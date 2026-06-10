@@ -81,3 +81,88 @@ fn audio_thread_does_not_allocate() {
     // The network side drops them: the group plus 32 synths.
     assert_eq!(handle.collect_garbage(), 33);
 }
+
+/// Same guardian for the Faust path (F3): inserting, processing, recontrolling
+/// and freeing `FaustSynth`s must not allocate on the audio thread. This
+/// guards our wrapper (staging copies, zone stores, garbage routing) —
+/// `compute` itself is JIT code whose C-side mallocs, if any, would bypass
+/// the Rust allocator hook; Faust documents it allocation-free after init.
+#[cfg(feature = "faust")]
+#[test]
+fn faust_synths_do_not_allocate_on_the_audio_thread() {
+    use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+    use claudesufa::faust::synth::FaustSynth;
+
+    // Compilation and instantiation allocate freely: network/compiler side.
+    let compiler = CompilerThread::spawn();
+    compiler
+        .submit(CompileRequest {
+            name: "rt_sine".into(),
+            payload: CompilePayload::Source(
+                r#"
+                wrap(x) = x - floor(x);
+                freq = hslider("freq", 440.0, 20.0, 20000.0, 0.01);
+                process = sin(6.283185307179586 * ((+(freq/48000.0) : wrap) ~ _)) * 0.01;
+                "#
+                .into(),
+            ),
+            client: "127.0.0.1:1".parse().unwrap(),
+        })
+        .ok()
+        .unwrap();
+    let def = Arc::new(
+        compiler
+            .recv_result_timeout(std::time::Duration::from_secs(10))
+            .expect("compilation must finish")
+            .outcome
+            .expect("def must compile"),
+    );
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for i in 0..8i32 {
+        let mut synth = Box::new(FaustSynth::new(Arc::clone(&def), 48_000.0).unwrap());
+        synth.set_control(0, 100.0 + i as f32);
+        handle
+            .send(Cmd::AddSynth {
+                id: 2000 + i,
+                target: ROOT_NODE_ID,
+                action: AddAction::Tail,
+                synth,
+            })
+            .ok()
+            .unwrap();
+    }
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // Zone writes via SetControl are plain stores: still no allocation.
+    handle
+        .send(Cmd::SetControl {
+            id: 2000,
+            index: 0,
+            value: 880.0,
+        })
+        .ok()
+        .unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..10 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // Freeing routes the instances out through the garbage FIFO untouched.
+    for i in 0..8i32 {
+        handle.send(Cmd::FreeNode { id: 2000 + i }).ok().unwrap();
+    }
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 8);
+}

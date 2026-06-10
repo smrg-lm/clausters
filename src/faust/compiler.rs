@@ -16,6 +16,7 @@ use std::time::Duration;
 use crate::faust::boxes;
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
+use crate::faust::synth::FaustDef;
 
 /// What `/d_faust` carries: either of the two def formats.
 pub enum CompilePayload {
@@ -37,9 +38,9 @@ pub struct CompileRequest {
 pub struct CompileResult {
     pub name: String,
     pub client: SocketAddr,
-    /// The compiled factory, or a human-readable compiler error destined for
-    /// the `/fail` reply verbatim.
-    pub outcome: Result<FaustFactory, String>,
+    /// The compiled def (factory + probed parameters), or a human-readable
+    /// compiler error destined for the `/fail` reply verbatim.
+    pub outcome: Result<FaustDef, String>,
 }
 
 pub struct CompilerThread {
@@ -193,13 +194,17 @@ impl Drop for LibContext {
     }
 }
 
-/// Runs on the compiler thread. Compiles with default options: `-single`
-/// (FAUSTFLOAT = f32, matching our buses) and maximum LLVM optimization.
-fn compile(name: &str, payload: &CompilePayload) -> Result<FaustFactory, String> {
-    match payload {
+/// Runs on the compiler thread. Compiles with default options — `-single`
+/// (FAUSTFLOAT = f32, matching our buses) and maximum LLVM optimization —
+/// then probes a throwaway instance for the def's parameters and I/O arity
+/// (F3), so `/s_new`/`/n_set` can resolve control names without touching
+/// libfaust again.
+fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String> {
+    let factory = match payload {
         CompilePayload::Source(source) => compile_source(name, source),
         CompilePayload::Json(json) => compile_json(name, json),
-    }
+    }?;
+    FaustDef::probe(factory)
 }
 
 fn compile_source(name: &str, source: &str) -> Result<FaustFactory, String> {

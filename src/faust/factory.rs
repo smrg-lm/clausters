@@ -7,9 +7,10 @@ use crate::faust::ffi;
 /// A compiled Faust DSP factory. Owns the underlying libfaust object and
 /// deletes it on drop.
 ///
-/// Refcounting: hold factories as `Arc<FaustFactory>`; every instance (F3's
-/// `FaustSynth`) keeps a clone, so the factory cannot be deleted while
-/// instances live — `deleteCDSPFactory` with live instances is UB.
+/// Refcounting: the factory lives inside an `Arc<FaustDef>` (see
+/// `faust::synth`); every `FaustSynth` instance keeps a clone of that Arc,
+/// so the factory cannot be deleted while instances live —
+/// `deleteCDSPFactory` with live instances is UB.
 pub struct FaustFactory {
     ptr: NonNull<ffi::llvm_dsp_factory>,
 }

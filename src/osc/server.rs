@@ -5,7 +5,9 @@
 //! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
 //! `/d_faust name def` compiles a def — JSON box graph (F2) or raw Faust
 //! source (F1) — on the dedicated compiler thread and replies
-//! `/done`/`/fail` asynchronously.
+//! `/done`/`/fail` asynchronously; `/s_new` instantiates Faust defs like any
+//! other (F3), with the def's UI parameters plus the reserved `out`/`in` bus
+//! controls as `/n_set` names.
 //!
 //! This runs on the network thread: allocating and doing I/O here is fine.
 //! It owns the [`EngineHandle`] and the SynthDef table: defs are compiled and
@@ -26,7 +28,7 @@ use rosc::{OscBundle, OscMessage, OscPacket, OscType, decoder, encoder};
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 #[cfg(feature = "faust")]
-use crate::faust::factory::FaustFactory;
+use crate::faust::synth::{FaustDef, FaustSynth};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::synthdef::instance::UGenSynth;
@@ -56,6 +58,25 @@ enum Flow {
     Quit,
 }
 
+/// What a live node was built from, mirrored per node ID so `/n_set` can
+/// resolve control names on the network thread.
+#[derive(Clone)]
+enum NodeDef {
+    UGen(Arc<SynthDef>),
+    #[cfg(feature = "faust")]
+    Faust(Arc<FaustDef>),
+}
+
+impl NodeDef {
+    fn control_index(&self, name: &str) -> Option<u32> {
+        match self {
+            NodeDef::UGen(def) => def.control_index(name),
+            #[cfg(feature = "faust")]
+            NodeDef::Faust(def) => def.control_index(name),
+        }
+    }
+}
+
 pub struct OscServer {
     socket: UdpSocket,
     info: ServerInfo,
@@ -65,16 +86,16 @@ pub struct OscServer {
     defs: HashMap<String, Arc<SynthDef>>,
     /// Mirror of which def each live node was built from, for resolving
     /// `/n_set` control names. Maintained from s_new and collected garbage.
-    node_defs: HashMap<i32, Arc<SynthDef>>,
+    node_defs: HashMap<i32, NodeDef>,
     dump_osc: bool,
     /// Clients registered via `/notify 1`; the client ID is index + 1.
     clients: Vec<SocketAddr>,
     recv_buf: Vec<u8>,
     next_auto_id: i32,
-    /// Compiled Faust factories by name, refcounted (F3 instances will hold
-    /// clones). The compiler thread is owned here and dies with the server.
+    /// Compiled Faust defs by name, refcounted (every instance holds a
+    /// clone). The compiler thread is owned here and dies with the server.
     #[cfg(feature = "faust")]
-    faust_defs: HashMap<String, Arc<FaustFactory>>,
+    faust_defs: HashMap<String, Arc<FaustDef>>,
     #[cfg(feature = "faust")]
     faust_compiler: CompilerThread,
 }
@@ -163,8 +184,8 @@ impl OscServer {
     fn collect_faust_results(&mut self) {
         while let Some(result) = self.faust_compiler.try_result() {
             match result.outcome {
-                Ok(factory) => {
-                    self.faust_defs.insert(result.name.clone(), Arc::new(factory));
+                Ok(def) => {
+                    self.faust_defs.insert(result.name.clone(), Arc::new(def));
                     self.reply(
                         result.client,
                         "/done",
@@ -369,8 +390,9 @@ impl OscServer {
             ] => (def.clone(), *id, *action, *target),
             _ => return self.fail(from, "/s_new", "expected: name, id, addAction, targetID"),
         };
-        let Some(def) = self.defs.get(&def_name).cloned() else {
-            return self.fail(from, "/s_new", format!("SynthDef not found: {def_name}"));
+        let (mut synth, def) = match self.make_synth(&def_name) {
+            Ok(pair) => pair,
+            Err(e) => return self.fail(from, "/s_new", e),
         };
         let Some(action) = AddAction::from_i32(action) else {
             return self.fail(from, "/s_new", "add action must be 0-4");
@@ -384,7 +406,6 @@ impl OscServer {
             return self.fail(from, "/s_new", "node ID must be positive or -1");
         };
 
-        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
         for pair in msg.args[4..].chunks(2) {
             let (Some(index), Some(value)) = (
                 control_key(&pair[0], &def),
@@ -406,6 +427,22 @@ impl OscServer {
         } else {
             self.fail(from, "/s_new", "command FIFO full");
         }
+    }
+
+    /// Builds a synth instance from either def table. Faust instantiation
+    /// (`createCDSPInstance` + `init`) allocates — fine, this is the network
+    /// thread; the boxed instance reaches the audio thread fully built.
+    fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
+        if let Some(def) = self.defs.get(name) {
+            let synth = Box::new(UGenSynth::new(Arc::clone(def)));
+            return Ok((synth, NodeDef::UGen(Arc::clone(def))));
+        }
+        #[cfg(feature = "faust")]
+        if let Some(def) = self.faust_defs.get(name) {
+            let synth = FaustSynth::new(Arc::clone(def), self.handle.sample_rate)?;
+            return Ok((Box::new(synth), NodeDef::Faust(Arc::clone(def))));
+        }
+        Err(format!("SynthDef not found: {name}"))
     }
 
     /// `/g_new` takes (id, addAction, targetID) triples.
@@ -593,7 +630,7 @@ impl OscServer {
 }
 
 /// Control reference: by name (resolved against the def) or by index.
-fn control_key(arg: &OscType, def: &SynthDef) -> Option<u32> {
+fn control_key(arg: &OscType, def: &NodeDef) -> Option<u32> {
     match arg {
         OscType::String(name) => def.control_index(name),
         OscType::Int(i) if *i >= 0 => Some(*i as u32),

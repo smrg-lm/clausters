@@ -14,8 +14,8 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
-use claudesufa::faust::factory::FaustFactory;
 use claudesufa::faust::ffi;
+use claudesufa::faust::synth::FaustDef;
 use serde_json::{Value, json};
 
 const SR: f32 = 48_000.0;
@@ -26,7 +26,7 @@ fn dummy_client() -> SocketAddr {
     "127.0.0.1:1".parse().unwrap()
 }
 
-fn compile(name: &str, payload: CompilePayload) -> Result<FaustFactory, String> {
+fn compile(name: &str, payload: CompilePayload) -> Result<FaustDef, String> {
     let compiler = CompilerThread::spawn();
     compiler
         .submit(CompileRequest {
@@ -42,14 +42,14 @@ fn compile(name: &str, payload: CompilePayload) -> Result<FaustFactory, String> 
         .outcome
 }
 
-fn compile_json(name: &str, graph: &Value) -> Result<FaustFactory, String> {
+fn compile_json(name: &str, graph: &Value) -> Result<FaustDef, String> {
     compile(name, CompilePayload::Json(graph.to_string()))
 }
 
-/// Renders a 0-in/1-out factory for `seconds`, audio-thread style
+/// Renders a 0-in/1-out def for `seconds`, audio-thread style
 /// (non-interleaved block buffers).
-fn render_mono(factory: &FaustFactory, seconds: f32) -> Vec<f32> {
-    let dsp = unsafe { ffi::createCDSPInstance(factory.as_ptr()) };
+fn render_mono(def: &FaustDef, seconds: f32) -> Vec<f32> {
+    let dsp = unsafe { ffi::createCDSPInstance(def.factory().as_ptr()) };
     assert!(!dsp.is_null(), "instance creation failed");
     unsafe { ffi::initCDSPInstance(dsp, SR as i32) };
     assert_eq!(unsafe { ffi::getNumInputsCDSPInstance(dsp) }, 0);
@@ -113,8 +113,8 @@ fn sine_graph() -> Value {
 
 #[test]
 fn json_sine_graph_compiles_and_plays_at_440() {
-    let factory = compile_json("jsine", &sine_graph()).expect("sine graph must compile");
-    let out = render_mono(&factory, 1.0);
+    let def = compile_json("jsine", &sine_graph()).expect("sine graph must compile");
+    let out = render_mono(&def, 1.0);
     assert!(out.iter().all(|x| x.is_finite()));
     let freq = estimated_freq(&out);
     assert!((freq - 440.0).abs() < 5.0, "estimated freq = {freq}");
@@ -136,8 +136,8 @@ fn faust_op_embeds_stdlib_source_as_a_composable_box() {
             {"op": "mul", "in": ["_", 0.5]}
         ]
     });
-    let factory = compile_json("josc", &graph).expect("stdlib fragment must compile");
-    let out = render_mono(&factory, 1.0);
+    let def = compile_json("josc", &graph).expect("stdlib fragment must compile");
+    let out = render_mono(&def, 1.0);
     let freq = estimated_freq(&out);
     assert!((freq - 440.0).abs() < 5.0, "estimated freq = {freq}");
     let expected_rms = 0.5 * std::f32::consts::FRAC_1_SQRT_2;

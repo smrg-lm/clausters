@@ -20,7 +20,7 @@
 
 #![allow(non_snake_case, non_camel_case_types)]
 
-use std::ffi::{c_char, c_int};
+use std::ffi::{c_char, c_int, c_void};
 
 /// Opaque box-expression node, owned by the lib context arena.
 #[repr(C)]
@@ -43,6 +43,66 @@ pub struct llvm_dsp {
 
 /// Required size of the `error_msg` buffer for factory creation.
 pub const ERROR_MSG_SIZE: usize = 4096;
+
+// ---- UI parameter discovery (faust/gui/CInterface.h) ----
+//
+// `buildUserInterfaceCDSPInstance` walks the instance's UI tree calling these
+// callbacks; the zone pointers it hands out are `FAUSTFLOAT*` (f32, we always
+// compile `-single`) into the instance's own memory — writing them is a plain
+// aligned store, the RT-safe way to set parameters.
+
+pub type OpenBoxFun = unsafe extern "C" fn(ui: *mut c_void, label: *const c_char);
+pub type CloseBoxFun = unsafe extern "C" fn(ui: *mut c_void);
+pub type AddButtonFun =
+    unsafe extern "C" fn(ui: *mut c_void, label: *const c_char, zone: *mut f32);
+pub type AddSliderFun = unsafe extern "C" fn(
+    ui: *mut c_void,
+    label: *const c_char,
+    zone: *mut f32,
+    init: f32,
+    min: f32,
+    max: f32,
+    step: f32,
+);
+pub type AddBargraphFun = unsafe extern "C" fn(
+    ui: *mut c_void,
+    label: *const c_char,
+    zone: *mut f32,
+    min: f32,
+    max: f32,
+);
+pub type AddSoundfileFun = unsafe extern "C" fn(
+    ui: *mut c_void,
+    label: *const c_char,
+    url: *const c_char,
+    sf_zone: *mut *mut c_void,
+);
+pub type DeclareFun = unsafe extern "C" fn(
+    ui: *mut c_void,
+    zone: *mut f32,
+    key: *const c_char,
+    value: *const c_char,
+);
+
+/// C UI visitor: every field must be a valid function pointer (libfaust calls
+/// them unconditionally). `uiInterface` is passed back as the first argument.
+#[repr(C)]
+pub struct UIGlue {
+    pub uiInterface: *mut c_void,
+    pub openTabBox: OpenBoxFun,
+    pub openHorizontalBox: OpenBoxFun,
+    pub openVerticalBox: OpenBoxFun,
+    pub closeBox: CloseBoxFun,
+    pub addButton: AddButtonFun,
+    pub addCheckButton: AddButtonFun,
+    pub addVerticalSlider: AddSliderFun,
+    pub addHorizontalSlider: AddSliderFun,
+    pub addNumEntry: AddSliderFun,
+    pub addHorizontalBargraph: AddBargraphFun,
+    pub addVerticalBargraph: AddBargraphFun,
+    pub addSoundfile: AddSoundfileFun,
+    pub declare: DeclareFun,
+}
 
 unsafe extern "C" {
     // ---- lib context (libfaust-signal-c.h) ----
@@ -181,6 +241,7 @@ unsafe extern "C" {
     pub fn initCDSPInstance(dsp: *mut llvm_dsp, sample_rate: c_int);
     pub fn getNumInputsCDSPInstance(dsp: *mut llvm_dsp) -> c_int;
     pub fn getNumOutputsCDSPInstance(dsp: *mut llvm_dsp) -> c_int;
+    pub fn buildUserInterfaceCDSPInstance(dsp: *mut llvm_dsp, ui: *mut UIGlue);
     /// The only call allowed on the audio thread.
     pub fn computeCDSPInstance(
         dsp: *mut llvm_dsp,

@@ -171,13 +171,16 @@ UGens.
   *(Completado 2026-06-10 — ver NOTAS.md. Schema documentado en
   `src/faust/boxes.rs`; `/d_faust` acepta JSON o fuente Faust cruda.
   Hallazgo: bug upstream en `boxFmod()`, rodeado vía fragmento.)*
-- **F3 — FaustSynth en el árbol**: `FaustSynth: SynthNode` envolviendo la
+- ✅ **F3 — FaustSynth en el árbol**: `FaustSynth: SynthNode` envolviendo la
   instancia JIT; `/s_new` con nombre de def Faust instancia en el hilo de red
   (`createDSPInstance` + `init(sr)` alocan) y enchufa por el cmd FIFO; mapeo
   buses↔`inputs`/`outputs` no intercalados de Faust; `/n_set` sobre parámetros
   por nombre (zonas `FAUSTFLOAT*` recolectadas con UIGlue al instanciar);
   liberación por garbage FIFO con refcount de factory (destruir una factory con
   instancias vivas es UB).
+  *(Completado 2026-06-10 — ver NOTAS.md. Controles reservados `out`/`in`
+  para el mapeo de buses; los params se sondean una vez en el hilo
+  compilador y viven en `FaustDef`.)*
 - **F4 — Paridad e interop**: synths Faust y UGen conviven en grupos/buses;
   tests dorados de grafos equivalentes (UGen `SinOsc` vs box `sin(phasor)`);
   cliente de ejemplo en Python que genera JSON; documentación del schema.

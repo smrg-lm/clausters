@@ -476,7 +476,65 @@ de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
 - `cargo test` sin feature: 47 tests, intacto. Clippy limpio (solo los dos
   `Default` preexistentes de dsp).
 
-## Próximo: M5 — Buffers (o F3 — FaustSynth en el árbol)
+## F3 — FaustSynth en el árbol (completado 2026-06-10)
+
+### Qué quedó hecho
+
+- **`src/faust/synth.rs`** (nuevo): `FaustDef` y `FaustSynth`.
+  - **`FaustDef`** es lo que ahora guardan las tablas de defs: la factory
+    compilada más los parámetros (nombre, init, min, max, step) y la aridad
+    de E/S, descubiertos **una sola vez** sondeando una instancia
+    descartable en el hilo compilador (`FaustDef::probe`, llamada por
+    `compile()` después de crear la factory). Así `/s_new` y `/n_set`
+    resuelven nombres de controles en el hilo de red sin tocar libfaust.
+  - **`FaustSynth: SynthNode`**: se construye en el hilo de red
+    (`createCDSPInstance` + `initCDSPInstance(sr)` alocan), recolecta las
+    zonas `FAUSTFLOAT*` con `UIGlue` al instanciar, viaja ya armado por el
+    cmd FIFO, y `process()` solo llama `computeCDSPInstance` (la única
+    llamada RT-safe de libfaust) más copias de staging. `Drop` borra la
+    instancia — siempre corre en el hilo de red porque los nodos liberados
+    salen por el garbage FIFO; el `Arc<FaustDef>` del synth garantiza
+    instancia-muere-antes-que-factory.
+- **Convención de controles**: índices `0..n` = parámetros UI del def (orden
+  de declaración, labels pelados — los grupos se aplanan); después dos
+  nombres reservados: `out` (índice n) e `in` (n+1), el primer bus de audio
+  al que mapean salidas/entradas. Defaults `out=0`, `in=0`. Clamp para que
+  el span completo de canales quede dentro de los buses.
+- **Mapeo de buses**: la E/S de Faust es `float**` no intercalada como
+  nuestros buses, pero el synth pasa por buffers de staging propios: las
+  salidas **suman** al bus (semántica de `Out`, los synths mezclan) y las
+  entradas se copian antes de escribir salidas (una cadena in-place
+  `in == out` queda correcta).
+- **OSC**: `/s_new` instancia defs Faust como cualquier otro (helper
+  `make_synth` que busca en ambas tablas); el espejo `node_defs` ahora
+  guarda un enum `NodeDef::{UGen, Faust}` para resolver nombres en
+  `/n_set`. `/d_free` con instancias vivas no rompe nada (refcount).
+- **FFI**: `UIGlue` (struct repr(C) de 13 callbacks de CInterface.h) y
+  `buildUserInterfaceCDSPInstance`.
+
+### Decisiones
+
+- Instanciación en el hilo de red **sin** `ffi_lock()`: crear instancias
+  desde una factory ya compilada es independiente del estado global del
+  compilador (es código JIT + malloc; FaustLive/faustgen~ lo hacen
+  concurrente con compilaciones). El lock sigue siendo solo para compilar.
+- `ugen_count() = 1` por instancia Faust en `/status.reply`.
+- La SR queda congelada por `instanceInit` (ver previsión en PLAN.md);
+  el probe usa 48 kHz fijo porque params y aridad no dependen de la SR.
+
+### Verificación
+
+- `cargo test --features faust`: 73 tests (64 de F2 + 8 de `faust_synth`:
+  probe de params y controles reservados, sine en el árbol con
+  frecuencia/RMS, `/n_set` por zona, ruteo por `out`, cadena por bus de
+  entrada con `in`, mezcla UGen+Faust en el mismo bus (interop de F4
+  adelantada), free con factory sobreviviendo al `/d_free`, y el ciclo
+  completo por OSC con engine tickeado a mano + 1 en `rt_safety`: 8
+  FaustSynths insertados, procesados, recontrolados y liberados bajo
+  `assert_no_alloc`). Estable en 3 corridas.
+- `cargo test` sin feature: 47 tests, intacto. Clippy limpio.
+
+## Próximo: M5 — Buffers (o F4 — paridad e interop)
 
 M5: pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read`
 (hound), `PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
