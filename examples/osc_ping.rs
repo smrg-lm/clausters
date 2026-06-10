@@ -80,9 +80,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 25.0}]},
                         {"kind": "Add",    "inputs": [{"ugen": 1}, {"control": 0}]},
                         {"kind": "SinOsc", "inputs": [{"ugen": 2}]},
-                        {"kind": "Mul",    "inputs": [{"ugen": 3}, {"const": 0.2}]}
-                    ],
-                    "out": 4
+                        {"kind": "Mul",    "inputs": [{"ugen": 3}, {"const": 0.2}]},
+                        {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 4}]},
+                        {"kind": "Out",    "inputs": [{"const": 1.0}, {"ugen": 4}]}
+                    ]
                 }"#;
                 send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())])?;
                 recv("/d_recv")?;

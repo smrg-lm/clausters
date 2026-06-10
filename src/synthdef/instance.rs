@@ -2,9 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{MAX_UGEN_INPUTS, ProcessCtx, UGen, registry};
+use crate::dsp::{BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, UGen, registry};
 use crate::node::SynthNode;
-use crate::server::engine::BLOCK_SIZE;
 use crate::synthdef::{InputRef, SynthDef};
 
 /// Built entirely on the network thread (allocates); `process` runs on the
@@ -32,8 +31,7 @@ impl UGenSynth {
 }
 
 impl SynthNode for UGenSynth {
-    fn process(&mut self, sample_rate: f32, out: &mut [f32]) {
-        let ctx = ProcessCtx { sample_rate };
+    fn process(&mut self, ctx: &mut ProcessCtx) {
         for i in 0..self.ugens.len() {
             // Topological order guarantees inputs only reference earlier wires.
             let (earlier, rest) = self.wires.split_at_mut(i);
@@ -48,9 +46,8 @@ impl SynthNode for UGenSynth {
                     InputRef::Wire(w) => &earlier[*w][..],
                 };
             }
-            self.ugens[i].process(&ctx, &inputs[..refs.len()], output);
+            self.ugens[i].process(ctx, &inputs[..refs.len()], output);
         }
-        out.copy_from_slice(&self.wires[self.def.out_index]);
     }
 
     fn set_control(&mut self, index: u32, value: f32) {

@@ -58,25 +58,58 @@ impl TestServer {
         }
     }
 
-    /// Ticks the engine and polls /status until the synth count matches or
-    /// the deadline passes. Covers the network→FIFO→audio round trip.
-    fn wait_for_synth_count(&mut self, expected: i32) {
+    /// Receives until a message with this address arrives, discarding others
+    /// (e.g. interleaved /n_go//n_end notifications).
+    fn recv_until(&self, addr: &str) -> OscMessage {
+        for _ in 0..100 {
+            let msg = self.recv();
+            if msg.addr == addr {
+                return msg;
+            }
+        }
+        panic!("never received {addr}");
+    }
+
+    /// Ticks the engine and polls /status until the given reply argument
+    /// matches or the deadline passes. Covers the network→FIFO→audio round
+    /// trip. Argument 2 is the synth count, 3 the group count.
+    fn wait_for_status(&mut self, arg_index: usize, expected: i32) {
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
         for _ in 0..100 {
             self.engine.process_block(&mut out);
             self.send("/status", vec![]);
-            if self.recv().args[2] == OscType::Int(expected) {
+            if self.recv_until("/status.reply").args[arg_index] == OscType::Int(expected) {
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        panic!("synth count never reached {expected}");
+        panic!("status arg {arg_index} never reached {expected}");
+    }
+
+    fn wait_for_synth_count(&mut self, expected: i32) {
+        self.wait_for_status(2, expected);
+    }
+
+    /// Ticks the engine, nudging the server with /status, until a message
+    /// with this address arrives (used for /n_go and /n_end, whose timing
+    /// depends on the engine applying the command first).
+    fn tick_until(&mut self, addr: &str) -> OscMessage {
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for _ in 0..100 {
+            self.engine.process_block(&mut out);
+            self.send("/status", vec![]);
+            let msg = self.recv();
+            if msg.addr == addr {
+                return msg;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("never received {addr}");
     }
 
     fn quit(self) {
         self.send("/quit", vec![]);
-        let reply = self.recv();
-        assert_eq!(reply.addr, "/done");
+        let reply = self.recv_until("/done");
         assert_eq!(reply.args[0], OscType::String("/quit".into()));
         self.handle.join().unwrap().unwrap();
     }
@@ -107,9 +140,9 @@ fn d_recv_compiles_def_and_plays_it() {
         "controls": [{"name": "freq", "default": 220.0}],
         "ugens": [
             {"kind": "SinOsc", "inputs": [{"control": 0}]},
-            {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.1}]}
-        ],
-        "out": 1
+            {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.1}]},
+            {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
     }"#;
     server.send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())]);
     let reply = server.recv();
@@ -155,7 +188,7 @@ fn d_recv_invalid_json_fails() {
 #[test]
 fn d_recv_bad_graph_fails_with_compile_error() {
     let server = TestServer::spawn();
-    let json = r#"{"name":"x","ugens":[{"kind":"Nope","inputs":[]}],"out":0}"#;
+    let json = r#"{"name":"x","ugens":[{"kind":"Nope","inputs":[]}]}"#;
     server.send("/d_recv", vec![OscType::String(json.into())]);
     let reply = server.recv();
     assert_eq!(reply.addr, "/fail");
@@ -169,7 +202,7 @@ fn d_recv_bad_graph_fails_with_compile_error() {
 #[test]
 fn d_free_removes_def() {
     let server = TestServer::spawn();
-    let json = r#"{"name":"temp","ugens":[{"kind":"SinOsc","inputs":[{"const":440.0}]}],"out":0}"#;
+    let json = r#"{"name":"temp","ugens":[{"kind":"SinOsc","inputs":[{"const":440.0}]}]}"#;
     server.send("/d_recv", vec![OscType::String(json.into())]);
     assert_eq!(server.recv().addr, "/done");
 
@@ -249,6 +282,102 @@ fn s_new_unknown_synthdef_fails() {
     let reply = server.recv();
     assert_eq!(reply.addr, "/fail");
     assert_eq!(reply.args[0], OscType::String("/s_new".into()));
+    server.quit();
+}
+
+#[test]
+fn g_new_and_free_update_group_count() {
+    let mut server = TestServer::spawn();
+
+    server.send(
+        "/g_new",
+        vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
+    );
+    server.wait_for_status(3, 2); // root + new group
+
+    server.send("/n_free", vec![OscType::Int(1)]);
+    server.wait_for_status(3, 1);
+
+    server.quit();
+}
+
+#[test]
+fn g_free_all_empties_group_but_keeps_it() {
+    let mut server = TestServer::spawn();
+
+    server.send(
+        "/g_new",
+        vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
+    );
+    server.wait_for_status(3, 2);
+
+    // a synth inside the group (addAction tail of group 1)
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(1),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    server.send("/g_freeAll", vec![OscType::Int(1)]);
+    server.wait_for_synth_count(0);
+    server.wait_for_status(3, 2); // the group itself survives
+
+    server.quit();
+}
+
+#[test]
+fn c_set_and_c_get_roundtrip() {
+    let server = TestServer::spawn();
+
+    server.send(
+        "/c_set",
+        vec![OscType::Int(5), OscType::Float(0.25)],
+    );
+    server.send("/c_get", vec![OscType::Int(5)]);
+    let reply = server.recv_until("/c_set");
+    assert_eq!(reply.args[0], OscType::Int(5));
+    assert_eq!(reply.args[1], OscType::Float(0.25));
+
+    // unset buses read as 0.0
+    server.send("/c_get", vec![OscType::Int(99)]);
+    let reply = server.recv_until("/c_set");
+    assert_eq!(reply.args[1], OscType::Float(0.0));
+
+    server.quit();
+}
+
+#[test]
+fn notify_clients_receive_n_go_and_n_end() {
+    let mut server = TestServer::spawn();
+    server.send("/notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], OscType::Int(1));
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::String("amp".into()),
+            OscType::Float(0.0),
+        ],
+    );
+    let go = server.tick_until("/n_go");
+    assert_eq!(go.args[0], OscType::Int(1000));
+    assert_eq!(go.args[1], OscType::Int(0)); // parent: root group
+    assert_eq!(go.args[4], OscType::Int(0)); // not a group
+
+    server.send("/n_free", vec![OscType::Int(1000)]);
+    let end = server.tick_until("/n_end");
+    assert_eq!(end.args[0], OscType::Int(1000));
+    assert_eq!(end.args[4], OscType::Int(0));
+
     server.quit();
 }
 

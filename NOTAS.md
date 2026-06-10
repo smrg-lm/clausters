@@ -245,8 +245,81 @@ parsear). Considerar reportarlo upstream.
   (5 UGens, FM) enviada por `/d_recv` como blob JSON, `/done` recibido, sonó
   1.2 s audible, `/status` durante la reproducción: 5 ugens / 1 synth / 2 defs.
 
-## Próximo: M4 — Buses y orden
+## M4 — Buses y orden (completado 2026-06-10)
 
-Buses de audio/control, UGens `In`/`Out` (los synths dejan de mezclarse a la
-salida hardcodeada), `/n_before`/`/n_after`, `/g_new` y grupos anidados, add
-actions 2–4, reply FIFO para `/fail` asíncrono y notificaciones `/n_go`/`/n_end`.
+### Qué quedó hecho
+
+- **Buses** (`src/dsp/mod.rs`): `Buses` con 128 buses de audio (`[f32; 64]`,
+  propiedad del hilo de audio, limpiados cada bloque) y 1024 buses de control
+  compartidos (`ControlBuses`: `Arc<Vec<AtomicU32>>` con bit-cast de f32,
+  stores/loads relaxed — lock-free en ambos hilos). Los buses `0..channels`
+  son las salidas de hardware. `ProcessCtx` ahora lleva `sample_rate` +
+  `&mut Buses` y se pasa a todos los UGens.
+- **UGens de E/S** (`src/dsp/io.rs`): `Out` (suma al bus — varios synths sobre
+  el mismo bus se mezclan, semántica scsynth), `ReplaceOut` (sobreescribe),
+  `In` (copia de un bus de audio), `InCtl` (lee un bus de control como
+  constante de bloque). **Cambio de formato**: las SynthDefs ya no llevan el
+  campo `out`; la salida es exclusivamente vía UGens `Out` (una def sin `Out`
+  es silenciosa). La def "default" ahora termina en dos `Out` (buses 0 y 1).
+- **Árbol de nodos** (`src/node/mod.rs`, reescrito): el grupo raíz (ID 0) vive
+  en el slot 0 del slab y no se puede liberar/mover; cada nodo guarda su
+  `parent`; grupos anidados con `children` pre-alocados
+  (`MAX_GROUP_CHILDREN=256`, raíz `MAX_NODES`) y rechazo por capacidad antes
+  de insertar (nunca crece un Vec en el hilo de audio). Add actions 0–4
+  completas (`Replace` libera el subárbol del target). `move_node`
+  (`/n_before`/`/n_after`) con chequeo de ciclo por ancestros y de capacidad
+  al cruzar de grupo. `free` recursivo, `free_all` (vacía el grupo) y
+  `deep_free` (libera solo synths, conserva subgrupos) — todos sin alocar,
+  con un `free_stack` pre-alocado separado del `dfs_stack`. Los nodos salen
+  por un *sink* (`&mut dyn FnMut(FreedNode)`) que reporta ID + parent.
+- **Engine** (`src/server/engine.rs`): es dueño de los `Buses`; la salida
+  interleaved se copia de los buses 0..channels (ya no hay `mix`/`scratch`).
+  `Cmd` extendido: `AddSynth`/`AddGroup` con `target` + acción, `FreeNode`,
+  `FreeAllInGroup`, `DeepFreeGroup`, `MoveNode`, `SetControl`. `Garbage` con 4
+  variantes (Freed/Rejected × Synth/Group). FIFO nuevo de eventos
+  (`NodeEvent { Go|End, id, parent_id, is_group }`, capacidad 2048, entrega
+  best-effort) para `/n_go`/`/n_end`. `GarbageSink` interno presta los campos
+  del engine por separado para evitar el doble préstamo con el árbol.
+  `Counters` suma `groups` (inicializado en 1: la raíz existe antes del primer
+  tick). `BLOCK_SIZE` se movió a `dsp` (re-export en `engine` para
+  compatibilidad).
+- **OSC** (`src/osc/server.rs`): `/s_new` con add actions 0–4 y target real;
+  nuevos `/g_new` (tripletas id/acción/target), `/g_freeAll`, `/g_deepFree`,
+  `/n_before`/`/n_after` (pares); `/c_set`/`/c_get` servidos directo en el
+  hilo de red sobre los atomics (sin round-trip al engine; `/c_get` responde
+  con un `/c_set` de pares índice/valor, como scsynth). `collect_garbage`
+  drena además el FIFO de eventos y manda `/n_go`/`/n_end`
+  (`[id, parent, -1, -1, isGroup]`) a los clientes de `/notify`. `/status`
+  reporta el conteo real de grupos.
+
+### Decisiones
+
+- `/c_set`/`/c_get` no pasan por el FIFO de comandos: los buses de control son
+  atomics compartidos y el hilo de red opera directo. Un synth los ve recién
+  en su próximo bloque (mismo efecto que pasar por el FIFO).
+- `Out` suma y `ReplaceOut` sobreescribe → el orden de ejecución es audible y
+  testeable: los tests de orden usan un "silencer" (`ReplaceOut` de 0.0) que
+  gana o pierde el bus según esté después o antes de la fuente.
+- El reply FIFO genérico para `/fail` asíncrono quedó cubierto por el FIFO de
+  eventos (`/n_go`/`/n_end`); los rechazos del engine siguen saliendo como
+  `Garbage::Rejected*` con log en stderr (un `/fail` asíncrono real
+  necesitaría guardar el remitente por comando — se evalúa en M5/M6).
+
+### Verificación
+
+- `cargo test`: 47 tests pasan — 15 del motor (mezcla por bus, orden
+  audible + `MoveNode`, before/after/replace, grupos anidados con free
+  recursivo, `free_all`/`deep_free`, eventos go/end, buses de control desde el
+  hilo de red), 16 de OSC (nuevos: `/g_new` + conteo de grupos en `/status`,
+  `/g_freeAll`, roundtrip `/c_set`/`/c_get`, notificaciones `/n_go`/`/n_end` a
+  clientes `/notify`), 15 de synthdef (semántica Out/ReplaceOut/In/InCtl, def
+  sin `Out` silenciosa) y el guardián RT (ahora con grupo + 32 synths, move y
+  free recursivo bajo `assert_no_alloc`).
+- E2E real (2026-06-10): `osc_ping status vibrato status quit` contra el
+  binario M4 — la def "vibrato" reescrita con UGens `Out` (7 ugens) sonó
+  audible; `/status` durante la reproducción: 7 ugens / 1 synth / 1 grupo.
+
+## Próximo: M5 — Buffers
+
+Pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read` (hound),
+`PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.

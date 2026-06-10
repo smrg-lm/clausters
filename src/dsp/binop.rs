@@ -20,7 +20,7 @@ impl BinaryOp {
 }
 
 impl UGen for BinaryOp {
-    fn process(&mut self, _ctx: &ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+    fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (a, b) = (inputs[0], inputs[1]);
         for (i, s) in output.iter_mut().enumerate() {
             let (x, y) = (at(a, i), at(b, i));

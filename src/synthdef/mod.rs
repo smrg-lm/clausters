@@ -6,7 +6,8 @@
 //! the network thread. `/s_new` builds a [`instance::UGenSynth`] from it —
 //! fully allocated on the network thread — and ships it to the audio thread.
 //!
-//! Example of the wire format:
+//! Output happens exclusively through `Out`/`ReplaceOut` UGens writing to
+//! buses; a def without them is silent. Example of the wire format:
 //!
 //! ```json
 //! {
@@ -17,9 +18,9 @@
 //!   ],
 //!   "ugens": [
 //!     {"kind": "SinOsc", "inputs": [{"control": 0}]},
-//!     {"kind": "Mul",    "inputs": [{"ugen": 0}, {"control": 1}]}
-//!   ],
-//!   "out": 1
+//!     {"kind": "Mul",    "inputs": [{"ugen": 0}, {"control": 1}]},
+//!     {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
+//!   ]
 //! }
 //! ```
 
@@ -38,8 +39,6 @@ pub struct SynthDefSpec {
     #[serde(default)]
     pub controls: Vec<ControlSpec>,
     pub ugens: Vec<UGenSpec>,
-    /// Index of the UGen whose output is the synth's output (mono until M4).
-    pub out: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -87,7 +86,6 @@ pub struct SynthDef {
     pub constants: Vec<f32>,
     /// Topologically ordered: inputs only reference earlier UGens.
     pub ugens: Vec<UGenDef>,
-    pub out_index: usize,
 }
 
 impl SynthDef {
@@ -155,26 +153,18 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         ugens.push(UGenDef { kind, inputs });
     }
 
-    let out_index = spec.out as usize;
-    if out_index >= ugens.len() {
-        return Err(format!(
-            "out index {out_index} out of range (have {} ugens)",
-            ugens.len()
-        ));
-    }
-
     Ok(SynthDef {
         name: spec.name,
         control_names: spec.controls.iter().map(|c| c.name.clone()).collect(),
         control_defaults: spec.controls.iter().map(|c| c.default).collect(),
         constants,
         ugens,
-        out_index,
     })
 }
 
-/// The built-in "default" def, registered at startup: SinOsc(freq) * amp.
-/// Built through the same spec/compile path as client-sent defs.
+/// The built-in "default" def, registered at startup: SinOsc(freq) * amp to
+/// buses 0 and 1 (the hardware outputs). Built through the same spec/compile
+/// path as client-sent defs.
 pub fn default_spec() -> SynthDefSpec {
     SynthDefSpec {
         name: "default".into(),
@@ -197,7 +187,14 @@ pub fn default_spec() -> SynthDefSpec {
                 kind: "Mul".into(),
                 inputs: vec![InputSpec::Ugen(0), InputSpec::Control(1)],
             },
+            UGenSpec {
+                kind: "Out".into(),
+                inputs: vec![InputSpec::Const(0.0), InputSpec::Ugen(1)],
+            },
+            UGenSpec {
+                kind: "Out".into(),
+                inputs: vec![InputSpec::Const(1.0), InputSpec::Ugen(1)],
+            },
         ],
-        out: 1,
     }
 }

@@ -16,7 +16,7 @@ impl SinOsc {
 }
 
 impl UGen for SinOsc {
-    fn process(&mut self, ctx: &ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let freq = inputs[0];
         let sr = ctx.sample_rate as f64;
         for (i, s) in output.iter_mut().enumerate() {

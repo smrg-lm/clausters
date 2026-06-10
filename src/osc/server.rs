@@ -1,6 +1,8 @@
-//! UDP OSC server implementing the M3 subset of the scsynth protocol:
-//! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/s_new`, `/n_free`, `/n_set`,
-//! `/d_recv`, `/d_free`.
+//! UDP OSC server implementing the M4 subset of the scsynth protocol:
+//! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/s_new` (add actions 0-4),
+//! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
+//! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; `/n_go` and
+//! `/n_end` notifications go to `/notify` clients.
 //!
 //! This runs on the network thread: allocating and doing I/O here is fine.
 //! It owns the [`EngineHandle`] and the SynthDef table: defs are compiled and
@@ -18,8 +20,8 @@ use std::time::Duration;
 
 use rosc::{OscBundle, OscMessage, OscPacket, OscType, decoder, encoder};
 
-use crate::node::{AddAction, SynthNode};
-use crate::server::engine::{Cmd, EngineHandle, Garbage};
+use crate::node::{AddAction, Group, Place, SynthNode};
+use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::synthdef::instance::UGenSynth;
 use crate::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
 
@@ -133,18 +135,38 @@ impl OscServer {
         }
     }
 
-    /// Drops what the audio thread discarded and keeps the def mirror in sync.
+    /// Drops what the audio thread discarded, keeps the def mirror in sync
+    /// and forwards node lifecycle events to `/notify` clients.
     fn collect_garbage(&mut self) {
         while let Some(g) = self.handle.pop_garbage() {
             match g {
-                Garbage::Freed { id, .. } => {
+                Garbage::FreedSynth { id, .. } => {
                     self.node_defs.remove(&id);
                 }
-                Garbage::Rejected { id, .. } => {
+                Garbage::FreedGroup { .. } => {}
+                Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID.
-                    eprintln!("engine rejected node {id} (duplicate ID or full node table)");
+                    eprintln!("engine rejected node {id} (duplicate ID, bad target or full table)");
                 }
+            }
+        }
+        while let Some(ev) = self.handle.pop_event() {
+            let addr = match ev.kind {
+                NodeEventKind::Go => "/n_go",
+                NodeEventKind::End => "/n_end",
+            };
+            // scsynth shape: id, parent, previous, next, isGroup. We don't
+            // track sibling IDs on this side, so previous/next are -1.
+            let args = vec![
+                OscType::Int(ev.id),
+                OscType::Int(ev.parent_id),
+                OscType::Int(-1),
+                OscType::Int(-1),
+                OscType::Int(ev.is_group as i32),
+            ];
+            for client in &self.clients {
+                self.reply(*client, addr, args.clone());
             }
         }
     }
@@ -174,8 +196,15 @@ impl OscServer {
             "/status" => self.send_status(from),
             "/notify" => self.handle_notify(&msg, from),
             "/s_new" => self.handle_s_new(&msg, from),
+            "/g_new" => self.handle_g_new(&msg, from),
+            "/g_freeAll" => self.handle_g_free(&msg, from, "/g_freeAll"),
+            "/g_deepFree" => self.handle_g_free(&msg, from, "/g_deepFree"),
             "/n_free" => self.handle_n_free(&msg, from),
             "/n_set" => self.handle_n_set(&msg, from),
+            "/n_before" => self.handle_n_move(&msg, from, Place::Before),
+            "/n_after" => self.handle_n_move(&msg, from, Place::After),
+            "/c_set" => self.handle_c_set(&msg, from),
+            "/c_get" => self.handle_c_get(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
             "/d_free" => self.handle_d_free(&msg, from),
             "/dumpOSC" => {
@@ -196,7 +225,7 @@ impl OscServer {
             OscType::Int(1),
             OscType::Int(counters.ugens.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.synths.load(Ordering::Relaxed) as i32),
-            OscType::Int(1), // groups: only the root until M4
+            OscType::Int(counters.groups.load(Ordering::Relaxed) as i32),
             OscType::Int(self.defs.len() as i32),
             OscType::Float(0.0), // avg CPU
             OscType::Float(0.0), // peak CPU
@@ -236,23 +265,21 @@ impl OscServer {
     }
 
     fn handle_s_new(&mut self, msg: &OscMessage, from: SocketAddr) {
-        let (def_name, id, action) = match msg.args.as_slice() {
+        let (def_name, id, action, target) = match msg.args.as_slice() {
             [
                 OscType::String(def),
                 OscType::Int(id),
                 OscType::Int(action),
-                OscType::Int(_target),
+                OscType::Int(target),
                 ..,
-            ] => (def.clone(), *id, *action),
+            ] => (def.clone(), *id, *action, *target),
             _ => return self.fail(from, "/s_new", "expected: name, id, addAction, targetID"),
         };
         let Some(def) = self.defs.get(&def_name).cloned() else {
             return self.fail(from, "/s_new", format!("SynthDef not found: {def_name}"));
         };
-        let action = match action {
-            0 => AddAction::Head,
-            1 => AddAction::Tail,
-            _ => return self.fail(from, "/s_new", "add actions 2-4 arrive in M4"),
+        let Some(action) = AddAction::from_i32(action) else {
+            return self.fail(from, "/s_new", "add action must be 0-4");
         };
         let id = if id == -1 {
             self.next_auto_id += 1;
@@ -263,7 +290,6 @@ impl OscServer {
             return self.fail(from, "/s_new", "node ID must be positive or -1");
         };
 
-        // target is ignored in M3: everything hangs from the root group.
         let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
         for pair in msg.args[4..].chunks(2) {
             let (Some(index), Some(value)) = (
@@ -275,11 +301,117 @@ impl OscServer {
             synth.set_control(index, value);
         }
 
-        if self.handle.send(Cmd::AddSynth { id, synth, action }).is_ok() {
+        let cmd = Cmd::AddSynth {
+            id,
+            target,
+            action,
+            synth,
+        };
+        if self.handle.send(cmd).is_ok() {
             self.node_defs.insert(id, def);
         } else {
             self.fail(from, "/s_new", "command FIFO full");
         }
+    }
+
+    /// `/g_new` takes (id, addAction, targetID) triples.
+    fn handle_g_new(&mut self, msg: &OscMessage, from: SocketAddr) {
+        if msg.args.is_empty() || !msg.args.len().is_multiple_of(3) {
+            return self.fail(from, "/g_new", "expected (id, addAction, targetID) triples");
+        }
+        for triple in msg.args.chunks(3) {
+            let [OscType::Int(id), OscType::Int(action), OscType::Int(target)] = triple else {
+                return self.fail(from, "/g_new", "expected int (id, addAction, targetID)");
+            };
+            let Some(action) = AddAction::from_i32(*action) else {
+                return self.fail(from, "/g_new", "add action must be 0-4");
+            };
+            if *id <= 0 {
+                return self.fail(from, "/g_new", "group ID must be positive");
+            }
+            let cmd = Cmd::AddGroup {
+                id: *id,
+                target: *target,
+                action,
+                group: Group::new(),
+            };
+            if self.handle.send(cmd).is_err() {
+                return self.fail(from, "/g_new", "command FIFO full");
+            }
+        }
+    }
+
+    fn handle_g_free(&mut self, msg: &OscMessage, from: SocketAddr, cmd_name: &str) {
+        for arg in &msg.args {
+            let OscType::Int(id) = arg else {
+                return self.fail(from, cmd_name, "expected int group IDs");
+            };
+            let cmd = match cmd_name {
+                "/g_freeAll" => Cmd::FreeAllInGroup { id: *id },
+                _ => Cmd::DeepFreeGroup { id: *id },
+            };
+            if self.handle.send(cmd).is_err() {
+                return self.fail(from, cmd_name, "command FIFO full");
+            }
+        }
+    }
+
+    /// `/n_before` / `/n_after` take (nodeID, targetID) pairs.
+    fn handle_n_move(&mut self, msg: &OscMessage, from: SocketAddr, place: Place) {
+        let cmd_name = match place {
+            Place::Before => "/n_before",
+            Place::After => "/n_after",
+        };
+        if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
+            return self.fail(from, cmd_name, "expected (nodeID, targetID) pairs");
+        }
+        for pair in msg.args.chunks(2) {
+            let [OscType::Int(id), OscType::Int(target)] = pair else {
+                return self.fail(from, cmd_name, "expected int (nodeID, targetID)");
+            };
+            let cmd = Cmd::MoveNode {
+                id: *id,
+                target: *target,
+                place,
+            };
+            if self.handle.send(cmd).is_err() {
+                return self.fail(from, cmd_name, "command FIFO full");
+            }
+        }
+    }
+
+    /// Control buses are shared atomics: set directly, no engine round-trip.
+    fn handle_c_set(&mut self, msg: &OscMessage, from: SocketAddr) {
+        if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
+            return self.fail(from, "/c_set", "expected (busIndex, value) pairs");
+        }
+        for pair in msg.args.chunks(2) {
+            let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1])) else {
+                return self.fail(from, "/c_set", "expected int bus index and number value");
+            };
+            if *index < 0 {
+                return self.fail(from, "/c_set", "bus index must be non-negative");
+            }
+            self.handle.control_buses().set(*index as usize, value);
+        }
+    }
+
+    /// Replies with a `/c_set` message carrying (busIndex, value) pairs.
+    fn handle_c_get(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let mut args = Vec::with_capacity(msg.args.len() * 2);
+        for arg in &msg.args {
+            let OscType::Int(index) = arg else {
+                return self.fail(from, "/c_get", "expected int bus indices");
+            };
+            if *index < 0 {
+                return self.fail(from, "/c_get", "bus index must be non-negative");
+            }
+            args.push(OscType::Int(*index));
+            args.push(OscType::Float(
+                self.handle.control_buses().get(*index as usize),
+            ));
+        }
+        self.reply(from, "/c_set", args);
     }
 
     fn handle_n_free(&mut self, msg: &OscMessage, from: SocketAddr) {

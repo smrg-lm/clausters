@@ -103,8 +103,11 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   asigna wires, `/d_recv`, `/n_set` sobre controles nombrados e indexados.
   *(Completado 2026-06-10 — ver NOTAS.md. Incluye el trait `SynthNode`,
   prerequisito de la bifurcación F.)*
-- **M4 — Buses y orden**: buses de audio/control, UGens `In`/`Out`, `/n_before`,
+- ✅ **M4 — Buses y orden**: buses de audio/control, UGens `In`/`Out`, `/n_before`,
   `/n_after`, grupos anidados, add actions de `/s_new` (head/tail/before/after/replace).
+  *(Completado 2026-06-10 — ver NOTAS.md. Incluye `/g_new`, `/g_freeAll`,
+  `/g_deepFree`, `/c_set`/`/c_get` y notificaciones `/n_go`/`/n_end`. Cambio de
+  formato: las defs ya no llevan campo `out`; la salida es vía UGens `Out`.)*
 - **M5 — Buffers**: pool de buffers, hilo NRT, `/b_alloc`, `/b_read` (hound),
   `PlayBuf`/`BufRd`, replies asíncronos `/done`.
 - **M6 — Scheduling sample-accurate**: cola de bundles ordenada por timetag en el
@@ -172,15 +175,36 @@ UGens.
   waveforms/soundfiles, polifonía nativa de Faust, backend interpreter de Faust
   (sin LLVM) para plataformas sin JIT.
 
-### Riesgos conocidos
+### Previsiones de implementación
 
-- **Licencia**: sin riesgo — este proyecto es GPLv3-o-posterior, compatible con
-  libfaust (GPLv2-o-posterior); la combinación se distribuye como GPLv3+.
-- **LLVM**: link pesado (decenas de MB) y sensible a versiones; el feature flag
-  aísla el costo.
-- **Sample rate fijo por instancia**: `init(sr)` congela el SR; re-instanciar si
-  cambia el dispositivo.
-- `FAUSTFLOAT` debe compilarse como `f32` para casar con nuestros buses.
+- **Dependencia libfaust (no LLVM directo)**: se enlaza contra libfaust; LLVM
+  viene embebido adentro cuando la build trae el backend JIT. El costo se paga
+  de una de dos formas según el modo de consumo: libfaust *del sistema*
+  (dinámica) deja el binario liviano pero hereda la fragilidad de versiones —
+  la C API (`libfaust-box-c.h`) cambió entre versiones de Faust, los headers
+  de bindgen tienen que casar con la libfaust instalada, y esta a su vez está
+  atada a una `libLLVM-XX.so` concreta; libfaust *vendoreada/estática* da un
+  binario autocontenido a cambio de decenas de MB de LLVM adentro. F0 mide
+  cuál conviene; el feature flag `faust` aísla todo del core.
+- **Sample rate horneada en el init de cada instancia**: la factory compilada
+  es independiente de la SR, pero `instanceInit(dsp, sr)` precalcula las
+  constantes dependientes (coeficientes, incrementos de fase) una sola vez —
+  a diferencia de nuestros UGens, que leen `ctx.sample_rate` por bloque. Con
+  la SR fija por ejecución de `engine_pair` esto hoy no afecta; se vuelve
+  relevante solo con cambio de dispositivo en caliente o render NRT (M7) a
+  otra SR. Mitigación barata: re-`instanceInit` (resetea estado) o
+  re-instanciar.
+- **Ancho de float**: el JIT elige `FAUSTFLOAT` por flag al crear la factory
+  (`-single`/`-double`, default single). Regla: crear factories con `-single`
+  y assertear el tamaño de float de la factory antes de usarla, para casar
+  con los buses `f32`. Si algún día se quisiera f64 (p. ej. mastering NRT),
+  lo barato es un buffer de conversión en la frontera del nodo Faust — no
+  buses f64 globales; queda abierta la opción de un alias `Sample`
+  parametrizable al estilo del typedef FAUSTFLOAT.
+
+Licencia: este proyecto es GPLv3-o-posterior, compatible con libfaust
+(GPLv2-o-posterior); la combinación se distribuye como GPLv3+. Falta agregar
+el archivo `COPYING` con el texto verbatim de la GPLv3.
 
 Ver skill `faust-embedding` para los detalles de la C API y sus trampas.
 

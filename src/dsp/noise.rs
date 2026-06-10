@@ -30,7 +30,7 @@ impl WhiteNoise {
 }
 
 impl UGen for WhiteNoise {
-    fn process(&mut self, _ctx: &ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         for s in output.iter_mut() {
             self.state ^= self.state << 13;
             self.state ^= self.state >> 17;
