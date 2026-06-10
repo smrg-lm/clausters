@@ -1,0 +1,12 @@
+[package]
+name = "claudesufa"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["realtime"]
+# cpal backend. Can be disabled for tests/CI without an audio device.
+realtime = ["dep:cpal"]
+
+[dependencies]
+cpal = { version = "0.15", optional = true }

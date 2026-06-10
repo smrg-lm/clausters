@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo test *)",
+      "Bash(cargo build *)",
+      "Bash(timeout 4 ./target/release/claudesufa)",
+      "Bash(echo \"exit: $?\")"
+    ]
+  }
+}
