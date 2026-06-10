@@ -2,6 +2,7 @@
 name = "claudesufa"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-or-later"
 
 [features]
 default = ["realtime"]
@@ -11,3 +12,7 @@ realtime = ["dep:cpal"]
 [dependencies]
 cpal = { version = "0.15", optional = true }
 rosc = "0.10"
+rtrb = "0.3"
+
+[dev-dependencies]
+assert_no_alloc = "1"

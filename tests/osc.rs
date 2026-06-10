@@ -1,5 +1,6 @@
-//! Integration tests for the M1 OSC server: ephemeral port, real UDP
-//! round-trips, no audio device needed.
+//! Integration tests for the OSC server: ephemeral port, real UDP
+//! round-trips, no audio device needed. The engine is ticked manually from
+//! the test (manual clock), never in real time.
 
 use std::net::{SocketAddr, UdpSocket};
 use std::thread::JoinHandle;
@@ -7,20 +8,23 @@ use std::time::Duration;
 
 use claudesufa::osc::server::{OscServer, ServerInfo};
 use claudesufa::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+use claudesufa::server::engine::{BLOCK_SIZE, Engine, engine_pair};
 
 struct TestServer {
     addr: SocketAddr,
     handle: JoinHandle<std::io::Result<()>>,
     client: UdpSocket,
+    engine: Engine,
 }
 
 impl TestServer {
     fn spawn() -> Self {
+        let (engine, engine_handle) = engine_pair(48_000.0, 2);
         let info = ServerInfo {
             nominal_sample_rate: 48_000.0,
             actual_sample_rate: 48_000.0,
         };
-        let mut server = OscServer::bind(("127.0.0.1", 0), info).unwrap();
+        let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
         let addr = server.local_addr().unwrap();
         let handle = std::thread::spawn(move || server.run());
 
@@ -32,6 +36,7 @@ impl TestServer {
             addr,
             handle,
             client,
+            engine,
         }
     }
 
@@ -53,6 +58,21 @@ impl TestServer {
         }
     }
 
+    /// Ticks the engine and polls /status until the synth count matches or
+    /// the deadline passes. Covers the network→FIFO→audio round trip.
+    fn wait_for_synth_count(&mut self, expected: i32) {
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for _ in 0..100 {
+            self.engine.process_block(&mut out);
+            self.send("/status", vec![]);
+            if self.recv().args[2] == OscType::Int(expected) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("synth count never reached {expected}");
+    }
+
     fn quit(self) {
         self.send("/quit", vec![]);
         let reply = self.recv();
@@ -71,10 +91,51 @@ fn status_reply_format() {
     assert_eq!(reply.addr, "/status.reply");
     assert_eq!(reply.args.len(), 9);
     assert_eq!(reply.args[0], OscType::Int(1));
-    // counts are zero until M2
-    assert_eq!(reply.args[2], OscType::Int(0));
+    assert_eq!(reply.args[2], OscType::Int(0)); // no synths yet
+    assert_eq!(reply.args[3], OscType::Int(1)); // root group
     assert_eq!(reply.args[7], OscType::Double(48_000.0));
 
+    server.quit();
+}
+
+#[test]
+fn s_new_and_n_free_update_status_counts() {
+    let mut server = TestServer::spawn();
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::String("freq".into()),
+            OscType::Float(330.0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    server.send("/n_free", vec![OscType::Int(1000)]);
+    server.wait_for_synth_count(0);
+
+    server.quit();
+}
+
+#[test]
+fn s_new_unknown_synthdef_fails() {
+    let server = TestServer::spawn();
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("nonexistent".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/s_new".into()));
     server.quit();
 }
 
@@ -118,11 +179,14 @@ fn unknown_command_fails() {
 
 #[test]
 fn bundle_contents_execute() {
-    use claudesufa::rosc::OscBundle;
+    use claudesufa::rosc::{OscBundle, OscTime};
 
     let server = TestServer::spawn();
     let bundle = OscPacket::Bundle(OscBundle {
-        timetag: rosc_immediate(),
+        timetag: OscTime {
+            seconds: 0,
+            fractional: 1,
+        },
         content: vec![OscPacket::Message(OscMessage {
             addr: "/status".into(),
             args: vec![],
@@ -132,11 +196,4 @@ fn bundle_contents_execute() {
     server.client.send_to(&bytes, server.addr).unwrap();
     assert_eq!(server.recv().addr, "/status.reply");
     server.quit();
-}
-
-fn rosc_immediate() -> claudesufa::rosc::OscTime {
-    claudesufa::rosc::OscTime {
-        seconds: 0,
-        fractional: 1,
-    }
 }

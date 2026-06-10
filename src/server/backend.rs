@@ -7,7 +7,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SizedSample};
 
-use crate::server::engine::{BLOCK_SIZE, Engine};
+use crate::server::engine::{BLOCK_SIZE, Engine, EngineHandle, engine_pair};
 
 pub struct AudioBackend {
     pub sample_rate: f32,
@@ -44,7 +44,9 @@ impl BlockAdapter {
     }
 }
 
-pub fn start() -> Result<AudioBackend, Box<dyn std::error::Error>> {
+/// Opens the default output device and starts the engine on its callback.
+/// Returns the handle the network thread uses to talk to the engine.
+pub fn start() -> Result<(AudioBackend, EngineHandle), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -53,7 +55,8 @@ pub fn start() -> Result<AudioBackend, Box<dyn std::error::Error>> {
 
     let sample_rate = config.sample_rate().0 as f32;
     let channels = config.channels() as usize;
-    let adapter = BlockAdapter::new(Engine::new(sample_rate, channels));
+    let (engine, handle) = engine_pair(sample_rate, channels);
+    let adapter = BlockAdapter::new(engine);
 
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config.into(), adapter)?,
@@ -63,11 +66,14 @@ pub fn start() -> Result<AudioBackend, Box<dyn std::error::Error>> {
     };
     stream.play()?;
 
-    Ok(AudioBackend {
-        sample_rate,
-        channels,
-        _stream: stream,
-    })
+    Ok((
+        AudioBackend {
+            sample_rate,
+            channels,
+            _stream: stream,
+        },
+        handle,
+    ))
 }
 
 fn build_stream<T>(

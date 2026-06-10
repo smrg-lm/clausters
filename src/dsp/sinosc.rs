@@ -17,6 +17,14 @@ impl SinOsc {
         }
     }
 
+    pub fn set_freq(&mut self, freq: f32) {
+        self.freq = freq;
+    }
+
+    pub fn set_amp(&mut self, amp: f32) {
+        self.amp = amp;
+    }
+
     pub fn process(&mut self, sample_rate: f32, out: &mut [f32]) {
         let inc = TAU * self.freq as f64 / sample_rate as f64;
         for s in out.iter_mut() {

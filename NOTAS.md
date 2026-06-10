@@ -103,8 +103,75 @@ tests/osc.rs            # 5 tests de integración por UDP real
 - E2E manual: `cargo run --release` + `cargo run --example osc_ping -- quit`
   (probado 2026-06-10; el servidor salió limpio tras `/quit`).
 
-## Próximo: M2 — FIFO RT-safe + node tree
+## M2 — FIFO RT-safe + node tree (completado 2026-06-10)
 
-Ring buffers de comandos y basura (`rtrb`), `NodeTree` con grupos, synth
-hardcodeado vía `/s_new`/`/n_free`, contadores reales en `/status.reply`, test
-guardián con `assert_no_alloc`. Ver skills `realtime-audio` y `audio-testing`.
+**Qué hay:** el servidor ahora arranca en silencio (como scsynth) y suena solo por
+comandos: `/s_new` instancia el synth hardcodeado "default" (SinOsc con controles
+`freq`/`amp`), `/n_set` lo modifica en vivo y `/n_free` lo libera. Toda la
+comunicación red→audio va por ring buffers lock-free; el hilo de audio no aloca
+nunca, verificado por el test guardián con `assert_no_alloc`.
+
+### Qué se agregó
+
+```
+src/server/engine.rs    # reescrito: Cmd/Garbage FIFOs (rtrb), Counters, engine_pair()
+src/node/mod.rs         # NodeTree: slab pre-alocado de 1024 slots, DFS con stack propio
+src/node/default_synth.rs # DefaultSynth "default": SinOsc + controles freq(0)/amp(1)
+src/osc/server.rs       # + /s_new, /n_free, /n_set; contadores reales en /status
+tests/engine.rs         # 6 tests del motor (reemplaza tests/sine.rs)
+tests/rt_safety.rs      # guardián assert_no_alloc sobre process_block
+```
+
+### Arquitectura implementada (el patrón scsynth)
+
+- **`engine_pair()`** divide el servidor en dos mitades: `Engine` (hilo de audio)
+  y `EngineHandle` (hilo de red), conectadas solo por dos FIFOs SPSC de `rtrb`
+  (1024 entradas cada uno):
+  - **Comandos** (red→audio): `Cmd::{AddSynth, FreeNode, SetControl}`. El synth
+    viaja ya construido y boxeado — el hilo de audio solo lo enchufa, O(1).
+  - **Basura** (audio→red): `Garbage::{Freed, Rejected}`. El hilo de audio nunca
+    dropea un `Box`; lo devuelve entero y el hilo de red lo dropea en
+    `collect_garbage()`, que corre tras cada paquete y cada 100 ms por timeout
+    del socket (también ahí viajan los comandos rechazados: ID duplicado o tabla
+    llena).
+  - Si el FIFO de basura se llena: lista local pre-alocada de 64; si también se
+    llena, `mem::forget` (leak deliberado — la única opción RT-safe).
+- **`NodeTree`**: slab de 1024 slots pre-alocados (`MAX_NODES`), búsqueda lineal
+  por ID (suficiente por ahora), hijos del grupo raíz en orden de ejecución, DFS
+  iterativo con stack pre-alocado. `Group` existe estructuralmente; `/g_new`
+  llega en M4.
+- **Contadores**: el hilo de audio publica `synths`/`ugens` con stores atómicos
+  relaxed; `/status.reply` los lee — los contadores ya son reales.
+
+### Decisiones tomadas
+
+- `/n_set` se adelantó de M3 porque `Cmd::SetControl` salía gratis y permite
+  probar el motor en vivo (cambiar freq sin recrear el synth).
+- IDs automáticos (`/s_new` con -1) desde 2_000_001, como el contador alto de
+  scsynth. ID 0 (raíz) y negativos se rechazan con `/fail`.
+- Add actions 0 (head) y 1 (tail) sobre la raíz; 2–4 responden `/fail` hasta M4.
+- Controles por nombre (`freq`, `amp`) o por índice (0, 1); desconocidos se
+  ignoran en silencio, como scsynth.
+- `/n_free` de un ID inexistente se ignora (el `/fail` asíncrono necesita el
+  reply FIFO de M4). Los rechazos del motor se loguean al recolectar basura.
+- El `/status` enviado inmediatamente después de un comando puede mostrar el
+  conteo viejo: los comandos se aplican al inicio del siguiente bloque (~1.45 ms
+  a 44.1 kHz). Es la semántica asíncrona de scsynth, no un bug.
+
+### Verificación
+
+- `cargo test`: 14 tests pasan — 6 del motor (sinusoide, mezcla de dos synths,
+  cambio de pitch en vivo, silencio tras free, rechazo de ID duplicado), 7 de
+  OSC (incluye el round-trip red→FIFO→audio→/status con reloj manual) y el
+  guardián RT: 400 bloques procesando, insertando y liberando 32 synths bajo
+  `assert_no_alloc`, sin una sola alocación.
+- E2E manual con el binario real (2026-06-10): `osc_ping status beep status quit`
+  — beep audible a 440 Hz, re-afinado a 660 Hz en vivo, liberado, servidor
+  apagado limpio. El example `osc_ping` ganó el modo `beep`.
+
+## Próximo: M3 — SynthDefs
+
+Formato de definición propio (serde), intérprete que construye el vector de
+UGens y asigna wires, `/d_recv`, `/n_set` sobre controles nombrados. El
+`DefaultSynth` hardcodeado se reemplaza por instancias de SynthDef. Ver skills
+`ugen-dsp` (trait UGen) y `scsynth-osc` (`/d_recv`).
