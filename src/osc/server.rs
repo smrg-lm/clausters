@@ -2,7 +2,9 @@
 //! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/s_new` (add actions 0-4),
 //! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
 //! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; `/n_go` and
-//! `/n_end` notifications go to `/notify` clients.
+//! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
+//! `/d_faust name source` compiles Faust source on the dedicated compiler
+//! thread and replies `/done`/`/fail` asynchronously (F1).
 //!
 //! This runs on the network thread: allocating and doing I/O here is fine.
 //! It owns the [`EngineHandle`] and the SynthDef table: defs are compiled and
@@ -20,6 +22,10 @@ use std::time::Duration;
 
 use rosc::{OscBundle, OscMessage, OscPacket, OscType, decoder, encoder};
 
+#[cfg(feature = "faust")]
+use crate::faust::compiler::{CompileRequest, CompilerThread};
+#[cfg(feature = "faust")]
+use crate::faust::factory::FaustFactory;
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::synthdef::instance::UGenSynth;
@@ -64,6 +70,12 @@ pub struct OscServer {
     clients: Vec<SocketAddr>,
     recv_buf: Vec<u8>,
     next_auto_id: i32,
+    /// Compiled Faust factories by name, refcounted (F3 instances will hold
+    /// clones). The compiler thread is owned here and dies with the server.
+    #[cfg(feature = "faust")]
+    faust_defs: HashMap<String, Arc<FaustFactory>>,
+    #[cfg(feature = "faust")]
+    faust_compiler: CompilerThread,
 }
 
 impl OscServer {
@@ -88,6 +100,10 @@ impl OscServer {
             clients: Vec::new(),
             recv_buf: vec![0; RECV_BUF_SIZE],
             next_auto_id: AUTO_NODE_ID_BASE,
+            #[cfg(feature = "faust")]
+            faust_defs: HashMap::new(),
+            #[cfg(feature = "faust")]
+            faust_compiler: CompilerThread::spawn(),
         })
     }
 
@@ -107,6 +123,8 @@ impl OscServer {
                     ) =>
                 {
                     self.collect_garbage();
+                    #[cfg(feature = "faust")]
+                    self.collect_faust_results();
                     continue;
                 }
                 // A previous send to a now-closed client port can surface as
@@ -129,10 +147,67 @@ impl OscServer {
             };
             let flow = self.handle_packet(packet, from);
             self.collect_garbage();
+            #[cfg(feature = "faust")]
+            self.collect_faust_results();
             if let Flow::Quit = flow {
                 return Ok(());
             }
         }
+    }
+
+    /// Drains finished compilations: stores factories and sends the async
+    /// `/done`/`/fail` replies. Called from the same places as
+    /// `collect_garbage` (after each packet and on the GC tick).
+    #[cfg(feature = "faust")]
+    fn collect_faust_results(&mut self) {
+        while let Some(result) = self.faust_compiler.try_result() {
+            match result.outcome {
+                Ok(factory) => {
+                    self.faust_defs.insert(result.name.clone(), Arc::new(factory));
+                    self.reply(
+                        result.client,
+                        "/done",
+                        vec![
+                            OscType::String("/d_faust".into()),
+                            OscType::String(result.name),
+                        ],
+                    );
+                }
+                Err(error) => self.fail(result.client, "/d_faust", error),
+            }
+        }
+    }
+
+    /// `/d_faust name source`: queue an async Faust compilation.
+    #[cfg(feature = "faust")]
+    fn handle_d_faust(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let (name, source) = match msg.args.as_slice() {
+            [OscType::String(name), OscType::String(src), ..] => (name.clone(), src.clone()),
+            [OscType::String(name), OscType::Blob(src), ..] => (
+                name.clone(),
+                match String::from_utf8(src.clone()) {
+                    Ok(s) => s,
+                    Err(_) => return self.fail(from, "/d_faust", "source blob is not UTF-8"),
+                },
+            ),
+            _ => return self.fail(from, "/d_faust", "expected: name, Faust source"),
+        };
+        if name.is_empty() {
+            return self.fail(from, "/d_faust", "empty def name");
+        }
+        let request = CompileRequest {
+            name,
+            source,
+            client: from,
+        };
+        if self.faust_compiler.submit(request).is_err() {
+            self.fail(from, "/d_faust", "compiler thread is down");
+        }
+    }
+
+    #[cfg(not(feature = "faust"))]
+    fn handle_d_faust(&mut self, _msg: &OscMessage, from: SocketAddr) {
+        self.fail(from, "/d_faust", "server built without faust support");
     }
 
     /// Drops what the audio thread discarded, keeps the def mirror in sync
@@ -206,6 +281,7 @@ impl OscServer {
             "/c_set" => self.handle_c_set(&msg, from),
             "/c_get" => self.handle_c_get(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
+            "/d_faust" => self.handle_d_faust(&msg, from),
             "/d_free" => self.handle_d_free(&msg, from),
             "/dumpOSC" => {
                 self.dump_osc = matches!(msg.args.first(), Some(OscType::Int(n)) if *n != 0);
@@ -221,12 +297,18 @@ impl OscServer {
 
     fn send_status(&mut self, to: SocketAddr) {
         let counters = self.handle.counters();
+        #[allow(unused_mut)]
+        let mut num_defs = self.defs.len();
+        #[cfg(feature = "faust")]
+        {
+            num_defs += self.faust_defs.len();
+        }
         let args = vec![
             OscType::Int(1),
             OscType::Int(counters.ugens.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.synths.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.groups.load(Ordering::Relaxed) as i32),
-            OscType::Int(self.defs.len() as i32),
+            OscType::Int(num_defs as i32),
             OscType::Float(0.0), // avg CPU
             OscType::Float(0.0), // peak CPU
             OscType::Double(self.info.nominal_sample_rate),
@@ -259,8 +341,11 @@ impl OscServer {
             let OscType::String(name) = arg else {
                 return self.fail(from, "/d_free", "expected synthdef names");
             };
-            // Live synths keep their Arc<SynthDef>: scsynth semantics.
+            // Live synths keep their Arc<SynthDef>: scsynth semantics. Same
+            // for Faust factories (instances refcount them).
             self.defs.remove(name);
+            #[cfg(feature = "faust")]
+            self.faust_defs.remove(name);
         }
     }
 

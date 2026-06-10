@@ -153,9 +153,13 @@ UGens.
   *(Completado 2026-06-10 — ver NOTAS.md. Mediciones: JIT ≈ 10 ms por def,
   libfaust.so 11 MB con libLLVM.so dinámica de sistema; binding propio a mano,
   sin bindgen por ahora.)*
-- **F1 — Hilo compilador**: thread dedicado con cola `CompileRequest { nombre,
+- ✅ **F1 — Hilo compilador**: thread dedicado con cola `CompileRequest { nombre,
   json, cliente }`; tabla de factories con refcount; replies asíncronos
   `/done /d_faust <nombre>` o `/fail` con el error de compilación legible.
+  *(Completado 2026-06-10 — ver NOTAS.md. F1 compila fuente Faust vía
+  `/d_faust name source`; el mapeo JSON→Box llega en F2. Hallazgo: libfaust
+  no tolera compilaciones concurrentes en un proceso — lock global además
+  del hilo dedicado.)*
   Comando OSC nuevo: `/d_faust` (blob JSON) — `/d_recv` queda reservado para el
   formato UGen de M3.
 - **F2 — Esquema JSON → Box API**: definir el schema (primitivas, composición

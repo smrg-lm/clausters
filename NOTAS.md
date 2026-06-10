@@ -380,9 +380,50 @@ más barato de lo previsto** (JIT ≈ 10 ms por def).
 - `cargo test` sin feature: igual que antes, sin tocar libfaust.
 - libfaust instalada en `~/.local` (lib + headers + stdlib de Faust).
 
-## Próximo: M5 — Buffers (o F1 — hilo compilador)
+## F1 — Hilo compilador Faust (completado 2026-06-10)
+
+### Qué quedó hecho
+
+- **`src/faust/compiler.rs`**: `CompilerThread` dedicado ("faust-compiler")
+  con cola mpsc de `CompileRequest { name, source, client }` y canal de
+  `CompileResult` de vuelta. El hilo de red drena resultados en su loop
+  (tras cada paquete y en el tick de GC) y manda el reply asíncrono al
+  cliente que pidió: `/done "/d_faust" <name>` o `/fail` con el error del
+  compilador Faust verbatim. Shutdown limpio por Drop (cierra el canal y
+  joinea).
+- **`src/faust/factory.rs`**: `FaustFactory` (wrapper con ownership del
+  puntero, `Drop` → `deleteCDSPFactory` en hilo no-RT). Refcount vía
+  `Arc<FaustFactory>` en la tabla `faust_defs` del OscServer; las instancias
+  de F3 retendrán clones para que la factory nunca muera antes que ellas.
+- **OSC**: `/d_faust name source` (String o Blob UTF-8) encola la
+  compilación; `/d_free` también limpia la tabla Faust; `/status` cuenta
+  ambas tablas de defs. Sin el feature, `/d_faust` responde
+  `/fail "server built without faust support"`.
+- F1 compila **fuente Faust** (`createCDSPFactoryFromString`); el mapeo
+  JSON→Box API entra en F2 reemplazando solo el cuerpo de `compile()`.
+
+### Hallazgo: libfaust no tolera compilación concurrente
+
+Dos `CompilerThread` compilando a la vez en el mismo proceso → SIGSEGV
+(verificado: los tests en paralelo crasheaban, en serie pasaban). El estado
+global del compilador Faust no es thread-safe ni siquiera para
+`createCDSPFactoryFromString` (no solo el lib context de la Box API). Fix:
+lock global de proceso (`compiler::ffi_lock()`) alrededor de toda llamada
+FFI de compilación; el smoke test de F0 también lo toma. Un servidor tiene
+un solo hilo compilador, pero los tests (y cualquier embedder con varios
+servidores) necesitan el lock.
+
+### Verificación
+
+- `cargo test --features faust`: 55 tests (47 core + 2 smoke F0 + 6 de F1:
+  hilo directo con orden FIFO y errores legibles, round-trip OSC asíncrono
+  de `/d_faust` con `/done`/`/fail`, conteo en `/status`, `/d_free`).
+  Estable en 3 corridas seguidas (sin razas).
+- `cargo test` sin feature: intacto. Clippy limpio.
+
+## Próximo: M5 — Buffers (o F2 — esquema JSON→Box)
 
 M5: pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read`
 (hound), `PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
-F1: thread compilador dedicado con cola de `CompileRequest`, tabla de
-factories con refcount, replies asíncronos.
+F2: esquema JSON espejo de la Box API (con escape hatch `DSPToBoxes`),
+validación con paths de error, reemplaza el cuerpo de `compile()`.

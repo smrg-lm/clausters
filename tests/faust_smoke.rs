@@ -56,6 +56,8 @@ fn jit_compiled_box_sine_plays_at_440() {
     let mut error_msg = [0 as c_char; ERROR_MSG_SIZE];
 
     // ---- compiler-side: context, box construction, JIT ----
+    // libfaust compiler state is global: serialize against the other test.
+    let guard = claudesufa::faust::compiler::ffi_lock();
     let t0 = Instant::now();
     let factory = unsafe {
         createLibContext();
@@ -81,6 +83,7 @@ fn jit_compiled_box_sine_plays_at_440() {
         destroyLibContext();
         factory
     };
+    drop(guard);
     let compile_ms = t0.elapsed().as_secs_f64() * 1e3;
     if factory.is_null() {
         let msg = unsafe { CStr::from_ptr(error_msg.as_ptr()) };
@@ -138,6 +141,7 @@ fn factory_creation_reports_errors() {
     let target = CString::new("").unwrap();
     let mut error_msg = [0 as c_char; ERROR_MSG_SIZE];
 
+    let _guard = claudesufa::faust::compiler::ffi_lock();
     let factory = unsafe {
         createLibContext();
         let bad = CboxAddAux(CboxWire(), CboxWire()); // 2 inputs, never fed

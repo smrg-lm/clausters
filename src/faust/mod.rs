@@ -13,4 +13,6 @@
 //! audio thread; the lib context is global and single-threaded — F1's
 //! dedicated compiler thread serializes it naturally.
 
+pub mod compiler;
+pub mod factory;
 pub mod ffi;
