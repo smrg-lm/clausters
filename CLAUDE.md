@@ -35,6 +35,15 @@ zero bytes to the datagram before decoding (harmless for well-formed packets —
 they remain as unparsed remainder). Do not remove that padding without
 verifying rosc has fixed it upstream.
 
+## Optional `faust` feature
+
+`cargo test --features faust` needs libfaust built **with the LLVM backend**
+— Ubuntu's `libfaust2t64` ships without it and without headers, so it is
+built from source and installed under `~/.local` (see the F0 section of
+`NOTAS.md` for the reproducible recipe). `build.rs` locates it through
+`FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`. The core must
+always build and test without the feature and without libfaust installed.
+
 ## RT-safety (non-negotiable)
 
 The audio thread (`Engine::process_block` and everything it calls) must never

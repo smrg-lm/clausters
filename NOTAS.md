@@ -319,7 +319,70 @@ parsear). Considerar reportarlo upstream.
   binario M4 — la def "vibrato" reescrita con UGens `Out` (7 ugens) sonó
   audible; `/status` durante la reproducción: 7 ugens / 1 synth / 1 grupo.
 
-## Próximo: M5 — Buffers
+## F0 — Toolchain Faust y FFI mínimo (completado 2026-06-10)
 
-Pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read` (hound),
-`PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
+Primer milestone de la bifurcación F (SynthDefs vía Box API de Faust + JIT
+LLVM). El objetivo era medir el riesgo real del toolchain; resultado: **mucho
+más barato de lo previsto** (JIT ≈ 10 ms por def).
+
+### Hallazgos del toolchain
+
+- **El libfaust de Ubuntu no sirve para embeber**: `libfaust2t64` (2.81.10)
+  se compila sin backend LLVM (no depende de libLLVM) y no existe paquete
+  `-dev` con headers. Había que compilar desde fuente.
+- **Crates evaluados y descartados**: `faust-build`/`faust-types` hacen
+  codegen Faust→Rust en build-time (necesitan el compilador `faust` y el DSP
+  como fuente estática) — no embeben el JIT. No hay binding mantenido de
+  libfaust. Decisión: **binding propio escrito a mano** contra los headers
+  reales (~30 funciones); bindgen queda para F1+ si la superficie crece
+  (evita la dependencia de libclang por ahora).
+- **Build desde fuente** (receta reproducible, sin sudo):
+  `git clone --depth 1 -b 2.81.10 github.com/grame-cncm/faust` +
+  `make most` + dos ajustes de caché cmake en `build/faustdir`:
+  `-DINCLUDE_DYNAMIC=ON` (el target `most` no construye la .so) y
+  `-DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20`; después
+  `make install PREFIX=$HOME/.local`. Deps de sistema: `cmake`,
+  `llvm-20-dev`, `libzstd-dev`, `zlib1g-dev`.
+- **Link estático de LLVM falla en Ubuntu sin `libpolly-20-dev`** (Polly va
+  en paquete aparte) — con `LINK_LLVM_STATIC=off` no hace falta: se enlaza
+  `libLLVM.so` monolítica.
+- **Mediciones** (Faust 2.81.10 + LLVM 20.1.8): `libfaust.so` = 11 MB
+  (dinámica contra `libLLVM.so.20.1`, 137 MB ya presente como lib de
+  sistema); la alternativa estática (`libfaustwithllvm.a`) = 35 MB.
+  Latencia JIT de la def del smoke test: **~10 ms**; instanciación + init:
+  **~0.08 ms**. Compilación completa de Faust desde fuente: ~10 min en 8
+  cores.
+
+### Qué quedó hecho
+
+- **Feature `faust`** en Cargo.toml (apagado por defecto; el core compila y
+  testea sin libfaust en el sistema).
+- **`build.rs`**: con el feature activo localiza libfaust vía `FAUST_PREFIX`
+  (fallback `~/.local`, luego `/usr/local`), enlaza `-lfaust` y agrega rpath
+  para que tests y binarios corran sin `LD_LIBRARY_PATH`.
+- **`src/faust/ffi.rs`**: FFI mínimo verificado contra los headers de la
+  build exacta — contexto (`createLibContext`/`destroyLibContext`), Box API
+  (`CboxReal`, `CboxWire`, `CboxSeq/Par/Split/Rec`, los aplicados `Cbox*Aux`,
+  `CboxHSlider`) y JIT (`createCDSPFactoryFromBoxes`, instancia, `compute`).
+  Detalle de la C API: los operadores existen en dos formas — `CboxAdd()`
+  (primitivo, caja de 2 entradas) y `CboxAddAux(b1, b2)` (aplicado) — porque
+  C no tiene overloading.
+- **`tests/faust_smoke.rs`** (gated): construye el equivalente de `SinOsc`
+  desde primitivas — `sin(2π·phasor(freq))`, `phasor = (+(f/SR) : wrap) ~ _`,
+  `wrap = _ <: _ - floor(_)`, `freq` como hslider en su default 440 — lo
+  compila por JIT, renderiza 1 s offline y asserta frecuencia (±5 Hz) y RMS;
+  segundo test: una box inválida llena el buffer de error (4096 bytes) en
+  vez de crashear.
+
+### Verificación
+
+- `cargo test --features faust`: 49 tests (los 47 del core + 2 del smoke).
+- `cargo test` sin feature: igual que antes, sin tocar libfaust.
+- libfaust instalada en `~/.local` (lib + headers + stdlib de Faust).
+
+## Próximo: M5 — Buffers (o F1 — hilo compilador)
+
+M5: pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read`
+(hound), `PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
+F1: thread compilador dedicado con cola de `CompileRequest`, tabla de
+factories con refcount, replies asíncronos.

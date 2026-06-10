@@ -8,6 +8,9 @@ license = "GPL-3.0-or-later"
 default = ["realtime"]
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
+# libfaust embedding (Box API + LLVM JIT). Needs libfaust built with the LLVM
+# backend; see build.rs for how the library is located (FAUST_PREFIX).
+faust = []
 
 [dependencies]
 cpal = { version = "0.15", optional = true }

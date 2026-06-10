@@ -143,13 +143,16 @@ UGens.
 
 ### Milestones F (después de M4 recomendado; F0 puede hacerse antes como spike)
 
-- **F0 — Toolchain y FFI mínimo**: instalar libfaust con backend LLVM; evaluar
+- ✅ **F0 — Toolchain y FFI mínimo**: instalar libfaust con backend LLVM; evaluar
   crates existentes vs. binding propio con bindgen sobre la C API
   (`libfaust-box-c.h`, `llvm-dsp-c.h`); feature flag `faust` (todo opcional, el
   core sigue compilando sin libfaust). Prueba de humo: compilar un box hardcodeado
   (sinusoide por recursión/phasor) y renderizar offline comparando contra nuestro
   `SinOsc`. Acá se mide el riesgo real: tamaño del link con LLVM, versión de
   libfaust, latencia de compilación.
+  *(Completado 2026-06-10 — ver NOTAS.md. Mediciones: JIT ≈ 10 ms por def,
+  libfaust.so 11 MB con libLLVM.so dinámica de sistema; binding propio a mano,
+  sin bindgen por ahora.)*
 - **F1 — Hilo compilador**: thread dedicado con cola `CompileRequest { nombre,
   json, cliente }`; tabla de factories con refcount; replies asíncronos
   `/done /d_faust <nombre>` o `/fail` con el error de compilación legible.
