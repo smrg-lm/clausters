@@ -70,11 +70,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("/n_free 1000");
                 send("/n_free", vec![OscType::Int(1000)])?;
             }
+            "vibrato" => {
+                // M3 demo: define a synth as JSON, then play it
+                let json = r#"{
+                    "name": "vibrato",
+                    "controls": [{"name": "freq", "default": 440.0}],
+                    "ugens": [
+                        {"kind": "SinOsc", "inputs": [{"const": 5.0}]},
+                        {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 25.0}]},
+                        {"kind": "Add",    "inputs": [{"ugen": 1}, {"control": 0}]},
+                        {"kind": "SinOsc", "inputs": [{"ugen": 2}]},
+                        {"kind": "Mul",    "inputs": [{"ugen": 3}, {"const": 0.2}]}
+                    ],
+                    "out": 4
+                }"#;
+                send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())])?;
+                recv("/d_recv")?;
+                println!("/s_new vibrato 1001");
+                send(
+                    "/s_new",
+                    vec![
+                        OscType::String("vibrato".into()),
+                        OscType::Int(1001),
+                        OscType::Int(1),
+                        OscType::Int(0),
+                    ],
+                )?;
+                std::thread::sleep(Duration::from_millis(1200));
+                println!("/n_free 1001");
+                send("/n_free", vec![OscType::Int(1001)])?;
+            }
             "quit" => {
                 send("/quit", vec![])?;
                 recv("/quit")?;
             }
-            other => eprintln!("unknown command: {other} (use status, beep, quit)"),
+            other => eprintln!("unknown command: {other} (use status, beep, vibrato, quit)"),
         }
     }
     Ok(())

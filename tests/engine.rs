@@ -2,21 +2,32 @@
 //! through the same FIFO the network thread uses, audio comes out of
 //! `process_block`, and signal asserts do the listening.
 
-use claudesufa::node::AddAction;
-use claudesufa::node::default_synth::{CTL_FREQ, DefaultSynth};
+use std::sync::Arc;
+
+use claudesufa::node::{AddAction, SynthNode};
 use claudesufa::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
+use claudesufa::synthdef::instance::UGenSynth;
+use claudesufa::synthdef::{SynthDef, compile, default_spec};
 
 const SR: f32 = 48_000.0;
 const CHANNELS: usize = 2;
+const CTL_FREQ: u32 = 0;
 
 fn make_engine() -> (Engine, EngineHandle) {
     engine_pair(SR, CHANNELS)
 }
 
+fn default_def() -> Arc<SynthDef> {
+    Arc::new(compile(default_spec()).unwrap())
+}
+
 fn add_synth(id: i32, freq: f32, amp: f32) -> Cmd {
+    let mut synth = Box::new(UGenSynth::new(default_def()));
+    synth.set_control(0, freq);
+    synth.set_control(1, amp);
     Cmd::AddSynth {
         id,
-        synth: Box::new(DefaultSynth::new(freq, amp)),
+        synth,
         action: AddAction::Tail,
     }
 }

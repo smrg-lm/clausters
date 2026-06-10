@@ -2,10 +2,13 @@
 //! including while applying commands and discarding freed nodes. If someone
 //! sneaks a `Vec::push` or a `format!` into the audio path, this fails.
 
+use std::sync::Arc;
+
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
-use claudesufa::node::AddAction;
-use claudesufa::node::default_synth::DefaultSynth;
+use claudesufa::node::{AddAction, SynthNode};
 use claudesufa::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
+use claudesufa::synthdef::instance::UGenSynth;
+use claudesufa::synthdef::{compile, default_spec};
 
 #[global_allocator]
 static ALLOC: AllocDisabler = AllocDisabler;
@@ -15,12 +18,16 @@ fn audio_thread_does_not_allocate() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
 
-    // Network side (allowed to allocate): pre-build 32 synths.
+    // Network side (allowed to allocate): build 32 SynthDef instances.
+    let def = Arc::new(compile(default_spec()).unwrap());
     for i in 0..32i32 {
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        synth.set_control(0, 100.0 + i as f32);
+        synth.set_control(1, 0.01);
         handle
             .send(Cmd::AddSynth {
                 id: 1000 + i,
-                synth: Box::new(DefaultSynth::new(100.0 + i as f32, 0.01)),
+                synth,
                 action: AddAction::Tail,
             })
             .ok()

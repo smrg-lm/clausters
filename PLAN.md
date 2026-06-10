@@ -98,9 +98,11 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   con grupos, un synth hardcodeado instanciable vía `/s_new` y liberable con
   `/n_free`. Test con `assert_no_alloc` activo en el callback.
   *(Completado 2026-06-10 — ver NOTAS.md. Bonus: `/n_set` adelantado de M3.)*
-- **M3 — SynthDefs**: formato de definición (sugerido: estructura serializada con
+- ✅ **M3 — SynthDefs**: formato de definición (sugerido: estructura serializada con
   `serde` — JSON/binario propio), intérprete que construye el vector de UGens y
   asigna wires, `/d_recv`, `/n_set` sobre controles nombrados e indexados.
+  *(Completado 2026-06-10 — ver NOTAS.md. Incluye el trait `SynthNode`,
+  prerequisito de la bifurcación F.)*
 - **M4 — Buses y orden**: buses de audio/control, UGens `In`/`Out`, `/n_before`,
   `/n_after`, grupos anidados, add actions de `/s_new` (head/tail/before/after/replace).
 - **M5 — Buffers**: pool de buffers, hilo NRT, `/b_alloc`, `/b_read` (hound),

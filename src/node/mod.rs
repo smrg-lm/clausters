@@ -6,9 +6,18 @@
 //! hands the box back to the caller (which must route it to the garbage FIFO,
 //! never drop it here).
 
-pub mod default_synth;
-
-use default_synth::DefaultSynth;
+/// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
+/// (M3) and, in the F fork, by `FaustSynth` — both built off the audio thread
+/// and shipped in as `Box<dyn SynthNode>`.
+pub trait SynthNode: Send {
+    /// Writes one mono block of `BLOCK_SIZE` samples (bus I/O arrives in M4).
+    /// Runs on the audio thread: must not allocate, lock or do I/O.
+    fn process(&mut self, sample_rate: f32, out: &mut [f32]);
+    /// Unknown indices must be ignored, like scsynth.
+    fn set_control(&mut self, index: u32, value: f32);
+    /// How many UGens this synth contributes to `/status.reply`.
+    fn ugen_count(&self) -> usize;
+}
 
 /// Fixed capacity of the node slab (scsynth's `-n` option; configurable later).
 pub const MAX_NODES: usize = 1024;
@@ -21,7 +30,7 @@ pub enum AddAction {
 }
 
 pub enum NodeKind {
-    Synth(Box<DefaultSynth>),
+    Synth(Box<dyn SynthNode>),
     /// Structurally supported; `/g_new` creates these starting in M4.
     Group(Group),
 }
@@ -43,6 +52,7 @@ pub struct NodeTree {
     /// Pre-allocated stack for the depth-first traversal.
     dfs_stack: Vec<usize>,
     synth_count: usize,
+    ugen_count: usize,
 }
 
 impl NodeTree {
@@ -52,11 +62,16 @@ impl NodeTree {
             root_children: Vec::with_capacity(MAX_NODES),
             dfs_stack: Vec::with_capacity(MAX_NODES),
             synth_count: 0,
+            ugen_count: 0,
         }
     }
 
     pub fn synth_count(&self) -> usize {
         self.synth_count
+    }
+
+    pub fn ugen_count(&self) -> usize {
+        self.ugen_count
     }
 
     fn find(&self, id: i32) -> Option<usize> {
@@ -70,15 +85,16 @@ impl NodeTree {
     pub fn insert_synth(
         &mut self,
         id: i32,
-        synth: Box<DefaultSynth>,
+        synth: Box<dyn SynthNode>,
         action: AddAction,
-    ) -> Result<(), Box<DefaultSynth>> {
+    ) -> Result<(), Box<dyn SynthNode>> {
         if self.find(id).is_some() {
             return Err(synth);
         }
         let Some(free) = self.slots.iter().position(|s| s.is_none()) else {
             return Err(synth);
         };
+        self.ugen_count += synth.ugen_count();
         self.slots[free] = Some(NodeSlot {
             id,
             kind: NodeKind::Synth(synth),
@@ -93,7 +109,7 @@ impl NodeTree {
 
     /// Unlinks a synth and returns it for disposal. `None` if the ID does not
     /// exist or is a group.
-    pub fn free_synth(&mut self, id: i32) -> Option<Box<DefaultSynth>> {
+    pub fn free_synth(&mut self, id: i32) -> Option<Box<dyn SynthNode>> {
         let idx = self.find(id)?;
         if !matches!(self.slots[idx].as_ref()?.kind, NodeKind::Synth(_)) {
             return None;
@@ -104,16 +120,17 @@ impl NodeTree {
         match self.slots[idx].take()?.kind {
             NodeKind::Synth(synth) => {
                 self.synth_count -= 1;
+                self.ugen_count -= synth.ugen_count();
                 Some(synth)
             }
             NodeKind::Group(_) => unreachable!("checked above"),
         }
     }
 
-    pub fn synth_mut(&mut self, id: i32) -> Option<&mut DefaultSynth> {
+    pub fn synth_mut(&mut self, id: i32) -> Option<&mut dyn SynthNode> {
         let idx = self.find(id)?;
         match &mut self.slots[idx].as_mut()?.kind {
-            NodeKind::Synth(synth) => Some(synth),
+            NodeKind::Synth(synth) => Some(synth.as_mut()),
             NodeKind::Group(_) => None,
         }
     }

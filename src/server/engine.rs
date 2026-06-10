@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
-use crate::node::{AddAction, NodeTree, default_synth::DefaultSynth};
+use crate::node::{AddAction, NodeTree, SynthNode};
 
 /// Frames per processing block, like scsynth.
 pub const BLOCK_SIZE: usize = 64;
@@ -26,7 +26,7 @@ const PENDING_GARBAGE_CAPACITY: usize = 64;
 pub enum Cmd {
     AddSynth {
         id: i32,
-        synth: Box<DefaultSynth>,
+        synth: Box<dyn SynthNode>,
         action: AddAction,
     },
     FreeNode {
@@ -41,9 +41,15 @@ pub enum Cmd {
 
 /// Heap memory leaving the audio thread to be dropped on the network side.
 pub enum Garbage {
-    Freed { id: i32, synth: Box<DefaultSynth> },
+    Freed {
+        id: i32,
+        synth: Box<dyn SynthNode>,
+    },
     /// Command the engine could not apply (duplicate ID or full node table).
-    Rejected { synth: Box<DefaultSynth> },
+    Rejected {
+        id: i32,
+        synth: Box<dyn SynthNode>,
+    },
 }
 
 /// Counts published by the audio thread (relaxed stores) and read by the
@@ -125,10 +131,12 @@ impl Engine {
             frame.fill(s);
         }
 
-        let n = self.tree.synth_count() as u32;
-        self.counters.synths.store(n, Ordering::Relaxed);
-        // one SinOsc per DefaultSynth; real UGen counts arrive with M3
-        self.counters.ugens.store(n, Ordering::Relaxed);
+        self.counters
+            .synths
+            .store(self.tree.synth_count() as u32, Ordering::Relaxed);
+        self.counters
+            .ugens
+            .store(self.tree.ugen_count() as u32, Ordering::Relaxed);
     }
 
     fn drain_commands(&mut self) {
@@ -136,7 +144,7 @@ impl Engine {
             match cmd {
                 Cmd::AddSynth { id, synth, action } => {
                     if let Err(synth) = self.tree.insert_synth(id, synth, action) {
-                        self.push_garbage(Garbage::Rejected { synth });
+                        self.push_garbage(Garbage::Rejected { id, synth });
                     }
                 }
                 Cmd::FreeNode { id } => {
@@ -184,13 +192,19 @@ impl EngineHandle {
         self.cmd_tx.push(cmd).map_err(|PushError::Full(c)| c)
     }
 
-    /// Drops everything the audio thread discarded. Call periodically from
-    /// the network thread. Returns how many items were collected.
+    /// Pops one item of garbage, if any. The caller drops it (we are on the
+    /// network thread) and may use the ID for bookkeeping.
+    pub fn pop_garbage(&mut self) -> Option<Garbage> {
+        self.garbage_rx.pop().ok()
+    }
+
+    /// Drops everything the audio thread discarded. Returns how many items
+    /// were collected.
     pub fn collect_garbage(&mut self) -> usize {
         let mut n = 0;
-        while let Ok(g) = self.garbage_rx.pop() {
-            if matches!(g, Garbage::Rejected { .. }) {
-                eprintln!("engine rejected a command (duplicate node ID or full node table)");
+        while let Some(g) = self.pop_garbage() {
+            if let Garbage::Rejected { id, .. } = &g {
+                eprintln!("engine rejected node {id} (duplicate ID or full node table)");
             }
             drop(g);
             n += 1;

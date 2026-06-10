@@ -169,9 +169,84 @@ tests/rt_safety.rs      # guardián assert_no_alloc sobre process_block
   — beep audible a 440 Hz, re-afinado a 660 Hz en vivo, liberado, servidor
   apagado limpio. El example `osc_ping` ganó el modo `beep`.
 
-## Próximo: M3 — SynthDefs
+## M3 — SynthDefs (completado 2026-06-10)
 
-Formato de definición propio (serde), intérprete que construye el vector de
-UGens y asigna wires, `/d_recv`, `/n_set` sobre controles nombrados. El
-`DefaultSynth` hardcodeado se reemplaza por instancias de SynthDef. Ver skills
-`ugen-dsp` (trait UGen) y `scsynth-osc` (`/d_recv`).
+**Qué hay:** los clientes ya definen synths en vivo: `/d_recv` recibe una SynthDef
+en JSON (formato propio, no el `.scsyndef` binario de SC), el intérprete la valida
+y compila, y `/s_new` instancia grafos arbitrarios de UGens. El `DefaultSynth`
+hardcodeado desapareció — "default" es ahora una SynthDef construida por el mismo
+intérprete y registrada al arranque.
+
+### Qué se agregó
+
+```
+src/synthdef/mod.rs      # SynthDefSpec (serde/JSON), compile() con validación, default_spec()
+src/synthdef/instance.rs # UGenSynth: vector de UGens + wires, impl SynthNode
+src/dsp/mod.rs           # trait UGen { process(ctx, inputs, output) }, helper at()
+src/dsp/{sinosc,binop,noise,registry}.rs  # SinOsc refactorizado, Add/Sub/Mul/Div, WhiteNoise
+src/node/mod.rs          # trait SynthNode; el árbol guarda Box<dyn SynthNode>
+tests/synthdef.rs        # 12 tests: formato, validación, señal (FM/vibrato incluido)
+```
+
+### El formato (ejemplo completo en el doc de src/synthdef/mod.rs)
+
+```json
+{"name": "beep",
+ "controls": [{"name": "freq", "default": 440.0}],
+ "ugens": [{"kind": "SinOsc", "inputs": [{"control": 0}]},
+           {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.2}]}],
+ "out": 1}
+```
+
+Entradas: `{"const": x}`, `{"control": i}`, `{"ugen": j}` (solo UGens anteriores —
+orden topológico validado). `compile()` rechaza con mensajes que nombran el nodo
+culpable (`ugens[2].inputs[0]: references ugen 3; only earlier...`) y viajan al
+cliente en `/fail`.
+
+### Decisiones tomadas
+
+- **Trait `SynthNode`** (prerequisito de la bifurcación F): el árbol y los FIFOs
+  manejan `Box<dyn SynthNode>` — `UGenSynth` hoy, `FaustSynth` en F3, sin tocar
+  motor ni árbol.
+- **Las defs viven solo en el hilo de red** (`HashMap<String, Arc<SynthDef>>`):
+  las instancias se construyen ahí y viajan ya listas; el hilo de audio nunca ve
+  la tabla. `/d_free` solo saca la def del mapa — los synths vivos conservan su
+  `Arc` (semántica scsynth exacta).
+- **Resolución de nombres de controles en el hilo de red**: espejo
+  `node_id → Arc<SynthDef>` mantenido desde `/s_new` y limpiado al recolectar
+  `Garbage::Freed` — así `Cmd::SetControl` sigue siendo POD y el hilo de audio
+  no compara strings.
+- **Wiring sin alocar**: `UGenSynth::process` arma las entradas de cada UGen en
+  un array fijo en el stack (`MAX_UGEN_INPUTS = 8`) con `split_at_mut` sobre los
+  wires — el orden topológico garantiza que las entradas solo miran wires
+  anteriores. Verificado por el guardián `assert_no_alloc`.
+- UGens iniciales: `SinOsc` (freq modulable por señal — FM/vibrato funciona),
+  `Add`/`Sub`/`Mul`/`Div`, `WhiteNoise` (xorshift con seed por instancia, sin
+  `rand`). El resto del catálogo (filtros, EnvGen, PolyBLEP) queda para M4+.
+- `/d_recv` acepta el JSON como Blob o String OSC.
+
+### Bug encontrado: rosc 0.10.1 y blobs múltiplo de 4
+
+El decoder de rosc sobre-lee el padding de blobs cuya longitud es múltiplo de 4 y
+devuelve `Eof` en paquetes válidos (afectaría a clientes reales, no solo a los
+tests). Workaround en `OscServer::run`: anexar 4 bytes cero al datagrama antes de
+decodificar — inofensivo para paquetes bien formados (quedan como remainder sin
+parsear). Considerar reportarlo upstream.
+
+### Verificación
+
+- `cargo test`: 31 tests pasan — 12 de synthdef (roundtrip JSON, validación de
+  los 6 errores de compilación, señal: frecuencia/RMS de defs interpretadas,
+  mezcla por `Add`, ruido, vibrato por FM), 12 de OSC (incluye `/d_recv` con
+  def inválida → `/fail` con el error de compilación, `/d_free`, `/n_set` por
+  nombre vía espejo), 6 del motor y el guardián RT (ahora procesando instancias
+  interpretadas).
+- E2E real (2026-06-10): `osc_ping status vibrato status quit` — def "vibrato"
+  (5 UGens, FM) enviada por `/d_recv` como blob JSON, `/done` recibido, sonó
+  1.2 s audible, `/status` durante la reproducción: 5 ugens / 1 synth / 2 defs.
+
+## Próximo: M4 — Buses y orden
+
+Buses de audio/control, UGens `In`/`Out` (los synths dejan de mezclarse a la
+salida hardcodeada), `/n_before`/`/n_after`, `/g_new` y grupos anidados, add
+actions 2–4, reply FIFO para `/fail` asíncrono y notificaciones `/n_go`/`/n_end`.

@@ -93,8 +93,121 @@ fn status_reply_format() {
     assert_eq!(reply.args[0], OscType::Int(1));
     assert_eq!(reply.args[2], OscType::Int(0)); // no synths yet
     assert_eq!(reply.args[3], OscType::Int(1)); // root group
+    assert_eq!(reply.args[4], OscType::Int(1)); // the built-in "default" def
     assert_eq!(reply.args[7], OscType::Double(48_000.0));
 
+    server.quit();
+}
+
+#[test]
+fn d_recv_compiles_def_and_plays_it() {
+    let mut server = TestServer::spawn();
+    let json = r#"{
+        "name": "beep2",
+        "controls": [{"name": "freq", "default": 220.0}],
+        "ugens": [
+            {"kind": "SinOsc", "inputs": [{"control": 0}]},
+            {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.1}]}
+        ],
+        "out": 1
+    }"#;
+    server.send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/done");
+    assert_eq!(reply.args[0], OscType::String("/d_recv".into()));
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("beep2".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    // /n_set by name resolves through the def mirror (no /fail expected)
+    server.send(
+        "/n_set",
+        vec![
+            OscType::Int(1000),
+            OscType::String("freq".into()),
+            OscType::Float(330.0),
+        ],
+    );
+
+    server.send("/n_free", vec![OscType::Int(1000)]);
+    server.wait_for_synth_count(0);
+    server.quit();
+}
+
+#[test]
+fn d_recv_invalid_json_fails() {
+    let server = TestServer::spawn();
+    server.send("/d_recv", vec![OscType::Blob(b"not json".to_vec())]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/d_recv".into()));
+    server.quit();
+}
+
+#[test]
+fn d_recv_bad_graph_fails_with_compile_error() {
+    let server = TestServer::spawn();
+    let json = r#"{"name":"x","ugens":[{"kind":"Nope","inputs":[]}],"out":0}"#;
+    server.send("/d_recv", vec![OscType::String(json.into())]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    let OscType::String(why) = &reply.args[1] else {
+        panic!("expected error string");
+    };
+    assert!(why.contains("unknown kind"), "{why}");
+    server.quit();
+}
+
+#[test]
+fn d_free_removes_def() {
+    let server = TestServer::spawn();
+    let json = r#"{"name":"temp","ugens":[{"kind":"SinOsc","inputs":[{"const":440.0}]}],"out":0}"#;
+    server.send("/d_recv", vec![OscType::String(json.into())]);
+    assert_eq!(server.recv().addr, "/done");
+
+    server.send("/status", vec![]);
+    assert_eq!(server.recv().args[4], OscType::Int(2)); // default + temp
+
+    server.send("/d_free", vec![OscType::String("temp".into())]);
+    server.send("/status", vec![]);
+    assert_eq!(server.recv().args[4], OscType::Int(1));
+
+    // s_new on the freed def now fails
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("temp".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    assert_eq!(server.recv().addr, "/fail");
+    server.quit();
+}
+
+#[test]
+fn n_set_unknown_node_fails() {
+    let server = TestServer::spawn();
+    server.send(
+        "/n_set",
+        vec![
+            OscType::Int(4242),
+            OscType::String("freq".into()),
+            OscType::Float(100.0),
+        ],
+    );
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/n_set".into()));
     server.quit();
 }
 
