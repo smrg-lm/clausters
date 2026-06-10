@@ -3,8 +3,9 @@
 //! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
 //! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; `/n_go` and
 //! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
-//! `/d_faust name source` compiles Faust source on the dedicated compiler
-//! thread and replies `/done`/`/fail` asynchronously (F1).
+//! `/d_faust name def` compiles a def — JSON box graph (F2) or raw Faust
+//! source (F1) — on the dedicated compiler thread and replies
+//! `/done`/`/fail` asynchronously.
 //!
 //! This runs on the network thread: allocating and doing I/O here is fine.
 //! It owns the [`EngineHandle`] and the SynthDef table: defs are compiled and
@@ -23,7 +24,7 @@ use std::time::Duration;
 use rosc::{OscBundle, OscMessage, OscPacket, OscType, decoder, encoder};
 
 #[cfg(feature = "faust")]
-use crate::faust::compiler::{CompileRequest, CompilerThread};
+use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 #[cfg(feature = "faust")]
 use crate::faust::factory::FaustFactory;
 use crate::node::{AddAction, Group, Place, SynthNode};
@@ -178,26 +179,34 @@ impl OscServer {
         }
     }
 
-    /// `/d_faust name source`: queue an async Faust compilation.
+    /// `/d_faust name def`: queue an async Faust compilation. The def is a
+    /// JSON box graph if it starts with `{` (F2, see `faust::boxes` for the
+    /// schema), raw Faust source otherwise (F1) — top-level Faust source can
+    /// never start with `{`, so the sniff is unambiguous.
     #[cfg(feature = "faust")]
     fn handle_d_faust(&mut self, msg: &OscMessage, from: SocketAddr) {
-        let (name, source) = match msg.args.as_slice() {
+        let (name, def) = match msg.args.as_slice() {
             [OscType::String(name), OscType::String(src), ..] => (name.clone(), src.clone()),
             [OscType::String(name), OscType::Blob(src), ..] => (
                 name.clone(),
                 match String::from_utf8(src.clone()) {
                     Ok(s) => s,
-                    Err(_) => return self.fail(from, "/d_faust", "source blob is not UTF-8"),
+                    Err(_) => return self.fail(from, "/d_faust", "def blob is not UTF-8"),
                 },
             ),
-            _ => return self.fail(from, "/d_faust", "expected: name, Faust source"),
+            _ => return self.fail(from, "/d_faust", "expected: name, JSON or Faust source"),
         };
         if name.is_empty() {
             return self.fail(from, "/d_faust", "empty def name");
         }
+        let payload = if def.trim_start().starts_with('{') {
+            CompilePayload::Json(def)
+        } else {
+            CompilePayload::Source(def)
+        };
         let request = CompileRequest {
             name,
-            source,
+            payload,
             client: from,
         };
         if self.faust_compiler.submit(request).is_err() {

@@ -162,12 +162,15 @@ UGens.
   del hilo dedicado.)*
   Comando OSC nuevo: `/d_faust` (blob JSON) — `/d_recv` queda reservado para el
   formato UGen de M3.
-- **F2 — Esquema JSON → Box API**: definir el schema (primitivas, composición
+- ✅ **F2 — Esquema JSON → Box API**: definir el schema (primitivas, composición
   `par`/`seq`/`split`/`merge`/`rec`, matemática, delays, y UI `hslider`/`button`
   como controles nombrados); intérprete JSON→llamadas a la C API con validación y
   errores con ruta del nodo JSON culpable. Acceso a la stdlib de Faust (`os.osc`,
   filtros de `fi.`) vía `DSPToBoxes` embebiendo fragmentos de fuente Faust dentro
   del JSON — lo mejor de ambos mundos.
+  *(Completado 2026-06-10 — ver NOTAS.md. Schema documentado en
+  `src/faust/boxes.rs`; `/d_faust` acepta JSON o fuente Faust cruda.
+  Hallazgo: bug upstream en `boxFmod()`, rodeado vía fragmento.)*
 - **F3 — FaustSynth en el árbol**: `FaustSynth: SynthNode` envolviendo la
   instancia JIT; `/s_new` con nombre de def Faust instancia en el hilo de red
   (`createDSPInstance` + `init(sr)` alocan) y enchufa por el cmd FIFO; mapeo

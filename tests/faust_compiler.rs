@@ -8,7 +8,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use claudesufa::faust::compiler::{CompileRequest, CompilerThread};
+use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 
 /// Stdlib-free sine at 440 Hz: keeps the test independent of the Faust
 /// library search path (stdlib imports are exercised from F2 on).
@@ -30,7 +30,7 @@ fn compiler_thread_compiles_and_reports_back() {
     compiler
         .submit(CompileRequest {
             name: "sine".into(),
-            source: SINE_SRC.into(),
+            payload: CompilePayload::Source(SINE_SRC.into()),
             client: dummy_client(),
         })
         .ok()
@@ -49,7 +49,7 @@ fn compiler_thread_reports_readable_errors() {
     compiler
         .submit(CompileRequest {
             name: "broken".into(),
-            source: "process = nonsense(;".into(),
+            payload: CompilePayload::Source("process = nonsense(;".into()),
             client: dummy_client(),
         })
         .ok()
@@ -69,7 +69,7 @@ fn requests_are_serialized_in_order() {
         compiler
             .submit(CompileRequest {
                 name: name.into(),
-                source: SINE_SRC.into(),
+                payload: CompilePayload::Source(SINE_SRC.into()),
                 client: dummy_client(),
             })
             .ok()
@@ -196,6 +196,39 @@ mod osc {
             panic!("expected error string");
         };
         assert!(!why.is_empty());
+        server.quit();
+    }
+
+    #[test]
+    fn d_faust_json_payload_compiles() {
+        let server = TestServer::spawn();
+        server.send(
+            "/d_faust",
+            vec![
+                OscType::String("jconst".into()),
+                OscType::Blob(br#"{"op": "real", "value": 0.1}"#.to_vec()),
+            ],
+        );
+        let done = server.recv_until("/done");
+        assert_eq!(done.args[1], OscType::String("jconst".into()));
+        server.quit();
+    }
+
+    #[test]
+    fn d_faust_json_errors_carry_the_node_path() {
+        let server = TestServer::spawn();
+        server.send(
+            "/d_faust",
+            vec![
+                OscType::String("jbad".into()),
+                OscType::String(r#"{"op": "seq", "in": [{"op": "zzz"}, "_"]}"#.into()),
+            ],
+        );
+        let fail = server.recv_until("/fail");
+        let OscType::String(why) = &fail.args[1] else {
+            panic!("expected error string");
+        };
+        assert!(why.contains("$.in[0]"), "error must locate the node: {why}");
         server.quit();
     }
 

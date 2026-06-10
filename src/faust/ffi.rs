@@ -59,18 +59,98 @@ unsafe extern "C" {
     pub fn CboxSplit(x: FaustBox, y: FaustBox) -> FaustBox;
     pub fn CboxMerge(x: FaustBox, y: FaustBox) -> FaustBox;
     pub fn CboxRec(x: FaustBox, y: FaustBox) -> FaustBox;
+
+    // Binary operators, applied form (`CboxAdd()` without arguments is the
+    // primitive 2-input box; C has no overloading, hence the `Aux` suffix).
     pub fn CboxAddAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     pub fn CboxSubAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     pub fn CboxMulAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     pub fn CboxDivAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    // `CboxFmodAux` is deliberately not bound: broken upstream (faust
+    // 2.81.10 through master-dev), `boxFmod()` returns the `abs` primitive.
+    // `boxes` builds fmod through a `CDSPToBoxes` fragment instead.
+    pub fn CboxPowAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxMinAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxMaxAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxAtan2Aux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxGTAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxLTAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxGEAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxLEAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxEQAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxNEAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxANDAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxORAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxXORAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
+
+    // Unary math, applied form.
     pub fn CboxSinAux(x: FaustBox) -> FaustBox;
+    pub fn CboxCosAux(x: FaustBox) -> FaustBox;
+    pub fn CboxTanAux(x: FaustBox) -> FaustBox;
+    pub fn CboxAsinAux(x: FaustBox) -> FaustBox;
+    pub fn CboxAcosAux(x: FaustBox) -> FaustBox;
+    pub fn CboxAtanAux(x: FaustBox) -> FaustBox;
+    pub fn CboxExpAux(x: FaustBox) -> FaustBox;
+    pub fn CboxExp10Aux(x: FaustBox) -> FaustBox;
+    pub fn CboxLogAux(x: FaustBox) -> FaustBox;
+    pub fn CboxLog10Aux(x: FaustBox) -> FaustBox;
+    pub fn CboxSqrtAux(x: FaustBox) -> FaustBox;
+    pub fn CboxAbsAux(x: FaustBox) -> FaustBox;
     pub fn CboxFloorAux(x: FaustBox) -> FaustBox;
+    pub fn CboxCeilAux(x: FaustBox) -> FaustBox;
+    pub fn CboxRintAux(x: FaustBox) -> FaustBox;
+    pub fn CboxRoundAux(x: FaustBox) -> FaustBox;
+    pub fn CboxIntCastAux(x: FaustBox) -> FaustBox;
+    pub fn CboxFloatCastAux(x: FaustBox) -> FaustBox;
+
+    // Delays and selectors.
+    pub fn CboxDelayAux(b: FaustBox, del: FaustBox) -> FaustBox;
+    pub fn CboxSelect2Aux(selector: FaustBox, b1: FaustBox, b2: FaustBox) -> FaustBox;
+    pub fn CboxSelect3Aux(
+        selector: FaustBox,
+        b1: FaustBox,
+        b2: FaustBox,
+        b3: FaustBox,
+    ) -> FaustBox;
+
+    // UI elements: named parameters, the future `/n_set` controls (F3).
     pub fn CboxHSlider(
         label: *const c_char,
         init: FaustBox,
         min: FaustBox,
         max: FaustBox,
         step: FaustBox,
+    ) -> FaustBox;
+    pub fn CboxVSlider(
+        label: *const c_char,
+        init: FaustBox,
+        min: FaustBox,
+        max: FaustBox,
+        step: FaustBox,
+    ) -> FaustBox;
+    pub fn CboxNumEntry(
+        label: *const c_char,
+        init: FaustBox,
+        min: FaustBox,
+        max: FaustBox,
+        step: FaustBox,
+    ) -> FaustBox;
+    pub fn CboxButton(label: *const c_char) -> FaustBox;
+    pub fn CboxCheckbox(label: *const c_char) -> FaustBox;
+    pub fn CboxHGroup(label: *const c_char, group: FaustBox) -> FaustBox;
+    pub fn CboxVGroup(label: *const c_char, group: FaustBox) -> FaustBox;
+
+    /// Compiles Faust *source* into a box usable inside the current lib
+    /// context — the schema's escape hatch to the Faust stdlib. On error
+    /// returns NULL and fills `error_msg`.
+    pub fn CDSPToBoxes(
+        name_app: *const c_char,
+        dsp_content: *const c_char,
+        argc: c_int,
+        argv: *const *const c_char,
+        inputs: *mut c_int,
+        outputs: *mut c_int,
+        error_msg: *mut c_char,
     ) -> FaustBox;
 
     // ---- LLVM JIT (llvm-dsp-c.h) ----

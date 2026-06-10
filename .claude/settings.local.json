@@ -5,7 +5,8 @@
       "Bash(cargo build *)",
       "Bash(timeout 4 ./target/release/claudesufa)",
       "Bash(echo \"exit: $?\")",
-      "Bash(cargo clippy *)"
+      "Bash(cargo clippy *)",
+      "Bash(gh api *)"
     ]
   }
 }

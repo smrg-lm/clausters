@@ -421,7 +421,62 @@ servidores) necesitan el lock.
   Estable en 3 corridas seguidas (sin razas).
 - `cargo test` sin feature: intacto. Clippy limpio.
 
-## Próximo: M5 — Buffers (o F2 — esquema JSON→Box)
+## F2 — Esquema JSON → Box API (completado 2026-06-10)
+
+### Qué quedó hecho
+
+- **`src/faust/boxes.rs`** (nuevo): intérprete JSON → llamadas a la Box API.
+  El schema (documentado con tabla y ejemplo en el doc del módulo) refleja
+  la C API uno-a-uno: atajos (número = constante, `"_"` = wire, `"!"` =
+  cut), objetos `{"op": …}` para composición (`seq`/`par`/`split`/`merge`
+  n-arios con fold a izquierda, `rec` binario), 18 binarios (aritmética,
+  comparaciones, bitwise, `delay`), 19 unarios (trig, exp/log, redondeos,
+  casts), `select2`/`select3`, UI (`hslider`/`vslider`/`nentry`/`button`/
+  `checkbox`/`hgroup`/`vgroup`) y el escape hatch `{"op": "faust", "src":
+  "…"}` que compila un programa Faust completo a box vía `CDSPToBoxes` —
+  acceso a toda la stdlib (`os.osc`, `fi.`) componible con primitivas.
+- **Errores con ruta**: la validación estructural se hace al construir y
+  cada error lleva la ruta del nodo JSON culpable desde la raíz `$` (p. ej.
+  `at $.in[0].in[1]: unknown op "zzz"`); los errores semánticos de Faust
+  (aridades de composición, entradas colgantes) llegan verbatim del paso de
+  factory.
+- **`src/faust/compiler.rs`**: `CompileRequest` ahora lleva un
+  `CompilePayload::Source` (F1) o `::Json` (F2); guard `LibContext` (lock +
+  `createLibContext`/`destroyLibContext` en Drop); `FaustArgs::stdlib()`
+  pasa `-I $PREFIX/share/faust` (búsqueda como build.rs: `FAUST_PREFIX` →
+  `~/.local` → `/usr/local`) tanto a `createCDSPFactoryFromString` — los
+  defs de fuente cruda ahora pueden `import("stdfaust.lib")` — como a los
+  fragmentos.
+- **`src/faust/ffi.rs`**: superficie Box API completada (~45 símbolos
+  nuevos: binarios/unarios `Aux`, delays, selects, UI, `CDSPToBoxes`),
+  verificados contra `nm -D libfaust.so` además del header.
+- **OSC**: `/d_faust name def` distingue por sniffing — si el def empieza
+  con `{` es JSON, si no es fuente Faust (la fuente Faust top-level nunca
+  empieza con `{`, el sniff no es ambiguo).
+
+### Hallazgo: bug upstream en `boxFmod()`
+
+`CboxFmodAux(a, b)` construye `(a, b) : abs` — `boxFmod()` en
+`compiler/box_signal_api.cpp` devuelve `gGlobal->gAbsPrim->box()` (bug de
+copy-paste presente en 2.81.10 y todavía en master-dev). Lo detectó el test
+"kitchen sink" que ejercita cada op del schema una vez (necesario porque el
+linking dinámico es lazy: un símbolo mal tipeado en el FFI a mano recién
+explota al llamarlo). Workaround: `fmod` no usa el binding sino un
+fragmento `CDSPToBoxes("process = fmod;")` que devuelve el primitivo real
+de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
+
+### Verificación
+
+- `cargo test --features faust`: 64 tests (47 core + 2 smoke F0 + 8 F1/OSC
+  + 7 F2: sine JSON con paridad de frecuencia y RMS contra el smoke de F0,
+  fragmento stdlib componiendo `os.osc` con primitivas, import de stdlib
+  desde fuente cruda, errores de validación con ruta del nodo, error de
+  fragmento con ruta + mensaje del compilador, kitchen sink de todos los
+  ops). Estable en 3 corridas seguidas.
+- `cargo test` sin feature: 47 tests, intacto. Clippy limpio (solo los dos
+  `Default` preexistentes de dsp).
+
+## Próximo: M5 — Buffers (o F3 — FaustSynth en el árbol)
 
 M5: pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read`
 (hound), `PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
