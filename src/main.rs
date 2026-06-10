@@ -1,13 +1,24 @@
 #[cfg(feature = "realtime")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    use claudesufa::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
+
     let backend = claudesufa::server::backend::start()?;
+    let info = ServerInfo {
+        nominal_sample_rate: backend.sample_rate as f64,
+        actual_sample_rate: backend.sample_rate as f64,
+    };
+    let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info)?;
     println!(
-        "claudesufa M0 — 440 Hz sine | {} Hz, {} channels | Ctrl-C to quit",
-        backend.sample_rate, backend.channels
+        "claudesufa M1 — 440 Hz sine | {} Hz, {} channels | OSC on {} | /quit or Ctrl-C to stop",
+        backend.sample_rate,
+        backend.channels,
+        osc.local_addr()?
     );
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(3600));
-    }
+    // The OSC server runs on the main thread; the audio runs in cpal's
+    // callback thread until `backend` is dropped.
+    osc.run()?;
+    println!("received /quit, shutting down");
+    Ok(())
 }
 
 #[cfg(not(feature = "realtime"))]

@@ -1,2 +1,4 @@
-//! OSC server: UDP socket, parsing with rosc and translation into engine
-//! commands. Implemented in M1 (see PLAN.md).
+//! OSC layer: UDP server, parsing with rosc and translation into engine
+//! commands (the command FIFO arrives in M2).
+
+pub mod server;

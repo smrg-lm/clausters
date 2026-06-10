@@ -10,3 +10,4 @@ realtime = ["dep:cpal"]
 
 [dependencies]
 cpal = { version = "0.15", optional = true }
+rosc = "0.10"

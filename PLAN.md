@@ -91,8 +91,9 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
 - ✅ **M0 — Esqueleto**: `cargo init`, cpal abre el dispositivo y suena una sinusoide
   hardcodeada. Estructura de módulos: `server/`, `dsp/`, `osc/`, `node/`.
   *(Completado 2026-06-10 — ver NOTAS.md.)*
-- **M1 — Servidor OSC**: socket UDP (puerto 57110 por defecto), `rosc`, responder
+- ✅ **M1 — Servidor OSC**: socket UDP (puerto 57110 por defecto), `rosc`, responder
   `/status.reply`, `/quit`, `/notify`. Logging con `/dumpOSC`.
+  *(Completado 2026-06-10 — ver NOTAS.md.)*
 - **M2 — FIFO RT-safe + node tree**: ring buffers de comandos y basura, `NodeTree`
   con grupos, un synth hardcodeado instanciable vía `/s_new` y liberable con
   `/n_free`. Test con `assert_no_alloc` activo en el callback.
