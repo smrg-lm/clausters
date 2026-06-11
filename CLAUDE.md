@@ -30,10 +30,13 @@ silently lost. Always run server and client in the **same** Bash invocation
 ## Known bug: rosc 0.10.1 blob decoding
 
 rosc's decoder over-reads the padding of blobs whose length is a multiple of 4
-and returns `Eof` on valid packets. Workaround in `OscServer::run`: append 4
-zero bytes to the datagram before decoding (harmless for well-formed packets —
-they remain as unparsed remainder). Do not remove that padding without
-verifying rosc has fixed it upstream.
+and returns `Eof` on valid packets; inside a **bundle** the failing element is
+silently dropped instead (the content is parsed from its own size-prefixed
+slice). Workaround: `osc::decode_packet` splits bundles into elements by hand
+(recursively) and decodes only leaf messages with rosc, appending 4 zero bytes
+first (harmless for well-formed packets — they remain as unparsed remainder).
+Always decode through it; do not go back to `decoder::decode_udp` without
+verifying rosc has fixed both behaviors upstream.
 
 ## Optional `faust` feature
 

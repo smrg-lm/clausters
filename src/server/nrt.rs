@@ -153,7 +153,9 @@ impl Drop for NrtThread {
     }
 }
 
-fn run_job(job: NrtJob) -> Result<NrtAction, String> {
+/// Performs one job. The NRT thread calls this per request; the offline
+/// renderer (`server::render`) calls it directly, synchronously.
+pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
     match job {
         NrtJob::Alloc {
             frames,
@@ -252,6 +254,17 @@ fn read_wav(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, St
     Ok(Buffer::new(data, channels, frames, spec.sample_rate as f64))
 }
 
+/// Maps a scsynth-style sample-format name to a hound WAV spec fragment.
+/// Shared with the offline renderer (`server::render`).
+pub fn wav_format(sample_format: &str) -> Result<(u16, hound::SampleFormat), String> {
+    match sample_format {
+        "int16" => Ok((16, hound::SampleFormat::Int)),
+        "int24" => Ok((24, hound::SampleFormat::Int)),
+        "float" | "float32" => Ok((32, hound::SampleFormat::Float)),
+        other => Err(format!("unsupported sample format {other:?}")),
+    }
+}
+
 fn write_wav(
     path: &str,
     sample_format: &str,
@@ -260,12 +273,7 @@ fn write_wav(
     buffer: &Buffer,
 ) -> Result<(), String> {
     let err = |e: hound::Error| format!("{path}: {e}");
-    let (bits, format) = match sample_format {
-        "int16" => (16, hound::SampleFormat::Int),
-        "int24" => (24, hound::SampleFormat::Int),
-        "float" | "float32" => (32, hound::SampleFormat::Float),
-        other => return Err(format!("unsupported sample format {other:?}")),
-    };
+    let (bits, format) = wav_format(sample_format)?;
     let spec = hound::WavSpec {
         channels: buffer.channels() as u16,
         sample_rate: buffer.sample_rate() as u32,

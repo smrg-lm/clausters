@@ -121,8 +121,14 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   `offset`+`frames`; el engine publica su reloj de samples y la conversión
   NTP→samples vive en el hilo de red. Nota: scsynth real cuantiza al bloque
   — nosotros partimos el bloque de verdad, sin necesitar `OffsetOut`.)*
-- **M7 — Modo NRT + tests dorados**: render offline a WAV (mismo motor, sin cpal),
+- ✅ **M7 — Modo NRT + tests dorados**: render offline a WAV (mismo motor, sin cpal),
   tests de regresión comparando contra archivos dorados, benchmarks del grafo.
+  *(Completado 2026-06-11 — ver NOTAS.md. `clausters --nrt score.osc out.wav`
+  con partituras en el formato binario de scsynth; los comandos async corren
+  síncronos como en scsynth NRT; goldens en `tests/golden/` regenerables con
+  `cargo run --example render_golden`; benchmark `cargo run --release
+  --example bench`. Bonus: el bug de blobs de rosc también afectaba elementos
+  de bundle — arreglado para ambos modos en `osc::decode_packet`.)*
 
 ## Bifurcación F — SynthDefs vía Faust (Box/Signal API + JIT)
 

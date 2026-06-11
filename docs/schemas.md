@@ -40,6 +40,31 @@ Anything else (defs, buffers, server commands) replies `/fail … cannot be
 scheduled in a timed bundle` — load defs and buffers first, then schedule
 the notes.
 
+## NRT mode (offline rendering)
+
+The same engine renders scores to WAV without an audio device:
+
+```sh
+clausters --nrt score.osc out.wav [--rate 48000] [--channels 2] [--format float|int16|int24]
+```
+
+A score is the scsynth binary format: OSC packets back to back, each
+preceded by its byte count as a big-endian `int32`. Timetags count **seconds
+from the start of the render** (the immediate tag is time 0); bundles fire
+sample-accurately exactly like in real time, so an offline render equals a
+perfectly timed live take. The render ends at the time of the **last**
+bundle, whose commands produce no sound — close every score with a dummy
+bundle (a final `/n_free`) to set the duration.
+
+Unlike the live server, a score bundle may also contain the asynchronous
+commands `/d_recv`, `/d_faust`, `/d_free` and the `/b_*` family: they
+complete synchronously before time advances (scsynth NRT semantics), and any
+failure aborts the render with the offending event's time and message.
+Queries (`/status`, `/b_query`, `/c_get`) are errors in a score.
+
+`python3 examples/json_client.py score` writes an example score;
+`cargo run --release --example bench` measures graph throughput offline.
+
 ## SynthDef JSON (`/d_recv`)
 
 The blob is a JSON object:

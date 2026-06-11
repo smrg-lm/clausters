@@ -199,7 +199,11 @@ impl Drop for LibContext {
 /// then probes a throwaway instance for the def's parameters and I/O arity
 /// (F3), so `/s_new`/`/n_set` can resolve control names without touching
 /// libfaust again.
-fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String> {
+/// Compiles a def synchronously on the calling thread. The compiler thread
+/// uses this per request; the NRT renderer calls it directly (it owns the
+/// process, so hogging the thread for ~10 ms is fine). Serialized by the
+/// process-wide FFI lock either way.
+pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String> {
     let factory = match payload {
         CompilePayload::Source(source) => compile_source(name, source),
         CompilePayload::Json(json) => compile_json(name, json),

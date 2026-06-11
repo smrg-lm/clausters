@@ -292,6 +292,41 @@ def demo_bundle(client: Client):
     time.sleep(0.5 + len(notes) * 0.4 + 0.2)
 
 
+def score_bundle(seconds: float, *packets: bytes) -> bytes:
+    """An OSC bundle for an NRT score: the timetag counts seconds from the
+    start of the render, not wall-clock time."""
+    tag = struct.pack(">II", int(seconds), int((seconds % 1.0) * 2**32))
+    body = b"".join(struct.pack(">i", len(p)) + p for p in packets)
+    return _string("#bundle") + tag + body
+
+
+def demo_score():
+    """Writes a binary score file (the same arpeggio as the bundle demo) for
+    the offline renderer; no server needed. Render and listen with:
+
+        ./target/release/clausters --nrt /tmp/clausters_score.osc /tmp/out.wav
+        ffplay -autoexit /tmp/out.wav
+    """
+    path = "/tmp/clausters_score.osc"
+    notes = [330.0, 440.0, 550.0, 660.0, 880.0]
+    packets = []
+    for i, freq in enumerate(notes):
+        when = 0.1 + i * 0.4
+        node = 3100 + i
+        packets.append(
+            score_bundle(
+                when, message("/s_new", "default", node, 1, 0, "freq", freq, "amp", 0.3)
+            )
+        )
+        packets.append(score_bundle(when + 0.3, message("/n_free", node)))
+    # The render ends at the last bundle's time: this one sets the duration.
+    packets.append(score_bundle(0.1 + len(notes) * 0.4, message("/n_free", 3100)))
+    with open(path, "wb") as f:
+        f.write(b"".join(struct.pack(">i", len(p)) + p for p in packets))
+    print(f"wrote {path} ({len(packets)} bundles); render it with:")
+    print(f"  ./target/release/clausters --nrt {path} /tmp/out.wav")
+
+
 def main():
     demos = sys.argv[1:] or ["status"]
     client = Client()
@@ -307,12 +342,14 @@ def main():
             demo_buffer(client)
         elif demo == "bundle":
             demo_bundle(client)
+        elif demo == "score":
+            demo_score()
         elif demo == "quit":
             client.send("/quit")
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, buffer, bundle, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, buffer, bundle, score, quit)"
             )
 
 

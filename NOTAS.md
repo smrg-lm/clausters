@@ -698,9 +698,74 @@ de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
 - E2E real: server release + `json_client.py bundle` (5 notas agendadas
   por adelantado, ritmo regular). Banner ahora dice `clausters M6`.
 
-## Próximo: M7 — Modo NRT + tests dorados (o F5)
+## M7 — Modo NRT + tests dorados (completado 2026-06-11)
 
-M7: render offline a WAV (mismo motor, sin cpal), tests de regresión
-comparando contra archivos dorados, benchmarks del grafo.
-F5 (opcional): Signal API, waveforms/soundfiles, polifonía nativa de
-Faust, backend interpreter (sin LLVM).
+### Qué quedó hecho
+
+- **Refactor previo** (`src/osc/translate.rs`): la traducción mensaje→`Cmd`
+  salió de `OscServer` a un `CmdTranslator` compartido — tablas de defs,
+  espejo `node_defs`, auto-IDs, `translate()` (el viejo `schedule_message`),
+  `d_recv`/`d_free`, `make_synth` — más `parse_buffer_msg` (los seis `/b_*`
+  async → `NrtJob`, antes seis handlers casi iguales) y `parse_d_faust`.
+  El server delega; `/s_new` inmediato ahora también pasa por `translate`.
+- **Renderer** (`src/server/render.rs`): `Score` (eventos ordenados estables
+  por tiempo) + `render`/`render_to_vec`/`render_to_wav`. Una `Score` se
+  carga del formato binario de scsynth (`[i32 BE tamaño][paquete OSC]`…;
+  el timetag cuenta **segundos desde el inicio del render**, tag inmediato
+  = 0). El render es mono-hilo con las dos mitades de `engine_pair`: los
+  comandos agendables viajan como `Cmd::Schedule` por la cola M6 (mismo
+  split sub-bloque que en vivo → el render offline es idéntico sample a
+  sample a una toma en vivo perfecta), y los async (`/d_recv`, `/d_faust`,
+  `/d_free`, `/b_*`) corren **síncronos** antes de avanzar el tiempo
+  (semántica scsynth NRT): `run_job` y `faust::compiler::compile` ahora son
+  `pub` y se llaman en línea; los buffers se instalan con el resto del
+  bundle (swap sample-accurate). El render termina en el tiempo del último
+  bundle (sus comandos no suenan): cerrar la partitura con un bundle dummy.
+  Errores estrictos: comando desconocido/fallido aborta con tiempo y
+  mensaje; bundles dropeados por cola llena también (mejor que notas
+  faltantes silenciosas en un golden).
+- **CLI**: `clausters --nrt score.osc out.wav [--rate] [--channels]
+  [--format float|int16|int24]` — disponible **sin** el feature `realtime`
+  (sin cpal); `--help`. El cliente Python ganó `score_bundle` (timetag
+  relativo) y la demo `score` que escribe `/tmp/clausters_score.osc`.
+- **Bug nuevo de rosc, arreglado para ambos modos**: el bug de blobs
+  múltiplo-de-4 también rompe blobs **dentro de un bundle** — el elemento
+  se parsea de su propio slice con prefijo de tamaño (el padding externo no
+  llega) y rosc devuelve el bundle con el contenido **silenciosamente
+  vacío**. `osc::decode_packet` parte los bundles a mano (recursivo) y solo
+  decodifica mensajes hoja con rosc + padding; lo usan el server UDP y el
+  loader de scores. CLAUDE.md actualizado.
+- **Goldens** (`tests/golden.rs` + `tests/golden/*.wav` float32, escenas en
+  `tests/common/scenes.rs` compartidas con `cargo run --example
+  render_golden`): `arpeggio` (def default, entradas a mitad de bloque,
+  `/n_set`, frees escalonados) y `playbuf` (`/d_recv` + `/b_allocRead` a
+  44100 con rate compensado, `/c_set` agendado, `/b_zero` a mitad de
+  reproducción). Comparación por sample con tolerancia 1e-4 (el sin de
+  libm puede variar entre plataformas; misma máquina es bit-exacto) **más**
+  asserts de señal independientes (frecuencia por cruces por cero, RMS,
+  silencios) para que un golden viejo no bendiga un render roto. Regenerar
+  solo a mano y **escuchar antes de commitear**.
+- **Benchmark** (`cargo run --release --example bench`): throughput de
+  bloques offline → factor de tiempo real a 48 kHz, def default y def
+  Faust (con feature). Medición acá: ~1790 synth·xRT estable de 32 a 1000
+  synths default (≈1800 voces sinusoidales en tiempo real); 1 synth solo
+  ~1000x (domina el overhead fijo por bloque).
+
+### Verificación
+
+- `cargo test`: 80 (72 + 8 de `tests/golden.rs`); `--features faust`: 111
+  (+1 `/d_faust` síncrono en NRT). Sin default features también verde.
+  Clippy limpio en ambas configs (solo las 2 warnings preexistentes).
+- E2E: `json_client.py score` → `clausters --nrt` (release): 11 eventos,
+  2.1 s; primer sample no-cero en el frame 4801 (el 4800 es sin(0)=0) y
+  última nota liberada exactamente en el frame 96000 — sample-accurate de
+  punta a punta. Server en vivo verificado con las demos
+  `status ugen buffer bundle quit` tras el refactor.
+
+## Próximo: F5 — Extensiones Faust (opcional) o features nuevas
+
+El plan original (M0–M7) está completo. F5 (opcional): Signal API,
+waveforms/soundfiles, polifonía nativa de Faust, backend interpreter (sin
+LLVM). Otras direcciones naturales: más UGens (filtros, EnvGen con done
+actions, Line), streaming de buffers (`leaveOpen`), `/n_query`/`/g_queryTree`,
+multi-cliente con notificaciones por ID.
