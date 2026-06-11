@@ -2,6 +2,7 @@
 
 use crate::dsp::UGen;
 use crate::dsp::binop::{BinOp, BinaryOp};
+use crate::dsp::buf::{BufRd, PlayBuf};
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::sinosc::SinOsc;
@@ -18,6 +19,8 @@ pub enum UGenKind {
     InCtl,
     Out,
     ReplaceOut,
+    PlayBuf,
+    BufRd,
 }
 
 pub fn parse_kind(name: &str) -> Option<UGenKind> {
@@ -32,6 +35,8 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
         "InCtl" => Some(UGenKind::InCtl),
         "Out" => Some(UGenKind::Out),
         "ReplaceOut" => Some(UGenKind::ReplaceOut),
+        "PlayBuf" => Some(UGenKind::PlayBuf),
+        "BufRd" => Some(UGenKind::BufRd),
         _ => None,
     }
 }
@@ -46,6 +51,8 @@ pub fn arity(kind: UGenKind) -> usize {
         | UGenKind::Div
         | UGenKind::Out
         | UGenKind::ReplaceOut => 2,
+        // (bufnum, chan, rate, loop) and (bufnum, chan, phase, loop).
+        UGenKind::PlayBuf | UGenKind::BufRd => 4,
     }
 }
 
@@ -62,5 +69,7 @@ pub fn build(kind: UGenKind) -> Box<dyn UGen> {
         UGenKind::InCtl => Box::new(InCtl),
         UGenKind::Out => Box::new(Out),
         UGenKind::ReplaceOut => Box::new(ReplaceOut),
+        UGenKind::PlayBuf => Box::new(PlayBuf::new()),
+        UGenKind::BufRd => Box::new(BufRd),
     }
 }

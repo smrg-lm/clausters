@@ -108,8 +108,12 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   *(Completado 2026-06-10 — ver NOTAS.md. Incluye `/g_new`, `/g_freeAll`,
   `/g_deepFree`, `/c_set`/`/c_get` y notificaciones `/n_go`/`/n_end`. Cambio de
   formato: las defs ya no llevan campo `out`; la salida es vía UGens `Out`.)*
-- **M5 — Buffers**: pool de buffers, hilo NRT, `/b_alloc`, `/b_read` (hound),
+- ✅ **M5 — Buffers**: pool de buffers, hilo NRT, `/b_alloc`, `/b_read` (hound),
   `PlayBuf`/`BufRd`, replies asíncronos `/done`.
+  *(Completado 2026-06-10 — ver NOTAS.md. Incluye `/b_allocRead`, `/b_write`,
+  `/b_zero`, `/b_free` y `/b_query`. Buffers inmutables compartidos por
+  `Arc`: el hilo NRT construye, el engine swapea, lo reemplazado sale por el
+  garbage FIFO.)*
 - **M6 — Scheduling sample-accurate**: cola de bundles ordenada por timetag en el
   hilo de audio (pre-alocada), conversión NTP→samples, ejecución con offset
   intra-bloque (partir el bloque en el sample del evento, como hace scsynth).

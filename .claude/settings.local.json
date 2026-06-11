@@ -7,7 +7,12 @@
       "Bash(echo \"exit: $?\")",
       "Bash(cargo clippy *)",
       "Bash(gh api *)",
-      "Bash(grep -c \"^test .* ok$\")"
+      "Bash(grep -c \"^test .* ok$\")",
+      "Bash(awk '/test result/ {p+=$4; f+=$6} END {print \"core: \"p\" passed, \"f\" failed\"}')",
+      "Bash(awk '/test result/ {p+=$4; f+=$6} END {print \"faust: \"p\" passed, \"f\" failed\"}')",
+      "Bash(awk '/test result/ {p+=$4; f+=$6} END {print \"core: \"p\"/\"f}')",
+      "Bash(awk '/test result/ {p+=$4; f+=$6} END {print \"faust: \"p\"/\"f}')",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('examples/json_client.py'\\).read\\(\\)\\); print\\('json_client.py: sintaxis OK'\\)\")"
     ]
   }
 }

@@ -7,6 +7,8 @@
 //! on the audio thread: no allocation.
 
 pub mod binop;
+pub mod buf;
+pub mod buffer;
 pub mod io;
 pub mod noise;
 pub mod registry;
@@ -83,6 +85,9 @@ impl Buses {
 pub struct ProcessCtx<'a> {
     pub sample_rate: f32,
     pub buses: &'a mut Buses,
+    /// The engine's buffer pool; read-only on the audio thread (see
+    /// [`buffer`] for the immutability contract).
+    pub buffers: &'a [Option<Arc<buffer::Buffer>>],
 }
 
 pub trait UGen: Send {

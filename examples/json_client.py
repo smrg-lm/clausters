@@ -11,16 +11,21 @@ then run one or more demos (default: status):
 
     python3 examples/json_client.py status ugen faust quit
 
-`ugen`  defines an amplitude-modulated noise synth via /d_recv and plays it.
-`faust` builds two Faust defs as JSON box trees via /d_faust (needs the
-        feature): a sine from primitives and one importing the Faust stdlib.
+`ugen`   defines an amplitude-modulated noise synth via /d_recv and plays it.
+`faust`  builds two Faust defs as JSON box trees via /d_faust (needs the
+         feature): a sine from primitives and one importing the Faust stdlib.
+`buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
+         the file's pitch (rate from /b_info and /status), then frees it.
 """
 
 import json
+import math
+import os
 import socket
 import struct
 import sys
 import time
+import wave
 
 SERVER = ("127.0.0.1", 57110)
 
@@ -198,6 +203,60 @@ def demo_faust(client: Client):
     client.send("/n_free", 3002)
 
 
+# ---- /b_*: buffers and PlayBuf ----
+
+
+def write_test_wav(path: str, freq: float, seconds: float, sample_rate: int):
+    """A mono int16 sine, written with the stdlib `wave` module."""
+    with wave.open(path, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sample_rate)
+        n = int(seconds * sample_rate)
+        samples = (
+            int(0.3 * 32767 * math.sin(2 * math.pi * freq * i / sample_rate))
+            for i in range(n)
+        )
+        w.writeframes(b"".join(struct.pack("<h", s) for s in samples))
+
+
+def demo_buffer(client: Client):
+    path = os.path.join("/tmp", f"clausters_demo_{os.getpid()}.wav")
+    write_test_wav(path, freq=330.0, seconds=1.0, sample_rate=22050)
+
+    print(f"buffer demo: /b_allocRead 10 {path}")
+    client.send("/b_allocRead", 10, path)
+    addr, _ = client.reply()  # async: /done /b_allocRead 10
+    if addr == "/fail":
+        return
+    client.send("/b_query", 10)
+    _, info = client.reply()  # /b_info: bufnum, frames, channels, sampleRate
+    file_sr = info[3]
+    client.send("/status")
+    _, status = client.reply()
+    server_sr = status[7]
+
+    # PlayBuf's rate is frames per output sample: 1.0 plays at the server
+    # rate, so the file's pitch needs file_sr / server_sr.
+    d = SynthDefBuilder("bplayer")
+    rate = d.control("rate", 1.0)
+    d.add("Out", 0, d.add("PlayBuf", 10, 0, rate, 1))
+    client.send("/d_recv", d.blob())
+    client.reply()
+
+    pitch_true = file_sr / server_sr
+    print(f"  /s_new bplayer 3003 (rate {pitch_true:.3f}: the file's pitch)")
+    client.send("/s_new", "bplayer", 3003, 1, 0, "rate", pitch_true)
+    time.sleep(2.0)
+    print("  /n_set 3003 rate ×1.5 (a fifth up)")
+    client.send("/n_set", 3003, "rate", pitch_true * 1.5)
+    time.sleep(2.0)
+    client.send("/n_free", 3003)
+    client.send("/b_free", 10)
+    client.reply()  # /done /b_free 10
+    os.remove(path)
+
+
 def main():
     demos = sys.argv[1:] or ["status"]
     client = Client()
@@ -209,11 +268,13 @@ def main():
             demo_ugen(client)
         elif demo == "faust":
             demo_faust(client)
+        elif demo == "buffer":
+            demo_buffer(client)
         elif demo == "quit":
             client.send("/quit")
             client.reply()
         else:
-            sys.exit(f"unknown demo: {demo} (use status, ugen, faust, quit)")
+            sys.exit(f"unknown demo: {demo} (use status, ugen, faust, buffer, quit)")
 
 
 if __name__ == "__main__":

@@ -585,9 +585,68 @@ de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
   + 2 completas); sospecho del test OSC por UDP bajo carga. Vigilar si
   reaparece.
 
-## Próximo: M5 — Buffers (o F5 — extensiones Faust)
+## M5 — Buffers (completado 2026-06-10)
 
-M5: pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read`
-(hound), `PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
-F5 (opcional): Signal API, waveforms/soundfiles, polifonía nativa de
-Faust, backend interpreter (sin LLVM).
+### Qué quedó hecho
+
+- **`src/dsp/buffer.rs`** (nuevo): `Buffer` — datos f32 intercalados +
+  frames/canales/sample-rate — **inmutable una vez construido**, compartido
+  como `Arc<Buffer>`. Pool de 1024 slots (`BufferPool`) en el engine;
+  espejo en el hilo de red para `/b_query` y para darle a
+  `/b_read`/`/b_write`/`/b_zero` el contenido/forma actual. La inmutabilidad
+  es la decisión central: sin locks ni aliasing entre hilos (scsynth muta
+  memoria compartida; nosotros pagamos una copia por reemplazo). UGens de
+  grabación necesitarán otro esquema.
+- **`src/server/nrt.rs`** (nuevo): hilo NRT con el mismo patrón que el
+  compilador Faust (mpsc requests/results, drenado en el loop del servidor
+  OSC). Jobs: `Alloc` (cero), `AllocRead`/`Read`/`Write` (WAV vía `hound`:
+  int 1–32 bits escalado a ±1 y float32; `Read` superpone el archivo sobre
+  una copia del contenido actual conservando la forma), `Free`. **Una sola
+  cola = los comandos de buffer completan en orden de envío** (por eso
+  hasta `/b_free` pasa por ahí: no puede sobrepasar a un alloc pendiente).
+- **Engine**: `Cmd::SetBuffer { index, Option<Arc<Buffer>> }` swapea el
+  slot; lo reemplazado sale como `Garbage::FreedBuffer` (el último `Arc`
+  nunca se suelta en el hilo de audio). `ProcessCtx` ahora lleva
+  `buffers: &[Option<Arc<Buffer>>]`.
+- **UGens** (`src/dsp/buf.rs`): `PlayBuf` (bufnum, canal, rate, loop; rate
+  en frames por sample de salida — 1.0 = sr del servidor, el cliente
+  compensa con `sr_archivo / sr_servidor`; fase f64; silencio al final si
+  no loopea) y `BufRd` (bufnum, canal, fase en frames, loop; la fase fuera
+  de rango wrapea con loop y clampea sin él). Ambos **mono** con entrada
+  `chan` (nuestros UGens tienen una salida): un archivo estéreo son dos
+  lectores sample-locked. Interpolación lineal. Sin trigger ni done action
+  todavía.
+- **OSC**: `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write` (solo WAV;
+  int16/int24/float), `/b_zero` (reemplaza por uno en cero de la misma
+  forma), `/b_free` — asíncronos, responden `/done cmd bufnum` o `/fail` —
+  y `/b_query` → `/b_info` (síncrono desde el espejo). `leaveOpen` se
+  acepta y se ignora (sin streaming).
+- **Cliente Python**: demo `buffer` (escribe WAV con el módulo `wave`,
+  `/b_allocRead`, rate correcta desde `/b_info` + `/status`, `/n_set` de
+  rate, `/b_free`). Schema y comandos documentados en `docs/schemas.md`;
+  pasos manuales en GUIA.md.
+
+### Verificación
+
+- `cargo test`: 61 tests (47 + 13 de `tests/buffers.rs` + 1 en
+  `rt_safety`); con feature: 90. Los tests de buffers incluyen igualdad
+  **exacta** muestra a muestra (playback rate 1, loop, canales,
+  interpolación de `BufRd` con valores representables), round-trip WAV
+  float sin pérdida, grilla de cuantización int16 verificada
+  (escala 32767 al escribir, 1/32768 al leer), slicing de archivo,
+  overlay de `/b_read`, errores (mismatch de canales, archivo inexistente)
+  y el ciclo `/b_*` completo por OSC con engine tickeado a mano.
+- `rt_safety`: instalar, reemplazar (incluso achicando con un `PlayBuf`
+  leyendo), vaciar el slot y liberar el synth — cero allocs en el hilo de
+  audio, 3 items por el garbage FIFO.
+- E2E real: server release + `json_client.py buffer` (sine 330 Hz a
+  22050 Hz tocada a rate 0.5 sobre servidor de 44100, quinta arriba con
+  `/n_set`, `/b_free` con `/done`). Clippy limpio (solo las 2 warnings
+  preexistentes de `Default`).
+
+## Próximo: M6 — Scheduling sample-accurate (o M7 / F5)
+
+M6: cola de bundles ordenada por timetag en el hilo de audio (pre-alocada),
+conversión NTP→samples, ejecución con offset intra-bloque.
+M7: modo NRT/render offline a WAV, tests dorados contra archivos de
+referencia, benchmarks. F5 (opcional): extensiones Faust.

@@ -21,7 +21,8 @@ either kind are instantiated, controlled and freed the same way:
 
 Engine facts that apply to every def: blocks of 64 samples; 128 audio buses
 (`0..channels` are the hardware outputs, bus 0 = left) and 1024 control
-buses; all signals are `f32` at the device sample rate.
+buses; a pool of 1024 sample buffers filled by the `/b_*` commands; all
+signals are `f32` at the device sample rate.
 
 ## SynthDef JSON (`/d_recv`)
 
@@ -71,11 +72,39 @@ The blob is a JSON object:
 | `InCtl` | bus | a control-bus value, constant over the block |
 | `Out` | bus, signal | **sums** the signal into an audio bus |
 | `ReplaceOut` | bus, signal | overwrites the bus instead of summing |
+| `PlayBuf` | bufnum, chan, rate, loop | buffer player with linear interpolation; `rate` is frames per output sample (1.0 = the server rate — scale by `file_sr / server_sr` for the file's pitch); starts at frame 0, silent at the end unless looping |
+| `BufRd` | bufnum, chan, phase, loop | reads the buffer at a `phase` signal in frames (linear interpolation); out-of-range phases wrap when looping, clamp otherwise |
 
 Output happens exclusively through `Out`/`ReplaceOut`; a def without them is
 silent. Several synths with `Out` on the same bus mix. Bus-index inputs are
 ordinary signals, sampled at the first frame of each block and clamped to
 the valid range.
+
+Buffer readers are **mono** (one output per UGen, unlike scsynth's
+multi-output PlayBuf): the `chan` input picks the channel, and two readers
+with the same inputs stay sample-locked, so a stereo file is two UGens.
+Neither has a trigger or done action yet.
+
+## Buffers (`/b_*`)
+
+```text
+/b_alloc     bufnum frames [channels=1]                  # zeroed buffer
+/b_allocRead bufnum path [fileStart=0] [numFrames=0=all] # shape from the WAV
+/b_read      bufnum path [fileStart=0] [numFrames=-1=all] [bufStart=0]
+/b_write     bufnum path [header="wav"] [format="int16"|"int24"|"float"] [numFrames=-1] [startFrame=0]
+/b_zero      bufnum
+/b_free      bufnum
+/b_query     bufnum...    →  /b_info  bufnum frames channels sampleRate ...
+```
+
+All except `/b_query` are **asynchronous**: the work happens on a dedicated
+NRT thread (one queue, so commands on the same buffer complete in submission
+order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`.
+Buffers keep the file's sample rate (the server never resamples — see
+`PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires
+an allocated buffer and keeps its shape; channel-count mismatches fail.
+WAV is the only file format in v1, and `leaveOpen` (streaming) is not
+supported.
 
 ## Faust defs (`/d_faust`)
 

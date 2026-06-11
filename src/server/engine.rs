@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 pub use crate::dsp::BLOCK_SIZE;
+use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
 use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 
@@ -60,6 +61,13 @@ pub enum Cmd {
         index: u32,
         value: f32,
     },
+    /// Installs (`Some`) or removes (`None`) a buffer in the pool. The
+    /// buffer arrives fully built by the NRT thread; the replaced one leaves
+    /// through the garbage FIFO.
+    SetBuffer {
+        index: usize,
+        buffer: Option<Arc<Buffer>>,
+    },
 }
 
 /// Heap memory leaving the audio thread to be dropped on the network side.
@@ -82,6 +90,10 @@ pub enum Garbage {
         id: i32,
         group: Group,
     },
+    /// A buffer replaced or removed from the pool; this clone is dropped on
+    /// the network side so the deallocation (if it is the last `Arc`) never
+    /// happens on the audio thread.
+    FreedBuffer(Arc<Buffer>),
 }
 
 /// Node lifecycle event for `/n_go`/`/n_end` notifications. POD; delivery is
@@ -166,6 +178,7 @@ pub struct Engine {
     channels: usize,
     tree: NodeTree,
     buses: Buses,
+    buffers: BufferPool,
     cmd_rx: Consumer<Cmd>,
     garbage_tx: Producer<Garbage>,
     pending_garbage: Vec<Garbage>,
@@ -202,6 +215,7 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
         channels,
         tree: NodeTree::new(),
         buses: Buses::new(control_buses.clone()),
+        buffers: empty_pool(),
         cmd_rx,
         garbage_tx,
         pending_garbage: Vec::with_capacity(PENDING_GARBAGE_CAPACITY),
@@ -240,6 +254,7 @@ impl Engine {
         let mut ctx = ProcessCtx {
             sample_rate: self.sample_rate,
             buses: &mut self.buses,
+            buffers: &self.buffers,
         };
         self.tree.process(&mut ctx);
         // Buses 0..channels are the hardware outputs.
@@ -343,6 +358,17 @@ impl Engine {
                 Cmd::SetControl { id, index, value } => {
                     if let Some(synth) = self.tree.synth_mut(id) {
                         synth.set_control(index, value);
+                    }
+                }
+                Cmd::SetBuffer { index, buffer } => {
+                    if let Some(slot) = self.buffers.get_mut(index) {
+                        if let Some(old) = std::mem::replace(slot, buffer) {
+                            sink.push(Garbage::FreedBuffer(old));
+                        }
+                    } else if let Some(buffer) = buffer {
+                        // Out-of-range index (the network thread validates,
+                        // so this is belt and braces): ship it back.
+                        sink.push(Garbage::FreedBuffer(buffer));
                     }
                 }
             }

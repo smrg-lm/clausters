@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
     println!(
-        "clausters M4 — silent until /s_new | {} Hz, {} channels | OSC on {} | /quit or Ctrl-C to stop",
+        "clausters M5 — silent until /s_new | {} Hz, {} channels | OSC on {} | /quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
         osc.local_addr()?

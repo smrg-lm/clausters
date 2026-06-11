@@ -82,6 +82,86 @@ fn audio_thread_does_not_allocate() {
     assert_eq!(handle.collect_garbage(), 33);
 }
 
+/// Same guardian for the buffer path (M5): installing, replacing and freeing
+/// pool buffers, and `PlayBuf` reading them, must not allocate on the audio
+/// thread — swapped-out buffers leave as garbage, never dropped there.
+#[test]
+fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // Network side: a looping PlayBuf synth plus the first buffer.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "player",
+            "ugens": [
+                {"kind": "PlayBuf", "inputs": [
+                    {"const": 0.0}, {"const": 0.0}, {"const": 0.5}, {"const": 1.0}
+                ]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    let make_buffer = |frames: usize| {
+        Some(Arc::new(Buffer::new(
+            vec![0.1; frames],
+            1,
+            frames,
+            48_000.0,
+        )))
+    };
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: make_buffer(4800),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // Replacing mid-playback (including a shrink) and emptying the slot are
+    // pointer swaps; the old Arcs go out through the garbage FIFO.
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: make_buffer(100),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::SetBuffer { index: 0, buffer: None })
+        .ok()
+        .unwrap();
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // Two buffers plus the synth drop here, on the network side.
+    assert_eq!(handle.collect_garbage(), 3);
+}
+
 /// Same guardian for the Faust path (F3): inserting, processing, recontrolling
 /// and freeing `FaustSynth`s must not allocate on the audio thread. This
 /// guards our wrapper (staging copies, zone stores, garbage routing) —

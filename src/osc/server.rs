@@ -1,7 +1,10 @@
-//! UDP OSC server implementing the M4 subset of the scsynth protocol:
+//! UDP OSC server implementing the M5 subset of the scsynth protocol:
 //! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/s_new` (add actions 0-4),
 //! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
-//! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; `/n_go` and
+//! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; the buffer
+//! commands `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`,
+//! `/b_free` (all async via the NRT thread, replying `/done cmd bufnum`)
+//! and `/b_query` (synchronous `/b_info`); `/n_go` and
 //! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
 //! `/d_faust name def` compiles a def — JSON box graph (F2) or raw Faust
 //! source (F1) — on the dedicated compiler thread and replies
@@ -29,8 +32,10 @@ use rosc::{OscBundle, OscMessage, OscPacket, OscType, decoder, encoder};
 use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
+use crate::dsp::buffer::{BufferPool, NUM_BUFFERS, empty_pool};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
+use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtThread};
 use crate::synthdef::instance::UGenSynth;
 use crate::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
 
@@ -88,6 +93,11 @@ pub struct OscServer {
     /// `/n_set` control names. Maintained from s_new and collected garbage.
     node_defs: HashMap<i32, NodeDef>,
     dump_osc: bool,
+    /// Network-side mirror of the engine's buffer pool, updated when NRT
+    /// results are installed. Serves `/b_query` and gives `/b_read`,
+    /// `/b_write` and `/b_zero` the current contents/shape.
+    buffers: BufferPool,
+    nrt: NrtThread,
     /// Clients registered via `/notify 1`; the client ID is index + 1.
     clients: Vec<SocketAddr>,
     recv_buf: Vec<u8>,
@@ -119,6 +129,8 @@ impl OscServer {
             defs,
             node_defs: HashMap::new(),
             dump_osc: false,
+            buffers: empty_pool(),
+            nrt: NrtThread::spawn(),
             clients: Vec::new(),
             recv_buf: vec![0; RECV_BUF_SIZE],
             next_auto_id: AUTO_NODE_ID_BASE,
@@ -145,6 +157,7 @@ impl OscServer {
                     ) =>
                 {
                     self.collect_garbage();
+                    self.collect_nrt_results();
                     #[cfg(feature = "faust")]
                     self.collect_faust_results();
                     continue;
@@ -169,6 +182,7 @@ impl OscServer {
             };
             let flow = self.handle_packet(packet, from);
             self.collect_garbage();
+            self.collect_nrt_results();
             #[cfg(feature = "faust")]
             self.collect_faust_results();
             if let Flow::Quit = flow {
@@ -248,7 +262,7 @@ impl OscServer {
                 Garbage::FreedSynth { id, .. } => {
                     self.node_defs.remove(&id);
                 }
-                Garbage::FreedGroup { .. } => {}
+                Garbage::FreedGroup { .. } | Garbage::FreedBuffer(_) => {}
                 Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID.
@@ -310,6 +324,13 @@ impl OscServer {
             "/n_after" => self.handle_n_move(&msg, from, Place::After),
             "/c_set" => self.handle_c_set(&msg, from),
             "/c_get" => self.handle_c_get(&msg, from),
+            "/b_alloc" => self.handle_b_alloc(&msg, from),
+            "/b_allocRead" => self.handle_b_alloc_read(&msg, from),
+            "/b_read" => self.handle_b_read(&msg, from),
+            "/b_write" => self.handle_b_write(&msg, from),
+            "/b_zero" => self.handle_b_zero(&msg, from),
+            "/b_free" => self.handle_b_free(&msg, from),
+            "/b_query" => self.handle_b_query(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
             "/d_faust" => self.handle_d_faust(&msg, from),
             "/d_free" => self.handle_d_free(&msg, from),
@@ -545,6 +566,212 @@ impl OscServer {
         self.reply(from, "/c_set", args);
     }
 
+    /// Drains finished NRT jobs: installs/clears buffers in the engine and
+    /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
+    fn collect_nrt_results(&mut self) {
+        while let Some(result) = self.nrt.try_result() {
+            let action = match result.outcome {
+                Ok(action) => action,
+                Err(error) => {
+                    self.fail(result.client, result.cmd, error);
+                    continue;
+                }
+            };
+            let index = result.index as usize;
+            let swap = match action {
+                NrtAction::Install(buffer) => {
+                    self.buffers[index] = Some(Arc::clone(&buffer));
+                    Some(Some(buffer))
+                }
+                NrtAction::Clear => {
+                    self.buffers[index] = None;
+                    Some(None)
+                }
+                NrtAction::None => None,
+            };
+            if let Some(buffer) = swap
+                && self.handle.send(Cmd::SetBuffer { index, buffer }).is_err()
+            {
+                self.fail(result.client, result.cmd, "command FIFO full");
+                continue;
+            }
+            self.reply(
+                result.client,
+                "/done",
+                vec![
+                    OscType::String(result.cmd.into()),
+                    OscType::Int(result.index),
+                ],
+            );
+        }
+    }
+
+    /// Validates a buffer index and queues an NRT job for it.
+    fn submit_nrt(&mut self, cmd: &'static str, index: i32, from: SocketAddr, job: NrtJob) {
+        if index < 0 || index as usize >= NUM_BUFFERS {
+            return self.fail(from, cmd, format!("buffer index out of range: {index}"));
+        }
+        let request = NrtRequest {
+            cmd,
+            index,
+            client: from,
+            job,
+        };
+        if self.nrt.submit(request).is_err() {
+            self.fail(from, cmd, "NRT thread is down");
+        }
+    }
+
+    /// `/b_alloc bufnum frames [channels=1]`.
+    fn handle_b_alloc(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let (index, frames) = match msg.args.as_slice() {
+            [OscType::Int(index), OscType::Int(frames), ..] => (*index, *frames),
+            _ => return self.fail(from, "/b_alloc", "expected: bufnum, frames [, channels]"),
+        };
+        let channels = int_arg(&msg.args, 2).unwrap_or(1);
+        if frames <= 0 || channels <= 0 {
+            return self.fail(from, "/b_alloc", "frames and channels must be positive");
+        }
+        let job = NrtJob::Alloc {
+            frames: frames as usize,
+            channels: channels as usize,
+            sample_rate: self.info.nominal_sample_rate,
+        };
+        self.submit_nrt("/b_alloc", index, from, job);
+    }
+
+    /// `/b_allocRead bufnum path [fileStart=0] [numFrames=0 (all)]`.
+    fn handle_b_alloc_read(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let (index, path) = match msg.args.as_slice() {
+            [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
+            _ => {
+                return self.fail(
+                    from,
+                    "/b_allocRead",
+                    "expected: bufnum, path [, fileStart, numFrames]",
+                );
+            }
+        };
+        let job = NrtJob::AllocRead {
+            path,
+            file_start: int_arg(&msg.args, 2).unwrap_or(0).max(0) as usize,
+            num_frames: int_arg(&msg.args, 3).unwrap_or(0) as i64,
+        };
+        self.submit_nrt("/b_allocRead", index, from, job);
+    }
+
+    /// `/b_read bufnum path [fileStart=0] [numFrames=-1 (all)] [bufStart=0]
+    /// [leaveOpen]` — leaveOpen is accepted and ignored (no streaming yet).
+    /// The buffer must already exist; its shape is kept.
+    fn handle_b_read(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let (index, path) = match msg.args.as_slice() {
+            [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
+            _ => {
+                return self.fail(
+                    from,
+                    "/b_read",
+                    "expected: bufnum, path [, fileStart, numFrames, bufStart]",
+                );
+            }
+        };
+        let Some(current) = self.mirror_buffer(index) else {
+            return self.fail(from, "/b_read", format!("no buffer allocated at {index}"));
+        };
+        let job = NrtJob::Read {
+            path,
+            file_start: int_arg(&msg.args, 2).unwrap_or(0).max(0) as usize,
+            num_frames: int_arg(&msg.args, 3).unwrap_or(-1) as i64,
+            buf_start: int_arg(&msg.args, 4).unwrap_or(0).max(0) as usize,
+            current,
+        };
+        self.submit_nrt("/b_read", index, from, job);
+    }
+
+    /// `/b_write bufnum path [headerFormat="wav"] [sampleFormat="int16"]
+    /// [numFrames=-1 (all)] [startFrame=0]` — WAV only in v1.
+    fn handle_b_write(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let (index, path) = match msg.args.as_slice() {
+            [OscType::Int(index), OscType::String(path), ..] => (*index, path.clone()),
+            _ => {
+                return self.fail(
+                    from,
+                    "/b_write",
+                    "expected: bufnum, path [, headerFormat, sampleFormat, numFrames, startFrame]",
+                );
+            }
+        };
+        let header = string_arg(&msg.args, 2).unwrap_or("wav");
+        if !header.eq_ignore_ascii_case("wav") && !header.eq_ignore_ascii_case("wave") {
+            return self.fail(from, "/b_write", format!("unsupported header format {header:?}"));
+        }
+        let sample_format = string_arg(&msg.args, 3).unwrap_or("int16").to_string();
+        let Some(buffer) = self.mirror_buffer(index) else {
+            return self.fail(from, "/b_write", format!("no buffer allocated at {index}"));
+        };
+        let job = NrtJob::Write {
+            path,
+            sample_format,
+            num_frames: int_arg(&msg.args, 4).unwrap_or(-1) as i64,
+            buf_start: int_arg(&msg.args, 5).unwrap_or(0).max(0) as usize,
+            buffer,
+        };
+        self.submit_nrt("/b_write", index, from, job);
+    }
+
+    /// `/b_zero bufnum`: replaces the buffer with a zeroed one of the same
+    /// shape (buffers are immutable; see `dsp::buffer`).
+    fn handle_b_zero(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let Some(OscType::Int(index)) = msg.args.first() else {
+            return self.fail(from, "/b_zero", "expected a buffer index");
+        };
+        let index = *index;
+        let Some(current) = self.mirror_buffer(index) else {
+            return self.fail(from, "/b_zero", format!("no buffer allocated at {index}"));
+        };
+        let job = NrtJob::Alloc {
+            frames: current.frames(),
+            channels: current.channels(),
+            sample_rate: current.sample_rate(),
+        };
+        self.submit_nrt("/b_zero", index, from, job);
+    }
+
+    /// `/b_free bufnum`: routed through the NRT queue so it cannot overtake
+    /// a pending alloc/read on the same index.
+    fn handle_b_free(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let Some(OscType::Int(index)) = msg.args.first() else {
+            return self.fail(from, "/b_free", "expected a buffer index");
+        };
+        self.submit_nrt("/b_free", *index, from, NrtJob::Free);
+    }
+
+    /// `/b_query bufnum...` → `/b_info` with (bufnum, frames, channels,
+    /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
+    /// answered from the mirror (= state as of the last completed command).
+    fn handle_b_query(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let mut args = Vec::with_capacity(msg.args.len() * 4);
+        for arg in &msg.args {
+            let OscType::Int(index) = arg else {
+                return self.fail(from, "/b_query", "expected int buffer indices");
+            };
+            let info = self.mirror_buffer(*index);
+            args.push(OscType::Int(*index));
+            args.push(OscType::Int(info.as_ref().map_or(0, |b| b.frames() as i32)));
+            args.push(OscType::Int(info.as_ref().map_or(0, |b| b.channels() as i32)));
+            args.push(OscType::Float(
+                info.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
+            ));
+        }
+        self.reply(from, "/b_info", args);
+    }
+
+    fn mirror_buffer(&self, index: i32) -> Option<Arc<crate::dsp::buffer::Buffer>> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.buffers.get(i))
+            .and_then(|b| b.as_ref().map(Arc::clone))
+    }
+
     fn handle_n_free(&mut self, msg: &OscMessage, from: SocketAddr) {
         for arg in &msg.args {
             let OscType::Int(id) = arg else {
@@ -634,6 +861,21 @@ fn control_key(arg: &OscType, def: &NodeDef) -> Option<u32> {
     match arg {
         OscType::String(name) => def.control_index(name),
         OscType::Int(i) if *i >= 0 => Some(*i as u32),
+        _ => None,
+    }
+}
+
+/// Optional trailing int argument (scsynth buffer commands have several).
+fn int_arg(args: &[OscType], n: usize) -> Option<i32> {
+    match args.get(n) {
+        Some(OscType::Int(i)) => Some(*i),
+        _ => None,
+    }
+}
+
+fn string_arg(args: &[OscType], n: usize) -> Option<&str> {
+    match args.get(n) {
+        Some(OscType::String(s)) => Some(s.as_str()),
         _ => None,
     }
 }

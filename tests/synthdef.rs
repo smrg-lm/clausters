@@ -31,6 +31,7 @@ fn render_with(
         let mut ctx = ProcessCtx {
             sample_rate: SR,
             buses: &mut buses,
+            buffers: &[],
         };
         for synth in synths.iter_mut() {
             synth.process(&mut ctx);
