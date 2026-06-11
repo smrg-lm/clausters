@@ -87,6 +87,9 @@ where
     device.build_output_stream(
         config,
         move |data: &mut [T], _| {
+            // Subnormals in decaying DSP state are 10-100x slower: keep the
+            // callback thread in flush-to-zero mode (see dsp::denormals).
+            crate::dsp::denormals::flush_to_zero();
             for s in data.iter_mut() {
                 *s = T::from_sample(adapter.next_sample());
             }

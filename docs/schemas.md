@@ -175,8 +175,10 @@ If a def declares its own `out`/`in` control, the def's wins.
 
 Any complete Faust program; `import("stdfaust.lib")` and friends resolve
 against the stdlib installed with libfaust (`<prefix>/share/faust`).
-Compilation is single precision (`FAUSTFLOAT` = `f32`) and the sample rate
-is fixed per instance at `/s_new` time.
+Compilation is single precision (`FAUSTFLOAT` = `f32`) with `-ftz 2`
+(recursive state below the normal float range flushes to zero — decaying
+tails cannot stall the audio thread in subnormal math), and the sample
+rate is fixed per instance at `/s_new` time.
 
 ```text
 /d_faust fsine 'import("stdfaust.lib"); freq = hslider("freq", 440, 20, 20000, 0.01); process = os.osc(freq) * 0.2;'

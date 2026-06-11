@@ -53,3 +53,10 @@ The audio thread (`Engine::process_block` and everything it calls) must never
 allocate, free, lock or do I/O. Commands arrive fully pre-built over a
 lock-free FIFO; freed memory leaves through the garbage FIFO and is dropped on
 the network thread. `tests/rt_safety.rs` guards this with `assert_no_alloc`.
+
+Denormals: every processing thread runs in flush-to-zero mode —
+`dsp::denormals::flush_to_zero()` is re-armed in the cpal callback and armed
+in `render()` (both, so NRT stays sample-identical to RT) — and Faust
+factories are compiled with `-ftz 2`. Keep all three call sites if you touch
+them; `tests/denormals.rs` and the Faust tail test in `tests/golden.rs` guard
+this.

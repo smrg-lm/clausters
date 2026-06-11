@@ -265,6 +265,55 @@ fn faust_def_renders_in_nrt() {
     }
 }
 
+/// A decaying recursion must die to exact zero instead of lingering in
+/// subnormals: factories are compiled with `-ftz 2` and the render thread
+/// runs in flush-to-zero mode (see `dsp::denormals`). y[n] = 0.9^n leaves
+/// the normal f32 range near sample 830 and plain IEEE would keep subnormal
+/// values until ~sample 980.
+#[cfg(feature = "faust")]
+#[test]
+fn faust_tail_flushes_to_zero_instead_of_denormals() {
+    let score = Score::new([
+        (
+            0.0,
+            vec![
+                msg(
+                    "/d_faust",
+                    vec![
+                        OscType::String("tail".into()),
+                        // 1-1' is an impulse; pole(0.9) decays it forever.
+                        OscType::String(
+                            "import(\"stdfaust.lib\"); process = 1-1' : fi.pole(0.9);".into(),
+                        ),
+                    ],
+                ),
+                msg(
+                    "/s_new",
+                    vec![
+                        OscType::String("tail".into()),
+                        OscType::Int(1),
+                        OscType::Int(0),
+                        OscType::Int(0),
+                    ],
+                ),
+            ],
+        ),
+        (1100.0 / 48000.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+    ])
+    .unwrap();
+    let cfg = RenderConfig {
+        sample_rate: 48000.0,
+        channels: 1,
+    };
+    let (out, _) = render_to_vec(&score, &cfg).unwrap();
+    assert!(out[1] > 0.5, "the impulse decay must be audible at the start");
+    assert!(
+        out.iter().all(|s| *s == 0.0 || s.is_normal()),
+        "no sample may be subnormal"
+    );
+    assert_eq!(out[1000], 0.0, "the tail must reach exact zero");
+}
+
 #[test]
 fn zero_length_score_is_an_error() {
     let score = Score::new([(0.0, vec![msg("/n_free", vec![OscType::Int(1)])])]).unwrap();

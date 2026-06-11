@@ -162,6 +162,10 @@ pub struct RenderStats {
 
 /// Renders a score, handing each processed chunk (interleaved, at most one
 /// block) to `sink`. This is the core the WAV and in-memory frontends wrap.
+///
+/// Side effect: leaves the calling thread in flush-to-zero FPU mode (see
+/// [`crate::dsp::denormals`]) — the same mode the real-time callback runs
+/// in, so the offline render stays sample-identical to a live take.
 pub fn render(
     score: &Score,
     cfg: &RenderConfig,
@@ -183,6 +187,7 @@ pub fn render(
         );
     }
 
+    crate::dsp::denormals::flush_to_zero();
     let (engine, handle) = engine_pair(sr as f32, cfg.channels);
     let mut r = Renderer {
         engine,

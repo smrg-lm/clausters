@@ -9,6 +9,7 @@
 pub mod binop;
 pub mod buf;
 pub mod buffer;
+pub mod denormals;
 pub mod io;
 pub mod noise;
 pub mod registry;

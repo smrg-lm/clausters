@@ -288,7 +288,7 @@ unsafe fn build_op(
 
 /// The `faust` escape hatch: compiles a complete Faust program into a box
 /// with `CDSPToBoxes`, importing from the stdlib directories (see
-/// [`FaustArgs::stdlib`]).
+/// [`FaustArgs::defaults`]).
 unsafe fn faust_fragment(
     obj: &Map<String, Value>,
     path: &str,
@@ -305,7 +305,7 @@ unsafe fn faust_fragment(
 unsafe fn dsp_to_boxes(src: &str, path: &str) -> Result<FaustBox, String> {
     let src_c = CString::new(src).map_err(|_| err(path, "NUL byte in Faust source"))?;
     let name_c = CString::new("fragment").unwrap();
-    let args = FaustArgs::stdlib();
+    let args = FaustArgs::defaults();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
     let (mut num_inputs, mut num_outputs) = (0 as c_int, 0 as c_int);
     let fragment = unsafe {

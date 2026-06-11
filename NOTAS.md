@@ -762,6 +762,36 @@ de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
   punta a punta. Server en vivo verificado con las demos
   `status ugen buffer bundle quit` tras el refactor.
 
+## Post-M7 — Protección contra denormales (2026-06-11)
+
+A pedido del usuario (la pregunta venía de antes; la técnica estaba
+documentada en la skill `realtime-audio` pero sin implementar). Los
+subnormales aparecen en estados recursivos que decaen a cero (colas de
+filtros, envolventes, recursiones Faust) y en muchas CPUs se resuelven en
+microcódigo 10–100x más lento — justo cuando un sonido se apaga. Tres
+piezas:
+
+- **`dsp::denormals::flush_to_zero()`**: pone el hilo llamador en modo
+  flush-to-zero — MXCSR FTZ+DAZ (bits 15 y 6) en x86-64, FPCR.FZ (bit 24)
+  en aarch64, ambos por asm inline (los intrínsecos `_mm_setcsr` están
+  deprecados); no-op en otras arquitecturas. Se rearma en cada callback de
+  cpal (barato, un par de accesos a registro) y se arma al inicio de
+  `render()` — **en los dos modos**, porque FTZ cambia resultados (flushea
+  a cero) y el render NRT debe seguir siendo sample-idéntico al vivo.
+- **`-ftz 2` en las factories Faust** (`FaustArgs::defaults()`, antes
+  `stdlib()`): el código generado flushea las variables recursivas por
+  debajo del rango normal — independiente de la arquitectura y del modo
+  FPU del hilo. Era la exposición real: los UGens propios actuales no
+  tienen estado recursivo decayente (eso llega con LPF/EnvGen), pero un
+  def Faust cualquiera sí.
+- **Tests**: `tests/denormals.rs` (el switch FPU: resultado y operando
+  subnormal colapsan a 0 tras armar; idempotencia; la matemática normal
+  intacta — cada `#[test]` corre en su propio hilo, no contamina) y en
+  `tests/golden.rs` el tail Faust `1-1' : fi.pole(0.9)` (y[n]=0.9ⁿ sale
+  del rango normal cerca del sample 830): ningún sample subnormal y
+  `out[1000] == 0.0` exacto. 82 tests núcleo / 114 con faust, goldens
+  intactos (las escenas no generaban subnormales).
+
 ## Próximo: F5 — Extensiones Faust (opcional) o features nuevas
 
 El plan original (M0–M7) está completo. F5 (opcional): Signal API,

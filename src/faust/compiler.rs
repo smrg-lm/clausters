@@ -127,12 +127,22 @@ pub(crate) struct FaustArgs {
 }
 
 impl FaustArgs {
-    /// `-I <dir>` for the Faust stdlib (`stdfaust.lib` and friends), so both
-    /// raw-source defs and `faust` fragments inside JSON can `import()` it.
-    /// The directory comes from `$FAUST_PREFIX/share/faust`, falling back to
-    /// `~/.local`, then `/usr/local` — same search order as build.rs.
-    pub(crate) fn stdlib() -> Self {
-        let mut storage = Vec::new();
+    /// The arguments every factory is created with:
+    ///
+    /// - `-I <dir>` for the Faust stdlib (`stdfaust.lib` and friends), so
+    ///   both raw-source defs and `faust` fragments inside JSON can
+    ///   `import()` it. The directory comes from `$FAUST_PREFIX/share/faust`,
+    ///   falling back to `~/.local`, then `/usr/local` — same search order
+    ///   as build.rs.
+    /// - `-ftz 2`: the generated code flushes recursive variables below the
+    ///   normal float range, so decaying tails cannot strand the audio
+    ///   thread in slow subnormal math regardless of the host FPU mode (the
+    ///   architecture-independent half of [`crate::dsp::denormals`]).
+    pub(crate) fn defaults() -> Self {
+        let mut storage = vec![
+            CString::new("-ftz").unwrap(),
+            CString::new("2").unwrap(),
+        ];
         if let Some(dir) = stdlib_dir()
             && let Ok(dir_c) = CString::new(dir)
         {
@@ -194,15 +204,15 @@ impl Drop for LibContext {
     }
 }
 
-/// Runs on the compiler thread. Compiles with default options — `-single`
-/// (FAUSTFLOAT = f32, matching our buses) and maximum LLVM optimization —
-/// then probes a throwaway instance for the def's parameters and I/O arity
+/// Compiles a def synchronously on the calling thread: the compiler thread
+/// uses this per request, and the NRT renderer calls it directly (it owns
+/// the process, so hogging the thread for ~10 ms is fine). Serialized by
+/// the process-wide FFI lock either way. Options: `-single` (FAUSTFLOAT =
+/// f32, matching our buses), `-ftz 2` plus the stdlib include path
+/// ([`FaustArgs::defaults`]) and maximum LLVM optimization; afterwards a
+/// throwaway instance is probed for the def's parameters and I/O arity
 /// (F3), so `/s_new`/`/n_set` can resolve control names without touching
 /// libfaust again.
-/// Compiles a def synchronously on the calling thread. The compiler thread
-/// uses this per request; the NRT renderer calls it directly (it owns the
-/// process, so hogging the thread for ~10 ms is fine). Serialized by the
-/// process-wide FFI lock either way.
 pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String> {
     let factory = match payload {
         CompilePayload::Source(source) => compile_source(name, source),
@@ -215,7 +225,7 @@ fn compile_source(name: &str, source: &str) -> Result<FaustFactory, String> {
     let name_c = CString::new(name).map_err(|_| "NUL byte in name".to_string())?;
     let source_c = CString::new(source).map_err(|_| "NUL byte in source".to_string())?;
     let target = CString::new("").unwrap(); // current machine
-    let args = FaustArgs::stdlib();
+    let args = FaustArgs::defaults();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
 
     let _guard = ffi_lock();
@@ -241,7 +251,7 @@ fn compile_json(name: &str, json: &str) -> Result<FaustFactory, String> {
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
     let name_c = CString::new(name).map_err(|_| "NUL byte in name".to_string())?;
     let target = CString::new("").unwrap();
-    let args = FaustArgs::stdlib();
+    let args = FaustArgs::defaults();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
     // Labels handed to libfaust stay alive until the factory exists.
     let mut cstrings = Vec::new();
