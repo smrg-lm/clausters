@@ -181,9 +181,12 @@ UGens.
   *(Completado 2026-06-10 — ver NOTAS.md. Controles reservados `out`/`in`
   para el mapeo de buses; los params se sondean una vez en el hilo
   compilador y viven en `FaustDef`.)*
-- **F4 — Paridad e interop**: synths Faust y UGen conviven en grupos/buses;
+- ✅ **F4 — Paridad e interop**: synths Faust y UGen conviven en grupos/buses;
   tests dorados de grafos equivalentes (UGen `SinOsc` vs box `sin(phasor)`);
   cliente de ejemplo en Python que genera JSON; documentación del schema.
+  *(Completado 2026-06-10 — ver NOTAS.md. `tests/faust_parity.rs` (sine con
+  tolerancia float + ganancia bit-exacta + grupo compartido),
+  `examples/json_client.py` (solo stdlib), `docs/schemas.md`.)*
 - **F5 — Extensiones (opcional)**: Signal API como variante de bajo nivel,
   waveforms/soundfiles, polifonía nativa de Faust, backend interpreter de Faust
   (sin LLVM) para plataformas sin JIT.

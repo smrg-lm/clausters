@@ -534,9 +534,60 @@ de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
   `assert_no_alloc`). Estable en 3 corridas.
 - `cargo test` sin feature: 47 tests, intacto. Clippy limpio.
 
-## Próximo: M5 — Buffers (o F4 — paridad e interop)
+## F4 — Paridad e interop (completado 2026-06-10)
+
+### Qué quedó hecho
+
+- **`tests/faust_parity.rs`** (nuevo): tests dorados de grafos equivalentes,
+  renderizados lado a lado **en el mismo engine** (UGen al canal 0, Faust al
+  canal 1, mismos bloques):
+  - **Sine**: `SinOsc(440)·0.2` contra el mismo grafo vía JSON→Box
+    (`sin(2π·phasor)` con `delay 1` para alinear la fase: nuestro `SinOsc`
+    arranca en fase 0, el phasor crudo `(+(f/SR) : wrap) ~ _` arranca en
+    `f/SR`). Igualdad muestra a muestra con tolerancia `4e-3` — `SinOsc`
+    acumula fase en f64 y Faust (-single) en f32, así que no puede ser
+    exacta — y un assert de discriminación: las mismas señales corridas
+    una muestra **deben** violar la tolerancia (un offset de fase de 1
+    muestra pica en ≈ 0.0115, bien arriba).
+  - **Ganancia bit-exacta**: una sine UGen alimenta el bus 4; una cadena
+    UGen `In·0.5` y una Faust `_ * 0.5` lo leen en el mismo bloque hacia
+    los canales 0 y 1. Misma multiplicación f32 sobre las mismas muestras:
+    **cero** bits de diferencia (la aritmética sin estado es idéntica entre
+    los dos mundos; solo los osciladores divergen por precisión).
+  - **Grupo compartido**: synth UGen + synth Faust como hermanos en un
+    grupo no-raíz, mezclan al mismo bus (RMS de la suma) y un solo
+    `FreeAllInGroup` los libera juntos (2 en el garbage FIFO).
+- **`examples/json_client.py`** (nuevo): cliente de ejemplo en Python, solo
+  stdlib (encoder/decoder OSC a mano: i, f, s, b, d). **Genera** los dos
+  formatos de def programáticamente — `SynthDefBuilder` para `/d_recv`
+  (noise con AM) y helpers `box()`/`hslider()`/`faust()` para `/d_faust`
+  (sine desde primitivas + def con stdlib vía escape hatch) — y maneja el
+  ciclo completo: `/done`//`/fail`, `/s_new` con controles por nombre,
+  `/n_set`, `/n_free`, `/status`, `/quit`. Demos: `status ugen faust quit`.
+- **`docs/schemas.md`** (nuevo): documentación de referencia de ambos
+  schemas (en inglés, como los docs de código): formato SynthDef JSON
+  completo (tabla de UGens, formas de input, semántica `Out`/`ReplaceOut`,
+  errores), defs Faust (fuente vs JSON, tabla de ops espejo de la Box API,
+  controles reservados `out`/`in`, errores con ruta `$`), y el ciclo OSC
+  común.
+
+### Verificación
+
+- `cargo test --features faust`: 76 tests (73 + 3 de paridad). `cargo test`
+  sin feature: 47, intacto. Clippy limpio (solo las 2 warnings
+  preexistentes de `Default`).
+- E2E real del cliente Python contra el server release con feature, en una
+  sola invocación: `status` (reply con doubles — el decoder necesitó el tag
+  `d`), `/d_recv` amnoise `/done`, `/d_faust` jsine y jstdlib `/done`,
+  synths sonando y `/quit`.
+- Una corrida de la suite completa tuvo 1 fallo esporádico en
+  `faust_synth` que no se reprodujo en 7 corridas posteriores (5 aisladas
+  + 2 completas); sospecho del test OSC por UDP bajo carga. Vigilar si
+  reaparece.
+
+## Próximo: M5 — Buffers (o F5 — extensiones Faust)
 
 M5: pool de buffers, hilo NRT para I/O de disco, `/b_alloc`, `/b_read`
 (hound), `PlayBuf`/`BufRd`, replies asíncronos `/done` por comando.
-F2: esquema JSON espejo de la Box API (con escape hatch `DSPToBoxes`),
-validación con paths de error, reemplaza el cuerpo de `compile()`.
+F5 (opcional): Signal API, waveforms/soundfiles, polifonía nativa de
+Faust, backend interpreter (sin LLVM).
