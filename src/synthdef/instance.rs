@@ -32,10 +32,12 @@ impl UGenSynth {
 
 impl SynthNode for UGenSynth {
     fn process(&mut self, ctx: &mut ProcessCtx) {
+        // `ctx.frames` < BLOCK_SIZE when a scheduled bundle split the block:
+        // every wire then carries only the slice being processed.
         for i in 0..self.ugens.len() {
             // Topological order guarantees inputs only reference earlier wires.
             let (earlier, rest) = self.wires.split_at_mut(i);
-            let output = &mut rest[0];
+            let output = &mut rest[0][..ctx.frames];
 
             let mut inputs: [&[f32]; MAX_UGEN_INPUTS] = [&[]; MAX_UGEN_INPUTS];
             let refs = &self.def.ugens[i].inputs;
@@ -43,7 +45,7 @@ impl SynthNode for UGenSynth {
                 inputs[k] = match r {
                     InputRef::Const(c) => std::slice::from_ref(&self.def.constants[*c]),
                     InputRef::Control(c) => std::slice::from_ref(&self.controls[*c]),
-                    InputRef::Wire(w) => &earlier[*w][..],
+                    InputRef::Wire(w) => &earlier[*w][..ctx.frames],
                 };
             }
             self.ugens[i].process(ctx, &inputs[..refs.len()], output);

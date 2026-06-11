@@ -82,12 +82,20 @@ impl Buses {
     }
 }
 
+/// One processing slice. Normally a whole block (`offset` 0, `frames` =
+/// [`BLOCK_SIZE`]), but scheduled bundles (M6) split the block at the
+/// event's sample: synths then process the sub-range `offset..offset+frames`
+/// of the current block, and bus I/O must index buses at `offset`.
 pub struct ProcessCtx<'a> {
     pub sample_rate: f32,
     pub buses: &'a mut Buses,
     /// The engine's buffer pool; read-only on the audio thread (see
     /// [`buffer`] for the immutability contract).
     pub buffers: &'a [Option<Arc<buffer::Buffer>>],
+    /// First frame of this slice within the block.
+    pub offset: usize,
+    /// Slice length in frames.
+    pub frames: usize,
 }
 
 pub trait UGen: Send {

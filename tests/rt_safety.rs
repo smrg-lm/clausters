@@ -82,6 +82,57 @@ fn audio_thread_does_not_allocate() {
     assert_eq!(handle.collect_garbage(), 33);
 }
 
+/// Same guardian for the scheduler (M6): enqueuing timed bundles, splitting
+/// blocks at their offsets and executing them must not allocate — the spent
+/// `Vec` shells leave through the garbage FIFO with their capacity intact.
+#[test]
+fn scheduled_bundles_do_not_allocate_on_the_audio_thread() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // Network side: 16 bundles at odd offsets inside the first blocks, each
+    // adding a synth, retuning another and freeing a third.
+    let def = Arc::new(compile(default_spec()).unwrap());
+    for i in 0..16u64 {
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        synth.set_control(1, 0.01);
+        let cmds = vec![
+            Cmd::AddSynth {
+                id: 1000 + i as i32,
+                target: ROOT_NODE_ID,
+                action: AddAction::Tail,
+                synth,
+            },
+            Cmd::SetControl {
+                id: 1000 + i.saturating_sub(1) as i32,
+                index: 0,
+                value: 200.0 + i as f32,
+            },
+            Cmd::SetControlBus {
+                index: 7,
+                value: i as f32,
+            },
+        ];
+        handle
+            .send(Cmd::Schedule {
+                time: i * 37 + 13, // never on a block boundary
+                cmds,
+            })
+            .ok()
+            .unwrap();
+    }
+
+    // Audio side: enqueue (sorted insert), split, execute — no allocation.
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // 16 spent shells came back through the garbage FIFO.
+    assert_eq!(handle.collect_garbage(), 16);
+}
+
 /// Same guardian for the buffer path (M5): installing, replacing and freeing
 /// pool buffers, and `PlayBuf` reading them, must not allocate on the audio
 /// thread — swapped-out buffers leave as garbage, never dropped there.

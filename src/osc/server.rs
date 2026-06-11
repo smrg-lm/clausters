@@ -24,9 +24,9 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rosc::{OscBundle, OscMessage, OscPacket, OscType, decoder, encoder};
+use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, decoder, encoder};
 
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
@@ -263,6 +263,13 @@ impl OscServer {
                     self.node_defs.remove(&id);
                 }
                 Garbage::FreedGroup { .. } | Garbage::FreedBuffer(_) => {}
+                Garbage::SpentBundle(cmds) => {
+                    // Empty: the executed shell of a timed bundle. Non-empty:
+                    // the engine's schedule queue was full.
+                    if !cmds.is_empty() {
+                        eprintln!("engine rejected a timed bundle (schedule queue full)");
+                    }
+                }
                 Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID.
@@ -297,14 +304,205 @@ impl OscServer {
         }
     }
 
-    /// M3 executes bundle contents immediately; timetag scheduling is M6.
+    /// Bundles with the "immediately" timetag (or a past one — scsynth also
+    /// runs late bundles right away) execute now; future timetags are
+    /// converted to a sample target and shipped to the engine's scheduler,
+    /// which fires them sample-accurately (M6).
     fn handle_bundle(&mut self, bundle: OscBundle, from: SocketAddr) -> Flow {
+        match timetag_delta_secs(bundle.timetag) {
+            Some(delta) if delta > 0.0 => {
+                self.schedule_bundle(bundle, delta, from);
+                Flow::Continue
+            }
+            Some(delta) => {
+                eprintln!("late bundle ({:.3}s): executing immediately", -delta);
+                self.run_bundle_now(bundle, from)
+            }
+            None => self.run_bundle_now(bundle, from),
+        }
+    }
+
+    fn run_bundle_now(&mut self, bundle: OscBundle, from: SocketAddr) -> Flow {
         for packet in bundle.content {
             if let Flow::Quit = self.handle_packet(packet, from) {
                 return Flow::Quit;
             }
         }
         Flow::Continue
+    }
+
+    /// Builds every message of a timed bundle into engine commands (synths
+    /// boxed, names resolved — all the allocating work happens now) and
+    /// sends them as one atomic [`Cmd::Schedule`].
+    fn schedule_bundle(&mut self, bundle: OscBundle, delta: f64, from: SocketAddr) {
+        let time = self.handle.current_samples() + (delta * self.handle.sample_rate as f64) as u64;
+        let mut cmds = Vec::new();
+        for packet in bundle.content {
+            match packet {
+                OscPacket::Message(msg) => {
+                    if self.dump_osc {
+                        println!("[dumpOSC] {} {:?} (in {delta:.3}s)", msg.addr, msg.args);
+                    }
+                    if let Err(e) = self.schedule_message(&msg, &mut cmds) {
+                        self.fail(from, &msg.addr, e);
+                    }
+                }
+                // A nested bundle carries its own timetag: scheduled (or
+                // executed) independently.
+                OscPacket::Bundle(inner) => {
+                    self.handle_bundle(inner, from);
+                }
+            }
+        }
+        if !cmds.is_empty()
+            && self.handle.send(Cmd::Schedule { time, cmds }).is_err()
+        {
+            self.fail(from, "#bundle", "command FIFO full");
+        }
+    }
+
+    /// Translates one schedulable message into commands. Mirrors the
+    /// immediate handlers' parsing, but nothing reaches the engine until the
+    /// whole bundle is assembled.
+    fn schedule_message(&mut self, msg: &OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        match msg.addr.as_str() {
+            "/s_new" => {
+                let [
+                    OscType::String(name),
+                    OscType::Int(id),
+                    OscType::Int(action),
+                    OscType::Int(target),
+                    rest @ ..,
+                ] = msg.args.as_slice()
+                else {
+                    return Err("expected: name, id, addAction, targetID".into());
+                };
+                let (mut synth, def) = self.make_synth(name)?;
+                let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
+                let id = if *id == -1 {
+                    self.next_auto_id += 1;
+                    self.next_auto_id
+                } else if *id > 0 {
+                    *id
+                } else {
+                    return Err("node ID must be positive or -1".into());
+                };
+                for pair in rest.chunks(2) {
+                    if let (Some(index), Some(value)) = (
+                        control_key(&pair[0], &def),
+                        pair.get(1).and_then(float_value),
+                    ) {
+                        synth.set_control(index, value);
+                    }
+                }
+                self.node_defs.insert(id, def);
+                cmds.push(Cmd::AddSynth {
+                    id,
+                    target: *target,
+                    action,
+                    synth,
+                });
+                Ok(())
+            }
+            "/n_set" => {
+                let Some(OscType::Int(id)) = msg.args.first() else {
+                    return Err("expected: id, then control/value pairs".into());
+                };
+                let def = self
+                    .node_defs
+                    .get(id)
+                    .cloned()
+                    .ok_or_else(|| format!("node {id} not found"))?;
+                for pair in msg.args[1..].chunks(2) {
+                    if let (Some(index), Some(value)) = (
+                        control_key(&pair[0], &def),
+                        pair.get(1).and_then(float_value),
+                    ) {
+                        cmds.push(Cmd::SetControl {
+                            id: *id,
+                            index,
+                            value,
+                        });
+                    }
+                }
+                Ok(())
+            }
+            "/n_free" => {
+                for arg in &msg.args {
+                    let OscType::Int(id) = arg else {
+                        return Err("expected int node IDs".into());
+                    };
+                    cmds.push(Cmd::FreeNode { id: *id });
+                }
+                Ok(())
+            }
+            "/n_before" | "/n_after" => {
+                let place = if msg.addr == "/n_before" {
+                    Place::Before
+                } else {
+                    Place::After
+                };
+                for pair in msg.args.chunks(2) {
+                    let [OscType::Int(id), OscType::Int(target)] = pair else {
+                        return Err("expected int (nodeID, targetID) pairs".into());
+                    };
+                    cmds.push(Cmd::MoveNode {
+                        id: *id,
+                        target: *target,
+                        place,
+                    });
+                }
+                Ok(())
+            }
+            "/g_new" => {
+                for triple in msg.args.chunks(3) {
+                    let [OscType::Int(id), OscType::Int(action), OscType::Int(target)] = triple
+                    else {
+                        return Err("expected int (id, addAction, targetID) triples".into());
+                    };
+                    let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
+                    cmds.push(Cmd::AddGroup {
+                        id: *id,
+                        target: *target,
+                        action,
+                        group: Group::new(),
+                    });
+                }
+                Ok(())
+            }
+            "/g_freeAll" | "/g_deepFree" => {
+                for arg in &msg.args {
+                    let OscType::Int(id) = arg else {
+                        return Err("expected int group IDs".into());
+                    };
+                    cmds.push(if msg.addr == "/g_freeAll" {
+                        Cmd::FreeAllInGroup { id: *id }
+                    } else {
+                        Cmd::DeepFreeGroup { id: *id }
+                    });
+                }
+                Ok(())
+            }
+            // The immediate form writes the shared atomics right here, but a
+            // scheduled write must land at its exact sample on the engine.
+            "/c_set" => {
+                for pair in msg.args.chunks(2) {
+                    let (OscType::Int(index), Some(value)) = (&pair[0], float_value(&pair[1]))
+                    else {
+                        return Err("expected (busIndex, value) pairs".into());
+                    };
+                    if *index < 0 {
+                        return Err("bus index must be non-negative".into());
+                    }
+                    cmds.push(Cmd::SetControlBus {
+                        index: *index as usize,
+                        value,
+                    });
+                }
+                Ok(())
+            }
+            other => Err(format!("{other} cannot be scheduled in a timed bundle")),
+        }
     }
 
     fn handle_message(&mut self, msg: OscMessage, from: SocketAddr) -> Flow {
@@ -863,6 +1061,23 @@ fn control_key(arg: &OscType, def: &NodeDef) -> Option<u32> {
         OscType::Int(i) if *i >= 0 => Some(*i as u32),
         _ => None,
     }
+}
+
+/// Seconds between the NTP epoch (1900) and the Unix epoch (1970).
+const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
+
+/// Seconds from now until the timetag fires. `None` is the OSC
+/// "immediately" tag (seconds 0, fractional 1 — rosc keeps it verbatim).
+fn timetag_delta_secs(t: OscTime) -> Option<f64> {
+    if t.seconds == 0 && t.fractional <= 1 {
+        return None;
+    }
+    let target = t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32);
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    Some(target - now)
 }
 
 /// Optional trailing int argument (scsynth buffer commands have several).

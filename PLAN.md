@@ -114,9 +114,13 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   `/b_zero`, `/b_free` y `/b_query`. Buffers inmutables compartidos por
   `Arc`: el hilo NRT construye, el engine swapea, lo reemplazado sale por el
   garbage FIFO.)*
-- **M6 — Scheduling sample-accurate**: cola de bundles ordenada por timetag en el
+- ✅ **M6 — Scheduling sample-accurate**: cola de bundles ordenada por timetag en el
   hilo de audio (pre-alocada), conversión NTP→samples, ejecución con offset
   intra-bloque (partir el bloque en el sample del evento, como hace scsynth).
+  *(Completado 2026-06-10 — ver NOTAS.md. `ProcessCtx` procesa por slices
+  `offset`+`frames`; el engine publica su reloj de samples y la conversión
+  NTP→samples vive en el hilo de red. Nota: scsynth real cuantiza al bloque
+  — nosotros partimos el bloque de verdad, sin necesitar `OffsetOut`.)*
 - **M7 — Modo NRT + tests dorados**: render offline a WAV (mismo motor, sin cpal),
   tests de regresión comparando contra archivos dorados, benchmarks del grafo.
 

@@ -158,9 +158,13 @@ impl FaustSynth {
 
 impl SynthNode for FaustSynth {
     fn process(&mut self, ctx: &mut ProcessCtx) {
+        // Scheduled bundles (M6) may split the block: only the
+        // `offset..offset+frames` range of the buses belongs to this call.
+        let (offset, frames) = (ctx.offset, ctx.frames);
         for i in 0..self.in_bufs.len() {
             let bus = (self.in_bus + i).min(NUM_AUDIO_BUSES - 1);
-            self.in_bufs[i].copy_from_slice(&ctx.buses.audio[bus]);
+            self.in_bufs[i][..frames]
+                .copy_from_slice(&ctx.buses.audio[bus][offset..offset + frames]);
             self.in_ptrs[i] = self.in_bufs[i].as_mut_ptr();
         }
         for i in 0..self.out_bufs.len() {
@@ -169,14 +173,17 @@ impl SynthNode for FaustSynth {
         unsafe {
             ffi::computeCDSPInstance(
                 self.dsp.as_ptr(),
-                BLOCK_SIZE as i32,
+                frames as i32,
                 self.in_ptrs.as_mut_ptr(),
                 self.out_ptrs.as_mut_ptr(),
             );
         }
         for (i, buf) in self.out_bufs.iter().enumerate() {
             let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            for (d, s) in ctx.buses.audio[bus].iter_mut().zip(buf) {
+            for (d, s) in ctx.buses.audio[bus][offset..offset + frames]
+                .iter_mut()
+                .zip(&buf[..frames])
+            {
                 *d += s;
             }
         }

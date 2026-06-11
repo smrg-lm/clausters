@@ -32,6 +32,8 @@ fn render_with(
             sample_rate: SR,
             buses: &mut buses,
             buffers: &[],
+            offset: 0,
+            frames: BLOCK_SIZE,
         };
         for synth in synths.iter_mut() {
             synth.process(&mut ctx);

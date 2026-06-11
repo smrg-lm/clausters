@@ -6,9 +6,15 @@
 //! pre-built (the audio thread only plugs them in), freed memory flows back
 //! out as [`Garbage`] to be dropped on the network side, and node lifecycle
 //! events flow out as [`NodeEvent`]s for `/n_go`/`/n_end` notifications.
+//!
+//! Timed bundles (M6) arrive as [`Cmd::Schedule`] carrying an absolute
+//! target in samples; the engine keeps them in a pre-allocated queue sorted
+//! by time (FIFO for equal times) and executes them **sample-accurately**,
+//! splitting the block at each event's offset. The engine publishes its
+//! sample counter so the network thread can convert NTP timetags.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
@@ -22,6 +28,9 @@ const GARBAGE_FIFO_CAPACITY: usize = 1024;
 /// Local holding list for when the garbage FIFO is full.
 const PENDING_GARBAGE_CAPACITY: usize = 64;
 const EVENT_FIFO_CAPACITY: usize = 2048;
+/// Pre-allocated capacity of the scheduled-bundle queue; bundles beyond it
+/// are rejected (shipped back through the garbage FIFO).
+const SCHED_CAPACITY: usize = 1024;
 
 /// Commands are built **completely** on the network thread (including boxed
 /// synths and pre-reserved group child lists); applying them on the audio
@@ -68,6 +77,21 @@ pub enum Cmd {
         index: usize,
         buffer: Option<Arc<Buffer>>,
     },
+    /// `/c_set` inside a timed bundle: the immediate form writes the shared
+    /// atomics from the network thread, but a scheduled write must land at
+    /// its exact sample, so it travels to the audio thread like any command.
+    SetControlBus {
+        index: usize,
+        value: f32,
+    },
+    /// A timed bundle: `cmds` execute back to back when the stream reaches
+    /// `time` (absolute, in samples), splitting the block at that offset.
+    /// Built on the network thread; the spent `Vec` shell returns as
+    /// [`Garbage::SpentBundle`].
+    Schedule {
+        time: u64,
+        cmds: Vec<Cmd>,
+    },
 }
 
 /// Heap memory leaving the audio thread to be dropped on the network side.
@@ -94,6 +118,16 @@ pub enum Garbage {
     /// the network side so the deallocation (if it is the last `Arc`) never
     /// happens on the audio thread.
     FreedBuffer(Arc<Buffer>),
+    /// The drained shell of an executed scheduled bundle (its heap capacity
+    /// must be freed on the network side) — or, if non-empty, a bundle the
+    /// engine rejected because the schedule queue was full.
+    SpentBundle(Vec<Cmd>),
+}
+
+/// A timed bundle waiting in the engine's queue.
+struct ScheduledBundle {
+    time: u64,
+    cmds: Vec<Cmd>,
 }
 
 /// Node lifecycle event for `/n_go`/`/n_end` notifications. POD; delivery is
@@ -179,6 +213,13 @@ pub struct Engine {
     tree: NodeTree,
     buses: Buses,
     buffers: BufferPool,
+    /// Samples processed since start; the stream clock scheduled bundles
+    /// are measured against.
+    now: u64,
+    /// Pending timed bundles, sorted by time (stable for equal times).
+    /// Pre-allocated: insertion and removal never allocate.
+    sched: Vec<ScheduledBundle>,
+    sample_clock: Arc<AtomicU64>,
     cmd_rx: Consumer<Cmd>,
     garbage_tx: Producer<Garbage>,
     pending_garbage: Vec<Garbage>,
@@ -195,6 +236,7 @@ pub struct EngineHandle {
     garbage_rx: Consumer<Garbage>,
     events_rx: Consumer<NodeEvent>,
     control_buses: ControlBuses,
+    sample_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
 }
 
@@ -210,12 +252,16 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
         groups: AtomicU32::new(1),
     });
     let control_buses = ControlBuses::new();
+    let sample_clock = Arc::new(AtomicU64::new(0));
     let engine = Engine {
         sample_rate,
         channels,
         tree: NodeTree::new(),
         buses: Buses::new(control_buses.clone()),
         buffers: empty_pool(),
+        now: 0,
+        sched: Vec::with_capacity(SCHED_CAPACITY),
+        sample_clock: Arc::clone(&sample_clock),
         cmd_rx,
         garbage_tx,
         pending_garbage: Vec::with_capacity(PENDING_GARBAGE_CAPACITY),
@@ -229,6 +275,7 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
         garbage_rx,
         events_rx,
         control_buses,
+        sample_clock,
         counters,
     };
     (engine, handle)
@@ -245,18 +292,35 @@ impl Engine {
 
     /// Processes one block. `out` is interleaved and its length must be
     /// `BLOCK_SIZE * channels`. Runs on the audio thread: does not allocate.
+    ///
+    /// Immediate commands apply at the block start; scheduled bundles whose
+    /// time falls inside this block execute at their exact sample, splitting
+    /// the processing into slices around each event (late ones at offset 0).
     pub fn process_block(&mut self, out: &mut [f32]) {
         debug_assert_eq!(out.len(), BLOCK_SIZE * self.channels);
         self.drain_commands();
         self.flush_pending_garbage();
 
         self.buses.clear_audio();
-        let mut ctx = ProcessCtx {
-            sample_rate: self.sample_rate,
-            buses: &mut self.buses,
-            buffers: &self.buffers,
-        };
-        self.tree.process(&mut ctx);
+        let block_start = self.now;
+        let block_end = block_start + BLOCK_SIZE as u64;
+        let mut offset = 0usize;
+        while self.sched.first().is_some_and(|b| b.time < block_end) {
+            // Vec::remove on the pre-allocated queue: memmove, no (de)alloc.
+            let due = self.sched.remove(0);
+            let at = due.time.saturating_sub(block_start) as usize;
+            if at > offset {
+                self.process_slice(offset, at - offset);
+                offset = at;
+            }
+            let mut cmds = due.cmds;
+            for cmd in cmds.drain(..) {
+                self.apply(cmd);
+            }
+            self.push_garbage(Garbage::SpentBundle(cmds));
+        }
+        self.process_slice(offset, BLOCK_SIZE - offset);
+
         // Buses 0..channels are the hardware outputs.
         for (f, frame) in out.chunks_exact_mut(self.channels).enumerate() {
             for (ch, s) in frame.iter_mut().enumerate() {
@@ -264,6 +328,8 @@ impl Engine {
             }
         }
 
+        self.now = block_end;
+        self.sample_clock.store(block_end, Ordering::Relaxed);
         self.counters
             .synths
             .store(self.tree.synth_count() as u32, Ordering::Relaxed);
@@ -275,8 +341,40 @@ impl Engine {
             .store(self.tree.group_count() as u32, Ordering::Relaxed);
     }
 
+    /// Runs the node tree over `offset..offset+frames` of the current block.
+    fn process_slice(&mut self, offset: usize, frames: usize) {
+        if frames == 0 {
+            return;
+        }
+        let mut ctx = ProcessCtx {
+            sample_rate: self.sample_rate,
+            buses: &mut self.buses,
+            buffers: &self.buffers,
+            offset,
+            frames,
+        };
+        self.tree.process(&mut ctx);
+    }
+
+    fn push_garbage(&mut self, garbage: Garbage) {
+        let mut sink = GarbageSink {
+            garbage_tx: &mut self.garbage_tx,
+            pending_garbage: &mut self.pending_garbage,
+            events_tx: &mut self.events_tx,
+        };
+        sink.push(garbage);
+    }
+
     fn drain_commands(&mut self) {
         while let Ok(cmd) = self.cmd_rx.pop() {
+            self.apply(cmd);
+        }
+    }
+
+    /// Applies one command. Called when draining the FIFO at block start and
+    /// when a scheduled bundle fires mid-block.
+    fn apply(&mut self, cmd: Cmd) {
+        {
             let mut sink = GarbageSink {
                 garbage_tx: &mut self.garbage_tx,
                 pending_garbage: &mut self.pending_garbage,
@@ -371,6 +469,21 @@ impl Engine {
                         sink.push(Garbage::FreedBuffer(buffer));
                     }
                 }
+                Cmd::SetControlBus { index, value } => {
+                    self.buses.control.set(index, value);
+                }
+                Cmd::Schedule { time, cmds } => {
+                    if self.sched.len() == self.sched.capacity() {
+                        // Queue full: reject the whole bundle; the network
+                        // side logs it when it collects the garbage.
+                        sink.push(Garbage::SpentBundle(cmds));
+                    } else {
+                        // Sorted insert, after equal times (FIFO ties).
+                        // Vec::insert below capacity does not allocate.
+                        let pos = self.sched.partition_point(|b| b.time <= time);
+                        self.sched.insert(pos, ScheduledBundle { time, cmds });
+                    }
+                }
             }
         }
     }
@@ -421,6 +534,12 @@ impl EngineHandle {
     /// here on the network thread, no command round-trip.
     pub fn control_buses(&self) -> &ControlBuses {
         &self.control_buses
+    }
+
+    /// The engine's stream clock: samples processed so far, published once
+    /// per block. Timetag→sample conversion anchors on this.
+    pub fn current_samples(&self) -> u64 {
+        self.sample_clock.load(Ordering::Relaxed)
     }
 
     pub fn counters(&self) -> &Counters {

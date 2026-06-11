@@ -16,6 +16,8 @@ then run one or more demos (default: status):
          feature): a sine from primitives and one importing the Faust stdlib.
 `buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
          the file's pitch (rate from /b_info and /status), then frees it.
+`bundle` schedules a melody in advance with NTP-timetagged bundles: the
+         server fires each note sample-accurately on its own clock.
 """
 
 import json
@@ -58,6 +60,17 @@ def message(addr: str, *args) -> bytes:
     return _string(addr) + _string(tags) + data
 
 
+NTP_UNIX_OFFSET = 2_208_988_800
+
+
+def bundle(seconds_ahead: float, *packets: bytes) -> bytes:
+    """An OSC bundle timetagged `seconds_ahead` from now."""
+    target = time.time() + seconds_ahead + NTP_UNIX_OFFSET
+    tag = struct.pack(">II", int(target), int((target % 1.0) * 2**32))
+    body = b"".join(struct.pack(">i", len(p)) + p for p in packets)
+    return _string("#bundle") + tag + body
+
+
 def _read_string(data: bytes) -> tuple[str, bytes]:
     end = data.index(b"\x00")
     return data[:end].decode(), data[(end + 4) // 4 * 4:]
@@ -97,6 +110,9 @@ class Client:
 
     def send(self, addr: str, *args):
         self.sock.sendto(message(addr, *args), SERVER)
+
+    def send_raw(self, packet: bytes):
+        self.sock.sendto(packet, SERVER)
 
     def reply(self) -> tuple[str, list]:
         packet, _ = self.sock.recvfrom(65536)
@@ -257,6 +273,25 @@ def demo_buffer(client: Client):
     os.remove(path)
 
 
+# ---- timed bundles (M6) ----
+
+
+def demo_bundle(client: Client):
+    """An arpeggio scheduled entirely up front: every /s_new and /n_free
+    travels now inside a timetagged bundle, and the server fires them
+    sample-accurately — note the machine-steady rhythm."""
+    notes = [330.0, 440.0, 550.0, 660.0, 880.0]
+    print(f"bundle demo: scheduling {len(notes)} notes 0.4 s apart")
+    for i, freq in enumerate(notes):
+        when = 0.5 + i * 0.4
+        node = 3100 + i
+        on = message("/s_new", "default", node, 1, 0, "freq", freq, "amp", 0.3)
+        off = message("/n_free", node)
+        client.send_raw(bundle(when, on))
+        client.send_raw(bundle(when + 0.3, off))
+    time.sleep(0.5 + len(notes) * 0.4 + 0.2)
+
+
 def main():
     demos = sys.argv[1:] or ["status"]
     client = Client()
@@ -270,11 +305,15 @@ def main():
             demo_faust(client)
         elif demo == "buffer":
             demo_buffer(client)
+        elif demo == "bundle":
+            demo_bundle(client)
         elif demo == "quit":
             client.send("/quit")
             client.reply()
         else:
-            sys.exit(f"unknown demo: {demo} (use status, ugen, faust, buffer, quit)")
+            sys.exit(
+                f"unknown demo: {demo} (use status, ugen, faust, buffer, bundle, quit)"
+            )
 
 
 if __name__ == "__main__":

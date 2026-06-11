@@ -24,6 +24,22 @@ Engine facts that apply to every def: blocks of 64 samples; 128 audio buses
 buses; a pool of 1024 sample buffers filled by the `/b_*` commands; all
 signals are `f32` at the device sample rate.
 
+## Timed bundles
+
+OSC bundles carry an NTP timetag. The immediate tag (`1`) executes on
+arrival; a **future** timetag is converted to a position on the server's
+sample clock and the whole bundle fires **sample-accurately**: the engine
+splits the audio block at the event's exact sample, so a `/s_new` scheduled
+mid-block starts on that very frame. Bundles with equal times run in
+arrival order; late bundles run immediately (and are logged). Nested
+bundles are scheduled independently by their own timetags.
+
+Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_free`,
+`/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`.
+Anything else (defs, buffers, server commands) replies `/fail … cannot be
+scheduled in a timed bundle` — load defs and buffers first, then schedule
+the notes.
+
 ## SynthDef JSON (`/d_recv`)
 
 The blob is a JSON object:

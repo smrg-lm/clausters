@@ -644,9 +644,63 @@ de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
   `/n_set`, `/b_free` con `/done`). Clippy limpio (solo las 2 warnings
   preexistentes de `Default`).
 
-## Próximo: M6 — Scheduling sample-accurate (o M7 / F5)
+## M6 — Scheduling sample-accurate (completado 2026-06-10)
 
-M6: cola de bundles ordenada por timetag en el hilo de audio (pre-alocada),
-conversión NTP→samples, ejecución con offset intra-bloque.
-M7: modo NRT/render offline a WAV, tests dorados contra archivos de
-referencia, benchmarks. F5 (opcional): extensiones Faust.
+### Qué quedó hecho
+
+- **Slices en `ProcessCtx`**: `offset` + `frames` — normalmente el bloque
+  entero, pero un bundle agendado parte el bloque en el sample del evento y
+  todos los nodos procesan solo el sub-rango. `UGenSynth` recorta wires e
+  inputs a `frames`; `In`/`Out`/`ReplaceOut` indexan los buses en `offset`;
+  `FaustSynth` copia staging parcial y llama `compute(frames)`. Esto va
+  **más allá de scsynth real**, que cuantiza los bundles al bloque de 64 y
+  necesita `OffsetOut` para compensar — acá el split es genuino y no hace
+  falta.
+- **Cola en el engine**: `Cmd::Schedule { time, cmds }` — tiempo absoluto
+  en samples, comandos ya construidos (synths boxeados) en el hilo de red.
+  `Vec<ScheduledBundle>` pre-alocada (1024), inserción ordenada estable
+  (FIFO en empates, `partition_point` + `insert` sin alocar) y `remove(0)`
+  al vencer; el shell `Vec` ejecutado vuelve como `Garbage::SpentBundle`
+  (capacidad heap liberada en red); cola llena = bundle rechazado entero
+  por el mismo camino. `process_block`: drena comandos inmediatos al inicio
+  del bloque, luego loop de segmentos ejecutando los bundles vencidos en su
+  offset exacto (tardíos en offset 0).
+- **Reloj y conversión NTP**: el engine publica `now` (samples procesados,
+  `AtomicU64`) cada bloque; el hilo de red convierte
+  `delta = timetag − SystemTime::now()` y agenda en
+  `current_samples() + delta·sr`. Timetag inmediato (`{0,1}`) o pasado =
+  ejecución al llegar (los pasados loguean "late", como scsynth). Bundles
+  anidados se agendan independientes por su propio timetag.
+- **Traducción de mensajes** (`schedule_message`): `/s_new` (controles
+  aplicados al boxear, espejo `node_defs` actualizado al agendar, IDs -1
+  resueltos), `/n_set` (por nombre vía espejo), `/n_free`,
+  `/n_before`/`/n_after`, `/g_new`, `/g_freeAll`/`/g_deepFree` y `/c_set`
+  — este último como `Cmd::SetControlBus` nuevo: la forma inmediata escribe
+  los atomics en red, pero la agendada debe caer en su sample exacto. Lo no
+  agendable responde `/fail "… cannot be scheduled in a timed bundle"`.
+- **Cliente Python**: `bundle(seconds_ahead, *packets)` (timetag NTP a
+  mano) y demo `bundle`: un arpegio agendado entero por adelantado.
+
+### Verificación
+
+- `cargo test`: 72 (61 + 10 de `tests/scheduling.rs` + 1 en `rt_safety`);
+  con feature: 102 (+1: FaustSynth partido a mitad de bloque con def
+  constante, borde exacto). Los tests de scheduling son **sample-exactos**
+  con señales DC: disparo a mitad de bloque (sample 100 = bloque 1 offset
+  36), tres eventos partiendo un mismo bloque (10/30/50), atomicidad del
+  bundle, empates en orden de llegada, tiempos fuera de orden, tardíos en
+  offset 0, `/c_set` agendado (escalón en sample 32), cola llena (1025º
+  rechazado y devuelto entero), y el round-trip OSC con timetag NTP real
+  (ventana de tolerancia sobre el reloj publicado).
+- `rt_safety`: 16 bundles en offsets impares (encolar ordenado, partir,
+  ejecutar) — cero allocs, 16 shells de vuelta. Clippy limpio (solo las 2
+  warnings preexistentes).
+- E2E real: server release + `json_client.py bundle` (5 notas agendadas
+  por adelantado, ritmo regular). Banner ahora dice `clausters M6`.
+
+## Próximo: M7 — Modo NRT + tests dorados (o F5)
+
+M7: render offline a WAV (mismo motor, sin cpal), tests de regresión
+comparando contra archivos dorados, benchmarks del grafo.
+F5 (opcional): Signal API, waveforms/soundfiles, polifonía nativa de
+Faust, backend interpreter (sin LLVM).
