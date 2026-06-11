@@ -132,7 +132,7 @@ per-bus layout, no conversion needed.
 
 ## Licensing
 
-Not an issue for this project: claudesufa is **GPLv3-or-later**, libfaust is
+Not an issue for this project: Clausters is **GPLv3-or-later**, libfaust is
 GPLv2-or-later — the combination distributes as GPLv3+. (Code *generated* by
 Faust carries no license restriction either.)
 

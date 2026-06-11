@@ -3,10 +3,10 @@
 
 use std::sync::Arc;
 
-use claudesufa::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
-use claudesufa::node::SynthNode;
-use claudesufa::synthdef::instance::UGenSynth;
-use claudesufa::synthdef::{SynthDefSpec, compile, default_spec};
+use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
+use clausters::node::SynthNode;
+use clausters::synthdef::instance::UGenSynth;
+use clausters::synthdef::{SynthDefSpec, compile, default_spec};
 
 const SR: f32 = 48_000.0;
 

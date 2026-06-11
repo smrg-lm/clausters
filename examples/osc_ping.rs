@@ -7,8 +7,8 @@
 use std::net::UdpSocket;
 use std::time::Duration;
 
-use claudesufa::osc::server::DEFAULT_PORT;
-use claudesufa::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+use clausters::osc::server::DEFAULT_PORT;
+use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = ("127.0.0.1", DEFAULT_PORT);

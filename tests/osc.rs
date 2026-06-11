@@ -6,9 +6,9 @@ use std::net::{SocketAddr, UdpSocket};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use claudesufa::osc::server::{OscServer, ServerInfo};
-use claudesufa::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
-use claudesufa::server::engine::{BLOCK_SIZE, Engine, engine_pair};
+use clausters::osc::server::{OscServer, ServerInfo};
+use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair};
 
 struct TestServer {
     addr: SocketAddr,
@@ -421,7 +421,7 @@ fn unknown_command_fails() {
 
 #[test]
 fn bundle_contents_execute() {
-    use claudesufa::rosc::{OscBundle, OscTime};
+    use clausters::rosc::{OscBundle, OscTime};
 
     let server = TestServer::spawn();
     let bundle = OscPacket::Bundle(OscBundle {

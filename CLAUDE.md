@@ -1,4 +1,4 @@
-# claudesufa
+# Clausters
 
 A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
@@ -23,7 +23,7 @@ silently lost. Always run server and client in the **same** Bash invocation
 (server in background with `&`, then the client, then kill), e.g.:
 
 ```sh
-(./target/debug/claudesufa & PID=$!; sleep 1.5; \
+(./target/debug/clausters & PID=$!; sleep 1.5; \
  ./target/debug/examples/osc_ping status vibrato quit; kill $PID 2>/dev/null)
 ```
 

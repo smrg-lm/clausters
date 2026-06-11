@@ -11,10 +11,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
-use claudesufa::faust::synth::{FaustDef, FaustSynth};
-use claudesufa::node::{AddAction, ROOT_NODE_ID, SynthNode};
-use claudesufa::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
+use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+use clausters::faust::synth::{FaustDef, FaustSynth};
+use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
+use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
 
 const SR: f32 = 48_000.0;
 const CHANNELS: usize = 2;
@@ -196,8 +196,8 @@ fn input_buses_feed_faust_synths() {
 
 #[test]
 fn ugen_and_faust_synths_mix_on_the_same_bus() {
-    use claudesufa::synthdef::instance::UGenSynth;
-    use claudesufa::synthdef::{compile, default_spec};
+    use clausters::synthdef::instance::UGenSynth;
+    use clausters::synthdef::{compile, default_spec};
 
     let fdef = compile_def("fsine", SINE_SRC);
     let udef = Arc::new(compile(default_spec()).unwrap());
@@ -255,8 +255,8 @@ mod osc {
     use super::*;
     use std::net::UdpSocket;
 
-    use claudesufa::osc::server::{OscServer, ServerInfo};
-    use claudesufa::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+    use clausters::osc::server::{OscServer, ServerInfo};
+    use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
 
     #[test]
     fn faust_def_lifecycle_over_osc() {

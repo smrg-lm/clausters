@@ -4,10 +4,10 @@
 
 use std::sync::Arc;
 
-use claudesufa::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
-use claudesufa::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
-use claudesufa::synthdef::instance::UGenSynth;
-use claudesufa::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
+use clausters::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
+use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
+use clausters::synthdef::instance::UGenSynth;
+use clausters::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
 
 const SR: f32 = 48_000.0;
 const CHANNELS: usize = 2;
@@ -354,7 +354,7 @@ fn deep_free_keeps_nested_groups() {
 
 #[test]
 fn node_events_report_go_and_end() {
-    use claudesufa::server::engine::NodeEventKind;
+    use clausters::server::engine::NodeEventKind;
 
     let (mut engine, mut handle) = make_engine();
     handle

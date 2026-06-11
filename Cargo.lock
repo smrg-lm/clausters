@@ -138,7 +138,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "claudesufa"
+name = "clausters"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",

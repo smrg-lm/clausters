@@ -13,9 +13,9 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
-use claudesufa::faust::ffi;
-use claudesufa::faust::synth::FaustDef;
+use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+use clausters::faust::ffi;
+use clausters::faust::synth::FaustDef;
 use serde_json::{Value, json};
 
 const SR: f32 = 48_000.0;

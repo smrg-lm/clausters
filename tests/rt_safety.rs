@@ -6,10 +6,10 @@
 use std::sync::Arc;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};
-use claudesufa::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
-use claudesufa::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
-use claudesufa::synthdef::instance::UGenSynth;
-use claudesufa::synthdef::{compile, default_spec};
+use clausters::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};
+use clausters::server::engine::{BLOCK_SIZE, Cmd, engine_pair};
+use clausters::synthdef::instance::UGenSynth;
+use clausters::synthdef::{compile, default_spec};
 
 #[global_allocator]
 static ALLOC: AllocDisabler = AllocDisabler;
@@ -90,8 +90,8 @@ fn audio_thread_does_not_allocate() {
 #[cfg(feature = "faust")]
 #[test]
 fn faust_synths_do_not_allocate_on_the_audio_thread() {
-    use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
-    use claudesufa::faust::synth::FaustSynth;
+    use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+    use clausters::faust::synth::FaustSynth;
 
     // Compilation and instantiation allocate freely: network/compiler side.
     let compiler = CompilerThread::spawn();

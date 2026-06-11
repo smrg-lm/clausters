@@ -8,7 +8,7 @@
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 
 /// Stdlib-free sine at 440 Hz: keeps the test independent of the Faust
 /// library search path (stdlib imports are exercised from F2 on).
@@ -90,9 +90,9 @@ mod osc {
     use super::{COMPILE_DEADLINE, SINE_SRC};
     use std::net::UdpSocket;
 
-    use claudesufa::osc::server::{OscServer, ServerInfo};
-    use claudesufa::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
-    use claudesufa::server::engine::engine_pair;
+    use clausters::osc::server::{OscServer, ServerInfo};
+    use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+    use clausters::server::engine::engine_pair;
 
     struct TestServer {
         addr: std::net::SocketAddr,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example Python client: generates defs as JSON and drives claudesufa over
+"""Example Python client: generates defs as JSON and drives Clausters over
 OSC. Standard library only — no python-osc needed.
 
 Start a server first:

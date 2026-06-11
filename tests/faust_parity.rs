@@ -16,12 +16,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use claudesufa::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
-use claudesufa::faust::synth::{FaustDef, FaustSynth};
-use claudesufa::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
-use claudesufa::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
-use claudesufa::synthdef::instance::UGenSynth;
-use claudesufa::synthdef::{SynthDefSpec, compile};
+use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+use clausters::faust::synth::{FaustDef, FaustSynth};
+use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
+use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, engine_pair};
+use clausters::synthdef::instance::UGenSynth;
+use clausters::synthdef::{SynthDefSpec, compile};
 use serde_json::json;
 
 const SR: f32 = 48_000.0;

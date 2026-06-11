@@ -12,7 +12,7 @@
 use std::ffi::{CStr, CString, c_char};
 use std::time::Instant;
 
-use claudesufa::faust::ffi::*;
+use clausters::faust::ffi::*;
 
 const SR: f32 = 48_000.0;
 const BLOCK: usize = 64;
@@ -57,7 +57,7 @@ fn jit_compiled_box_sine_plays_at_440() {
 
     // ---- compiler-side: context, box construction, JIT ----
     // libfaust compiler state is global: serialize against the other test.
-    let guard = claudesufa::faust::compiler::ffi_lock();
+    let guard = clausters::faust::compiler::ffi_lock();
     let t0 = Instant::now();
     let factory = unsafe {
         createLibContext();
@@ -141,7 +141,7 @@ fn factory_creation_reports_errors() {
     let target = CString::new("").unwrap();
     let mut error_msg = [0 as c_char; ERROR_MSG_SIZE];
 
-    let _guard = claudesufa::faust::compiler::ffi_lock();
+    let _guard = clausters::faust::compiler::ffi_lock();
     let factory = unsafe {
         createLibContext();
         let bad = CboxAddAux(CboxWire(), CboxWire()); // 2 inputs, never fed

@@ -1,6 +1,6 @@
 # Def schemas
 
-claudesufa accepts instrument definitions in two wire formats, both loaded
+Clausters accepts instrument definitions in two wire formats, both loaded
 hot over OSC (UDP, default port `127.0.0.1:57110`):
 
 | format | OSC command | availability |
