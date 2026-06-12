@@ -30,10 +30,7 @@ use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 use crate::dsp::buffer::{BufferPool, empty_pool};
-use crate::node::{AddAction, Group, Place};
-use crate::osc::translate::{
-    CmdTranslator, control_key, float_value, parse_buffer_msg,
-};
+use crate::osc::translate::{CmdTranslator, float_value, int_arg, parse_buffer_msg};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::server::nrt::{NrtAction, NrtRequest, NrtThread};
 
@@ -326,14 +323,13 @@ impl OscServer {
         match msg.addr.as_str() {
             "/status" => self.send_status(from),
             "/notify" => self.handle_notify(&msg, from),
-            "/s_new" => self.handle_s_new(&msg, from),
-            "/g_new" => self.handle_g_new(&msg, from),
-            "/g_freeAll" => self.handle_g_free(&msg, from, "/g_freeAll"),
-            "/g_deepFree" => self.handle_g_free(&msg, from, "/g_deepFree"),
-            "/n_free" => self.handle_n_free(&msg, from),
-            "/n_set" => self.handle_n_set(&msg, from),
-            "/n_before" => self.handle_n_move(&msg, from, Place::Before),
-            "/n_after" => self.handle_n_move(&msg, from, Place::After),
+            // The translator covers the whole schedulable subset (and keeps
+            // the M12 tree mirror in sync), so the immediate forms share one
+            // path: translate, then ship every command.
+            "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
+            | "/n_before" | "/n_after" | "/g_sortMode" => self.handle_via_translate(&msg, from),
+            "/g_queryTree" => self.handle_g_query_tree(&msg, from),
+            "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
             "/c_set" => self.handle_c_set(&msg, from),
             "/c_get" => self.handle_c_get(&msg, from),
             "/clock" => self.handle_clock(from),
@@ -474,81 +470,43 @@ impl OscServer {
         }
     }
 
-    fn handle_s_new(&mut self, msg: &OscMessage, from: SocketAddr) {
+    /// Immediate form of every translator-covered command: translate (which
+    /// also updates the M12 tree mirror and may append re-sort moves), then
+    /// ship the whole batch.
+    fn handle_via_translate(&mut self, msg: &OscMessage, from: SocketAddr) {
         let mut cmds = Vec::new();
         if let Err(e) = self.translator.translate(msg, &mut cmds) {
-            return self.fail(from, "/s_new", e);
+            return self.fail(from, &msg.addr, e);
         }
         for cmd in cmds {
             if self.handle.send(cmd).is_err() {
-                return self.fail(from, "/s_new", "command FIFO full");
+                return self.fail(from, &msg.addr, "command FIFO full");
             }
         }
     }
 
-    /// `/g_new` takes (id, addAction, targetID) triples.
-    fn handle_g_new(&mut self, msg: &OscMessage, from: SocketAddr) {
-        if msg.args.is_empty() || !msg.args.len().is_multiple_of(3) {
-            return self.fail(from, "/g_new", "expected (id, addAction, targetID) triples");
-        }
-        for triple in msg.args.chunks(3) {
-            let [OscType::Int(id), OscType::Int(action), OscType::Int(target)] = triple else {
-                return self.fail(from, "/g_new", "expected int (id, addAction, targetID)");
-            };
-            let Some(action) = AddAction::from_i32(*action) else {
-                return self.fail(from, "/g_new", "add action must be 0-4");
-            };
-            if *id <= 0 {
-                return self.fail(from, "/g_new", "group ID must be positive");
-            }
-            let cmd = Cmd::AddGroup {
-                id: *id,
-                target: *target,
-                action,
-                group: Group::new(),
-            };
-            if self.handle.send(cmd).is_err() {
-                return self.fail(from, "/g_new", "command FIFO full");
-            }
+    /// M12: the node tree as seen by the network-side mirror, in scsynth's
+    /// `/g_queryTree.reply` format. Args: [groupID = 0, flag = 0]; flag 1
+    /// includes control names and values.
+    fn handle_g_query_tree(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let group = int_arg(&msg.args, 0).unwrap_or(0);
+        let flag = int_arg(&msg.args, 1).unwrap_or(0);
+        match self.translator.query_tree(group, flag != 0) {
+            Ok(args) => self.reply(from, "/g_queryTree.reply", args),
+            Err(e) => self.fail(from, "/g_queryTree", e),
         }
     }
 
-    fn handle_g_free(&mut self, msg: &OscMessage, from: SocketAddr, cmd_name: &str) {
-        for arg in &msg.args {
-            let OscType::Int(id) = arg else {
-                return self.fail(from, cmd_name, "expected int group IDs");
-            };
-            let cmd = match cmd_name {
-                "/g_freeAll" => Cmd::FreeAllInGroup { id: *id },
-                _ => Cmd::DeepFreeGroup { id: *id },
-            };
-            if self.handle.send(cmd).is_err() {
-                return self.fail(from, cmd_name, "command FIFO full");
-            }
-        }
-    }
-
-    /// `/n_before` / `/n_after` take (nodeID, targetID) pairs.
-    fn handle_n_move(&mut self, msg: &OscMessage, from: SocketAddr, place: Place) {
-        let cmd_name = match place {
-            Place::Before => "/n_before",
-            Place::After => "/n_after",
-        };
-        if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
-            return self.fail(from, cmd_name, "expected (nodeID, targetID) pairs");
-        }
-        for pair in msg.args.chunks(2) {
-            let [OscType::Int(id), OscType::Int(target)] = pair else {
-                return self.fail(from, cmd_name, "expected int (nodeID, targetID)");
-            };
-            let cmd = Cmd::MoveNode {
-                id: *id,
-                target: *target,
-                place,
-            };
-            if self.handle.send(cmd).is_err() {
-                return self.fail(from, cmd_name, "command FIFO full");
-            }
+    /// M12 debug: the inferred bus graph of one group as a string reply.
+    fn handle_g_dump_graph(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let group = int_arg(&msg.args, 0).unwrap_or(0);
+        match self.translator.dump_graph(group) {
+            Ok(dump) => self.reply(
+                from,
+                "/g_dumpGraph.reply",
+                vec![OscType::Int(group), OscType::String(dump)],
+            ),
+            Err(e) => self.fail(from, "/g_dumpGraph", e),
         }
     }
 
@@ -672,42 +630,6 @@ impl OscServer {
             .ok()
             .and_then(|i| self.buffers.get(i))
             .and_then(|b| b.as_ref().map(Arc::clone))
-    }
-
-    fn handle_n_free(&mut self, msg: &OscMessage, from: SocketAddr) {
-        for arg in &msg.args {
-            let OscType::Int(id) = arg else {
-                return self.fail(from, "/n_free", "expected int node IDs");
-            };
-            if self.handle.send(Cmd::FreeNode { id: *id }).is_err() {
-                return self.fail(from, "/n_free", "command FIFO full");
-            }
-        }
-    }
-
-    fn handle_n_set(&mut self, msg: &OscMessage, from: SocketAddr) {
-        let Some(OscType::Int(id)) = msg.args.first() else {
-            return self.fail(from, "/n_set", "expected: id, then control/value pairs");
-        };
-        let id = *id;
-        let Some(def) = self.translator.node_defs.get(&id).cloned() else {
-            return self.fail(from, "/n_set", format!("node {id} not found"));
-        };
-        for pair in msg.args[1..].chunks(2) {
-            let (Some(index), Some(value)) = (
-                control_key(&pair[0], &def),
-                pair.get(1).and_then(float_value),
-            ) else {
-                continue;
-            };
-            if self
-                .handle
-                .send(Cmd::SetControl { id, index, value })
-                .is_err()
-            {
-                return self.fail(from, "/n_set", "command FIFO full");
-            }
-        }
     }
 
     fn handle_notify(&mut self, msg: &OscMessage, from: SocketAddr) {

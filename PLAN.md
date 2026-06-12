@@ -355,7 +355,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   `/n_set`. (La variante `/n_mapa` con buses de audio queda para después, si
   aparece el caso de uso; para audio ya existe el patrón bus + `In`/`in`.)
 
-- **M12 — Forma canónica del grafo por conexiones de buses**: inferir el DAG
+- ✅ **M12 — Forma canónica del grafo por conexiones de buses**: inferir el DAG
   de dependencias entre nodos a partir de los buses: qué buses de audio lee
   (`In`, `in` de Faust) y escribe (`Out`/`ReplaceOut`, `out` de Faust) cada
   def. El análisis es estático solo cuando los índices de bus son constantes
@@ -375,6 +375,13 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   `/g_queryTree` (pendiente del set scsynth) más un `/g_dumpGraph` de
   debug. Beneficio: los grupos pasan a ser «canales de multipista» y el
   cliente deja de micro-gestionar el orden de ejecución.
+  *(Completado 2026-06-12 — ver NOTAS.md. `osc/graph.rs`: análisis de buses
+  por def + `TreeMirror` en el hilo de red + sort topológico estable;
+  `/g_sortMode` (agendable y válido en scores NRT), `/g_queryTree`
+  compatible scsynth y `/g_dumpGraph`; los handlers inmediatos del server
+  se unificaron vía `CmdTranslator::translate`. Ejemplo
+  `examples/auto_order.py`, doc `docs/auto-order.md`. Cero cambios en el
+  hilo de audio, como estaba previsto.)*
 
 - **M13 — Procesamiento paralelo del árbol** (requiere M12): el DAG de M12
   es exactamente la estructura que habilita el paralelismo — etapas =
@@ -520,3 +527,8 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
 ## Notas del proyecto
 
 - Los avances realizados en cada milestone se van a gregando en las notas del proyecto.
+- Cerrar un milestone incluye siempre, cuando corresponda: la documentación
+  de desarrollo (`docs/architecture.md`, docs de módulos), la documentación
+  de usuario en `docs/` para features nuevas, los pasos de prueba manual y
+  conteos en `GUIA.md`, y un ejemplo explicado en `examples/` si la feature
+  es de cara al usuario — no solo el código y NOTAS.md.

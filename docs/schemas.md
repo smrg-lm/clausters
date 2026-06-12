@@ -39,10 +39,17 @@ arrival order; late bundles run immediately (and are logged). Nested
 bundles are scheduled independently by their own timetags.
 
 Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_free`,
-`/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`.
-Anything else (defs, buffers, server commands) replies `/fail … cannot be
-scheduled in a timed bundle` — load defs and buffers first, then schedule
-the notes.
+`/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`,
+`/g_sortMode`. Anything else (defs, buffers, server commands) replies
+`/fail … cannot be scheduled in a timed bundle` — load defs and buffers
+first, then schedule the notes.
+
+Also beyond scsynth: **auto-sorted groups**. `/g_sortMode groupID 1` makes
+a group keep its children in dependency order inferred from the buses each
+def reads and writes — no more manual `/n_before` bookkeeping; query what
+the server inferred with `/g_queryTree` (scsynth-compatible reply) and
+`/g_dumpGraph`. See [`auto-order.md`](auto-order.md) and
+`examples/auto_order.py`.
 
 Beyond scsynth, the server also exposes its **sample clock** directly:
 `/clock` queries the sample counter, and `/sched <int64 target> <blob>`

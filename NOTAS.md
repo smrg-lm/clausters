@@ -950,10 +950,92 @@ servidor.
   8 beats audibles regulares, slope reportado) y el one-liner `/clock` de
   GUIA.md (contador avanza ≈22050 por 0.5 s a 44.1 kHz).
 
+## M12 — Grupos auto-ordenados por conexiones de buses (completado 2026-06-12)
+
+El servidor infiere el DAG de dependencias entre nodos a partir de los
+buses que cada def lee (`In`, `in` Faust) y escribe (`Out`/`ReplaceOut`,
+`out` Faust), y mantiene **grupos auto-ordenados opt-in**: los grupos pasan
+a ser canales de multipista y el cliente deja de micro-gestionar el orden.
+Cero cambios en el hilo de audio: los re-ordenamientos llegan como
+`Cmd::MoveNode` comunes.
+
+### Qué quedó hecho
+
+- **`src/osc/graph.rs`**: `BusUsage` (bitmasks `u128` de lectura/escritura
+  + flag `dynamic`), análisis por def — `ugen_usage` (índices de bus
+  constantes o por control = estáticos, registrando qué controles son
+  índices de bus; índice por señal = `dynamic`) y `faust_usage`
+  (`out..out+N` / `in..in+M` por los controles reservados, mismos clamps
+  que `FaustSynth`) —, `stable_topo_sort` (Kahn estable: entre los listos
+  gana el más temprano del orden actual; barrera = nodo dynamic con aristas
+  contra todo según posición; deadlock = ciclo → se libera el más temprano:
+  los ciclos conservan orden relativo = un bloque de delay, como un return
+  de multipista; `ReplaceOut` cuenta lectura+escritura, así un insert fx
+  cae entre las fuentes y los lectores; escritores puros al mismo bus no
+  generan arista — mezclar conmuta), y **`TreeMirror`**: espejo del árbol
+  en el hilo de red (topología, valores de controles por nodo, usage, flag
+  auto por grupo) alimentado por el mismo stream de `Cmd` que recibe el
+  engine, con rollback por la basura de rechazos (`remove` idempotente).
+- **`CmdTranslator` integra el espejo**: cada brazo de `translate()`
+  actualiza el espejo y, si cambia la topología o el usage, re-ordena la
+  cadena de ancestros auto (`resort_from`) apéndice de moves al mismo batch
+  — por eso funciona igual en inmediato, en bundles con timetag (el sort
+  dispara atómico con el bundle) y en **scores NRT** (el renderer comparte
+  el translator). `/n_set` sobre un control usado como índice de bus
+  re-analiza y re-ordena. `/n_before`/`/n_after` con nodo o target dentro
+  de un grupo auto → `Err`/`/fail`. Liberaciones no re-ordenan (quitar
+  nodos nunca invalida un orden topológico).
+- **Protocolo**: `/g_sortMode groupID mode` (1 = auto, 0 = manual; acepta
+  pares; root permitido; agendable), `/g_queryTree [gid] [flag]` →
+  `/g_queryTree.reply` **formato scsynth** (flag 1 incluye nombres y
+  valores de controles desde el espejo) y `/g_dumpGraph [gid]` →
+  `/g_dumpGraph.reply` con el grafo inferido legible (reads/writes/dynamic
+  por hijo).
+- **Refactor**: los handlers inmediatos duplicados del server (`/s_new`,
+  `/n_set`, `/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
+  `/g_deepFree`) se unificaron en `handle_via_translate` — un solo camino
+  de traducción para inmediato/bundle/score, que era prerequisito para que
+  el espejo no se desincronice. De paso `/g_new` por bundle ganó la
+  validación `id > 0` que solo tenía el camino inmediato.
+- **Docs y ejemplo**: `docs/auto-order.md` (reglas del análisis, ciclos,
+  barreras, caveat espejo-adelantado-del-engine), sección en schemas.md
+  (+ `/g_sortMode` en la lista de agendables), architecture.md (fila de
+  módulo + espejo en el hilo de red), `examples/auto_order.py` (cadena
+  fuente→fx→master armada al revés: silencio en grupo manual, suena al
+  activar `/g_sortMode`, grafo impreso antes/después, segunda voz en head
+  que se ordena sola), sección en GUIA.md.
+
+### Decisiones y caveats
+
+- El espejo refleja comandos **al enviarse**: lo agendado en un bundle
+  futuro se espeja ya (el queryTree puede mostrar brevemente el estado
+  futuro); un re-sort que corre contra un bundle pendiente converge al
+  siguiente cambio. Documentado.
+- Barreras dinámicas: nada se ordena a través de ellas aunque el subgrafo
+  estático lo pida (conservador a propósito).
+- La capacidad del espejo es la del hilo de red (HashMaps): los límites
+  reales los pone el engine y los rechazos ruedan atrás por el garbage.
+
+### Verificación
+
+- 10 tests nuevos en `tests/auto_order.rs` (+1 con faust): cadena invertida
+  ordenada y **audible** (RMS exacto 0.1/√2) vs. silencio en grupo manual;
+  `/g_sortMode` sobre hijos existentes y vuelta a manual; `/fail` de moves
+  manuales en grupos auto y de `/g_sortMode` sobre grupos inexistentes o
+  synths; formato completo de `/g_queryTree.reply` con flag 1; barrera
+  dinámica reportada y respetada; ciclo de feedback conserva orden de
+  inserción con la fuente ordenada antes; `/n_set` de control-índice
+  re-ordena (silencio → sonido); score NRT con `/g_sortMode` renderiza la
+  cadena invertida; def Faust ordenado por su control reservado `out`.
+  **96 core / 133 con faust**, clippy y rustdoc limpios.
+- E2E: `examples/auto_order.py` contra el server real — dump antes/después
+  muestra el reorden (manual: master,fx,src → auto: src,fx,master) y la
+  cadena suena.
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7), F0–F5, M8 y M9 están completos. Direcciones
-planificadas: M10–M14 en «Milestones futuros» de PLAN.md. Sueltas: más
-UGens (filtros, EnvGen con done actions, Line), streaming de buffers
-(`leaveOpen`), `/n_query`/`/g_queryTree`, multi-cliente con notificaciones
-por ID.
+El plan original (M0–M7), F0–F5, M8, M9 y M12 están completos. Direcciones
+planificadas: M10, M11, M13 (ya tiene su prerequisito M12) y M14 en
+«Milestones futuros» de PLAN.md. Sueltas: más UGens (filtros, EnvGen con
+done actions, Line), streaming de buffers (`leaveOpen`), `/n_query`,
+multi-cliente con notificaciones por ID.

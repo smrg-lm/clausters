@@ -1,7 +1,7 @@
 # Guía de compilación y prueba
 
 Cómo compilar **Clausters**, correrlo y probar todo lo que hay hasta ahora
-(milestones M0–M9 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
+(milestones M0–M9, M12 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
 nuevo.
 
 Documentación de referencia: `docs/schemas.md` (formatos de defs y comandos
@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 86 tests, no necesita placa de audio
+cargo test                       # 96 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -64,7 +64,7 @@ Terminal 1:
 
 ```sh
 cargo run --release
-# clausters M8 — silent until /s_new | 44100 Hz, 2 channels | OSC on 127.0.0.1:57110 | ...
+# clausters M12 — silent until /s_new | 44100 Hz, 2 channels | OSC on 127.0.0.1:57110 | ...
 # (la sample rate es la del dispositivo de audio default)
 ```
 
@@ -134,8 +134,8 @@ python3 examples/json_client.py bundle
 `sclang` (`s.sendBundle(0.5, ["/s_new", "default", 4000, 1, 0])`) o
 copiando la función `bundle()` del cliente Python. Comandos agendables
 dentro de un bundle: `/s_new`, `/n_set`, `/n_free`, `/n_before`,
-`/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`; cualquier
-otro responde `/fail`. Bundles con timetag pasado se ejecutan al llegar
+`/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`,
+`/g_sortMode`; cualquier otro responde `/fail`. Bundles con timetag pasado se ejecutan al llegar
 (y el servidor loguea "late").
 
 ### Probar el modo NRT / render offline (M7)
@@ -221,6 +221,38 @@ for _ in range(3):
 La columna `x real time` es el headroom: con N synths, cuántas veces más
 rápido que 48 kHz procesa. En esta máquina ≈1800 voces sinusoidales.
 
+### Probar los grupos auto-ordenados (M12)
+
+El servidor puede inferir el orden de ejecución a partir de los buses que
+cada def lee y escribe, y mantener un grupo ordenado solo (`/g_sortMode`):
+los grupos pasan a ser como canales de un multipista y el cliente deja de
+pelear con `/n_before`. La demo arma la cadena fuente → fx → master **al
+revés a propósito** (silencio en un grupo manual) y la repara con un solo
+comando:
+
+```sh
+cargo run --release                  # terminal 1
+python3 examples/auto_order.py      # terminal 2
+```
+
+Debe verse el grafo inferido antes y después (`/g_dumpGraph`), oírse
+silencio 2 s, luego la cadena a 330 Hz al activar `/g_sortMode 100 1`, y
+una segunda voz (495 Hz) agregada en la cabeza del grupo que suena igual
+(cada cambio re-ordena). A mano:
+
+```sh
+oscsend localhost 57110 /g_sortMode ii 100 1   # activa; 0 vuelve a manual
+oscsend localhost 57110 /g_queryTree ii 0 1    # árbol estilo scsynth, con controles
+oscsend localhost 57110 /g_dumpGraph i 100     # buses leídos/escritos por nodo
+```
+
+Reglas finas (detalle en `docs/auto-order.md`): índices de bus constantes
+o por control se analizan (un `/n_set` al control re-ordena); un índice
+calculado por señal marca el nodo `dynamic` = barrera que nada cruza; los
+ciclos (feedback) conservan su orden relativo = un bloque de delay; y
+dentro de un grupo auto los `/n_before`/`/n_after` manuales responden
+`/fail`.
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -292,7 +324,7 @@ falta `LD_LIBRARY_PATH`.
 ### Compilar y testear con el feature
 
 ```sh
-cargo test --features faust      # 122 tests (los 86 del núcleo + 36 de Faust)
+cargo test --features faust      # 133 tests (los 96 del núcleo + 37 de Faust)
 ```
 
 Los tests de Faust cubren: humo del JIT con paridad de señal contra nuestro
@@ -418,14 +450,16 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | `PlayBuf`/`BufRd` (loop, interpolación, canales) | `tests/buffers.rs` | demo `buffer` (sine 330 Hz, luego quinta arriba) |
 | Bundles con timetag, sample-accurate | `tests/scheduling.rs` | `json_client.py bundle` (arpegio agendado) |
 | Reloj de samples, `/clock` + `/sched` (M8) | `tests/osc.rs`, `tests/scheduling.rs` | `python3 examples/sample_clock.py` |
+| Grupos auto-ordenados, `/g_sortMode` + `/g_queryTree` (M12) | `tests/auto_order.rs` | `python3 examples/auto_order.py` |
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 
-Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8 y M9 están
-completos; lo que sigue está en «Milestones futuros» de PLAN.md (M10–M14).
+Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8, M9 y M12
+están completos; lo que sigue está en «Milestones futuros» de PLAN.md
+(M10, M11, M13, M14).
 
 ## 5. Problemas frecuentes
 

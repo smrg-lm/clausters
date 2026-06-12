@@ -18,10 +18,14 @@ use rosc::OscType;
 use crate::faust::synth::{FaustDef, FaustSynth};
 use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS};
 use crate::node::{AddAction, Group, Place, SynthNode};
+use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
 use crate::synthdef::instance::UGenSynth;
 use crate::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
+
+#[cfg(feature = "faust")]
+use crate::osc::graph::faust_usage;
 
 /// Auto-assigned node IDs (`/s_new` with ID -1) start above this.
 const AUTO_NODE_ID_BASE: i32 = 2_000_000;
@@ -43,6 +47,43 @@ impl NodeDef {
             NodeDef::Faust(def) => def.control_index(name),
         }
     }
+
+    /// Control name by index, for `/g_queryTree.reply`.
+    pub fn control_name(&self, index: usize) -> Option<&str> {
+        match self {
+            NodeDef::UGen(def) => def.control_names.get(index).map(String::as_str),
+            #[cfg(feature = "faust")]
+            NodeDef::Faust(def) => match index.checked_sub(def.params.len()) {
+                None => def.params.get(index).map(|p| p.name.as_str()),
+                Some(0) => Some("out"),
+                Some(1) => Some("in"),
+                Some(_) => None,
+            },
+        }
+    }
+
+    /// Default control values of a fresh instance.
+    fn control_defaults(&self) -> Vec<f32> {
+        match self {
+            NodeDef::UGen(def) => def.control_defaults.clone(),
+            #[cfg(feature = "faust")]
+            NodeDef::Faust(def) => {
+                // UI params at their inits, then the reserved out/in buses.
+                let mut v: Vec<f32> = def.params.iter().map(|p| p.init).collect();
+                v.extend([0.0, 0.0]);
+                v
+            }
+        }
+    }
+
+    /// Bus usage of an instance with these control values (M12).
+    fn usage(&self, controls: &[f32]) -> (BusUsage, Vec<u32>) {
+        match self {
+            NodeDef::UGen(def) => ugen_usage(def, controls),
+            #[cfg(feature = "faust")]
+            NodeDef::Faust(def) => faust_usage(def, controls),
+        }
+    }
 }
 
 pub struct CmdTranslator {
@@ -58,6 +99,9 @@ pub struct CmdTranslator {
     /// Compiled Faust defs by name, refcounted (every instance holds a clone).
     #[cfg(feature = "faust")]
     pub faust_defs: HashMap<String, Arc<FaustDef>>,
+    /// Network-side tree mirror: topology, per-node controls and bus usage,
+    /// auto-sorted groups (M12). Fed by the same commands the engine gets.
+    pub mirror: TreeMirror,
 }
 
 impl CmdTranslator {
@@ -72,6 +116,7 @@ impl CmdTranslator {
             next_auto_id: AUTO_NODE_ID_BASE,
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
+            mirror: TreeMirror::new(),
         }
     }
 
@@ -102,9 +147,47 @@ impl CmdTranslator {
         Err(format!("SynthDef not found: {name}"))
     }
 
-    /// Drops the node→def mirror entry of a freed node.
+    /// Drops the mirror entries of a node the engine freed or rejected.
     pub fn forget_node(&mut self, id: i32) {
         self.node_defs.remove(&id);
+        self.mirror.remove(id);
+    }
+
+    /// Re-sorts every auto group on the ancestor chain starting at `group`,
+    /// appending the move commands (and updating the mirror). Removals never
+    /// invalidate a topological order, so callers skip this on frees.
+    fn resort_from(&mut self, group: Option<i32>, cmds: &mut Vec<Cmd>) {
+        let Some(mut group) = group else { return };
+        loop {
+            if self.mirror.is_auto_group(group)
+                && let Some(order) = self.mirror.sorted_children(group)
+            {
+                for pair in order.windows(2) {
+                    cmds.push(Cmd::MoveNode {
+                        id: pair[1],
+                        target: pair[0],
+                        place: Place::After,
+                    });
+                }
+                self.mirror.set_children_order(group, order);
+            }
+            match self.mirror.parent(group) {
+                Some(parent) => group = parent,
+                None => break,
+            }
+        }
+    }
+
+    /// Re-analyzes a synth's bus usage after its controls changed.
+    fn refresh_usage(&mut self, id: i32) {
+        let Some(def) = self.node_defs.get(&id) else {
+            return;
+        };
+        let Some((_, controls)) = self.mirror.synth_info(id) else {
+            return;
+        };
+        let (usage, _) = def.usage(controls);
+        self.mirror.set_usage(id, usage);
     }
 
     /// `/d_recv`: compile a SynthDef JSON blob into the def table.
@@ -161,14 +244,19 @@ impl CmdTranslator {
                 } else {
                     return Err("node ID must be positive or -1".into());
                 };
+                let mut controls = def.control_defaults();
                 for pair in rest.chunks(2) {
                     if let (Some(index), Some(value)) = (
                         control_key(&pair[0], &def),
                         pair.get(1).and_then(float_value),
                     ) {
                         synth.set_control(index, value);
+                        if let Some(slot) = controls.get_mut(index as usize) {
+                            *slot = value;
+                        }
                     }
                 }
+                let (usage, bus_controls) = def.usage(&controls);
                 self.node_defs.insert(id, def);
                 cmds.push(Cmd::AddSynth {
                     id,
@@ -176,6 +264,15 @@ impl CmdTranslator {
                     action,
                     synth,
                 });
+                let body = MirrorBody::Synth {
+                    def_name: name.clone(),
+                    controls,
+                    usage,
+                    bus_controls,
+                };
+                if let Ok(parent) = self.mirror.insert(id, body, *target, action) {
+                    self.resort_from(Some(parent), cmds);
+                }
                 Ok(())
             }
             "/n_set" => {
@@ -187,6 +284,7 @@ impl CmdTranslator {
                     .get(id)
                     .cloned()
                     .ok_or_else(|| format!("node {id} not found"))?;
+                let mut bus_control_hit = false;
                 for pair in msg.args[1..].chunks(2) {
                     if let (Some(index), Some(value)) = (
                         control_key(&pair[0], &def),
@@ -197,7 +295,12 @@ impl CmdTranslator {
                             index,
                             value,
                         });
+                        bus_control_hit |= self.mirror.set_control(*id, index, value);
                     }
+                }
+                if bus_control_hit {
+                    self.refresh_usage(*id);
+                    self.resort_from(self.mirror.parent(*id), cmds);
                 }
                 Ok(())
             }
@@ -207,6 +310,8 @@ impl CmdTranslator {
                         return Err("expected int node IDs".into());
                     };
                     cmds.push(Cmd::FreeNode { id: *id });
+                    // Removals keep any topological order valid: no re-sort.
+                    self.mirror.remove(*id);
                 }
                 Ok(())
             }
@@ -220,11 +325,32 @@ impl CmdTranslator {
                     let [OscType::Int(id), OscType::Int(target)] = pair else {
                         return Err("expected int (nodeID, targetID) pairs".into());
                     };
+                    // Manual ordering is the auto group's job (M12).
+                    for node in [*id, *target] {
+                        if self
+                            .mirror
+                            .parent(node)
+                            .is_some_and(|p| self.mirror.is_auto_group(p))
+                        {
+                            return Err(format!(
+                                "node {node} is in an auto-sorted group (/g_sortMode): manual moves are disabled there"
+                            ));
+                        }
+                    }
                     cmds.push(Cmd::MoveNode {
                         id: *id,
                         target: *target,
                         place,
                     });
+                    // Reparenting can change the bus usage of auto ancestors.
+                    if let Some((old_parent, new_parent)) =
+                        self.mirror.move_node(*id, *target, place)
+                    {
+                        self.resort_from(Some(old_parent), cmds);
+                        if new_parent != old_parent {
+                            self.resort_from(Some(new_parent), cmds);
+                        }
+                    }
                 }
                 Ok(())
             }
@@ -235,12 +361,21 @@ impl CmdTranslator {
                         return Err("expected int (id, addAction, targetID) triples".into());
                     };
                     let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
+                    if *id <= 0 {
+                        return Err("group ID must be positive".into());
+                    }
                     cmds.push(Cmd::AddGroup {
                         id: *id,
                         target: *target,
                         action,
                         group: Group::new(),
                     });
+                    let body = MirrorBody::Group {
+                        children: Vec::new(),
+                        auto: false,
+                    };
+                    // An empty group has no bus usage: no re-sort needed.
+                    let _ = self.mirror.insert(*id, body, *target, action);
                 }
                 Ok(())
             }
@@ -249,11 +384,31 @@ impl CmdTranslator {
                     let OscType::Int(id) = arg else {
                         return Err("expected int group IDs".into());
                     };
-                    cmds.push(if msg.addr == "/g_freeAll" {
-                        Cmd::FreeAllInGroup { id: *id }
+                    if msg.addr == "/g_freeAll" {
+                        cmds.push(Cmd::FreeAllInGroup { id: *id });
+                        self.mirror.free_all(*id);
                     } else {
-                        Cmd::DeepFreeGroup { id: *id }
-                    });
+                        cmds.push(Cmd::DeepFreeGroup { id: *id });
+                        self.mirror.deep_free(*id);
+                    }
+                }
+                Ok(())
+            }
+            // M12: `/g_sortMode groupID mode` — mode 1 sorts the group's
+            // children by their bus connections now and on every future
+            // change; mode 0 returns it to manual ordering.
+            "/g_sortMode" => {
+                if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
+                    return Err("expected (groupID, mode) pairs".into());
+                }
+                for pair in msg.args.chunks(2) {
+                    let [OscType::Int(group), OscType::Int(mode)] = pair else {
+                        return Err("expected int (groupID, mode) pairs".into());
+                    };
+                    self.mirror.set_auto(*group, *mode != 0)?;
+                    if *mode != 0 {
+                        self.resort_from(Some(*group), cmds);
+                    }
                 }
                 Ok(())
             }
@@ -279,6 +434,97 @@ impl CmdTranslator {
             other => Err(format!("{other} cannot be scheduled in a timed bundle")),
         }
     }
+
+    /// `/g_queryTree.reply` arguments, scsynth-compatible: `flag`, the
+    /// queried group and its child count, then depth-first per node: ID and
+    /// child count (`-1` for synths), the def name for synths, and — with
+    /// `flag` — the control count and (name, value) pairs.
+    pub fn query_tree(&self, group: i32, with_controls: bool) -> Result<Vec<OscType>, String> {
+        let Some(children) = self.mirror.children(group) else {
+            return Err(match self.mirror.get(group) {
+                Some(_) => format!("node {group} is not a group"),
+                None => format!("group {group} not found"),
+            });
+        };
+        let mut args = vec![
+            OscType::Int(with_controls as i32),
+            OscType::Int(group),
+            OscType::Int(children.len() as i32),
+        ];
+        self.query_children(group, with_controls, &mut args);
+        Ok(args)
+    }
+
+    fn query_children(&self, group: i32, with_controls: bool, args: &mut Vec<OscType>) {
+        let children = self.mirror.children(group).unwrap_or(&[]).to_vec();
+        for child in children {
+            args.push(OscType::Int(child));
+            if let Some(grandchildren) = self.mirror.children(child) {
+                args.push(OscType::Int(grandchildren.len() as i32));
+                self.query_children(child, with_controls, args);
+            } else if let Some((def_name, controls)) = self.mirror.synth_info(child) {
+                args.push(OscType::Int(-1));
+                args.push(OscType::String(def_name.into()));
+                if with_controls {
+                    args.push(OscType::Int(controls.len() as i32));
+                    let def = self.node_defs.get(&child);
+                    for (i, value) in controls.iter().enumerate() {
+                        let name = def.and_then(|d| d.control_name(i)).unwrap_or("");
+                        if name.is_empty() {
+                            args.push(OscType::Int(i as i32));
+                        } else {
+                            args.push(OscType::String(name.into()));
+                        }
+                        args.push(OscType::Float(*value));
+                    }
+                }
+            }
+        }
+    }
+
+    /// `/g_dumpGraph`: a human-readable view of the inferred bus graph of
+    /// one group — what each child reads/writes and the current order.
+    pub fn dump_graph(&self, group: i32) -> Result<String, String> {
+        let Some(children) = self.mirror.children(group) else {
+            return Err(match self.mirror.get(group) {
+                Some(_) => format!("node {group} is not a group"),
+                None => format!("group {group} not found"),
+            });
+        };
+        let auto = if self.mirror.is_auto_group(group) {
+            "auto"
+        } else {
+            "manual"
+        };
+        let mut out = format!("group {group} ({auto})\n");
+        for &child in children {
+            let usage = self.mirror.usage_of(child);
+            let kind = match self.mirror.synth_info(child) {
+                Some((def_name, _)) => def_name.to_string(),
+                None if self.mirror.is_auto_group(child) => "group (auto)".into(),
+                None => "group".into(),
+            };
+            let dynamic = if usage.dynamic { "  dynamic" } else { "" };
+            out.push_str(&format!(
+                "  {child} {kind}  reads {}  writes {}{dynamic}\n",
+                bus_list(usage.reads),
+                bus_list(usage.writes),
+            ));
+        }
+        Ok(out)
+    }
+}
+
+/// `u128` bus mask → "0,1,16" (or "-" when empty).
+fn bus_list(mask: u128) -> String {
+    if mask == 0 {
+        return "-".into();
+    }
+    let buses: Vec<String> = (0..128)
+        .filter(|b| mask & (1 << b) != 0)
+        .map(|b| b.to_string())
+        .collect();
+    buses.join(",")
 }
 
 /// Parses one `/b_*` command (except the synchronous `/b_query`) into the

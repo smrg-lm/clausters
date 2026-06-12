@@ -1,6 +1,7 @@
 //! OSC layer: UDP server, parsing with rosc and translation into engine
 //! commands.
 
+pub mod graph;
 pub mod server;
 pub mod translate;
 

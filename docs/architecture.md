@@ -23,8 +23,12 @@ and `NOTAS.md` (Spanish) at the repository root.
   results), parses every datagram through `osc::decode_packet`, builds
   commands *fully allocated* — boxed synths, pre-reserved group child lists —
   and pushes them into the command FIFO. It also owns all lookup tables: the
-  def tables, the node-ID→def mirror, and the buffer mirror
-  (`osc::translate::CmdTranslator`). All replies (`/done`, `/fail`,
+  def tables, the node-ID→def mirror, the buffer mirror, and the M12
+  **tree mirror** (`osc::graph::TreeMirror` inside
+  `osc::translate::CmdTranslator`) — topology, per-node control values and
+  bus usage, fed by the same `Cmd` stream the engine gets and rolled back by
+  rejection garbage; it answers `/g_queryTree` and drives the auto-sorted
+  groups without touching the audio thread. All replies (`/done`, `/fail`,
   `/n_go`/`/n_end`, queries) are sent from here.
 - **Audio thread** (the cpal callback, `server::backend`): runs
   `Engine::process_block` on 64-frame blocks. Per block: drain the command
@@ -70,7 +74,8 @@ the offline mode and the integration tests possible.
 | `src/synthdef/` | SynthDef JSON wire format, validation/compilation, `UGenSynth` instance |
 | `src/osc/mod.rs` | `decode_packet` — the only entry point for incoming OSC bytes |
 | `src/osc/server.rs` | The network thread: socket loop, immediate handlers, replies |
-| `src/osc/translate.rs` | `CmdTranslator`: OSC message → `Cmd`, shared by the live server and the renderer |
+| `src/osc/translate.rs` | `CmdTranslator`: OSC message → `Cmd`, shared by the live server and the renderer; owns the M12 tree mirror |
+| `src/osc/graph.rs` | M12: bus-usage analysis, the network-side `TreeMirror`, the stable topological sort behind `/g_sortMode` |
 | `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth` |
 | `src/main.rs` | CLI: realtime server (default) or `--nrt` renderer |
 
