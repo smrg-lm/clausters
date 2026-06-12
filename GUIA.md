@@ -1,7 +1,7 @@
 # Guía de compilación y prueba
 
 Cómo compilar **Clausters**, correrlo y probar todo lo que hay hasta ahora
-(milestones M0–M7, F0–F5 y M9). Pensada para Linux / Ubuntu 24.04 o más
+(milestones M0–M9 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
 nuevo.
 
 Documentación de referencia: `docs/schemas.md` (formatos de defs y comandos
@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 82 tests, no necesita placa de audio
+cargo test                       # 86 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -64,7 +64,7 @@ Terminal 1:
 
 ```sh
 cargo run --release
-# clausters F5 — silent until /s_new | 44100 Hz, 2 channels | OSC on 127.0.0.1:57110 | ...
+# clausters M8 — silent until /s_new | 44100 Hz, 2 channels | OSC on 127.0.0.1:57110 | ...
 # (la sample rate es la del dispositivo de audio default)
 ```
 
@@ -180,6 +180,44 @@ cargo run --release --example bench                    # def default
 cargo run --release --example bench --features faust   # + def Faust JIT
 ```
 
+### Probar el reloj de samples como timebase (M8)
+
+El reloj del SO y el cristal de la placa derivan entre sí; M8 agrega dos
+comandos para que el cliente use el **reloj de samples del servidor** como
+maestro: `/clock` (consulta el contador, responde `/clock.reply` con int64 +
+sample rate) y `/sched <target int64> <blob>` (agenda un paquete OSC en un
+**sample absoluto**, atómico y sample-accurate). Conviven con los bundles
+NTP de M6 — misma cola interna. El ejemplo de referencia modela
+`sample(t) = a + b·t` con regresión sobre anclas `/clock` y agenda 8 notas
+con espaciado exacto en samples:
+
+```sh
+cargo run --release                      # terminal 1
+python3 examples/sample_clock.py         # terminal 2
+```
+
+Debe escucharse un patrón de 8 notas perfectamente regular y verse el
+reporte por beat (sample objetivo, slope del modelo). Notas: la
+incertidumbre del ancla solo corre el grid entero por una constante (no se
+acumula) y el espaciado *relativo* es sample-exacto por construcción; el
+slope necesita minutos de línea de base para mostrar la deriva real (en una
+corrida corta domina la cuantización del buffer del dispositivo). Detalles
+en `docs/sample-clock.md`.
+
+A mano con `oscsend` no se puede (necesita int64 + blob), pero se ve el
+reloj avanzar con dos consultas espaciadas usando el decoder del cliente
+Python, o directamente:
+
+```sh
+python3 -c "
+import sys; sys.path.insert(0, 'examples')
+import json_client as osc, time
+c = osc.Client()
+for _ in range(3):
+    c.send('/clock'); c.reply(); time.sleep(0.5)
+"
+```
+
 La columna `x real time` es el headroom: con N synths, cuántas veces más
 rápido que 48 kHz procesa. En esta máquina ≈1800 voces sinusoidales.
 
@@ -254,7 +292,7 @@ falta `LD_LIBRARY_PATH`.
 ### Compilar y testear con el feature
 
 ```sh
-cargo test --features faust      # 118 tests (los 82 del núcleo + 36 de Faust)
+cargo test --features faust      # 122 tests (los 86 del núcleo + 36 de Faust)
 ```
 
 Los tests de Faust cubren: humo del JIT con paridad de señal contra nuestro
@@ -379,15 +417,15 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Buffers `/b_*`, hilo NRT, WAV (hound) | `tests/buffers.rs` | `json_client.py buffer`, `oscsend /b_*` de arriba |
 | `PlayBuf`/`BufRd` (loop, interpolación, canales) | `tests/buffers.rs` | demo `buffer` (sine 330 Hz, luego quinta arriba) |
 | Bundles con timetag, sample-accurate | `tests/scheduling.rs` | `json_client.py bundle` (arpegio agendado) |
+| Reloj de samples, `/clock` + `/sched` (M8) | `tests/osc.rs`, `tests/scheduling.rs` | `python3 examples/sample_clock.py` |
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 
-Con esto el plan original (M0–M7), la bifurcación F (F0–F5) y M9 están
-completos; lo que sigue está en «Milestones futuros» de PLAN.md (M8,
-M10–M14).
+Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8 y M9 están
+completos; lo que sigue está en «Milestones futuros» de PLAN.md (M10–M14).
 
 ## 5. Problemas frecuentes
 

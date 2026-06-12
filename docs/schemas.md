@@ -44,6 +44,12 @@ Anything else (defs, buffers, server commands) replies `/fail … cannot be
 scheduled in a timed bundle` — load defs and buffers first, then schedule
 the notes.
 
+Beyond scsynth, the server also exposes its **sample clock** directly:
+`/clock` queries the sample counter, and `/sched <int64 target> <blob>`
+schedules a packet at an **absolute sample** instead of an NTP time — same
+queue, same sample accuracy, drift-free by construction. See
+[`sample-clock.md`](sample-clock.md) and `examples/sample_clock.py`.
+
 ## NRT mode (offline rendering)
 
 The same engine renders scores to WAV without an audio device:

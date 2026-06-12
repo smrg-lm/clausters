@@ -134,10 +134,14 @@ scsynth, which quantizes to block boundaries and needs `OffsetOut`. The
 spent `Vec` shell of an executed bundle returns through the garbage FIFO
 (`Garbage::SpentBundle`) to be freed on the network side.
 
-In offline rendering, score timetags are seconds from render start, and the
-renderer pushes the same `Cmd::Schedule` commands — that single shared code
-path is the sample-identity guarantee, and it is why scheduling fixes must
-never fork between the two modes.
+The NTP conversion is one of **two front-ends** to the same queue: `/sched`
+(M8) carries an absolute sample target directly — no wall clock involved —
+and `/clock` exposes the counter so clients can model the sample clock as
+their master timebase (see `docs/sample-clock.md`). In offline rendering,
+score timetags are seconds from render start, and the renderer pushes the
+same `Cmd::Schedule` commands — that single shared code path is the
+sample-identity guarantee, and it is why scheduling fixes must never fork
+between the two modes.
 
 ## Invariants — do not break these
 

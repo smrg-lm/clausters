@@ -439,3 +439,108 @@ fn bundle_contents_execute() {
     assert_eq!(server.recv().addr, "/status.reply");
     server.quit();
 }
+
+/// M8: `/clock` exposes the engine's sample counter and the actual sample
+/// rate, the two numbers a client needs to anchor its clock model.
+#[test]
+fn clock_reports_the_engine_sample_counter() {
+    let mut server = TestServer::spawn();
+
+    server.send("/clock", vec![]);
+    let reply = server.recv_until("/clock.reply");
+    assert_eq!(reply.args[0], OscType::Long(0), "fresh engine starts at 0");
+    assert_eq!(reply.args[1], OscType::Double(48_000.0));
+
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..10 {
+        server.engine.process_block(&mut out);
+    }
+    server.send("/clock", vec![]);
+    let reply = server.recv_until("/clock.reply");
+    assert_eq!(reply.args[0], OscType::Long(10 * BLOCK_SIZE as i64));
+    server.quit();
+}
+
+/// M8: `/sched` argument validation and per-message translation failures.
+#[test]
+fn sched_rejects_bad_arguments() {
+    let server = TestServer::spawn();
+    let s_new_blob = || {
+        encoder::encode(&OscPacket::Message(OscMessage {
+            addr: "/s_new".into(),
+            args: vec![
+                OscType::String("default".into()),
+                OscType::Int(1000),
+                OscType::Int(1),
+                OscType::Int(0),
+            ],
+        }))
+        .unwrap()
+    };
+
+    // No arguments at all.
+    server.send("/sched", vec![]);
+    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    // Target without a packet blob.
+    server.send("/sched", vec![OscType::Long(100)]);
+    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    // Negative target.
+    server.send(
+        "/sched",
+        vec![OscType::Long(-1), OscType::Blob(s_new_blob())],
+    );
+    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    // Garbage blob.
+    server.send(
+        "/sched",
+        vec![OscType::Long(100), OscType::Blob(vec![1, 2, 3, 4])],
+    );
+    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    // A query is not schedulable: the /fail names the offending message.
+    let status_blob = encoder::encode(&OscPacket::Message(OscMessage {
+        addr: "/status".into(),
+        args: vec![],
+    }))
+    .unwrap();
+    server.send(
+        "/sched",
+        vec![OscType::Long(100), OscType::Blob(status_blob)],
+    );
+    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/status".into()));
+    server.quit();
+}
+
+/// M8: an `Int` target is tolerated and the blob may be a bundle — all its
+/// leaf messages fire as one atomic instant (inner timetags are ignored).
+#[test]
+fn sched_accepts_int_targets_and_bundle_blobs() {
+    use clausters::rosc::{OscBundle, OscTime};
+
+    let mut server = TestServer::spawn();
+    let bundle = OscPacket::Bundle(OscBundle {
+        // A far-future NTP tag that must be ignored: /sched is the clock.
+        timetag: OscTime {
+            seconds: u32::MAX,
+            fractional: 0,
+        },
+        content: vec![OscPacket::Message(OscMessage {
+            addr: "/s_new".into(),
+            args: vec![
+                OscType::String("default".into()),
+                OscType::Int(1000),
+                OscType::Int(1),
+                OscType::Int(0),
+            ],
+        })],
+    });
+    server.send(
+        "/sched",
+        vec![
+            OscType::Int(64),
+            OscType::Blob(encoder::encode(&bundle).unwrap()),
+        ],
+    );
+    // If the inner NTP tag were honored, this synth would never start.
+    server.wait_for_synth_count(1);
+    server.quit();
+}

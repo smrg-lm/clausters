@@ -129,7 +129,7 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   `cargo run --example render_golden`; benchmark `cargo run --release
   --example bench`. Bonus: el bug de blobs de rosc también afectaba elementos
   de bundle — arreglado para ambos modos en `osc::decode_packet`.)*
-- **M8 — Reloj de samples como timebase del cliente**: el reloj del SO y el
+- ✅ **M8 — Reloj de samples como timebase del cliente**: el reloj del SO y el
   cristal del DAC derivan entre sí (decenas de ppm ≈ ms por minuto), así que
   la conversión NTP→samples actual re-ancla cada bundle contra dos relojes
   que no coinciden. Extensión de protocolo para que el cliente use el reloj
@@ -147,7 +147,20 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   `docs/schemas.md` la diferencia con scsynth (que no tiene esto). Ojo: el
   contador cuenta samples procesados, no escuchados (sumar latencia del
   dispositivo para alinear con el mundo exterior) y se pausa en xruns (el
-  re-anclaje periódico lo absorbe).
+  re-anclaje periódico lo absorbe). **Los dos relojes conviven, nada se
+  descarta**: el camino NTP queda intacto (compatibilidad scsynth) y el
+  target en samples es opt-in **por bundle** — clientes NTP y clientes
+  sample-clock pueden hablarle al mismo servidor a la vez, porque ambos
+  front-ends desembocan en la misma cola (`Cmd::Schedule`). Señalización:
+  como el timetag OSC es formato NTP por especificación, no reinterpretarlo;
+  la vía es un mensaje contenedor nuevo (p. ej. `/sched` con el target i64 +
+  el bundle como blob), que además se anida/agenda igual que un bundle común.
+  *(Completado 2026-06-12 — ver NOTAS.md. `/clock` → `/clock.reply h d` y
+  `/sched <h target> <blob>` (atómico, timetags internos ignorados, target
+  pasado = próximo bloque); cliente de referencia `examples/sample_clock.py`
+  con el modelo de regresión; documentado en `docs/sample-clock.md` +
+  schemas.md. El test agenda por `/sched` y asserta el sample **exacto**,
+  sin la vecindad que necesita el camino NTP.)*
 
 ## Bifurcación F — SynthDefs vía Faust (Box/Signal API + JIT)
 

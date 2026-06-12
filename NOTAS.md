@@ -894,10 +894,66 @@ resuelve por otro camino.
 - `cargo test` 82 / `--features faust` 118 — intactos (solo cambiaron
   comentarios de doc en `src/`); `cargo doc` sin warnings en ambas configs.
 
+## M8 — Reloj de samples como timebase del cliente (completado 2026-06-12)
+
+El servidor expone su reloj de samples y acepta agendar por sample absoluto;
+el cliente puede usar el reloj de audio como maestro en vez del reloj del
+SO (que deriva decenas de ppm respecto del cristal del DAC). Los dos
+caminos conviven: NTP (M6) y samples (M8) desembocan en la misma cola
+`Cmd::Schedule`, así que clientes de ambos tipos coexisten contra el mismo
+servidor.
+
+### Qué quedó hecho
+
+- **`/clock`** → `/clock.reply h <samples> d <sampleRate>`: el contador de
+  samples del engine (el `AtomicU64` que ya publicaba desde M6) y la sample
+  rate real del dispositivo.
+- **`/sched <h target> <b packet>`**: agenda un paquete OSC completo en un
+  sample **absoluto**, atómico y sample-accurate (mismo split de bloque que
+  M6). Decisiones: mensaje contenedor en vez de reinterpretar el timetag
+  (que es formato NTP por especificación — no romper clientes estándar);
+  los timetags internos del blob se **ignoran** (un `/sched` = un instante);
+  target pasado = próximo bloque, como los bundles NTP tardíos; target
+  `i` int32 tolerado (clientes a mano) pero se desborda en <13 h a 48 kHz;
+  `/fail` por mensaje malo individual, el resto del paquete dispara igual
+  (mismo criterio que `schedule_bundle`); no agendable dentro de un bundle
+  NTP ni válido en partituras NRT (los timetags de score ya son exactos).
+- **Cliente de referencia `examples/sample_clock.py`** (stdlib, importa los
+  helpers OSC de json_client.py, que ganó el tag `h` int64 — encode con
+  marker `Int64`, decode — y `reply(quiet=)`): clase `SampleClock` con
+  anclas estilo NTP (t0/t1 alrededor de la consulta, par (punto medio,
+  contador), incertidumbre = semiancho), ajuste por cuadrados mínimos sobre
+  ventana deslizante de 64 anclas (olvido), `now()`/`local_time_of()`, y un
+  patrón de 8 notas con espaciado **exacto en samples** agendado por
+  adelantado (lead 0.3 s) re-anclando en cada beat. Honestidad del demo: el
+  slope necesita minutos de línea de base para mostrar deriva real — en una
+  corrida corta domina la cuantización por saltos de buffer del contador
+  (ruido acotado: solo afecta cuándo se *envía* un /sched, jamás cuándo
+  dispara) — y el reporte lo dice.
+- **Docs**: `docs/sample-clock.md` nuevo (protocolo, receta del modelo, por
+  qué la latencia no importa, caveats: samples procesados vs escuchados,
+  pausa en xruns, saltos de buffer; diferencia con scsynth) + párrafo en
+  schemas.md (Timed bundles) + architecture.md (los dos front-ends de la
+  misma cola). Banner a M8.
+
+### Verificación
+
+- Tests nuevos: `/clock` reporta el contador y avanza con los bloques
+  (tests/osc.rs); validación de argumentos de `/sched` (sin args, sin blob,
+  target negativo, blob basura, query no agendable → `/fail` nombrando el
+  mensaje); target `Int` + blob bundle con timetag NTP futuro ignorado;
+  y el central en tests/scheduling.rs: `/sched` a mitad de bloque y assert
+  del **sample exacto** (5026 = target+1 por sin(0)=0) — sin la vecindad
+  que necesita el test NTP equivalente. 86 core / 122 con faust, clippy y
+  rustdoc limpios.
+- E2E con el servidor real: `sample_clock.py` completo (anclas, modelo,
+  8 beats audibles regulares, slope reportado) y el one-liner `/clock` de
+  GUIA.md (contador avanza ≈22050 por 0.5 s a 44.1 kHz).
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7), F0–F5 y M9 están completos. Direcciones
-planificadas: M8 (reloj de samples como timebase del cliente) y M10–M14 en
-«Milestones futuros» de PLAN.md. Sueltas: más UGens (filtros, EnvGen con
-done actions, Line), streaming de buffers (`leaveOpen`),
-`/n_query`/`/g_queryTree`, multi-cliente con notificaciones por ID.
+El plan original (M0–M7), F0–F5, M8 y M9 están completos. Direcciones
+planificadas: M10–M14 en «Milestones futuros» de PLAN.md. Sueltas: más
+UGens (filtros, EnvGen con done actions, Line), streaming de buffers
+(`leaveOpen`), `/n_query`/`/g_queryTree`, multi-cliente con notificaciones
+por ID.

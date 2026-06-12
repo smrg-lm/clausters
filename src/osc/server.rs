@@ -336,6 +336,8 @@ impl OscServer {
             "/n_after" => self.handle_n_move(&msg, from, Place::After),
             "/c_set" => self.handle_c_set(&msg, from),
             "/c_get" => self.handle_c_get(&msg, from),
+            "/clock" => self.handle_clock(from),
+            "/sched" => self.handle_sched(&msg, from),
             "/b_alloc" => self.handle_b_cmd(&msg, from, "/b_alloc"),
             "/b_allocRead" => self.handle_b_cmd(&msg, from, "/b_allocRead"),
             "/b_read" => self.handle_b_cmd(&msg, from, "/b_read"),
@@ -373,6 +375,90 @@ impl OscServer {
             OscType::Double(self.info.actual_sample_rate),
         ];
         self.reply(to, "/status.reply", args);
+    }
+
+    /// M8: the sample-clock query. Replies `/clock.reply` with the engine's
+    /// sample counter (int64 `h`) and the actual sample rate (double `d`).
+    /// Clients pair the reply with their local monotonic clock to model
+    /// `sample(t_local) = a + b·t` and then schedule with [`/sched`]
+    /// (`Self::handle_sched`) directly in samples — see
+    /// `docs/sample-clock.md`. The counter counts *processed* samples: it
+    /// runs a device buffer ahead of the speakers and pauses on xruns.
+    fn handle_clock(&mut self, from: SocketAddr) {
+        let args = vec![
+            OscType::Long(self.handle.current_samples() as i64),
+            OscType::Double(self.info.actual_sample_rate),
+        ];
+        self.reply(from, "/clock.reply", args);
+    }
+
+    /// M8: `/sched <int64 target> <blob packet>` — a timed bundle whose time
+    /// is an absolute position on the **sample clock** instead of an NTP
+    /// timetag (the OSC timetag format is NTP by spec, so sample targets get
+    /// a container message rather than a reinterpreted tag; both front-ends
+    /// feed the same engine queue and coexist freely). The blob is a complete
+    /// OSC packet; all its leaf messages execute atomically at the target
+    /// sample — nested bundle timetags inside the blob are **ignored**, one
+    /// `/sched` is one instant. Past targets run at the start of the next
+    /// block, like late NTP bundles.
+    fn handle_sched(&mut self, msg: &OscMessage, from: SocketAddr) {
+        let target = match msg.args.first() {
+            Some(OscType::Long(t)) => *t,
+            // Tolerated for hand-written clients; real targets outgrow i32
+            // in under 13 hours at 48 kHz.
+            Some(OscType::Int(t)) => *t as i64,
+            _ => return self.fail(from, "/sched", "expected (int64 sampleTarget, blob packet)"),
+        };
+        if target < 0 {
+            return self.fail(from, "/sched", "sample target must be >= 0");
+        }
+        let Some(OscType::Blob(blob)) = msg.args.get(1) else {
+            return self.fail(from, "/sched", "expected (int64 sampleTarget, blob packet)");
+        };
+        let packet = match crate::osc::decode_packet(blob) {
+            Ok(packet) => packet,
+            Err(e) => return self.fail(from, "/sched", format!("bad packet blob: {e}")),
+        };
+        let mut cmds = Vec::new();
+        self.sched_leaves(&packet, target, &mut cmds, from);
+        if !cmds.is_empty()
+            && self
+                .handle
+                .send(Cmd::Schedule {
+                    time: target as u64,
+                    cmds,
+                })
+                .is_err()
+        {
+            self.fail(from, "/sched", "command FIFO full");
+        }
+    }
+
+    /// Translates every leaf message of a `/sched` blob, like
+    /// [`Self::schedule_bundle`] does for NTP bundles: bad messages reply
+    /// `/fail` individually, the rest still fire.
+    fn sched_leaves(
+        &mut self,
+        packet: &OscPacket,
+        target: i64,
+        cmds: &mut Vec<Cmd>,
+        from: SocketAddr,
+    ) {
+        match packet {
+            OscPacket::Message(msg) => {
+                if self.dump_osc {
+                    println!("[dumpOSC] {} {:?} (at sample {target})", msg.addr, msg.args);
+                }
+                if let Err(e) = self.schedule_message(msg, cmds) {
+                    self.fail(from, &msg.addr, e);
+                }
+            }
+            OscPacket::Bundle(bundle) => {
+                for inner in &bundle.content {
+                    self.sched_leaves(inner, target, cmds, from);
+                }
+            }
+        }
     }
 
     fn handle_d_recv(&mut self, msg: &OscMessage, from: SocketAddr) {

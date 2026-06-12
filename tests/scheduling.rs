@@ -411,4 +411,63 @@ mod osc {
             .unwrap();
         server_thread.join().unwrap().unwrap();
     }
+
+    /// M8: `/sched` carries an *absolute* sample target, so unlike the NTP
+    /// test above there is no wall-clock neighborhood to allow for — the
+    /// note must start on that exact frame. This precision is the point of
+    /// scheduling on the sample clock.
+    #[test]
+    fn sched_message_fires_at_the_exact_sample() {
+        let (mut engine, engine_handle) = engine_pair(SR, CHANNELS);
+        let info = ServerInfo {
+            nominal_sample_rate: SR as f64,
+            actual_sample_rate: SR as f64,
+        };
+        let mut server = OscServer::bind(("127.0.0.1", 0), info, engine_handle).unwrap();
+        let addr = server.local_addr().unwrap();
+        let server_thread = std::thread::spawn(move || server.run());
+        let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+
+        let target: i64 = 5_025; // deliberately mid-block (5025 % 64 != 0)
+        let s_new = OscPacket::Message(OscMessage {
+            addr: "/s_new".into(),
+            args: vec![
+                OscType::String("default".into()),
+                OscType::Int(1000),
+                OscType::Int(1),
+                OscType::Int(0),
+            ],
+        });
+        let sched = OscPacket::Message(OscMessage {
+            addr: "/sched".into(),
+            args: vec![
+                OscType::Long(target),
+                OscType::Blob(encoder::encode(&s_new).unwrap()),
+            ],
+        });
+        client
+            .send_to(&encoder::encode(&sched).unwrap(), addr)
+            .unwrap();
+        // Let the server thread parse and push the command; the engine is
+        // not ticking, so unlike NTP there is no clock racing against us.
+        std::thread::sleep(Duration::from_millis(200));
+
+        let left = render(&mut engine, 100); // 6400 samples
+        let first = left.iter().position(|s| *s != 0.0);
+        assert_eq!(
+            first,
+            Some(target as usize + 1),
+            "first audible sample (the target frame itself is sin(0) = 0)"
+        );
+
+        let quit = OscPacket::Message(OscMessage {
+            addr: "/quit".into(),
+            args: vec![],
+        });
+        client
+            .send_to(&encoder::encode(&quit).unwrap(), addr)
+            .unwrap();
+        server_thread.join().unwrap().unwrap();
+    }
 }

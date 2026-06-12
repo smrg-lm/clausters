@@ -44,12 +44,21 @@ def _string(s: str) -> bytes:
     return _pad(s.encode() + b"\x00")
 
 
+class Int64:
+    """Marker for an OSC int64 (`h`) argument — `/sched` sample targets."""
+
+    def __init__(self, value: int):
+        self.value = int(value)
+
+
 def message(addr: str, *args) -> bytes:
     tags, data = ",", b""
     for a in args:
         if isinstance(a, bool):
             raise TypeError("OSC has no bool tag here; use int")
-        if isinstance(a, int):
+        if isinstance(a, Int64):
+            tags, data = tags + "h", data + struct.pack(">q", a.value)
+        elif isinstance(a, int):
             tags, data = tags + "i", data + struct.pack(">i", a)
         elif isinstance(a, float):
             tags, data = tags + "f", data + struct.pack(">f", a)
@@ -86,6 +95,9 @@ def decode(packet: bytes) -> tuple[str, list]:
         if tag == "i":
             args.append(struct.unpack(">i", rest[:4])[0])
             rest = rest[4:]
+        elif tag == "h":
+            args.append(struct.unpack(">q", rest[:8])[0])
+            rest = rest[8:]
         elif tag == "f":
             args.append(struct.unpack(">f", rest[:4])[0])
             rest = rest[4:]
@@ -116,10 +128,11 @@ class Client:
     def send_raw(self, packet: bytes):
         self.sock.sendto(packet, SERVER)
 
-    def reply(self) -> tuple[str, list]:
+    def reply(self, quiet: bool = False) -> tuple[str, list]:
         packet, _ = self.sock.recvfrom(65536)
         addr, args = decode(packet)
-        print(f"  <- {addr} {args}")
+        if not quiet:
+            print(f"  <- {addr} {args}")
         return addr, args
 
 
