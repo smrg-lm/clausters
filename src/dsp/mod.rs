@@ -21,6 +21,18 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Frames per processing block, like scsynth.
 pub const BLOCK_SIZE: usize = 64;
+
+/// One block of samples, aligned to a cache line (M10): a block is exactly
+/// four full 64-byte lines, so SIMD loads/stores never straddle a line and
+/// autovectorization stays stable. Wires and audio buses use this; access
+/// the samples through `.0`.
+#[repr(C, align(64))]
+#[derive(Clone, Copy)]
+pub struct Block(pub [f32; BLOCK_SIZE]);
+
+impl Block {
+    pub const SILENCE: Block = Block([0.0; BLOCK_SIZE]);
+}
 /// Audio buses (scsynth `-a`); buses `0..channels` are the hardware outputs.
 pub const NUM_AUDIO_BUSES: usize = 128;
 /// Control buses (scsynth `-c`).
@@ -151,7 +163,7 @@ impl BusUsage {
 /// [`BusUsage`] masks, that no two nodes of a parallel stage touch
 /// overlapping buses (and that nothing reads what the stage writes).
 pub struct Buses {
-    audio: Vec<UnsafeCell<[f32; BLOCK_SIZE]>>,
+    audio: Vec<UnsafeCell<Block>>,
     pub control: ControlBuses,
 }
 
@@ -165,7 +177,7 @@ impl Buses {
     pub fn new(control: ControlBuses) -> Self {
         Self {
             audio: (0..NUM_AUDIO_BUSES)
-                .map(|_| UnsafeCell::new([0.0; BLOCK_SIZE]))
+                .map(|_| UnsafeCell::new(Block::SILENCE))
                 .collect(),
             control,
         }
@@ -173,7 +185,7 @@ impl Buses {
 
     pub fn clear_audio(&mut self) {
         for bus in &mut self.audio {
-            bus.get_mut().fill(0.0);
+            bus.get_mut().0.fill(0.0);
         }
     }
 
@@ -183,7 +195,7 @@ impl Buses {
     /// buses (scheduler invariant), so the plain reference is sound.
     #[inline]
     pub fn audio(&self, bus: usize) -> &[f32; BLOCK_SIZE] {
-        unsafe { &*self.audio[bus].get() }
+        unsafe { &(*self.audio[bus].get()).0 }
     }
 
     /// Mutable access to one audio bus through a shared reference.
@@ -196,7 +208,7 @@ impl Buses {
     #[inline]
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn audio_mut(&self, bus: usize) -> &mut [f32; BLOCK_SIZE] {
-        unsafe { &mut *self.audio[bus].get() }
+        unsafe { &mut (*self.audio[bus].get()).0 }
     }
 }
 

@@ -77,7 +77,7 @@ the offline mode and the integration tests possible.
 | `src/embed.rs` | M14: the embed C ABI (feature `embed`, exported by the cdylib) |
 | `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
 | `src/node/mod.rs` | `NodeTree` (fixed slab), `SynthNode` trait, groups, add actions, moves |
-| `src/dsp/mod.rs` | `UGen` trait, `ProcessCtx`, buses, block/bus-count constants |
+| `src/dsp/mod.rs` | `UGen` trait, `ProcessCtx`, buses, the cache-line-aligned `Block` (M10), block/bus-count constants |
 | `src/dsp/<ugen>.rs` | One file per UGen family (`sinosc`, `binop`, `io`, `noise`, `buf`) |
 | `src/dsp/registry.rs` | `UGenKind`: name parsing, input arity, construction |
 | `src/dsp/buffer.rs` | Immutable sample buffers and the engine-side pool |
@@ -125,6 +125,9 @@ Two shared structures cross threads without the FIFOs:
 
 ### Preallocated capacities and what happens when they fill
 
+Audited in M10: `tests/capacity.rs` overflows each structure on purpose and
+pins the behavior below.
+
 | Structure | Capacity | When full |
 |---|---|---|
 | Command FIFO | 1024 | reply `/fail … command FIFO full` (render mode: abort with the event time) |
@@ -136,6 +139,7 @@ Two shared structures cross threads without the FIFOs:
 | Buffer pool | 1024 | `/b_*` validates the index up front and replies `/fail` |
 | Audio buses | 128 (`dsp::NUM_AUDIO_BUSES`) | bus-index inputs are clamped per block |
 | Control buses | 1024 | out-of-range reads return 0.0, writes are ignored |
+| IPC rings (M14) | 64 KiB each | backpressure: `push` fails, the producer retries; nothing is dropped (a full *reply* ring drops the reply with a log — the client stopped draining) |
 
 ## Clocks and scheduling
 

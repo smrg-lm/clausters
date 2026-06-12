@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, UGen, registry};
+use crate::dsp::{Block, MAX_UGEN_INPUTS, ProcessCtx, UGen, registry};
 use crate::node::SynthNode;
 use crate::synthdef::{InputRef, SynthDef};
 
@@ -12,15 +12,15 @@ pub struct UGenSynth {
     def: Arc<SynthDef>,
     controls: Vec<f32>,
     ugens: Vec<Box<dyn UGen>>,
-    /// One output wire per UGen.
-    wires: Vec<[f32; BLOCK_SIZE]>,
+    /// One output wire per UGen, cache-line aligned (M10).
+    wires: Vec<Block>,
 }
 
 impl UGenSynth {
     pub fn new(def: Arc<SynthDef>) -> Self {
         let controls = def.control_defaults.clone();
         let ugens: Vec<_> = def.ugens.iter().map(|u| registry::build(u.kind)).collect();
-        let wires = vec![[0.0; BLOCK_SIZE]; ugens.len()];
+        let wires = vec![Block::SILENCE; ugens.len()];
         Self {
             def,
             controls,
@@ -37,7 +37,7 @@ impl SynthNode for UGenSynth {
         for i in 0..self.ugens.len() {
             // Topological order guarantees inputs only reference earlier wires.
             let (earlier, rest) = self.wires.split_at_mut(i);
-            let output = &mut rest[0][..ctx.frames];
+            let output = &mut rest[0].0[..ctx.frames];
 
             let mut inputs: [&[f32]; MAX_UGEN_INPUTS] = [&[]; MAX_UGEN_INPUTS];
             let refs = &self.def.ugens[i].inputs;
@@ -45,7 +45,7 @@ impl SynthNode for UGenSynth {
                 inputs[k] = match r {
                     InputRef::Const(c) => std::slice::from_ref(&self.def.constants[*c]),
                     InputRef::Control(c) => std::slice::from_ref(&self.controls[*c]),
-                    InputRef::Wire(w) => &earlier[*w][..ctx.frames],
+                    InputRef::Wire(w) => &earlier[*w].0[..ctx.frames],
                 };
             }
             self.ugens[i].process(ctx, &inputs[..refs.len()], output);

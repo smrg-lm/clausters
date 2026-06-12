@@ -1,7 +1,7 @@
 # Guía de compilación y prueba
 
 Cómo compilar **Clausters**, correrlo y probar todo lo que hay hasta ahora
-(milestones M0–M9, M12–M14 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
+(milestones M0–M14 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
 nuevo.
 
 Documentación de referencia: `docs/schemas.md` (formatos de defs y comandos
@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 106 tests, no necesita placa de audio
+cargo test                       # 111 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -287,6 +287,27 @@ La identidad bit a bit está clavada por `tests/parallel.rs` (en vivo, en
 NRT, y tras un `/n_set` que re-apunta un bus); la RT-safety del conductor
 por `tests/rt_safety.rs`. Detalle en `docs/parallel.md`.
 
+### Probar la memoria acotada y la alineación (M10)
+
+Toda estructura pre-alocada tiene un comportamiento definido y no-fatal al
+llenarse — la tabla completa (capacidad + modo de fallo) está en
+`docs/architecture.md`. Los tests la clavan desbordando cada una a
+propósito (FIFO de basura → leak acotado en vez de bloquear; eventos →
+drop silencioso; slab/grupos → rechazo con rollback):
+
+```sh
+cargo test --test capacity
+```
+
+Los bloques de señal (wires, buses, staging Faust) están alineados a línea
+de caché (`Block`, `#[repr(align(64))]`): un bloque = 4 líneas exactas, sin
+straddling. Medido neutro en el bench (dentro del ruido de la máquina);
+verificable con A/B intercalado:
+
+```sh
+cargo run --release --example bench | grep "1000 synths"
+```
+
 ### Probar los transportes locales: shm y embebido (M14)
 
 OSC sigue siendo la única codificación, pero ya no hace falta UDP para
@@ -394,7 +415,7 @@ falta `LD_LIBRARY_PATH`.
 ### Compilar y testear con el feature
 
 ```sh
-cargo test --features faust      # 143 tests (los 106 del núcleo + 37 de Faust)
+cargo test --features faust      # 148 tests (los 111 del núcleo + 37 de Faust)
 ```
 
 Los tests de Faust cubren: humo del JIT con paridad de señal contra nuestro
@@ -524,15 +545,16 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Grupos paralelos, `/g_parallel` + `--workers` (M13) | `tests/parallel.rs`, `tests/rt_safety.rs` | `cargo run --release --example bench` (sección parallel) |
 | Transporte shm + data plane (M14) | `tests/ipc.rs` | `--shm` + `python3 examples/shm_client.py` |
 | C ABI embebida, render síncrono (M14) | `tests/ipc.rs` (feature embed) | `python3 examples/embed_render.py` |
+| Memoria acotada + alineación (M10) | `tests/capacity.rs` | leer la tabla en `docs/architecture.md` |
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 
-Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8, M9 y
-M12–M14 están completos; de los «Milestones futuros» de PLAN.md quedan M10
-y M11.
+Con esto el plan original (M0–M7), la bifurcación F (F0–F5) y M8–M14
+(salvo M11) están completos; de los «Milestones futuros» de PLAN.md queda
+solo M11 (`/n_map`).
 
 ## 5. Problemas frecuentes
 

@@ -324,7 +324,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   desde CLAUDE.md y schemas.md; rustdoc sin warnings en ambas configs. La
   tabla de capacidades adelanta la mitad de auditoría de M10.)*
 
-- **M10 — Memoria acotada y alineación**: la mitad «denormales» de la idea
+- ✅ **M10 — Memoria acotada y alineación**: la mitad «denormales» de la idea
   original ya está hecha (post-M7: `dsp::denormals`, `-ftz 2`, tests); queda
   la mitad de memoria. (1) Auditar y documentar en una tabla única (en
   `docs/architecture.md`) todas las capacidades pre-alocadas — FIFOs de
@@ -341,6 +341,13 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   (3) Actualizar la skill `realtime-audio` con las tres cosas: memoria
   acotada con su tabla, nota de alineación, y referencia a la protección de
   denormales ya implementada.
+  *(Completado 2026-06-12 — ver NOTAS.md. Tabla de M9 ahora clavada por
+  `tests/capacity.rs` (desbordes de basura/eventos/slab/grupos + fila nueva
+  de rings M14); `Block` `#[repr(C, align(64))]` para wires, buses y staging
+  Faust — bench A/B intercalado: neutro dentro del ruido (±4%), se conserva
+  por el argumento de estabilidad; skill `realtime-audio` actualizada
+  (modos de fallo, alineación, denormales reales en vez del `_mm_setcsr`
+  deprecado).)*
 
 - **M11 — `/n_map`: buses de control como fuente de parámetros** (derivado
   de la revisión de la UI de Faust): la concepción «los elementos de UI son

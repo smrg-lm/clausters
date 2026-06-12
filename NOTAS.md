@@ -1192,11 +1192,59 @@ científico.
   `embed_render.py` → 100800 frames, WAV escuchable.
 - **106 tests core / 143 faust / 107 embed**, clippy y rustdoc limpios.
 
+## M10 — Memoria acotada y alineación (completado 2026-06-12)
+
+La mitad «denormales» de la idea original ya estaba (post-M7); esta es la
+mitad de memoria. La tabla de capacidades de M9 deja de ser solo
+documentación: ahora está **clavada por tests**, y los bloques de señal
+quedaron alineados a línea de caché.
+
+### Qué quedó hecho
+
+- **`tests/capacity.rs`** (5 tests): desborda cada estructura a propósito y
+  fija el modo de fallo —
+  - garbage FIFO (1024) + lista de retención (64): 1500 synths muertos sin
+    recolectar → leak acotado por `mem::forget` (la única opción RT-safe),
+    el engine sigue procesando y sonando; la recolección posterior drena
+    FIFO + retención (assert 1024..1500 recolectados);
+  - FIFO de eventos (2048): 2400 eventos sin drenar → drop silencioso,
+    estado del árbol exacto;
+  - slab de nodos (1024 con root): 1100 adds → 1023 vivos + 77
+    `RejectedSynth` que ruedan atrás por el garbage (conteo exacto);
+  - grupos no-root (256 hijos): 300 adds → 256 + 44 rechazos;
+  - `Block` alineado: `align_of == 64`, sin padding (`size == 256`),
+    direcciones de un `Vec<Block>` verificadas.
+- **Alineación**: tipo `Block` (`#[repr(C, align(64))]` sobre
+  `[f32; BLOCK_SIZE]`, acceso por `.0`) para los wires de `UGenSynth`, los
+  buses de audio (`UnsafeCell<Block>`) y los buffers de staging de
+  `FaustSynth`. Un bloque = exactamente 4 líneas de caché: ningún load SIMD
+  parte una línea. **Medición** (la condición del plan era «conservar solo
+  si no empeora»): bench A/B intercalado con `git stash` (1000 synths) —
+  SIN {1186, 1283, 1328, 1337} vs CON {1240, 1281, 1286, 1292, 1315}
+  blocks/s: medias idénticas dentro del ruido de la máquina (±4–8%). Se
+  conserva por el argumento de estabilidad, no por una ganancia medida —
+  anotado tal cual.
+- **Tabla en architecture.md**: nota de que `tests/capacity.rs` la clava +
+  fila nueva para los rings M14 (backpressure; reply ring lleno = drop con
+  log) + mención de `Block` en el mapa de módulos.
+- **Skill `realtime-audio` actualizada**: filosofía de modos de fallo
+  (rechazar-y-reportar / drop best-effort / leak acotado) con puntero a la
+  tabla y los tests; sección nueva de alineación; la sección de denormales
+  reescrita para referir a la implementación real
+  (`dsp::denormals::flush_to_zero()` por asm — el ejemplo viejo usaba el
+  intrínseco `_mm_setcsr` deprecado — más `-ftz 2` y el requisito de armar
+  FTZ en todo hilo de procesamiento nuevo).
+
+### Verificación
+
+- **111 tests core / 148 con faust** (+5), clippy y rustdoc limpios.
+- Goldens intactos (la alineación no cambia ningún valor — `size_of` no
+  cambia, solo la dirección base).
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7), F0–F5, M8, M9 y M12–M14 están completos. De los
-«Milestones futuros» de PLAN.md quedan M10 (memoria acotada y alineación) y
-M11 (`/n_map`). Sueltas: más UGens (filtros, EnvGen con done actions,
-Line), streaming de buffers (`leaveOpen`), `/n_query`, multi-cliente con
-notificaciones por ID, y los diferidos de M14 (semáforo de wakeup,
-múltiples clientes de ring, JS/wasm).
+El plan original (M0–M7), F0–F5 y M8–M14 salvo M11 están completos. De los
+«Milestones futuros» de PLAN.md queda solo M11 (`/n_map`). Sueltas: más
+UGens (filtros, EnvGen con done actions, Line), streaming de buffers
+(`leaveOpen`), `/n_query`, multi-cliente con notificaciones por ID, y los
+diferidos de M14 (semáforo de wakeup, múltiples clientes de ring, JS/wasm).

@@ -29,7 +29,7 @@ use std::ffi::{CStr, c_char, c_void};
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use crate::dsp::{BLOCK_SIZE, NUM_AUDIO_BUSES, ProcessCtx};
+use crate::dsp::{Block, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
 use crate::node::SynthNode;
@@ -112,8 +112,8 @@ pub struct FaustSynth {
     zones: Vec<*mut f32>,
     out_bus: usize,
     in_bus: usize,
-    in_bufs: Vec<[f32; BLOCK_SIZE]>,
-    out_bufs: Vec<[f32; BLOCK_SIZE]>,
+    in_bufs: Vec<Block>,
+    out_bufs: Vec<Block>,
     /// Scratch pointer arrays for `compute`, refreshed every block.
     in_ptrs: Vec<*mut f32>,
     out_ptrs: Vec<*mut f32>,
@@ -148,8 +148,8 @@ impl FaustSynth {
             zones: ui.zones,
             out_bus: 0,
             in_bus: 0,
-            in_bufs: vec![[0.0; BLOCK_SIZE]; num_inputs],
-            out_bufs: vec![[0.0; BLOCK_SIZE]; num_outputs],
+            in_bufs: vec![Block::SILENCE; num_inputs],
+            out_bufs: vec![Block::SILENCE; num_outputs],
             in_ptrs: vec![std::ptr::null_mut(); num_inputs],
             out_ptrs: vec![std::ptr::null_mut(); num_outputs],
         })
@@ -163,12 +163,12 @@ impl SynthNode for FaustSynth {
         let (offset, frames) = (ctx.offset, ctx.frames);
         for i in 0..self.in_bufs.len() {
             let bus = (self.in_bus + i).min(NUM_AUDIO_BUSES - 1);
-            self.in_bufs[i][..frames]
+            self.in_bufs[i].0[..frames]
                 .copy_from_slice(&ctx.buses.audio(bus)[offset..offset + frames]);
-            self.in_ptrs[i] = self.in_bufs[i].as_mut_ptr();
+            self.in_ptrs[i] = self.in_bufs[i].0.as_mut_ptr();
         }
         for i in 0..self.out_bufs.len() {
-            self.out_ptrs[i] = self.out_bufs[i].as_mut_ptr();
+            self.out_ptrs[i] = self.out_bufs[i].0.as_mut_ptr();
         }
         unsafe {
             ffi::computeCDSPInstance(
@@ -184,7 +184,7 @@ impl SynthNode for FaustSynth {
             // this bus while we sum into it.
             for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
                 .iter_mut()
-                .zip(&buf[..frames])
+                .zip(&buf.0[..frames])
             {
                 *d += s;
             }

@@ -67,6 +67,21 @@ calls `collector.collect()`.
   buffers — scsynth does exactly this with its command-line options).
 - `Vec` is fine if built with `with_capacity` and never exceeded; in debug, guard
   with `assert_no_alloc`.
+- **Every bounded structure needs a defined, non-fatal full behavior**, decided
+  per case: reject-and-report (command FIFO → `/fail`), best-effort drop
+  (notification events), or — when the only alternatives are blocking or
+  freeing on the RT thread — a bounded leak (`mem::forget`). In this project
+  the complete table (capacity + failure mode of every structure) lives in
+  `docs/architecture.md`, and `tests/capacity.rs` overflows each one on
+  purpose (M10).
+
+### Alignment
+
+Signal blocks should not straddle cache lines: this project wraps them in
+`#[repr(C, align(64))] struct Block([f32; 64])` (M10) — one block = exactly
+four 64-byte lines, no padding added, autovectorization stays stable. Wires,
+audio buses and the Faust staging buffers all use it. Measured neutral on the
+dev machine (within run-to-run noise); kept for the stability argument.
 
 ## cpal: the essentials
 
@@ -112,17 +127,14 @@ for each 64-sample block:
 ## Denormals
 
 Filters with tails decaying to zero produce denormal numbers that can be 100x
-slower. Enable flush-to-zero at the start of the callback on x86:
-
-```rust
-// once per callback, audio thread
-unsafe {
-    use std::arch::x86_64::{_mm_setcsr, _mm_getcsr};
-    _mm_setcsr(_mm_getcsr() | 0x8040); // FTZ + DAZ
-}
-```
-
-(or add a tiny DC offset, 1e-18, inside the filters — classic scsynth technique).
+slower. **Implemented in this project** as `dsp::denormals::flush_to_zero()`
+(inline asm: MXCSR FTZ+DAZ on x86-64, FPCR.FZ on aarch64 — the `_mm_setcsr`
+intrinsic is deprecated), re-armed in the cpal callback, armed in `render()`
+and in every M13 DSP worker — all modes, so renders stay sample-identical.
+Faust factories additionally compile with `-ftz 2`. Guarded by
+`tests/denormals.rs` and the Faust tail test in `tests/golden.rs`; do not add
+new processing threads without arming it. (The classic alternative — a tiny
+DC offset, 1e-18, inside filters — is not needed here.)
 
 ## Verification
 
