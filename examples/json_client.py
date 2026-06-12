@@ -14,6 +14,8 @@ then run one or more demos (default: status):
 `ugen`   defines an amplitude-modulated noise synth via /d_recv and plays it.
 `faust`  builds two Faust defs as JSON box trees via /d_faust (needs the
          feature): a sine from primitives and one importing the Faust stdlib.
+`wavetable` computes a 256-point table in Python and plays it through
+         `waveform` + `rdtable` (needs the faust feature).
 `buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
          the file's pitch (rate from /b_info and /status), then frees it.
 `bundle` schedules a melody in advance with NTP-timetagged bundles: the
@@ -197,6 +199,39 @@ def stdlib_def() -> str:
     return json.dumps(box("seq", osc, box("mul", "_", 0.15)))
 
 
+def wavetable_def() -> str:
+    """F5: a wavetable oscillator whose table is *computed in Python* — the
+    first four harmonics of a saw — and shipped inside a `waveform` box. No
+    Faust source formatting, no server-side files."""
+    n = 256
+    table = [sum(math.sin(math.tau * k * i / n) / k for k in range(1, 5))
+             for i in range(n)]
+    peak = max(abs(x) for x in table)
+    table = [x / peak for x in table]
+    wrap = box("split", "_", box("sub", "_", box("floor", "_")))
+    freq = hslider("freq", 220.0, 20.0, 20000.0, 0.01)
+    phasor = box("rec", box("seq", box("add", "_", box("div", freq, 48000.0)), wrap), "_")
+    idx = box("intcast", box("mul", phasor, n))
+    read = {"op": "rdtable", "in": [{"op": "waveform", "values": table}, idx]}
+    return json.dumps(box("mul", read, hslider("amp", 0.2, 0.0, 1.0, 0.001)))
+
+
+def demo_wavetable(client: Client):
+    print("wavetable demo: /d_faust jwavetable (table computed client-side)")
+    client.send("/d_faust", "jwavetable", wavetable_def())
+    addr, _ = client.reply()  # compilation is async: /done or /fail
+    if addr == "/fail":
+        print("  (is the server running with --features faust?)")
+        return
+    print("  /s_new jwavetable 3003 (freq 220)")
+    client.send("/s_new", "jwavetable", 3003, 1, 0)
+    time.sleep(1.5)
+    print("  /n_set 3003 freq 330")
+    client.send("/n_set", 3003, "freq", 330.0)
+    time.sleep(1.5)
+    client.send("/n_free", 3003)
+
+
 def demo_faust(client: Client):
     for name, payload in [("jsine", sine_def()), ("jstdlib", stdlib_def())]:
         print(f"faust demo: /d_faust {name}")
@@ -338,6 +373,8 @@ def main():
             demo_ugen(client)
         elif demo == "faust":
             demo_faust(client)
+        elif demo == "wavetable":
+            demo_wavetable(client)
         elif demo == "buffer":
             demo_buffer(client)
         elif demo == "bundle":
@@ -349,7 +386,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, buffer, bundle, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, bundle, score, quit)"
             )
 
 

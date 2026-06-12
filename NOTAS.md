@@ -792,10 +792,60 @@ piezas:
   `out[1000] == 0.0` exacto. 82 tests núcleo / 114 con faust, goldens
   intactos (las escenas no generaban subnormales).
 
-## Próximo: F5 — Extensiones Faust (opcional) o features nuevas
+## F5 — Extensiones Faust: waveforms y tablas (completado 2026-06-12)
 
-El plan original (M0–M7) está completo. F5 (opcional): Signal API,
-waveforms/soundfiles, polifonía nativa de Faust, backend interpreter (sin
-LLVM). Otras direcciones naturales: más UGens (filtros, EnvGen con done
-actions, Line), streaming de buffers (`leaveOpen`), `/n_query`/`/g_queryTree`,
+El alcance salió de la revisión del 2026-06-12 (ver «Milestones futuros» en
+PLAN.md): de la lista original de F5 se implementó lo que aporta hoy —
+`waveform` + primitivas de tabla — y se descartó lo que el servidor ya
+resuelve por otro camino.
+
+### Qué quedó hecho
+
+- **Tres ops nuevos en el schema JSON→Box** (`src/faust/boxes.rs`):
+  - `waveform` con `values` (array no vacío de números): tabla embebida en
+    la def, calculada numéricamente por el cliente (wavetables, funciones de
+    transferencia para waveshaping) sin formatear fuente Faust. Emite el par
+    (tamaño, contenido) como en Faust. FFI: `CboxWaveform` recibe un array
+    de boxes `CboxInt`/`CboxReal` **terminado en NULL** (verificado en la
+    fuente de faust, `box_signal_api.cpp`).
+  - `rdtable` (2 o 3 boxes en `in`) y `rwtable` (4 o 5): se componen como
+    `seq(par(...), primitiva)` — exactamente como los helpers `Aux` de
+    upstream, que esta vez **no** tienen el slip de `boxFmod` (revisado en
+    la fuente). La forma corta es el idioma `wf, idx : rdtable` con un
+    `waveform` ocupando (tamaño, init); Faust valida la aridad total al
+    compilar.
+  - Helper `number_box` compartido con el shorthand numérico (int si entra
+    en `c_int`, real si no).
+- **Descartes documentados** (en PLAN.md y `docs/schemas.md`): `soundfile`
+  — los datos de audio viven en los buffers del servidor; `PlayBuf`/`BufRd`
+  → bus → control `in` del def Faust cruza la señal sin copiar nada al
+  mundo Faust — y la polifonía nativa de Faust — el node tree es el
+  alocador de voces (una voz = un `/s_new`, las instancias comparten
+  factory) y el modo polifónico impone convenciones MIDI ajenas al modelo.
+  El backend interpreter (sin LLVM) y la Signal API quedan ligados al
+  target wasm de M14.
+- **Cliente Python**: demo `wavetable` — tabla de 256 puntos (4 armónicos
+  de sierra) calculada en Python, normalizada y enviada como `waveform`;
+  oscilador con `freq`/`amp` como sliders.
+- **Docs**: filas nuevas en la tabla de ops y sección «Tables and
+  waveforms» en `docs/schemas.md`, con el patrón buffers-como-señal.
+  Banner del server a F5.
+
+### Verificación
+
+- `cargo test --features faust`: 118 (+4: ciclo exacto por la tabla con
+  contador `& 3`; oscilador de wavetable de 64 puntos a 440 Hz con RMS
+  1/√2; `rdtable` explícito con init constante; `rwtable` escribe-y-lee;
+  más 4 casos de error de validación y los ops en el kitchen sink).
+  `cargo test` core: 82, intacto. Clippy limpio en ambas configs (solo las
+  2 warnings preexistentes).
+- E2E: demo `wavetable` contra el server release con faust — `/done
+  /d_faust jwavetable`, `/s_new` + `/n_set freq` audibles, `/quit` limpio.
+
+## Próximo: features nuevas
+
+El plan original (M0–M7) y F0–F5 están completos. Direcciones planificadas:
+M8 (reloj de samples como timebase del cliente) y M9–M14 en «Milestones
+futuros» de PLAN.md. Sueltas: más UGens (filtros, EnvGen con done actions,
+Line), streaming de buffers (`leaveOpen`), `/n_query`/`/g_queryTree`,
 multi-cliente con notificaciones por ID.

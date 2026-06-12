@@ -200,6 +200,14 @@ unsafe extern "C" {
     pub fn CboxHGroup(label: *const c_char, group: FaustBox) -> FaustBox;
     pub fn CboxVGroup(label: *const c_char, group: FaustBox) -> FaustBox;
 
+    // Tables (F5). `CboxWaveform` takes a NULL-terminated array of
+    // `CboxInt`/`CboxReal` boxes; the primitives are the 0-argument forms
+    // (3 inputs for rdtable, 5 for rwtable), applied via `CboxSeq`/`CboxPar`
+    // exactly like upstream's own `Cbox*TableAux` helpers.
+    pub fn CboxWaveform(wf: *mut FaustBox) -> FaustBox;
+    pub fn CboxReadOnlyTable() -> FaustBox;
+    pub fn CboxWriteReadTable() -> FaustBox;
+
     /// Compiles Faust *source* into a box usable inside the current lib
     /// context — the schema's escape hatch to the Faust stdlib. On error
     /// returns NULL and fills `error_msg`.

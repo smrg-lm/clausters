@@ -129,6 +129,25 @@ binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
   `cargo run --example render_golden`; benchmark `cargo run --release
   --example bench`. Bonus: el bug de blobs de rosc también afectaba elementos
   de bundle — arreglado para ambos modos en `osc::decode_packet`.)*
+- **M8 — Reloj de samples como timebase del cliente**: el reloj del SO y el
+  cristal del DAC derivan entre sí (decenas de ppm ≈ ms por minuto), así que
+  la conversión NTP→samples actual re-ancla cada bundle contra dos relojes
+  que no coinciden. Extensión de protocolo para que el cliente use el reloj
+  de samples como maestro: (1) exponer `current_samples()` por OSC (en
+  `/status.reply` o un `/clock` nuevo); (2) aceptar bundles con target
+  **en samples** (entero de 64 bits — `Cmd::Schedule` ya trabaja así, la
+  conversión NTP es solo el front-end); (3) en el cliente, modelar
+  `sample(t_local) = a + b·t` con pares (reloj monotónico local, sample
+  consultado) y regresión con olvido — estilo DLL de JACK / Ableton Link —
+  y agendar por adelantado directo en samples. La latencia de la consulta
+  no importa (solo necesita incertidumbre acotada + scheduling ahead): el
+  error del ancla desplaza todo el grid por una constante, y el timing
+  *relativo* entre eventos queda sample-exacto por construcción.
+  Demo/referencia en `examples/json_client.py`; documentar en
+  `docs/schemas.md` la diferencia con scsynth (que no tiene esto). Ojo: el
+  contador cuenta samples procesados, no escuchados (sumar latencia del
+  dispositivo para alinear con el mundo exterior) y se pausa en xruns (el
+  re-anclaje periódico lo absorbe).
 
 ## Bifurcación F — SynthDefs vía Faust (Box/Signal API + JIT)
 
@@ -201,9 +220,26 @@ UGens.
   *(Completado 2026-06-10 — ver NOTAS.md. `tests/faust_parity.rs` (sine con
   tolerancia float + ganancia bit-exacta + grupo compartido),
   `examples/json_client.py` (solo stdlib), `docs/schemas.md`.)*
-- **F5 — Extensiones (opcional)**: Signal API como variante de bajo nivel,
-  waveforms/soundfiles, polifonía nativa de Faust, backend interpreter de Faust
-  (sin LLVM) para plataformas sin JIT.
+- ✅ **F5 — Extensiones (opcional; revisado 2026-06-12, ver «Milestones
+  futuros»)**: la lista original se revisó contra lo que el servidor ya
+  resuelve. **Se mantiene**: `waveform` (tablas chicas embebidas en la propia
+  def — wavetables, funciones de transferencia para waveshaping; son
+  autocontenidas y no compiten con los buffers), el backend interpreter de
+  Faust (sin LLVM) para plataformas sin JIT — cobra sentido real con el
+  target wasm de M14 — y la Signal API como variante de bajo nivel (baja
+  prioridad: la Box API cubrió todos los casos hasta ahora). **Se descarta**:
+  `soundfile` — duplica el sistema de buffers: un `PlayBuf`/`BufRd`
+  escribiendo a un bus alimenta a cualquier nodo Faust por su control `in`,
+  sin copiar datos al mundo Faust (documentar el patrón en `docs/schemas.md`);
+  y la polifonía nativa de Faust — el node tree ya es el alocador de voces
+  (una voz = un `/s_new`, las instancias comparten factory) y el modo
+  polifónico impone convenciones MIDI (`freq`/`gain`/`gate`) ajenas al modelo
+  scsynth; el único caso de uso real sería portar DSP polifónico Faust
+  existente sin tocarlo, marginal acá.
+  *(Completado 2026-06-12 — ver NOTAS.md. Ops `waveform`/`rdtable`/`rwtable`
+  en el schema, demo `wavetable` en el cliente Python, patrón
+  buffers-como-señal documentado en `docs/schemas.md`; interpreter backend
+  y Signal API quedan como parte del target wasm de M14.)*
 
 ### Previsiones de implementación
 
@@ -237,6 +273,207 @@ Licencia: este proyecto es GPLv3-o-posterior, compatible con libfaust
 el archivo `COPYING` con el texto verbatim de la GPLv3.
 
 Ver skill `faust-embedding` para los detalles de la C API y sus trampas.
+
+## Milestones futuros (M9+) — características adicionales
+
+Sección agregada el 2026-06-12 a partir de una lista de ideas a revisar (el
+M8 salió de esa misma lista). El orden refleja dependencias y costo/valor,
+no urgencia: M9–M11 son chicos e independientes entre sí, M12 habilita M13,
+M14 es independiente de todos. Al final se anota qué ideas se descartaron y
+por qué. Direcciones menores que no llegan a milestone (más UGens —
+`Saw`/`Pulse`/filtros/`EnvGen` con done actions ya listados arriba —,
+`/g_queryTree`, streaming de buffers) se toman sueltas cuando hagan falta.
+
+- **M9 — Documentación de desarrollo**: hoy `docs/` solo tiene documentación
+  de usuario (`schemas.md`). Agregar `docs/architecture.md` (en inglés, como
+  todo `docs/`): mapa de hilos (red / audio / NRT / compilador Faust), mapa
+  de módulos (qué vive en `src/server`, `src/node`, `src/dsp`, `src/osc`,
+  `src/faust`, `src/synthdef`), ciclo de vida de la memoria (comandos
+  pre-armados en el hilo de red, garbage FIFO, pools `Arc`) e invariantes
+  que ningún cambio puede romper (RT-safety, identidad sample-exacta RT/NRT,
+  decodificar siempre por `osc::decode_packet`). Y una guía «cómo agregar
+  una UGen en Rust»: el trait, la aridad, `ProcessCtx` por slices, dónde se
+  registra el `kind`, y qué tests exige (unitario de señal + no-alloc +
+  golden si cambia el sonido). Dos decisiones quedan escritas acá:
+  (a) el mapeo de UI de Faust a controles — usar los labels como nombres de
+  control es deliberado: los nombres los pone el autor de la def, igual que
+  en `controls` del JSON de UGens, con `out`/`in` reservados para buses; el
+  *qué* ya está en `schemas.md`, falta el *porqué* en la doc de desarrollo;
+  (b) plugins de UGens: Rust no tiene ABI estable, así que no hay plugins
+  dinámicos en v1 — extender = compilar dentro del crate y la API interna
+  documentada es el contrato; si algún día hacen falta plugins dinámicos, la
+  vía es una C ABI o wasm **versionadas** (lección histórica de scsynth: su
+  ABI de plugins se rompía con cada cambio de struct o de feature). Cierra
+  con una pasada de rustdoc sobre los items públicos.
+
+- **M10 — Memoria acotada y alineación**: la mitad «denormales» de la idea
+  original ya está hecha (post-M7: `dsp::denormals`, `-ftz 2`, tests); queda
+  la mitad de memoria. (1) Auditar y documentar en una tabla única (en
+  `docs/architecture.md`) todas las capacidades pre-alocadas — FIFOs de
+  comandos/basura/eventos, cola de schedule (1024), slab de nodos, pool de
+  buffers (1024), buses (128 audio / 1024 control) — y el modo de fallo de
+  cada una al llenarse: el FIFO de comandos ya responde `/fail … command
+  FIFO full` en todos los caminos del servidor vivo; verificar el resto
+  (¿qué hace el hilo de audio si el garbage FIFO está lleno?, ¿y el de
+  eventos?) y emparejar comportamientos. (2) Alineación: wires y bloques de
+  bus son `[f32; 64]` con alineación natural de 4 bytes; envolverlos en un
+  tipo `#[repr(align(64))]` (un bloque = 256 bytes = 4 líneas de caché
+  enteras, sin partir) para autovectorización estable — medir con
+  `examples/bench` antes y después y conservarlo solo si no empeora.
+  (3) Actualizar la skill `realtime-audio` con las tres cosas: memoria
+  acotada con su tabla, nota de alineación, y referencia a la protección de
+  denormales ya implementada.
+
+- **M11 — `/n_map`: buses de control como fuente de parámetros** (derivado
+  de la revisión de la UI de Faust): la concepción «los elementos de UI son
+  señales que llegan por buses de control» hoy solo es cierta para defs
+  UGen que incluyan `InCtl` en su grafo; los params Faust solo se mueven por
+  `/n_set` discreto. `/n_map nodeID ctl bus` (scsynth) lo unifica para los
+  dos mundos: el nodo lee el bus de control al inicio de cada bloque y lo
+  escribe en su control/zona hasta que `/n_map ctl -1` o un `/n_set`
+  posterior lo desactive. Implementación RT-safe: tabla de mapeos por nodo
+  (índice de control → bus) resuelta en el hilo de audio leyendo los atomics
+  de buses de control que ya existen — sin alocar. Agendable en bundles como
+  `/n_set`. (La variante `/n_mapa` con buses de audio queda para después, si
+  aparece el caso de uso; para audio ya existe el patrón bus + `In`/`in`.)
+
+- **M12 — Forma canónica del grafo por conexiones de buses**: inferir el DAG
+  de dependencias entre nodos a partir de los buses: qué buses de audio lee
+  (`In`, `in` de Faust) y escribe (`Out`/`ReplaceOut`, `out` de Faust) cada
+  def. El análisis es estático solo cuando los índices de bus son constantes
+  o controles — no señales calculadas: una def analizable aporta aristas, y
+  un nodo con índice de bus dinámico actúa de barrera conservadora (depende
+  de todo lo anterior y todo lo posterior depende de él). Sobre el DAG,
+  **grupos auto-ordenados opt-in** (flag nuevo en `/g_new` o comando
+  `/g_sortMode`): dentro de ese grupo el orden de ejecución se recalcula en
+  el hilo de red ante cada cambio de topología o de def y se aplica
+  reusando la maquinaria de moves existente (equivalentes a `/n_before`) —
+  cero cambios en el hilo de audio. Los ciclos (feedback legítimo
+  leer-antes-de-escribir) no se «resuelven»: conservan el orden explícito
+  vigente = un bloque de delay, como los sends de retorno de un editor
+  multipista; documentarlo. La pérdida de flexibilidad queda contenida por
+  el opt-in: en un grupo auto-ordenado, `/n_before`/`/n_after` manuales
+  responden `/fail`. Para que el cliente inspeccione lo inferido:
+  `/g_queryTree` (pendiente del set scsynth) más un `/g_dumpGraph` de
+  debug. Beneficio: los grupos pasan a ser «canales de multipista» y el
+  cliente deja de micro-gestionar el orden de ejecución.
+
+- **M13 — Procesamiento paralelo del árbol** (requiere M12): el DAG de M12
+  es exactamente la estructura que habilita el paralelismo — etapas =
+  conjuntos de nodos sin dependencias entre sí — análogo al `ParGroup` de
+  supernova pero inferido en vez de declarado. Workers RT (N−1 hilos con
+  prioridad de audio) sincronizados por etapa con spin acotado + backoff;
+  nada de locks ni syscalls en el camino caliente. El riesgo central es el
+  hazard de escritura: dos nodos de la misma etapa sumando al mismo bus.
+  Como el análisis ya conoce las escrituras, la regla inicial es «misma
+  etapa ⇒ buses de escritura disjuntos; si no, se serializan dentro de la
+  etapa» (la alternativa — acumuladores por worker + pase de reducción —
+  cuesta memoria y un recorrido extra; queda como plan B). `assert_no_alloc`
+  en todos los workers; el modo NRT se beneficia igual (renders más
+  rápidos). Encararlo recién cuando exista un grafo real que no entre en un
+  core: hoy `examples/bench` da ~1800 voces sine en un core, y este es el
+  milestone más caro en complejidad de toda la sección.
+
+- **M14 — Transportes enchufables, modo embebido y llamadas síncronas**
+  (redefinido 2026-06-12; antes era solo «plano de datos por shm»): el
+  objetivo es que un cliente local use el servidor como si la aplicación
+  fuera monolítica — sin protocolo de red a la vista y sin asincronía
+  obligatoria — sin perder el control remoto por UDP. Tres capas:
+
+  1. **Separar codificación de transporte.** OSC queda como única
+     codificación (mensajes, bundles, timetags de M8, replies: un solo
+     camino de parseo/validación con `decode_packet`); el transporte pasa a
+     ser un trait con tres implementaciones. **UDP**: lo actual, para
+     clientes remotos — la modularidad no se pierde. **Ring de bytes OSC en
+     memoria compartida** (dos procesos, misma máquina): par de rings
+     ida/vuelta por cliente, índice de commit publicado al final de cada
+     escritura (un cliente que muere a mitad de escritura no corrompe nada),
+     contenido tratado como bytes no confiables (la validación OSC ya
+     existe), despertar por semáforo nombrado/eventfd — bloquear ahí es
+     legal porque quien drena es el hilo de **red**, no el de audio; a
+     cambio de UDP local: backpressure real en vez de pérdida silenciosa de
+     paquetes y ningún puerto abierto. **In-process**: el caso monolítico de
+     verdad — el servidor como biblioteca, el cliente entrega los bytes OSC
+     por llamada de función al hilo de red, estilo `World_SendPacket` de
+     libscsynth. El navegador no tiene UDP, así que esta abstracción es
+     además prerrequisito del target wasm (allí el «ring» es un
+     `SharedArrayBuffer`; depende del backend interpreter de F5, sin JIT
+     LLVM en wasm).
+
+  2. **Plano de datos compartido** (el M14 original): segmento
+     multiplataforma (`shm_open` en Unix, `CreateFileMapping` en Windows;
+     `memmap2` o similar) con header magic + **versión de layout**, el reloj
+     de samples (el `AtomicU64` que el engine ya publica — anclas de M8 sin
+     jitter de UDP) y el array de buses de control (lectura/escritura, los
+     mismos atomics). En modo in-process es acceso directo, sin segmento.
+
+  3. **Modo de ejecución síncrono.** La asincronía estilo scsynth es tediosa
+     en los clientes (Routines en sclang, callbacks/promesas en JS); para el
+     uso interactivo/científico en Python (consultar un dato y plotearlo) el
+     binding ofrece una fachada bloqueante: llamada que espera datos =
+     enviar el request + bloquear con timeout hasta el reply correlacionado.
+     No exige cambios en el servidor (funciona incluso sobre UDP hoy), pero
+     sí resolver dos cosas. **Correlación**: los replies identifican por
+     comando + bufnum/nodeID — alcanza si el binding serializa sus requests;
+     para concurrencia real, extensión mínima de protocolo: token opcional
+     en las queries que el reply ecoa. **Datos grandes**: leer un buffer
+     entero por UDP exige trocear estilo `/b_getn` (límite de datagrama); en
+     modo in-process es **zero-copy** — los buffers ya son `Arc<Buffer>`
+     inmutables, el binding clona el `Arc` en el hilo de red y expone
+     puntero + longitud de `f32` planos. **Principio de la frontera**: solo
+     estructuras básicas (arrays `f32` contiguos, enteros, strings de
+     error), nunca tipos de una librería — las científicas fueron ejemplo de
+     uso, no dependencia: numpy puede *ver* ese puntero sin copiar (buffer
+     protocol), pero eso es elección del cliente, no del binding. Bonus que
+     cierra el ciclo: el render NRT como llamada síncrona
+     (`render(score) → frames f32`; `render_to_vec` ya existe). Lo síncrono
+     es siempre el **cliente**
+     esperando: el hilo de audio nunca se entera y el servidor nunca
+     bloquea. Nota por lenguaje: Python bloquea sin problema; en JS el modo
+     síncrono solo existe en workers (`Atomics.wait` sobre
+     `SharedArrayBuffer`) — en el hilo principal queda `await`, que ya es
+     tolerable.
+
+  Entregables: trait de transporte + ring shm + modo embebido (feature
+  `embed` o crate aparte). La **cdylib con C ABI versionada** (acá aplica la
+  lección de ABI de la idea de plugins) es obligatoria — es lo que permite
+  conectar cualquier lenguaje: JavaScript vía Node/Deno FFI, y los que
+  vengan. Los bindings son envoltorios finos que respetan el principio de la
+  frontera; **cómo se construye cada binding es ortogonal a ese principio**:
+  para Python (target principal) las dos vías son `ctypes` de la stdlib
+  sobre la C ABI (Python puro, cero build propio, pero firmas declaradas a
+  mano — frágil) o un módulo **PyO3** (extensión nativa: clases idiomáticas,
+  errores → excepciones, buffer protocol zero-copy trivial; se distribuye
+  como wheel). PyO3 no impone dependencias al cliente — expone tipos
+  nativos y `memoryview` sobre `f32` planos, sin numpy — y para el modo
+  embebido es la vía más natural: el módulo *es* el servidor enlazando el
+  engine directo, sin pasar por la C ABI. Opciones a definir al encarar:
+  ¿cliente Python por ctypes o PyO3? (PyO3 favorito para el modo embebido;
+  ctypes alcanza para el caso dos-procesos); ¿token de correlación en el
+  protocolo? (empezar sin él, serializando requests en el binding);
+  ¿buffers grandes por el segmento shm en el caso dos-procesos? (empezar
+  sin eso: copiar al segmento duplica memoria y complica el layout — datos
+  grandes quedan para el modo embebido, que es el caso de uso científico
+  real).
+
+### Ideas revisadas: qué se descartó y por qué
+
+- **Denormales** (de la idea de memoria/eficiencia): ya implementado post-M7
+  (`dsp::denormals::flush_to_zero()` + `-ftz 2` + `tests/denormals.rs`);
+  solo faltaba la parte de skill/documentación, absorbida por M10.
+- **F5 original**: `soundfile` y polifonía nativa de Faust descartados con
+  el racional en el propio F5 (arriba); `waveform`, interpreter backend y
+  Signal API se mantienen, con el interpreter ligado al target wasm de M14.
+- **UI de Faust**: la implementación se considera correcta — usar los labels
+  de Faust como nombres de control es deliberado (los nombres los elige el
+  autor de la def, como en el JSON de UGens) —; lo pendiente era documentar
+  el racional (M9) y la generalización «params alimentados por buses de
+  control» (M11).
+- **API de plugins**: documentar la API interna sí (M9); plugins dinámicos
+  no por ahora — Rust no tiene ABI estable y el problema histórico de
+  scsynth confirma el costo de mantener esa frontera. La mitigación
+  (versionar la frontera binaria) se aplica donde la frontera existe de
+  verdad: la C ABI del modo embebido y el layout del segmento de M14.
 
 ## Estrategia de pruebas
 

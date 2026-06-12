@@ -206,6 +206,9 @@ is an object with an `"op"` field:
 | `hslider`, `vslider`, `nentry` | `label`, `init`, `min`, `max`, `step` | named control |
 | `button`, `checkbox` | `label` | named control (0/1) |
 | `hgroup`, `vgroup` | `label`, `in`: exactly 1 box | control grouping |
+| `waveform` | `values`: non-empty array of numbers | `waveform{…}` — outputs the (size, content) pair |
+| `rdtable` | `in`: size, init, ridx — or 2 boxes when a `waveform` stands in for (size, init) | `rdtable` |
+| `rwtable` | `in`: size, init, widx, wsig, ridx — or 4 boxes starting with a `waveform` | `rwtable` |
 | `faust` | `src` | escape hatch: a complete Faust program compiled to a composable box, with stdlib access |
 
 Example — `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control
@@ -236,6 +239,36 @@ box you can compose with primitives:
   {"op": "mul", "in": ["_", 0.2]}
 ]}
 ```
+
+### Tables and waveforms
+
+`waveform` embeds a small lookup table in the def itself: the client
+computes the values numerically — a wavetable period, a waveshaping
+transfer function — instead of formatting them into Faust source. The box
+outputs the (size, content) pair the table primitives expect, so the usual
+idiom is `rdtable` with just two inputs:
+
+```json
+{"op": "rdtable", "in": [
+  {"op": "waveform", "values": [0.0, 0.25, 0.5, 0.75]},
+  {"op": "intcast", "in": [{"op": "and", "in": [
+    {"op": "intcast", "in": [{"op": "sub", "in": [
+      {"op": "rec", "in": [{"op": "add", "in": ["_", {"op": "int", "value": 1}]}, "_"]},
+      {"op": "int", "value": 1}]}]},
+    {"op": "int", "value": 3}]}]}
+]}
+```
+
+`rdtable` also accepts the explicit (size, init, ridx) form with plain
+boxes, and `rwtable` (size, init, widx, wsig, ridx) is a table written and
+read at audio rate. Sizes must be constant expressions and indexes integers
+(`intcast`), as in Faust.
+
+There is deliberately no `soundfile` op: sample data lives in the server's
+buffers. Play a buffer with `PlayBuf`/`BufRd` in a UGen synth, route it
+through an audio bus, and let the Faust def read that bus via its reserved
+`in` control — the signal crosses over without copying anything into the
+Faust world, and both def families stay composable on the same buses.
 
 ### Errors
 

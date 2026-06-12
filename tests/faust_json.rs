@@ -157,9 +157,90 @@ fn raw_source_defs_resolve_stdlib_imports() {
         .expect("raw source with stdlib import must compile");
 }
 
+/// F5: a `waveform` standing in for (size, init) of `rdtable`, read by a
+/// wrapping integer counter — the output must walk the table verbatim.
+#[test]
+fn waveform_rdtable_cycles_through_the_table() {
+    // counter = (+(1) ~ _) - 1 = 0, 1, 2, …; idx = counter & 3.
+    let counter = json!({"op": "sub", "in": [
+        {"op": "rec", "in": [{"op": "add", "in": ["_", {"op": "int", "value": 1}]}, "_"]},
+        {"op": "int", "value": 1}
+    ]});
+    let idx = json!({"op": "and", "in": [
+        {"op": "intcast", "in": [counter]}, {"op": "int", "value": 3}
+    ]});
+    let graph = json!({"op": "rdtable", "in": [
+        {"op": "waveform", "values": [0.0, 0.25, 0.5, 0.75]},
+        idx
+    ]});
+    let def = compile_json("jwave", &graph).expect("waveform + rdtable must compile");
+    let out = render_mono(&def, 0.01);
+    let table = [0.0f32, 0.25, 0.5, 0.75];
+    for (i, &x) in out.iter().take(16).enumerate() {
+        assert_eq!(x, table[i % 4], "sample {i} must read table[{}]", i % 4);
+    }
+}
+
+/// F5's real use case: a wavetable oscillator whose table the client computed
+/// numerically (here a 64-point sine) instead of serializing Faust source.
+#[test]
+fn computed_wavetable_oscillator_plays_at_440() {
+    let n = 64;
+    let values: Vec<f64> = (0..n)
+        .map(|i| (std::f64::consts::TAU * i as f64 / n as f64).sin())
+        .collect();
+    let wrap = json!({
+        "op": "split",
+        "in": ["_", {"op": "sub", "in": ["_", {"op": "floor", "in": ["_"]}]}]
+    });
+    let phasor = json!({"op": "rec", "in": [
+        {"op": "seq", "in": [{"op": "add", "in": ["_", 440.0 / SR as f64]}, wrap]},
+        "_"
+    ]});
+    let idx = json!({"op": "intcast", "in": [{"op": "mul", "in": [phasor, n]}]});
+    let graph = json!({"op": "rdtable", "in": [{"op": "waveform", "values": values}, idx]});
+    let def = compile_json("jwtosc", &graph).expect("wavetable oscillator must compile");
+    let out = render_mono(&def, 1.0);
+    let freq = estimated_freq(&out);
+    assert!((freq - 440.0).abs() < 5.0, "estimated freq = {freq}");
+    // A full-period sine table has RMS 1/√2 regardless of the stair-stepping.
+    let expected_rms = std::f32::consts::FRAC_1_SQRT_2;
+    assert!(
+        (rms(&out) - expected_rms).abs() < 0.02,
+        "rms = {}, expected ≈ {expected_rms}",
+        rms(&out)
+    );
+}
+
+/// The explicit 3-box form: size and init as plain constant boxes.
+#[test]
+fn rdtable_accepts_explicit_size_and_init() {
+    let graph = json!({"op": "rdtable", "in": [
+        {"op": "int", "value": 4}, 0.5, {"op": "int", "value": 2}
+    ]});
+    let def = compile_json("jrdc", &graph).expect("explicit rdtable must compile");
+    let out = render_mono(&def, 0.01);
+    assert!(out.iter().all(|&x| x == 0.5), "constant-init table must read 0.5");
+}
+
+#[test]
+fn rwtable_reads_back_what_it_writes() {
+    // Write 0.25 at index 0, read index 0. Whether the first sample sees the
+    // init value or the fresh write is a Faust ordering detail; from the
+    // second sample on it must be the written value.
+    let graph = json!({"op": "rwtable", "in": [
+        {"op": "int", "value": 4}, 0.0,
+        {"op": "int", "value": 0}, 0.25, {"op": "int", "value": 0}
+    ]});
+    let def = compile_json("jrwt", &graph).expect("rwtable must compile");
+    let out = render_mono(&def, 0.01);
+    assert!(out[0] == 0.0 || out[0] == 0.25, "first sample = {}", out[0]);
+    assert!(out[1..].iter().all(|&x| x == 0.25), "table must hold the write");
+}
+
 #[test]
 fn validation_errors_point_at_the_offending_node() {
-    let cases: [(Value, &str); 6] = [
+    let cases: [(Value, &str); 10] = [
         // Unknown op at the root: the path is just `$`.
         (json!({"op": "mul3", "in": [1, 2]}), "unknown op \"mul3\""),
         // Nested: the path walks the `in` arrays.
@@ -171,6 +252,13 @@ fn validation_errors_point_at_the_offending_node() {
         (json!({"op": "rec", "in": ["_"]}), "`rec` takes 2 boxes"),
         (json!({"op": "seq"}), "`seq` needs an \"in\" array"),
         (json!([1, 2]), "at $: expected a box"),
+        (json!({"op": "waveform"}), "`waveform` needs a \"values\""),
+        (json!({"op": "waveform", "values": []}), "must not be empty"),
+        (
+            json!({"op": "waveform", "values": [1.0, "x"]}),
+            "values[1] must be a number",
+        ),
+        (json!({"op": "rdtable", "in": ["_"]}), "`rdtable` takes 2 to 3 boxes"),
     ];
     let compiler = CompilerThread::spawn();
     for (graph, _) in &cases {
@@ -258,6 +346,13 @@ fn kitchen_sink_graph_exercises_every_op() {
     boxes.push(json!({"op": "seq", "in": [1.5, {"op": "wire"}]}));
     boxes.push(json!({"op": "seq", "in": [{"op": "real", "value": 2.5}, {"op": "cut"}]}));
     boxes.push(json!({"op": "merge", "in": [{"op": "par", "in": [1.0, 2.0, "!"]}, "_"]}));
+    boxes.push(json!({"op": "rdtable", "in": [
+        {"op": "waveform", "values": [0.0, 1.0]}, {"op": "int", "value": 0}
+    ]}));
+    boxes.push(json!({"op": "rwtable", "in": [
+        {"op": "int", "value": 2}, 0.0,
+        {"op": "int", "value": 0}, 0.5, {"op": "int", "value": 1}
+    ]}));
 
     let graph = json!({"op": "par", "in": boxes});
     compile_json("sink", &graph).expect("kitchen sink must compile");

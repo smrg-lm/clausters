@@ -27,6 +27,9 @@
 //! | `hslider`, `vslider`, `nentry` | `label`, `init`, `min`, `max`, `step` | named control |
 //! | `button`, `checkbox` | `label` | named control (0/1) |
 //! | `hgroup`, `vgroup` | `label`, `in`: exactly 1 box | control grouping |
+//! | `waveform` | `values`: non-empty array of numbers | `waveform{…}` — outputs the (size, content) pair |
+//! | `rdtable` | `in`: size, init, ridx — or 2 boxes when a `waveform` stands in for (size, init) | `rdtable` |
+//! | `rwtable` | `in`: size, init, widx, wsig, ridx — or 4 boxes starting with a `waveform` | `rwtable` |
 //! | `faust` | `src` | escape hatch: a complete Faust program (`process = …`) compiled with `CDSPToBoxes`, giving access to the stdlib (`os.osc`, `fi.lowpass`, …) as a composable box |
 //!
 //! Example — `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control:
@@ -153,10 +156,7 @@ unsafe fn build(
     cstrings: &mut Vec<CString>,
 ) -> Result<FaustBox, String> {
     match node {
-        Value::Number(n) => match n.as_i64().and_then(|i| c_int::try_from(i).ok()) {
-            Some(i) => Ok(unsafe { ffi::CboxInt(i) }),
-            None => Ok(unsafe { ffi::CboxReal(n.as_f64().unwrap_or(0.0)) }),
-        },
+        Value::Number(n) => Ok(unsafe { number_box(n) }),
         Value::String(s) => match s.as_str() {
             "_" => Ok(unsafe { ffi::CboxWire() }),
             "!" => Ok(unsafe { ffi::CboxCut() }),
@@ -178,6 +178,15 @@ unsafe fn build(
             path,
             "expected a box: number, \"_\", \"!\" or {\"op\": …} object",
         )),
+    }
+}
+
+/// A constant box: `int` if the number is integral within `c_int`, `real`
+/// otherwise (same rule as the bare-number shorthand).
+unsafe fn number_box(n: &serde_json::Number) -> FaustBox {
+    match n.as_i64().and_then(|i| c_int::try_from(i).ok()) {
+        Some(i) => unsafe { ffi::CboxInt(i) },
+        None => unsafe { ffi::CboxReal(n.as_f64().unwrap_or(0.0)) },
     }
 }
 
@@ -281,9 +290,59 @@ unsafe fn build_op(
             };
             Ok(unsafe { f(label, boxes[0]) })
         }
+        "waveform" => {
+            let Some(field) = obj.get("values") else {
+                return Err(err(path, "`waveform` needs a \"values\" array of numbers"));
+            };
+            let Some(values) = field.as_array() else {
+                return Err(err(path, "`waveform` \"values\" must be an array"));
+            };
+            if values.is_empty() {
+                return Err(err(path, "`waveform` \"values\" must not be empty"));
+            }
+            let mut boxes: Vec<FaustBox> = Vec::with_capacity(values.len() + 1);
+            for (i, v) in values.iter().enumerate() {
+                let Value::Number(n) = v else {
+                    return Err(err(
+                        path,
+                        format_args!("`waveform` values[{i}] must be a number"),
+                    ));
+                };
+                boxes.push(unsafe { number_box(n) });
+            }
+            boxes.push(std::ptr::null_mut()); // CboxWaveform wants a NULL terminator
+            Ok(unsafe { ffi::CboxWaveform(boxes.as_mut_ptr()) })
+        }
+        // The table primitives take (size, init, read index) — rdtable — and
+        // (size, init, write index, write signal, read index) — rwtable. A
+        // `waveform` box outputs the (size, init) pair itself, so each op
+        // also accepts the form with one box less up front.
+        "rdtable" => unsafe { table_op(obj, op, path, cstrings, 2, 3, ffi::CboxReadOnlyTable) },
+        "rwtable" => unsafe { table_op(obj, op, path, cstrings, 4, 5, ffi::CboxWriteReadTable) },
         "faust" => unsafe { faust_fragment(obj, path, cstrings) },
         other => Err(err(path, format_args!("unknown op {other:?}"))),
     }
+}
+
+/// `seq(par(inputs…), primitive)` — how upstream's own `Cbox*TableAux`
+/// helpers apply the 0-argument table primitives. Faust checks the summed
+/// output arity against the primitive's inputs at compile time.
+unsafe fn table_op(
+    obj: &Map<String, Value>,
+    op: &str,
+    path: &mut String,
+    cstrings: &mut Vec<CString>,
+    min: usize,
+    max: usize,
+    primitive: unsafe extern "C" fn() -> FaustBox,
+) -> Result<FaustBox, String> {
+    let items = inputs(obj, op, path, min, max)?;
+    let boxes = unsafe { build_children(items, path, cstrings) }?;
+    let pars = boxes
+        .into_iter()
+        .reduce(|a, b| unsafe { ffi::CboxPar(a, b) })
+        .expect("inputs() guarantees at least two");
+    Ok(unsafe { ffi::CboxSeq(pars, primitive()) })
 }
 
 /// The `faust` escape hatch: compiles a complete Faust program into a box
