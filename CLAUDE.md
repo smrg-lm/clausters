@@ -6,6 +6,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 - Implementation plan and milestones: `PLAN.md` (Spanish).
 - Completion notes per milestone: `NOTAS.md` (Spanish) — update it when a
   milestone is finished.
+- Developer documentation (threads, memory lifecycle, invariants, how to add
+  a UGen): `docs/architecture.md`. User-facing wire formats and OSC
+  reference: `docs/schemas.md`. Both in English; keep them current.
 - Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
   ugen-dsp, audio-testing, faust-embedding).
 

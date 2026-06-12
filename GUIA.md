@@ -1,7 +1,12 @@
 # Guía de compilación y prueba
 
 Cómo compilar **Clausters**, correrlo y probar todo lo que hay hasta ahora
-(milestones M0–M7 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más nuevo.
+(milestones M0–M7, F0–F5 y M9). Pensada para Linux / Ubuntu 24.04 o más
+nuevo.
+
+Documentación de referencia: `docs/schemas.md` (formatos de defs y comandos
+OSC, para usuarios) y `docs/architecture.md` (internals: hilos, memoria,
+invariantes y cómo agregar UGens, para desarrollo). Ambas en inglés.
 
 ## Qué es
 
@@ -378,9 +383,11 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
+| Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 
-Con esto el plan original (M0–M7) y la bifurcación F (F0–F5) están
-completos; lo que sigue está en «Milestones futuros» de PLAN.md (M8–M14).
+Con esto el plan original (M0–M7), la bifurcación F (F0–F5) y M9 están
+completos; lo que sigue está en «Milestones futuros» de PLAN.md (M8,
+M10–M14).
 
 ## 5. Problemas frecuentes
 

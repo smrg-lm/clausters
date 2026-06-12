@@ -284,7 +284,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
 `Saw`/`Pulse`/filtros/`EnvGen` con done actions ya listados arriba —,
 `/g_queryTree`, streaming de buffers) se toman sueltas cuando hagan falta.
 
-- **M9 — Documentación de desarrollo**: hoy `docs/` solo tiene documentación
+- ✅ **M9 — Documentación de desarrollo**: hoy `docs/` solo tiene documentación
   de usuario (`schemas.md`). Agregar `docs/architecture.md` (en inglés, como
   todo `docs/`): mapa de hilos (red / audio / NRT / compilador Faust), mapa
   de módulos (qué vive en `src/server`, `src/node`, `src/dsp`, `src/osc`,
@@ -305,6 +305,11 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   vía es una C ABI o wasm **versionadas** (lección histórica de scsynth: su
   ABI de plugins se rompía con cada cambio de struct o de feature). Cierra
   con una pasada de rustdoc sobre los items públicos.
+  *(Completado 2026-06-12 — ver NOTAS.md. `docs/architecture.md` con mapa de
+  hilos/módulos, ciclo de vida de memoria, tabla de capacidades pre-alocadas,
+  invariantes, guía «cómo agregar una UGen» y las dos decisiones; punteros
+  desde CLAUDE.md y schemas.md; rustdoc sin warnings en ambas configs. La
+  tabla de capacidades adelanta la mitad de auditoría de M10.)*
 
 - **M10 — Memoria acotada y alineación**: la mitad «denormales» de la idea
   original ya está hecha (post-M7: `dsp::denormals`, `-ftz 2`, tests); queda

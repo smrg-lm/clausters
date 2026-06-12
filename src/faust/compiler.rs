@@ -209,7 +209,7 @@ impl Drop for LibContext {
 /// the process, so hogging the thread for ~10 ms is fine). Serialized by
 /// the process-wide FFI lock either way. Options: `-single` (FAUSTFLOAT =
 /// f32, matching our buses), `-ftz 2` plus the stdlib include path
-/// ([`FaustArgs::defaults`]) and maximum LLVM optimization; afterwards a
+/// (`FaustArgs::defaults`) and maximum LLVM optimization; afterwards a
 /// throwaway instance is probed for the def's parameters and I/O arity
 /// (F3), so `/s_new`/`/n_set` can resolve control names without touching
 /// libfaust again.

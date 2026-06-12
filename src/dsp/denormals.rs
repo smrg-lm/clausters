@@ -12,7 +12,7 @@
 //!   render ([`crate::server::render`]) — both modes, so an NRT render stays
 //!   sample-identical to a live take (the M7 guarantee).
 //! - Faust factories are created with `-ftz 2`
-//!   ([`crate::faust::compiler::FaustArgs`]): the generated code itself
+//!   (`FaustArgs::defaults` in `crate::faust::compiler`): the generated code itself
 //!   flushes recursive variables below the normal range, independent of the
 //!   host FPU mode and of the architecture.
 //!

@@ -842,10 +842,62 @@ resuelve por otro camino.
 - E2E: demo `wavetable` contra el server release con faust — `/done
   /d_faust jwavetable`, `/s_new` + `/n_set freq` audibles, `/quit` limpio.
 
+## M9 — Documentación de desarrollo (completado 2026-06-12)
+
+### Qué quedó hecho
+
+- **`docs/architecture.md`** (en inglés, como todo `docs/`): mapa de hilos
+  (red / audio / NRT / compilador Faust, más el modo offline mono-hilo y
+  dónde se arma el flush-to-zero), mapa de módulos (tabla path → contenido),
+  ciclo de vida de la memoria (la regla «se aloca en red/NRT/compilador, se
+  usa en audio, se libera en red»; los dos cruces sin FIFO: buses de control
+  atómicos y buffers `Arc` inmutables), **tabla de capacidades pre-alocadas
+  con el modo de fallo de cada una al llenarse** (verificado caso por caso
+  en el código: cmd FIFO → `/fail`, garbage FIFO → lista de retención de 64
+  reintentada por bloque y `mem::forget` como último recurso, eventos
+  best-effort, cola de schedule → `SpentBundle` no vacío, slab/grupos →
+  `Rejected*`), relojes y scheduling (reloj de samples, conversión NTP en el
+  hilo de red, split de bloque), y los **8 invariantes** que un cambio no
+  puede romper (RT-safety, comandos pre-armados, `decode_packet`
+  obligatorio, identidad RT/NRT, buffers inmutables, salida solo por
+  `Out`/`ReplaceOut`, core sin features, determinismo en tests).
+- **Guía «cómo agregar una UGen»**: ejemplo `Lag` completo (estado en el
+  struct, `at()` para entradas, `output.len()` ≠ `BLOCK_SIZE` por los splits,
+  `ctx.offset` solo para UGens de bus), registro en `registry.rs` (variante
+  + `parse_kind`/`arity`/`build`), tests exigidos (señal + no-alloc +
+  golden si corresponde, con la nota de determinismo de `WhiteNoise`) y qué
+  documentación actualizar.
+- **Decisión (a), UI de Faust**: los labels son los nombres de control a
+  propósito (los nombres los pone el autor de la def, como `controls` en el
+  JSON UGen); paths de grupos ignorados, primera declaración gana,
+  `out`/`in` reservados al final y la def pisa lo reservado si los declara;
+  los params NO están ligados a buses de control hoy (eso es M11/`/n_map`).
+- **Decisión (b), plugins**: sin plugins dinámicos en v1 — Rust no tiene ABI
+  estable; extender = compilar en el crate (la API interna documentada es el
+  contrato) y la vía runtime para usuarios es `/d_faust`; si algún día hacen
+  falta, C ABI o wasm **versionadas** (lección scsynth, misma política que
+  el layout shm de M14).
+- **Punteros**: CLAUDE.md ahora lista los dos docs de `docs/` (con «keep
+  them current»); schemas.md abre remitiendo a architecture.md para
+  internals.
+- **Rustdoc**: las 2 warnings (links a `FaustArgs`, item privado, desde
+  `denormals.rs` y `compiler.rs`) corregidas a texto plano; `cargo doc
+  --no-deps` limpio con y sin feature.
+
+### Verificación
+
+- Afirmaciones del doc verificadas contra el código antes de escribirlas:
+  capacidades y constantes (`engine.rs`, `node/mod.rs`, `dsp/mod.rs`,
+  `buffer.rs`), timeout del socket (100 ms), reintento de `pending_garbage`
+  por bloque, semilla global de `WhiteNoise`, conversión
+  `current_samples() + delta·sr`.
+- `cargo test` 82 / `--features faust` 118 — intactos (solo cambiaron
+  comentarios de doc en `src/`); `cargo doc` sin warnings en ambas configs.
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7) y F0–F5 están completos. Direcciones planificadas:
-M8 (reloj de samples como timebase del cliente) y M9–M14 en «Milestones
-futuros» de PLAN.md. Sueltas: más UGens (filtros, EnvGen con done actions,
-Line), streaming de buffers (`leaveOpen`), `/n_query`/`/g_queryTree`,
-multi-cliente con notificaciones por ID.
+El plan original (M0–M7), F0–F5 y M9 están completos. Direcciones
+planificadas: M8 (reloj de samples como timebase del cliente) y M10–M14 en
+«Milestones futuros» de PLAN.md. Sueltas: más UGens (filtros, EnvGen con
+done actions, Line), streaming de buffers (`leaveOpen`),
+`/n_query`/`/g_queryTree`, multi-cliente con notificaciones por ID.

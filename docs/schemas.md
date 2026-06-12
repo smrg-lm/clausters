@@ -1,5 +1,9 @@
 # Def schemas
 
+User-facing reference: wire formats and OSC commands. For the server's
+internals — threads, memory lifecycle, invariants, adding UGens — see
+[`architecture.md`](architecture.md).
+
 Clausters accepts instrument definitions in two wire formats, both loaded
 hot over OSC (UDP, default port `127.0.0.1:57110`):
 
