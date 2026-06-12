@@ -62,6 +62,7 @@ fn add_faust(id: i32, def: &Arc<FaustDef>, controls: &[(&str, f32)]) -> Cmd {
         target: ROOT_NODE_ID,
         action: AddAction::Tail,
         synth,
+        usage: Default::default(),
     }
 }
 
@@ -213,6 +214,7 @@ fn ugen_and_faust_synths_mix_on_the_same_bus() {
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
             synth: usynth,
+            usage: Default::default(),
         })
         .ok()
         .unwrap();

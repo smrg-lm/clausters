@@ -25,7 +25,7 @@ use crate::dsp::buffer::{BufferPool, empty_pool};
 use crate::osc::translate::{CmdTranslator, parse_buffer_msg};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_d_faust;
-use crate::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair};
+use crate::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair_with_workers};
 use crate::server::nrt::{NrtAction, run_job, wav_format};
 
 /// One score entry: the messages of a bundle, executed atomically at `time`
@@ -143,6 +143,9 @@ pub struct RenderConfig {
     pub sample_rate: f64,
     /// Output channels = how many of the first audio buses land in the file.
     pub channels: usize,
+    /// M13 DSP workers for `/g_parallel` groups. Parallel rendering is
+    /// bit-identical to sequential (disjoint stages), just faster.
+    pub workers: usize,
 }
 
 impl Default for RenderConfig {
@@ -150,6 +153,7 @@ impl Default for RenderConfig {
         Self {
             sample_rate: 48000.0,
             channels: 2,
+            workers: 0,
         }
     }
 }
@@ -188,7 +192,7 @@ pub fn render(
     }
 
     crate::dsp::denormals::flush_to_zero();
-    let (engine, handle) = engine_pair(sr as f32, cfg.channels);
+    let (engine, handle) = engine_pair_with_workers(sr as f32, cfg.channels, cfg.workers);
     let mut r = Renderer {
         engine,
         handle,

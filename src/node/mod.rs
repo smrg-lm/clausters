@@ -8,7 +8,10 @@
 //! must route them to the garbage FIFO — nothing heap-allocated is dropped
 //! here.
 
-use crate::dsp::ProcessCtx;
+use std::cell::UnsafeCell;
+
+use crate::dsp::{BusUsage, ProcessCtx};
+use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
 /// (M3) and, in the F fork, by `FaustSynth` — both built off the audio thread
@@ -72,7 +75,12 @@ pub enum Place {
 }
 
 pub enum NodeKind {
-    Synth(Box<dyn SynthNode>),
+    Synth {
+        node: Box<dyn SynthNode>,
+        /// Bus usage analyzed by the network thread at build time (M13):
+        /// the parallel scheduler partitions stages from this.
+        usage: BusUsage,
+    },
     Group(Group),
 }
 
@@ -80,6 +88,9 @@ pub struct Group {
     /// Slot indices of the children, in execution order. Pre-allocated; the
     /// tree rejects inserts that would grow it.
     pub children: Vec<usize>,
+    /// `/g_parallel` (M13): children run in dependency stages on the worker
+    /// pool instead of strictly in order.
+    pub parallel: bool,
 }
 
 impl Group {
@@ -87,6 +98,7 @@ impl Group {
     pub fn new() -> Self {
         Self {
             children: Vec::with_capacity(MAX_GROUP_CHILDREN),
+            parallel: false,
         }
     }
 }
@@ -124,8 +136,14 @@ impl Default for NodeTree {
     }
 }
 
+// SAFETY: the `UnsafeCell`s in `slots` are only accessed concurrently
+// during `process`, where the M13 stage scheduler hands **disjoint
+// subtrees** to the workers — each slot is reached by exactly one thread
+// per slice. Every other method takes `&mut self`.
+unsafe impl Sync for NodeTree {}
+
 pub struct NodeTree {
-    slots: Vec<Option<NodeSlot>>,
+    slots: Vec<UnsafeCell<Option<NodeSlot>>>,
     /// Pre-allocated stack for the depth-first processing traversal.
     dfs_stack: Vec<usize>,
     /// Pre-allocated stack for recursive frees: (slot, parent node ID at the
@@ -138,12 +156,14 @@ pub struct NodeTree {
 
 impl NodeTree {
     pub fn new() -> Self {
-        let mut slots: Vec<Option<NodeSlot>> = (0..MAX_NODES).map(|_| None).collect();
-        slots[ROOT_SLOT] = Some(NodeSlot {
+        let mut slots: Vec<UnsafeCell<Option<NodeSlot>>> =
+            (0..MAX_NODES).map(|_| UnsafeCell::new(None)).collect();
+        *slots[ROOT_SLOT].get_mut() = Some(NodeSlot {
             id: ROOT_NODE_ID,
             parent: NO_PARENT,
             kind: NodeKind::Group(Group {
                 children: Vec::with_capacity(MAX_NODES),
+                parallel: false,
             }),
         });
         Self {
@@ -168,33 +188,48 @@ impl NodeTree {
         self.ugen_count
     }
 
+    /// Shared view of a slot. Sound outside `process` (no concurrency);
+    /// during `process` only on slots the calling thread owns.
+    #[inline]
+    fn slot(&self, idx: usize) -> Option<&NodeSlot> {
+        unsafe { (*self.slots[idx].get()).as_ref() }
+    }
+
+    #[inline]
+    fn slot_mut(&mut self, idx: usize) -> Option<&mut NodeSlot> {
+        self.slots[idx].get_mut().as_mut()
+    }
+
+    #[inline]
+    fn take_slot(&mut self, idx: usize) -> Option<NodeSlot> {
+        self.slots[idx].get_mut().take()
+    }
+
     fn find(&self, id: i32) -> Option<usize> {
-        self.slots
-            .iter()
-            .position(|s| s.as_ref().is_some_and(|s| s.id == id))
+        (0..self.slots.len()).find(|&i| self.slot(i).is_some_and(|s| s.id == id))
     }
 
     fn id_of(&self, idx: usize) -> i32 {
-        self.slots[idx].as_ref().map_or(-1, |s| s.id)
+        self.slot(idx).map_or(-1, |s| s.id)
     }
 
     fn group_of(&self, idx: usize) -> Option<&Group> {
-        match &self.slots[idx].as_ref()?.kind {
+        match &self.slot(idx)?.kind {
             NodeKind::Group(g) => Some(g),
-            NodeKind::Synth(_) => None,
+            NodeKind::Synth { .. } => None,
         }
     }
 
     fn group_of_mut(&mut self, idx: usize) -> Option<&mut Group> {
-        match &mut self.slots[idx].as_mut()?.kind {
+        match &mut self.slot_mut(idx)?.kind {
             NodeKind::Group(g) => Some(g),
-            NodeKind::Synth(_) => None,
+            NodeKind::Synth { .. } => None,
         }
     }
 
     /// Removes `idx` from its parent's child list.
     fn unlink(&mut self, idx: usize) {
-        let Some(parent) = self.slots[idx].as_ref().map(|s| s.parent) else {
+        let Some(parent) = self.slot(idx).map(|s| s.parent) else {
             return;
         };
         if parent == NO_PARENT {
@@ -213,7 +248,7 @@ impl NodeTree {
             if a == b {
                 return true;
             }
-            match self.slots[b].as_ref() {
+            match self.slot(b) {
                 Some(s) if s.parent != NO_PARENT => b = s.parent,
                 _ => return false,
             }
@@ -227,11 +262,11 @@ impl NodeTree {
         debug_assert!(self.free_stack.is_empty());
         self.free_stack.push((idx, parent_id));
         while let Some((idx, parent_id)) = self.free_stack.pop() {
-            let Some(slot) = self.slots[idx].take() else {
+            let Some(slot) = self.take_slot(idx) else {
                 continue;
             };
             match slot.kind {
-                NodeKind::Synth(synth) => {
+                NodeKind::Synth { node: synth, .. } => {
                     self.synth_count -= 1;
                     self.ugen_count -= synth.ugen_count();
                     sink(FreedNode::Synth {
@@ -274,7 +309,7 @@ impl NodeTree {
         let Some(tidx) = self.find(target) else {
             return Err(kind);
         };
-        let Some(free) = self.slots.iter().position(|s| s.is_none()) else {
+        let Some(free) = (0..self.slots.len()).find(|&i| self.slot(i).is_none()) else {
             return Err(kind);
         };
 
@@ -294,7 +329,7 @@ impl NodeTree {
                 (tidx, pos, None)
             }
             AddAction::Before | AddAction::After => {
-                let parent = self.slots[tidx].as_ref().map(|s| s.parent).unwrap();
+                let parent = self.slot(tidx).map(|s| s.parent).unwrap();
                 if parent == NO_PARENT {
                     return Err(kind); // target is the root group
                 }
@@ -310,7 +345,7 @@ impl NodeTree {
                 (parent, pos, None)
             }
             AddAction::Replace => {
-                let parent = self.slots[tidx].as_ref().map(|s| s.parent).unwrap();
+                let parent = self.slot(tidx).map(|s| s.parent).unwrap();
                 if parent == NO_PARENT {
                     return Err(kind); // the root group cannot be replaced
                 }
@@ -327,15 +362,15 @@ impl NodeTree {
         }
 
         match &kind {
-            NodeKind::Synth(s) => {
+            NodeKind::Synth { node, .. } => {
                 self.synth_count += 1;
-                self.ugen_count += s.ugen_count();
+                self.ugen_count += node.ugen_count();
             }
             NodeKind::Group(_) => self.group_count += 1,
         }
         // After a Replace, `free` may have opened up earlier slots; the one
         // found above is still vacant either way.
-        self.slots[free] = Some(NodeSlot {
+        *self.slots[free].get_mut() = Some(NodeSlot {
             id,
             parent: parent_idx,
             kind,
@@ -355,7 +390,7 @@ impl NodeTree {
         let Some(idx) = self.find(id) else {
             return false;
         };
-        let parent = self.slots[idx].as_ref().unwrap().parent;
+        let parent = self.slot(idx).unwrap().parent;
         let parent_id = self.id_of(parent);
         self.unlink(idx);
         self.free_subtree(idx, parent_id, sink);
@@ -395,11 +430,11 @@ impl NodeTree {
             let gid = self.id_of(gidx);
             let mut i = 0;
             while let Some(&child) = self.group_of(gidx).unwrap().children.get(i) {
-                match self.slots[child].as_ref().map(|s| &s.kind) {
-                    Some(NodeKind::Synth(_)) => {
+                match self.slot(child).map(|s| &s.kind) {
+                    Some(NodeKind::Synth { .. }) => {
                         self.group_of_mut(gidx).unwrap().children.remove(i);
-                        let slot = self.slots[child].take().unwrap();
-                        if let NodeKind::Synth(synth) = slot.kind {
+                        let slot = self.take_slot(child).unwrap();
+                        if let NodeKind::Synth { node: synth, .. } = slot.kind {
                             self.synth_count -= 1;
                             self.ugen_count -= synth.ugen_count();
                             sink(FreedNode::Synth {
@@ -430,14 +465,14 @@ impl NodeTree {
         let (Some(idx), Some(tidx)) = (self.find(id), self.find(target)) else {
             return false;
         };
-        let new_parent = self.slots[tidx].as_ref().unwrap().parent;
+        let new_parent = self.slot(tidx).unwrap().parent;
         if new_parent == NO_PARENT {
             return false; // cannot be a sibling of the root group
         }
         if self.is_ancestor_or_self(idx, new_parent) {
             return false; // would create a cycle
         }
-        let old_parent = self.slots[idx].as_ref().unwrap().parent;
+        let old_parent = self.slot(idx).unwrap().parent;
         if new_parent != old_parent {
             let g = self.group_of(new_parent).unwrap();
             if g.children.len() >= g.children.capacity() {
@@ -454,41 +489,158 @@ impl NodeTree {
             Place::After => at + 1,
         };
         g.children.insert(pos, idx);
-        self.slots[idx].as_mut().unwrap().parent = new_parent;
+        self.slot_mut(idx).unwrap().parent = new_parent;
         true
     }
 
     pub fn synth_mut(&mut self, id: i32) -> Option<&mut dyn SynthNode> {
         let idx = self.find(id)?;
-        match &mut self.slots[idx].as_mut()?.kind {
-            NodeKind::Synth(synth) => Some(synth.as_mut()),
+        match &mut self.slot_mut(idx)?.kind {
+            NodeKind::Synth { node, .. } => Some(node.as_mut()),
             NodeKind::Group(_) => None,
         }
     }
 
-    /// Depth-first traversal in execution order; synths write to the buses in
-    /// `ctx` through their I/O UGens. Runs on the audio thread: no allocation.
-    pub fn process(&mut self, ctx: &mut ProcessCtx) {
-        self.dfs_stack.clear();
-        if let Some(slot) = self.slots[ROOT_SLOT].as_ref()
-            && let NodeKind::Group(g) = &slot.kind
+    /// Updates a synth's bus-usage masks (`Cmd::SetUsage`, after an `/n_set`
+    /// on a control used as a bus index).
+    pub fn set_usage(&mut self, id: i32, usage: BusUsage) {
+        if let Some(idx) = self.find(id)
+            && let Some(slot) = self.slot_mut(idx)
+            && let NodeKind::Synth { usage: u, .. } = &mut slot.kind
         {
-            for &c in g.children.iter().rev() {
-                self.dfs_stack.push(c);
-            }
+            *u = usage;
         }
-        while let Some(idx) = self.dfs_stack.pop() {
-            let Some(slot) = self.slots[idx].as_mut() else {
-                continue;
-            };
-            match &mut slot.kind {
-                NodeKind::Synth(synth) => synth.process(ctx),
-                NodeKind::Group(group) => {
-                    for &c in group.children.iter().rev() {
-                        self.dfs_stack.push(c);
-                    }
+    }
+
+    /// Flags a group as parallel (`/g_parallel`). Returns `false` when the
+    /// ID is missing or not a group.
+    pub fn set_parallel(&mut self, id: i32, parallel: bool) -> bool {
+        let Some(idx) = self.find(id) else {
+            return false;
+        };
+        match self.slot_mut(idx).map(|s| &mut s.kind) {
+            Some(NodeKind::Group(g)) => {
+                g.parallel = parallel;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Depth-first traversal in execution order; synths write to the buses in
+    /// `ctx` through their I/O UGens. Runs on the audio thread: no
+    /// allocation. Children of groups flagged parallel (`/g_parallel`) run
+    /// in dependency **stages** on the worker pool (M13).
+    pub fn process(&mut self, ctx: &ProcessCtx, pool: &WorkerPool) {
+        // SAFETY: entry point — this thread owns the whole tree; the pool
+        // only ever receives disjoint subtrees.
+        unsafe { self.process_index(ROOT_SLOT, ctx, pool) }
+    }
+
+    /// Processes the subtree rooted at slot `idx`, dispatching parallel
+    /// stages to the pool.
+    ///
+    /// # Safety
+    /// During the current slice, `idx`'s subtree must be visited by exactly
+    /// one thread (the stage scheduler guarantees this for workers).
+    pub(crate) unsafe fn process_index(&self, idx: usize, ctx: &ProcessCtx, pool: &WorkerPool) {
+        // SAFETY: per the contract, no other thread touches this slot now.
+        let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
+            return;
+        };
+        match &mut slot.kind {
+            NodeKind::Synth { node, .. } => {
+                let mut ctx = *ctx;
+                node.process(&mut ctx);
+            }
+            NodeKind::Group(group) if group.parallel => unsafe {
+                self.process_parallel(&group.children, ctx, pool);
+            },
+            NodeKind::Group(group) => {
+                for &child in &group.children {
+                    unsafe { self.process_index(child, ctx, pool) };
                 }
             }
+        }
+    }
+
+    /// Sequential variant for worker threads: identical traversal, but
+    /// nested parallel groups run inline (no nested fork-join on one pool).
+    ///
+    /// # Safety
+    /// Same single-visitor contract as [`Self::process_index`].
+    pub(crate) unsafe fn process_index_seq(&self, idx: usize, ctx: &ProcessCtx) {
+        // SAFETY: per the contract, no other thread touches this slot now.
+        let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
+            return;
+        };
+        match &mut slot.kind {
+            NodeKind::Synth { node, .. } => {
+                let mut ctx = *ctx;
+                node.process(&mut ctx);
+            }
+            NodeKind::Group(group) => {
+                for &child in &group.children {
+                    unsafe { self.process_index_seq(child, ctx) };
+                }
+            }
+        }
+    }
+
+    /// Greedy stage partition of a parallel group's children, in order:
+    /// a child joins the current stage while it writes nothing the stage
+    /// reads or writes and reads nothing the stage writes; conflicts close
+    /// the stage (those children run after — sequential semantics
+    /// preserved); a `dynamic` child (signal-driven bus index) always runs
+    /// alone. Since stage members touch pairwise disjoint buses and stages
+    /// run in child order, the output is **bit-identical** to sequential
+    /// execution regardless of worker interleaving.
+    ///
+    /// # Safety
+    /// Single-visitor contract on the subtree (see [`Self::process_index`]).
+    unsafe fn process_parallel(&self, children: &[usize], ctx: &ProcessCtx, pool: &WorkerPool) {
+        let mut i = 0;
+        while i < children.len() {
+            let mut reads = 0u128;
+            let mut writes = 0u128;
+            let mut j = i;
+            while j < children.len() {
+                let usage = self.subtree_usage(children[j]);
+                if usage.dynamic {
+                    if j == i {
+                        j += 1; // the dynamic child is its own stage
+                    }
+                    break;
+                }
+                if j > i
+                    && ((usage.writes & (reads | writes)) != 0 || (usage.reads & writes) != 0)
+                {
+                    break;
+                }
+                reads |= usage.reads;
+                writes |= usage.writes;
+                j += 1;
+            }
+            if j - i >= 2 {
+                pool.run_stage(self, &children[i..j], ctx);
+            } else {
+                // SAFETY: contract propagates to the single child.
+                unsafe { self.process_index(children[i], ctx, pool) };
+            }
+            i = j;
+        }
+    }
+
+    /// A node's bus usage; for groups, the union over the subtree. Pure
+    /// bitops over engine-owned masks — RT-safe.
+    fn subtree_usage(&self, idx: usize) -> BusUsage {
+        match self.slot(idx).map(|s| &s.kind) {
+            Some(NodeKind::Synth { usage, .. }) => *usage,
+            Some(NodeKind::Group(g)) => g
+                .children
+                .iter()
+                .fold(BusUsage::default(), |acc, &c| acc.union(self.subtree_usage(c))),
+            None => BusUsage::default(),
         }
     }
 }

@@ -2,11 +2,12 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters                                    real-time server (OSC on UDP 57110)
+  clausters [--workers <n>]                    real-time server (OSC on UDP 57110)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
       --format <fmt>       int16 | int24 | float (default float)
+      --workers <n>        DSP threads for /g_parallel groups (default 0)
 
 A score is the scsynth binary format: length-prefixed OSC bundles whose
 timetags count seconds from the start; the render ends at the last bundle.";
@@ -21,17 +22,17 @@ fn main() {
             }
         }
         Some("--help" | "-h") => println!("{USAGE}"),
-        Some(other) => {
-            eprintln!("unknown argument: {other}\n{USAGE}");
-            std::process::exit(2);
-        }
-        None => {
-            if let Err(e) = realtime_main() {
+        _ => {
+            if let Err(e) = realtime_main(&args) {
                 eprintln!("error: {e}");
                 std::process::exit(1);
             }
         }
     }
+}
+
+fn parse_workers(value: &str) -> Result<usize, String> {
+    value.parse().map_err(|e| format!("--workers: {e}"))
 }
 
 /// Offline render; works with or without the `realtime` feature (no cpal).
@@ -58,6 +59,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
                     .map_err(|e| format!("--channels: {e}"))?;
             }
             "--format" => format = value("--format")?,
+            "--workers" => cfg.workers = parse_workers(&value("--workers")?)?,
             other => paths.push(other.to_string()),
         }
     }
@@ -79,19 +81,32 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 }
 
 #[cfg(feature = "realtime")]
-fn realtime_main() -> Result<(), Box<dyn std::error::Error>> {
+fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
 
-    let (backend, handle) = clausters::server::backend::start()?;
+    let mut workers = 0usize;
+    let mut it = args.iter();
+    while let Some(arg) = it.next() {
+        match arg.as_str() {
+            "--workers" => {
+                let value = it.next().ok_or(format!("--workers needs a value\n{USAGE}"))?;
+                workers = parse_workers(value)?;
+            }
+            other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
+        }
+    }
+
+    let (backend, handle) = clausters::server::backend::start(workers)?;
     let info = ServerInfo {
         nominal_sample_rate: backend.sample_rate as f64,
         actual_sample_rate: backend.sample_rate as f64,
     };
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
     println!(
-        "clausters M12 — silent until /s_new | {} Hz, {} channels | OSC on {} | /quit or Ctrl-C to stop",
+        "clausters M13 — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
+        workers,
         osc.local_addr()?
     );
     // The OSC server runs on the main thread; the audio runs in cpal's
@@ -102,6 +117,6 @@ fn realtime_main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[cfg(not(feature = "realtime"))]
-fn realtime_main() -> Result<(), String> {
+fn realtime_main(_args: &[String]) -> Result<(), String> {
     Err("built without the `realtime` feature: no audio backend (try --nrt)".into())
 }

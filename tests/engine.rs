@@ -48,6 +48,7 @@ fn add_synth_in(id: i32, freq: f32, amp: f32, target: i32, action: AddAction) ->
         target,
         action,
         synth,
+        usage: Default::default(),
     }
 }
 
@@ -57,6 +58,7 @@ fn add_silencer(id: i32, target: i32, action: AddAction) -> Cmd {
         target,
         action,
         synth: Box::new(UGenSynth::new(silencer_def())),
+        usage: Default::default(),
     }
 }
 
@@ -408,6 +410,7 @@ fn control_buses_feed_the_audio_thread() {
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
             synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
         })
         .ok()
         .unwrap();

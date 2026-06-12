@@ -537,6 +537,7 @@ fn nrt_scores_support_g_sort_mode() {
     let cfg = RenderConfig {
         sample_rate: SR as f64,
         channels: 1,
+        ..RenderConfig::default()
     };
     let (out, _) = render_to_vec(&score, &cfg).expect("render must succeed");
     let expected = 0.2 * std::f32::consts::FRAC_1_SQRT_2;

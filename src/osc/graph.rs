@@ -30,6 +30,7 @@
 
 use std::collections::HashMap;
 
+#[cfg(feature = "faust")]
 use crate::dsp::NUM_AUDIO_BUSES;
 use crate::node::{AddAction, Place, ROOT_NODE_ID};
 use crate::synthdef::{InputRef, SynthDef};
@@ -38,38 +39,9 @@ use crate::synthdef::{InputRef, SynthDef};
 use crate::faust::synth::FaustDef;
 use crate::dsp::registry::UGenKind;
 
-/// Which audio buses a node touches. Bus sets are `u128` bitmasks —
-/// [`NUM_AUDIO_BUSES`] is 128.
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub struct BusUsage {
-    pub reads: u128,
-    pub writes: u128,
-    /// A bus index fed by a computed signal: position must be preserved.
-    pub dynamic: bool,
-}
-
-const _: () = assert!(NUM_AUDIO_BUSES <= 128, "BusUsage bitmasks are u128");
-
-impl BusUsage {
-    pub fn union(self, other: Self) -> Self {
-        Self {
-            reads: self.reads | other.reads,
-            writes: self.writes | other.writes,
-            dynamic: self.dynamic || other.dynamic,
-        }
-    }
-
-    fn mark(&mut self, value: f32, read: bool, write: bool) {
-        // Same conversion as `dsp::io::audio_bus` on the audio thread.
-        let bus = (value.max(0.0) as usize).min(NUM_AUDIO_BUSES - 1);
-        if read {
-            self.reads |= 1 << bus;
-        }
-        if write {
-            self.writes |= 1 << bus;
-        }
-    }
-}
+/// Bus-usage masks now live in [`crate::dsp`] (the engine's parallel
+/// scheduler uses them too, M13); re-exported here for the analysis API.
+pub use crate::dsp::BusUsage;
 
 /// Analyzes a UGen def against a node's current control values. Returns the
 /// usage plus the control indices that act as bus indexes (a `/n_set` on one
@@ -182,6 +154,8 @@ pub enum MirrorBody {
         children: Vec<i32>,
         /// `/g_sortMode`: re-sort on every topology or bus-usage change.
         auto: bool,
+        /// `/g_parallel` (M13): mirrored for `/g_dumpGraph` introspection.
+        parallel: bool,
     },
     Synth {
         def_name: String,
@@ -222,6 +196,7 @@ impl TreeMirror {
                 body: MirrorBody::Group {
                     children: Vec::new(),
                     auto: false,
+                    parallel: false,
                 },
             },
         );
@@ -263,6 +238,24 @@ impl TreeMirror {
             Some(MirrorBody::Synth { .. }) => Err(format!("node {group} is not a group")),
             None => Err(format!("group {group} not found")),
         }
+    }
+
+    pub fn set_parallel(&mut self, group: i32, parallel: bool) -> Result<(), String> {
+        match self.nodes.get_mut(&group).map(|n| &mut n.body) {
+            Some(MirrorBody::Group { parallel: flag, .. }) => {
+                *flag = parallel;
+                Ok(())
+            }
+            Some(MirrorBody::Synth { .. }) => Err(format!("node {group} is not a group")),
+            None => Err(format!("group {group} not found")),
+        }
+    }
+
+    pub fn is_parallel_group(&self, id: i32) -> bool {
+        matches!(
+            self.nodes.get(&id).map(|n| &n.body),
+            Some(MirrorBody::Group { parallel: true, .. })
+        )
     }
 
     /// Mirrors `NodeTree::insert` (same placement rules; capacity limits are

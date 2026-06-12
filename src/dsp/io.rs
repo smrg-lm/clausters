@@ -17,7 +17,7 @@ impl UGen for In {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let from = ctx.offset;
-        output.copy_from_slice(&ctx.buses.audio[bus][from..from + output.len()]);
+        output.copy_from_slice(&ctx.buses.audio(bus)[from..from + output.len()]);
     }
 }
 
@@ -29,7 +29,9 @@ impl UGen for Out {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let signal = inputs[1];
-        let dest = &mut ctx.buses.audio[bus][ctx.offset..];
+        // SAFETY: the M13 stage scheduler never runs two nodes touching the
+        // same bus concurrently (single-threaded otherwise).
+        let dest = &mut unsafe { ctx.buses.audio_mut(bus) }[ctx.offset..];
         for (i, s) in output.iter_mut().enumerate() {
             let x = at(signal, i);
             dest[i] += x;
@@ -45,7 +47,8 @@ impl UGen for ReplaceOut {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let bus = audio_bus(inputs[0]);
         let signal = inputs[1];
-        let dest = &mut ctx.buses.audio[bus][ctx.offset..];
+        // SAFETY: same disjointness argument as `Out`.
+        let dest = &mut unsafe { ctx.buses.audio_mut(bus) }[ctx.offset..];
         for (i, s) in output.iter_mut().enumerate() {
             let x = at(signal, i);
             dest[i] = x;

@@ -39,6 +39,7 @@ fn add_dc(id: i32, level: f32) -> Cmd {
         target: ROOT_NODE_ID,
         action: AddAction::Tail,
         synth: dc_synth(level),
+        usage: Default::default(),
     }
 }
 
@@ -192,6 +193,7 @@ fn scheduled_control_bus_write_lands_on_its_sample() {
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
             synth,
+            usage: Default::default(),
         })
         .ok()
         .unwrap();
@@ -283,6 +285,7 @@ fn faust_synths_survive_block_splits() {
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
             synth,
+            usage: Default::default(),
         }]))
         .ok()
         .unwrap();

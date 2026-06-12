@@ -1032,10 +1032,91 @@ Cero cambios en el hilo de audio: los re-ordenamientos llegan como
   muestra el reorden (manual: master,fx,src → auto: src,fx,master) y la
   cadena suena.
 
+## M13 — Procesamiento paralelo del árbol (completado 2026-06-12)
+
+Los hijos independientes de un grupo marcado con `/g_parallel` corren en
+paralelo sobre un pool de workers (`--workers N`), por **etapas** derivadas
+del mismo análisis de buses de M12 — el análogo del `ParGroup` de supernova
+pero **inferido y verificado por el engine** en vez de prometido por el
+usuario: una declaración equivocada no corrompe audio, solo serializa.
+
+### Decisión de diseño central
+
+Las máscaras `BusUsage` viajan **al engine** dentro de `Cmd::AddSynth` (y
+se re-envían con `Cmd::SetUsage` cuando un `/n_set` toca un control usado
+como índice de bus). El particionado en etapas ocurre en el hilo de audio
+con datos propios — bitops puros, sin alocar — así la *seguridad* del
+paralelismo jamás depende del espejo de red (que puede ir adelantado por
+bundles agendados). Regla greedy por bloque, en orden de hijos: un hijo
+entra a la etapa mientras no escriba nada que la etapa lea o escriba, ni
+lea nada que la etapa escriba; el conflicto cierra la etapa (= los
+escritores al mismo bus se serializan solos, en orden); un hijo `dynamic`
+corre aislado; subgrupos = unidades (unión del subárbol); grupos paralelos
+anidados dentro de un worker corren secuenciales (v1).
+
+**Consecuencia clave: bit-idéntico al secuencial.** Los miembros de una
+etapa tocan buses disjuntos dos a dos y no leen lo que la etapa escribe ⇒
+sus resultados no dependen del interleaving; las etapas preservan el orden
+⇒ mismas sumas en el mismo orden. `--workers` solo cambia el tiempo de
+pared. Goldens e identidad RT/NRT intactos.
+
+### Qué quedó hecho
+
+- **Refactor de soporte**: `BusUsage` se mudó a `dsp` (lo usan análisis y
+  engine); los buses de audio pasaron a `UnsafeCell` por bus
+  (`Buses::audio()`/`audio_mut()` unsafe con contrato documentado) y
+  `ProcessCtx.buses` es `&Buses` (el struct ahora es `Copy` — cada worker
+  lleva el suyo); los slots del `NodeTree` pasaron a
+  `UnsafeCell<Option<NodeSlot>>` con `unsafe impl Sync` (subárboles
+  disjuntos por etapa = un visitante por slot); `NodeKind::Synth` ahora
+  lleva `{ node, usage }`; el process pasó de pila DFS a recursión con
+  `process_index` (con pool) y `process_index_seq` (workers: sin fork-join
+  anidado).
+- **`server/workers.rs`**: pool fork-join. Conductor publica la etapa
+  (job + cursor + remaining + epoch Release), despierta solo a los
+  parqueados, participa del robo de trabajo (cursor `fetch_add`), espera
+  `remaining == 0` y después `active == 0` (el contador `active` cierra la
+  ventana ABA de rezagados sobre cursor/job). Workers: spin acotado →
+  yield → park (re-chequeo anti-lost-wakeup); FTZ armado al nacer (los dos
+  modos quedan sample-idénticos también en paralelo). Camino del conductor
+  sin alocaciones ni locks; el único syscall es `unpark` al salir de idle.
+- **Protocolo y CLI**: `/g_parallel groupID mode` (agendable, scores NRT
+  incluidos, espejado para `/g_dumpGraph` que ahora muestra
+  `(auto, parallel)`), `--workers N` en el server RT y en `--nrt`
+  (`RenderConfig.workers`); `engine_pair_with_workers` (el `engine_pair`
+  de siempre = 0 workers: toda la suite previa corre idéntica).
+- **Benchmark** (`examples/bench.rs`, sección nueva): 8 subgrupos × 125
+  sines en buses disjuntos — en esta máquina ~1.76x con 1 worker, ~2x con
+  2, **~3.3x con 3** y degradación con 7 (SMT/contención), contra los
+  ~1790 synth·xRT de un core.
+- **Docs**: `docs/parallel.md` (uso, formación de etapas, determinismo,
+  cuándo no sirve), architecture.md (workers en el mapa de hilos, fila de
+  módulo, invariantes 1 y 4 ampliados: la regla de partición es el
+  contrato unsafe de `audio_mut` y de los slots), schemas.md
+  (`/g_parallel` agendable + párrafo), GUIA.md (sección M13 con el bench
+  como demo + checklist + conteos).
+
+### Verificación
+
+- `tests/parallel.rs` (4): **bit-identidad** secuencial vs 3 workers sobre
+  un grafo tortura (fuentes disjuntas, subgrupo anidado como unidad, 2
+  insert fx, 2 masters en conflicto serializados, nodo dinámico, y un
+  `/n_set` que re-apunta un bus a mitad de test); supervivencia de muchos
+  ciclos publish/park/unpark + shutdown limpio; `/fail` de `/g_parallel`
+  sobre no-grupos; **NRT con workers bit-idéntico**. `tests/rt_safety.rs`
+  ganó `parallel_dispatch_does_not_allocate` (16 fuentes disjuntas, 2
+  workers, 300 bloques bajo `assert_no_alloc` en el conductor; los workers
+  corren el mismo código de process ya cubierto — el guardián por-hilo no
+  los envuelve, anotado como límite conocido).
+- E2E: server RT `--workers 2` con cadena auto-ordenada y paralela sonando
+  (dump `(auto, parallel)`); `--nrt --workers 2` produce un WAV
+  **byte-idéntico** al secuencial (`cmp` limpio).
+- **101 tests core / 138 con faust**, clippy y rustdoc limpios.
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7), F0–F5, M8, M9 y M12 están completos. Direcciones
-planificadas: M10, M11, M13 (ya tiene su prerequisito M12) y M14 en
-«Milestones futuros» de PLAN.md. Sueltas: más UGens (filtros, EnvGen con
-done actions, Line), streaming de buffers (`leaveOpen`), `/n_query`,
-multi-cliente con notificaciones por ID.
+El plan original (M0–M7), F0–F5, M8, M9, M12 y M13 están completos.
+Direcciones planificadas: M10, M11 y M14 en «Milestones futuros» de
+PLAN.md. Sueltas: más UGens (filtros, EnvGen con done actions, Line),
+streaming de buffers (`leaveOpen`), `/n_query`, multi-cliente con
+notificaciones por ID.

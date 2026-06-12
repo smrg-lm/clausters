@@ -1,7 +1,7 @@
 # Guía de compilación y prueba
 
 Cómo compilar **Clausters**, correrlo y probar todo lo que hay hasta ahora
-(milestones M0–M9, M12 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
+(milestones M0–M9, M12, M13 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
 nuevo.
 
 Documentación de referencia: `docs/schemas.md` (formatos de defs y comandos
@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 96 tests, no necesita placa de audio
+cargo test                       # 101 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -64,7 +64,7 @@ Terminal 1:
 
 ```sh
 cargo run --release
-# clausters M12 — silent until /s_new | 44100 Hz, 2 channels | OSC on 127.0.0.1:57110 | ...
+# clausters M13 — silent until /s_new | 44100 Hz, 2 channels | 0 DSP worker(s) | OSC on 127.0.0.1:57110 | ...
 # (la sample rate es la del dispositivo de audio default)
 ```
 
@@ -253,6 +253,40 @@ ciclos (feedback) conservan su orden relativo = un bloque de delay; y
 dentro de un grupo auto los `/n_before`/`/n_after` manuales responden
 `/fail`.
 
+### Probar el procesamiento paralelo (M13)
+
+Con `--workers N` el servidor levanta N hilos DSP y los grupos marcados con
+`/g_parallel` procesan sus hijos independientes en paralelo, por **etapas**
+derivadas del mismo análisis de buses de M12. Garantía central: el resultado
+es **bit-idéntico** al secuencial (las etapas solo agrupan hijos con buses
+disjuntos), así que activar workers solo cambia el tiempo de pared, jamás el
+audio. Dos escritores al mismo bus se serializan solos; un índice de bus
+dinámico corre aislado.
+
+La prueba que importa es el **benchmark** (offline, a fondo, en release):
+
+```sh
+cargo run --release --example bench
+# ... al final:
+# parallel group (/g_parallel): 8 subgroups x 125 sines, disjoint buses:
+#   0 workers: ... (speedup 1.00x)
+#   3 workers: ... (speedup ~3x en una máquina de 4+ cores)
+```
+
+En vivo y en NRT:
+
+```sh
+cargo run --release -- --workers 3                       # servidor RT
+./target/release/clausters --nrt score.osc out.wav --workers 3   # render más rápido
+oscsend localhost 57110 /g_parallel ii 100 1   # marca el grupo 100
+oscsend localhost 57110 /g_dumpGraph i 100     # muestra "(…, parallel)"
+```
+
+Sin `--workers` el flag se acepta y se recuerda pero todo sigue secuencial.
+La identidad bit a bit está clavada por `tests/parallel.rs` (en vivo, en
+NRT, y tras un `/n_set` que re-apunta un bus); la RT-safety del conductor
+por `tests/rt_safety.rs`. Detalle en `docs/parallel.md`.
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -324,7 +358,7 @@ falta `LD_LIBRARY_PATH`.
 ### Compilar y testear con el feature
 
 ```sh
-cargo test --features faust      # 133 tests (los 96 del núcleo + 37 de Faust)
+cargo test --features faust      # 138 tests (los 101 del núcleo + 37 de Faust)
 ```
 
 Los tests de Faust cubren: humo del JIT con paridad de señal contra nuestro
@@ -451,15 +485,16 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Bundles con timetag, sample-accurate | `tests/scheduling.rs` | `json_client.py bundle` (arpegio agendado) |
 | Reloj de samples, `/clock` + `/sched` (M8) | `tests/osc.rs`, `tests/scheduling.rs` | `python3 examples/sample_clock.py` |
 | Grupos auto-ordenados, `/g_sortMode` + `/g_queryTree` (M12) | `tests/auto_order.rs` | `python3 examples/auto_order.py` |
+| Grupos paralelos, `/g_parallel` + `--workers` (M13) | `tests/parallel.rs`, `tests/rt_safety.rs` | `cargo run --release --example bench` (sección parallel) |
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 
-Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8, M9 y M12
-están completos; lo que sigue está en «Milestones futuros» de PLAN.md
-(M10, M11, M13, M14).
+Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8, M9, M12 y
+M13 están completos; lo que sigue está en «Milestones futuros» de PLAN.md
+(M10, M11, M14).
 
 ## 5. Problemas frecuentes
 

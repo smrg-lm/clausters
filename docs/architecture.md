@@ -40,6 +40,12 @@ and `NOTAS.md` (Spanish) at the repository root.
   reading/writing via hound, zeroing. One queue, so commands on the same
   buffer complete in submission order. Produces immutable buffers the network
   thread installs with `Cmd::SetBuffer`.
+- **DSP workers** (`server::workers`, M13, opt-in via `--workers N`): a
+  fork-join pool the audio thread conducts to process the stages of
+  `/g_parallel` groups. Atomic work stealing, bounded spinning, park/unpark
+  only across idle gaps; each worker arms flush-to-zero at spawn. With 0
+  workers (the default and the whole test suite) the pool is inert and
+  everything is sequential.
 - **Faust compiler thread** (`faust::compiler`, feature `faust`): JIT
   compilation of `/d_faust` defs. libfaust does not tolerate concurrent
   compilation in one process (SIGSEGV), so every compiling FFI call holds the
@@ -64,6 +70,7 @@ the offline mode and the integration tests possible.
 | `src/server/engine.rs` | The core: `Engine` (audio half), `EngineHandle` (network half), `Cmd`, `Garbage`, the FIFOs, the schedule queue, the sample clock |
 | `src/server/backend.rs` | cpal glue: `BlockAdapter` slices arbitrary callback sizes into 64-frame engine blocks (feature `realtime`) |
 | `src/server/nrt.rs` | NRT thread, `NrtJob`/`run_job` (also called synchronously by the renderer), WAV format helpers |
+| `src/server/workers.rs` | M13 worker pool: stage publish/steal/wait protocol for parallel groups |
 | `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
 | `src/node/mod.rs` | `NodeTree` (fixed slab), `SynthNode` trait, groups, add actions, moves |
 | `src/dsp/mod.rs` | `UGen` trait, `ProcessCtx`, buses, block/bus-count constants |
@@ -151,9 +158,10 @@ between the two modes.
 ## Invariants — do not break these
 
 1. **The audio thread never allocates, frees, locks or does I/O.**
-   `Engine::process_block` and everything it calls. Guarded by
-   `tests/rt_safety.rs` (`assert_no_alloc`); new processing code must stay
-   under that umbrella.
+   `Engine::process_block` and everything it calls — including the M13
+   parallel dispatch (atomics, bounded spins, at worst an `unpark`).
+   Guarded by `tests/rt_safety.rs` (`assert_no_alloc`); new processing code
+   must stay under that umbrella.
 2. **Commands arrive fully built.** If a handler needs the audio thread to
    "finish" constructing something, the design is wrong.
 3. **All incoming OSC bytes decode through `osc::decode_packet`.** rosc
@@ -163,9 +171,16 @@ between the two modes.
    reintroduce `rosc::decoder::decode_udp` without verifying both fixes
    upstream (see `CLAUDE.md`).
 4. **RT and NRT render sample-identically.** Same engine, same schedule
-   queue, same FPU mode — flush-to-zero is armed in the cpal callback *and*
-   in `render()`, and Faust factories get `-ftz 2`. Keep all three call
-   sites (`tests/denormals.rs`, Faust tail test in `tests/golden.rs`).
+   queue, same FPU mode — flush-to-zero is armed in the cpal callback, in
+   `render()` *and* in every DSP worker at spawn, and Faust factories get
+   `-ftz 2`. Keep all the call sites (`tests/denormals.rs`, Faust tail test
+   in `tests/golden.rs`).
+   Corollary (M13): **parallel execution is bit-identical to sequential** —
+   a stage only batches children with pairwise disjoint bus usage, verified
+   by the engine against its own masks (`tests/parallel.rs`). Never weaken
+   the stage partition rule: concurrent same-bus access is not just wrong
+   ordering, it is the unsafe contract of `Buses::audio_mut` and of the
+   per-slot `UnsafeCell`s in `NodeTree`.
 5. **Buffers are immutable once installed.** Replace, never mutate. A
    recording UGen would need a new scheme — design it, don't poke holes.
 6. **Synth output goes only through `Out`/`ReplaceOut`** (and the Faust

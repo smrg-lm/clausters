@@ -69,6 +69,7 @@ fn add_synth(id: i32, synth: UGenSynth) -> Cmd {
         target: ROOT_NODE_ID,
         action: AddAction::Tail,
         synth: Box::new(synth),
+        usage: Default::default(),
     }
 }
 

@@ -20,6 +20,8 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
+use crate::dsp::BusUsage;
+use crate::server::workers::WorkerPool;
 use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 
@@ -41,6 +43,9 @@ pub enum Cmd {
         target: i32,
         action: AddAction,
         synth: Box<dyn SynthNode>,
+        /// Bus masks analyzed at build time; the M13 parallel scheduler
+        /// partitions stages from this engine-owned copy.
+        usage: BusUsage,
     },
     AddGroup {
         id: i32,
@@ -83,6 +88,18 @@ pub enum Cmd {
     SetControlBus {
         index: usize,
         value: f32,
+    },
+    /// `/n_set` on a control used as a bus index: ships the re-analyzed
+    /// masks so the parallel scheduler stays in sync (M13).
+    SetUsage {
+        id: i32,
+        usage: BusUsage,
+    },
+    /// `/g_parallel`: children of this group run in dependency stages on
+    /// the worker pool (M13).
+    SetGroupParallel {
+        id: i32,
+        parallel: bool,
     },
     /// A timed bundle: `cmds` execute back to back when the stream reaches
     /// `time` (absolute, in samples), splitting the block at that offset.
@@ -211,6 +228,8 @@ pub struct Engine {
     sample_rate: f32,
     channels: usize,
     tree: NodeTree,
+    /// M13 DSP workers for parallel groups; empty pool = sequential.
+    pool: WorkerPool,
     buses: Buses,
     buffers: BufferPool,
     /// Samples processed since start; the stream clock scheduled bundles
@@ -241,6 +260,18 @@ pub struct EngineHandle {
 }
 
 pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) {
+    engine_pair_with_workers(sample_rate, channels, 0)
+}
+
+/// Like [`engine_pair`], plus an M13 worker pool of `workers` DSP threads
+/// for parallel groups (`/g_parallel`). `workers == 0` is fully sequential
+/// — identical behavior and output either way (stages are bit-identical to
+/// sequential execution by construction).
+pub fn engine_pair_with_workers(
+    sample_rate: f32,
+    channels: usize,
+    workers: usize,
+) -> (Engine, EngineHandle) {
     assert!(channels > 0 && channels <= NUM_AUDIO_BUSES);
     let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY);
@@ -257,6 +288,7 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
         sample_rate,
         channels,
         tree: NodeTree::new(),
+        pool: WorkerPool::new(workers),
         buses: Buses::new(control_buses.clone()),
         buffers: empty_pool(),
         now: 0,
@@ -324,7 +356,7 @@ impl Engine {
         // Buses 0..channels are the hardware outputs.
         for (f, frame) in out.chunks_exact_mut(self.channels).enumerate() {
             for (ch, s) in frame.iter_mut().enumerate() {
-                *s = self.buses.audio[ch][f];
+                *s = self.buses.audio(ch)[f];
             }
         }
 
@@ -346,14 +378,14 @@ impl Engine {
         if frames == 0 {
             return;
         }
-        let mut ctx = ProcessCtx {
+        let ctx = ProcessCtx {
             sample_rate: self.sample_rate,
-            buses: &mut self.buses,
+            buses: &self.buses,
             buffers: &self.buffers,
             offset,
             frames,
         };
-        self.tree.process(&mut ctx);
+        self.tree.process(&ctx, &self.pool);
     }
 
     fn push_garbage(&mut self, garbage: Garbage) {
@@ -386,10 +418,11 @@ impl Engine {
                     target,
                     action,
                     synth,
+                    usage,
                 } => {
                     match self.tree.insert(
                         id,
-                        NodeKind::Synth(synth),
+                        NodeKind::Synth { node: synth, usage },
                         target,
                         action,
                         &mut |f| sink.consume(f),
@@ -402,13 +435,18 @@ impl Engine {
                                 is_group: false,
                             });
                         }
-                        Err(NodeKind::Synth(synth)) => {
+                        Err(NodeKind::Synth { node: synth, .. }) => {
                             sink.push(Garbage::RejectedSynth { id, synth });
                         }
                         Err(NodeKind::Group(group)) => {
                             sink.push(Garbage::RejectedGroup { id, group });
                         }
                     }
+                }
+                Cmd::SetUsage { id, usage } => self.tree.set_usage(id, usage),
+                Cmd::SetGroupParallel { id, parallel } => {
+                    // Unknown or non-group IDs are ignored, like /n_set.
+                    let _ = self.tree.set_parallel(id, parallel);
                 }
                 Cmd::AddGroup {
                     id,
@@ -431,7 +469,7 @@ impl Engine {
                                 is_group: true,
                             });
                         }
-                        Err(NodeKind::Synth(synth)) => {
+                        Err(NodeKind::Synth { node: synth, .. }) => {
                             sink.push(Garbage::RejectedSynth { id, synth });
                         }
                         Err(NodeKind::Group(group)) => {

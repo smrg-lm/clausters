@@ -38,7 +38,7 @@ fn render_with(
         for synth in synths.iter_mut() {
             synth.process(&mut ctx);
         }
-        out.extend_from_slice(&buses.audio[0]);
+        out.extend_from_slice(buses.audio(0));
     }
     out
 }

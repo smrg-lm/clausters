@@ -15,6 +15,7 @@ pub mod noise;
 pub mod registry;
 pub mod sinosc;
 
+use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -61,25 +62,98 @@ impl ControlBuses {
     }
 }
 
+/// Which audio buses a node reads and writes, as `u128` bitmasks (M12/M13).
+/// Computed by the network thread from the def and the node's current
+/// control values (`osc::graph`); shipped to the engine inside
+/// `Cmd::AddSynth` so the parallel scheduler (M13) partitions stages from
+/// engine-owned data — safety never depends on possibly stale mirror state.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub struct BusUsage {
+    pub reads: u128,
+    pub writes: u128,
+    /// A bus index fed by a computed signal: the node may touch *any* bus,
+    /// so it keeps its position and never runs in parallel with anything.
+    pub dynamic: bool,
+}
+
+const _: () = assert!(NUM_AUDIO_BUSES <= 128, "BusUsage bitmasks are u128");
+
+impl BusUsage {
+    pub fn union(self, other: Self) -> Self {
+        Self {
+            reads: self.reads | other.reads,
+            writes: self.writes | other.writes,
+            dynamic: self.dynamic || other.dynamic,
+        }
+    }
+
+    /// Marks one bus, converting like `dsp::io::audio_bus` does at run time.
+    pub fn mark(&mut self, value: f32, read: bool, write: bool) {
+        let bus = (value.max(0.0) as usize).min(NUM_AUDIO_BUSES - 1);
+        if read {
+            self.reads |= 1 << bus;
+        }
+        if write {
+            self.writes |= 1 << bus;
+        }
+    }
+}
+
 /// Global buses. Audio buses live on the audio thread and are cleared every
 /// block; control buses persist and are shared (see [`ControlBuses`]).
+///
+/// Each audio bus sits in its own [`UnsafeCell`] so the M13 worker threads
+/// can write **disjoint** buses concurrently through a shared `&Buses`: the
+/// stage scheduler (`node::NodeTree::process`) guarantees, from the
+/// [`BusUsage`] masks, that no two nodes of a parallel stage touch
+/// overlapping buses (and that nothing reads what the stage writes).
 pub struct Buses {
-    pub audio: Vec<[f32; BLOCK_SIZE]>,
+    audio: Vec<UnsafeCell<[f32; BLOCK_SIZE]>>,
     pub control: ControlBuses,
 }
+
+// SAFETY: concurrent access to `audio` only happens during a parallel stage,
+// where the scheduler proves per-bus disjointness; everything else is
+// single-threaded on the audio thread.
+unsafe impl Send for Buses {}
+unsafe impl Sync for Buses {}
 
 impl Buses {
     pub fn new(control: ControlBuses) -> Self {
         Self {
-            audio: vec![[0.0; BLOCK_SIZE]; NUM_AUDIO_BUSES],
+            audio: (0..NUM_AUDIO_BUSES)
+                .map(|_| UnsafeCell::new([0.0; BLOCK_SIZE]))
+                .collect(),
             control,
         }
     }
 
     pub fn clear_audio(&mut self) {
         for bus in &mut self.audio {
-            bus.fill(0.0);
+            bus.get_mut().fill(0.0);
         }
+    }
+
+    /// Shared read of one audio bus.
+    ///
+    /// During a parallel stage this may race only with writes to *other*
+    /// buses (scheduler invariant), so the plain reference is sound.
+    #[inline]
+    pub fn audio(&self, bus: usize) -> &[f32; BLOCK_SIZE] {
+        unsafe { &*self.audio[bus].get() }
+    }
+
+    /// Mutable access to one audio bus through a shared reference.
+    ///
+    /// # Safety
+    /// The caller must be the only thread touching `bus` for the lifetime
+    /// of the returned reference. Inside `process` this holds because the
+    /// M13 stage scheduler only runs nodes with disjoint bus usage in
+    /// parallel; single-threaded callers hold it trivially.
+    #[inline]
+    #[allow(clippy::mut_from_ref)]
+    pub unsafe fn audio_mut(&self, bus: usize) -> &mut [f32; BLOCK_SIZE] {
+        unsafe { &mut *self.audio[bus].get() }
     }
 }
 
@@ -87,9 +161,13 @@ impl Buses {
 /// [`BLOCK_SIZE`]), but scheduled bundles (M6) split the block at the
 /// event's sample: synths then process the sub-range `offset..offset+frames`
 /// of the current block, and bus I/O must index buses at `offset`.
+/// `buses` is a shared reference since M13: bus *writes* go through
+/// [`Buses::audio_mut`] under the parallel scheduler's disjointness rule.
+/// The struct is `Copy` so every worker carries its own.
+#[derive(Clone, Copy)]
 pub struct ProcessCtx<'a> {
     pub sample_rate: f32,
-    pub buses: &'a mut Buses,
+    pub buses: &'a Buses,
     /// The engine's buffer pool; read-only on the audio thread (see
     /// [`buffer`] for the immutability contract).
     pub buffers: &'a [Option<Arc<buffer::Buffer>>],

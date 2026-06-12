@@ -164,7 +164,7 @@ impl SynthNode for FaustSynth {
         for i in 0..self.in_bufs.len() {
             let bus = (self.in_bus + i).min(NUM_AUDIO_BUSES - 1);
             self.in_bufs[i][..frames]
-                .copy_from_slice(&ctx.buses.audio[bus][offset..offset + frames]);
+                .copy_from_slice(&ctx.buses.audio(bus)[offset..offset + frames]);
             self.in_ptrs[i] = self.in_bufs[i].as_mut_ptr();
         }
         for i in 0..self.out_bufs.len() {
@@ -180,7 +180,9 @@ impl SynthNode for FaustSynth {
         }
         for (i, buf) in self.out_bufs.iter().enumerate() {
             let bus = (self.out_bus + i).min(NUM_AUDIO_BUSES - 1);
-            for (d, s) in ctx.buses.audio[bus][offset..offset + frames]
+            // SAFETY: M13 stage disjointness — no other thread touches
+            // this bus while we sum into it.
+            for (d, s) in unsafe { ctx.buses.audio_mut(bus) }[offset..offset + frames]
                 .iter_mut()
                 .zip(&buf[..frames])
             {

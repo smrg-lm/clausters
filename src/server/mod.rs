@@ -6,3 +6,4 @@ pub mod backend;
 pub mod engine;
 pub mod nrt;
 pub mod render;
+pub mod workers;

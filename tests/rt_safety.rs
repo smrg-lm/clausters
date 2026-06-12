@@ -41,6 +41,7 @@ fn audio_thread_does_not_allocate() {
                 target: 1,
                 action: AddAction::Tail,
                 synth,
+                usage: Default::default(),
             })
             .ok()
             .unwrap();
@@ -102,6 +103,7 @@ fn scheduled_bundles_do_not_allocate_on_the_audio_thread() {
                 target: ROOT_NODE_ID,
                 action: AddAction::Tail,
                 synth,
+                usage: Default::default(),
             },
             Cmd::SetControl {
                 id: 1000 + i.saturating_sub(1) as i32,
@@ -179,6 +181,7 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
             synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
         })
         .ok()
         .unwrap();
@@ -260,6 +263,7 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
                 target: ROOT_NODE_ID,
                 action: AddAction::Tail,
                 synth,
+                usage: Default::default(),
             })
             .ok()
             .unwrap();
@@ -296,4 +300,67 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
         }
     });
     assert_eq!(handle.collect_garbage(), 8);
+}
+
+/// M13: the conductor side of parallel dispatch — stage partition (bitops),
+/// the publish/steal/wait protocol (atomics, bounded spins, at worst an
+/// `unpark` syscall) — must not allocate either. The workers run the same
+/// `process` code path verified above; their threads are spawned (and
+/// allocate) only at engine creation, outside the audio path.
+#[test]
+fn parallel_dispatch_does_not_allocate() {
+    use clausters::server::engine::engine_pair_with_workers;
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair_with_workers(48_000.0, 2, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // Sources on disjoint buses so stages genuinely fan out to the workers.
+    handle
+        .send(Cmd::AddGroup {
+            id: 1,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::new(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::SetGroupParallel {
+            id: 1,
+            parallel: true,
+        })
+        .ok()
+        .unwrap();
+    for i in 0..16i32 {
+        let spec: SynthDefSpec = serde_json::from_value(serde_json::json!({
+            "name": format!("p{i}"),
+            "ugens": [
+                {"kind": "SinOsc", "inputs": [{"const": 110.0 + i as f64}]},
+                {"kind": "Out", "inputs": [{"const": 16.0 + i as f64}, {"ugen": 0}]}
+            ]
+        }))
+        .unwrap();
+        let synth = Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap())));
+        handle
+            .send(Cmd::AddSynth {
+                id: 3000 + i,
+                target: 1,
+                action: AddAction::Tail,
+                synth,
+                usage: {
+                    let mut u = clausters::dsp::BusUsage::default();
+                    u.mark(16.0 + i as f32, false, true);
+                    u
+                },
+            })
+            .ok()
+            .unwrap();
+    }
+
+    assert_no_alloc(|| {
+        for _ in 0..300 {
+            engine.process_block(&mut out);
+        }
+    });
 }

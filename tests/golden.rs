@@ -160,6 +160,7 @@ fn render_is_sample_accurate_mid_block() {
     let cfg = RenderConfig {
         sample_rate: 48000.0,
         channels: 1,
+        ..RenderConfig::default()
     };
     let (out, stats) = render_to_vec(&score, &cfg).unwrap();
     assert_eq!(stats.frames, 200);
@@ -216,6 +217,7 @@ fn score_file_round_trips_through_disk() {
     let cfg = RenderConfig {
         sample_rate: 48000.0,
         channels: 1,
+        ..RenderConfig::default()
     };
     let (out, _) = render_to_vec(&score, &cfg).unwrap();
     assert_eq!(out.len(), 200);
@@ -257,6 +259,7 @@ fn faust_def_renders_in_nrt() {
     let cfg = RenderConfig {
         sample_rate: 48000.0,
         channels: 1,
+        ..RenderConfig::default()
     };
     let (out, _) = render_to_vec(&score, &cfg).unwrap();
     for (i, s) in out.iter().enumerate() {
@@ -304,6 +307,7 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
     let cfg = RenderConfig {
         sample_rate: 48000.0,
         channels: 1,
+        ..RenderConfig::default()
     };
     let (out, _) = render_to_vec(&score, &cfg).unwrap();
     assert!(out[1] > 0.5, "the impulse decay must be audible at the start");

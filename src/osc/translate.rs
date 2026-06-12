@@ -263,6 +263,7 @@ impl CmdTranslator {
                     target: *target,
                     action,
                     synth,
+                    usage,
                 });
                 let body = MirrorBody::Synth {
                     def_name: name.clone(),
@@ -300,6 +301,12 @@ impl CmdTranslator {
                 }
                 if bus_control_hit {
                     self.refresh_usage(*id);
+                    // The engine keeps its own copy of the masks for the
+                    // M13 parallel scheduler: ship the update.
+                    if self.mirror.synth_info(*id).is_some() {
+                        let usage = self.mirror.usage_of(*id);
+                        cmds.push(Cmd::SetUsage { id: *id, usage });
+                    }
                     self.resort_from(self.mirror.parent(*id), cmds);
                 }
                 Ok(())
@@ -373,6 +380,7 @@ impl CmdTranslator {
                     let body = MirrorBody::Group {
                         children: Vec::new(),
                         auto: false,
+                        parallel: false,
                     };
                     // An empty group has no bus usage: no re-sort needed.
                     let _ = self.mirror.insert(*id, body, *target, action);
@@ -391,6 +399,25 @@ impl CmdTranslator {
                         cmds.push(Cmd::DeepFreeGroup { id: *id });
                         self.mirror.deep_free(*id);
                     }
+                }
+                Ok(())
+            }
+            // M13: `/g_parallel groupID mode` — mode 1 runs the group's
+            // children in dependency stages on the engine's worker pool
+            // (sequential without workers); mode 0 returns to strict order.
+            "/g_parallel" => {
+                if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
+                    return Err("expected (groupID, mode) pairs".into());
+                }
+                for pair in msg.args.chunks(2) {
+                    let [OscType::Int(group), OscType::Int(mode)] = pair else {
+                        return Err("expected int (groupID, mode) pairs".into());
+                    };
+                    self.mirror.set_parallel(*group, *mode != 0)?;
+                    cmds.push(Cmd::SetGroupParallel {
+                        id: *group,
+                        parallel: *mode != 0,
+                    });
                 }
                 Ok(())
             }
@@ -496,7 +523,12 @@ impl CmdTranslator {
         } else {
             "manual"
         };
-        let mut out = format!("group {group} ({auto})\n");
+        let parallel = if self.mirror.is_parallel_group(group) {
+            ", parallel"
+        } else {
+            ""
+        };
+        let mut out = format!("group {group} ({auto}{parallel})\n");
         for &child in children {
             let usage = self.mirror.usage_of(child);
             let kind = match self.mirror.synth_info(child) {

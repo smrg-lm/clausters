@@ -20,6 +20,7 @@ pub fn config() -> RenderConfig {
     RenderConfig {
         sample_rate: SAMPLE_RATE,
         channels: 1,
+        ..RenderConfig::default()
     }
 }
 

@@ -40,7 +40,7 @@ bundles are scheduled independently by their own timetags.
 
 Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_free`,
 `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`,
-`/g_sortMode`. Anything else (defs, buffers, server commands) replies
+`/g_sortMode`, `/g_parallel`. Anything else (defs, buffers, server commands) replies
 `/fail … cannot be scheduled in a timed bundle` — load defs and buffers
 first, then schedule the notes.
 
@@ -49,7 +49,10 @@ a group keep its children in dependency order inferred from the buses each
 def reads and writes — no more manual `/n_before` bookkeeping; query what
 the server inferred with `/g_queryTree` (scsynth-compatible reply) and
 `/g_dumpGraph`. See [`auto-order.md`](auto-order.md) and
-`examples/auto_order.py`.
+`examples/auto_order.py`. The same analysis powers **parallel groups**:
+`/g_parallel groupID 1` (with the server started as `--workers N`) runs a
+group's independent children on several cores, bit-identically to the
+sequential result — see [`parallel.md`](parallel.md).
 
 Beyond scsynth, the server also exposes its **sample clock** directly:
 `/clock` queries the sample counter, and `/sched <int64 target> <blob>`

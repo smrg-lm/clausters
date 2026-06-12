@@ -383,7 +383,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   `examples/auto_order.py`, doc `docs/auto-order.md`. Cero cambios en el
   hilo de audio, como estaba previsto.)*
 
-- **M13 — Procesamiento paralelo del árbol** (requiere M12): el DAG de M12
+- ✅ **M13 — Procesamiento paralelo del árbol** (requiere M12): el DAG de M12
   es exactamente la estructura que habilita el paralelismo — etapas =
   conjuntos de nodos sin dependencias entre sí — análogo al `ParGroup` de
   supernova pero inferido en vez de declarado. Workers RT (N−1 hilos con
@@ -398,6 +398,13 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   rápidos). Encararlo recién cuando exista un grafo real que no entre en un
   core: hoy `examples/bench` da ~1800 voces sine en un core, y este es el
   milestone más caro en complejidad de toda la sección.
+  *(Completado 2026-06-12 — ver NOTAS.md. Particionado en etapas en el
+  propio engine a partir de máscaras `BusUsage` enviadas en `Cmd::AddSynth`
+  — la seguridad nunca depende del espejo de red —; `server/workers.rs`
+  (fork-join con robo de trabajo atómico, spin acotado, park en idle);
+  `/g_parallel` + `--workers` en RT y NRT; **bit-idéntico al secuencial**
+  por construcción y por test; speedup medido ~3.3x con 3 workers en el
+  bench de 8 cadenas × 125 sines. Doc en `docs/parallel.md`.)*
 
 - **M14 — Transportes enchufables, modo embebido y llamadas síncronas**
   (redefinido 2026-06-12; antes era solo «plano de datos por shm»): el

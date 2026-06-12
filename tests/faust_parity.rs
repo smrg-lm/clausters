@@ -65,6 +65,7 @@ fn add_tail(id: i32, target: i32, synth: Box<dyn SynthNode>) -> Cmd {
         target,
         action: AddAction::Tail,
         synth,
+        usage: Default::default(),
     }
 }
 
