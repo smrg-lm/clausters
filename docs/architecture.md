@@ -20,7 +20,9 @@ and `NOTAS.md` (Spanish) at the repository root.
 
 - **Network thread** (`osc::server::OscServer::run`): owns the UDP socket
   (100 ms read timeout — each timeout tick collects garbage and async
-  results), parses every datagram through `osc::decode_packet`, builds
+  results; 2 ms when an M14 ring is attached, which it also drains every
+  iteration), parses every packet — datagram or ring — through
+  `osc::decode_packet`, builds
   commands *fully allocated* — boxed synths, pre-reserved group child lists —
   and pushes them into the command FIFO. It also owns all lookup tables: the
   def tables, the node-ID→def mirror, the buffer mirror, and the M12
@@ -71,6 +73,8 @@ the offline mode and the integration tests possible.
 | `src/server/backend.rs` | cpal glue: `BlockAdapter` slices arbitrary callback sizes into 64-frame engine blocks (feature `realtime`) |
 | `src/server/nrt.rs` | NRT thread, `NrtJob`/`run_job` (also called synchronously by the renderer), WAV format helpers |
 | `src/server/workers.rs` | M13 worker pool: stage publish/steal/wait protocol for parallel groups |
+| `src/server/ipc.rs` | M14: the versioned shared segment — data plane (clock, control buses) + OSC byte rings (`--shm` and embed transports) |
+| `src/embed.rs` | M14: the embed C ABI (feature `embed`, exported by the cdylib) |
 | `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
 | `src/node/mod.rs` | `NodeTree` (fixed slab), `SynthNode` trait, groups, add actions, moves |
 | `src/dsp/mod.rs` | `UGen` trait, `ProcessCtx`, buses, block/bus-count constants |
@@ -109,7 +113,9 @@ Two shared structures cross threads without the FIFOs:
 - **Control buses**: 1024 atomics (`dsp::ControlBuses`). Immediate `/c_set`
   and `/c_get` are served directly on the network thread; the audio thread
   reads them through `InCtl`. A *scheduled* `/c_set` must land on its exact
-  sample, so it travels as `Cmd::SetControlBus` instead.
+  sample, so it travels as `Cmd::SetControlBus` instead. With an M14
+  segment the backing array lives in shared memory: other processes write
+  the same atomics.
 - **Buffers**: `Arc<Buffer>`, **immutable once installed**. The NRT thread
   builds them, `Cmd::SetBuffer` swaps them into the engine pool, the
   replaced `Arc` returns as `Garbage::FreedBuffer`. "Mutating" commands
@@ -164,7 +170,9 @@ between the two modes.
    must stay under that umbrella.
 2. **Commands arrive fully built.** If a handler needs the audio thread to
    "finish" constructing something, the design is wrong.
-3. **All incoming OSC bytes decode through `osc::decode_packet`.** rosc
+3. **All incoming OSC bytes decode through `osc::decode_packet`.**
+   Whatever the transport — UDP datagrams and IPC ring contents are equally
+   untrusted. rosc
    0.10.1 over-reads the padding of blobs whose length is a multiple of 4
    (top-level: `Err(Eof)`; inside a bundle: the element is **silently
    dropped**). `decode_packet` splits bundles by hand, recursively. Do not
@@ -189,7 +197,12 @@ between the two modes.
    libfaust installed** (and without `realtime`/cpal: the renderer and the
    whole test suite run deviceless). Everything Faust hides behind
    `#[cfg(feature = "faust")]`.
-8. **Determinism in tests.** Golden scenes must be reproducible: no
+8. **Binary boundaries are versioned.** The IPC segment layout and the
+   embed C ABI share one version constant (`ipc::ABI_VERSION`), checked on
+   attach/load; `tests/ipc.rs` pins the layout size. Any layout or C-ABI
+   change bumps it — never ship an unversioned boundary (the scsynth
+   plugin-ABI lesson).
+9. **Determinism in tests.** Golden scenes must be reproducible: no
    wall-clock, no global seeds shared across parallel tests (`WhiteNoise`
    seeds from a global counter — keep it out of golden scenes), tolerances
    per `tests/golden.rs` (1e-4: libm differs across platforms, same machine

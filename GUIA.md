@@ -1,7 +1,7 @@
 # Guía de compilación y prueba
 
 Cómo compilar **Clausters**, correrlo y probar todo lo que hay hasta ahora
-(milestones M0–M9, M12, M13 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
+(milestones M0–M9, M12–M14 y F0–F5). Pensada para Linux / Ubuntu 24.04 o más
 nuevo.
 
 Documentación de referencia: `docs/schemas.md` (formatos de defs y comandos
@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 101 tests, no necesita placa de audio
+cargo test                       # 106 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -64,7 +64,7 @@ Terminal 1:
 
 ```sh
 cargo run --release
-# clausters M13 — silent until /s_new | 44100 Hz, 2 channels | 0 DSP worker(s) | OSC on 127.0.0.1:57110 | ...
+# clausters M14 — silent until /s_new | 44100 Hz, 2 channels | 0 DSP worker(s) | OSC on 127.0.0.1:57110 | ...
 # (la sample rate es la del dispositivo de audio default)
 ```
 
@@ -287,6 +287,42 @@ La identidad bit a bit está clavada por `tests/parallel.rs` (en vivo, en
 NRT, y tras un `/n_set` que re-apunta un bus); la RT-safety del conductor
 por `tests/rt_safety.rs`. Detalle en `docs/parallel.md`.
 
+### Probar los transportes locales: shm y embebido (M14)
+
+OSC sigue siendo la única codificación, pero ya no hace falta UDP para
+clientes locales. **Memoria compartida** (dos procesos):
+
+```sh
+cargo run --release -- --shm /dev/shm/clausters   # terminal 1
+python3 examples/shm_client.py                    # terminal 2
+```
+
+Debe verse el reloj de samples avanzando leído directo del segmento, un
+`/status` ida y vuelta por el ring (sin sockets), y oírse una sinusoide que
+hace fade **escribiendo el bus de control 7 en memoria compartida** — sin
+mandar ningún comando: el `InCtl` del engine lee esos mismos atomics al
+bloque siguiente.
+
+**Modo embebido** (el servidor como biblioteca, C ABI):
+
+```sh
+cargo build --release --features embed,realtime   # produce libclausters.so
+python3 examples/embed_render.py /tmp/arp.wav     # render síncrono, sin servidor
+ffplay -autoexit /tmp/arp.wav                     # el arpegio de 5 notas
+```
+
+`clausters.render(score)` bloquea al *llamador* (nunca al servidor: no hay
+servidor) y devuelve los floats planos — el flujo científico de consultar y
+graficar. El binding (`clients/python/clausters.py`, stdlib pura) también
+trae `Clausters(workers=N)` para el servidor vivo in-process: comandos por
+llamada de función, replies por `poll()`/`request()` (la fachada síncrona),
+y `clock`/`ctl_set` directos al data plane.
+
+Tests del segmento y la C ABI: `cargo test --test ipc` (núcleo) y
+`cargo test --features embed --test ipc` (+1 del render embebido). El
+layout está versionado (ABI v1): un cliente con versión distinta es
+rechazado al conectar. Detalles y referencia C en `docs/ipc.md`.
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -358,7 +394,7 @@ falta `LD_LIBRARY_PATH`.
 ### Compilar y testear con el feature
 
 ```sh
-cargo test --features faust      # 138 tests (los 101 del núcleo + 37 de Faust)
+cargo test --features faust      # 143 tests (los 106 del núcleo + 37 de Faust)
 ```
 
 Los tests de Faust cubren: humo del JIT con paridad de señal contra nuestro
@@ -486,15 +522,17 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Reloj de samples, `/clock` + `/sched` (M8) | `tests/osc.rs`, `tests/scheduling.rs` | `python3 examples/sample_clock.py` |
 | Grupos auto-ordenados, `/g_sortMode` + `/g_queryTree` (M12) | `tests/auto_order.rs` | `python3 examples/auto_order.py` |
 | Grupos paralelos, `/g_parallel` + `--workers` (M13) | `tests/parallel.rs`, `tests/rt_safety.rs` | `cargo run --release --example bench` (sección parallel) |
+| Transporte shm + data plane (M14) | `tests/ipc.rs` | `--shm` + `python3 examples/shm_client.py` |
+| C ABI embebida, render síncrono (M14) | `tests/ipc.rs` (feature embed) | `python3 examples/embed_render.py` |
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 
-Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8, M9, M12 y
-M13 están completos; lo que sigue está en «Milestones futuros» de PLAN.md
-(M10, M11, M14).
+Con esto el plan original (M0–M7), la bifurcación F (F0–F5), M8, M9 y
+M12–M14 están completos; de los «Milestones futuros» de PLAN.md quedan M10
+y M11.
 
 ## 5. Problemas frecuentes
 

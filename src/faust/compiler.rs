@@ -8,7 +8,7 @@
 //! `/done`/`/fail` reply to the requesting client.
 
 use std::ffi::{CStr, CString, c_char, c_int};
-use std::net::SocketAddr;
+use crate::osc::ClientId;
 use std::sync::{Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -32,12 +32,12 @@ pub struct CompileRequest {
     pub name: String,
     pub payload: CompilePayload,
     /// Who asked: the async reply goes back to this client.
-    pub client: SocketAddr,
+    pub client: ClientId,
 }
 
 pub struct CompileResult {
     pub name: String,
-    pub client: SocketAddr,
+    pub client: ClientId,
     /// The compiled def (factory + probed parameters), or a human-readable
     /// compiler error destined for the `/fail` reply verbatim.
     pub outcome: Result<FaustDef, String>,

@@ -5,6 +5,8 @@
 //! and the future NRT mode use it exactly like the real audio backend does.
 
 pub mod dsp;
+#[cfg(feature = "embed")]
+pub mod embed;
 #[cfg(feature = "faust")]
 pub mod faust;
 pub mod node;

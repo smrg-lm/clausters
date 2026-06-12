@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 
+[lib]
+# The cdylib is the M14 embed surface (a versioned C ABI, see src/embed.rs);
+# the rlib is everything else. Both build always; the C exports only exist
+# with the `embed` feature.
+crate-type = ["rlib", "cdylib"]
+
 [features]
 default = ["realtime"]
 # cpal backend. Can be disabled for tests/CI without an audio device.
@@ -11,6 +17,8 @@ realtime = ["dep:cpal"]
 # libfaust embedding (Box API + LLVM JIT). Needs libfaust built with the LLVM
 # backend; see build.rs for how the library is located (FAUST_PREFIX).
 faust = []
+# M14: the C ABI for embedding the server in-process (clausters_* exports).
+embed = []
 
 [dependencies]
 cpal = { version = "0.15", optional = true }
@@ -19,6 +27,11 @@ rosc = "0.10"
 rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+# Only for mmap-ing the M14 shared-memory segment (already in the tree via
+# cpal, so this adds no new download).
+libc = "0.2"
 
 [dev-dependencies]
 assert_no_alloc = "1"

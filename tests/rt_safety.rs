@@ -240,7 +240,7 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
                 "#
                 .into(),
             ),
-            client: "127.0.0.1:1".parse().unwrap(),
+            client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
         })
         .ok()
         .unwrap();

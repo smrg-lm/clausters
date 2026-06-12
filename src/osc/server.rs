@@ -30,6 +30,7 @@ use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
 use crate::dsp::buffer::{BufferPool, empty_pool};
+use crate::osc::ClientId;
 use crate::osc::translate::{CmdTranslator, float_value, int_arg, parse_buffer_msg};
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::server::nrt::{NrtAction, NrtRequest, NrtThread};
@@ -69,8 +70,10 @@ pub struct OscServer {
     buffers: BufferPool,
     nrt: NrtThread,
     /// Clients registered via `/notify 1`; the client ID is index + 1.
-    clients: Vec<SocketAddr>,
+    clients: Vec<ClientId>,
     recv_buf: Vec<u8>,
+    /// M14: the shared-memory / in-process ring endpoint, when attached.
+    ipc: Option<crate::server::ipc::IpcPeer>,
     /// The compiler thread is owned here and dies with the server.
     #[cfg(feature = "faust")]
     faust_compiler: CompilerThread,
@@ -95,6 +98,7 @@ impl OscServer {
             buffers: empty_pool(),
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
+            ipc: None,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(),
@@ -105,9 +109,23 @@ impl OscServer {
         self.socket.local_addr()
     }
 
+    /// M14: attaches the ring endpoint of an IPC segment. The run loop then
+    /// drains it on every iteration; to keep ring latency low without a
+    /// cross-process semaphore (v1 trade-off), the socket timeout — the
+    /// loop's tick — is shortened.
+    pub fn attach_ipc(&mut self, peer: crate::server::ipc::IpcPeer) -> io::Result<()> {
+        self.socket
+            .set_read_timeout(Some(Duration::from_millis(2)))?;
+        self.ipc = Some(peer);
+        Ok(())
+    }
+
     /// Blocks serving requests until a `/quit` arrives.
     pub fn run(&mut self) -> io::Result<()> {
         loop {
+            if let Flow::Quit = self.drain_ring() {
+                return Ok(());
+            }
             let (len, from) = match self.socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
                 Err(e)
@@ -136,13 +154,40 @@ impl OscServer {
                     continue;
                 }
             };
-            let flow = self.handle_packet(packet, from);
+            let flow = self.handle_packet(packet, ClientId::Udp(from));
             self.collect_garbage();
             self.collect_nrt_results();
             #[cfg(feature = "faust")]
             self.collect_faust_results();
             if let Flow::Quit = flow {
                 return Ok(());
+            }
+        }
+    }
+
+    /// M14: handles every packet waiting in the attached ring. Same
+    /// validation path as UDP (`decode_packet`); ring bytes are untrusted.
+    fn drain_ring(&mut self) -> Flow {
+        if self.ipc.is_none() {
+            return Flow::Continue;
+        }
+        loop {
+            let Some(ipc) = &self.ipc else { unreachable!() };
+            let mut buf = std::mem::take(&mut self.recv_buf);
+            let popped = ipc.try_pop(&mut buf);
+            self.recv_buf = buf;
+            let Some(len) = popped else {
+                return Flow::Continue;
+            };
+            let packet = match crate::osc::decode_packet(&self.recv_buf[..len]) {
+                Ok(packet) => packet,
+                Err(e) => {
+                    eprintln!("malformed OSC packet from ring client: {e}");
+                    continue;
+                }
+            };
+            if let Flow::Quit = self.handle_packet(packet, ClientId::Ring) {
+                return Flow::Quit;
             }
         }
     }
@@ -177,7 +222,7 @@ impl OscServer {
     /// schema), raw Faust source otherwise (F1) — top-level Faust source can
     /// never start with `{`, so the sniff is unambiguous.
     #[cfg(feature = "faust")]
-    fn handle_d_faust(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_d_faust(&mut self, msg: &OscMessage, from: ClientId) {
         let (name, def) = match crate::osc::translate::parse_d_faust(&msg.args) {
             Ok(pair) => pair,
             Err(e) => return self.fail(from, "/d_faust", e),
@@ -198,7 +243,7 @@ impl OscServer {
     }
 
     #[cfg(not(feature = "faust"))]
-    fn handle_d_faust(&mut self, _msg: &OscMessage, from: SocketAddr) {
+    fn handle_d_faust(&mut self, _msg: &OscMessage, from: ClientId) {
         self.fail(from, "/d_faust", "server built without faust support");
     }
 
@@ -245,7 +290,7 @@ impl OscServer {
         }
     }
 
-    fn handle_packet(&mut self, packet: OscPacket, from: SocketAddr) -> Flow {
+    fn handle_packet(&mut self, packet: OscPacket, from: ClientId) -> Flow {
         match packet {
             OscPacket::Message(msg) => self.handle_message(msg, from),
             OscPacket::Bundle(bundle) => self.handle_bundle(bundle, from),
@@ -256,7 +301,7 @@ impl OscServer {
     /// runs late bundles right away) execute now; future timetags are
     /// converted to a sample target and shipped to the engine's scheduler,
     /// which fires them sample-accurately (M6).
-    fn handle_bundle(&mut self, bundle: OscBundle, from: SocketAddr) -> Flow {
+    fn handle_bundle(&mut self, bundle: OscBundle, from: ClientId) -> Flow {
         match timetag_delta_secs(bundle.timetag) {
             Some(delta) if delta > 0.0 => {
                 self.schedule_bundle(bundle, delta, from);
@@ -270,7 +315,7 @@ impl OscServer {
         }
     }
 
-    fn run_bundle_now(&mut self, bundle: OscBundle, from: SocketAddr) -> Flow {
+    fn run_bundle_now(&mut self, bundle: OscBundle, from: ClientId) -> Flow {
         for packet in bundle.content {
             if let Flow::Quit = self.handle_packet(packet, from) {
                 return Flow::Quit;
@@ -282,7 +327,7 @@ impl OscServer {
     /// Builds every message of a timed bundle into engine commands (synths
     /// boxed, names resolved — all the allocating work happens now) and
     /// sends them as one atomic [`Cmd::Schedule`].
-    fn schedule_bundle(&mut self, bundle: OscBundle, delta: f64, from: SocketAddr) {
+    fn schedule_bundle(&mut self, bundle: OscBundle, delta: f64, from: ClientId) {
         let time = self.handle.current_samples() + (delta * self.handle.sample_rate as f64) as u64;
         let mut cmds = Vec::new();
         for packet in bundle.content {
@@ -316,7 +361,7 @@ impl OscServer {
         self.translator.translate(msg, cmds)
     }
 
-    fn handle_message(&mut self, msg: OscMessage, from: SocketAddr) -> Flow {
+    fn handle_message(&mut self, msg: OscMessage, from: ClientId) -> Flow {
         if self.dump_osc {
             println!("[dumpOSC] {} {:?}", msg.addr, msg.args);
         }
@@ -358,7 +403,7 @@ impl OscServer {
         Flow::Continue
     }
 
-    fn send_status(&mut self, to: SocketAddr) {
+    fn send_status(&mut self, to: ClientId) {
         let counters = self.handle.counters();
         let num_defs = self.translator.def_count();
         let args = vec![
@@ -382,7 +427,7 @@ impl OscServer {
     /// (`Self::handle_sched`) directly in samples — see
     /// `docs/sample-clock.md`. The counter counts *processed* samples: it
     /// runs a device buffer ahead of the speakers and pauses on xruns.
-    fn handle_clock(&mut self, from: SocketAddr) {
+    fn handle_clock(&mut self, from: ClientId) {
         let args = vec![
             OscType::Long(self.handle.current_samples() as i64),
             OscType::Double(self.info.actual_sample_rate),
@@ -399,7 +444,7 @@ impl OscServer {
     /// sample — nested bundle timetags inside the blob are **ignored**, one
     /// `/sched` is one instant. Past targets run at the start of the next
     /// block, like late NTP bundles.
-    fn handle_sched(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_sched(&mut self, msg: &OscMessage, from: ClientId) {
         let target = match msg.args.first() {
             Some(OscType::Long(t)) => *t,
             // Tolerated for hand-written clients; real targets outgrow i32
@@ -440,7 +485,7 @@ impl OscServer {
         packet: &OscPacket,
         target: i64,
         cmds: &mut Vec<Cmd>,
-        from: SocketAddr,
+        from: ClientId,
     ) {
         match packet {
             OscPacket::Message(msg) => {
@@ -459,14 +504,14 @@ impl OscServer {
         }
     }
 
-    fn handle_d_recv(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_d_recv(&mut self, msg: &OscMessage, from: ClientId) {
         match self.translator.d_recv(&msg.args) {
             Ok(()) => self.reply(from, "/done", vec![OscType::String("/d_recv".into())]),
             Err(e) => self.fail(from, "/d_recv", e),
         }
     }
 
-    fn handle_d_free(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_d_free(&mut self, msg: &OscMessage, from: ClientId) {
         if let Err(e) = self.translator.d_free(&msg.args) {
             self.fail(from, "/d_free", e);
         }
@@ -475,7 +520,7 @@ impl OscServer {
     /// Immediate form of every translator-covered command: translate (which
     /// also updates the M12 tree mirror and may append re-sort moves), then
     /// ship the whole batch.
-    fn handle_via_translate(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_via_translate(&mut self, msg: &OscMessage, from: ClientId) {
         let mut cmds = Vec::new();
         if let Err(e) = self.translator.translate(msg, &mut cmds) {
             return self.fail(from, &msg.addr, e);
@@ -490,7 +535,7 @@ impl OscServer {
     /// M12: the node tree as seen by the network-side mirror, in scsynth's
     /// `/g_queryTree.reply` format. Args: [groupID = 0, flag = 0]; flag 1
     /// includes control names and values.
-    fn handle_g_query_tree(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_g_query_tree(&mut self, msg: &OscMessage, from: ClientId) {
         let group = int_arg(&msg.args, 0).unwrap_or(0);
         let flag = int_arg(&msg.args, 1).unwrap_or(0);
         match self.translator.query_tree(group, flag != 0) {
@@ -500,7 +545,7 @@ impl OscServer {
     }
 
     /// M12 debug: the inferred bus graph of one group as a string reply.
-    fn handle_g_dump_graph(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_g_dump_graph(&mut self, msg: &OscMessage, from: ClientId) {
         let group = int_arg(&msg.args, 0).unwrap_or(0);
         match self.translator.dump_graph(group) {
             Ok(dump) => self.reply(
@@ -513,7 +558,7 @@ impl OscServer {
     }
 
     /// Control buses are shared atomics: set directly, no engine round-trip.
-    fn handle_c_set(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_c_set(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
             return self.fail(from, "/c_set", "expected (busIndex, value) pairs");
         }
@@ -529,7 +574,7 @@ impl OscServer {
     }
 
     /// Replies with a `/c_set` message carrying (busIndex, value) pairs.
-    fn handle_c_get(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_c_get(&mut self, msg: &OscMessage, from: ClientId) {
         let mut args = Vec::with_capacity(msg.args.len() * 2);
         for arg in &msg.args {
             let OscType::Int(index) = arg else {
@@ -590,7 +635,7 @@ impl OscServer {
     /// renderer; the job runs on the NRT thread. `/b_free` also travels
     /// through the queue so it cannot overtake a pending alloc/read on the
     /// same index.
-    fn handle_b_cmd(&mut self, msg: &OscMessage, from: SocketAddr, cmd: &'static str) {
+    fn handle_b_cmd(&mut self, msg: &OscMessage, from: ClientId, cmd: &'static str) {
         let (index, job) =
             match parse_buffer_msg(cmd, &msg.args, &self.buffers, self.info.nominal_sample_rate) {
                 Ok(parsed) => parsed,
@@ -610,7 +655,7 @@ impl OscServer {
     /// `/b_query bufnum...` → `/b_info` with (bufnum, frames, channels,
     /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
     /// answered from the mirror (= state as of the last completed command).
-    fn handle_b_query(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_b_query(&mut self, msg: &OscMessage, from: ClientId) {
         let mut args = Vec::with_capacity(msg.args.len() * 4);
         for arg in &msg.args {
             let OscType::Int(index) = arg else {
@@ -634,7 +679,7 @@ impl OscServer {
             .and_then(|b| b.as_ref().map(Arc::clone))
     }
 
-    fn handle_notify(&mut self, msg: &OscMessage, from: SocketAddr) {
+    fn handle_notify(&mut self, msg: &OscMessage, from: ClientId) {
         match msg.args.first() {
             Some(OscType::Int(1)) => {
                 let id = match self.clients.iter().position(|c| *c == from) {
@@ -658,7 +703,7 @@ impl OscServer {
         }
     }
 
-    fn fail(&self, to: SocketAddr, cmd: &str, why: impl Into<String>) {
+    fn fail(&self, to: ClientId, cmd: &str, why: impl Into<String>) {
         self.reply(
             to,
             "/fail",
@@ -666,18 +711,31 @@ impl OscServer {
         );
     }
 
-    fn reply(&self, to: SocketAddr, addr: &str, args: Vec<OscType>) {
+    fn reply(&self, to: ClientId, addr: &str, args: Vec<OscType>) {
         let packet = OscPacket::Message(OscMessage {
             addr: addr.into(),
             args,
         });
-        match encoder::encode(&packet) {
-            Ok(bytes) => {
-                if let Err(e) = self.socket.send_to(&bytes, to) {
-                    eprintln!("failed to send {addr} to {to}: {e}");
+        let bytes = match encoder::encode(&packet) {
+            Ok(bytes) => bytes,
+            Err(e) => return eprintln!("failed to encode {addr}: {e}"),
+        };
+        match to {
+            ClientId::Udp(addr_to) => {
+                if let Err(e) = self.socket.send_to(&bytes, addr_to) {
+                    eprintln!("failed to send {addr} to {addr_to}: {e}");
                 }
             }
-            Err(e) => eprintln!("failed to encode {addr}: {e}"),
+            ClientId::Ring => {
+                // Backpressure, not loss: a full reply ring means the client
+                // stopped draining; dropping the reply is all we can do
+                // without blocking the server.
+                if let Some(ipc) = &self.ipc
+                    && !ipc.push(&bytes)
+                {
+                    eprintln!("reply ring full: dropping {addr}");
+                }
+            }
         }
     }
 }

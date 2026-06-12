@@ -10,7 +10,6 @@
 
 #![cfg(feature = "faust")]
 
-use std::net::SocketAddr;
 use std::time::Duration;
 
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
@@ -22,8 +21,8 @@ const SR: f32 = 48_000.0;
 const BLOCK: usize = 64;
 const COMPILE_DEADLINE: Duration = Duration::from_secs(10);
 
-fn dummy_client() -> SocketAddr {
-    "127.0.0.1:1".parse().unwrap()
+fn dummy_client() -> clausters::osc::ClientId {
+    clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())
 }
 
 fn compile(name: &str, payload: CompilePayload) -> Result<FaustDef, String> {

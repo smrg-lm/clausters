@@ -5,7 +5,6 @@
 
 #![cfg(feature = "faust")]
 
-use std::net::SocketAddr;
 use std::time::Duration;
 
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
@@ -18,8 +17,8 @@ phasor = (+(440.0/48000.0) : wrap) ~ _;
 process = sin(6.283185307179586 * phasor) * 0.2;
 "#;
 
-fn dummy_client() -> SocketAddr {
-    "127.0.0.1:1".parse().unwrap()
+fn dummy_client() -> clausters::osc::ClientId {
+    clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())
 }
 
 const COMPILE_DEADLINE: Duration = Duration::from_secs(10);

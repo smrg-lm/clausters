@@ -28,7 +28,7 @@ fn run_nrt(job: NrtJob) -> Result<NrtAction, String> {
     nrt.submit(NrtRequest {
         cmd: "/b_test",
         index: 0,
-        client: "127.0.0.1:1".parse().unwrap(),
+        client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
         job,
     })
     .ok()

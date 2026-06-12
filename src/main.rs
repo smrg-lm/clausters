@@ -2,12 +2,14 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>]                    real-time server (OSC on UDP 57110)
+  clausters [--workers <n>] [--shm <path>]     real-time server (OSC on UDP 57110)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
       --format <fmt>       int16 | int24 | float (default float)
       --workers <n>        DSP threads for /g_parallel groups (default 0)
+      --shm <path>         shared-memory segment for local clients (RT only;
+                           put it on /dev/shm — see docs/ipc.md)
 
 A score is the scsynth binary format: length-prefixed OSC bundles whose
 timetags count seconds from the start; the render ends at the last bundle.";
@@ -84,7 +86,10 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
 
+    use clausters::server::ipc::{IpcPeer, Role, Segment};
+
     let mut workers = 0usize;
+    let mut shm_path: Option<String> = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -92,18 +97,34 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let value = it.next().ok_or(format!("--workers needs a value\n{USAGE}"))?;
                 workers = parse_workers(value)?;
             }
+            "--shm" => {
+                let value = it.next().ok_or(format!("--shm needs a path\n{USAGE}"))?;
+                shm_path = Some(value.clone());
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
 
-    let (backend, handle) = clausters::server::backend::start(workers)?;
+    let segment = match &shm_path {
+        Some(path) => Some(Segment::create(std::path::Path::new(path))?),
+        None => None,
+    };
+    let (backend, handle) = clausters::server::backend::start(workers, segment.clone())?;
     let info = ServerInfo {
         nominal_sample_rate: backend.sample_rate as f64,
         actual_sample_rate: backend.sample_rate as f64,
     };
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
+    if let Some(segment) = segment {
+        osc.attach_ipc(IpcPeer::new(segment, Role::Server))?;
+        println!(
+            "shared segment at {} (ABI v{})",
+            shm_path.as_deref().unwrap_or(""),
+            clausters::server::ipc::ABI_VERSION
+        );
+    }
     println!(
-        "clausters M13 — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
+        "clausters M14 — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
         workers,

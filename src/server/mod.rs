@@ -4,6 +4,7 @@
 #[cfg(feature = "realtime")]
 pub mod backend;
 pub mod engine;
+pub mod ipc;
 pub mod nrt;
 pub mod render;
 pub mod workers;

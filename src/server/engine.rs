@@ -21,6 +21,7 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
 use crate::dsp::BusUsage;
+use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
 use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
@@ -239,6 +240,9 @@ pub struct Engine {
     /// Pre-allocated: insertion and removal never allocate.
     sched: Vec<ScheduledBundle>,
     sample_clock: Arc<AtomicU64>,
+    /// M14: block-accurate mirror of the sample clock into the IPC segment
+    /// (one extra Release store per block); the Arc pins the mapping.
+    ipc: Option<Arc<Segment>>,
     cmd_rx: Consumer<Cmd>,
     garbage_tx: Producer<Garbage>,
     pending_garbage: Vec<Garbage>,
@@ -272,6 +276,18 @@ pub fn engine_pair_with_workers(
     channels: usize,
     workers: usize,
 ) -> (Engine, EngineHandle) {
+    engine_pair_full(sample_rate, channels, workers, None)
+}
+
+/// Full form (M14): with an IPC segment, the control buses live *inside the
+/// segment* (clients on the other side write the very atomics `InCtl`
+/// reads) and the engine mirrors its sample clock into it every block.
+pub fn engine_pair_full(
+    sample_rate: f32,
+    channels: usize,
+    workers: usize,
+    ipc: Option<Arc<Segment>>,
+) -> (Engine, EngineHandle) {
     assert!(channels > 0 && channels <= NUM_AUDIO_BUSES);
     let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY);
@@ -282,7 +298,13 @@ pub fn engine_pair_with_workers(
         // The root group exists before the first tick publishes counts.
         groups: AtomicU32::new(1),
     });
-    let control_buses = ControlBuses::new();
+    let control_buses = match &ipc {
+        Some(segment) => {
+            segment.set_sample_rate(sample_rate as f64);
+            segment.control_buses()
+        }
+        None => ControlBuses::new(),
+    };
     let sample_clock = Arc::new(AtomicU64::new(0));
     let engine = Engine {
         sample_rate,
@@ -294,6 +316,7 @@ pub fn engine_pair_with_workers(
         now: 0,
         sched: Vec::with_capacity(SCHED_CAPACITY),
         sample_clock: Arc::clone(&sample_clock),
+        ipc,
         cmd_rx,
         garbage_tx,
         pending_garbage: Vec::with_capacity(PENDING_GARBAGE_CAPACITY),
@@ -362,6 +385,9 @@ impl Engine {
 
         self.now = block_end;
         self.sample_clock.store(block_end, Ordering::Relaxed);
+        if let Some(segment) = &self.ipc {
+            segment.clock().store(block_end, Ordering::Release);
+        }
         self.counters
             .synths
             .store(self.tree.synth_count() as u32, Ordering::Relaxed);

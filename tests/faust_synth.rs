@@ -39,7 +39,7 @@ fn compile_def(name: &str, src: &str) -> Arc<FaustDef> {
         .submit(CompileRequest {
             name: name.into(),
             payload: CompilePayload::Source(src.into()),
-            client: "127.0.0.1:1".parse().unwrap(),
+            client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
         })
         .ok()
         .unwrap();

@@ -144,6 +144,7 @@ dependencies = [
  "assert_no_alloc",
  "cpal",
  "hound",
+ "libc",
  "rosc",
  "rtrb",
  "serde",

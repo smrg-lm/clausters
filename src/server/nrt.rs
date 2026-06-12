@@ -15,7 +15,7 @@
 //! existing buffer and `/b_zero` build a *replacement* from the current
 //! contents instead of mutating shared memory.
 
-use std::net::SocketAddr;
+use crate::osc::ClientId;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::thread::JoinHandle;
@@ -65,7 +65,7 @@ pub struct NrtRequest {
     pub cmd: &'static str,
     pub index: i32,
     /// Who asked: the async reply goes back to this client.
-    pub client: SocketAddr,
+    pub client: ClientId,
     pub job: NrtJob,
 }
 
@@ -81,7 +81,7 @@ pub enum NrtAction {
 pub struct NrtResult {
     pub cmd: &'static str,
     pub index: i32,
-    pub client: SocketAddr,
+    pub client: ClientId,
     pub outcome: Result<NrtAction, String>,
 }
 

@@ -31,8 +31,29 @@ pub const MAX_UGEN_INPUTS: usize = 8;
 /// Control buses are single floats shared between threads: the network
 /// thread serves `/c_set`/`/c_get` directly, the audio thread reads them via
 /// the `InCtl` UGen. Plain atomic bit-cast stores — lock-free on both sides.
-#[derive(Clone)]
-pub struct ControlBuses(Arc<Vec<AtomicU32>>);
+///
+/// Since M14 the backing storage is abstract: a heap array by default, or
+/// the control-bus region of a shared-memory segment (`server::ipc`), where
+/// other *processes* read and write the same atomics. `_owner` keeps the
+/// backing alive (the `Vec` or the mapped segment).
+pub struct ControlBuses {
+    ptr: *const AtomicU32,
+    _owner: Arc<dyn std::any::Any + Send + Sync>,
+}
+
+// SAFETY: the pointee is a fixed array of atomics kept alive by `_owner`;
+// atomics are Sync by nature.
+unsafe impl Send for ControlBuses {}
+unsafe impl Sync for ControlBuses {}
+
+impl Clone for ControlBuses {
+    fn clone(&self) -> Self {
+        Self {
+            ptr: self.ptr,
+            _owner: Arc::clone(&self._owner),
+        }
+    }
+}
 
 impl Default for ControlBuses {
     fn default() -> Self {
@@ -42,21 +63,43 @@ impl Default for ControlBuses {
 
 impl ControlBuses {
     pub fn new() -> Self {
-        Self(Arc::new(
+        let storage: Arc<Vec<AtomicU32>> = Arc::new(
             (0..NUM_CONTROL_BUSES)
                 .map(|_| AtomicU32::new(0.0f32.to_bits()))
                 .collect(),
-        ))
+        );
+        let ptr = storage.as_ptr();
+        Self {
+            ptr,
+            _owner: storage,
+        }
+    }
+
+    /// Control buses backed by external memory (the M14 IPC segment).
+    ///
+    /// # Safety
+    /// `ptr` must point to [`NUM_CONTROL_BUSES`] initialized `AtomicU32`s
+    /// that stay valid and pinned for as long as `owner` is alive.
+    pub unsafe fn from_raw(
+        ptr: *const AtomicU32,
+        owner: Arc<dyn std::any::Any + Send + Sync>,
+    ) -> Self {
+        Self { ptr, _owner: owner }
+    }
+
+    #[inline]
+    fn slot(&self, index: usize) -> Option<&AtomicU32> {
+        // SAFETY: in-range offsets into the fixed array `_owner` keeps alive.
+        (index < NUM_CONTROL_BUSES).then(|| unsafe { &*self.ptr.add(index) })
     }
 
     pub fn get(&self, index: usize) -> f32 {
-        self.0
-            .get(index)
+        self.slot(index)
             .map_or(0.0, |b| f32::from_bits(b.load(Ordering::Relaxed)))
     }
 
     pub fn set(&self, index: usize, value: f32) {
-        if let Some(b) = self.0.get(index) {
+        if let Some(b) = self.slot(index) {
             b.store(value.to_bits(), Ordering::Relaxed);
         }
     }

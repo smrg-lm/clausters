@@ -1113,10 +1113,90 @@ pared. Goldens e identidad RT/NRT intactos.
   **byte-idéntico** al secuencial (`cmp` limpio).
 - **101 tests core / 138 con faust**, clippy y rustdoc limpios.
 
+## M14 — Transportes locales, modo embebido y llamadas síncronas (completado 2026-06-12)
+
+OSC queda como única codificación; al transporte UDP se suman dos locales
+construidos sobre un **segmento de memoria compartida versionado**, y el
+servidor se puede embeber como biblioteca con una C ABI. La asincronía deja
+de ser obligatoria para el cliente: fachada síncrona (bloquea el llamador,
+jamás el servidor) y un render offline 100% síncrono para el flujo
+científico.
+
+### Qué quedó hecho
+
+- **`server/ipc.rs` — el segmento** (135 360 bytes, ABI v1, fijado por
+  test): header con magic + **versión de layout** (mismatch = rechazo al
+  conectar; la lección de ABI de scsynth), sample rate, y dos planos:
+  - **Data plane**: el reloj de samples **espejado por el hilo de audio en
+    cada bloque** (un store Release extra en `process_block`; anclas M8 sin
+    jitter de transporte) y los **buses de control viviendo dentro del
+    segmento** — `ControlBuses` se refactorizó a puntero + owner
+    (`from_raw`), así el `InCtl` del engine lee los mismos atomics que el
+    proceso cliente escribe: un write externo suena al bloque siguiente sin
+    comando alguno.
+  - **Command plane**: dos rings SPSC de bytes (64 KiB c/u, paquetes OSC
+    con prefijo de longitud, head/tail Release/Acquire). A diferencia de
+    UDP: **backpressure** en vez de pérdida silenciosa. Contenido tan
+    no-confiable como un datagrama: valida `decode_packet` y la basura
+    re-sincroniza el ring en vez de colgarlo.
+  - Respaldos: archivo mapeado (`mmap` MAP_SHARED vía libc, ya transitiva
+    de cpal — cero deps nuevas; ponerlo en `/dev/shm`) o heap alineado
+    (in-process). Windows queda diferido.
+- **Refactor `ClientId`** (`osc::ClientId::{Udp, Ring}`): la identidad de
+  cliente dejó de ser `SocketAddr` en server.rs, `NrtRequest` y
+  `CompileRequest`; los replies se enrutan por transporte. El loop drena el
+  ring en cada iteración; con ring conectado el timeout del socket baja a
+  2 ms (v1 sin semáforo cross-process: latencia de comando acotada por el
+  tick, data plane sin latencia — diferido explícito).
+- **CLI**: `clausters --shm <path>` crea el segmento y lo conecta (convive
+  con UDP y `--workers`).
+- **C ABI embebida** (`src/embed.rs`, feature `embed`, crate-type cdylib):
+  `clausters_abi_version` (== versión del segmento),
+  **`clausters_render`** — el llamado científico síncrono: partitura
+  binaria → frames f32 planos (puntero + longitud, frontera de estructuras
+  básicas) —, y el servidor vivo in-process: `clausters_open` (dispositivo
+  + engine + loop de red con el host como cliente de ring; socket efímero
+  localhost solo como tick/escape de debug), `send`/`poll`,
+  `clock`/`sample_rate`/`ctl_set`/`ctl_get` directos al data plane,
+  `close` (manda `/quit` por el ring y joinea).
+- **Binding Python** (`clients/python/clausters.py`, stdlib pura):
+  `ShmClient` (mmap + struct: layout parseado a mano, mismos offsets que
+  Rust), `Clausters` (ctypes sobre la cdylib, chequea ABI al cargar),
+  `render()` → `array('f')` (numpy puede envolver sin copiar — elección del
+  cliente, no dependencia), y `request()` = la **fachada síncrona** en los
+  dos transportes (sobre UDP ya existía: `json_client.Client.reply`).
+  Correlación por serialización de requests; token de protocolo diferido.
+- **Demos**: `examples/shm_client.py` (reloj leído del segmento, `/status`
+  por ring, fade audible escribiendo el bus 7 en memoria compartida) y
+  `examples/embed_render.py` (render síncrono → WAV).
+- **Docs**: `docs/ipc.md` (segmento, rings, C ABI de referencia, fachada
+  síncrona, caveats del cliente Python puro), architecture.md (loop de red,
+  filas de módulos, invariante nuevo: **toda frontera binaria va
+  versionada**), schemas.md (párrafo de transportes), GUIA.md (sección M14,
+  checklist, conteos).
+
+### Verificación
+
+- `tests/ipc.rs` (5 núcleo + 1 con embed): roundtrip y wraparound del ring
+  con orden FIFO + backpressure sin pérdida; contenido corrupto
+  re-sincroniza sin colgar; segmentos de archivo validan magic/versión/
+  tamaño y comparten memoria entre mapeos; **el servidor entero hablando
+  solo por el ring** (status, /s_new audible, /fail enrutado, /quit) con el
+  reloj espejado block-accurate; data plane: write externo de bus de
+  control leído por `InCtl` al bloque siguiente y visible para `/c_get`;
+  `clausters_render` devuelve 4800 frames exactos y reporta errores por
+  buffer. Tamaño del layout fijado (cambiarlo = subir ABI_VERSION).
+- E2E: server real `--shm /dev/shm/clausters` + cliente Python — reloj
+  avanzando (+11328 ≈ 0.257 s a 44.1 kHz), `/status` y `/d_recv` por ring,
+  fade audible por data plane, `/quit` por ring apagando el server; y
+  `embed_render.py` → 100800 frames, WAV escuchable.
+- **106 tests core / 143 faust / 107 embed**, clippy y rustdoc limpios.
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7), F0–F5, M8, M9, M12 y M13 están completos.
-Direcciones planificadas: M10, M11 y M14 en «Milestones futuros» de
-PLAN.md. Sueltas: más UGens (filtros, EnvGen con done actions, Line),
-streaming de buffers (`leaveOpen`), `/n_query`, multi-cliente con
-notificaciones por ID.
+El plan original (M0–M7), F0–F5, M8, M9 y M12–M14 están completos. De los
+«Milestones futuros» de PLAN.md quedan M10 (memoria acotada y alineación) y
+M11 (`/n_map`). Sueltas: más UGens (filtros, EnvGen con done actions,
+Line), streaming de buffers (`leaveOpen`), `/n_query`, multi-cliente con
+notificaciones por ID, y los diferidos de M14 (semáforo de wakeup,
+múltiples clientes de ring, JS/wasm).

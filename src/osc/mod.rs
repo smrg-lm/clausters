@@ -5,7 +5,28 @@ pub mod graph;
 pub mod server;
 pub mod translate;
 
+use std::net::SocketAddr;
+
 use rosc::{OscBundle, OscPacket, OscTime, decoder};
+
+/// Where a request came from and where its replies go (M14): the OSC
+/// *encoding* is transport-independent, so client identity is too. `Udp` is
+/// a remote socket; `Ring` is the single shared-memory / in-process ring
+/// client of `server::ipc`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum ClientId {
+    Udp(SocketAddr),
+    Ring,
+}
+
+impl std::fmt::Display for ClientId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClientId::Udp(addr) => write!(f, "{addr}"),
+            ClientId::Ring => write!(f, "ring client"),
+        }
+    }
+}
 
 /// Decodes one OSC packet, working around the rosc 0.10 blob bug (see
 /// CLAUDE.md): the decoder over-reads the padding of blobs whose length is a

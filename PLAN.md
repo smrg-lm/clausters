@@ -406,7 +406,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   por construcción y por test; speedup medido ~3.3x con 3 workers en el
   bench de 8 cadenas × 125 sines. Doc en `docs/parallel.md`.)*
 
-- **M14 — Transportes enchufables, modo embebido y llamadas síncronas**
+- ✅ **M14 — Transportes enchufables, modo embebido y llamadas síncronas**
   (redefinido 2026-06-12; antes era solo «plano de datos por shm»): el
   objetivo es que un cliente local use el servidor como si la aplicación
   fuera monolítica — sin protocolo de red a la vista y sin asincronía
@@ -487,6 +487,16 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   sin eso: copiar al segmento duplica memoria y complica el layout — datos
   grandes quedan para el modo embebido, que es el caso de uso científico
   real).
+  *(Completado 2026-06-12 — ver NOTAS.md. Segmento versionado en
+  `server/ipc.rs` (header ABI v1 + reloj de samples espejado por bloque +
+  buses de control compartidos de verdad + par de rings SPSC de bytes OSC),
+  respaldo archivo-mapeado (`--shm`, cliente Python stdlib `mmap`) o heap
+  (in-process); `ClientId` reemplaza a `SocketAddr` en el server (replies
+  enrutados por transporte); C ABI `embed` (cdylib): `clausters_render`
+  síncrono + servidor vivo in-process; binding `clients/python/clausters.py`
+  con la fachada síncrona. Diferidos explícitos: semáforo de wakeup (v1
+  polling 2 ms), múltiples clientes de ring, token de correlación, buffers
+  por shm, JS/wasm.)*
 
 ### Ideas revisadas: qué se descartó y por qué
 
