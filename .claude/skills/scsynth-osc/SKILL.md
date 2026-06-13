@@ -50,6 +50,12 @@ Reference".
   control/value pairs (control by name `s` or index `i`, value `f`).
 - `/n_free i...` → frees nodes. `/n_run i i...` → pause(0)/resume(1).
 - `/n_set i [s|i f]...` → sets controls on a node (by name or index).
+- `/n_map i [s|i i]...` → maps controls to **control buses** (read live every
+  block); `/n_mapa` maps to **audio buses**. `-1` unmaps; a later `/n_set`
+  also clears the mapping. In Clausters controls are block scalars (UGen
+  controls and Faust zones alike), so `/n_mapa` samples one frame per block
+  (control rate) — there are no audio-rate controls; feed audio through `In`.
+  (scsynth also has the multi forms `/n_mapn`/`/n_mapan`; not implemented.)
 - `/n_before i i`, `/n_after i i` → reorder: node A before/after node B.
 - `/g_new i i i...` → ID, add action, target (like s_new without controls).
 - `/g_freeAll i` → frees all children of the group. `/g_deepFree i` → frees all

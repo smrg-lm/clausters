@@ -19,6 +19,8 @@ either kind are instantiated, controlled and freed the same way:
 ```text
 /s_new  name id addAction targetID [ctlName value]...   # ctl args: s f pairs
 /n_set  id ctlName value
+/n_map  id ctlName busIndex...                           # control bus -> control
+/n_mapa id ctlName busIndex...                           # audio bus  -> control
 /n_free id
 /d_free name...                                          # SynthDef JSON only
 ```
@@ -27,6 +29,26 @@ Engine facts that apply to every def: blocks of 64 samples; 128 audio buses
 (`0..channels` are the hardware outputs, bus 0 = left) and 1024 control
 buses; a pool of 1024 sample buffers filled by the `/b_*` commands; all
 signals are `f32` at the device sample rate.
+
+### Mapping controls to buses (`/n_map`, `/n_mapa`)
+
+`/n_set` writes a control once. `/n_map id ctl bus` instead **binds** the
+control to a **control bus**: the node re-reads that bus at the start of
+every block, so the control tracks whatever any client (`/c_set`) or synth
+(`Out` to a control bus) writes there — no further `/n_set`. `/n_mapa` is the
+same against an **audio bus**. Both take any number of `ctl bus` pairs, by
+control name or index, and work for UGen controls and Faust parameters alike.
+
+A `busIndex` of `-1` removes the mapping (the control keeps its last value);
+a later `/n_set` on the same control also clears it and fixes the value.
+
+Because a control is one value per block, `/n_mapa` **samples** one frame of
+the audio bus per block (control rate) — this matches scsynth for a
+control-rate control; there are no audio-rate controls here (feed an audio
+signal through `In`/an input bus instead). Mapping a control that is used as
+a bus index makes the node a dynamic barrier for auto/parallel groups, and an
+audio map adds that bus to the node's reads so the dependency analysis stays
+correct.
 
 ## Timed bundles
 
@@ -38,9 +60,9 @@ mid-block starts on that very frame. Bundles with equal times run in
 arrival order; late bundles run immediately (and are logged). Nested
 bundles are scheduled independently by their own timetags.
 
-Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_free`,
-`/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`,
-`/g_sortMode`, `/g_parallel`. Anything else (defs, buffers, server commands) replies
+Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_map`, `/n_mapa`,
+`/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`,
+`/c_set`, `/g_sortMode`, `/g_parallel`. Anything else (defs, buffers, server commands) replies
 `/fail … cannot be scheduled in a timed bundle` — load defs and buffers
 first, then schedule the notes.
 

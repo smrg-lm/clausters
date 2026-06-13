@@ -23,8 +23,31 @@ pub trait SynthNode: Send {
     fn process(&mut self, ctx: &mut ProcessCtx);
     /// Unknown indices must be ignored, like scsynth.
     fn set_control(&mut self, index: u32, value: f32);
+    /// Maps control `index` to a bus read at the start of every block:
+    /// `/n_map` (a control bus, `audio = false`) or `/n_mapa` (an audio bus
+    /// sampled at control rate, `audio = true`). `bus < 0` removes the
+    /// mapping. Unknown indices are ignored, like scsynth. A later
+    /// [`set_control`](Self::set_control) on the same index clears the mapping.
+    fn map_control(&mut self, index: u32, bus: i32, audio: bool);
     /// How many UGens this synth contributes to `/status.reply`.
     fn ugen_count(&self) -> usize;
+}
+
+/// One control's bus mapping (`/n_map`/`/n_mapa`), stored per synth parallel
+/// to its controls. `bus < 0` is unmapped; `audio` selects the audio-bus
+/// space (sampled at control rate, one frame per block) over the control-bus
+/// space. The synth applies live mappings at the start of every block.
+#[derive(Clone, Copy)]
+pub struct ControlMap {
+    pub bus: i32,
+    pub audio: bool,
+}
+
+impl ControlMap {
+    pub const UNMAPPED: Self = Self {
+        bus: -1,
+        audio: false,
+    };
 }
 
 /// Fixed capacity of the node slab (scsynth's `-n` option; configurable later).

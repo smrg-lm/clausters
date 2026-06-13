@@ -32,7 +32,7 @@ use std::sync::Arc;
 use crate::dsp::{Block, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
-use crate::node::SynthNode;
+use crate::node::{ControlMap, SynthNode};
 
 /// One named parameter of a Faust def, as declared by its UI elements.
 pub struct ParamSpec {
@@ -110,6 +110,9 @@ pub struct FaustSynth {
     dsp: NonNull<ffi::llvm_dsp>,
     /// Parameter zones inside the instance, aligned with `def.params`.
     zones: Vec<*mut f32>,
+    /// Bus mappings parallel to `zones` (`/n_map`/`/n_mapa`). The reserved
+    /// `out`/`in` routing controls are not mappable.
+    maps: Vec<ControlMap>,
     out_bus: usize,
     in_bus: usize,
     in_bufs: Vec<Block>,
@@ -142,10 +145,12 @@ impl FaustSynth {
             "instance UI must match the def probe"
         );
         let (num_inputs, num_outputs) = (def.num_inputs, def.num_outputs);
+        let maps = vec![ControlMap::UNMAPPED; ui.zones.len()];
         Ok(Self {
             def,
             dsp,
             zones: ui.zones,
+            maps,
             out_bus: 0,
             in_bus: 0,
             in_bufs: vec![Block::SILENCE; num_inputs],
@@ -161,6 +166,21 @@ impl SynthNode for FaustSynth {
         // Scheduled bundles (M6) may split the block: only the
         // `offset..offset+frames` range of the buses belongs to this call.
         let (offset, frames) = (ctx.offset, ctx.frames);
+        // Pull bus-mapped parameters into their zones before `compute`
+        // reads them: a control bus, or one frame of an audio bus
+        // (control-rate, `/n_mapa`). Zones are scalar, so audio mappings are
+        // always sampled — Faust has no audio-rate parameter.
+        for i in 0..self.maps.len() {
+            let m = self.maps[i];
+            if m.bus >= 0 {
+                let v = if m.audio {
+                    ctx.buses.audio((m.bus as usize).min(NUM_AUDIO_BUSES - 1))[offset]
+                } else {
+                    ctx.buses.control.get(m.bus as usize)
+                };
+                unsafe { self.zones[i].write(v) };
+            }
+        }
         for i in 0..self.in_bufs.len() {
             let bus = (self.in_bus + i).min(NUM_AUDIO_BUSES - 1);
             self.in_bufs[i].0[..frames]
@@ -193,6 +213,10 @@ impl SynthNode for FaustSynth {
 
     fn set_control(&mut self, index: u32, value: f32) {
         let i = index as usize;
+        // An explicit set overrides and clears any mapping (scsynth).
+        if let Some(m) = self.maps.get_mut(i) {
+            m.bus = -1;
+        }
         if let Some(zone) = self.zones.get(i) {
             unsafe { zone.write(value) };
         } else if i == self.zones.len() {
@@ -201,6 +225,13 @@ impl SynthNode for FaustSynth {
             self.in_bus = clamp_first_bus(value, self.def.num_inputs);
         }
         // anything else is ignored, like scsynth
+    }
+
+    fn map_control(&mut self, index: u32, bus: i32, audio: bool) {
+        // Only the parameter zones are mappable; `out`/`in` routing is not.
+        if let Some(m) = self.maps.get_mut(index as usize) {
+            *m = ControlMap { bus, audio };
+        }
     }
 
     /// The whole JIT instance counts as one UGen in `/status.reply`.

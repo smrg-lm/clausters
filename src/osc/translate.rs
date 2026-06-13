@@ -186,8 +186,59 @@ impl CmdTranslator {
         let Some((_, controls)) = self.mirror.synth_info(id) else {
             return;
         };
-        let (usage, _) = def.usage(controls);
+        let (base, _) = def.usage(controls);
+        let usage = self.mirror.fold_maps_into_usage(id, base);
         self.mirror.set_usage(id, usage);
+    }
+
+    /// After a control change altered a synth's effective bus usage:
+    /// re-analyze, ship the fresh masks to the engine (the M13 scheduler keeps
+    /// its own copy), and re-sort the parent auto group.
+    fn reanalyze_and_resort(&mut self, id: i32, cmds: &mut Vec<Cmd>) {
+        self.refresh_usage(id);
+        if self.mirror.synth_info(id).is_some() {
+            let usage = self.mirror.usage_of(id);
+            cmds.push(Cmd::SetUsage { id, usage });
+        }
+        self.resort_from(self.mirror.parent(id), cmds);
+    }
+
+    /// `/n_map` (control bus) and `/n_mapa` (audio bus): bind controls to
+    /// buses the synth reads at the start of every block, `bus = -1` to
+    /// unbind. Same pair-wise parsing as `/n_set`; an audio map (or mapping a
+    /// control used as a bus index) re-analyzes the node's bus usage.
+    fn map_controls(
+        &mut self,
+        msg: &rosc::OscMessage,
+        audio: bool,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let Some(OscType::Int(id)) = msg.args.first() else {
+            return Err("expected: id, then control/bus pairs".into());
+        };
+        let def = self
+            .node_defs
+            .get(id)
+            .cloned()
+            .ok_or_else(|| format!("node {id} not found"))?;
+        let mut usage_hit = false;
+        for pair in msg.args[1..].chunks(2) {
+            if let (Some(index), Some(bus)) =
+                (control_key(&pair[0], &def), pair.get(1).and_then(int_value))
+            {
+                cmds.push(Cmd::MapControl {
+                    id: *id,
+                    index,
+                    bus,
+                    audio,
+                });
+                usage_hit |= self.mirror.set_map(*id, index, bus, audio);
+            }
+        }
+        if usage_hit {
+            self.reanalyze_and_resort(*id, cmds);
+        }
+        Ok(())
     }
 
     /// `/d_recv`: compile a SynthDef JSON blob into the def table.
@@ -270,6 +321,7 @@ impl CmdTranslator {
                     controls,
                     usage,
                     bus_controls,
+                    maps: Vec::new(),
                 };
                 if let Ok(parent) = self.mirror.insert(id, body, *target, action) {
                     self.resort_from(Some(parent), cmds);
@@ -297,20 +349,18 @@ impl CmdTranslator {
                             value,
                         });
                         bus_control_hit |= self.mirror.set_control(*id, index, value);
+                        // An explicit set clears any mapping on that control
+                        // (scsynth); dropping an audio map changes usage.
+                        bus_control_hit |= self.mirror.set_map(*id, index, -1, false);
                     }
                 }
                 if bus_control_hit {
-                    self.refresh_usage(*id);
-                    // The engine keeps its own copy of the masks for the
-                    // M13 parallel scheduler: ship the update.
-                    if self.mirror.synth_info(*id).is_some() {
-                        let usage = self.mirror.usage_of(*id);
-                        cmds.push(Cmd::SetUsage { id: *id, usage });
-                    }
-                    self.resort_from(self.mirror.parent(*id), cmds);
+                    self.reanalyze_and_resort(*id, cmds);
                 }
                 Ok(())
             }
+            "/n_map" => self.map_controls(msg, false, cmds),
+            "/n_mapa" => self.map_controls(msg, true, cmds),
             "/n_free" => {
                 for arg in &msg.args {
                     let OscType::Int(id) = arg else {
@@ -736,6 +786,14 @@ pub fn float_value(arg: &OscType) -> Option<f32> {
         OscType::Float(f) => Some(*f),
         OscType::Int(i) => Some(*i as f32),
         OscType::Double(d) => Some(*d as f32),
+        _ => None,
+    }
+}
+
+/// A bus index argument (`/n_map`/`/n_mapa`): a plain int, `-1` to unbind.
+pub fn int_value(arg: &OscType) -> Option<i32> {
+    match arg {
+        OscType::Int(i) => Some(*i),
         _ => None,
     }
 }

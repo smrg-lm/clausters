@@ -202,6 +202,58 @@ fn auto_group_reorders_a_reversed_chain() {
 }
 
 #[test]
+fn n_mapa_adds_a_read_edge_and_resorts() {
+    // `src` writes bus 16; `default` reads no bus statically, so an auto group
+    // leaves the two in insertion order. Mapping default's freq to bus 16 with
+    // /n_mapa makes it read that bus — a writer-before-reader edge that must
+    // re-sort src ahead of it (M11 feeding the M12/M13 analysis).
+    let server = Server::spawn();
+    server.d_recv(&src_def());
+    server.send(
+        "/g_new",
+        vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
+    );
+    server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
+    // Reader first, writer second: nothing connects them yet.
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1001),
+            OscType::Int(1),
+            OscType::Int(100),
+        ],
+    );
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("src".into()),
+            OscType::Int(1002),
+            OscType::Int(1),
+            OscType::Int(100),
+        ],
+    );
+    server.wait_for_order(100, &[1001, 1002]);
+
+    // /n_mapa freq -> bus 16: now 1001 reads what 1002 writes.
+    server.send(
+        "/n_mapa",
+        vec![OscType::Int(1001), OscType::Int(0), OscType::Int(16)],
+    );
+    server.wait_for_order(100, &[1002, 1001]);
+
+    // Unmapping drops the read edge. The sort is stable, so the now
+    // unconstrained pair keeps its current order rather than snapping back —
+    // re-sorting must not deadlock or shuffle it.
+    server.send(
+        "/n_mapa",
+        vec![OscType::Int(1001), OscType::Int(0), OscType::Int(-1)],
+    );
+    server.wait_for_order(100, &[1002, 1001]);
+    server.quit();
+}
+
+#[test]
 fn manual_group_keeps_the_reversed_chain_silent() {
     let mut server = Server::spawn();
     server.d_recv(&src_def());

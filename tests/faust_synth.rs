@@ -124,6 +124,49 @@ fn faust_synth_plays_in_the_tree() {
 }
 
 #[test]
+fn n_map_drives_a_faust_zone_from_a_control_bus() {
+    let def = compile_def("fsine", SINE_SRC);
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(add_faust(1000, &def, &[])).ok().unwrap();
+
+    // Map the `freq` zone to control bus 5: M11 unifies UGen and Faust
+    // parameters under the same bus mapping.
+    let freq = def.control_index("freq").unwrap();
+    handle
+        .send(Cmd::MapControl {
+            id: 1000,
+            index: freq,
+            bus: 5,
+            audio: false,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::SetControlBus {
+            index: 5,
+            value: 660.0,
+        })
+        .ok()
+        .unwrap();
+
+    let left = render_channel(&mut engine, 750, 0);
+    let f = estimated_freq(&left);
+    assert!((f - 660.0).abs() < 8.0, "estimated freq = {f}");
+
+    // The zone tracks the bus live, with no further /n_set.
+    handle
+        .send(Cmd::SetControlBus {
+            index: 5,
+            value: 330.0,
+        })
+        .ok()
+        .unwrap();
+    let left = render_channel(&mut engine, 750, 0);
+    let f = estimated_freq(&left);
+    assert!((f - 330.0).abs() < 8.0, "estimated freq = {f}");
+}
+
+#[test]
 fn set_control_writes_the_named_zone() {
     let def = compile_def("fsine", SINE_SRC);
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);

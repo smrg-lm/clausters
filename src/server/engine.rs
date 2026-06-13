@@ -76,6 +76,16 @@ pub enum Cmd {
         index: u32,
         value: f32,
     },
+    /// `/n_map` (`audio = false`) / `/n_mapa` (`audio = true`): binds a
+    /// control to a bus the synth reads at the start of every block, or
+    /// `bus = -1` to unbind. RT-safe: it only flips an entry in the synth's
+    /// pre-allocated mapping table.
+    MapControl {
+        id: i32,
+        index: u32,
+        bus: i32,
+        audio: bool,
+    },
     /// Installs (`Some`) or removes (`None`) a buffer in the pool. The
     /// buffer arrives fully built by the NRT thread; the replaced one leaves
     /// through the garbage FIFO.
@@ -520,6 +530,16 @@ impl Engine {
                 Cmd::SetControl { id, index, value } => {
                     if let Some(synth) = self.tree.synth_mut(id) {
                         synth.set_control(index, value);
+                    }
+                }
+                Cmd::MapControl {
+                    id,
+                    index,
+                    bus,
+                    audio,
+                } => {
+                    if let Some(synth) = self.tree.synth_mut(id) {
+                        synth.map_control(index, bus, audio);
                     }
                 }
                 Cmd::SetBuffer { index, buffer } => {

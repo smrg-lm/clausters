@@ -30,7 +30,6 @@
 
 use std::collections::HashMap;
 
-#[cfg(feature = "faust")]
 use crate::dsp::NUM_AUDIO_BUSES;
 use crate::node::{AddAction, Place, ROOT_NODE_ID};
 use crate::synthdef::{InputRef, SynthDef};
@@ -164,6 +163,11 @@ pub enum MirrorBody {
         usage: BusUsage,
         /// Control indices used as bus indexes; `/n_set` on these re-sorts.
         bus_controls: Vec<u32>,
+        /// Active `/n_map`/`/n_mapa` bindings as `(control, bus, audio)`.
+        /// An audio map adds the bus to the node's reads; mapping a
+        /// `bus_controls` index makes the node a dynamic barrier (see
+        /// [`TreeMirror::fold_maps_into_usage`]).
+        maps: Vec<(u32, i32, bool)>,
     },
 }
 
@@ -485,5 +489,45 @@ impl TreeMirror {
         {
             *usage = new;
         }
+    }
+
+    /// Records (`bus >= 0`) or clears (`bus < 0`) a control→bus mapping.
+    /// Returns whether the change can affect the node's bus usage — i.e. it
+    /// touches an audio map (new or just-cleared) or a control used as a bus
+    /// index — so the caller knows to re-analyze and re-sort.
+    pub fn set_map(&mut self, id: i32, ctl: u32, bus: i32, audio: bool) -> bool {
+        if let Some(MirrorBody::Synth {
+            maps, bus_controls, ..
+        }) = self.nodes.get_mut(&id).map(|n| &mut n.body)
+        {
+            let had_audio = maps.iter().any(|&(c, _, a)| c == ctl && a);
+            maps.retain(|&(c, _, _)| c != ctl);
+            if bus >= 0 {
+                maps.push((ctl, bus, audio));
+            }
+            had_audio || (audio && bus >= 0) || bus_controls.contains(&ctl)
+        } else {
+            false
+        }
+    }
+
+    /// Folds a synth's live mappings into its statically computed usage: each
+    /// audio map adds the bus to `reads`, and any mapped bus-index control
+    /// forces `dynamic` (the index is no longer statically known).
+    pub fn fold_maps_into_usage(&self, id: i32, mut usage: BusUsage) -> BusUsage {
+        if let Some(MirrorBody::Synth {
+            maps, bus_controls, ..
+        }) = self.nodes.get(&id).map(|n| &n.body)
+        {
+            for &(ctl, bus, audio) in maps {
+                if audio && bus >= 0 {
+                    usage.reads |= 1 << (bus as usize).min(NUM_AUDIO_BUSES - 1);
+                }
+                if bus_controls.contains(&ctl) {
+                    usage.dynamic = true;
+                }
+            }
+        }
+        usage
     }
 }

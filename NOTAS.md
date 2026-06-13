@@ -1241,10 +1241,63 @@ quedaron alineados a línea de caché.
 - Goldens intactos (la alineación no cambia ningún valor — `size_of` no
   cambia, solo la dirección base).
 
+## M11 — `/n_map` y `/n_mapa`: buses como fuente de parámetros (completado 2026-06-13)
+
+Último milestone del plan. `/n_set` escribe un control una vez; `/n_map` lo
+liga a un **bus de control** y `/n_mapa` a un **bus de audio**, releídos al
+inicio de cada bloque. Unifica los dos mundos que antes divergían: una def
+UGen leía buses de control solo si incluía `InCtl` en su grafo, y los
+parámetros Faust solo se movían por `/n_set` discreto — ahora cualquier
+control o zona se ata a un bus con el mismo comando.
+
+### Qué quedó hecho
+
+- **Hilo de audio**: trait `SynthNode::map_control(index, bus, audio)` y un
+  `node::ControlMap { bus, audio }` pre-alocado paralelo a los controles en
+  `UGenSynth` y `FaustSynth`. Al inicio de `process`, antes de correr UGens /
+  `compute`, el synth tira cada mapeo vivo a su control/zona: valor del bus de
+  control, o **un sample** del bus de audio (control-rate; un control es un
+  escalar por bloque y las zonas Faust también — no hay control audio-rate, y
+  para señal de audio ya está `In`/bus de entrada). Se escribe directo al
+  control, nunca por `set_control` (que desligaría); un `/n_set` sí pasa por
+  `set_control`, que limpia el mapeo primero, así un set explícito siempre
+  gana (semántica scsynth).
+- **Engine**: `Cmd::MapControl { id, index, bus, audio }` despachado como
+  `SetControl`; agendable en bundles. RT-safe (solo cambia una entrada de la
+  tabla, jamás aloca) — clavado por `tests/rt_safety.rs`.
+- **OSC**: handlers `/n_map`/`/n_mapa` en `translate` (pares `ctl bus` como
+  `/n_set`, por nombre o índice, `-1` desliga) y en la lista de despacho
+  inmediato del server. El path agendado ya pasaba por `translate`.
+- **Análisis de buses (M12/M13)**: el mirror guarda los mapeos vivos por nodo;
+  `fold_maps_into_usage` suma el bus de un mapeo de audio a las `reads` del
+  nodo y lo marca barrera `dynamic` si el control mapeado se usa como índice de
+  bus — así auto/parallel groups quedan correctos bajo mapeos. Detalle fino:
+  el topo-sort es **estable**, así que desligar no revierte el orden (no hay
+  restricción que lo fuerce), solo deja de imponerlo.
+- **Docs y ejemplo**: `docs/schemas.md` (referencia OSC + nota de muestreo
+  control-rate), `docs/architecture.md` (subsección del modelo de mapeo),
+  `GUIA.md` (sección M11 + checklist), `examples/osc_ping.rs` (subcomando
+  `map`: `/n_map`+`/c_set` en vivo y un LFO→bus de audio→`/n_mapa` = vibrato),
+  skill `scsynth-osc`.
+
+### Verificación
+
+- **117 tests core / 155 con faust** (+6/+7): `tests/mapping.rs` (4:
+  seguimiento de bus de control en vivo, desligado que conserva el último
+  valor, `/n_set` que rompe el mapeo, muestreo de bus de audio),
+  `tests/rt_safety.rs` (no-alloc con mapeos de control y audio por bloque),
+  `tests/auto_order.rs` (`/n_mapa` agrega arista de lectura y re-ordena),
+  `tests/faust_synth.rs` (zona Faust seguida de un bus de control). clippy y
+  rustdoc limpios; goldens intactos.
+- E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
+  vibrato por `/n_mapa` sin `/fail`.
+
 ## Próximo: features nuevas
 
-El plan original (M0–M7), F0–F5 y M8–M14 salvo M11 están completos. De los
-«Milestones futuros» de PLAN.md queda solo M11 (`/n_map`). Sueltas: más
-UGens (filtros, EnvGen con done actions, Line), streaming de buffers
-(`leaveOpen`), `/n_query`, multi-cliente con notificaciones por ID, y los
+El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
+2026-06-13). De los «Milestones futuros» de PLAN.md no queda ninguno. Sueltas:
+más UGens (filtros, EnvGen con done actions, Line), streaming de buffers
+(`leaveOpen`), `/n_query`, multi-cliente con notificaciones por ID, las
+variantes multi `/n_mapn`/`/n_mapan` (bucle trivial sobre el comando ya
+hecho), y los
 diferidos de M14 (semáforo de wakeup, múltiples clientes de ring, JS/wasm).

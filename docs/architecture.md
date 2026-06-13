@@ -123,6 +123,26 @@ Two shared structures cross threads without the FIFOs:
   of touching shared memory. The network thread keeps a mirror for
   `/b_query`/`/b_write` and for validation.
 
+### Control/bus mapping (`/n_map`, `/n_mapa`, M11)
+
+`/n_set` writes a control once; `/n_map`/`/n_mapa` make a control **follow a
+bus**, re-read at the start of every block. Each synth carries a `ControlMap`
+table parallel to its controls (`node::ControlMap`, pre-allocated at build —
+`map_control` only flips an entry, never grows it). At the top of `process`,
+before any UGen runs, the synth pulls each live mapping into its control/zone:
+a control bus value (`/n_map`), or one frame of an audio bus sampled at
+control rate (`/n_mapa` — controls are one value per block, and Faust zones
+are scalar, so there is no audio-rate control). Writing straight to the
+control storage, never through `set_control`, keeps the mapping intact; a
+`/n_set` *does* go through `set_control`, which clears the mapping first, so
+an explicit set always wins (scsynth semantics). `Cmd::MapControl` carries it
+to the engine and is schedulable in bundles like `/n_set`.
+
+This feeds the M12/M13 bus analysis: the network-side mirror records each
+node's live maps, and `fold_maps_into_usage` adds an audio map's bus to the
+node's `reads` and marks the node a dynamic barrier when a mapped control is
+used as a bus index — so auto/parallel groups stay correct under mappings.
+
 ### Preallocated capacities and what happens when they fill
 
 Audited in M10: `tests/capacity.rs` overflows each structure on purpose and
@@ -286,10 +306,10 @@ Group paths (`hgroup`/`vgroup`) are ignored on purpose — bare labels, first
 declaration wins on collision. The two reserved names `out`/`in` (first
 output/input bus) come *after* the def's own params, and a def that declares
 its own `out`/`in` control wins over the reserved meaning. UI elements are
-plain values written by `/n_set` (zone stores, RT-safe); they are **not**
-bound to control buses today — a UGen def reads control buses with `InCtl`,
-a Faust def reads audio buses via `in`. Generalizing "any param driven by a
-control bus" is planned as `/n_map` (PLAN.md, M11).
+plain values written by `/n_set` (zone stores, RT-safe) and, since M11, can
+also be **bound to a bus** with `/n_map`/`/n_mapa` — the same mechanism
+unifies UGen controls and Faust zones (see *Control/bus mapping* above). The
+two reserved `out`/`in` routing controls are not mappable.
 
 ## Extending the server: the plugin question
 

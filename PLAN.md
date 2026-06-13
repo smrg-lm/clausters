@@ -349,7 +349,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   (modos de fallo, alineación, denormales reales en vez del `_mm_setcsr`
   deprecado).)*
 
-- **M11 — `/n_map`: buses de control como fuente de parámetros** (derivado
+- ✅ **M11 — `/n_map`/`/n_mapa`: buses como fuente de parámetros** (derivado
   de la revisión de la UI de Faust): la concepción «los elementos de UI son
   señales que llegan por buses de control» hoy solo es cierta para defs
   UGen que incluyan `InCtl` en su grafo; los params Faust solo se mueven por
@@ -359,8 +359,16 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   posterior lo desactive. Implementación RT-safe: tabla de mapeos por nodo
   (índice de control → bus) resuelta en el hilo de audio leyendo los atomics
   de buses de control que ya existen — sin alocar. Agendable en bundles como
-  `/n_set`. (La variante `/n_mapa` con buses de audio queda para después, si
-  aparece el caso de uso; para audio ya existe el patrón bus + `In`/`in`.)
+  `/n_set`.
+  *(Completado 2026-06-13 — ver NOTAS.md. Se implementó también `/n_mapa`
+  con buses de audio: como un control es un escalar por bloque (y las zonas
+  Faust también), muestrea un sample del bus por bloque (control-rate, fiel a
+  scsynth para controles `kr`; no hay controles audio-rate — para audio está
+  `In`/`in`). El mirror suma el bus de un mapeo de audio a las lecturas del
+  nodo y marca `dynamic` si el control mapeado es índice de bus, así M12/M13
+  siguen correctos. `tests/mapping.rs`, +tests en rt_safety/auto_order/
+  faust_synth; ejemplo `osc_ping map`. Quedan opcionales las variantes multi
+  `/n_mapn`/`/n_mapan`.)*
 
 - ✅ **M12 — Forma canónica del grafo por conexiones de buses**: inferir el DAG
   de dependencias entre nodos a partir de los buses: qué buses de audio lee

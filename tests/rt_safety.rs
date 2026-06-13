@@ -83,6 +83,63 @@ fn audio_thread_does_not_allocate() {
     assert_eq!(handle.collect_garbage(), 33);
 }
 
+/// Same guardian for the M11 mapping path: reading a control bus and sampling
+/// an audio bus into mapped controls at the start of every block must not
+/// allocate — `map_control` only flips entries in a pre-allocated table.
+#[test]
+fn mapped_controls_do_not_allocate_on_the_audio_thread() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let def = Arc::new(compile(default_spec()).unwrap());
+    for i in 0..16i32 {
+        let synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        handle
+            .send(Cmd::AddSynth {
+                id: 1000 + i,
+                target: ROOT_NODE_ID,
+                action: AddAction::Tail,
+                synth,
+                usage: Default::default(),
+            })
+            .ok()
+            .unwrap();
+        // freq follows a control bus, amp samples an audio bus: both branches
+        // of the per-block apply get exercised.
+        handle
+            .send(Cmd::MapControl {
+                id: 1000 + i,
+                index: 0,
+                bus: 5,
+                audio: false,
+            })
+            .ok()
+            .unwrap();
+        handle
+            .send(Cmd::MapControl {
+                id: 1000 + i,
+                index: 1,
+                bus: 6,
+                audio: true,
+            })
+            .ok()
+            .unwrap();
+    }
+    handle
+        .send(Cmd::SetControlBus {
+            index: 5,
+            value: 220.0,
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+}
+
 /// Same guardian for the scheduler (M6): enqueuing timed bundles, splitting
 /// blocks at their offsets and executing them must not allocate — the spent
 /// `Vec` shells leave through the garbage FIFO with their capacity intact.

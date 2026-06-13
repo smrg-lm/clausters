@@ -372,9 +372,8 @@ impl OscServer {
             // the M12 tree mirror in sync), so the immediate forms share one
             // path: translate, then ship every command.
             "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
-            | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel" => {
-                self.handle_via_translate(&msg, from)
-            }
+            | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode"
+            | "/g_parallel" => self.handle_via_translate(&msg, from),
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),
             "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
             "/c_set" => self.handle_c_set(&msg, from),

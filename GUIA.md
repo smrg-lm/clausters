@@ -253,6 +253,38 @@ ciclos (feedback) conservan su orden relativo = un bloque de delay; y
 dentro de un grupo auto los `/n_before`/`/n_after` manuales responden
 `/fail`.
 
+### Probar el mapeo de buses a parámetros (M11)
+
+`/n_set` escribe un control una vez; `/n_map` lo **liga a un bus de control**
+y `/n_mapa` a un **bus de audio**: el nodo re-lee el bus al inicio de cada
+bloque, así el parámetro sigue al bus en vivo (sirve igual para defs UGen y
+zonas Faust). El subcomando `map` de `osc_ping` lo demuestra entero —
+`/n_map freq` a un bus de control retuneado con `/c_set`, y luego un LFO que
+escribe un bus de audio del que un segundo synth toma su `freq` (vibrato):
+
+```sh
+cargo run --release                         # terminal 1 (o ver consola)
+cargo run --example osc_ping -- map quit    # terminal 2
+```
+
+A mano:
+
+```sh
+oscsend localhost 57110 /s_new siii default 1000 1 0
+oscsend localhost 57110 /n_map isi 1000 freq 5      # freq <- bus de control 5
+oscsend localhost 57110 /c_set if 5 330             # …y 5 lo retunea en vivo
+oscsend localhost 57110 /c_set if 5 660
+oscsend localhost 57110 /n_map isi 1000 freq -1     # -1 desliga (queda en 660)
+oscsend localhost 57110 /n_set isf 1000 freq 440    # un /n_set también desliga
+```
+
+`/n_mapa` toma un bus de audio muestreando **un sample por bloque** (a
+control-rate: un control es un escalar por bloque, y las zonas Faust también;
+para señal de audio real está `In`/bus de entrada). Un control mapeado que se
+usa como índice de bus vuelve al nodo barrera `dynamic`, y un mapeo de audio
+suma ese bus a las lecturas del nodo, así el análisis de M12/M13 sigue
+correcto. Detalle en `docs/schemas.md` y `docs/architecture.md`.
+
 ### Probar el procesamiento paralelo (M13)
 
 Con `--workers N` el servidor levanta N hilos DSP y los grupos marcados con
@@ -358,6 +390,8 @@ oscsend localhost 57110 /g_new iii 1 1 0        # grupo 1 al final del root
 oscsend localhost 57110 /s_new siii default 1000 1 1   # synth al final del grupo 1
 oscsend localhost 57110 /n_set isf 1000 freq 330
 oscsend localhost 57110 /n_set isf 1000 amp 0.3
+oscsend localhost 57110 /n_map isi 1000 freq 5  # freq sigue al bus de control 5
+oscsend localhost 57110 /c_set if 5 660         # …retunear en vivo, sin /n_set
 oscsend localhost 57110 /g_freeAll i 1          # silencio: vació el grupo
 
 # Buses de control (atómicos, sin pasar por el hilo de audio)
@@ -366,7 +400,8 @@ cargo run --example osc_ping -- status          # y /c_get vía tests
 ```
 
 Protocolo implementado hasta M6: `/status`, `/quit`, `/notify`, `/dumpOSC`,
-`/s_new` (add actions 0–4), `/n_free`, `/n_set`, `/n_before`, `/n_after`,
+`/s_new` (add actions 0–4), `/n_free`, `/n_set`, `/n_map`, `/n_mapa`,
+`/n_before`, `/n_after`,
 `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`,
 `/d_free`, los buffers `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`,
 `/b_zero`, `/b_free` (asíncronos vía hilo NRT, responden `/done cmd
