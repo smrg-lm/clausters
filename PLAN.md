@@ -513,6 +513,43 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   polling 2 ms), múltiples clientes de ring, token de correlación, buffers
   por shm, JS/wasm.)*
 
+- **M15 — Documentación integral en inglés (README + libro mdBook + rustdoc)**:
+  hoy la documentación en inglés está bien pero dispersa en `docs/`
+  (`architecture.md` desarrollo; `schemas.md` referencia OSC/usuario;
+  `auto-order.md`, `parallel.md`, `sample-clock.md`, `ipc.md` por feature) y
+  falta una puerta de entrada y una estructura navegable que la unifique. Tres
+  audiencias a cubrir: usuario por OSC, usuario como **librería**/embebido
+  (`rlib`+`cdylib`: `engine_pair`, `render_to_wav`, el C ABI), y desarrollador.
+  Plan:
+  - **README.md** en la raíz, en inglés (obligatorio): overview, quickstart
+    (build → correr servidor → un comando OSC; y un render NRT), matriz de
+    features (`realtime`/`faust`/`embed`), links al libro y al rustdoc, licencia
+    GPL-3.0. No duplica el libro, enlaza.
+  - **Libro mdBook** como cuerpo navegable, **estándar de la comunidad Rust**
+    (el fuente vive en el repo, el HTML generado se ignora en git). `book.toml`
+    en la raíz con `src = "docs"` para **reusar los `docs/*.md` en su lugar**
+    (cero churn en las referencias entrantes a `docs/x.md` que hay en rustdoc,
+    tests y este archivo). `docs/SUMMARY.md` arma el índice; capítulos nuevos en
+    `docs/`: `introduction.md`, `getting-started.md` (versión inglés de las
+    partes ejecutables), `using-as-a-library.md`, `examples.md` (catálogo de
+    `examples/` y `clients/python/`), `contributing.md` (setup de desarrollo,
+    libfaust desde fuente, regla E2E de una sola invocación de Bash). Los
+    capítulos existentes (`architecture.md`, `schemas.md`, los de feature) se
+    reusan tal cual.
+  - **rustdoc** como referencia de API: expandir el doc-comment de crate
+    (`src/lib.rs`) para orientar (split engine/red, feature flags, entry
+    points), enlazado desde y hacia el libro.
+  - Los archivos en español (`PLAN.md`, `NOTAS.md`, `GUIA.md`) **se mantienen en
+    español y en su lugar** — son del autor y se siguen actualizando; la doc de
+    usuario en inglés es nueva/aparte (`GUIA.md` sigue siendo el checklist de QA
+    por milestone).
+  - Opcional (fuera del primer pase): workflow de CI para `mdbook build` +
+    deploy a GitHub Pages y `mdbook test`; dividir `schemas.md` si queda largo.
+
+  Criterio de cierre: `mdbook build` y `cargo doc` limpios y sin links rotos;
+  README y libro con un camino claro desde la portada para cada una de las tres
+  audiencias.
+
 ### Ideas revisadas: qué se descartó y por qué
 
 - **Denormales** (de la idea de memoria/eficiencia): ya implementado post-M7

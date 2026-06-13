@@ -1,0 +1,18 @@
+# mdBook configuration. The book sources are the Markdown files in `docs/`
+# (reused in place; `docs/SUMMARY.md` is the table of contents). Build with
+# `mdbook build` — the generated HTML lands in `book/`, which git ignores.
+# The crate's API reference is separate: `cargo doc` (rustdoc).
+
+[book]
+title = "Clausters"
+authors = ["Lucas Samaruga"]
+description = "A real-time audio synthesis server in the style of scsynth, written in Rust."
+src = "docs"
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"

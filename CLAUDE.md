@@ -6,9 +6,14 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 - Implementation plan and milestones: `PLAN.md` (Spanish).
 - Completion notes per milestone: `NOTAS.md` (Spanish) — update it when a
   milestone is finished.
-- Developer documentation (threads, memory lifecycle, invariants, how to add
-  a UGen): `docs/architecture.md`. User-facing wire formats and OSC
-  reference: `docs/schemas.md`. Both in English; keep them current.
+- English documentation is an **mdBook** in `docs/` (`docs/SUMMARY.md` is the
+  table of contents, `book.toml` the config, `README.md` the front door; build
+  with `mdbook build`, output `book/` is git-ignored). It reuses the existing
+  `docs/*.md` in place. Key chapters: developer docs (threads, memory
+  lifecycle, invariants, how to add a UGen) in `docs/architecture.md`;
+  user-facing wire formats and OSC reference in `docs/schemas.md`; library/
+  embedding use in `docs/using-as-a-library.md` and `docs/ipc.md`. The crate
+  API reference is the rustdoc (`cargo doc`). Keep all of it current.
 - **Closing a milestone always includes, whenever applicable**: the
   developer documentation (`docs/architecture.md`, module docs), the user
   documentation in `docs/` for new features, manual testing steps and

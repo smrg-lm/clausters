@@ -1,3 +1,4 @@
 /target
+/book
 .claude/settings.local.json
 __pycache__/
