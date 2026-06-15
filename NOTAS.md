@@ -1292,6 +1292,25 @@ control o zona se ata a un bus con el mismo comando.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
 
+## Suelta: comparación de rendimiento UGen vs Faust en `bench.rs`
+
+- **Dos secciones head-to-head** (gated `--features faust`) en
+  `examples/bench.rs` corren el *mismo* DSP por ambos motores (pares de
+  paridad de `tests/faust_parity.rs`, idénticos muestra a muestra), midiendo
+  **solo `process_block`** (la instanciación y el JIT quedan fuera del bucle):
+  una **sine** (`sin(2π·phasor)·0.2`) y una **gain** bit-exacta (`·0.5` sobre
+  un bus compartido, sin transcendental ni asimetría f64/f32 → overhead de
+  motor puro). Tabla con xRT de cada uno y la columna `Faust slowdown`.
+- **Hallazgo**: en igualdad de DSP, Faust **no es más lento** (la sospecha que
+  motivó esto), sino ~1.3–1.6× **más rápido** y consistente en todos los
+  conteos de voces, incluso en la `gain` bit-exacta. Razón: una llamada
+  `compute` LLVM vectorizada sobre el bloque vs 3 dispatches `dyn` + 2 buffers
+  de wire intermedios en el grafo de UGens. El bench viejo no era comparable
+  (default `SinOsc·amp → 2×Out` f64 vs Faust `os.osc → 1` por tabla).
+- Refactor menor del harness: `measure()` (warmup + bucle de medición) y
+  `send_cmd()` (envío con drenaje del FIFO) compartidos. Docs: `bench.rs`,
+  `docs/examples.md`, `GUIA.md`.
+
 ## Suelta: UGen `Impulse` + impulsos prístinos en `clock_recorder.py`
 
 - **UGen `Impulse`** (`src/dsp/impulse.rs`): tren de impulsos como el de

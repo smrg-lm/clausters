@@ -177,8 +177,21 @@ real (corre offline, a fondo, en release):
 
 ```sh
 cargo run --release --example bench                    # def default
-cargo run --release --example bench --features faust   # + def Faust JIT
+cargo run --release --example bench --features faust   # + comparación UGen vs Faust
 ```
+
+Con `--features faust` agrega dos secciones **head-to-head**: el *mismo* DSP
+(pares de paridad de `tests/faust_parity.rs`, que ambos motores calculan
+muestra a muestra) corrido por las dos variantes, así el tiempo aísla el
+overhead por synth dentro del bucle de audio (grafo de UGens con dispatch
+`dyn` y buffers intermedios vs una llamada `compute` de Faust LLVM). La
+construcción y el JIT quedan fuera del bucle medido. Las dos secciones: una
+**sine** (`sin(2π·phasor)·0.2`, realista pero con `SinOsc` en f64 y Faust en
+f32) y una **gain** (`·0.5` bit-exacto sobre un bus compartido, sin
+transcendental ni asimetría de precisión → overhead de motor puro). En ambas,
+en igualdad de DSP, Faust resulta **más rápido**, no más lento (`slowdown` <
+1, ~0.7×): una sospecha de lentitud de Faust no se sostiene en condiciones
+equivalentes.
 
 ### Probar el reloj de samples como timebase (M8)
 
