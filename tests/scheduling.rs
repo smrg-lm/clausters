@@ -43,6 +43,29 @@ fn add_dc(id: i32, level: f32) -> Cmd {
     }
 }
 
+/// `Impulse.ar(freq)` straight to bus 0: a single-sample 1.0 on its first
+/// frame, then the train (or, with freq 0, silence forever).
+fn add_impulse(id: i32, freq: f32) -> Cmd {
+    let spec: SynthDefSpec = serde_json::from_value(json!({
+        "name": "imp",
+        "ugens": [
+            {"kind": "Impulse", "inputs": [{"const": freq}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }))
+    .unwrap();
+    let synth = Box::new(UGenSynth::new(Arc::new(
+        clausters::synthdef::compile(spec).unwrap(),
+    )));
+    Cmd::AddSynth {
+        id,
+        target: ROOT_NODE_ID,
+        action: AddAction::Tail,
+        synth,
+        usage: Default::default(),
+    }
+}
+
 fn at(time: u64, cmds: Vec<Cmd>) -> Cmd {
     Cmd::Schedule { time, cmds }
 }
@@ -157,6 +180,36 @@ fn earlier_times_fire_first_regardless_of_send_order() {
             20..40 => 0.25,
             _ => 0.75,
         };
+        assert_eq!(*s, expected, "sample {i}");
+    }
+}
+
+#[test]
+fn scheduled_impulse_lands_on_its_exact_sample() {
+    // The example's mechanism: a `/sched`'d Impulse(0) splits the block at
+    // the target and fires its single impulse on that exact frame — unlike
+    // SinOsc (which starts at sin(0) = 0), the marked sample itself is 1.0.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let target = 100u64; // mid-block: block 1, offset 36
+    handle.send(at(target, vec![add_impulse(1000, 0.0)])).ok().unwrap();
+
+    let left = render(&mut engine, 4);
+    for (i, s) in left.iter().enumerate() {
+        let expected = if i as u64 == target { 1.0 } else { 0.0 };
+        assert_eq!(*s, expected, "sample {i}");
+    }
+}
+
+#[test]
+fn impulse_train_is_periodic_to_the_sample() {
+    // freq = SR / 64 → an impulse exactly every 64 samples, the first on the
+    // synth's first frame; the f64 phase keeps it drift-free.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(add_impulse(1000, SR / 64.0)).ok().unwrap();
+
+    let left = render(&mut engine, 4);
+    for (i, s) in left.iter().enumerate() {
+        let expected = if i % 64 == 0 { 1.0 } else { 0.0 };
         assert_eq!(*s, expected, "sample {i}");
     }
 }

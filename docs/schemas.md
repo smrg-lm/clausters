@@ -92,6 +92,7 @@ The blob is a JSON object:
 | kind | inputs | output |
 |---|---|---|
 | `SinOsc` | freq (Hz) | sine by f64 phase accumulation, starts at phase 0 |
+| `Impulse` | freq (Hz) | single-sample `1.0` every `freq` Hz, `0.0` between; the first output sample is always an impulse, so a `/sched`'d `/s_new` places it on an exact frame; `freq` 0 emits one impulse then silence (f64 phase, drift-free) |
 | `WhiteNoise` | — | uniform white noise in ±1 |
 | `Add`, `Sub`, `Mul`, `Div` | a, b | sample-wise arithmetic |
 | `In` | bus | copies an audio bus (read once per block) |

@@ -376,6 +376,55 @@ Tests del segmento y la C ABI: `cargo test --test ipc` (núcleo) y
 layout está versionado (ABI v1): un cliente con versión distinta es
 rechazado al conectar. Detalles y referencia C en `docs/ipc.md`.
 
+### Verificar el reloj de samples grabando la salida (M8 + M14)
+
+`clock_recorder.py` cierra el lazo: lee el reloj **directo del segmento**
+(`ShmClient.clock`, sin ida y vuelta), agenda un **impulso prístino de un
+solo sample cada N samples** con `/sched` y graba la salida real para medir
+si los impulsos cayeron parejos. Cada marca es la UGen `Impulse` a
+frecuencia 0: emite un único `1.0` en el primer sample del synth, y como un
+`/s_new` por `/sched` parte el bloque en el sample objetivo, ese primer
+sample *es* el objetivo — un impulso limpio en un frame exacto, sin envolvente
+ni rampa de ataque que difumine dónde cayó. La duración es libre: de unos
+segundos a varias horas.
+
+```sh
+cargo run --release -- --shm /dev/shm/clausters     # terminal 1
+python3 examples/clock_recorder.py --seconds 20      # terminal 2
+```
+
+La grabación usa `pw-record` (PipeWire). Por defecto captura el **nodo de
+salida del propio servidor**: lo encuentra con `pw-dump` (aparece como
+`alsa_playback.clausters`, clase `Stream/Output/Audio`) y engancha sus
+puertos de salida, así graba exactamente lo que emite el servidor sin
+importar a qué sink esté ruteado. Esto es más robusto que el monitor del
+sink, que solo ve al servidor si su salida se mezcla en ese sink (cpal/ALSA
+suele rutearla por otro lado, y entonces el monitor queda casi vacío aunque
+los impulsos se oigan). Si no encuentra el nodo, cae al monitor del sink por
+defecto (detectado con `wpctl inspect @DEFAULT_AUDIO_SINK@`, o `pactl`).
+Podés forzar el origen con `--target <node.name>` (mirá `pw-dump`/`wpctl
+status`), reemplazar todo el comando con `--record-cmd "..."` (`{out}` se
+sustituye por `--out`), o usar `--no-record` para solo agendar. Si los
+impulsos se oyen pero la grabación sale casi vacía, el análisis lo detecta y
+avisa que se capturó el nodo equivocado. El sample rate que verás es el real
+del dispositivo (p. ej. 44100 Hz): lo reporta el servidor por el segmento y
+la grabación se hace a ese mismo rate. Al terminar, el script escanea el WAV y reporta
+el espaciado medido vs el esperado, el **jitter** (rms alrededor de la
+recta ajustada) y la **deriva** en ppm, con veredicto PASS/FAIL.
+
+Lo que prueba: dos impulsos separados N samples en la agenda salen separados
+N samples en la grabación — el espaciado nunca pasa por el reloj de pared de
+esta máquina, solo por el de audio. Nota sobre el "testigo": al capturar el
+nodo del propio servidor, el grabador comparte el mismo reloj de PipeWire, así
+que el jitter cae casi a cero (verifica que `/sched` es sample-exacto, pero no
+mide deriva de cristal independiente); para ver deriva real en ppm hay que
+grabar por el **monitor del sink** (reloj independiente, `--target <sink>`).
+Para corridas largas el agendado se mantiene a distancia fija del
+reloj (`--lead`), así la memoria queda acotada aunque corra horas. Un WAV ya
+capturado se re-analiza sin servidor con `--analyze archivo.wav` (pasale el
+`--period` y `--server-rate` usados). Requiere hardware de audio real (el
+sandbox no tiene dispositivo de salida).
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;

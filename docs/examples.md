@@ -18,6 +18,7 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 | `auto_order.py` | [Auto-sorted groups](auto-order.md): builds a source → fx → master chain reversed on purpose and repairs it with one `/g_sortMode`. |
 | `sample_clock.py` | [The sample clock](sample-clock.md) as master timebase: models `sample(t)` from `/clock` anchors and schedules with `/sched`. |
 | `shm_client.py` | The shared-memory transport (`--shm`): the same OSC with no sockets anywhere. |
+| `clock_recorder.py` | The shared-memory sample clock made checkable: reads `ShmClient.clock` directly (no round trip), schedules a pristine `Impulse` **exactly every N samples** with `/sched`, records the real output (`pw-record`) and reports the impulse spacing/jitter/drift. Duration is free (`--seconds`), seconds to hours. |
 | `embed_render.py` | Synchronous offline render through the embed C ABI (`ctypes`), no server process. |
 
 The OSC encoding/decoding in these scripts is hand-rolled (stdlib only); they double as a compact reference for the wire format.

@@ -1292,6 +1292,39 @@ control o zona se ata a un bus con el mismo comando.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
 
+## Suelta: UGen `Impulse` + impulsos prístinos en `clock_recorder.py`
+
+- **UGen `Impulse`** (`src/dsp/impulse.rs`): tren de impulsos como el de
+  SuperCollider — un `1.0` de un solo sample cada `freq` Hz, `0.0` en el
+  medio. La fase arranca "vencida" (`phase = 1.0`) para que el **primer**
+  sample de salida sea siempre un impulso: combinado con un `/s_new` por
+  `/sched` (que parte el bloque en el sample objetivo), coloca un impulso
+  limpio en un frame exacto. `freq = 0` emite ese único impulso y silencio
+  después. Fase en `f64`, sin deriva. Registrada en `src/dsp/registry.rs`
+  (enum/`parse_kind`/`arity` 1/`build`) y `src/dsp/mod.rs`; `osc/graph.rs`
+  no necesita cambios (no toca buses, cae en `_ => continue`).
+- **Ejemplo**: `clock_recorder.py` reemplaza la ráfaga de tono de 4 ms por un
+  impulso prístino de un sample (`Impulse(0)·amp`), agendado en cada sample
+  objetivo. Sin envolvente ni rampa de ataque, el frame marcado *es* el
+  impulso (a diferencia de `SinOsc`, que arranca en `sin(0)=0`). Args:
+  `--burst-ms`/`--freq` → `--hold-ms` (cuánto vive el synth antes del
+  `/n_free`); el detector de onsets ahora marca el flanco del impulso (un
+  solo sample en la captura directa del nodo).
+- **Docs**: `docs/schemas.md` (fila `Impulse` en la tabla de UGens),
+  `docs/examples.md` y `GUIA.md` (sección del reloj grabado, ahora
+  "impulsos").
+
+### Verificación
+
+- **119 tests core** (+2): `tests/scheduling.rs` —
+  `scheduled_impulse_lands_on_its_exact_sample` (un `Impulse(0)` por `/sched`
+  cae 1.0 en el sample exacto y 0.0 en el resto) e
+  `impulse_train_is_periodic_to_the_sample` (freq = SR/64 → impulso cada 64
+  samples, sin deriva). Suite completa en verde; rt-safety intacto.
+- E2E contra server real: 220 impulsos en 120 s, gaps exactos de 24000
+  samples, jitter 0.000 ms (captura directa del nodo `alsa_playback.clausters`,
+  que comparte el reloj de PipeWire del servidor).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
