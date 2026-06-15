@@ -93,6 +93,16 @@ The engine publishes its **sample clock** — samples processed since start — 
 
 The NTP conversion is one of **two front-ends** to the same queue: `/sched` (M8) carries an absolute sample target directly — no wall clock involved — and `/clock` exposes the counter so clients can model the sample clock as their master timebase (see `docs/sample-clock.md`). In offline rendering, score timetags are seconds from render start, and the renderer pushes the same `Cmd::Schedule` commands — that single shared code path is the sample-identity guarantee, and it is why scheduling fixes must never fork between the two modes.
 
+## Feedback (`LocalIn`/`LocalOut`)
+
+A SynthDef graph is a **DAG by construction**: the compiler rejects any input that references a UGen at index `>= i` (`src/synthdef/mod.rs`), and UGens exchange whole blocks through wires processed in topological order. So a feedback loop cannot be wired directly — and intra-block, multi-UGen feedback is impossible in any block-processing engine, because the wire between two UGens only carries a *finished* block.
+
+`LocalIn`/`LocalOut` give the SuperCollider answer: a synth-private feedback bus with **one control block (64 samples) of delay**. `LocalOut` writes a signal into `UGenSynth::locals[channel]` — a `Vec<Block>` that, unlike the per-UGen `wires`, **persists across `process_block` calls**. `LocalIn` reads that buffer. Because the compiler requires `LocalIn` to precede `LocalOut` for a channel, within a block `LocalIn` reads the buffer *before* `LocalOut` overwrites it — so it sees the previous block's value. That read-before-write order is the entire delay mechanism; no double buffering. It holds under mid-block schedule splits too: each slice reads then writes its own `[offset..offset+frames]` sub-range.
+
+These two are the one place a UGen needs **synth-private** state that `ProcessCtx` (global, shared by the parallel scheduler) cannot carry, so `UGenSynth::process` handles them inline (matching on `def.ugens[i].kind`) instead of through the `UGen` trait; `src/dsp/local.rs` holds only placeholder structs. They touch no global bus, so `osc::graph::ugen_usage` gives them empty `BusUsage` and feedback synths still parallelize safely (private state, nothing shared). The channel index must be a constant (so the buffer is sized at compile time, `SynthDef::num_locals`).
+
+The delay is **block-rate**, not sample-accurate: a one-channel loop is a comb resonating at `sampleRate / 64`. For a sample-accurate recursive filter (one-pole, biquad) or sub-block feedback, the loop must be fused into a single node — a recursive UGen written as one `process` with internal state (the `SinOsc` pattern), or a Faust def, whose `~` operator (`CboxRec`) compiles the whole loop into one `compute` with the state inside the instance. That fusion is exactly why `FaustSynth` exists.
+
 ## Invariants — do not break these
 
 1. **The audio thread never allocates, frees, locks or does I/O.** `Engine::process_block` and everything it calls — including the M13 parallel dispatch (atomics, bounded spins, at worst an `unpark`). Guarded by `tests/rt_safety.rs` (`assert_no_alloc`); new processing code must stay under that umbrella.

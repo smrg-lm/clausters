@@ -1292,6 +1292,45 @@ control o zona se ata a un bus con el mismo comando.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
 
+## Suelta: feedback intra-synth `LocalIn`/`LocalOut` (retardo de 1 bloque)
+
+- **UGens `LocalIn`/`LocalOut`** (estilo scsynth): feedback **privado del
+  synth** con 1 bloque de control (64 muestras) de retardo. El grafo es un DAG
+  (no se puede wirear un ciclo), así que el lazo va por un buffer
+  **persistente entre bloques** que vive en `UGenSynth` (`locals: Vec<Block>`,
+  a diferencia de `wires` que se recomputan). `LocalIn` (fuente, va primero) lo
+  lee; `LocalOut` (sumidero, va último) lo escribe. Como `LocalIn` lee **antes**
+  de que `LocalOut` escriba, ve el valor del bloque anterior → el retardo de 1
+  bloque sale del orden read-before-write, sin doble buffer. Anda igual bajo el
+  split de bloque de M6 (se opera el sub-rango `[offset..offset+frames]`).
+- **Implementación**: `src/dsp/local.rs` (structs placeholder no-op),
+  registrados en `registry.rs`/`mod.rs`. El trabajo real se hace en
+  `UGenSynth::process` (`src/synthdef/instance.rs`), que intercepta por
+  `def.ugens[i].kind` — son el único caso que necesita estado **privado del
+  synth** que `ProcessCtx` (global, compartido por el scheduler paralelo) no
+  puede llevar. `compile` (`src/synthdef/mod.rs`) exige índice de canal
+  constante, calcula `SynthDef::num_locals`, y valida `LocalIn` antes que
+  `LocalOut` por canal (error claro si no). No tocan buses globales → `BusUsage`
+  vacío (`osc/graph.rs` ya cae en `_ => continue`), así que los synths con
+  feedback siguen paralelizables.
+- **Límite (documentado)**: feedback a **tasa de bloque**, no sample-accurate;
+  un lazo de un canal resuena en `sampleRate/64` (≈750 Hz). Para IIR sub-bloque
+  (one-pole/biquad) hay que fusionar el lazo en un nodo: una UGen recursiva o
+  un def Faust (`~`/`CboxRec`) — la razón de ser de `FaustSynth`.
+- **Docs/ejemplo**: `docs/schemas.md` (filas + nota de feedback),
+  `docs/architecture.md` (sección "Feedback"), `GUIA.md` (prueba manual +
+  checklist), `examples/json_client.py` (subcomando `feedback`: comb
+  resonante).
+
+### Verificación
+
+- **+6 tests** en `tests/feedback.rs`: retardo exacto de 1 bloque a la muestra,
+  acumulador por bloques, dos canales independientes, supervivencia al split de
+  bloque, y dos validaciones de compilación (orden y canal constante). **+1**
+  escena no-alloc en `tests/rt_safety.rs` (lazo `LocalIn→·0.9→LocalOut`). Suite
+  completa en verde; clippy sin warnings nuevos (`LocalIn`/`LocalOut` son unit
+  structs, no disparan `new_without_default`).
+
 ## Suelta: comparación de rendimiento UGen vs Faust en `bench.rs`
 
 - **Dos secciones head-to-head** (gated `--features faust`) en

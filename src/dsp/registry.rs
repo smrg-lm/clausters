@@ -5,6 +5,7 @@ use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufRd, PlayBuf};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
+use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::sinosc::SinOsc;
 
@@ -23,6 +24,8 @@ pub enum UGenKind {
     ReplaceOut,
     PlayBuf,
     BufRd,
+    LocalIn,
+    LocalOut,
 }
 
 pub fn parse_kind(name: &str) -> Option<UGenKind> {
@@ -40,6 +43,8 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
         "ReplaceOut" => Some(UGenKind::ReplaceOut),
         "PlayBuf" => Some(UGenKind::PlayBuf),
         "BufRd" => Some(UGenKind::BufRd),
+        "LocalIn" => Some(UGenKind::LocalIn),
+        "LocalOut" => Some(UGenKind::LocalOut),
         _ => None,
     }
 }
@@ -47,13 +52,15 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
 pub fn arity(kind: UGenKind) -> usize {
     match kind {
         UGenKind::WhiteNoise => 0,
-        UGenKind::SinOsc | UGenKind::Impulse | UGenKind::In | UGenKind::InCtl => 1,
+        UGenKind::SinOsc | UGenKind::Impulse | UGenKind::In | UGenKind::InCtl
+        | UGenKind::LocalIn => 1,
         UGenKind::Add
         | UGenKind::Sub
         | UGenKind::Mul
         | UGenKind::Div
         | UGenKind::Out
-        | UGenKind::ReplaceOut => 2,
+        | UGenKind::ReplaceOut
+        | UGenKind::LocalOut => 2,
         // (bufnum, chan, rate, loop) and (bufnum, chan, phase, loop).
         UGenKind::PlayBuf | UGenKind::BufRd => 4,
     }
@@ -75,5 +82,8 @@ pub fn build(kind: UGenKind) -> Box<dyn UGen> {
         UGenKind::ReplaceOut => Box::new(ReplaceOut),
         UGenKind::PlayBuf => Box::new(PlayBuf::new()),
         UGenKind::BufRd => Box::new(BufRd),
+        // Intercepted by UGenSynth::process; these are placeholders.
+        UGenKind::LocalIn => Box::new(LocalIn),
+        UGenKind::LocalOut => Box::new(LocalOut),
     }
 }

@@ -438,6 +438,29 @@ capturado se re-analiza sin servidor con `--analyze archivo.wav` (pasale el
 `--period` y `--server-rate` usados). Requiere hardware de audio real (el
 sandbox no tiene dispositivo de salida).
 
+### Probar el feedback intra-synth (LocalIn/LocalOut)
+
+El grafo de UGens es un DAG: no se puede wirear un ciclo. `LocalIn`/`LocalOut`
+dan feedback **privado del synth** con **1 bloque de control (64 muestras) de
+retardo** (estilo scsynth): `LocalOut` escribe en un buffer que persiste entre
+bloques y `LocalIn` lo lee — como `LocalIn` va antes que `LocalOut` (lo exige
+el compilador), lee el valor del bloque anterior. Un lazo de un canal resuena
+en `sampleRate/64` (≈ 750 Hz a 48 kHz).
+
+```sh
+cargo run --release                              # terminal 1
+python3 examples/json_client.py feedback         # terminal 2
+```
+
+Debe oírse un comb resonante (pluck metálico repetido ~3 veces/seg, afinado
+en sampleRate/64) que decae según la ganancia de realimentación (0.98). Es
+feedback a **tasa de bloque**, no sample-accurate: para un IIR sub-bloque
+(one-pole, biquad) hay que fusionar el lazo en un nodo — una UGen recursiva o
+un def de Faust (`~`/`CboxRec`), que es la razón de ser de `FaustSynth`.
+Tests: `cargo test --test feedback` (retardo exacto de 1 bloque, acumulador
+por bloques, dos canales, split de bloque, validaciones de compilación) y la
+escena no-alloc en `tests/rt_safety.rs`.
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -627,6 +650,7 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Node tree, grupos, orden, add actions | `tests/engine.rs` | secuencia `/g_new` de arriba |
 | SynthDefs JSON de UGens, `/d_recv` | `tests/synthdef.rs` | `osc_ping vibrato` |
 | Buses de audio/control, `In`/`Out` | `tests/engine.rs` | `/c_set`, `/n_set out` |
+| Feedback intra-synth, `LocalIn`/`LocalOut` (1 bloque) | `tests/feedback.rs`, `tests/rt_safety.rs` | `json_client.py feedback` (comb resonante) |
 | RT-safety (cero allocs en audio) | `tests/rt_safety.rs` | — |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |

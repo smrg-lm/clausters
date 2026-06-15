@@ -2,7 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::dsp::{Block, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, UGen, registry};
+use crate::dsp::registry::UGenKind;
+use crate::dsp::{Block, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, UGen, at, registry};
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{InputRef, SynthDef};
 
@@ -16,6 +17,10 @@ pub struct UGenSynth {
     ugens: Vec<Box<dyn UGen>>,
     /// One output wire per UGen, cache-line aligned (M10).
     wires: Vec<Block>,
+    /// Synth-private feedback channels (`LocalIn`/`LocalOut`): unlike `wires`,
+    /// these **persist across blocks** — that persistence is the one-block
+    /// feedback delay. Empty for defs without feedback.
+    locals: Vec<Block>,
 }
 
 impl UGenSynth {
@@ -24,12 +29,14 @@ impl UGenSynth {
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
         let ugens: Vec<_> = def.ugens.iter().map(|u| registry::build(u.kind)).collect();
         let wires = vec![Block::SILENCE; ugens.len()];
+        let locals = vec![Block::SILENCE; def.num_locals];
         Self {
             def,
             controls,
             maps,
             ugens,
             wires,
+            locals,
         }
     }
 }
@@ -66,7 +73,32 @@ impl SynthNode for UGenSynth {
                     InputRef::Wire(w) => &earlier[*w].0[..ctx.frames],
                 };
             }
-            self.ugens[i].process(ctx, &inputs[..refs.len()], output);
+            // LocalIn/LocalOut feed back through the persistent `locals`
+            // buffer — synth-private state the UGen trait can't reach — so
+            // they are handled here instead of by `process`. Reading before
+            // writing (LocalIn precedes LocalOut, enforced at compile) is the
+            // one-block delay.
+            let (lo, hi) = (ctx.offset, ctx.offset + ctx.frames);
+            match self.def.ugens[i].kind {
+                UGenKind::LocalIn => {
+                    let ch = inputs[0][0] as usize;
+                    output.copy_from_slice(&self.locals[ch].0[lo..hi]);
+                }
+                UGenKind::LocalOut => {
+                    let ch = inputs[0][0] as usize;
+                    let signal = inputs[1];
+                    let dst = &mut self.locals[ch].0[lo..hi];
+                    for (j, d) in dst.iter_mut().enumerate() {
+                        *d = at(signal, j);
+                    }
+                    // Pass the signal through this UGen's wire too, so a
+                    // LocalOut can sit mid-chain and still feed later UGens.
+                    for (j, o) in output.iter_mut().enumerate() {
+                        *o = at(signal, j);
+                    }
+                }
+                _ => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
+            }
         }
     }
 

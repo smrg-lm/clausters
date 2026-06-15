@@ -273,6 +273,59 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 3);
 }
 
+/// Same guardian for the feedback path (`LocalIn`/`LocalOut`): the per-synth
+/// `locals` buffer is allocated at build time (network side); reading and
+/// writing it each block is plain slice copies, no allocation.
+#[test]
+fn local_feedback_does_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // A feedback loop through composed UGens: LocalIn -> *0.9 -> LocalOut,
+    // seeded by an impulse, plus the fed-back value summed to bus 0.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "fb",
+            "ugens": [
+                {"kind": "LocalIn",  "inputs": [{"const": 0.0}]},
+                {"kind": "Impulse",  "inputs": [{"const": 0.0}]},
+                {"kind": "Add",      "inputs": [{"ugen": 0}, {"ugen": 1}]},
+                {"kind": "Mul",      "inputs": [{"ugen": 2}, {"const": 0.9}]},
+                {"kind": "Out",      "inputs": [{"const": 0.0}, {"ugen": 0}]},
+                {"kind": "LocalOut", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}
+
 /// Same guardian for the Faust path (F3): inserting, processing, recontrolling
 /// and freeing `FaustSynth`s must not allocate on the audio thread. This
 /// guards our wrapper (staging copies, zone stores, garbage routing) —

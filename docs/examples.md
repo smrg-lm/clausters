@@ -14,7 +14,7 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 
 | script | what it shows |
 |---|---|
-| `json_client.py` | Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust`, `wavetable`, `buffer`, `bundle`, `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
+| `json_client.py` | Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust`, `wavetable`, `buffer`, `bundle`, `feedback` (a LocalIn/LocalOut resonant comb), `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
 | `auto_order.py` | [Auto-sorted groups](auto-order.md): builds a source → fx → master chain reversed on purpose and repairs it with one `/g_sortMode`. |
 | `sample_clock.py` | [The sample clock](sample-clock.md) as master timebase: models `sample(t)` from `/clock` anchors and schedules with `/sched`. |
 | `shm_client.py` | The shared-memory transport (`--shm`): the same OSC with no sockets anywhere. |

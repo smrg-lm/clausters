@@ -20,6 +20,9 @@ then run one or more demos (default: status):
          the file's pitch (rate from /b_info and /status), then frees it.
 `bundle` schedules a melody in advance with NTP-timetagged bundles: the
          server fires each note sample-accurately on its own clock.
+`feedback` plays a resonant comb built with LocalIn/LocalOut: the graph's
+         one-block feedback delay makes a one-channel loop ring at
+         sampleRate/64 (≈ 750 Hz at 48 kHz).
 """
 
 import json
@@ -340,6 +343,30 @@ def demo_bundle(client: Client):
     time.sleep(0.5 + len(notes) * 0.4 + 0.2)
 
 
+def demo_feedback(client: Client):
+    """A resonant comb from LocalIn/LocalOut feedback. The graph is a DAG, so
+    the loop goes through a synth-private feedback bus with one control block
+    (64 samples) of delay — a one-channel loop therefore rings at
+    sampleRate/64 (≈ 750 Hz at 48 kHz). A quiet 3 Hz impulse train re-excites
+    it; the 0.98 feedback gain sets the decay. (LocalIn must come before
+    LocalOut — the builder adds them in call order, so it does.)"""
+    d = SynthDefBuilder("fbcomb")
+    fb = d.add("LocalIn", 0)                          # channel 0, previous block
+    exc = d.add("Mul", d.add("Impulse", 3.0), 0.3)   # 3 Hz excitation
+    mix = d.add("Add", exc, fb)
+    d.add("Out", 0, mix)
+    d.add("Out", 1, mix)
+    d.add("LocalOut", 0, d.add("Mul", mix, 0.98))    # feed back, decaying
+
+    print("feedback demo: /d_recv fbcomb (LocalIn/LocalOut resonant comb)")
+    client.send("/d_recv", d.blob())
+    client.reply()
+    print("  /s_new fbcomb 3005 — rings at sampleRate/64 ≈ 750 Hz")
+    client.send("/s_new", "fbcomb", 3005, 1, 0)
+    time.sleep(3.0)
+    client.send("/n_free", 3005)
+
+
 def score_bundle(seconds: float, *packets: bytes) -> bytes:
     """An OSC bundle for an NRT score: the timetag counts seconds from the
     start of the render, not wall-clock time."""
@@ -392,6 +419,8 @@ def main():
             demo_buffer(client)
         elif demo == "bundle":
             demo_bundle(client)
+        elif demo == "feedback":
+            demo_feedback(client)
         elif demo == "score":
             demo_score()
         elif demo == "quit":
@@ -399,7 +428,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, bundle, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, bundle, feedback, score, quit)"
             )
 
 

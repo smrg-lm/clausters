@@ -12,6 +12,7 @@ pub mod buffer;
 pub mod denormals;
 pub mod impulse;
 pub mod io;
+pub mod local;
 pub mod noise;
 pub mod registry;
 pub mod sinosc;

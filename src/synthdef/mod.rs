@@ -86,6 +86,9 @@ pub struct SynthDef {
     pub constants: Vec<f32>,
     /// Topologically ordered: inputs only reference earlier UGens.
     pub ugens: Vec<UGenDef>,
+    /// Number of synth-private feedback channels (`LocalIn`/`LocalOut`); the
+    /// instance allocates this many persistent `Block`s. 0 for most defs.
+    pub num_locals: usize,
 }
 
 impl SynthDef {
@@ -109,6 +112,10 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     let n_controls = spec.controls.len();
     let mut constants = Vec::new();
     let mut ugens = Vec::with_capacity(spec.ugens.len());
+    // Synth-private feedback channels: size the buffer and require each
+    // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
+    let mut num_locals = 0usize;
+    let mut localin_channels = std::collections::HashSet::new();
 
     for (i, u) in spec.ugens.iter().enumerate() {
         let kind = parse_kind(&u.kind)
@@ -122,6 +129,34 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             ));
         }
         debug_assert!(want <= MAX_UGEN_INPUTS);
+
+        // LocalIn/LocalOut: channel index (input 0) must be a constant so the
+        // buffer can be sized and routed at compile time.
+        if matches!(kind, UGenKind::LocalIn | UGenKind::LocalOut) {
+            let channel = match u.inputs[0] {
+                InputSpec::Const(x) if x.is_finite() && x >= 0.0 => x as usize,
+                _ => {
+                    return Err(format!(
+                        "ugens[{i}] ({}): channel index (input 0) must be a non-negative constant",
+                        u.kind
+                    ));
+                }
+            };
+            num_locals = num_locals.max(channel + 1);
+            match kind {
+                UGenKind::LocalIn => {
+                    localin_channels.insert(channel);
+                }
+                UGenKind::LocalOut if !localin_channels.contains(&channel) => {
+                    return Err(format!(
+                        "ugens[{i}] (LocalOut): local channel {channel} has no earlier LocalIn; \
+                         LocalIn must precede LocalOut (one block of feedback delay)"
+                    ));
+                }
+                _ => {}
+            }
+        }
+
         let mut inputs = Vec::with_capacity(want);
         for (k, inp) in u.inputs.iter().enumerate() {
             inputs.push(match *inp {
@@ -159,6 +194,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         control_defaults: spec.controls.iter().map(|c| c.default).collect(),
         constants,
         ugens,
+        num_locals,
     })
 }
 
