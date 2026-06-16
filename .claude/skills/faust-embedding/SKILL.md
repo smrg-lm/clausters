@@ -15,7 +15,7 @@ Headers shipped with libfaust:
 
 - `faust/dsp/libfaust-c.h` — context, misc.
 - `faust/dsp/libfaust-box-c.h` — the Box API (`Cbox*` functions).
-- `faust/dsp/libfaust-signal-c.h` — the lower-level Signal API (`Csig*`).
+- `faust/dsp/libfaust-signal-c.h` — the lower-level Signal API (`Csig*`). Bound and wired: `src/faust/signals.rs` maps a `{"signals":[…]}` JSON tree to `Csig*` + `createCDSPFactoryFromSignals`, with explicit inputs/delays and `recursion`/`self` feedback. Same lib-context bracket, FFI lock and `FaustDef::probe` as boxes; shares the JSON validation helpers in `src/faust/json_util.rs`. Note: Faust 2.81.10 crashes its own `sigtyperules.cpp` on the logical-right-shift opcode, so `lrsh` is not exposed.
 - `faust/dsp/llvm-dsp-c.h` — LLVM factory/instance (`llvm_dsp_factory`, `llvm_dsp`).
 - `faust/gui/CUI.h` — `UIGlue` for parameter discovery.
 

@@ -369,11 +369,7 @@ impl Renderer {
     fn d_faust(&mut self, args: &[rosc::OscType]) -> Result<(), String> {
         use crate::faust::compiler::{CompilePayload, compile};
         let (name, def) = parse_d_faust(args)?;
-        let payload = if def.trim_start().starts_with('{') {
-            CompilePayload::Json(def)
-        } else {
-            CompilePayload::Source(def)
-        };
+        let payload = CompilePayload::classify(def);
         let def = compile(&name, &payload)?;
         self.translator.faust_defs.insert(name, Arc::new(def));
         Ok(())

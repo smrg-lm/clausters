@@ -16,9 +16,10 @@ use std::time::Duration;
 use crate::faust::boxes;
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
+use crate::faust::signals;
 use crate::faust::synth::FaustDef;
 
-/// What `/d_faust` carries: either of the two def formats.
+/// What `/d_faust` carries: one of the three def formats.
 pub enum CompilePayload {
     /// Raw Faust source code (F1), compiled with
     /// `createCDSPFactoryFromString`.
@@ -26,6 +27,32 @@ pub enum CompilePayload {
     /// JSON box graph (F2), mapped to Box API calls (see [`boxes`]) and
     /// compiled with `createCDSPFactoryFromBoxes`.
     Json(String),
+    /// JSON signal tree, mapped to Signal API calls (see
+    /// [`crate::faust::signals`]) and compiled with
+    /// `createCDSPFactoryFromSignals`.
+    Signal(String),
+}
+
+impl CompilePayload {
+    /// Classifies a `/d_faust` def string: raw Faust source unless it starts
+    /// with `{`, then a signal tree if the JSON object has a top-level
+    /// `"signals"` key, otherwise a box tree. The sniff is unambiguous —
+    /// Faust source never starts with `{`, and a box def's root is a single
+    /// box node (`{"op": …}`), never an object keyed by `"signals"`.
+    pub fn classify(def: String) -> Self {
+        if !def.trim_start().starts_with('{') {
+            return Self::Source(def);
+        }
+        let is_signal = serde_json::from_str::<serde_json::Value>(&def)
+            .ok()
+            .and_then(|v| v.as_object().map(|o| o.contains_key("signals")))
+            .unwrap_or(false);
+        if is_signal {
+            Self::Signal(def)
+        } else {
+            Self::Json(def)
+        }
+    }
 }
 
 pub struct CompileRequest {
@@ -217,6 +244,7 @@ pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String>
     let factory = match payload {
         CompilePayload::Source(source) => compile_source(name, source),
         CompilePayload::Json(json) => compile_json(name, json),
+        CompilePayload::Signal(json) => compile_signal(name, json),
     }?;
     FaustDef::probe(factory)
 }
@@ -268,6 +296,43 @@ fn compile_json(name: &str, json: &str) -> Result<FaustFactory, String> {
             error_msg.as_mut_ptr(),
             -1,
         )
+    };
+    drop(ctx);
+    factory_or_error(ptr, &error_msg)
+}
+
+/// JSON → Signal API (see [`crate::faust::signals`] for the schema). Mirrors
+/// [`compile_json`] but builds a NULL-terminated output-signal vector and
+/// calls `createCDSPFactoryFromSignals`.
+fn compile_signal(name: &str, json: &str) -> Result<FaustFactory, String> {
+    let root: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
+    let name_c = CString::new(name).map_err(|_| "NUL byte in name".to_string())?;
+    let target = CString::new("").unwrap();
+    let args = FaustArgs::defaults();
+    let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
+    let mut cstrings = Vec::new();
+
+    let ctx = LibContext::acquire();
+    let ptr = match unsafe { signals::build_signals(&root, &mut cstrings) } {
+        Ok(mut outputs) => {
+            outputs.push(std::ptr::null_mut()); // NULL-terminated output array
+            unsafe {
+                ffi::createCDSPFactoryFromSignals(
+                    name_c.as_ptr(),
+                    outputs.as_mut_ptr(),
+                    args.argc(),
+                    args.argv(),
+                    target.as_ptr(),
+                    error_msg.as_mut_ptr(),
+                    -1,
+                )
+            }
+        }
+        Err(e) => {
+            drop(ctx);
+            return Err(e);
+        }
     };
     drop(ctx);
     factory_or_error(ptr, &error_msg)

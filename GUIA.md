@@ -612,6 +612,31 @@ UI del def (sliders, botones) por su label, más dos nombres reservados:
 `out` (primer bus de salida, default 0 = hardware izquierdo) e `in` (primer
 bus de entrada, para defs que procesan señal).
 
+**Def como JSON→Signal API** (la capa más baja de Faust). Mismo `/d_faust`,
+pero el JSON tiene raíz `{"signals":[...]}` — así se distingue del box tree
+(`{"op":...}`) y de la fuente. Es la API de entradas/delays/recursión
+**explícitos**: el `self()` de realimentación que la box API envuelve en `~`.
+El cliente Python lo demuestra con un seno por `recursion`/`self` y un
+one-pole sobre ruido (feedback sample-accurate, lo que el `LocalIn`/`LocalOut`
+del grafo no puede dar):
+
+```sh
+python3 examples/json_client.py signal
+```
+
+Debe oírse el seno (330→440 Hz) y luego un ruido pasado por el lowpass de un
+polo, que se cierra al subir `a` a 0.99. A mano, un one-pole leyendo el bus 4:
+
+```sh
+oscsend localhost 57110 /d_faust ss siglp \
+  '{"signals":[{"op":"recursion","in":[{"op":"add","in":[{"op":"mul","in":[{"op":"sub","in":[1.0,{"op":"hslider","label":"a","init":0.9,"min":0.0,"max":0.999,"step":0.001}]},{"op":"input","index":0}]},{"op":"mul","in":[{"op":"hslider","label":"a","init":0.9,"min":0.0,"max":0.999,"step":0.001},{"op":"self"}]}]}]}]}'
+```
+
+El schema completo (tabla de ops, discriminador, límites) está en
+`docs/schemas.md`. No expone `seq`/`par`/wires implícitos ni el escape `faust`
+(son conceptos del box tree), ni recursión N-aria (igual que la box solo tiene
+`~`).
+
 ### Probar waveforms y tablas (F5)
 
 El op `waveform` embebe una tabla calculada por el cliente dentro de la def
@@ -655,6 +680,7 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |
+| Schema JSON→Signal API (input/delay/recursion/self) | `tests/faust_signal.rs` | `json_client.py signal` |
 | FaustSynth en el árbol, zonas, buses | `tests/faust_synth.rs` | def `fsine` de arriba |
 | Paridad UGen↔Faust (goldens), interop en grupos | `tests/faust_parity.rs` | `json_client.py ugen faust` (suenan juntos) |
 | Cliente que genera JSON (ambos formatos) | — | `examples/json_client.py` |

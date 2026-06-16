@@ -1,7 +1,7 @@
 //! Raw FFI over the libfaust C API. Hand-written against the headers of the
 //! libfaust build we link (faust 2.81.10):
 //!
-//! - `faust/dsp/libfaust-signal-c.h` — lib context.
+//! - `faust/dsp/libfaust-signal-c.h` — lib context + Signal API (`Csig*`).
 //! - `faust/dsp/libfaust-box-c.h` — Box API (`Cbox*`).
 //! - `faust/dsp/llvm-dsp-c.h` — LLVM JIT factory/instance.
 //!
@@ -30,6 +30,10 @@ pub struct CTree {
 
 /// `Box` in the C API; renamed to avoid clashing with `std::boxed::Box`.
 pub type FaustBox = *mut CTree;
+
+/// `Signal` in the C API (Signal API, `libfaust-signal-c.h`). The same opaque
+/// arena node as a box; a distinct alias keeps the two interpreters readable.
+pub type FaustSignal = *mut CTree;
 
 #[repr(C)]
 pub struct llvm_dsp_factory {
@@ -221,6 +225,123 @@ unsafe extern "C" {
         error_msg: *mut c_char,
     ) -> FaustBox;
 
+    // ---- Signal API (libfaust-signal-c.h) ----
+    // The lower-level API: each `Signal` is one output. Inputs are explicit
+    // (`CsigInput`), delays are explicit (`CsigDelay`/`CsigDelay1`), and
+    // feedback is `CsigSelf()` inside `CsigRecursion(s)`. Built inside the
+    // same lib-context bracket as boxes. (See `faust::signals` for the schema.)
+    pub fn CsigInt(n: c_int) -> FaustSignal;
+    pub fn CsigReal(n: f64) -> FaustSignal;
+    pub fn CsigInput(idx: c_int) -> FaustSignal;
+    pub fn CsigDelay(s: FaustSignal, del: FaustSignal) -> FaustSignal;
+    pub fn CsigDelay1(s: FaustSignal) -> FaustSignal;
+    pub fn CsigIntCast(s: FaustSignal) -> FaustSignal;
+    pub fn CsigFloatCast(s: FaustSignal) -> FaustSignal;
+
+    // Feedback: `CsigSelf()` refers to the recursive signal inside the body
+    // passed to `CsigRecursion` (one implicit sample of delay).
+    pub fn CsigSelf() -> FaustSignal;
+    pub fn CsigRecursion(s: FaustSignal) -> FaustSignal;
+
+    // Binary operators (explicit, no `Aux` suffix in the Signal API).
+    pub fn CsigAdd(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigSub(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigMul(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigDiv(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigRem(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigLeftShift(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigARightShift(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigGT(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigLT(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigGE(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigLE(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigEQ(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigNE(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigAND(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigOR(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigXOR(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigPow(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigMin(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigMax(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigFmod(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigRemainder(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    pub fn CsigAtan2(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+
+    // Unary math (the Signal API exposes `rint` but not `round`).
+    pub fn CsigAbs(x: FaustSignal) -> FaustSignal;
+    pub fn CsigAcos(x: FaustSignal) -> FaustSignal;
+    pub fn CsigAsin(x: FaustSignal) -> FaustSignal;
+    pub fn CsigAtan(x: FaustSignal) -> FaustSignal;
+    pub fn CsigCos(x: FaustSignal) -> FaustSignal;
+    pub fn CsigSin(x: FaustSignal) -> FaustSignal;
+    pub fn CsigTan(x: FaustSignal) -> FaustSignal;
+    pub fn CsigExp(x: FaustSignal) -> FaustSignal;
+    pub fn CsigExp10(x: FaustSignal) -> FaustSignal;
+    pub fn CsigLog(x: FaustSignal) -> FaustSignal;
+    pub fn CsigLog10(x: FaustSignal) -> FaustSignal;
+    pub fn CsigSqrt(x: FaustSignal) -> FaustSignal;
+    pub fn CsigFloor(x: FaustSignal) -> FaustSignal;
+    pub fn CsigCeil(x: FaustSignal) -> FaustSignal;
+    pub fn CsigRint(x: FaustSignal) -> FaustSignal;
+
+    pub fn CsigSelect2(selector: FaustSignal, s1: FaustSignal, s2: FaustSignal) -> FaustSignal;
+    pub fn CsigSelect3(
+        selector: FaustSignal,
+        s1: FaustSignal,
+        s2: FaustSignal,
+        s3: FaustSignal,
+    ) -> FaustSignal;
+
+    // Tables: the Signal API primitives take their inputs directly (no
+    // `seq`/`par` wrapping). `CsigWaveform` wants a NULL-terminated array of
+    // `CsigInt`/`CsigReal` signals (its size is `CsigInt(values.len())`).
+    pub fn CsigReadOnlyTable(n: FaustSignal, init: FaustSignal, ridx: FaustSignal) -> FaustSignal;
+    pub fn CsigWriteReadTable(
+        n: FaustSignal,
+        init: FaustSignal,
+        widx: FaustSignal,
+        wsig: FaustSignal,
+        ridx: FaustSignal,
+    ) -> FaustSignal;
+    pub fn CsigWaveform(wf: *mut FaustSignal) -> FaustSignal;
+
+    // UI: init/min/max/step are `Signal`s (build them with `CsigReal`).
+    pub fn CsigButton(label: *const c_char) -> FaustSignal;
+    pub fn CsigCheckbox(label: *const c_char) -> FaustSignal;
+    pub fn CsigHSlider(
+        label: *const c_char,
+        init: FaustSignal,
+        min: FaustSignal,
+        max: FaustSignal,
+        step: FaustSignal,
+    ) -> FaustSignal;
+    pub fn CsigVSlider(
+        label: *const c_char,
+        init: FaustSignal,
+        min: FaustSignal,
+        max: FaustSignal,
+        step: FaustSignal,
+    ) -> FaustSignal;
+    pub fn CsigNumEntry(
+        label: *const c_char,
+        init: FaustSignal,
+        min: FaustSignal,
+        max: FaustSignal,
+        step: FaustSignal,
+    ) -> FaustSignal;
+    pub fn CsigHBargraph(
+        label: *const c_char,
+        min: FaustSignal,
+        max: FaustSignal,
+        s: FaustSignal,
+    ) -> FaustSignal;
+    pub fn CsigVBargraph(
+        label: *const c_char,
+        min: FaustSignal,
+        max: FaustSignal,
+        s: FaustSignal,
+    ) -> FaustSignal;
+
     // ---- LLVM JIT (llvm-dsp-c.h) ----
     /// Compiles Faust *source code* (no lib context needed). F1 uses this;
     /// F2 switches to JSON→Box construction + `createCDSPFactoryFromBoxes`.
@@ -236,6 +357,17 @@ unsafe extern "C" {
     pub fn createCDSPFactoryFromBoxes(
         name_app: *const c_char,
         box_: FaustBox,
+        argc: c_int,
+        argv: *const *const c_char,
+        target: *const c_char,
+        error_msg: *mut c_char,
+        opt_level: c_int,
+    ) -> *mut llvm_dsp_factory;
+    /// Signal API factory: `signals` is a NULL-terminated array of output
+    /// signals (the DSP's outputs).
+    pub fn createCDSPFactoryFromSignals(
+        name_app: *const c_char,
+        signals: *mut FaustSignal,
         argc: c_int,
         argv: *const *const c_char,
         target: *const c_char,

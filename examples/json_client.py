@@ -23,6 +23,10 @@ then run one or more demos (default: status):
 `feedback` plays a resonant comb built with LocalIn/LocalOut: the graph's
          one-block feedback delay makes a one-channel loop ring at
          sampleRate/64 (≈ 750 Hz at 48 kHz).
+`signal` builds Faust defs with the **Signal API** (`{"signals": […]}`): a
+         sine from an explicit `recursion`/`self` phasor, and a one-pole
+         lowpass on noise — explicit sample-accurate feedback (needs the
+         faust feature).
 """
 
 import json
@@ -343,6 +347,72 @@ def demo_bundle(client: Client):
     time.sleep(0.5 + len(notes) * 0.4 + 0.2)
 
 
+# ---- /d_faust: the Signal API (JSON signal tree) ----
+
+
+def sig(op: str, *inputs) -> dict:
+    return {"op": op, "in": list(inputs)}
+
+
+def sig_slider(label: str, init: float, lo: float, hi: float, step: float) -> dict:
+    return {"op": "hslider", "label": label,
+            "init": init, "min": lo, "max": hi, "step": step}
+
+
+def signal_sine_def() -> str:
+    """sin(2π·phasor(freq))·0.2 via the Signal API: the phasor is the explicit
+    recursion `phasor = wrap(self + freq/SR)` (no point-free wires here)."""
+    freq = sig_slider("freq", 330.0, 20.0, 20000.0, 0.01)
+    acc = sig("add", {"op": "self"}, sig("div", freq, 48000.0))
+    phasor = {"op": "recursion", "in": [sig("sub", acc, sig("floor", acc))]}
+    sine = sig("sin", sig("mul", 6.283185307179586, phasor))
+    return json.dumps({"signals": [sig("mul", sine, 0.2)]})
+
+
+def signal_lowpass_def() -> str:
+    """A one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0 — the
+    `self`/`recursion` feedback is one sample, sample-accurate (a UGen graph
+    cannot do this across nodes; see the `feedback` demo's one-block limit)."""
+    a = sig_slider("a", 0.9, 0.0, 0.999, 0.001)
+    x = {"op": "input", "index": 0}
+    body = sig("add", sig("mul", sig("sub", 1.0, a), x), sig("mul", a, {"op": "self"}))
+    return json.dumps({"signals": [{"op": "recursion", "in": [body]}]})
+
+
+def demo_signal(client: Client):
+    print("signal demo: /d_faust ssine (Signal API recursion/self sine)")
+    client.send("/d_faust", "ssine", signal_sine_def())
+    addr, _ = client.reply()
+    if addr == "/fail":
+        print("  (is the server running with --features faust?)")
+        return
+    print("  /s_new ssine 3010 (freq 330 -> 440)")
+    client.send("/s_new", "ssine", 3010, 1, 0)
+    time.sleep(1.2)
+    client.send("/n_set", 3010, "freq", 440.0)
+    time.sleep(1.0)
+    client.send("/n_free", 3010)
+
+    # Explicit-feedback filter: a UGen noise source on bus 4, a Signal-API
+    # one-pole reading it via its reserved `in` control.
+    print("  one-pole lowpass on noise (explicit feedback filter)")
+    noise = SynthDefBuilder("noise4")
+    noise.add("Out", 4, noise.add("Mul", noise.add("WhiteNoise"), 0.3))
+    client.send("/d_recv", noise.blob())
+    client.reply()
+    client.send("/d_faust", "siglp", signal_lowpass_def())
+    if client.reply()[0] == "/fail":
+        return
+    client.send("/s_new", "noise4", 3011, 1, 0)
+    client.send("/s_new", "siglp", 3012, 1, 0, "in", 4.0, "out", 0.0)
+    time.sleep(1.5)
+    print("  /n_set 3012 a 0.99 (tighter lowpass)")
+    client.send("/n_set", 3012, "a", 0.99)
+    time.sleep(1.5)
+    client.send("/n_free", 3011)
+    client.send("/n_free", 3012)
+
+
 def demo_feedback(client: Client):
     """A resonant comb from LocalIn/LocalOut feedback. The graph is a DAG, so
     the loop goes through a synth-private feedback bus with one control block
@@ -421,6 +491,8 @@ def main():
             demo_bundle(client)
         elif demo == "feedback":
             demo_feedback(client)
+        elif demo == "signal":
+            demo_signal(client)
         elif demo == "score":
             demo_score()
         elif demo == "quit":
@@ -428,7 +500,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, bundle, feedback, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, bundle, feedback, signal, score, quit)"
             )
 
 

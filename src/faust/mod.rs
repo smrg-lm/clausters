@@ -21,4 +21,6 @@ pub mod boxes;
 pub mod compiler;
 pub mod factory;
 pub mod ffi;
+pub mod json_util;
+pub mod signals;
 pub mod synth;

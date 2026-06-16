@@ -217,21 +217,17 @@ impl OscServer {
         }
     }
 
-    /// `/d_faust name def`: queue an async Faust compilation. The def is a
-    /// JSON box graph if it starts with `{` (F2, see `faust::boxes` for the
-    /// schema), raw Faust source otherwise (F1) — top-level Faust source can
-    /// never start with `{`, so the sniff is unambiguous.
+    /// `/d_faust name def`: queue an async Faust compilation. The def format
+    /// is sniffed by [`CompilePayload::classify`]: raw Faust source (F1), a
+    /// JSON box graph (F2, `faust::boxes`), or a JSON signal tree
+    /// (`faust::signals`, root `{"signals": …}`).
     #[cfg(feature = "faust")]
     fn handle_d_faust(&mut self, msg: &OscMessage, from: ClientId) {
         let (name, def) = match crate::osc::translate::parse_d_faust(&msg.args) {
             Ok(pair) => pair,
             Err(e) => return self.fail(from, "/d_faust", e),
         };
-        let payload = if def.trim_start().starts_with('{') {
-            CompilePayload::Json(def)
-        } else {
-            CompilePayload::Source(def)
-        };
+        let payload = CompilePayload::classify(def);
         let request = CompileRequest {
             name,
             payload,

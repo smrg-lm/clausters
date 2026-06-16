@@ -126,7 +126,7 @@ All except `/b_query` are **asynchronous**: the work happens on a dedicated NRT 
 
 ## Faust defs (`/d_faust`)
 
-`/d_faust name payload` — the payload is **Faust source** unless its first non-whitespace byte is `{`, in which case it is parsed as a **JSON box tree**. Either way it is JIT-compiled (LLVM) on a dedicated compiler thread; expect the `/done`/`/fail` reply a few milliseconds later.
+`/d_faust name payload` — the payload is **Faust source** unless its first non-whitespace byte is `{`, in which case it is JSON: a **box tree** (root `{"op": …}`, below) or a **signal tree** (root `{"signals": […]}`, see [JSON signal tree](#json-signal-tree-the-signal-api)). All three are JIT-compiled (LLVM) on a dedicated compiler thread; expect the `/done`/`/fail` reply a few milliseconds later.
 
 ### Controls
 
@@ -223,6 +223,47 @@ There is deliberately no `soundfile` op: sample data lives in the server's buffe
 
 Structural problems (unknown ops, missing fields, wrong arities in `"in"`) fail during interpretation and the `/fail` message carries the path of the offending JSON node from the root `$`, e.g. `at $.in[1].op: unknown op "mul3"`. Semantic errors — composition arity mismatches, dangling inputs — are reported by the Faust compiler verbatim, prefixed with the path of the fragment for `faust` ops.
 
+## JSON signal tree (the Signal API)
+
+A third `/d_faust` format maps Faust's lower-level **Signal API** (`Csig*`) instead of the box algebra. It is selected by the **shape of the JSON**: a root object keyed by `"signals"` (`{"signals": [ … ]}`) is a signal tree, anything else starting with `{` is a box tree, and a non-`{` payload is raw source. The `"signals"` array lists one node per DSP **output** (this is how a signal def declares more than one output).
+
+Where boxes compose point-free, signals are explicit: there is no implicit wire (`"_"`), inputs are addressed by index (`{"op": "input", "index": n}`), delays are explicit (`delay`/`delay1`), and **feedback** is explicit — `{"op": "recursion", "in": [body]}` with `{"op": "self"}` inside the body (the `CsigRecursion`/`CsigSelf` pair, one implicit sample of delay). That single recursive node is sample-accurate feedback fused into one DSP — the thing the UGen graph's block-rate `LocalIn`/`LocalOut` cannot do.
+
+| `op` | fields | Signal API |
+|---|---|---|
+| `int`, `real` | `value` | `CsigInt` / `CsigReal` (a bare number works too) |
+| `input` | `index` | `CsigInput` |
+| `delay` | `in`: signal, delay | `CsigDelay` |
+| `delay1` | `in`: 1 signal | `CsigDelay1` |
+| `recursion` | `in`: 1 body using `self` | `CsigRecursion` |
+| `self` | — | `CsigSelf` (only inside a `recursion` body) |
+| `add` `sub` `mul` `div` `rem` `fmod` `remainder` `pow` `min` `max` `atan2` `gt` `lt` `ge` `le` `eq` `ne` `and` `or` `xor` `lsh` `rsh` | `in`: exactly 2 signals | binary ops (bit ops/shifts need integer operands) |
+| `sin` `cos` `tan` `asin` `acos` `atan` `exp` `exp10` `log` `log10` `sqrt` `abs` `floor` `ceil` `rint` `intcast` `floatcast` | `in`: exactly 1 signal | unary functions |
+| `select2`, `select3` | `in`: selector, then 2 / 3 signals | `CsigSelect2` / `CsigSelect3` |
+| `hslider`, `vslider`, `nentry` | `label`, `init`, `min`, `max`, `step` | named control |
+| `button`, `checkbox` | `label` | named control (0/1) |
+| `hbargraph`, `vbargraph` | `label`, `min`, `max`, `in`: 1 signal | passive monitor (passes the signal through) |
+| `waveform` | `values`: non-empty array of numbers | `CsigWaveform` (size is `int(len)`) |
+| `rdtable` | `in`: size, init, ridx | `CsigReadOnlyTable` |
+| `rwtable` | `in`: size, init, widx, wsig, ridx | `CsigWriteReadTable` |
+
+Differences from the box schema: no `seq`/`par`/`split`/`merge`, `hgroup`/`vgroup`, the `"_"`/`"!"` shorthands or the `faust` source escape hatch (those are box/UI-tree concepts); `round` is absent upstream (`rint` rounds); N-ary mutual recursion (`selfN`/`recursionN`) is not exposed — like the box `~`, single recursion is the surface. Errors carry the node path the same way (`at $.signals[0].in[1]: …`).
+
+Example — a one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0, the explicit-feedback idiom:
+
+```json
+{"signals": [{"op": "recursion", "in": [
+  {"op": "add", "in": [
+    {"op": "mul", "in": [
+      {"op": "sub", "in": [1.0, {"op": "hslider", "label": "a",
+        "init": 0.9, "min": 0.0, "max": 0.999, "step": 0.001}]},
+      {"op": "input", "index": 0}]},
+    {"op": "mul", "in": [
+      {"op": "hslider", "label": "a",
+        "init": 0.9, "min": 0.0, "max": 0.999, "step": 0.001},
+      {"op": "self"}]}]}]}]}
+```
+
 ## Generating defs programmatically
 
-`examples/json_client.py` (Python, stdlib only) builds both formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the two def families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph and its Faust translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `SinOsc` accumulates phase in f64 and Faust in f32).
+`examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `SinOsc` accumulates phase in f64 and Faust in f32).

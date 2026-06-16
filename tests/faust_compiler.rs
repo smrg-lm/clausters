@@ -214,6 +214,23 @@ mod osc {
     }
 
     #[test]
+    fn d_faust_signal_payload_compiles() {
+        // A root keyed by "signals" routes to the Signal API interpreter
+        // (CompilePayload::classify), not the box one.
+        let server = TestServer::spawn();
+        server.send(
+            "/d_faust",
+            vec![
+                OscType::String("sconst".into()),
+                OscType::Blob(br#"{"signals": [{"op": "mul", "in": [0.5, 0.5]}]}"#.to_vec()),
+            ],
+        );
+        let done = server.recv_until("/done");
+        assert_eq!(done.args[1], OscType::String("sconst".into()));
+        server.quit();
+    }
+
+    #[test]
     fn d_faust_json_errors_carry_the_node_path() {
         let server = TestServer::spawn();
         server.send(

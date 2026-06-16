@@ -135,6 +135,53 @@ fn sine_box_json() -> String {
     .to_string()
 }
 
+/// The same `sin(2π·phasor)·0.2`, but via the **Signal API**: the phasor is
+/// `recursion(sub(add(self, freq/SR), floor(add(self, freq/SR))))` — explicit
+/// `self`/`recursion` feedback instead of the box `~`.
+fn sine_signal_json() -> String {
+    let freq = || {
+        json!({"op": "hslider", "label": "freq",
+               "init": 440.0, "min": 20.0, "max": 20000.0, "step": 0.01})
+    };
+    let acc = || json!({"op": "add", "in": [
+        {"op": "self"}, {"op": "div", "in": [freq(), f64::from(SR)]}]});
+    let recur = json!({"op": "recursion", "in": [
+        {"op": "sub", "in": [acc(), {"op": "floor", "in": [acc()]}]}]});
+    // The box `sine_box_json` delays its phasor by 1 to start at 0 (UGen
+    // alignment); match that so the two track sample for sample.
+    let phasor = json!({"op": "delay1", "in": [recur]});
+    json!({"signals": [{"op": "mul", "in": [
+        {"op": "sin", "in": [{"op": "mul", "in": [std::f64::consts::TAU, phasor]}]},
+        0.2]}]})
+    .to_string()
+}
+
+#[test]
+fn signal_and_box_sines_agree_within_float_tolerance() {
+    // Box sine on channel 0, the equivalent Signal-API sine on channel 1: same
+    // algorithm, same f32 precision, so they track each other tightly.
+    let bdef = compile_faust("bsine", CompilePayload::Json(sine_box_json()));
+    let sdef = compile_faust("ssine", CompilePayload::Signal(sine_signal_json()));
+    assert_eq!((sdef.num_inputs, sdef.num_outputs), (0, 1));
+
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(add_tail(1000, ROOT_NODE_ID, faust_synth(&bdef, &[("out", 0.0)])))
+        .ok()
+        .unwrap();
+    handle
+        .send(add_tail(1001, ROOT_NODE_ID, faust_synth(&sdef, &[("out", 1.0)])))
+        .ok()
+        .unwrap();
+
+    let (left, right) = render_stereo(&mut engine, 250);
+    assert!(rms(&left) > 0.1, "box sine must play");
+    assert!(rms(&right) > 0.1, "signal sine must play");
+    const TOL: f32 = 4e-3;
+    let diff = max_abs_diff(&left, &right);
+    assert!(diff < TOL, "max sample difference {diff} exceeds {TOL}");
+}
+
 #[test]
 fn sine_graphs_agree_within_float_tolerance() {
     // UGen sine on channel 0, the equivalent Faust box graph on channel 1,

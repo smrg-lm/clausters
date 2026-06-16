@@ -248,7 +248,7 @@ fn validation_errors_point_at_the_offending_node() {
             "at $.in[0].in[1]:",
         ),
         (json!({"op": "hslider", "init": 440.0}), "label"),
-        (json!({"op": "rec", "in": ["_"]}), "`rec` takes 2 boxes"),
+        (json!({"op": "rec", "in": ["_"]}), "`rec` takes 2 in \"in\""),
         (json!({"op": "seq"}), "`seq` needs an \"in\" array"),
         (json!([1, 2]), "at $: expected a box"),
         (json!({"op": "waveform"}), "`waveform` needs a \"values\""),
@@ -257,7 +257,7 @@ fn validation_errors_point_at_the_offending_node() {
             json!({"op": "waveform", "values": [1.0, "x"]}),
             "values[1] must be a number",
         ),
-        (json!({"op": "rdtable", "in": ["_"]}), "`rdtable` takes 2 to 3 boxes"),
+        (json!({"op": "rdtable", "in": ["_"]}), "`rdtable` takes 2 to 3 in \"in\""),
     ];
     let compiler = CompilerThread::spawn();
     for (graph, _) in &cases {

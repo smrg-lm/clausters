@@ -1292,6 +1292,54 @@ control o zona se ata a un bus con el mismo comando.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
 
+## Suelta: Faust **signal API** (`Csig*` / `createCDSPFactoryFromSignals`)
+
+- **Tercer formato de `/d_faust`**: además de fuente Faust (F1) y JSON box tree
+  (F2), un JSON con raíz `{"signals":[...]}` mapea la **signal API** de Faust
+  (la capa baja: entradas, delays y recursión **explícitos**). Discriminador
+  por forma del JSON en `CompilePayload::classify` (compartido por
+  `osc/server.rs` y `server/render.rs`): raíz `{"signals":...}` → signal,
+  `{"op":...}` → box, texto → source.
+- **Diseño**: la signal API solo diverge en el paso **def→factory**. `Signal`
+  es el mismo `CTree*` opaco que `FaustBox`; `createCDSPFactoryFromSignals`
+  tiene la misma forma que la de boxes (vector de salidas **null-terminated**).
+  Todo lo de abajo (`FaustDef::probe`, `FaustSynth`, controles, ciclo OSC) se
+  **reusa sin tocar**. Nuevos: `src/faust/signals.rs` (intérprete JSON→Signal,
+  espejo de `boxes.rs`), `src/faust/json_util.rs` (helpers de validación
+  `err`/`inputs`/`num_field`/`label_field` extraídos y compartidos con
+  `boxes.rs`), bindings `Csig*` + factory en `ffi.rs`, brazo `compile_signal`
+  en `compiler.rs`.
+- **Lo distintivo**: feedback **explícito y sample-accurate** —
+  `{"op":"recursion","in":[body]}` con `{"op":"self"}` adentro
+  (`CsigRecursion`/`CsigSelf`, un sample de delay). Es el `self()` que el box
+  `~` envuelve; fusiona el lazo en un nodo, lo que el `LocalIn`/`LocalOut` del
+  grafo (1 bloque) no puede. Entradas `input`, delays `delay`/`delay1`,
+  multi-output (un nodo por salida en `signals`).
+- **Cobertura**: paridad con el set de ops del box API + lo de señales. Quedó
+  fuera `lrsh` (logical right shift): Faust 2.81.10 crashea su propio
+  `sigtyperules.cpp` con ese opcode (`unrecognized opcode : 7`); `round` no
+  existe en la signal API upstream (`rint`); N-aria (`selfN`/`recursionN`) no
+  se expone, igual que la box solo tiene `~`.
+- **Docs/ejemplo**: `docs/schemas.md` (subsección "JSON signal tree" +
+  discriminador), `docs/examples.md`, `GUIA.md` (prueba manual + checklist),
+  `examples/json_client.py` (subcomando `signal`: seno recursion/self +
+  one-pole sobre ruido). Nota en el skill `faust-embedding`.
+
+### Verificación
+
+- **+8 tests** con faust: `tests/faust_signal.rs` (6: seno a 440 por
+  recursion/self, one-pole con respuesta a impulso geométrica al polo,
+  multi-output, def por la ruta de synth, kitchen-sink que toca cada op,
+  validaciones con ruta); `tests/faust_parity.rs` (+1: seno box vs signal
+  coinciden dentro de tolerancia); `tests/faust_compiler.rs` (+1: `/d_faust`
+  con `{"signals":[...]}` → `/done` sobre OSC). Suite faust y núcleo en verde;
+  clippy/rustdoc limpios. Refactor de `boxes.rs` para usar `json_util` sin
+  cambio de conducta (mensaje de aridad ahora neutral, sin "boxes").
+- E2E con audio real OK: `json_client.py signal` contra el servidor vivo
+  (`--features faust`) — ambos defs cargan (`/done`), el seno suena y el
+  one-pole sobre ruido filtra (cola de ruido con energía de alta frecuencia
+  ~0.02 del total, vs ~2 del ruido blanco). Capturado del nodo de salida.
+
 ## Suelta: feedback intra-synth `LocalIn`/`LocalOut` (retardo de 1 bloque)
 
 - **UGens `LocalIn`/`LocalOut`** (estilo scsynth): feedback **privado del
