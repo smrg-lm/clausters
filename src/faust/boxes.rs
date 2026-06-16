@@ -89,7 +89,8 @@ type BinaryFn = unsafe extern "C" fn(FaustBox, FaustBox) -> FaustBox;
 fn unary_op(op: &str) -> Option<UnaryFn> {
     Some(match op {
         "sin" => ffi::CboxSinAux,
-        "cos" => ffi::CboxCosAux,
+        // "cos" is special-cased in `build_op`: upstream bug (`boxCos()`
+        // returns the abs primitive), same as fmod.
         "tan" => ffi::CboxTanAux,
         "asin" => ffi::CboxAsinAux,
         "acos" => ffi::CboxAcosAux,
@@ -232,15 +233,23 @@ unsafe fn build_op(
             let boxes = unsafe { build_children(items, path, cstrings) }?;
             Ok(unsafe { ffi::CboxRec(boxes[0], boxes[1]) })
         }
-        // libfaust bug (2.81.10, still on master-dev): `boxFmod()` returns
-        // the `abs` primitive (`gGlobal->gAbsPrim->box()`), so `CboxFmodAux`
-        // builds `(a, b) : abs` and fails with an arity error. A one-line
-        // fragment yields the genuine 2-input fmod primitive instead.
+        // libfaust bug (2.81.10, still in 2.85.5): in `box_signal_api.cpp`,
+        // `boxFmod()` and `boxCos()` both return the `abs` primitive
+        // (`gGlobal->gAbsPrim->box()`), so `CboxFmodAux`/`CboxCosAux` silently
+        // compute `abs` (fmod also fails with an arity error). A one-line
+        // source fragment yields the genuine primitive instead. The Signal
+        // API (`sigCos`) is unaffected.
         "fmod" => {
             let items = inputs(obj, op, path, 2, 2)?;
             let boxes = unsafe { build_children(items, path, cstrings) }?;
             let prim = unsafe { dsp_to_boxes("process = fmod;", path) }?;
             Ok(unsafe { ffi::CboxSeq(ffi::CboxPar(boxes[0], boxes[1]), prim) })
+        }
+        "cos" => {
+            let items = inputs(obj, op, path, 1, 1)?;
+            let boxes = unsafe { build_children(items, path, cstrings) }?;
+            let prim = unsafe { dsp_to_boxes("process = cos;", path) }?;
+            Ok(unsafe { ffi::CboxSeq(boxes[0], prim) })
         }
         "select2" => {
             let items = inputs(obj, op, path, 3, 3)?;

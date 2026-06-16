@@ -1284,6 +1284,22 @@ control o zona se ata a un bus con el mismo comando.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
 
+## Suelta: fix del box `cos` (devolvía abs por bug upstream)
+
+- Encontrado al chequear si Faust 2.85.5 arreglaba los bugs conocidos (no:
+  `boxFmod` y `kLRsh` siguen rotos): en `box_signal_api.cpp`, `boxCos()`
+  devuelve `gGlobal->gAbsPrim->box()` (mismo copy-paste que `boxFmod`), en
+  2.81.10 y 2.85.5. O sea el op `cos` del **box API** calculaba **abs** en
+  silencio (verificado: box `cos(0.5)` daba 0.5, no 0.8776). La **signal API
+  está bien** (`sigCos` usa `gCosPrim`).
+- Fix en `src/faust/boxes.rs`: `cos` sale de `unary_op` y se rutea por un
+  fragmento `CDSPToBoxes("process = cos;")`, igual que `fmod`. Test de
+  regresión `tests/faust_json.rs::box_cos_computes_cosine_not_abs`
+  (cos(0.5)≈0.8776, no 0.5). El kitchen-sink no lo agarraba porque solo
+  chequea compila+finito.
+- Clone del fuente de Faust en `third_party/faust` (git-ignored) para trabajo
+  con upstream.
+
 ## Suelta: upgrade a rosc 0.11
 
 - `Cargo.toml`: `rosc = "0.10"` → `"0.11"`; la API no rompió ningún call site.

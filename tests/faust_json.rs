@@ -356,3 +356,15 @@ fn kitchen_sink_graph_exercises_every_op() {
     let graph = json!({"op": "par", "in": boxes});
     compile_json("sink", &graph).expect("kitchen sink must compile");
 }
+
+/// Regression: `boxCos()` is broken upstream (returns the `abs` primitive), so
+/// the `cos` op is built from a source fragment instead of `CboxCosAux`. A
+/// constant `cos(0.5)` must be cos(0.5) ≈ 0.8776, not abs(0.5) = 0.5.
+#[test]
+fn box_cos_computes_cosine_not_abs() {
+    let def = compile_json("bcos", &json!({"op": "cos", "in": [0.5]})).expect("compiles");
+    let out = render_mono(&def, 0.01);
+    let v = out[0];
+    assert!((v - 0.5_f32.cos()).abs() < 1e-4, "cos(0.5) = {v}, expected ≈ 0.8776");
+    assert!((v - 0.5).abs() > 0.1, "cos returned abs(0.5) = 0.5 (the upstream bug)");
+}
