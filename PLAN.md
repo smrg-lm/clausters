@@ -513,7 +513,7 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   polling 2 ms), múltiples clientes de ring, token de correlación, buffers
   por shm, JS/wasm.)*
 
-- **M15 — Documentación integral en inglés (README + libro mdBook + rustdoc)**:
+- ✅ **M15 — Documentación integral en inglés (README + libro mdBook + rustdoc)**:
   hoy la documentación en inglés está bien pero dispersa en `docs/`
   (`architecture.md` desarrollo; `schemas.md` referencia OSC/usuario;
   `auto-order.md`, `parallel.md`, `sample-clock.md`, `ipc.md` por feature) y
@@ -549,6 +549,14 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   Criterio de cierre: `mdbook build` y `cargo doc` limpios y sin links rotos;
   README y libro con un camino claro desde la portada para cada una de las tres
   audiencias.
+  *(Completado en una sesión anterior — el trabajo está en el commit `5424855`
+  "Documentation" (mensaje no convencional, anterior a este registro):
+  `README.md`, `book.toml` (`src = "docs"`), `docs/SUMMARY.md` y capítulos
+  nuevos `introduction.md`/`getting-started.md`/`using-as-a-library.md`/
+  `examples.md`/`contributing.md`, doc-comment de crate ampliado en
+  `src/lib.rs`, `book/` git-ignored. `mdbook build` (v0.5.3) y `cargo doc`
+  limpios. El cierre formal —este ✅ y la entrada de NOTAS.md— quedó pendiente
+  y se registra ahora.)*
 
 - ✅ **M16 — Persistencia de defs en disco + caché de bitcode**: hoy los defs
   (`/d_recv` y `/d_faust`) son volátiles, viven solo en memoria; un cliente que

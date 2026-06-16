@@ -733,6 +733,7 @@ nada.
 | Persistencia de defs en disco + caché de bitcode (M16) | `tests/persistence.rs` | `--data-dir`, dos sesiones de arriba |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
+| Documentación integral: README + libro mdBook + rustdoc (M15) | `mdbook build` y `cargo doc` limpios | leer `README.md` y el libro |
 
 Con esto el plan original (M0–M7), la bifurcación F (F0–F5) y M8–M14
 (salvo M11) están completos; de los «Milestones futuros» de PLAN.md queda

@@ -1469,6 +1469,36 @@ control o zona se ata a un bus con el mismo comando.
   samples, jitter 0.000 ms (captura directa del nodo `alsa_playback.clausters`,
   que comparte el reloj de PipeWire del servidor).
 
+## M15 — Documentación integral en inglés (README + libro mdBook + rustdoc)
+
+Registro de cierre tardío: el trabajo se hizo en una sesión anterior y quedó
+en el commit **`5424855` "Documentation"** (mensaje no convencional, por eso no
+era fácil de encontrar), pero nunca se marcó el milestone como cerrado en
+PLAN.md ni se anotó acá. El código/doc ya estaba en la historia de `main`; esta
+entrada y el ✅ de PLAN.md son el cierre formal.
+
+### Qué entró (en `5424855`)
+
+- **`README.md`** en la raíz: overview, quickstart (build → server → comando
+  OSC; y un render NRT), matriz de features (`realtime`/`faust`/`embed`), links
+  al libro y al rustdoc, licencia GPL-3.0.
+- **Libro mdBook**: `book.toml` con `src = "docs"` (reusa los `docs/*.md` en su
+  lugar, cero churn en las referencias entrantes), `docs/SUMMARY.md` como
+  índice, capítulos nuevos `introduction.md`, `getting-started.md`,
+  `using-as-a-library.md`, `examples.md`, `contributing.md`. Los existentes
+  (`architecture.md`, `schemas.md`, los de feature) se reusan tal cual. El HTML
+  generado (`book/`) está git-ignored.
+- **rustdoc**: doc-comment de crate ampliado en `src/lib.rs` (split engine/red,
+  feature flags, entry points), enlazado con el libro.
+- Los archivos en español (`PLAN.md`, `NOTAS.md`, `GUIA.md`) se mantienen en
+  español y en su lugar.
+
+### Verificación
+
+- `mdbook build` (v0.5.3) y `cargo doc` limpios, sin links rotos.
+- Diferido explícito (fuera del primer pase): CI de `mdbook build` + deploy a
+  GitHub Pages y `mdbook test`.
+
 ## M16 — Persistencia de defs en disco + caché de bitcode
 
 Los defs cargados (`/d_recv` y `/d_faust`) ahora se pueden guardar en un
