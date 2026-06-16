@@ -21,6 +21,12 @@ impl Impulse {
     }
 }
 
+impl Default for Impulse {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UGen for Impulse {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let freq = inputs[0];

@@ -29,6 +29,12 @@ impl WhiteNoise {
     }
 }
 
+impl Default for WhiteNoise {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UGen for WhiteNoise {
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         for s in output.iter_mut() {

@@ -15,6 +15,12 @@ impl SinOsc {
     }
 }
 
+impl Default for SinOsc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UGen for SinOsc {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let freq = inputs[0];
