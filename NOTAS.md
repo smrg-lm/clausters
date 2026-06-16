@@ -1284,6 +1284,27 @@ control o zona se ata a un bus con el mismo comando.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
 
+## Suelta: upgrade de libfaust a 2.85.5
+
+- **2.85.5 es el último release** (2.81.10 → 2.83.1 → 2.85.5; los tags
+  `v2-5-x` son viejos). Con los workarounds de `fmod` y `cos` ya en el árbol
+  y `lrsh` sin exponer, subir es seguro.
+- **Build** (receta de F0, reproducible): checkout del tag `2.85.5` en
+  `third_party/faust`, `make most` + reconfigurar `build/faustdir` con
+  `-DINCLUDE_DYNAMIC=ON -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20
+  -DCMAKE_INSTALL_PREFIX=$HOME/.local`, `make -j` y `make install`. Produjo
+  `libfaust.so.2.85.5` (10.7 MB, dinámica contra libLLVM 20). El install
+  anterior (2.81.10) quedó respaldado en `~/.local/faust-backup-2.81.10`.
+- **FFI sin cambios**: las firmas C que usamos (`createCDSPFactoryFromBoxes/
+  Signals`, `Csig*`/`Cbox*`, `compute`, `UIGlue`) son idénticas en 2.85.5;
+  binding a mano sigue válido. Solo se actualizaron menciones de versión
+  (`src/faust/ffi.rs`, receta en `GUIA.md`).
+- **Verificación**: toda la suite faust en verde contra 2.85.5 (incluye los
+  tests de regresión de `cos` y los kitchen-sinks que tocan cada op);
+  `ldd` confirma que los binarios cargan `libfaust.so.2 → 2.85.5`. Los bugs
+  que persisten en 2.85.5 (`boxFmod`, `boxCos`, `kLRsh`) quedan cubiertos por
+  los workarounds / la no-exposición.
+
 ## Suelta: fix del box `cos` (devolvía abs por bug upstream)
 
 - Encontrado al chequear si Faust 2.85.5 arreglaba los bugs conocidos (no:

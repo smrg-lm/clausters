@@ -1,5 +1,5 @@
 //! Raw FFI over the libfaust C API. Hand-written against the headers of the
-//! libfaust build we link (faust 2.81.10):
+//! libfaust build we link (faust 2.85.5):
 //!
 //! - `faust/dsp/libfaust-signal-c.h` — lib context + Signal API (`Csig*`).
 //! - `faust/dsp/libfaust-box-c.h` — Box API (`Cbox*`).
@@ -131,8 +131,9 @@ unsafe extern "C" {
     pub fn CboxMulAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     pub fn CboxDivAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     // `CboxFmodAux` is deliberately not bound: broken upstream (faust
-    // 2.81.10 through master-dev), `boxFmod()` returns the `abs` primitive.
-    // `boxes` builds fmod through a `CDSPToBoxes` fragment instead.
+    // 2.81.10 through 2.85.5), `boxFmod()` returns the `abs` primitive.
+    // `boxes` builds fmod through a `CDSPToBoxes` fragment instead (same for
+    // `cos`, whose `CboxCosAux` is the other broken one).
     pub fn CboxPowAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     pub fn CboxMinAux(b1: FaustBox, b2: FaustBox) -> FaustBox;
     pub fn CboxMaxAux(b1: FaustBox, b2: FaustBox) -> FaustBox;

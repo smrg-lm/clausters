@@ -509,7 +509,7 @@ fuente una vez (~10 min, sin sudo, se instala en `~/.local`):
 # probado con LLVM 20. Ajustar el «20» en lo que sigue si es otra.)
 sudo apt install cmake llvm-20-dev libzstd-dev zlib1g-dev
 
-git clone --depth 1 -b 2.81.10 https://github.com/grame-cncm/faust
+git clone --depth 1 -b 2.85.5 https://github.com/grame-cncm/faust
 cd faust
 make most CMAKEOPT="-DCMAKE_BUILD_TYPE=Release -DINCLUDE_DYNAMIC=ON \
     -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20"
