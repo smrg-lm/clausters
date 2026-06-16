@@ -18,6 +18,7 @@
 //! dedicated compiler thread serializes it naturally.
 
 pub mod boxes;
+pub mod cache;
 pub mod compiler;
 pub mod factory;
 pub mod ffi;

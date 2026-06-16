@@ -550,6 +550,29 @@ por qué. Direcciones menores que no llegan a milestone (más UGens —
   README y libro con un camino claro desde la portada para cada una de las tres
   audiencias.
 
+- ✅ **M16 — Persistencia de defs en disco + caché de bitcode**: hoy los defs
+  (`/d_recv` y `/d_faust`) son volátiles, viven solo en memoria; un cliente que
+  arma una biblioteca (incluso importando piezas de faustlib como faustdefs)
+  tiene que reenviarla cada sesión. Guardar los defs en un directorio de datos y
+  recargarlos al arrancar, en dos capas: **B** — la definición original (JSON
+  del `SynthDefSpec` para UGens, source/JSON del def Faust) como fuente de verdad
+  transparente, que se recompila al recargar; **A** — para Faust, una caché del
+  bitcode LLVM (`writeCDSPFactoryToBitcodeFile`) **no autoritativa**, keyed por
+  versión de libfaust + sha del payload, que salta el front-end de Faust en el
+  arranque y hace fallback a recompilar ante cualquier miss/corrupción/upgrade.
+  Dos subdirs `synthdefs/` y `faustdefs/`; dir resuelto por
+  `--data-dir`/`$CLAUSTERS_DATA_DIR`/XDG, `--no-persist` para apagarlo, solo en
+  el server RT (NRT no persiste). Recarga incremental en el hilo compilador para
+  no bloquear el arranque con bibliotecas grandes. El `FaustDef` en sí no se
+  serializa (factory JIT opaca): se persiste la definición, no el artefacto.
+  *(Completado 2026-06-16 — ver NOTAS.md. FFI de bitcode + `getCLibFaustVersion`;
+  módulos `faust::cache` y `server::defstore`; `CacheJob`/`client: Option` en el
+  hilo compilador; wiring en `osc::server` + flags en `main`; dep `sha2`.
+  `tests/persistence.rs` (3 core + 6 faust): round-trip de bitcode
+  sample-idéntico, recarga end-to-end entre dos servidores, version mismatch,
+  fallback ante corrupción, borrado por `/d_free`. Docs en `schemas.md`,
+  `architecture.md`, `examples.md`, `GUIA.md` y `examples/persistence.sh`.)*
+
 ### Ideas revisadas: qué se descartó y por qué
 
 - **Denormales** (de la idea de memoria/eficiencia): ya implementado post-M7

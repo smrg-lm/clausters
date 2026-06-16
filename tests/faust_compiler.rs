@@ -30,7 +30,8 @@ fn compiler_thread_compiles_and_reports_back() {
         .submit(CompileRequest {
             name: "sine".into(),
             payload: CompilePayload::Source(SINE_SRC.into()),
-            client: dummy_client(),
+            client: Some(dummy_client()),
+            cache: None,
         })
         .ok()
         .unwrap();
@@ -49,7 +50,8 @@ fn compiler_thread_reports_readable_errors() {
         .submit(CompileRequest {
             name: "broken".into(),
             payload: CompilePayload::Source("process = nonsense(;".into()),
-            client: dummy_client(),
+            client: Some(dummy_client()),
+            cache: None,
         })
         .ok()
         .unwrap();
@@ -69,7 +71,8 @@ fn requests_are_serialized_in_order() {
             .submit(CompileRequest {
                 name: name.into(),
                 payload: CompilePayload::Source(SINE_SRC.into()),
-                client: dummy_client(),
+                client: Some(dummy_client()),
+                cache: None,
             })
             .ok()
             .unwrap();

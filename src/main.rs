@@ -2,7 +2,8 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>]     real-time server (OSC on UDP 57110)
+  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist]
+                                               real-time server (OSC on UDP 57110)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
@@ -10,6 +11,9 @@ usage:
       --workers <n>        DSP threads for /g_parallel groups (default 0)
       --shm <path>         shared-memory segment for local clients (RT only;
                            put it on /dev/shm — see docs/ipc.md)
+      --data-dir <dir>     where defs are persisted/reloaded (RT only;
+                           default $CLAUSTERS_DATA_DIR or the XDG data dir)
+      --no-persist         disable def persistence for this run (RT only)
 
 A score is the scsynth binary format: length-prefixed OSC bundles whose
 timetags count seconds from the start; the render ends at the last bundle.";
@@ -86,10 +90,13 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
 
+    use clausters::server::defstore::{DefStore, resolve_data_dir};
     use clausters::server::ipc::{IpcPeer, Role, Segment};
 
     let mut workers = 0usize;
     let mut shm_path: Option<String> = None;
+    let mut data_dir: Option<String> = None;
+    let mut no_persist = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -101,6 +108,11 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let value = it.next().ok_or(format!("--shm needs a path\n{USAGE}"))?;
                 shm_path = Some(value.clone());
             }
+            "--data-dir" => {
+                let value = it.next().ok_or(format!("--data-dir needs a path\n{USAGE}"))?;
+                data_dir = Some(value.clone());
+            }
+            "--no-persist" => no_persist = true,
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
@@ -115,6 +127,17 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         actual_sample_rate: backend.sample_rate as f64,
     };
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
+    if !no_persist
+        && let Some(dir) = resolve_data_dir(data_dir.as_deref())
+    {
+        match DefStore::open(&dir) {
+            Ok(store) => {
+                osc.attach_store(store);
+                println!("persisting defs in {}", dir.display());
+            }
+            Err(e) => eprintln!("def persistence disabled: cannot open {}: {e}", dir.display()),
+        }
+    }
     if let Some(segment) = segment {
         osc.attach_ipc(IpcPeer::new(segment, Role::Server))?;
         println!(

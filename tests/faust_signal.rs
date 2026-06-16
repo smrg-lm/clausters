@@ -31,7 +31,8 @@ fn compile(name: &str, payload: CompilePayload) -> Result<FaustDef, String> {
         .submit(CompileRequest {
             name: name.into(),
             payload,
-            client: dummy_client(),
+            client: Some(dummy_client()),
+            cache: None,
         })
         .ok()
         .unwrap();

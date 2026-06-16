@@ -1469,6 +1469,70 @@ control o zona se ata a un bus con el mismo comando.
   samples, jitter 0.000 ms (captura directa del nodo `alsa_playback.clausters`,
   que comparte el reloj de PipeWire del servidor).
 
+## M16 — Persistencia de defs en disco + caché de bitcode
+
+Los defs cargados (`/d_recv` y `/d_faust`) ahora se pueden guardar en un
+directorio de datos y recargar solos al arrancar el servidor, para no tener
+que reenviar la biblioteca cada sesión (pensado para importar bibliotecas
+grandes estilo faustlib como faustdefs).
+
+### Diseño (capas B + A, decidido con el usuario)
+
+- **B — definición en JSON, fuente de verdad transparente** (ambas tablas).
+  `synthdefs/<name>.json` = el `SynthDefSpec` verbatim; `faustdefs/<name>.json`
+  = un `FaustRecord` (source/JSON original + versión de libfaust + sha256 del
+  payload). Recargar = recompilar desde ahí, por el mismo camino que un
+  `/d_recv`/`/d_faust` nuevo. El `FaustDef` en sí no se serializa (su factory
+  es estado JIT opaco de LLVM).
+- **A — caché de bitcode, no autoritativa** (solo Faust).
+  `faustdefs/<name>.<sha16>.bc` es el bitcode LLVM; al recargar,
+  `cache::try_restore` re-crea la factory desde el `.bc` (salta el front-end de
+  Faust) solo si la versión de libfaust coincide y el archivo lee bien.
+  Cualquier miss → recompila desde el source y reescribe la caché. Un upgrade
+  de libfaust invalida todos los `.bc` automáticamente; una caché corrupta
+  nunca sirve un def equivocado. El `.bc` se nombra por el sha del payload, así
+  un `.bc` viejo de un overwrite interrumpido nunca se aparea con un record más
+  nuevo.
+- **Arranque por partes**: las recargas se encolan en el hilo compilador con
+  `client = None` (sin respuesta) y se drenan en `collect_faust_results`, así el
+  socket atiende desde el arranque y una biblioteca grande carga incremental.
+- **Dir de datos**: `--data-dir` > `$CLAUSTERS_DATA_DIR` >
+  `$XDG_DATA_HOME/clausters` > `~/.local/share/clausters`. Activo por defecto en
+  el server RT; `--no-persist` lo apaga; NRT nunca persiste. Escrituras
+  atómicas (temp + rename). Nombres saneados (percent-encoding).
+
+### Implementación
+
+- FFI nuevo en `src/faust/ffi.rs`: `writeCDSPFactoryToBitcodeFile`,
+  `readCDSPFactoryFromBitcodeFile`, `getCLibFaustVersion` (C-API de
+  `llvm-dsp-c.h`). El bitcode es IR target-independiente: se re-JITea al host al
+  leer (`target=""`), así un `.bc` es portable entre máquinas de la misma
+  libfaust.
+- `src/faust/cache.rs` (nuevo, faust-gated): bitcode read/write +
+  `FaustRecord`/`FaustKind` + `persist`/`try_restore`/`load_records`/`remove`.
+- `src/server/defstore.rs` (nuevo, sin gate): resolución del dir, layout,
+  saneado, IO atómico, persistencia de synthdefs. La parte Faust del wiring está
+  gated.
+- `src/faust/compiler.rs`: `CacheJob` (boxeado en `CompileRequest`),
+  `client: Option<ClientId>`, `run_request` (intenta caché y si no, compila +
+  persiste). `src/osc/server.rs`: `store: Option<DefStore>`, `attach_store`
+  (recarga al iniciar), persistencia en `/d_recv`/`/d_faust`, borrado en
+  `/d_free`. `src/main.rs`: flags `--data-dir`/`--no-persist`. `d_recv` ahora
+  devuelve el nombre del def. Dep nueva: `sha2` (pura Rust).
+
+### Verificación
+
+- **`tests/persistence.rs`** (3 core + 6 faust): saneado, round-trip de
+  synthdef en disco, `resolve_data_dir`; round-trip de bitcode **sample-idéntico**
+  (compile → write → read → render byte a byte igual), persist/restore por
+  record, rechazo por version mismatch, fallback ante `.bc` corrupto, recarga
+  end-to-end entre dos instancias de `OscServer` sobre un mismo dir, y borrado
+  de archivos por `/d_free`.
+- Suite core y `--features faust` en verde; clippy limpio (incluido tests).
+- Docs: `docs/schemas.md` (formato en disco + flags), `docs/architecture.md`
+  (lifecycle), `docs/examples.md`, `GUIA.md` (dos sesiones + fila de checklist),
+  `examples/persistence.sh`.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

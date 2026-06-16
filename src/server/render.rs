@@ -329,7 +329,7 @@ impl Renderer {
 
     fn message_cmds(&mut self, msg: &OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         match msg.addr.as_str() {
-            "/d_recv" => self.translator.d_recv(&msg.args),
+            "/d_recv" => self.translator.d_recv(&msg.args).map(|_| ()),
             "/d_free" => self.translator.d_free(&msg.args),
             "/d_faust" => self.d_faust(&msg.args),
             "/b_alloc" | "/b_allocRead" | "/b_read" | "/b_write" | "/b_zero" | "/b_free" => {

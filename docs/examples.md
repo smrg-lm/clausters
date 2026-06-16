@@ -23,6 +23,12 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 
 The OSC encoding/decoding in these scripts is hand-rolled (stdlib only); they double as a compact reference for the wire format.
 
+## Shell
+
+| script | what it shows |
+|---|---|
+| `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs the `faust` feature and `oscsend`. |
+
 ## Python binding (`clients/python/clausters.py`)
 
 The reusable client library (standard library + `ctypes`): a shared-memory client and the embed façade with a synchronous `request()` call. See [Local transports & embedding](ipc.md) for the API.

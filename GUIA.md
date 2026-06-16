@@ -667,6 +667,40 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 `PlayBuf`/`BufRd` → bus de audio → control reservado `in` del synth Faust
 (ver `docs/schemas.md`, «Tables and waveforms»).
 
+### Probar la persistencia de defs entre sesiones
+
+El servidor guarda los defs cargados (`/d_recv` y `/d_faust`) en un directorio
+de datos y los recarga solo al arrancar, así un cliente no tiene que reenviar
+su biblioteca cada sesión. Está activo por defecto; se controla con
+`--data-dir <dir>` y `--no-persist` (o `$CLAUSTERS_DATA_DIR`). Las dos sesiones
+van en la **misma** invocación de Bash (el primer servidor termina con `/quit`
+antes de arrancar el segundo):
+
+```sh
+D=/tmp/clausters-defs; rm -rf "$D"
+cargo build --release --features faust
+# Sesión 1: definir un Faust def y un SynthDef de UGen, luego salir.
+( ./target/release/clausters --data-dir "$D" & PID=$!; sleep 1.0; \
+  oscsend localhost 57110 /d_faust ss psine \
+    'process = sin(6.283185307179586 * ((+(440.0/48000.0) : _-floor(_)) ~ _)) * 0.2;'; \
+  sleep 0.5; oscsend localhost 57110 /quit; wait $PID )
+
+ls "$D/faustdefs"        # psine.json + psine.<sha>.bc
+cat "$D/faustdefs/psine.json"   # el source original + versión de libfaust + sha
+
+# Sesión 2: NO se reenvía el def; arranca, se instancia y suena.
+( ./target/release/clausters --data-dir "$D" & PID=$!; sleep 1.0; \
+  oscsend localhost 57110 /s_new siii psine 3001 1 0; sleep 1; \
+  oscsend localhost 57110 /n_free i 3001; \
+  oscsend localhost 57110 /quit; wait $PID )
+```
+
+Debe oírse el seno a 440 Hz en la **segunda** sesión sin haber reenviado
+`psine`. Borrar el `.bc` o cambiar de versión de libfaust no rompe nada:
+recompila desde el `.json` (la caché de bitcode es no autoritativa). `/d_free
+psine` borra ambos archivos. Con `--no-persist` no se escribe ni se recarga
+nada.
+
 ## 4. Checklist de funcionalidades
 
 | Funcionalidad | Automático | A mano |
@@ -696,6 +730,7 @@ buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
+| Persistencia de defs en disco + caché de bitcode (M16) | `tests/persistence.rs` | `--data-dir`, dos sesiones de arriba |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 

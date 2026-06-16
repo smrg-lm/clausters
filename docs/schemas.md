@@ -264,6 +264,29 @@ Example — a one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0, the
       {"op": "self"}]}]}]}]}
 ```
 
+## Persisting defs across restarts
+
+The real-time server can persist loaded defs to a data directory and reload them automatically on the next start, so a client need not re-send its instrument library every session. It is **on by default**; control it with two flags:
+
+```text
+clausters --data-dir <dir>   # where defs are stored/reloaded
+clausters --no-persist       # disable for this run
+```
+
+With no `--data-dir`, the directory is `$CLAUSTERS_DATA_DIR` if set, else `$XDG_DATA_HOME/clausters`, else `~/.local/share/clausters`. Persistence applies to the real-time server only; offline `--nrt` renders never read or write it.
+
+Two subdirectories hold the two def kinds:
+
+| path | written on | content |
+|---|---|---|
+| `<dir>/synthdefs/<name>.json` | `/d_recv` | the `SynthDefSpec` JSON, verbatim |
+| `<dir>/faustdefs/<name>.json` | `/d_faust` | a record: the original Faust source/JSON, the libfaust version, and the payload's SHA-256 |
+| `<dir>/faustdefs/<name>.<sha>.bc` | `/d_faust` | the compiled LLVM **bitcode** (a speed cache) |
+
+The stored **definition** (the JSON) is always the source of truth: it is transparent, human-readable, and what gets recompiled. The Faust `.bc` is a non-authoritative cache — on reload the server re-creates the factory from bitcode (skipping Faust's front-end) only when the libfaust version still matches and the file is intact; otherwise it silently recompiles from the source and rewrites the cache. A libfaust upgrade therefore invalidates every `.bc` automatically. `/d_free <name>` deletes both files. Re-sending a name overwrites them.
+
+Reloading is **incremental**: the socket starts serving immediately and the library loads in the background on the compiler thread, so a large Faust library does not delay startup — a def simply "does not exist yet" until its reload finishes.
+
 ## Generating defs programmatically
 
 `examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `SinOsc` accumulates phase in f64 and Faust in f32).

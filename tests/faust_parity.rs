@@ -34,7 +34,8 @@ fn compile_faust(name: &str, payload: CompilePayload) -> Arc<FaustDef> {
         .submit(CompileRequest {
             name: name.into(),
             payload,
-            client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
+            client: Some(clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())),
+            cache: None,
         })
         .ok()
         .unwrap();

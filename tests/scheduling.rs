@@ -318,7 +318,8 @@ fn faust_synths_survive_block_splits() {
         .submit(CompileRequest {
             name: "fdc".into(),
             payload: CompilePayload::Source("process = 0.8;".into()),
-            client: clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap()),
+            client: Some(clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())),
+            cache: None,
         })
         .ok()
         .unwrap();

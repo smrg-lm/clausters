@@ -377,6 +377,26 @@ unsafe extern "C" {
     ) -> *mut llvm_dsp_factory;
     pub fn deleteCDSPFactory(factory: *mut llvm_dsp_factory) -> bool;
 
+    /// libfaust version string (static storage, never freed). Keys the
+    /// bitcode cache: a different libfaust/LLVM may emit incompatible IR.
+    pub fn getCLibFaustVersion() -> *const c_char;
+    /// Writes the factory's LLVM bitcode to `bit_code_path`; `false` on
+    /// failure. The IR is target-independent (re-JIT'd to the host on read),
+    /// so a cached `.bc` is portable across machines of the same libfaust.
+    pub fn writeCDSPFactoryToBitcodeFile(
+        factory: *mut llvm_dsp_factory,
+        bit_code_path: *const c_char,
+    ) -> bool;
+    /// Re-creates a factory from a bitcode file (`target` `""` = host).
+    /// Returns null on failure (e.g. incompatible/corrupt bitcode), filling
+    /// `error_msg`; callers fall back to a fresh compile.
+    pub fn readCDSPFactoryFromBitcodeFile(
+        bit_code_path: *const c_char,
+        target: *const c_char,
+        error_msg: *mut c_char,
+        opt_level: c_int,
+    ) -> *mut llvm_dsp_factory;
+
     pub fn createCDSPInstance(factory: *mut llvm_dsp_factory) -> *mut llvm_dsp;
     pub fn deleteCDSPInstance(dsp: *mut llvm_dsp);
     pub fn initCDSPInstance(dsp: *mut llvm_dsp, sample_rate: c_int);

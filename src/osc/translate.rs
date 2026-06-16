@@ -241,8 +241,9 @@ impl CmdTranslator {
         Ok(())
     }
 
-    /// `/d_recv`: compile a SynthDef JSON blob into the def table.
-    pub fn d_recv(&mut self, args: &[OscType]) -> Result<(), String> {
+    /// `/d_recv`: compile a SynthDef JSON blob into the def table. Returns the
+    /// def name, so the caller can persist the spec under it.
+    pub fn d_recv(&mut self, args: &[OscType]) -> Result<String, String> {
         let bytes: &[u8] = match args.first() {
             Some(OscType::Blob(b)) => b,
             Some(OscType::String(s)) => s.as_bytes(),
@@ -251,8 +252,9 @@ impl CmdTranslator {
         let spec: SynthDefSpec =
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
         let def = compile(spec)?;
-        self.defs.insert(def.name.clone(), Arc::new(def));
-        Ok(())
+        let name = def.name.clone();
+        self.defs.insert(name.clone(), Arc::new(def));
+        Ok(name)
     }
 
     /// `/d_free name...`. Live synths keep their `Arc<SynthDef>`: scsynth

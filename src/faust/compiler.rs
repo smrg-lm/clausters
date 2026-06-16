@@ -8,12 +8,14 @@
 //! `/done`/`/fail` reply to the requesting client.
 
 use std::ffi::{CStr, CString, c_char, c_int};
+use std::path::PathBuf;
 use crate::osc::ClientId;
 use std::sync::{Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
 use crate::faust::boxes;
+use crate::faust::cache::{self, FaustRecord};
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
 use crate::faust::signals;
@@ -55,16 +57,31 @@ impl CompilePayload {
     }
 }
 
+/// Disk-cache work attached to a compile request (see
+/// [`crate::server::defstore`]). Present only when persistence is enabled.
+pub struct CacheJob {
+    /// `<data>/faustdefs`, where the record and bitcode live.
+    pub dir: PathBuf,
+    /// On a startup reload, the record to restore: the thread tries its
+    /// bitcode first and recompiles only on a miss. `None` for a live
+    /// `/d_faust`, which always compiles fresh and then (re)writes the cache.
+    pub restore: Option<FaustRecord>,
+}
+
 pub struct CompileRequest {
     pub name: String,
     pub payload: CompilePayload,
-    /// Who asked: the async reply goes back to this client.
-    pub client: ClientId,
+    /// Who asked: the async reply goes back to this client. `None` for an
+    /// internal startup reload, which has no requester to answer.
+    pub client: Option<ClientId>,
+    /// Bitcode cache read/write, when persistence is on. Boxed so a bounced
+    /// [`CompilerThread::submit`] error stays small.
+    pub cache: Option<Box<CacheJob>>,
 }
 
 pub struct CompileResult {
     pub name: String,
-    pub client: ClientId,
+    pub client: Option<ClientId>,
     /// The compiled def (factory + probed parameters), or a human-readable
     /// compiler error destined for the `/fail` reply verbatim.
     pub outcome: Result<FaustDef, String>,
@@ -85,7 +102,7 @@ impl CompilerThread {
             .name("faust-compiler".into())
             .spawn(move || {
                 while let Ok(req) = req_rx.recv() {
-                    let outcome = compile(&req.name, &req.payload);
+                    let outcome = run_request(&req);
                     let result = CompileResult {
                         name: req.name,
                         client: req.client,
@@ -247,6 +264,26 @@ pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String>
         CompilePayload::Signal(json) => compile_signal(name, json),
     }?;
     FaustDef::probe(factory)
+}
+
+/// Runs one request: on a startup reload, tries the bitcode cache first
+/// (skipping the Faust front-end); otherwise — and on any cache miss —
+/// compiles from source. When persistence is on, a fresh compile (re)writes
+/// the cache. The cache is non-authoritative: a miss is silent and always
+/// recoverable.
+fn run_request(req: &CompileRequest) -> Result<FaustDef, String> {
+    if let Some(job) = &req.cache
+        && let Some(record) = &job.restore
+        && let Ok(factory) = cache::try_restore(record, &job.dir)
+        && let Ok(def) = FaustDef::probe(factory)
+    {
+        return Ok(def);
+    }
+    let def = compile(&req.name, &req.payload)?;
+    if let Some(job) = &req.cache {
+        cache::persist(def.factory(), &req.name, &req.payload, &job.dir);
+    }
+    Ok(def)
 }
 
 fn compile_source(name: &str, source: &str) -> Result<FaustFactory, String> {

@@ -28,10 +28,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 
 #[cfg(feature = "faust")]
-use crate::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
+use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
 use crate::dsp::buffer::{BufferPool, empty_pool};
 use crate::osc::ClientId;
 use crate::osc::translate::{CmdTranslator, float_value, int_arg, parse_buffer_msg};
+use crate::server::defstore::DefStore;
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
 use crate::server::nrt::{NrtAction, NrtRequest, NrtThread};
 
@@ -74,6 +75,10 @@ pub struct OscServer {
     recv_buf: Vec<u8>,
     /// M14: the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
+    /// On-disk def persistence, when a data directory is configured. Defs
+    /// loaded from it on startup; `/d_recv`/`/d_faust` write to it,
+    /// `/d_free` deletes from it.
+    store: Option<DefStore>,
     /// The compiler thread is owned here and dies with the server.
     #[cfg(feature = "faust")]
     faust_compiler: CompilerThread,
@@ -99,10 +104,41 @@ impl OscServer {
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
             ipc: None,
+            store: None,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(),
         })
+    }
+
+    /// Enables on-disk persistence and reloads whatever defs the store
+    /// already holds. SynthDefs are recompiled inline (cheap); Faust defs are
+    /// queued on the compiler thread, restoring from the bitcode cache when
+    /// possible, so the socket starts serving immediately and the library
+    /// loads incrementally.
+    pub fn attach_store(&mut self, store: DefStore) {
+        for spec in store.load_synthdef_specs() {
+            if let Err(e) = self.translator.d_recv(&[OscType::Blob(spec)]) {
+                eprintln!("persisted SynthDef failed to load: {e}");
+            }
+        }
+        #[cfg(feature = "faust")]
+        for record in crate::faust::cache::load_records(store.faustdefs_dir()) {
+            let request = CompileRequest {
+                name: record.name.clone(),
+                payload: record.to_payload(),
+                client: None,
+                cache: Some(Box::new(CacheJob {
+                    dir: store.faustdefs_dir().to_path_buf(),
+                    restore: Some(record),
+                })),
+            };
+            if self.faust_compiler.submit(request).is_err() {
+                eprintln!("compiler thread down: cannot reload persisted Faust defs");
+                break;
+            }
+        }
+        self.store = Some(store);
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -202,16 +238,22 @@ impl OscServer {
                     self.translator
                         .faust_defs
                         .insert(result.name.clone(), Arc::new(def));
-                    self.reply(
-                        result.client,
-                        "/done",
-                        vec![
-                            OscType::String("/d_faust".into()),
-                            OscType::String(result.name),
-                        ],
-                    );
+                    // No client on a startup reload: nothing to answer.
+                    if let Some(client) = result.client {
+                        self.reply(
+                            client,
+                            "/done",
+                            vec![
+                                OscType::String("/d_faust".into()),
+                                OscType::String(result.name),
+                            ],
+                        );
+                    }
                 }
-                Err(error) => self.fail(result.client, "/d_faust", error),
+                Err(error) => match result.client {
+                    Some(client) => self.fail(client, "/d_faust", error),
+                    None => eprintln!("persisted Faust def '{}' failed: {error}", result.name),
+                },
             }
         }
     }
@@ -227,10 +269,19 @@ impl OscServer {
             Err(e) => return self.fail(from, "/d_faust", e),
         };
         let payload = CompilePayload::classify(def);
+        // A live /d_faust always compiles fresh from the given def and, with
+        // persistence on, (re)writes the cache (restore = None).
+        let cache = self.store.as_ref().map(|s| {
+            Box::new(CacheJob {
+                dir: s.faustdefs_dir().to_path_buf(),
+                restore: None,
+            })
+        });
         let request = CompileRequest {
             name,
             payload,
-            client: from,
+            client: Some(from),
+            cache,
         };
         if self.faust_compiler.submit(request).is_err() {
             self.fail(from, "/d_faust", "compiler thread is down");
@@ -500,14 +551,31 @@ impl OscServer {
 
     fn handle_d_recv(&mut self, msg: &OscMessage, from: ClientId) {
         match self.translator.d_recv(&msg.args) {
-            Ok(()) => self.reply(from, "/done", vec![OscType::String("/d_recv".into())]),
+            Ok(name) => {
+                if let Some(store) = &self.store
+                    && let Some(spec) = synthdef_spec_bytes(&msg.args)
+                    && let Err(e) = store.save_synthdef(&name, spec)
+                {
+                    eprintln!("could not persist SynthDef '{name}': {e}");
+                }
+                self.reply(from, "/done", vec![OscType::String("/d_recv".into())]);
+            }
             Err(e) => self.fail(from, "/d_recv", e),
         }
     }
 
     fn handle_d_free(&mut self, msg: &OscMessage, from: ClientId) {
         if let Err(e) = self.translator.d_free(&msg.args) {
-            self.fail(from, "/d_free", e);
+            return self.fail(from, "/d_free", e);
+        }
+        if let Some(store) = &self.store {
+            for arg in &msg.args {
+                if let OscType::String(name) = arg {
+                    store.remove_synthdef(name);
+                    #[cfg(feature = "faust")]
+                    crate::faust::cache::remove(store.faustdefs_dir(), name);
+                }
+            }
         }
     }
 
@@ -731,6 +799,17 @@ impl OscServer {
                 }
             }
         }
+    }
+}
+
+/// The raw `SynthDefSpec` JSON of a `/d_recv` message (blob or string form),
+/// for persisting it verbatim. Mirrors the argument parsing in
+/// [`CmdTranslator::d_recv`].
+fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
+    match args.first() {
+        Some(OscType::Blob(b)) => Some(b),
+        Some(OscType::String(s)) => Some(s.as_bytes()),
+        _ => None,
     }
 }
 

@@ -31,7 +31,8 @@ fn compile(name: &str, payload: CompilePayload) -> Result<FaustDef, String> {
         .submit(CompileRequest {
             name: name.into(),
             payload,
-            client: dummy_client(),
+            client: Some(dummy_client()),
+            cache: None,
         })
         .ok()
         .unwrap();
@@ -265,7 +266,8 @@ fn validation_errors_point_at_the_offending_node() {
             .submit(CompileRequest {
                 name: "bad".into(),
                 payload: CompilePayload::Json(graph.to_string()),
-                client: dummy_client(),
+                client: Some(dummy_client()),
+                cache: None,
             })
             .ok()
             .unwrap();
