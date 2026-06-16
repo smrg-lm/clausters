@@ -23,7 +23,7 @@ embed = []
 [dependencies]
 cpal = { version = "0.15", optional = true }
 hound = "3"
-rosc = "0.10"
+rosc = "0.11"
 rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

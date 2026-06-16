@@ -72,8 +72,7 @@ impl Score {
             if len <= 0 || !(len as usize).is_multiple_of(4) || pos + len as usize > bytes.len() {
                 return Err(format!("packet {n}: bad length {len}"));
             }
-            // decode_packet carries the rosc 0.10 blob workaround, including
-            // for blobs inside bundle elements (see `crate::osc`).
+            // The single decode entry point for every transport (`crate::osc`).
             let packet = crate::osc::decode_packet(&bytes[pos..pos + len as usize])
                 .map_err(|e| format!("packet {n}: {e}"))?;
             pos += len as usize;

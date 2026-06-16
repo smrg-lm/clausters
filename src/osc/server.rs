@@ -145,8 +145,7 @@ impl OscServer {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => continue,
                 Err(e) => return Err(e),
             };
-            // decode_packet carries the rosc 0.10 blob workaround, including
-            // for blobs inside bundle elements (see `crate::osc`).
+            // The single decode entry point for every transport (`crate::osc`).
             let packet = match crate::osc::decode_packet(&self.recv_buf[..len]) {
                 Ok(packet) => packet,
                 Err(e) => {

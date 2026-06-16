@@ -40,16 +40,12 @@ silently lost. Always run server and client in the **same** Bash invocation
  ./target/debug/examples/osc_ping status vibrato quit; kill $PID 2>/dev/null)
 ```
 
-## Known bug: rosc 0.10.1 blob decoding
+## OSC decoding
 
-rosc's decoder over-reads the padding of blobs whose length is a multiple of 4
-and returns `Eof` on valid packets; inside a **bundle** the failing element is
-silently dropped instead (the content is parsed from its own size-prefixed
-slice). Workaround: `osc::decode_packet` splits bundles into elements by hand
-(recursively) and decodes only leaf messages with rosc, appending 4 zero bytes
-first (harmless for well-formed packets — they remain as unparsed remainder).
-Always decode through it; do not go back to `decoder::decode_udp` without
-verifying rosc has fixed both behaviors upstream.
+All incoming OSC bytes — UDP datagrams and IPC ring contents alike — decode
+through `osc::decode_packet`, the single entry point (a thin wrapper over
+rosc's `decoder::decode_udp`). Keep that one door so decoding and any future
+hardening stay in one place.
 
 ## Optional `faust` feature
 

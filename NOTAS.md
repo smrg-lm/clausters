@@ -225,14 +225,6 @@ cliente en `/fail`.
   `rand`). El resto del catálogo (filtros, EnvGen, PolyBLEP) queda para M4+.
 - `/d_recv` acepta el JSON como Blob o String OSC.
 
-### Bug encontrado: rosc 0.10.1 y blobs múltiplo de 4
-
-El decoder de rosc sobre-lee el padding de blobs cuya longitud es múltiplo de 4 y
-devuelve `Eof` en paquetes válidos (afectaría a clientes reales, no solo a los
-tests). Workaround en `OscServer::run`: anexar 4 bytes cero al datagrama antes de
-decodificar — inofensivo para paquetes bien formados (quedan como remainder sin
-parsear). Considerar reportarlo upstream.
-
 ### Verificación
 
 - `cargo test`: 31 tests pasan — 12 de synthdef (roundtrip JSON, validación de
@@ -1291,6 +1283,15 @@ control o zona se ata a un bus con el mismo comando.
   rustdoc limpios; goldens intactos.
 - E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
   vibrato por `/n_mapa` sin `/fail`.
+
+## Suelta: upgrade a rosc 0.11
+
+- `Cargo.toml`: `rosc = "0.10"` → `"0.11"`; la API no rompió ningún call site.
+- `src/osc/mod.rs::decode_packet` quedó como **wrapper fino** sobre
+  `decoder::decode_udp`, el único punto de decodificación de todos los
+  transportes. Test `osc::tests::multiple_of_four_blob_round_trips` (round-trip
+  de blob de largo múltiplo de 4, top-level y dentro de bundle). Suite núcleo +
+  faust en verde; clippy limpio.
 
 ## Suelta: Faust **signal API** (`Csig*` / `createCDSPFactoryFromSignals`)
 

@@ -36,9 +36,9 @@ Some CI/sandbox environments isolate the network **between** shell invocations: 
  ./target/debug/examples/osc_ping status quit; kill $PID 2>/dev/null)
 ```
 
-## Known bug: rosc 0.10.1 blob decoding
+## OSC decoding
 
-rosc's decoder over-reads the padding of blobs whose length is a multiple of 4 and can drop a valid bundle element. The workaround is `osc::decode_packet`, which splits bundles by hand and decodes only leaf messages. Always decode through it; don't go back to `decoder::decode_udp` without verifying rosc has fixed both behaviors upstream.
+All incoming OSC bytes decode through `osc::decode_packet`, the single entry point (every transport funnels through it). It is a thin wrapper over `rosc::decoder::decode_udp` — keep that one door so decoding and any future hardening stay in one place.
 
 ## Conventions
 

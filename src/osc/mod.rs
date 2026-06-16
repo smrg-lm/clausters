@@ -7,7 +7,7 @@ pub mod translate;
 
 use std::net::SocketAddr;
 
-use rosc::{OscBundle, OscPacket, OscTime, decoder};
+use rosc::{OscPacket, decoder};
 
 /// Where a request came from and where its replies go (M14): the OSC
 /// *encoding* is transport-independent, so client identity is too. `Udp` is
@@ -28,44 +28,42 @@ impl std::fmt::Display for ClientId {
     }
 }
 
-/// Decodes one OSC packet, working around the rosc 0.10 blob bug (see
-/// CLAUDE.md): the decoder over-reads the padding of blobs whose length is a
-/// multiple of 4 and fails on valid packets. For a top-level message, four
-/// appended zero bytes fix it (harmless: they stay as unparsed remainder) —
-/// but a bundle *element* is parsed from its own size-prefixed slice that
-/// outer padding cannot reach, and rosc silently returns the bundle with the
-/// content decoded so far. So bundles are split into elements here,
-/// recursively, and only leaf messages go through rosc.
+/// Decodes one OSC packet through rosc — the single decode entry point every
+/// transport funnels through (UDP datagrams and IPC ring contents alike), so
+/// decoding and any future hardening live in one place.
 pub fn decode_packet(bytes: &[u8]) -> Result<OscPacket, String> {
-    const BUNDLE_TAG: &[u8] = b"#bundle\0";
-    if bytes.starts_with(BUNDLE_TAG) {
-        if bytes.len() < 16 {
-            return Err("truncated bundle header".into());
-        }
-        let timetag = OscTime {
-            seconds: u32::from_be_bytes(bytes[8..12].try_into().unwrap()),
-            fractional: u32::from_be_bytes(bytes[12..16].try_into().unwrap()),
+    let (_, packet) = decoder::decode_udp(bytes).map_err(|e| e.to_string())?;
+    Ok(packet)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rosc::{OscBundle, OscMessage, OscTime, OscType, encoder};
+
+    /// A blob whose length is a multiple of 4 round-trips — at the top level
+    /// and as an element inside a bundle.
+    #[test]
+    fn multiple_of_four_blob_round_trips() {
+        let blob = || OscType::Blob(vec![1, 2, 3, 4]);
+        let msg = OscPacket::Message(OscMessage {
+            addr: "/b".into(),
+            args: vec![blob()],
+        });
+        let bytes = encoder::encode(&msg).unwrap();
+        let OscPacket::Message(m) = decode_packet(&bytes).unwrap() else {
+            panic!("expected a message");
         };
-        let mut content = Vec::new();
-        let mut pos = 16;
-        while pos < bytes.len() {
-            if bytes.len() - pos < 4 {
-                return Err("truncated bundle element size".into());
-            }
-            let size = u32::from_be_bytes(bytes[pos..pos + 4].try_into().unwrap()) as usize;
-            pos += 4;
-            if size == 0 || pos + size > bytes.len() {
-                return Err(format!("bad bundle element size {size}"));
-            }
-            content.push(decode_packet(&bytes[pos..pos + size])?);
-            pos += size;
-        }
-        Ok(OscPacket::Bundle(OscBundle { timetag, content }))
-    } else {
-        let mut padded = Vec::with_capacity(bytes.len() + 4);
-        padded.extend_from_slice(bytes);
-        padded.extend_from_slice(&[0; 4]);
-        let (_, packet) = decoder::decode_udp(&padded).map_err(|e| e.to_string())?;
-        Ok(packet)
+        assert_eq!(m.args, vec![blob()]);
+
+        let bundle = OscPacket::Bundle(OscBundle {
+            timetag: OscTime { seconds: 0, fractional: 1 },
+            content: vec![msg],
+        });
+        let bytes = encoder::encode(&bundle).unwrap();
+        let OscPacket::Bundle(b) = decode_packet(&bytes).unwrap() else {
+            panic!("expected a bundle");
+        };
+        assert_eq!(b.content.len(), 1, "the blob element must not be dropped");
     }
 }
