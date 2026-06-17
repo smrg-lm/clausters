@@ -194,17 +194,57 @@ PY
 Con altavoces deberías oír un tono que cambia de 330 a 440 Hz antes de
 liberarse. (Sin placa de audio, el server igual responde por OSC pero no suena.)
 
-## 5. Suite de tests
+## 5. Secuenciación: patterns y eventos (C5)
+
+Un `Pbind` toca una secuencia de notas; corre **NRT** (score → `render()`) o
+**RT** (en vivo) solo cambiando la interfaz de la `Server`. El tiempo es exacto
+por `yield`: con `dur=0.5` los `/s_new` caen en `0, 0.5, 1.0, 1.5` exactos.
+
+```sh
+PYTHONPATH=. python3 - <<'PY'
+from clausters.base import TempoClock, OscNrtInterface
+from clausters.defs import Server
+from clausters.seq import Pbind, Pseq
+server = Server(interface=OscNrtInterface()); clock = TempoClock(tempo=1.0)
+Pbind(instrument="default", freq=Pseq([262.,330.,392.,523.]), dur=0.5, amp=0.2).play(clock, server)
+clock.render()                                          # drena la cola (NRT)
+import struct
+from clausters.base import _osclib as osc
+def inner(raw): n=struct.unpack(">i",raw[16:20])[0]; return osc.decode(raw[20:20+n])[0]
+starts = sorted(w for w,raw in server.interface.score.bundles if inner(raw)=="/s_new")
+print("starts (exactos):", starts)                      # [0.0, 0.5, 1.0, 1.5]
+samples, frames = server.render(sample_rate=48000.0, channels=2)
+print(f"render: {frames} frames, peak {max(abs(s) for s in samples):.3f}")
+PY
+```
+
+En vivo (mismo `Pbind`, servidor UDP), regla E2E (misma invocación Bash):
+
+```sh
+(./target/debug/clausters & SRV=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python3 -c "
+from clausters.base import TempoClock
+from clausters.defs import Server
+from clausters.seq import Pbind, Pseq
+srv=Server(latency=0.1); clock=TempoClock(tempo=4.0)
+Pbind(instrument='default', freq=Pseq([262.,330.,392.,523.]), dur=1.0, amp=0.2).play(clock, srv)
+clock.run(1.3); print('synths:', srv.status()[1:4]); srv.close()
+"; kill $SRV 2>/dev/null)
+```
+
+## 6. Suite de tests
 
 ```sh
 cd clients/python
-python -m pytest                  # tests/test_smoke.py, test_base.py, test_defs.py
+python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq
 ```
 
-Si no tenés `pytest`, cada archivo de test corre también como script
-skip-aware: `python tests/test_defs.py`.
+`pytest` es la dependencia de dev (PEP 735 `[dependency-groups] dev`): a nivel
+sistema `sudo apt install python3-pytest`, o `pip install --group dev`. Los
+tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
+`CLAUSTERS_FFI_LIB`/`CLAUSTERS_LIB` o construilos con `cargo build`).
 
-## 6. Checklist por milestone
+## 7. Checklist por milestone
 
 | Milestone | Qué probar | Cómo |
 |---|---|---|
@@ -212,3 +252,5 @@ skip-aware: `python tests/test_defs.py`.
 | C1 | `_native` (builtins/rng/clock) + `render()` | sección 2 |
 | C2 | builtins f32, rutinas, reloj, costura RT/NRT | sección 3 |
 | C3 | `signals` + `FaustDef` + allocators + slice E2E | sección 4 (NRT y vivo) |
+| C4 | reloj solo timing; `Server` posee comunicación y emite | secciones 3–5 |
+| C5 | patterns/eventos; `Pbind` NRT/vivo; timing exacto | sección 5 |

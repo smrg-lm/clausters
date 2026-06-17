@@ -40,11 +40,15 @@ def _flatten_controls(controls) -> list:
 
 
 class Server:
-    def __init__(self, host: str = "127.0.0.1", port: int = 57110, interface=None):
+    def __init__(self, host: str = "127.0.0.1", port: int = 57110, interface=None,
+                 latency: float = 0.0):
         self.target = NetAddr(host, port)
         #: the communication interface (RT/UDP, NRT/score, …). The Server owns
         #: it; swapping it is the RT/NRT seam.
         self.interface = interface if interface is not None else OscUDPInterface().start()
+        #: seconds added to RT timetags so they land in the (near) future,
+        #: sample-accurate, instead of "as soon as possible" (scsynth latency).
+        self.latency = latency
         self.nodes = NodeIDAllocator()
         self.audio_buses = AudioBusAllocator()
         self.control_buses = ControlBusAllocator()
@@ -57,32 +61,33 @@ class Server:
         self.interface.send_msg(self.target.addr(), addr, *args)
 
     def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None):
-        """Emit a timetagged bundle of ``(addr, *args)`` messages at the current
-        beat (+ optional lookahead). Call it from a routine playing on a clock
-        (the clock is found via ``main.current_tt``) or pass ``clock=``. The
-        interface decides destination and wire time (wall clock for RT,
-        seconds-from-start for NRT)."""
-        clock = clock if clock is not None else self._clock()
-        beat = clock.beats() + delay_beats
-        self.interface.send_bundle(self.target.addr(), self._when(clock, beat), *messages)
-
-    @staticmethod
-    def _clock():
+        """Emit a timetagged bundle of ``(addr, *args)`` messages at the running
+        routine's **exact logical beat** (+ optional lookahead). Call it from a
+        routine playing on a clock (found via ``main.current_tt``) or pass
+        ``clock=``. The timetag comes from the yield-accumulated beat, not from
+        wall-clock now, so inter-event timing is exact; the interface decides
+        the wire time (wall clock for RT, seconds-from-start for NRT)."""
         tt = main.current_tt
-        clock = getattr(tt, "clock", None)
         if clock is None:
-            raise RuntimeError(
-                "send_bundle needs a clock: call it from a routine playing on a "
-                "TempoClock, or pass clock=..."
-            )
-        return clock
+            clock = getattr(tt, "clock", None)
+            if clock is None:
+                raise RuntimeError(
+                    "send_bundle needs a clock: call it from a routine playing "
+                    "on a TempoClock, or pass clock=..."
+                )
+        base = getattr(tt, "_logical_beat", None)
+        if base is None:
+            base = clock.beats()
+        self.interface.send_bundle(
+            self.target.addr(), self._when(clock, base + delay_beats), *messages
+        )
 
     def _when(self, clock, beat: float) -> float:
         secs = clock.beats2secs(beat)
         if getattr(self.interface, "time_mode", "unix") == "score":
             return secs  # seconds from render start
         base = clock.start_time if clock.start_time is not None else time.time()
-        return base + secs  # absolute wall clock
+        return base + secs + self.latency  # absolute wall clock (+ latency)
 
     def request(self, addr, *args, timeout: float = 5.0, expect=None):
         """Sends a message and returns the first matching reply ``(addr, args)``

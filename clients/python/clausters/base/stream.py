@@ -49,6 +49,7 @@ class FunctionStream(Stream):
         self.func = func
         self.reset_func = reset_func
         self.clock = None
+        self._logical_beat = 0.0
 
     def next(self, inval=None):
         try:
@@ -77,6 +78,9 @@ class Routine(Stream):
         #: the clock currently driving this routine (set by the clock on wake),
         #: so a Server can read the logical time. None when not playing.
         self.clock = None
+        #: the exact logical beat at which the clock last resumed this routine
+        #: (yield-accumulated, not wall-clock); the Server emits timetags from it.
+        self._logical_beat = 0.0
 
     @classmethod
     def run(cls, func):

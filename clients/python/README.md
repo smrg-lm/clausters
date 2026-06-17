@@ -5,7 +5,7 @@ ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
 see [`../PLAN.md`](../PLAN.md).
 
-Milestones C0–C4 are done. In place now:
+Milestones C0–C5 are done. In place now:
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -24,7 +24,11 @@ Milestones C0–C4 are done. In place now:
   allocators, and `Server`. The **`Server` owns the communication interface and
   emits** (C4): swap its interface to retarget a routine from live RT to an NRT
   score without touching clock or routine. SynthDef-based definitions come later.
-- `clausters.seq` — placeholder for sequencing (C5).
+- `clausters.seq` (C5) — sequencing: `Event` (a note plays a synth and frees it
+  after its sustain), the value patterns (`Pseq`, `Pwhite`, `Pseries`, …) and
+  `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live
+  or builds an NRT score by which interface the `Server` holds — with
+  **yield-exact** timing (monotonic pacing, wall-clock timetags).
 
 See [`clausters/GUIA.md`](clausters/GUIA.md) for a hands-on, milestone-by-
 milestone manual test guide (Spanish).

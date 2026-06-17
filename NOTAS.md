@@ -1788,6 +1788,45 @@ Clausters). Se movió, **sin reescribir lo que ya funcionaba** (ver memoria
   cambiar de transporte = agregar una interfaz de comunicación a la `Server`,
   sin tocar reloj/seq. `GUIA.md` actualizada.
 
+## C5 — Capa de secuenciación (seq) (track cliente)
+
+Port de `sc3/seq`. Un `Pbind` corre RT o NRT solo cambiando la interfaz de la
+`Server` (la costura), con timing **exacto por `yield`**.
+
+- **`seq/event.py`**: `Event` (dict con defaults de nota). `play(server)`
+  asigna id de nodo, emite `/s_new` en el beat lógico actual y agenda la
+  liberación a `sustain = dur*legato*stretch` (por defecto `/n_free`; con
+  `has_gate` manda `gate 0`). `delta = dur*stretch`. Pitch desde `freq`/
+  `midinote`/`degree`+escala. Adaptado a Clausters (sin doneAction todavía).
+- **`seq/pattern.py`**: `Pattern` base + value patterns (`Pseq`, `Pser`,
+  `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) y `Pbind`
+  (combina patterns por clave → stream de `Event`; corta cuando un stream
+  finito se agota). Implementados como generators Python; sub-patterns se
+  embeben en sitio.
+- **`seq/eventstream.py`**: `EventStreamPlayer` = una `Routine` que por cada
+  evento lo toca contra el `Server` (emitiendo en el beat lógico) y `yield`ea
+  su `delta`. `Pbind(...).play(clock, server)` lo arma.
+- **Timing exacto (refinamiento del núcleo, ver memoria
+  `tempoclock-timebase-clausters`)**: el reloj setea `routine._logical_beat` al
+  reanudar; `Server.send_bundle` emite desde ese beat lógico (acumulado por
+  `yield`), no desde el "ahora". Pacing con `time.monotonic()` (fuente
+  `timebase` enchufable); el timetag OSC usa un reloj **wall/Unix** separado
+  (`start_time`), válido para el servidor. `Server.latency` para lookahead RT.
+- **Pendiente (follow-up)**: timebase alternativo = sample-clock del servidor
+  (seleccionable; el hook `timebase` ya lo permite) + tests robustos con ambas
+  opciones; golden de paridad de score más completo.
+
+### Verificación
+
+- `clients/python/tests/test_seq.py` (con **pytest**, ya dependencia de dev):
+  value patterns, `Event` (defaults/pitch/delta/sustain), `Pbind`, el **test de
+  exactitud** (`/s_new` en `[0, 0.5, 1.0, 1.5]` exactos en el score NRT) y el
+  render del seam (`Pbind` de `default` → score → audio). Suite completa:
+  **32 passed**.
+- **E2E en vivo** (server+cliente misma invocación Bash): `Pbind` por UDP con
+  `latency`, reloj RT en un thread; los synths se liberan solos al terminar
+  (`status` = 0 synths). Pacing monotónico, timetags wall.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

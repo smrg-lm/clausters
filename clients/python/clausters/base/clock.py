@@ -9,7 +9,9 @@ resuming a routine (the ``yield`` driver) stays in Python.
 One clock, two drives:
 
 - :meth:`run` / :meth:`start` — real time: a background thread sleeps between
-  events and resumes routines on the wall clock.
+  events using a **monotonic** pacing clock; the logical beat still advances
+  only by the routines' ``yield``s, so inter-event timing is exact and the OSC
+  timetags (stamped from a separate wall clock) carry that exactness.
 - :meth:`render` — non-real time: drain the queue in beat order with no
   sleeping, advancing a logical clock; used to build a score.
 
@@ -32,18 +34,24 @@ from .stream import Stream, StopStream
 
 
 class TempoClock:
-    def __init__(self, tempo: float = 1.0):
+    def __init__(self, tempo: float = 1.0, timebase=None):
         #: beats per second
         self.tempo = tempo
         self._base_beats = 0.0
         self._base_secs = 0.0
 
+        #: monotonic pacing source — *only* used to decide how long to sleep
+        #: between events (never to stamp them). Swappable: a future alternative
+        #: timebase (the server's sample clock) plugs in here.
+        self._now = timebase if timebase is not None else time.monotonic
+
         self._queue = []              # heap of (beat, seq, item)
         self._seq = itertools.count()
         self._cond = threading.Condition()
         self._mode = "stopped"        # 'rt' | 'nrt' | 'stopped'
-        self._logical_beat = 0.0      # current beat while driving
-        self._start_time = None       # wall-clock origin (RT)
+        self._logical_beat = 0.0      # current beat while driving (yield-exact)
+        self._mono_start = None       # pacing origin (monotonic)
+        self._unix_start = None       # wall-clock origin for OSC timetags
         self._running = False
         self._thread = None
 
@@ -56,17 +64,20 @@ class TempoClock:
         return _native.secs_to_beats(self.tempo, self._base_beats, self._base_secs, secs)
 
     def beats(self) -> float:
-        """The current beat: logical while rendering, wall-clock-derived in RT."""
-        if self._mode == "nrt" or self._start_time is None:
+        """The clock's current beat: the yield-driven logical beat while
+        rendering or being woken, else the monotonic-paced elapsed beat in RT
+        (used for scheduling relative to "now")."""
+        if self._mode == "nrt" or self._mono_start is None:
             return self._logical_beat
-        return self.secs2beats(time.time() - self._start_time)
+        return self.secs2beats(self._now() - self._mono_start)
 
     @property
     def start_time(self):
         """Wall-clock origin (Unix seconds) while running in real time, else
         ``None``. The Server uses it to turn a logical beat into a wall-clock
-        timetag."""
-        return self._start_time
+        OSC timetag — the **wall** clock, kept separate from the monotonic
+        pacing source so timetags stay valid Unix time."""
+        return self._unix_start
 
     def set_tempo(self, tempo: float):
         """Change tempo, pinning the current instant (no discontinuity)."""
@@ -109,7 +120,8 @@ class TempoClock:
         prev = main.current_tt
         main.current_tt = item
         if isinstance(item, Stream):
-            item.clock = self  # the running thread carries its clock (sc3)
+            item.clock = self          # the running thread carries its clock (sc3)
+            item._logical_beat = beat  # ...and its exact logical time (yield-driven)
         try:
             if isinstance(item, Stream):
                 try:
@@ -153,7 +165,8 @@ class TempoClock:
             return self
         self._mode = "rt"
         self._running = True
-        self._start_time = time.time()
+        self._mono_start = self._now()   # pacing origin (monotonic)
+        self._unix_start = time.time()   # wall-clock origin (for timetags)
         self._thread = threading.Thread(target=self._run_rt, name="TempoClock", daemon=True)
         self._thread.start()
         return self
@@ -183,7 +196,7 @@ class TempoClock:
                     self._cond.wait(timeout=0.05)
                     continue
                 beat, _, item = self._queue[0]
-                wait = self.beats2secs(beat) - (time.time() - self._start_time)
+                wait = self.beats2secs(beat) - (self._now() - self._mono_start)
                 if wait > 0.0:
                     self._cond.wait(timeout=wait)
                     continue
