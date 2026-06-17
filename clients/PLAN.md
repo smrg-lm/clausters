@@ -78,14 +78,35 @@ clients/python/
 - `defs/signals.py`: **la interfaz de usuario para construir FaustDefs**. Provee una librería de **callables en minúscula** (funciones u objetos invocables) que mapean, en principio, la **Signal API de Faust** (`sin`, `cos`, `add`, `mul`, `delay`, `select2`, `hslider`, `rdtable`, …). La **composición** de estos callables es lo que arma el grafo: una especificación que se serializa a **JSON signal tree** ahora (y a **box tree** más adelante) para enviar con `/d_faust` (ver `crates/clausters/src/faust/`). Convención de diseño firme: **nombres en minúscula incluso para objetos que actúan como funciones** — es una cualidad que facilita el trabajo de programación en Python (composición fluida estilo expresión). El **mismo patrón se reutiliza para las UGens** (`ugens.py`, constructores del grafo SynthDef en JSON).
 - `defs/faustdef.py`: **centro del cliente**. Toma el grafo construido con `signals.py` (o Faust source directo) y produce la def para `/d_faust` en sus tres formas (source, JSON box tree, JSON signal tree); maneja controles (labels UI → nombres de control; reservados `out`/`in`). Persistencia/cache en disco la maneja el servidor (M16, bitcode cache). `synthdef.py` (después) hace lo análogo para el grafo de UGens.
 - `defs/{node,bus,buffer,server}.py`: allocators client-side de IDs (estilo scsynth: nodos, buses audio 0..127 / control 0..1023, buffers 0..1023), manejo de `/done`/`/fail`, `/notify` → `/n_go`/`/n_end`. NRT: score → `render()` del transport.
+- **A portar más adelante desde `sc3/synth`** (recordar): `synthdef.py` + `ugen.py` (representación cliente de las SynthDef de UGens), `synthdesc.py` + `spec.py` (specs de control; en Clausters solo existe `InCtl` como UGen de control), `_graphparam.py` (adapta tipos Python a los tipos que reciben los nodos; revisable, no tiene por qué ser igual, diferible).
+
+### Separación de responsabilidades: cliente agnóstico vs representación del servidor
+
+Hay **dos grupos de abstracciones** que deben quedar bien separados (ver memoria `separacion-cliente-servidor-clausters`):
+
+1. **Agnóstico al servidor** (no sabe de transporte ni de la app servidor): el **timing** (`base/clock.TempoClock`), la **secuenciación** (`base/stream`, `seq`) y la **generación del grafo JSON** (`defs/signals`, `defs/faustdef`, `base/absobject`, `base/builtins`).
+2. **Representación + configuración del servidor Clausters**: la clase **`Server`** (`defs/server`) = el servidor corriendo; los **handles+allocators de recursos** (`defs/node`, `defs/bus`, `defs/buffer`); y la **interfaz de comunicación** que la `Server` posee. Elegir comunicación por **memoria compartida** o **embed** = agregar una **interfaz de comunicación nueva** a la `Server`.
+
+Correspondencia con el servidor Clausters:
+
+| Python (cliente) | Representa | Contraparte en el servidor |
+|---|---|---|
+| `defs/server.Server` | el servidor corriendo + su comunicación | el proceso `clausters` (OSC/UDP; luego shm/embed) |
+| `defs/node` (`Synth`/`Group`) | handles + allocator de ids | `src/node` (árbol de nodos) |
+| `defs/bus` (`Bus`) | buses audio/control + allocator | buses de `src/dsp` |
+| `defs/buffer` (`Buffer`) | buffers + allocator | `src/dsp/buffer` |
+| `base/clock`, `base/stream`, `seq` | timing y secuenciación | — (agnóstico) |
+| `defs/signals`, `defs/faustdef` | grafo JSON del lado del cliente | `/d_faust`, `src/faust` |
 
 ### Interfaces de destino y manejo del tiempo (RT / NRT / MIDI) — pieza central
 
-Este es el punto que hace que **una misma lógica de relojes y rutinas** sirva para tiempo real, render diferido y MIDI sin reescribirla: el reloj (`TempoClock`) y las rutinas **no envían directamente**, sino que **emiten eventos contra una interfaz de destino intercambiable**. Cambiar la interfaz cambia *a dónde* y *en qué modo* (vivo vs diferido) van los eventos; la generación de eventos queda idéntica.
+El punto que hace que **una misma lógica de relojes y rutinas** sirva para tiempo real, render diferido y MIDI sin reescribirla. La división correcta es:
 
-- `base/_oscinterface.py`: define interfaces OSC intercambiables — `OscUDPInterface` y `OscTCPInterface` (RT, distintos protocolos de transporte; UDP ya disponible en el servidor, **TCP aún no implementado**) y `OscNrtInterface`, que en lugar de enviar **acumula los eventos con timetag en un `OscScore`** (la partitura binaria que luego va a `render()` del transport para NRT).
-- `base/_midiinterface.py`: análogamente, `MidiRtInterface` (envío MIDI en vivo) y `MidiNrtInterface`, que acumula en un `MidiScore`.
-- Por eso el manejo del tiempo es responsabilidad compartida con clara división: la **aritmética y los timetags** (beat↔segundo↔sample, conversión contra el sample-clock, armado de bundles) viven en el núcleo Rust (`_native`); la **interfaz** solo decide destino (UDP/TCP/score/MIDI) y modo (RT vivo vs NRT diferido); el **driver de coroutines** (reanudar los `yield`) vive en Python. Un mismo `Routine` + `TempoClock` produce una sesión RT en vivo o un `OscScore`/`MidiScore` para render **solo cambiando la interfaz** — sin tocar relojes ni rutinas.
+- El **reloj** (`base/clock.TempoClock`) solo agenda y provee tiempo (matemática beat↔segundo↔sample por `_native`, cola de scheduling, drives RT/NRT, reanudar `yield`). **No comunica con el servidor.**
+- La **`Server`** posee la **interfaz de destino/comunicación** y **emite** los eventos, computando el timetag a partir del tiempo lógico del reloj de la rutina en curso (`main.current_tt`). Cambiar la interfaz cambia *a dónde* y *en qué modo* (vivo vs diferido) van los eventos; reloj y rutinas no cambian.
+- `base/_oscinterface.py`: `OscUDPInterface`/`OscTCPInterface` (RT; TCP aún no en el servidor) y `OscNrtInterface` (acumula en `OscScore` → `render()`). `base/_midiinterface.py`: `MidiRtInterface`/`MidiNrtInterface`+`MidiScore`. shm/embed serían interfaces de comunicación adicionales de la `Server`.
+
+> **Corrección post-C3:** en C2 la comunicación quedó **mal ubicada en `TempoClock`** (campos `target`/`interface`, métodos `send_bundle`/`send_msg`/`_emit`/`_when`). El milestone **C4** la mueve a `Server`. El reloj queda solo con timing.
 
 ## Milestones (track "C" del cliente, paralelo al track "M" del servidor)
 
@@ -93,8 +114,10 @@ Este es el punto que hace que **una misma lógica de relojes y rutinas** sirva p
 - ✅ **C1 — Scaffold cliente + núcleo accesible**: `pyproject.toml`, paquete `clausters/`, reubicar transport, `_native.py` (ctypes sobre `clausters-ffi`). Smoke: importar, llamar un builtin escalar/lista, instanciar `TempoClock`, armar un bundle OSC, `render()`. *(Completado 2026-06-17 — ver NOTAS.md.)*
 - ✅ **C2 — base**: `absobject`/`builtins` (despacho a nativo, escalar+lista), `stream` (Routine/Stream con `yield`), `main` (contexto global, semillas), `clock` (TempoClock sobre núcleo), `netaddr`. Interfaces de destino: `_oscinterface` (`OscUDPInterface` + `OscNrtInterface`/`OscScore`) y `_midiinterface` (`MidiRtInterface` + `MidiNrtInterface`/`MidiScore`), de modo que reloj y rutinas emitan contra una interfaz intercambiable. (`OscTCPInterface` queda como stub: TCP aún no implementado en el servidor.) *(Completado 2026-06-17 — ver NOTAS.md.)*
 - ✅ **C3 — defs Faust-first**: `signals.py` (callables en minúscula que mapean la Signal API de Faust; su composición arma el JSON signal tree), `faustdef` (las tres formas para `/d_faust`, controles), `node`/`bus`/`buffer`/`server` (allocators, async `/done`-`/fail`, `/notify`). Vertical slice E2E: construir un grafo con `signals` → `faustdef` → `/d_faust` → `/s_new` → controlar por bus/clock. *(Completado 2026-06-17 — ver NOTAS.md.)*
-- **C4 — seq**: `event`, `pattern`, stream-patterns; un mismo `Routine`+`TempoClock` corre en **RT** (interfaz UDP, servidor vivo) o **NRT** (interfaz score → `render()`) **solo cambiando la interfaz de destino**. Golden de paridad de score con el servidor.
-- **C5 — multi-lenguaje + cierre**: confirmar reuso del C-ABI desde JS (nota N-API/wasm, sin implementarlo aún); docs (mdBook: capítulos nuevos en `docs/`), `GUIA.md` (pasos manuales + conteos), ejemplo comentado en `examples/`, `NOTAS.md`.
+- **C4 — Refactor: separación cliente/servidor** (corrección post-C3, quirúrgica — no reescribir lo que funciona): sacar la comunicación de `TempoClock` (campos `target`/`interface`, métodos `send_bundle`/`send_msg`/`_emit`/`_when`) y llevarla a `Server`. El reloj queda solo con timing (math + cola + drives + reanudar rutinas) y expone el tiempo lógico/wall; la `Server` posee la **interfaz de comunicación** y **emite**, leyendo el tiempo del reloj de la rutina en curso (`main.current_tt` lleva su `clock`). Reconciliar las dos capas de comunicación hoy duplicadas: `defs/server.UdpConnection` (RT bidireccional, replies) y `base/_oscinterface.Osc*Interface` (envío/acumulación), en una **interfaz de comunicación** coherente que la `Server` posee, con variantes RT (UDP; luego shm/embed) y NRT (score). La `Server` en modo NRT expone `render()`. Actualizar rutinas/tests/`GUIA.md`/ejemplos: el patrón pasa de `clock.send_bundle(...)` a `server.send_bundle(...)`. Sin tocar `signals`/`faustdef`/builtins/núcleo.
+  - Criterio de aceptación: `TempoClock` no importa ni referencia ninguna interfaz/NetAddr; el slice E2E (NRT y vivo) y el seam RT/NRT siguen pasando con la nueva ubicación; un cambio de transporte (p. ej. shm) se hace agregando una interfaz de comunicación a la `Server`, sin tocar reloj/seq.
+- **C5 — seq**: `event`, `pattern`, stream-patterns; un mismo `Routine`+`TempoClock`+`Server` corre en **RT** (interfaz UDP, servidor vivo) o **NRT** (interfaz score → `render()`) **solo cambiando la interfaz de comunicación de la `Server`**. Golden de paridad de score con el servidor.
+- **C6 — multi-lenguaje + cierre**: confirmar reuso del C-ABI desde JS (nota N-API/wasm, sin implementarlo aún); docs (mdBook: capítulos nuevos en `docs/`), `GUIA.md` (pasos manuales + conteos), ejemplo comentado en `examples/`, `NOTAS.md`.
 
 ## Convenciones de organización
 
