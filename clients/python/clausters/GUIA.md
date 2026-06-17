@@ -95,24 +95,26 @@ print("routine:", [r.next(), r.next(), r.next()])       # [0,1,2]
 PY
 ```
 
-**La costura** (lo central): una misma rutina + `TempoClock` produce un score
-NRT solo dándole una `OscNrtInterface`; el score se rinde a audio. Cambiar la
-interfaz por `OscUDPInterface` lo manda en vivo, sin tocar la rutina.
+**La costura** (lo central): el **reloj solo agenda y mide el tiempo**; la
+**`Server` posee la interfaz de comunicación y emite** (C4). Una misma rutina
+produce un score NRT si la `Server` tiene una `OscNrtInterface`; cambiando la
+interfaz por `OscUDPInterface` la misma rutina se manda en vivo, sin tocarla.
 
 ```sh
 PYTHONPATH=. python3 - <<'PY'
-from clausters.base import Routine, TempoClock, NetAddr, OscNrtInterface
-def arpegio(clock):
+from clausters.base import Routine, TempoClock, OscNrtInterface
+from clausters.defs import Server
+server = Server(interface=OscNrtInterface())             # modo NRT (sin servidor)
+clock = TempoClock(tempo=2.0)                            # el reloj solo mide el tiempo
+def arpegio():                                          # halla su reloj vía main.current_tt
     for i, freq in enumerate([262.,330.,392.,523.,659.]):
         nid = 1000+i
-        clock.send_bundle(("/s_new","default",nid,1,0,"freq",freq,"amp",0.2))
-        clock.send_bundle(("/n_free",nid), delay_beats=0.9)
+        server.send_bundle(("/s_new","default",nid,1,0,"freq",freq,"amp",0.2))
+        server.send_bundle(("/n_free",nid), delay_beats=0.9)
         yield 1.0
-    clock.send_bundle(("/n_free",0))                     # cierra
-nrt = OscNrtInterface()
-clock = TempoClock(tempo=2.0, target=NetAddr(), interface=nrt)
+    server.send_bundle(("/n_free",0))                    # cierra
 clock.play(Routine(arpegio)); clock.render()             # drena la cola (NRT)
-samples, frames = nrt.render(sample_rate=48000.0, channels=2)
+samples, frames = server.render(sample_rate=48000.0, channels=2)
 print(f"seam NRT: {frames} frames, peak {max(abs(s) for s in samples):.3f}")
 PY
 ```
@@ -145,21 +147,21 @@ Grafo → `/d_faust` → `/s_new` → control por reloj → `render()`:
 
 ```sh
 PYTHONPATH=. python3 - <<'PY'
-from clausters.base import Routine, TempoClock, NetAddr, OscNrtInterface
-from clausters.defs import signals as S, FaustDef
+from clausters.base import Routine, TempoClock, OscNrtInterface
+from clausters.defs import signals as S, FaustDef, Server
 freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
 phasor = S.rec(lambda s: (s + freq/48000.0) % 1.0)
 fdef = FaustDef.from_signals("c3sine", S.sin(phasor*6.283185307179586)*0.2)
-nrt = OscNrtInterface(); clock = TempoClock(tempo=1.0, target=NetAddr(), interface=nrt)
-def play(clock):
-    clock.send_bundle(("/d_faust", fdef.name, fdef.payload()))   # def primero
-    clock.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
+server = Server(interface=OscNrtInterface()); clock = TempoClock(tempo=1.0)
+def play():
+    server.send_bundle(("/d_faust", fdef.name, fdef.payload()))   # def primero
+    server.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
     yield 0.5
-    clock.send_bundle(("/n_set", 1000, "freq", 660.0))           # control por reloj
+    server.send_bundle(("/n_set", 1000, "freq", 660.0))           # control por reloj
     yield 0.5
-    clock.send_bundle(("/n_free", 1000)); clock.send_bundle(("/n_free", 0))
+    server.send_bundle(("/n_free", 1000)); server.send_bundle(("/n_free", 0))
 clock.play(Routine(play)); clock.render()
-samples, frames = nrt.render(sample_rate=48000.0, channels=2)
+samples, frames = server.render(sample_rate=48000.0, channels=2)
 print(f"E2E NRT: {frames} frames, peak {max(abs(s) for s in samples):.3f}")
 PY
 ```

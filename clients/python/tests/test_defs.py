@@ -4,7 +4,7 @@ Server round-trip (over a fake connection), and the end-to-end vertical slice
 
 import pytest
 
-from clausters.base import NetAddr, OscNrtInterface, Routine, TempoClock
+from clausters.base import OscNrtInterface, Routine, TempoClock
 from clausters.base import _osclib as osc
 from clausters.defs import (
     AddAction,
@@ -94,9 +94,14 @@ def test_buffer_allocator():
     assert a.alloc() == 0
 
 
-# ---- Server over a fake connection ----
+# ---- Server over a fake communication interface ----
 
-class _FakeConn:
+class _FakeInterface:
+    """A Server communication interface that records sent messages and replays
+    queued replies — the Server's comms surface, no socket."""
+
+    time_mode = "unix"
+
     def __init__(self):
         self.sent = []          # decoded (addr, args)
         self._replies = []      # queued reply packets (bytes)
@@ -104,44 +109,51 @@ class _FakeConn:
     def queue_reply(self, addr, *args):
         self._replies.append(osc.message(addr, *args))
 
-    def send(self, packet):
-        self.sent.append(osc.decode(packet))
+    def send_msg(self, target, addr, *args):
+        self.sent.append((addr, list(args)))
+
+    def send_bundle(self, target, when, *messages):
+        for m in messages:
+            self.sent.append((m[0], list(m[1:])))
 
     def recv(self, timeout):
         return self._replies.pop(0) if self._replies else None
 
+    def close(self):
+        pass
+
 
 def test_server_builds_s_new_correctly():
-    conn = _FakeConn()
-    srv = Server(conn=conn)
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
     synth = srv.synth("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL)
     assert synth.id == 1000 and synth.defname == "foo"
-    assert conn.sent[-1] == ("/s_new", ["foo", 1000, 1, 0, "freq", 440.0])
+    assert iface.sent[-1] == ("/s_new", ["foo", 1000, 1, 0, "freq", 440.0])
 
 
 def test_server_add_def_waits_for_done_and_raises_on_fail():
-    conn = _FakeConn()
-    srv = Server(conn=conn)
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
     fdef = FaustDef.from_source("ok", "process = _;")
 
-    conn.queue_reply("/done", "/d_faust", "ok")
+    iface.queue_reply("/done", "/d_faust", "ok")
     assert srv.add_def(fdef) == "ok"
-    assert conn.sent[-1][0] == "/d_faust"
+    assert iface.sent[-1][0] == "/d_faust"
 
-    conn.queue_reply("/fail", "/d_faust", "boom")
+    iface.queue_reply("/fail", "/d_faust", "boom")
     with pytest.raises(RuntimeError):
         srv.add_def(fdef)
 
 
 def test_server_map_and_set_layout():
-    conn = _FakeConn()
-    srv = Server(conn=conn)
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
     node = srv.synth("foo")
     srv.set(node, {"in": 4.0, "out": 0.0})        # reserved controls via dict
-    assert conn.sent[-1] == ("/n_set", [1000, "in", 4.0, "out", 0.0])
+    assert iface.sent[-1] == ("/n_set", [1000, "in", 4.0, "out", 0.0])
     bus = srv.audio_bus(1)
     srv.map(node, "in", bus, audio=True)
-    assert conn.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
+    assert iface.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
 
 
 # ---- end-to-end vertical slice: graph -> /d_faust -> /s_new -> control -> render ----
@@ -155,23 +167,23 @@ def _sine_def(name="c3sine", default_freq=330.0):
 def test_faustdef_renders_through_the_seam():
     _ffi_or_skip()
     fdef = _sine_def()
-    nrt = OscNrtInterface()
-    clock = TempoClock(tempo=1.0, target=NetAddr(), interface=nrt)
+    server = Server(interface=OscNrtInterface())   # NRT mode (no live server)
+    clock = TempoClock(tempo=1.0)
 
-    def play(clock):
+    def play():
         # def first, then instantiate (same beat; score keeps insertion order)
-        clock.send_bundle(("/d_faust", fdef.name, fdef.payload()))
-        clock.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
+        server.send_bundle(("/d_faust", fdef.name, fdef.payload()))
+        server.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
         yield 0.5
-        clock.send_bundle(("/n_set", 1000, "freq", 660.0))  # control by clock
+        server.send_bundle(("/n_set", 1000, "freq", 660.0))  # control by clock
         yield 0.5
-        clock.send_bundle(("/n_free", 1000))
-        clock.send_bundle(("/n_free", 0))                   # closes the render
+        server.send_bundle(("/n_free", 1000))
+        server.send_bundle(("/n_free", 0))                   # closes the render
 
     clock.play(Routine(play))
     clock.render()
     try:
-        samples, frames = nrt.render(sample_rate=48_000.0, channels=2)
+        samples, frames = server.render(sample_rate=48_000.0, channels=2)
     except (OSError, RuntimeError, AttributeError) as e:
         pytest.skip(f"embed+faust library not built/usable: {e}")
     assert frames > 0

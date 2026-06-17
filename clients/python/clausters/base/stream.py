@@ -48,6 +48,7 @@ class FunctionStream(Stream):
     def __init__(self, func, reset_func=None):
         self.func = func
         self.reset_func = reset_func
+        self.clock = None
 
     def next(self, inval=None):
         try:
@@ -73,6 +74,9 @@ class Routine(Stream):
         self._gen = None
         self._started = False
         self.state = "init"  # init | running | done | paused
+        #: the clock currently driving this routine (set by the clock on wake),
+        #: so a Server can read the logical time. None when not playing.
+        self.clock = None
 
     @classmethod
     def run(cls, func):

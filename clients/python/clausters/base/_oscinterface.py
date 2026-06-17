@@ -26,9 +26,19 @@ class OscInterface:
     def send_bundle(self, target, when, *messages):
         raise NotImplementedError(f"{type(self).__name__}.send_bundle")
 
+    def recv(self, timeout):
+        """One reply packet, or ``None``. Only real-time interfaces reply; the
+        default (NRT/one-way) has nothing to return."""
+        return None
+
+    def close(self):
+        pass
+
 
 class OscUDPInterface(OscInterface):
-    """Real-time UDP: messages and bundles go out the socket immediately."""
+    """Real-time UDP: messages and bundles go out the socket immediately, and
+    the server's replies come back to the bound socket (so the Server can do
+    request/reply over the same interface)."""
 
     time_mode = "unix"
 
@@ -37,12 +47,16 @@ class OscUDPInterface(OscInterface):
 
     def start(self):
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Bind so the server's replies have somewhere to return.
+        self._sock.bind(("127.0.0.1", 0))
         return self
 
     def stop(self):
         if self._sock is not None:
             self._sock.close()
             self._sock = None
+
+    close = stop
 
     def _ensure(self):
         if self._sock is None:
@@ -56,6 +70,15 @@ class OscUDPInterface(OscInterface):
         self._ensure()
         packets = [_osclib.message(*m) for m in messages]
         self._sock.sendto(_osclib.bundle_at(when, *packets), target)
+
+    def recv(self, timeout):
+        self._ensure()
+        self._sock.settimeout(timeout)
+        try:
+            data, _ = self._sock.recvfrom(65536)
+            return data
+        except (TimeoutError, OSError):
+            return None
 
 
 class OscTCPInterface(OscInterface):

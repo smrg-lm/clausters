@@ -5,7 +5,7 @@ ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
 see [`../PLAN.md`](../PLAN.md).
 
-Milestones C0–C3 are done. In place now:
+Milestones C0–C4 are done. In place now:
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -15,16 +15,16 @@ Milestones C0–C3 are done. In place now:
   math, matching the server by construction.
 - `clausters.base` (C2) — the base layer: `builtins` (scalar/list math, f32 via
   the core), `absobject` (operator overloading), `stream` (`Routine`/`Stream`,
-  the `yield` layer), `clock` (`TempoClock`, RT + NRT drives), `netaddr`,
-  `main`, and the destination interfaces `_oscinterface`/`_midiinterface` —
-  swap the interface to retarget a routine from live RT to an NRT score without
-  changing it. Plus the minimal OSC wire encoder `_osclib`.
+  the `yield` layer), `clock` (`TempoClock`, RT + NRT drives — **timing only**),
+  `netaddr`, `main`, the destination interfaces `_oscinterface`/`_midiinterface`,
+  and the minimal OSC wire encoder `_osclib`.
 - `clausters.defs` (C3) — Faust-first definitions and server resources:
   `signals` (lowercase callables mapping Faust's Signal API, composed into the
   JSON graph), `FaustDef`, the `Synth`/`Group`/`Bus`/`Buffer` handles and
-  allocators, and `Server` (the live OSC round-trip). SynthDef-based definitions
-  come later.
-- `clausters.seq` — placeholder for sequencing (C4).
+  allocators, and `Server`. The **`Server` owns the communication interface and
+  emits** (C4): swap its interface to retarget a routine from live RT to an NRT
+  score without touching clock or routine. SynthDef-based definitions come later.
+- `clausters.seq` — placeholder for sequencing (C5).
 
 See [`clausters/GUIA.md`](clausters/GUIA.md) for a hands-on, milestone-by-
 milestone manual test guide (Spanish).

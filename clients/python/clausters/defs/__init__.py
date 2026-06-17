@@ -20,7 +20,7 @@ from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
-from .server import Server, UdpConnection
+from .server import Server
 from .signals import Signal
 
 __all__ = [
@@ -38,5 +38,4 @@ __all__ = [
     "NodeIDAllocator",
     "ROOT_NODE_ID",
     "Server",
-    "UdpConnection",
 ]

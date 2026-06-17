@@ -1747,6 +1747,47 @@ desde Python y manejar nodos/buses/buffers contra el servidor.
   prueba manual del cliente al estilo de la `GUIA.md` raíz, con snippets
   runnables por milestone (C0–C3), slice NRT y slice en vivo, y checklist.
 
+## C4 — Refactor: separación cliente/servidor (track cliente)
+
+Corrección quirúrgica detectada después de C3: `TempoClock` había quedado dueño
+de comunicación que pertenece a `Server` (la representación del servidor
+Clausters). Se movió, **sin reescribir lo que ya funcionaba** (ver memoria
+`separacion-cliente-servidor-clausters`).
+
+- **`base/clock.TempoClock`**: se le sacó `target`/`interface` y los métodos
+  `send_bundle`/`send_msg`/`_emit`/`_when`. Queda **solo con timing** (math por
+  el núcleo, cola, drives RT/NRT, reanudar rutinas) y expone el tiempo:
+  `beats()`, `beats2secs()` y la nueva propiedad `start_time`. En `_wake` ahora
+  setea `routine.clock = self` (el thread en curso lleva su reloj, estilo sc3).
+- **`base/stream`**: `Routine`/`FunctionStream` tienen slot `clock` (lo setea el
+  reloj al reanudar; así la `Server` halla el tiempo lógico vía `main.current_tt`).
+- **`base/_oscinterface`**: la base ahora declara `recv`/`close`;
+  `OscUDPInterface` **bindea** el socket y agrega `recv(timeout)`, así una sola
+  interfaz hace envío **y** recepción de replies (reconcilia la antigua
+  `UdpConnection`).
+- **`defs/server.Server`**: ahora **posee la interfaz de comunicación**
+  (`OscUDPInterface` por defecto en RT; `OscNrtInterface` para offline; shm/embed
+  serían interfaces nuevas) y **emite**: `send_msg` (inmediato) y `send_bundle`
+  (temporizado, calcula el timetag leyendo el reloj de la rutina en curso y el
+  `time_mode` de la interfaz). `request` usa `interface.recv`. `render()`
+  (modo NRT) delega en la interfaz. Eliminada `UdpConnection`. El patrón en las
+  rutinas pasó de `clock.send_bundle(...)` a `server.send_bundle(...)`.
+
+### Verificación
+
+- Tests actualizados (`test_base.py` seam, `test_defs.py` Server + E2E): el
+  fake de conexión pasó a ser un **fake de interfaz** (`send_msg`/`send_bundle`/
+  `recv`); el seam y el E2E emiten por `Server`. Corrido inline (pytest no
+  instalado): **todo pasa**. Seam NRT = 120000 frames; E2E faustdef = 48000
+  frames (peak = amp).
+- **E2E en vivo** revalidado (server+cliente misma invocación Bash): `Server`
+  por UDP → `/status`, `add_def` (compila Faust), `/s_new`, `/n_set`, `/n_free`.
+- Smoke del driver RT con `Server.send_bundle` (rama wall-clock de `_when`): 4
+  eventos, parada limpia.
+- Criterio de aceptación cumplido: `TempoClock` no referencia interfaz/NetAddr;
+  cambiar de transporte = agregar una interfaz de comunicación a la `Server`,
+  sin tocar reloj/seq. `GUIA.md` actualizada.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

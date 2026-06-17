@@ -13,10 +13,13 @@ One clock, two drives:
 - :meth:`render` — non-real time: drain the queue in beat order with no
   sleeping, advancing a logical clock; used to build a score.
 
-Either way, when a routine emits with :meth:`send_bundle` the clock hands the
-event to its **interface** at the right time for that interface's ``time_mode``
-(absolute wall clock for RT, seconds-from-start for NRT). Swapping the
-interface is the whole trick.
+The clock does **not** talk to the server: it only schedules and exposes the
+current time (:meth:`beats`, :meth:`beats2secs`, :attr:`start_time`). Sending
+events belongs to :class:`clausters.defs.server.Server`, which owns the
+destination/communication interface and reads the time from the clock of the
+routine being resumed (the clock sets ``routine.clock`` and
+``main.current_tt`` around each wake). Swapping that interface (RT/NRT/MIDI) is
+the seam — and it lives on the Server, not here.
 """
 
 import heapq
@@ -29,13 +32,11 @@ from .stream import Stream, StopStream
 
 
 class TempoClock:
-    def __init__(self, tempo: float = 1.0, target=None, interface=None):
+    def __init__(self, tempo: float = 1.0):
         #: beats per second
         self.tempo = tempo
         self._base_beats = 0.0
         self._base_secs = 0.0
-        self.target = target          # NetAddr (or None)
-        self.interface = interface    # an Osc*Interface (or None)
 
         self._queue = []              # heap of (beat, seq, item)
         self._seq = itertools.count()
@@ -59,6 +60,13 @@ class TempoClock:
         if self._mode == "nrt" or self._start_time is None:
             return self._logical_beat
         return self.secs2beats(time.time() - self._start_time)
+
+    @property
+    def start_time(self):
+        """Wall-clock origin (Unix seconds) while running in real time, else
+        ``None``. The Server uses it to turn a logical beat into a wall-clock
+        timetag."""
+        return self._start_time
 
     def set_tempo(self, tempo: float):
         """Change tempo, pinning the current instant (no discontinuity)."""
@@ -92,30 +100,6 @@ class TempoClock:
         with self._cond:
             self._queue.clear()
 
-    # ---- event emission to the interface (the seam) ----
-
-    def send_bundle(self, *messages, delay_beats: float = 0.0):
-        """Emit a timetagged bundle of ``(addr, *args)`` messages at the current
-        beat (+ optional lookahead). The interface decides destination/mode."""
-        self._emit(self.beats() + delay_beats, messages)
-
-    def send_msg(self, addr, *args):
-        self._emit(self.beats(), ((addr, *args),))
-
-    def _emit(self, beat: float, messages):
-        if self.interface is None:
-            raise RuntimeError("clock has no interface to emit to")
-        when = self._when(beat)
-        target = self.target.addr() if self.target is not None else None
-        self.interface.send_bundle(target, when, *messages)
-
-    def _when(self, beat: float) -> float:
-        secs = self.beats2secs(beat)
-        if getattr(self.interface, "time_mode", "unix") == "score":
-            return secs  # seconds from render start
-        base = self._start_time if self._start_time is not None else time.time()
-        return base + secs  # absolute wall clock
-
     # ---- driving ----
 
     def _wake(self, item, beat):
@@ -124,6 +108,8 @@ class TempoClock:
 
         prev = main.current_tt
         main.current_tt = item
+        if isinstance(item, Stream):
+            item.clock = self  # the running thread carries its clock (sc3)
         try:
             if isinstance(item, Stream):
                 try:
@@ -145,7 +131,8 @@ class TempoClock:
         """NRT drive: process the queue in beat order without sleeping.
 
         Returns when the queue is empty (or the next event is past
-        ``until_beat``). Routines emit into the interface's score."""
+        ``until_beat``). Whatever the routines emit (through a Server) lands in
+        that Server's interface — here we only advance time and resume them."""
         self._mode = "nrt"
         self._logical_beat = 0.0
         try:

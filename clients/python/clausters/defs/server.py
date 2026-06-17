@@ -1,48 +1,30 @@
-"""Server facade: resources, definitions and the OSC round-trip.
+"""Server facade: the running Clausters server, its resources and comms.
 
-Ties the client-side allocators (:mod:`node`/:mod:`bus`/:mod:`buffer`) to a live
-Clausters server, builds the OSC and handles the async replies (``/done`` /
-``/fail``) and notifications (``/n_go`` / ``/n_end``). By default it talks UDP;
-pass any connection exposing ``send(packet)`` / ``recv(timeout)`` (e.g. an
-adapter over the shared-memory transport) to reuse the same logic.
+This is the **server-application** side of the client (see the memory note
+``separacion-cliente-servidor-clausters`` and ``clients/PLAN.md``): it owns the
+**communication interface** (RT over UDP by default; an ``OscNrtInterface`` for
+offline; shared-memory/embed would be further interfaces), the client-side
+resource allocators (:mod:`node`/:mod:`bus`/:mod:`buffer`), builds the OSC and
+handles the async replies (``/done`` / ``/fail``) and notifications.
 
-Offline (NRT) work does not go through here: build a score with
-:mod:`clausters.defs.signals` + :mod:`clausters.defs.faustdef` and a clock with
-an ``OscNrtInterface``, then ``render`` it (see ``GUIA.md``).
+Timing is **not** here and not in the clock-as-sender: the clock
+(:class:`clausters.base.clock.TempoClock`) only schedules and tells time; the
+Server emits, reading the logical time from the clock of the routine in flight.
+A routine sequences events by calling :meth:`send_bundle`; swapping the
+Server's interface retargets every routine from live RT to an NRT score without
+touching clock or routine.
 """
 
-import socket
 import time
 
 from ..base import _osclib
+from ..base.main import main
 from ..base.netaddr import NetAddr
+from ..base._oscinterface import OscNrtInterface, OscUDPInterface
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
-
-
-class UdpConnection:
-    """A bound UDP socket; replies come back to the address it binds."""
-
-    def __init__(self, host: str = "127.0.0.1", port: int = 57110):
-        self.target = (host, port)
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.bind(("127.0.0.1", 0))
-
-    def send(self, packet: bytes):
-        self._sock.sendto(packet, self.target)
-
-    def recv(self, timeout: float):
-        self._sock.settimeout(timeout)
-        try:
-            data, _ = self._sock.recvfrom(65536)
-            return data
-        except (TimeoutError, OSError):
-            return None
-
-    def close(self):
-        self._sock.close()
 
 
 def _flatten_controls(controls) -> list:
@@ -58,26 +40,57 @@ def _flatten_controls(controls) -> list:
 
 
 class Server:
-    def __init__(self, host: str = "127.0.0.1", port: int = 57110, conn=None):
+    def __init__(self, host: str = "127.0.0.1", port: int = 57110, interface=None):
         self.target = NetAddr(host, port)
-        self.conn = conn if conn is not None else UdpConnection(host, port)
+        #: the communication interface (RT/UDP, NRT/score, …). The Server owns
+        #: it; swapping it is the RT/NRT seam.
+        self.interface = interface if interface is not None else OscUDPInterface().start()
         self.nodes = NodeIDAllocator()
         self.audio_buses = AudioBusAllocator()
         self.control_buses = ControlBusAllocator()
         self.buffers = BufferAllocator()
 
-    # ---- raw OSC ----
+    # ---- raw OSC: immediate and timed ----
 
     def send_msg(self, addr, *args):
-        self.conn.send(_osclib.message(addr, *args))
+        """Send one message immediately."""
+        self.interface.send_msg(self.target.addr(), addr, *args)
+
+    def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None):
+        """Emit a timetagged bundle of ``(addr, *args)`` messages at the current
+        beat (+ optional lookahead). Call it from a routine playing on a clock
+        (the clock is found via ``main.current_tt``) or pass ``clock=``. The
+        interface decides destination and wire time (wall clock for RT,
+        seconds-from-start for NRT)."""
+        clock = clock if clock is not None else self._clock()
+        beat = clock.beats() + delay_beats
+        self.interface.send_bundle(self.target.addr(), self._when(clock, beat), *messages)
+
+    @staticmethod
+    def _clock():
+        tt = main.current_tt
+        clock = getattr(tt, "clock", None)
+        if clock is None:
+            raise RuntimeError(
+                "send_bundle needs a clock: call it from a routine playing on a "
+                "TempoClock, or pass clock=..."
+            )
+        return clock
+
+    def _when(self, clock, beat: float) -> float:
+        secs = clock.beats2secs(beat)
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            return secs  # seconds from render start
+        base = clock.start_time if clock.start_time is not None else time.time()
+        return base + secs  # absolute wall clock
 
     def request(self, addr, *args, timeout: float = 5.0, expect=None):
-        """Sends a message and returns the first matching reply ``(addr, args)``.
-        ``expect`` is a set of reply addresses to accept (defaults to any)."""
-        self.conn.send(_osclib.message(addr, *args))
+        """Sends a message and returns the first matching reply ``(addr, args)``
+        (RT only; the interface must reply). ``expect`` filters reply addresses."""
+        self.send_msg(addr, *args)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            packet = self.conn.recv(timeout)
+            packet = self.interface.recv(timeout)
             if packet is None:
                 continue
             raddr, rargs = _osclib.decode(packet)
@@ -114,8 +127,8 @@ class Server:
         return Group(node_id)
 
     def set(self, node, controls):
-        flat = _flatten_controls(controls)
-        self.send_msg("/n_set", node.id if hasattr(node, "id") else node, *flat)
+        self.send_msg("/n_set", node.id if hasattr(node, "id") else node,
+                      *_flatten_controls(controls))
 
     def map(self, node, name, bus, *, audio=False):
         index = bus.index if isinstance(bus, Bus) else bus
@@ -162,6 +175,16 @@ class Server:
         self.send_msg("/b_free", bufnum)
         self.buffers.free(bufnum)
 
+    # ---- offline render (NRT interface only) ----
+
+    def render(self, sample_rate: float = 48_000.0, channels: int = 2):
+        """Renders the accumulated score (the interface must be an
+        :class:`OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
+        so the render has a defined duration."""
+        if not isinstance(self.interface, OscNrtInterface):
+            raise RuntimeError("render() needs a Server with an OscNrtInterface")
+        return self.interface.render(sample_rate=sample_rate, channels=channels)
+
     # ---- server control ----
 
     def notify(self, flag: bool = True, timeout: float = 5.0):
@@ -179,5 +202,4 @@ class Server:
         self.send_msg("/quit")
 
     def close(self):
-        if hasattr(self.conn, "close"):
-            self.conn.close()
+        self.interface.close()
