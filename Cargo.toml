@@ -1,3 +1,9 @@
+[workspace]
+# C0: the server crate is the workspace root (all existing paths stay put);
+# the shared native core and its C ABI live under `crates/`. See clients/PLAN.md.
+members = ["crates/clausters-core", "crates/clausters-ffi"]
+resolver = "3"
+
 [package]
 name = "clausters"
 version = "0.1.0"
@@ -21,6 +27,10 @@ faust = []
 embed = []
 
 [dependencies]
+# Shared native core: the single source of truth for the numeric builtins,
+# the seeded RNG and the timing/OSC math that both the server and every
+# client binding use, so client-side results match the server by construction.
+clausters-core = { path = "crates/clausters-core" }
 cpal = { version = "0.15", optional = true }
 hound = "3"
 rosc = "0.11"

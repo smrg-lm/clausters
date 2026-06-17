@@ -151,6 +151,7 @@ name = "clausters"
 version = "0.1.0"
 dependencies = [
  "assert_no_alloc",
+ "clausters-core",
  "cpal",
  "hound",
  "libc",
@@ -159,6 +160,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "clausters-core"
+version = "0.1.0"
+dependencies = [
+ "rosc",
+]
+
+[[package]]
+name = "clausters-ffi"
+version = "0.1.0"
+dependencies = [
+ "clausters-core",
 ]
 
 [[package]]

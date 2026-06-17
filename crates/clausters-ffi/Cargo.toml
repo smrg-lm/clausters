@@ -1,0 +1,14 @@
+[package]
+name = "clausters-ffi"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "C ABI over clausters-core: the language-agnostic surface every client binding (Python ctypes now, JS N-API/wasm later) sits on."
+
+[lib]
+# cdylib is the binding surface (libclausters_ffi.so/.dylib/.dll); rlib lets
+# the in-crate tests link the same functions.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clausters-core = { path = "../clausters-core" }

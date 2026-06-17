@@ -1,0 +1,11 @@
+[package]
+name = "clausters-core"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Shared native core for Clausters: numeric builtins, seeded RNG and timing/OSC math, used by the server and every client binding."
+
+[dependencies]
+# Only the `osc` module needs it; the builtins/rng/tempoclock hot paths are
+# dependency-free and allocation-free so the audio thread can call them.
+rosc = "0.11"

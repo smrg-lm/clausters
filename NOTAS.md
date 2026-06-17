@@ -1563,6 +1563,52 @@ grandes estilo faustlib como faustdefs).
   (lifecycle), `docs/examples.md`, `GUIA.md` (dos sesiones + fila de checklist),
   `examples/persistence.sh`.
 
+## C0 — Workspace + núcleo nativo compartido + C-ABI (track cliente)
+
+Primer milestone del cliente (plan en `clients/PLAN.md`). Sienta la base para
+que el cliente Python (y el futuro JS) compartan código nativo con el servidor.
+
+- **Workspace**: la raíz pasa a ser workspace (`[workspace]`, `resolver = "3"`)
+  manteniéndose como crate del servidor; los crates nuevos viven en `crates/`.
+  Todas las rutas existentes (build.rs, tests, examples,
+  `target/…/libclausters.so`) quedan intactas.
+- **`crates/clausters-core`** (nuevo): el núcleo puro y sin dependencias en el
+  hot path. Módulos:
+  - `builtins`: ops unarias/binarias sobre escalar y slice (con broadcast tipo
+    `dsp::at`). `Add/Sub/Mul/Div` son las del servidor; el resto espeja la
+    Signal API de Faust con la misma fórmula. Enums `#[repr(u32)]` como contrato
+    C-ABI.
+  - `rng`: `splitmix64` + `WhiteNoise` idénticos a `dsp::noise`.
+  - `tempoclock`: mapeo afín beat↔segundo (con rebase de tempo), helpers
+    seg↔sample y un `Scheduler` (min-heap por beat, estable).
+  - `osc`: timetag NTP, conversión instante→sample por anclaje, armado de
+    bundles (única dep `rosc`, no apto para el audio thread).
+- **`crates/clausters-ffi`** (nuevo, cdylib + rlib): C-ABI sobre el núcleo
+  (`clausters_core_*`), versión `CORE_ABI_VERSION = 1`. Expone builtins sobre
+  arrays, white noise sembrado y los escalares de clock/sample. El armado OSC
+  por FFI se difiere a C2 (cuando el cliente Python lo necesite). Artefacto:
+  `libclausters_ffi.so`, distinto del `libclausters.so` del embed.
+- **Servidor refactorizado a `clausters-core`** (equivalencia por construcción):
+  `dsp::binop` usa `builtins::binary_slice` y `BinaryOp` del núcleo; `dsp::noise`
+  delega en `rng::WhiteNoise` (solo el sembrado por instancia queda en el
+  servidor). RT-safety intacta (funciones `#[inline]`, sin alloc).
+
+### Verificación
+
+- `tests/core_parity.rs` (nuevo): los UGens `Add/Sub/Mul/Div` por el camino real
+  de `UGen::process` dan bit-idéntico a `clausters_core::builtins` (bloque
+  completo y constante broadcast); el `WhiteNoise` del servidor corre por
+  delegación.
+- Tests unitarios en `clausters-core` (14) y `clausters-ffi` (4). Suite del
+  servidor, `--features embed` y `--features faust` en verde (paridad Faust
+  sin cambios); `tests/rt_safety.rs` y `tests/denormals.rs` siguen verdes.
+- Comandos: `cargo test` (servidor), `cargo test --workspace` (incluye los
+  crates núcleo y FFI), `cargo build -p clausters-ffi` (genera el cdylib).
+- **Contrato de equivalencia documentado**: bit-exacto para las ops nativas del
+  servidor; para la matemática superior (solo Faust en el servidor) el núcleo
+  usa la misma fórmula, sin garantía bit-a-bit contra el codegen LLVM de Faust
+  (tolerancia, a fijar en su consumo).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
