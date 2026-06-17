@@ -36,7 +36,7 @@ Milestones C0–C5 are done. In place now:
   `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist (an
   offline NRT one for plots next to a live RT one) in the same script.
 
-See [`clausters/GUIA.md`](clausters/GUIA.md) for a hands-on, milestone-by-
+See [`GUIA.md`](GUIA.md) for a hands-on, milestone-by-
 milestone manual test guide (Spanish).
 
 ## Building the native libraries

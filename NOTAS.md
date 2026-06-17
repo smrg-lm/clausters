@@ -1743,7 +1743,7 @@ desde Python y manejar nodos/buses/buffers contra el servidor.
   de CLAUDE.md): `Server` por UDP en 57110 → `/status`, `add_def` (compila
   Faust), `/s_new`, `/n_set`, `/n_free`, `quit`. Requiere el binario con
   `--features …,faust`.
-- **`clients/python/clausters/GUIA.md`** (nuevo, pedido del usuario): guía de
+- **`clients/python/GUIA.md`** (nuevo, pedido del usuario; movido desde `clients/python/clausters/GUIA.md` a la raíz del paquete el 2026-06-17): guía de
   prueba manual del cliente al estilo de la `GUIA.md` raíz, con snippets
   runnables por milestone (C0–C3), slice NRT y slice en vivo, y checklist.
 

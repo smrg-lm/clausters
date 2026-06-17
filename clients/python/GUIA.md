@@ -1,7 +1,7 @@
 # Guía de prueba del cliente Python
 
 Cómo probar a mano la librería cliente de **Clausters** (paquete
-`clausters`, port Faust-first de sc3) milestone a milestone (C0–C3). Pensada
+`clausters`, port Faust-first de sc3) milestone a milestone (C0–C8). Pensada
 para Linux / Ubuntu 24.04+. Es el equivalente de la `GUIA.md` de la raíz, pero
 para la librería en vez del servidor.
 

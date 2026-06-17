@@ -57,7 +57,7 @@ OSC bytes to the server (UDP, or shm/embed via the transport module). Layering:
 What is implemented (C0–C6, C8 TCP) and what is planned (C11 MIDI interfaces — the
 old C7, now a future milestone; see the workspace `PLAN.md` M17 —, …) is tracked
 in `clients/PLAN.md`; the hands-on
-guide is `clients/python/clausters/GUIA.md`. The destination interfaces include
+guide is `clients/python/GUIA.md`. The destination interfaces include
 `OscUDPInterface` and `OscTCPInterface` (length-prefixed OSC; start the server
 with `--tcp`), both drop-in for the `Server`.
 
