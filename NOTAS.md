@@ -1899,7 +1899,7 @@ cliente JS y la distribución.
   por el embed render); `list(hi)==list(lo)`, frames 91200. Prueba end-to-end de
   event/pattern/timing.
 - Suite: **43 passed**. Único pendiente de C5: grafo **instance-based** al portar
-  SynthDef (diferido con `sc3/synth`).
+  SynthDef (cerrado más abajo, "C5 — grafo UGen instance-based").
 
 ## C6 — Anclaje del sample-clock por UDP (track cliente)
 
@@ -1924,6 +1924,44 @@ anclaba fácil por embed/shm con `.clock`).
   `/sched`, synths suenan y se liberan. (El drift en runs cortos es ruidoso por
   la cuantización de buffer del contador; converge con baseline largo y solo
   afecta cuán temprano se envía el `/sched`, no cuándo dispara — documentado.)
+
+## C5 — grafo UGen instance-based (suelta de C5 cerrada, 2026-06-17)
+
+Cierra el único pendiente registrado de C5: la contraparte UGen del par Faust
+`signals`/`FaustDef`, construida **instance-based** (sin contexto global de
+build estilo `UGen.buildSynthDef` de sclang).
+
+- **`defs/ugens.py`**: nodos del grafo y callables minúscula (el "instruction
+  set" del cliente). `Ugen(kind, inputs)` y `Control(name, default)` comparten
+  `_Node(AbstractObject)`: los cuatro operadores aritméticos componen UGens
+  `Add`/`Sub`/`Mul`/`Div` (los únicos math UGens del servidor); cualquier otro
+  operador/unario levanta `TypeError` claro ("usá un Faust def"). Callables:
+  `sin_osc`, `impulse`, `white_noise`, `in_`/`in_ctl`, `out`/`replace_out`,
+  `play_buf`/`buf_rd`, `local_in`/`local_out`, `control`. Orden de inputs según
+  el registry del servidor (ver `docs/schemas.md`).
+- **`defs/synthdef.py`**: `SynthDef(name, *outputs)` recorre el grafo en
+  post-orden: cada UGen se emite tras sus inputs ⇒ lista `ugens` topológicamente
+  ordenada (todo `{"ugen": w}` apunta a un nodo anterior, como exige el server)
+  y los subgrafos compartidos se emiten una vez (dedup por identidad). Controles
+  recolectados en orden de primera aparición (defaults en conflicto = error).
+  `payload()` → JSON `SynthDefSpec`; `control_names()` paralelo a `FaustDef`.
+- **`Server.add_synthdef(sdef)`**: en RT bloquea hasta `/done` (o `/fail`); en
+  NRT scorea `/d_recv` en t=0 (el render lo compila antes de avanzar el tiempo —
+  semántica NRT de scsynth). Mismo patrón que `add_def` (Faust).
+- **Frontera/no-globales**: el grafo es el árbol de objetos compuestos; nada
+  thread-global, así que varias defs se arman en paralelo (memoria
+  `evitar-estados-globales-clausters`). El resto de `sc3/synth` (más UGens) es
+  del lado servidor y queda independiente de esta suelta.
+- **Verificación** (`tests/test_synthdef.py`, **56 passed, 1 skip** en la
+  suite): estructura (spec idéntico al `default` interno, dedup, operadores →
+  Add/Mul/…, errores de operador no soportado, control en conflicto, LocalIn
+  antes de LocalOut, outputs deben ser UGens) **sin servidor**; y un **golden de
+  paridad**: el `Pbind` sobre una def cliente equivalente al `default` rinde
+  **byte-idéntico** al `Pbind` sobre el `default` interno (mismo motor por el
+  embed render). **E2E en vivo** (server+cliente misma invocación Bash): `/d_recv`
+  → `/done`, `/s_new` instancia igual que una def interna (synths/defs por
+  `/status`). Ejemplo `examples/synthdef.py` (imprime el JSON, prueba la paridad,
+  opcionalmente escribe un WAV).
 
 ## Próximo: features nuevas
 

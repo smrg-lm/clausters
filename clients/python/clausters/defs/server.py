@@ -128,6 +128,22 @@ class Server:
             raise RuntimeError(f"/d_faust {fdef.name!r} failed: {args}")
         return fdef.name
 
+    def add_synthdef(self, sdef, timeout: float = 10.0) -> str:
+        """Sends a UGen :class:`~clausters.defs.synthdef.SynthDef` via ``/d_recv``.
+        In RT it blocks until the server compiles it (``/done``) or raises
+        (``/fail``); in NRT it scores the ``/d_recv`` at time 0 so the renderer
+        compiles it before time advances (scsynth NRT semantics)."""
+        payload = sdef.payload()
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            self.send_msg("/d_recv", payload)
+            return sdef.name
+        addr, args = self.request(
+            "/d_recv", payload, timeout=timeout, expect=("/done", "/fail")
+        )
+        if addr == "/fail":
+            raise RuntimeError(f"/d_recv {sdef.name!r} failed: {args}")
+        return sdef.name
+
     def free_def(self, *names: str):
         self.send_msg("/d_free", *names)
 

@@ -23,7 +23,9 @@ Milestones C0–C5 are done. In place now:
   JSON graph), `FaustDef`, the `Synth`/`Group`/`Bus`/`Buffer` handles and
   allocators, and `Server`. The **`Server` owns the communication interface and
   emits** (C4): swap its interface to retarget a routine from live RT to an NRT
-  score without touching clock or routine. SynthDef-based definitions come later.
+  score without touching clock or routine. UGen-graph definitions are also here
+  — `ugens` (lowercase callables → `Ugen`/`Control`) and `SynthDef` (`/d_recv`),
+  the instance-based UGen counterpart of `signals`/`FaustDef`.
 - `clausters.seq` (C5) — sequencing: `Event` (a note plays a synth and frees it
   after its sustain), the value patterns (`Pseq`, `Pwhite`, `Pseries`, …) and
   `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live

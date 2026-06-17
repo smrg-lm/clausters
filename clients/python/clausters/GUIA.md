@@ -194,6 +194,39 @@ PY
 Con altavoces deberías oír un tono que cambia de 330 a 440 Hz antes de
 liberarse. (Sin placa de audio, el server igual responde por OSC pero no suena.)
 
+### Def UGen propia con `SynthDef` (C5 leftover, `/d_recv`)
+
+La contraparte UGen de `FaustDef`: el grafo se arma con callables minúscula
+(`sin_osc`, `control`, `out`, …) y `SynthDef` lo serializa al JSON
+`SynthDefSpec` que el servidor compila por `/d_recv`. **Instance-based, sin
+contexto global de build** (varias defs en paralelo). El grafo equivalente al
+`default` interno (`SinOsc(freq)*amp` a los buses 0 y 1) rinde **byte-idéntico**.
+
+```sh
+PYTHONPATH=. python3 - <<'PY'
+from clausters.defs import SynthDef, control, sin_osc, out
+freq, amp = control("freq", 440.0), control("amp", 0.2)
+sig = sin_osc(freq) * amp                      # los operadores → UGens Mul/Add/…
+sd = SynthDef("py_default", out(0.0, sig), out(1.0, sig))
+print(sd.payload())                            # el JSON que ve /d_recv
+PY
+```
+
+En vivo (regla E2E, misma invocación Bash): `add_synthdef` bloquea hasta
+`/done`, después `synth(...)` instancia igual que una def interna.
+
+```sh
+(./target/debug/clausters --no-persist & SRV=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python3 -c "
+from clausters.defs import Server, SynthDef, control, sin_osc, out
+srv=Server()
+sig = sin_osc(control('freq',440.))*control('amp',0.2)
+print('add_synthdef ->', srv.add_synthdef(SynthDef('py_beep', out(0.,sig), out(1.,sig))))
+n=srv.synth('py_beep', {'freq':330.}); srv.sync()
+print('synths/defs:', srv.status()[2], srv.status()[4]); srv.free(n); srv.close()
+"; kill $SRV 2>/dev/null)
+```
+
 ## 5. Secuenciación: patterns y eventos (C5)
 
 Un `Pbind` toca una secuencia de notas; corre **NRT** (score → `render()`) o
@@ -271,7 +304,7 @@ PY
 
 ```sh
 cd clients/python
-python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq
+python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef
 ```
 
 `pytest` es la dependencia de dev (PEP 735 `[dependency-groups] dev`): a nivel
@@ -289,3 +322,4 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C3 | `signals` + `FaustDef` + allocators + slice E2E | sección 4 (NRT y vivo) |
 | C4 | reloj solo timing; `Server` posee comunicación y emite | secciones 3–5 |
 | C5 | patterns/eventos; `Pbind` NRT/vivo; timing exacto | sección 5 |
+| C5 leftover | `SynthDef` UGen (`/d_recv`); paridad byte-idéntica con `default` | sección 4 (def UGen) |

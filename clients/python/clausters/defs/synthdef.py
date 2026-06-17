@@ -1,0 +1,107 @@
+"""SynthDef: a named UGen graph ready for ``/d_recv`` (port of the ``SynthDef``
+side of ``sc3/synth``, adapted to Clausters' JSON ``SynthDefSpec``).
+
+The UGen-graph counterpart of :class:`~clausters.defs.faustdef.FaustDef`: it
+wraps one or more output :class:`~clausters.defs.ugens.Ugen` nodes (built with
+the lowercase callables in :mod:`clausters.defs.ugens`), walks the graph and
+serializes the ``{"name", "controls", "ugens"}`` JSON the server compiles.
+
+```python
+from clausters.defs import SynthDef, control, sin_osc, out
+
+freq = control("freq", 440.0)
+amp = control("amp", 0.2)
+sig = sin_osc(freq) * amp
+sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # stereo
+server.add_synthdef(sdef)                                # /d_recv
+```
+
+**Instance-based build (no globals).** The walk is a plain post-order traversal
+of the output nodes: a UGen is emitted only after its inputs, so the ``ugens``
+list is topologically ordered (every ``{"ugen": w}`` reference points at an
+earlier node, as the server requires) and shared sub-graphs are emitted once
+(dedup by object identity). Controls are gathered in first-seen order; reusing
+the same name with a different default is an error. No thread-global build
+context is touched, so defs build concurrently — the project's
+no-global-state rule (memory ``evitar-estados-globales-clausters``).
+"""
+
+import json
+
+from .ugens import Control, Ugen
+
+
+class SynthDef:
+    """A named UGen graph. Pass the output UGens (``out(...)`` /
+    ``replace_out(...)``, and any ``local_out(...)`` to keep feedback writes in
+    the graph); a def with no output UGen is silent on the server."""
+
+    def __init__(self, name: str, *outputs: Ugen):
+        if not outputs:
+            raise ValueError(
+                "a SynthDef needs at least one output UGen (e.g. out(bus, signal))"
+            )
+        for o in outputs:
+            if not isinstance(o, Ugen):
+                raise TypeError(f"SynthDef outputs must be UGens, got {o!r}")
+        self.name = str(name)
+        self.outputs = list(outputs)
+
+    def spec(self) -> dict:
+        """The ``SynthDefSpec`` dict the server's ``/d_recv`` compiles."""
+        ordered: list[Ugen] = []      # UGens in topological order
+        wire: dict[int, int] = {}     # id(ugen) -> its index in `ordered`
+        controls: list[Control] = []  # controls in first-seen order
+        ctl_index: dict[str, int] = {}
+
+        def visit(node):
+            if isinstance(node, Ugen):
+                if id(node) in wire:
+                    return
+                for inp in node.inputs:
+                    visit(inp)
+                wire[id(node)] = len(ordered)
+                ordered.append(node)
+            elif isinstance(node, Control):
+                seen = ctl_index.get(node.name)
+                if seen is None:
+                    ctl_index[node.name] = len(controls)
+                    controls.append(node)
+                elif controls[seen].default != node.default:
+                    raise ValueError(
+                        f"control {node.name!r} used with conflicting defaults "
+                        f"({controls[seen].default} vs {node.default})"
+                    )
+            elif isinstance(node, bool) or not isinstance(node, (int, float)):
+                raise TypeError(f"not a UGen graph node: {node!r}")
+            # a plain number is a constant: nothing to gather here
+
+        for o in self.outputs:
+            visit(o)
+
+        def ser(inp):
+            if isinstance(inp, Ugen):
+                return {"ugen": wire[id(inp)]}
+            if isinstance(inp, Control):
+                return {"control": ctl_index[inp.name]}
+            return {"const": float(inp)}
+
+        return {
+            "name": self.name,
+            "controls": [{"name": c.name, "default": c.default} for c in controls],
+            "ugens": [
+                {"kind": u.kind, "inputs": [ser(i) for i in u.inputs]} for u in ordered
+            ],
+        }
+
+    def payload(self) -> str:
+        """The wire payload for ``/d_recv <payload>`` (JSON text)."""
+        return json.dumps(self.spec())
+
+    def control_names(self) -> list[str]:
+        """The control names this def declares, in spec order (parallels
+        :meth:`FaustDef.control_names`)."""
+        return [c["name"] for c in self.spec()["controls"]]
+
+    def __repr__(self):
+        return f"SynthDef({self.name!r}, {len(self.outputs)} outputs)"

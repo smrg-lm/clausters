@@ -11,11 +11,14 @@ C3 ships the Faust-first definition layer and the server resources:
   :class:`Buffer` and their client-side allocators.
 - :mod:`~clausters.defs.server` — :class:`Server`: the live OSC round-trip
   (definitions, nodes, buses, buffers, ``/done``/``/fail``, ``/notify``).
-
-SynthDef-based definitions (``synthdef``/``ugens``) come later.
+- :mod:`~clausters.defs.ugens` / :mod:`~clausters.defs.synthdef` — the UGen
+  graph (lowercase callables → :class:`Ugen`/:class:`Control`) and
+  :class:`SynthDef` (``/d_recv``), the UGen-graph counterpart of the Faust
+  :mod:`~clausters.defs.signals` / :class:`FaustDef` pair.
 """
 
 from . import signals
+from . import ugens
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
@@ -23,11 +26,44 @@ from .faustdef import FaustDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
 from .server import Server
 from .signals import Signal
+from .synthdef import SynthDef
+from .ugens import (
+    Control,
+    Ugen,
+    buf_rd,
+    control,
+    impulse,
+    in_,
+    in_ctl,
+    local_in,
+    local_out,
+    out,
+    play_buf,
+    replace_out,
+    sin_osc,
+    white_noise,
+)
 
 __all__ = [
     "signals",
+    "ugens",
     "Signal",
     "FaustDef",
+    "SynthDef",
+    "Ugen",
+    "Control",
+    "control",
+    "sin_osc",
+    "impulse",
+    "white_noise",
+    "in_",
+    "in_ctl",
+    "out",
+    "replace_out",
+    "play_buf",
+    "buf_rd",
+    "local_in",
+    "local_out",
     "Bus",
     "AudioBusAllocator",
     "ControlBusAllocator",

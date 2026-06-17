@@ -47,10 +47,12 @@ OSC bytes to the server (UDP, or shm/embed via the transport module). Layering:
 - `clausters.seq` — sequencing: `Event`, the value patterns and `Pbind`,
   `EventStreamPlayer`.
 - `clausters.defs` — the **server side**: `signals` (lowercase callables mapping
-  Faust's Signal API into the JSON graph), `FaustDef`, the `Node`/`Bus`/`Buffer`
-  handles and allocators, and `Server` (owns the communication interface and
-  emits; swapping its interface retargets a routine from live RT to an NRT
-  score — the seam).
+  Faust's Signal API into the JSON graph) + `FaustDef` (`/d_faust`), and their
+  UGen-graph counterpart `ugens` (lowercase callables → `Ugen`/`Control`) +
+  `SynthDef` (`/d_recv`) — both built **instance-based, no global build
+  context**; the `Node`/`Bus`/`Buffer` handles and allocators, and `Server`
+  (owns the communication interface and emits; swapping its interface retargets
+  a routine from live RT to an NRT score — the seam).
 
 What is implemented (C0–C5) and what is planned (C6 UDP sample-clock anchoring,
 C7 MIDI interfaces, C8 TCP, …) is tracked in `clients/PLAN.md`; the hands-on
