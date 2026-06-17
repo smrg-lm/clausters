@@ -1901,6 +1901,30 @@ cliente JS y la distribución.
 - Suite: **43 passed**. Único pendiente de C5: grafo **instance-based** al portar
   SynthDef (diferido con `sc3/synth`).
 
+## C6 — Anclaje del sample-clock por UDP (track cliente)
+
+Completa el timebase sample-clock para el transporte **UDP** (antes solo se
+anclaba fácil por embed/shm con `.clock`).
+
+- **`defs/clocksync.py`** (nuevo): `SampleClockModel` — `sample = a + b·t` por
+  **mínimos cuadrados** sobre ventana deslizante de anchors `/clock` (midpoint
+  del round-trip como tiempo local; la latencia no acumula, solo corre la grilla
+  un constante). Mismo modelo que `examples/sample_clock.py` del servidor.
+  `UdpSampleClock` — usa **socket propio** (no compite con el de la `Server`);
+  `anchor()`/`warmup()`/`track(interval)` (re-anclaje en background) y
+  `timebase()` → `SampleClockTimebase(now, rate)`. `Server.sample_clock()` lo
+  construye.
+- Con esto, una `TempoClock(timebase=sc.timebase())` **paça contra el reloj de
+  muestras del servidor** y la `Server` emite por **`/sched <sample_absoluto>`**
+  (sample-accurate, sin drift) en vivo por UDP.
+- **Verificación**: `tests/test_clocksync.py` (modelo: recupera recta limpia,
+  mide drift ppm con pendiente conocida, fallback a rate nominal con 1 anchor,
+  smoke del timebase). Suite **47 passed**. **Live** (server+cliente misma
+  invocación): `warmup` por `/clock` (rate 44100, anchor ±0.20 ms) → `Pbind` por
+  `/sched`, synths suenan y se liberan. (El drift en runs cortos es ruidoso por
+  la cuantización de buffer del contador; converge con baseline largo y solo
+  afecta cuán temprano se envía el `/sched`, no cuándo dispara — documentado.)
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

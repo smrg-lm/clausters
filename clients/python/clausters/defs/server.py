@@ -220,5 +220,13 @@ class Server:
     def quit(self):
         self.send_msg("/quit")
 
+    def sample_clock(self, window: int = 64, timeout: float = 2.0):
+        """A :class:`~clausters.defs.clocksync.UdpSampleClock` tracking this
+        server's sample clock over UDP (C6). Pass its ``.timebase()`` to a
+        ``TempoClock`` to anchor timing to the server and schedule by ``/sched``."""
+        from .clocksync import UdpSampleClock
+
+        return UdpSampleClock(self, window=window, timeout=timeout)
+
     def close(self):
         self.interface.close()

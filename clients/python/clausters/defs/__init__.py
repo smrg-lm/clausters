@@ -17,6 +17,7 @@ SynthDef-based definitions (``synthdef``/``ugens``) come later.
 
 from . import signals
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
+from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
@@ -38,4 +39,6 @@ __all__ = [
     "NodeIDAllocator",
     "ROOT_NODE_ID",
     "Server",
+    "UdpSampleClock",
+    "SampleClockModel",
 ]

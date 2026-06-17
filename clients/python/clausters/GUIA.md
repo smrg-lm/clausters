@@ -232,6 +232,25 @@ clock.run(1.3); print('synths:', srv.status()[1:4]); srv.close()
 "; kill $SRV 2>/dev/null)
 ```
 
+### Anclado al reloj del servidor (C6, en vivo por UDP)
+
+Para timing sample-accurate sin drift, anclá el reloj al **sample-clock del
+servidor** (`/sched` en vez de timetag NTP). `Server.sample_clock()` modela el
+reloj por `/clock`; su `.timebase()` alimenta el `TempoClock`:
+
+```sh
+(./target/debug/clausters & SRV=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python3 -c "
+from clausters.base import TempoClock
+from clausters.defs import Server
+from clausters.seq import Pbind, Pseq
+srv=Server(latency=0.2); sc=srv.sample_clock(); sc.warmup(); sc.track()
+clock=TempoClock(tempo=4.0, timebase=sc.timebase())   # paça contra el servidor
+Pbind(instrument='default', freq=Pseq([262.,330.,392.,523.]), dur=1.0, amp=0.2).play(clock, srv)
+clock.run(1.4); print('synths:', srv.status()[1:4]); sc.close(); srv.close()
+"; kill $SRV 2>/dev/null)
+```
+
 ### Con `Session` (ergonomía sin globales)
 
 `Session` agrupa `Server`+reloj con fábricas; varias sesiones coexisten (NRT +
