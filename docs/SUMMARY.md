@@ -15,6 +15,7 @@
 
 - [Using Clausters as a library](using-as-a-library.md)
 - [Local transports & embedding](ipc.md)
+- [Clients & language bindings](clients.md)
 
 # Developer Guide
 

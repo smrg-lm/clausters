@@ -1864,6 +1864,27 @@ Principio del proyecto: evitar estados globales (ver memoria
   paridad más completo; ergonomía de defaults sin globales; SynthDef
   instance-based al portarlo.
 
+## C9 (parcial) — Documentación cross-lenguaje
+
+Adelanto del milestone de cierre porque es lo más útil para planificar el
+cliente JS y la distribución.
+
+- **`docs/clients.md`** (nuevo capítulo del mdBook, en `SUMMARY.md` bajo
+  "Library & Embedding"): el **contrato C-ABI único** (`clausters-core` →
+  `clausters-ffi` + embed/shm, regla de datos planos, los dos cdylibs y sus
+  entry points), el **cliente Python** (capas base/seq/defs, estado C0–C5,
+  cómo consume el C-ABI por ctypes y habla OSC), el **camino al cliente JS**
+  (mismo C-ABI vía N-API/wasm, generators/async en vez de `yield`; sin
+  implementar) y el **plan de distribución** (wheels Python, npm/wasm JS, Faust
+  reproducible en `third_party`). Tabla de estado.
+- **Confirmación del reuso del C-ABI**: Python (lenguaje no-Rust) ya maneja todo
+  el sistema (matemática del núcleo, render offline, servidor vivo) solo por el
+  C-ABI + OSC → la frontera no es Python-específica.
+- `mdbook build` en verde con el capítulo nuevo.
+- Pendiente del cierre (C9 ⏳ / C10): ejemplo en `examples/`, cliente JS real,
+  empaquetado wheels/npm + Faust en `third_party`; y mantener docs/ejemplos al
+  día (milestone C10).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
