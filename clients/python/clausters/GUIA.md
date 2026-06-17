@@ -232,6 +232,22 @@ clock.run(1.3); print('synths:', srv.status()[1:4]); srv.close()
 "; kill $SRV 2>/dev/null)
 ```
 
+### Con `Session` (ergonomía sin globales)
+
+`Session` agrupa `Server`+reloj con fábricas; varias sesiones coexisten (NRT +
+RT en el mismo script). Equivale a lo de arriba, más corto:
+
+```sh
+PYTHONPATH=. python3 - <<'PY'
+from clausters import Session
+from clausters.seq import Pbind, Pseq
+s = Session.nrt(tempo=2.0)
+s.play(Pbind(instrument="default", freq=Pseq([262.,330.,392.,523.]), dur=0.5, amp=0.2))
+samples, frames = s.render()        # drena el reloj y rinde el score
+print(f"session NRT: {frames} frames, peak {max(abs(x) for x in samples):.3f}")
+PY
+```
+
 ## 6. Suite de tests
 
 ```sh

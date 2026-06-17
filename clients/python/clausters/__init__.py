@@ -22,6 +22,7 @@ What is in place now:
 """
 
 from . import _native
+from .session import Session
 from .transport import (
     ABI_VERSION,
     SEGMENT_SIZE,
@@ -35,6 +36,7 @@ __all__ = [
     "SEGMENT_SIZE",
     "Clausters",
     "ShmClient",
+    "Session",
     "render",
     "_native",
 ]

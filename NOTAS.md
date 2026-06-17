@@ -1885,6 +1885,22 @@ cliente JS y la distribución.
   empaquetado wheels/npm + Faust en `third_party`; y mantener docs/ejemplos al
   día (milestone C10).
 
+## C5 — cierre de las sueltas (golden + ergonomía sin globales)
+
+- **`clausters.session.Session`** (nuevo, exportado del paquete): contexto
+  explícito que agrupa `Server`+`TempoClock`; fábricas `Session.nrt(tempo)` y
+  `Session.live(host, port, …)`; `play(pattern)`/`render()`/`run(s)`/`start`/
+  `stop`/context-manager. Devuelve la ergonomía de los defaults de sc3 **sin
+  estado global**: varias sesiones coexisten (NRT para plot + RT en vivo en el
+  mismo script). Test `tests/test_session.py` (render NRT; dos sesiones
+  independientes).
+- **`tests/test_golden.py`** (nuevo): golden de paridad — el render del camino
+  `Pbind` es **byte-idéntico** al del OSC hand-rolled equivalente (mismo motor
+  por el embed render); `list(hi)==list(lo)`, frames 91200. Prueba end-to-end de
+  event/pattern/timing.
+- Suite: **43 passed**. Único pendiente de C5: grafo **instance-based** al portar
+  SynthDef (diferido con `sc3/synth`).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

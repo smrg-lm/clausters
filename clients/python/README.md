@@ -29,6 +29,10 @@ Milestones C0–C5 are done. In place now:
   `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live
   or builds an NRT score by which interface the `Server` holds — with
   **yield-exact** timing (monotonic pacing, wall-clock timetags).
+- `clausters.Session` — ergonomic defaults **without global state**: bundles a
+  `Server` and a clock; `Session.nrt()` / `Session.live()` factories,
+  `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist (an
+  offline NRT one for plots next to a live RT one) in the same script.
 
 See [`clausters/GUIA.md`](clausters/GUIA.md) for a hands-on, milestone-by-
 milestone manual test guide (Spanish).
