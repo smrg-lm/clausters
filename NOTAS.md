@@ -1827,6 +1827,25 @@ Port de `sc3/seq`. Un `Pbind` corre RT o NRT solo cambiando la interfaz de la
   `latency`, reloj RT en un thread; los synths se liberan solos al terminar
   (`status` = 0 synths). Pacing monotónico, timetags wall.
 
+### Follow-up post-C5: contexto sin globales que se pisen entre hilos
+
+Principio del proyecto: evitar estados globales (ver memoria
+`evitar-estados-globales-clausters`); habilitar **RT y NRT en el mismo script**.
+
+- **`base/main.py`**: `main.current_tt` pasó a ser **thread-local**
+  (`threading.local`). Así varios `TempoClock` (threads) y un reloj RT en vivo
+  junto a un render NRT no se pisan el "thread actual". `Server`/`clock` siguen
+  explícitos por instancia; `default_clock` es solo azúcar opcional (nunca
+  requerido).
+- **`tests/test_concurrency.py`** (nuevo): (1) `current_tt` es thread-local
+  (un worker no clobberea al main); (2) dos relojes NRT concurrentes rinden
+  scores independientes y con timing exacto (sin mezclar frecuencias ni
+  tiempos); (3) **litmus**: un reloj RT churneando en un thread de fondo
+  mientras el main arma un score NRT — el NRT queda exacto. Suite: **35 passed**.
+- Pendiente del follow-up: timebase alternativo (sample-clock) + tests con ambas
+  opciones; golden de paridad más completo; ergonomía de defaults sin globales;
+  y, al portar SynthDef, construcción instance-based (defs concurrentes).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
