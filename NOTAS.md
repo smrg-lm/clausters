@@ -2020,12 +2020,15 @@ cambiando solo la sesión, nunca la rutina. Comentado para servir de puerta de
 entrada. Validado offline (46800 frames, peak 0.165) y en vivo (E2E misma
 invocación Bash). Catalogado en `docs/examples.md`.
 
-**De C9 queda pendiente** (no es del «mismo tema» docs/ejemplos, son esfuerzos
-grandes e independientes): el cliente **JS** real (N-API/wasm) y el empaquetado
-wheels/npm + build reproducible de Faust en `third_party` (este último ya es
-backlog del usuario). El mantenimiento general de docs/ejemplos es **C10** (p.
-ej. catalogar `synthdef.py`/`tcp_client.py` y refrescar refs «C0–C5» a «C0–C8»
-en README/`docs/clients.md`), no tocado acá por pedido del usuario.
+Con esto **C9 queda cerrado** (doc cross-lenguaje + ejemplo). Los dos items
+pesados que estaban mal planificados dentro de C9 se sacaron a milestones aparte
+(no son del «mismo tema» docs/ejemplos): el **cliente JS real** pasó a un nuevo
+**track «J»** (a planificar más adelante junto con el empaquetado npm; se basa en
+el cliente Python ya hecho), y el **empaquetado de wheels del cliente Python**
+(con el build reproducible de Faust en `third_party`, backlog del usuario) pasó a
+**C12** en los milestones futuros del track C. El mantenimiento general de
+docs/ejemplos sigue siendo **C10** (p. ej. catalogar `synthdef.py`/`tcp_client.py`
+y refrescar refs «C0–C5» a «C0–C8» en README/`docs/clients.md`), no tocado acá.
 
 ## Próximo: features nuevas
 
