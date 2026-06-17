@@ -15,6 +15,8 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 | script | what it shows |
 |---|---|
 | `sequencing.py` | The high-level [`clausters` client](clients.md): pattern sequencing with `Session` + `Pbind` + value patterns, and the one seam that runs the *same* phrase offline (NRT render) or live (UDP) by swapping the session. The flagship intro to the client library. |
+| `synthdef.py` | Builds a UGen `SynthDef` from Python (lowercase callables → graph → `/d_recv`), instance-based with no global build context, and proves it renders **byte-identically** to the server's built-in `default` def. |
+| `tcp_client.py` | The same `Server` facade over **TCP** (`OscTCPInterface`, length-prefixed OSC; start the server with `--tcp`) instead of UDP. |
 | `json_client.py` | Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust` (box API), `signal` (Faust Signal API: a `recursion`/`self` sine + a one-pole lowpass on noise), `wavetable`, `buffer`, `bundle`, `feedback` (a LocalIn/LocalOut resonant comb), `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
 | `auto_order.py` | [Auto-sorted groups](auto-order.md): builds a source → fx → master chain reversed on purpose and repairs it with one `/g_sortMode`. |
 | `sample_clock.py` | [The sample clock](sample-clock.md) as master timebase: models `sample(t)` from `/clock` anchors and schedules with `/sched`. |

@@ -2030,6 +2030,29 @@ el cliente Python ya hecho), y el **empaquetado de wheels del cliente Python**
 docs/ejemplos sigue siendo **C10** (p. ej. catalogar `synthdef.py`/`tcp_client.py`
 y refrescar refs «C0–C5» a «C0–C8» en README/`docs/clients.md`), no tocado acá.
 
+## C10 — barrido de mantenimiento de docs/ejemplos (2026-06-17)
+
+Barrido de C10 dejando docs y ejemplos al día con el estado real (C0–C9):
+
+- **Revisión de `SynthDef`** (pedida): la clase quedó sin cambios desde su commit
+  C5 (`db8557e`); las "correcciones que se fueron haciendo" son las decisiones de
+  diseño de C5, ahora **documentadas tal como quedaron** en la GUIA (sección «Def
+  UGen propia»): recorrido **post-orden topológico** + dedup por identidad,
+  controles juntados por nombre (default en conflicto = error), **solo `+-*/`**
+  componen UGens (otro operador/función levanta `TypeError` → usar Faust def), y
+  los outputs deben ser UGens. README/`docs/clients.md` ya la describían como
+  contraparte instance-based de `signals`/`FaustDef`; verificado que coincide con
+  el código.
+- **Estados refrescados**: «Milestones C0–C5 are done» → C0–C9 en
+  `clients/python/README.md` (+ menciones de `timebase`/TCP C8 y `clocksync` C6);
+  «C0–C5» → C0–C9 y tabla de estado actualizada en `docs/clients.md` (fila C9
+  hecha, JS → track J, distribución → C12/track J).
+- **Catálogo de ejemplos** (`docs/examples.md`): agregados `synthdef.py` y
+  `tcp_client.py` (faltaban) junto al ya catalogado `sequencing.py`.
+- **GUIA**: intro a C0–C9 y fila C9 en el checklist (correr `examples/sequencing.py`).
+- `mdbook build` limpio; suite Python 61 passed. C10 sigue activo: re-revisar a
+  medida que avancen nuevos milestones (track J, C11/C12, etc.).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

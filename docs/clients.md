@@ -54,10 +54,11 @@ OSC bytes to the server (UDP, or shm/embed via the transport module). Layering:
   (owns the communication interface and emits; swapping its interface retargets
   a routine from live RT to an NRT score — the seam).
 
-What is implemented (C0–C6, C8 TCP) and what is planned (C11 MIDI interfaces — the
-old C7, now a future milestone; see the workspace `PLAN.md` M17 —, …) is tracked
-in `clients/PLAN.md`; the hands-on
-guide is `clients/python/GUIA.md`. The destination interfaces include
+What is implemented (C0–C9: through TCP, the UGen `SynthDef`, and the
+cross-language docs + sequencing example) and what is planned (C11 MIDI
+interfaces — the old C7, now a future milestone; see the workspace `PLAN.md`
+M17 —, the JavaScript client in track J, …) is tracked in `clients/PLAN.md`;
+the hands-on guide is `clients/python/GUIA.md`. The destination interfaces include
 `OscUDPInterface` and `OscTCPInterface` (length-prefixed OSC; start the server
 with `--tcp`), both drop-in for the `Server`.
 
@@ -99,8 +100,8 @@ same C ABI and the same OSC.
 | Piece | State |
 |---|---|
 | Shared core + C ABI (`clausters-core`/`clausters-ffi`) | done |
-| Python client base/seq/defs (C0–C5) | done |
-| UDP sample-clock anchoring (C6), TCP transport (C8) | done |
+| Python client base/seq/defs, incl. UGen `SynthDef` (C0–C8) | done |
+| Cross-language docs + sequencing example (C9) | done |
 | MIDI interfaces (C11, ex-C7 → workspace M17) | planned |
-| JavaScript client | planned |
-| Wheels / npm / wasm distribution, `third_party` Faust | planned |
+| JavaScript client + npm (track J) | planned |
+| Python wheels packaging (C12), `third_party` Faust | planned |

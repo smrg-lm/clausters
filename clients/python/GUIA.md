@@ -1,7 +1,7 @@
 # Guía de prueba del cliente Python
 
 Cómo probar a mano la librería cliente de **Clausters** (paquete
-`clausters`, port Faust-first de sc3) milestone a milestone (C0–C8). Pensada
+`clausters`, port Faust-first de sc3) milestone a milestone (C0–C9). Pensada
 para Linux / Ubuntu 24.04+. Es el equivalente de la `GUIA.md` de la raíz, pero
 para la librería en vez del servidor.
 
@@ -202,6 +202,15 @@ La contraparte UGen de `FaustDef`: el grafo se arma con callables minúscula
 contexto global de build** (varias defs en paralelo). El grafo equivalente al
 `default` interno (`SinOsc(freq)*amp` a los buses 0 y 1) rinde **byte-idéntico**.
 
+Detalles de la clase tal como quedó: el recorrido es post-orden (los `ugens`
+salen topológicamente ordenados y los subgrafos compartidos se emiten una sola
+vez, dedup por identidad); los controles se juntan por nombre en orden de
+aparición (reusar un nombre con otro default es error). **Solo los operadores
+`+ - * /`** componen UGens (`Add`/`Sub`/`Mul`/`Div` — los únicos math UGens del
+servidor); cualquier otro operador o función matemática (`.sin()`, `%`, `min`,
+comparaciones) levanta `TypeError` claro: para eso está un Faust def
+(`signals`). Los outputs deben ser UGens (`out`/`replace_out`/`local_out`).
+
 ```sh
 PYTHONPATH=. python3 - <<'PY'
 from clausters.defs import SynthDef, control, sin_osc, out
@@ -360,3 +369,4 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C5 leftover | `SynthDef` UGen (`/d_recv`); paridad byte-idéntica con `default` | sección 4 (def UGen) |
 | C6 | anclaje sample-clock por UDP (`/clock` → modelo → `/sched`) | sección 5 (anclado) |
 | C8 | transporte TCP (`--tcp`, length-prefixed); `OscTCPInterface` | sección 5 (TCP) |
+| C9 | doc cross-lenguaje + ejemplo de secuenciación de alto nivel | `python3 examples/sequencing.py` (offline) y `--live` |

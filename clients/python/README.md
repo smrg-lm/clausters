@@ -5,7 +5,8 @@ ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
 see [`../PLAN.md`](../PLAN.md).
 
-Milestones C0–C5 are done. In place now:
+Milestones C0–C9 are done (the JavaScript client and the wheels/npm packaging
+are the remaining tracks). In place now:
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -16,8 +17,9 @@ Milestones C0–C5 are done. In place now:
 - `clausters.base` (C2) — the base layer: `builtins` (scalar/list math, f32 via
   the core), `absobject` (operator overloading), `stream` (`Routine`/`Stream`,
   the `yield` layer), `clock` (`TempoClock`, RT + NRT drives — **timing only**),
-  `netaddr`, `main`, the destination interfaces `_oscinterface`/`_midiinterface`,
-  and the minimal OSC wire encoder `_osclib`.
+  `timebase` (monotonic or, anchored to the server's sample clock, `/sched`),
+  `netaddr`, `main`, the destination interfaces `_oscinterface` (UDP / **TCP**
+  (C8) / NRT) and `_midiinterface`, and the minimal OSC wire encoder `_osclib`.
 - `clausters.defs` (C3) — Faust-first definitions and server resources:
   `signals` (lowercase callables mapping Faust's Signal API, composed into the
   JSON graph), `FaustDef`, the `Synth`/`Group`/`Bus`/`Buffer` handles and
@@ -25,7 +27,9 @@ Milestones C0–C5 are done. In place now:
   emits** (C4): swap its interface to retarget a routine from live RT to an NRT
   score without touching clock or routine. UGen-graph definitions are also here
   — `ugens` (lowercase callables → `Ugen`/`Control`) and `SynthDef` (`/d_recv`),
-  the instance-based UGen counterpart of `signals`/`FaustDef`.
+  the instance-based UGen counterpart of `signals`/`FaustDef`. `clocksync`
+  (C6) models the server's sample clock over UDP (`Server.sample_clock()`) for
+  drift-free `/sched` timing without shared memory.
 - `clausters.seq` (C5) — sequencing: `Event` (a note plays a synth and frees it
   after its sustain), the value patterns (`Pseq`, `Pwhite`, `Pseries`, …) and
   `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live
