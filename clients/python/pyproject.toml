@@ -16,8 +16,10 @@ authors = [{ name = "Lucas Samaruga" }]
 # without it ever being a dependency here.
 dependencies = []
 
-[project.optional-dependencies]
-test = ["pytest>=7"]
+# Development-only dependencies (PEP 735): the test runner. Not part of the
+# published package — install with `pip install --group dev` (or `uv sync`).
+[dependency-groups]
+dev = ["pytest>=7"]
 
 [tool.setuptools]
 packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs"]
