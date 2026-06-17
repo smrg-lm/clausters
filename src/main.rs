@@ -2,8 +2,10 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist]
+  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]]
                                                real-time server (OSC on UDP 57110)
+      --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
+                           default port 57110)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
@@ -97,9 +99,21 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut shm_path: Option<String> = None;
     let mut data_dir: Option<String> = None;
     let mut no_persist = false;
+    let mut tcp_port: Option<u16> = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
+            "--tcp" => {
+                // Optional port; defaults to the UDP port (separate namespace).
+                let mut port = DEFAULT_PORT;
+                if let Some(next) = it.clone().next()
+                    && let Ok(p) = next.parse::<u16>()
+                {
+                    port = p;
+                    it.next();
+                }
+                tcp_port = Some(port);
+            }
             "--workers" => {
                 let value = it.next().ok_or(format!("--workers needs a value\n{USAGE}"))?;
                 workers = parse_workers(value)?;
@@ -145,6 +159,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             shm_path.as_deref().unwrap_or(""),
             clausters::server::ipc::ABI_VERSION
         );
+    }
+    if let Some(port) = tcp_port {
+        let bound = osc.listen_tcp(("0.0.0.0", port))?;
+        println!("OSC on TCP {bound} (length-prefixed)");
     }
     println!(
         "clausters M14 — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",

@@ -122,9 +122,14 @@ def test_clock_beat_second_math():
     assert clk.secs2beats(1.0) == pytest.approx(2.0)
 
 
-def test_tcp_interface_is_a_stub():
-    with pytest.raises(NotImplementedError):
-        OscTCPInterface()
+def test_tcp_interface_constructs_and_frames():
+    # C8: no longer a stub. It constructs without connecting and frames an OSC
+    # packet with a 4-byte big-endian length prefix (full framing/reassembly
+    # coverage is in tests/test_tcp.py).
+    iface = OscTCPInterface(host="127.0.0.1", port=57110)
+    assert iface.time_mode == "unix"
+    framed = iface._frame(b"abcdef")
+    assert framed == (6).to_bytes(4, "big") + b"abcdef"
 
 
 # ---- the seam: one routine -> NRT score -> render ----

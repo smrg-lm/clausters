@@ -300,11 +300,34 @@ print(f"session NRT: {frames} frames, peak {max(abs(x) for x in samples):.3f}")
 PY
 ```
 
+### Transporte TCP (C8)
+
+El servidor también habla **OSC por TCP** con `--tcp` (length-prefixed: prefijo
+de 4 bytes big-endian + bytes OSC, mismo framing que scsynth). `OscTCPInterface`
+es drop-in de `OscUDPInterface`: la `Server` lo usa igual (request/reply,
+`/d_recv`, synths). Regla E2E (misma invocación Bash):
+
+```sh
+(./target/debug/clausters --tcp --no-persist & SRV=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python3 -c "
+from clausters.base import OscTCPInterface
+from clausters.defs import Server
+srv = Server(interface=OscTCPInterface().start())   # conecta por TCP
+print('status:', srv.status())                      # round-trip enmarcado
+import time; n = srv.synth('default', {'freq': 440.}); time.sleep(0.2)
+print('synths:', srv.status()[2]); srv.free(n); srv.close()
+"; kill $SRV 2>/dev/null)
+```
+
+`--tcp` toma un puerto opcional (default 57110, junto al UDP — espacios de
+nombres separados). El timing sigue en los timetags/`/sched`, así que la latencia
+de llegada no afecta *cuándo* dispara un comando agendado.
+
 ## 6. Suite de tests
 
 ```sh
 cd clients/python
-python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef
+python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef, test_tcp
 ```
 
 `pytest` es la dependencia de dev (PEP 735 `[dependency-groups] dev`): a nivel
@@ -323,3 +346,5 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C4 | reloj solo timing; `Server` posee comunicación y emite | secciones 3–5 |
 | C5 | patterns/eventos; `Pbind` NRT/vivo; timing exacto | sección 5 |
 | C5 leftover | `SynthDef` UGen (`/d_recv`); paridad byte-idéntica con `default` | sección 4 (def UGen) |
+| C6 | anclaje sample-clock por UDP (`/clock` → modelo → `/sched`) | sección 5 (anclado) |
+| C8 | transporte TCP (`--tcp`, length-prefixed); `OscTCPInterface` | sección 5 (TCP) |

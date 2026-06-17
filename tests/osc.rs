@@ -2,7 +2,8 @@
 //! round-trips, no audio device needed. The engine is ticked manually from
 //! the test (manual clock), never in real time.
 
-use std::net::{SocketAddr, UdpSocket};
+use std::io::{Read, Write};
+use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -543,4 +544,105 @@ fn sched_accepts_int_targets_and_bundle_blobs() {
     // If the inner NTP tag were honored, this synth would never start.
     server.wait_for_synth_count(1);
     server.quit();
+}
+
+// ---- TCP transport (server track M / client C8) ----
+
+/// A length-prefixed OSC client over TCP: a 4-byte big-endian length then the
+/// OSC bytes, the same framing the server's `osc::tcp` speaks both ways.
+struct TcpClient {
+    stream: TcpStream,
+}
+
+impl TcpClient {
+    fn connect(addr: SocketAddr) -> Self {
+        let stream = TcpStream::connect(addr).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        Self { stream }
+    }
+
+    fn send(&mut self, addr: &str, args: Vec<OscType>) {
+        let bytes = encoder::encode(&OscPacket::Message(OscMessage {
+            addr: addr.into(),
+            args,
+        }))
+        .unwrap();
+        self.stream
+            .write_all(&(bytes.len() as u32).to_be_bytes())
+            .unwrap();
+        self.stream.write_all(&bytes).unwrap();
+    }
+
+    fn recv(&mut self) -> OscMessage {
+        let mut prefix = [0u8; 4];
+        self.stream.read_exact(&mut prefix).expect("reply timed out");
+        let len = u32::from_be_bytes(prefix) as usize;
+        let mut buf = vec![0u8; len];
+        self.stream.read_exact(&mut buf).expect("short framed reply");
+        match decoder::decode_udp(&buf).unwrap().1 {
+            OscPacket::Message(msg) => msg,
+            OscPacket::Bundle(_) => panic!("expected a message, got a bundle"),
+        }
+    }
+
+    fn recv_until(&mut self, addr: &str) -> OscMessage {
+        for _ in 0..100 {
+            let msg = self.recv();
+            if msg.addr == addr {
+                return msg;
+            }
+        }
+        panic!("never received {addr}");
+    }
+}
+
+/// Spawns a server with TCP enabled (no audio device); returns the TCP address,
+/// the join handle and the engine kept alive so the handle stays valid.
+fn spawn_tcp_server() -> (SocketAddr, JoinHandle<std::io::Result<()>>, Engine) {
+    let (engine, handle) = engine_pair(48_000.0, 2);
+    let info = ServerInfo {
+        nominal_sample_rate: 48_000.0,
+        actual_sample_rate: 48_000.0,
+    };
+    let mut server = OscServer::bind(("127.0.0.1", 0), info, handle).unwrap();
+    let tcp_addr = server.listen_tcp(("127.0.0.1", 0)).unwrap();
+    let join = std::thread::spawn(move || server.run());
+    (tcp_addr, join, engine)
+}
+
+#[test]
+fn tcp_status_and_d_recv_roundtrip() {
+    let (tcp_addr, _join, _engine) = spawn_tcp_server();
+    let mut client = TcpClient::connect(tcp_addr);
+
+    // A query round-trips over the framed connection (the zero-length-UDP wake
+    // means we do not wait for the GC tick).
+    client.send("/status", vec![]);
+    assert_eq!(client.recv_until("/status.reply").addr, "/status.reply");
+
+    // A SynthDef sent over TCP compiles and the async /done comes back framed
+    // on the same connection.
+    let spec = br#"{"name":"tcp_def","controls":[],"ugens":[{"kind":"WhiteNoise","inputs":[]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":0}]}]}"#;
+    client.send("/d_recv", vec![OscType::Blob(spec.to_vec())]);
+    assert_eq!(
+        client.recv_until("/done").args[0],
+        OscType::String("/d_recv".into())
+    );
+}
+
+#[test]
+fn tcp_replies_route_to_the_originating_connection() {
+    let (tcp_addr, _join, _engine) = spawn_tcp_server();
+    let mut a = TcpClient::connect(tcp_addr);
+    let mut b = TcpClient::connect(tcp_addr);
+
+    // Only `a` asks: only `a` must receive the reply (per-connection routing).
+    a.send("/status", vec![]);
+    assert_eq!(a.recv_until("/status.reply").addr, "/status.reply");
+
+    // `b` is still healthy on its own connection afterwards.
+    b.send("/status", vec![]);
+    assert_eq!(b.recv_until("/status.reply").addr, "/status.reply");
 }

@@ -5,7 +5,7 @@ How Clausters is built, where everything lives, and the invariants a change must
 ## Threads
 
 ```text
-            OSC/UDP            cmd FIFO (SPSC, pre-built commands)
+         OSC/UDP+TCP           cmd FIFO (SPSC, pre-built commands)
  client ◄────────► network ─────────────────────────► audio (cpal callback)
                    thread  ◄───────────────────────── Engine::process_block
                      │   garbage FIFO + event FIFO
@@ -20,6 +20,7 @@ How Clausters is built, where everything lives, and the invariants a change must
 - **NRT thread** (`server::nrt`): all `/b_*` work — allocation, WAV reading/writing via hound, zeroing. One queue, so commands on the same buffer complete in submission order. Produces immutable buffers the network thread installs with `Cmd::SetBuffer`.
 - **DSP workers** (`server::workers`, M13, opt-in via `--workers N`): a fork-join pool the audio thread conducts to process the stages of `/g_parallel` groups. Atomic work stealing, bounded spinning, park/unpark only across idle gaps; each worker arms flush-to-zero at spawn. With 0 workers (the default and the whole test suite) the pool is inert and everything is sequential.
 - **Faust compiler thread** (`faust::compiler`, feature `faust`): JIT compilation of `/d_faust` defs. libfaust does not tolerate concurrent compilation in one process (SIGSEGV), so every compiling FFI call holds the process-wide `ffi_lock()`; instantiating from a finished factory is concurrency-safe and happens on the network thread.
+- **TCP I/O threads** (`osc::tcp`, opt-in via `--tcp [port]`): an acceptor thread plus one reader thread per connection turn each TCP byte stream into whole, length-prefixed OSC frames and hand them to the network thread over an `mpsc` channel — drained every loop iteration like the M14 ring. The command processing stays single-threaded; these threads only do I/O. A reader pings the network thread's own UDP socket with a **zero-length datagram** after queuing a frame, so the loop wakes immediately instead of waiting for the GC tick. Replies write back through the connection's write half (the network thread owns it; `&TcpStream` is `Write`, so a reply needs only a shared borrow). No async runtime, no new dependency.
 
 **Offline rendering** (`server::render`, the `--nrt` CLI mode) uses no threads at all: one thread drives both halves of `engine_pair`, runs NRT jobs and Faust compilations synchronously between blocks (scsynth NRT semantics), and arms flush-to-zero once at the start. Because scheduled commands go through the same engine queue as in real time, an offline render is sample-identical to a perfectly timed live take.
 
@@ -45,6 +46,7 @@ The realtime backend (cpal) sits behind the `realtime` feature (on by default); 
 | `src/synthdef/` | SynthDef JSON wire format, validation/compilation, `UGenSynth` instance |
 | `src/osc/mod.rs` | `decode_packet` — the only entry point for incoming OSC bytes |
 | `src/osc/server.rs` | The network thread: socket loop, immediate handlers, replies |
+| `src/osc/tcp.rs` | TCP transport (`--tcp`): acceptor/reader threads, length-prefixed framing, `TcpHub` |
 | `src/osc/translate.rs` | `CmdTranslator`: OSC message → `Cmd`, shared by the live server and the renderer; owns the M12 tree mirror |
 | `src/osc/graph.rs` | M12: bus-usage analysis, the network-side `TreeMirror`, the stable topological sort behind `/g_sortMode` |
 | `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth` |

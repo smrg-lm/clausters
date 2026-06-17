@@ -1,8 +1,9 @@
-//! OSC layer: UDP server, parsing with rosc and translation into engine
+//! OSC layer: UDP/TCP server, parsing with rosc and translation into engine
 //! commands.
 
 pub mod graph;
 pub mod server;
+pub mod tcp;
 pub mod translate;
 
 use std::net::SocketAddr;
@@ -11,11 +12,13 @@ use rosc::{OscPacket, decoder};
 
 /// Where a request came from and where its replies go (M14): the OSC
 /// *encoding* is transport-independent, so client identity is too. `Udp` is
-/// a remote socket; `Ring` is the single shared-memory / in-process ring
-/// client of `server::ipc`.
+/// a remote socket; `Tcp(id)` is a connected TCP client (the per-connection id
+/// from `tcp`); `Ring` is the single shared-memory / in-process ring client of
+/// `server::ipc`.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ClientId {
     Udp(SocketAddr),
+    Tcp(u64),
     Ring,
 }
 
@@ -23,6 +26,7 @@ impl std::fmt::Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ClientId::Udp(addr) => write!(f, "{addr}"),
+            ClientId::Tcp(id) => write!(f, "tcp client {id}"),
             ClientId::Ring => write!(f, "ring client"),
         }
     }

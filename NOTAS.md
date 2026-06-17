@@ -1963,6 +1963,46 @@ build estilo `UGen.buildSynthDef` de sclang).
   `/status`). Ejemplo `examples/synthdef.py` (imprime el JSON, prueba la paridad,
   opcionalmente escribe un WAV).
 
+## C8 — Transporte TCP (servidor track M + cliente, 2026-06-17)
+
+Las dos puntas del único milestone con dependencia cruzada cliente↔servidor: el
+servidor aprende a hablar OSC por TCP y el cliente estrena `OscTCPInterface`.
+
+- **Servidor — `src/osc/tcp.rs`** (`--tcp [port]`, default 57110 junto al UDP,
+  espacios de nombres separados): OSC **length-prefixed** (4 bytes BE + bytes,
+  el framing de scsynth, en ambos sentidos). Multiplexado en el loop
+  single-thread **sin runtime async ni dependencia nueva**, con el patrón del
+  ring M14: un hilo **acceptor** + un hilo **lector por conexión** parten el
+  stream en frames OSC completos y los pasan por un canal `mpsc` que el loop
+  drena cada iteración (`drain_tcp`, como `drain_ring`). Para no esperar el tick
+  de GC (100 ms), el lector **despierta** el loop con un datagrama UDP de
+  **longitud 0** al propio socket del servidor (`run()` trata `len==0` como wake
+  y reitera). Las réplicas salen por el write-half de la conexión, que posee el
+  hilo de red en un `HashMap<u64, TcpStream>`; como `&TcpStream: Write`, escribir
+  una réplica necesita solo `&self` (las conexiones muertas se podan al recibir
+  `Disconnected`). `ClientId::Tcp(id)` (id por conexión) rutea cada réplica a su
+  origen. Frame máximo 64 KiB; prefijo inválido/0 cierra la conexión.
+- **Cliente — `OscTCPInterface`** (`base/_oscinterface.py`): drop-in de
+  `OscUDPInterface` (la `Server` lo usa igual; el arg `target` se ignora, la
+  conexión ya conoce su peer). `send_msg`/`send_bundle` enmarcan; `recv`
+  **reensambla** prefijo+payload a través de segmentos TCP con un buffer
+  interno. `--tcp` toma puerto opcional.
+- **Frontera/decodificación**: los bytes TCP pasan por el único `decode_packet`
+  como todo transporte; no se relaja la validación. El timing sigue en
+  timetags/`/sched`, así que la latencia de llegada por TCP no afecta *cuándo*
+  dispara un comando agendado (solo demora la llegada de comandos inmediatos, y
+  el wake la hace ~inmediata).
+- **Verificación**: `tests/osc.rs::tcp_status_and_d_recv_roundtrip` y
+  `tcp_replies_route_to_the_originating_connection` (sin device de audio, mismo
+  `engine_pair` que los tests UDP); `clients/python/tests/test_tcp.py` (framing y
+  reensamblado entre segmentos con un socket falso, determinístico, sin server
+  vivo); E2E en vivo (server `--tcp` + `OscTCPInterface`: `/status`, `/d_recv`,
+  synth). Ejemplo `examples/tcp_client.py`. Suites verdes (Rust `osc`: 21;
+  Python: 61). El stub histórico de `OscTCPInterface` y su test pasaron a la
+  implementación real. **Diferido**: lower-latency por epoll/mio (hoy el wake por
+  UDP-0 ya hace el round-trip inmediato), y limpiar entradas de `/notify` de
+  conexiones TCP caídas (hoy la réplica a una conexión muerta se descarta).
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

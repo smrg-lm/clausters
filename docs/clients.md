@@ -54,9 +54,11 @@ OSC bytes to the server (UDP, or shm/embed via the transport module). Layering:
   (owns the communication interface and emits; swapping its interface retargets
   a routine from live RT to an NRT score — the seam).
 
-What is implemented (C0–C5) and what is planned (C6 UDP sample-clock anchoring,
-C7 MIDI interfaces, C8 TCP, …) is tracked in `clients/PLAN.md`; the hands-on
-guide is `clients/python/clausters/GUIA.md`.
+What is implemented (C0–C6, C8 TCP) and what is planned (C7 MIDI interfaces — see
+the workspace `PLAN.md` M17 —, …) is tracked in `clients/PLAN.md`; the hands-on
+guide is `clients/python/clausters/GUIA.md`. The destination interfaces include
+`OscUDPInterface` and `OscTCPInterface` (length-prefixed OSC; start the server
+with `--tcp`), both drop-in for the `Server`.
 
 **This is also the proof the contract is language-agnostic**: Python — a
 non-Rust language — already drives the whole system (core math, offline render,
@@ -97,6 +99,7 @@ same C ABI and the same OSC.
 |---|---|
 | Shared core + C ABI (`clausters-core`/`clausters-ffi`) | done |
 | Python client base/seq/defs (C0–C5) | done |
-| UDP sample-clock anchoring, MIDI, TCP (C6–C8) | planned |
+| UDP sample-clock anchoring (C6), TCP transport (C8) | done |
+| MIDI interfaces (C7 → workspace M17) | planned |
 | JavaScript client | planned |
 | Wheels / npm / wasm distribution, `third_party` Faust | planned |

@@ -13,6 +13,7 @@ the native core; this layer only encodes and routes.
 """
 
 import socket
+import time
 
 from . import _osclib
 
@@ -82,16 +83,79 @@ class OscUDPInterface(OscInterface):
 
 
 class OscTCPInterface(OscInterface):
-    """Real-time TCP (length-prefixed). The Clausters server does not speak TCP
-    yet, so this is a deliberate stub kept for interface symmetry."""
+    """Real-time TCP, length-prefixed (client C8). Each OSC packet — message or
+    bundle — goes out as a 4-byte big-endian length followed by the bytes, the
+    same framing scsynth uses and the server's ``osc::tcp`` expects; replies
+    arrive framed the same way over the one connection. A drop-in for
+    :class:`OscUDPInterface` (the ``target`` argument is ignored: the connection
+    already knows its peer). Start the server with ``--tcp``."""
 
     time_mode = "unix"
 
-    def __init__(self, *args, **kwargs):
-        raise NotImplementedError(
-            "TCP transport is not implemented in the server yet "
-            "(clients/PLAN.md: OscTCPInterface stub)"
-        )
+    def __init__(self, host: str = "127.0.0.1", port: int = 57110):
+        self.host = host
+        self.port = port
+        self._sock = None
+        self._buf = b""        # leftover bytes between framed reads
+
+    def start(self):
+        self._sock = socket.create_connection((self.host, self.port))
+        self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        return self
+
+    def stop(self):
+        if self._sock is not None:
+            self._sock.close()
+            self._sock = None
+        self._buf = b""
+
+    close = stop
+
+    def _ensure(self):
+        if self._sock is None:
+            self.start()
+
+    @staticmethod
+    def _frame(payload: bytes) -> bytes:
+        return len(payload).to_bytes(4, "big") + payload
+
+    def send_msg(self, target, addr, *args):
+        self._ensure()
+        self._sock.sendall(self._frame(_osclib.message(addr, *args)))
+
+    def send_bundle(self, target, when, *messages):
+        self._ensure()
+        packets = [_osclib.message(*m) for m in messages]
+        self._sock.sendall(self._frame(_osclib.bundle_at(when, *packets)))
+
+    def _recv_into_buf(self, timeout) -> bool:
+        """Reads one chunk into ``_buf`` within ``timeout``; False on
+        timeout/close."""
+        self._sock.settimeout(timeout)
+        try:
+            chunk = self._sock.recv(65536)
+        except (TimeoutError, OSError):
+            return False
+        if not chunk:
+            return False
+        self._buf += chunk
+        return True
+
+    def recv(self, timeout):
+        """One reply packet (the bytes inside a frame), or ``None``. Reassembles
+        the 4-byte length prefix and payload across TCP segments."""
+        self._ensure()
+        deadline = time.monotonic() + timeout
+        while True:
+            if len(self._buf) >= 4:
+                length = int.from_bytes(self._buf[:4], "big")
+                if len(self._buf) >= 4 + length:
+                    packet = self._buf[4:4 + length]
+                    self._buf = self._buf[4 + length:]
+                    return packet
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self._recv_into_buf(remaining):
+                return None
 
 
 class OscScore:

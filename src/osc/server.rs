@@ -75,6 +75,9 @@ pub struct OscServer {
     recv_buf: Vec<u8>,
     /// M14: the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
+    /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
+    /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
+    tcp: Option<crate::osc::tcp::TcpHub>,
     /// On-disk def persistence, when a data directory is configured. Defs
     /// loaded from it on startup; `/d_recv`/`/d_faust` write to it,
     /// `/d_free` deletes from it.
@@ -104,6 +107,7 @@ impl OscServer {
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
             ipc: None,
+            tcp: None,
             store: None,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
@@ -145,6 +149,27 @@ impl OscServer {
         self.socket.local_addr()
     }
 
+    /// Starts accepting length-prefixed OSC over TCP on `addr` (server track M /
+    /// client C8). The run loop drains the connections every iteration and a
+    /// zero-length UDP datagram to our own address wakes it the moment a frame
+    /// arrives, so TCP requests don't wait for the GC tick. Returns the bound
+    /// TCP address.
+    pub fn listen_tcp(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
+        // Reader threads wake the loop by pinging the UDP socket; if we bound to
+        // an unspecified address, ping loopback on the same port.
+        let mut wake_target = self.socket.local_addr()?;
+        if wake_target.ip().is_unspecified() {
+            wake_target.set_ip(match wake_target {
+                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+            });
+        }
+        let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target)?;
+        let bound = hub.local_addr();
+        self.tcp = Some(hub);
+        Ok(bound)
+    }
+
     /// M14: attaches the ring endpoint of an IPC segment. The run loop then
     /// drains it on every iteration; to keep ring latency low without a
     /// cross-process semaphore (v1 trade-off), the socket timeout — the
@@ -160,6 +185,9 @@ impl OscServer {
     pub fn run(&mut self) -> io::Result<()> {
         loop {
             if let Flow::Quit = self.drain_ring() {
+                return Ok(());
+            }
+            if let Flow::Quit = self.drain_tcp() {
                 return Ok(());
             }
             let (len, from) = match self.socket.recv_from(&mut self.recv_buf) {
@@ -181,6 +209,11 @@ impl OscServer {
                 Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => continue,
                 Err(e) => return Err(e),
             };
+            if len == 0 {
+                // A zero-length datagram is a TCP wake (a reader queued a frame
+                // or a disconnect): loop back to drain TCP/ring promptly.
+                continue;
+            }
             // The single decode entry point for every transport (`crate::osc`).
             let packet = match crate::osc::decode_packet(&self.recv_buf[..len]) {
                 Ok(packet) => packet,
@@ -222,6 +255,38 @@ impl OscServer {
                 }
             };
             if let Flow::Quit = self.handle_packet(packet, ClientId::Ring) {
+                return Flow::Quit;
+            }
+        }
+    }
+
+    /// Handles every complete TCP frame currently queued. Same validation path
+    /// as UDP (`decode_packet`); TCP bytes are untrusted. Replies route back to
+    /// the originating connection via [`ClientId::Tcp`].
+    fn drain_tcp(&mut self) -> Flow {
+        loop {
+            // Scope the `&mut self.tcp` borrow so `handle_packet(&mut self)` and
+            // its replies (which read `self.tcp`) can run.
+            let next = match &mut self.tcp {
+                Some(hub) => hub.next_frame(),
+                None => return Flow::Continue,
+            };
+            let Some((id, bytes)) = next else {
+                return Flow::Continue;
+            };
+            let packet = match crate::osc::decode_packet(&bytes) {
+                Ok(packet) => packet,
+                Err(e) => {
+                    eprintln!("malformed OSC packet from tcp client {id}: {e}");
+                    continue;
+                }
+            };
+            let flow = self.handle_packet(packet, ClientId::Tcp(id));
+            self.collect_garbage();
+            self.collect_nrt_results();
+            #[cfg(feature = "faust")]
+            self.collect_faust_results();
+            if let Flow::Quit = flow {
                 return Flow::Quit;
             }
         }
@@ -786,6 +851,13 @@ impl OscServer {
             ClientId::Udp(addr_to) => {
                 if let Err(e) = self.socket.send_to(&bytes, addr_to) {
                     eprintln!("failed to send {addr} to {addr_to}: {e}");
+                }
+            }
+            ClientId::Tcp(id) => {
+                // Length-prefixed reply on the originating connection; dropped
+                // if it has since closed.
+                if let Some(hub) = &self.tcp {
+                    hub.reply(id, &bytes);
                 }
             }
             ClientId::Ring => {
