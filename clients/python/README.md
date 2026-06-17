@@ -5,7 +5,7 @@ ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
 see [`../PLAN.md`](../PLAN.md).
 
-This is the **C1 scaffold**. In place now:
+Milestones C0–C2 are done. In place now:
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -13,10 +13,14 @@ This is the **C1 scaffold**. In place now:
 - `clausters._native` — ctypes binding over the shared native core
   (`clausters-ffi`): numeric builtins, seeded white noise and clock/sample
   math, matching the server by construction.
-- `clausters.base._osclib` — minimal OSC wire encoding.
-- `clausters.base` / `clausters.seq` / `clausters.defs` — placeholders for the
-  base layer (C2), sequencing (C4) and Faust/SynthDef definitions plus server
-  resources (C3).
+- `clausters.base` (C2) — the base layer: `builtins` (scalar/list math, f32 via
+  the core), `absobject` (operator overloading), `stream` (`Routine`/`Stream`,
+  the `yield` layer), `clock` (`TempoClock`, RT + NRT drives), `netaddr`,
+  `main`, and the destination interfaces `_oscinterface`/`_midiinterface` —
+  swap the interface to retarget a routine from live RT to an NRT score without
+  changing it. Plus the minimal OSC wire encoder `_osclib`.
+- `clausters.seq` / `clausters.defs` — placeholders for sequencing (C4) and
+  Faust/SynthDef definitions plus server resources (C3).
 
 ## Building the native libraries
 

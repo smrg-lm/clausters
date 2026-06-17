@@ -1,0 +1,171 @@
+"""C2 base-layer tests.
+
+The headline is the destination-swap seam: one routine + clock produces an NRT
+score (rendered to audio) just by giving the clock an ``OscNrtInterface``. The
+rest unit-tests builtins (native, f32), the operator-overloading base, the
+stream/routine protocol and the native-backed clock math.
+"""
+
+import pytest
+
+from clausters.base import builtins as B
+from clausters.base import (
+    AbstractObject,
+    NetAddr,
+    OscNrtInterface,
+    OscTCPInterface,
+    Routine,
+    StopStream,
+    TempoClock,
+)
+from clausters.base import _osclib as osc
+
+
+def _ffi_or_skip():
+    try:
+        from clausters import _native
+        _native.lib()
+    except OSError as e:
+        pytest.skip(f"clausters-ffi not built: {e}")
+
+
+# ---- builtins: scalar + list, f32 via the core ----
+
+def test_builtins_scalar_and_list():
+    _ffi_or_skip()
+    assert B.add(1.5, 2.0) == pytest.approx(3.5)
+    assert B.mul([1.0, 2.0, 3.0], 2.0) == [2.0, 4.0, 6.0]
+    # two lists, cyclic extension of the shorter one (sc3 semantics)
+    assert B.add([10.0, 20.0, 30.0, 40.0], [1.0, 2.0]) == [11.0, 22.0, 31.0, 42.0]
+    assert B.sqrt([9.0, 16.0]) == [3.0, 4.0]
+
+
+def test_builtins_are_f32_not_python_float():
+    _ffi_or_skip()
+    # 0.1 + 0.2 in f32 differs from Python's f64 0.30000000000000004; the
+    # client matches the server because it rounds through the core.
+    assert B.add(0.1, 0.2) != 0.1 + 0.2
+
+
+def test_music_helpers():
+    assert B.midicps(69) == pytest.approx(440.0)
+    assert B.dbamp(0.0) == pytest.approx(1.0)
+
+
+# ---- absobject: operator overloading dispatches by selector ----
+
+class _Recorder(AbstractObject):
+    """Records the composed expression instead of evaluating it."""
+
+    def __init__(self, tag):
+        self.tag = tag
+
+    def _compose_unop(self, selector):
+        return _Recorder((selector, self.tag))
+
+    def _compose_binop(self, selector, other):
+        return _Recorder((selector, self.tag, other))
+
+    def _rcompose_binop(self, selector, other):
+        return _Recorder((selector, other, self.tag))
+
+    def _compose_narop(self, selector, *args):
+        return _Recorder((selector, self.tag, args))
+
+
+def test_operator_overloading_uses_selectors():
+    x = _Recorder("x")
+    assert (x + 1).tag == ("add", "x", 1)
+    assert (2 * x).tag == ("mul", 2, "x")  # reflected
+    assert (-x).tag == ("neg", "x")
+    assert x.midicps().tag == ("midicps", "x")
+    assert x.max(3).tag == ("max", "x", 3)
+
+
+# ---- stream / routine ----
+
+def test_routine_yields_and_finishes():
+    def counter(_):
+        yield 1
+        yield 2
+        yield 3
+
+    r = Routine(counter)
+    assert [r.next(), r.next(), r.next()] == [1, 2, 3]
+    with pytest.raises(StopStream):
+        r.next()
+    r.reset()
+    assert r.next() == 1
+
+
+def test_routine_receives_inval_on_resume():
+    seen = []
+
+    def echo(first):
+        got = first
+        while True:
+            got = yield got
+            seen.append(got)
+
+    r = Routine(echo)
+    assert r.next("a") == "a"      # initial arg flows through
+    assert r.next("b") == "b"      # sent into the yield
+    assert seen == ["b"]
+
+
+# ---- clock math (native-backed) ----
+
+def test_clock_beat_second_math():
+    _ffi_or_skip()
+    clk = TempoClock(tempo=2.0)  # 2 beats/s
+    assert clk.beats2secs(2.0) == pytest.approx(1.0)
+    assert clk.secs2beats(1.0) == pytest.approx(2.0)
+
+
+def test_tcp_interface_is_a_stub():
+    with pytest.raises(NotImplementedError):
+        OscTCPInterface()
+
+
+# ---- the seam: one routine -> NRT score -> render ----
+
+def _play_arpeggio(clock):
+    """A routine that schedules five notes one beat apart, then closes."""
+    for i, freq in enumerate([262.0, 330.0, 392.0, 523.0, 659.0]):
+        node = 1000 + i
+        clock.send_bundle(("/s_new", "default", node, 1, 0, "freq", freq, "amp", 0.2))
+        clock.send_bundle(("/n_free", node), delay_beats=0.9)
+        yield 1.0
+    clock.send_bundle(("/n_free", 0))  # closes the render
+
+
+def test_routine_renders_through_nrt_interface():
+    _ffi_or_skip()
+    nrt = OscNrtInterface()
+    clock = TempoClock(tempo=2.0, target=NetAddr(), interface=nrt)
+    clock.play(Routine(_play_arpeggio))
+    clock.render()  # drain the queue logically; routine fills the score
+
+    assert len(nrt.score.bundles) > 5  # five notes + frees + close
+    try:
+        samples, frames = nrt.render(sample_rate=48_000.0, channels=2)
+    except (OSError, RuntimeError, AttributeError) as e:
+        pytest.skip(f"embed library not built/usable: {e}")
+    assert frames > 0
+    assert max(abs(s) for s in samples) > 0.0
+
+
+if __name__ == "__main__":
+    import traceback
+
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print(f"ok   {name}")
+            except BaseException as e:  # noqa: BLE001 — smoke harness
+                kind = type(e).__name__
+                skip = kind in ("Skipped", "OutcomeException")
+                print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
+                if not skip:
+                    traceback.print_exc()

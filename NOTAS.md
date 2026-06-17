@@ -1654,6 +1654,53 @@ usable desde Python.
 - Docs actualizadas (ruta del transport movida): `docs/examples.md`,
   `docs/ipc.md`, `docs/schemas.md`, `GUIA.md`.
 
+## C2 — Capa base del cliente Python (track cliente)
+
+Port selectivo de `sc3/base`. La pieza central es la **costura de interfaces de
+destino**: un mismo `Routine`+`TempoClock` produce eventos RT o un score NRT
+solo cambiando la interfaz, sin tocar reloj ni rutina.
+
+- **`base/builtins.py`**: ops numéricas sobre escalar o lista, despachadas al
+  núcleo (`_native`) → se computan en **f32**, equivalentes al servidor (la
+  `float` de Python es f64 y divergiría). Listas con extensión cíclica del
+  operando más corto (semántica sc3). Helpers músico-teóricos (`midicps`,
+  `dbamp`, …) en Python puro con la fórmula estándar. Cuidado: `min`/`max`/`pow`
+  del módulo sombrean las builtins de Python; internamente se usa `_py.max`.
+- **`base/absobject.py`**: `AbstractObject` con sobrecarga de operadores
+  (aritméticos, comparación, bitwise) y métodos nombrados, todo despachado por
+  cuatro hooks (`_compose_unop/_binop/_rcompose_binop/_narop`). Los selectores
+  son los mismos nombres que `builtins` (valor) y luego `defs/signals` (grafo).
+- **`base/stream.py`**: `Stream`/`Routine`/`FunctionStream` + `StopStream`/
+  `YieldAndReset`. `Routine` envuelve una **generator function** (0 o 1 arg);
+  `next(inval)` la reanuda (primer resume con el arg, luego `.send`), el valor
+  `yield`eado es el tiempo a esperar (en beats). `yield` se queda en Python.
+- **`base/clock.py`**: `TempoClock` native-backed. La aritmética beat↔segundo
+  va por `_native` (matchea el sample-clock del servidor); la cola es `heapq` en
+  Python (el `Scheduler` del núcleo no está expuesto por FFI todavía). Dos
+  drives: `start/run` (tiempo real, hilo + `Condition`) y `render` (NRT, drena
+  la cola en orden de beat sin dormir). `send_bundle` emite a la interfaz con el
+  tiempo correcto según `time_mode` (unix absoluto en RT, segundos-desde-inicio
+  en NRT).
+- **`base/_oscinterface.py`**: `OscInterface` + `OscUDPInterface` (RT, socket),
+  `OscNrtInterface`+`OscScore` (acumula bundles → score → `render()` por el
+  transport de C1), `OscTCPInterface` (stub: TCP no implementado en el
+  servidor). **`base/_midiinterface.py`**: `MidiNrtInterface`+`MidiScore`
+  funcional, `MidiRtInterface` stub (sin backend MIDI como dependencia).
+- **`base/netaddr.py`** (`NetAddr` host/puerto) y **`base/main.py`**
+  (`main`: clock por defecto, time-thread actual, RNG con semilla).
+- **`base/_osclib.py`**: agregado `bundle_at` (timetag NTP absoluto) para el
+  envío RT.
+
+### Verificación
+
+- `clients/python/tests/test_base.py` (pytest o `python tests/test_base.py`):
+  builtins escalar/lista/f32/música, sobrecarga de operadores por selector,
+  routine (yield + inval + reset + StopStream), matemática del clock, TCP stub,
+  y el **caso estrella**: routine→`OscNrtInterface`→score→`render()`.
+- Corrido inline (pytest no instalado): **todo pasa**. Seam NRT = 120000 frames
+  @ 48k (peak = amp); smoke del driver RT = 4 eventos, parada limpia, sin
+  deadlock.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

@@ -57,9 +57,13 @@ def _timetag(ntp_seconds: float) -> bytes:
 
 def bundle(seconds_ahead: float, *packets: bytes) -> bytes:
     """An RT bundle timetagged `seconds_ahead` from now (wall clock)."""
-    target = time.time() + seconds_ahead + NTP_UNIX_OFFSET
+    return bundle_at(time.time() + seconds_ahead, *packets)
+
+
+def bundle_at(unix_seconds: float, *packets: bytes) -> bytes:
+    """An RT bundle timetagged at an absolute Unix instant (wall clock)."""
     body = b"".join(struct.pack(">i", len(p)) + p for p in packets)
-    return _string("#bundle") + _timetag(target) + body
+    return _string("#bundle") + _timetag(unix_seconds + NTP_UNIX_OFFSET) + body
 
 
 def score_bundle(seconds: float, *packets: bytes) -> bytes:
