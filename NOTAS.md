@@ -1842,9 +1842,27 @@ Principio del proyecto: evitar estados globales (ver memoria
   scores independientes y con timing exacto (sin mezclar frecuencias ni
   tiempos); (3) **litmus**: un reloj RT churneando en un thread de fondo
   mientras el main arma un score NRT — el NRT queda exacto. Suite: **35 passed**.
-- Pendiente del follow-up: timebase alternativo (sample-clock) + tests con ambas
-  opciones; golden de paridad más completo; ergonomía de defaults sin globales;
-  y, al portar SynthDef, construcción instance-based (defs concurrentes).
+### Follow-up post-C5: timebase seleccionable (monotónico vs sample-clock)
+
+- **`base/timebase.py`** (nuevo): `Timebase` con `MonotonicTimebase` (default, el
+  reloj del SO; eventos por bundle NTP) y `SampleClockTimebase(sample, sr)`
+  (`now = sample()/sr`, anclado al **reloj de muestras del servidor**; `sample`
+  es cualquier callable al contador, p. ej. `Clausters.clock`/`ShmClient.clock`).
+- **`base/clock.py`**: `TempoClock(timebase=…)` usa el objeto (default
+  `MonotonicTimebase`); `pacing_origin` expone el origen en segundos del
+  timebase. **`defs/server.py`**: en RT, si el timebase es `SampleClockTimebase`
+  emite por **`/sched <sample_absoluto>`** (`origin + secs + latency` × sr,
+  sample-accurate, sin drift) en vez de timetag wall; si no, bundle NTP como
+  antes. NRT (score, lógico) es **independiente del timebase**. Agregado
+  `_osclib.immediate_bundle` (blob del `/sched`).
+- **Verificación** (`tests/test_timebase.py`, **40 passed** en la suite):
+  monotónico emite bundle NTP (no `/sched`); sample-clock paça contra el contador
+  y emite `/sched` con el sample exacto (+ efecto de `latency`); NRT idéntico con
+  ambos timebases. `/sched` **validado en vivo** (servidor acepta y procesa;
+  synths suenan y se liberan).
+- Pendiente: lector real del sample-clock sobre UDP (anclaje `/clock`); golden de
+  paridad más completo; ergonomía de defaults sin globales; SynthDef
+  instance-based al portarlo.
 
 ## Próximo: features nuevas
 

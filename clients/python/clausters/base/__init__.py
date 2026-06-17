@@ -22,6 +22,7 @@ from .clock import TempoClock
 from .main import Main, main
 from .netaddr import NetAddr
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
+from .timebase import MonotonicTimebase, SampleClockTimebase, Timebase
 from ._midiinterface import MidiNrtInterface, MidiRtInterface, MidiScore
 from ._oscinterface import (
     OscInterface,
@@ -34,6 +35,9 @@ from ._oscinterface import (
 __all__ = [
     "AbstractObject",
     "TempoClock",
+    "Timebase",
+    "MonotonicTimebase",
+    "SampleClockTimebase",
     "Main",
     "main",
     "NetAddr",

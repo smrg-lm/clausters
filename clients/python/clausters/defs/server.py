@@ -21,6 +21,7 @@ from ..base import _osclib
 from ..base.main import main
 from ..base.netaddr import NetAddr
 from ..base._oscinterface import OscNrtInterface, OscUDPInterface
+from ..base.timebase import SampleClockTimebase
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
@@ -78,16 +79,29 @@ class Server:
         base = getattr(tt, "_logical_beat", None)
         if base is None:
             base = clock.beats()
-        self.interface.send_bundle(
-            self.target.addr(), self._when(clock, base + delay_beats), *messages
-        )
-
-    def _when(self, clock, beat: float) -> float:
+        beat = base + delay_beats
         secs = clock.beats2secs(beat)
+
         if getattr(self.interface, "time_mode", "unix") == "score":
-            return secs  # seconds from render start
-        base = clock.start_time if clock.start_time is not None else time.time()
-        return base + secs + self.latency  # absolute wall clock (+ latency)
+            # NRT: seconds from render start (logical, timebase-independent).
+            self.interface.send_bundle(self.target.addr(), secs, *messages)
+            return
+
+        timebase = getattr(clock, "timebase", None)
+        if isinstance(timebase, SampleClockTimebase):
+            # Anchored to the server's sample clock: schedule by absolute sample,
+            # drift-free and sample-accurate, via /sched.
+            origin = clock.pacing_origin or 0.0      # seconds in the sample timebase
+            sample = round((origin + secs + self.latency) * timebase.sample_rate)
+            self._send_sched(sample, messages)
+        else:
+            # Wall clock: an NTP-timetagged bundle.
+            wall = (clock.start_time if clock.start_time is not None else time.time())
+            self.interface.send_bundle(self.target.addr(), wall + secs + self.latency, *messages)
+
+    def _send_sched(self, sample: int, messages):
+        inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
+        self.send_msg("/sched", _osclib.Int64(sample), inner)
 
     def request(self, addr, *args, timeout: float = 5.0, expect=None):
         """Sends a message and returns the first matching reply ``(addr, args)``

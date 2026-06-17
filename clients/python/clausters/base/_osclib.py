@@ -66,6 +66,14 @@ def bundle_at(unix_seconds: float, *packets: bytes) -> bytes:
     return _string("#bundle") + _timetag(unix_seconds + NTP_UNIX_OFFSET) + body
 
 
+def immediate_bundle(*packets: bytes) -> bytes:
+    """A bundle with the immediate timetag ``{0, 1}`` — used as the ``/sched``
+    payload, where the server ignores the inner timetag and fires it at the
+    scheduled sample."""
+    body = b"".join(struct.pack(">i", len(p)) + p for p in packets)
+    return _string("#bundle") + struct.pack(">II", 0, 1) + body
+
+
 def score_bundle(seconds: float, *packets: bytes) -> bytes:
     """A bundle for an NRT score: the timetag counts seconds from the start of
     the render, not wall-clock time."""

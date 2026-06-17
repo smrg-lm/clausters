@@ -31,6 +31,7 @@ import time
 
 from .. import _native
 from .stream import Stream, StopStream
+from .timebase import MonotonicTimebase
 
 
 class TempoClock:
@@ -40,10 +41,13 @@ class TempoClock:
         self._base_beats = 0.0
         self._base_secs = 0.0
 
-        #: monotonic pacing source — *only* used to decide how long to sleep
-        #: between events (never to stamp them). Swappable: a future alternative
-        #: timebase (the server's sample clock) plugs in here.
-        self._now = timebase if timebase is not None else time.monotonic
+        #: pacing source — *only* used to decide how long to sleep between
+        #: events. The default is the OS monotonic clock; pass a
+        #: :class:`~clausters.base.timebase.SampleClockTimebase` to anchor to the
+        #: server's sample clock. The Server reads this to choose how to stamp
+        #: events (NTP timetag vs ``/sched`` absolute sample).
+        self.timebase = timebase if timebase is not None else MonotonicTimebase()
+        self._now = self.timebase
 
         self._queue = []              # heap of (beat, seq, item)
         self._seq = itertools.count()
@@ -78,6 +82,13 @@ class TempoClock:
         OSC timetag — the **wall** clock, kept separate from the monotonic
         pacing source so timetags stay valid Unix time."""
         return self._unix_start
+
+    @property
+    def pacing_origin(self):
+        """The timebase value (seconds) captured at :meth:`start`. For a
+        sample-clock timebase this is ``sample_origin / sample_rate``, which the
+        Server turns into the absolute sample for ``/sched``."""
+        return self._mono_start
 
     def set_tempo(self, tempo: float):
         """Change tempo, pinning the current instant (no discontinuity)."""
