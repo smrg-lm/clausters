@@ -2008,6 +2008,25 @@ servidor aprende a hablar OSC por TCP y el cliente estrena `OscTCPInterface`.
   UDP-0 ya hace el round-trip inmediato), y limpiar entradas de `/notify` de
   conexiones TCP caídas (hoy la réplica a una conexión muerta se descarta).
 
+## C9 — ejemplo comentado del cliente (2026-06-17)
+
+Avanza C9 cerrando su ítem de **ejemplo**: `examples/sequencing.py`, el tour
+introductorio de la capa de secuenciación de alto nivel del cliente Python.
+Muestra `Session` (ergonomía sin globales) + `Pbind` combinando value patterns
+(`Pseq` de `degree`, `Pwhite` de `amp`, `dur` fijo) en un stream de `Event`s, y
+sobre todo la **costura NRT/vivo**: el mismo pattern rinde offline (`Session.nrt`
+→ render a samples/WAV) o toca en vivo por UDP (`Session.live` → `run(seconds)`)
+cambiando solo la sesión, nunca la rutina. Comentado para servir de puerta de
+entrada. Validado offline (46800 frames, peak 0.165) y en vivo (E2E misma
+invocación Bash). Catalogado en `docs/examples.md`.
+
+**De C9 queda pendiente** (no es del «mismo tema» docs/ejemplos, son esfuerzos
+grandes e independientes): el cliente **JS** real (N-API/wasm) y el empaquetado
+wheels/npm + build reproducible de Faust en `third_party` (este último ya es
+backlog del usuario). El mantenimiento general de docs/ejemplos es **C10** (p.
+ej. catalogar `synthdef.py`/`tcp_client.py` y refrescar refs «C0–C5» a «C0–C8»
+en README/`docs/clients.md`), no tocado acá por pedido del usuario.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
