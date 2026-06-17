@@ -40,7 +40,7 @@ Also beyond scsynth: **auto-sorted groups**. `/g_sortMode groupID 1` makes a gro
 
 Beyond scsynth, the server also exposes its **sample clock** directly: `/clock` queries the sample counter, and `/sched <int64 target> <blob>` schedules a packet at an **absolute sample** instead of an NTP time — same queue, same sample accuracy, drift-free by construction. See [`sample-clock.md`](sample-clock.md) and `examples/sample_clock.py`.
 
-UDP is not the only transport: local clients can speak the same OSC through **shared memory** (`clausters --shm <path>`) or run the whole server **in-process** through the embed C ABI, with the sample clock and the control buses readable and writable directly in mapped memory. See [`ipc.md`](ipc.md) and `clients/python/clausters.py`.
+UDP is not the only transport: local clients can speak the same OSC through **shared memory** (`clausters --shm <path>`) or run the whole server **in-process** through the embed C ABI, with the sample clock and the control buses readable and writable directly in mapped memory. See [`ipc.md`](ipc.md) and `clients/python/clausters/transport.py`.
 
 ## NRT mode (offline rendering)
 

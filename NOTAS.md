@@ -1609,6 +1609,51 @@ que el cliente Python (y el futuro JS) compartan código nativo con el servidor.
   usa la misma fórmula, sin garantía bit-a-bit contra el codegen LLVM de Faust
   (tolerancia, a fijar en su consumo).
 
+## C1 — Scaffold del paquete Python + núcleo accesible (track cliente)
+
+Andamiaje del cliente Python alto y su acceso al núcleo nativo. No hay aún capa
+base/seq/defs (eso es C2–C4); esto deja el paquete importable y el núcleo
+usable desde Python.
+
+- **Paquete** `clients/python/clausters/` con `pyproject.toml` (setuptools,
+  stdlib-only en runtime), `README.md` y subpaquetes placeholder `base/`,
+  `seq/`, `defs/` (cada uno documenta en qué milestone se llena).
+- **Transport reubicado**: `clients/python/clausters.py` → `clausters/transport.py`
+  vía `git mv` (preserva historial). El `__init__.py` re-exporta
+  `Clausters`/`ShmClient`/`render`/`ABI_VERSION`/`SEGMENT_SIZE`, así el código y
+  los `examples/*.py` que hacen `from clausters import ...` siguen funcionando.
+  Se ajustó el cálculo de la raíz del repo en `_find_library` (un nivel más
+  profundo).
+- **`clausters/_native.py`**: binding ctypes sobre `libclausters_ffi` (carga
+  perezosa y versionada contra `CORE_ABI_VERSION = 1`, así importar el paquete
+  no falla si el cdylib no está construido). Expone `BinaryOp`/`UnaryOp`
+  (IntEnum con los discriminantes del núcleo), `binary`/`unary` (escalar o
+  secuencia, con broadcast; devuelven float o `array('f')`), `white_noise`, y
+  los escalares de clock/sample. Regla de frontera: solo datos planos cruzan.
+- **`clausters/base/_osclib.py`**: encoder OSC de wire mínimo (stdlib) —
+  `message`, `bundle`/`score_bundle`, `score` — equivalente a los helpers de
+  `examples/json_client.py`, para armar scores que rinden idéntico. La
+  abstracción de interfaces RT/NRT/MIDI va en C2.
+
+### Verificación
+
+- `clients/python/tests/test_smoke.py` (pytest; también ejecutable con
+  `python tests/test_smoke.py`): re-exports, builtins escalar/lista/broadcast +
+  matemática superior, white noise determinista y en rango, conversiones de
+  TempoClock, armado de bundle OSC, y `render()` de un score con el synth
+  `default` (14400 frames @ 48k, peak = amp). Tests skip-aware si falta un
+  cdylib.
+- Smoke corrido inline (pytest no instalado en el entorno): **todas las
+  comprobaciones pasan**. Para `render`, `transport._find_library` prefiere
+  `target/release/`; si ahí hay un `libclausters.so` viejo **sin** la feature
+  embed, usar `CLAUSTERS_LIB` o construir el release con
+  `--features embed,realtime`.
+- Comandos: `cargo build -p clausters-ffi` (núcleo) y
+  `cargo build --features embed,realtime` (transport `render`); luego
+  `cd clients/python && python -m pytest`.
+- Docs actualizadas (ruta del transport movida): `docs/examples.md`,
+  `docs/ipc.md`, `docs/schemas.md`, `GUIA.md`.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado

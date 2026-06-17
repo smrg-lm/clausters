@@ -29,6 +29,6 @@ The OSC encoding/decoding in these scripts is hand-rolled (stdlib only); they do
 |---|---|
 | `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs the `faust` feature and `oscsend`. |
 
-## Python binding (`clients/python/clausters.py`)
+## Python binding (`clients/python/clausters/transport.py`)
 
-The reusable client library (standard library + `ctypes`): a shared-memory client and the embed façade with a synchronous `request()` call. See [Local transports & embedding](ipc.md) for the API.
+The reusable transport library (standard library + `ctypes`): a shared-memory client and the embed façade with a synchronous `request()` call. It is the `clausters.transport` module of the high-level Python client package (`clients/python/clausters/`), and its `Clausters`/`ShmClient`/`render` are re-exported from the top-level `clausters` package. See [Local transports & embedding](ipc.md) for the API.

@@ -169,7 +169,8 @@ class ShmClient:
 def _find_library() -> str:
     candidates = [os.environ.get("CLAUSTERS_LIB")]
     here = os.path.dirname(os.path.abspath(__file__))
-    root = os.path.dirname(os.path.dirname(here))
+    # clients/python/clausters/transport.py -> repo root is three levels up.
+    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
     for profile in ("release", "debug"):
         candidates.append(os.path.join(root, "target", profile, "libclausters.so"))
         candidates.append(os.path.join(root, "target", profile, "libclausters.dylib"))

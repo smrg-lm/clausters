@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "clausters"
+version = "0.1.0"
+description = "High-level Python client for the Clausters audio server (Faust-first)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+authors = [{ name = "Lucas Samaruga" }]
+# Stdlib only at runtime: the native core is reached through ctypes over the
+# `clausters-ffi` cdylib (and the embed/shm transports over `clausters`), both
+# built by cargo, not pip. A numpy user can wrap the returned `array('f')`
+# without it ever being a dependency here.
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools]
+packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

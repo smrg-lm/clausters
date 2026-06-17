@@ -5,7 +5,7 @@ OSC over UDP makes Clausters controllable from anywhere — but a client on the 
 | transport | processes | start | client |
 |---|---|---|---|
 | UDP | any | `clausters` | anything that speaks OSC |
-| shared memory | 2, same machine | `clausters --shm <path>` | `clients/python/clausters.py` (`ShmClient`), or any mmap |
+| shared memory | 2, same machine | `clausters --shm <path>` | `clients/python/clausters/transport.py` (`ShmClient`), or any mmap |
 | in-process (embed) | 1 | `cargo build --features embed,realtime` | the cdylib's C ABI, `Clausters` in the Python binding |
 
 All three coexist: a `--shm` server still serves UDP; the embedded server keeps an ephemeral localhost socket as a debug escape hatch. Commands from any transport land in the same queue with the same semantics (timed bundles, `/sched`, `/g_sortMode`, …).
@@ -63,7 +63,7 @@ Correlation is by serialization: one request in flight per client, like scsynth 
 
 ## Python binding
 
-`clients/python/clausters.py`, stdlib only:
+`clients/python/clausters/transport.py` (re-exported from the `clausters` package), stdlib only:
 
 ```python
 from clausters import ShmClient, Clausters, render
