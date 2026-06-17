@@ -26,6 +26,7 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
   test names) is in English.
+- **Git commit messages are in English** (subject and body), ASCII-only.
 - `PLAN.md`, `NOTAS.md` and conversation with the user are in Spanish.
 
 ## E2E testing rule
