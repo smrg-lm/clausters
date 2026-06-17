@@ -319,9 +319,21 @@ print('synths:', srv.status()[2]); srv.free(n); srv.close()
 "; kill $SRV 2>/dev/null)
 ```
 
-`--tcp` toma un puerto opcional (default 57110, junto al UDP — espacios de
-nombres separados). El timing sigue en los timetags/`/sched`, así que la latencia
-de llegada no afecta *cuándo* dispara un comando agendado.
+**UDP siempre + TCP opcional.** El UDP es el transporte base y se bindea siempre
+(no hay modo «solo TCP»); `--tcp` *agrega* el listener TCP sin reemplazarlo. Es
+además **infraestructura interna**: el wake del loop TCP manda un datagrama UDP
+de longitud 0 al propio socket del servidor, así que el UDP también sirve para
+despertar el loop. `--tcp` toma un puerto opcional (default 57110, junto al UDP —
+espacios de nombres separados).
+
+| comando | UDP | TCP |
+|---|---|---|
+| `clausters` | ✅ 57110 | ❌ |
+| `clausters --tcp` | ✅ 57110 | ✅ 57110 |
+| `clausters --tcp 9000` | ✅ 57110 | ✅ 9000 |
+
+El timing sigue en los timetags/`/sched`, así que la latencia de llegada no
+afecta *cuándo* dispara un comando agendado.
 
 ## 6. Suite de tests
 

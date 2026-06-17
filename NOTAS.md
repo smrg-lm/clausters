@@ -1968,6 +1968,11 @@ build estilo `UGen.buildSynthDef` de sclang).
 Las dos puntas del único milestone con dependencia cruzada cliente↔servidor: el
 servidor aprende a hablar OSC por TCP y el cliente estrena `OscTCPInterface`.
 
+- **UDP siempre + TCP opcional**: el UDP se bindea siempre (transporte base, no
+  hay modo «solo TCP»); `--tcp` *agrega* el listener TCP. El UDP es además
+  infraestructura del propio TCP: el wake del loop manda un datagrama UDP de
+  longitud 0 al socket del servidor. (Si alguna vez se quiere solo-TCP, habría
+  que cambiar ese mecanismo de wake — anotado.)
 - **Servidor — `src/osc/tcp.rs`** (`--tcp [port]`, default 57110 junto al UDP,
   espacios de nombres separados): OSC **length-prefixed** (4 bytes BE + bytes,
   el framing de scsynth, en ambos sentidos). Multiplexado en el loop
