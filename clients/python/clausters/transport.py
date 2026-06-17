@@ -30,6 +30,17 @@ import struct
 import time
 from array import array
 
+from .errors import (
+    AbiMismatchError,
+    CommandRingFull,
+    LibraryFeatureError,
+    LibraryNotFoundError,
+    RenderError,
+    ReplyTimeout,
+    SegmentError,
+    ServerError,
+)
+
 ABI_VERSION = 1
 
 # ---- segment layout (must match src/server/ipc.rs; pinned by tests) ----
@@ -113,9 +124,9 @@ class ShmClient:
         self.mm = mmap.mmap(self._file.fileno(), SEGMENT_SIZE)
         magic, version = struct.unpack_from("<II", self.mm, 0)
         if magic != _MAGIC:
-            raise ValueError(f"{path} is not a clausters segment")
+            raise SegmentError(f"{path} is not a clausters segment")
         if version != ABI_VERSION:
-            raise ValueError(f"segment ABI v{version}, this client speaks v{ABI_VERSION}")
+            raise SegmentError(f"segment ABI v{version}, this client speaks v{ABI_VERSION}")
         self._c2s = _Ring(self.mm, _OFF_C2S)  # we produce here
         self._s2c = _Ring(self.mm, _OFF_S2C)  # we consume here
 
@@ -149,14 +160,14 @@ class ShmClient:
         """The synchronous facade: send, then block (the *client* blocks,
         never the server) until a reply arrives."""
         if not self.send(packet):
-            raise BufferError("command ring full")
+            raise CommandRingFull("command ring full")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             reply = self.poll()
             if reply is not None:
                 return reply
             time.sleep(0.001)
-        raise TimeoutError("no reply through the ring")
+        raise ReplyTimeout("no reply through the ring")
 
     def close(self):
         self.mm.close()
@@ -177,27 +188,72 @@ def _find_library() -> str:
     for c in candidates:
         if c and os.path.exists(c):
             return c
-    raise OSError(
+    raise LibraryNotFoundError(
         "libclausters not found: build it with "
         "`cargo build --release --features embed,realtime` "
         "or point CLAUSTERS_LIB at it"
     )
 
 
+def _require(lib: ctypes.CDLL, name: str, feature: str):
+    """Fetch an FFI symbol, turning a missing one into a concrete
+    :class:`LibraryFeatureError` that names the symbol and the Cargo feature to
+    rebuild with — instead of the bare ``AttributeError``/``undefined symbol``
+    ctypes raises when the library was built without that feature."""
+    try:
+        return getattr(lib, name)
+    except AttributeError:
+        raise LibraryFeatureError(
+            f"{os.path.basename(getattr(lib, '_name', None) or 'libclausters')}: "
+            f"symbol {name!r} is missing -- the library was built without the "
+            f"`{feature}` feature. Rebuild it with "
+            f"`cargo build --release --features {feature}` (or point "
+            f"CLAUSTERS_LIB at a library that has it).",
+            symbol=name, feature=feature,
+        ) from None
+
+
 def _load(path: str | None = None) -> ctypes.CDLL:
     lib = ctypes.CDLL(path or _find_library())
-    lib.clausters_abi_version.restype = ctypes.c_uint32
-    got = lib.clausters_abi_version()
+
+    # `embed`-only surface: ABI check + offline render. Required.
+    abi = _require(lib, "clausters_abi_version", "embed")
+    abi.restype = ctypes.c_uint32
+    got = abi()
     if got != ABI_VERSION:
-        raise OSError(f"libclausters speaks ABI v{got}, this binding v{ABI_VERSION}")
-    lib.clausters_render.restype = ctypes.POINTER(ctypes.c_float)
-    lib.clausters_render.argtypes = [
+        raise AbiMismatchError(
+            f"libclausters speaks ABI v{got}, this binding speaks v{ABI_VERSION}",
+            got=got, expected=ABI_VERSION,
+        )
+    render_fn = _require(lib, "clausters_render", "embed")
+    render_fn.restype = ctypes.POINTER(ctypes.c_float)
+    render_fn.argtypes = [
         ctypes.c_char_p, ctypes.c_size_t, ctypes.c_double, ctypes.c_uint32,
         ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint64), ctypes.c_char_p,
         ctypes.c_size_t,
     ]
-    lib.clausters_free_samples.argtypes = [ctypes.POINTER(ctypes.c_float), ctypes.c_uint64]
-    lib.clausters_open.restype = ctypes.c_void_p
+    _require(lib, "clausters_free_samples", "embed").argtypes = [
+        ctypes.POINTER(ctypes.c_float), ctypes.c_uint64]
+
+    # `embed,realtime` surface: the live embedded server. Optional at load
+    # time so `render()` works with an `embed`-only build; if it is absent the
+    # error is deferred to `Clausters()`, where it is actually needed.
+    lib._clausters_live_error = _bind_live(lib)
+    return lib
+
+
+def _bind_live(lib: ctypes.CDLL) -> LibraryFeatureError | None:
+    """Bind the live-server symbols. Returns the :class:`LibraryFeatureError`
+    to raise if they are missing (built without `realtime`), else ``None``."""
+    try:
+        lib.clausters_open.restype = ctypes.c_void_p
+    except AttributeError:
+        return LibraryFeatureError(
+            f"{os.path.basename(getattr(lib, '_name', None) or 'libclausters')}: "
+            "the embedded live server needs the `realtime` feature. Rebuild it "
+            "with `cargo build --release --features embed,realtime`.",
+            symbol="clausters_open", feature="embed,realtime",
+        )
     lib.clausters_open.argtypes = [ctypes.c_uint32, ctypes.c_char_p, ctypes.c_size_t]
     lib.clausters_send.restype = ctypes.c_int32
     lib.clausters_send.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
@@ -211,7 +267,7 @@ def _load(path: str | None = None) -> ctypes.CDLL:
     lib.clausters_ctl_get.restype = ctypes.c_float
     lib.clausters_ctl_get.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
     lib.clausters_close.argtypes = [ctypes.c_void_p]
-    return lib
+    return None
 
 
 def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
@@ -225,7 +281,7 @@ def render(score: bytes, sample_rate: float = 48000.0, channels: int = 2,
     ptr = lib.clausters_render(score, len(score), sample_rate, channels,
                                workers, ctypes.byref(frames), err, len(err))
     if not ptr:
-        raise RuntimeError(err.value.decode() or "render failed")
+        raise RenderError(err.value.decode() or "render failed")
     total = frames.value * channels
     samples = array("f", ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float * total)).contents)
     lib.clausters_free_samples(ptr, total)
@@ -237,15 +293,17 @@ class Clausters:
 
     def __init__(self, workers: int = 0, lib_path: str | None = None):
         self._lib = _load(lib_path)
+        if self._lib._clausters_live_error is not None:
+            raise self._lib._clausters_live_error
         err = ctypes.create_string_buffer(512)
         self._h = self._lib.clausters_open(workers, err, len(err))
         if not self._h:
-            raise RuntimeError(err.value.decode() or "clausters_open failed")
+            raise ServerError(err.value.decode() or "clausters_open failed")
         self._buf = ctypes.create_string_buffer(64 * 1024)
 
     def send(self, packet: bytes):
         if self._lib.clausters_send(self._h, packet, len(packet)) != 0:
-            raise BufferError("command ring full")
+            raise CommandRingFull("command ring full")
 
     def poll(self) -> bytes | None:
         n = self._lib.clausters_poll(self._h, self._buf, len(self._buf))
@@ -260,7 +318,7 @@ class Clausters:
             if reply is not None:
                 return reply
             time.sleep(0.001)
-        raise TimeoutError("no reply from the embedded server")
+        raise ReplyTimeout("no reply from the embedded server")
 
     @property
     def clock(self) -> int:

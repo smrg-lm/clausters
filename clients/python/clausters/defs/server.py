@@ -18,6 +18,7 @@ touching clock or routine.
 import time
 
 from ..base import _osclib
+from ..errors import CommandError, ReplyTimeout
 from ..base.main import main
 from ..base.netaddr import NetAddr
 from ..base._oscinterface import OscNrtInterface, OscUDPInterface
@@ -115,7 +116,7 @@ class Server:
             raddr, rargs = _osclib.decode(packet)
             if expect is None or raddr in expect:
                 return raddr, rargs
-        raise TimeoutError(f"no reply to {addr}")
+        raise ReplyTimeout(f"no reply to {addr}")
 
     # ---- definitions ----
 
@@ -125,7 +126,7 @@ class Server:
             "/d_faust", fdef.name, fdef.payload(), timeout=timeout, expect=("/done", "/fail")
         )
         if addr == "/fail":
-            raise RuntimeError(f"/d_faust {fdef.name!r} failed: {args}")
+            raise CommandError(f"/d_faust {fdef.name!r} failed: {args}")
         return fdef.name
 
     def add_synthdef(self, sdef, timeout: float = 10.0) -> str:
@@ -141,7 +142,7 @@ class Server:
             "/d_recv", payload, timeout=timeout, expect=("/done", "/fail")
         )
         if addr == "/fail":
-            raise RuntimeError(f"/d_recv {sdef.name!r} failed: {args}")
+            raise CommandError(f"/d_recv {sdef.name!r} failed: {args}")
         return sdef.name
 
     def free_def(self, *names: str):
@@ -202,7 +203,7 @@ class Server:
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             self.buffers.free(bufnum)
-            raise RuntimeError(f"/b_alloc {bufnum} failed: {args}")
+            raise CommandError(f"/b_alloc {bufnum} failed: {args}")
         return Buffer(bufnum, frames, channels)
 
     def free_buffer(self, buf):

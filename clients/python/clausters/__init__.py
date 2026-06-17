@@ -22,6 +22,19 @@ What is in place now:
 """
 
 from . import _native
+from .errors import (
+    AbiMismatchError,
+    ClaustersError,
+    CommandError,
+    CommandRingFull,
+    LibraryError,
+    LibraryFeatureError,
+    LibraryNotFoundError,
+    RenderError,
+    ReplyTimeout,
+    SegmentError,
+    ServerError,
+)
 from .session import Session
 from .transport import (
     ABI_VERSION,
@@ -39,4 +52,16 @@ __all__ = [
     "Session",
     "render",
     "_native",
+    # error types
+    "ClaustersError",
+    "LibraryError",
+    "LibraryNotFoundError",
+    "LibraryFeatureError",
+    "AbiMismatchError",
+    "RenderError",
+    "ServerError",
+    "CommandError",
+    "SegmentError",
+    "CommandRingFull",
+    "ReplyTimeout",
 ]
