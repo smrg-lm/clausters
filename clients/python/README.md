@@ -5,7 +5,7 @@ ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
 see [`../PLAN.md`](../PLAN.md).
 
-Milestones C0–C2 are done. In place now:
+Milestones C0–C3 are done. In place now:
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -19,8 +19,15 @@ Milestones C0–C2 are done. In place now:
   `main`, and the destination interfaces `_oscinterface`/`_midiinterface` —
   swap the interface to retarget a routine from live RT to an NRT score without
   changing it. Plus the minimal OSC wire encoder `_osclib`.
-- `clausters.seq` / `clausters.defs` — placeholders for sequencing (C4) and
-  Faust/SynthDef definitions plus server resources (C3).
+- `clausters.defs` (C3) — Faust-first definitions and server resources:
+  `signals` (lowercase callables mapping Faust's Signal API, composed into the
+  JSON graph), `FaustDef`, the `Synth`/`Group`/`Bus`/`Buffer` handles and
+  allocators, and `Server` (the live OSC round-trip). SynthDef-based definitions
+  come later.
+- `clausters.seq` — placeholder for sequencing (C4).
+
+See [`clausters/GUIA.md`](clausters/GUIA.md) for a hands-on, milestone-by-
+milestone manual test guide (Spanish).
 
 ## Building the native libraries
 

@@ -76,3 +76,33 @@ def score_bundle(seconds: float, *packets: bytes) -> bytes:
 def score(*bundles: bytes) -> bytes:
     """Frames bundles into the binary NRT score (`[i32 len][packet]…`)."""
     return b"".join(struct.pack(">i", len(b)) + b for b in bundles)
+
+
+def _read_string(data: bytes) -> tuple[str, bytes]:
+    end = data.index(b"\x00")
+    n = (end + 4) // 4 * 4
+    return data[:end].decode(), data[n:]
+
+
+def decode(packet: bytes) -> tuple[str, list]:
+    """Decodes a single OSC message into ``(addr, args)``. Enough for the
+    server's replies (`/done`, `/fail`, `/status.reply`, …); bundles are not
+    expected as replies."""
+    addr, rest = _read_string(packet)
+    tags, rest = _read_string(rest)
+    args = []
+    for t in tags[1:]:  # skip the leading ','
+        if t == "i":
+            args.append(struct.unpack(">i", rest[:4])[0]); rest = rest[4:]
+        elif t == "h":
+            args.append(struct.unpack(">q", rest[:8])[0]); rest = rest[8:]
+        elif t == "f":
+            args.append(struct.unpack(">f", rest[:4])[0]); rest = rest[4:]
+        elif t == "d":
+            args.append(struct.unpack(">d", rest[:8])[0]); rest = rest[8:]
+        elif t == "s":
+            s, rest = _read_string(rest); args.append(s)
+        elif t == "b":
+            size = struct.unpack(">i", rest[:4])[0]
+            args.append(rest[4:4 + size]); rest = rest[4 + (size + 3) // 4 * 4:]
+    return addr, args

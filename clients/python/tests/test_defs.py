@@ -1,0 +1,194 @@
+"""C3 tests: Faust signal graphs, FaustDef payloads, resource allocators, the
+Server round-trip (over a fake connection), and the end-to-end vertical slice
+(build a graph -> /d_faust -> /s_new -> control -> render)."""
+
+import pytest
+
+from clausters.base import NetAddr, OscNrtInterface, Routine, TempoClock
+from clausters.base import _osclib as osc
+from clausters.defs import (
+    AddAction,
+    AudioBusAllocator,
+    BufferAllocator,
+    FaustDef,
+    NodeIDAllocator,
+    Server,
+)
+from clausters.defs import signals as S
+
+
+def _ffi_or_skip():
+    try:
+        from clausters import _native
+        _native.lib()
+    except OSError as e:
+        pytest.skip(f"clausters-ffi not built: {e}")
+
+
+# ---- signals: lowercase callables compose the JSON signal tree ----
+
+def test_signal_functions_and_operators_build_the_tree():
+    freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
+    expr = S.sin(freq * 2.0) * 0.5
+    node = expr.to_json()
+    assert node == {
+        "op": "mul",
+        "in": [
+            {"op": "sin", "in": [{"op": "mul", "in": [
+                {"op": "hslider", "label": "freq", "init": 330.0,
+                 "min": 20.0, "max": 20000.0, "step": 0.01},
+                2.0]}]},
+            0.5,
+        ],
+    }
+
+
+def test_recursion_and_self():
+    phasor = S.rec(lambda s: (s + 0.01) % 1.0)
+    node = phasor.to_json()
+    assert node["op"] == "recursion"
+    assert node["in"][0]["op"] == "rem"          # `% 1.0`
+    assert node["in"][0]["in"][0]["in"][0] == {"op": "self"}
+
+
+# ---- FaustDef payloads and controls ----
+
+def test_faustdef_signal_payload_and_controls():
+    import json
+
+    freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
+    fdef = FaustDef.from_signals("d", S.sin(freq) * 0.2)
+    payload = json.loads(fdef.payload())
+    assert list(payload) == ["signals"] and len(payload["signals"]) == 1
+    assert fdef.control_names() == ["freq"]
+    assert fdef.reserved == ("out", "in")
+
+
+def test_faustdef_source_payload():
+    fdef = FaustDef.from_source("s", "process = _;")
+    assert fdef.payload() == "process = _;"
+
+
+# ---- resource allocators ----
+
+def test_node_id_allocator_reuses_freed():
+    a = NodeIDAllocator(start=1000)
+    assert (a.alloc(), a.alloc()) == (1000, 1001)
+    a.free(1000)
+    assert a.alloc() == 1000
+
+
+def test_audio_bus_allocator_reserves_outputs():
+    a = AudioBusAllocator(size=128, reserved=2)
+    b2 = a.alloc(2)
+    assert b2.index == 2 and b2.channels == 2     # above the 2 hardware outs
+    assert a.alloc(1).index == 4
+    a.free(b2)
+    assert a.alloc(2).index == 2                   # exact-width reuse
+
+
+def test_buffer_allocator():
+    a = BufferAllocator()
+    assert (a.alloc(), a.alloc()) == (0, 1)
+    a.free(0)
+    assert a.alloc() == 0
+
+
+# ---- Server over a fake connection ----
+
+class _FakeConn:
+    def __init__(self):
+        self.sent = []          # decoded (addr, args)
+        self._replies = []      # queued reply packets (bytes)
+
+    def queue_reply(self, addr, *args):
+        self._replies.append(osc.message(addr, *args))
+
+    def send(self, packet):
+        self.sent.append(osc.decode(packet))
+
+    def recv(self, timeout):
+        return self._replies.pop(0) if self._replies else None
+
+
+def test_server_builds_s_new_correctly():
+    conn = _FakeConn()
+    srv = Server(conn=conn)
+    synth = srv.synth("foo", {"freq": 440.0}, target=0, action=AddAction.TAIL)
+    assert synth.id == 1000 and synth.defname == "foo"
+    assert conn.sent[-1] == ("/s_new", ["foo", 1000, 1, 0, "freq", 440.0])
+
+
+def test_server_add_def_waits_for_done_and_raises_on_fail():
+    conn = _FakeConn()
+    srv = Server(conn=conn)
+    fdef = FaustDef.from_source("ok", "process = _;")
+
+    conn.queue_reply("/done", "/d_faust", "ok")
+    assert srv.add_def(fdef) == "ok"
+    assert conn.sent[-1][0] == "/d_faust"
+
+    conn.queue_reply("/fail", "/d_faust", "boom")
+    with pytest.raises(RuntimeError):
+        srv.add_def(fdef)
+
+
+def test_server_map_and_set_layout():
+    conn = _FakeConn()
+    srv = Server(conn=conn)
+    node = srv.synth("foo")
+    srv.set(node, {"in": 4.0, "out": 0.0})        # reserved controls via dict
+    assert conn.sent[-1] == ("/n_set", [1000, "in", 4.0, "out", 0.0])
+    bus = srv.audio_bus(1)
+    srv.map(node, "in", bus, audio=True)
+    assert conn.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
+
+
+# ---- end-to-end vertical slice: graph -> /d_faust -> /s_new -> control -> render ----
+
+def _sine_def(name="c3sine", default_freq=330.0):
+    freq = S.hslider("freq", default_freq, 20.0, 20000.0, 0.01)
+    phasor = S.rec(lambda s: (s + freq / 48000.0) % 1.0)
+    return FaustDef.from_signals(name, S.sin(phasor * 6.283185307179586) * 0.2)
+
+
+def test_faustdef_renders_through_the_seam():
+    _ffi_or_skip()
+    fdef = _sine_def()
+    nrt = OscNrtInterface()
+    clock = TempoClock(tempo=1.0, target=NetAddr(), interface=nrt)
+
+    def play(clock):
+        # def first, then instantiate (same beat; score keeps insertion order)
+        clock.send_bundle(("/d_faust", fdef.name, fdef.payload()))
+        clock.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
+        yield 0.5
+        clock.send_bundle(("/n_set", 1000, "freq", 660.0))  # control by clock
+        yield 0.5
+        clock.send_bundle(("/n_free", 1000))
+        clock.send_bundle(("/n_free", 0))                   # closes the render
+
+    clock.play(Routine(play))
+    clock.render()
+    try:
+        samples, frames = nrt.render(sample_rate=48_000.0, channels=2)
+    except (OSError, RuntimeError, AttributeError) as e:
+        pytest.skip(f"embed+faust library not built/usable: {e}")
+    assert frames > 0
+    assert max(abs(s) for s in samples) > 0.0
+
+
+if __name__ == "__main__":
+    import traceback
+
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            try:
+                fn()
+                print(f"ok   {name}")
+            except BaseException as e:  # noqa: BLE001 — smoke harness
+                kind = type(e).__name__
+                skip = kind in ("Skipped", "OutcomeException")
+                print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
+                if not skip:
+                    traceback.print_exc()

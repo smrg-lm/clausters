@@ -1701,6 +1701,52 @@ solo cambiando la interfaz, sin tocar reloj ni rutina.
   @ 48k (peak = amp); smoke del driver RT = 4 eventos, parada limpia, sin
   deadlock.
 
+## C3 — Defs Faust-first y recursos del servidor (track cliente)
+
+Port de `sc3/synth`, Faust-first. Es el centro del cliente: construir defs Faust
+desde Python y manejar nodos/buses/buffers contra el servidor.
+
+- **`defs/signals.py`**: la interfaz de usuario para FaustDefs. Callables en
+  **minúscula** (`sin`, `cos`, `min`, `delay`, `hslider`, `recursion`, `input`,
+  …) que devuelven `Signal` (subclase de `AbstractObject`), y su composición
+  —por operadores o por funciones— arma el **JSON signal tree** del servidor
+  (`{"signals":[…]}`). Constantes = números pelados; feedback explícito con
+  `recursion`/`self_` (o el azúcar `rec(lambda s: …)`). Selectores de
+  `absobject` → ops Faust (`mod`→`rem`, `neg`→`0-x`, bitwise→`and/or/xor`…).
+- **`defs/faustdef.py`**: `FaustDef` con las tres formas para `/d_faust`
+  (`from_signals`, `from_source`, `from_box`); `.payload()` serializa,
+  `.control_names()` extrae los labels de los controles, `reserved=("out","in")`
+  (los buses de salida/entrada que el servidor agrega).
+- **`defs/node.py` / `bus.py` / `buffer.py`**: handles planos (`Synth`/`Group`,
+  `Bus`, `Buffer`) y allocators client-side estilo scsynth (ids desde 1000;
+  buses audio reservando las salidas de hardware; control 0..1023; buffers
+  0..1023; reuso de freed).
+- **`defs/server.py`**: facade `Server` sobre una conexión `send`/`recv`
+  (`UdpConnection` por defecto; admite adaptadores sobre el transport). Arma el
+  OSC y maneja replies async: `add_def` bloquea hasta `/done` (o lanza ante
+  `/fail`), `synth`/`group`/`set`/`map`/`free`, buses (`/c_set`/`/c_get`),
+  buffers (`/b_alloc`), `notify`/`status`/`sync`/`quit`. Los controles van por
+  dict o lista de pares (así `in`/`out`, que son keywords, son expresables).
+- **`base/_osclib.py`**: agregado `decode` (mensaje OSC → `(addr, args)`) para
+  leer los replies.
+
+### Verificación
+
+- `clients/python/tests/test_defs.py`: señales (funciones + operadores +
+  `recursion`/`self`), payload y `control_names` de `FaustDef`, allocators
+  (reuso de freed, reserva de salidas), `Server` sobre conexión fake (layout de
+  `/s_new`, `/d_faust` done/fail, `/n_set`), y el **vertical slice E2E** por NRT.
+- Corrido inline (pytest no instalado): **todo pasa**. E2E offline
+  grafo→`/d_faust`→`/s_new`→control→`render()` = 48000 frames @ 48k (peak =
+  amp), con el JIT de Faust corriendo en NRT.
+- **E2E en vivo** validado (server + cliente en la misma invocación Bash, regla
+  de CLAUDE.md): `Server` por UDP en 57110 → `/status`, `add_def` (compila
+  Faust), `/s_new`, `/n_set`, `/n_free`, `quit`. Requiere el binario con
+  `--features …,faust`.
+- **`clients/python/clausters/GUIA.md`** (nuevo, pedido del usuario): guía de
+  prueba manual del cliente al estilo de la `GUIA.md` raíz, con snippets
+  runnables por milestone (C0–C3), slice NRT y slice en vivo, y checklist.
+
 ## Próximo: features nuevas
 
 El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
