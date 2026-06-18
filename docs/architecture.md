@@ -1,6 +1,6 @@
 # Architecture (developer documentation)
 
-How Clausters is built, where everything lives, and the invariants a change must not break. User-facing documentation (wire formats, OSC commands) is in [`schemas.md`](schemas.md); the plan and per-milestone notes are `PLAN.md` and `NOTAS.md` (Spanish) at the repository root.
+How Clausters is built, where everything lives, and the invariants a change must not break. User-facing documentation (wire formats, OSC commands) is in [`schemas.md`](schemas.md); the plan and per-milestone completion log are `PLAN.md` and `LOG.md` at the repository root.
 
 ## Threads
 

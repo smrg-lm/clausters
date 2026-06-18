@@ -1,647 +1,641 @@
-# Plan de implementación: servidor de audio en tiempo real estilo scsynth
+# Implementation plan: a real-time scsynth-style audio server
 
-Servidor de síntesis en Rust controlado por OSC, inspirado en la arquitectura de
-scsynth (SuperCollider): un proceso que abre el dispositivo de audio, mantiene un
-árbol de nodos (synths y grupos), y recibe comandos OSC por UDP para crear/destruir
-synths, fijar parámetros, gestionar buses y buffers, todo con scheduling
-sample-accurate.
+A synthesis server in Rust controlled over OSC, inspired by the architecture of
+scsynth (SuperCollider): a process that opens the audio device, keeps a node tree
+(synths and groups), and receives OSC commands over UDP to create/destroy synths,
+set parameters, manage buses and buffers, all with sample-accurate scheduling.
 
-## Principios de diseño (no negociables)
+## Design principles (non-negotiable)
 
-1. **El hilo de audio nunca bloquea**: sin `malloc`/`free`, sin locks, sin syscalls,
-   sin I/O dentro del callback de audio. Ver skill `realtime-audio`.
-2. **Toda comunicación con el hilo de audio es lock-free**: ring buffers SPSC para
-   comandos entrantes y para devolver "basura" (memoria a liberar) al hilo no-RT.
-3. **Procesamiento por bloques**: bloques de 64 samples (como scsynth), no
-   sample-a-sample, para amortizar el dispatch de UGens.
-4. **Compatibilidad conceptual con scsynth, no binaria**: mismo modelo (node tree,
-   buses, buffers, SynthDefs, comandos `/s_new`, `/n_set`, etc.) pero formato de
-   SynthDef propio (no el formato binario `.scsyndef` — al menos no en v1).
+1. **The audio thread never blocks**: no `malloc`/`free`, no locks, no syscalls,
+   no I/O inside the audio callback. See the `realtime-audio` skill.
+2. **All communication with the audio thread is lock-free**: SPSC ring buffers for
+   incoming commands and for returning "garbage" (memory to free) to the non-RT thread.
+3. **Block processing**: blocks of 64 samples (like scsynth), not sample-by-sample,
+   to amortize UGen dispatch.
+4. **Conceptual, not binary, scsynth compatibility**: same model (node tree,
+   buses, buffers, SynthDefs, commands `/s_new`, `/n_set`, etc.) but our own
+   SynthDef format (not the binary `.scsyndef` format — at least not in v1).
 
-## Arquitectura de hilos
+## Thread architecture
 
 ```
 ┌─────────────┐  OSC/UDP   ┌──────────────┐  SPSC cmd FIFO  ┌──────────────┐
-│ Cliente OSC │ ─────────> │ Hilo de red  │ ──────────────> │ Hilo de audio│
-│ (sclang,    │ <───────── │ (parse OSC,  │ <────────────── │ (callback    │
-│  TouchOSC…) │  replies   │  aloca memoria│  SPSC garbage/  │  cpal, DSP)  │
-└─────────────┘            │  pre-armada) │  reply FIFO     └──────────────┘
-                           └──────┬───────┘
-                                  │ tareas lentas (disco, decode)
+│ OSC client  │ ─────────> │ Network thread│ ──────────────> │ Audio thread │
+│ (sclang,    │ <───────── │ (parse OSC,  │ <────────────── │ (cpal        │
+│  TouchOSC…) │  replies   │  alloc       │  SPSC garbage/  │  callback,   │
+└─────────────┘            │  pre-built)  │  reply FIFO     │  DSP)        │
+                           └──────┬───────┘                 └──────────────┘
+                                  │ slow tasks (disk, decode)
                            ┌──────▼───────┐
-                           │ Hilo NRT     │  (carga de archivos a buffers, etc.)
+                           │ NRT thread   │  (loading files into buffers, etc.)
                            └──────────────┘
 ```
 
-- **Hilo de red**: socket UDP, parsea OSC (`rosc`), construye comandos *ya
-  completamente alocados* (p. ej. el nodo Synth ya instanciado) y los empuja al FIFO.
-  El hilo de audio solo los "enchufa" — O(1), sin alocar.
-- **Hilo de audio**: callback de cpal. En cada bloque: (1) drena el FIFO de comandos,
-  (2) ejecuta bundles agendados cuyo timestamp cae en este bloque, (3) recorre el
-  árbol de nodos en orden y ejecuta el DSP, (4) empuja memoria muerta al FIFO de
-  basura.
-- **Hilo NRT**: lectura/escritura de archivos de audio para buffers (`/b_read`,
-  `/b_write`), igual que el "NRT thread" de scsynth.
+- **Network thread**: UDP socket, parses OSC (`rosc`), builds commands *already
+  fully allocated* (e.g. the Synth node already instantiated) and pushes them to the FIFO.
+  The audio thread just "plugs them in" — O(1), no allocation.
+- **Audio thread**: cpal callback. Each block: (1) drains the command FIFO,
+  (2) runs scheduled bundles whose timestamp falls in this block, (3) walks the
+  node tree in order and runs the DSP, (4) pushes dead memory to the garbage FIFO.
+- **NRT thread**: reading/writing audio files for buffers (`/b_read`,
+  `/b_write`), like scsynth's "NRT thread".
 
 ## Crates
 
-| Crate | Uso |
+| Crate | Use |
 |---|---|
-| `cpal` | I/O de audio multiplataforma (ALSA/JACK en Linux) |
-| `rosc` | Encode/decode de OSC 1.0 (mensajes y bundles con timetag) |
-| `rtrb` | Ring buffer SPSC lock-free y realtime-safe |
-| `basedrop` | Punteros compartidos con deallocación diferida fuera del hilo RT |
-| `hound` | Lectura/escritura WAV para buffers |
-| `assert_no_alloc` | En tests/debug: panic si el hilo de audio aloca |
+| `cpal` | Cross-platform audio I/O (ALSA/JACK on Linux) |
+| `rosc` | OSC 1.0 encode/decode (messages and bundles with timetag) |
+| `rtrb` | Lock-free, realtime-safe SPSC ring buffer |
+| `basedrop` | Shared pointers with deferred deallocation off the RT thread |
+| `hound` | WAV read/write for buffers |
+| `assert_no_alloc` | In tests/debug: panic if the audio thread allocates |
 
-## Estructuras de datos centrales
+## Core data structures
 
-- **`NodeTree`**: árbol de `Group` y `Synth` con IDs enteros (mapa ID→nodo
-  pre-alocado o slab). Orden de ejecución = recorrido en profundidad, como scsynth.
-- **`Synth`**: instancia de una `SynthDef`: vector de UGens construidos + buffers de
-  cableado ("wires") + valores de controles.
-- **`SynthDef`**: grafo de UGens topológicamente ordenado, con constantes, controles
-  nombrados y asignación de wires. Se define en un formato propio (ver M3).
-- **`Bus`**: arrays globales de buses de audio (por bloque) y de control (un valor);
-  los primeros N buses de audio se mapean a las salidas/entradas de hardware.
-- **`Buffer`**: pool pre-alocado de buffers de samples con canal/frames/samplerate,
-  llenados por el hilo NRT.
-- **UGen**: trait con `fn process(&mut self, ctx: &ProcessCtx, inputs, outputs)`
-  sobre bloques de 64 samples; dispatch dinámico (`Box<dyn UGen>`) está bien en v1
-  (la construcción ocurre fuera del hilo RT; la llamada virtual por bloque es barata).
+- **`NodeTree`**: a tree of `Group` and `Synth` with integer IDs (ID→node map,
+  pre-allocated or slab). Execution order = depth-first traversal, like scsynth.
+- **`Synth`**: an instance of a `SynthDef`: a vector of built UGens + wiring buffers
+  ("wires") + control values.
+- **`SynthDef`**: a topologically-ordered UGen graph, with constants, named controls
+  and wire assignment. Defined in our own format (see M3).
+- **`Bus`**: global arrays of audio buses (per block) and control buses (one value);
+  the first N audio buses map to the hardware outputs/inputs.
+- **`Buffer`**: a pre-allocated pool of sample buffers with channel/frames/samplerate,
+  filled by the NRT thread.
+- **UGen**: a trait with `fn process(&mut self, ctx: &ProcessCtx, inputs, outputs)`
+  over blocks of 64 samples; dynamic dispatch (`Box<dyn UGen>`) is fine in v1
+  (construction happens off the RT thread; the per-block virtual call is cheap).
 
-## Protocolo OSC (subconjunto de scsynth)
+## OSC protocol (a subset of scsynth)
 
-Implementar en este orden: `/status`, `/quit`, `/notify`, `/dumpOSC` — `/s_new`,
+Implement in this order: `/status`, `/quit`, `/notify`, `/dumpOSC` — `/s_new`,
 `/n_free`, `/n_set`, `/n_run` — `/g_new`, `/g_freeAll`, `/g_deepFree`, `/n_before`,
 `/n_after` — `/b_alloc`, `/b_free`, `/b_read`, `/b_write`, `/b_zero` — `/d_recv`
-(con nuestro formato), `/d_free` — `/c_set`, `/c_get`. Bundles con timetag NTP →
-scheduling sample-accurate dentro del bloque. Ver skill `scsynth-osc`.
+(with our format), `/d_free` — `/c_set`, `/c_get`. Bundles with an NTP timetag →
+sample-accurate scheduling within the block. See the `scsynth-osc` skill.
 
-## UGens iniciales
+## Initial UGens
 
-Osciladores: `SinOsc`, `Saw` (PolyBLEP), `Pulse`, `WhiteNoise`, `Phasor`.
-Filtros: `LPF`/`HPF` (biquad), `OnePole`, `Lag`.
-Envolventes/control: `EnvGen` (con done actions: free self, como scsynth), `Line`.
-E/S: `Out`, `In`, `ReplaceOut`. Buffers: `PlayBuf`, `BufRd`. Matemática: operadores
-binarios/unarios entre señales. Ver skill `ugen-dsp` para los algoritmos.
+Oscillators: `SinOsc`, `Saw` (PolyBLEP), `Pulse`, `WhiteNoise`, `Phasor`.
+Filters: `LPF`/`HPF` (biquad), `OnePole`, `Lag`.
+Envelopes/control: `EnvGen` (with done actions: free self, like scsynth), `Line`.
+I/O: `Out`, `In`, `ReplaceOut`. Buffers: `PlayBuf`, `BufRd`. Math: binary/unary
+operators between signals. See the `ugen-dsp` skill for the algorithms.
 
 ## Milestones
 
-- ✅ **M0 — Esqueleto**: `cargo init`, cpal abre el dispositivo y suena una sinusoide
-  hardcodeada. Estructura de módulos: `server/`, `dsp/`, `osc/`, `node/`.
-  *(Completado 2026-06-10 — ver NOTAS.md.)*
-- ✅ **M1 — Servidor OSC**: socket UDP (puerto 57110 por defecto), `rosc`, responder
-  `/status.reply`, `/quit`, `/notify`. Logging con `/dumpOSC`.
-  *(Completado 2026-06-10 — ver NOTAS.md.)*
-- ✅ **M2 — FIFO RT-safe + node tree**: ring buffers de comandos y basura, `NodeTree`
-  con grupos, un synth hardcodeado instanciable vía `/s_new` y liberable con
-  `/n_free`. Test con `assert_no_alloc` activo en el callback.
-  *(Completado 2026-06-10 — ver NOTAS.md. Bonus: `/n_set` adelantado de M3.)*
-- ✅ **M3 — SynthDefs**: formato de definición (sugerido: estructura serializada con
-  `serde` — JSON/binario propio), intérprete que construye el vector de UGens y
-  asigna wires, `/d_recv`, `/n_set` sobre controles nombrados e indexados.
-  *(Completado 2026-06-10 — ver NOTAS.md. Incluye el trait `SynthNode`,
-  prerequisito de la bifurcación F.)*
-- ✅ **M4 — Buses y orden**: buses de audio/control, UGens `In`/`Out`, `/n_before`,
-  `/n_after`, grupos anidados, add actions de `/s_new` (head/tail/before/after/replace).
-  *(Completado 2026-06-10 — ver NOTAS.md. Incluye `/g_new`, `/g_freeAll`,
-  `/g_deepFree`, `/c_set`/`/c_get` y notificaciones `/n_go`/`/n_end`. Cambio de
-  formato: las defs ya no llevan campo `out`; la salida es vía UGens `Out`.)*
-- ✅ **M5 — Buffers**: pool de buffers, hilo NRT, `/b_alloc`, `/b_read` (hound),
-  `PlayBuf`/`BufRd`, replies asíncronos `/done`.
-  *(Completado 2026-06-10 — ver NOTAS.md. Incluye `/b_allocRead`, `/b_write`,
-  `/b_zero`, `/b_free` y `/b_query`. Buffers inmutables compartidos por
-  `Arc`: el hilo NRT construye, el engine swapea, lo reemplazado sale por el
+- ✅ **M0 — Skeleton**: `cargo init`, cpal opens the device and a hardcoded sine
+  plays. Module structure: `server/`, `dsp/`, `osc/`, `node/`.
+  *(Completed 2026-06-10 — see LOG.md.)*
+- ✅ **M1 — OSC server**: UDP socket (port 57110 by default), `rosc`, reply to
+  `/status.reply`, `/quit`, `/notify`. Logging with `/dumpOSC`.
+  *(Completed 2026-06-10 — see LOG.md.)*
+- ✅ **M2 — RT-safe FIFO + node tree**: command and garbage ring buffers, `NodeTree`
+  with groups, a hardcoded synth instantiable via `/s_new` and freeable with
+  `/n_free`. Test with `assert_no_alloc` active in the callback.
+  *(Completed 2026-06-10 — see LOG.md. Bonus: `/n_set` brought forward from M3.)*
+- ✅ **M3 — SynthDefs**: definition format (suggested: a structure serialized with
+  `serde` — JSON/our own binary), an interpreter that builds the UGen vector and
+  assigns wires, `/d_recv`, `/n_set` over named and indexed controls.
+  *(Completed 2026-06-10 — see LOG.md. Includes the `SynthNode` trait,
+  a prerequisite of the F fork.)*
+- ✅ **M4 — Buses and order**: audio/control buses, `In`/`Out` UGens, `/n_before`,
+  `/n_after`, nested groups, `/s_new` add actions (head/tail/before/after/replace).
+  *(Completed 2026-06-10 — see LOG.md. Includes `/g_new`, `/g_freeAll`,
+  `/g_deepFree`, `/c_set`/`/c_get` and `/n_go`/`/n_end` notifications. Format change:
+  defs no longer carry an `out` field; output is via `Out` UGens.)*
+- ✅ **M5 — Buffers**: buffer pool, NRT thread, `/b_alloc`, `/b_read` (hound),
+  `PlayBuf`/`BufRd`, async `/done` replies.
+  *(Completed 2026-06-10 — see LOG.md. Includes `/b_allocRead`, `/b_write`,
+  `/b_zero`, `/b_free` and `/b_query`. Immutable buffers shared by `Arc`:
+  the NRT thread builds, the engine swaps, the replaced one leaves via the
   garbage FIFO.)*
-- ✅ **M6 — Scheduling sample-accurate**: cola de bundles ordenada por timetag en el
-  hilo de audio (pre-alocada), conversión NTP→samples, ejecución con offset
-  intra-bloque (partir el bloque en el sample del evento, como hace scsynth).
-  *(Completado 2026-06-10 — ver NOTAS.md. `ProcessCtx` procesa por slices
-  `offset`+`frames`; el engine publica su reloj de samples y la conversión
-  NTP→samples vive en el hilo de red. Nota: scsynth real cuantiza al bloque
-  — nosotros partimos el bloque de verdad, sin necesitar `OffsetOut`.)*
-- ✅ **M7 — Modo NRT + tests dorados**: render offline a WAV (mismo motor, sin cpal),
-  tests de regresión comparando contra archivos dorados, benchmarks del grafo.
-  *(Completado 2026-06-11 — ver NOTAS.md. `clausters --nrt score.osc out.wav`
-  con partituras en el formato binario de scsynth; los comandos async corren
-  síncronos como en scsynth NRT; goldens en `tests/golden/` regenerables con
+- ✅ **M6 — Sample-accurate scheduling**: a bundle queue ordered by timetag on the
+  audio thread (pre-allocated), NTP→samples conversion, execution with an
+  intra-block offset (splitting the block at the event's sample, as scsynth does).
+  *(Completed 2026-06-10 — see LOG.md. `ProcessCtx` processes by `offset`+`frames`
+  slices; the engine publishes its sample clock and the NTP→samples conversion
+  lives in the network thread. Note: real scsynth quantizes to the block
+  — we split the block for real, with no need for `OffsetOut`.)*
+- ✅ **M7 — NRT mode + golden tests**: offline render to WAV (same engine, no cpal),
+  regression tests comparing against golden files, graph benchmarks.
+  *(Completed 2026-06-11 — see LOG.md. `clausters --nrt score.osc out.wav`
+  with scores in scsynth's binary format; async commands run synchronously like
+  scsynth NRT; goldens in `tests/golden/` regenerable with
   `cargo run --example render_golden`; benchmark `cargo run --release
-  --example bench`. Bonus: el bug de blobs de rosc también afectaba elementos
-  de bundle — arreglado para ambos modos en `osc::decode_packet`.)*
-- ✅ **M8 — Reloj de samples como timebase del cliente**: el reloj del SO y el
-  cristal del DAC derivan entre sí (decenas de ppm ≈ ms por minuto), así que
-  la conversión NTP→samples actual re-ancla cada bundle contra dos relojes
-  que no coinciden. Extensión de protocolo para que el cliente use el reloj
-  de samples como maestro: (1) exponer `current_samples()` por OSC (en
-  `/status.reply` o un `/clock` nuevo); (2) aceptar bundles con target
-  **en samples** (entero de 64 bits — `Cmd::Schedule` ya trabaja así, la
-  conversión NTP es solo el front-end); (3) en el cliente, modelar
-  `sample(t_local) = a + b·t` con pares (reloj monotónico local, sample
-  consultado) y regresión con olvido — estilo DLL de JACK / Ableton Link —
-  y agendar por adelantado directo en samples. La latencia de la consulta
-  no importa (solo necesita incertidumbre acotada + scheduling ahead): el
-  error del ancla desplaza todo el grid por una constante, y el timing
-  *relativo* entre eventos queda sample-exacto por construcción.
-  Demo/referencia en `examples/json_client.py`; documentar en
-  `docs/schemas.md` la diferencia con scsynth (que no tiene esto). Ojo: el
-  contador cuenta samples procesados, no escuchados (sumar latencia del
-  dispositivo para alinear con el mundo exterior) y se pausa en xruns (el
-  re-anclaje periódico lo absorbe). **Los dos relojes conviven, nada se
-  descarta**: el camino NTP queda intacto (compatibilidad scsynth) y el
-  target en samples es opt-in **por bundle** — clientes NTP y clientes
-  sample-clock pueden hablarle al mismo servidor a la vez, porque ambos
-  front-ends desembocan en la misma cola (`Cmd::Schedule`). Señalización:
-  como el timetag OSC es formato NTP por especificación, no reinterpretarlo;
-  la vía es un mensaje contenedor nuevo (p. ej. `/sched` con el target i64 +
-  el bundle como blob), que además se anida/agenda igual que un bundle común.
-  *(Completado 2026-06-12 — ver NOTAS.md. `/clock` → `/clock.reply h d` y
-  `/sched <h target> <blob>` (atómico, timetags internos ignorados, target
-  pasado = próximo bloque); cliente de referencia `examples/sample_clock.py`
-  con el modelo de regresión; documentado en `docs/sample-clock.md` +
-  schemas.md. El test agenda por `/sched` y asserta el sample **exacto**,
-  sin la vecindad que necesita el camino NTP.)*
+  --example bench`. Bonus: the rosc blob bug also affected bundle elements
+  — fixed for both modes in `osc::decode_packet`.)*
+- ✅ **M8 — The sample clock as the client's timebase**: the OS clock and the DAC
+  crystal drift relative to each other (tens of ppm ≈ ms per minute), so the
+  current NTP→samples conversion re-anchors every bundle against two clocks
+  that don't agree. A protocol extension so the client uses the sample
+  clock as master: (1) expose `current_samples()` over OSC (in
+  `/status.reply` or a new `/clock`); (2) accept bundles with a target
+  **in samples** (64-bit integer — `Cmd::Schedule` already works this way, the
+  NTP conversion is only the front-end); (3) on the client, model
+  `sample(t_local) = a + b·t` from (local monotonic clock, queried sample)
+  pairs with forgetting regression — JACK DLL / Ableton Link style —
+  and schedule ahead directly in samples. The query latency
+  doesn't matter (it only needs bounded uncertainty + scheduling ahead): the
+  anchor error shifts the whole grid by a constant, and the *relative* timing
+  between events is sample-exact by construction.
+  Demo/reference in `examples/json_client.py`; document in
+  `docs/schemas.md` the difference from scsynth (which doesn't have this). Note: the
+  counter counts samples processed, not heard (add device latency to align
+  with the outside world) and pauses on xruns (periodic re-anchoring absorbs it).
+  **The two clocks coexist, nothing is discarded**: the NTP path stays intact
+  (scsynth compatibility) and the samples target is opt-in **per bundle** — NTP
+  clients and sample-clock clients can talk to the same server at once, because
+  both front-ends feed the same queue (`Cmd::Schedule`). Signaling:
+  since the OSC timetag is NTP format by spec, don't reinterpret it;
+  the way is a new container message (e.g. `/sched` with the i64 target +
+  the bundle as a blob), which moreover nests/schedules just like an ordinary bundle.
+  *(Completed 2026-06-12 — see LOG.md. `/clock` → `/clock.reply h d` and
+  `/sched <h target> <blob>` (atomic, internal timetags ignored, the passed
+  target = next block); reference client `examples/sample_clock.py`
+  with the regression model; documented in `docs/sample-clock.md` +
+  schemas.md. The test schedules via `/sched` and asserts the **exact** sample,
+  without the neighborhood the NTP path needs.)*
 
-## Bifurcación F — SynthDefs vía Faust (Box/Signal API + JIT)
+## F fork — SynthDefs via Faust (Box/Signal API + JIT)
 
-Camino alternativo (no reemplaza M3–M7: conviven) para construir nodos de síntesis:
-en lugar de interpretar un grafo de UGens propios, el servidor recibe **JSON que se
-mapea a llamadas de la Box API (o Signal API) de libfaust**, compila a código nativo
-con el backend LLVM (como FaustLive) y cuelga el resultado en el mismo node tree.
-La ventaja: el "instruction set" del cliente es la Box API completa de Faust —
-clientes en cualquier lenguaje solo generan JSON, sin depender de nuestro set de
-UGens.
+An alternative path (does not replace M3–M7: they coexist) for building synthesis
+nodes: instead of interpreting a graph of our own UGens, the server receives **JSON
+that maps to calls of libfaust's Box API (or Signal API)**, compiles to native code
+with the LLVM backend (like FaustLive) and hangs the result on the same node tree.
+The advantage: the client's "instruction set" is Faust's full Box API —
+clients in any language only generate JSON, without depending on our UGen set.
 
-### Cambios al diseño base que esto exige
+### Changes to the base design this requires
 
-- **Prerequisito en M3**: el nodo synth del árbol debe ser `Box<dyn SynthNode>`
-  (trait con `process`, `set_control`, `done`), no un tipo concreto — así
-  `UGenSynth` (M3) y `FaustSynth` (F3) son intercambiables en el mismo árbol.
-  M3 debe implementarse ya con este trait.
-- **Hilo compilador** (nuevo, además del NRT): recibe pedidos de compilación,
-  serializa el acceso a libfaust (su contexto global no es thread-safe) y publica
-  factories en una tabla compartida (`basedrop::Shared`). La compilación JIT tarda
-  decenas-cientos de ms: siempre asíncrona, nunca bloquea ni la red ni el audio.
-- **Frontera RT intacta**: `compute()` de un dsp Faust ya inicializado es RT-safe
-  (sin alocaciones); crear/inicializar/destruir instancias y factories NO lo es —
-  instanciación en el hilo de red/compilador, destrucción vía garbage FIFO, igual
-  que los synths actuales.
+- **Prerequisite in M3**: the tree's synth node must be `Box<dyn SynthNode>`
+  (a trait with `process`, `set_control`, `done`), not a concrete type — so
+  `UGenSynth` (M3) and `FaustSynth` (F3) are interchangeable in the same tree.
+  M3 must be implemented with this trait from the start.
+- **Compiler thread** (new, on top of the NRT one): receives compilation requests,
+  serializes access to libfaust (its global context is not thread-safe) and publishes
+  factories in a shared table (`basedrop::Shared`). JIT compilation takes
+  tens-to-hundreds of ms: always asynchronous, never blocks the network or the audio.
+- **RT boundary intact**: `compute()` of an already-initialized Faust dsp is RT-safe
+  (no allocations); creating/initializing/destroying instances and factories is NOT —
+  instantiation on the network/compiler thread, destruction via the garbage FIFO,
+  like the current synths.
 
-### Milestones F (después de M4 recomendado; F0 puede hacerse antes como spike)
+### F milestones (after M4 recommended; F0 can be done earlier as a spike)
 
-- ✅ **F0 — Toolchain y FFI mínimo**: instalar libfaust con backend LLVM; evaluar
-  crates existentes vs. binding propio con bindgen sobre la C API
-  (`libfaust-box-c.h`, `llvm-dsp-c.h`); feature flag `faust` (todo opcional, el
-  core sigue compilando sin libfaust). Prueba de humo: compilar un box hardcodeado
-  (sinusoide por recursión/phasor) y renderizar offline comparando contra nuestro
-  `SinOsc`. Acá se mide el riesgo real: tamaño del link con LLVM, versión de
-  libfaust, latencia de compilación.
-  *(Completado 2026-06-10 — ver NOTAS.md. Mediciones: JIT ≈ 10 ms por def,
-  libfaust.so 11 MB con libLLVM.so dinámica de sistema; binding propio a mano,
-  sin bindgen por ahora.)*
-- ✅ **F1 — Hilo compilador**: thread dedicado con cola `CompileRequest { nombre,
-  json, cliente }`; tabla de factories con refcount; replies asíncronos
-  `/done /d_faust <nombre>` o `/fail` con el error de compilación legible.
-  *(Completado 2026-06-10 — ver NOTAS.md. F1 compila fuente Faust vía
-  `/d_faust name source`; el mapeo JSON→Box llega en F2. Hallazgo: libfaust
-  no tolera compilaciones concurrentes en un proceso — lock global además
-  del hilo dedicado.)*
-  Comando OSC nuevo: `/d_faust` (blob JSON) — `/d_recv` queda reservado para el
-  formato UGen de M3.
-- ✅ **F2 — Esquema JSON → Box API**: definir el schema (primitivas, composición
-  `par`/`seq`/`split`/`merge`/`rec`, matemática, delays, y UI `hslider`/`button`
-  como controles nombrados); intérprete JSON→llamadas a la C API con validación y
-  errores con ruta del nodo JSON culpable. Acceso a la stdlib de Faust (`os.osc`,
-  filtros de `fi.`) vía `DSPToBoxes` embebiendo fragmentos de fuente Faust dentro
-  del JSON — lo mejor de ambos mundos.
-  *(Completado 2026-06-10 — ver NOTAS.md. Schema documentado en
-  `src/faust/boxes.rs`; `/d_faust` acepta JSON o fuente Faust cruda.
-  Hallazgo: bug upstream en `boxFmod()`, rodeado vía fragmento.)*
-- ✅ **F3 — FaustSynth en el árbol**: `FaustSynth: SynthNode` envolviendo la
-  instancia JIT; `/s_new` con nombre de def Faust instancia en el hilo de red
-  (`createDSPInstance` + `init(sr)` alocan) y enchufa por el cmd FIFO; mapeo
-  buses↔`inputs`/`outputs` no intercalados de Faust; `/n_set` sobre parámetros
-  por nombre (zonas `FAUSTFLOAT*` recolectadas con UIGlue al instanciar);
-  liberación por garbage FIFO con refcount de factory (destruir una factory con
-  instancias vivas es UB).
-  *(Completado 2026-06-10 — ver NOTAS.md. Controles reservados `out`/`in`
-  para el mapeo de buses; los params se sondean una vez en el hilo
-  compilador y viven en `FaustDef`.)*
-- ✅ **F4 — Paridad e interop**: synths Faust y UGen conviven en grupos/buses;
-  tests dorados de grafos equivalentes (UGen `SinOsc` vs box `sin(phasor)`);
-  cliente de ejemplo en Python que genera JSON; documentación del schema.
-  *(Completado 2026-06-10 — ver NOTAS.md. `tests/faust_parity.rs` (sine con
-  tolerancia float + ganancia bit-exacta + grupo compartido),
-  `examples/json_client.py` (solo stdlib), `docs/schemas.md`.)*
-- ✅ **F5 — Extensiones (opcional; revisado 2026-06-12, ver «Milestones
-  futuros»)**: la lista original se revisó contra lo que el servidor ya
-  resuelve. **Se mantiene**: `waveform` (tablas chicas embebidas en la propia
-  def — wavetables, funciones de transferencia para waveshaping; son
-  autocontenidas y no compiten con los buffers), el backend interpreter de
-  Faust (sin LLVM) para plataformas sin JIT — cobra sentido real con el
-  target wasm de M14 — y la Signal API como variante de bajo nivel (baja
-  prioridad: la Box API cubrió todos los casos hasta ahora). **Se descarta**:
-  `soundfile` — duplica el sistema de buffers: un `PlayBuf`/`BufRd`
-  escribiendo a un bus alimenta a cualquier nodo Faust por su control `in`,
-  sin copiar datos al mundo Faust (documentar el patrón en `docs/schemas.md`);
-  y la polifonía nativa de Faust — el node tree ya es el alocador de voces
-  (una voz = un `/s_new`, las instancias comparten factory) y el modo
-  polifónico impone convenciones MIDI (`freq`/`gain`/`gate`) ajenas al modelo
-  scsynth; el único caso de uso real sería portar DSP polifónico Faust
-  existente sin tocarlo, marginal acá.
-  *(Completado 2026-06-12 — ver NOTAS.md. Ops `waveform`/`rdtable`/`rwtable`
-  en el schema, demo `wavetable` en el cliente Python, patrón
-  buffers-como-señal documentado en `docs/schemas.md`; interpreter backend
-  y Signal API quedan como parte del target wasm de M14.)*
+- ✅ **F0 — Toolchain and minimal FFI**: install libfaust with the LLVM backend;
+  evaluate existing crates vs. our own binding with bindgen over the C API
+  (`libfaust-box-c.h`, `llvm-dsp-c.h`); feature flag `faust` (all optional, the
+  core still compiles without libfaust). Smoke test: compile a hardcoded box
+  (sine by recursion/phasor) and render offline comparing against our
+  `SinOsc`. Here the real risk is measured: link size with LLVM, libfaust
+  version, compilation latency.
+  *(Completed 2026-06-10 — see LOG.md. Measurements: JIT ≈ 10 ms per def,
+  libfaust.so 11 MB with the system's dynamic libLLVM.so; hand-written binding,
+  no bindgen for now.)*
+- ✅ **F1 — Compiler thread**: a dedicated thread with a `CompileRequest { name,
+  json, client }` queue; a factory table with refcount; async
+  `/done /d_faust <name>` replies or `/fail` with the readable compilation error.
+  *(Completed 2026-06-10 — see LOG.md. F1 compiles Faust source via
+  `/d_faust name source`; the JSON→Box mapping comes in F2. Finding: libfaust
+  does not tolerate concurrent compilations in a process — global lock on top
+  of the dedicated thread.)*
+  New OSC command: `/d_faust` (JSON blob) — `/d_recv` stays reserved for the
+  M3 UGen format.
+- ✅ **F2 — JSON → Box API schema**: define the schema (primitives, composition
+  `par`/`seq`/`split`/`merge`/`rec`, math, delays, and UI `hslider`/`button`
+  as named controls); a JSON→C-API-calls interpreter with validation and
+  errors carrying the path of the offending JSON node. Access to Faust's stdlib (`os.osc`,
+  `fi.` filters) via `DSPToBoxes` embedding Faust source fragments inside
+  the JSON — the best of both worlds.
+  *(Completed 2026-06-10 — see LOG.md. Schema documented in
+  `src/faust/boxes.rs`; `/d_faust` accepts JSON or raw Faust source.
+  Finding: an upstream bug in `boxFmod()`, worked around via a fragment.)*
+- ✅ **F3 — FaustSynth in the tree**: `FaustSynth: SynthNode` wrapping the
+  JIT instance; `/s_new` with a Faust def name instantiates on the network thread
+  (`createDSPInstance` + `init(sr)` allocate) and plugs in via the cmd FIFO; mapping
+  of buses↔Faust's non-interleaved `inputs`/`outputs`; `/n_set` over parameters
+  by name (`FAUSTFLOAT*` zones collected with UIGlue at instantiation);
+  freeing via the garbage FIFO with factory refcount (destroying a factory with
+  live instances is UB).
+  *(Completed 2026-06-10 — see LOG.md. Reserved controls `out`/`in`
+  for bus mapping; params are probed once on the compiler thread
+  and live in `FaustDef`.)*
+- ✅ **F4 — Parity and interop**: Faust and UGen synths coexist in groups/buses;
+  golden tests of equivalent graphs (UGen `SinOsc` vs box `sin(phasor)`);
+  an example Python client that generates JSON; schema documentation.
+  *(Completed 2026-06-10 — see LOG.md. `tests/faust_parity.rs` (sine with
+  float tolerance + bit-exact gain + a shared group),
+  `examples/json_client.py` (stdlib only), `docs/schemas.md`.)*
+- ✅ **F5 — Extensions (optional; revised 2026-06-12, see "Future
+  milestones")**: the original list was revised against what the server already
+  solves. **Kept**: `waveform` (small tables embedded in the def itself
+  — wavetables, transfer functions for waveshaping; self-contained and not
+  competing with buffers), Faust's interpreter backend (no LLVM) for platforms
+  without JIT — it makes real sense with the M14 wasm target — and the Signal API
+  as a low-level variant (low priority: the Box API has covered every case so
+  far). **Dropped**: `soundfile` — it duplicates the buffer system: a
+  `PlayBuf`/`BufRd` writing to a bus feeds any Faust node via its `in` control,
+  without copying data into the Faust world (document the pattern in
+  `docs/schemas.md`); and Faust's native polyphony — the node tree is already
+  the voice allocator (one voice = one `/s_new`, instances share a factory) and
+  the polyphonic mode imposes MIDI conventions (`freq`/`gain`/`gate`) alien to
+  the scsynth model; the only real use case would be porting existing
+  polyphonic Faust DSP untouched, marginal here.
+  *(Completed 2026-06-12 — see LOG.md. Ops `waveform`/`rdtable`/`rwtable`
+  in the schema, `wavetable` demo in the Python client, the
+  buffers-as-signal pattern documented in `docs/schemas.md`; interpreter backend
+  and Signal API stay part of the M14 wasm target.)*
 
-### Previsiones de implementación
+### Implementation foresight
 
-- **Dependencia libfaust (no LLVM directo)**: se enlaza contra libfaust; LLVM
-  viene embebido adentro cuando la build trae el backend JIT. El costo se paga
-  de una de dos formas según el modo de consumo: libfaust *del sistema*
-  (dinámica) deja el binario liviano pero hereda la fragilidad de versiones —
-  la C API (`libfaust-box-c.h`) cambió entre versiones de Faust, los headers
-  de bindgen tienen que casar con la libfaust instalada, y esta a su vez está
-  atada a una `libLLVM-XX.so` concreta; libfaust *vendoreada/estática* da un
-  binario autocontenido a cambio de decenas de MB de LLVM adentro. F0 mide
-  cuál conviene; el feature flag `faust` aísla todo del core.
-- **Sample rate horneada en el init de cada instancia**: la factory compilada
-  es independiente de la SR, pero `instanceInit(dsp, sr)` precalcula las
-  constantes dependientes (coeficientes, incrementos de fase) una sola vez —
-  a diferencia de nuestros UGens, que leen `ctx.sample_rate` por bloque. Con
-  la SR fija por ejecución de `engine_pair` esto hoy no afecta; se vuelve
-  relevante solo con cambio de dispositivo en caliente o render NRT (M7) a
-  otra SR. Mitigación barata: re-`instanceInit` (resetea estado) o
-  re-instanciar.
-- **Ancho de float**: el JIT elige `FAUSTFLOAT` por flag al crear la factory
-  (`-single`/`-double`, default single). Regla: crear factories con `-single`
-  y assertear el tamaño de float de la factory antes de usarla, para casar
-  con los buses `f32`. Si algún día se quisiera f64 (p. ej. mastering NRT),
-  lo barato es un buffer de conversión en la frontera del nodo Faust — no
-  buses f64 globales; queda abierta la opción de un alias `Sample`
-  parametrizable al estilo del typedef FAUSTFLOAT.
+- **libfaust dependency (not LLVM directly)**: we link against libfaust; LLVM
+  comes embedded inside when the build brings the JIT backend. The cost is paid
+  one of two ways depending on the consumption mode: *system* libfaust
+  (dynamic) keeps the binary light but inherits version fragility —
+  the C API (`libfaust-box-c.h`) changed between Faust versions, the bindgen
+  headers must match the installed libfaust, which in turn is tied
+  to a specific `libLLVM-XX.so`; *vendored/static* libfaust gives a
+  self-contained binary in exchange for tens of MB of LLVM inside. F0 measures
+  which is preferable; the `faust` feature flag isolates it all from the core.
+- **Sample rate baked into each instance's init**: the compiled factory
+  is sample-rate independent, but `instanceInit(dsp, sr)` precomputes the
+  rate-dependent constants (coefficients, phase increments) once —
+  unlike our UGens, which read `ctx.sample_rate` per block. With
+  the SR fixed per `engine_pair` run this doesn't affect anything today; it
+  becomes relevant only with a hot device change or an NRT render (M7) at
+  another SR. Cheap mitigation: re-`instanceInit` (resets state) or
+  re-instantiate.
+- **Float width**: the JIT picks `FAUSTFLOAT` by flag when creating the factory
+  (`-single`/`-double`, default single). Rule: create factories with `-single`
+  and assert the factory's float size before using it, to match
+  the `f32` buses. If one day f64 were wanted (e.g. NRT mastering),
+  the cheap thing is a conversion buffer at the Faust node's boundary — not
+  global f64 buses; the option of a parameterizable `Sample` alias
+  in the style of the FAUSTFLOAT typedef stays open.
 
-Licencia: este proyecto es GPLv3-o-posterior, compatible con libfaust
-(GPLv2-o-posterior); la combinación se distribuye como GPLv3+. Falta agregar
-el archivo `COPYING` con el texto verbatim de la GPLv3.
+License: this project is GPLv3-or-later, compatible with libfaust
+(GPLv2-or-later); the combination is distributed as GPLv3+. Still missing the
+`COPYING` file with the verbatim GPLv3 text.
 
-Ver skill `faust-embedding` para los detalles de la C API y sus trampas.
+See the `faust-embedding` skill for the C API details and its pitfalls.
 
-## Milestones futuros (M9+) — características adicionales
+## Future milestones (M9+) — additional features
 
-Sección agregada el 2026-06-12 a partir de una lista de ideas a revisar (el
-M8 salió de esa misma lista). El orden refleja dependencias y costo/valor,
-no urgencia: M9–M11 son chicos e independientes entre sí, M12 habilita M13,
-M14 es independiente de todos. Al final se anota qué ideas se descartaron y
-por qué. Direcciones menores que no llegan a milestone (más UGens —
-`Saw`/`Pulse`/filtros/`EnvGen` con done actions ya listados arriba —,
-`/g_queryTree`, streaming de buffers) se toman sueltas cuando hagan falta.
+Section added on 2026-06-12 from a list of ideas to review (M8 came out of that
+same list). The order reflects dependencies and cost/value, not urgency: M9–M11
+are small and independent of each other, M12 enables M13, M14 is independent of
+all. At the end, which ideas were dropped and why is noted. Minor directions that
+don't reach milestone status (more UGens — `Saw`/`Pulse`/filters/`EnvGen` with
+done actions, already listed above —, `/g_queryTree`, buffer streaming) are taken
+as loose items when needed.
 
-- ✅ **M9 — Documentación de desarrollo**: hoy `docs/` solo tiene documentación
-  de usuario (`schemas.md`). Agregar `docs/architecture.md` (en inglés, como
-  todo `docs/`): mapa de hilos (red / audio / NRT / compilador Faust), mapa
-  de módulos (qué vive en `src/server`, `src/node`, `src/dsp`, `src/osc`,
-  `src/faust`, `src/synthdef`), ciclo de vida de la memoria (comandos
-  pre-armados en el hilo de red, garbage FIFO, pools `Arc`) e invariantes
-  que ningún cambio puede romper (RT-safety, identidad sample-exacta RT/NRT,
-  decodificar siempre por `osc::decode_packet`). Y una guía «cómo agregar
-  una UGen en Rust»: el trait, la aridad, `ProcessCtx` por slices, dónde se
-  registra el `kind`, y qué tests exige (unitario de señal + no-alloc +
-  golden si cambia el sonido). Dos decisiones quedan escritas acá:
-  (a) el mapeo de UI de Faust a controles — usar los labels como nombres de
-  control es deliberado: los nombres los pone el autor de la def, igual que
-  en `controls` del JSON de UGens, con `out`/`in` reservados para buses; el
-  *qué* ya está en `schemas.md`, falta el *porqué* en la doc de desarrollo;
-  (b) plugins de UGens: Rust no tiene ABI estable, así que no hay plugins
-  dinámicos en v1 — extender = compilar dentro del crate y la API interna
-  documentada es el contrato; si algún día hacen falta plugins dinámicos, la
-  vía es una C ABI o wasm **versionadas** (lección histórica de scsynth: su
-  ABI de plugins se rompía con cada cambio de struct o de feature). Cierra
-  con una pasada de rustdoc sobre los items públicos.
-  *(Completado 2026-06-12 — ver NOTAS.md. `docs/architecture.md` con mapa de
-  hilos/módulos, ciclo de vida de memoria, tabla de capacidades pre-alocadas,
-  invariantes, guía «cómo agregar una UGen» y las dos decisiones; punteros
-  desde CLAUDE.md y schemas.md; rustdoc sin warnings en ambas configs. La
-  tabla de capacidades adelanta la mitad de auditoría de M10.)*
+- ✅ **M9 — Developer documentation**: today `docs/` only has user documentation
+  (`schemas.md`). Add `docs/architecture.md` (in English, like all of `docs/`):
+  thread map (network / audio / NRT / Faust compiler), module map
+  (what lives in `src/server`, `src/node`, `src/dsp`, `src/osc`,
+  `src/faust`, `src/synthdef`), memory lifecycle (pre-built commands
+  on the network thread, garbage FIFO, `Arc` pools) and invariants
+  no change may break (RT-safety, sample-exact RT/NRT identity,
+  always decode via `osc::decode_packet`). And a "how to add
+  a UGen in Rust" guide: the trait, arity, `ProcessCtx` by slices,
+  where the `kind` is registered, and what tests it requires (signal unit
+  + no-alloc + golden if the sound changes). Two decisions get written down here:
+  (a) Faust's UI mapping to controls — using the labels as control
+  names is deliberate: the author of the def picks the names, just like
+  in `controls` of the UGen JSON, with `out`/`in` reserved for buses; the
+  *what* is already in `schemas.md`, the *why* was missing from the developer doc;
+  (b) UGen plugins: Rust has no stable ABI, so there are no dynamic
+  plugins in v1 — extending = compiling within the crate and the documented
+  internal API is the contract; if dynamic plugins are ever needed, the
+  way is a **versioned** C ABI or wasm (scsynth's historical lesson: its
+  plugin ABI broke with every struct or feature change). It closes
+  with a rustdoc pass over the public items.
+  *(Completed 2026-06-12 — see LOG.md. `docs/architecture.md` with a
+  thread/module map, memory lifecycle, a table of pre-allocated capacities,
+  invariants, the "how to add a UGen" guide and the two decisions; pointers
+  from CLAUDE.md and schemas.md; rustdoc with no warnings in both configs. The
+  capacities table front-runs half of M10's audit.)*
 
-- ✅ **M10 — Memoria acotada y alineación**: la mitad «denormales» de la idea
-  original ya está hecha (post-M7: `dsp::denormals`, `-ftz 2`, tests); queda
-  la mitad de memoria. (1) Auditar y documentar en una tabla única (en
-  `docs/architecture.md`) todas las capacidades pre-alocadas — FIFOs de
-  comandos/basura/eventos, cola de schedule (1024), slab de nodos, pool de
-  buffers (1024), buses (128 audio / 1024 control) — y el modo de fallo de
-  cada una al llenarse: el FIFO de comandos ya responde `/fail … command
-  FIFO full` en todos los caminos del servidor vivo; verificar el resto
-  (¿qué hace el hilo de audio si el garbage FIFO está lleno?, ¿y el de
-  eventos?) y emparejar comportamientos. (2) Alineación: wires y bloques de
-  bus son `[f32; 64]` con alineación natural de 4 bytes; envolverlos en un
-  tipo `#[repr(align(64))]` (un bloque = 256 bytes = 4 líneas de caché
-  enteras, sin partir) para autovectorización estable — medir con
-  `examples/bench` antes y después y conservarlo solo si no empeora.
-  (3) Actualizar la skill `realtime-audio` con las tres cosas: memoria
-  acotada con su tabla, nota de alineación, y referencia a la protección de
-  denormales ya implementada.
-  *(Completado 2026-06-12 — ver NOTAS.md. Tabla de M9 ahora clavada por
-  `tests/capacity.rs` (desbordes de basura/eventos/slab/grupos + fila nueva
-  de rings M14); `Block` `#[repr(C, align(64))]` para wires, buses y staging
-  Faust — bench A/B intercalado: neutro dentro del ruido (±4%), se conserva
-  por el argumento de estabilidad; skill `realtime-audio` actualizada
-  (modos de fallo, alineación, denormales reales en vez del `_mm_setcsr`
-  deprecado).)*
+- ✅ **M10 — Bounded memory and alignment**: the "denormals" half of the original
+  idea is already done (post-M7: `dsp::denormals`, `-ftz 2`, tests); the
+  memory half remains. (1) Audit and document in a single table (in
+  `docs/architecture.md`) every pre-allocated capacity — command/garbage/event
+  FIFOs, schedule queue (1024), node slab, buffer pool (1024), buses (128 audio /
+  1024 control) — and the failure mode of each when full: the command FIFO
+  already replies `/fail … command FIFO full` on all live-server paths;
+  verify the rest (what does the audio thread do if the garbage FIFO is full?,
+  and the event one?) and align behaviors. (2) Alignment: wires and bus blocks
+  are `[f32; 64]` with a natural 4-byte alignment; wrap them in a
+  `#[repr(align(64))]` type (one block = 256 bytes = 4 whole cache
+  lines, not split) for stable autovectorization — measure with
+  `examples/bench` before and after and keep it only if it doesn't get worse.
+  (3) Update the `realtime-audio` skill with the three things: bounded
+  memory with its table, an alignment note, and a reference to the denormal
+  protection already implemented.
+  *(Completed 2026-06-12 — see LOG.md. The M9 table now pinned by
+  `tests/capacity.rs` (garbage/event/slab/group overflows + a new row
+  for the M14 rings); `Block` `#[repr(C, align(64))]` for wires, buses and Faust
+  staging — interleaved A/B bench: neutral within the noise (±4%), kept
+  for the stability argument; `realtime-audio` skill updated
+  (failure modes, alignment, real denormals instead of the deprecated
+  `_mm_setcsr`).)*
 
-- ✅ **M11 — `/n_map`/`/n_mapa`: buses como fuente de parámetros** (derivado
-  de la revisión de la UI de Faust): la concepción «los elementos de UI son
-  señales que llegan por buses de control» hoy solo es cierta para defs
-  UGen que incluyan `InCtl` en su grafo; los params Faust solo se mueven por
-  `/n_set` discreto. `/n_map nodeID ctl bus` (scsynth) lo unifica para los
-  dos mundos: el nodo lee el bus de control al inicio de cada bloque y lo
-  escribe en su control/zona hasta que `/n_map ctl -1` o un `/n_set`
-  posterior lo desactive. Implementación RT-safe: tabla de mapeos por nodo
-  (índice de control → bus) resuelta en el hilo de audio leyendo los atomics
-  de buses de control que ya existen — sin alocar. Agendable en bundles como
+- ✅ **M11 — `/n_map`/`/n_mapa`: buses as a parameter source** (derived
+  from the review of Faust's UI): the conception "UI elements are
+  signals arriving over control buses" today is only true for UGen
+  defs that include `InCtl` in their graph; Faust params only move via
+  discrete `/n_set`. `/n_map nodeID ctl bus` (scsynth) unifies it for both
+  worlds: the node reads the control bus at the start of each block and
+  writes it into its control/zone until `/n_map ctl -1` or a later `/n_set`
+  disables it. RT-safe implementation: a per-node mapping table (control
+  index → bus) resolved on the audio thread by reading the control-bus
+  atomics that already exist — no allocation. Schedulable in bundles like
   `/n_set`.
-  *(Completado 2026-06-13 — ver NOTAS.md. Se implementó también `/n_mapa`
-  con buses de audio: como un control es un escalar por bloque (y las zonas
-  Faust también), muestrea un sample del bus por bloque (control-rate, fiel a
-  scsynth para controles `kr`; no hay controles audio-rate — para audio está
-  `In`/`in`). El mirror suma el bus de un mapeo de audio a las lecturas del
-  nodo y marca `dynamic` si el control mapeado es índice de bus, así M12/M13
-  siguen correctos. `tests/mapping.rs`, +tests en rt_safety/auto_order/
-  faust_synth; ejemplo `osc_ping map`. Quedan opcionales las variantes multi
-  `/n_mapn`/`/n_mapan`.)*
+  *(Completed 2026-06-13 — see LOG.md. `/n_mapa` was also implemented
+  with audio buses: since a control is a scalar per block (and Faust zones
+  too), it samples one sample of the bus per block (control-rate, faithful to
+  scsynth for `kr` controls; there are no audio-rate controls — for audio there's
+  `In`/`in`). The mirror sums an audio mapping's bus into the node's reads
+  and marks `dynamic` if the mapped control is a bus index, so M12/M13
+  stay correct. `tests/mapping.rs`, +tests in rt_safety/auto_order/
+  faust_synth; example `osc_ping map`. The multi variants
+  `/n_mapn`/`/n_mapan` remain optional.)*
 
-- ✅ **M12 — Forma canónica del grafo por conexiones de buses**: inferir el DAG
-  de dependencias entre nodos a partir de los buses: qué buses de audio lee
-  (`In`, `in` de Faust) y escribe (`Out`/`ReplaceOut`, `out` de Faust) cada
-  def. El análisis es estático solo cuando los índices de bus son constantes
-  o controles — no señales calculadas: una def analizable aporta aristas, y
-  un nodo con índice de bus dinámico actúa de barrera conservadora (depende
-  de todo lo anterior y todo lo posterior depende de él). Sobre el DAG,
-  **grupos auto-ordenados opt-in** (flag nuevo en `/g_new` o comando
-  `/g_sortMode`): dentro de ese grupo el orden de ejecución se recalcula en
-  el hilo de red ante cada cambio de topología o de def y se aplica
-  reusando la maquinaria de moves existente (equivalentes a `/n_before`) —
-  cero cambios en el hilo de audio. Los ciclos (feedback legítimo
-  leer-antes-de-escribir) no se «resuelven»: conservan el orden explícito
-  vigente = un bloque de delay, como los sends de retorno de un editor
-  multipista; documentarlo. La pérdida de flexibilidad queda contenida por
-  el opt-in: en un grupo auto-ordenado, `/n_before`/`/n_after` manuales
-  responden `/fail`. Para que el cliente inspeccione lo inferido:
-  `/g_queryTree` (pendiente del set scsynth) más un `/g_dumpGraph` de
-  debug. Beneficio: los grupos pasan a ser «canales de multipista» y el
-  cliente deja de micro-gestionar el orden de ejecución.
-  *(Completado 2026-06-12 — ver NOTAS.md. `osc/graph.rs`: análisis de buses
-  por def + `TreeMirror` en el hilo de red + sort topológico estable;
-  `/g_sortMode` (agendable y válido en scores NRT), `/g_queryTree`
-  compatible scsynth y `/g_dumpGraph`; los handlers inmediatos del server
-  se unificaron vía `CmdTranslator::translate`. Ejemplo
-  `examples/auto_order.py`, doc `docs/auto-order.md`. Cero cambios en el
-  hilo de audio, como estaba previsto.)*
+- ✅ **M12 — Canonical graph form via bus connections**: infer the dependency
+  DAG between nodes from the buses: which audio buses each def reads
+  (`In`, Faust's `in`) and writes (`Out`/`ReplaceOut`, Faust's `out`).
+  The analysis is static only when the bus indices are constants
+  or controls — not computed signals: an analyzable def contributes edges, and
+  a node with a dynamic bus index acts as a conservative barrier (it depends
+  on everything before and everything after depends on it). Over the DAG,
+  **opt-in auto-ordered groups** (a new flag on `/g_new` or a command
+  `/g_sortMode`): within that group the execution order is recomputed on
+  the network thread on each topology or def change and applied
+  reusing the existing move machinery (equivalent to `/n_before`) —
+  zero changes on the audio thread. Cycles (legitimate read-before-write
+  feedback) are not "resolved": they keep the explicit order
+  in force = one block of delay, like the return sends of a multitrack
+  editor; document it. The loss of flexibility is contained by the
+  opt-in: in an auto-ordered group, manual `/n_before`/`/n_after`
+  reply `/fail`. So the client can inspect what was inferred:
+  `/g_queryTree` (pending from the scsynth set) plus a debug `/g_dumpGraph`.
+  Benefit: groups become "multitrack channels" and the
+  client stops micro-managing the execution order.
+  *(Completed 2026-06-12 — see LOG.md. `osc/graph.rs`: per-def bus
+  analysis + `TreeMirror` on the network thread + stable topological sort;
+  `/g_sortMode` (schedulable and valid in NRT scores), `/g_queryTree`
+  scsynth-compatible and `/g_dumpGraph`; the server's immediate handlers
+  were unified via `CmdTranslator::translate`. Example
+  `examples/auto_order.py`, doc `docs/auto-order.md`. Zero changes on the
+  audio thread, as planned.)*
 
-- ✅ **M13 — Procesamiento paralelo del árbol** (requiere M12): el DAG de M12
-  es exactamente la estructura que habilita el paralelismo — etapas =
-  conjuntos de nodos sin dependencias entre sí — análogo al `ParGroup` de
-  supernova pero inferido en vez de declarado. Workers RT (N−1 hilos con
-  prioridad de audio) sincronizados por etapa con spin acotado + backoff;
-  nada de locks ni syscalls en el camino caliente. El riesgo central es el
-  hazard de escritura: dos nodos de la misma etapa sumando al mismo bus.
-  Como el análisis ya conoce las escrituras, la regla inicial es «misma
-  etapa ⇒ buses de escritura disjuntos; si no, se serializan dentro de la
-  etapa» (la alternativa — acumuladores por worker + pase de reducción —
-  cuesta memoria y un recorrido extra; queda como plan B). `assert_no_alloc`
-  en todos los workers; el modo NRT se beneficia igual (renders más
-  rápidos). Encararlo recién cuando exista un grafo real que no entre en un
-  core: hoy `examples/bench` da ~1800 voces sine en un core, y este es el
-  milestone más caro en complejidad de toda la sección.
-  *(Completado 2026-06-12 — ver NOTAS.md. Particionado en etapas en el
-  propio engine a partir de máscaras `BusUsage` enviadas en `Cmd::AddSynth`
-  — la seguridad nunca depende del espejo de red —; `server/workers.rs`
-  (fork-join con robo de trabajo atómico, spin acotado, park en idle);
-  `/g_parallel` + `--workers` en RT y NRT; **bit-idéntico al secuencial**
-  por construcción y por test; speedup medido ~3.3x con 3 workers en el
-  bench de 8 cadenas × 125 sines. Doc en `docs/parallel.md`.)*
+- ✅ **M13 — Parallel tree processing** (requires M12): the M12 DAG
+  is exactly the structure that enables parallelism — stages =
+  sets of nodes with no dependencies among them — analogous to supernova's
+  `ParGroup` but inferred instead of declared. RT workers (N−1 threads with
+  audio priority) synchronized per stage with bounded spin + backoff;
+  no locks or syscalls on the hot path. The central risk is the write
+  hazard: two nodes in the same stage summing to the same bus.
+  Since the analysis already knows the writes, the initial rule is "same
+  stage ⇒ disjoint write buses; otherwise, serialize within the
+  stage" (the alternative — per-worker accumulators + a reduction pass —
+  costs memory and an extra traversal; kept as plan B). `assert_no_alloc`
+  on all workers; NRT mode benefits equally (faster
+  renders). Tackle it only once a real graph exists that doesn't fit on one
+  core: today `examples/bench` gives ~1800 sine voices on one core, and this is
+  the most expensive milestone in complexity of the whole section.
+  *(Completed 2026-06-12 — see LOG.md. Stage partitioning in the
+  engine itself from `BusUsage` masks sent in `Cmd::AddSynth`
+  — safety never depends on the network mirror —; `server/workers.rs`
+  (fork-join with atomic work stealing, bounded spin, park on idle);
+  `/g_parallel` + `--workers` in RT and NRT; **bit-identical to sequential**
+  by construction and by test; measured speedup ~3.3x with 3 workers on the
+  8-chain × 125-sine bench. Doc in `docs/parallel.md`.)*
 
-- ✅ **M14 — Transportes enchufables, modo embebido y llamadas síncronas**
-  (redefinido 2026-06-12; antes era solo «plano de datos por shm»): el
-  objetivo es que un cliente local use el servidor como si la aplicación
-  fuera monolítica — sin protocolo de red a la vista y sin asincronía
-  obligatoria — sin perder el control remoto por UDP. Tres capas:
+- ✅ **M14 — Pluggable transports, embedded mode and synchronous calls**
+  (redefined 2026-06-12; before it was only "shm data plane"): the
+  goal is that a local client uses the server as if the application
+  were monolithic — no network protocol in sight and no mandatory
+  asynchrony — without losing remote control over UDP. Three layers:
 
-  1. **Separar codificación de transporte.** OSC queda como única
-     codificación (mensajes, bundles, timetags de M8, replies: un solo
-     camino de parseo/validación con `decode_packet`); el transporte pasa a
-     ser un trait con tres implementaciones. **UDP**: lo actual, para
-     clientes remotos — la modularidad no se pierde. **Ring de bytes OSC en
-     memoria compartida** (dos procesos, misma máquina): par de rings
-     ida/vuelta por cliente, índice de commit publicado al final de cada
-     escritura (un cliente que muere a mitad de escritura no corrompe nada),
-     contenido tratado como bytes no confiables (la validación OSC ya
-     existe), despertar por semáforo nombrado/eventfd — bloquear ahí es
-     legal porque quien drena es el hilo de **red**, no el de audio; a
-     cambio de UDP local: backpressure real en vez de pérdida silenciosa de
-     paquetes y ningún puerto abierto. **In-process**: el caso monolítico de
-     verdad — el servidor como biblioteca, el cliente entrega los bytes OSC
-     por llamada de función al hilo de red, estilo `World_SendPacket` de
-     libscsynth. El navegador no tiene UDP, así que esta abstracción es
-     además prerrequisito del target wasm (allí el «ring» es un
-     `SharedArrayBuffer`; depende del backend interpreter de F5, sin JIT
-     LLVM en wasm).
+  1. **Separate encoding from transport.** OSC stays as the single
+     encoding (messages, bundles, M8 timetags, replies: one single
+     parse/validate path with `decode_packet`); the transport becomes
+     a trait with three implementations. **UDP**: the current one, for
+     remote clients — modularity is not lost. **OSC-bytes ring in
+     shared memory** (two processes, same machine): a pair of round-trip
+     rings per client, the commit index published at the end of each
+     write (a client dying mid-write corrupts nothing),
+     content treated as untrusted bytes (OSC validation already
+     exists), wakeup via a named semaphore/eventfd — blocking there is
+     legal because the one draining is the **network** thread, not the audio
+     one; in exchange, over local UDP: real backpressure instead of silent
+     packet loss and no open port. **In-process**: the truly monolithic
+     case — the server as a library, the client hands the OSC bytes
+     via a function call to the network thread, in the style of `World_SendPacket`
+     from libscsynth. The browser has no UDP, so this abstraction is
+     also a prerequisite of the wasm target (there the "ring" is a
+     `SharedArrayBuffer`; it depends on the F5 interpreter backend, no JIT
+     LLVM in wasm).
 
-  2. **Plano de datos compartido** (el M14 original): segmento
-     multiplataforma (`shm_open` en Unix, `CreateFileMapping` en Windows;
-     `memmap2` o similar) con header magic + **versión de layout**, el reloj
-     de samples (el `AtomicU64` que el engine ya publica — anclas de M8 sin
-     jitter de UDP) y el array de buses de control (lectura/escritura, los
-     mismos atomics). En modo in-process es acceso directo, sin segmento.
+  2. **Shared data plane** (the original M14): a cross-platform
+     segment (`shm_open` on Unix, `CreateFileMapping` on Windows;
+     `memmap2` or similar) with a magic header + **layout version**, the sample
+     clock (the `AtomicU64` the engine already publishes — M8 anchors without
+     UDP jitter) and the control-bus array (read/write, the
+     same atomics). In in-process mode it's direct access, no segment.
 
-  3. **Modo de ejecución síncrono.** La asincronía estilo scsynth es tediosa
-     en los clientes (Routines en sclang, callbacks/promesas en JS); para el
-     uso interactivo/científico en Python (consultar un dato y plotearlo) el
-     binding ofrece una fachada bloqueante: llamada que espera datos =
-     enviar el request + bloquear con timeout hasta el reply correlacionado.
-     No exige cambios en el servidor (funciona incluso sobre UDP hoy), pero
-     sí resolver dos cosas. **Correlación**: los replies identifican por
-     comando + bufnum/nodeID — alcanza si el binding serializa sus requests;
-     para concurrencia real, extensión mínima de protocolo: token opcional
-     en las queries que el reply ecoa. **Datos grandes**: leer un buffer
-     entero por UDP exige trocear estilo `/b_getn` (límite de datagrama); en
-     modo in-process es **zero-copy** — los buffers ya son `Arc<Buffer>`
-     inmutables, el binding clona el `Arc` en el hilo de red y expone
-     puntero + longitud de `f32` planos. **Principio de la frontera**: solo
-     estructuras básicas (arrays `f32` contiguos, enteros, strings de
-     error), nunca tipos de una librería — las científicas fueron ejemplo de
-     uso, no dependencia: numpy puede *ver* ese puntero sin copiar (buffer
-     protocol), pero eso es elección del cliente, no del binding. Bonus que
-     cierra el ciclo: el render NRT como llamada síncrona
-     (`render(score) → frames f32`; `render_to_vec` ya existe). Lo síncrono
-     es siempre el **cliente**
-     esperando: el hilo de audio nunca se entera y el servidor nunca
-     bloquea. Nota por lenguaje: Python bloquea sin problema; en JS el modo
-     síncrono solo existe en workers (`Atomics.wait` sobre
-     `SharedArrayBuffer`) — en el hilo principal queda `await`, que ya es
-     tolerable.
+  3. **Synchronous execution mode.** scsynth-style asynchrony is tedious
+     in clients (Routines in sclang, callbacks/promises in JS); for
+     interactive/scientific use in Python (query a datum and plot it) the
+     binding offers a blocking facade: a call that waits for data =
+     send the request + block with a timeout until the correlated reply.
+     It requires no server changes (it works even over UDP today), but
+     it does require solving two things. **Correlation**: replies identify by
+     command + bufnum/nodeID — enough if the binding serializes its requests;
+     for real concurrency, a minimal protocol extension: an optional token
+     on the queries that the reply echoes. **Large data**: reading a whole
+     buffer over UDP requires chunking `/b_getn` style (datagram limit); in
+     in-process mode it's **zero-copy** — buffers are already immutable
+     `Arc<Buffer>`, the binding clones the `Arc` on the network thread and exposes
+     a pointer + length of flat `f32`. **Boundary principle**: only basic
+     structures (contiguous `f32` arrays, integers, error strings), never types
+     from a library — scientific ones were a usage example, not a dependency:
+     numpy can *view* that pointer without copying (buffer protocol), but that
+     is the client's choice, not the binding's. A bonus that closes the
+     loop: the NRT render as a synchronous call
+     (`render(score) → frames f32`; `render_to_vec` already exists). The
+     synchronous part is always the **client** waiting: the audio thread never
+     finds out and the server never blocks. Per-language note: Python blocks
+     without issue; in JS the synchronous mode only exists in workers
+     (`Atomics.wait` over `SharedArrayBuffer`) — on the main thread there's
+     `await`, which is already tolerable.
 
-  Entregables: trait de transporte + ring shm + modo embebido (feature
-  `embed` o crate aparte). La **cdylib con C ABI versionada** (acá aplica la
-  lección de ABI de la idea de plugins) es obligatoria — es lo que permite
-  conectar cualquier lenguaje: JavaScript vía Node/Deno FFI, y los que
-  vengan. Los bindings son envoltorios finos que respetan el principio de la
-  frontera; **cómo se construye cada binding es ortogonal a ese principio**:
-  para Python (target principal) las dos vías son `ctypes` de la stdlib
-  sobre la C ABI (Python puro, cero build propio, pero firmas declaradas a
-  mano — frágil) o un módulo **PyO3** (extensión nativa: clases idiomáticas,
-  errores → excepciones, buffer protocol zero-copy trivial; se distribuye
-  como wheel). PyO3 no impone dependencias al cliente — expone tipos
-  nativos y `memoryview` sobre `f32` planos, sin numpy — y para el modo
-  embebido es la vía más natural: el módulo *es* el servidor enlazando el
-  engine directo, sin pasar por la C ABI. Opciones a definir al encarar:
-  ¿cliente Python por ctypes o PyO3? (PyO3 favorito para el modo embebido;
-  ctypes alcanza para el caso dos-procesos); ¿token de correlación en el
-  protocolo? (empezar sin él, serializando requests en el binding);
-  ¿buffers grandes por el segmento shm en el caso dos-procesos? (empezar
-  sin eso: copiar al segmento duplica memoria y complica el layout — datos
-  grandes quedan para el modo embebido, que es el caso de uso científico
-  real).
-  *(Completado 2026-06-12 — ver NOTAS.md. Segmento versionado en
-  `server/ipc.rs` (header ABI v1 + reloj de samples espejado por bloque +
-  buses de control compartidos de verdad + par de rings SPSC de bytes OSC),
-  respaldo archivo-mapeado (`--shm`, cliente Python stdlib `mmap`) o heap
-  (in-process); `ClientId` reemplaza a `SocketAddr` en el server (replies
-  enrutados por transporte); C ABI `embed` (cdylib): `clausters_render`
-  síncrono + servidor vivo in-process; binding `clients/python/clausters.py`
-  con la fachada síncrona. Diferidos explícitos: semáforo de wakeup (v1
-  polling 2 ms), múltiples clientes de ring, token de correlación, buffers
-  por shm, JS/wasm.)*
+  Deliverables: transport trait + shm ring + embedded mode (feature
+  `embed` or a separate crate). The **versioned-C-ABI cdylib** (here the
+  ABI lesson from the plugins idea applies) is mandatory — it's what allows
+  connecting any language: JavaScript via Node/Deno FFI, and whatever
+  comes next. The bindings are thin wrappers that respect the boundary
+  principle; **how each binding is built is orthogonal to that principle**:
+  for Python (the main target) the two ways are stdlib `ctypes`
+  over the C ABI (pure Python, zero build of its own, but signatures declared
+  by hand — fragile) or a **PyO3** module (a native extension: idiomatic classes,
+  errors → exceptions, trivial zero-copy buffer protocol; distributed
+  as a wheel). PyO3 imposes no dependencies on the client — it exposes
+  native types and a `memoryview` over flat `f32`, without numpy — and for the
+  embedded mode it's the most natural path: the module *is* the server linking
+  the engine directly, without going through the C ABI. Options to define when
+  tackling it: Python client via ctypes or PyO3? (PyO3 favorite for the embedded
+  mode; ctypes is enough for the two-process case); a correlation token in the
+  protocol? (start without it, serializing requests in the binding);
+  large buffers via the shm segment in the two-process case? (start
+  without that: copying into the segment doubles memory and complicates the
+  layout — large data stays for the embedded mode, which is the real
+  scientific use case).
+  *(Completed 2026-06-12 — see LOG.md. Versioned segment in
+  `server/ipc.rs` (ABI header v1 + per-block-mirrored sample clock +
+  genuinely shared control buses + a pair of SPSC OSC-byte rings),
+  file-mapped backing (`--shm`, stdlib `mmap` Python client) or heap
+  (in-process); `ClientId` replaces `SocketAddr` in the server (replies
+  routed by transport); C ABI `embed` (cdylib): synchronous `clausters_render`
+  + a live in-process server; binding `clients/python/clausters.py`
+  with the synchronous facade. Explicit deferrals: wakeup semaphore (v1
+  2 ms polling), multiple ring clients, correlation token, shm
+  buffers, JS/wasm.)*
 
-- ✅ **M15 — Documentación integral en inglés (README + libro mdBook + rustdoc)**:
-  hoy la documentación en inglés está bien pero dispersa en `docs/`
-  (`architecture.md` desarrollo; `schemas.md` referencia OSC/usuario;
-  `auto-order.md`, `parallel.md`, `sample-clock.md`, `ipc.md` por feature) y
-  falta una puerta de entrada y una estructura navegable que la unifique. Tres
-  audiencias a cubrir: usuario por OSC, usuario como **librería**/embebido
-  (`rlib`+`cdylib`: `engine_pair`, `render_to_wav`, el C ABI), y desarrollador.
+- ✅ **M15 — Comprehensive English documentation (README + mdBook + rustdoc)**:
+  today the English documentation is good but scattered in `docs/`
+  (`architecture.md` development; `schemas.md` OSC/user reference;
+  `auto-order.md`, `parallel.md`, `sample-clock.md`, `ipc.md` per feature) and
+  it lacks a front door and a navigable structure that unifies it. Three
+  audiences to cover: the OSC user, the **library**/embedded user
+  (`rlib`+`cdylib`: `engine_pair`, `render_to_wav`, the C ABI), and the developer.
   Plan:
-  - **README.md** en la raíz, en inglés (obligatorio): overview, quickstart
-    (build → correr servidor → un comando OSC; y un render NRT), matriz de
-    features (`realtime`/`faust`/`embed`), links al libro y al rustdoc, licencia
-    GPL-3.0. No duplica el libro, enlaza.
-  - **Libro mdBook** como cuerpo navegable, **estándar de la comunidad Rust**
-    (el fuente vive en el repo, el HTML generado se ignora en git). `book.toml`
-    en la raíz con `src = "docs"` para **reusar los `docs/*.md` en su lugar**
-    (cero churn en las referencias entrantes a `docs/x.md` que hay en rustdoc,
-    tests y este archivo). `docs/SUMMARY.md` arma el índice; capítulos nuevos en
-    `docs/`: `introduction.md`, `getting-started.md` (versión inglés de las
-    partes ejecutables), `using-as-a-library.md`, `examples.md` (catálogo de
-    `examples/` y `clients/python/`), `contributing.md` (setup de desarrollo,
-    libfaust desde fuente, regla E2E de una sola invocación de Bash). Los
-    capítulos existentes (`architecture.md`, `schemas.md`, los de feature) se
-    reusan tal cual.
-  - **rustdoc** como referencia de API: expandir el doc-comment de crate
-    (`src/lib.rs`) para orientar (split engine/red, feature flags, entry
-    points), enlazado desde y hacia el libro.
-  - Los archivos en español (`PLAN.md`, `NOTAS.md`, `GUIA.md`) **se mantienen en
-    español y en su lugar** — son del autor y se siguen actualizando; la doc de
-    usuario en inglés es nueva/aparte (`GUIA.md` sigue siendo el checklist de QA
-    por milestone).
-  - Opcional (fuera del primer pase): workflow de CI para `mdbook build` +
-    deploy a GitHub Pages y `mdbook test`; dividir `schemas.md` si queda largo.
+  - **README.md** at the root, in English (mandatory): overview, quickstart
+    (build → run server → an OSC command; and an NRT render), feature matrix
+    (`realtime`/`faust`/`embed`), links to the book and rustdoc, license
+    GPL-3.0. It doesn't duplicate the book, it links.
+  - **mdBook** as the navigable body, the **Rust community standard**
+    (the source lives in the repo, the generated HTML is git-ignored). `book.toml`
+    at the root with `src = "docs"` to **reuse the `docs/*.md` in place**
+    (zero churn in the incoming references to `docs/x.md` that exist in rustdoc,
+    tests and this file). `docs/SUMMARY.md` builds the index; new chapters in
+    `docs/`: `introduction.md`, `getting-started.md` (English version of the
+    runnable parts), `using-as-a-library.md`, `examples.md` (catalog of
+    `examples/` and `clients/python/`), `contributing.md` (development setup,
+    libfaust from source, the single-Bash-invocation E2E rule). The
+    existing chapters (`architecture.md`, `schemas.md`, the feature ones) are
+    reused as is.
+  - **rustdoc** as the API reference: expand the crate doc-comment
+    (`src/lib.rs`) to orient (engine/network split, feature flags, entry
+    points), linked to and from the book.
+  - The Spanish files (`PLAN.md`, `NOTAS.md`, `GUIA.md`) **stay in
+    Spanish and in place** — they're the author's and keep being updated; the
+    English user doc is new/separate (`GUIA.md` is still the per-milestone QA
+    checklist). *(Historical note: this decision was later revised — `PLAN.md`,
+    `clients/PLAN.md` and `LOG.md` were translated to English; only `GUIA.md`
+    and the conversation with the user remain Spanish.)*
+  - Optional (out of the first pass): a CI workflow for `mdbook build` +
+    deploy to GitHub Pages and `mdbook test`; split `schemas.md` if it gets long.
 
-  Criterio de cierre: `mdbook build` y `cargo doc` limpios y sin links rotos;
-  README y libro con un camino claro desde la portada para cada una de las tres
-  audiencias.
-  *(Completado en una sesión anterior — el trabajo está en el commit `5424855`
-  "Documentation" (mensaje no convencional, anterior a este registro):
-  `README.md`, `book.toml` (`src = "docs"`), `docs/SUMMARY.md` y capítulos
-  nuevos `introduction.md`/`getting-started.md`/`using-as-a-library.md`/
-  `examples.md`/`contributing.md`, doc-comment de crate ampliado en
-  `src/lib.rs`, `book/` git-ignored. `mdbook build` (v0.5.3) y `cargo doc`
-  limpios. El cierre formal —este ✅ y la entrada de NOTAS.md— quedó pendiente
-  y se registra ahora.)*
+  Close-out criterion: `mdbook build` and `cargo doc` clean and with no broken
+  links; README and book with a clear path from the front page for each of the three
+  audiences.
+  *(Completed in an earlier session — the work is in commit `5424855`
+  "Documentation" (unconventional message, predating this log):
+  `README.md`, `book.toml` (`src = "docs"`), `docs/SUMMARY.md` and new
+  chapters `introduction.md`/`getting-started.md`/`using-as-a-library.md`/
+  `examples.md`/`contributing.md`, expanded crate doc-comment in
+  `src/lib.rs`, `book/` git-ignored. `mdbook build` (v0.5.3) and `cargo doc`
+  clean. The formal close-out —this ✅ and the LOG.md entry— was pending
+  and is recorded now.)*
 
-- ✅ **M16 — Persistencia de defs en disco + caché de bitcode**: hoy los defs
-  (`/d_recv` y `/d_faust`) son volátiles, viven solo en memoria; un cliente que
-  arma una biblioteca (incluso importando piezas de faustlib como faustdefs)
-  tiene que reenviarla cada sesión. Guardar los defs en un directorio de datos y
-  recargarlos al arrancar, en dos capas: **B** — la definición original (JSON
-  del `SynthDefSpec` para UGens, source/JSON del def Faust) como fuente de verdad
-  transparente, que se recompila al recargar; **A** — para Faust, una caché del
-  bitcode LLVM (`writeCDSPFactoryToBitcodeFile`) **no autoritativa**, keyed por
-  versión de libfaust + sha del payload, que salta el front-end de Faust en el
-  arranque y hace fallback a recompilar ante cualquier miss/corrupción/upgrade.
-  Dos subdirs `synthdefs/` y `faustdefs/`; dir resuelto por
-  `--data-dir`/`$CLAUSTERS_DATA_DIR`/XDG, `--no-persist` para apagarlo, solo en
-  el server RT (NRT no persiste). Recarga incremental en el hilo compilador para
-  no bloquear el arranque con bibliotecas grandes. El `FaustDef` en sí no se
-  serializa (factory JIT opaca): se persiste la definición, no el artefacto.
-  *(Completado 2026-06-16 — ver NOTAS.md. FFI de bitcode + `getCLibFaustVersion`;
-  módulos `faust::cache` y `server::defstore`; `CacheJob`/`client: Option` en el
-  hilo compilador; wiring en `osc::server` + flags en `main`; dep `sha2`.
-  `tests/persistence.rs` (3 core + 6 faust): round-trip de bitcode
-  sample-idéntico, recarga end-to-end entre dos servidores, version mismatch,
-  fallback ante corrupción, borrado por `/d_free`. Docs en `schemas.md`,
-  `architecture.md`, `examples.md`, `GUIA.md` y `examples/persistence.sh`.)*
+- ✅ **M16 — On-disk def persistence + bitcode cache**: today defs
+  (`/d_recv` and `/d_faust`) are volatile, living only in memory; a client that
+  builds a library (even importing pieces of faustlib as faustdefs)
+  has to resend it each session. Save the defs in a data directory and
+  reload them at startup, in two layers: **B** — the original definition (JSON
+  of the `SynthDefSpec` for UGens, source/JSON of the Faust def) as a transparent
+  source of truth, recompiled on reload; **A** — for Faust, an LLVM bitcode
+  cache (`writeCDSPFactoryToBitcodeFile`) **non-authoritative**, keyed by
+  libfaust version + payload sha, that skips Faust's front-end at
+  startup and falls back to recompiling on any miss/corruption/upgrade.
+  Two subdirs `synthdefs/` and `faustdefs/`; dir resolved by
+  `--data-dir`/`$CLAUSTERS_DATA_DIR`/XDG, `--no-persist` to turn it off, only on
+  the RT server (NRT doesn't persist). Incremental reload on the compiler thread so as
+  not to block startup with large libraries. The `FaustDef` itself isn't
+  serialized (opaque JIT factory): the definition is persisted, not the artifact.
+  *(Completed 2026-06-16 — see LOG.md. Bitcode FFI + `getCLibFaustVersion`;
+  modules `faust::cache` and `server::defstore`; `CacheJob`/`client: Option` in the
+  compiler thread; wiring in `osc::server` + flags in `main`; dep `sha2`.
+  `tests/persistence.rs` (3 core + 6 faust): sample-identical bitcode
+  round-trip, end-to-end reload between two servers, version mismatch,
+  fallback on corruption, deletion via `/d_free`. Docs in `schemas.md`,
+  `architecture.md`, `examples.md`, `GUIA.md` and `examples/persistence.sh`.)*
 
-- **M17 — MIDI: protocolo del servidor y salida del cliente (núcleo Rust reusable)** *(diferido — sin fecha)*: hoy el servidor solo habla OSC y el cliente Python no exporta MIDI (`clients/python/clausters/base/_midiinterface.py` acumula eventos pero `MidiNrtInterface` no escribe nada y `MidiRtInterface` es un stub). MIDI aparece en dos lugares — como **protocolo de control alternativo al OSC en el servidor** (idea del backlog del usuario) y como **salida del cliente** (`.mid` offline + puertos en vivo) — y ambos comparten la misma capa de mensajes, así que MIDI vive en un **crate nativo reusable** (`crates/clausters-midi`, cdylib+rlib, C ABI versionada con el mismo patrón que `clausters-ffi` y `src/embed.rs`), agnóstico al lenguaje y al lado: lo usan el cliente Python por ctypes, el futuro cliente JS y el propio servidor. Nada de librería MIDI de Python (python-rtmidi): el núcleo es Rust, como `clausters-core`.
+- **M17 — MIDI: server protocol and client output (reusable Rust core)** *(deferred — no date)*: today the server only speaks OSC and the Python client doesn't export MIDI (`clients/python/clausters/base/_midiinterface.py` accumulates events but `MidiNrtInterface` writes nothing and `MidiRtInterface` is a stub). MIDI appears in two places — as a **control protocol alternative to OSC in the server** (a user backlog idea) and as **client output** (`.mid` offline + live ports) — and both share the same message layer, so MIDI lives in a **reusable native crate** (`crates/clausters-midi`, cdylib+rlib, versioned C ABI with the same pattern as `clausters-ffi` and `src/embed.rs`), language- and side-agnostic: used by the Python client via ctypes, the future JS client and the server itself. No Python MIDI library (python-rtmidi): the core is Rust, like `clausters-core`.
 
-  **Capa de mensajes: MIDI 2.0 (UMP) vía `midi2`.** Se analizó `midi2` (bl-midi2-rs, github.com/midi2-dev/bl-midi2-rs; crates.io `midi2`, v0.11 ago-2025, MIT/Apache-2.0): wrappers fuertemente tipados de **todos** los mensajes de la spec MIDI 2.0 (rev 1.1) sobre **UMP (Universal MIDI Packet)** — Channel Voice 2 (feature por defecto), Sysex 7/8-bit, Flex Data, System Common/Real-Time, UMP Stream y MIDI-CI (WIP), todas opt-in por features. Es **`no_std` y no-alocante**, genérico sobre el buffer de respaldo (`Vec`, `[u32; N]` en stack, o `&[u32]` prestado) → encaja con la frontera RT del servidor (mensajes armados en el stack, cero asignaciones en el hilo de audio). Lo decisivo es la **mayor resolución**: velocity de 16 bits y controllers de 32 bits frente a los 7 bits del MIDI 1.0 clásico — relevante acá porque un control MIDI termina mapeado a un parámetro `f32` de un nodo Faust/UGen, donde 7 bits de cuantización se notan. **Limitación clave**: `midi2` **no lee ni escribe Standard MIDI Files (`.mid`/SMF)** — es solo la capa de mensajes.
+  **Message layer: MIDI 2.0 (UMP) via `midi2`.** `midi2` was analyzed (bl-midi2-rs, github.com/midi2-dev/bl-midi2-rs; crates.io `midi2`, v0.11 Aug-2025, MIT/Apache-2.0): strongly-typed wrappers for **all** messages of the MIDI 2.0 spec (rev 1.1) over **UMP (Universal MIDI Packet)** — Channel Voice 2 (default feature), Sysex 7/8-bit, Flex Data, System Common/Real-Time, UMP Stream and MIDI-CI (WIP), all opt-in by features. It is **`no_std` and non-allocating**, generic over the backing buffer (`Vec`, `[u32; N]` on the stack, or a borrowed `&[u32]`) → it fits the server's RT boundary (messages built on the stack, zero allocations on the audio thread). The decisive thing is the **higher resolution**: 16-bit velocity and 32-bit controllers versus classic MIDI 1.0's 7 bits — relevant here because a MIDI control ends up mapped to an `f32` parameter of a Faust/UGen node, where 7 bits of quantization are noticeable. **Key limitation**: `midi2` **does not read or write Standard MIDI Files (`.mid`/SMF)** — it's only the message layer.
 
-  **Persistencia con resolución plena: MIDI 2.0 Clip File vía `midi2-clip`.** Sí vale preservar la mayor resolución en disco: el `.mid` clásico (SMF) es MIDI 1.0 por definición del formato y cuantiza velocity/controllers a 7 bits en la escritura, así que el formato primario para partituras pasa a ser el **MIDI 2.0 Clip File**, escrito con `midi2-clip` (crates.io `midi2-clip` v0.1, mismo autor que `midi2`: lee/escribe clip files MIDI 2.0) — conserva los 16/32 bits de UMP de punta a punta. Como **MIDI 2.0 es retrocompatible con MIDI 1.0**, se mantiene un escritor `.mid`/SMF (MIDI 1.0) con `midly` (Rust puro, sin dependencia de sistema) como **camino de interop** para DAWs/herramientas que solo entienden MIDI 1 (degradando a 7 bits a propósito). El crate `clausters-midi` esconde ambos formatos detrás de su C ABI, respetando la frontera de **solo datos planos** (POD de enteros in, bytes del archivo malloc'd out — la misma forma que `clausters_render`/`clausters_free_samples`).
+  **Persistence at full resolution: MIDI 2.0 Clip File via `midi2-clip`.** It's worth preserving the higher resolution on disk: the classic `.mid` (SMF) is MIDI 1.0 by definition of the format and quantizes velocity/controllers to 7 bits on write, so the primary format for scores becomes the **MIDI 2.0 Clip File**, written with `midi2-clip` (crates.io `midi2-clip` v0.1, same author as `midi2`: reads/writes MIDI 2.0 clip files) — it preserves UMP's 16/32 bits end to end. Since **MIDI 2.0 is backward-compatible with MIDI 1.0**, a `.mid`/SMF (MIDI 1.0) writer is kept with `midly` (pure Rust, no system dependency) as an **interop path** for DAWs/tools that only understand MIDI 1 (deliberately degrading to 7 bits). The `clausters-midi` crate hides both formats behind its C ABI, respecting the **only-flat-data** boundary (integer POD in, malloc'd file bytes out — the same shape as `clausters_render`/`clausters_free_samples`).
 
-  **Sub-partes** (orden de costo/valor; encarables por separado):
-  1. **Cliente — archivo offline (NRT)**: secuenciar un `Pbind` y escribir un **clip MIDI 2.0** (resolución plena) — o un `.mid`/SMF de interop — con timing exacto (ticks ← beat lógico, reusando la costura RT/NRT del cliente). Refactor mínimo de doble despacho: mover la realización OSC de `Event.play` a `destination.play_event(event)` (la lógica `/s_new`+`/n_free` pasa a `Server.play_event`, sin cambio de comportamiento — lo guarda el golden de `clients/python/tests/test_golden.py`), de modo que un pattern apunte a OSC **o** a un destino MIDI sin tocar reloj ni rutina. `MidiScore` pasa a guardar `(beat, mensaje)`, `MidiNrtInterface.write(path, ppq)` convierte beats→ticks y delega la escritura del archivo al crate; binding `clients/python/clausters/_midi.py` por ctypes (mismo patrón lazy/versionado que `_native.py`).
-  2. **Cliente — MIDI en vivo**: salida a puertos del SO (feature `live` del crate, `midir` que reusa el ALSA que cpal ya pide; best-effort, sin timetags — MIDI no los lleva), `MidiRtInterface` real reemplazando el stub.
-  3. **Servidor — protocolo MIDI alternativo al OSC**: aceptar UMP como vía de control paralela al OSC (mapeo nota/control → `/s_new`/`/n_set`); el crate aporta el parser/encoder RT-safe. Decisiones abiertas: transporte (UDP-MIDI 2.0 / ALSA seq / puerto virtual), cómo se mapean canales y notas a nodos/grupos/controles, y si la alta resolución se expone como `f32` directo al control del nodo.
+  **Sub-parts** (cost/value order; tackleable separately):
+  1. **Client — offline file (NRT)**: sequence a `Pbind` and write a **MIDI 2.0 clip** (full resolution) — or an interop `.mid`/SMF — with exact timing (ticks ← logical beat, reusing the client's RT/NRT seam). Minimal double-dispatch refactor: move the OSC realization out of `Event.play` to `destination.play_event(event)` (the `/s_new`+`/n_free` logic moves to `Server.play_event`, with no behavior change — the golden in `clients/python/tests/test_golden.py` guards it), so a pattern points at OSC **or** at a MIDI destination without touching clock or routine. `MidiScore` switches to storing `(beat, message)`, `MidiNrtInterface.write(path, ppq)` converts beats→ticks and delegates the file write to the crate; binding `clients/python/clausters/_midi.py` via ctypes (same lazy/versioned pattern as `_native.py`).
+  2. **Client — live MIDI**: output to OS ports (the crate's `live` feature, `midir` reusing the ALSA that cpal already requires; best-effort, no timetags — MIDI carries none), a real `MidiRtInterface` replacing the stub.
+  3. **Server — MIDI protocol alternative to OSC**: accept UMP as a control path parallel to OSC (note/control mapping → `/s_new`/`/n_set`); the crate provides the RT-safe parser/encoder. Open decisions: transport (UDP-MIDI 2.0 / ALSA seq / virtual port), how channels and notes map to nodes/groups/controls, and whether the high resolution is exposed as direct `f32` to the node's control.
 
-  Decisiones ya tomadas con el usuario: MIDI nativo en Rust (no python-rtmidi); un solo crate reusable cliente+servidor; persistencia/NRT primero y en vivo como follow-up; **alta resolución preservada vía MIDI 2.0** — UMP (`midi2`) para mensajes/protocolo y Clip File (`midi2-clip`) para disco, con `.mid`/SMF (`midly`) como interop MIDI 1.0. **Evaluación pendiente al encarar** (no cerrar ahora): la elección final del protocolo en vivo y del transporte del servidor, y el set definitivo de crates candidatos (confirmar `midi2`/`midi2-clip`/`midly`/`midir` vs. alternativas, su madurez y features `no_std`/no-alocantes reales bajo `assert_no_alloc`). Sin fecha: se encara después de cerrar los sueltos del cliente (track C) y según la prioridad del protocolo del servidor. (El milestone **C11** de `clients/PLAN.md` —en su sección «Milestones futuros», movido desde el viejo C7— redirige a este M17.)
+  Decisions already taken with the user: native MIDI in Rust (not python-rtmidi); a single reusable client+server crate; persistence/NRT first and live as a follow-up; **high resolution preserved via MIDI 2.0** — UMP (`midi2`) for messages/protocol and Clip File (`midi2-clip`) for disk, with `.mid`/SMF (`midly`) as MIDI 1.0 interop. **Evaluation pending when tackled** (don't close now): the final choice of live protocol and server transport, and the definitive set of candidate crates (confirm `midi2`/`midi2-clip`/`midly`/`midir` vs. alternatives, their maturity and real `no_std`/non-allocating features under `assert_no_alloc`). No date: tackled after closing the client loose ends (track C) and depending on the priority of the server protocol. (Milestone **C11** of `clients/PLAN.md` —in its "Future milestones" section, moved from the old C7— redirects to this M17.)
 
-### Ideas revisadas: qué se descartó y por qué
+### Reviewed ideas: what was dropped and why
 
-- **Denormales** (de la idea de memoria/eficiencia): ya implementado post-M7
+- **Denormals** (from the memory/efficiency idea): already implemented post-M7
   (`dsp::denormals::flush_to_zero()` + `-ftz 2` + `tests/denormals.rs`);
-  solo faltaba la parte de skill/documentación, absorbida por M10.
-- **F5 original**: `soundfile` y polifonía nativa de Faust descartados con
-  el racional en el propio F5 (arriba); `waveform`, interpreter backend y
-  Signal API se mantienen, con el interpreter ligado al target wasm de M14.
-- **UI de Faust**: la implementación se considera correcta — usar los labels
-  de Faust como nombres de control es deliberado (los nombres los elige el
-  autor de la def, como en el JSON de UGens) —; lo pendiente era documentar
-  el racional (M9) y la generalización «params alimentados por buses de
-  control» (M11).
-- **API de plugins**: documentar la API interna sí (M9); plugins dinámicos
-  no por ahora — Rust no tiene ABI estable y el problema histórico de
-  scsynth confirma el costo de mantener esa frontera. La mitigación
-  (versionar la frontera binaria) se aplica donde la frontera existe de
-  verdad: la C ABI del modo embebido y el layout del segmento de M14.
+  only the skill/documentation part was missing, absorbed by M10.
+- **Original F5**: `soundfile` and Faust's native polyphony dropped with
+  the rationale in F5 itself (above); `waveform`, interpreter backend and
+  Signal API are kept, with the interpreter tied to the M14 wasm target.
+- **Faust UI**: the implementation is considered correct — using Faust's labels
+  as control names is deliberate (the author of the def picks the names, as in
+  the UGen JSON) —; what was pending was documenting the rationale (M9) and the
+  generalization "params fed by control buses" (M11).
+- **Plugin API**: documenting the internal API yes (M9); dynamic plugins
+  not for now — Rust has no stable ABI and scsynth's historical problem
+  confirms the cost of maintaining that boundary. The mitigation
+  (versioning the binary boundary) is applied where the boundary truly exists:
+  the embedded mode's C ABI and the M14 segment layout.
 
-## Estrategia de pruebas
+## Testing strategy
 
-- **Unitarias por UGen**: render offline de N bloques, asserts sobre la señal
-  (frecuencia vía cruces por cero, RMS, respuesta a impulso para filtros).
-- **Golden files**: el modo NRT (M7) renderiza escenas a WAV y se compara con
-  tolerancia contra archivos de referencia versionados.
-- **RT-safety**: `assert_no_alloc` envuelve el callback en builds de test; CI corre
-  el grafo más pesado bajo esa condición.
-- **Integración OSC**: tests que levantan el servidor en un puerto efímero y le
-  hablan con `rosc` desde el test; verificable a mano con `oscsend` o con sclang
-  apuntando `Server` a nuestro puerto. Ver skill `audio-testing`.
+- **Per-UGen unit tests**: offline render of N blocks, asserts on the signal
+  (frequency via zero crossings, RMS, impulse response for filters).
+- **Golden files**: NRT mode (M7) renders scenes to WAV and compares with
+  tolerance against versioned reference files.
+- **RT-safety**: `assert_no_alloc` wraps the callback in test builds; CI runs
+  the heaviest graph under that condition.
+- **OSC integration**: tests that bring up the server on an ephemeral port and
+  talk to it with `rosc` from the test; verifiable by hand with `oscsend` or with sclang
+  pointing a `Server` at our port. See the `audio-testing` skill.
 
-## Skills del proyecto
+## Project skills
 
-- `.claude/skills/realtime-audio` — reglas del hilo RT, patrones lock-free, cpal.
-- `.claude/skills/scsynth-osc` — referencia del protocolo OSC de scsynth y semántica
-  del node tree.
-- `.claude/skills/ugen-dsp` — algoritmos DSP de los UGens (osciladores, filtros,
-  envolventes) con sus fórmulas.
-- `.claude/skills/audio-testing` — cómo testear audio sin oídos: NRT, golden files,
-  asserts de señal, no-alloc.
-- `.claude/skills/faust-embedding` — embeber libfaust: C API (box/signal/LLVM),
-  ciclo de vida factory/instancia, fronteras RT, mapeo JSON→Box API.
+- `.claude/skills/realtime-audio` — RT thread rules, lock-free patterns, cpal.
+- `.claude/skills/scsynth-osc` — reference for scsynth's OSC protocol and node-tree
+  semantics.
+- `.claude/skills/ugen-dsp` — the UGens' DSP algorithms (oscillators, filters,
+  envelopes) with their formulas.
+- `.claude/skills/audio-testing` — how to test audio without ears: NRT, golden files,
+  signal asserts, no-alloc.
+- `.claude/skills/faust-embedding` — embedding libfaust: C API (box/signal/LLVM),
+  factory/instance lifecycle, RT boundaries, JSON→Box API mapping.
 
-## Notas del proyecto
+## Project notes
 
-- Los avances realizados en cada milestone se van a gregando en las notas del proyecto.
-- Cerrar un milestone incluye siempre, cuando corresponda: la documentación
-  de desarrollo (`docs/architecture.md`, docs de módulos), la documentación
-  de usuario en `docs/` para features nuevas, los pasos de prueba manual y
-  conteos en `GUIA.md`, y un ejemplo explicado en `examples/` si la feature
-  es de cara al usuario — no solo el código y NOTAS.md.
+- The progress made in each milestone is added to the project notes.
+- Closing a milestone always includes, where applicable: the developer
+  documentation (`docs/architecture.md`, module docs), the user
+  documentation in `docs/` for new features, the manual-test steps and
+  counts in `GUIA.md`, and an explained example in `examples/` if the feature
+  is user-facing — not just the code and LOG.md.

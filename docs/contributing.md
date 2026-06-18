@@ -15,7 +15,7 @@ The core **must always build and test without any feature and without libfaust i
 
 ## The `faust` feature
 
-`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in the **F0 section of `NOTAS.md`**. `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
+`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in the **F0 section of `LOG.md`**. `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
 
 ```sh
 FAUST_PREFIX=~/.local cargo test --features faust
@@ -42,8 +42,8 @@ All incoming OSC bytes decode through `osc::decode_packet`, the single entry poi
 
 ## Conventions
 
-- **Language**: everything under `src/`, `tests/` and `examples/` (code, comments, strings, test names) is in **English**. `PLAN.md`, `NOTAS.md` and `GUIA.md` are in **Spanish** (maintainer-facing) — this book and the rustdoc are the English documentation.
-- **Closing a milestone** means, where applicable: developer docs (`docs/architecture.md`, module docs), user docs in `docs/` for new features, manual-test steps and counts in `GUIA.md`, and a commented `examples/` entry for user-facing features — not just code and `NOTAS.md`.
+- **Language**: everything under `src/`, `tests/` and `examples/` (code, comments, strings, test names) is in **English**, as are the dev-history files `PLAN.md`, `clients/PLAN.md` and `LOG.md`. `GUIA.md` (root + `clients/python/GUIA.md`) stays in **Spanish** (maintainer-facing QA checklists); this book and the rustdoc are the English documentation.
+- **Closing a milestone** means, where applicable: developer docs (`docs/architecture.md`, module docs), user docs in `docs/` for new features, manual-test steps and counts in `GUIA.md`, and a commented `examples/` entry for user-facing features — not just code and `LOG.md`.
 
 ## Project skills
 

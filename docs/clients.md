@@ -29,7 +29,7 @@ Why a shared core at all: the builtins, the seeded white noise and the
 beat/second/sample math are compiled **once** in `clausters-core` and used by
 both the server's UGens and every client, so client-side results match the
 server **by construction** for the operations the server computes natively (see
-the C0 notes in `NOTAS.md`).
+the C0 notes in `LOG.md`).
 
 ## The Python client
 

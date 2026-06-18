@@ -167,5 +167,6 @@ convert. Driving:
 
 When a client feature lands, update (where applicable): docstrings (the docs
 source), `clients/python/GUIA.md` (manual steps), `docs/` for user-facing wire
-formats, `NOTAS.md`, and a commented `examples/*.py`. Keep code English,
-conversation/notes Spanish; commit messages English/ASCII.
+formats, `LOG.md`, and a commented `examples/*.py`. Keep code, `LOG.md` and
+`PLAN.md` English; `GUIA.md` and the conversation Spanish; commit messages
+English/ASCII.

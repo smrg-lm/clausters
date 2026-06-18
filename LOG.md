@@ -1,194 +1,192 @@
-# Notas de completado
+# Completion log
 
-Registro de lo implementado por Claude en cada milestone (ver PLAN.md).
+A record of what Claude implemented in each milestone (see PLAN.md).
 
-## M0 — Esqueleto (completado 2026-06-10)
+## M0 — Skeleton (completed 2026-06-10)
 
-**Qué hay:** un binario que abre el dispositivo de audio por defecto con cpal y
-suena una sinusoide de 440 Hz a amplitud 0.2. Verificado en esta máquina:
-44100 Hz, 2 canales, sin errores de stream.
+**What's there:** a binary that opens the default audio device with cpal and
+plays a 440 Hz sine at amplitude 0.2. Verified on this machine:
+44100 Hz, 2 channels, no stream errors.
 
-### Estructura
+### Structure
 
 ```
 src/
-├── lib.rs              # crate lib para que los tests usen el motor
-├── main.rs             # arranca el backend y queda esperando (Ctrl-C)
+├── lib.rs              # lib crate so tests can use the engine
+├── main.rs             # starts the backend and waits (Ctrl-C)
 ├── server/
-│   ├── engine.rs       # Engine: process_block() de 64 frames, no conoce cpal
-│   └── backend.rs      # cpal + BlockAdapter (solo con feature `realtime`)
-├── dsp/sinosc.rs       # SinOsc por acumulación de fase (fase en f64)
+│   ├── engine.rs       # Engine: 64-frame process_block(), knows nothing of cpal
+│   └── backend.rs      # cpal + BlockAdapter (only with the `realtime` feature)
+├── dsp/sinosc.rs       # SinOsc by phase accumulation (f64 phase)
 ├── node/mod.rs         # stub — M2
 └── osc/mod.rs          # stub — M1
-tests/sine.rs           # tests offline del motor (2 tests, pasan)
+tests/sine.rs           # offline engine tests (2 tests, pass)
 ```
 
-### Decisiones tomadas
+### Decisions made
 
-- **Motor desacoplado del backend**: `Engine::process_block(&mut [f32])` procesa
-  bloques de `BLOCK_SIZE = 64` frames intercalados contra memoria. cpal vive solo
-  en `backend.rs`. Esto habilita los tests sin dispositivo y el futuro modo NRT (M7).
-- **Feature `realtime`** (default on): cpal es dependencia opcional;
-  `cargo test --no-default-features` corre sin ALSA — es lo que debe usar CI.
-- **`BlockAdapter`**: cpal entrega buffers intercalados de tamaño variable, no
-  múltiplo de 64; el adapter pide bloques al motor y retiene el sobrante entre
-  callbacks (`pos` arranca saturado para forzar el primer bloque).
-- **Formatos de sample**: f32, i16, u16 vía `cpal::FromSample`; otros formatos
-  devuelven error explícito.
-- **Fase del oscilador en `f64`** para no degradar afinación en sesiones largas.
-- El callback no aloca (todo pre-alocado en la construcción del adapter); aún sin
-  guardián `assert_no_alloc` — entra en M2 junto con los FIFOs.
+- **Engine decoupled from the backend**: `Engine::process_block(&mut [f32])`
+  processes blocks of `BLOCK_SIZE = 64` frames interleaved into memory. cpal lives
+  only in `backend.rs`. This enables tests with no device and the future NRT mode (M7).
+- **Feature `realtime`** (default on): cpal is an optional dependency;
+  `cargo test --no-default-features` runs without ALSA — what CI must use.
+- **`BlockAdapter`**: cpal delivers interleaved buffers of variable size, not a
+  multiple of 64; the adapter requests blocks from the engine and holds the
+  leftover between callbacks (`pos` starts saturated to force the first block).
+- **Sample formats**: f32, i16, u16 via `cpal::FromSample`; other formats
+  return an explicit error.
+- **Oscillator phase in `f64`** so tuning does not degrade in long sessions.
+- The callback doesn't allocate (everything pre-allocated when building the adapter);
+  no `assert_no_alloc` guard yet — it comes in M2 along with the FIFOs.
 
-### Verificación
+### Verification
 
-- `cargo test --no-default-features`: 2 tests pasan — frecuencia 440 Hz ±5 por
-  cruces por cero, RMS ≈ 0.2/√2, sin NaN, canales coherentes.
-- `cargo run --release` abre el stream y suena (probado 2026-06-10).
+- `cargo test --no-default-features`: 2 tests pass — frequency 440 Hz ±5 by
+  zero crossings, RMS ≈ 0.2/√2, no NaN, coherent channels.
+- `cargo run --release` opens the stream and plays (tested 2026-06-10).
 
-### Dependencias del sistema
+### System dependencies
 
-- Linux: requiere `libasound2-dev` y `pkg-config` para compilar con la feature
-  `realtime` (alsa-sys los necesita).
+- Linux: requires `libasound2-dev` and `pkg-config` to build with the
+  `realtime` feature (alsa-sys needs them).
 
-## M1 — Servidor OSC (completado 2026-06-10)
+## M1 — OSC server (completed 2026-06-10)
 
-**Qué hay:** el binario ahora levanta, además del audio, un servidor OSC por UDP
-en `127.0.0.1:57110` que implementa `/status`, `/quit`, `/notify` y `/dumpOSC`
-con la semántica de scsynth. Verificado de punta a punta contra el binario real:
-`/status` responde `/status.reply` con los sample rates del dispositivo y `/quit`
-apaga el servidor limpiamente.
+**What's there:** the binary now brings up, besides audio, an OSC server over UDP
+at `127.0.0.1:57110` implementing `/status`, `/quit`, `/notify` and `/dumpOSC`
+with scsynth semantics. Verified end to end against the real binary:
+`/status` replies `/status.reply` with the device's sample rates and `/quit`
+shuts the server down cleanly.
 
-### Qué se agregó
+### What was added
 
 ```
-src/osc/server.rs       # OscServer: socket UDP, dispatch de comandos, replies
-src/main.rs             # arranca backend + OSC; el loop OSC corre en el main thread
-src/lib.rs              # re-exporta rosc para tests y clientes
-examples/osc_ping.rs    # cliente mínimo: /status (+ /quit) para pruebas a mano
-tests/osc.rs            # 5 tests de integración por UDP real
+src/osc/server.rs       # OscServer: UDP socket, command dispatch, replies
+src/main.rs             # starts backend + OSC; the OSC loop runs on the main thread
+src/lib.rs              # re-exports rosc for tests and clients
+examples/osc_ping.rs    # minimal client: /status (+ /quit) for hand testing
+tests/osc.rs            # 5 integration tests over real UDP
 ```
 
-### Comportamiento implementado
+### Implemented behavior
 
-- **`/status`** → `/status.reply` con el formato scsynth de 9 argumentos:
+- **`/status`** → `/status.reply` with the 9-argument scsynth format:
   `(1, #UGens, #synths, #groups, #defs, avg_cpu, peak_cpu, sr_nominal, sr_real)`.
-  Los contadores van en cero hasta que M2 conecte el node tree; los sample rates
-  son los reales del dispositivo (Double).
-- **`/notify 1|0`** → registra/desregistra la dirección del cliente y responde
-  `/done /notify clientID` (IDs desde 1; registrar dos veces conserva el ID).
-  La lista de clientes queda lista para las notificaciones `/n_go`/`/n_end` de M2.
-- **`/quit`** → responde `/done /quit` y el loop retorna; main dropea el backend.
-- **`/dumpOSC 0|1`** → activa/desactiva el log de mensajes parseados por stdout.
-- **Comando desconocido / argumentos inválidos** → `/fail <cmd> <motivo>`, sin
-  matar el servidor.
-- **Bundles**: se ejecutan inmediatamente (recursivo); el scheduling por timetag
-  es M6.
+  The counters are zero until M2 wires up the node tree; the sample rates
+  are the device's real ones (Double).
+- **`/notify 1|0`** → registers/unregisters the client address and replies
+  `/done /notify clientID` (IDs from 1; registering twice keeps the ID).
+  The client list is ready for M2's `/n_go`/`/n_end` notifications.
+- **`/quit`** → replies `/done /quit` and the loop returns; main drops the backend.
+- **`/dumpOSC 0|1`** → enables/disables logging of parsed messages to stdout.
+- **Unknown command / invalid arguments** → `/fail <cmd> <reason>`, without
+  killing the server.
+- **Bundles**: executed immediately (recursive); timetag scheduling is M6.
 
-### Decisiones tomadas
+### Decisions made
 
-- El servidor OSC corre **en el main thread** (bloqueante en `recv_from`); el
-  audio vive en el hilo del callback de cpal. El hilo de red puede alocar y hacer
-  I/O libremente — la frontera RT-safe (FIFOs) llega en M2.
-- `rosc` se **re-exporta desde la lib** para que los tests de integración y los
-  clientes usen exactamente la misma versión.
-- Bind a `127.0.0.1` (no `0.0.0.0`) por defecto; exponerlo será opción de CLI.
-- `ECONNREFUSED` en `recv_from` (rebote ICMP de un reply a un cliente ya cerrado,
-  comportamiento de Linux) se ignora y se sigue sirviendo.
-- Tests de integración con servidor en **puerto efímero** (`127.0.0.1:0`) y UDP
-  real, hilo joineado tras `/quit` — corren en paralelo sin colisiones.
+- The OSC server runs **on the main thread** (blocking on `recv_from`); the
+  audio lives on the cpal callback thread. The network thread may allocate and do
+  I/O freely — the RT-safe boundary (FIFOs) arrives in M2.
+- `rosc` is **re-exported from the lib** so integration tests and
+  clients use exactly the same version.
+- Bind to `127.0.0.1` (not `0.0.0.0`) by default; exposing it will be a CLI option.
+- `ECONNREFUSED` on `recv_from` (an ICMP bounce of a reply to an already-closed
+  client, Linux behavior) is ignored and serving continues.
+- Integration tests with the server on an **ephemeral port** (`127.0.0.1:0`) and real
+  UDP, the thread joined after `/quit` — they run in parallel without collisions.
 
-### Verificación
+### Verification
 
-- `cargo test`: 7 tests pasan (5 de OSC + 2 del motor M0).
-- E2E manual: `cargo run --release` + `cargo run --example osc_ping -- quit`
-  (probado 2026-06-10; el servidor salió limpio tras `/quit`).
+- `cargo test`: 7 tests pass (5 OSC + 2 from the M0 engine).
+- Manual E2E: `cargo run --release` + `cargo run --example osc_ping -- quit`
+  (tested 2026-06-10; the server exited cleanly after `/quit`).
 
-## M2 — FIFO RT-safe + node tree (completado 2026-06-10)
+## M2 — RT-safe FIFO + node tree (completed 2026-06-10)
 
-**Qué hay:** el servidor ahora arranca en silencio (como scsynth) y suena solo por
-comandos: `/s_new` instancia el synth hardcodeado "default" (SinOsc con controles
-`freq`/`amp`), `/n_set` lo modifica en vivo y `/n_free` lo libera. Toda la
-comunicación red→audio va por ring buffers lock-free; el hilo de audio no aloca
-nunca, verificado por el test guardián con `assert_no_alloc`.
+**What's there:** the server now starts silent (like scsynth) and plays only via
+commands: `/s_new` instantiates the hardcoded "default" synth (SinOsc with controls
+`freq`/`amp`), `/n_set` modifies it live and `/n_free` frees it. All
+network→audio communication goes over lock-free ring buffers; the audio thread never
+allocates, verified by the guard test with `assert_no_alloc`.
 
-### Qué se agregó
-
-```
-src/server/engine.rs    # reescrito: Cmd/Garbage FIFOs (rtrb), Counters, engine_pair()
-src/node/mod.rs         # NodeTree: slab pre-alocado de 1024 slots, DFS con stack propio
-src/node/default_synth.rs # DefaultSynth "default": SinOsc + controles freq(0)/amp(1)
-src/osc/server.rs       # + /s_new, /n_free, /n_set; contadores reales en /status
-tests/engine.rs         # 6 tests del motor (reemplaza tests/sine.rs)
-tests/rt_safety.rs      # guardián assert_no_alloc sobre process_block
-```
-
-### Arquitectura implementada (el patrón scsynth)
-
-- **`engine_pair()`** divide el servidor en dos mitades: `Engine` (hilo de audio)
-  y `EngineHandle` (hilo de red), conectadas solo por dos FIFOs SPSC de `rtrb`
-  (1024 entradas cada uno):
-  - **Comandos** (red→audio): `Cmd::{AddSynth, FreeNode, SetControl}`. El synth
-    viaja ya construido y boxeado — el hilo de audio solo lo enchufa, O(1).
-  - **Basura** (audio→red): `Garbage::{Freed, Rejected}`. El hilo de audio nunca
-    dropea un `Box`; lo devuelve entero y el hilo de red lo dropea en
-    `collect_garbage()`, que corre tras cada paquete y cada 100 ms por timeout
-    del socket (también ahí viajan los comandos rechazados: ID duplicado o tabla
-    llena).
-  - Si el FIFO de basura se llena: lista local pre-alocada de 64; si también se
-    llena, `mem::forget` (leak deliberado — la única opción RT-safe).
-- **`NodeTree`**: slab de 1024 slots pre-alocados (`MAX_NODES`), búsqueda lineal
-  por ID (suficiente por ahora), hijos del grupo raíz en orden de ejecución, DFS
-  iterativo con stack pre-alocado. `Group` existe estructuralmente; `/g_new`
-  llega en M4.
-- **Contadores**: el hilo de audio publica `synths`/`ugens` con stores atómicos
-  relaxed; `/status.reply` los lee — los contadores ya son reales.
-
-### Decisiones tomadas
-
-- `/n_set` se adelantó de M3 porque `Cmd::SetControl` salía gratis y permite
-  probar el motor en vivo (cambiar freq sin recrear el synth).
-- IDs automáticos (`/s_new` con -1) desde 2_000_001, como el contador alto de
-  scsynth. ID 0 (raíz) y negativos se rechazan con `/fail`.
-- Add actions 0 (head) y 1 (tail) sobre la raíz; 2–4 responden `/fail` hasta M4.
-- Controles por nombre (`freq`, `amp`) o por índice (0, 1); desconocidos se
-  ignoran en silencio, como scsynth.
-- `/n_free` de un ID inexistente se ignora (el `/fail` asíncrono necesita el
-  reply FIFO de M4). Los rechazos del motor se loguean al recolectar basura.
-- El `/status` enviado inmediatamente después de un comando puede mostrar el
-  conteo viejo: los comandos se aplican al inicio del siguiente bloque (~1.45 ms
-  a 44.1 kHz). Es la semántica asíncrona de scsynth, no un bug.
-
-### Verificación
-
-- `cargo test`: 14 tests pasan — 6 del motor (sinusoide, mezcla de dos synths,
-  cambio de pitch en vivo, silencio tras free, rechazo de ID duplicado), 7 de
-  OSC (incluye el round-trip red→FIFO→audio→/status con reloj manual) y el
-  guardián RT: 400 bloques procesando, insertando y liberando 32 synths bajo
-  `assert_no_alloc`, sin una sola alocación.
-- E2E manual con el binario real (2026-06-10): `osc_ping status beep status quit`
-  — beep audible a 440 Hz, re-afinado a 660 Hz en vivo, liberado, servidor
-  apagado limpio. El example `osc_ping` ganó el modo `beep`.
-
-## M3 — SynthDefs (completado 2026-06-10)
-
-**Qué hay:** los clientes ya definen synths en vivo: `/d_recv` recibe una SynthDef
-en JSON (formato propio, no el `.scsyndef` binario de SC), el intérprete la valida
-y compila, y `/s_new` instancia grafos arbitrarios de UGens. El `DefaultSynth`
-hardcodeado desapareció — "default" es ahora una SynthDef construida por el mismo
-intérprete y registrada al arranque.
-
-### Qué se agregó
+### What was added
 
 ```
-src/synthdef/mod.rs      # SynthDefSpec (serde/JSON), compile() con validación, default_spec()
-src/synthdef/instance.rs # UGenSynth: vector de UGens + wires, impl SynthNode
+src/server/engine.rs    # rewritten: Cmd/Garbage FIFOs (rtrb), Counters, engine_pair()
+src/node/mod.rs         # NodeTree: pre-allocated slab of 1024 slots, DFS with its own stack
+src/node/default_synth.rs # DefaultSynth "default": SinOsc + controls freq(0)/amp(1)
+src/osc/server.rs       # + /s_new, /n_free, /n_set; real counters in /status
+tests/engine.rs         # 6 engine tests (replaces tests/sine.rs)
+tests/rt_safety.rs      # assert_no_alloc guard over process_block
+```
+
+### Implemented architecture (the scsynth pattern)
+
+- **`engine_pair()`** splits the server into two halves: `Engine` (audio thread)
+  and `EngineHandle` (network thread), connected only by two `rtrb` SPSC FIFOs
+  (1024 entries each):
+  - **Commands** (network→audio): `Cmd::{AddSynth, FreeNode, SetControl}`. The synth
+    travels already built and boxed — the audio thread just plugs it in, O(1).
+  - **Garbage** (audio→network): `Garbage::{Freed, Rejected}`. The audio thread never
+    drops a `Box`; it returns it whole and the network thread drops it in
+    `collect_garbage()`, which runs after each packet and every 100 ms via socket
+    timeout (rejected commands also travel there: duplicate ID or full table).
+  - If the garbage FIFO fills up: a pre-allocated local list of 64; if that also
+    fills, `mem::forget` (a deliberate leak — the only RT-safe option).
+- **`NodeTree`**: a slab of 1024 pre-allocated slots (`MAX_NODES`), linear search
+  by ID (enough for now), the root group's children in execution order, iterative
+  DFS with a pre-allocated stack. `Group` exists structurally; `/g_new`
+  arrives in M4.
+- **Counters**: the audio thread publishes `synths`/`ugens` with relaxed atomic
+  stores; `/status.reply` reads them — the counters are real already.
+
+### Decisions made
+
+- `/n_set` was brought forward from M3 because `Cmd::SetControl` came for free and
+  lets you test the engine live (change freq without recreating the synth).
+- Automatic IDs (`/s_new` with -1) from 2_000_001, like scsynth's high
+  counter. ID 0 (root) and negatives are rejected with `/fail`.
+- Add actions 0 (head) and 1 (tail) over the root; 2–4 reply `/fail` until M4.
+- Controls by name (`freq`, `amp`) or by index (0, 1); unknown ones are
+  silently ignored, like scsynth.
+- `/n_free` of a nonexistent ID is ignored (the async `/fail` needs the
+  reply FIFO of M4). Engine rejections are logged when collecting garbage.
+- A `/status` sent immediately after a command may show the old
+  count: commands are applied at the start of the next block (~1.45 ms
+  at 44.1 kHz). It's scsynth's asynchronous semantics, not a bug.
+
+### Verification
+
+- `cargo test`: 14 tests pass — 6 engine ones (sine, mixing two synths,
+  live pitch change, silence after free, duplicate-ID rejection), 7 OSC
+  (including the network→FIFO→audio→/status round-trip with a manual clock) and the
+  RT guard: 400 blocks processing, inserting and freeing 32 synths under
+  `assert_no_alloc`, with not a single allocation.
+- Manual E2E with the real binary (2026-06-10): `osc_ping status beep status quit`
+  — audible beep at 440 Hz, retuned to 660 Hz live, freed, server
+  shut down cleanly. The `osc_ping` example gained the `beep` mode.
+
+## M3 — SynthDefs (completed 2026-06-10)
+
+**What's there:** clients now define synths live: `/d_recv` receives a SynthDef
+in JSON (our own format, not SC's binary `.scsyndef`), the interpreter validates
+and compiles it, and `/s_new` instantiates arbitrary UGen graphs. The hardcoded
+`DefaultSynth` is gone — "default" is now a SynthDef built by the same
+interpreter and registered at startup.
+
+### What was added
+
+```
+src/synthdef/mod.rs      # SynthDefSpec (serde/JSON), compile() with validation, default_spec()
+src/synthdef/instance.rs # UGenSynth: UGen vector + wires, impl SynthNode
 src/dsp/mod.rs           # trait UGen { process(ctx, inputs, output) }, helper at()
-src/dsp/{sinosc,binop,noise,registry}.rs  # SinOsc refactorizado, Add/Sub/Mul/Div, WhiteNoise
-src/node/mod.rs          # trait SynthNode; el árbol guarda Box<dyn SynthNode>
-tests/synthdef.rs        # 12 tests: formato, validación, señal (FM/vibrato incluido)
+src/dsp/{sinosc,binop,noise,registry}.rs  # SinOsc refactored, Add/Sub/Mul/Div, WhiteNoise
+src/node/mod.rs          # trait SynthNode; the tree holds Box<dyn SynthNode>
+tests/synthdef.rs        # 12 tests: format, validation, signal (FM/vibrato included)
 ```
 
-### El formato (ejemplo completo en el doc de src/synthdef/mod.rs)
+### The format (full example in the doc of src/synthdef/mod.rs)
 
 ```json
 {"name": "beep",
@@ -198,1914 +196,1931 @@ tests/synthdef.rs        # 12 tests: formato, validación, señal (FM/vibrato in
  "out": 1}
 ```
 
-Entradas: `{"const": x}`, `{"control": i}`, `{"ugen": j}` (solo UGens anteriores —
-orden topológico validado). `compile()` rechaza con mensajes que nombran el nodo
-culpable (`ugens[2].inputs[0]: references ugen 3; only earlier...`) y viajan al
-cliente en `/fail`.
+Inputs: `{"const": x}`, `{"control": i}`, `{"ugen": j}` (only earlier UGens —
+topological order validated). `compile()` rejects with messages naming the
+offending node (`ugens[2].inputs[0]: references ugen 3; only earlier...`) that
+travel to the client in `/fail`.
 
-### Decisiones tomadas
+### Decisions made
 
-- **Trait `SynthNode`** (prerequisito de la bifurcación F): el árbol y los FIFOs
-  manejan `Box<dyn SynthNode>` — `UGenSynth` hoy, `FaustSynth` en F3, sin tocar
-  motor ni árbol.
-- **Las defs viven solo en el hilo de red** (`HashMap<String, Arc<SynthDef>>`):
-  las instancias se construyen ahí y viajan ya listas; el hilo de audio nunca ve
-  la tabla. `/d_free` solo saca la def del mapa — los synths vivos conservan su
-  `Arc` (semántica scsynth exacta).
-- **Resolución de nombres de controles en el hilo de red**: espejo
-  `node_id → Arc<SynthDef>` mantenido desde `/s_new` y limpiado al recolectar
-  `Garbage::Freed` — así `Cmd::SetControl` sigue siendo POD y el hilo de audio
-  no compara strings.
-- **Wiring sin alocar**: `UGenSynth::process` arma las entradas de cada UGen en
-  un array fijo en el stack (`MAX_UGEN_INPUTS = 8`) con `split_at_mut` sobre los
-  wires — el orden topológico garantiza que las entradas solo miran wires
-  anteriores. Verificado por el guardián `assert_no_alloc`.
-- UGens iniciales: `SinOsc` (freq modulable por señal — FM/vibrato funciona),
-  `Add`/`Sub`/`Mul`/`Div`, `WhiteNoise` (xorshift con seed por instancia, sin
-  `rand`). El resto del catálogo (filtros, EnvGen, PolyBLEP) queda para M4+.
-- `/d_recv` acepta el JSON como Blob o String OSC.
+- **`SynthNode` trait** (a prerequisite of the F fork): the tree and the FIFOs
+  handle `Box<dyn SynthNode>` — `UGenSynth` today, `FaustSynth` in F3, without touching
+  the engine or the tree.
+- **Defs live only on the network thread** (`HashMap<String, Arc<SynthDef>>`):
+  instances are built there and travel ready; the audio thread never sees
+  the table. `/d_free` only removes the def from the map — live synths keep their
+  `Arc` (exact scsynth semantics).
+- **Control name resolution on the network thread**: a mirror
+  `node_id → Arc<SynthDef>` kept from `/s_new` and cleaned when collecting
+  `Garbage::Freed` — so `Cmd::SetControl` stays POD and the audio thread
+  doesn't compare strings.
+- **Wiring without allocation**: `UGenSynth::process` builds each UGen's inputs in
+  a fixed stack array (`MAX_UGEN_INPUTS = 8`) with `split_at_mut` over the
+  wires — the topological order guarantees inputs only look at earlier wires.
+  Verified by the `assert_no_alloc` guard.
+- Initial UGens: `SinOsc` (freq modulable by signal — FM/vibrato works),
+  `Add`/`Sub`/`Mul`/`Div`, `WhiteNoise` (xorshift with a per-instance seed, no
+  `rand`). The rest of the catalog (filters, EnvGen, PolyBLEP) stays for M4+.
+- `/d_recv` accepts the JSON as an OSC Blob or String.
 
-### Verificación
+### Verification
 
-- `cargo test`: 31 tests pasan — 12 de synthdef (roundtrip JSON, validación de
-  los 6 errores de compilación, señal: frecuencia/RMS de defs interpretadas,
-  mezcla por `Add`, ruido, vibrato por FM), 12 de OSC (incluye `/d_recv` con
-  def inválida → `/fail` con el error de compilación, `/d_free`, `/n_set` por
-  nombre vía espejo), 6 del motor y el guardián RT (ahora procesando instancias
-  interpretadas).
-- E2E real (2026-06-10): `osc_ping status vibrato status quit` — def "vibrato"
-  (5 UGens, FM) enviada por `/d_recv` como blob JSON, `/done` recibido, sonó
-  1.2 s audible, `/status` durante la reproducción: 5 ugens / 1 synth / 2 defs.
+- `cargo test`: 31 tests pass — 12 synthdef ones (JSON roundtrip, validation of
+  the 6 compilation errors, signal: frequency/RMS of interpreted defs,
+  mix via `Add`, noise, vibrato via FM), 12 OSC (includes `/d_recv` with
+  an invalid def → `/fail` with the compilation error, `/d_free`, `/n_set` by
+  name via the mirror), 6 engine and the RT guard (now processing interpreted
+  instances).
+- Real E2E (2026-06-10): `osc_ping status vibrato status quit` — def "vibrato"
+  (5 UGens, FM) sent via `/d_recv` as a JSON blob, `/done` received, it
+  played 1.2 s audibly, `/status` during playback: 5 ugens / 1 synth / 2 defs.
 
-## M4 — Buses y orden (completado 2026-06-10)
+## M4 — Buses and order (completed 2026-06-10)
 
-### Qué quedó hecho
+### What got done
 
-- **Buses** (`src/dsp/mod.rs`): `Buses` con 128 buses de audio (`[f32; 64]`,
-  propiedad del hilo de audio, limpiados cada bloque) y 1024 buses de control
-  compartidos (`ControlBuses`: `Arc<Vec<AtomicU32>>` con bit-cast de f32,
-  stores/loads relaxed — lock-free en ambos hilos). Los buses `0..channels`
-  son las salidas de hardware. `ProcessCtx` ahora lleva `sample_rate` +
-  `&mut Buses` y se pasa a todos los UGens.
-- **UGens de E/S** (`src/dsp/io.rs`): `Out` (suma al bus — varios synths sobre
-  el mismo bus se mezclan, semántica scsynth), `ReplaceOut` (sobreescribe),
-  `In` (copia de un bus de audio), `InCtl` (lee un bus de control como
-  constante de bloque). **Cambio de formato**: las SynthDefs ya no llevan el
-  campo `out`; la salida es exclusivamente vía UGens `Out` (una def sin `Out`
-  es silenciosa). La def "default" ahora termina en dos `Out` (buses 0 y 1).
-- **Árbol de nodos** (`src/node/mod.rs`, reescrito): el grupo raíz (ID 0) vive
-  en el slot 0 del slab y no se puede liberar/mover; cada nodo guarda su
-  `parent`; grupos anidados con `children` pre-alocados
-  (`MAX_GROUP_CHILDREN=256`, raíz `MAX_NODES`) y rechazo por capacidad antes
-  de insertar (nunca crece un Vec en el hilo de audio). Add actions 0–4
-  completas (`Replace` libera el subárbol del target). `move_node`
-  (`/n_before`/`/n_after`) con chequeo de ciclo por ancestros y de capacidad
-  al cruzar de grupo. `free` recursivo, `free_all` (vacía el grupo) y
-  `deep_free` (libera solo synths, conserva subgrupos) — todos sin alocar,
-  con un `free_stack` pre-alocado separado del `dfs_stack`. Los nodos salen
-  por un *sink* (`&mut dyn FnMut(FreedNode)`) que reporta ID + parent.
-- **Engine** (`src/server/engine.rs`): es dueño de los `Buses`; la salida
-  interleaved se copia de los buses 0..channels (ya no hay `mix`/`scratch`).
-  `Cmd` extendido: `AddSynth`/`AddGroup` con `target` + acción, `FreeNode`,
-  `FreeAllInGroup`, `DeepFreeGroup`, `MoveNode`, `SetControl`. `Garbage` con 4
-  variantes (Freed/Rejected × Synth/Group). FIFO nuevo de eventos
-  (`NodeEvent { Go|End, id, parent_id, is_group }`, capacidad 2048, entrega
-  best-effort) para `/n_go`/`/n_end`. `GarbageSink` interno presta los campos
-  del engine por separado para evitar el doble préstamo con el árbol.
-  `Counters` suma `groups` (inicializado en 1: la raíz existe antes del primer
-  tick). `BLOCK_SIZE` se movió a `dsp` (re-export en `engine` para
-  compatibilidad).
-- **OSC** (`src/osc/server.rs`): `/s_new` con add actions 0–4 y target real;
-  nuevos `/g_new` (tripletas id/acción/target), `/g_freeAll`, `/g_deepFree`,
-  `/n_before`/`/n_after` (pares); `/c_set`/`/c_get` servidos directo en el
-  hilo de red sobre los atomics (sin round-trip al engine; `/c_get` responde
-  con un `/c_set` de pares índice/valor, como scsynth). `collect_garbage`
-  drena además el FIFO de eventos y manda `/n_go`/`/n_end`
-  (`[id, parent, -1, -1, isGroup]`) a los clientes de `/notify`. `/status`
-  reporta el conteo real de grupos.
+- **Buses** (`src/dsp/mod.rs`): `Buses` with 128 audio buses (`[f32; 64]`,
+  owned by the audio thread, cleared each block) and 1024 control buses
+  shared (`ControlBuses`: `Arc<Vec<AtomicU32>>` with bit-cast of f32,
+  relaxed stores/loads — lock-free on both threads). Buses `0..channels`
+  are the hardware outputs. `ProcessCtx` now carries `sample_rate` +
+  `&mut Buses` and is passed to every UGen.
+- **I/O UGens** (`src/dsp/io.rs`): `Out` (sums into the bus — several synths on
+  the same bus mix, scsynth semantics), `ReplaceOut` (overwrites),
+  `In` (copies an audio bus), `InCtl` (reads a control bus as a block
+  constant). **Format change**: SynthDefs no longer carry the
+  `out` field; output is exclusively via `Out` UGens (a def without `Out`
+  is silent). The "default" def now ends in two `Out` (buses 0 and 1).
+- **Node tree** (`src/node/mod.rs`, rewritten): the root group (ID 0) lives
+  in slot 0 of the slab and cannot be freed/moved; each node keeps its
+  `parent`; nested groups with pre-allocated `children`
+  (`MAX_GROUP_CHILDREN=256`, root `MAX_NODES`) and capacity rejection before
+  inserting (a Vec never grows on the audio thread). Add actions 0–4
+  complete (`Replace` frees the target's subtree). `move_node`
+  (`/n_before`/`/n_after`) with cycle check by ancestors and capacity
+  check when crossing groups. Recursive `free`, `free_all` (empties the group) and
+  `deep_free` (frees only synths, keeps subgroups) — all without allocation,
+  with a pre-allocated `free_stack` separate from the `dfs_stack`. Nodes leave
+  via a *sink* (`&mut dyn FnMut(FreedNode)`) reporting ID + parent.
+- **Engine** (`src/server/engine.rs`): owns the `Buses`; the interleaved
+  output is copied from buses 0..channels (no more `mix`/`scratch`).
+  `Cmd` extended: `AddSynth`/`AddGroup` with `target` + action, `FreeNode`,
+  `FreeAllInGroup`, `DeepFreeGroup`, `MoveNode`, `SetControl`. `Garbage` with 4
+  variants (Freed/Rejected × Synth/Group). New event FIFO
+  (`NodeEvent { Go|End, id, parent_id, is_group }`, capacity 2048, best-effort
+  delivery) for `/n_go`/`/n_end`. An internal `GarbageSink` borrows the engine's
+  fields separately to avoid the double borrow with the tree.
+  `Counters` adds `groups` (initialized to 1: the root exists before the first
+  tick). `BLOCK_SIZE` moved to `dsp` (re-exported in `engine` for
+  compatibility).
+- **OSC** (`src/osc/server.rs`): `/s_new` with add actions 0–4 and a real target;
+  new `/g_new` (id/action/target triples), `/g_freeAll`, `/g_deepFree`,
+  `/n_before`/`/n_after` (pairs); `/c_set`/`/c_get` served directly on the
+  network thread over the atomics (no engine round-trip; `/c_get` replies
+  with a `/c_set` of index/value pairs, like scsynth). `collect_garbage`
+  also drains the event FIFO and sends `/n_go`/`/n_end`
+  (`[id, parent, -1, -1, isGroup]`) to `/notify` clients. `/status`
+  reports the real group count.
 
-### Decisiones
+### Decisions
 
-- `/c_set`/`/c_get` no pasan por el FIFO de comandos: los buses de control son
-  atomics compartidos y el hilo de red opera directo. Un synth los ve recién
-  en su próximo bloque (mismo efecto que pasar por el FIFO).
-- `Out` suma y `ReplaceOut` sobreescribe → el orden de ejecución es audible y
-  testeable: los tests de orden usan un "silencer" (`ReplaceOut` de 0.0) que
-  gana o pierde el bus según esté después o antes de la fuente.
-- El reply FIFO genérico para `/fail` asíncrono quedó cubierto por el FIFO de
-  eventos (`/n_go`/`/n_end`); los rechazos del engine siguen saliendo como
-  `Garbage::Rejected*` con log en stderr (un `/fail` asíncrono real
-  necesitaría guardar el remitente por comando — se evalúa en M5/M6).
+- `/c_set`/`/c_get` don't go through the command FIFO: control buses are
+  shared atomics and the network thread operates directly. A synth sees them only
+  on its next block (same effect as going through the FIFO).
+- `Out` sums and `ReplaceOut` overwrites → execution order is audible and
+  testable: the order tests use a "silencer" (`ReplaceOut` of 0.0) that
+  wins or loses the bus depending on whether it's after or before the source.
+- The generic reply FIFO for async `/fail` ended up covered by the event
+  FIFO (`/n_go`/`/n_end`); engine rejections still leave as
+  `Garbage::Rejected*` with a log to stderr (a real async `/fail`
+  would need to store the sender per command — evaluated in M5/M6).
 
-### Verificación
+### Verification
 
-- `cargo test`: 47 tests pasan — 15 del motor (mezcla por bus, orden
-  audible + `MoveNode`, before/after/replace, grupos anidados con free
-  recursivo, `free_all`/`deep_free`, eventos go/end, buses de control desde el
-  hilo de red), 16 de OSC (nuevos: `/g_new` + conteo de grupos en `/status`,
-  `/g_freeAll`, roundtrip `/c_set`/`/c_get`, notificaciones `/n_go`/`/n_end` a
-  clientes `/notify`), 15 de synthdef (semántica Out/ReplaceOut/In/InCtl, def
-  sin `Out` silenciosa) y el guardián RT (ahora con grupo + 32 synths, move y
-  free recursivo bajo `assert_no_alloc`).
-- E2E real (2026-06-10): `osc_ping status vibrato status quit` contra el
-  binario M4 — la def "vibrato" reescrita con UGens `Out` (7 ugens) sonó
-  audible; `/status` durante la reproducción: 7 ugens / 1 synth / 1 grupo.
+- `cargo test`: 47 tests pass — 15 engine ones (bus mixing, audible
+  order + `MoveNode`, before/after/replace, nested groups with recursive
+  free, `free_all`/`deep_free`, go/end events, control buses from the
+  network thread), 16 OSC (new: `/g_new` + group count in `/status`,
+  `/g_freeAll`, `/c_set`/`/c_get` roundtrip, `/n_go`/`/n_end` notifications to
+  `/notify` clients), 15 synthdef (Out/ReplaceOut/In/InCtl semantics, a def
+  without `Out` silent) and the RT guard (now with a group + 32 synths, move and
+  recursive free under `assert_no_alloc`).
+- Real E2E (2026-06-10): `osc_ping status vibrato status quit` against the
+  M4 binary — the "vibrato" def rewritten with `Out` UGens (7 ugens) played
+  audibly; `/status` during playback: 7 ugens / 1 synth / 1 group.
 
-## F0 — Toolchain Faust y FFI mínimo (completado 2026-06-10)
+## F0 — Faust toolchain and minimal FFI (completed 2026-06-10)
 
-Primer milestone de la bifurcación F (SynthDefs vía Box API de Faust + JIT
-LLVM). El objetivo era medir el riesgo real del toolchain; resultado: **mucho
-más barato de lo previsto** (JIT ≈ 10 ms por def).
+The first milestone of the F fork (SynthDefs via Faust's Box API + LLVM
+JIT). The goal was to measure the toolchain's real risk; result: **much
+cheaper than expected** (JIT ≈ 10 ms per def).
 
-### Hallazgos del toolchain
+### Toolchain findings
 
-- **El libfaust de Ubuntu no sirve para embeber**: `libfaust2t64` (2.81.10)
-  se compila sin backend LLVM (no depende de libLLVM) y no existe paquete
-  `-dev` con headers. Había que compilar desde fuente.
-- **Crates evaluados y descartados**: `faust-build`/`faust-types` hacen
-  codegen Faust→Rust en build-time (necesitan el compilador `faust` y el DSP
-  como fuente estática) — no embeben el JIT. No hay binding mantenido de
-  libfaust. Decisión: **binding propio escrito a mano** contra los headers
-  reales (~30 funciones); bindgen queda para F1+ si la superficie crece
-  (evita la dependencia de libclang por ahora).
-- **Build desde fuente** (receta reproducible, sin sudo):
+- **Ubuntu's libfaust is useless for embedding**: `libfaust2t64` (2.81.10)
+  is compiled without the LLVM backend (it doesn't depend on libLLVM) and there's no
+  `-dev` package with headers. We had to compile from source.
+- **Crates evaluated and dropped**: `faust-build`/`faust-types` do
+  Faust→Rust codegen at build time (they need the `faust` compiler and the DSP
+  as static source) — they don't embed the JIT. There's no maintained binding of
+  libfaust. Decision: **our own hand-written binding** against the real
+  headers (~30 functions); bindgen stays for F1+ if the surface grows
+  (avoids the libclang dependency for now).
+- **Build from source** (reproducible recipe, no sudo):
   `git clone --depth 1 -b 2.81.10 github.com/grame-cncm/faust` +
-  `make most` + dos ajustes de caché cmake en `build/faustdir`:
-  `-DINCLUDE_DYNAMIC=ON` (el target `most` no construye la .so) y
-  `-DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20`; después
-  `make install PREFIX=$HOME/.local`. Deps de sistema: `cmake`,
+  `make most` + two cmake cache tweaks in `build/faustdir`:
+  `-DINCLUDE_DYNAMIC=ON` (the `most` target doesn't build the .so) and
+  `-DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20`; then
+  `make install PREFIX=$HOME/.local`. System deps: `cmake`,
   `llvm-20-dev`, `libzstd-dev`, `zlib1g-dev`.
-- **Link estático de LLVM falla en Ubuntu sin `libpolly-20-dev`** (Polly va
-  en paquete aparte) — con `LINK_LLVM_STATIC=off` no hace falta: se enlaza
-  `libLLVM.so` monolítica.
-- **Mediciones** (Faust 2.81.10 + LLVM 20.1.8): `libfaust.so` = 11 MB
-  (dinámica contra `libLLVM.so.20.1`, 137 MB ya presente como lib de
-  sistema); la alternativa estática (`libfaustwithllvm.a`) = 35 MB.
-  Latencia JIT de la def del smoke test: **~10 ms**; instanciación + init:
-  **~0.08 ms**. Compilación completa de Faust desde fuente: ~10 min en 8
+- **Static LLVM linking fails on Ubuntu without `libpolly-20-dev`** (Polly is
+  in a separate package) — with `LINK_LLVM_STATIC=off` it's not needed: the
+  monolithic `libLLVM.so` is linked.
+- **Measurements** (Faust 2.81.10 + LLVM 20.1.8): `libfaust.so` = 11 MB
+  (dynamic against `libLLVM.so.20.1`, 137 MB already present as a system
+  lib); the static alternative (`libfaustwithllvm.a`) = 35 MB.
+  JIT latency of the smoke test's def: **~10 ms**; instantiation + init:
+  **~0.08 ms**. Full Faust compilation from source: ~10 min on 8
   cores.
 
-### Qué quedó hecho
+### What got done
 
-- **Feature `faust`** en Cargo.toml (apagado por defecto; el core compila y
-  testea sin libfaust en el sistema).
-- **`build.rs`**: con el feature activo localiza libfaust vía `FAUST_PREFIX`
-  (fallback `~/.local`, luego `/usr/local`), enlaza `-lfaust` y agrega rpath
-  para que tests y binarios corran sin `LD_LIBRARY_PATH`.
-- **`src/faust/ffi.rs`**: FFI mínimo verificado contra los headers de la
-  build exacta — contexto (`createLibContext`/`destroyLibContext`), Box API
-  (`CboxReal`, `CboxWire`, `CboxSeq/Par/Split/Rec`, los aplicados `Cbox*Aux`,
-  `CboxHSlider`) y JIT (`createCDSPFactoryFromBoxes`, instancia, `compute`).
-  Detalle de la C API: los operadores existen en dos formas — `CboxAdd()`
-  (primitivo, caja de 2 entradas) y `CboxAddAux(b1, b2)` (aplicado) — porque
-  C no tiene overloading.
-- **`tests/faust_smoke.rs`** (gated): construye el equivalente de `SinOsc`
-  desde primitivas — `sin(2π·phasor(freq))`, `phasor = (+(f/SR) : wrap) ~ _`,
-  `wrap = _ <: _ - floor(_)`, `freq` como hslider en su default 440 — lo
-  compila por JIT, renderiza 1 s offline y asserta frecuencia (±5 Hz) y RMS;
-  segundo test: una box inválida llena el buffer de error (4096 bytes) en
-  vez de crashear.
+- **Feature `faust`** in Cargo.toml (off by default; the core compiles and
+  tests without libfaust on the system).
+- **`build.rs`**: with the feature active, locates libfaust via `FAUST_PREFIX`
+  (fallback `~/.local`, then `/usr/local`), links `-lfaust` and adds an rpath
+  so tests and binaries run without `LD_LIBRARY_PATH`.
+- **`src/faust/ffi.rs`**: minimal FFI verified against the headers of the
+  exact build — context (`createLibContext`/`destroyLibContext`), Box API
+  (`CboxReal`, `CboxWire`, `CboxSeq/Par/Split/Rec`, the applied `Cbox*Aux`,
+  `CboxHSlider`) and JIT (`createCDSPFactoryFromBoxes`, instance, `compute`).
+  C API detail: operators exist in two forms — `CboxAdd()`
+  (primitive, a 2-input box) and `CboxAddAux(b1, b2)` (applied) — because
+  C has no overloading.
+- **`tests/faust_smoke.rs`** (gated): builds the equivalent of `SinOsc`
+  from primitives — `sin(2π·phasor(freq))`, `phasor = (+(f/SR) : wrap) ~ _`,
+  `wrap = _ <: _ - floor(_)`, `freq` as an hslider at its default 440 — compiles it
+  by JIT, renders 1 s offline and asserts frequency (±5 Hz) and RMS;
+  second test: an invalid box fills the error buffer (4096 bytes) instead
+  of crashing.
 
-### Verificación
+### Verification
 
-- `cargo test --features faust`: 49 tests (los 47 del core + 2 del smoke).
-- `cargo test` sin feature: igual que antes, sin tocar libfaust.
-- libfaust instalada en `~/.local` (lib + headers + stdlib de Faust).
+- `cargo test --features faust`: 49 tests (the 47 core ones + 2 smoke).
+- `cargo test` without the feature: same as before, without touching libfaust.
+- libfaust installed in `~/.local` (lib + headers + Faust's stdlib).
 
-## F1 — Hilo compilador Faust (completado 2026-06-10)
+## F1 — Faust compiler thread (completed 2026-06-10)
 
-### Qué quedó hecho
+### What got done
 
-- **`src/faust/compiler.rs`**: `CompilerThread` dedicado ("faust-compiler")
-  con cola mpsc de `CompileRequest { name, source, client }` y canal de
-  `CompileResult` de vuelta. El hilo de red drena resultados en su loop
-  (tras cada paquete y en el tick de GC) y manda el reply asíncrono al
-  cliente que pidió: `/done "/d_faust" <name>` o `/fail` con el error del
-  compilador Faust verbatim. Shutdown limpio por Drop (cierra el canal y
-  joinea).
-- **`src/faust/factory.rs`**: `FaustFactory` (wrapper con ownership del
-  puntero, `Drop` → `deleteCDSPFactory` en hilo no-RT). Refcount vía
-  `Arc<FaustFactory>` en la tabla `faust_defs` del OscServer; las instancias
-  de F3 retendrán clones para que la factory nunca muera antes que ellas.
-- **OSC**: `/d_faust name source` (String o Blob UTF-8) encola la
-  compilación; `/d_free` también limpia la tabla Faust; `/status` cuenta
-  ambas tablas de defs. Sin el feature, `/d_faust` responde
+- **`src/faust/compiler.rs`**: a dedicated `CompilerThread` ("faust-compiler")
+  with an mpsc queue of `CompileRequest { name, source, client }` and a channel of
+  `CompileResult` back. The network thread drains results in its loop
+  (after each packet and on the GC tick) and sends the async reply to the
+  client that requested it: `/done "/d_faust" <name>` or `/fail` with the Faust
+  compiler error verbatim. Clean shutdown on Drop (closes the channel and
+  joins).
+- **`src/faust/factory.rs`**: `FaustFactory` (a wrapper owning the
+  pointer, `Drop` → `deleteCDSPFactory` on a non-RT thread). Refcount via
+  `Arc<FaustFactory>` in the OscServer's `faust_defs` table; F3's instances
+  will keep clones so the factory never dies before them.
+- **OSC**: `/d_faust name source` (String or UTF-8 Blob) enqueues the
+  compilation; `/d_free` also cleans the Faust table; `/status` counts
+  both def tables. Without the feature, `/d_faust` replies
   `/fail "server built without faust support"`.
-- F1 compila **fuente Faust** (`createCDSPFactoryFromString`); el mapeo
-  JSON→Box API entra en F2 reemplazando solo el cuerpo de `compile()`.
+- F1 compiles **Faust source** (`createCDSPFactoryFromString`); the JSON→Box
+  API mapping enters in F2 replacing only the body of `compile()`.
 
-### Hallazgo: libfaust no tolera compilación concurrente
+### Finding: libfaust does not tolerate concurrent compilation
 
-Dos `CompilerThread` compilando a la vez en el mismo proceso → SIGSEGV
-(verificado: los tests en paralelo crasheaban, en serie pasaban). El estado
-global del compilador Faust no es thread-safe ni siquiera para
-`createCDSPFactoryFromString` (no solo el lib context de la Box API). Fix:
-lock global de proceso (`compiler::ffi_lock()`) alrededor de toda llamada
-FFI de compilación; el smoke test de F0 también lo toma. Un servidor tiene
-un solo hilo compilador, pero los tests (y cualquier embedder con varios
-servidores) necesitan el lock.
+Two `CompilerThread`s compiling at once in the same process → SIGSEGV
+(verified: parallel test runs crashed, serial ones passed). Faust's
+global compiler state is not thread-safe even for
+`createCDSPFactoryFromString` (not just the Box API's lib context). Fix:
+a process-global lock (`compiler::ffi_lock()`) around every compilation
+FFI call; the F0 smoke test takes it too. A server has
+a single compiler thread, but the tests (and any embedder with several
+servers) need the lock.
 
-### Verificación
+#### Pending flake: factory deletion under parallel load (2026-06-18)
 
-- `cargo test --features faust`: 55 tests (47 core + 2 smoke F0 + 6 de F1:
-  hilo directo con orden FIFO y errores legibles, round-trip OSC asíncrono
-  de `/d_faust` con `/done`/`/fail`, conteo en `/status`, `/d_free`).
-  Estable en 3 corridas seguidas (sin razas).
-- `cargo test` sin feature: intacto. Clippy limpio.
+`cargo test --features faust` with the default parallelism sometimes fails in
+`faust_compiler` with `WARNING : deleteDSPFactory factory not found!` (non-
+deterministic; serially with `--test-threads=1` it passes 4/4 reliably). It's a
+symptom of the same non-thread-safe global state, but it points at **factory
+deletion** (the drop of a `FaustDef`'s factory), a path that today does NOT go
+through `ffi_lock()`: by the F0 decision (see "Decisions" below) instantiating/
+deleting from an already-compiled factory was assumed independent of the
+compiler's state, so only *compilation* takes the lock. The warning suggests
+`deleteDSPFactory` does touch the global factory table and can race with
+concurrent compilations/deletions. Distinct from the concurrent-compilation
+crash already solved (that one is covered). Pending: either put the factory
+delete under `ffi_lock()`, or mark the `faust_compiler` binary as
+`--test-threads=1`. Non-blocking (a real server has a single compiler and does
+not delete factories concurrently).
 
-## F2 — Esquema JSON → Box API (completado 2026-06-10)
+### Verification
 
-### Qué quedó hecho
+- `cargo test --features faust`: 55 tests (47 core + 2 F0 smoke + 6 F1:
+  direct thread with FIFO order and readable errors, async OSC round-trip
+  of `/d_faust` with `/done`/`/fail`, count in `/status`, `/d_free`).
+  Stable across 3 consecutive runs (no races).
+- `cargo test` without the feature: intact. Clippy clean.
 
-- **`src/faust/boxes.rs`** (nuevo): intérprete JSON → llamadas a la Box API.
-  El schema (documentado con tabla y ejemplo en el doc del módulo) refleja
-  la C API uno-a-uno: atajos (número = constante, `"_"` = wire, `"!"` =
-  cut), objetos `{"op": …}` para composición (`seq`/`par`/`split`/`merge`
-  n-arios con fold a izquierda, `rec` binario), 18 binarios (aritmética,
-  comparaciones, bitwise, `delay`), 19 unarios (trig, exp/log, redondeos,
+## F2 — JSON → Box API schema (completed 2026-06-10)
+
+### What got done
+
+- **`src/faust/boxes.rs`** (new): a JSON → Box API calls interpreter.
+  The schema (documented with a table and example in the module doc) mirrors
+  the C API one-to-one: shortcuts (a number = constant, `"_"` = wire, `"!"` =
+  cut), `{"op": …}` objects for composition (`seq`/`par`/`split`/`merge`
+  n-ary with left fold, binary `rec`), 18 binaries (arithmetic,
+  comparisons, bitwise, `delay`), 19 unaries (trig, exp/log, roundings,
   casts), `select2`/`select3`, UI (`hslider`/`vslider`/`nentry`/`button`/
-  `checkbox`/`hgroup`/`vgroup`) y el escape hatch `{"op": "faust", "src":
-  "…"}` que compila un programa Faust completo a box vía `CDSPToBoxes` —
-  acceso a toda la stdlib (`os.osc`, `fi.`) componible con primitivas.
-- **Errores con ruta**: la validación estructural se hace al construir y
-  cada error lleva la ruta del nodo JSON culpable desde la raíz `$` (p. ej.
-  `at $.in[0].in[1]: unknown op "zzz"`); los errores semánticos de Faust
-  (aridades de composición, entradas colgantes) llegan verbatim del paso de
-  factory.
-- **`src/faust/compiler.rs`**: `CompileRequest` ahora lleva un
-  `CompilePayload::Source` (F1) o `::Json` (F2); guard `LibContext` (lock +
-  `createLibContext`/`destroyLibContext` en Drop); `FaustArgs::stdlib()`
-  pasa `-I $PREFIX/share/faust` (búsqueda como build.rs: `FAUST_PREFIX` →
-  `~/.local` → `/usr/local`) tanto a `createCDSPFactoryFromString` — los
-  defs de fuente cruda ahora pueden `import("stdfaust.lib")` — como a los
-  fragmentos.
-- **`src/faust/ffi.rs`**: superficie Box API completada (~45 símbolos
-  nuevos: binarios/unarios `Aux`, delays, selects, UI, `CDSPToBoxes`),
-  verificados contra `nm -D libfaust.so` además del header.
-- **OSC**: `/d_faust name def` distingue por sniffing — si el def empieza
-  con `{` es JSON, si no es fuente Faust (la fuente Faust top-level nunca
-  empieza con `{`, el sniff no es ambiguo).
+  `checkbox`/`hgroup`/`vgroup`) and the escape hatch `{"op": "faust", "src":
+  "…"}` that compiles a complete Faust program to a box via `CDSPToBoxes` —
+  access to the whole stdlib (`os.osc`, `fi.`) composable with primitives.
+- **Errors with a path**: structural validation is done while building and
+  each error carries the path of the offending JSON node from the root `$` (e.g.
+  `at $.in[0].in[1]: unknown op "zzz"`); Faust's semantic errors
+  (composition arities, dangling inputs) come verbatim from the
+  factory step.
+- **`src/faust/compiler.rs`**: `CompileRequest` now carries a
+  `CompilePayload::Source` (F1) or `::Json` (F2); a `LibContext` guard (lock +
+  `createLibContext`/`destroyLibContext` on Drop); `FaustArgs::stdlib()`
+  passes `-I $PREFIX/share/faust` (search like build.rs: `FAUST_PREFIX` →
+  `~/.local` → `/usr/local`) both to `createCDSPFactoryFromString` — raw-source
+  defs can now `import("stdfaust.lib")` — and to the fragments.
+- **`src/faust/ffi.rs`**: Box API surface completed (~45 new
+  symbols: binary/unary `Aux`, delays, selects, UI, `CDSPToBoxes`),
+  verified against `nm -D libfaust.so` besides the header.
+- **OSC**: `/d_faust name def` distinguishes by sniffing — if the def starts
+  with `{` it's JSON, otherwise it's Faust source (top-level Faust source never
+  starts with `{`, the sniff is unambiguous).
 
-### Hallazgo: bug upstream en `boxFmod()`
+### Finding: upstream bug in `boxFmod()`
 
-`CboxFmodAux(a, b)` construye `(a, b) : abs` — `boxFmod()` en
-`compiler/box_signal_api.cpp` devuelve `gGlobal->gAbsPrim->box()` (bug de
-copy-paste presente en 2.81.10 y todavía en master-dev). Lo detectó el test
-"kitchen sink" que ejercita cada op del schema una vez (necesario porque el
-linking dinámico es lazy: un símbolo mal tipeado en el FFI a mano recién
-explota al llamarlo). Workaround: `fmod` no usa el binding sino un
-fragmento `CDSPToBoxes("process = fmod;")` que devuelve el primitivo real
-de 2 entradas; `CboxFmodAux` quedó sin bindear con nota en ffi.rs.
+`CboxFmodAux(a, b)` builds `(a, b) : abs` — `boxFmod()` in
+`compiler/box_signal_api.cpp` returns `gGlobal->gAbsPrim->box()` (a copy-paste
+bug present in 2.81.10 and still in master-dev). The "kitchen sink"
+test that exercises each schema op once caught it (needed because dynamic
+linking is lazy: a mistyped symbol in the hand-written FFI only blows up
+when called). Workaround: `fmod` doesn't use the binding but a
+`CDSPToBoxes("process = fmod;")` fragment returning the real 2-input
+primitive; `CboxFmodAux` was left unbound with a note in ffi.rs.
 
-### Verificación
+### Verification
 
-- `cargo test --features faust`: 64 tests (47 core + 2 smoke F0 + 8 F1/OSC
-  + 7 F2: sine JSON con paridad de frecuencia y RMS contra el smoke de F0,
-  fragmento stdlib componiendo `os.osc` con primitivas, import de stdlib
-  desde fuente cruda, errores de validación con ruta del nodo, error de
-  fragmento con ruta + mensaje del compilador, kitchen sink de todos los
-  ops). Estable en 3 corridas seguidas.
-- `cargo test` sin feature: 47 tests, intacto. Clippy limpio (solo los dos
-  `Default` preexistentes de dsp).
+- `cargo test --features faust`: 64 tests (47 core + 2 F0 smoke + 8 F1/OSC
+  + 7 F2: JSON sine with frequency and RMS parity against the F0 smoke,
+  stdlib fragment composing `os.osc` with primitives, stdlib import
+  from raw source, validation errors with the node path, fragment
+  error with path + compiler message, kitchen sink of all the
+  ops). Stable across 3 consecutive runs.
+- `cargo test` without the feature: 47 tests, intact. Clippy clean (only the two
+  preexisting `Default` ones from dsp).
 
-## F3 — FaustSynth en el árbol (completado 2026-06-10)
+## F3 — FaustSynth in the tree (completed 2026-06-10)
 
-### Qué quedó hecho
+### What got done
 
-- **`src/faust/synth.rs`** (nuevo): `FaustDef` y `FaustSynth`.
-  - **`FaustDef`** es lo que ahora guardan las tablas de defs: la factory
-    compilada más los parámetros (nombre, init, min, max, step) y la aridad
-    de E/S, descubiertos **una sola vez** sondeando una instancia
-    descartable en el hilo compilador (`FaustDef::probe`, llamada por
-    `compile()` después de crear la factory). Así `/s_new` y `/n_set`
-    resuelven nombres de controles en el hilo de red sin tocar libfaust.
-  - **`FaustSynth: SynthNode`**: se construye en el hilo de red
-    (`createCDSPInstance` + `initCDSPInstance(sr)` alocan), recolecta las
-    zonas `FAUSTFLOAT*` con `UIGlue` al instanciar, viaja ya armado por el
-    cmd FIFO, y `process()` solo llama `computeCDSPInstance` (la única
-    llamada RT-safe de libfaust) más copias de staging. `Drop` borra la
-    instancia — siempre corre en el hilo de red porque los nodos liberados
-    salen por el garbage FIFO; el `Arc<FaustDef>` del synth garantiza
-    instancia-muere-antes-que-factory.
-- **Convención de controles**: índices `0..n` = parámetros UI del def (orden
-  de declaración, labels pelados — los grupos se aplanan); después dos
-  nombres reservados: `out` (índice n) e `in` (n+1), el primer bus de audio
-  al que mapean salidas/entradas. Defaults `out=0`, `in=0`. Clamp para que
-  el span completo de canales quede dentro de los buses.
-- **Mapeo de buses**: la E/S de Faust es `float**` no intercalada como
-  nuestros buses, pero el synth pasa por buffers de staging propios: las
-  salidas **suman** al bus (semántica de `Out`, los synths mezclan) y las
-  entradas se copian antes de escribir salidas (una cadena in-place
-  `in == out` queda correcta).
-- **OSC**: `/s_new` instancia defs Faust como cualquier otro (helper
-  `make_synth` que busca en ambas tablas); el espejo `node_defs` ahora
-  guarda un enum `NodeDef::{UGen, Faust}` para resolver nombres en
-  `/n_set`. `/d_free` con instancias vivas no rompe nada (refcount).
-- **FFI**: `UIGlue` (struct repr(C) de 13 callbacks de CInterface.h) y
+- **`src/faust/synth.rs`** (new): `FaustDef` and `FaustSynth`.
+  - **`FaustDef`** is what the def tables now hold: the compiled
+    factory plus the parameters (name, init, min, max, step) and the I/O
+    arity, discovered **once** by probing a disposable
+    instance on the compiler thread (`FaustDef::probe`, called by
+    `compile()` after creating the factory). So `/s_new` and `/n_set`
+    resolve control names on the network thread without touching libfaust.
+  - **`FaustSynth: SynthNode`**: built on the network thread
+    (`createCDSPInstance` + `initCDSPInstance(sr)` allocate), collects the
+    `FAUSTFLOAT*` zones with `UIGlue` at instantiation, travels already
+    assembled via the cmd FIFO, and `process()` only calls
+    `computeCDSPInstance` (libfaust's only RT-safe call) plus staging
+    copies. `Drop` deletes the instance — it always runs on the network thread because
+    freed nodes leave via the garbage FIFO; the synth's
+    `Arc<FaustDef>` guarantees instance-dies-before-factory.
+- **Controls convention**: indices `0..n` = the def's UI parameters (declaration
+  order, bare labels — groups are flattened); then two
+  reserved names: `out` (index n) and `in` (n+1), the first audio bus
+  outputs/inputs map to. Defaults `out=0`, `in=0`. Clamp so that
+  the full channel span stays within the buses.
+- **Bus mapping**: Faust's I/O is non-interleaved `float**` like
+  our buses, but the synth goes through its own staging buffers: outputs
+  **sum** into the bus (`Out` semantics, synths mix) and
+  inputs are copied before writing outputs (an in-place chain
+  `in == out` stays correct).
+- **OSC**: `/s_new` instantiates Faust defs like any other (helper
+  `make_synth` that searches both tables); the `node_defs` mirror now
+  holds an enum `NodeDef::{UGen, Faust}` to resolve names in
+  `/n_set`. `/d_free` with live instances breaks nothing (refcount).
+- **FFI**: `UIGlue` (a repr(C) struct of 13 callbacks from CInterface.h) and
   `buildUserInterfaceCDSPInstance`.
 
-### Decisiones
+### Decisions
 
-- Instanciación en el hilo de red **sin** `ffi_lock()`: crear instancias
-  desde una factory ya compilada es independiente del estado global del
-  compilador (es código JIT + malloc; FaustLive/faustgen~ lo hacen
-  concurrente con compilaciones). El lock sigue siendo solo para compilar.
-- `ugen_count() = 1` por instancia Faust en `/status.reply`.
-- La SR queda congelada por `instanceInit` (ver previsión en PLAN.md);
-  el probe usa 48 kHz fijo porque params y aridad no dependen de la SR.
+- Instantiation on the network thread **without** `ffi_lock()`: creating instances
+  from an already-compiled factory is independent of the compiler's global
+  state (it's JIT code + malloc; FaustLive/faustgen~ do it
+  concurrently with compilations). The lock stays only for compiling.
+- `ugen_count() = 1` per Faust instance in `/status.reply`.
+- The SR is frozen by `instanceInit` (see the foresight in PLAN.md);
+  the probe uses a fixed 48 kHz because params and arity don't depend on the SR.
 
-### Verificación
+### Verification
 
-- `cargo test --features faust`: 73 tests (64 de F2 + 8 de `faust_synth`:
-  probe de params y controles reservados, sine en el árbol con
-  frecuencia/RMS, `/n_set` por zona, ruteo por `out`, cadena por bus de
-  entrada con `in`, mezcla UGen+Faust en el mismo bus (interop de F4
-  adelantada), free con factory sobreviviendo al `/d_free`, y el ciclo
-  completo por OSC con engine tickeado a mano + 1 en `rt_safety`: 8
-  FaustSynths insertados, procesados, recontrolados y liberados bajo
-  `assert_no_alloc`). Estable en 3 corridas.
-- `cargo test` sin feature: 47 tests, intacto. Clippy limpio.
+- `cargo test --features faust`: 73 tests (64 from F2 + 8 from `faust_synth`:
+  param and reserved-control probe, sine in the tree with
+  frequency/RMS, `/n_set` by zone, routing via `out`, chain via input
+  bus with `in`, UGen+Faust mix on the same bus (F4 interop
+  brought forward), free with the factory surviving the `/d_free`, and the full
+  cycle over OSC with the engine ticked by hand + 1 in `rt_safety`: 8
+  FaustSynths inserted, processed, recontrolled and freed under
+  `assert_no_alloc`). Stable across 3 runs.
+- `cargo test` without the feature: 47 tests, intact. Clippy clean.
 
-## F4 — Paridad e interop (completado 2026-06-10)
+## F4 — Parity and interop (completed 2026-06-10)
 
-### Qué quedó hecho
+### What got done
 
-- **`tests/faust_parity.rs`** (nuevo): tests dorados de grafos equivalentes,
-  renderizados lado a lado **en el mismo engine** (UGen al canal 0, Faust al
-  canal 1, mismos bloques):
-  - **Sine**: `SinOsc(440)·0.2` contra el mismo grafo vía JSON→Box
-    (`sin(2π·phasor)` con `delay 1` para alinear la fase: nuestro `SinOsc`
-    arranca en fase 0, el phasor crudo `(+(f/SR) : wrap) ~ _` arranca en
-    `f/SR`). Igualdad muestra a muestra con tolerancia `4e-3` — `SinOsc`
-    acumula fase en f64 y Faust (-single) en f32, así que no puede ser
-    exacta — y un assert de discriminación: las mismas señales corridas
-    una muestra **deben** violar la tolerancia (un offset de fase de 1
-    muestra pica en ≈ 0.0115, bien arriba).
-  - **Ganancia bit-exacta**: una sine UGen alimenta el bus 4; una cadena
-    UGen `In·0.5` y una Faust `_ * 0.5` lo leen en el mismo bloque hacia
-    los canales 0 y 1. Misma multiplicación f32 sobre las mismas muestras:
-    **cero** bits de diferencia (la aritmética sin estado es idéntica entre
-    los dos mundos; solo los osciladores divergen por precisión).
-  - **Grupo compartido**: synth UGen + synth Faust como hermanos en un
-    grupo no-raíz, mezclan al mismo bus (RMS de la suma) y un solo
-    `FreeAllInGroup` los libera juntos (2 en el garbage FIFO).
-- **`examples/json_client.py`** (nuevo): cliente de ejemplo en Python, solo
-  stdlib (encoder/decoder OSC a mano: i, f, s, b, d). **Genera** los dos
-  formatos de def programáticamente — `SynthDefBuilder` para `/d_recv`
-  (noise con AM) y helpers `box()`/`hslider()`/`faust()` para `/d_faust`
-  (sine desde primitivas + def con stdlib vía escape hatch) — y maneja el
-  ciclo completo: `/done`//`/fail`, `/s_new` con controles por nombre,
+- **`tests/faust_parity.rs`** (new): golden tests of equivalent graphs,
+  rendered side by side **in the same engine** (UGen to channel 0, Faust to
+  channel 1, same blocks):
+  - **Sine**: `SinOsc(440)·0.2` against the same graph via JSON→Box
+    (`sin(2π·phasor)` with `delay 1` to align the phase: our `SinOsc`
+    starts at phase 0, the raw phasor `(+(f/SR) : wrap) ~ _` starts at
+    `f/SR`). Sample-by-sample equality with tolerance `4e-3` — `SinOsc`
+    accumulates phase in f64 and Faust (-single) in f32, so it can't be
+    exact — and a discrimination assert: the same signals shifted
+    one sample **must** violate the tolerance (a 1-sample phase offset
+    peaks at ≈ 0.0115, well above).
+  - **Bit-exact gain**: a UGen sine feeds bus 4; a UGen chain
+    `In·0.5` and a Faust one `_ * 0.5` read it in the same block into
+    channels 0 and 1. Same f32 multiplication over the same samples:
+    **zero** bits of difference (stateless arithmetic is identical between
+    the two worlds; only the oscillators diverge by precision).
+  - **Shared group**: a UGen synth + a Faust synth as siblings in a
+    non-root group, mix into the same bus (RMS of the sum) and a single
+    `FreeAllInGroup` frees them together (2 in the garbage FIFO).
+- **`examples/json_client.py`** (new): an example client in Python, stdlib
+  only (a hand-written OSC encoder/decoder: i, f, s, b, d). It **generates** the two
+  def formats programmatically — `SynthDefBuilder` for `/d_recv`
+  (noise with AM) and `box()`/`hslider()`/`faust()` helpers for `/d_faust`
+  (sine from primitives + a def with stdlib via the escape hatch) — and handles
+  the full cycle: `/done`//`/fail`, `/s_new` with controls by name,
   `/n_set`, `/n_free`, `/status`, `/quit`. Demos: `status ugen faust quit`.
-- **`docs/schemas.md`** (nuevo): documentación de referencia de ambos
-  schemas (en inglés, como los docs de código): formato SynthDef JSON
-  completo (tabla de UGens, formas de input, semántica `Out`/`ReplaceOut`,
-  errores), defs Faust (fuente vs JSON, tabla de ops espejo de la Box API,
-  controles reservados `out`/`in`, errores con ruta `$`), y el ciclo OSC
-  común.
+- **`docs/schemas.md`** (new): reference documentation of both
+  schemas (in English, like the code docs): full SynthDef JSON
+  format (UGen table, input forms, `Out`/`ReplaceOut` semantics,
+  errors), Faust defs (source vs JSON, op table mirroring the Box API,
+  reserved controls `out`/`in`, errors with the `$` path), and the
+  common OSC cycle.
 
-### Verificación
+### Verification
 
-- `cargo test --features faust`: 76 tests (73 + 3 de paridad). `cargo test`
-  sin feature: 47, intacto. Clippy limpio (solo las 2 warnings
-  preexistentes de `Default`).
-- E2E real del cliente Python contra el server release con feature, en una
-  sola invocación: `status` (reply con doubles — el decoder necesitó el tag
-  `d`), `/d_recv` amnoise `/done`, `/d_faust` jsine y jstdlib `/done`,
-  synths sonando y `/quit`.
-- Una corrida de la suite completa tuvo 1 fallo esporádico en
-  `faust_synth` que no se reprodujo en 7 corridas posteriores (5 aisladas
-  + 2 completas); sospecho del test OSC por UDP bajo carga. Vigilar si
-  reaparece.
+- `cargo test --features faust`: 76 tests (73 + 3 parity). `cargo test`
+  without the feature: 47, intact. Clippy clean (only the 2 preexisting
+  `Default` warnings).
+- Real E2E of the Python client against the release server with the feature, in a
+  single invocation: `status` (reply with doubles — the decoder needed the
+  `d` tag), `/d_recv` amnoise `/done`, `/d_faust` jsine and jstdlib `/done`,
+  synths sounding and `/quit`.
+- One run of the full suite had 1 sporadic failure in
+  `faust_synth` that didn't reproduce in 7 later runs (5 isolated
+  + 2 full); I suspect the UDP OSC test under load. Watch if it
+  reappears.
 
-## M5 — Buffers (completado 2026-06-10)
+## M5 — Buffers (completed 2026-06-10)
 
-### Qué quedó hecho
+### What got done
 
-- **`src/dsp/buffer.rs`** (nuevo): `Buffer` — datos f32 intercalados +
-  frames/canales/sample-rate — **inmutable una vez construido**, compartido
-  como `Arc<Buffer>`. Pool de 1024 slots (`BufferPool`) en el engine;
-  espejo en el hilo de red para `/b_query` y para darle a
-  `/b_read`/`/b_write`/`/b_zero` el contenido/forma actual. La inmutabilidad
-  es la decisión central: sin locks ni aliasing entre hilos (scsynth muta
-  memoria compartida; nosotros pagamos una copia por reemplazo). UGens de
-  grabación necesitarán otro esquema.
-- **`src/server/nrt.rs`** (nuevo): hilo NRT con el mismo patrón que el
-  compilador Faust (mpsc requests/results, drenado en el loop del servidor
-  OSC). Jobs: `Alloc` (cero), `AllocRead`/`Read`/`Write` (WAV vía `hound`:
-  int 1–32 bits escalado a ±1 y float32; `Read` superpone el archivo sobre
-  una copia del contenido actual conservando la forma), `Free`. **Una sola
-  cola = los comandos de buffer completan en orden de envío** (por eso
-  hasta `/b_free` pasa por ahí: no puede sobrepasar a un alloc pendiente).
-- **Engine**: `Cmd::SetBuffer { index, Option<Arc<Buffer>> }` swapea el
-  slot; lo reemplazado sale como `Garbage::FreedBuffer` (el último `Arc`
-  nunca se suelta en el hilo de audio). `ProcessCtx` ahora lleva
+- **`src/dsp/buffer.rs`** (new): `Buffer` — interleaved f32 data +
+  frames/channels/sample-rate — **immutable once built**, shared
+  as `Arc<Buffer>`. A pool of 1024 slots (`BufferPool`) in the engine;
+  a mirror on the network thread for `/b_query` and to give
+  `/b_read`/`/b_write`/`/b_zero` the current content/shape. Immutability
+  is the central decision: no locks or aliasing between threads (scsynth mutates
+  shared memory; we pay a copy per replacement). Recording UGens
+  will need another scheme.
+- **`src/server/nrt.rs`** (new): an NRT thread with the same pattern as the
+  Faust compiler (mpsc requests/results, drained in the OSC server's
+  loop). Jobs: `Alloc` (zero), `AllocRead`/`Read`/`Write` (WAV via `hound`:
+  int 1–32 bits scaled to ±1 and float32; `Read` overlays the file over
+  a copy of the current content keeping the shape), `Free`. **A single
+  queue = buffer commands complete in submission order** (that's why even
+  `/b_free` goes through it: it can't overtake a pending alloc).
+- **Engine**: `Cmd::SetBuffer { index, Option<Arc<Buffer>> }` swaps the
+  slot; the replaced one leaves as `Garbage::FreedBuffer` (the last `Arc`
+  is never dropped on the audio thread). `ProcessCtx` now carries
   `buffers: &[Option<Arc<Buffer>>]`.
-- **UGens** (`src/dsp/buf.rs`): `PlayBuf` (bufnum, canal, rate, loop; rate
-  en frames por sample de salida — 1.0 = sr del servidor, el cliente
-  compensa con `sr_archivo / sr_servidor`; fase f64; silencio al final si
-  no loopea) y `BufRd` (bufnum, canal, fase en frames, loop; la fase fuera
-  de rango wrapea con loop y clampea sin él). Ambos **mono** con entrada
-  `chan` (nuestros UGens tienen una salida): un archivo estéreo son dos
-  lectores sample-locked. Interpolación lineal. Sin trigger ni done action
-  todavía.
-- **OSC**: `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write` (solo WAV;
-  int16/int24/float), `/b_zero` (reemplaza por uno en cero de la misma
-  forma), `/b_free` — asíncronos, responden `/done cmd bufnum` o `/fail` —
-  y `/b_query` → `/b_info` (síncrono desde el espejo). `leaveOpen` se
-  acepta y se ignora (sin streaming).
-- **Cliente Python**: demo `buffer` (escribe WAV con el módulo `wave`,
-  `/b_allocRead`, rate correcta desde `/b_info` + `/status`, `/n_set` de
-  rate, `/b_free`). Schema y comandos documentados en `docs/schemas.md`;
-  pasos manuales en GUIA.md.
+- **UGens** (`src/dsp/buf.rs`): `PlayBuf` (bufnum, channel, rate, loop; rate
+  in frames per output sample — 1.0 = the server's sr, the client
+  compensates with `file_sr / server_sr`; f64 phase; silence at the end if
+  not looping) and `BufRd` (bufnum, channel, phase in frames, loop; out-of-range
+  phase wraps with loop and clamps without it). Both **mono** with a `chan`
+  input (our UGens have one output): a stereo file is two
+  sample-locked readers. Linear interpolation. No trigger or done action
+  yet.
+- **OSC**: `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write` (WAV only;
+  int16/int24/float), `/b_zero` (replaces with a zeroed one of the same
+  shape), `/b_free` — asynchronous, replying `/done cmd bufnum` or `/fail` —
+  and `/b_query` → `/b_info` (synchronous from the mirror). `leaveOpen` is
+  accepted and ignored (no streaming).
+- **Python client**: a `buffer` demo (writes a WAV with the `wave` module,
+  `/b_allocRead`, correct rate from `/b_info` + `/status`, `/n_set` of
+  rate, `/b_free`). Schema and commands documented in `docs/schemas.md`;
+  manual steps in GUIA.md.
 
-### Verificación
+### Verification
 
-- `cargo test`: 61 tests (47 + 13 de `tests/buffers.rs` + 1 en
-  `rt_safety`); con feature: 90. Los tests de buffers incluyen igualdad
-  **exacta** muestra a muestra (playback rate 1, loop, canales,
-  interpolación de `BufRd` con valores representables), round-trip WAV
-  float sin pérdida, grilla de cuantización int16 verificada
-  (escala 32767 al escribir, 1/32768 al leer), slicing de archivo,
-  overlay de `/b_read`, errores (mismatch de canales, archivo inexistente)
-  y el ciclo `/b_*` completo por OSC con engine tickeado a mano.
-- `rt_safety`: instalar, reemplazar (incluso achicando con un `PlayBuf`
-  leyendo), vaciar el slot y liberar el synth — cero allocs en el hilo de
-  audio, 3 items por el garbage FIFO.
-- E2E real: server release + `json_client.py buffer` (sine 330 Hz a
-  22050 Hz tocada a rate 0.5 sobre servidor de 44100, quinta arriba con
-  `/n_set`, `/b_free` con `/done`). Clippy limpio (solo las 2 warnings
-  preexistentes de `Default`).
+- `cargo test`: 61 tests (47 + 13 from `tests/buffers.rs` + 1 in
+  `rt_safety`); with the feature: 90. The buffer tests include **exact**
+  sample-by-sample equality (playback rate 1, loop, channels,
+  `BufRd` interpolation with representable values), lossless float WAV
+  round-trip, verified int16 quantization grid
+  (scale 32767 on write, 1/32768 on read), file slicing,
+  `/b_read` overlay, errors (channel mismatch, nonexistent file)
+  and the full `/b_*` cycle over OSC with the engine ticked by hand.
+- `rt_safety`: install, replace (even shrinking with a `PlayBuf`
+  reading), empty the slot and free the synth — zero allocs on the audio
+  thread, 3 items via the garbage FIFO.
+- Real E2E: release server + `json_client.py buffer` (a 330 Hz sine at
+  22050 Hz played at rate 0.5 on a 44100 server, a fifth up with
+  `/n_set`, `/b_free` with `/done`). Clippy clean (only the 2 preexisting
+  `Default` warnings).
 
-## M6 — Scheduling sample-accurate (completado 2026-06-10)
+## M6 — Sample-accurate scheduling (completed 2026-06-10)
 
-### Qué quedó hecho
+### What got done
 
-- **Slices en `ProcessCtx`**: `offset` + `frames` — normalmente el bloque
-  entero, pero un bundle agendado parte el bloque en el sample del evento y
-  todos los nodos procesan solo el sub-rango. `UGenSynth` recorta wires e
-  inputs a `frames`; `In`/`Out`/`ReplaceOut` indexan los buses en `offset`;
-  `FaustSynth` copia staging parcial y llama `compute(frames)`. Esto va
-  **más allá de scsynth real**, que cuantiza los bundles al bloque de 64 y
-  necesita `OffsetOut` para compensar — acá el split es genuino y no hace
-  falta.
-- **Cola en el engine**: `Cmd::Schedule { time, cmds }` — tiempo absoluto
-  en samples, comandos ya construidos (synths boxeados) en el hilo de red.
-  `Vec<ScheduledBundle>` pre-alocada (1024), inserción ordenada estable
-  (FIFO en empates, `partition_point` + `insert` sin alocar) y `remove(0)`
-  al vencer; el shell `Vec` ejecutado vuelve como `Garbage::SpentBundle`
-  (capacidad heap liberada en red); cola llena = bundle rechazado entero
-  por el mismo camino. `process_block`: drena comandos inmediatos al inicio
-  del bloque, luego loop de segmentos ejecutando los bundles vencidos en su
-  offset exacto (tardíos en offset 0).
-- **Reloj y conversión NTP**: el engine publica `now` (samples procesados,
-  `AtomicU64`) cada bloque; el hilo de red convierte
-  `delta = timetag − SystemTime::now()` y agenda en
-  `current_samples() + delta·sr`. Timetag inmediato (`{0,1}`) o pasado =
-  ejecución al llegar (los pasados loguean "late", como scsynth). Bundles
-  anidados se agendan independientes por su propio timetag.
-- **Traducción de mensajes** (`schedule_message`): `/s_new` (controles
-  aplicados al boxear, espejo `node_defs` actualizado al agendar, IDs -1
-  resueltos), `/n_set` (por nombre vía espejo), `/n_free`,
-  `/n_before`/`/n_after`, `/g_new`, `/g_freeAll`/`/g_deepFree` y `/c_set`
-  — este último como `Cmd::SetControlBus` nuevo: la forma inmediata escribe
-  los atomics en red, pero la agendada debe caer en su sample exacto. Lo no
-  agendable responde `/fail "… cannot be scheduled in a timed bundle"`.
-- **Cliente Python**: `bundle(seconds_ahead, *packets)` (timetag NTP a
-  mano) y demo `bundle`: un arpegio agendado entero por adelantado.
+- **Slices in `ProcessCtx`**: `offset` + `frames` — normally the whole
+  block, but a scheduled bundle splits the block at the event's sample and
+  every node processes only the sub-range. `UGenSynth` trims wires and
+  inputs to `frames`; `In`/`Out`/`ReplaceOut` index the buses at `offset`;
+  `FaustSynth` copies partial staging and calls `compute(frames)`. This goes
+  **beyond real scsynth**, which quantizes bundles to the 64 block and
+  needs `OffsetOut` to compensate — here the split is genuine and not
+  needed.
+- **Queue in the engine**: `Cmd::Schedule { time, cmds }` — absolute time
+  in samples, commands already built (boxed synths) on the network thread.
+  A pre-allocated `Vec<ScheduledBundle>` (1024), stable ordered insertion
+  (FIFO on ties, `partition_point` + `insert` without allocation) and `remove(0)`
+  when due; the executed `Vec` shell returns as `Garbage::SpentBundle`
+  (heap capacity freed on the network thread); a full queue = the whole bundle
+  rejected by the same path. `process_block`: drains immediate commands at the
+  start of the block, then a loop of segments running the due bundles at their
+  exact offset (late ones at offset 0).
+- **Clock and NTP conversion**: the engine publishes `now` (samples processed,
+  `AtomicU64`) every block; the network thread converts
+  `delta = timetag − SystemTime::now()` and schedules at
+  `current_samples() + delta·sr`. An immediate timetag (`{0,1}`) or a past one =
+  execution on arrival (past ones log "late", like scsynth). Nested bundles
+  are scheduled independently by their own timetag.
+- **Message translation** (`schedule_message`): `/s_new` (controls
+  applied at boxing, the `node_defs` mirror updated at scheduling, -1 IDs
+  resolved), `/n_set` (by name via the mirror), `/n_free`,
+  `/n_before`/`/n_after`, `/g_new`, `/g_freeAll`/`/g_deepFree` and `/c_set`
+  — the last as a new `Cmd::SetControlBus`: the immediate form writes
+  the atomics on the network thread, but the scheduled one must land on its exact
+  sample. The unschedulable replies `/fail "… cannot be scheduled in a timed bundle"`.
+- **Python client**: `bundle(seconds_ahead, *packets)` (NTP timetag by
+  hand) and a `bundle` demo: an arpeggio scheduled entirely ahead.
 
-### Verificación
+### Verification
 
-- `cargo test`: 72 (61 + 10 de `tests/scheduling.rs` + 1 en `rt_safety`);
-  con feature: 102 (+1: FaustSynth partido a mitad de bloque con def
-  constante, borde exacto). Los tests de scheduling son **sample-exactos**
-  con señales DC: disparo a mitad de bloque (sample 100 = bloque 1 offset
-  36), tres eventos partiendo un mismo bloque (10/30/50), atomicidad del
-  bundle, empates en orden de llegada, tiempos fuera de orden, tardíos en
-  offset 0, `/c_set` agendado (escalón en sample 32), cola llena (1025º
-  rechazado y devuelto entero), y el round-trip OSC con timetag NTP real
-  (ventana de tolerancia sobre el reloj publicado).
-- `rt_safety`: 16 bundles en offsets impares (encolar ordenado, partir,
-  ejecutar) — cero allocs, 16 shells de vuelta. Clippy limpio (solo las 2
-  warnings preexistentes).
-- E2E real: server release + `json_client.py bundle` (5 notas agendadas
-  por adelantado, ritmo regular). Banner ahora dice `clausters M6`.
+- `cargo test`: 72 (61 + 10 from `tests/scheduling.rs` + 1 in `rt_safety`);
+  with the feature: 102 (+1: FaustSynth split mid-block with a constant
+  def, exact edge). The scheduling tests are **sample-exact**
+  with DC signals: a mid-block trigger (sample 100 = block 1 offset
+  36), three events splitting one block (10/30/50), bundle
+  atomicity, ties in arrival order, out-of-order times, late ones at
+  offset 0, scheduled `/c_set` (step at sample 32), full queue (the 1025th
+  rejected and returned whole), and the OSC round-trip with a real NTP
+  timetag (a tolerance window over the published clock).
+- `rt_safety`: 16 bundles at odd offsets (ordered enqueue, split,
+  execute) — zero allocs, 16 shells back. Clippy clean (only the 2
+  preexisting warnings).
+- Real E2E: release server + `json_client.py bundle` (5 notes scheduled
+  ahead, regular rhythm). The banner now says `clausters M6`.
 
-## M7 — Modo NRT + tests dorados (completado 2026-06-11)
+## M7 — NRT mode + golden tests (completed 2026-06-11)
 
-### Qué quedó hecho
+### What got done
 
-- **Refactor previo** (`src/osc/translate.rs`): la traducción mensaje→`Cmd`
-  salió de `OscServer` a un `CmdTranslator` compartido — tablas de defs,
-  espejo `node_defs`, auto-IDs, `translate()` (el viejo `schedule_message`),
-  `d_recv`/`d_free`, `make_synth` — más `parse_buffer_msg` (los seis `/b_*`
-  async → `NrtJob`, antes seis handlers casi iguales) y `parse_d_faust`.
-  El server delega; `/s_new` inmediato ahora también pasa por `translate`.
-- **Renderer** (`src/server/render.rs`): `Score` (eventos ordenados estables
-  por tiempo) + `render`/`render_to_vec`/`render_to_wav`. Una `Score` se
-  carga del formato binario de scsynth (`[i32 BE tamaño][paquete OSC]`…;
-  el timetag cuenta **segundos desde el inicio del render**, tag inmediato
-  = 0). El render es mono-hilo con las dos mitades de `engine_pair`: los
-  comandos agendables viajan como `Cmd::Schedule` por la cola M6 (mismo
-  split sub-bloque que en vivo → el render offline es idéntico sample a
-  sample a una toma en vivo perfecta), y los async (`/d_recv`, `/d_faust`,
-  `/d_free`, `/b_*`) corren **síncronos** antes de avanzar el tiempo
-  (semántica scsynth NRT): `run_job` y `faust::compiler::compile` ahora son
-  `pub` y se llaman en línea; los buffers se instalan con el resto del
-  bundle (swap sample-accurate). El render termina en el tiempo del último
-  bundle (sus comandos no suenan): cerrar la partitura con un bundle dummy.
-  Errores estrictos: comando desconocido/fallido aborta con tiempo y
-  mensaje; bundles dropeados por cola llena también (mejor que notas
-  faltantes silenciosas en un golden).
+- **Prior refactor** (`src/osc/translate.rs`): the message→`Cmd` translation
+  moved out of `OscServer` into a shared `CmdTranslator` — def tables,
+  the `node_defs` mirror, auto-IDs, `translate()` (the old `schedule_message`),
+  `d_recv`/`d_free`, `make_synth` — plus `parse_buffer_msg` (the six async `/b_*`
+  → `NrtJob`, before six nearly-identical handlers) and `parse_d_faust`.
+  The server delegates; the immediate `/s_new` now also goes through `translate`.
+- **Renderer** (`src/server/render.rs`): `Score` (events stably ordered
+  by time) + `render`/`render_to_vec`/`render_to_wav`. A `Score` is
+  loaded from scsynth's binary format (`[i32 BE size][OSC packet]`…;
+  the timetag counts **seconds since the render start**, immediate tag
+  = 0). The render is single-threaded with the two halves of `engine_pair`: the
+  schedulable commands travel as `Cmd::Schedule` through the M6 queue (the same
+  sub-block split as live → the offline render is sample-by-sample
+  identical to a perfect live take), and the async ones (`/d_recv`, `/d_faust`,
+  `/d_free`, `/b_*`) run **synchronously** before advancing time
+  (scsynth NRT semantics): `run_job` and `faust::compiler::compile` are now
+  `pub` and called inline; buffers are installed with the rest of the
+  bundle (sample-accurate swap). The render ends at the time of the last
+  bundle (its commands don't sound): close the score with a dummy
+  bundle. Strict errors: an unknown/failed command aborts with the time and
+  message; bundles dropped due to a full queue too (better than silently
+  missing notes in a golden).
 - **CLI**: `clausters --nrt score.osc out.wav [--rate] [--channels]
-  [--format float|int16|int24]` — disponible **sin** el feature `realtime`
-  (sin cpal); `--help`. El cliente Python ganó `score_bundle` (timetag
-  relativo) y la demo `score` que escribe `/tmp/clausters_score.osc`.
-- **Bug nuevo de rosc, arreglado para ambos modos**: el bug de blobs
-  múltiplo-de-4 también rompe blobs **dentro de un bundle** — el elemento
-  se parsea de su propio slice con prefijo de tamaño (el padding externo no
-  llega) y rosc devuelve el bundle con el contenido **silenciosamente
-  vacío**. `osc::decode_packet` parte los bundles a mano (recursivo) y solo
-  decodifica mensajes hoja con rosc + padding; lo usan el server UDP y el
-  loader de scores. CLAUDE.md actualizado.
-- **Goldens** (`tests/golden.rs` + `tests/golden/*.wav` float32, escenas en
-  `tests/common/scenes.rs` compartidas con `cargo run --example
-  render_golden`): `arpeggio` (def default, entradas a mitad de bloque,
-  `/n_set`, frees escalonados) y `playbuf` (`/d_recv` + `/b_allocRead` a
-  44100 con rate compensado, `/c_set` agendado, `/b_zero` a mitad de
-  reproducción). Comparación por sample con tolerancia 1e-4 (el sin de
-  libm puede variar entre plataformas; misma máquina es bit-exacto) **más**
-  asserts de señal independientes (frecuencia por cruces por cero, RMS,
-  silencios) para que un golden viejo no bendiga un render roto. Regenerar
-  solo a mano y **escuchar antes de commitear**.
-- **Benchmark** (`cargo run --release --example bench`): throughput de
-  bloques offline → factor de tiempo real a 48 kHz, def default y def
-  Faust (con feature). Medición acá: ~1790 synth·xRT estable de 32 a 1000
-  synths default (≈1800 voces sinusoidales en tiempo real); 1 synth solo
-  ~1000x (domina el overhead fijo por bloque).
+  [--format float|int16|int24]` — available **without** the `realtime` feature
+  (no cpal); `--help`. The Python client gained `score_bundle` (relative
+  timetag) and the `score` demo that writes `/tmp/clausters_score.osc`.
+- **New rosc bug, fixed for both modes**: the multiple-of-4 blob bug
+  also breaks blobs **inside a bundle** — the element is parsed from its own
+  slice with a size prefix (the outer padding doesn't reach it)
+  and rosc returns the bundle with the content **silently
+  empty**. `osc::decode_packet` splits bundles by hand (recursive) and only
+  decodes leaf messages with rosc + padding; the UDP server and the
+  score loader use it. CLAUDE.md updated.
+- **Goldens** (`tests/golden.rs` + `tests/golden/*.wav` float32, scenes in
+  `tests/common/scenes.rs` shared with `cargo run --example
+  render_golden`): `arpeggio` (the default def, mid-block entries,
+  `/n_set`, staggered frees) and `playbuf` (`/d_recv` + `/b_allocRead` at
+  44100 with compensated rate, scheduled `/c_set`, `/b_zero` mid-
+  playback). Sample comparison with tolerance 1e-4 (libm's sin
+  can vary between platforms; on the same machine it's bit-exact) **plus**
+  independent signal asserts (frequency via zero crossings, RMS,
+  silences) so an old golden doesn't bless a broken render.
+  Regenerate only by hand and **listen before committing**.
+- **Benchmark** (`cargo run --release --example bench`): offline block
+  throughput → real-time factor at 48 kHz, the default def and a Faust
+  def (with the feature). Measurement here: ~1790 synth·xRT stable from 32 to 1000
+  default synths (≈1800 sine voices in real time); 1 synth alone
+  ~1000x (the fixed per-block overhead dominates).
 
-### Verificación
+### Verification
 
-- `cargo test`: 80 (72 + 8 de `tests/golden.rs`); `--features faust`: 111
-  (+1 `/d_faust` síncrono en NRT). Sin default features también verde.
-  Clippy limpio en ambas configs (solo las 2 warnings preexistentes).
-- E2E: `json_client.py score` → `clausters --nrt` (release): 11 eventos,
-  2.1 s; primer sample no-cero en el frame 4801 (el 4800 es sin(0)=0) y
-  última nota liberada exactamente en el frame 96000 — sample-accurate de
-  punta a punta. Server en vivo verificado con las demos
-  `status ugen buffer bundle quit` tras el refactor.
+- `cargo test`: 80 (72 + 8 from `tests/golden.rs`); `--features faust`: 111
+  (+1 synchronous `/d_faust` in NRT). Without default features also green.
+  Clippy clean in both configs (only the 2 preexisting warnings).
+- E2E: `json_client.py score` → `clausters --nrt` (release): 11 events,
+  2.1 s; first non-zero sample at frame 4801 (4800 is sin(0)=0) and
+  the last note freed exactly at frame 96000 — sample-accurate end
+  to end. Live server verified with the demos
+  `status ugen buffer bundle quit` after the refactor.
 
-## Post-M7 — Protección contra denormales (2026-06-11)
+## Post-M7 — Denormal protection (2026-06-11)
 
-A pedido del usuario (la pregunta venía de antes; la técnica estaba
-documentada en la skill `realtime-audio` pero sin implementar). Los
-subnormales aparecen en estados recursivos que decaen a cero (colas de
-filtros, envolventes, recursiones Faust) y en muchas CPUs se resuelven en
-microcódigo 10–100x más lento — justo cuando un sonido se apaga. Tres
-piezas:
+At the user's request (the question came from before; the technique was
+documented in the `realtime-audio` skill but not implemented). Subnormals
+appear in recursive states that decay to zero (filter tails, envelopes,
+Faust recursions) and on many CPUs are resolved in microcode 10–100x slower —
+exactly when a sound fades out. Three pieces:
 
-- **`dsp::denormals::flush_to_zero()`**: pone el hilo llamador en modo
-  flush-to-zero — MXCSR FTZ+DAZ (bits 15 y 6) en x86-64, FPCR.FZ (bit 24)
-  en aarch64, ambos por asm inline (los intrínsecos `_mm_setcsr` están
-  deprecados); no-op en otras arquitecturas. Se rearma en cada callback de
-  cpal (barato, un par de accesos a registro) y se arma al inicio de
-  `render()` — **en los dos modos**, porque FTZ cambia resultados (flushea
-  a cero) y el render NRT debe seguir siendo sample-idéntico al vivo.
-- **`-ftz 2` en las factories Faust** (`FaustArgs::defaults()`, antes
-  `stdlib()`): el código generado flushea las variables recursivas por
-  debajo del rango normal — independiente de la arquitectura y del modo
-  FPU del hilo. Era la exposición real: los UGens propios actuales no
-  tienen estado recursivo decayente (eso llega con LPF/EnvGen), pero un
-  def Faust cualquiera sí.
-- **Tests**: `tests/denormals.rs` (el switch FPU: resultado y operando
-  subnormal colapsan a 0 tras armar; idempotencia; la matemática normal
-  intacta — cada `#[test]` corre en su propio hilo, no contamina) y en
-  `tests/golden.rs` el tail Faust `1-1' : fi.pole(0.9)` (y[n]=0.9ⁿ sale
-  del rango normal cerca del sample 830): ningún sample subnormal y
-  `out[1000] == 0.0` exacto. 82 tests núcleo / 114 con faust, goldens
-  intactos (las escenas no generaban subnormales).
+- **`dsp::denormals::flush_to_zero()`**: puts the calling thread in
+  flush-to-zero mode — MXCSR FTZ+DAZ (bits 15 and 6) on x86-64, FPCR.FZ (bit 24)
+  on aarch64, both via inline asm (the `_mm_setcsr` intrinsics are
+  deprecated); a no-op on other architectures. It's re-armed in each cpal
+  callback (cheap, a couple of register accesses) and armed at the start of
+  `render()` — **in both modes**, because FTZ changes results (flushes
+  to zero) and the NRT render must stay sample-identical to live.
+- **`-ftz 2` in the Faust factories** (`FaustArgs::defaults()`, formerly
+  `stdlib()`): the generated code flushes recursive variables below
+  the normal range — independent of the architecture and of the thread's FPU
+  mode. It was the real exposure: our current UGens don't
+  have decaying recursive state (that comes with LPF/EnvGen), but any
+  Faust def does.
+- **Tests**: `tests/denormals.rs` (the FPU switch: a subnormal result and
+  operand collapse to 0 after arming; idempotency; normal math
+  intact — each `#[test]` runs in its own thread, not contaminating) and in
+  `tests/golden.rs` the Faust tail `1-1' : fi.pole(0.9)` (y[n]=0.9ⁿ leaves
+  the normal range near sample 830): no subnormal sample and
+  `out[1000] == 0.0` exactly. 82 core tests / 114 with faust, goldens
+  intact (the scenes didn't generate subnormals).
 
-## F5 — Extensiones Faust: waveforms y tablas (completado 2026-06-12)
+## F5 — Faust extensions: waveforms and tables (completed 2026-06-12)
 
-El alcance salió de la revisión del 2026-06-12 (ver «Milestones futuros» en
-PLAN.md): de la lista original de F5 se implementó lo que aporta hoy —
-`waveform` + primitivas de tabla — y se descartó lo que el servidor ya
-resuelve por otro camino.
+The scope came from the 2026-06-12 review (see "Future milestones" in
+PLAN.md): of the original F5 list, what's useful today was implemented —
+`waveform` + table primitives — and what the server already solves
+another way was dropped.
 
-### Qué quedó hecho
+### What got done
 
-- **Tres ops nuevos en el schema JSON→Box** (`src/faust/boxes.rs`):
-  - `waveform` con `values` (array no vacío de números): tabla embebida en
-    la def, calculada numéricamente por el cliente (wavetables, funciones de
-    transferencia para waveshaping) sin formatear fuente Faust. Emite el par
-    (tamaño, contenido) como en Faust. FFI: `CboxWaveform` recibe un array
-    de boxes `CboxInt`/`CboxReal` **terminado en NULL** (verificado en la
-    fuente de faust, `box_signal_api.cpp`).
-  - `rdtable` (2 o 3 boxes en `in`) y `rwtable` (4 o 5): se componen como
-    `seq(par(...), primitiva)` — exactamente como los helpers `Aux` de
-    upstream, que esta vez **no** tienen el slip de `boxFmod` (revisado en
-    la fuente). La forma corta es el idioma `wf, idx : rdtable` con un
-    `waveform` ocupando (tamaño, init); Faust valida la aridad total al
-    compilar.
-  - Helper `number_box` compartido con el shorthand numérico (int si entra
-    en `c_int`, real si no).
-- **Descartes documentados** (en PLAN.md y `docs/schemas.md`): `soundfile`
-  — los datos de audio viven en los buffers del servidor; `PlayBuf`/`BufRd`
-  → bus → control `in` del def Faust cruza la señal sin copiar nada al
-  mundo Faust — y la polifonía nativa de Faust — el node tree es el
-  alocador de voces (una voz = un `/s_new`, las instancias comparten
-  factory) y el modo polifónico impone convenciones MIDI ajenas al modelo.
-  El backend interpreter (sin LLVM) y la Signal API quedan ligados al
-  target wasm de M14.
-- **Cliente Python**: demo `wavetable` — tabla de 256 puntos (4 armónicos
-  de sierra) calculada en Python, normalizada y enviada como `waveform`;
-  oscilador con `freq`/`amp` como sliders.
-- **Docs**: filas nuevas en la tabla de ops y sección «Tables and
-  waveforms» en `docs/schemas.md`, con el patrón buffers-como-señal.
-  Banner del server a F5.
+- **Three new ops in the JSON→Box schema** (`src/faust/boxes.rs`):
+  - `waveform` with `values` (a non-empty array of numbers): a table embedded in
+    the def, computed numerically by the client (wavetables, transfer
+    functions for waveshaping) without formatting Faust source. Emits the pair
+    (size, content) as in Faust. FFI: `CboxWaveform` receives an array
+    of `CboxInt`/`CboxReal` boxes **NULL-terminated** (verified in
+    faust's source, `box_signal_api.cpp`).
+  - `rdtable` (2 or 3 boxes in `in`) and `rwtable` (4 or 5): composed as
+    `seq(par(...), primitive)` — exactly like upstream's `Aux` helpers,
+    which this time do **not** have the `boxFmod` slip (checked in
+    the source). The short form is the idiom `wf, idx : rdtable` with a
+    `waveform` filling (size, init); Faust validates the total arity at
+    compile time.
+  - A shared `number_box` helper with the numeric shorthand (int if it fits
+    in `c_int`, real otherwise).
+- **Documented drops** (in PLAN.md and `docs/schemas.md`): `soundfile`
+  — audio data lives in the server's buffers; `PlayBuf`/`BufRd`
+  → bus → the Faust def's `in` control crosses the signal without copying anything to the Faust
+  world — and Faust's native polyphony — the node tree is the
+  voice allocator (one voice = one `/s_new`, instances share a
+  factory) and the polyphonic mode imposes MIDI conventions alien to the model.
+  The interpreter backend (no LLVM) and the Signal API stay tied to the
+  M14 wasm target.
+- **Python client**: a `wavetable` demo — a 256-point table (4 sawtooth
+  harmonics) computed in Python, normalized and sent as a `waveform`;
+  an oscillator with `freq`/`amp` as sliders.
+- **Docs**: new rows in the op table and a "Tables and
+  waveforms" section in `docs/schemas.md`, with the buffers-as-signal pattern.
+  Server banner to F5.
 
-### Verificación
+### Verification
 
-- `cargo test --features faust`: 118 (+4: ciclo exacto por la tabla con
-  contador `& 3`; oscilador de wavetable de 64 puntos a 440 Hz con RMS
-  1/√2; `rdtable` explícito con init constante; `rwtable` escribe-y-lee;
-  más 4 casos de error de validación y los ops en el kitchen sink).
-  `cargo test` core: 82, intacto. Clippy limpio en ambas configs (solo las
-  2 warnings preexistentes).
-- E2E: demo `wavetable` contra el server release con faust — `/done
-  /d_faust jwavetable`, `/s_new` + `/n_set freq` audibles, `/quit` limpio.
+- `cargo test --features faust`: 118 (+4: exact cycle through the table with
+  a `& 3` counter; a 64-point wavetable oscillator at 440 Hz with RMS
+  1/√2; explicit `rdtable` with a constant init; `rwtable` write-and-read;
+  plus 4 validation error cases and the ops in the kitchen sink).
+  `cargo test` core: 82, intact. Clippy clean in both configs (only the
+  2 preexisting warnings).
+- E2E: the `wavetable` demo against the release server with faust — `/done
+  /d_faust jwavetable`, `/s_new` + `/n_set freq` audible, `/quit` clean.
 
-## M9 — Documentación de desarrollo (completado 2026-06-12)
+## M9 — Developer documentation (completed 2026-06-12)
 
-### Qué quedó hecho
+### What got done
 
-- **`docs/architecture.md`** (en inglés, como todo `docs/`): mapa de hilos
-  (red / audio / NRT / compilador Faust, más el modo offline mono-hilo y
-  dónde se arma el flush-to-zero), mapa de módulos (tabla path → contenido),
-  ciclo de vida de la memoria (la regla «se aloca en red/NRT/compilador, se
-  usa en audio, se libera en red»; los dos cruces sin FIFO: buses de control
-  atómicos y buffers `Arc` inmutables), **tabla de capacidades pre-alocadas
-  con el modo de fallo de cada una al llenarse** (verificado caso por caso
-  en el código: cmd FIFO → `/fail`, garbage FIFO → lista de retención de 64
-  reintentada por bloque y `mem::forget` como último recurso, eventos
-  best-effort, cola de schedule → `SpentBundle` no vacío, slab/grupos →
-  `Rejected*`), relojes y scheduling (reloj de samples, conversión NTP en el
-  hilo de red, split de bloque), y los **8 invariantes** que un cambio no
-  puede romper (RT-safety, comandos pre-armados, `decode_packet`
-  obligatorio, identidad RT/NRT, buffers inmutables, salida solo por
-  `Out`/`ReplaceOut`, core sin features, determinismo en tests).
-- **Guía «cómo agregar una UGen»**: ejemplo `Lag` completo (estado en el
-  struct, `at()` para entradas, `output.len()` ≠ `BLOCK_SIZE` por los splits,
-  `ctx.offset` solo para UGens de bus), registro en `registry.rs` (variante
-  + `parse_kind`/`arity`/`build`), tests exigidos (señal + no-alloc +
-  golden si corresponde, con la nota de determinismo de `WhiteNoise`) y qué
-  documentación actualizar.
-- **Decisión (a), UI de Faust**: los labels son los nombres de control a
-  propósito (los nombres los pone el autor de la def, como `controls` en el
-  JSON UGen); paths de grupos ignorados, primera declaración gana,
-  `out`/`in` reservados al final y la def pisa lo reservado si los declara;
-  los params NO están ligados a buses de control hoy (eso es M11/`/n_map`).
-- **Decisión (b), plugins**: sin plugins dinámicos en v1 — Rust no tiene ABI
-  estable; extender = compilar en el crate (la API interna documentada es el
-  contrato) y la vía runtime para usuarios es `/d_faust`; si algún día hacen
-  falta, C ABI o wasm **versionadas** (lección scsynth, misma política que
-  el layout shm de M14).
-- **Punteros**: CLAUDE.md ahora lista los dos docs de `docs/` (con «keep
-  them current»); schemas.md abre remitiendo a architecture.md para
+- **`docs/architecture.md`** (in English, like all of `docs/`): a thread map
+  (network / audio / NRT / Faust compiler, plus the single-thread offline mode and
+  where flush-to-zero is armed), a module map (path → content table),
+  the memory lifecycle (the rule "allocated on network/NRT/compiler, used
+  on audio, freed on network"; the two crossings without a FIFO: atomic control
+  buses and immutable `Arc` buffers), **a table of pre-allocated capacities
+  with each one's failure mode when full** (verified case by case
+  in the code: cmd FIFO → `/fail`, garbage FIFO → a 64-entry retention list
+  retried per block and `mem::forget` as a last resort, events
+  best-effort, schedule queue → non-empty `SpentBundle`, slab/groups →
+  `Rejected*`), clocks and scheduling (sample clock, NTP conversion on the
+  network thread, block split), and the **8 invariants** a change cannot
+  break (RT-safety, pre-built commands, mandatory `decode_packet`,
+  RT/NRT identity, immutable buffers, output only via
+  `Out`/`ReplaceOut`, core without features, determinism in tests).
+- **"How to add a UGen" guide**: a complete `Lag` example (state in the
+  struct, `at()` for inputs, `output.len()` ≠ `BLOCK_SIZE` due to the splits,
+  `ctx.offset` only for bus UGens), registration in `registry.rs` (the variant
+  + `parse_kind`/`arity`/`build`), required tests (signal + no-alloc +
+  golden if applicable, with the `WhiteNoise` determinism note) and what
+  documentation to update.
+- **Decision (a), Faust UI**: the labels are the control names on
+  purpose (the author of the def picks the names, like `controls` in the
+  UGen JSON); group paths ignored, first declaration wins,
+  `out`/`in` reserved at the end and the def overrides the reserved ones if it declares
+  them; the params are NOT tied to control buses today (that's M11/`/n_map`).
+- **Decision (b), plugins**: no dynamic plugins in v1 — Rust has no stable
+  ABI; extend = compile in the crate (the documented internal API is the
+  contract) and the runtime path for users is `/d_faust`; if they're ever
+  needed, a **versioned** C ABI or wasm (scsynth's lesson, same policy as
+  the M14 shm layout).
+- **Pointers**: CLAUDE.md now lists the two `docs/` docs (with "keep
+  them current"); schemas.md opens by referring to architecture.md for
   internals.
-- **Rustdoc**: las 2 warnings (links a `FaustArgs`, item privado, desde
-  `denormals.rs` y `compiler.rs`) corregidas a texto plano; `cargo doc
-  --no-deps` limpio con y sin feature.
+- **Rustdoc**: the 2 warnings (links to `FaustArgs`, a private item, from
+  `denormals.rs` and `compiler.rs`) fixed to plain text; `cargo doc
+  --no-deps` clean with and without the feature.
 
-### Verificación
+### Verification
 
-- Afirmaciones del doc verificadas contra el código antes de escribirlas:
-  capacidades y constantes (`engine.rs`, `node/mod.rs`, `dsp/mod.rs`,
-  `buffer.rs`), timeout del socket (100 ms), reintento de `pending_garbage`
-  por bloque, semilla global de `WhiteNoise`, conversión
-  `current_samples() + delta·sr`.
-- `cargo test` 82 / `--features faust` 118 — intactos (solo cambiaron
-  comentarios de doc en `src/`); `cargo doc` sin warnings en ambas configs.
+- The doc's claims verified against the code before writing them:
+  capacities and constants (`engine.rs`, `node/mod.rs`, `dsp/mod.rs`,
+  `buffer.rs`), the socket timeout (100 ms), the `pending_garbage` retry
+  per block, `WhiteNoise`'s global seed, the
+  `current_samples() + delta·sr` conversion.
+- `cargo test` 82 / `--features faust` 118 — intact (only doc
+  comments in `src/` changed); `cargo doc` with no warnings in both configs.
 
-## M8 — Reloj de samples como timebase del cliente (completado 2026-06-12)
+## M8 — The sample clock as the client's timebase (completed 2026-06-12)
 
-El servidor expone su reloj de samples y acepta agendar por sample absoluto;
-el cliente puede usar el reloj de audio como maestro en vez del reloj del
-SO (que deriva decenas de ppm respecto del cristal del DAC). Los dos
-caminos conviven: NTP (M6) y samples (M8) desembocan en la misma cola
-`Cmd::Schedule`, así que clientes de ambos tipos coexisten contra el mismo
-servidor.
+The server exposes its sample clock and accepts scheduling by absolute sample;
+the client can use the audio clock as master instead of the OS clock
+(which drifts tens of ppm relative to the DAC crystal). The two
+paths coexist: NTP (M6) and samples (M8) feed the same
+`Cmd::Schedule` queue, so clients of both types coexist against the same
+server.
 
-### Qué quedó hecho
+### What got done
 
-- **`/clock`** → `/clock.reply h <samples> d <sampleRate>`: el contador de
-  samples del engine (el `AtomicU64` que ya publicaba desde M6) y la sample
-  rate real del dispositivo.
-- **`/sched <h target> <b packet>`**: agenda un paquete OSC completo en un
-  sample **absoluto**, atómico y sample-accurate (mismo split de bloque que
-  M6). Decisiones: mensaje contenedor en vez de reinterpretar el timetag
-  (que es formato NTP por especificación — no romper clientes estándar);
-  los timetags internos del blob se **ignoran** (un `/sched` = un instante);
-  target pasado = próximo bloque, como los bundles NTP tardíos; target
-  `i` int32 tolerado (clientes a mano) pero se desborda en <13 h a 48 kHz;
-  `/fail` por mensaje malo individual, el resto del paquete dispara igual
-  (mismo criterio que `schedule_bundle`); no agendable dentro de un bundle
-  NTP ni válido en partituras NRT (los timetags de score ya son exactos).
-- **Cliente de referencia `examples/sample_clock.py`** (stdlib, importa los
-  helpers OSC de json_client.py, que ganó el tag `h` int64 — encode con
-  marker `Int64`, decode — y `reply(quiet=)`): clase `SampleClock` con
-  anclas estilo NTP (t0/t1 alrededor de la consulta, par (punto medio,
-  contador), incertidumbre = semiancho), ajuste por cuadrados mínimos sobre
-  ventana deslizante de 64 anclas (olvido), `now()`/`local_time_of()`, y un
-  patrón de 8 notas con espaciado **exacto en samples** agendado por
-  adelantado (lead 0.3 s) re-anclando en cada beat. Honestidad del demo: el
-  slope necesita minutos de línea de base para mostrar deriva real — en una
-  corrida corta domina la cuantización por saltos de buffer del contador
-  (ruido acotado: solo afecta cuándo se *envía* un /sched, jamás cuándo
-  dispara) — y el reporte lo dice.
-- **Docs**: `docs/sample-clock.md` nuevo (protocolo, receta del modelo, por
-  qué la latencia no importa, caveats: samples procesados vs escuchados,
-  pausa en xruns, saltos de buffer; diferencia con scsynth) + párrafo en
-  schemas.md (Timed bundles) + architecture.md (los dos front-ends de la
-  misma cola). Banner a M8.
+- **`/clock`** → `/clock.reply h <samples> d <sampleRate>`: the engine's
+  sample counter (the `AtomicU64` it already published since M6) and the device's
+  real sample rate.
+- **`/sched <h target> <b packet>`**: schedules a full OSC packet at an
+  **absolute** sample, atomic and sample-accurate (the same block split as
+  M6). Decisions: a container message instead of reinterpreting the timetag
+  (which is NTP format by spec — don't break standard clients);
+  the blob's internal timetags are **ignored** (a `/sched` = one instant);
+  a past target = next block, like late NTP bundles; an
+  `i` int32 target tolerated (hand clients) but it overflows in <13 h at 48 kHz;
+  `/fail` per bad individual message, the rest of the packet fires anyway
+  (same criterion as `schedule_bundle`); not schedulable within an NTP
+  bundle nor valid in NRT scores (score timetags are already exact).
+- **Reference client `examples/sample_clock.py`** (stdlib, imports the
+  OSC helpers from json_client.py, which gained the `h` int64 tag — encode with
+  an `Int64` marker, decode — and `reply(quiet=)`): a `SampleClock` class with
+  NTP-style anchors (t0/t1 around the query, a (midpoint,
+  counter) pair, uncertainty = half-width), least-squares fit over a sliding
+  window of 64 anchors (forgetting), `now()`/`local_time_of()`, and an
+  8-note pattern with **sample-exact spacing** scheduled
+  ahead (0.3 s lead) re-anchoring on each beat. The demo's honesty: the
+  slope needs minutes of baseline to show real drift — on a short
+  run the quantization by counter buffer jumps dominates (bounded
+  noise: it only affects when a /sched is *sent*, never when it
+  fires) — and the report says so.
+- **Docs**: `docs/sample-clock.md` new (protocol, model recipe, why
+  latency doesn't matter, caveats: samples processed vs heard,
+  pause on xruns, buffer jumps; difference from scsynth) + a paragraph in
+  schemas.md (Timed bundles) + architecture.md (the two front-ends of the
+  same queue). Banner to M8.
 
-### Verificación
+### Verification
 
-- Tests nuevos: `/clock` reporta el contador y avanza con los bloques
-  (tests/osc.rs); validación de argumentos de `/sched` (sin args, sin blob,
-  target negativo, blob basura, query no agendable → `/fail` nombrando el
-  mensaje); target `Int` + blob bundle con timetag NTP futuro ignorado;
-  y el central en tests/scheduling.rs: `/sched` a mitad de bloque y assert
-  del **sample exacto** (5026 = target+1 por sin(0)=0) — sin la vecindad
-  que necesita el test NTP equivalente. 86 core / 122 con faust, clippy y
-  rustdoc limpios.
-- E2E con el servidor real: `sample_clock.py` completo (anclas, modelo,
-  8 beats audibles regulares, slope reportado) y el one-liner `/clock` de
-  GUIA.md (contador avanza ≈22050 por 0.5 s a 44.1 kHz).
+- New tests: `/clock` reports the counter and advances with the blocks
+  (tests/osc.rs); validation of `/sched`'s arguments (no args, no blob,
+  negative target, garbage blob, unschedulable query → `/fail` naming the
+  message); an `Int` target + a bundle blob with a future NTP timetag ignored;
+  and the central one in tests/scheduling.rs: `/sched` mid-block and an assert
+  of the **exact sample** (5026 = target+1 due to sin(0)=0) — without the neighborhood
+  the equivalent NTP test needs. 86 core / 122 with faust, clippy and
+  rustdoc clean.
+- E2E with the real server: the full `sample_clock.py` (anchors, model,
+  8 audible regular beats, reported slope) and GUIA.md's `/clock` one-liner
+  (the counter advances ≈22050 over 0.5 s at 44.1 kHz).
 
-## M12 — Grupos auto-ordenados por conexiones de buses (completado 2026-06-12)
+## M12 — Bus-connection auto-ordered groups (completed 2026-06-12)
 
-El servidor infiere el DAG de dependencias entre nodos a partir de los
-buses que cada def lee (`In`, `in` Faust) y escribe (`Out`/`ReplaceOut`,
-`out` Faust), y mantiene **grupos auto-ordenados opt-in**: los grupos pasan
-a ser canales de multipista y el cliente deja de micro-gestionar el orden.
-Cero cambios en el hilo de audio: los re-ordenamientos llegan como
-`Cmd::MoveNode` comunes.
+The server infers the dependency DAG between nodes from the
+buses each def reads (`In`, Faust's `in`) and writes (`Out`/`ReplaceOut`,
+Faust's `out`), and keeps **opt-in auto-ordered groups**: groups become
+multitrack channels and the client stops micro-managing order.
+Zero changes on the audio thread: the reorderings arrive as
+ordinary `Cmd::MoveNode`.
 
-### Qué quedó hecho
+### What got done
 
-- **`src/osc/graph.rs`**: `BusUsage` (bitmasks `u128` de lectura/escritura
-  + flag `dynamic`), análisis por def — `ugen_usage` (índices de bus
-  constantes o por control = estáticos, registrando qué controles son
-  índices de bus; índice por señal = `dynamic`) y `faust_usage`
-  (`out..out+N` / `in..in+M` por los controles reservados, mismos clamps
-  que `FaustSynth`) —, `stable_topo_sort` (Kahn estable: entre los listos
-  gana el más temprano del orden actual; barrera = nodo dynamic con aristas
-  contra todo según posición; deadlock = ciclo → se libera el más temprano:
-  los ciclos conservan orden relativo = un bloque de delay, como un return
-  de multipista; `ReplaceOut` cuenta lectura+escritura, así un insert fx
-  cae entre las fuentes y los lectores; escritores puros al mismo bus no
-  generan arista — mezclar conmuta), y **`TreeMirror`**: espejo del árbol
-  en el hilo de red (topología, valores de controles por nodo, usage, flag
-  auto por grupo) alimentado por el mismo stream de `Cmd` que recibe el
-  engine, con rollback por la basura de rechazos (`remove` idempotente).
-- **`CmdTranslator` integra el espejo**: cada brazo de `translate()`
-  actualiza el espejo y, si cambia la topología o el usage, re-ordena la
-  cadena de ancestros auto (`resort_from`) apéndice de moves al mismo batch
-  — por eso funciona igual en inmediato, en bundles con timetag (el sort
-  dispara atómico con el bundle) y en **scores NRT** (el renderer comparte
-  el translator). `/n_set` sobre un control usado como índice de bus
-  re-analiza y re-ordena. `/n_before`/`/n_after` con nodo o target dentro
-  de un grupo auto → `Err`/`/fail`. Liberaciones no re-ordenan (quitar
-  nodos nunca invalida un orden topológico).
-- **Protocolo**: `/g_sortMode groupID mode` (1 = auto, 0 = manual; acepta
-  pares; root permitido; agendable), `/g_queryTree [gid] [flag]` →
-  `/g_queryTree.reply` **formato scsynth** (flag 1 incluye nombres y
-  valores de controles desde el espejo) y `/g_dumpGraph [gid]` →
-  `/g_dumpGraph.reply` con el grafo inferido legible (reads/writes/dynamic
-  por hijo).
-- **Refactor**: los handlers inmediatos duplicados del server (`/s_new`,
+- **`src/osc/graph.rs`**: `BusUsage` (`u128` read/write bitmasks
+  + a `dynamic` flag), per-def analysis — `ugen_usage` (constant or
+  control bus indices = static, recording which controls are bus
+  indices; a signal index = `dynamic`) and `faust_usage`
+  (`out..out+N` / `in..in+M` from the reserved controls, the same clamps
+  as `FaustSynth`) —, `stable_topo_sort` (stable Kahn: among the ready,
+  the earliest of the current order wins; a barrier = a dynamic node with edges
+  against everything by position; a deadlock = a cycle → the earliest is
+  released: cycles keep relative order = one block of delay, like a return
+  in multitrack; `ReplaceOut` counts as read+write, so an insert fx
+  lands between sources and readers; pure writers to the same bus don't
+  generate an edge — mixing commutes), and **`TreeMirror`**: a mirror of the tree
+  on the network thread (topology, per-node control values, usage, the auto
+  flag per group) fed by the same `Cmd` stream the engine receives,
+  with rollback via the rejection garbage (`remove` idempotent).
+- **`CmdTranslator` integrates the mirror**: each arm of `translate()`
+  updates the mirror and, if the topology or usage changes, reorders the
+  ancestor chain that is auto (`resort_from`), appending moves to the same batch
+  — that's why it works the same immediately, in timed bundles (the sort
+  fires atomic with the bundle) and in **NRT scores** (the renderer shares
+  the translator). A `/n_set` over a control used as a bus index
+  re-analyzes and reorders. `/n_before`/`/n_after` with a node or target inside
+  an auto group → `Err`/`/fail`. Frees don't reorder (removing
+  nodes never invalidates a topological order).
+- **Protocol**: `/g_sortMode groupID mode` (1 = auto, 0 = manual; accepts
+  pairs; root allowed; schedulable), `/g_queryTree [gid] [flag]` →
+  `/g_queryTree.reply` in **scsynth format** (flag 1 includes control names and
+  values from the mirror) and `/g_dumpGraph [gid]` →
+  `/g_dumpGraph.reply` with the inferred graph readable (reads/writes/dynamic
+  per child).
+- **Refactor**: the server's duplicated immediate handlers (`/s_new`,
   `/n_set`, `/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
-  `/g_deepFree`) se unificaron en `handle_via_translate` — un solo camino
-  de traducción para inmediato/bundle/score, que era prerequisito para que
-  el espejo no se desincronice. De paso `/g_new` por bundle ganó la
-  validación `id > 0` que solo tenía el camino inmediato.
-- **Docs y ejemplo**: `docs/auto-order.md` (reglas del análisis, ciclos,
-  barreras, caveat espejo-adelantado-del-engine), sección en schemas.md
-  (+ `/g_sortMode` en la lista de agendables), architecture.md (fila de
-  módulo + espejo en el hilo de red), `examples/auto_order.py` (cadena
-  fuente→fx→master armada al revés: silencio en grupo manual, suena al
-  activar `/g_sortMode`, grafo impreso antes/después, segunda voz en head
-  que se ordena sola), sección en GUIA.md.
+  `/g_deepFree`) unified into `handle_via_translate` — a single translation
+  path for immediate/bundle/score, which was a prerequisite for the
+  mirror not to desync. Along the way, `/g_new` via bundle gained the
+  `id > 0` validation that only the immediate path had.
+- **Docs and example**: `docs/auto-order.md` (the analysis rules, cycles,
+  barriers, the mirror-ahead-of-engine caveat), a section in schemas.md
+  (+ `/g_sortMode` in the schedulable list), architecture.md (a module
+  row + mirror on the network thread), `examples/auto_order.py` (a source→fx→master
+  chain built backwards: silent in a manual group, sounds when
+  activating `/g_sortMode`, the graph printed before/after, a second voice at head
+  that orders itself), a section in GUIA.md.
 
-### Decisiones y caveats
+### Decisions and caveats
 
-- El espejo refleja comandos **al enviarse**: lo agendado en un bundle
-  futuro se espeja ya (el queryTree puede mostrar brevemente el estado
-  futuro); un re-sort que corre contra un bundle pendiente converge al
-  siguiente cambio. Documentado.
-- Barreras dinámicas: nada se ordena a través de ellas aunque el subgrafo
-  estático lo pida (conservador a propósito).
-- La capacidad del espejo es la del hilo de red (HashMaps): los límites
-  reales los pone el engine y los rechazos ruedan atrás por el garbage.
+- The mirror reflects commands **when sent**: what's scheduled in a future
+  bundle is mirrored already (queryTree may briefly show the
+  future state); a re-sort that runs against a pending bundle converges on the
+  next change. Documented.
+- Dynamic barriers: nothing is ordered across them even if the static
+  subgraph asks for it (conservative on purpose).
+- The mirror's capacity is the network thread's (HashMaps): the real
+  limits are set by the engine and rejections roll back via the garbage.
 
-### Verificación
+### Verification
 
-- 10 tests nuevos en `tests/auto_order.rs` (+1 con faust): cadena invertida
-  ordenada y **audible** (RMS exacto 0.1/√2) vs. silencio en grupo manual;
-  `/g_sortMode` sobre hijos existentes y vuelta a manual; `/fail` de moves
-  manuales en grupos auto y de `/g_sortMode` sobre grupos inexistentes o
-  synths; formato completo de `/g_queryTree.reply` con flag 1; barrera
-  dinámica reportada y respetada; ciclo de feedback conserva orden de
-  inserción con la fuente ordenada antes; `/n_set` de control-índice
-  re-ordena (silencio → sonido); score NRT con `/g_sortMode` renderiza la
-  cadena invertida; def Faust ordenado por su control reservado `out`.
-  **96 core / 133 con faust**, clippy y rustdoc limpios.
-- E2E: `examples/auto_order.py` contra el server real — dump antes/después
-  muestra el reorden (manual: master,fx,src → auto: src,fx,master) y la
-  cadena suena.
+- 10 new tests in `tests/auto_order.rs` (+1 with faust): an inverted chain
+  ordered and **audible** (RMS exactly 0.1/√2) vs. silence in a manual group;
+  `/g_sortMode` over existing children and back to manual; `/fail` of manual
+  moves in auto groups and of `/g_sortMode` over nonexistent groups or
+  synths; the full `/g_queryTree.reply` format with flag 1; a dynamic
+  barrier reported and respected; a feedback cycle keeps insertion
+  order with the source ordered first; a `/n_set` of a control index
+  reorders (silence → sound); an NRT score with `/g_sortMode` renders the
+  inverted chain; a Faust def ordered by its reserved `out` control.
+  **96 core / 133 with faust**, clippy and rustdoc clean.
+- E2E: `examples/auto_order.py` against the real server — the dump before/after
+  shows the reorder (manual: master,fx,src → auto: src,fx,master) and the
+  chain sounds.
 
-## M13 — Procesamiento paralelo del árbol (completado 2026-06-12)
+## M13 — Parallel tree processing (completed 2026-06-12)
 
-Los hijos independientes de un grupo marcado con `/g_parallel` corren en
-paralelo sobre un pool de workers (`--workers N`), por **etapas** derivadas
-del mismo análisis de buses de M12 — el análogo del `ParGroup` de supernova
-pero **inferido y verificado por el engine** en vez de prometido por el
-usuario: una declaración equivocada no corrompe audio, solo serializa.
+The independent children of a group marked with `/g_parallel` run in
+parallel over a pool of workers (`--workers N`), by **stages** derived
+from the same M12 bus analysis — the analog of supernova's `ParGroup`
+but **inferred and verified by the engine** instead of promised by the
+user: a wrong declaration doesn't corrupt audio, it just serializes.
 
-### Decisión de diseño central
+### Central design decision
 
-Las máscaras `BusUsage` viajan **al engine** dentro de `Cmd::AddSynth` (y
-se re-envían con `Cmd::SetUsage` cuando un `/n_set` toca un control usado
-como índice de bus). El particionado en etapas ocurre en el hilo de audio
-con datos propios — bitops puros, sin alocar — así la *seguridad* del
-paralelismo jamás depende del espejo de red (que puede ir adelantado por
-bundles agendados). Regla greedy por bloque, en orden de hijos: un hijo
-entra a la etapa mientras no escriba nada que la etapa lea o escriba, ni
-lea nada que la etapa escriba; el conflicto cierra la etapa (= los
-escritores al mismo bus se serializan solos, en orden); un hijo `dynamic`
-corre aislado; subgrupos = unidades (unión del subárbol); grupos paralelos
-anidados dentro de un worker corren secuenciales (v1).
+The `BusUsage` masks travel **to the engine** inside `Cmd::AddSynth` (and
+are re-sent with `Cmd::SetUsage` when a `/n_set` touches a control used
+as a bus index). Stage partitioning happens on the audio thread with its own
+data — pure bitops, no allocation — so the *safety* of the
+parallelism never depends on the network mirror (which can run ahead due to
+scheduled bundles). A greedy rule per block, in child order: a child
+enters the stage as long as it doesn't write anything the stage reads or writes, nor
+read anything the stage writes; the conflict closes the stage (= the
+writers to the same bus serialize themselves, in order); a `dynamic` child
+runs isolated; subgroups = units (the subtree's union); nested parallel
+groups within a worker run sequential (v1).
 
-**Consecuencia clave: bit-idéntico al secuencial.** Los miembros de una
-etapa tocan buses disjuntos dos a dos y no leen lo que la etapa escribe ⇒
-sus resultados no dependen del interleaving; las etapas preservan el orden
-⇒ mismas sumas en el mismo orden. `--workers` solo cambia el tiempo de
-pared. Goldens e identidad RT/NRT intactos.
+**Key consequence: bit-identical to sequential.** A stage's members
+touch pairwise-disjoint buses and don't read what the stage writes ⇒
+their results don't depend on the interleaving; the stages preserve order
+⇒ the same sums in the same order. `--workers` only changes wall
+time. Goldens and RT/NRT identity intact.
 
-### Qué quedó hecho
+### What got done
 
-- **Refactor de soporte**: `BusUsage` se mudó a `dsp` (lo usan análisis y
-  engine); los buses de audio pasaron a `UnsafeCell` por bus
-  (`Buses::audio()`/`audio_mut()` unsafe con contrato documentado) y
-  `ProcessCtx.buses` es `&Buses` (el struct ahora es `Copy` — cada worker
-  lleva el suyo); los slots del `NodeTree` pasaron a
-  `UnsafeCell<Option<NodeSlot>>` con `unsafe impl Sync` (subárboles
-  disjuntos por etapa = un visitante por slot); `NodeKind::Synth` ahora
-  lleva `{ node, usage }`; el process pasó de pila DFS a recursión con
-  `process_index` (con pool) y `process_index_seq` (workers: sin fork-join
-  anidado).
-- **`server/workers.rs`**: pool fork-join. Conductor publica la etapa
-  (job + cursor + remaining + epoch Release), despierta solo a los
-  parqueados, participa del robo de trabajo (cursor `fetch_add`), espera
-  `remaining == 0` y después `active == 0` (el contador `active` cierra la
-  ventana ABA de rezagados sobre cursor/job). Workers: spin acotado →
-  yield → park (re-chequeo anti-lost-wakeup); FTZ armado al nacer (los dos
-  modos quedan sample-idénticos también en paralelo). Camino del conductor
-  sin alocaciones ni locks; el único syscall es `unpark` al salir de idle.
-- **Protocolo y CLI**: `/g_parallel groupID mode` (agendable, scores NRT
-  incluidos, espejado para `/g_dumpGraph` que ahora muestra
-  `(auto, parallel)`), `--workers N` en el server RT y en `--nrt`
-  (`RenderConfig.workers`); `engine_pair_with_workers` (el `engine_pair`
-  de siempre = 0 workers: toda la suite previa corre idéntica).
-- **Benchmark** (`examples/bench.rs`, sección nueva): 8 subgrupos × 125
-  sines en buses disjuntos — en esta máquina ~1.76x con 1 worker, ~2x con
-  2, **~3.3x con 3** y degradación con 7 (SMT/contención), contra los
-  ~1790 synth·xRT de un core.
-- **Docs**: `docs/parallel.md` (uso, formación de etapas, determinismo,
-  cuándo no sirve), architecture.md (workers en el mapa de hilos, fila de
-  módulo, invariantes 1 y 4 ampliados: la regla de partición es el
-  contrato unsafe de `audio_mut` y de los slots), schemas.md
-  (`/g_parallel` agendable + párrafo), GUIA.md (sección M13 con el bench
-  como demo + checklist + conteos).
+- **Support refactor**: `BusUsage` moved to `dsp` (analysis and the
+  engine use it); the audio buses moved to per-bus `UnsafeCell`
+  (`Buses::audio()`/`audio_mut()` unsafe with a documented contract) and
+  `ProcessCtx.buses` is `&Buses` (the struct is now `Copy` — each worker
+  carries its own); the `NodeTree`'s slots moved to
+  `UnsafeCell<Option<NodeSlot>>` with `unsafe impl Sync` (disjoint subtrees
+  per stage = one visitor per slot); `NodeKind::Synth` now
+  carries `{ node, usage }`; the process went from a DFS stack to recursion with
+  `process_index` (with a pool) and `process_index_seq` (workers: no nested
+  fork-join).
+- **`server/workers.rs`**: a fork-join pool. The conductor publishes the stage
+  (job + cursor + remaining + Release epoch), wakes only the
+  parked ones, participates in work stealing (cursor `fetch_add`), waits for
+  `remaining == 0` and then `active == 0` (the `active` counter closes the
+  ABA window of stragglers over cursor/job). Workers: bounded spin →
+  yield → park (re-check anti-lost-wakeup); FTZ armed at birth (the two
+  modes stay sample-identical in parallel too). The conductor's path with no
+  allocations or locks; the only syscall is `unpark` on leaving idle.
+- **Protocol and CLI**: `/g_parallel groupID mode` (schedulable, NRT scores
+  included, mirrored for `/g_dumpGraph` which now shows
+  `(auto, parallel)`), `--workers N` in the RT server and in `--nrt`
+  (`RenderConfig.workers`); `engine_pair_with_workers` (the usual `engine_pair`
+  = 0 workers: the whole previous suite runs identical).
+- **Benchmark** (`examples/bench.rs`, new section): 8 subgroups × 125
+  sines on disjoint buses — on this machine ~1.76x with 1 worker, ~2x with
+  2, **~3.3x with 3** and degradation with 7 (SMT/contention), against the
+  ~1790 synth·xRT of one core.
+- **Docs**: `docs/parallel.md` (usage, stage formation, determinism,
+  when it doesn't help), architecture.md (workers in the thread map, a module
+  row, invariants 1 and 4 expanded: the partition rule is the
+  unsafe contract of `audio_mut` and of the slots), schemas.md
+  (`/g_parallel` schedulable + a paragraph), GUIA.md (the M13 section with the bench
+  as a demo + checklist + counts).
 
-### Verificación
+### Verification
 
-- `tests/parallel.rs` (4): **bit-identidad** secuencial vs 3 workers sobre
-  un grafo tortura (fuentes disjuntas, subgrupo anidado como unidad, 2
-  insert fx, 2 masters en conflicto serializados, nodo dinámico, y un
-  `/n_set` que re-apunta un bus a mitad de test); supervivencia de muchos
-  ciclos publish/park/unpark + shutdown limpio; `/fail` de `/g_parallel`
-  sobre no-grupos; **NRT con workers bit-idéntico**. `tests/rt_safety.rs`
-  ganó `parallel_dispatch_does_not_allocate` (16 fuentes disjuntas, 2
-  workers, 300 bloques bajo `assert_no_alloc` en el conductor; los workers
-  corren el mismo código de process ya cubierto — el guardián por-hilo no
-  los envuelve, anotado como límite conocido).
-- E2E: server RT `--workers 2` con cadena auto-ordenada y paralela sonando
-  (dump `(auto, parallel)`); `--nrt --workers 2` produce un WAV
-  **byte-idéntico** al secuencial (`cmp` limpio).
-- **101 tests core / 138 con faust**, clippy y rustdoc limpios.
+- `tests/parallel.rs` (4): **bit-identity** sequential vs 3 workers over
+  a torture graph (disjoint sources, a nested subgroup as a unit, 2
+  insert fx, 2 conflicting masters serialized, a dynamic node, and a
+  `/n_set` that re-points a bus mid-test); survival of many
+  publish/park/unpark cycles + clean shutdown; `/fail` of `/g_parallel`
+  over non-groups; **NRT with workers bit-identical**. `tests/rt_safety.rs`
+  gained `parallel_dispatch_does_not_allocate` (16 disjoint sources, 2
+  workers, 300 blocks under `assert_no_alloc` in the conductor; the workers
+  run the same process code already covered — the per-thread guard does not
+  wrap them, noted as a known limit).
+- E2E: RT server `--workers 2` with an auto-ordered, parallel chain sounding
+  (dump `(auto, parallel)`); `--nrt --workers 2` produces a WAV
+  **byte-identical** to sequential (`cmp` clean).
+- **101 core tests / 138 with faust**, clippy and rustdoc clean.
 
-## M14 — Transportes locales, modo embebido y llamadas síncronas (completado 2026-06-12)
+## M14 — Local transports, embedded mode and synchronous calls (completed 2026-06-12)
 
-OSC queda como única codificación; al transporte UDP se suman dos locales
-construidos sobre un **segmento de memoria compartida versionado**, y el
-servidor se puede embeber como biblioteca con una C ABI. La asincronía deja
-de ser obligatoria para el cliente: fachada síncrona (bloquea el llamador,
-jamás el servidor) y un render offline 100% síncrono para el flujo
-científico.
+OSC stays as the single encoding; the UDP transport is joined by two locals
+built on a **versioned shared-memory segment**, and the
+server can be embedded as a library with a C ABI. Asynchrony stops
+being mandatory for the client: a synchronous facade (blocks the caller,
+never the server) and a 100% synchronous offline render for the
+scientific flow.
 
-### Qué quedó hecho
+### What got done
 
-- **`server/ipc.rs` — el segmento** (135 360 bytes, ABI v1, fijado por
-  test): header con magic + **versión de layout** (mismatch = rechazo al
-  conectar; la lección de ABI de scsynth), sample rate, y dos planos:
-  - **Data plane**: el reloj de samples **espejado por el hilo de audio en
-    cada bloque** (un store Release extra en `process_block`; anclas M8 sin
-    jitter de transporte) y los **buses de control viviendo dentro del
-    segmento** — `ControlBuses` se refactorizó a puntero + owner
-    (`from_raw`), así el `InCtl` del engine lee los mismos atomics que el
-    proceso cliente escribe: un write externo suena al bloque siguiente sin
-    comando alguno.
-  - **Command plane**: dos rings SPSC de bytes (64 KiB c/u, paquetes OSC
-    con prefijo de longitud, head/tail Release/Acquire). A diferencia de
-    UDP: **backpressure** en vez de pérdida silenciosa. Contenido tan
-    no-confiable como un datagrama: valida `decode_packet` y la basura
-    re-sincroniza el ring en vez de colgarlo.
-  - Respaldos: archivo mapeado (`mmap` MAP_SHARED vía libc, ya transitiva
-    de cpal — cero deps nuevas; ponerlo en `/dev/shm`) o heap alineado
-    (in-process). Windows queda diferido.
-- **Refactor `ClientId`** (`osc::ClientId::{Udp, Ring}`): la identidad de
-  cliente dejó de ser `SocketAddr` en server.rs, `NrtRequest` y
-  `CompileRequest`; los replies se enrutan por transporte. El loop drena el
-  ring en cada iteración; con ring conectado el timeout del socket baja a
-  2 ms (v1 sin semáforo cross-process: latencia de comando acotada por el
-  tick, data plane sin latencia — diferido explícito).
-- **CLI**: `clausters --shm <path>` crea el segmento y lo conecta (convive
-  con UDP y `--workers`).
-- **C ABI embebida** (`src/embed.rs`, feature `embed`, crate-type cdylib):
-  `clausters_abi_version` (== versión del segmento),
-  **`clausters_render`** — el llamado científico síncrono: partitura
-  binaria → frames f32 planos (puntero + longitud, frontera de estructuras
-  básicas) —, y el servidor vivo in-process: `clausters_open` (dispositivo
-  + engine + loop de red con el host como cliente de ring; socket efímero
-  localhost solo como tick/escape de debug), `send`/`poll`,
-  `clock`/`sample_rate`/`ctl_set`/`ctl_get` directos al data plane,
-  `close` (manda `/quit` por el ring y joinea).
-- **Binding Python** (`clients/python/clausters.py`, stdlib pura):
-  `ShmClient` (mmap + struct: layout parseado a mano, mismos offsets que
-  Rust), `Clausters` (ctypes sobre la cdylib, chequea ABI al cargar),
-  `render()` → `array('f')` (numpy puede envolver sin copiar — elección del
-  cliente, no dependencia), y `request()` = la **fachada síncrona** en los
-  dos transportes (sobre UDP ya existía: `json_client.Client.reply`).
-  Correlación por serialización de requests; token de protocolo diferido.
-- **Demos**: `examples/shm_client.py` (reloj leído del segmento, `/status`
-  por ring, fade audible escribiendo el bus 7 en memoria compartida) y
-  `examples/embed_render.py` (render síncrono → WAV).
-- **Docs**: `docs/ipc.md` (segmento, rings, C ABI de referencia, fachada
-  síncrona, caveats del cliente Python puro), architecture.md (loop de red,
-  filas de módulos, invariante nuevo: **toda frontera binaria va
-  versionada**), schemas.md (párrafo de transportes), GUIA.md (sección M14,
-  checklist, conteos).
+- **`server/ipc.rs` — the segment** (135,360 bytes, ABI v1, pinned by
+  test): a header with a magic + **layout version** (mismatch = rejection on
+  connect; scsynth's ABI lesson), sample rate, and two planes:
+  - **Data plane**: the sample clock **mirrored by the audio thread on
+    each block** (one extra Release store in `process_block`; M8 anchors without
+    transport jitter) and the **control buses living inside the
+    segment** — `ControlBuses` was refactored to a pointer + owner
+    (`from_raw`), so the engine's `InCtl` reads the same atomics the client
+    process writes: an external write sounds the next block with no
+    command at all.
+  - **Command plane**: two SPSC byte rings (64 KiB each, OSC packets
+    with a length prefix, Release/Acquire head/tail). Unlike
+    UDP: **backpressure** instead of silent loss. Content as
+    untrusted as a datagram: `decode_packet` validates and garbage
+    re-syncs the ring instead of hanging it.
+  - Backings: a mapped file (`mmap` MAP_SHARED via libc, already transitive
+    from cpal — zero new deps; put it in `/dev/shm`) or aligned heap
+    (in-process). Windows deferred.
+- **`ClientId` refactor** (`osc::ClientId::{Udp, Ring}`): client
+  identity stopped being a `SocketAddr` in server.rs, `NrtRequest` and
+  `CompileRequest`; replies are routed by transport. The loop drains the
+  ring on each iteration; with a ring connected the socket timeout drops to
+  2 ms (v1 with no cross-process semaphore: command latency bounded by the
+  tick, the data plane without latency — an explicit deferral).
+- **CLI**: `clausters --shm <path>` creates the segment and connects it (coexists
+  with UDP and `--workers`).
+- **Embedded C ABI** (`src/embed.rs`, feature `embed`, crate-type cdylib):
+  `clausters_abi_version` (== the segment's version),
+  **`clausters_render`** — the synchronous scientific call: a binary
+  score → flat f32 frames (pointer + length, the basic-structures
+  boundary) —, and the live in-process server: `clausters_open` (device
+  + engine + network loop with the host as a ring client; an ephemeral
+  localhost socket only as a debug tick/escape), `send`/`poll`,
+  `clock`/`sample_rate`/`ctl_set`/`ctl_get` directly to the data plane,
+  `close` (sends `/quit` over the ring and joins).
+- **Python binding** (`clients/python/clausters.py`, pure stdlib):
+  `ShmClient` (mmap + struct: the layout parsed by hand, the same offsets as
+  Rust), `Clausters` (ctypes over the cdylib, checks the ABI on load),
+  `render()` → `array('f')` (numpy can wrap it without copying — the
+  client's choice, not a dependency), and `request()` = the **synchronous
+  facade** over both transports (over UDP it already existed:
+  `json_client.Client.reply`). Correlation by serializing requests; a protocol
+  token deferred.
+- **Demos**: `examples/shm_client.py` (clock read from the segment, `/status`
+  via the ring, an audible fade by writing bus 7 in shared memory) and
+  `examples/embed_render.py` (synchronous render → WAV).
+- **Docs**: `docs/ipc.md` (segment, rings, reference C ABI,
+  synchronous facade, pure-Python client caveats), architecture.md (network
+  loop, module rows, a new invariant: **every binary boundary is
+  versioned**), schemas.md (a transports paragraph), GUIA.md (the M14 section,
+  checklist, counts).
 
-### Verificación
+### Verification
 
-- `tests/ipc.rs` (5 núcleo + 1 con embed): roundtrip y wraparound del ring
-  con orden FIFO + backpressure sin pérdida; contenido corrupto
-  re-sincroniza sin colgar; segmentos de archivo validan magic/versión/
-  tamaño y comparten memoria entre mapeos; **el servidor entero hablando
-  solo por el ring** (status, /s_new audible, /fail enrutado, /quit) con el
-  reloj espejado block-accurate; data plane: write externo de bus de
-  control leído por `InCtl` al bloque siguiente y visible para `/c_get`;
-  `clausters_render` devuelve 4800 frames exactos y reporta errores por
-  buffer. Tamaño del layout fijado (cambiarlo = subir ABI_VERSION).
-- E2E: server real `--shm /dev/shm/clausters` + cliente Python — reloj
-  avanzando (+11328 ≈ 0.257 s a 44.1 kHz), `/status` y `/d_recv` por ring,
-  fade audible por data plane, `/quit` por ring apagando el server; y
-  `embed_render.py` → 100800 frames, WAV escuchable.
-- **106 tests core / 143 faust / 107 embed**, clippy y rustdoc limpios.
+- `tests/ipc.rs` (5 core + 1 with embed): ring roundtrip and wraparound
+  with FIFO order + backpressure without loss; corrupt content
+  re-syncs without hanging; file segments validate magic/version/
+  size and share memory between mappings; **the whole server speaking
+  only via the ring** (status, /s_new audible, /fail routed, /quit) with the
+  clock mirrored block-accurate; data plane: an external control-bus write
+  read by `InCtl` the next block and visible to `/c_get`;
+  `clausters_render` returns exactly 4800 frames and reports errors per
+  buffer. The layout size pinned (changing it = bump ABI_VERSION).
+- E2E: real server `--shm /dev/shm/clausters` + Python client — the clock
+  advancing (+11328 ≈ 0.257 s at 44.1 kHz), `/status` and `/d_recv` via the ring,
+  an audible fade via the data plane, `/quit` via the ring shutting down the server; and
+  `embed_render.py` → 100800 frames, an audible WAV.
+- **106 core tests / 143 faust / 107 embed**, clippy and rustdoc clean.
 
-## M10 — Memoria acotada y alineación (completado 2026-06-12)
+## M10 — Bounded memory and alignment (completed 2026-06-12)
 
-La mitad «denormales» de la idea original ya estaba (post-M7); esta es la
-mitad de memoria. La tabla de capacidades de M9 deja de ser solo
-documentación: ahora está **clavada por tests**, y los bloques de señal
-quedaron alineados a línea de caché.
+The "denormals" half of the original idea was already there (post-M7); this is the
+memory half. The M9 capacities table stops being just
+documentation: it's now **pinned by tests**, and the signal blocks
+got cache-line aligned.
 
-### Qué quedó hecho
+### What got done
 
-- **`tests/capacity.rs`** (5 tests): desborda cada estructura a propósito y
-  fija el modo de fallo —
-  - garbage FIFO (1024) + lista de retención (64): 1500 synths muertos sin
-    recolectar → leak acotado por `mem::forget` (la única opción RT-safe),
-    el engine sigue procesando y sonando; la recolección posterior drena
-    FIFO + retención (assert 1024..1500 recolectados);
-  - FIFO de eventos (2048): 2400 eventos sin drenar → drop silencioso,
-    estado del árbol exacto;
-  - slab de nodos (1024 con root): 1100 adds → 1023 vivos + 77
-    `RejectedSynth` que ruedan atrás por el garbage (conteo exacto);
-  - grupos no-root (256 hijos): 300 adds → 256 + 44 rechazos;
-  - `Block` alineado: `align_of == 64`, sin padding (`size == 256`),
-    direcciones de un `Vec<Block>` verificadas.
-- **Alineación**: tipo `Block` (`#[repr(C, align(64))]` sobre
-  `[f32; BLOCK_SIZE]`, acceso por `.0`) para los wires de `UGenSynth`, los
-  buses de audio (`UnsafeCell<Block>`) y los buffers de staging de
-  `FaustSynth`. Un bloque = exactamente 4 líneas de caché: ningún load SIMD
-  parte una línea. **Medición** (la condición del plan era «conservar solo
-  si no empeora»): bench A/B intercalado con `git stash` (1000 synths) —
-  SIN {1186, 1283, 1328, 1337} vs CON {1240, 1281, 1286, 1292, 1315}
-  blocks/s: medias idénticas dentro del ruido de la máquina (±4–8%). Se
-  conserva por el argumento de estabilidad, no por una ganancia medida —
-  anotado tal cual.
-- **Tabla en architecture.md**: nota de que `tests/capacity.rs` la clava +
-  fila nueva para los rings M14 (backpressure; reply ring lleno = drop con
-  log) + mención de `Block` en el mapa de módulos.
-- **Skill `realtime-audio` actualizada**: filosofía de modos de fallo
-  (rechazar-y-reportar / drop best-effort / leak acotado) con puntero a la
-  tabla y los tests; sección nueva de alineación; la sección de denormales
-  reescrita para referir a la implementación real
-  (`dsp::denormals::flush_to_zero()` por asm — el ejemplo viejo usaba el
-  intrínseco `_mm_setcsr` deprecado — más `-ftz 2` y el requisito de armar
-  FTZ en todo hilo de procesamiento nuevo).
+- **`tests/capacity.rs`** (5 tests): overflows each structure on purpose and
+  pins the failure mode —
+  - garbage FIFO (1024) + retention list (64): 1500 dead synths without
+    collection → a leak bounded by `mem::forget` (the only RT-safe option),
+    the engine keeps processing and sounding; the later collection drains
+    FIFO + retention (assert 1024..1500 collected);
+  - event FIFO (2048): 2400 events undrained → silent drop,
+    exact tree state;
+  - node slab (1024 with root): 1100 adds → 1023 alive + 77
+    `RejectedSynth` that roll back via the garbage (exact count);
+  - non-root groups (256 children): 300 adds → 256 + 44 rejections;
+  - aligned `Block`: `align_of == 64`, no padding (`size == 256`),
+    a `Vec<Block>`'s addresses verified.
+- **Alignment**: a `Block` type (`#[repr(C, align(64))]` over
+  `[f32; BLOCK_SIZE]`, access via `.0`) for `UGenSynth`'s wires, the
+  audio buses (`UnsafeCell<Block>`) and `FaustSynth`'s staging buffers.
+  A block = exactly 4 cache lines: no SIMD load splits
+  a line. **Measurement** (the plan's condition was "keep only
+  if it doesn't get worse"): interleaved A/B bench with `git stash` (1000 synths) —
+  WITHOUT {1186, 1283, 1328, 1337} vs WITH {1240, 1281, 1286, 1292, 1315}
+  blocks/s: identical means within the machine's noise (±4–8%). Kept
+  for the stability argument, not for a measured gain —
+  noted as is.
+- **Table in architecture.md**: a note that `tests/capacity.rs` pins it +
+  a new row for the M14 rings (backpressure; full reply ring = drop with
+  log) + a mention of `Block` in the module map.
+- **`realtime-audio` skill updated**: failure-mode philosophy
+  (reject-and-report / best-effort drop / bounded leak) with a pointer to the
+  table and the tests; a new alignment section; the denormals section
+  rewritten to refer to the real implementation
+  (`dsp::denormals::flush_to_zero()` via asm — the old example used the
+  deprecated `_mm_setcsr` intrinsic — plus `-ftz 2` and the requirement to arm
+  FTZ in every new processing thread).
 
-### Verificación
+### Verification
 
-- **111 tests core / 148 con faust** (+5), clippy y rustdoc limpios.
-- Goldens intactos (la alineación no cambia ningún valor — `size_of` no
-  cambia, solo la dirección base).
+- **111 core tests / 148 with faust** (+5), clippy and rustdoc clean.
+- Goldens intact (alignment changes no value — `size_of` doesn't
+  change, only the base address).
 
-## M11 — `/n_map` y `/n_mapa`: buses como fuente de parámetros (completado 2026-06-13)
+## M11 — `/n_map` and `/n_mapa`: buses as a parameter source (completed 2026-06-13)
 
-Último milestone del plan. `/n_set` escribe un control una vez; `/n_map` lo
-liga a un **bus de control** y `/n_mapa` a un **bus de audio**, releídos al
-inicio de cada bloque. Unifica los dos mundos que antes divergían: una def
-UGen leía buses de control solo si incluía `InCtl` en su grafo, y los
-parámetros Faust solo se movían por `/n_set` discreto — ahora cualquier
-control o zona se ata a un bus con el mismo comando.
+The plan's last milestone. `/n_set` writes a control once; `/n_map` ties it
+to a **control bus** and `/n_mapa` to an **audio bus**, re-read at the
+start of each block. It unifies the two worlds that used to diverge: a UGen
+def read control buses only if it included `InCtl` in its graph, and Faust
+parameters only moved via discrete `/n_set` — now any
+control or zone is tied to a bus with the same command.
 
-### Qué quedó hecho
+### What got done
 
-- **Hilo de audio**: trait `SynthNode::map_control(index, bus, audio)` y un
-  `node::ControlMap { bus, audio }` pre-alocado paralelo a los controles en
-  `UGenSynth` y `FaustSynth`. Al inicio de `process`, antes de correr UGens /
-  `compute`, el synth tira cada mapeo vivo a su control/zona: valor del bus de
-  control, o **un sample** del bus de audio (control-rate; un control es un
-  escalar por bloque y las zonas Faust también — no hay control audio-rate, y
-  para señal de audio ya está `In`/bus de entrada). Se escribe directo al
-  control, nunca por `set_control` (que desligaría); un `/n_set` sí pasa por
-  `set_control`, que limpia el mapeo primero, así un set explícito siempre
-  gana (semántica scsynth).
-- **Engine**: `Cmd::MapControl { id, index, bus, audio }` despachado como
-  `SetControl`; agendable en bundles. RT-safe (solo cambia una entrada de la
-  tabla, jamás aloca) — clavado por `tests/rt_safety.rs`.
-- **OSC**: handlers `/n_map`/`/n_mapa` en `translate` (pares `ctl bus` como
-  `/n_set`, por nombre o índice, `-1` desliga) y en la lista de despacho
-  inmediato del server. El path agendado ya pasaba por `translate`.
-- **Análisis de buses (M12/M13)**: el mirror guarda los mapeos vivos por nodo;
-  `fold_maps_into_usage` suma el bus de un mapeo de audio a las `reads` del
-  nodo y lo marca barrera `dynamic` si el control mapeado se usa como índice de
-  bus — así auto/parallel groups quedan correctos bajo mapeos. Detalle fino:
-  el topo-sort es **estable**, así que desligar no revierte el orden (no hay
-  restricción que lo fuerce), solo deja de imponerlo.
-- **Docs y ejemplo**: `docs/schemas.md` (referencia OSC + nota de muestreo
-  control-rate), `docs/architecture.md` (subsección del modelo de mapeo),
-  `GUIA.md` (sección M11 + checklist), `examples/osc_ping.rs` (subcomando
-  `map`: `/n_map`+`/c_set` en vivo y un LFO→bus de audio→`/n_mapa` = vibrato),
-  skill `scsynth-osc`.
+- **Audio thread**: a trait `SynthNode::map_control(index, bus, audio)` and a
+  pre-allocated `node::ControlMap { bus, audio }` parallel to the controls in
+  `UGenSynth` and `FaustSynth`. At the start of `process`, before running UGens /
+  `compute`, the synth pulls each live mapping into its control/zone:
+  the control bus's value, or **one sample** of the audio bus (control-rate; a
+  control is a scalar per block and Faust zones too — there's no audio-rate
+  control, and for an audio signal there's already `In`/the input bus). It's
+  written directly to the control, never via `set_control` (which would unmap it);
+  a `/n_set` does go through `set_control`, which clears the mapping first, so an
+  explicit set always wins (scsynth semantics).
+- **Engine**: `Cmd::MapControl { id, index, bus, audio }` dispatched as
+  `SetControl`; schedulable in bundles. RT-safe (only changes one table
+  entry, never allocates) — pinned by `tests/rt_safety.rs`.
+- **OSC**: `/n_map`/`/n_mapa` handlers in `translate` (`ctl bus` pairs like
+  `/n_set`, by name or index, `-1` unmaps) and in the server's immediate
+  dispatch list. The scheduled path already went through `translate`.
+- **Bus analysis (M12/M13)**: the mirror keeps the live mappings per node;
+  `fold_maps_into_usage` sums an audio mapping's bus into the node's `reads`
+  and marks it a `dynamic` barrier if the mapped control is used as a bus
+  index — so auto/parallel groups stay correct under mappings. Fine detail:
+  the topo-sort is **stable**, so unmapping doesn't revert the order (there's no
+  constraint forcing it), it just stops imposing it.
+- **Docs and example**: `docs/schemas.md` (OSC reference + a control-rate
+  sampling note), `docs/architecture.md` (a mapping-model subsection),
+  `GUIA.md` (the M11 section + checklist), `examples/osc_ping.rs` (the `map`
+  subcommand: `/n_map`+`/c_set` live and an LFO→audio bus→`/n_mapa` = vibrato),
+  the `scsynth-osc` skill.
 
-### Verificación
+### Verification
 
-- **117 tests core / 155 con faust** (+6/+7): `tests/mapping.rs` (4:
-  seguimiento de bus de control en vivo, desligado que conserva el último
-  valor, `/n_set` que rompe el mapeo, muestreo de bus de audio),
-  `tests/rt_safety.rs` (no-alloc con mapeos de control y audio por bloque),
-  `tests/auto_order.rs` (`/n_mapa` agrega arista de lectura y re-ordena),
-  `tests/faust_synth.rs` (zona Faust seguida de un bus de control). clippy y
-  rustdoc limpios; goldens intactos.
-- E2E contra server real: `osc_ping map` retunea por `/c_set` y arma el
-  vibrato por `/n_mapa` sin `/fail`.
+- **117 core tests / 155 with faust** (+6/+7): `tests/mapping.rs` (4:
+  live control-bus tracking, an unmap that keeps the last
+  value, a `/n_set` that breaks the mapping, audio-bus sampling),
+  `tests/rt_safety.rs` (no-alloc with control and audio mappings per block),
+  `tests/auto_order.rs` (`/n_mapa` adds a read edge and reorders),
+  `tests/faust_synth.rs` (a Faust zone following a control bus). clippy and
+  rustdoc clean; goldens intact.
+- E2E against the real server: `osc_ping map` retunes via `/c_set` and arms the
+  vibrato via `/n_mapa` without `/fail`.
 
-## Suelta: upgrade de libfaust a 2.85.5
+## Loose item: libfaust upgrade to 2.85.5
 
-- **2.85.5 es el último release** (2.81.10 → 2.83.1 → 2.85.5; los tags
-  `v2-5-x` son viejos). Con los workarounds de `fmod` y `cos` ya en el árbol
-  y `lrsh` sin exponer, subir es seguro.
-- **Build** (receta de F0, reproducible): checkout del tag `2.85.5` en
-  `third_party/faust`, `make most` + reconfigurar `build/faustdir` con
+- **2.85.5 is the latest release** (2.81.10 → 2.83.1 → 2.85.5; the
+  `v2-5-x` tags are old). With the `fmod` and `cos` workarounds already in the tree
+  and `lrsh` not exposed, upgrading is safe.
+- **Build** (the F0 recipe, reproducible): checkout the `2.85.5` tag in
+  `third_party/faust`, `make most` + reconfigure `build/faustdir` with
   `-DINCLUDE_DYNAMIC=ON -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20
-  -DCMAKE_INSTALL_PREFIX=$HOME/.local`, `make -j` y `make install`. Produjo
-  `libfaust.so.2.85.5` (10.7 MB, dinámica contra libLLVM 20). El install
-  anterior (2.81.10) quedó respaldado en `~/.local/faust-backup-2.81.10`.
-- **FFI sin cambios**: las firmas C que usamos (`createCDSPFactoryFromBoxes/
-  Signals`, `Csig*`/`Cbox*`, `compute`, `UIGlue`) son idénticas en 2.85.5;
-  binding a mano sigue válido. Solo se actualizaron menciones de versión
-  (`src/faust/ffi.rs`, receta en `GUIA.md`).
-- **Verificación**: toda la suite faust en verde contra 2.85.5 (incluye los
-  tests de regresión de `cos` y los kitchen-sinks que tocan cada op);
-  `ldd` confirma que los binarios cargan `libfaust.so.2 → 2.85.5`. Los bugs
-  que persisten en 2.85.5 (`boxFmod`, `boxCos`, `kLRsh`) quedan cubiertos por
-  los workarounds / la no-exposición.
+  -DCMAKE_INSTALL_PREFIX=$HOME/.local`, `make -j` and `make install`. It produced
+  `libfaust.so.2.85.5` (10.7 MB, dynamic against libLLVM 20). The previous
+  install (2.81.10) was backed up in `~/.local/faust-backup-2.81.10`.
+- **FFI unchanged**: the C signatures we use (`createCDSPFactoryFromBoxes/
+  Signals`, `Csig*`/`Cbox*`, `compute`, `UIGlue`) are identical in 2.85.5;
+  the hand-written binding stays valid. Only version mentions were
+  updated (`src/faust/ffi.rs`, the recipe in `GUIA.md`).
+- **Verification**: the whole faust suite green against 2.85.5 (includes the
+  `cos` regression tests and the kitchen-sinks touching each op);
+  `ldd` confirms the binaries load `libfaust.so.2 → 2.85.5`. The bugs
+  that persist in 2.85.5 (`boxFmod`, `boxCos`, `kLRsh`) stay covered by
+  the workarounds / non-exposure.
 
-## Suelta: fix del box `cos` (devolvía abs por bug upstream)
+## Loose item: fix the `cos` box (it returned abs due to an upstream bug)
 
-- Encontrado al chequear si Faust 2.85.5 arreglaba los bugs conocidos (no:
-  `boxFmod` y `kLRsh` siguen rotos): en `box_signal_api.cpp`, `boxCos()`
-  devuelve `gGlobal->gAbsPrim->box()` (mismo copy-paste que `boxFmod`), en
-  2.81.10 y 2.85.5. O sea el op `cos` del **box API** calculaba **abs** en
-  silencio (verificado: box `cos(0.5)` daba 0.5, no 0.8776). La **signal API
-  está bien** (`sigCos` usa `gCosPrim`).
-- Fix en `src/faust/boxes.rs`: `cos` sale de `unary_op` y se rutea por un
-  fragmento `CDSPToBoxes("process = cos;")`, igual que `fmod`. Test de
-  regresión `tests/faust_json.rs::box_cos_computes_cosine_not_abs`
-  (cos(0.5)≈0.8776, no 0.5). El kitchen-sink no lo agarraba porque solo
-  chequea compila+finito.
-- Clone del fuente de Faust en `third_party/faust` (git-ignored) para trabajo
-  con upstream.
+- Found while checking whether Faust 2.85.5 fixed the known bugs (no:
+  `boxFmod` and `kLRsh` are still broken): in `box_signal_api.cpp`, `boxCos()`
+  returns `gGlobal->gAbsPrim->box()` (the same copy-paste as `boxFmod`), in
+  2.81.10 and 2.85.5. That is, the **box API**'s `cos` op silently computed
+  **abs** (verified: box `cos(0.5)` gave 0.5, not 0.8776). The **signal API
+  is fine** (`sigCos` uses `gCosPrim`).
+- Fix in `src/faust/boxes.rs`: `cos` leaves `unary_op` and is routed through a
+  `CDSPToBoxes("process = cos;")` fragment, like `fmod`. A regression
+  test `tests/faust_json.rs::box_cos_computes_cosine_not_abs`
+  (cos(0.5)≈0.8776, not 0.5). The kitchen-sink didn't catch it because it only
+  checks compiles+finite.
+- A clone of Faust's source in `third_party/faust` (git-ignored) for work
+  with upstream.
 
-## Suelta: upgrade a rosc 0.11
+## Loose item: upgrade to rosc 0.11
 
-- `Cargo.toml`: `rosc = "0.10"` → `"0.11"`; la API no rompió ningún call site.
-- `src/osc/mod.rs::decode_packet` quedó como **wrapper fino** sobre
-  `decoder::decode_udp`, el único punto de decodificación de todos los
-  transportes. Test `osc::tests::multiple_of_four_blob_round_trips` (round-trip
-  de blob de largo múltiplo de 4, top-level y dentro de bundle). Suite núcleo +
-  faust en verde; clippy limpio.
+- `Cargo.toml`: `rosc = "0.10"` → `"0.11"`; the API didn't break any call site.
+- `src/osc/mod.rs::decode_packet` stayed a **thin wrapper** over
+  `decoder::decode_udp`, the single decoding point of all
+  transports. Test `osc::tests::multiple_of_four_blob_round_trips` (round-trip
+  of a multiple-of-4-length blob, top-level and inside a bundle). The core +
+  faust suite green; clippy clean.
 
-## Suelta: Faust **signal API** (`Csig*` / `createCDSPFactoryFromSignals`)
+## Loose item: Faust **signal API** (`Csig*` / `createCDSPFactoryFromSignals`)
 
-- **Tercer formato de `/d_faust`**: además de fuente Faust (F1) y JSON box tree
-  (F2), un JSON con raíz `{"signals":[...]}` mapea la **signal API** de Faust
-  (la capa baja: entradas, delays y recursión **explícitos**). Discriminador
-  por forma del JSON en `CompilePayload::classify` (compartido por
-  `osc/server.rs` y `server/render.rs`): raíz `{"signals":...}` → signal,
-  `{"op":...}` → box, texto → source.
-- **Diseño**: la signal API solo diverge en el paso **def→factory**. `Signal`
-  es el mismo `CTree*` opaco que `FaustBox`; `createCDSPFactoryFromSignals`
-  tiene la misma forma que la de boxes (vector de salidas **null-terminated**).
-  Todo lo de abajo (`FaustDef::probe`, `FaustSynth`, controles, ciclo OSC) se
-  **reusa sin tocar**. Nuevos: `src/faust/signals.rs` (intérprete JSON→Signal,
-  espejo de `boxes.rs`), `src/faust/json_util.rs` (helpers de validación
-  `err`/`inputs`/`num_field`/`label_field` extraídos y compartidos con
-  `boxes.rs`), bindings `Csig*` + factory en `ffi.rs`, brazo `compile_signal`
-  en `compiler.rs`.
-- **Lo distintivo**: feedback **explícito y sample-accurate** —
-  `{"op":"recursion","in":[body]}` con `{"op":"self"}` adentro
-  (`CsigRecursion`/`CsigSelf`, un sample de delay). Es el `self()` que el box
-  `~` envuelve; fusiona el lazo en un nodo, lo que el `LocalIn`/`LocalOut` del
-  grafo (1 bloque) no puede. Entradas `input`, delays `delay`/`delay1`,
-  multi-output (un nodo por salida en `signals`).
-- **Cobertura**: paridad con el set de ops del box API + lo de señales. Quedó
-  fuera `lrsh` (logical right shift): Faust 2.81.10 crashea su propio
-  `sigtyperules.cpp` con ese opcode (`unrecognized opcode : 7`); `round` no
-  existe en la signal API upstream (`rint`); N-aria (`selfN`/`recursionN`) no
-  se expone, igual que la box solo tiene `~`.
-- **Docs/ejemplo**: `docs/schemas.md` (subsección "JSON signal tree" +
-  discriminador), `docs/examples.md`, `GUIA.md` (prueba manual + checklist),
-  `examples/json_client.py` (subcomando `signal`: seno recursion/self +
-  one-pole sobre ruido). Nota en el skill `faust-embedding`.
+- **A third `/d_faust` format**: besides Faust source (F1) and JSON box tree
+  (F2), a JSON with root `{"signals":[...]}` maps Faust's **signal API**
+  (the low layer: **explicit** inputs, delays and recursion). The discriminator
+  is by JSON shape in `CompilePayload::classify` (shared by
+  `osc/server.rs` and `server/render.rs`): root `{"signals":...}` → signal,
+  `{"op":...}` → box, text → source.
+- **Design**: the signal API only diverges in the **def→factory** step. `Signal`
+  is the same opaque `CTree*` as `FaustBox`; `createCDSPFactoryFromSignals`
+  has the same shape as the boxes one (a **null-terminated** vector of outputs).
+  Everything below (`FaustDef::probe`, `FaustSynth`, controls, the OSC cycle) is
+  **reused untouched**. New: `src/faust/signals.rs` (a JSON→Signal interpreter,
+  mirroring `boxes.rs`), `src/faust/json_util.rs` (validation helpers
+  `err`/`inputs`/`num_field`/`label_field` extracted and shared with
+  `boxes.rs`), `Csig*` bindings + factory in `ffi.rs`, a `compile_signal`
+  arm in `compiler.rs`.
+- **What's distinctive**: **explicit and sample-accurate** feedback —
+  `{"op":"recursion","in":[body]}` with `{"op":"self"}` inside
+  (`CsigRecursion`/`CsigSelf`, one sample of delay). It's the `self()` the box
+  `~` wraps; it fuses the loop into one node, which the graph's `LocalIn`/`LocalOut`
+  (1 block) cannot. Inputs `input`, delays `delay`/`delay1`,
+  multi-output (one node per output in `signals`).
+- **Coverage**: parity with the box API's op set + the signal stuff. Left
+  out: `lrsh` (logical right shift): Faust 2.81.10 crashes its own
+  `sigtyperules.cpp` with that opcode (`unrecognized opcode : 7`); `round` doesn't
+  exist in the upstream signal API (`rint`); N-ary (`selfN`/`recursionN`) is not
+  exposed, just like the box only has `~`.
+- **Docs/example**: `docs/schemas.md` (a "JSON signal tree" subsection +
+  the discriminator), `docs/examples.md`, `GUIA.md` (manual test + checklist),
+  `examples/json_client.py` (the `signal` subcommand: a recursion/self sine +
+  a one-pole over noise). A note in the `faust-embedding` skill.
 
-### Verificación
+### Verification
 
-- **+8 tests** con faust: `tests/faust_signal.rs` (6: seno a 440 por
-  recursion/self, one-pole con respuesta a impulso geométrica al polo,
-  multi-output, def por la ruta de synth, kitchen-sink que toca cada op,
-  validaciones con ruta); `tests/faust_parity.rs` (+1: seno box vs signal
-  coinciden dentro de tolerancia); `tests/faust_compiler.rs` (+1: `/d_faust`
-  con `{"signals":[...]}` → `/done` sobre OSC). Suite faust y núcleo en verde;
-  clippy/rustdoc limpios. Refactor de `boxes.rs` para usar `json_util` sin
-  cambio de conducta (mensaje de aridad ahora neutral, sin "boxes").
-- E2E con audio real OK: `json_client.py signal` contra el servidor vivo
-  (`--features faust`) — ambos defs cargan (`/done`), el seno suena y el
-  one-pole sobre ruido filtra (cola de ruido con energía de alta frecuencia
-  ~0.02 del total, vs ~2 del ruido blanco). Capturado del nodo de salida.
+- **+8 tests** with faust: `tests/faust_signal.rs` (6: a 440 sine by
+  recursion/self, a one-pole with a geometric impulse response at the pole,
+  multi-output, a def via the synth path, a kitchen-sink touching each op,
+  validations with a path); `tests/faust_parity.rs` (+1: box vs signal sine
+  match within tolerance); `tests/faust_compiler.rs` (+1: `/d_faust`
+  with `{"signals":[...]}` → `/done` over OSC). The faust and core suite green;
+  clippy/rustdoc clean. A refactor of `boxes.rs` to use `json_util` without
+  behavior change (the arity message is now neutral, no "boxes").
+- E2E with real audio OK: `json_client.py signal` against the live server
+  (`--features faust`) — both defs load (`/done`), the sine sounds and the
+  one-pole over noise filters (a noise tail with high-frequency energy
+  ~0.02 of the total, vs ~2 for white noise). Captured from the output node.
 
-## Suelta: feedback intra-synth `LocalIn`/`LocalOut` (retardo de 1 bloque)
+## Loose item: intra-synth feedback `LocalIn`/`LocalOut` (1-block delay)
 
-- **UGens `LocalIn`/`LocalOut`** (estilo scsynth): feedback **privado del
-  synth** con 1 bloque de control (64 muestras) de retardo. El grafo es un DAG
-  (no se puede wirear un ciclo), así que el lazo va por un buffer
-  **persistente entre bloques** que vive en `UGenSynth` (`locals: Vec<Block>`,
-  a diferencia de `wires` que se recomputan). `LocalIn` (fuente, va primero) lo
-  lee; `LocalOut` (sumidero, va último) lo escribe. Como `LocalIn` lee **antes**
-  de que `LocalOut` escriba, ve el valor del bloque anterior → el retardo de 1
-  bloque sale del orden read-before-write, sin doble buffer. Anda igual bajo el
-  split de bloque de M6 (se opera el sub-rango `[offset..offset+frames]`).
-- **Implementación**: `src/dsp/local.rs` (structs placeholder no-op),
-  registrados en `registry.rs`/`mod.rs`. El trabajo real se hace en
-  `UGenSynth::process` (`src/synthdef/instance.rs`), que intercepta por
-  `def.ugens[i].kind` — son el único caso que necesita estado **privado del
-  synth** que `ProcessCtx` (global, compartido por el scheduler paralelo) no
-  puede llevar. `compile` (`src/synthdef/mod.rs`) exige índice de canal
-  constante, calcula `SynthDef::num_locals`, y valida `LocalIn` antes que
-  `LocalOut` por canal (error claro si no). No tocan buses globales → `BusUsage`
-  vacío (`osc/graph.rs` ya cae en `_ => continue`), así que los synths con
-  feedback siguen paralelizables.
-- **Límite (documentado)**: feedback a **tasa de bloque**, no sample-accurate;
-  un lazo de un canal resuena en `sampleRate/64` (≈750 Hz). Para IIR sub-bloque
-  (one-pole/biquad) hay que fusionar el lazo en un nodo: una UGen recursiva o
-  un def Faust (`~`/`CboxRec`) — la razón de ser de `FaustSynth`.
-- **Docs/ejemplo**: `docs/schemas.md` (filas + nota de feedback),
-  `docs/architecture.md` (sección "Feedback"), `GUIA.md` (prueba manual +
-  checklist), `examples/json_client.py` (subcomando `feedback`: comb
-  resonante).
+- **UGens `LocalIn`/`LocalOut`** (scsynth-style): **synth-private** feedback
+  with 1 control block (64 samples) of delay. The graph is a DAG
+  (you can't wire a cycle), so the loop goes through a buffer
+  **persistent between blocks** living in `UGenSynth` (`locals: Vec<Block>`,
+  unlike `wires` which are recomputed). `LocalIn` (the source, goes first)
+  reads it; `LocalOut` (the sink, goes last) writes it. Since `LocalIn` reads **before**
+  `LocalOut` writes, it sees the previous block's value → the 1-block delay
+  comes from the read-before-write order, with no double buffer. It works the same under
+  the M6 block split (the sub-range `[offset..offset+frames]` is operated on).
+- **Implementation**: `src/dsp/local.rs` (no-op placeholder structs),
+  registered in `registry.rs`/`mod.rs`. The real work is done in
+  `UGenSynth::process` (`src/synthdef/instance.rs`), which intercepts by
+  `def.ugens[i].kind` — they're the only case that needs **synth-private**
+  state that `ProcessCtx` (global, shared by the parallel scheduler)
+  cannot carry. `compile` (`src/synthdef/mod.rs`) requires a constant channel
+  index, computes `SynthDef::num_locals`, and validates `LocalIn` before
+  `LocalOut` per channel (a clear error otherwise). They don't touch global buses → an empty
+  `BusUsage` (`osc/graph.rs` already falls in `_ => continue`), so synths with
+  feedback stay parallelizable.
+- **Limit (documented)**: **block-rate** feedback, not sample-accurate;
+  a one-channel loop resonates at `sampleRate/64` (≈750 Hz). For sub-block IIR
+  (one-pole/biquad) the loop has to be fused into one node: a recursive UGen or
+  a Faust def (`~`/`CboxRec`) — `FaustSynth`'s reason for being.
+- **Docs/example**: `docs/schemas.md` (rows + a feedback note),
+  `docs/architecture.md` (a "Feedback" section), `GUIA.md` (manual test +
+  checklist), `examples/json_client.py` (the `feedback` subcommand: a resonant
+  comb).
 
-### Verificación
+### Verification
 
-- **+6 tests** en `tests/feedback.rs`: retardo exacto de 1 bloque a la muestra,
-  acumulador por bloques, dos canales independientes, supervivencia al split de
-  bloque, y dos validaciones de compilación (orden y canal constante). **+1**
-  escena no-alloc en `tests/rt_safety.rs` (lazo `LocalIn→·0.9→LocalOut`). Suite
-  completa en verde; clippy sin warnings nuevos (`LocalIn`/`LocalOut` son unit
-  structs, no disparan `new_without_default`).
+- **+6 tests** in `tests/feedback.rs`: an exact 1-block delay to the sample,
+  a per-block accumulator, two independent channels, survival of the block
+  split, and two compilation validations (order and constant channel). **+1**
+  no-alloc scene in `tests/rt_safety.rs` (a `LocalIn→·0.9→LocalOut` loop). The full
+  suite green; clippy with no new warnings (`LocalIn`/`LocalOut` are unit
+  structs, they don't trigger `new_without_default`).
 
-## Suelta: comparación de rendimiento UGen vs Faust en `bench.rs`
+## Loose item: UGen vs Faust performance comparison in `bench.rs`
 
-- **Dos secciones head-to-head** (gated `--features faust`) en
-  `examples/bench.rs` corren el *mismo* DSP por ambos motores (pares de
-  paridad de `tests/faust_parity.rs`, idénticos muestra a muestra), midiendo
-  **solo `process_block`** (la instanciación y el JIT quedan fuera del bucle):
-  una **sine** (`sin(2π·phasor)·0.2`) y una **gain** bit-exacta (`·0.5` sobre
-  un bus compartido, sin transcendental ni asimetría f64/f32 → overhead de
-  motor puro). Tabla con xRT de cada uno y la columna `Faust slowdown`.
-- **Hallazgo**: en igualdad de DSP, Faust **no es más lento** (la sospecha que
-  motivó esto), sino ~1.3–1.6× **más rápido** y consistente en todos los
-  conteos de voces, incluso en la `gain` bit-exacta. Razón: una llamada
-  `compute` LLVM vectorizada sobre el bloque vs 3 dispatches `dyn` + 2 buffers
-  de wire intermedios en el grafo de UGens. El bench viejo no era comparable
-  (default `SinOsc·amp → 2×Out` f64 vs Faust `os.osc → 1` por tabla).
-- Refactor menor del harness: `measure()` (warmup + bucle de medición) y
-  `send_cmd()` (envío con drenaje del FIFO) compartidos. Docs: `bench.rs`,
+- **Two head-to-head sections** (gated `--features faust`) in
+  `examples/bench.rs` run the *same* DSP through both engines (the
+  parity pairs from `tests/faust_parity.rs`, sample-by-sample identical),
+  measuring **only `process_block`** (instantiation and JIT stay out of the loop):
+  a **sine** (`sin(2π·phasor)·0.2`) and a bit-exact **gain** (`·0.5` over
+  a shared bus, no transcendental and no f64/f32 asymmetry → pure engine
+  overhead). A table with each one's xRT and a `Faust slowdown` column.
+- **Finding**: at equal DSP, Faust is **not slower** (the suspicion that
+  motivated this), but ~1.3–1.6× **faster** and consistent across all
+  voice counts, even in the bit-exact `gain`. Reason: one vectorized
+  LLVM `compute` call over the block vs 3 `dyn` dispatches + 2 intermediate wire
+  buffers in the UGen graph. The old bench wasn't comparable (default
+  `SinOsc·amp → 2×Out` f64 vs Faust `os.osc → 1` by table).
+- A minor harness refactor: `measure()` (warmup + measurement loop) and
+  `send_cmd()` (send with FIFO drain) shared. Docs: `bench.rs`,
   `docs/examples.md`, `GUIA.md`.
 
-## Suelta: UGen `Impulse` + impulsos prístinos en `clock_recorder.py`
+## Loose item: UGen `Impulse` + pristine impulses in `clock_recorder.py`
 
-- **UGen `Impulse`** (`src/dsp/impulse.rs`): tren de impulsos como el de
-  SuperCollider — un `1.0` de un solo sample cada `freq` Hz, `0.0` en el
-  medio. La fase arranca "vencida" (`phase = 1.0`) para que el **primer**
-  sample de salida sea siempre un impulso: combinado con un `/s_new` por
-  `/sched` (que parte el bloque en el sample objetivo), coloca un impulso
-  limpio en un frame exacto. `freq = 0` emite ese único impulso y silencio
-  después. Fase en `f64`, sin deriva. Registrada en `src/dsp/registry.rs`
-  (enum/`parse_kind`/`arity` 1/`build`) y `src/dsp/mod.rs`; `osc/graph.rs`
-  no necesita cambios (no toca buses, cae en `_ => continue`).
-- **Ejemplo**: `clock_recorder.py` reemplaza la ráfaga de tono de 4 ms por un
-  impulso prístino de un sample (`Impulse(0)·amp`), agendado en cada sample
-  objetivo. Sin envolvente ni rampa de ataque, el frame marcado *es* el
-  impulso (a diferencia de `SinOsc`, que arranca en `sin(0)=0`). Args:
-  `--burst-ms`/`--freq` → `--hold-ms` (cuánto vive el synth antes del
-  `/n_free`); el detector de onsets ahora marca el flanco del impulso (un
-  solo sample en la captura directa del nodo).
-- **Docs**: `docs/schemas.md` (fila `Impulse` en la tabla de UGens),
-  `docs/examples.md` y `GUIA.md` (sección del reloj grabado, ahora
-  "impulsos").
+- **UGen `Impulse`** (`src/dsp/impulse.rs`): an impulse train like
+  SuperCollider's — a single-sample `1.0` every `freq` Hz, `0.0` in
+  between. The phase starts "due" (`phase = 1.0`) so that the **first**
+  output sample is always an impulse: combined with a `/s_new` via
+  `/sched` (which splits the block at the target sample), it places a clean
+  impulse on an exact frame. `freq = 0` emits that single impulse and silence
+  after. f64 phase, no drift. Registered in `src/dsp/registry.rs`
+  (enum/`parse_kind`/`arity` 1/`build`) and `src/dsp/mod.rs`; `osc/graph.rs`
+  needs no changes (it doesn't touch buses, falls in `_ => continue`).
+- **Example**: `clock_recorder.py` replaces the 4 ms tone burst with a
+  pristine single-sample impulse (`Impulse(0)·amp`), scheduled at each target
+  sample. With no envelope or attack ramp, the marked frame *is* the
+  impulse (unlike `SinOsc`, which starts at `sin(0)=0`). Args:
+  `--burst-ms`/`--freq` → `--hold-ms` (how long the synth lives before the
+  `/n_free`); the onset detector now marks the impulse's edge (a
+  single sample in the direct node capture).
+- **Docs**: `docs/schemas.md` (an `Impulse` row in the UGen table),
+  `docs/examples.md` and `GUIA.md` (the recorded-clock section, now
+  "impulses").
 
-### Verificación
+### Verification
 
-- **119 tests core** (+2): `tests/scheduling.rs` —
-  `scheduled_impulse_lands_on_its_exact_sample` (un `Impulse(0)` por `/sched`
-  cae 1.0 en el sample exacto y 0.0 en el resto) e
-  `impulse_train_is_periodic_to_the_sample` (freq = SR/64 → impulso cada 64
-  samples, sin deriva). Suite completa en verde; rt-safety intacto.
-- E2E contra server real: 220 impulsos en 120 s, gaps exactos de 24000
-  samples, jitter 0.000 ms (captura directa del nodo `alsa_playback.clausters`,
-  que comparte el reloj de PipeWire del servidor).
+- **119 core tests** (+2): `tests/scheduling.rs` —
+  `scheduled_impulse_lands_on_its_exact_sample` (an `Impulse(0)` via `/sched`
+  lands 1.0 on the exact sample and 0.0 on the rest) and
+  `impulse_train_is_periodic_to_the_sample` (freq = SR/64 → an impulse every 64
+  samples, no drift). The full suite green; rt-safety intact.
+- E2E against the real server: 220 impulses in 120 s, exact gaps of 24000
+  samples, jitter 0.000 ms (a direct capture of the `alsa_playback.clausters` node,
+  which shares the server's PipeWire clock).
 
-## M15 — Documentación integral en inglés (README + libro mdBook + rustdoc)
+## M15 — Comprehensive English documentation (README + mdBook + rustdoc)
 
-Registro de cierre tardío: el trabajo se hizo en una sesión anterior y quedó
-en el commit **`5424855` "Documentation"** (mensaje no convencional, por eso no
-era fácil de encontrar), pero nunca se marcó el milestone como cerrado en
-PLAN.md ni se anotó acá. El código/doc ya estaba en la historia de `main`; esta
-entrada y el ✅ de PLAN.md son el cierre formal.
+A late close-out record: the work was done in an earlier session and ended up
+in commit **`5424855` "Documentation"** (an unconventional message, which is why it
+wasn't easy to find), but the milestone was never marked closed in
+PLAN.md nor noted here. The code/doc was already in `main`'s history; this
+entry and PLAN.md's ✅ are the formal close-out.
 
-### Qué entró (en `5424855`)
+### What landed (in `5424855`)
 
-- **`README.md`** en la raíz: overview, quickstart (build → server → comando
-  OSC; y un render NRT), matriz de features (`realtime`/`faust`/`embed`), links
-  al libro y al rustdoc, licencia GPL-3.0.
-- **Libro mdBook**: `book.toml` con `src = "docs"` (reusa los `docs/*.md` en su
-  lugar, cero churn en las referencias entrantes), `docs/SUMMARY.md` como
-  índice, capítulos nuevos `introduction.md`, `getting-started.md`,
-  `using-as-a-library.md`, `examples.md`, `contributing.md`. Los existentes
-  (`architecture.md`, `schemas.md`, los de feature) se reusan tal cual. El HTML
-  generado (`book/`) está git-ignored.
-- **rustdoc**: doc-comment de crate ampliado en `src/lib.rs` (split engine/red,
-  feature flags, entry points), enlazado con el libro.
-- Los archivos en español (`PLAN.md`, `NOTAS.md`, `GUIA.md`) se mantienen en
-  español y en su lugar.
+- **`README.md`** at the root: overview, quickstart (build → server → an
+  OSC command; and an NRT render), feature matrix (`realtime`/`faust`/`embed`),
+  links to the book and rustdoc, GPL-3.0 license.
+- **mdBook**: `book.toml` with `src = "docs"` (reuses the `docs/*.md` in
+  place, zero churn in incoming references), `docs/SUMMARY.md` as the
+  index, new chapters `introduction.md`, `getting-started.md`,
+  `using-as-a-library.md`, `examples.md`, `contributing.md`. The existing ones
+  (`architecture.md`, `schemas.md`, the feature ones) are reused as is. The
+  generated HTML (`book/`) is git-ignored.
+- **rustdoc**: an expanded crate doc-comment in `src/lib.rs` (engine/network
+  split, feature flags, entry points), linked with the book.
+- The Spanish files (`PLAN.md`, `NOTAS.md`, `GUIA.md`) stay in
+  Spanish and in place. *(Historical note: this was later revised — `PLAN.md`,
+  `clients/PLAN.md` and this `LOG.md` were translated to English; only `GUIA.md`
+  and the conversation with the user remain Spanish.)*
 
-### Verificación
+### Verification
 
-- `mdbook build` (v0.5.3) y `cargo doc` limpios, sin links rotos.
-- Diferido explícito (fuera del primer pase): CI de `mdbook build` + deploy a
-  GitHub Pages y `mdbook test`.
+- `mdbook build` (v0.5.3) and `cargo doc` clean, no broken links.
+- Explicit deferral (out of the first pass): CI of `mdbook build` + deploy to
+  GitHub Pages and `mdbook test`.
 
-## M16 — Persistencia de defs en disco + caché de bitcode
+## M16 — On-disk def persistence + bitcode cache
 
-Los defs cargados (`/d_recv` y `/d_faust`) ahora se pueden guardar en un
-directorio de datos y recargar solos al arrancar el servidor, para no tener
-que reenviar la biblioteca cada sesión (pensado para importar bibliotecas
-grandes estilo faustlib como faustdefs).
+The loaded defs (`/d_recv` and `/d_faust`) can now be saved in a
+data directory and reloaded by themselves when the server starts, so as not to have
+to resend the library each session (intended for importing large
+faustlib-style libraries as faustdefs).
 
-### Diseño (capas B + A, decidido con el usuario)
+### Design (layers B + A, decided with the user)
 
-- **B — definición en JSON, fuente de verdad transparente** (ambas tablas).
-  `synthdefs/<name>.json` = el `SynthDefSpec` verbatim; `faustdefs/<name>.json`
-  = un `FaustRecord` (source/JSON original + versión de libfaust + sha256 del
-  payload). Recargar = recompilar desde ahí, por el mismo camino que un
-  `/d_recv`/`/d_faust` nuevo. El `FaustDef` en sí no se serializa (su factory
-  es estado JIT opaco de LLVM).
-- **A — caché de bitcode, no autoritativa** (solo Faust).
-  `faustdefs/<name>.<sha16>.bc` es el bitcode LLVM; al recargar,
-  `cache::try_restore` re-crea la factory desde el `.bc` (salta el front-end de
-  Faust) solo si la versión de libfaust coincide y el archivo lee bien.
-  Cualquier miss → recompila desde el source y reescribe la caché. Un upgrade
-  de libfaust invalida todos los `.bc` automáticamente; una caché corrupta
-  nunca sirve un def equivocado. El `.bc` se nombra por el sha del payload, así
-  un `.bc` viejo de un overwrite interrumpido nunca se aparea con un record más
-  nuevo.
-- **Arranque por partes**: las recargas se encolan en el hilo compilador con
-  `client = None` (sin respuesta) y se drenan en `collect_faust_results`, así el
-  socket atiende desde el arranque y una biblioteca grande carga incremental.
-- **Dir de datos**: `--data-dir` > `$CLAUSTERS_DATA_DIR` >
-  `$XDG_DATA_HOME/clausters` > `~/.local/share/clausters`. Activo por defecto en
-  el server RT; `--no-persist` lo apaga; NRT nunca persiste. Escrituras
-  atómicas (temp + rename). Nombres saneados (percent-encoding).
+- **B — JSON definition, transparent source of truth** (both tables).
+  `synthdefs/<name>.json` = the `SynthDefSpec` verbatim; `faustdefs/<name>.json`
+  = a `FaustRecord` (original source/JSON + libfaust version + payload sha256).
+  Reloading = recompiling from there, by the same path as a new
+  `/d_recv`/`/d_faust`. The `FaustDef` itself isn't serialized (its factory
+  is opaque LLVM JIT state).
+- **A — bitcode cache, non-authoritative** (Faust only).
+  `faustdefs/<name>.<sha16>.bc` is the LLVM bitcode; on reload,
+  `cache::try_restore` re-creates the factory from the `.bc` (skips Faust's
+  front-end) only if the libfaust version matches and the file reads well.
+  Any miss → recompiles from the source and rewrites the cache. A libfaust
+  upgrade invalidates all the `.bc` automatically; a corrupt cache
+  never serves a wrong def. The `.bc` is named by the payload sha, so
+  an old `.bc` from an interrupted overwrite never pairs with a newer
+  record.
+- **Startup in parts**: reloads are enqueued on the compiler thread with
+  `client = None` (no reply) and drained in `collect_faust_results`, so the
+  socket serves from startup and a large library loads incrementally.
+- **Data dir**: `--data-dir` > `$CLAUSTERS_DATA_DIR` >
+  `$XDG_DATA_HOME/clausters` > `~/.local/share/clausters`. On by default in
+  the RT server; `--no-persist` turns it off; NRT never persists. Atomic
+  writes (temp + rename). Sanitized names (percent-encoding).
 
-### Implementación
+### Implementation
 
-- FFI nuevo en `src/faust/ffi.rs`: `writeCDSPFactoryToBitcodeFile`,
-  `readCDSPFactoryFromBitcodeFile`, `getCLibFaustVersion` (C-API de
-  `llvm-dsp-c.h`). El bitcode es IR target-independiente: se re-JITea al host al
-  leer (`target=""`), así un `.bc` es portable entre máquinas de la misma
+- New FFI in `src/faust/ffi.rs`: `writeCDSPFactoryToBitcodeFile`,
+  `readCDSPFactoryFromBitcodeFile`, `getCLibFaustVersion` (from the C-API of
+  `llvm-dsp-c.h`). The bitcode is target-independent IR: it's re-JITed to the host on
+  read (`target=""`), so a `.bc` is portable between machines of the same
   libfaust.
-- `src/faust/cache.rs` (nuevo, faust-gated): bitcode read/write +
+- `src/faust/cache.rs` (new, faust-gated): bitcode read/write +
   `FaustRecord`/`FaustKind` + `persist`/`try_restore`/`load_records`/`remove`.
-- `src/server/defstore.rs` (nuevo, sin gate): resolución del dir, layout,
-  saneado, IO atómico, persistencia de synthdefs. La parte Faust del wiring está
+- `src/server/defstore.rs` (new, ungated): dir resolution, layout,
+  sanitization, atomic IO, synthdef persistence. The Faust part of the wiring is
   gated.
-- `src/faust/compiler.rs`: `CacheJob` (boxeado en `CompileRequest`),
-  `client: Option<ClientId>`, `run_request` (intenta caché y si no, compila +
-  persiste). `src/osc/server.rs`: `store: Option<DefStore>`, `attach_store`
-  (recarga al iniciar), persistencia en `/d_recv`/`/d_faust`, borrado en
-  `/d_free`. `src/main.rs`: flags `--data-dir`/`--no-persist`. `d_recv` ahora
-  devuelve el nombre del def. Dep nueva: `sha2` (pura Rust).
+- `src/faust/compiler.rs`: `CacheJob` (boxed in `CompileRequest`),
+  `client: Option<ClientId>`, `run_request` (tries the cache and if not, compiles +
+  persists). `src/osc/server.rs`: `store: Option<DefStore>`, `attach_store`
+  (reload on start), persistence in `/d_recv`/`/d_faust`, deletion in
+  `/d_free`. `src/main.rs`: flags `--data-dir`/`--no-persist`. `d_recv` now
+  returns the def's name. New dep: `sha2` (pure Rust).
 
-### Verificación
+### Verification
 
-- **`tests/persistence.rs`** (3 core + 6 faust): saneado, round-trip de
-  synthdef en disco, `resolve_data_dir`; round-trip de bitcode **sample-idéntico**
-  (compile → write → read → render byte a byte igual), persist/restore por
-  record, rechazo por version mismatch, fallback ante `.bc` corrupto, recarga
-  end-to-end entre dos instancias de `OscServer` sobre un mismo dir, y borrado
-  de archivos por `/d_free`.
-- Suite core y `--features faust` en verde; clippy limpio (incluido tests).
-- Docs: `docs/schemas.md` (formato en disco + flags), `docs/architecture.md`
-  (lifecycle), `docs/examples.md`, `GUIA.md` (dos sesiones + fila de checklist),
+- **`tests/persistence.rs`** (3 core + 6 faust): sanitization, on-disk
+  synthdef round-trip, `resolve_data_dir`; **sample-identical** bitcode round-trip
+  (compile → write → read → render byte-for-byte equal), persist/restore by
+  record, rejection on version mismatch, fallback on a corrupt `.bc`, end-to-end
+  reload between two `OscServer` instances over one dir, and deletion
+  of files via `/d_free`.
+- The core and `--features faust` suite green; clippy clean (tests included).
+- Docs: `docs/schemas.md` (on-disk format + flags), `docs/architecture.md`
+  (lifecycle), `docs/examples.md`, `GUIA.md` (two sessions + a checklist row),
   `examples/persistence.sh`.
 
-## C0 — Workspace + núcleo nativo compartido + C-ABI (track cliente)
+## C0 — Workspace + shared native core + C-ABI (client track)
 
-Primer milestone del cliente (plan en `clients/PLAN.md`). Sienta la base para
-que el cliente Python (y el futuro JS) compartan código nativo con el servidor.
+The client's first milestone (plan in `clients/PLAN.md`). It lays the base for
+the Python client (and the future JS one) to share native code with the server.
 
-- **Workspace**: la raíz pasa a ser workspace (`[workspace]`, `resolver = "3"`)
-  manteniéndose como crate del servidor; los crates nuevos viven en `crates/`.
-  Todas las rutas existentes (build.rs, tests, examples,
-  `target/…/libclausters.so`) quedan intactas.
-- **`crates/clausters-core`** (nuevo): el núcleo puro y sin dependencias en el
-  hot path. Módulos:
-  - `builtins`: ops unarias/binarias sobre escalar y slice (con broadcast tipo
-    `dsp::at`). `Add/Sub/Mul/Div` son las del servidor; el resto espeja la
-    Signal API de Faust con la misma fórmula. Enums `#[repr(u32)]` como contrato
-    C-ABI.
-  - `rng`: `splitmix64` + `WhiteNoise` idénticos a `dsp::noise`.
-  - `tempoclock`: mapeo afín beat↔segundo (con rebase de tempo), helpers
-    seg↔sample y un `Scheduler` (min-heap por beat, estable).
-  - `osc`: timetag NTP, conversión instante→sample por anclaje, armado de
-    bundles (única dep `rosc`, no apto para el audio thread).
-- **`crates/clausters-ffi`** (nuevo, cdylib + rlib): C-ABI sobre el núcleo
-  (`clausters_core_*`), versión `CORE_ABI_VERSION = 1`. Expone builtins sobre
-  arrays, white noise sembrado y los escalares de clock/sample. El armado OSC
-  por FFI se difiere a C2 (cuando el cliente Python lo necesite). Artefacto:
-  `libclausters_ffi.so`, distinto del `libclausters.so` del embed.
-- **Servidor refactorizado a `clausters-core`** (equivalencia por construcción):
-  `dsp::binop` usa `builtins::binary_slice` y `BinaryOp` del núcleo; `dsp::noise`
-  delega en `rng::WhiteNoise` (solo el sembrado por instancia queda en el
-  servidor). RT-safety intacta (funciones `#[inline]`, sin alloc).
+- **Workspace**: the root becomes a workspace (`[workspace]`, `resolver = "3"`)
+  staying the server crate; the new crates live in `crates/`.
+  All existing paths (build.rs, tests, examples,
+  `target/…/libclausters.so`) stay intact.
+- **`crates/clausters-core`** (new): the pure, dependency-free core on the
+  hot path. Modules:
+  - `builtins`: unary/binary ops over a scalar and a slice (with `dsp::at`-style
+    broadcast). `Add/Sub/Mul/Div` are the server's; the rest mirror the
+    Faust Signal API with the same formula. `#[repr(u32)]` enums as the
+    C-ABI contract.
+  - `rng`: `splitmix64` + `WhiteNoise` identical to `dsp::noise`.
+  - `tempoclock`: an affine beat↔second mapping (with tempo rebase),
+    sec↔sample helpers and a `Scheduler` (a min-heap by beat, stable).
+  - `osc`: NTP timetag, instant→sample conversion by anchoring, bundle
+    assembly (the only dep `rosc`, not fit for the audio thread).
+- **`crates/clausters-ffi`** (new, cdylib + rlib): a C-ABI over the core
+  (`clausters_core_*`), version `CORE_ABI_VERSION = 1`. It exposes builtins over
+  arrays, seeded white noise and the clock/sample scalars. OSC assembly
+  via FFI is deferred to C2 (when the Python client needs it). Artifact:
+  `libclausters_ffi.so`, distinct from the embed's `libclausters.so`.
+- **Server refactored to `clausters-core`** (equivalence by construction):
+  `dsp::binop` uses `builtins::binary_slice` and the core's `BinaryOp`; `dsp::noise`
+  delegates to `rng::WhiteNoise` (only the per-instance seeding stays in the
+  server). RT-safety intact (`#[inline]` functions, no alloc).
 
-### Verificación
+### Verification
 
-- `tests/core_parity.rs` (nuevo): los UGens `Add/Sub/Mul/Div` por el camino real
-  de `UGen::process` dan bit-idéntico a `clausters_core::builtins` (bloque
-  completo y constante broadcast); el `WhiteNoise` del servidor corre por
-  delegación.
-- Tests unitarios en `clausters-core` (14) y `clausters-ffi` (4). Suite del
-  servidor, `--features embed` y `--features faust` en verde (paridad Faust
-  sin cambios); `tests/rt_safety.rs` y `tests/denormals.rs` siguen verdes.
-- Comandos: `cargo test` (servidor), `cargo test --workspace` (incluye los
-  crates núcleo y FFI), `cargo build -p clausters-ffi` (genera el cdylib).
-- **Contrato de equivalencia documentado**: bit-exacto para las ops nativas del
-  servidor; para la matemática superior (solo Faust en el servidor) el núcleo
-  usa la misma fórmula, sin garantía bit-a-bit contra el codegen LLVM de Faust
-  (tolerancia, a fijar en su consumo).
+- `tests/core_parity.rs` (new): the `Add/Sub/Mul/Div` UGens via the real
+  `UGen::process` path give bit-identical results to `clausters_core::builtins`
+  (full block and constant broadcast); the server's `WhiteNoise` runs by
+  delegation.
+- Unit tests in `clausters-core` (14) and `clausters-ffi` (4). The server's
+  suite, `--features embed` and `--features faust` green (Faust parity
+  unchanged); `tests/rt_safety.rs` and `tests/denormals.rs` stay green.
+- Commands: `cargo test` (server), `cargo test --workspace` (includes the
+  core and FFI crates), `cargo build -p clausters-ffi` (generates the cdylib).
+- **Documented equivalence contract**: bit-exact for the server's native
+  ops; for the higher math (Faust-only in the server) the core
+  uses the same formula, with no bit-for-bit guarantee against Faust's LLVM codegen
+  (tolerance, to be set at its consumption).
 
-## C1 — Scaffold del paquete Python + núcleo accesible (track cliente)
+## C1 — Python package scaffold + accessible core (client track)
 
-Andamiaje del cliente Python alto y su acceso al núcleo nativo. No hay aún capa
-base/seq/defs (eso es C2–C4); esto deja el paquete importable y el núcleo
-usable desde Python.
+Scaffolding for the high-level Python client and its access to the native core. There is no
+base/seq/defs layer yet (that's C2–C4); this leaves the package importable and the core
+usable from Python.
 
-- **Paquete** `clients/python/clausters/` con `pyproject.toml` (setuptools,
-  stdlib-only en runtime), `README.md` y subpaquetes placeholder `base/`,
-  `seq/`, `defs/` (cada uno documenta en qué milestone se llena).
-- **Transport reubicado**: `clients/python/clausters.py` → `clausters/transport.py`
-  vía `git mv` (preserva historial). El `__init__.py` re-exporta
-  `Clausters`/`ShmClient`/`render`/`ABI_VERSION`/`SEGMENT_SIZE`, así el código y
-  los `examples/*.py` que hacen `from clausters import ...` siguen funcionando.
-  Se ajustó el cálculo de la raíz del repo en `_find_library` (un nivel más
-  profundo).
-- **`clausters/_native.py`**: binding ctypes sobre `libclausters_ffi` (carga
-  perezosa y versionada contra `CORE_ABI_VERSION = 1`, así importar el paquete
-  no falla si el cdylib no está construido). Expone `BinaryOp`/`UnaryOp`
-  (IntEnum con los discriminantes del núcleo), `binary`/`unary` (escalar o
-  secuencia, con broadcast; devuelven float o `array('f')`), `white_noise`, y
-  los escalares de clock/sample. Regla de frontera: solo datos planos cruzan.
-- **`clausters/base/_osclib.py`**: encoder OSC de wire mínimo (stdlib) —
-  `message`, `bundle`/`score_bundle`, `score` — equivalente a los helpers de
-  `examples/json_client.py`, para armar scores que rinden idéntico. La
-  abstracción de interfaces RT/NRT/MIDI va en C2.
+- **Package** `clients/python/clausters/` with `pyproject.toml` (setuptools,
+  stdlib-only at runtime), `README.md` and placeholder subpackages `base/`,
+  `seq/`, `defs/` (each documents which milestone fills it).
+- **Transport relocated**: `clients/python/clausters.py` → `clausters/transport.py`
+  via `git mv` (preserves history). The `__init__.py` re-exports
+  `Clausters`/`ShmClient`/`render`/`ABI_VERSION`/`SEGMENT_SIZE`, so code and
+  the `examples/*.py` that do `from clausters import ...` keep working.
+  The repo-root computation in `_find_library` was adjusted (one level
+  deeper).
+- **`clausters/_native.py`**: a ctypes binding over `libclausters_ffi` (lazy,
+  versioned load against `CORE_ABI_VERSION = 1`, so importing the package
+  doesn't fail if the cdylib isn't built). Exposes `BinaryOp`/`UnaryOp`
+  (IntEnum with the core's discriminants), `binary`/`unary` (scalar or
+  sequence, with broadcast; return a float or `array('f')`), `white_noise`, and
+  the clock/sample scalars. Boundary rule: only flat data crosses.
+- **`clausters/base/_osclib.py`**: a minimal OSC wire encoder (stdlib) —
+  `message`, `bundle`/`score_bundle`, `score` — equivalent to the helpers of
+  `examples/json_client.py`, to build scores that render identically. The
+  RT/NRT/MIDI interface abstraction goes in C2.
 
-### Verificación
+### Verification
 
-- `clients/python/tests/test_smoke.py` (pytest; también ejecutable con
-  `python tests/test_smoke.py`): re-exports, builtins escalar/lista/broadcast +
-  matemática superior, white noise determinista y en rango, conversiones de
-  TempoClock, armado de bundle OSC, y `render()` de un score con el synth
-  `default` (14400 frames @ 48k, peak = amp). Tests skip-aware si falta un
-  cdylib.
-- Smoke corrido inline (pytest no instalado en el entorno): **todas las
-  comprobaciones pasan**. Para `render`, `transport._find_library` prefiere
-  `target/release/`; si ahí hay un `libclausters.so` viejo **sin** la feature
-  embed, usar `CLAUSTERS_LIB` o construir el release con
+- `clients/python/tests/test_smoke.py` (pytest; also runnable with
+  `python tests/test_smoke.py`): re-exports, scalar/list/broadcast builtins +
+  higher math, deterministic and in-range white noise, TempoClock
+  conversions, OSC bundle assembly, and `render()` of a score with the `default`
+  synth (14400 frames @ 48k, peak = amp). Skip-aware tests if a
+  cdylib is missing.
+- Smoke run inline (pytest not installed in the environment): **all
+  checks pass**. For `render`, `transport._find_library` prefers
+  `target/release/`; if there's an old `libclausters.so` there **without** the
+  embed feature, use `CLAUSTERS_LIB` or build the release with
   `--features embed,realtime`.
-- Comandos: `cargo build -p clausters-ffi` (núcleo) y
-  `cargo build --features embed,realtime` (transport `render`); luego
+- Commands: `cargo build -p clausters-ffi` (core) and
+  `cargo build --features embed,realtime` (transport `render`); then
   `cd clients/python && python -m pytest`.
-- Docs actualizadas (ruta del transport movida): `docs/examples.md`,
+- Docs updated (the moved transport path): `docs/examples.md`,
   `docs/ipc.md`, `docs/schemas.md`, `GUIA.md`.
 
-## C2 — Capa base del cliente Python (track cliente)
+## C2 — Python client base layer (client track)
 
-Port selectivo de `sc3/base`. La pieza central es la **costura de interfaces de
-destino**: un mismo `Routine`+`TempoClock` produce eventos RT o un score NRT
-solo cambiando la interfaz, sin tocar reloj ni rutina.
+A selective port of `sc3/base`. The central piece is the **target-interface
+seam**: one and the same `Routine`+`TempoClock` produces RT events or an NRT score
+just by changing the interface, without touching clock or routine.
 
-- **`base/builtins.py`**: ops numéricas sobre escalar o lista, despachadas al
-  núcleo (`_native`) → se computan en **f32**, equivalentes al servidor (la
-  `float` de Python es f64 y divergiría). Listas con extensión cíclica del
-  operando más corto (semántica sc3). Helpers músico-teóricos (`midicps`,
-  `dbamp`, …) en Python puro con la fórmula estándar. Cuidado: `min`/`max`/`pow`
-  del módulo sombrean las builtins de Python; internamente se usa `_py.max`.
-- **`base/absobject.py`**: `AbstractObject` con sobrecarga de operadores
-  (aritméticos, comparación, bitwise) y métodos nombrados, todo despachado por
-  cuatro hooks (`_compose_unop/_binop/_rcompose_binop/_narop`). Los selectores
-  son los mismos nombres que `builtins` (valor) y luego `defs/signals` (grafo).
+- **`base/builtins.py`**: numeric ops over a scalar or list, dispatched to the
+  core (`_native`) → computed in **f32**, equivalent to the server (Python's
+  `float` is f64 and would diverge). Lists with cyclic extension of the shorter
+  operand (sc3 semantics). Music-theory helpers (`midicps`,
+  `dbamp`, …) in pure Python with the standard formula. Watch out: the module's
+  `min`/`max`/`pow` shadow Python's builtins; internally `_py.max` is used.
+- **`base/absobject.py`**: `AbstractObject` with operator overloading
+  (arithmetic, comparison, bitwise) and named methods, all dispatched by
+  four hooks (`_compose_unop/_binop/_rcompose_binop/_narop`). The selectors
+  are the same names as `builtins` (value) and later `defs/signals` (graph).
 - **`base/stream.py`**: `Stream`/`Routine`/`FunctionStream` + `StopStream`/
-  `YieldAndReset`. `Routine` envuelve una **generator function** (0 o 1 arg);
-  `next(inval)` la reanuda (primer resume con el arg, luego `.send`), el valor
-  `yield`eado es el tiempo a esperar (en beats). `yield` se queda en Python.
-- **`base/clock.py`**: `TempoClock` native-backed. La aritmética beat↔segundo
-  va por `_native` (matchea el sample-clock del servidor); la cola es `heapq` en
-  Python (el `Scheduler` del núcleo no está expuesto por FFI todavía). Dos
-  drives: `start/run` (tiempo real, hilo + `Condition`) y `render` (NRT, drena
-  la cola en orden de beat sin dormir). `send_bundle` emite a la interfaz con el
-  tiempo correcto según `time_mode` (unix absoluto en RT, segundos-desde-inicio
-  en NRT).
+  `YieldAndReset`. `Routine` wraps a **generator function** (0 or 1 arg);
+  `next(inval)` resumes it (the first resume with the arg, then `.send`), the
+  `yield`ed value is the time to wait (in beats). `yield` stays in Python.
+- **`base/clock.py`**: a native-backed `TempoClock`. The beat↔second arithmetic
+  goes via `_native` (matches the server's sample-clock); the queue is `heapq` in
+  Python (the core's `Scheduler` isn't exposed via FFI yet). Two
+  drives: `start/run` (real time, a thread + `Condition`) and `render` (NRT, drains
+  the queue in beat order without sleeping). `send_bundle` emits to the interface with the
+  correct time according to `time_mode` (absolute unix in RT, seconds-since-start
+  in NRT).
 - **`base/_oscinterface.py`**: `OscInterface` + `OscUDPInterface` (RT, socket),
-  `OscNrtInterface`+`OscScore` (acumula bundles → score → `render()` por el
-  transport de C1), `OscTCPInterface` (stub: TCP no implementado en el
-  servidor). **`base/_midiinterface.py`**: `MidiNrtInterface`+`MidiScore`
-  funcional, `MidiRtInterface` stub (sin backend MIDI como dependencia).
-- **`base/netaddr.py`** (`NetAddr` host/puerto) y **`base/main.py`**
-  (`main`: clock por defecto, time-thread actual, RNG con semilla).
-- **`base/_osclib.py`**: agregado `bundle_at` (timetag NTP absoluto) para el
-  envío RT.
+  `OscNrtInterface`+`OscScore` (accumulates bundles → score → `render()` via the
+  C1 transport), `OscTCPInterface` (stub: TCP not implemented in the
+  server). **`base/_midiinterface.py`**: `MidiNrtInterface`+`MidiScore`
+  functional, `MidiRtInterface` a stub (no MIDI backend as a dependency).
+- **`base/netaddr.py`** (`NetAddr` host/port) and **`base/main.py`**
+  (`main`: default clock, current time-thread, seeded RNG).
+- **`base/_osclib.py`**: added `bundle_at` (absolute NTP timetag) for the
+  RT send.
 
-### Verificación
+### Verification
 
-- `clients/python/tests/test_base.py` (pytest o `python tests/test_base.py`):
-  builtins escalar/lista/f32/música, sobrecarga de operadores por selector,
-  routine (yield + inval + reset + StopStream), matemática del clock, TCP stub,
-  y el **caso estrella**: routine→`OscNrtInterface`→score→`render()`.
-- Corrido inline (pytest no instalado): **todo pasa**. Seam NRT = 120000 frames
-  @ 48k (peak = amp); smoke del driver RT = 4 eventos, parada limpia, sin
+- `clients/python/tests/test_base.py` (pytest or `python tests/test_base.py`):
+  scalar/list/f32/music builtins, operator overloading by selector,
+  routine (yield + inval + reset + StopStream), clock math, the TCP stub,
+  and the **star case**: routine→`OscNrtInterface`→score→`render()`.
+- Run inline (pytest not installed): **everything passes**. The NRT seam = 120000 frames
+  @ 48k (peak = amp); the RT driver smoke = 4 events, clean stop, no
   deadlock.
 
-## C3 — Defs Faust-first y recursos del servidor (track cliente)
+## C3 — Faust-first defs and server resources (client track)
 
-Port de `sc3/synth`, Faust-first. Es el centro del cliente: construir defs Faust
-desde Python y manejar nodos/buses/buffers contra el servidor.
+A Faust-first port of `sc3/synth`. It's the client's center: building Faust defs
+from Python and managing nodes/buses/buffers against the server.
 
-- **`defs/signals.py`**: la interfaz de usuario para FaustDefs. Callables en
-  **minúscula** (`sin`, `cos`, `min`, `delay`, `hslider`, `recursion`, `input`,
-  …) que devuelven `Signal` (subclase de `AbstractObject`), y su composición
-  —por operadores o por funciones— arma el **JSON signal tree** del servidor
-  (`{"signals":[…]}`). Constantes = números pelados; feedback explícito con
-  `recursion`/`self_` (o el azúcar `rec(lambda s: …)`). Selectores de
-  `absobject` → ops Faust (`mod`→`rem`, `neg`→`0-x`, bitwise→`and/or/xor`…).
-- **`defs/faustdef.py`**: `FaustDef` con las tres formas para `/d_faust`
-  (`from_signals`, `from_source`, `from_box`); `.payload()` serializa,
-  `.control_names()` extrae los labels de los controles, `reserved=("out","in")`
-  (los buses de salida/entrada que el servidor agrega).
-- **`defs/node.py` / `bus.py` / `buffer.py`**: handles planos (`Synth`/`Group`,
-  `Bus`, `Buffer`) y allocators client-side estilo scsynth (ids desde 1000;
-  buses audio reservando las salidas de hardware; control 0..1023; buffers
-  0..1023; reuso de freed).
-- **`defs/server.py`**: facade `Server` sobre una conexión `send`/`recv`
-  (`UdpConnection` por defecto; admite adaptadores sobre el transport). Arma el
-  OSC y maneja replies async: `add_def` bloquea hasta `/done` (o lanza ante
+- **`defs/signals.py`**: the user interface for FaustDefs. **Lowercase**
+  callables (`sin`, `cos`, `min`, `delay`, `hslider`, `recursion`, `input`,
+  …) that return a `Signal` (a subclass of `AbstractObject`), and their composition
+  —by operators or by functions— builds the server's **JSON signal tree**
+  (`{"signals":[…]}`). Constants = bare numbers; explicit feedback with
+  `recursion`/`self_` (or the sugar `rec(lambda s: …)`). The selectors of
+  `absobject` → Faust ops (`mod`→`rem`, `neg`→`0-x`, bitwise→`and/or/xor`…).
+- **`defs/faustdef.py`**: `FaustDef` with the three forms for `/d_faust`
+  (`from_signals`, `from_source`, `from_box`); `.payload()` serializes,
+  `.control_names()` extracts the controls' labels, `reserved=("out","in")`
+  (the output/input buses the server adds).
+- **`defs/node.py` / `bus.py` / `buffer.py`**: flat handles (`Synth`/`Group`,
+  `Bus`, `Buffer`) and scsynth-style client-side allocators (ids from 1000;
+  audio buses reserving the hardware outputs; control 0..1023; buffers
+  0..1023; reuse of freed).
+- **`defs/server.py`**: a `Server` facade over a `send`/`recv` connection
+  (`UdpConnection` by default; supports adapters over the transport). It builds the
+  OSC and handles async replies: `add_def` blocks until `/done` (or raises on
   `/fail`), `synth`/`group`/`set`/`map`/`free`, buses (`/c_set`/`/c_get`),
-  buffers (`/b_alloc`), `notify`/`status`/`sync`/`quit`. Los controles van por
-  dict o lista de pares (así `in`/`out`, que son keywords, son expresables).
-- **`base/_osclib.py`**: agregado `decode` (mensaje OSC → `(addr, args)`) para
-  leer los replies.
+  buffers (`/b_alloc`), `notify`/`status`/`sync`/`quit`. The controls go via a
+  dict or a list of pairs (so `in`/`out`, which are keywords, are expressible).
+- **`base/_osclib.py`**: added `decode` (OSC message → `(addr, args)`) to
+  read the replies.
 
-### Verificación
+### Verification
 
-- `clients/python/tests/test_defs.py`: señales (funciones + operadores +
-  `recursion`/`self`), payload y `control_names` de `FaustDef`, allocators
-  (reuso de freed, reserva de salidas), `Server` sobre conexión fake (layout de
-  `/s_new`, `/d_faust` done/fail, `/n_set`), y el **vertical slice E2E** por NRT.
-- Corrido inline (pytest no instalado): **todo pasa**. E2E offline
-  grafo→`/d_faust`→`/s_new`→control→`render()` = 48000 frames @ 48k (peak =
-  amp), con el JIT de Faust corriendo en NRT.
-- **E2E en vivo** validado (server + cliente en la misma invocación Bash, regla
-  de CLAUDE.md): `Server` por UDP en 57110 → `/status`, `add_def` (compila
-  Faust), `/s_new`, `/n_set`, `/n_free`, `quit`. Requiere el binario con
+- `clients/python/tests/test_defs.py`: signals (functions + operators +
+  `recursion`/`self`), `FaustDef`'s payload and `control_names`, allocators
+  (reuse of freed, reservation of outputs), `Server` over a fake connection (the layout of
+  `/s_new`, `/d_faust` done/fail, `/n_set`), and the **E2E vertical slice** over NRT.
+- Run inline (pytest not installed): **everything passes**. Offline E2E
+  graph→`/d_faust`→`/s_new`→control→`render()` = 48000 frames @ 48k (peak =
+  amp), with Faust's JIT running in NRT.
+- **Live E2E** validated (server + client in the same Bash invocation, the
+  CLAUDE.md rule): `Server` over UDP at 57110 → `/status`, `add_def` (compiles
+  Faust), `/s_new`, `/n_set`, `/n_free`, `quit`. Requires the binary with
   `--features …,faust`.
-- **`clients/python/GUIA.md`** (nuevo, pedido del usuario; movido desde `clients/python/clausters/GUIA.md` a la raíz del paquete el 2026-06-17): guía de
-  prueba manual del cliente al estilo de la `GUIA.md` raíz, con snippets
-  runnables por milestone (C0–C3), slice NRT y slice en vivo, y checklist.
+- **`clients/python/GUIA.md`** (new, user request; moved from `clients/python/clausters/GUIA.md` to the package root on 2026-06-17): a manual-test
+  guide for the client in the style of the root `GUIA.md`, with runnable
+  snippets per milestone (C0–C3), an NRT slice and a live slice, and a checklist.
 
-## C4 — Refactor: separación cliente/servidor (track cliente)
+## C4 — Refactor: client/server separation (client track)
 
-Corrección quirúrgica detectada después de C3: `TempoClock` había quedado dueño
-de comunicación que pertenece a `Server` (la representación del servidor
-Clausters). Se movió, **sin reescribir lo que ya funcionaba** (ver memoria
+A surgical correction detected after C3: `TempoClock` had ended up owning
+communication that belongs to `Server` (the representation of the Clausters
+server). It was moved, **without rewriting what already worked** (see memory
 `separacion-cliente-servidor-clausters`).
 
-- **`base/clock.TempoClock`**: se le sacó `target`/`interface` y los métodos
-  `send_bundle`/`send_msg`/`_emit`/`_when`. Queda **solo con timing** (math por
-  el núcleo, cola, drives RT/NRT, reanudar rutinas) y expone el tiempo:
-  `beats()`, `beats2secs()` y la nueva propiedad `start_time`. En `_wake` ahora
-  setea `routine.clock = self` (el thread en curso lleva su reloj, estilo sc3).
-- **`base/stream`**: `Routine`/`FunctionStream` tienen slot `clock` (lo setea el
-  reloj al reanudar; así la `Server` halla el tiempo lógico vía `main.current_tt`).
-- **`base/_oscinterface`**: la base ahora declara `recv`/`close`;
-  `OscUDPInterface` **bindea** el socket y agrega `recv(timeout)`, así una sola
-  interfaz hace envío **y** recepción de replies (reconcilia la antigua
+- **`base/clock.TempoClock`**: stripped of `target`/`interface` and the methods
+  `send_bundle`/`send_msg`/`_emit`/`_when`. It keeps **only timing** (math via
+  the core, queue, RT/NRT drives, resuming routines) and exposes time:
+  `beats()`, `beats2secs()` and the new `start_time` property. In `_wake` it now
+  sets `routine.clock = self` (the running thread carries its clock, sc3-style).
+- **`base/stream`**: `Routine`/`FunctionStream` have a `clock` slot (set by the
+  clock when resuming; so the `Server` finds the logical time via `main.current_tt`).
+- **`base/_oscinterface`**: the base now declares `recv`/`close`;
+  `OscUDPInterface` **binds** the socket and adds `recv(timeout)`, so a single
+  interface does sending **and** receiving of replies (reconciles the old
   `UdpConnection`).
-- **`defs/server.Server`**: ahora **posee la interfaz de comunicación**
-  (`OscUDPInterface` por defecto en RT; `OscNrtInterface` para offline; shm/embed
-  serían interfaces nuevas) y **emite**: `send_msg` (inmediato) y `send_bundle`
-  (temporizado, calcula el timetag leyendo el reloj de la rutina en curso y el
-  `time_mode` de la interfaz). `request` usa `interface.recv`. `render()`
-  (modo NRT) delega en la interfaz. Eliminada `UdpConnection`. El patrón en las
-  rutinas pasó de `clock.send_bundle(...)` a `server.send_bundle(...)`.
+- **`defs/server.Server`**: now **owns the communication interface**
+  (`OscUDPInterface` by default in RT; `OscNrtInterface` for offline; shm/embed
+  would be new interfaces) and **emits**: `send_msg` (immediate) and `send_bundle`
+  (timed, computes the timetag by reading the running routine's clock and the
+  interface's `time_mode`). `request` uses `interface.recv`. `render()`
+  (NRT mode) delegates to the interface. `UdpConnection` removed. The pattern in
+  routines went from `clock.send_bundle(...)` to `server.send_bundle(...)`.
 
-### Verificación
+### Verification
 
-- Tests actualizados (`test_base.py` seam, `test_defs.py` Server + E2E): el
-  fake de conexión pasó a ser un **fake de interfaz** (`send_msg`/`send_bundle`/
-  `recv`); el seam y el E2E emiten por `Server`. Corrido inline (pytest no
-  instalado): **todo pasa**. Seam NRT = 120000 frames; E2E faustdef = 48000
+- Tests updated (`test_base.py` seam, `test_defs.py` Server + E2E): the
+  connection fake became an **interface fake** (`send_msg`/`send_bundle`/
+  `recv`); the seam and the E2E emit via `Server`. Run inline (pytest not
+  installed): **everything passes**. NRT seam = 120000 frames; E2E faustdef = 48000
   frames (peak = amp).
-- **E2E en vivo** revalidado (server+cliente misma invocación Bash): `Server`
-  por UDP → `/status`, `add_def` (compila Faust), `/s_new`, `/n_set`, `/n_free`.
-- Smoke del driver RT con `Server.send_bundle` (rama wall-clock de `_when`): 4
-  eventos, parada limpia.
-- Criterio de aceptación cumplido: `TempoClock` no referencia interfaz/NetAddr;
-  cambiar de transporte = agregar una interfaz de comunicación a la `Server`,
-  sin tocar reloj/seq. `GUIA.md` actualizada.
+- **Live E2E** revalidated (server+client same Bash invocation): `Server`
+  over UDP → `/status`, `add_def` (compiles Faust), `/s_new`, `/n_set`, `/n_free`.
+- The RT driver smoke with `Server.send_bundle` (the wall-clock branch of `_when`): 4
+  events, clean stop.
+- Acceptance criterion met: `TempoClock` references no interface/NetAddr;
+  changing transport = adding a communication interface to the `Server`,
+  without touching clock/seq. `GUIA.md` updated.
 
-## C5 — Capa de secuenciación (seq) (track cliente)
+## C5 — Sequencing layer (seq) (client track)
 
-Port de `sc3/seq`. Un `Pbind` corre RT o NRT solo cambiando la interfaz de la
-`Server` (la costura), con timing **exacto por `yield`**.
+A port of `sc3/seq`. A `Pbind` runs RT or NRT just by changing the `Server`'s
+interface (the seam), with **`yield`-exact** timing.
 
-- **`seq/event.py`**: `Event` (dict con defaults de nota). `play(server)`
-  asigna id de nodo, emite `/s_new` en el beat lógico actual y agenda la
-  liberación a `sustain = dur*legato*stretch` (por defecto `/n_free`; con
-  `has_gate` manda `gate 0`). `delta = dur*stretch`. Pitch desde `freq`/
-  `midinote`/`degree`+escala. Adaptado a Clausters (sin doneAction todavía).
-- **`seq/pattern.py`**: `Pattern` base + value patterns (`Pseq`, `Pser`,
-  `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) y `Pbind`
-  (combina patterns por clave → stream de `Event`; corta cuando un stream
-  finito se agota). Implementados como generators Python; sub-patterns se
-  embeben en sitio.
-- **`seq/eventstream.py`**: `EventStreamPlayer` = una `Routine` que por cada
-  evento lo toca contra el `Server` (emitiendo en el beat lógico) y `yield`ea
-  su `delta`. `Pbind(...).play(clock, server)` lo arma.
-- **Timing exacto (refinamiento del núcleo, ver memoria
-  `tempoclock-timebase-clausters`)**: el reloj setea `routine._logical_beat` al
-  reanudar; `Server.send_bundle` emite desde ese beat lógico (acumulado por
-  `yield`), no desde el "ahora". Pacing con `time.monotonic()` (fuente
-  `timebase` enchufable); el timetag OSC usa un reloj **wall/Unix** separado
-  (`start_time`), válido para el servidor. `Server.latency` para lookahead RT.
-- **Pendiente (follow-up)**: timebase alternativo = sample-clock del servidor
-  (seleccionable; el hook `timebase` ya lo permite) + tests robustos con ambas
-  opciones; golden de paridad de score más completo.
+- **`seq/event.py`**: `Event` (a dict with note defaults). `play(server)`
+  assigns a node id, emits `/s_new` at the current logical beat and schedules the
+  release at `sustain = dur*legato*stretch` (by default `/n_free`; with
+  `has_gate` it sends `gate 0`). `delta = dur*stretch`. Pitch from `freq`/
+  `midinote`/`degree`+scale. Adapted to Clausters (no doneAction yet).
+- **`seq/pattern.py`**: a `Pattern` base + value patterns (`Pseq`, `Pser`,
+  `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) and `Pbind`
+  (combines patterns by key → a stream of `Event`s; cuts when a finite
+  stream runs out). Implemented as Python generators; sub-patterns are
+  embedded in place.
+- **`seq/eventstream.py`**: `EventStreamPlayer` = a `Routine` that for each
+  event plays it against the `Server` (emitting at the logical beat) and `yield`s
+  its `delta`. `Pbind(...).play(clock, server)` builds it.
+- **Exact timing (a core refinement, see memory
+  `tempoclock-timebase-clausters`)**: the clock sets `routine._logical_beat` when
+  resuming; `Server.send_bundle` emits from that logical beat (accumulated by
+  `yield`), not from "now". Pacing with `time.monotonic()` (a pluggable
+  `timebase` source); the OSC timetag uses a separate **wall/Unix** clock
+  (`start_time`), valid for the server. `Server.latency` for RT lookahead.
+- **Pending (follow-up)**: an alternative timebase = the server's sample-clock
+  (selectable; the `timebase` hook already allows it) + robust tests with both
+  options; a more complete score parity golden.
 
-### Verificación
+### Verification
 
-- `clients/python/tests/test_seq.py` (con **pytest**, ya dependencia de dev):
-  value patterns, `Event` (defaults/pitch/delta/sustain), `Pbind`, el **test de
-  exactitud** (`/s_new` en `[0, 0.5, 1.0, 1.5]` exactos en el score NRT) y el
-  render del seam (`Pbind` de `default` → score → audio). Suite completa:
+- `clients/python/tests/test_seq.py` (with **pytest**, now a dev dependency):
+  value patterns, `Event` (defaults/pitch/delta/sustain), `Pbind`, the **exactness
+  test** (`/s_new` at exactly `[0, 0.5, 1.0, 1.5]` in the NRT score) and the
+  render of the seam (`Pbind` of `default` → score → audio). Full suite:
   **32 passed**.
-- **E2E en vivo** (server+cliente misma invocación Bash): `Pbind` por UDP con
-  `latency`, reloj RT en un thread; los synths se liberan solos al terminar
-  (`status` = 0 synths). Pacing monotónico, timetags wall.
+- **Live E2E** (server+client same Bash invocation): `Pbind` over UDP with
+  `latency`, an RT clock in a thread; the synths free themselves at the end
+  (`status` = 0 synths). Monotonic pacing, wall timetags.
 
-### Follow-up post-C5: contexto sin globales que se pisen entre hilos
+### Post-C5 follow-up: a context without globals that clobber across threads
 
-Principio del proyecto: evitar estados globales (ver memoria
-`evitar-estados-globales-clausters`); habilitar **RT y NRT en el mismo script**.
+A project principle: avoid global state (see memory
+`evitar-estados-globales-clausters`); enable **RT and NRT in the same script**.
 
-- **`base/main.py`**: `main.current_tt` pasó a ser **thread-local**
-  (`threading.local`). Así varios `TempoClock` (threads) y un reloj RT en vivo
-  junto a un render NRT no se pisan el "thread actual". `Server`/`clock` siguen
-  explícitos por instancia; `default_clock` es solo azúcar opcional (nunca
-  requerido).
-- **`tests/test_concurrency.py`** (nuevo): (1) `current_tt` es thread-local
-  (un worker no clobberea al main); (2) dos relojes NRT concurrentes rinden
-  scores independientes y con timing exacto (sin mezclar frecuencias ni
-  tiempos); (3) **litmus**: un reloj RT churneando en un thread de fondo
-  mientras el main arma un score NRT — el NRT queda exacto. Suite: **35 passed**.
-### Follow-up post-C5: timebase seleccionable (monotónico vs sample-clock)
+- **`base/main.py`**: `main.current_tt` became **thread-local**
+  (`threading.local`). So several `TempoClock`s (threads) and a live RT clock
+  alongside an NRT render don't clobber the "current thread". `Server`/`clock` stay
+  explicit per instance; `default_clock` is only optional sugar (never
+  required).
+- **`tests/test_concurrency.py`** (new): (1) `current_tt` is thread-local
+  (a worker doesn't clobber the main); (2) two concurrent NRT clocks render
+  independent scores with exact timing (without mixing frequencies or
+  times); (3) **litmus**: an RT clock churning in a background thread
+  while the main builds an NRT score — the NRT stays exact. Suite: **35 passed**.
+### Post-C5 follow-up: selectable timebase (monotonic vs sample-clock)
 
-- **`base/timebase.py`** (nuevo): `Timebase` con `MonotonicTimebase` (default, el
-  reloj del SO; eventos por bundle NTP) y `SampleClockTimebase(sample, sr)`
-  (`now = sample()/sr`, anclado al **reloj de muestras del servidor**; `sample`
-  es cualquier callable al contador, p. ej. `Clausters.clock`/`ShmClient.clock`).
-- **`base/clock.py`**: `TempoClock(timebase=…)` usa el objeto (default
-  `MonotonicTimebase`); `pacing_origin` expone el origen en segundos del
-  timebase. **`defs/server.py`**: en RT, si el timebase es `SampleClockTimebase`
-  emite por **`/sched <sample_absoluto>`** (`origin + secs + latency` × sr,
-  sample-accurate, sin drift) en vez de timetag wall; si no, bundle NTP como
-  antes. NRT (score, lógico) es **independiente del timebase**. Agregado
-  `_osclib.immediate_bundle` (blob del `/sched`).
-- **Verificación** (`tests/test_timebase.py`, **40 passed** en la suite):
-  monotónico emite bundle NTP (no `/sched`); sample-clock paça contra el contador
-  y emite `/sched` con el sample exacto (+ efecto de `latency`); NRT idéntico con
-  ambos timebases. `/sched` **validado en vivo** (servidor acepta y procesa;
-  synths suenan y se liberan).
-- Pendiente: lector real del sample-clock sobre UDP (anclaje `/clock`); golden de
-  paridad más completo; ergonomía de defaults sin globales; SynthDef
-  instance-based al portarlo.
+- **`base/timebase.py`** (new): `Timebase` with `MonotonicTimebase` (default, the
+  OS clock; events via NTP bundle) and `SampleClockTimebase(sample, sr)`
+  (`now = sample()/sr`, anchored to the **server's sample clock**; `sample`
+  is any callable to the counter, e.g. `Clausters.clock`/`ShmClient.clock`).
+- **`base/clock.py`**: `TempoClock(timebase=…)` uses the object (default
+  `MonotonicTimebase`); `pacing_origin` exposes the timebase's origin in seconds.
+  **`defs/server.py`**: in RT, if the timebase is `SampleClockTimebase` it
+  emits via **`/sched <absolute_sample>`** (`origin + secs + latency` × sr,
+  sample-accurate, no drift) instead of a wall timetag; otherwise an NTP bundle as
+  before. NRT (score, logical) is **independent of the timebase**. Added
+  `_osclib.immediate_bundle` (the `/sched` blob).
+- **Verification** (`tests/test_timebase.py`, **40 passed** in the suite):
+  monotonic emits an NTP bundle (not `/sched`); sample-clock paces against the counter
+  and emits `/sched` with the exact sample (+ the effect of `latency`); NRT identical with
+  both timebases. `/sched` **validated live** (the server accepts and processes it;
+  synths sound and free themselves).
+- Pending: a real sample-clock reader over UDP (`/clock` anchoring); a more complete
+  parity golden; defaults ergonomics without globals; an instance-based SynthDef
+  when porting it.
 
-## C9 (parcial) — Documentación cross-lenguaje
+## C9 (partial) — Cross-language documentation
 
-Adelanto del milestone de cierre porque es lo más útil para planificar el
-cliente JS y la distribución.
+The close-out milestone brought forward because it's the most useful for planning the
+JS client and distribution.
 
-- **`docs/clients.md`** (nuevo capítulo del mdBook, en `SUMMARY.md` bajo
-  "Library & Embedding"): el **contrato C-ABI único** (`clausters-core` →
-  `clausters-ffi` + embed/shm, regla de datos planos, los dos cdylibs y sus
-  entry points), el **cliente Python** (capas base/seq/defs, estado C0–C5,
-  cómo consume el C-ABI por ctypes y habla OSC), el **camino al cliente JS**
-  (mismo C-ABI vía N-API/wasm, generators/async en vez de `yield`; sin
-  implementar) y el **plan de distribución** (wheels Python, npm/wasm JS, Faust
-  reproducible en `third_party`). Tabla de estado.
-- **Confirmación del reuso del C-ABI**: Python (lenguaje no-Rust) ya maneja todo
-  el sistema (matemática del núcleo, render offline, servidor vivo) solo por el
-  C-ABI + OSC → la frontera no es Python-específica.
-- `mdbook build` en verde con el capítulo nuevo.
-- Pendiente del cierre (C9 ⏳ / C10): ejemplo en `examples/`, cliente JS real,
-  empaquetado wheels/npm + Faust en `third_party`; y mantener docs/ejemplos al
-  día (milestone C10).
+- **`docs/clients.md`** (a new mdBook chapter, in `SUMMARY.md` under
+  "Library & Embedding"): the **single C-ABI contract** (`clausters-core` →
+  `clausters-ffi` + embed/shm, the flat-data rule, the two cdylibs and their
+  entry points), the **Python client** (base/seq/defs layers, C0–C5 state,
+  how it consumes the C-ABI via ctypes and speaks OSC), the **path to the JS client**
+  (the same C-ABI via N-API/wasm, generators/async instead of `yield`; not
+  implemented) and the **distribution plan** (Python wheels, npm/wasm JS, Faust
+  reproducible in `third_party`). A state table.
+- **C-ABI reuse confirmation**: Python (a non-Rust language) already drives the whole
+  system (core math, offline render, live server) only via the
+  C-ABI + OSC → the boundary is not Python-specific.
+- `mdbook build` green with the new chapter.
+- Pending for the close-out (C9 ⏳ / C10): an example in `examples/`, a real JS client,
+  wheels/npm packaging + Faust in `third_party`; and keeping docs/examples up
+  to date (milestone C10).
 
-## C5 — cierre de las sueltas (golden + ergonomía sin globales)
+## C5 — closing the loose ends (golden + ergonomics without globals)
 
-- **`clausters.session.Session`** (nuevo, exportado del paquete): contexto
-  explícito que agrupa `Server`+`TempoClock`; fábricas `Session.nrt(tempo)` y
+- **`clausters.session.Session`** (new, exported from the package): an explicit
+  context that bundles `Server`+`TempoClock`; factories `Session.nrt(tempo)` and
   `Session.live(host, port, …)`; `play(pattern)`/`render()`/`run(s)`/`start`/
-  `stop`/context-manager. Devuelve la ergonomía de los defaults de sc3 **sin
-  estado global**: varias sesiones coexisten (NRT para plot + RT en vivo en el
-  mismo script). Test `tests/test_session.py` (render NRT; dos sesiones
-  independientes).
-- **`tests/test_golden.py`** (nuevo): golden de paridad — el render del camino
-  `Pbind` es **byte-idéntico** al del OSC hand-rolled equivalente (mismo motor
-  por el embed render); `list(hi)==list(lo)`, frames 91200. Prueba end-to-end de
+  `stop`/context-manager. It gives back sc3's defaults ergonomics **without
+  global state**: several sessions coexist (NRT for plot + live RT in the
+  same script). Test `tests/test_session.py` (NRT render; two independent
+  sessions).
+- **`tests/test_golden.py`** (new): a parity golden — the render of the
+  `Pbind` path is **byte-identical** to that of the equivalent hand-rolled OSC (same engine
+  via the embed render); `list(hi)==list(lo)`, 91200 frames. An end-to-end test of
   event/pattern/timing.
-- Suite: **43 passed**. Único pendiente de C5: grafo **instance-based** al portar
-  SynthDef (cerrado más abajo, "C5 — grafo UGen instance-based").
+- Suite: **43 passed**. The only C5 pending: an **instance-based** graph when porting
+  SynthDef (closed below, "C5 — instance-based UGen graph").
 
-## C6 — Anclaje del sample-clock por UDP (track cliente)
+## C6 — UDP sample-clock anchoring (client track)
 
-Completa el timebase sample-clock para el transporte **UDP** (antes solo se
-anclaba fácil por embed/shm con `.clock`).
+Completes the sample-clock timebase for the **UDP** transport (before it could only
+be anchored easily via embed/shm with `.clock`).
 
-- **`defs/clocksync.py`** (nuevo): `SampleClockModel` — `sample = a + b·t` por
-  **mínimos cuadrados** sobre ventana deslizante de anchors `/clock` (midpoint
-  del round-trip como tiempo local; la latencia no acumula, solo corre la grilla
-  un constante). Mismo modelo que `examples/sample_clock.py` del servidor.
-  `UdpSampleClock` — usa **socket propio** (no compite con el de la `Server`);
-  `anchor()`/`warmup()`/`track(interval)` (re-anclaje en background) y
-  `timebase()` → `SampleClockTimebase(now, rate)`. `Server.sample_clock()` lo
-  construye.
-- Con esto, una `TempoClock(timebase=sc.timebase())` **paça contra el reloj de
-  muestras del servidor** y la `Server` emite por **`/sched <sample_absoluto>`**
-  (sample-accurate, sin drift) en vivo por UDP.
-- **Verificación**: `tests/test_clocksync.py` (modelo: recupera recta limpia,
-  mide drift ppm con pendiente conocida, fallback a rate nominal con 1 anchor,
-  smoke del timebase). Suite **47 passed**. **Live** (server+cliente misma
-  invocación): `warmup` por `/clock` (rate 44100, anchor ±0.20 ms) → `Pbind` por
-  `/sched`, synths suenan y se liberan. (El drift en runs cortos es ruidoso por
-  la cuantización de buffer del contador; converge con baseline largo y solo
-  afecta cuán temprano se envía el `/sched`, no cuándo dispara — documentado.)
+- **`defs/clocksync.py`** (new): `SampleClockModel` — `sample = a + b·t` by
+  **least squares** over a sliding window of `/clock` anchors (the round-trip
+  midpoint as local time; latency doesn't accumulate, it just shifts the grid
+  by a constant). The same model as the server's `examples/sample_clock.py`.
+  `UdpSampleClock` — uses **its own socket** (doesn't compete with the `Server`'s);
+  `anchor()`/`warmup()`/`track(interval)` (background re-anchoring) and
+  `timebase()` → `SampleClockTimebase(now, rate)`. `Server.sample_clock()` builds
+  it.
+- With this, a `TempoClock(timebase=sc.timebase())` **paces against the server's
+  sample clock** and the `Server` emits via **`/sched <absolute_sample>`**
+  (sample-accurate, no drift) live over UDP.
+- **Verification**: `tests/test_clocksync.py` (model: recovers a clean line,
+  measures drift ppm with a known slope, falls back to the nominal rate with 1 anchor,
+  a timebase smoke). Suite **47 passed**. **Live** (server+client same
+  invocation): `warmup` via `/clock` (rate 44100, anchor ±0.20 ms) → `Pbind` via
+  `/sched`, synths sound and free themselves. (Drift on short runs is noisy due to
+  the counter's buffer quantization; it converges with a long baseline and only
+  affects how early the `/sched` is sent, not when it fires — documented.)
 
-## C5 — grafo UGen instance-based (suelta de C5 cerrada, 2026-06-17)
+## C5 — instance-based UGen graph (C5 leftover closed, 2026-06-17)
 
-Cierra el único pendiente registrado de C5: la contraparte UGen del par Faust
-`signals`/`FaustDef`, construida **instance-based** (sin contexto global de
-build estilo `UGen.buildSynthDef` de sclang).
+Closes the only recorded C5 pending: the UGen counterpart of the Faust pair
+`signals`/`FaustDef`, built **instance-based** (without a global build
+context in the style of sclang's `UGen.buildSynthDef`).
 
-- **`defs/ugens.py`**: nodos del grafo y callables minúscula (el "instruction
-  set" del cliente). `Ugen(kind, inputs)` y `Control(name, default)` comparten
-  `_Node(AbstractObject)`: los cuatro operadores aritméticos componen UGens
-  `Add`/`Sub`/`Mul`/`Div` (los únicos math UGens del servidor); cualquier otro
-  operador/unario levanta `TypeError` claro ("usá un Faust def"). Callables:
+- **`defs/ugens.py`**: graph nodes and lowercase callables (the client's
+  "instruction set"). `Ugen(kind, inputs)` and `Control(name, default)` share
+  `_Node(AbstractObject)`: the four arithmetic operators compose UGens
+  `Add`/`Sub`/`Mul`/`Div` (the server's only math UGens); any other
+  operator/unary raises a clear `TypeError` ("use a Faust def"). Callables:
   `sin_osc`, `impulse`, `white_noise`, `in_`/`in_ctl`, `out`/`replace_out`,
-  `play_buf`/`buf_rd`, `local_in`/`local_out`, `control`. Orden de inputs según
-  el registry del servidor (ver `docs/schemas.md`).
-- **`defs/synthdef.py`**: `SynthDef(name, *outputs)` recorre el grafo en
-  post-orden: cada UGen se emite tras sus inputs ⇒ lista `ugens` topológicamente
-  ordenada (todo `{"ugen": w}` apunta a un nodo anterior, como exige el server)
-  y los subgrafos compartidos se emiten una vez (dedup por identidad). Controles
-  recolectados en orden de primera aparición (defaults en conflicto = error).
-  `payload()` → JSON `SynthDefSpec`; `control_names()` paralelo a `FaustDef`.
-- **`Server.add_synthdef(sdef)`**: en RT bloquea hasta `/done` (o `/fail`); en
-  NRT scorea `/d_recv` en t=0 (el render lo compila antes de avanzar el tiempo —
-  semántica NRT de scsynth). Mismo patrón que `add_def` (Faust).
-- **Frontera/no-globales**: el grafo es el árbol de objetos compuestos; nada
-  thread-global, así que varias defs se arman en paralelo (memoria
-  `evitar-estados-globales-clausters`). El resto de `sc3/synth` (más UGens) es
-  del lado servidor y queda independiente de esta suelta.
-- **Verificación** (`tests/test_synthdef.py`, **56 passed, 1 skip** en la
-  suite): estructura (spec idéntico al `default` interno, dedup, operadores →
-  Add/Mul/…, errores de operador no soportado, control en conflicto, LocalIn
-  antes de LocalOut, outputs deben ser UGens) **sin servidor**; y un **golden de
-  paridad**: el `Pbind` sobre una def cliente equivalente al `default` rinde
-  **byte-idéntico** al `Pbind` sobre el `default` interno (mismo motor por el
-  embed render). **E2E en vivo** (server+cliente misma invocación Bash): `/d_recv`
-  → `/done`, `/s_new` instancia igual que una def interna (synths/defs por
-  `/status`). Ejemplo `examples/synthdef.py` (imprime el JSON, prueba la paridad,
-  opcionalmente escribe un WAV).
+  `play_buf`/`buf_rd`, `local_in`/`local_out`, `control`. Input order follows
+  the server's registry (see `docs/schemas.md`).
+- **`defs/synthdef.py`**: `SynthDef(name, *outputs)` walks the graph in
+  post-order: each UGen is emitted after its inputs ⇒ a topologically
+  ordered `ugens` list (every `{"ugen": w}` points to an earlier node, as the
+  server requires) and shared subgraphs are emitted once (dedup by identity).
+  Controls collected in order of first appearance (conflicting defaults = error).
+  `payload()` → JSON `SynthDefSpec`; `control_names()` parallel to `FaustDef`.
+- **`Server.add_synthdef(sdef)`**: in RT it blocks until `/done` (or `/fail`); in
+  NRT it scores `/d_recv` at t=0 (the render compiles it before advancing time —
+  scsynth's NRT semantics). The same pattern as `add_def` (Faust).
+- **Boundary/no-globals**: the graph is the tree of composed objects; nothing
+  thread-global, so several defs are built in parallel (memory
+  `evitar-estados-globales-clausters`). The rest of `sc3/synth` (more UGens) is
+  server-side and stays independent of this leftover.
+- **Verification** (`tests/test_synthdef.py`, **56 passed, 1 skip** in the
+  suite): structure (a spec identical to the internal `default`, dedup, operators →
+  Add/Mul/…, unsupported-operator errors, a conflicting control, LocalIn
+  before LocalOut, outputs must be UGens) **without a server**; and a **parity
+  golden**: the `Pbind` over a client def equivalent to the `default` renders
+  **byte-identical** to the `Pbind` over the internal `default` (same engine via the
+  embed render). **Live E2E** (server+client same Bash invocation): `/d_recv`
+  → `/done`, `/s_new` instantiates the same as an internal def (synths/defs via
+  `/status`). Example `examples/synthdef.py` (prints the JSON, tests the parity,
+  optionally writes a WAV).
 
-## C8 — Transporte TCP (servidor track M + cliente, 2026-06-17)
+## C8 — TCP transport (server track M + client, 2026-06-17)
 
-Las dos puntas del único milestone con dependencia cruzada cliente↔servidor: el
-servidor aprende a hablar OSC por TCP y el cliente estrena `OscTCPInterface`.
+Both ends of the only milestone with a cross client↔server dependency: the
+server learns to speak OSC over TCP and the client debuts `OscTCPInterface`.
 
-- **UDP siempre + TCP opcional**: el UDP se bindea siempre (transporte base, no
-  hay modo «solo TCP»); `--tcp` *agrega* el listener TCP. El UDP es además
-  infraestructura del propio TCP: el wake del loop manda un datagrama UDP de
-  longitud 0 al socket del servidor. (Si alguna vez se quiere solo-TCP, habría
-  que cambiar ese mecanismo de wake — anotado.)
-- **Servidor — `src/osc/tcp.rs`** (`--tcp [port]`, default 57110 junto al UDP,
-  espacios de nombres separados): OSC **length-prefixed** (4 bytes BE + bytes,
-  el framing de scsynth, en ambos sentidos). Multiplexado en el loop
-  single-thread **sin runtime async ni dependencia nueva**, con el patrón del
-  ring M14: un hilo **acceptor** + un hilo **lector por conexión** parten el
-  stream en frames OSC completos y los pasan por un canal `mpsc` que el loop
-  drena cada iteración (`drain_tcp`, como `drain_ring`). Para no esperar el tick
-  de GC (100 ms), el lector **despierta** el loop con un datagrama UDP de
-  **longitud 0** al propio socket del servidor (`run()` trata `len==0` como wake
-  y reitera). Las réplicas salen por el write-half de la conexión, que posee el
-  hilo de red en un `HashMap<u64, TcpStream>`; como `&TcpStream: Write`, escribir
-  una réplica necesita solo `&self` (las conexiones muertas se podan al recibir
-  `Disconnected`). `ClientId::Tcp(id)` (id por conexión) rutea cada réplica a su
-  origen. Frame máximo 64 KiB; prefijo inválido/0 cierra la conexión.
-- **Cliente — `OscTCPInterface`** (`base/_oscinterface.py`): drop-in de
-  `OscUDPInterface` (la `Server` lo usa igual; el arg `target` se ignora, la
-  conexión ya conoce su peer). `send_msg`/`send_bundle` enmarcan; `recv`
-  **reensambla** prefijo+payload a través de segmentos TCP con un buffer
-  interno. `--tcp` toma puerto opcional.
-- **Frontera/decodificación**: los bytes TCP pasan por el único `decode_packet`
-  como todo transporte; no se relaja la validación. El timing sigue en
-  timetags/`/sched`, así que la latencia de llegada por TCP no afecta *cuándo*
-  dispara un comando agendado (solo demora la llegada de comandos inmediatos, y
-  el wake la hace ~inmediata).
-- **Verificación**: `tests/osc.rs::tcp_status_and_d_recv_roundtrip` y
-  `tcp_replies_route_to_the_originating_connection` (sin device de audio, mismo
-  `engine_pair` que los tests UDP); `clients/python/tests/test_tcp.py` (framing y
-  reensamblado entre segmentos con un socket falso, determinístico, sin server
-  vivo); E2E en vivo (server `--tcp` + `OscTCPInterface`: `/status`, `/d_recv`,
-  synth). Ejemplo `examples/tcp_client.py`. Suites verdes (Rust `osc`: 21;
-  Python: 61). El stub histórico de `OscTCPInterface` y su test pasaron a la
-  implementación real. **Diferido**: lower-latency por epoll/mio (hoy el wake por
-  UDP-0 ya hace el round-trip inmediato), y limpiar entradas de `/notify` de
-  conexiones TCP caídas (hoy la réplica a una conexión muerta se descarta).
+- **UDP always + TCP optional**: UDP is always bound (the base transport, there's
+  no "TCP-only" mode); `--tcp` *adds* the TCP listener. UDP is also
+  the TCP's own infrastructure: the loop's wake sends a zero-length UDP datagram
+  to the server's socket. (If a TCP-only mode is ever wanted, that wake mechanism
+  would have to change — noted.)
+- **Server — `src/osc/tcp.rs`** (`--tcp [port]`, default 57110 alongside UDP,
+  separate namespaces): **length-prefixed** OSC (4 bytes BE + bytes,
+  scsynth's framing, both ways). Multiplexed in the single-thread loop
+  **with no async runtime and no new dependency**, with the M14 ring pattern:
+  an **acceptor** thread + one **reader thread per connection** split the
+  stream into complete OSC frames and pass them through an `mpsc` channel the loop
+  drains each iteration (`drain_tcp`, like `drain_ring`). So as not to wait for the GC tick
+  (100 ms), the reader **wakes** the loop with a **zero-length** UDP datagram
+  to the server's own socket (`run()` treats `len==0` as a wake and reiterates). The
+  replies leave via the connection's write-half, owned by the network
+  thread in a `HashMap<u64, TcpStream>`; since `&TcpStream: Write`, writing
+  a reply needs only `&self` (dead connections are pruned on receiving
+  `Disconnected`). `ClientId::Tcp(id)` (id per connection) routes each reply to its
+  origin. Max frame 64 KiB; an invalid/0 prefix closes the connection.
+- **Client — `OscTCPInterface`** (`base/_oscinterface.py`): a drop-in for
+  `OscUDPInterface` (the `Server` uses it the same; the `target` arg is ignored, the
+  connection already knows its peer). `send_msg`/`send_bundle` frame; `recv`
+  **reassembles** prefix+payload across TCP segments with an
+  internal buffer. `--tcp` takes an optional port.
+- **Boundary/decoding**: the TCP bytes go through the single `decode_packet`
+  like every transport; validation is not relaxed. Timing still rides on
+  timetags/`/sched`, so TCP arrival latency doesn't affect *when*
+  a scheduled command fires (it only delays the arrival of immediate commands, and
+  the wake makes that ~immediate).
+- **Verification**: `tests/osc.rs::tcp_status_and_d_recv_roundtrip` and
+  `tcp_replies_route_to_the_originating_connection` (no audio device, the same
+  `engine_pair` as the UDP tests); `clients/python/tests/test_tcp.py` (framing and
+  reassembly across segments with a fake socket, deterministic, no live
+  server); live E2E (server `--tcp` + `OscTCPInterface`: `/status`, `/d_recv`,
+  a synth). Example `examples/tcp_client.py`. Suites green (Rust `osc`: 21;
+  Python: 61). The historical `OscTCPInterface` stub and its test moved to the
+  real implementation. **Deferred**: lower-latency via epoll/mio (today the UDP-0
+  wake already makes the round-trip immediate), and cleaning up `/notify` entries of
+  dead TCP connections (today a reply to a dead connection is dropped).
 
-## C9 — ejemplo comentado del cliente (2026-06-17)
+## C9 — commented client example (2026-06-17)
 
-Avanza C9 cerrando su ítem de **ejemplo**: `examples/sequencing.py`, el tour
-introductorio de la capa de secuenciación de alto nivel del cliente Python.
-Muestra `Session` (ergonomía sin globales) + `Pbind` combinando value patterns
-(`Pseq` de `degree`, `Pwhite` de `amp`, `dur` fijo) en un stream de `Event`s, y
-sobre todo la **costura NRT/vivo**: el mismo pattern rinde offline (`Session.nrt`
-→ render a samples/WAV) o toca en vivo por UDP (`Session.live` → `run(seconds)`)
-cambiando solo la sesión, nunca la rutina. Comentado para servir de puerta de
-entrada. Validado offline (46800 frames, peak 0.165) y en vivo (E2E misma
-invocación Bash). Catalogado en `docs/examples.md`.
+Advances C9 by closing its **example** item: `examples/sequencing.py`, the
+introductory tour of the Python client's high-level sequencing layer.
+It shows `Session` (ergonomics without globals) + `Pbind` combining value patterns
+(`Pseq` of `degree`, `Pwhite` of `amp`, fixed `dur`) into a stream of `Event`s, and
+above all the **NRT/live seam**: the same pattern renders offline (`Session.nrt`
+→ render to samples/WAV) or plays live over UDP (`Session.live` → `run(seconds)`)
+changing only the session, never the routine. Commented to serve as an entry
+point. Validated offline (46800 frames, peak 0.165) and live (E2E same
+Bash invocation). Cataloged in `docs/examples.md`.
 
-Con esto **C9 queda cerrado** (doc cross-lenguaje + ejemplo). Los dos items
-pesados que estaban mal planificados dentro de C9 se sacaron a milestones aparte
-(no son del «mismo tema» docs/ejemplos): el **cliente JS real** pasó a un nuevo
-**track «J»** (a planificar más adelante junto con el empaquetado npm; se basa en
-el cliente Python ya hecho), y el **empaquetado de wheels del cliente Python**
-(con el build reproducible de Faust en `third_party`, backlog del usuario) pasó a
-**C12** en los milestones futuros del track C. El mantenimiento general de
-docs/ejemplos sigue siendo **C10** (p. ej. catalogar `synthdef.py`/`tcp_client.py`
-y refrescar refs «C0–C5» a «C0–C8» en README/`docs/clients.md`), no tocado acá.
+With this **C9 is closed** (cross-language doc + example). The two heavy items
+that were poorly planned inside C9 were pulled out into separate milestones
+(they're not of the "same topic" docs/examples): the **real JS client** moved to a new
+**"J" track** (to be planned later together with the npm packaging; it's based on
+the Python client already done), and the **Python client's wheel packaging**
+(with the reproducible Faust build in `third_party`, a user backlog item) moved to
+**C12** in the C track's future milestones. The general maintenance of
+docs/examples stays **C10** (e.g. cataloging `synthdef.py`/`tcp_client.py`
+and refreshing "C0–C5" refs to "C0–C8" in README/`docs/clients.md`), not touched here.
 
-## C10 — barrido de mantenimiento de docs/ejemplos (2026-06-17)
+## C10 — docs/examples maintenance sweep (2026-06-17)
 
-Barrido de C10 dejando docs y ejemplos al día con el estado real (C0–C9):
+A C10 sweep leaving docs and examples up to date with the real state (C0–C9):
 
-- **Revisión de `SynthDef`** (pedida): la clase quedó sin cambios desde su commit
-  C5 (`db8557e`); las "correcciones que se fueron haciendo" son las decisiones de
-  diseño de C5, ahora **documentadas tal como quedaron** en la GUIA (sección «Def
-  UGen propia»): recorrido **post-orden topológico** + dedup por identidad,
-  controles juntados por nombre (default en conflicto = error), **solo `+-*/`**
-  componen UGens (otro operador/función levanta `TypeError` → usar Faust def), y
-  los outputs deben ser UGens. README/`docs/clients.md` ya la describían como
-  contraparte instance-based de `signals`/`FaustDef`; verificado que coincide con
-  el código.
-- **Estados refrescados**: «Milestones C0–C5 are done» → C0–C9 en
-  `clients/python/README.md` (+ menciones de `timebase`/TCP C8 y `clocksync` C6);
-  «C0–C5» → C0–C9 y tabla de estado actualizada en `docs/clients.md` (fila C9
-  hecha, JS → track J, distribución → C12/track J).
-- **Catálogo de ejemplos** (`docs/examples.md`): agregados `synthdef.py` y
-  `tcp_client.py` (faltaban) junto al ya catalogado `sequencing.py`.
-- **GUIA**: intro a C0–C9 y fila C9 en el checklist (correr `examples/sequencing.py`).
-- `mdbook build` limpio; suite Python 61 passed. C10 sigue activo: re-revisar a
-  medida que avancen nuevos milestones (track J, C11/C12, etc.).
+- **`SynthDef` review** (requested): the class is unchanged since its
+  C5 commit (`db8557e`); the "corrections that were being made" are the design
+  decisions of C5, now **documented as they ended up** in the GUIA (the "Own
+  UGen def" section): a **topological post-order** traversal + dedup by identity,
+  controls collected by name (a conflicting default = error), **only `+-*/`**
+  compose UGens (another operator/function raises a `TypeError` → use a Faust def), and
+  outputs must be UGens. README/`docs/clients.md` already described it as the
+  instance-based counterpart of `signals`/`FaustDef`; verified it matches the
+  code.
+- **Refreshed states**: "Milestones C0–C5 are done" → C0–C9 in
+  `clients/python/README.md` (+ mentions of `timebase`/TCP C8 and `clocksync` C6);
+  "C0–C5" → C0–C9 and the state table updated in `docs/clients.md` (the C9 row
+  done, JS → track J, distribution → C12/track J).
+- **Example catalog** (`docs/examples.md`): added `synthdef.py` and
+  `tcp_client.py` (they were missing) alongside the already-cataloged `sequencing.py`.
+- **GUIA**: an intro to C0–C9 and a C9 row in the checklist (run `examples/sequencing.py`).
+- `mdbook build` clean; Python suite 61 passed. C10 stays active: re-review as
+  new milestones land (track J, C11/C12, etc.).
 
-## Próximo: features nuevas
+## Next: new features
 
-El plan original (M0–M7), F0–F5 y M8–M14 están completos (M11 cerrado
-2026-06-13). De los «Milestones futuros» de PLAN.md no queda ninguno. Sueltas:
-más UGens (filtros, EnvGen con done actions, Line), streaming de buffers
-(`leaveOpen`), `/n_query`, multi-cliente con notificaciones por ID, las
-variantes multi `/n_mapn`/`/n_mapan` (bucle trivial sobre el comando ya
-hecho), y los
-diferidos de M14 (semáforo de wakeup, múltiples clientes de ring, JS/wasm).
+The original plan (M0–M7), F0–F5 and M8–M14 are complete (M11 closed
+2026-06-13). None of PLAN.md's "Future milestones" remain. Loose ends:
+more UGens (filters, EnvGen with done actions, Line), buffer streaming
+(`leaveOpen`), `/n_query`, multi-client with per-ID notifications, the multi
+variants `/n_mapn`/`/n_mapan` (a trivial loop over the already-done command),
+and the M14 deferrals (wakeup semaphore, multiple ring clients, JS/wasm).
 
-## Barrera `/sync` y envío async de defs (cliente C-series)
+## The `/sync` barrier and async def sending (client C-series)
 
-- **Servidor**: `/sync <id>` → responde `/synced <id>` cuando terminaron
-  *todos* los comandos async recibidos antes (compilaciones Faust, `/d_recv`,
-  jobs `/b_*`). Implementado con contadores submitted/drained por pipeline
-  (cada uno completa FIFO en su thread), `pending_syncs` y `resolve_syncs()`
-  drenado tras cada `collect_*` (también en el tick idle, así `/synced` sale
-  sin más tráfico). Tests en `tests/osc.rs`
+- **Server**: `/sync <id>` → replies `/synced <id>` when *all* the async
+  commands received before it have finished (Faust compilations, `/d_recv`,
+  `/b_*` jobs). Implemented with submitted/drained counters per pipeline
+  (each completes FIFO on its thread), `pending_syncs` and `resolve_syncs()`
+  drained after each `collect_*` (also on the idle tick, so `/synced` goes out
+  with no more traffic). Tests in `tests/osc.rs`
   (`sync_answers_synced_with_the_same_id`, `sync_waits_for_an_async_buffer_alloc`).
-- **Cliente**: `Server.add_def` → **`add_faustdef`** (simétrico con
-  `add_synthdef`; sin alias). Ambos `add_*` aceptan `wait` (kw-only): `True`
-  por defecto = bloquea hasta `/done`/`/fail`; `False` = fire-and-forget.
-  `Server.sync()` ahora hace la barrera real `/sync`→`/synced` (antes era un
-  hack de round-trip de `/status`, que NO garantizaba el fin de las compilas).
-- **Regla de las rutinas** (documentada en `Routine` y `Server.sync`): el
-  generador de una rutina **nunca** debe bloquear el thread del reloj
-  (responsabilidad del usuario). Para crear defs desde una rutina, usar el
-  modo async (`wait=False`) y **no** llamar `sync()` bloqueante ahí. La barrera
-  no-bloqueante que se pueda `yield` desde una rutina es trabajo futuro
-  (`OSCFunc` / notificaciones), que también reemplazará el wait sincrónico
-  (recv en bucle) actual.
+- **Client**: `Server.add_def` → **`add_faustdef`** (symmetric with
+  `add_synthdef`; no alias). Both `add_*` accept `wait` (kw-only): `True`
+  by default = blocks until `/done`/`/fail`; `False` = fire-and-forget.
+  `Server.sync()` now does the real `/sync`→`/synced` barrier (before it was a
+  `/status` round-trip hack, which did NOT guarantee the end of the compiles).
+- **The routines rule** (documented in `Routine` and `Server.sync`): a
+  routine's generator **never** must block the clock thread
+  (the user's responsibility). To create defs from a routine, use the async
+  mode (`wait=False`) and do **not** call a blocking `sync()` there. The
+  non-blocking barrier that can be `yield`ed from a routine is future work
+  (`OSCFunc` / notifications), which will also replace the current synchronous
+  wait (recv in a loop).
 
-## Sample rate del grafo via `fconst` / `ma.SR` (Signal API)
+## Graph sample rate via `fconst` / `ma.SR` (Signal API)
 
-- **Problema**: el ejemplo del biquad horneaba `SR=48000` como constante de
-  Python, asi que los coeficientes RBJ quedaban desafinados si el motor corria
-  a otra tasa. `ma.SR` de Faust no es un literal: es
-  `min(192000, max(1, fconstant(int fSamplingFreq, <math.h>)))` — una
-  **constante foranea** que el compilador resuelve en `initCDSPInstance`. No
-  estaba bindeada (`CsigFConst`/`CsigFVar` faltaban en `ffi.rs`).
-- **Bindeado**: `ffi.rs` agrega el enum `SType {Int,Real}` y
-  `CsigFConst`/`CsigFVar` (+ los gemelos box `CboxFConst`/`CboxFVar`). Ambos
-  interpretes (`signals.rs`, `boxes.rs`) ganan los ops `fconst`/`fvar`
-  (`ctype`: `"int"`/`"real"`, `name`, `file` opcional); el parseo compartido
-  vive en `json_util::foreign_args` (+ helper `str_field`/`cstr`).
-- **Cliente Python** (`defs/signals.py`): `fconst()`/`fvar()` y sobre todo
-  `sr()` = replica exacta de `ma.SR` (clamp incluido). `PI`/`TAU` quedan como
-  **floats** (igual que `ma.PI`, que es literal — no necesita el servidor).
-- **Ejemplo** `examples/biquad_signal.py`: usa `S.sr()` y `S.TAU` en el grafo
-  (fasor y coeficientes); `RENDER_SR` solo es la tasa que se le pide al render
-  NRT y la cabecera WAV (eleccion del host, ya desacoplada del grafo).
-  Verificado afinado a 44100/48000/96000 (frames escalan, peak ~0.74).
+- **Problem**: the biquad example baked `SR=48000` as a Python
+  constant, so the RBJ coefficients were out of tune if the engine ran
+  at another rate. Faust's `ma.SR` is not a literal: it's
+  `min(192000, max(1, fconstant(int fSamplingFreq, <math.h>)))` — a
+  **foreign constant** the compiler resolves in `initCDSPInstance`. It wasn't
+  bound (`CsigFConst`/`CsigFVar` were missing in `ffi.rs`).
+- **Bound**: `ffi.rs` adds the enum `SType {Int,Real}` and
+  `CsigFConst`/`CsigFVar` (+ the box twins `CboxFConst`/`CboxFVar`). Both
+  interpreters (`signals.rs`, `boxes.rs`) gain the ops `fconst`/`fvar`
+  (`ctype`: `"int"`/`"real"`, `name`, optional `file`); the shared parsing
+  lives in `json_util::foreign_args` (+ the helper `str_field`/`cstr`).
+- **Python client** (`defs/signals.py`): `fconst()`/`fvar()` and above all
+  `sr()` = an exact replica of `ma.SR` (clamp included). `PI`/`TAU` stay as
+  **floats** (like `ma.PI`, which is a literal — it doesn't need the server).
+- **Example** `examples/biquad_signal.py`: uses `S.sr()` and `S.TAU` in the graph
+  (phasor and coefficients); `RENDER_SR` is only the rate asked of the NRT
+  render and the WAV header (the host's choice, now decoupled from the graph).
+  Verified in tune at 44100/48000/96000 (frames scale, peak ~0.74).
 - **Tests**: `tests/faust_signal.rs` (`fconst_reads_the_engine_sample_rate`,
-  `fvar_probe_compiles`, ops en el kitchen-sink y validacion de `ctype`/`name`),
-  `tests/faust_json.rs` (kitchen-sink box), `test_defs.py`
+  `fvar_probe_compiles`, ops in the kitchen-sink and `ctype`/`name` validation),
+  `tests/faust_json.rs` (box kitchen-sink), `test_defs.py`
   (`test_foreign_constant_and_sample_rate`, `test_pi_and_tau_are_plain_literals`).

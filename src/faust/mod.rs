@@ -6,7 +6,7 @@
 //! factories; `synth` puts JIT instances in the node tree as `SynthNode`s
 //! (F3). The FFI started in F0 as a minimal binding, verified
 //! against the headers of the exact libfaust build we link (see `ffi`). The
-//! decision log lives in NOTAS.md: distro packages ship without the LLVM
+//! decision log lives in LOG.md: distro packages ship without the LLVM
 //! backend and without headers, and the existing crates (`faust-build`,
 //! `faust-types`) do build-time Faust→Rust codegen, not JIT embedding — so
 //! libfaust is built from source and the binding is ours. bindgen remains an
