@@ -191,7 +191,9 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             }
             let channels = current.channels();
             let mut data = current.data().to_vec();
-            let take = file.frames().min(current.frames().saturating_sub(buf_start));
+            let take = file
+                .frames()
+                .min(current.frames().saturating_sub(buf_start));
             let to = buf_start * channels;
             data[to..to + take * channels].copy_from_slice(&file.data()[..take * channels]);
             Ok(NrtAction::Install(Arc::new(Buffer::new(
@@ -286,8 +288,7 @@ fn write_wav(
     } else {
         (num_frames as usize).min(buffer.frames() - start)
     };
-    let samples =
-        &buffer.data()[start * buffer.channels()..(start + frames) * buffer.channels()];
+    let samples = &buffer.data()[start * buffer.channels()..(start + frames) * buffer.channels()];
 
     let mut writer = hound::WavWriter::create(path, spec).map_err(err)?;
     match format {

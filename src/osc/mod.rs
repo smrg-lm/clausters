@@ -61,7 +61,10 @@ mod tests {
         assert_eq!(m.args, vec![blob()]);
 
         let bundle = OscPacket::Bundle(OscBundle {
-            timetag: OscTime { seconds: 0, fractional: 1 },
+            timetag: OscTime {
+                seconds: 0,
+                fractional: 1,
+            },
             content: vec![msg],
         });
         let bytes = encoder::encode(&bundle).unwrap();

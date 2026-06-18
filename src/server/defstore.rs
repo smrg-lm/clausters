@@ -74,7 +74,8 @@ impl DefStore {
     }
 
     fn synthdef_path(&self, name: &str) -> PathBuf {
-        self.synthdefs_dir.join(format!("{}.json", sanitize_name(name)))
+        self.synthdefs_dir
+            .join(format!("{}.json", sanitize_name(name)))
     }
 
     /// Stores a `/d_recv` SynthDef's spec JSON verbatim. Best-effort: errors

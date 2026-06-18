@@ -39,7 +39,9 @@ fn compile_def(name: &str, src: &str) -> Arc<FaustDef> {
         .submit(CompileRequest {
             name: name.into(),
             payload: CompilePayload::Source(src.into()),
-            client: Some(clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())),
+            client: Some(clausters::osc::ClientId::Udp(
+                "127.0.0.1:1".parse().unwrap(),
+            )),
             cache: None,
         })
         .ok()
@@ -83,10 +85,7 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
+    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
     crossings as f32 * SR / buf.len() as f32
 }
 
@@ -97,7 +96,10 @@ fn probed_def_exposes_params_and_reserved_bus_controls() {
     assert_eq!(def.num_outputs, 1);
     let names: Vec<_> = def.params.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names.len(), 2);
-    assert!(names.contains(&"freq") && names.contains(&"amp"), "{names:?}");
+    assert!(
+        names.contains(&"freq") && names.contains(&"amp"),
+        "{names:?}"
+    );
     assert_eq!(def.control_index("out"), Some(def.params.len() as u32));
     assert_eq!(def.control_index("in"), Some(def.params.len() as u32 + 1));
     assert_eq!(def.control_index("nope"), None);

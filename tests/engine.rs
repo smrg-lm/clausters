@@ -87,10 +87,7 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
+    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
     crossings as f32 * SR / buf.len() as f32
 }
 
@@ -172,7 +169,10 @@ fn duplicate_id_is_rejected_as_garbage() {
     render_left(&mut engine, 10);
     assert_eq!(handle.collect_garbage(), 1); // the rejected one came back
     let freq = estimated_freq(&render_left(&mut engine, 750));
-    assert!((freq - 440.0).abs() < 5.0, "the original synth must survive");
+    assert!(
+        (freq - 440.0).abs() < 5.0,
+        "the original synth must survive"
+    );
 }
 
 #[test]
@@ -288,7 +288,10 @@ fn freeing_a_group_frees_its_subtree() {
 
     handle.send(Cmd::FreeNode { id: 1 }).ok().unwrap();
     let left = render_left(&mut engine, 100);
-    assert!(rms(&left) < 1e-9, "freeing the group must silence its synths");
+    assert!(
+        rms(&left) < 1e-9,
+        "freeing the group must silence its synths"
+    );
     // the group and its two synths all come back as garbage
     assert_eq!(handle.collect_garbage(), 3);
 }

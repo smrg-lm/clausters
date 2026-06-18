@@ -29,7 +29,9 @@ pub fn faust_version() -> String {
     if ptr.is_null() {
         return String::new();
     }
-    unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned()
+    unsafe { CStr::from_ptr(ptr) }
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Writes `factory`'s bitcode to `path` atomically (temp file + rename), so a

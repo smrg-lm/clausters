@@ -29,6 +29,14 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 - **Git commit messages are in English** (subject and body), ASCII-only.
 - `PLAN.md`, `NOTAS.md` and conversation with the user are in Spanish.
 
+## Commit workflow
+
+Before generating any commit that touches Rust, run `cargo fmt` (or at least
+`cargo fmt --check`) and include the formatting fixes — the tree must be
+`cargo fmt --check`-clean. Do not hand-format Rust against rustfmt; rustfmt is
+the source of truth. (Likewise keep the build green: the core must compile and
+test without the `faust`/`embed` features.)
+
 ## E2E testing rule
 
 The Bash sandbox isolates the network between invocations: a server started in

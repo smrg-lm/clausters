@@ -115,7 +115,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 tcp_port = Some(port);
             }
             "--workers" => {
-                let value = it.next().ok_or(format!("--workers needs a value\n{USAGE}"))?;
+                let value = it
+                    .next()
+                    .ok_or(format!("--workers needs a value\n{USAGE}"))?;
                 workers = parse_workers(value)?;
             }
             "--shm" => {
@@ -123,7 +125,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 shm_path = Some(value.clone());
             }
             "--data-dir" => {
-                let value = it.next().ok_or(format!("--data-dir needs a path\n{USAGE}"))?;
+                let value = it
+                    .next()
+                    .ok_or(format!("--data-dir needs a path\n{USAGE}"))?;
                 data_dir = Some(value.clone());
             }
             "--no-persist" => no_persist = true,
@@ -141,15 +145,16 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         actual_sample_rate: backend.sample_rate as f64,
     };
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
-    if !no_persist
-        && let Some(dir) = resolve_data_dir(data_dir.as_deref())
-    {
+    if !no_persist && let Some(dir) = resolve_data_dir(data_dir.as_deref()) {
         match DefStore::open(&dir) {
             Ok(store) => {
                 osc.attach_store(store);
                 println!("persisting defs in {}", dir.display());
             }
-            Err(e) => eprintln!("def persistence disabled: cannot open {}: {e}", dir.display()),
+            Err(e) => eprintln!(
+                "def persistence disabled: cannot open {}: {e}",
+                dir.display()
+            ),
         }
     }
     if let Some(segment) = segment {

@@ -110,13 +110,20 @@ fn full_node_slab_rejects_gracefully() {
     // 1100 adds in FIFO-sized chunks; the slab fits 1023 beside the root.
     for chunk in 0..4 {
         for i in 0..275 {
-            handle.send(add(1000 + chunk * 275 + i, ROOT_NODE_ID)).ok().unwrap();
+            handle
+                .send(add(1000 + chunk * 275 + i, ROOT_NODE_ID))
+                .ok()
+                .unwrap();
         }
         tick(&mut engine, 1);
     }
     assert_eq!(synth_count(&handle), 1023, "slab capacity, root included");
     let collected = handle.collect_garbage();
-    assert_eq!(collected, 1100 - 1023, "every rejection rolls back as garbage");
+    assert_eq!(
+        collected,
+        1100 - 1023,
+        "every rejection rolls back as garbage"
+    );
     tick(&mut engine, 2); // still processing
 }
 

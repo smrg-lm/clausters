@@ -32,5 +32,8 @@ fn arming_is_idempotent_and_preserves_normal_math() {
     flush_to_zero();
     let x = black_box(0.25f32) * black_box(8.0f32);
     assert_eq!(x, 2.0);
-    assert_eq!(black_box(f32::MIN_POSITIVE) * black_box(2.0), f32::MIN_POSITIVE * 2.0);
+    assert_eq!(
+        black_box(f32::MIN_POSITIVE) * black_box(2.0),
+        f32::MIN_POSITIVE * 2.0
+    );
 }

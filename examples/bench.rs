@@ -72,11 +72,11 @@ fn main() {
     for w in counts {
         report_parallel(w, bench_parallel(w, chains, voices), base);
     }
-
 }
 
 fn make_default_synth() -> Box<dyn SynthNode> {
-    static DEF: std::sync::OnceLock<Arc<clausters::synthdef::SynthDef>> = std::sync::OnceLock::new();
+    static DEF: std::sync::OnceLock<Arc<clausters::synthdef::SynthDef>> =
+        std::sync::OnceLock::new();
     let def = DEF.get_or_init(|| Arc::new(compile(default_spec()).expect("default def compiles")));
     Box::new(UGenSynth::new(Arc::clone(def)))
 }
@@ -122,9 +122,7 @@ fn bench_ugen_vs_faust() {
             .expect("faust sine compiles"),
     );
 
-    println!(
-        "\nUGen vs Faust — identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:"
-    );
+    println!("\nUGen vs Faust — identical DSP (sin(2π·phasor(freq)) · 0.2 → 1 bus), JIT excluded:");
     println!(
         "  {:>6}  {:>13}  {:>13}  {:>14}",
         "synths", "UGen xRT", "Faust xRT", "Faust slowdown"
@@ -138,7 +136,10 @@ fn bench_ugen_vs_faust() {
         });
         let u_xrt = ugen * BLOCK_SIZE as f64 / SAMPLE_RATE;
         let f_xrt = faust * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!("  {n:>6}  {u_xrt:>11.1}x  {f_xrt:>11.1}x  {:>12.2}x", ugen / faust);
+        println!(
+            "  {n:>6}  {u_xrt:>11.1}x  {f_xrt:>11.1}x  {:>12.2}x",
+            ugen / faust
+        );
     }
     println!(
         "  (slowdown < 1.0 = Faust is faster. Caveat: SinOsc accumulates phase\n\
@@ -188,8 +189,11 @@ fn bench_gain_overhead() {
         .expect("ugen gain compiles"),
     );
     let faust_gain = Arc::new(
-        faust_compile("cmp_fgain", &CompilePayload::Source("process = _ * 0.5;".into()))
-            .expect("faust gain compiles"),
+        faust_compile(
+            "cmp_fgain",
+            &CompilePayload::Source("process = _ * 0.5;".into()),
+        )
+        .expect("faust gain compiles"),
     );
     let in_idx = faust_gain.control_index("in").expect("in control");
     let out_idx = faust_gain.control_index("out").expect("out control");
@@ -201,7 +205,9 @@ fn bench_gain_overhead() {
     );
     for &n in VOICE_COUNTS {
         let ug = Arc::clone(&ugen_gain);
-        let ugen = bench_chain(n, &src_def, move || Box::new(UGenSynth::new(Arc::clone(&ug))));
+        let ugen = bench_chain(n, &src_def, move || {
+            Box::new(UGenSynth::new(Arc::clone(&ug)))
+        });
         let fg = Arc::clone(&faust_gain);
         let faust = bench_chain(n, &src_def, move || {
             let mut s =
@@ -212,7 +218,10 @@ fn bench_gain_overhead() {
         });
         let u_xrt = ugen * BLOCK_SIZE as f64 / SAMPLE_RATE;
         let f_xrt = faust * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!("  {n:>6}  {u_xrt:>11.1}x  {f_xrt:>11.1}x  {:>12.2}x", ugen / faust);
+        println!(
+            "  {n:>6}  {u_xrt:>11.1}x  {f_xrt:>11.1}x  {:>12.2}x",
+            ugen / faust
+        );
     }
     println!(
         "  (one shared source synth sits in both columns, so the high-n rows are\n\
@@ -231,27 +240,36 @@ fn bench_chain(
 ) -> f64 {
     let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
-    send_cmd(&mut engine, &mut handle, &mut out, Cmd::AddSynth {
-        id: 1,
-        target: 0,
-        action: AddAction::Tail,
-        synth: Box::new(UGenSynth::new(Arc::clone(src_def))),
-        usage: Default::default(),
-    });
-    for i in 0..n {
-        send_cmd(&mut engine, &mut handle, &mut out, Cmd::AddSynth {
-            id: 1000 + i as i32,
+    send_cmd(
+        &mut engine,
+        &mut handle,
+        &mut out,
+        Cmd::AddSynth {
+            id: 1,
             target: 0,
             action: AddAction::Tail,
-            synth: make_gain(),
+            synth: Box::new(UGenSynth::new(Arc::clone(src_def))),
             usage: Default::default(),
-        });
+        },
+    );
+    for i in 0..n {
+        send_cmd(
+            &mut engine,
+            &mut handle,
+            &mut out,
+            Cmd::AddSynth {
+                id: 1000 + i as i32,
+                target: 0,
+                action: AddAction::Tail,
+                synth: make_gain(),
+                usage: Default::default(),
+            },
+        );
     }
     engine.process_block(&mut out);
     handle.collect_garbage();
     measure(&mut engine, &mut out)
 }
-
 
 /// One parallel group with `chains` subgroups, each holding `voices` sines
 /// summing into that chain's private bus — the layout where /g_parallel

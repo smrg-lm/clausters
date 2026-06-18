@@ -220,7 +220,12 @@ impl Segment {
     }
 
     pub fn sample_rate(&self) -> f64 {
-        f64::from_bits(self.layout().header.sample_rate_bits.load(Ordering::Acquire))
+        f64::from_bits(
+            self.layout()
+                .header
+                .sample_rate_bits
+                .load(Ordering::Acquire),
+        )
     }
 
     /// The shared sample-clock cell (the engine's block-accurate mirror).

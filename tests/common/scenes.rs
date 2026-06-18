@@ -155,7 +155,10 @@ pub fn playbuf(source: &Path) -> Score {
         (
             t(0),
             vec![
-                msg("/d_recv", vec![OscType::Blob(PLAYER_DEF.as_bytes().to_vec())]),
+                msg(
+                    "/d_recv",
+                    vec![OscType::Blob(PLAYER_DEF.as_bytes().to_vec())],
+                ),
                 msg("/b_allocRead", vec![i(0), s(path)]),
                 msg("/c_set", vec![i(0), f(0.4)]),
             ],

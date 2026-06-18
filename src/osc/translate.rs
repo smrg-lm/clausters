@@ -14,9 +14,9 @@ use std::sync::Arc;
 
 use rosc::OscType;
 
+use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS};
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
-use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
 use crate::server::engine::Cmd;

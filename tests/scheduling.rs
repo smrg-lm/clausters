@@ -101,11 +101,14 @@ fn several_events_split_the_same_block() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle.send(at(10, vec![add_dc(1000, 1.0)])).ok().unwrap();
     handle
-        .send(at(30, vec![Cmd::SetControl {
-            id: 1000,
-            index: 0,
-            value: 0.5,
-        }]))
+        .send(at(
+            30,
+            vec![Cmd::SetControl {
+                id: 1000,
+                index: 0,
+                value: 0.5,
+            }],
+        ))
         .ok()
         .unwrap();
     handle
@@ -146,19 +149,25 @@ fn bundles_at_the_same_time_run_in_send_order() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle.send(add_dc(1000, 1.0)).ok().unwrap();
     handle
-        .send(at(100, vec![Cmd::SetControl {
-            id: 1000,
-            index: 0,
-            value: 0.3,
-        }]))
+        .send(at(
+            100,
+            vec![Cmd::SetControl {
+                id: 1000,
+                index: 0,
+                value: 0.3,
+            }],
+        ))
         .ok()
         .unwrap();
     handle
-        .send(at(100, vec![Cmd::SetControl {
-            id: 1000,
-            index: 0,
-            value: 0.7,
-        }]))
+        .send(at(
+            100,
+            vec![Cmd::SetControl {
+                id: 1000,
+                index: 0,
+                value: 0.7,
+            }],
+        ))
         .ok()
         .unwrap();
 
@@ -191,7 +200,10 @@ fn scheduled_impulse_lands_on_its_exact_sample() {
     // SinOsc (which starts at sin(0) = 0), the marked sample itself is 1.0.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     let target = 100u64; // mid-block: block 1, offset 36
-    handle.send(at(target, vec![add_impulse(1000, 0.0)])).ok().unwrap();
+    handle
+        .send(at(target, vec![add_impulse(1000, 0.0)]))
+        .ok()
+        .unwrap();
 
     let left = render(&mut engine, 4);
     for (i, s) in left.iter().enumerate() {
@@ -251,10 +263,13 @@ fn scheduled_control_bus_write_lands_on_its_sample() {
         .ok()
         .unwrap();
     handle
-        .send(at(32, vec![Cmd::SetControlBus {
-            index: 7,
-            value: 0.9,
-        }]))
+        .send(at(
+            32,
+            vec![Cmd::SetControlBus {
+                index: 7,
+                value: 0.9,
+            }],
+        ))
         .ok()
         .unwrap();
 
@@ -318,7 +333,9 @@ fn faust_synths_survive_block_splits() {
         .submit(CompileRequest {
             name: "fdc".into(),
             payload: CompilePayload::Source("process = 0.8;".into()),
-            client: Some(clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())),
+            client: Some(clausters::osc::ClientId::Udp(
+                "127.0.0.1:1".parse().unwrap(),
+            )),
             cache: None,
         })
         .ok()
@@ -334,13 +351,16 @@ fn faust_synths_survive_block_splits() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     let synth = Box::new(FaustSynth::new(Arc::clone(&def), SR).unwrap());
     handle
-        .send(at(100, vec![Cmd::AddSynth {
-            id: 1000,
-            target: ROOT_NODE_ID,
-            action: AddAction::Tail,
-            synth,
-            usage: Default::default(),
-        }]))
+        .send(at(
+            100,
+            vec![Cmd::AddSynth {
+                id: 1000,
+                target: ROOT_NODE_ID,
+                action: AddAction::Tail,
+                synth,
+                usage: Default::default(),
+            }],
+        ))
         .ok()
         .unwrap();
     handle
@@ -362,9 +382,7 @@ mod osc {
     use std::net::UdpSocket;
 
     use clausters::osc::server::{OscServer, ServerInfo};
-    use clausters::rosc::{
-        OscBundle, OscMessage, OscPacket, OscTime, OscType, decoder, encoder,
-    };
+    use clausters::rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, decoder, encoder};
 
     const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 
@@ -391,7 +409,9 @@ mod osc {
         let addr = server.local_addr().unwrap();
         let server_thread = std::thread::spawn(move || server.run());
         let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
 
         let send_bundle = |timetag: OscTime, content: Vec<OscPacket>| {
             let packet = OscPacket::Bundle(OscBundle { timetag, content });
@@ -484,7 +504,9 @@ mod osc {
         let addr = server.local_addr().unwrap();
         let server_thread = std::thread::spawn(move || server.run());
         let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
 
         let target: i64 = 5_025; // deliberately mid-block (5025 % 64 != 0)
         let s_new = OscPacket::Message(OscMessage {

@@ -113,7 +113,10 @@ fn playbuf_matches_golden() {
     );
     let loud = rms(&out[2500..5900]);
     let soft = rms(&out[6100..8900]);
-    assert!(loud > 0.10 && soft > 0.03, "audible segments: {loud}, {soft}");
+    assert!(
+        loud > 0.10 && soft > 0.03,
+        "audible segments: {loud}, {soft}"
+    );
     assert!(
         loud / soft > 2.0,
         "the scheduled /c_set must drop the level: {loud} vs {soft}"
@@ -141,7 +144,10 @@ fn render_is_sample_accurate_mid_block() {
     // A DC=1 source scheduled at sample 100 (block 1, offset 36) and freed
     // at sample 200: the rendered edges must land on those exact samples.
     let score = Score::new([
-        (0.0, vec![msg("/d_recv", vec![OscType::String(DC_DEF.into())])]),
+        (
+            0.0,
+            vec![msg("/d_recv", vec![OscType::String(DC_DEF.into())])],
+        ),
         (
             100.0 / 48000.0,
             vec![msg(
@@ -301,7 +307,10 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
                 ),
             ],
         ),
-        (1100.0 / 48000.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+        (
+            1100.0 / 48000.0,
+            vec![msg("/n_free", vec![OscType::Int(1)])],
+        ),
     ])
     .unwrap();
     let cfg = RenderConfig {
@@ -310,7 +319,10 @@ fn faust_tail_flushes_to_zero_instead_of_denormals() {
         ..RenderConfig::default()
     };
     let (out, _) = render_to_vec(&score, &cfg).unwrap();
-    assert!(out[1] > 0.5, "the impulse decay must be audible at the start");
+    assert!(
+        out[1] > 0.5,
+        "the impulse decay must be audible at the start"
+    );
     assert!(
         out.iter().all(|s| *s == 0.0 || s.is_normal()),
         "no sample may be subnormal"
@@ -355,11 +367,9 @@ fn render_reports_failing_buffer_jobs() {
 
 #[test]
 fn sink_errors_propagate() {
-    let err = render(
-        &scenes::arpeggio(),
-        &scenes::config(),
-        |_| Err("disk full".into()),
-    )
+    let err = render(&scenes::arpeggio(), &scenes::config(), |_| {
+        Err("disk full".into())
+    })
     .unwrap_err();
     assert!(err.contains("disk full"));
 }

@@ -185,7 +185,9 @@ mod tests {
         );
         // in_len neither 1 nor n
         assert_eq!(
-            unsafe { clausters_core_unary(UnaryOp::Abs as u32, a.as_ptr(), 2, out.as_mut_ptr(), 5) },
+            unsafe {
+                clausters_core_unary(UnaryOp::Abs as u32, a.as_ptr(), 2, out.as_mut_ptr(), 5)
+            },
             -2
         );
     }

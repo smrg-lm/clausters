@@ -76,10 +76,7 @@ use crate::faust::json_util::{err, foreign_args, inputs, label_field, num_field}
 /// Must run inside a `createLibContext`..`destroyLibContext` bracket while
 /// holding [`crate::faust::compiler::ffi_lock`]; the returned box is an arena
 /// pointer only valid inside that bracket.
-pub unsafe fn build_process(
-    root: &Value,
-    cstrings: &mut Vec<CString>,
-) -> Result<FaustBox, String> {
+pub unsafe fn build_process(root: &Value, cstrings: &mut Vec<CString>) -> Result<FaustBox, String> {
     let mut path = String::from("$");
     unsafe { build(root, &mut path, cstrings) }
 }

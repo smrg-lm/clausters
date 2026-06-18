@@ -82,10 +82,7 @@ fn render_left(engine: &mut Engine, blocks: usize) -> Vec<f32> {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
+    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
     crossings as f32 * SR / buf.len() as f32
 }
 
@@ -146,10 +143,7 @@ fn unmap_holds_the_last_value() {
     assert_freq(&mut engine, 330.0);
 
     // -1 unmaps: the control keeps the last value it read…
-    handle
-        .send(map(1000, CTL_FREQ, -1, false))
-        .ok()
-        .unwrap();
+    handle.send(map(1000, CTL_FREQ, -1, false)).ok().unwrap();
     handle
         .send(Cmd::SetControlBus {
             index: SCRATCH_BUS,

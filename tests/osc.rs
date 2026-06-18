@@ -335,10 +335,7 @@ fn g_free_all_empties_group_but_keeps_it() {
 fn c_set_and_c_get_roundtrip() {
     let server = TestServer::spawn();
 
-    server.send(
-        "/c_set",
-        vec![OscType::Int(5), OscType::Float(0.25)],
-    );
+    server.send("/c_set", vec![OscType::Int(5), OscType::Float(0.25)]);
     server.send("/c_get", vec![OscType::Int(5)]);
     let reply = server.recv_until("/c_set");
     assert_eq!(reply.args[0], OscType::Int(5));
@@ -481,22 +478,34 @@ fn sched_rejects_bad_arguments() {
 
     // No arguments at all.
     server.send("/sched", vec![]);
-    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/sched".into())
+    );
     // Target without a packet blob.
     server.send("/sched", vec![OscType::Long(100)]);
-    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/sched".into())
+    );
     // Negative target.
     server.send(
         "/sched",
         vec![OscType::Long(-1), OscType::Blob(s_new_blob())],
     );
-    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/sched".into())
+    );
     // Garbage blob.
     server.send(
         "/sched",
         vec![OscType::Long(100), OscType::Blob(vec![1, 2, 3, 4])],
     );
-    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/sched".into()));
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/sched".into())
+    );
     // A query is not schedulable: the /fail names the offending message.
     let status_blob = encoder::encode(&OscPacket::Message(OscMessage {
         addr: "/status".into(),
@@ -507,7 +516,10 @@ fn sched_rejects_bad_arguments() {
         "/sched",
         vec![OscType::Long(100), OscType::Blob(status_blob)],
     );
-    assert_eq!(server.recv_until("/fail").args[0], OscType::String("/status".into()));
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/status".into())
+    );
     server.quit();
 }
 
@@ -577,10 +589,14 @@ impl TcpClient {
 
     fn recv(&mut self) -> OscMessage {
         let mut prefix = [0u8; 4];
-        self.stream.read_exact(&mut prefix).expect("reply timed out");
+        self.stream
+            .read_exact(&mut prefix)
+            .expect("reply timed out");
         let len = u32::from_be_bytes(prefix) as usize;
         let mut buf = vec![0u8; len];
-        self.stream.read_exact(&mut buf).expect("short framed reply");
+        self.stream
+            .read_exact(&mut buf)
+            .expect("short framed reply");
         match decoder::decode_udp(&buf).unwrap().1 {
             OscPacket::Message(msg) => msg,
             OscPacket::Bundle(_) => panic!("expected a message, got a bundle"),

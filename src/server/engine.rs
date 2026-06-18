@@ -19,12 +19,12 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 pub use crate::dsp::BLOCK_SIZE;
-use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
 use crate::dsp::BusUsage;
-use crate::server::ipc::Segment;
-use crate::server::workers::WorkerPool;
+use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
 use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
+use crate::server::ipc::Segment;
+use crate::server::workers::WorkerPool;
 
 const CMD_FIFO_CAPACITY: usize = 1024;
 const GARBAGE_FIFO_CAPACITY: usize = 1024;
@@ -490,13 +490,11 @@ impl Engine {
                     action,
                     group,
                 } => {
-                    match self.tree.insert(
-                        id,
-                        NodeKind::Group(group),
-                        target,
-                        action,
-                        &mut |f| sink.consume(f),
-                    ) {
+                    match self
+                        .tree
+                        .insert(id, NodeKind::Group(group), target, action, &mut |f| {
+                            sink.consume(f)
+                        }) {
                         Ok(parent_id) => {
                             let _ = sink.events_tx.push(NodeEvent {
                                 kind: NodeEventKind::Go,

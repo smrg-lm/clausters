@@ -118,8 +118,8 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     let mut localin_channels = std::collections::HashSet::new();
 
     for (i, u) in spec.ugens.iter().enumerate() {
-        let kind = parse_kind(&u.kind)
-            .ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
+        let kind =
+            parse_kind(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
         let want = arity(kind);
         if u.inputs.len() != want {
             return Err(format!(

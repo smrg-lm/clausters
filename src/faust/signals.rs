@@ -296,7 +296,10 @@ unsafe fn waveform(obj: &Map<String, Value>, path: &str) -> Result<FaustSignal, 
     let mut sigs: Vec<FaustSignal> = Vec::with_capacity(values.len() + 1);
     for (i, v) in values.iter().enumerate() {
         let Value::Number(n) = v else {
-            return Err(err(path, format_args!("`waveform` values[{i}] must be a number")));
+            return Err(err(
+                path,
+                format_args!("`waveform` values[{i}] must be a number"),
+            ));
         };
         sigs.push(unsafe { number_sig(n) });
     }

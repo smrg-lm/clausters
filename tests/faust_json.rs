@@ -61,7 +61,12 @@ fn render_mono(def: &FaustDef, seconds: f32) -> Vec<f32> {
     for _ in 0..blocks {
         let mut outputs: [*mut f32; 1] = [block.as_mut_ptr()];
         unsafe {
-            ffi::computeCDSPInstance(dsp, BLOCK as i32, std::ptr::null_mut(), outputs.as_mut_ptr())
+            ffi::computeCDSPInstance(
+                dsp,
+                BLOCK as i32,
+                std::ptr::null_mut(),
+                outputs.as_mut_ptr(),
+            )
         };
         out.extend_from_slice(&block);
     }
@@ -74,10 +79,7 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
+    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
     crossings as f32 * SR / buf.len() as f32
 }
 
@@ -220,7 +222,10 @@ fn rdtable_accepts_explicit_size_and_init() {
     ]});
     let def = compile_json("jrdc", &graph).expect("explicit rdtable must compile");
     let out = render_mono(&def, 0.01);
-    assert!(out.iter().all(|&x| x == 0.5), "constant-init table must read 0.5");
+    assert!(
+        out.iter().all(|&x| x == 0.5),
+        "constant-init table must read 0.5"
+    );
 }
 
 #[test]
@@ -235,7 +240,10 @@ fn rwtable_reads_back_what_it_writes() {
     let def = compile_json("jrwt", &graph).expect("rwtable must compile");
     let out = render_mono(&def, 0.01);
     assert!(out[0] == 0.0 || out[0] == 0.25, "first sample = {}", out[0]);
-    assert!(out[1..].iter().all(|&x| x == 0.25), "table must hold the write");
+    assert!(
+        out[1..].iter().all(|&x| x == 0.25),
+        "table must hold the write"
+    );
 }
 
 #[test]
@@ -258,7 +266,10 @@ fn validation_errors_point_at_the_offending_node() {
             json!({"op": "waveform", "values": [1.0, "x"]}),
             "values[1] must be a number",
         ),
-        (json!({"op": "rdtable", "in": ["_"]}), "`rdtable` takes 2 to 3 in \"in\""),
+        (
+            json!({"op": "rdtable", "in": ["_"]}),
+            "`rdtable` takes 2 to 3 in \"in\"",
+        ),
     ];
     let compiler = CompilerThread::spawn();
     for (graph, _) in &cases {
@@ -315,8 +326,23 @@ fn semantic_errors_from_faust_are_forwarded() {
 #[test]
 fn kitchen_sink_graph_exercises_every_op() {
     let unaries = [
-        "sin", "cos", "tan", "asin", "atan", "exp", "exp10", "log", "log10", "sqrt", "abs",
-        "floor", "ceil", "rint", "round", "intcast", "floatcast",
+        "sin",
+        "cos",
+        "tan",
+        "asin",
+        "atan",
+        "exp",
+        "exp10",
+        "log",
+        "log10",
+        "sqrt",
+        "abs",
+        "floor",
+        "ceil",
+        "rint",
+        "round",
+        "intcast",
+        "floatcast",
     ];
     let binaries = [
         "add", "sub", "mul", "div", "fmod", "pow", "min", "max", "atan2", "gt", "lt", "ge", "le",
@@ -371,6 +397,12 @@ fn box_cos_computes_cosine_not_abs() {
     let def = compile_json("bcos", &json!({"op": "cos", "in": [0.5]})).expect("compiles");
     let out = render_mono(&def, 0.01);
     let v = out[0];
-    assert!((v - 0.5_f32.cos()).abs() < 1e-4, "cos(0.5) = {v}, expected ≈ 0.8776");
-    assert!((v - 0.5).abs() > 0.1, "cos returned abs(0.5) = 0.5 (the upstream bug)");
+    assert!(
+        (v - 0.5_f32.cos()).abs() < 1e-4,
+        "cos(0.5) = {v}, expected ≈ 0.8776"
+    );
+    assert!(
+        (v - 0.5).abs() > 0.1,
+        "cos returned abs(0.5) = 0.5 (the upstream bug)"
+    );
 }

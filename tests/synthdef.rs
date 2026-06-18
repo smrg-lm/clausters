@@ -18,11 +18,7 @@ fn render(synth: &mut UGenSynth, blocks: usize) -> Vec<f32> {
 
 /// Several synths in order over shared buses, with a pre-process hook for
 /// setting control buses.
-fn render_with(
-    synths: &mut [UGenSynth],
-    blocks: usize,
-    setup: impl Fn(&ControlBuses),
-) -> Vec<f32> {
+fn render_with(synths: &mut [UGenSynth], blocks: usize, setup: impl Fn(&ControlBuses)) -> Vec<f32> {
     let mut buses = Buses::new(ControlBuses::new());
     setup(&buses.control);
     let mut out = Vec::with_capacity(blocks * BLOCK_SIZE);
@@ -48,10 +44,7 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
+    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
     crossings as f32 * SR / buf.len() as f32
 }
 

@@ -259,7 +259,10 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
         .ok()
         .unwrap();
     handle
-        .send(Cmd::SetBuffer { index: 0, buffer: None })
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: None,
+        })
         .ok()
         .unwrap();
     handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
@@ -350,7 +353,9 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
                 "#
                 .into(),
             ),
-            client: Some(clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())),
+            client: Some(clausters::osc::ClientId::Udp(
+                "127.0.0.1:1".parse().unwrap(),
+            )),
             cache: None,
         })
         .ok()

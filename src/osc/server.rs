@@ -27,9 +27,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 
+use crate::dsp::buffer::{BufferPool, empty_pool};
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
-use crate::dsp::buffer::{BufferPool, empty_pool};
 use crate::osc::ClientId;
 use crate::osc::translate::{CmdTranslator, float_value, int_arg, parse_buffer_msg};
 use crate::server::defstore::DefStore;
@@ -525,9 +525,7 @@ impl OscServer {
                 }
             }
         }
-        if !cmds.is_empty()
-            && self.handle.send(Cmd::Schedule { time, cmds }).is_err()
-        {
+        if !cmds.is_empty() && self.handle.send(Cmd::Schedule { time, cmds }).is_err() {
             self.fail(from, "#bundle", "command FIFO full");
         }
     }
@@ -550,8 +548,9 @@ impl OscServer {
             // the M12 tree mirror in sync), so the immediate forms share one
             // path: translate, then ship every command.
             "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
-            | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode"
-            | "/g_parallel" => self.handle_via_translate(&msg, from),
+            | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel" => {
+                self.handle_via_translate(&msg, from)
+            }
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),
             "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
             "/c_set" => self.handle_c_set(&msg, from),
@@ -863,7 +862,9 @@ impl OscServer {
             let info = self.mirror_buffer(*index);
             args.push(OscType::Int(*index));
             args.push(OscType::Int(info.as_ref().map_or(0, |b| b.frames() as i32)));
-            args.push(OscType::Int(info.as_ref().map_or(0, |b| b.channels() as i32)));
+            args.push(OscType::Int(
+                info.as_ref().map_or(0, |b| b.channels() as i32),
+            ));
             args.push(OscType::Float(
                 info.as_ref().map_or(0.0, |b| b.sample_rate() as f32),
             ));
@@ -973,4 +974,3 @@ fn timetag_delta_secs(t: OscTime) -> Option<f64> {
         .as_secs_f64();
     Some(target - now)
 }
-

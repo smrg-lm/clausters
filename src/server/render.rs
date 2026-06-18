@@ -22,10 +22,12 @@ use rosc::{OscMessage, OscPacket, OscTime};
 
 use crate::dsp::NUM_AUDIO_BUSES;
 use crate::dsp::buffer::{BufferPool, empty_pool};
-use crate::osc::translate::{CmdTranslator, parse_buffer_msg};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_d_faust;
-use crate::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair_with_workers};
+use crate::osc::translate::{CmdTranslator, parse_buffer_msg};
+use crate::server::engine::{
+    BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair_with_workers,
+};
 use crate::server::nrt::{NrtAction, run_job, wav_format};
 
 /// One score entry: the messages of a bundle, executed atomically at `time`
@@ -84,8 +86,7 @@ impl Score {
 
     pub fn load(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref();
-        let bytes =
-            std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         Self::from_bytes(&bytes).map_err(|e| format!("{}: {e}", path.display()))
     }
 
@@ -229,7 +230,9 @@ pub fn render(
     }
     r.collect();
     if r.dropped {
-        return Err("the engine dropped scheduled bundles (queue full): the score is too dense".into());
+        return Err(
+            "the engine dropped scheduled bundles (queue full): the score is too dense".into(),
+        );
     }
     Ok(RenderStats {
         frames: total,

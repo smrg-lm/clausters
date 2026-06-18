@@ -34,7 +34,9 @@ fn compile_faust(name: &str, payload: CompilePayload) -> Arc<FaustDef> {
         .submit(CompileRequest {
             name: name.into(),
             payload,
-            client: Some(clausters::osc::ClientId::Udp("127.0.0.1:1".parse().unwrap())),
+            client: Some(clausters::osc::ClientId::Udp(
+                "127.0.0.1:1".parse().unwrap(),
+            )),
             cache: None,
         })
         .ok()
@@ -144,8 +146,10 @@ fn sine_signal_json() -> String {
         json!({"op": "hslider", "label": "freq",
                "init": 440.0, "min": 20.0, "max": 20000.0, "step": 0.01})
     };
-    let acc = || json!({"op": "add", "in": [
-        {"op": "self"}, {"op": "div", "in": [freq(), f64::from(SR)]}]});
+    let acc = || {
+        json!({"op": "add", "in": [
+        {"op": "self"}, {"op": "div", "in": [freq(), f64::from(SR)]}]})
+    };
     let recur = json!({"op": "recursion", "in": [
         {"op": "sub", "in": [acc(), {"op": "floor", "in": [acc()]}]}]});
     // The box `sine_box_json` delays its phasor by 1 to start at 0 (UGen
@@ -167,11 +171,19 @@ fn signal_and_box_sines_agree_within_float_tolerance() {
 
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
-        .send(add_tail(1000, ROOT_NODE_ID, faust_synth(&bdef, &[("out", 0.0)])))
+        .send(add_tail(
+            1000,
+            ROOT_NODE_ID,
+            faust_synth(&bdef, &[("out", 0.0)]),
+        ))
         .ok()
         .unwrap();
     handle
-        .send(add_tail(1001, ROOT_NODE_ID, faust_synth(&sdef, &[("out", 1.0)])))
+        .send(add_tail(
+            1001,
+            ROOT_NODE_ID,
+            faust_synth(&sdef, &[("out", 1.0)]),
+        ))
         .ok()
         .unwrap();
 
@@ -192,11 +204,19 @@ fn sine_graphs_agree_within_float_tolerance() {
 
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
-        .send(add_tail(1000, ROOT_NODE_ID, ugen_synth(&sine_spec("usine", 0.0))))
+        .send(add_tail(
+            1000,
+            ROOT_NODE_ID,
+            ugen_synth(&sine_spec("usine", 0.0)),
+        ))
         .ok()
         .unwrap();
     handle
-        .send(add_tail(1001, ROOT_NODE_ID, faust_synth(&fdef, &[("out", 1.0)])))
+        .send(add_tail(
+            1001,
+            ROOT_NODE_ID,
+            faust_synth(&fdef, &[("out", 1.0)]),
+        ))
         .ok()
         .unwrap();
 
@@ -234,15 +254,16 @@ fn gain_stages_are_bit_exact_on_the_same_input() {
         ]
     })
     .to_string();
-    let fgain = compile_faust(
-        "pgain",
-        CompilePayload::Source("process = _ * 0.5;".into()),
-    );
+    let fgain = compile_faust("pgain", CompilePayload::Source("process = _ * 0.5;".into()));
     assert_eq!((fgain.num_inputs, fgain.num_outputs), (1, 1));
 
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
-        .send(add_tail(1000, ROOT_NODE_ID, ugen_synth(&sine_spec("src", 4.0))))
+        .send(add_tail(
+            1000,
+            ROOT_NODE_ID,
+            ugen_synth(&sine_spec("src", 4.0)),
+        ))
         .ok()
         .unwrap();
     handle

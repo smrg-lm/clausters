@@ -52,7 +52,10 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
 pub fn arity(kind: UGenKind) -> usize {
     match kind {
         UGenKind::WhiteNoise => 0,
-        UGenKind::SinOsc | UGenKind::Impulse | UGenKind::In | UGenKind::InCtl
+        UGenKind::SinOsc
+        | UGenKind::Impulse
+        | UGenKind::In
+        | UGenKind::InCtl
         | UGenKind::LocalIn => 1,
         UGenKind::Add
         | UGenKind::Sub

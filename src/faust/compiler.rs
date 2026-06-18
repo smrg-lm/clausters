@@ -7,9 +7,9 @@
 //! schedule (after each packet / on its GC tick), then sends the async
 //! `/done`/`/fail` reply to the requesting client.
 
+use crate::osc::ClientId;
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::path::PathBuf;
-use crate::osc::ClientId;
 use std::sync::{Mutex, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -183,10 +183,7 @@ impl FaustArgs {
     ///   thread in slow subnormal math regardless of the host FPU mode (the
     ///   architecture-independent half of [`crate::dsp::denormals`]).
     pub(crate) fn defaults() -> Self {
-        let mut storage = vec![
-            CString::new("-ftz").unwrap(),
-            CString::new("2").unwrap(),
-        ];
+        let mut storage = vec![CString::new("-ftz").unwrap(), CString::new("2").unwrap()];
         if let Some(dir) = stdlib_dir()
             && let Ok(dir_c) = CString::new(dir)
         {

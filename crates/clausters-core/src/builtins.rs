@@ -56,10 +56,26 @@ impl BinaryOp {
     pub fn from_u32(v: u32) -> Option<BinaryOp> {
         use BinaryOp::*;
         Some(match v {
-            0 => Add, 1 => Sub, 2 => Mul, 3 => Div, 4 => Mod, 5 => Pow,
-            6 => Min, 7 => Max, 8 => Atan2, 9 => Gt, 10 => Lt, 11 => Ge,
-            12 => Le, 13 => Eq, 14 => Ne, 15 => And, 16 => Or, 17 => Xor,
-            18 => Lsh, 19 => Rsh,
+            0 => Add,
+            1 => Sub,
+            2 => Mul,
+            3 => Div,
+            4 => Mod,
+            5 => Pow,
+            6 => Min,
+            7 => Max,
+            8 => Atan2,
+            9 => Gt,
+            10 => Lt,
+            11 => Ge,
+            12 => Le,
+            13 => Eq,
+            14 => Ne,
+            15 => And,
+            16 => Or,
+            17 => Xor,
+            18 => Lsh,
+            19 => Rsh,
             _ => return None,
         })
     }
@@ -96,9 +112,23 @@ impl UnaryOp {
     pub fn from_u32(v: u32) -> Option<UnaryOp> {
         use UnaryOp::*;
         Some(match v {
-            0 => Neg, 1 => Abs, 2 => Sin, 3 => Cos, 4 => Tan, 5 => Asin,
-            6 => Acos, 7 => Atan, 8 => Exp, 9 => Exp10, 10 => Log, 11 => Log10,
-            12 => Sqrt, 13 => Floor, 14 => Ceil, 15 => Rint, 16 => IntCast,
+            0 => Neg,
+            1 => Abs,
+            2 => Sin,
+            3 => Cos,
+            4 => Tan,
+            5 => Asin,
+            6 => Acos,
+            7 => Atan,
+            8 => Exp,
+            9 => Exp10,
+            10 => Log,
+            11 => Log10,
+            12 => Sqrt,
+            13 => Floor,
+            14 => Ceil,
+            15 => Rint,
+            16 => IntCast,
             17 => FloatCast,
             _ => return None,
         })
@@ -118,8 +148,20 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
         Pow => a.powf(b),
         // Explicit comparison (Faust's `select2(a<b, …)`) for a deterministic
         // result independent of platform fmin/fmax NaN handling.
-        Min => if a < b { a } else { b },
-        Max => if a > b { a } else { b },
+        Min => {
+            if a < b {
+                a
+            } else {
+                b
+            }
+        }
+        Max => {
+            if a > b {
+                a
+            } else {
+                b
+            }
+        }
         Atan2 => a.atan2(b),
         Gt => (a > b) as i32 as f32,
         Lt => (a < b) as i32 as f32,

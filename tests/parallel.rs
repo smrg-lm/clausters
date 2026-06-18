@@ -85,7 +85,10 @@ fn torture_graph() -> Vec<OscMessage> {
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 4}]}
         ]
     });
-    m.push(msg("/d_recv", vec![OscType::Blob(mix.to_string().into_bytes())]));
+    m.push(msg(
+        "/d_recv",
+        vec![OscType::Blob(mix.to_string().into_bytes())],
+    ));
     // Second master: nested-group buses into out 0 too (conflicting write).
     let mix2 = json!({
         "name": "mix2",
@@ -96,7 +99,10 @@ fn torture_graph() -> Vec<OscMessage> {
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
         ]
     });
-    m.push(msg("/d_recv", vec![OscType::Blob(mix2.to_string().into_bytes())]));
+    m.push(msg(
+        "/d_recv",
+        vec![OscType::Blob(mix2.to_string().into_bytes())],
+    ));
     // Dynamic: the In bus index is a signal — must run alone, untouched.
     let dynread = json!({
         "name": "dynread",
@@ -106,7 +112,10 @@ fn torture_graph() -> Vec<OscMessage> {
             {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 1}]}
         ]
     });
-    m.push(msg("/d_recv", vec![OscType::Blob(dynread.to_string().into_bytes())]));
+    m.push(msg(
+        "/d_recv",
+        vec![OscType::Blob(dynread.to_string().into_bytes())],
+    ));
     // A source whose output bus is a control (re-analyzed on /n_set later).
     let srcvar = json!({
         "name": "srcvar",
@@ -117,16 +126,16 @@ fn torture_graph() -> Vec<OscMessage> {
             {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 1}]}
         ]
     });
-    m.push(msg("/d_recv", vec![OscType::Blob(srcvar.to_string().into_bytes())]));
+    m.push(msg(
+        "/d_recv",
+        vec![OscType::Blob(srcvar.to_string().into_bytes())],
+    ));
 
     m.push(msg(
         "/g_new",
         vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
     ));
-    m.push(msg(
-        "/g_parallel",
-        vec![OscType::Int(100), OscType::Int(1)],
-    ));
+    m.push(msg("/g_parallel", vec![OscType::Int(100), OscType::Int(1)]));
     // Dependency-correct insertion order (M12 could do this; here it is
     // explicit so the test only exercises M13).
     m.push(s_new("src16", 1001, 100, &[]));
@@ -249,10 +258,7 @@ fn g_parallel_rejects_missing_or_non_groups() {
     assert!(err.contains("not found"), "{err}");
 
     translator
-        .translate(
-            &s_new("default", 1001, 0, &[]),
-            &mut cmds,
-        )
+        .translate(&s_new("default", 1001, 0, &[]), &mut cmds)
         .unwrap();
     let err = translator
         .translate(
@@ -272,10 +278,7 @@ fn nrt_render_with_workers_is_bit_identical() {
     let graph = torture_graph();
     let events = vec![
         (0.0, graph),
-        (
-            0.25,
-            vec![msg("/n_free", vec![OscType::Int(100)])],
-        ),
+        (0.25, vec![msg("/n_free", vec![OscType::Int(100)])]),
     ];
     let score = Score::new(events).unwrap();
     let base = RenderConfig {
@@ -284,14 +287,7 @@ fn nrt_render_with_workers_is_bit_identical() {
         workers: 0,
     };
     let (a, _) = render_to_vec(&score, &base).unwrap();
-    let (b, _) = render_to_vec(
-        &score,
-        &RenderConfig {
-            workers: 2,
-            ..base
-        },
-    )
-    .unwrap();
+    let (b, _) = render_to_vec(&score, &RenderConfig { workers: 2, ..base }).unwrap();
     assert!(a.iter().any(|s| *s != 0.0));
     assert!(a == b, "offline parallel render must be bit-identical");
 }

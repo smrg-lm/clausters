@@ -22,21 +22,13 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf
-        .windows(2)
-        .filter(|w| w[0] <= 0.0 && w[1] > 0.0)
-        .count();
+    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
     crossings as f32 * SR / buf.len() as f32
 }
 
 /// `wrap = _ <: _ - floor(_)` — one input, one output.
 unsafe fn wrap_box() -> FaustBox {
-    unsafe {
-        CboxSplit(
-            CboxWire(),
-            CboxSubAux(CboxWire(), CboxFloorAux(CboxWire())),
-        )
-    }
+    unsafe { CboxSplit(CboxWire(), CboxSubAux(CboxWire(), CboxFloorAux(CboxWire()))) }
 }
 
 /// `phasor = (+(freq/SR) : wrap) ~ _` — zero inputs, one output.
@@ -111,7 +103,12 @@ fn jit_compiled_box_sine_plays_at_440() {
         // exactly 1 s at 48 kHz
         let mut outputs: [*mut f32; 1] = [block.as_mut_ptr()];
         unsafe {
-            computeCDSPInstance(dsp, BLOCK as i32, std::ptr::null_mut(), outputs.as_mut_ptr())
+            computeCDSPInstance(
+                dsp,
+                BLOCK as i32,
+                std::ptr::null_mut(),
+                outputs.as_mut_ptr(),
+            )
         };
         out.extend_from_slice(&block);
     }

@@ -294,7 +294,9 @@ unsafe fn collector<'a>(ui: *mut c_void) -> &'a mut CollectedUi {
 
 unsafe fn add_param(ui: *mut c_void, label: *const c_char, zone: *mut f32, spec: [f32; 4]) {
     let ui = unsafe { collector(ui) };
-    let name = unsafe { CStr::from_ptr(label) }.to_string_lossy().into_owned();
+    let name = unsafe { CStr::from_ptr(label) }
+        .to_string_lossy()
+        .into_owned();
     let [init, min, max, step] = spec;
     ui.specs.push(ParamSpec {
         name,

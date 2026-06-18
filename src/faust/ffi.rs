@@ -67,8 +67,7 @@ pub const ERROR_MSG_SIZE: usize = 4096;
 
 pub type OpenBoxFun = unsafe extern "C" fn(ui: *mut c_void, label: *const c_char);
 pub type CloseBoxFun = unsafe extern "C" fn(ui: *mut c_void);
-pub type AddButtonFun =
-    unsafe extern "C" fn(ui: *mut c_void, label: *const c_char, zone: *mut f32);
+pub type AddButtonFun = unsafe extern "C" fn(ui: *mut c_void, label: *const c_char, zone: *mut f32);
 pub type AddSliderFun = unsafe extern "C" fn(
     ui: *mut c_void,
     label: *const c_char,
@@ -78,25 +77,16 @@ pub type AddSliderFun = unsafe extern "C" fn(
     max: f32,
     step: f32,
 );
-pub type AddBargraphFun = unsafe extern "C" fn(
-    ui: *mut c_void,
-    label: *const c_char,
-    zone: *mut f32,
-    min: f32,
-    max: f32,
-);
+pub type AddBargraphFun =
+    unsafe extern "C" fn(ui: *mut c_void, label: *const c_char, zone: *mut f32, min: f32, max: f32);
 pub type AddSoundfileFun = unsafe extern "C" fn(
     ui: *mut c_void,
     label: *const c_char,
     url: *const c_char,
     sf_zone: *mut *mut c_void,
 );
-pub type DeclareFun = unsafe extern "C" fn(
-    ui: *mut c_void,
-    zone: *mut f32,
-    key: *const c_char,
-    value: *const c_char,
-);
+pub type DeclareFun =
+    unsafe extern "C" fn(ui: *mut c_void, zone: *mut f32, key: *const c_char, value: *const c_char);
 
 /// C UI visitor: every field must be a valid function pointer (libfaust calls
 /// them unconditionally). `uiInterface` is passed back as the first argument.
@@ -181,12 +171,8 @@ unsafe extern "C" {
     // Delays and selectors.
     pub fn CboxDelayAux(b: FaustBox, del: FaustBox) -> FaustBox;
     pub fn CboxSelect2Aux(selector: FaustBox, b1: FaustBox, b2: FaustBox) -> FaustBox;
-    pub fn CboxSelect3Aux(
-        selector: FaustBox,
-        b1: FaustBox,
-        b2: FaustBox,
-        b3: FaustBox,
-    ) -> FaustBox;
+    pub fn CboxSelect3Aux(selector: FaustBox, b1: FaustBox, b2: FaustBox, b3: FaustBox)
+    -> FaustBox;
 
     // UI elements: named parameters, the future `/n_set` controls (F3).
     pub fn CboxHSlider(

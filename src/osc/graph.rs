@@ -34,9 +34,9 @@ use crate::dsp::NUM_AUDIO_BUSES;
 use crate::node::{AddAction, Place, ROOT_NODE_ID};
 use crate::synthdef::{InputRef, SynthDef};
 
+use crate::dsp::registry::UGenKind;
 #[cfg(feature = "faust")]
 use crate::faust::synth::FaustDef;
-use crate::dsp::registry::UGenKind;
 
 /// Bus-usage masks now live in [`crate::dsp`] (the engine's parallel
 /// scheduler uses them too, M13); re-exported here for the analysis API.
@@ -294,7 +294,14 @@ impl TreeMirror {
                 }
                 let parent = self.nodes[&target].parent;
                 let at = self.position(parent, target);
-                (parent, if matches!(action, AddAction::After) { at + 1 } else { at })
+                (
+                    parent,
+                    if matches!(action, AddAction::After) {
+                        at + 1
+                    } else {
+                        at
+                    },
+                )
             }
             AddAction::Replace => {
                 if target == ROOT_NODE_ID {
@@ -439,8 +446,7 @@ impl TreeMirror {
         if children.len() < 2 {
             return None;
         }
-        let units: Vec<(i32, BusUsage)> =
-            children.iter().map(|&c| (c, self.usage_of(c))).collect();
+        let units: Vec<(i32, BusUsage)> = children.iter().map(|&c| (c, self.usage_of(c))).collect();
         let desired = stable_topo_sort(&units);
         (desired != children).then_some(desired)
     }

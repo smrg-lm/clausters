@@ -635,8 +635,7 @@ impl NodeTree {
                     }
                     break;
                 }
-                if j > i
-                    && ((usage.writes & (reads | writes)) != 0 || (usage.reads & writes) != 0)
+                if j > i && ((usage.writes & (reads | writes)) != 0 || (usage.reads & writes) != 0)
                 {
                     break;
                 }
@@ -659,10 +658,9 @@ impl NodeTree {
     fn subtree_usage(&self, idx: usize) -> BusUsage {
         match self.slot(idx).map(|s| &s.kind) {
             Some(NodeKind::Synth { usage, .. }) => *usage,
-            Some(NodeKind::Group(g)) => g
-                .children
-                .iter()
-                .fold(BusUsage::default(), |acc, &c| acc.union(self.subtree_usage(c))),
+            Some(NodeKind::Group(g)) => g.children.iter().fold(BusUsage::default(), |acc, &c| {
+                acc.union(self.subtree_usage(c))
+            }),
             None => BusUsage::default(),
         }
     }

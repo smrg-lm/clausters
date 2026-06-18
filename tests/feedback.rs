@@ -148,7 +148,10 @@ fn feedback_survives_a_mid_block_schedule_split() {
         .unwrap();
     // A no-op timed bundle at sample 100 forces a split of block 1.
     handle
-        .send(Cmd::Schedule { time: 100, cmds: vec![] })
+        .send(Cmd::Schedule {
+            time: 100,
+            cmds: vec![],
+        })
         .ok()
         .unwrap();
 
@@ -188,5 +191,8 @@ fn rejects_non_constant_feedback_channel() {
     }))
     .unwrap();
     let err = compile(spec).unwrap_err();
-    assert!(err.contains("must be a non-negative constant"), "got: {err}");
+    assert!(
+        err.contains("must be a non-negative constant"),
+        "got: {err}"
+    );
 }

@@ -243,7 +243,11 @@ fn replaced_buffer_leaves_through_the_garbage_fifo() {
         .ok()
         .unwrap();
     render_channel(&mut engine, 1, 0);
-    assert_eq!(handle.collect_garbage(), 0, "first install replaces nothing");
+    assert_eq!(
+        handle.collect_garbage(),
+        0,
+        "first install replaces nothing"
+    );
 
     handle
         .send(Cmd::SetBuffer {
@@ -554,7 +558,10 @@ mod osc {
         assert_eq!(infos.args[1], OscType::Int(0));
 
         // Errors come back as /fail: unallocated read, bad index.
-        send("/b_read", vec![OscType::Int(0), OscType::String(path.clone())]);
+        send(
+            "/b_read",
+            vec![OscType::Int(0), OscType::String(path.clone())],
+        );
         let fail = recv_until("/fail");
         assert_eq!(fail.args[0], OscType::String("/b_read".into()));
         send("/b_alloc", vec![OscType::Int(-1), OscType::Int(10)]);

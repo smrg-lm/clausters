@@ -32,7 +32,9 @@ impl Server {
         let addr = server.local_addr().unwrap();
         let thread = std::thread::spawn(move || server.run());
         let client = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         Self {
             addr,
             thread,
@@ -72,7 +74,10 @@ impl Server {
 
     fn d_recv(&self, def: &serde_json::Value) {
         self.send("/d_recv", vec![OscType::Blob(def.to_string().into_bytes())]);
-        assert_eq!(self.recv_until("/done").args[0], OscType::String("/d_recv".into()));
+        assert_eq!(
+            self.recv_until("/done").args[0],
+            OscType::String("/d_recv".into())
+        );
     }
 
     /// Top-level child IDs of a flat group (synth children only).
@@ -83,7 +88,9 @@ impl Server {
         // args: flag, groupID, numChildren, then per synth: id, -1, defname.
         let mut i = 3;
         while i < reply.args.len() {
-            let OscType::Int(id) = reply.args[i] else { break };
+            let OscType::Int(id) = reply.args[i] else {
+                break;
+            };
             order.push(id);
             i += 3;
         }
@@ -310,14 +317,14 @@ fn g_sort_mode_sorts_existing_children_and_can_be_disabled() {
     server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(1)]);
     server.wait_for_order(100, &[1002, 1001]);
     let out = server.render(50);
-    assert!(rms(&out[BLOCK_SIZE..]) > 0.1, "sorted chain must be audible");
+    assert!(
+        rms(&out[BLOCK_SIZE..]) > 0.1,
+        "sorted chain must be audible"
+    );
 
     // …and disabling re-enables manual moves.
     server.send("/g_sortMode", vec![OscType::Int(100), OscType::Int(0)]);
-    server.send(
-        "/n_before",
-        vec![OscType::Int(1001), OscType::Int(1002)],
-    );
+    server.send("/n_before", vec![OscType::Int(1001), OscType::Int(1002)]);
     server.wait_for_order(100, &[1001, 1002]);
     server.quit();
 }
@@ -341,10 +348,7 @@ fn manual_moves_fail_inside_auto_groups() {
             ],
         );
     }
-    server.send(
-        "/n_before",
-        vec![OscType::Int(1002), OscType::Int(1001)],
-    );
+    server.send("/n_before", vec![OscType::Int(1002), OscType::Int(1001)]);
     let reply = server.recv_until("/fail");
     assert_eq!(reply.args[0], OscType::String("/n_before".into()));
     server.quit();
@@ -398,17 +402,17 @@ fn query_tree_reports_structure_and_controls() {
     server.send("/g_queryTree", vec![OscType::Int(100), OscType::Int(1)]);
     let reply = server.recv_until("/g_queryTree.reply");
     let expected: Vec<OscType> = vec![
-        OscType::Int(1),            // flag
-        OscType::Int(100),          // queried group
-        OscType::Int(1),            // its child count
-        OscType::Int(1001),         // the synth
-        OscType::Int(-1),           // synth marker
+        OscType::Int(1),    // flag
+        OscType::Int(100),  // queried group
+        OscType::Int(1),    // its child count
+        OscType::Int(1001), // the synth
+        OscType::Int(-1),   // synth marker
         OscType::String("default".into()),
-        OscType::Int(2),            // control count
+        OscType::Int(2), // control count
         OscType::String("freq".into()),
-        OscType::Float(220.0),      // /s_new override, mirrored
+        OscType::Float(220.0), // /s_new override, mirrored
         OscType::String("amp".into()),
-        OscType::Float(0.2),        // default
+        OscType::Float(0.2), // default
     ];
     assert_eq!(reply.args, expected);
     server.quit();
@@ -453,7 +457,10 @@ fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
     let OscType::String(dump) = &reply.args[1] else {
         panic!("expected a string dump");
     };
-    assert!(dump.contains("dynamic"), "dump must flag the barrier:\n{dump}");
+    assert!(
+        dump.contains("dynamic"),
+        "dump must flag the barrier:\n{dump}"
+    );
     assert!(dump.contains("group 100 (auto)"), "dump header:\n{dump}");
     server.quit();
 }
@@ -538,7 +545,10 @@ fn n_set_on_a_bus_control_resorts() {
     );
     server.wait_for_order(100, &[1002, 1001]);
     let out = server.render(50);
-    assert!(rms(&out[BLOCK_SIZE..]) > 0.1, "re-sorted chain must be audible");
+    assert!(
+        rms(&out[BLOCK_SIZE..]) > 0.1,
+        "re-sorted chain must be audible"
+    );
     server.quit();
 }
 
@@ -555,8 +565,14 @@ fn nrt_scores_support_g_sort_mode() {
         (
             0.0,
             vec![
-                msg("/d_recv", vec![OscType::Blob(src_def().to_string().into_bytes())]),
-                msg("/d_recv", vec![OscType::Blob(master_def().to_string().into_bytes())]),
+                msg(
+                    "/d_recv",
+                    vec![OscType::Blob(src_def().to_string().into_bytes())],
+                ),
+                msg(
+                    "/d_recv",
+                    vec![OscType::Blob(master_def().to_string().into_bytes())],
+                ),
                 msg(
                     "/g_new",
                     vec![OscType::Int(100), OscType::Int(0), OscType::Int(0)],
@@ -645,6 +661,9 @@ fn faust_synths_sort_by_their_reserved_buses() {
     );
     server.wait_for_order(100, &[1002, 1001]);
     let out = server.render(50);
-    assert!(rms(&out[BLOCK_SIZE..]) > 0.1, "faust source must reach the master");
+    assert!(
+        rms(&out[BLOCK_SIZE..]) > 0.1,
+        "faust source must reach the master"
+    );
     server.quit();
 }

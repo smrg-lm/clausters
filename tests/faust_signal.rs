@@ -58,7 +58,12 @@ fn render_mono(def: &FaustDef, seconds: f32) -> Vec<f32> {
     for _ in 0..blocks {
         let mut outputs: [*mut f32; 1] = [block.as_mut_ptr()];
         unsafe {
-            ffi::computeCDSPInstance(dsp, BLOCK as i32, std::ptr::null_mut(), outputs.as_mut_ptr())
+            ffi::computeCDSPInstance(
+                dsp,
+                BLOCK as i32,
+                std::ptr::null_mut(),
+                outputs.as_mut_ptr(),
+            )
         };
         out.extend_from_slice(&block);
     }
@@ -83,9 +88,7 @@ fn render_with_input(def: &FaustDef, input: &[f32]) -> Vec<f32> {
         inb[n..].fill(0.0);
         let mut ins: [*mut f32; 1] = [inb.as_mut_ptr()];
         let mut outs: [*mut f32; 1] = [outb.as_mut_ptr()];
-        unsafe {
-            ffi::computeCDSPInstance(dsp, BLOCK as i32, ins.as_mut_ptr(), outs.as_mut_ptr())
-        };
+        unsafe { ffi::computeCDSPInstance(dsp, BLOCK as i32, ins.as_mut_ptr(), outs.as_mut_ptr()) };
         out.extend_from_slice(&outb[..n]);
         i += n;
     }
@@ -158,7 +161,11 @@ fn explicit_recursion_makes_a_one_pole_filter() {
     assert!((y[0] - (1.0 - a as f32)).abs() < 1e-5, "y[0] = {}", y[0]);
     for n in 0..8 {
         let ratio = y[n + 1] / y[n];
-        assert!((ratio - a as f32).abs() < 1e-4, "y[{}]/y[{n}] = {ratio}", n + 1);
+        assert!(
+            (ratio - a as f32).abs() < 1e-4,
+            "y[{}]/y[{n}] = {ratio}",
+            n + 1
+        );
     }
 }
 
@@ -191,11 +198,21 @@ fn kitchen_sink_graph_exercises_every_op() {
 
     // Unary math on safe-domain constants + the input.
     let unary = [
-        un("sin", x.clone()), un("cos", x.clone()), un("tan", json!(0.1)),
-        un("asin", json!(0.5)), un("acos", json!(0.5)), un("atan", json!(0.5)),
-        un("exp", json!(0.0)), un("exp10", json!(0.0)), un("log", json!(2.0)),
-        un("log10", json!(2.0)), un("sqrt", json!(2.0)), un("abs", x.clone()),
-        un("floor", json!(1.5)), un("ceil", json!(1.5)), un("rint", json!(1.4)),
+        un("sin", x.clone()),
+        un("cos", x.clone()),
+        un("tan", json!(0.1)),
+        un("asin", json!(0.5)),
+        un("acos", json!(0.5)),
+        un("atan", json!(0.5)),
+        un("exp", json!(0.0)),
+        un("exp10", json!(0.0)),
+        un("log", json!(2.0)),
+        un("log10", json!(2.0)),
+        un("sqrt", json!(2.0)),
+        un("abs", x.clone()),
+        un("floor", json!(1.5)),
+        un("ceil", json!(1.5)),
+        un("rint", json!(1.4)),
         un("delay1", x.clone()),
     ];
     let mut sum = json!(0.0);
@@ -204,15 +221,39 @@ fn kitchen_sink_graph_exercises_every_op() {
     }
 
     // Binary ops (float-typed).
-    for op in ["add", "sub", "mul", "div", "fmod", "remainder", "pow", "min",
-               "max", "atan2", "gt", "lt", "ge", "le", "eq", "ne"] {
+    for op in [
+        "add",
+        "sub",
+        "mul",
+        "div",
+        "fmod",
+        "remainder",
+        "pow",
+        "min",
+        "max",
+        "atan2",
+        "gt",
+        "lt",
+        "ge",
+        "le",
+        "eq",
+        "ne",
+    ] {
         sum = bin("add", sum, bin(op, json!(0.7), json!(0.3)));
     }
     // delay by a constant.
     sum = bin("add", sum, bin("delay", x.clone(), json!(2)));
     // select2 / select3.
-    sum = bin("add", sum, json!({"op": "select2", "in": [json!(0), json!(0.1), json!(0.2)]}));
-    sum = bin("add", sum, json!({"op": "select3", "in": [json!(1), json!(0.1), json!(0.2), json!(0.3)]}));
+    sum = bin(
+        "add",
+        sum,
+        json!({"op": "select2", "in": [json!(0), json!(0.1), json!(0.2)]}),
+    );
+    sum = bin(
+        "add",
+        sum,
+        json!({"op": "select3", "in": [json!(1), json!(0.1), json!(0.2), json!(0.3)]}),
+    );
 
     // Integer-typed terms: bitwise/shift ops need int operands, then floatcast.
     let i3 = un("intcast", json!(3));
@@ -222,29 +263,71 @@ fn kitchen_sink_graph_exercises_every_op() {
     }
 
     // UI elements + a recursive phasor + tables, all scaled into the sink.
-    let ui = bin("add",
-        bin("add",
+    let ui = bin(
+        "add",
+        bin(
+            "add",
             json!({"op": "vslider", "label": "v", "init": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
-            json!({"op": "nentry", "label": "n", "init": 0.0, "min": 0.0, "max": 1.0, "step": 0.01})),
-        bin("add",
-            bin("add", json!({"op": "button", "label": "b"}), json!({"op": "checkbox", "label": "c"})),
-            json!({"op": "hbargraph", "label": "hb", "min": -1.0, "max": 1.0, "in": [x.clone()]})));
+            json!({"op": "nentry", "label": "n", "init": 0.0, "min": 0.0, "max": 1.0, "step": 0.01}),
+        ),
+        bin(
+            "add",
+            bin(
+                "add",
+                json!({"op": "button", "label": "b"}),
+                json!({"op": "checkbox", "label": "c"}),
+            ),
+            json!({"op": "hbargraph", "label": "hb", "min": -1.0, "max": 1.0, "in": [x.clone()]}),
+        ),
+    );
     sum = bin("add", sum, ui);
-    sum = bin("add", sum, json!({"op": "vbargraph", "label": "vb", "min": -1.0, "max": 1.0, "in": [json!(0.0)]}));
+    sum = bin(
+        "add",
+        sum,
+        json!({"op": "vbargraph", "label": "vb", "min": -1.0, "max": 1.0, "in": [json!(0.0)]}),
+    );
     // A recursive accumulator (self/recursion) and the two tables.
-    sum = bin("add", sum, json!({"op": "recursion", "in": [bin("mul", json!({"op": "self"}), json!(0.5))]}));
+    sum = bin(
+        "add",
+        sum,
+        json!({"op": "recursion", "in": [bin("mul", json!({"op": "self"}), json!(0.5))]}),
+    );
     // Foreign constant/variable (the SR primitives): floatcast then fold in.
-    sum = bin("add", sum, un("floatcast",
-        json!({"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"})));
-    sum = bin("add", sum, un("floatcast",
-        json!({"op": "fvar", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"})));
+    sum = bin(
+        "add",
+        sum,
+        un(
+            "floatcast",
+            json!({"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}),
+        ),
+    );
+    sum = bin(
+        "add",
+        sum,
+        un(
+            "floatcast",
+            json!({"op": "fvar", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}),
+        ),
+    );
     let wf = json!({"op": "waveform", "values": [0.0, 0.5, 1.0, 0.5]});
-    sum = bin("add", sum, json!({"op": "rdtable", "in": [json!(4), wf, json!(0)]}));
-    sum = bin("add", sum, json!({"op": "rwtable",
-        "in": [json!(4), json!(0.0), json!(0), json!(0.25), json!(0)]}));
+    sum = bin(
+        "add",
+        sum,
+        json!({"op": "rdtable", "in": [json!(4), wf, json!(0)]}),
+    );
+    sum = bin(
+        "add",
+        sum,
+        json!({"op": "rwtable",
+        "in": [json!(4), json!(0.0), json!(0), json!(0.25), json!(0)]}),
+    );
 
     // Keep the output bounded and deterministic: 0·(everything) + 0.5·input.
-    let out = bin("add", bin("mul", sum, json!(0.0)), bin("mul", x, json!(0.5)));
+    let out = bin(
+        "add",
+        bin("mul", sum, json!(0.0)),
+        bin("mul", x, json!(0.5)),
+    );
     let def = compile_signal("kitchen", &json!({"signals": [out]})).expect("must compile");
 
     let input: Vec<f32> = (0..256).map(|i| (i as f32 * 0.01).sin() * 0.5).collect();
@@ -268,7 +351,11 @@ fn fconst_reads_the_engine_sample_rate() {
     let def = compile_signal("srconst", &json!({"signals": [sr_sig]})).expect("fconst compiles");
     let out = render_mono(&def, 0.01);
     assert!(!out.is_empty());
-    assert!(out.iter().all(|&v| (v - SR).abs() < 1.0), "SR signal = {}", out[0]);
+    assert!(
+        out.iter().all(|&v| (v - SR).abs() < 1.0),
+        "SR signal = {}",
+        out[0]
+    );
 }
 
 #[test]
@@ -290,16 +377,28 @@ fn validation_errors_point_at_the_offending_node() {
         (json!([1, 2]), "must be a {\"signals\""),
         (json!({"foo": 1}), "missing \"signals\""),
         (json!({"signals": []}), "at least one output"),
-        (json!({"signals": [{"op": "input"}]}), "non-negative integer \"index\""),
+        (
+            json!({"signals": [{"op": "input"}]}),
+            "non-negative integer \"index\"",
+        ),
         (json!({"signals": [{"op": "frobnicate"}]}), "unknown op"),
         (json!({"signals": [{"op": "add", "in": [1.0]}]}), "takes 2"),
         (json!({"signals": [{"op": "sin"}]}), "needs an \"in\" array"),
-        (json!({"signals": [{"op": "fconst", "name": "x"}]}), "needs \"ctype\""),
-        (json!({"signals": [{"op": "fvar", "ctype": "int"}]}), "needs a string \"name\""),
+        (
+            json!({"signals": [{"op": "fconst", "name": "x"}]}),
+            "needs \"ctype\"",
+        ),
+        (
+            json!({"signals": [{"op": "fvar", "ctype": "int"}]}),
+            "needs a string \"name\"",
+        ),
     ];
     for (graph, needle) in cases {
         let err = compile_signal("bad", graph).err().unwrap();
-        assert!(err.contains(needle), "graph {graph} -> {err:?}, expected {needle:?}");
+        assert!(
+            err.contains(needle),
+            "graph {graph} -> {err:?}, expected {needle:?}"
+        );
     }
     // The path reaches the offending nested node.
     let nested = json!({"signals": [{"op": "mul", "in": [0.5, {"op": "add", "in": [1.0]}]}]});

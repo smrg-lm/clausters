@@ -280,7 +280,10 @@ mod faust {
         let a = TestServer::spawn(dir.path());
         a.send(
             "/d_faust",
-            vec![OscType::String("psine".into()), OscType::String(SINE.into())],
+            vec![
+                OscType::String("psine".into()),
+                OscType::String(SINE.into()),
+            ],
         );
         let done = a.recv_until("/done");
         assert_eq!(done.args[1], OscType::String("psine".into()));
