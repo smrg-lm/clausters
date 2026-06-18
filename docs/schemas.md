@@ -250,12 +250,15 @@ Where boxes compose point-free, signals are explicit: there is no implicit wire 
 | `select2`, `select3` | `in`: selector, then 2 / 3 signals | `CsigSelect2` / `CsigSelect3` |
 | `hslider`, `vslider`, `nentry` | `label`, `init`, `min`, `max`, `step` | named control |
 | `button`, `checkbox` | `label` | named control (0/1) |
+| `fconst`, `fvar` | `ctype`: `"int"`/`"real"`, `name`, `file` (optional) | `CsigFConst` / `CsigFVar` — a runtime scalar resolved at instance init |
 | `hbargraph`, `vbargraph` | `label`, `min`, `max`, `in`: 1 signal | passive monitor (passes the signal through) |
 | `waveform` | `values`: non-empty array of numbers | `CsigWaveform` (size is `int(len)`) |
 | `rdtable` | `in`: size, init, ridx | `CsigReadOnlyTable` |
 | `rwtable` | `in`: size, init, widx, wsig, ridx | `CsigWriteReadTable` |
 
 Differences from the box schema: no `seq`/`par`/`split`/`merge`, `hgroup`/`vgroup`, the `"_"`/`"!"` shorthands or the `faust` source escape hatch (those are box/UI-tree concepts); `round` is absent upstream (`rint` rounds); N-ary mutual recursion (`selfN`/`recursionN`) is not exposed — like the box `~`, single recursion is the surface. Errors carry the node path the same way (`at $.signals[0].in[1]: …`).
+
+The **sample rate** enters the graph through `fconst`, not as a baked number: `{"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}` is the runtime constant behind Faust's `ma.SR`, resolved when the def is instantiated, so a def stays in tune at whatever rate the engine (or NRT renderer) runs. `ma.SR` itself is that value clamped to `[1, 192000]`; the Python client wraps the whole thing as `signals.sr()`. (`ma.PI`, by contrast, is a plain numeric literal — no `fconst` needed.)
 
 Example — a one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0, the explicit-feedback idiom:
 

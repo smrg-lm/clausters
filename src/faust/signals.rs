@@ -22,6 +22,7 @@
 //! | `delay1` | `in`: 1 signal | `CsigDelay1` |
 //! | `recursion` | `in`: 1 body (uses `self`) | `CsigRecursion` |
 //! | `self` | — | `CsigSelf` (only valid inside a `recursion` body) |
+//! | `fconst`, `fvar` | `ctype`: `"int"`/`"real"`, `name`, `file` (optional) | `CsigFConst`/`CsigFVar` (runtime scalar, e.g. `fSamplingFreq` behind `ma.SR`) |
 //! | `add` `sub` `mul` `div` `rem` `fmod` `remainder` `pow` `min` `max` `atan2` `gt` `lt` `ge` `le` `eq` `ne` `and` `or` `xor` `lsh` `rsh` | `in`: 2 signals | binary ops |
 //! | `sin` `cos` `tan` `asin` `acos` `atan` `exp` `exp10` `log` `log10` `sqrt` `abs` `floor` `ceil` `rint` `intcast` `floatcast` | `in`: 1 signal | unary functions |
 //! | `select2` | `in`: selector, 2 signals | `CsigSelect2` |
@@ -49,7 +50,7 @@ use std::ffi::{CString, c_int};
 use serde_json::{Map, Value};
 
 use crate::faust::ffi::{self, FaustSignal};
-use crate::faust::json_util::{err, inputs, label_field, num_field};
+use crate::faust::json_util::{err, foreign_args, inputs, label_field, num_field};
 
 /// Builds the output-signal vector from the root of a JSON def.
 ///
@@ -206,6 +207,14 @@ unsafe fn build_op(
             _ => Err(err(path, "`input` needs a non-negative integer \"index\"")),
         },
         "self" => Ok(unsafe { ffi::CsigSelf() }),
+        "fconst" => {
+            let (ty, name, file) = foreign_args(obj, op, path, cstrings)?;
+            Ok(unsafe { ffi::CsigFConst(ty, name, file) })
+        }
+        "fvar" => {
+            let (ty, name, file) = foreign_args(obj, op, path, cstrings)?;
+            Ok(unsafe { ffi::CsigFVar(ty, name, file) })
+        }
         "recursion" => {
             let items = inputs(obj, op, path, 1, 1)?;
             let s = unsafe { build_children(items, path, cstrings) }?;

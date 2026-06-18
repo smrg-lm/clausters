@@ -51,6 +51,27 @@ def test_recursion_and_self():
     assert node["in"][0]["in"][0]["in"][0] == {"op": "self"}
 
 
+def test_foreign_constant_and_sample_rate():
+    # fconst/fvar carry ctype/name/file; sr() is the ma.SR clamp built on them.
+    assert S.fconst("int", "fSamplingFreq", "<math.h>").to_json() == {
+        "op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}
+    assert S.fvar("real", "x").to_json() == {
+        "op": "fvar", "ctype": "real", "name": "x", "file": ""}
+    sr = S.sr().to_json()
+    assert sr["op"] == "min"                      # min(192000, max(1, fconst))
+    assert sr["in"][0] == 192000.0
+    inner = sr["in"][1]
+    assert inner["op"] == "max" and inner["in"][0] == 1.0
+    assert inner["in"][1] == {
+        "op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}
+
+
+def test_pi_and_tau_are_plain_literals():
+    # PI/TAU are floats (ma.PI is a literal too), becoming constants in graphs.
+    assert S.TAU == pytest.approx(2.0 * S.PI)
+    assert (S.sin(S.TAU) * 1.0).to_json()["in"][0]["in"][0] == pytest.approx(S.TAU)
+
+
 # ---- FaustDef payloads and controls ----
 
 def test_faustdef_signal_payload_and_controls():

@@ -637,6 +637,16 @@ El schema completo (tabla de ops, discriminador, límites) está en
 (son conceptos del box tree), ni recursión N-aria (igual que la box solo tiene
 `~`).
 
+El **sample rate** se obtiene con el op `fconst` (la constante `fSamplingFreq`
+detrás de `ma.SR`), no como número horneado: el servidor la resuelve al
+instanciar la def, así queda afinada a cualquier tasa. A mano, una def cuya
+única salida es el SR (debe dar 48000 si el motor corre a 48 kHz):
+
+```sh
+oscsend localhost 57110 /d_faust ss srcheck \
+  '{"signals":[{"op":"floatcast","in":[{"op":"fconst","ctype":"int","name":"fSamplingFreq","file":"<math.h>"}]}]}'
+```
+
 ### Probar waveforms y tablas (F5)
 
 El op `waveform` embebe una tabla calculada por el cliente dentro de la def

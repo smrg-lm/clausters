@@ -26,6 +26,7 @@
 //! | `select3` | `in`: selector, then 3 branches | `select3` |
 //! | `hslider`, `vslider`, `nentry` | `label`, `init`, `min`, `max`, `step` | named control |
 //! | `button`, `checkbox` | `label` | named control (0/1) |
+//! | `fconst`, `fvar` | `ctype`: `"int"`/`"real"`, `name`, `file` (optional) | `CboxFConst`/`CboxFVar` (runtime scalar, e.g. `fSamplingFreq` behind `ma.SR`) |
 //! | `hgroup`, `vgroup` | `label`, `in`: exactly 1 box | control grouping |
 //! | `waveform` | `values`: non-empty array of numbers | `waveform{…}` — outputs the (size, content) pair |
 //! | `rdtable` | `in`: size, init, ridx — or 2 boxes when a `waveform` stands in for (size, init) | `rdtable` |
@@ -64,7 +65,7 @@ use serde_json::{Map, Value};
 
 use crate::faust::compiler::FaustArgs;
 use crate::faust::ffi::{self, FaustBox};
-use crate::faust::json_util::{err, inputs, label_field, num_field};
+use crate::faust::json_util::{err, foreign_args, inputs, label_field, num_field};
 
 /// Builds the `process` box from the root of a JSON def.
 ///
@@ -284,6 +285,14 @@ unsafe fn build_op(
         }
         "button" => Ok(unsafe { ffi::CboxButton(label_field(obj, path, cstrings)?) }),
         "checkbox" => Ok(unsafe { ffi::CboxCheckbox(label_field(obj, path, cstrings)?) }),
+        "fconst" => {
+            let (ty, name, file) = foreign_args(obj, op, path, cstrings)?;
+            Ok(unsafe { ffi::CboxFConst(ty, name, file) })
+        }
+        "fvar" => {
+            let (ty, name, file) = foreign_args(obj, op, path, cstrings)?;
+            Ok(unsafe { ffi::CboxFVar(ty, name, file) })
+        }
         "hgroup" | "vgroup" => {
             let label = label_field(obj, path, cstrings)?;
             let items = inputs(obj, op, path, 1, 1)?;

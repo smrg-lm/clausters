@@ -129,8 +129,8 @@ allocators de recursos:
 PYTHONPATH=. python3 - <<'PY'
 from clausters.defs import signals as S, FaustDef, NodeIDAllocator, AudioBusAllocator
 freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
-phasor = S.rec(lambda s: (s + freq/48000.0) % 1.0)       # feedback explícito
-sine = S.sin(phasor * 6.283185307179586) * 0.2
+phasor = S.rec(lambda s: (s + freq/S.sr()) % 1.0)        # feedback explícito; S.sr() = ma.SR
+sine = S.sin(phasor * S.TAU) * 0.2
 fdef = FaustDef.from_signals("sine", sine)
 print("controles:", fdef.control_names(), "+ reservados", fdef.reserved)
 print("payload (recorte):", fdef.payload()[:70], "...")
@@ -150,8 +150,8 @@ PYTHONPATH=. python3 - <<'PY'
 from clausters.base import Routine, TempoClock, OscNrtInterface
 from clausters.defs import signals as S, FaustDef, Server
 freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
-phasor = S.rec(lambda s: (s + freq/48000.0) % 1.0)
-fdef = FaustDef.from_signals("c3sine", S.sin(phasor*6.283185307179586)*0.2)
+phasor = S.rec(lambda s: (s + freq/S.sr()) % 1.0)        # S.sr() lo da el servidor
+fdef = FaustDef.from_signals("c3sine", S.sin(phasor*S.TAU)*0.2)
 server = Server(interface=OscNrtInterface()); clock = TempoClock(tempo=1.0)
 def play():
     server.send_bundle(("/d_faust", fdef.name, fdef.payload()))   # def primero
@@ -181,8 +181,8 @@ from clausters.defs import signals as S
 srv = Server()                                # 127.0.0.1:57110
 print("status:", srv.status()[:5])
 freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
-phasor = S.rec(lambda s: (s + freq/48000.0) % 1.0)
-fdef = FaustDef.from_signals("livesine", S.sin(phasor*6.283185307179586)*0.2)
+phasor = S.rec(lambda s: (s + freq/S.sr()) % 1.0)        # S.sr() = ma.SR del servidor
+fdef = FaustDef.from_signals("livesine", S.sin(phasor*S.TAU)*0.2)
 print("add ->", srv.add_faustdef(fdef))       # bloquea hasta /done (compila Faust)
 syn = srv.synth("livesine", target=0)         # /s_new, id asignado por el cliente
 srv.set(syn, {"freq": 440.0}); srv.sync(); srv.free(syn)
@@ -209,7 +209,7 @@ from clausters.defs import Server, FaustDef
 from clausters.defs import signals as S
 srv = Server()
 fdef = FaustDef.from_signals("asyncsine",
-    S.sin(S.rec(lambda s:(s+330.0/48000.0)%1.0)*6.2831853)*0.2)
+    S.sin(S.rec(lambda s:(s+330.0/S.sr())%1.0)*S.TAU)*0.2)
 print("fire-and-forget ->", srv.add_faustdef(fdef, wait=False))  # no bloquea
 print("synced id ->", srv.sync())               # barrera: espera la compilacion
 syn = srv.synth("asyncsine", target=0)          # la def existe seguro tras /synced
@@ -223,6 +223,28 @@ PY
 dentro del generador de una rutina (congelarían el reloj). Para crear defs
 desde una rutina, `wait=False` y resolver la dependencia sin bloquear (la
 barrera no-bloqueante que se pueda `yield` llega con `OSCFunc`).
+
+#### Sample rate desde el servidor (`S.sr()`)
+
+`S.sr()` es la versión de `ma.SR` de Faust: una constante foránea (`fconst`)
+que el servidor resuelve al compilar la def, **no** un número horneado. Así una
+def queda afinada a cualquier tasa. `S.PI`/`S.TAU` son literales (igual que
+`ma.PI`), floats de Python. El ejemplo `examples/biquad_signal.py` arma un
+biquad RBJ con coeficientes calculados sobre `S.sr()`; debe sonar afinado a
+cualquier `sample_rate` del render:
+
+```sh
+PYTHONPATH=. python3 - <<'PY'
+from clausters.base import Routine, TempoClock, OscNrtInterface
+from clausters.defs import Server
+import sys; sys.path.insert(0, "../../examples"); import biquad_signal as ex
+for rate in (44100, 48000, 96000):
+    srv = Server(interface=OscNrtInterface()); clk = TempoClock(tempo=ex.TEMPO)
+    srv.add_faustdef(ex.build_def()); clk.play(Routine(lambda: ex.voice(srv))); clk.render()
+    s, f = srv.render(sample_rate=rate, channels=2)
+    print(f"rate={rate}: {f} frames, peak {max(abs(x) for x in s):.3f}")  # peak ~0.74 en todas
+PY
+```
 
 ### Def UGen propia con `SynthDef` (C5 leftover, `/d_recv`)
 

@@ -113,6 +113,35 @@ def delay1(x) -> Signal:
     return Signal({"op": "delay1", "in": [_n(x)]})
 
 
+def fconst(ctype, name, file="") -> Signal:
+    """A foreign **constant**: a scalar the server resolves once, at def-compile
+    time, from its runtime (Faust ``CsigFConst``). ``ctype`` is ``"int"`` or
+    ``"real"``, ``name`` the runtime symbol, ``file`` the include that declares
+    it. The building block of :func:`sr` -- prefer that helper for sample rate.
+    """
+    return Signal({"op": "fconst", "ctype": ctype, "name": name, "file": file})
+
+
+def fvar(ctype, name, file="") -> Signal:
+    """A foreign **variable**: like :func:`fconst` but re-read each block
+    (Faust ``CsigFVar``)."""
+    return Signal({"op": "fvar", "ctype": ctype, "name": name, "file": file})
+
+
+def sr() -> Signal:
+    """The engine's sample rate as a :class:`Signal`, read from the server at
+    def-compile time -- the port of Faust's ``ma.SR``.
+
+    Use this instead of baking a Python ``SR`` constant: a def built with
+    :func:`sr` is correct at whatever rate the server (or NRT renderer) actually
+    runs, e.g. when normalizing a frequency (``freq / sr()``) or cooking filter
+    coefficients. It reproduces ``ma.SR`` exactly, including the stdlib's
+    ``[1, 192000]`` clamp around the raw ``fSamplingFreq`` constant.
+    """
+    raw = fconst("int", "fSamplingFreq", "<math.h>")
+    return min(signal(192000.0), max(signal(1.0), raw))
+
+
 def select2(sel, a, b) -> Signal:
     return Signal({"op": "select2", "in": [_n(sel), _n(a), _n(b)]})
 
@@ -156,6 +185,16 @@ pow = _binary("pow")  # noqa: A001
 atan2 = _binary("atan2")
 fmod = _binary("fmod")
 rem = _binary("rem")
+
+
+# ---- math constants ----
+#
+# Unlike the sample rate, these are *literals* in Faust too (``ma.PI`` is the
+# double constant 3.14159..., not a runtime value), so a Python float is exactly
+# what the compiler bakes in -- no server round-trip is involved. They become
+# constant signals as soon as they meet a Signal in an expression.
+PI = 3.141592653589793
+TAU = 6.283185307179586  # 2*PI; Faust has no ma.TAU, this is just the literal
 
 
 # ---- controls (labels become control names) ----

@@ -8,6 +8,8 @@ use std::fmt::Display;
 
 use serde_json::{Map, Value};
 
+use crate::faust::ffi::SType;
+
 pub(crate) fn err(path: &str, why: impl Display) -> String {
     format!("at {path}: {why}")
 }
@@ -60,10 +62,60 @@ pub(crate) fn label_field(
     path: &str,
     cstrings: &mut Vec<CString>,
 ) -> Result<*const c_char, String> {
-    let Some(label) = obj.get("label").and_then(Value::as_str) else {
-        return Err(err(path, "needs a string \"label\""));
+    str_field(obj, "label", path, cstrings)
+}
+
+/// Returns the required string field `key` as a C pointer kept alive in
+/// `cstrings`.
+pub(crate) fn str_field(
+    obj: &Map<String, Value>,
+    key: &str,
+    path: &str,
+    cstrings: &mut Vec<CString>,
+) -> Result<*const c_char, String> {
+    let Some(s) = obj.get(key).and_then(Value::as_str) else {
+        return Err(err(path, format_args!("needs a string \"{key}\"")));
     };
-    let label_c = CString::new(label).map_err(|_| err(path, "NUL byte in \"label\""))?;
-    cstrings.push(label_c);
+    cstr(s, key, path, cstrings)
+}
+
+/// Interns `s` as a C string in `cstrings` and returns its pointer.
+fn cstr(
+    s: &str,
+    key: &str,
+    path: &str,
+    cstrings: &mut Vec<CString>,
+) -> Result<*const c_char, String> {
+    let c = CString::new(s).map_err(|_| err(path, format_args!("NUL byte in \"{key}\"")))?;
+    cstrings.push(c);
     Ok(cstrings.last().unwrap().as_ptr())
+}
+
+/// Parses the `ctype`/`name`/`file` fields shared by `fconst`/`fvar` (foreign
+/// constant/variable). `ctype` is `"int"` or `"real"`; `file` (the include
+/// where the symbol is declared) is optional and defaults to empty.
+pub(crate) fn foreign_args(
+    obj: &Map<String, Value>,
+    op: &str,
+    path: &str,
+    cstrings: &mut Vec<CString>,
+) -> Result<(SType, *const c_char, *const c_char), String> {
+    let ty = match obj.get("ctype").and_then(Value::as_str) {
+        Some("int") => SType::Int,
+        Some("real") => SType::Real,
+        _ => {
+            return Err(err(
+                path,
+                format_args!("`{op}` needs \"ctype\": \"int\" or \"real\""),
+            ));
+        }
+    };
+    let name = str_field(obj, "name", path, cstrings)?;
+    let file = cstr(
+        obj.get("file").and_then(Value::as_str).unwrap_or(""),
+        "file",
+        path,
+        cstrings,
+    )?;
+    Ok((ty, name, file))
 }

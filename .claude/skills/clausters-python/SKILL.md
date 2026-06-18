@@ -41,10 +41,14 @@ fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1
 
 - `signals`: arithmetic + `sin/cos/...`, `delay`/`delay1` (Faust `'`), `rec`/`self_`
   (Faust `~`, one feedback sample), `hslider`/`nentry`/... (labels become control
-  names), `input(n)`, tables. **No sample-rate primitive** (`ma.SR` is not bound)
-  — bake SR as a Python constant (the server runs at its device rate, often
-  44100/48000). DSP can be built purely from these primitives (e.g. a biquad =
-  `rec` + `delay1` per `fi.tf2`).
+  names), `input(n)`, tables. DSP can be built purely from these primitives (e.g.
+  a biquad = `rec` + `delay1` per `fi.tf2`).
+- **Sample rate:** use `signals.sr()` (the port of Faust's `ma.SR`) — *do not* bake
+  an `SR` constant into the graph. `sr()` is a foreign constant (`fconst`) the
+  server resolves at def-compile time, so the def stays in tune at whatever rate
+  the engine/NRT renderer runs (`freq / S.sr()`, RBJ coeffs, etc.). `signals.PI`/
+  `signals.TAU` are *literals* (Faust's `ma.PI` is one too), so they are plain
+  Python floats — no server round-trip.
 - `FaustDef.from_signals/from_source/from_box`; `SynthDef` is the UGen
   counterpart (`/d_recv`), instance-based, only `+ - * /` compose UGens.
 - Reserved controls `in`/`out` (bus selectors) are added by the server.

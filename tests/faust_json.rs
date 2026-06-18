@@ -347,6 +347,10 @@ fn kitchen_sink_graph_exercises_every_op() {
     boxes.push(json!({"op": "seq", "in": [1.5, {"op": "wire"}]}));
     boxes.push(json!({"op": "seq", "in": [{"op": "real", "value": 2.5}, {"op": "cut"}]}));
     boxes.push(json!({"op": "merge", "in": [{"op": "par", "in": [1.0, 2.0, "!"]}, "_"]}));
+    boxes.push(json!({"op": "fconst",
+        "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}));
+    boxes.push(json!({"op": "fvar",
+        "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}));
     boxes.push(json!({"op": "rdtable", "in": [
         {"op": "waveform", "values": [0.0, 1.0]}, {"op": "int", "value": 0}
     ]}));

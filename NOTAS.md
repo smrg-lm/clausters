@@ -2084,3 +2084,28 @@ diferidos de M14 (semáforo de wakeup, múltiples clientes de ring, JS/wasm).
   no-bloqueante que se pueda `yield` desde una rutina es trabajo futuro
   (`OSCFunc` / notificaciones), que también reemplazará el wait sincrónico
   (recv en bucle) actual.
+
+## Sample rate del grafo via `fconst` / `ma.SR` (Signal API)
+
+- **Problema**: el ejemplo del biquad horneaba `SR=48000` como constante de
+  Python, asi que los coeficientes RBJ quedaban desafinados si el motor corria
+  a otra tasa. `ma.SR` de Faust no es un literal: es
+  `min(192000, max(1, fconstant(int fSamplingFreq, <math.h>)))` — una
+  **constante foranea** que el compilador resuelve en `initCDSPInstance`. No
+  estaba bindeada (`CsigFConst`/`CsigFVar` faltaban en `ffi.rs`).
+- **Bindeado**: `ffi.rs` agrega el enum `SType {Int,Real}` y
+  `CsigFConst`/`CsigFVar` (+ los gemelos box `CboxFConst`/`CboxFVar`). Ambos
+  interpretes (`signals.rs`, `boxes.rs`) ganan los ops `fconst`/`fvar`
+  (`ctype`: `"int"`/`"real"`, `name`, `file` opcional); el parseo compartido
+  vive en `json_util::foreign_args` (+ helper `str_field`/`cstr`).
+- **Cliente Python** (`defs/signals.py`): `fconst()`/`fvar()` y sobre todo
+  `sr()` = replica exacta de `ma.SR` (clamp incluido). `PI`/`TAU` quedan como
+  **floats** (igual que `ma.PI`, que es literal — no necesita el servidor).
+- **Ejemplo** `examples/biquad_signal.py`: usa `S.sr()` y `S.TAU` en el grafo
+  (fasor y coeficientes); `RENDER_SR` solo es la tasa que se le pide al render
+  NRT y la cabecera WAV (eleccion del host, ya desacoplada del grafo).
+  Verificado afinado a 44100/48000/96000 (frames escalan, peak ~0.74).
+- **Tests**: `tests/faust_signal.rs` (`fconst_reads_the_engine_sample_rate`,
+  `fvar_probe_compiles`, ops en el kitchen-sink y validacion de `ctype`/`name`),
+  `tests/faust_json.rs` (kitchen-sink box), `test_defs.py`
+  (`test_foreign_constant_and_sample_rate`, `test_pi_and_tau_are_plain_literals`).

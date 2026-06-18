@@ -233,6 +233,11 @@ fn kitchen_sink_graph_exercises_every_op() {
     sum = bin("add", sum, json!({"op": "vbargraph", "label": "vb", "min": -1.0, "max": 1.0, "in": [json!(0.0)]}));
     // A recursive accumulator (self/recursion) and the two tables.
     sum = bin("add", sum, json!({"op": "recursion", "in": [bin("mul", json!({"op": "self"}), json!(0.5))]}));
+    // Foreign constant/variable (the SR primitives): floatcast then fold in.
+    sum = bin("add", sum, un("floatcast",
+        json!({"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"})));
+    sum = bin("add", sum, un("floatcast",
+        json!({"op": "fvar", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"})));
     let wf = json!({"op": "waveform", "values": [0.0, 0.5, 1.0, 0.5]});
     sum = bin("add", sum, json!({"op": "rdtable", "in": [json!(4), wf, json!(0)]}));
     sum = bin("add", sum, json!({"op": "rwtable",
@@ -251,6 +256,35 @@ fn kitchen_sink_graph_exercises_every_op() {
 }
 
 #[test]
+fn fconst_reads_the_engine_sample_rate() {
+    // `ma.SR` is `floatcast(fconstant(int fSamplingFreq, <math.h>))`: a def
+    // whose sole output is that foreign constant must render the rate passed to
+    // `initCDSPInstance` (here `SR`), proving the value comes from the engine
+    // and is not baked into the graph.
+    let sr_sig = un(
+        "floatcast",
+        json!({"op": "fconst", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}),
+    );
+    let def = compile_signal("srconst", &json!({"signals": [sr_sig]})).expect("fconst compiles");
+    let out = render_mono(&def, 0.01);
+    assert!(!out.is_empty());
+    assert!(out.iter().all(|&v| (v - SR).abs() < 1.0), "SR signal = {}", out[0]);
+}
+
+#[test]
+fn fvar_probe_compiles() {
+    // The runtime variable twin. fSamplingFreq is also exposed as a variable;
+    // this only asserts the op builds and JIT-links (its value tracks the rate).
+    let v = un(
+        "floatcast",
+        json!({"op": "fvar", "ctype": "int", "name": "fSamplingFreq", "file": "<math.h>"}),
+    );
+    let def = compile_signal("srvar", &json!({"signals": [v]})).expect("fvar compiles");
+    let out = render_mono(&def, 0.01);
+    assert!(out.iter().all(|v| v.is_finite()));
+}
+
+#[test]
 fn validation_errors_point_at_the_offending_node() {
     let cases: &[(Value, &str)] = &[
         (json!([1, 2]), "must be a {\"signals\""),
@@ -260,6 +294,8 @@ fn validation_errors_point_at_the_offending_node() {
         (json!({"signals": [{"op": "frobnicate"}]}), "unknown op"),
         (json!({"signals": [{"op": "add", "in": [1.0]}]}), "takes 2"),
         (json!({"signals": [{"op": "sin"}]}), "needs an \"in\" array"),
+        (json!({"signals": [{"op": "fconst", "name": "x"}]}), "needs \"ctype\""),
+        (json!({"signals": [{"op": "fvar", "ctype": "int"}]}), "needs a string \"name\""),
     ];
     for (graph, needle) in cases {
         let err = compile_signal("bad", graph).err().unwrap();

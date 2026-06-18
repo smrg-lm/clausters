@@ -35,6 +35,16 @@ pub type FaustBox = *mut CTree;
 /// arena node as a box; a distinct alias keeps the two interpreters readable.
 pub type FaustSignal = *mut CTree;
 
+/// Scalar type of a foreign constant/variable (`enum SType` in the C API).
+/// Used by `CsigFConst`/`CsigFVar` (and the box twins) to declare e.g. the
+/// integer runtime constant `fSamplingFreq` behind `ma.SR`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub enum SType {
+    Int = 0,
+    Real = 1,
+}
+
 #[repr(C)]
 pub struct llvm_dsp_factory {
     _private: [u8; 0],
@@ -202,6 +212,9 @@ unsafe extern "C" {
     ) -> FaustBox;
     pub fn CboxButton(label: *const c_char) -> FaustBox;
     pub fn CboxCheckbox(label: *const c_char) -> FaustBox;
+    // Foreign constant/variable, box twin of `CsigFConst`/`CsigFVar`.
+    pub fn CboxFConst(ty: SType, name: *const c_char, file: *const c_char) -> FaustBox;
+    pub fn CboxFVar(ty: SType, name: *const c_char, file: *const c_char) -> FaustBox;
     pub fn CboxHGroup(label: *const c_char, group: FaustBox) -> FaustBox;
     pub fn CboxVGroup(label: *const c_char, group: FaustBox) -> FaustBox;
 
@@ -238,6 +251,13 @@ unsafe extern "C" {
     pub fn CsigDelay1(s: FaustSignal) -> FaustSignal;
     pub fn CsigIntCast(s: FaustSignal) -> FaustSignal;
     pub fn CsigFloatCast(s: FaustSignal) -> FaustSignal;
+
+    // Foreign constant/variable: a scalar read from the runtime (e.g. the
+    // `int fSamplingFreq` behind `ma.SR`) named by `name`, declared in include
+    // `file`. The compiler resolves it at `initCDSPInstance` time, so it tracks
+    // the engine's actual sample rate.
+    pub fn CsigFConst(ty: SType, name: *const c_char, file: *const c_char) -> FaustSignal;
+    pub fn CsigFVar(ty: SType, name: *const c_char, file: *const c_char) -> FaustSignal;
 
     // Feedback: `CsigSelf()` refers to the recursive signal inside the body
     // passed to `CsigRecursion` (one implicit sample of delay).
