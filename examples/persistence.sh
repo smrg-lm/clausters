@@ -24,8 +24,11 @@ fi
 rm -rf "$DATA_DIR"
 echo "data directory: $DATA_DIR"
 
-# A fixed-frequency sine in raw Faust (0 inputs, 1 output).
-SINE='process = sin(6.283185307179586 * ((+(440.0/48000.0) : _-floor(_)) ~ _)) * 0.2;'
+# A fixed-frequency sine in raw Faust (0 inputs, 1 output). The recursive
+# `+ : (_ <: _ - floor)` builds a 0..1 phasor: `(_ <: _ - floor)` splits its one
+# input so the fractional part stays a single-input block (`_ - floor(_)` would
+# be two inputs and fail to compose). 44100 matches the server sample rate.
+SINE='process = sin(6.283185307179586 * ((+(440.0/44100.0) : (_ <: _ - floor)) ~ _)) * 0.2;'
 
 echo
 echo "=== session 1: define 'psine' and quit (it gets persisted) ==="
