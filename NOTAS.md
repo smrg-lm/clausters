@@ -2062,3 +2062,25 @@ más UGens (filtros, EnvGen con done actions, Line), streaming de buffers
 variantes multi `/n_mapn`/`/n_mapan` (bucle trivial sobre el comando ya
 hecho), y los
 diferidos de M14 (semáforo de wakeup, múltiples clientes de ring, JS/wasm).
+
+## Barrera `/sync` y envío async de defs (cliente C-series)
+
+- **Servidor**: `/sync <id>` → responde `/synced <id>` cuando terminaron
+  *todos* los comandos async recibidos antes (compilaciones Faust, `/d_recv`,
+  jobs `/b_*`). Implementado con contadores submitted/drained por pipeline
+  (cada uno completa FIFO en su thread), `pending_syncs` y `resolve_syncs()`
+  drenado tras cada `collect_*` (también en el tick idle, así `/synced` sale
+  sin más tráfico). Tests en `tests/osc.rs`
+  (`sync_answers_synced_with_the_same_id`, `sync_waits_for_an_async_buffer_alloc`).
+- **Cliente**: `Server.add_def` → **`add_faustdef`** (simétrico con
+  `add_synthdef`; sin alias). Ambos `add_*` aceptan `wait` (kw-only): `True`
+  por defecto = bloquea hasta `/done`/`/fail`; `False` = fire-and-forget.
+  `Server.sync()` ahora hace la barrera real `/sync`→`/synced` (antes era un
+  hack de round-trip de `/status`, que NO garantizaba el fin de las compilas).
+- **Regla de las rutinas** (documentada en `Routine` y `Server.sync`): el
+  generador de una rutina **nunca** debe bloquear el thread del reloj
+  (responsabilidad del usuario). Para crear defs desde una rutina, usar el
+  modo async (`wait=False`) y **no** llamar `sync()` bloqueante ahí. La barrera
+  no-bloqueante que se pueda `yield` desde una rutina es trabajo futuro
+  (`OSCFunc` / notificaciones), que también reemplazará el wait sincrónico
+  (recv en bucle) actual.

@@ -68,6 +68,19 @@ class Routine(Stream):
     The generator may take zero or one positional argument (the initial
     ``inval``). Each :meth:`next` resumes it; a ``yield``ed number is the delay
     before the routine should be resumed again.
+
+    **The generator must never block the thread — that is the user's
+    responsibility.** A routine runs *on the clock thread* (RT) or inside the
+    render loop (NRT); blocking it (``time.sleep``, a blocking
+    ``Server.sync``/``wait=True`` def send, any synchronous wait-for-reply)
+    stalls every other routine and the whole timeline. Cede time with ``yield``
+    instead. In particular, to **create a def from inside a routine** use the
+    asynchronous form -- ``server.add_faustdef(fdef, wait=False)`` (or
+    ``add_synthdef(..., wait=False)``) -- which only sends; do *not* call the
+    blocking ``server.sync()`` here. A non-blocking, notification-driven
+    barrier you can ``yield`` (``OSCFunc``) is future work; until then, send
+    the def async and ``yield`` enough time before the ``/s_new`` that depends
+    on it.
     """
 
     def __init__(self, func):

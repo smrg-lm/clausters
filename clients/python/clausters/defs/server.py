@@ -55,6 +55,7 @@ class Server:
         self.audio_buses = AudioBusAllocator()
         self.control_buses = ControlBusAllocator()
         self.buffers = BufferAllocator()
+        self._sync_counter = 0      # ids for /sync -> /synced round-trips
 
     # ---- raw OSC: immediate and timed ----
 
@@ -120,8 +121,25 @@ class Server:
 
     # ---- definitions ----
 
-    def add_def(self, fdef: FaustDef, timeout: float = 10.0) -> str:
-        """Sends ``/d_faust`` and blocks until it compiles (or raises)."""
+    def add_faustdef(self, fdef: FaustDef, *, wait: bool = True,
+                     timeout: float = 10.0) -> str:
+        """Sends a :class:`~clausters.defs.faustdef.FaustDef` via ``/d_faust``.
+
+        ``/d_faust`` JIT-compiles **asynchronously** on the server's network
+        thread (answered later by ``/done``/``/fail``). In RT, ``wait=True``
+        (the default) blocks until that reply -- raising :class:`CommandError`
+        on ``/fail`` or :class:`ReplyTimeout` if it never lands; ``wait=False``
+        returns immediately (fire-and-forget), so use :meth:`sync` as a barrier
+        before relying on the def (e.g. ``yield`` it from a routine, never block
+        in one). In NRT it always *scores* ``/d_faust`` at time 0 -- the
+        renderer compiles it before time advances -- so ``wait`` does not
+        apply."""
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            self.send_msg("/d_faust", fdef.name, fdef.payload())
+            return fdef.name
+        if not wait:
+            self.send_msg("/d_faust", fdef.name, fdef.payload())
+            return fdef.name
         addr, args = self.request(
             "/d_faust", fdef.name, fdef.payload(), timeout=timeout, expect=("/done", "/fail")
         )
@@ -129,13 +147,17 @@ class Server:
             raise CommandError(f"/d_faust {fdef.name!r} failed: {args}")
         return fdef.name
 
-    def add_synthdef(self, sdef, timeout: float = 10.0) -> str:
-        """Sends a UGen :class:`~clausters.defs.synthdef.SynthDef` via ``/d_recv``.
-        In RT it blocks until the server compiles it (``/done``) or raises
-        (``/fail``); in NRT it scores the ``/d_recv`` at time 0 so the renderer
-        compiles it before time advances (scsynth NRT semantics)."""
+    def add_synthdef(self, sdef, *, wait: bool = True, timeout: float = 10.0) -> str:
+        """Sends a UGen :class:`~clausters.defs.synthdef.SynthDef` via
+        ``/d_recv``. Like :meth:`add_faustdef`: ``wait=True`` (default) blocks
+        in RT until ``/done``/``/fail``; ``wait=False`` is fire-and-forget
+        (pair with :meth:`sync`). In NRT it scores ``/d_recv`` at time 0 so the
+        renderer compiles it before time advances."""
         payload = sdef.payload()
         if getattr(self.interface, "time_mode", "unix") == "score":
+            self.send_msg("/d_recv", payload)
+            return sdef.name
+        if not wait:
             self.send_msg("/d_recv", payload)
             return sdef.name
         addr, args = self.request(
@@ -230,9 +252,24 @@ class Server:
         _, args = self.request("/status", timeout=timeout, expect=("/status.reply",))
         return args
 
-    def sync(self, timeout: float = 5.0):
-        """Round-trips ``/status`` so earlier async commands have landed."""
-        self.status(timeout=timeout)
+    def sync(self, timeout: float = 5.0) -> int:
+        """The async barrier (scsynth ``/sync``): sends ``/sync id`` and blocks
+        until the server answers ``/synced id``, which it does only once every
+        async command sent earlier -- Faust/SynthDef compiles, buffer jobs --
+        has completed. Use it after a ``wait=False`` :meth:`add_faustdef` /
+        :meth:`add_synthdef` / buffer alloc. RT only (in NRT the renderer
+        already serializes async work at time 0). Returns the id used.
+
+        **Blocking — never call from a routine.** This (and any ``wait=True``)
+        blocks the calling thread on a reply: fine on your own thread, but it
+        would freeze the clock thread if called from inside a routine generator
+        (see :class:`~clausters.base.stream.Routine`). It also polls the socket
+        synchronously; a non-blocking, notification-driven barrier you can
+        ``yield`` from a routine is future work (``OSCFunc``)."""
+        self._sync_counter += 1
+        sync_id = self._sync_counter
+        self.request("/sync", sync_id, timeout=timeout, expect=("/synced",))
+        return sync_id
 
     def quit(self):
         self.send_msg("/quit")

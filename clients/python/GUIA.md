@@ -183,7 +183,7 @@ print("status:", srv.status()[:5])
 freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
 phasor = S.rec(lambda s: (s + freq/48000.0) % 1.0)
 fdef = FaustDef.from_signals("livesine", S.sin(phasor*6.283185307179586)*0.2)
-print("add_def ->", srv.add_def(fdef))        # bloquea hasta /done (compila Faust)
+print("add ->", srv.add_faustdef(fdef))       # bloquea hasta /done (compila Faust)
 syn = srv.synth("livesine", target=0)         # /s_new, id asignado por el cliente
 srv.set(syn, {"freq": 440.0}); srv.sync(); srv.free(syn)
 print("LIVE OK"); srv.close()
@@ -193,6 +193,36 @@ PY
 
 Con altavoces deberías oír un tono que cambia de 330 a 440 Hz antes de
 liberarse. (Sin placa de audio, el server igual responde por OSC pero no suena.)
+
+#### Envío async de def + barrera `/sync`
+
+`add_faustdef`/`add_synthdef` bloquean por defecto (`wait=True`, esperan
+`/done`). Para no bloquear, `wait=False` (fire-and-forget) y luego `srv.sync()`
+como barrera real (`/sync`→`/synced`): el server responde recién cuando
+terminaron todas las compilaciones/jobs async previos. (En la **misma**
+invocación Bash con un server compilado con `faust`.)
+
+```sh
+(./target/debug/clausters & SRV=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python3 - <<'PY'
+from clausters.defs import Server, FaustDef
+from clausters.defs import signals as S
+srv = Server()
+fdef = FaustDef.from_signals("asyncsine",
+    S.sin(S.rec(lambda s:(s+330.0/48000.0)%1.0)*6.2831853)*0.2)
+print("fire-and-forget ->", srv.add_faustdef(fdef, wait=False))  # no bloquea
+print("synced id ->", srv.sync())               # barrera: espera la compilacion
+syn = srv.synth("asyncsine", target=0)          # la def existe seguro tras /synced
+srv.sync(); srv.free(syn)
+print("ASYNC OK"); srv.close()
+PY
+ kill $SRV 2>/dev/null)
+```
+
+**Regla**: `sync()` (y `wait=True`) bloquean el thread; **nunca** llamarlos
+dentro del generador de una rutina (congelarían el reloj). Para crear defs
+desde una rutina, `wait=False` y resolver la dependencia sin bloquear (la
+barrera no-bloqueante que se pueda `yield` llega con `OSCFunc`).
 
 ### Def UGen propia con `SynthDef` (C5 leftover, `/d_recv`)
 

@@ -11,6 +11,12 @@ Clausters accepts instrument definitions in two wire formats, both loaded hot ov
 
 Both reply asynchronously: `/done` with the command (and the def name for `/d_faust`), or `/fail` with a human-readable error. Once loaded, defs of either kind are instantiated, controlled and freed the same way:
 
+### The async barrier (`/sync`)
+
+`/sync <int id>` is the general way to wait for asynchronous work: the server replies `/synced <id>` once **every async command received before this `/sync`** has completed — Faust compiles (`/d_faust`), SynthDef sends (`/d_recv`) and buffer jobs (`/b_*`), each of which runs on its own FIFO worker thread. Use it instead of matching individual `/done`s when you fire several async commands and just want to know they have all landed (e.g. after sending a def without waiting, before the `/s_new` that needs it). It is a real barrier, not a round-trip of `/status`: a `/synced` guarantees the prior compiles/jobs are installed.
+
+
+
 ```text
 /s_new  name id addAction targetID [ctlName value]...   # ctl args: s f pairs
 /n_set  id ctlName value

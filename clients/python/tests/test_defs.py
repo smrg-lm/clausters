@@ -131,18 +131,31 @@ def test_server_builds_s_new_correctly():
     assert iface.sent[-1] == ("/s_new", ["foo", 1000, 1, 0, "freq", 440.0])
 
 
-def test_server_add_def_waits_for_done_and_raises_on_fail():
+def test_server_add_faustdef_waits_for_done_and_raises_on_fail():
     iface = _FakeInterface()
     srv = Server(interface=iface)
     fdef = FaustDef.from_source("ok", "process = _;")
 
     iface.queue_reply("/done", "/d_faust", "ok")
-    assert srv.add_def(fdef) == "ok"
+    assert srv.add_faustdef(fdef) == "ok"
     assert iface.sent[-1][0] == "/d_faust"
 
     iface.queue_reply("/fail", "/d_faust", "boom")
     with pytest.raises(RuntimeError):
-        srv.add_def(fdef)
+        srv.add_faustdef(fdef)
+
+    # wait=False is fire-and-forget: sends /d_faust without expecting a reply.
+    assert srv.add_faustdef(fdef, wait=False) == "ok"
+    assert iface.sent[-1][0] == "/d_faust"
+
+
+def test_server_sync_round_trips_synced_id():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/synced", 1)
+    assert srv.sync() == 1
+    assert iface.sent[-1][0] == "/sync"
+    assert iface.sent[-1][1] == [1]
 
 
 def test_server_map_and_set_layout():

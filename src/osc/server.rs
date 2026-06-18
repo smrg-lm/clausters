@@ -85,6 +85,24 @@ pub struct OscServer {
     /// The compiler thread is owned here and dies with the server.
     #[cfg(feature = "faust")]
     faust_compiler: CompilerThread,
+    /// `/sync` barrier bookkeeping. Each async pipeline (NRT buffers, Faust
+    /// compiles) completes FIFO on its own thread, so a monotonic
+    /// submitted/drained counter per pipeline is enough: a `/sync` records the
+    /// current submitted counts as its targets and is answered with `/synced`
+    /// once both drained counts have caught up. See [`Self::handle_sync`].
+    nrt_submitted: u64,
+    nrt_drained: u64,
+    faust_submitted: u64,
+    faust_drained: u64,
+    pending_syncs: Vec<PendingSync>,
+}
+
+/// A `/sync` waiting for the async pipelines to drain up to its targets.
+struct PendingSync {
+    client: ClientId,
+    id: i32,
+    nrt_target: u64,
+    faust_target: u64,
 }
 
 impl OscServer {
@@ -112,6 +130,11 @@ impl OscServer {
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
             faust_compiler: CompilerThread::spawn(),
+            nrt_submitted: 0,
+            nrt_drained: 0,
+            faust_submitted: 0,
+            faust_drained: 0,
+            pending_syncs: Vec::new(),
         })
     }
 
@@ -141,6 +164,7 @@ impl OscServer {
                 eprintln!("compiler thread down: cannot reload persisted Faust defs");
                 break;
             }
+            self.faust_submitted += 1;
         }
         self.store = Some(store);
     }
@@ -298,6 +322,7 @@ impl OscServer {
     #[cfg(feature = "faust")]
     fn collect_faust_results(&mut self) {
         while let Some(result) = self.faust_compiler.try_result() {
+            self.faust_drained += 1;
             match result.outcome {
                 Ok(def) => {
                     self.translator
@@ -321,6 +346,7 @@ impl OscServer {
                 },
             }
         }
+        self.resolve_syncs();
     }
 
     /// `/d_faust name def`: queue an async Faust compilation. The def format
@@ -350,12 +376,53 @@ impl OscServer {
         };
         if self.faust_compiler.submit(request).is_err() {
             self.fail(from, "/d_faust", "compiler thread is down");
+        } else {
+            self.faust_submitted += 1;
         }
     }
 
     #[cfg(not(feature = "faust"))]
     fn handle_d_faust(&mut self, _msg: &OscMessage, from: ClientId) {
         self.fail(from, "/d_faust", "server built without faust support");
+    }
+
+    /// `/sync id`: the async barrier (scsynth semantics). Records the current
+    /// submitted counts as targets and is answered with `/synced id` once both
+    /// async pipelines (NRT buffers, Faust compiles) have drained up to them —
+    /// i.e. every async command received before this `/sync` has finished.
+    /// Each pipeline completes FIFO, so the counters are a sufficient barrier.
+    fn handle_sync(&mut self, msg: &OscMessage, from: ClientId) {
+        let id = match msg.args.first() {
+            Some(OscType::Int(id)) => *id,
+            _ => return self.fail(from, "/sync", "expected an int id"),
+        };
+        self.pending_syncs.push(PendingSync {
+            client: from,
+            id,
+            nrt_target: self.nrt_submitted,
+            faust_target: self.faust_submitted,
+        });
+        self.resolve_syncs(); // answer at once if nothing is outstanding
+    }
+
+    /// Answers every pending `/sync` whose target counts have been reached.
+    /// Called after each async drain (and from [`Self::handle_sync`]).
+    fn resolve_syncs(&mut self) {
+        if self.pending_syncs.is_empty() {
+            return;
+        }
+        let (nrt, faust) = (self.nrt_drained, self.faust_drained);
+        let mut ready = Vec::new();
+        self.pending_syncs.retain(|p| {
+            let done = nrt >= p.nrt_target && faust >= p.faust_target;
+            if done {
+                ready.push((p.client, p.id));
+            }
+            !done
+        });
+        for (client, id) in ready {
+            self.reply(client, "/synced", vec![OscType::Int(id)]);
+        }
     }
 
     /// Drops what the audio thread discarded, keeps the def mirror in sync
@@ -498,6 +565,7 @@ impl OscServer {
             "/b_zero" => self.handle_b_cmd(&msg, from, "/b_zero"),
             "/b_free" => self.handle_b_cmd(&msg, from, "/b_free"),
             "/b_query" => self.handle_b_query(&msg, from),
+            "/sync" => self.handle_sync(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
             "/d_faust" => self.handle_d_faust(&msg, from),
             "/d_free" => self.handle_d_free(&msg, from),
@@ -722,6 +790,7 @@ impl OscServer {
     /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
     fn collect_nrt_results(&mut self) {
         while let Some(result) = self.nrt.try_result() {
+            self.nrt_drained += 1;
             let action = match result.outcome {
                 Ok(action) => action,
                 Err(error) => {
@@ -756,6 +825,7 @@ impl OscServer {
                 ],
             );
         }
+        self.resolve_syncs();
     }
 
     /// Any of the async `/b_*` commands: parsing is shared with the NRT
@@ -776,6 +846,8 @@ impl OscServer {
         };
         if self.nrt.submit(request).is_err() {
             self.fail(from, cmd, "NRT thread is down");
+        } else {
+            self.nrt_submitted += 1;
         }
     }
 

@@ -3,3 +3,4 @@
 /third_party
 .claude/settings.local.json
 __pycache__/
+.pytest_cache/

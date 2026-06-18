@@ -646,3 +646,40 @@ fn tcp_replies_route_to_the_originating_connection() {
     b.send("/status", vec![]);
     assert_eq!(b.recv_until("/status.reply").addr, "/status.reply");
 }
+
+#[test]
+fn sync_answers_synced_with_the_same_id() {
+    let server = TestServer::spawn();
+    // Nothing async outstanding: /synced comes back immediately, echoing the id.
+    server.send("/sync", vec![OscType::Int(42)]);
+    let reply = server.recv_until("/synced");
+    assert_eq!(reply.args, vec![OscType::Int(42)]);
+    server.quit();
+}
+
+#[test]
+fn sync_waits_for_an_async_buffer_alloc() {
+    let server = TestServer::spawn();
+    // Queue an async buffer alloc (runs on the NRT thread), then the barrier.
+    server.send(
+        "/b_alloc",
+        vec![OscType::Int(0), OscType::Int(64), OscType::Int(1)],
+    );
+    server.send("/sync", vec![OscType::Int(7)]);
+
+    // The barrier must not answer before the alloc's /done lands.
+    let mut saw_done = false;
+    for _ in 0..100 {
+        let msg = server.recv();
+        if msg.addr == "/done" && msg.args.first() == Some(&OscType::String("/b_alloc".into())) {
+            saw_done = true;
+        }
+        if msg.addr == "/synced" {
+            assert_eq!(msg.args, vec![OscType::Int(7)]);
+            assert!(saw_done, "/synced arrived before the buffer's /done");
+            server.quit();
+            return;
+        }
+    }
+    panic!("never received /synced");
+}
