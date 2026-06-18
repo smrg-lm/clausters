@@ -2124,3 +2124,20 @@ and the M14 deferrals (wakeup semaphore, multiple ring clients, JS/wasm).
   `fvar_probe_compiles`, ops in the kitchen-sink and `ctype`/`name` validation),
   `tests/faust_json.rs` (box kitchen-sink), `test_defs.py`
   (`test_foreign_constant_and_sample_rate`, `test_pi_and_tau_are_plain_literals`).
+
+## Decision: examples stay under `examples/` until C12 (2026-06-18)
+
+Briefly tried moving the Python client example `biquad_signal.py` into
+`clients/python/examples/` (the idea: package-specific examples ship with the
+wheel). Reverted — at this stage examples are a **development review/planning
+surface**, not a distribution artifact: only `biquad_signal.py` uses the client
+library idiomatically, the rest are scaffolding-era demos that will be rewritten
+as missing functionality lands, and C12 (the wheel packaging that would justify
+the split) has no date. Keeping a single flat `examples/` is the low-regret
+choice: a unified catalog to scan, and `biquad_signal.py`'s `sys.path` shim
+(written for the repo-root `examples/`) stays valid. Note: Cargo only discovers
+the `.rs` examples there; the `.py` files are inert to Cargo, so `examples/`
+mixes Rust examples + raw-protocol demos + client-library demos by convention,
+catalogued in `docs/examples.md`. The split into `clients/python/examples/` (the
+package-dependent examples, `sys.path` shims dropped) is deferred to **C12**, when
+the client examples have stabilized. See the C12 note in `clients/PLAN.md`.
