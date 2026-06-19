@@ -12,7 +12,7 @@ closing a gate — unless ``has_gate`` is set, in which case it sends
 ``gate 0`` (for defs that expose a ``gate`` control).
 """
 
-from ..base.builtins import midicps
+from ..base.builtins import cpsmidi, midicps
 
 #: Keys that drive timing/structure and are never sent as synth controls.
 _RESERVED = {
@@ -47,20 +47,27 @@ class Event(dict):
 
     # ---- derived quantities ----
 
-    def freq(self) -> float:
+    def midinote(self) -> float:
+        """The MIDI note number this event sounds (the value `freq` derives
+        from). An explicit `freq` (Hz) is inverted via `cpsmidi`; otherwise it
+        comes from `midinote`, or `degree`/`octave`/`root`/`scale`."""
         if self.get("freq") is not None:
-            return float(self["freq"])
+            return float(cpsmidi(float(self["freq"])))
         midinote = self.get("midinote")
         if midinote is None:
             degree = self.get("degree")
             if degree is None:
-                midinote = 60.0
-            else:
-                scale = self["scale"]
-                n = len(scale)
-                d = int(degree)
-                midinote = 12.0 * self["octave"] + self["root"] + scale[d % n] + 12 * (d // n)
-        return float(midicps(midinote))
+                return 60.0
+            scale = self["scale"]
+            n = len(scale)
+            d = int(degree)
+            return 12.0 * self["octave"] + self["root"] + scale[d % n] + 12 * (d // n)
+        return float(midinote)
+
+    def freq(self) -> float:
+        if self.get("freq") is not None:
+            return float(self["freq"])
+        return float(midicps(self.midinote()))
 
     def delta(self) -> float:
         """Beats until the next event (``dur * stretch``)."""
@@ -84,22 +91,13 @@ class Event(dict):
 
     # ---- play ----
 
-    def play(self, server):
-        """Emit this event to ``server`` at the current logical beat. Returns
-        the synth node id (or None for a rest)."""
-        if self.get("type") == "rest":
-            return None
-        node_id = server.nodes.alloc()
-        server.send_bundle(
-            ("/s_new", self["instrument"], node_id, int(self["add_action"]),
-             int(self["target"]), *self._control_args())
-        )
-        sustain = self.sustain()
-        if self.get("has_gate"):
-            server.send_bundle(("/n_set", node_id, "gate", 0.0), delay_beats=sustain)
-        else:
-            server.send_bundle(("/n_free", node_id), delay_beats=sustain)
-        return node_id
+    def play(self, destination):
+        """Realize this event on ``destination`` (double dispatch, M17): the OSC
+        :class:`~clausters.defs.server.Server` turns it into `/s_new` + release,
+        a MIDI destination into note on/off — without the clock or routine
+        knowing which. Returns whatever the destination's ``play_event`` does
+        (the synth node id for OSC, ``None`` for a rest or MIDI)."""
+        return destination.play_event(self)
 
 
 def rest(dur: float = 1.0) -> Event:

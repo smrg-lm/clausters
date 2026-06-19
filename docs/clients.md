@@ -19,6 +19,7 @@ arrays, NUL-terminated error strings. Never a library type (a numpy array can
 |---|---|---|---|
 | `libclausters_ffi` | `clausters-ffi` over `clausters-core` | the **shared numeric/timing core** | `clausters_core_abi_version`, `clausters_core_unary`/`_binary` (builtins), `clausters_core_whitenoise`, `clausters_core_beats_to_secs`/`_secs_to_samples`/… |
 | `libclausters` | `clausters` (feature `embed`) | the **server as a library** | `clausters_abi_version`, `clausters_render` (offline), `clausters_open`/`_send`/`_poll`/`_clock`/`_ctl_*` (in-process live server) |
+| `libclausters_midi` | `clausters-midi` over `midly` | **MIDI file I/O** (M17) | `clausters_midi_abi_version`, `clausters_midi_write_smf` (event pattern → `.mid` bytes), `clausters_midi_free` |
 
 Beside the in-process embed path, the same OSC reaches the server over **UDP**
 or **shared memory** (`--shm`); see [Local transports & embedding](ipc.md). So a

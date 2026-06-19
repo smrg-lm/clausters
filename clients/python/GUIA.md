@@ -326,6 +326,33 @@ clock.run(1.3); print('synths:', srv.status()[1:4]); srv.close()
 "; kill $SRV 2>/dev/null)
 ```
 
+### Exportar a un archivo MIDI estándar (`.mid`) (M17 sub-parte 1)
+
+El **mismo** `Pbind` puede apuntar a un destino MIDI en vez de la `Server` OSC:
+`MidiServer` es la contraparte por doble-dispatch. Cada nota se realiza como
+note on/off en un `MidiScore` (en beats) y `write` lo serializa a `.mid` por el
+crate `clausters-midi`. Sin servidor ni audio: solo un archivo.
+
+```sh
+cargo build -p clausters-midi            # construye libclausters_midi
+PYTHONPATH=. python3 - <<'PY'
+from clausters.base import TempoClock, MidiServer
+from clausters.seq import Pbind, Pseq
+midi = MidiServer(channel=0, ppq=480); clock = TempoClock(tempo=2.0)
+Pbind(instrument="default", midinote=Pseq([60,64,67,72]), dur=0.5, amp=0.6).play(clock, midi)
+clock.render()                           # NRT: drena la rutina, sin dormir
+ons = [(b, m[1]) for b, m in midi.score.sorted() if (m[0] & 0xF0) == 0x90 and m[2] > 0]
+print("note-ons (beat, nota):", ons)     # [(0.0,60),(0.5,64),(1.0,67),(1.5,72)]
+midi.write("/tmp/out.mid")
+print("MThd:", open("/tmp/out.mid","rb").read(4) == b"MThd")
+PY
+```
+
+El número de nota sale de `Event.midinote()` (de `midinote`/`degree`, o de un
+`freq` explícito vía `cpsmidi`), la velocity de `amp` (0..1 → 0..127). Ejemplo
+comentado: `examples/midi_file.py`. La salida MIDI **en vivo** por un puerto del
+SO (sub-parte 2) y el clip MIDI 2.0 de resolución completa quedan pendientes.
+
 ### Anclado al reloj del servidor (C6, en vivo por UDP)
 
 Para timing sample-accurate sin drift, anclá el reloj al **sample-clock del
@@ -422,3 +449,4 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C6 | anclaje sample-clock por UDP (`/clock` → modelo → `/sched`) | sección 5 (anclado) |
 | C8 | transporte TCP (`--tcp`, length-prefixed); `OscTCPInterface` | sección 5 (TCP) |
 | C9 | doc cross-lenguaje + ejemplo de secuenciación de alto nivel | `python3 examples/sequencing.py` (offline) y `--live` |
+| M17 s1 | `Pbind` → `.mid` (`MidiServer` + crate `clausters-midi`) | sección 5 (export MIDI), `tests/test_midi.py`, `examples/midi_file.py` |

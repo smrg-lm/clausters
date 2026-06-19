@@ -1,7 +1,7 @@
 [workspace]
 # C0: the server crate is the workspace root (all existing paths stay put);
 # the shared native core and its C ABI live under `crates/`. See clients/PLAN.md.
-members = ["crates/clausters-core", "crates/clausters-ffi"]
+members = ["crates/clausters-core", "crates/clausters-ffi", "crates/clausters-midi"]
 resolver = "3"
 
 [package]

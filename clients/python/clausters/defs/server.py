@@ -101,6 +101,26 @@ class Server:
             wall = (clock.start_time if clock.start_time is not None else time.time())
             self.interface.send_bundle(self.target.addr(), wall + secs + self.latency, *messages)
 
+    def play_event(self, event):
+        """Realize a note :class:`~clausters.seq.event.Event` as OSC: `/s_new`
+        at the routine's logical beat, then `/n_free` (or `gate 0`) after the
+        sustain. The OSC side of the M17 double dispatch — a MIDI destination
+        realizes the same event as note on/off. Returns the synth node id (or
+        None for a rest)."""
+        if event.get("type") == "rest":
+            return None
+        node_id = self.nodes.alloc()
+        self.send_bundle(
+            ("/s_new", event["instrument"], node_id, int(event["add_action"]),
+             int(event["target"]), *event._control_args())
+        )
+        sustain = event.sustain()
+        if event.get("has_gate"):
+            self.send_bundle(("/n_set", node_id, "gate", 0.0), delay_beats=sustain)
+        else:
+            self.send_bundle(("/n_free", node_id), delay_beats=sustain)
+        return node_id
+
     def _send_sched(self, sample: int, messages):
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])
         self.send_msg("/sched", _osclib.Int64(sample), inner)

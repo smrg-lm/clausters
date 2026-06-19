@@ -23,7 +23,7 @@ from .main import Main, main
 from .netaddr import NetAddr
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
 from .timebase import MonotonicTimebase, SampleClockTimebase, Timebase
-from ._midiinterface import MidiNrtInterface, MidiRtInterface, MidiScore
+from ._midiinterface import MidiNrtInterface, MidiRtInterface, MidiScore, MidiServer
 from ._oscinterface import (
     OscInterface,
     OscNrtInterface,
@@ -54,4 +54,5 @@ __all__ = [
     "MidiRtInterface",
     "MidiNrtInterface",
     "MidiScore",
+    "MidiServer",
 ]

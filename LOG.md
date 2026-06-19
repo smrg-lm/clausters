@@ -2224,3 +2224,34 @@ out-of-scope idea.
 - **Docs**: `docs/schemas.md` (the `--midi` transport), `docs/architecture.md`
   (the MIDI input thread in the Threads section + module map), `README.md`
   (Features bullet), `GUIA.md` (E2E recipe + checklist).
+
+## M17 (client sub-part 1) — Event pattern -> Standard MIDI File (2026-06-18)
+
+The client offline-file half of M17: a `Pbind` realized as standard MIDI and
+written to a `.mid`, on the same clock/routine/pattern as the audio path — only
+the destination differs (the double dispatch the plan called for).
+
+- **`crates/clausters-midi`** (new workspace crate, cdylib+rlib): a flat-data C
+  ABI over an SMF writer. `clausters_midi_write_smf(ticks, msgs, n, ppq,
+  out_len) -> *mut u8` (+ `_free`, `_abi_version`) takes parallel `u32` ticks
+  and 3-byte channel-voice messages and returns malloc'd `.mid` bytes — the
+  same POD-in/bytes-out shape as `clausters_render`. SMF (type 0) via **`midly`**
+  (mature, pure Rust); the **MIDI 2.0 Clip File** (`midi2-clip`, full 16/32-bit
+  resolution) is the planned follow-up behind the same ABI. Rust tests: SMF
+  round-trip, two-byte messages, C-ABI parity + clean free.
+- **Double dispatch** (`Event.play(destination)` -> `destination.play_event`):
+  the OSC realization moved verbatim from `Event.play` to `Server.play_event`
+  (`defs/server.py`) — `test_golden.py` confirms the render stays **byte-
+  identical**. `Event.midinote()` factored out (explicit `freq` inverted via
+  `cpsmidi`).
+- **`MidiServer`** (`base/_midiinterface.py`): the MIDI destination. `play_event`
+  records a note on at the routine's logical beat and a note off after the
+  sustain into a `MidiScore` (now keyed by **beat**, not seconds); `write(path,
+  ppq)` -> `MidiScore.to_smf` -> the `_midi.py` ctypes binding -> the crate.
+  Note number from `Event.midinote()`, velocity from `amp`.
+- **Tests/example**: `clients/python/tests/test_midi.py` (Pbind -> note on/off in
+  beats; explicit-freq -> note 69; writes a valid SMF). `examples/midi_file.py`
+  renders a phrase to `out.mid` (cataloged in `docs/examples.md`). Full Python
+  suite green, golden included; `cargo fmt --check` clean.
+- **Still pending**: client sub-part 2 (a live `MidiRtInterface` out a port) and
+  the MIDI 2.0 clip writer in the crate.
