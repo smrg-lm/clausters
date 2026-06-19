@@ -17,6 +17,7 @@ use rosc::OscType;
 use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS};
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
+use crate::midi::{ChannelVoiceMessage, MidiBinding, MidiBindings, convert};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
 use crate::server::engine::Cmd;
@@ -102,6 +103,9 @@ pub struct CmdTranslator {
     /// Network-side tree mirror: topology, per-node controls and bus usage,
     /// auto-sorted groups (M12). Fed by the same commands the engine gets.
     pub mirror: TreeMirror,
+    /// M17: per-channel MIDI bindings and the live voice table. Channel-voice
+    /// messages actuate nodes through [`Self::translate_midi`].
+    pub midi: MidiBindings,
 }
 
 impl CmdTranslator {
@@ -117,6 +121,7 @@ impl CmdTranslator {
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
             mirror: TreeMirror::new(),
+            midi: MidiBindings::new(),
         }
     }
 
@@ -363,6 +368,10 @@ impl CmdTranslator {
             }
             "/n_map" => self.map_controls(msg, false, cmds),
             "/n_mapa" => self.map_controls(msg, true, cmds),
+            // M17 MIDI binding config (no engine command; pure translator state).
+            "/midi_bind" => self.midi_bind(msg),
+            "/midi_unbind" => self.midi_unbind(msg, cmds),
+            "/midi_map" => self.midi_map(msg),
             "/n_free" => {
                 for arg in &msg.args {
                     let OscType::Int(id) = arg else {
@@ -511,6 +520,262 @@ impl CmdTranslator {
                 Ok(())
             }
             other => Err(format!("{other} cannot be scheduled in a timed bundle")),
+        }
+    }
+
+    /// `/midi_bind channel instrument [target] [addAction] [gate]`: bind a MIDI
+    /// channel to an instrument def (SynthDef *or* FaustDef). Default control
+    /// map is `freq`/`amp`; `/midi_map` extends it.
+    fn midi_bind(&mut self, msg: &rosc::OscMessage) -> Result<(), String> {
+        let [
+            OscType::Int(channel),
+            OscType::String(instrument),
+            rest @ ..,
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: channel, instrument [, target, addAction, gate]".into());
+        };
+        let channel = midi_channel(*channel)?;
+        let target = int_arg(rest, 0).unwrap_or(0);
+        let action = int_arg(rest, 1).unwrap_or(0);
+        let gate = int_arg(rest, 2).unwrap_or(0) != 0;
+        if AddAction::from_i32(action).is_none() {
+            return Err("add action must be 0-4".into());
+        }
+        self.midi.channels.insert(
+            channel,
+            MidiBinding::new(instrument.clone(), target, action, gate),
+        );
+        Ok(())
+    }
+
+    /// `/midi_unbind channel`: drop the binding and free every voice still
+    /// sounding on that channel.
+    fn midi_unbind(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let Some(OscType::Int(channel)) = msg.args.first() else {
+            return Err("expected: channel".into());
+        };
+        let channel = midi_channel(*channel)?;
+        self.midi.channels.remove(&channel);
+        for id in self.midi.drain_channel(channel) {
+            cmds.push(Cmd::FreeNode { id });
+            self.mirror.remove(id);
+        }
+        Ok(())
+    }
+
+    /// `/midi_map channel selector name`: route a message type to a control.
+    /// Selectors: `note`, `vel`, `gate`, `bend`,
+    /// `pressure` (channel aftertouch), `poly` (per-note aftertouch), `ccN`
+    /// (control change), `progN` (program → instrument def `name`).
+    fn midi_map(&mut self, msg: &rosc::OscMessage) -> Result<(), String> {
+        let [
+            OscType::Int(channel),
+            OscType::String(selector),
+            OscType::String(name),
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: channel, selector, name".into());
+        };
+        let channel = midi_channel(*channel)?;
+        let binding = self
+            .midi
+            .channels
+            .get_mut(&channel)
+            .ok_or_else(|| format!("channel {channel} is not bound"))?;
+        match selector.as_str() {
+            "note" => binding.freq_control = name.clone(),
+            "vel" | "velocity" => binding.amp_control = name.clone(),
+            "gate" => binding.gate_control = name.clone(),
+            "bend" => binding.bend_control = Some(name.clone()),
+            "pressure" => binding.pressure_control = Some(name.clone()),
+            "poly" => binding.poly_control = Some(name.clone()),
+            s if s.starts_with("cc") => {
+                let n: u8 = s[2..].parse().map_err(|_| "bad cc selector".to_string())?;
+                binding.cc.insert(n, name.clone());
+            }
+            s if s.starts_with("prog") => {
+                let n: u8 = s[4..]
+                    .parse()
+                    .map_err(|_| "bad prog selector".to_string())?;
+                binding.programs.insert(n, name.clone());
+            }
+            other => return Err(format!("unknown MIDI selector {other:?}")),
+        }
+        Ok(())
+    }
+
+    /// M17: actuate nodes from a standard channel-voice MIDI message. Reuses
+    /// the OSC path by synthesizing the equivalent `/s_new`/`/n_set`/`/n_free`,
+    /// so a MIDI-driven voice is byte-identical to the OSC one. Unbound
+    /// channels and unmapped expressive messages are silently ignored (a
+    /// running MIDI stream must never error). Network thread only.
+    pub fn translate_midi(
+        &mut self,
+        msg: ChannelVoiceMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        use ChannelVoiceMessage::*;
+        match msg {
+            NoteOn {
+                channel,
+                note,
+                velocity,
+            } => {
+                if velocity == 0 {
+                    self.midi_note_off(channel, note, cmds)
+                } else {
+                    self.midi_note_on(channel, note, velocity, cmds)
+                }
+            }
+            NoteOff { channel, note, .. } => self.midi_note_off(channel, note, cmds),
+            PolyAftertouch {
+                channel,
+                note,
+                pressure,
+            } => {
+                if let Some(ctrl) = self
+                    .midi
+                    .channels
+                    .get(&channel)
+                    .and_then(|b| b.poly_control.clone())
+                    && let Some(&id) = self.midi.voices.get(&(channel, note))
+                {
+                    self.midi_set(id, &ctrl, convert::aftertouch2control(pressure), cmds);
+                }
+                Ok(())
+            }
+            ChannelAftertouch { channel, pressure } => {
+                if let Some(ctrl) = self
+                    .midi
+                    .channels
+                    .get(&channel)
+                    .and_then(|b| b.pressure_control.clone())
+                {
+                    self.midi_set_channel(
+                        channel,
+                        &ctrl,
+                        convert::aftertouch2control(pressure),
+                        cmds,
+                    );
+                }
+                Ok(())
+            }
+            ControlChange {
+                channel,
+                controller,
+                value,
+            } => {
+                if let Some(ctrl) = self
+                    .midi
+                    .channels
+                    .get(&channel)
+                    .and_then(|b| b.cc.get(&controller).cloned())
+                {
+                    self.midi_set_channel(channel, &ctrl, convert::cc2control(value), cmds);
+                }
+                Ok(())
+            }
+            PitchBend { channel, value } => {
+                if let Some(ctrl) = self
+                    .midi
+                    .channels
+                    .get(&channel)
+                    .and_then(|b| b.bend_control.clone())
+                {
+                    self.midi_set_channel(channel, &ctrl, convert::bend2control(value), cmds);
+                }
+                Ok(())
+            }
+            ProgramChange { channel, program } => {
+                if let Some(binding) = self.midi.channels.get_mut(&channel)
+                    && let Some(instrument) = binding.programs.get(&program).cloned()
+                {
+                    binding.instrument = instrument;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Note on → `/s_new` with `freq`/`amp` from the conversions. Retriggering
+    /// a note already sounding frees the old voice first.
+    fn midi_note_on(
+        &mut self,
+        channel: u8,
+        note: u8,
+        velocity: u16,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let Some(binding) = self.midi.channels.get(&channel) else {
+            return Ok(());
+        };
+        let instrument = binding.instrument.clone();
+        let target = binding.target;
+        let action = binding.action;
+        let freq_control = binding.freq_control.clone();
+        let amp_control = binding.amp_control.clone();
+        if self.midi.voices.contains_key(&(channel, note)) {
+            self.midi_note_off(channel, note, cmds)?;
+        }
+        let id = self.midi.alloc_id();
+        let s_new = midi_message(
+            "/s_new",
+            vec![
+                OscType::String(instrument),
+                OscType::Int(id),
+                OscType::Int(action),
+                OscType::Int(target),
+                OscType::String(freq_control),
+                OscType::Float(convert::midi2freq(note as f32)),
+                OscType::String(amp_control),
+                OscType::Float(convert::velocity2amp(velocity)),
+            ],
+        );
+        self.translate(&s_new, cmds)?;
+        self.midi.voices.insert((channel, note), id);
+        Ok(())
+    }
+
+    /// Note off → `/n_free` (or `/n_set gate 0` for gate-aware bindings).
+    fn midi_note_off(&mut self, channel: u8, note: u8, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let Some(id) = self.midi.voices.remove(&(channel, note)) else {
+            return Ok(());
+        };
+        let gate = self.midi.channels.get(&channel);
+        let msg = match gate.filter(|b| b.gate) {
+            Some(b) => midi_message(
+                "/n_set",
+                vec![
+                    OscType::Int(id),
+                    OscType::String(b.gate_control.clone()),
+                    OscType::Float(0.0),
+                ],
+            ),
+            None => midi_message("/n_free", vec![OscType::Int(id)]),
+        };
+        // A freed voice may already be gone; an unknown control is a no-op.
+        let _ = self.translate(&msg, cmds);
+        Ok(())
+    }
+
+    /// `/n_set` one control on one voice; tolerate a stale node / unknown name.
+    fn midi_set(&mut self, id: i32, control: &str, value: f32, cmds: &mut Vec<Cmd>) {
+        let msg = midi_message(
+            "/n_set",
+            vec![
+                OscType::Int(id),
+                OscType::String(control.to_string()),
+                OscType::Float(value),
+            ],
+        );
+        let _ = self.translate(&msg, cmds);
+    }
+
+    /// `/n_set` one control on every live voice of a channel.
+    fn midi_set_channel(&mut self, channel: u8, control: &str, value: f32, cmds: &mut Vec<Cmd>) {
+        for id in self.midi.voice_ids(channel) {
+            self.midi_set(id, control, value, cmds);
         }
     }
 
@@ -757,6 +1022,21 @@ fn mirror_buffer(mirror: &BufferPool, index: i32) -> Option<Arc<Buffer>> {
         .ok()
         .and_then(|i| mirror.get(i))
         .and_then(|b| b.as_ref().map(Arc::clone))
+}
+
+/// A MIDI channel argument: 0-based, the classic 16 plus the extended UMP
+/// group×channel space (0..=255).
+fn midi_channel(channel: i32) -> Result<u8, String> {
+    u8::try_from(channel).map_err(|_| "MIDI channel out of range (0-255)".to_string())
+}
+
+/// Builds the OSC message a MIDI event is realized as, fed back through
+/// [`CmdTranslator::translate`] for byte-identical parity with the OSC path.
+fn midi_message(addr: &str, args: Vec<OscType>) -> rosc::OscMessage {
+    rosc::OscMessage {
+        addr: addr.to_string(),
+        args,
+    }
 }
 
 /// Control reference: by name (resolved against the def) or by index.

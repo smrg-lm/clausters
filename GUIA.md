@@ -298,6 +298,44 @@ usa como índice de bus vuelve al nodo barrera `dynamic`, y un mapeo de audio
 suma ese bus a las lecturas del nodo, así el análisis de M12/M13 sigue
 correcto. Detalle en `docs/schemas.md` y `docs/architecture.md`.
 
+### Probar el protocolo MIDI estándar (M17)
+
+El servidor puede accionarse con **MIDI estándar de canal-voz** (note on/off,
+velocity, aftertouch, pitch-bend, control change, program change), no solo OSC:
+una nota crea un nodo de síntesis y un mensaje expresivo escribe un control
+nombrado. El transporte es **MIDI estándar del SO**: con `--midi [nombre]` el
+servidor abre un **puerto de entrada virtual ALSA** (nombre por defecto
+`clausters`) al que se enruta cualquier dispositivo/app (un teclado por el
+kernel, `aconnect`, un DAW). La entrada es MIDI 1.0 (7 bits, ensanchados
+internamente a alta resolución). Usa `midir` (la librería pautada en el plan;
+ALSA seq por debajo en Linux), con su hilo de entrada decodificando los
+mensajes y pasándolos al loop de red.
+
+Primero hay que **ligar** un canal a un instrumento (por OSC), y luego tocar
+MIDI por el puerto. Todo en la **misma** invocación de Bash:
+
+```sh
+# Un SMF tipo-0 mínimo: note on canal 0, nota 69, velocity 100 (nota sostenida).
+printf '\x4d\x54\x68\x64\x00\x00\x00\x06\x00\x00\x00\x01\x00\x60\x4d\x54\x72\x6b\x00\x00\x00\x08\x00\x90\x45\x64\x00\xff\x2f\x00' > /tmp/note.mid
+
+( ./target/release/clausters --no-persist --midi clausters & PID=$!; sleep 1.5; \
+  aconnect -l | grep -i clausters; \
+  oscsend localhost 57110 /midi_bind is 0 default; \
+  cargo run --release --example osc_ping -- status; \
+  aplaymidi -p clausters /tmp/note.mid; \
+  sleep 0.4; \
+  cargo run --release --example osc_ping -- status; \
+  oscsend localhost 57110 /quit; wait $PID )
+```
+
+El `/status.reply` después de la nota debe mostrar **synths = 1** (el 3er entero)
+y ugens > 0: la nota MIDI creó el nodo `default` (`note -> midi2freq`,
+`velocity -> velocity2amp`). Para escucharlo, mandá un `.mid` real con notas
+sostenidas desde un secuenciador/teclado conectado con `aconnect`. La actuación
+y la **paridad byte a byte** con el `/s_new`/`/n_set`/`/n_free` equivalente
+están además cubiertas por `cargo test --test midi`. Detalle en
+`docs/schemas.md`.
+
 ### Probar el procesamiento paralelo (M13)
 
 Con `--workers N` el servidor levanta N hilos DSP y los grupos marcados con
@@ -727,6 +765,7 @@ nada.
 | Schema JSON→Signal API (input/delay/recursion/self) | `tests/faust_signal.rs` | `json_client.py signal` |
 | FaustSynth en el árbol, zonas, buses | `tests/faust_synth.rs` | def `fsine` de arriba |
 | Paridad UGen↔Faust (goldens), interop en grupos | `tests/faust_parity.rs` | `json_client.py ugen faust` (suenan juntos) |
+| MIDI estándar: actuación + transporte ALSA/midir (M17) | `tests/midi.rs` | `--midi` + `aplaymidi` -> `osc_ping status` (synths=1) |
 | Cliente que genera JSON (ambos formatos) | — | `examples/json_client.py` |
 | Buffers `/b_*`, hilo NRT, WAV (hound) | `tests/buffers.rs` | `json_client.py buffer`, `oscsend /b_*` de arriba |
 | `PlayBuf`/`BufRd` (loop, interpolación, canales) | `tests/buffers.rs` | demo `buffer` (sine 330 Hz, luego quinta arriba) |

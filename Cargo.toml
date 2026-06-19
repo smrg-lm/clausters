@@ -17,9 +17,13 @@ license = "GPL-3.0-or-later"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["realtime"]
+default = ["realtime", "midi"]
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
+# M17 live MIDI input via midir (ALSA seq on Linux — the same system MIDI any
+# DAW/controller uses; reuses the libasound cpal already links). Off in
+# `--no-default-features` builds, which have no system audio/MIDI deps.
+midi = ["dep:midir"]
 # libfaust embedding (Box API + LLVM JIT). Needs libfaust built with the LLVM
 # backend; see build.rs for how the library is located (FAUST_PREFIX).
 faust = []
@@ -33,6 +37,9 @@ embed = []
 clausters-core = { path = "crates/clausters-core" }
 cpal = { version = "0.15", optional = true }
 hound = "3"
+# M17: live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
+# Rust over libasound (already pulled in by cpal); creates virtual ports.
+midir = { version = "0.11", optional = true }
 rosc = "0.11"
 rtrb = "0.3"
 serde = { version = "1", features = ["derive"] }

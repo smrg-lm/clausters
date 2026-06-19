@@ -275,6 +275,25 @@ Example — a one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0, the
       {"op": "self"}]}]}]}]}
 ```
 
+## MIDI control protocol (standard channel-voice actuation)
+
+Besides OSC, the server can be driven by **standard channel-voice MIDI** — note on/off, velocity, aftertouch, pitch-bend, control change, program change. This is the **primary** MIDI path: a note actuates a synthesis node and an expressive message sets a named control, exactly the surface a sequencer or DAW already speaks. (SysEx, when it lands, is reserved for the non-musical control plane — def load, buffers, topology — and is never a tunnel for OSC commands.)
+
+A channel must first be **bound** to an instrument. Binding and mapping are OSC commands (so they ride the same reliable path as the rest of the protocol); the note/control events themselves arrive over the OS's standard MIDI. Start the server with `--midi [name]` (RT only) to open a **virtual ALSA input port** (default name `clausters`) — the same system MIDI any controller or DAW uses; route anything into it (`aconnect`, a keyboard through the kernel, a DAW). Live input is MIDI 1.0 (7-bit, widened internally to the high-resolution form); the full MIDI 2.0/UMP resolution is preserved on the persistence path (the `clausters-midi` crate, pending). Network MIDI is a separate, deliberately out-of-scope idea.
+
+- `/midi_bind channel instrument [target] [addAction] [gate]`: bind a MIDI channel (`0`–`255`: the classic 16 plus the extended UMP group×channel space) to an **instrument def** — a SynthDef **or** a FaustDef, actuated identically. Default target is the root group (`0`), default add-action `0` (head). `gate` non-zero marks the def gate-aware (see note off below). The default control map is `freq`/`amp`, matching the client `Event` convention.
+- `/midi_unbind channel`: remove the binding and free every voice still sounding on that channel.
+- `/midi_map channel selector name`: route a message type to a control. Selectors: `note` (→ frequency control, default `freq`), `vel` (→ amplitude, default `amp`), `gate` (gate control name), `bend` (pitch-bend → control), `pressure` (channel aftertouch → control), `poly` (per-note aftertouch → the note's voice), `ccN` (control change number `N` → control), `progN` (program `N` → an instrument def `name` to switch to).
+
+Actuation semantics, per message type (each with its named conversion):
+
+- **Note on** → `/s_new instrument <voiceID> addAction target freq <midi2freq(note)> amp <velocity2amp(vel)>`. Voice IDs come from a reserved server-side range (≥ `3_000_000`), disjoint from client IDs and the `/s_new -1` auto range. A note-on for an already-sounding `(channel, note)` frees the old voice first. Velocity `0` is a note-off.
+- **Note off** → `/n_free <voiceID>`, or `/n_set <voiceID> <gateControl> 0` when the binding is gate-aware.
+- **Poly aftertouch** → `/n_set` on that note's voice; **channel aftertouch**, **control change**, **pitch-bend** → `/n_set` on every live voice of the channel, for the mapped control. Unmapped expressive messages and unbound channels are silently ignored (a running MIDI stream never errors).
+- **Program change** → re-selects the channel's instrument def from its `prog`-mapped table (no-op if unset).
+
+Conversions (`note → midi2freq`, `velocity → velocity2amp`, `aftertouch`, `bend`, `cc`, `program`) take **MIDI 2.0 / UMP resolution** (16-bit velocity, 32-bit controllers/pressure/bend) and produce the `f32` a control zone wants — no 7-bit quantization. **MIDI 1.0 is backward-compatible**: classic 7/14-bit input is accepted and widened up to those, so the same controls are driven either way. Because a MIDI voice is realized as the *same* `/s_new`/`/n_set`/`/n_free` an OSC client would send, it is byte-identical to the OSC equivalent (`tests/midi.rs` guards this).
+
 ## Persisting defs across restarts
 
 The real-time server can persist loaded defs to a data directory and reload them automatically on the next start, so a client need not re-send its instrument library every session. It is **on by default**; control it with two flags:

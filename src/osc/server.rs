@@ -78,6 +78,10 @@ pub struct OscServer {
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
     tcp: Option<crate::osc::tcp::TcpHub>,
+    /// M17 live MIDI input, when `listen_midi` was called: a virtual ALSA port
+    /// whose decoded messages the loop drains. See [`crate::midi::live`].
+    #[cfg(feature = "midi")]
+    midi: Option<crate::midi::live::MidiHub>,
     /// On-disk def persistence, when a data directory is configured. Defs
     /// loaded from it on startup; `/d_recv`/`/d_faust` write to it,
     /// `/d_free` deletes from it.
@@ -126,6 +130,8 @@ impl OscServer {
             clients: Vec::new(),
             ipc: None,
             tcp: None,
+            #[cfg(feature = "midi")]
+            midi: None,
             store: None,
             recv_buf: vec![0; RECV_BUF_SIZE],
             #[cfg(feature = "faust")]
@@ -194,6 +200,25 @@ impl OscServer {
         Ok(bound)
     }
 
+    /// M17: opens a virtual MIDI input port named `port_name`. The `midir`
+    /// input thread wakes the loop with a zero-length UDP datagram (same
+    /// mechanism as TCP), so MIDI messages are served without waiting for the
+    /// GC tick. See [`crate::midi::live`].
+    #[cfg(feature = "midi")]
+    pub fn listen_midi(&mut self, port_name: &str) -> io::Result<()> {
+        let mut wake_target = self.socket.local_addr()?;
+        if wake_target.ip().is_unspecified() {
+            wake_target.set_ip(match wake_target {
+                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+            });
+        }
+        let hub =
+            crate::midi::live::MidiHub::open(port_name, wake_target).map_err(io::Error::other)?;
+        self.midi = Some(hub);
+        Ok(())
+    }
+
     /// M14: attaches the ring endpoint of an IPC segment. The run loop then
     /// drains it on every iteration; to keep ring latency low without a
     /// cross-process semaphore (v1 trade-off), the socket timeout — the
@@ -214,6 +239,7 @@ impl OscServer {
             if let Flow::Quit = self.drain_tcp() {
                 return Ok(());
             }
+            self.drain_midi();
             let (len, from) = match self.socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
                 Err(e)
@@ -315,6 +341,33 @@ impl OscServer {
             }
         }
     }
+
+    /// M17: translates every queued live-MIDI message into engine commands and
+    /// ships them. Each message is self-contained (one note/control event), so
+    /// it is realized like the immediate OSC forms: `translate_midi` (which
+    /// reuses the `/s_new`/`/n_set`/`/n_free` path and keeps the tree mirror in
+    /// sync), then ship the batch. MIDI never quits the server.
+    #[cfg(feature = "midi")]
+    fn drain_midi(&mut self) {
+        let mut cmds = Vec::new();
+        while let Some(msg) = self.midi.as_ref().and_then(|hub| hub.try_next()) {
+            cmds.clear();
+            if let Err(e) = self.translator.translate_midi(msg, &mut cmds) {
+                eprintln!("midi: {e}");
+                continue;
+            }
+            for cmd in cmds.drain(..) {
+                if self.handle.send(cmd).is_err() {
+                    eprintln!("midi: command FIFO full");
+                    break;
+                }
+            }
+        }
+        self.collect_garbage();
+    }
+
+    #[cfg(not(feature = "midi"))]
+    fn drain_midi(&mut self) {}
 
     /// Drains finished compilations: stores factories and sends the async
     /// `/done`/`/fail` replies. Called from the same places as
@@ -548,9 +601,8 @@ impl OscServer {
             // the M12 tree mirror in sync), so the immediate forms share one
             // path: translate, then ship every command.
             "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
-            | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel" => {
-                self.handle_via_translate(&msg, from)
-            }
+            | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel"
+            | "/midi_bind" | "/midi_unbind" | "/midi_map" => self.handle_via_translate(&msg, from),
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),
             "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
             "/c_set" => self.handle_c_set(&msg, from),

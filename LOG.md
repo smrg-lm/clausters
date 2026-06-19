@@ -2141,3 +2141,86 @@ mixes Rust examples + raw-protocol demos + client-library demos by convention,
 catalogued in `docs/examples.md`. The split into `clients/python/examples/` (the
 package-dependent examples, `sys.path` shims dropped) is deferred to **C12**, when
 the client examples have stabilized. See the C12 note in `clients/PLAN.md`.
+
+## M17 (partial) — MIDI: standard channel-voice actuation core (2026-06-18)
+
+First slice of M17: the **transport-independent server actuation core**, so
+standard channel-voice MIDI (not SysEx) is the primary way to drive synthesis
+nodes and their named `f32` input controls. The wire transport, the
+`crates/clausters-midi` persistence/live crate and the client sub-parts stay
+pending (see `PLAN.md` M17).
+
+- **`src/midi/`** (new module):
+  - `convert.rs` — one named conversion per MIDI message type (the user's
+    correction: `midi2freq`/`velocity2amp` are the note-on/off conversions):
+    `midi2freq` (note number + microtonal fraction → Hz, 12-TET, the `f32`
+    server counterpart of the client's `midicps`), `velocity2amp`,
+    `aftertouch2control`, `bend2control` (bipolar, center `0x8000_0000`),
+    `cc2control`, `program2control`. Inputs are MIDI 2.0 / UMP resolution
+    (16-bit velocity, 32-bit controllers/pressure/bend) → no 7-bit loss.
+  - `mod.rs` — the `ChannelVoiceMessage` taxonomy (note on/off, poly/channel
+    aftertouch, control change, program change, pitch bend), MIDI 1.0→2.0
+    widening (`widen_7_to_16`/`widen_7_to_32`/`widen_14_to_32`) and a
+    provisional `parse_midi1` (backward compatibility: classic 7/14-bit input
+    accepted and widened to the same `f32` zones), plus `MidiBinding` /
+    `MidiBindings` (per-channel binding, the `(channel, note) → node` voice
+    table, and the reserved voice-ID allocator from `MIDI_NODE_ID_BASE =
+    3_000_000`, disjoint from client IDs and the `/s_new -1` auto range).
+- **`CmdTranslator` (`src/osc/translate.rs`)**: a `midi: MidiBindings` field and
+  `translate_midi(ChannelVoiceMessage)` that realizes each message as the
+  **same** `/s_new`/`/n_set`/`/n_free` an OSC client would send (note on →
+  `/s_new` with `freq`/`amp` from the conversions; note off → `/n_free` or
+  `/n_set gate 0`; aftertouch/CC/bend → `/n_set` on the channel's live voices;
+  program change → re-select the instrument). Reusing the OSC path makes a MIDI
+  voice **byte-identical** to the OSC equivalent. Config commands, also routed
+  through `translate` (so RT and NRT share them) and dispatched immediately in
+  `osc/server.rs`: `/midi_bind`, `/midi_unbind`, `/midi_map`. The
+  binding addresses an instrument by name and drives **SynthDef and FaustDef
+  identically** (both expose named `f32` control zones). All on the network
+  thread; the audio thread and its RT-safety invariants are untouched.
+- **Tests**: `src/midi/` unit tests (conversions, widening, note-on-velocity-0,
+  bend center) and `tests/midi.rs` (note-on spawns a voice with converted
+  controls from the reserved ID range; **byte-identical parity** with the
+  equivalent hand-written `/s_new`; note off frees the right voice; CC sets the
+  mapped control on live voices; gate binding releases instead of freeing;
+  unbound channel ignored; unbind frees sounding voices). Full suite green,
+  `cargo fmt --check` clean, core builds without `faust`/`embed`.
+- **Docs**: `docs/schemas.md` gains the "MIDI control protocol" section
+  (commands, control map, per-message semantics, conversions, MIDI 1.0
+  compatibility, the SysEx-scope note). Not a milestone close: no runnable
+  example / `GUIA` E2E yet — those land with the transport.
+
+## M17 (transport) — live MIDI input over ALSA via midir (2026-06-18)
+
+The wire transport for the M17 actuation core: standard OS MIDI in, using
+**`midir`** (the live crate the plan pinned; ALSA sequencer on Linux — the same
+system MIDI any controller or DAW uses). Network MIDI stays a separate,
+out-of-scope idea.
+
+- **`src/midi/live.rs`** (feature `midi`): `MidiHub::open` creates a **virtual
+  ALSA input port** named for the server (`--midi [name]`, default `clausters`).
+  `midir` runs the input callback on **its own thread**, which decodes each MIDI
+  1.0 message with `parse_midi1` (widening to the internal high-resolution form)
+  and hands the `ChannelVoiceMessage` to the command loop over an `mpsc`
+  channel, waking it with a zero-length UDP datagram — the exact TCP-transport
+  pattern (`src/osc/tcp.rs`). The audio thread is never involved.
+- **`src/osc/server.rs`**: `listen_midi(name)` opens the hub; `drain_midi()`
+  (called every loop iteration alongside `drain_ring`/`drain_tcp`) translates
+  each queued message with `CmdTranslator::translate_midi` and ships the
+  commands. Field/method gated on feature `midi`; a no-op `drain_midi` keeps the
+  loop uniform when the feature is off.
+- **`src/main.rs`**: `--midi [name]` flag (RT only); prints the open port and a
+  hint to connect with `aconnect`. Without the feature it errors with a rebuild
+  hint.
+- **Build/deps**: new optional dep `midir = "0.11"` behind feature `midi`, which
+  is in `default` (it reuses the libasound cpal already links — no new system
+  dep). `--no-default-features` still builds with neither `midir` nor `cpal`.
+- **E2E** (real ALSA, same Bash invocation): start with `--midi clausters`, the
+  virtual port shows in `aconnect -l`; `/midi_bind 0 default` then
+  `aplaymidi -p clausters note.mid` (a note-on) makes `/status` report
+  **synths 0 -> 1** (ugens 0 -> 4) — the MIDI note created the node end to end.
+  Recipe in `GUIA.md`. Live input is MIDI 1.0 (7-bit, widened); full MIDI
+  2.0/UMP resolution is the persistence-crate path, still pending.
+- **Docs**: `docs/schemas.md` (the `--midi` transport), `docs/architecture.md`
+  (the MIDI input thread in the Threads section + module map), `README.md`
+  (Features bullet), `GUIA.md` (E2E recipe + checklist).

@@ -36,6 +36,7 @@ pub mod dsp;
 pub mod embed;
 #[cfg(feature = "faust")]
 pub mod faust;
+pub mod midi;
 pub mod node;
 pub mod osc;
 pub mod server;

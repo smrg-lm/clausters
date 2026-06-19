@@ -2,10 +2,12 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]]
+  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]] [--midi [name]]
                                                real-time server (OSC on UDP 57110)
       --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
                            default port 57110)
+      --midi [name]        open a virtual MIDI input port (RT only; ALSA seq;
+                           default name \"clausters\"; connect with aconnect)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
@@ -100,6 +102,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut data_dir: Option<String> = None;
     let mut no_persist = false;
     let mut tcp_port: Option<u16> = None;
+    let mut midi_port: Option<String> = None;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -113,6 +116,17 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     it.next();
                 }
                 tcp_port = Some(port);
+            }
+            "--midi" => {
+                // Optional virtual-port name; the next token unless it's a flag.
+                let mut name = "clausters".to_string();
+                if let Some(next) = it.clone().next()
+                    && !next.starts_with("--")
+                {
+                    name = next.clone();
+                    it.next();
+                }
+                midi_port = Some(name);
             }
             "--workers" => {
                 let value = it
@@ -168,6 +182,15 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(port) = tcp_port {
         let bound = osc.listen_tcp(("0.0.0.0", port))?;
         println!("OSC on TCP {bound} (length-prefixed)");
+    }
+    if let Some(name) = &midi_port {
+        #[cfg(feature = "midi")]
+        {
+            osc.listen_midi(name)?;
+            println!("MIDI input on virtual ALSA port \"{name}\" (connect with aconnect)");
+        }
+        #[cfg(not(feature = "midi"))]
+        return Err("built without the `midi` feature: rebuild with --features midi".into());
     }
     println!(
         "clausters M14 — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
