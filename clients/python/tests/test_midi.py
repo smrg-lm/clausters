@@ -12,7 +12,7 @@ import tempfile
 
 import pytest
 
-from clausters.base import MidiServer, TempoClock
+from clausters.base import MidiRtInterface, MidiServer, TempoClock
 from clausters.seq import Pbind, Pseq
 
 
@@ -68,18 +68,53 @@ def _midi_or_skip():
         pytest.skip(f"clausters-midi not built: {e}")
 
 
-def test_write_smf_produces_a_valid_file():
-    _midi_or_skip()
+def _rendered_midi(**pbind):
     midi = MidiServer()
     clock = TempoClock(tempo=1.0)
-    Pbind(instrument="default", midinote=Pseq([60, 67]), dur=1.0, amp=0.6).play(clock, midi)
+    Pbind(instrument="default", **pbind).play(clock, midi)
     clock.render()
+    return midi
 
+
+def test_write_smf_produces_a_valid_file():
+    _midi_or_skip()
+    midi = _rendered_midi(midinote=Pseq([60, 67]), dur=1.0, amp=0.6)
     with tempfile.TemporaryDirectory() as d:
         path = os.path.join(d, "out.mid")
         midi.write(path, ppq=480)
         data = open(path, "rb").read()
-
     assert data[:4] == b"MThd"  # SMF header chunk
     assert b"MTrk" in data  # a track chunk
     assert len(data) > 14
+
+
+def test_write_clip_produces_smf2clip_file():
+    _midi_or_skip()
+    midi = _rendered_midi(midinote=Pseq([60, 67]), dur=1.0, amp=0.6)
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "out.midiclip")
+        midi.write(path, ppq=480, fmt="clip")
+        data = open(path, "rb").read()
+    assert data[:8] == b"SMF2CLIP"  # MIDI 2.0 clip file header
+    assert len(data) > 8
+
+
+def test_live_output_smoke():
+    """Drive a Pbind through a live virtual port (open + send + scheduled
+    note-off + close). Skips without the `live` cdylib or a working ALSA seq."""
+    try:
+        from clausters import _midi
+
+        _midi.lib()
+        iface = MidiRtInterface(port="clausters-test")
+    except (OSError, RuntimeError) as e:
+        pytest.skip(f"live MIDI unavailable: {e}")
+    try:
+        midi = MidiServer(interface=iface)
+        clock = TempoClock(tempo=4.0)
+        Pbind(instrument="default", midinote=Pseq([60, 64, 67]), dur=0.25, amp=0.7).play(
+            clock, midi
+        )
+        clock.render()  # drives the routine: note-ons now, note-offs scheduled
+    finally:
+        iface.close()

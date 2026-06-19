@@ -10,6 +10,19 @@ description = "Reusable MIDI file I/O for clausters clients and server: a flat-d
 # the in-crate tests link the same functions. Same pattern as clausters-ffi.
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+# Live MIDI output over the OS's standard MIDI (ALSA seq on Linux) via midir —
+# a virtual output port. Off by default so the file writers (SMF/clip) need no
+# system MIDI dependency; build the client cdylib with it for live output.
+live = ["dep:midir"]
+
 [dependencies]
+# Live MIDI I/O (virtual ports). Pure Rust over libasound on Linux.
+midir = { version = "0.11", optional = true }
+# UMP message layer for the MIDI 2.0 clip file: Channel Voice 2 (default),
+# plus the Utility (Delta Clockstamp / DCTPQ) and UMP Stream (Start/End of
+# Clip) messages the SMF2CLIP container needs.
+midi2 = { version = "0.11.1", features = ["utility", "ump-stream"] }
 # Pure-Rust Standard MIDI File reader/writer, no system dependency.
 midly = "0.5"

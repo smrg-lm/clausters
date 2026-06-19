@@ -2255,3 +2255,38 @@ the destination differs (the double dispatch the plan called for).
   suite green, golden included; `cargo fmt --check` clean.
 - **Still pending**: client sub-part 2 (a live `MidiRtInterface` out a port) and
   the MIDI 2.0 clip writer in the crate.
+
+## M17 (client sub-part 2 + clip writer) — live MIDI out + MIDI 2.0 clip (2026-06-19)
+
+Closes the M17 client output: live MIDI out a virtual OS port, and the
+full-resolution MIDI 2.0 clip file. Both in the `clausters-midi` crate behind
+its C ABI, driven by the same `MidiServer` destination through a swappable
+interface (the RT/NRT seam, mirroring the OSC `Server`).
+
+- **MIDI 2.0 Clip File (SMF2CLIP)** — `clausters-midi`: the planned `midi2-clip`
+  crate turned out to be a **v0.1.0 stub** (`write_clip_file`/`read_clip_file`
+  are `todo!()`), so the container is assembled from **`midi2`**'s typed UMP
+  messages (the message layer the plan pinned, which *is* functional): the
+  8-byte `SMF2CLIP` header, then DCTPQ + Start of Clip + (Delta Clockstamp +
+  Channel Voice 2) per event + End of Clip, words big-endian. Note velocities
+  widened to **16 bits** (vs SMF's 7). `clausters_midi_write_clip` parallels
+  `_write_smf`; Rust test walks the UMP stream back and checks ticks/velocity.
+  Enabled `midi2` features `utility` + `ump-stream`; dropped the unused
+  `midi2-clip` dep.
+- **Live MIDI output** — `clausters-midi` feature `live` (midir/ALSA, unix):
+  `clausters_midi_output_open`/`_send`/`_close` (an opaque handle, the embed-ABI
+  pattern) open a virtual output port and send raw bytes.
+- **RT/NRT seam** (`base/_midiinterface.py`): `MidiServer(interface=...)` now
+  holds a swappable interface. `MidiNrtInterface` accumulates the `MidiScore`
+  (`write(path, ppq, fmt="smf"|"clip")`); **`MidiRtInterface`** (real backend,
+  replacing the stub) opens the port via `_midi.py` and `emit`s each message at
+  its beat — note-on now, note-off scheduled with `clock.sched_abs`.
+  `_midi.py` gains `write_clip` and `output_open`/`_send`/`_close` (live symbols
+  guarded: a clear error if the cdylib lacks `--features live`).
+- **Tests/examples**: `tests/test_midi.py` adds the clip file and a live-output
+  smoke (drives a Pbind out a real virtual port). `examples/midi_file.py`
+  gains `--clip`; new `examples/midi_live.py` plays a phrase live. **Full-loop
+  E2E** (real ALSA, one Bash invocation): client `MidiRtInterface` out port ->
+  `aconnect` -> server `--midi` in port -> the server makes synths
+  (`/status` reports synths 0 -> 2). Full Rust + Python suites green, golden
+  included; `cargo fmt --check` clean.

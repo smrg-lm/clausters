@@ -14,6 +14,7 @@ destination differs (the seam). Note number comes from the Event's `midinote`
 
     cargo build --release -p clausters-midi
     python3 examples/midi_file.py [out.mid]
+    python3 examples/midi_file.py --clip [out.midiclip]   # MIDI 2.0 clip (16-bit vel)
 """
 
 import os
@@ -37,16 +38,20 @@ def phrase() -> Pbind:
 
 
 def main() -> None:
-    out = sys.argv[1] if len(sys.argv) > 1 else "out.mid"
+    args = sys.argv[1:]
+    clip = "--clip" in args
+    paths = [a for a in args if not a.startswith("--")]
+    out = paths[0] if paths else ("out.midiclip" if clip else "out.mid")
 
     midi = MidiServer(channel=0, ppq=480)
     clock = TempoClock(tempo=2.0)  # 2 beats/second; tempo only scales the clock
     phrase().play(clock, midi)
     clock.render()  # NRT: drive the routine to the end, no sleeping
 
-    midi.write(out)
+    midi.write(out, fmt="clip" if clip else "smf")
     notes = sum(1 for _, m in midi.score.sorted() if (m[0] & 0xF0) == 0x90 and m[2] > 0)
-    print(f"wrote {out}: {notes} notes, {len(midi.score.events)} MIDI events")
+    fmt = "MIDI 2.0 clip" if clip else "SMF"
+    print(f"wrote {out} ({fmt}): {notes} notes, {len(midi.score.events)} MIDI events")
 
 
 if __name__ == "__main__":

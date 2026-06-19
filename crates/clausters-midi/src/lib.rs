@@ -6,12 +6,18 @@
 //! never a library type. A per-language wrapper (Python `ctypes` now) sits on
 //! top; check [`clausters_midi_abi_version`] first.
 //!
-//! Scope (M17 client sub-part 1): write a **Standard MIDI File** (`.mid`, SMF
-//! type 0) from a flat list of timed channel-voice messages — the interop
-//! format every DAW reads. The MIDI 2.0 **Clip File** (full 16/32-bit
-//! resolution via `midi2-clip`) is the planned follow-up behind the same ABI;
-//! SMF deliberately quantizes to MIDI 1.0's 7 bits on write.
+//! Scope (M17 client output): write a **Standard MIDI File** (`.mid`, SMF type
+//! 0, via `midly`) — the interop format every DAW reads — and a **MIDI 2.0
+//! Clip File** (SMF2CLIP, assembled from `midi2`'s typed UMP messages) that
+//! carries note velocities at 16-bit resolution instead of SMF's 7 bits. With
+//! the `live` feature, also a virtual MIDI **output port** (midir/ALSA) for
+//! real-time playback. (The planned `midi2-clip` crate is a v0.1.0 stub —
+//! `write_clip_file` is `todo!()` — so the clip container is built here.)
 
+use midi2::channel_voice2::{NoteOff, NoteOn};
+use midi2::prelude::*;
+use midi2::ump_stream::{EndOfClip, StartOfClip};
+use midi2::utility::{DeltaClockstamp, DeltaClockstampTpq};
 use midly::live::LiveEvent;
 use midly::{Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEventKind};
 
@@ -77,12 +83,128 @@ pub fn write_smf(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
     out
 }
 
+// ---- MIDI 2.0 Clip File (SMF2CLIP) ----
+//
+// The full-resolution format the plan wanted. The planned `midi2-clip` crate
+// (v0.1.0) turned out to be a stub — its `write_clip_file` is `todo!()` — so
+// the file is assembled here from `midi2`'s typed UMP messages (the message
+// layer the plan pinned, which *is* functional): the 8-byte `SMF2CLIP` header,
+// then a UMP stream of DCTPQ + Start of Clip + (Delta Clockstamp + Channel
+// Voice 2) per event + End of Clip, words big-endian. MIDI 1.0 note velocities
+// are widened to 16 bits, so a clip carries them at full resolution.
+
+/// Widen a 7-bit value to 16 bits (bit-repeat fill, 0→0 and 127→65535) — the
+/// same scaling the server uses for live MIDI 1.0 input.
+fn scale_7_to_16(v: u8) -> u16 {
+    let v = (v & 0x7f) as u16;
+    (v << 9) | (v << 2) | (v >> 5)
+}
+
+/// The two UMP words of a MIDI 2.0 Channel Voice note on/off from a MIDI 1.0
+/// status byte and data. `None` for non-note status (the client's MIDI
+/// destination only emits notes; other message types can be added here).
+fn note_cv2_words(status: u8, d1: u8, d2: u8) -> Option<[u32; 2]> {
+    let channel = u4::new(status & 0x0f);
+    let note = u7::new(d1 & 0x7f);
+    let velocity = scale_7_to_16(d2);
+    match status & 0xf0 {
+        0x90 if d2 != 0 => {
+            let mut m = NoteOn::<[u32; 2]>::new();
+            m.set_channel(channel);
+            m.set_note_number(note);
+            m.set_velocity(velocity);
+            Some([m.data()[0], m.data()[1]])
+        }
+        0x80 | 0x90 => {
+            let mut m = NoteOff::<[u32; 2]>::new();
+            m.set_channel(channel);
+            m.set_note_number(note);
+            m.set_velocity(velocity);
+            Some([m.data()[0], m.data()[1]])
+        }
+        _ => None,
+    }
+}
+
+/// Builds a MIDI 2.0 Clip File (SMF2CLIP) from `events` at `ppq` ticks per
+/// quarter note. Note velocities are carried at 16-bit resolution; unsupported
+/// status bytes are skipped.
+pub fn write_clip(events: &[TimedMessage], ppq: u16) -> Vec<u8> {
+    let mut events: Vec<TimedMessage> = events.to_vec();
+    events.sort_by_key(|e| e.tick);
+
+    let mut words: Vec<u32> = Vec::new();
+    let mut dctpq = DeltaClockstampTpq::<[u32; 1]>::new();
+    dctpq.set_time_data(ppq);
+    words.push(dctpq.data()[0]);
+    words.extend_from_slice(StartOfClip::<[u32; 4]>::new().data());
+
+    let mut last = 0u32;
+    for ev in &events {
+        let Some(cv2) = note_cv2_words(ev.bytes[0], ev.bytes[1], ev.bytes[2]) else {
+            continue;
+        };
+        let delta = ev.tick.saturating_sub(last);
+        last = ev.tick;
+        if delta > 0 {
+            let mut dc = DeltaClockstamp::<[u32; 1]>::new();
+            dc.set_time_data(u20::new(delta & 0x000F_FFFF));
+            words.push(dc.data()[0]);
+        }
+        words.extend_from_slice(&cv2);
+    }
+    words.extend_from_slice(EndOfClip::<[u32; 4]>::new().data());
+
+    let mut out = Vec::with_capacity(8 + words.len() * 4);
+    out.extend_from_slice(b"SMF2CLIP");
+    for w in words {
+        out.extend_from_slice(&w.to_be_bytes());
+    }
+    out
+}
+
 // ---- C ABI ----
 
 /// Returns [`MIDI_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_midi_abi_version() -> u32 {
     MIDI_ABI_VERSION
+}
+
+/// Collects `n` `(tick, 3-byte message)` events from the C arrays, or `None`
+/// on a null/zero input.
+///
+/// # Safety
+/// `ticks` must be readable for `n` `u32`s and `msgs` for `3 * n` bytes.
+unsafe fn collect_events(
+    ticks: *const u32,
+    msgs: *const u8,
+    n: usize,
+) -> Option<Vec<TimedMessage>> {
+    if ticks.is_null() || msgs.is_null() || n == 0 {
+        return None;
+    }
+    // SAFETY: caller guarantees the ranges.
+    let ticks = unsafe { std::slice::from_raw_parts(ticks, n) };
+    let msgs = unsafe { std::slice::from_raw_parts(msgs, 3 * n) };
+    Some(
+        (0..n)
+            .map(|i| TimedMessage {
+                tick: ticks[i],
+                bytes: [msgs[3 * i], msgs[3 * i + 1], msgs[3 * i + 2]],
+            })
+            .collect(),
+    )
+}
+
+/// Hands `bytes` to the caller as a malloc'd buffer (length in `out_len`),
+/// reclaimed by [`clausters_midi_free`].
+fn leak_bytes(bytes: Vec<u8>, out_len: *mut usize) -> *mut u8 {
+    let boxed = bytes.into_boxed_slice();
+    let len = boxed.len();
+    // SAFETY: out_len is non-null per each caller's contract.
+    unsafe { *out_len = len };
+    Box::into_raw(boxed) as *mut u8
 }
 
 /// Writes a Standard MIDI File from `n` events and returns a malloc'd byte
@@ -103,25 +225,36 @@ pub unsafe extern "C" fn clausters_midi_write_smf(
     ppq: u16,
     out_len: *mut usize,
 ) -> *mut u8 {
-    if ticks.is_null() || msgs.is_null() || out_len.is_null() || n == 0 {
+    if out_len.is_null() {
         return std::ptr::null_mut();
     }
-    // SAFETY: caller guarantees the ranges above.
-    let ticks = unsafe { std::slice::from_raw_parts(ticks, n) };
-    let msgs = unsafe { std::slice::from_raw_parts(msgs, 3 * n) };
-    let events: Vec<TimedMessage> = (0..n)
-        .map(|i| TimedMessage {
-            tick: ticks[i],
-            bytes: [msgs[3 * i], msgs[3 * i + 1], msgs[3 * i + 2]],
-        })
-        .collect();
-    let bytes = write_smf(&events, ppq);
-    // Hand ownership to the caller as a boxed slice; reclaimed by the free fn.
-    let boxed = bytes.into_boxed_slice();
-    let len = boxed.len();
-    // SAFETY: out_len is non-null per the contract.
-    unsafe { *out_len = len };
-    Box::into_raw(boxed) as *mut u8
+    let Some(events) = (unsafe { collect_events(ticks, msgs, n) }) else {
+        return std::ptr::null_mut();
+    };
+    leak_bytes(write_smf(&events, ppq), out_len)
+}
+
+/// Writes a MIDI 2.0 Clip File (SMF2CLIP) from `n` events. Same arguments,
+/// return and freeing as [`clausters_midi_write_smf`]; carries note velocities
+/// at 16-bit resolution.
+///
+/// # Safety
+/// Same as [`clausters_midi_write_smf`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_midi_write_clip(
+    ticks: *const u32,
+    msgs: *const u8,
+    n: usize,
+    ppq: u16,
+    out_len: *mut usize,
+) -> *mut u8 {
+    if out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    let Some(events) = (unsafe { collect_events(ticks, msgs, n) }) else {
+        return std::ptr::null_mut();
+    };
+    leak_bytes(write_clip(&events, ppq), out_len)
 }
 
 /// Frees a buffer returned by [`clausters_midi_write_smf`].
@@ -137,6 +270,87 @@ pub unsafe extern "C" fn clausters_midi_free(ptr: *mut u8, len: usize) {
     // SAFETY: reconstitute the same boxed slice we leaked, then drop it.
     let slice = unsafe { std::slice::from_raw_parts_mut(ptr, len) };
     drop(unsafe { Box::from_raw(slice as *mut [u8]) });
+}
+
+// ---- Live MIDI output (feature `live`, ALSA seq on Linux via midir) ----
+//
+// The client sub-part 2 surface: a virtual MIDI output port other apps/devices
+// subscribe to. An opaque handle (the same pattern as the embed ABI's
+// `clausters_open`) crosses the boundary; raw channel-voice bytes go out.
+#[cfg(all(feature = "live", unix))]
+mod live {
+    use midir::os::unix::VirtualOutput;
+    use midir::{MidiOutput, MidiOutputConnection};
+
+    /// Opaque live output handle.
+    pub struct Output {
+        conn: MidiOutputConnection,
+    }
+
+    /// Opens a virtual MIDI output port named `name` (UTF-8, `name_len` bytes).
+    /// Returns an opaque handle or null on failure. Close with
+    /// [`clausters_midi_output_close`].
+    ///
+    /// # Safety
+    /// `name` must be readable for `name_len` bytes.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn clausters_midi_output_open(
+        name: *const u8,
+        name_len: usize,
+    ) -> *mut Output {
+        if name.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: caller guarantees the range.
+        let bytes = unsafe { std::slice::from_raw_parts(name, name_len) };
+        let Ok(name) = std::str::from_utf8(bytes) else {
+            return std::ptr::null_mut();
+        };
+        let Ok(out) = MidiOutput::new("clausters") else {
+            return std::ptr::null_mut();
+        };
+        match out.create_virtual(name) {
+            Ok(conn) => Box::into_raw(Box::new(Output { conn })),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+
+    /// Sends `len` raw MIDI bytes out the port now. Returns 0 on success, <0 on
+    /// a null handle/buffer or a send error.
+    ///
+    /// # Safety
+    /// `handle` must come from [`clausters_midi_output_open`] (not yet closed);
+    /// `bytes` must be readable for `len`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn clausters_midi_output_send(
+        handle: *mut Output,
+        bytes: *const u8,
+        len: usize,
+    ) -> i32 {
+        if handle.is_null() || bytes.is_null() || len == 0 {
+            return -1;
+        }
+        // SAFETY: per the contract.
+        let out = unsafe { &mut *handle };
+        let msg = unsafe { std::slice::from_raw_parts(bytes, len) };
+        match out.conn.send(msg) {
+            Ok(()) => 0,
+            Err(_) => -2,
+        }
+    }
+
+    /// Closes a port opened with [`clausters_midi_output_open`].
+    ///
+    /// # Safety
+    /// `handle` must come from [`clausters_midi_output_open`], closed once.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn clausters_midi_output_close(handle: *mut Output) {
+        if handle.is_null() {
+            return;
+        }
+        // SAFETY: reconstitute and drop the box we leaked.
+        drop(unsafe { Box::from_raw(handle) });
+    }
 }
 
 #[cfg(test)]
@@ -209,6 +423,55 @@ mod tests {
             _ => None,
         });
         assert_eq!(prog.map(u8::from), Some(5));
+    }
+
+    /// Walk a SMF2CLIP UMP stream by message-type size, accumulating Delta
+    /// Clockstamps, and return `(abs_tick, note, velocity16)` per note-on.
+    fn clip_note_ons(bytes: &[u8]) -> Vec<(u32, u32, u32)> {
+        assert_eq!(&bytes[..8], b"SMF2CLIP");
+        let words: Vec<u32> = bytes[8..]
+            .chunks(4)
+            .map(|c| u32::from_be_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        let mut ons = Vec::new();
+        let mut tick = 0u32;
+        let mut i = 0;
+        while i < words.len() {
+            let w = words[i];
+            let mt = (w >> 28) & 0xF;
+            let size = match mt {
+                0x0 => 1, // utility
+                0x4 => 2, // channel voice 2
+                0xF => 4, // ump stream (start/end of clip)
+                _ => 1,
+            };
+            if mt == 0x0 && (w >> 20) & 0xF == 0x4 {
+                tick += w & 0x000F_FFFF; // delta clockstamp
+            } else if mt == 0x4 && (w >> 20) & 0xF == 0x9 {
+                let note = (w >> 8) & 0x7F;
+                let velocity = (words[i + 1] >> 16) & 0xFFFF;
+                ons.push((tick, note, velocity));
+            }
+            i += size;
+        }
+        ons
+    }
+
+    #[test]
+    fn clip_round_trips_with_16bit_velocity() {
+        let events = [
+            note_on(0, 0, 60, 100),
+            note_off(96, 0, 60),
+            note_on(96, 0, 67, 80),
+            note_off(192, 0, 67),
+        ];
+        let bytes = write_clip(&events, 96);
+        let ons = clip_note_ons(&bytes);
+        assert_eq!(ons.len(), 2);
+        assert_eq!(ons[0], (0, 60, scale_7_to_16(100) as u32));
+        assert_eq!(ons[1], (96, 67, scale_7_to_16(80) as u32));
+        // Velocity really is widened past 7 bits (not just `vel << 9`).
+        assert!(scale_7_to_16(100) > (100u16 << 8));
     }
 
     /// The C ABI path produces the same bytes and frees cleanly.

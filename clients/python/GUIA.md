@@ -350,8 +350,27 @@ PY
 
 El número de nota sale de `Event.midinote()` (de `midinote`/`degree`, o de un
 `freq` explícito vía `cpsmidi`), la velocity de `amp` (0..1 → 0..127). Ejemplo
-comentado: `examples/midi_file.py`. La salida MIDI **en vivo** por un puerto del
-SO (sub-parte 2) y el clip MIDI 2.0 de resolución completa quedan pendientes.
+comentado: `examples/midi_file.py` (con `--clip`).
+
+**Clip MIDI 2.0 (resolución completa):** `midi.write(path, fmt="clip")` escribe
+un archivo SMF2CLIP (cabecera `SMF2CLIP`) con la velocity a **16 bits** en vez
+de 7. El crate lo arma con los mensajes UMP de `midi2` (el `midi2-clip` pautado
+resultó un stub `todo!()`).
+
+**Salida en vivo (sub-parte 2):** con el cdylib construido con `--features live`,
+`MidiServer(interface=MidiRtInterface("clausters"))` abre un **puerto virtual de
+salida** (ALSA, vía `midir`) y emite cada nota en tiempo real (note-on en su
+beat, note-off programado con `clock.sched_abs`). Se enruta con `aconnect` a un
+synth o a la entrada MIDI del propio servidor (`clausters --midi`):
+
+```sh
+cargo build --release -p clausters-midi --features live
+python3 examples/midi_live.py clausters 4      # toca 4 s por el puerto "clausters"
+# en otra terminal: aconnect <puerto> <destino>   (ver `aconnect -l`)
+```
+
+El loop completo cliente→servidor (salida del cliente → `aconnect` → `--midi`
+del servidor → crea synths) está verificado en `LOG.md` (M17 sub-parte 2).
 
 ### Anclado al reloj del servidor (C6, en vivo por UDP)
 
@@ -449,4 +468,5 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C6 | anclaje sample-clock por UDP (`/clock` → modelo → `/sched`) | sección 5 (anclado) |
 | C8 | transporte TCP (`--tcp`, length-prefixed); `OscTCPInterface` | sección 5 (TCP) |
 | C9 | doc cross-lenguaje + ejemplo de secuenciación de alto nivel | `python3 examples/sequencing.py` (offline) y `--live` |
-| M17 s1 | `Pbind` → `.mid` (`MidiServer` + crate `clausters-midi`) | sección 5 (export MIDI), `tests/test_midi.py`, `examples/midi_file.py` |
+| M17 s1 | `Pbind` → `.mid` / clip MIDI 2.0 (`MidiServer` + crate) | sección 5 (export MIDI), `tests/test_midi.py`, `examples/midi_file.py` |
+| M17 s2 | salida MIDI en vivo por puerto del SO (`MidiRtInterface`, `--features live`) | sección 5 (salida en vivo), `examples/midi_live.py`, smoke en `tests/test_midi.py` |
