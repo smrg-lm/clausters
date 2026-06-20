@@ -113,7 +113,7 @@ fn file_segments_validate_magic_and_version() {
 #[test]
 fn server_speaks_osc_over_the_ring() {
     let segment = Segment::in_memory();
-    let (mut engine, handle) = engine_pair_full(SR, 2, 0, Some(Arc::clone(&segment)));
+    let (mut engine, handle) = engine_pair_full(SR, 2, 0, Some(Arc::clone(&segment)), 128, 1024);
     let info = ServerInfo {
         nominal_sample_rate: SR as f64,
         actual_sample_rate: SR as f64,
@@ -185,7 +185,8 @@ fn segment_control_buses_feed_the_engine_directly() {
     use clausters::synthdef::{SynthDefSpec, compile};
 
     let segment = Segment::in_memory();
-    let (mut engine, mut handle) = engine_pair_full(SR, 2, 0, Some(Arc::clone(&segment)));
+    let (mut engine, mut handle) =
+        engine_pair_full(SR, 2, 0, Some(Arc::clone(&segment)), 128, 1024);
 
     let spec: SynthDefSpec = serde_json::from_value(serde_json::json!({
         "name": "ctlreader",

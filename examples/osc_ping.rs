@@ -1,6 +1,6 @@
 //! Minimal OSC client for manual testing against a running server.
 //!
-//! Usage: cargo run --example osc_ping -- [status] [beep] [vibrato] [map] [quit]
+//! Usage: cargo run --example osc_ping -- [status] [info] [beep] [vibrato] [map] [quit]
 //! Default (no args): status. `beep` plays the default synth for a moment,
 //! re-tunes it with /n_set, then frees it. `map` demos /n_map and /n_mapa
 //! (controls driven live by buses).
@@ -45,6 +45,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "status" => {
                 send("/status", vec![])?;
                 recv("/status")?;
+            }
+            "info" => {
+                // Static server config: [audio_buses, control_buses, channels,
+                // block_size, nominal_sr, actual_sr]. A client sizes its own
+                // bus allocators from this instead of hardcoding the counts.
+                send("/server_info", vec![])?;
+                recv("/server_info")?;
             }
             "beep" => {
                 println!("/s_new default 1000 (440 Hz)");
@@ -181,7 +188,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 recv("/quit")?;
             }
             other => {
-                eprintln!("unknown command: {other} (use status, beep, vibrato, map, quit)")
+                eprintln!("unknown command: {other} (use status, info, beep, vibrato, map, quit)")
             }
         }
     }

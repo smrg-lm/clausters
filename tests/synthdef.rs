@@ -19,7 +19,7 @@ fn render(synth: &mut UGenSynth, blocks: usize) -> Vec<f32> {
 /// Several synths in order over shared buses, with a pre-process hook for
 /// setting control buses.
 fn render_with(synths: &mut [UGenSynth], blocks: usize, setup: impl Fn(&ControlBuses)) -> Vec<f32> {
-    let mut buses = Buses::new(ControlBuses::new());
+    let mut buses = Buses::new(ControlBuses::new(1024), 128);
     setup(&buses.control);
     let mut out = Vec::with_capacity(blocks * BLOCK_SIZE);
     for _ in 0..blocks {

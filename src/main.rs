@@ -7,6 +7,8 @@ usage:
       --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
                            device (PipeWire honors it per-app; other hosts fall
                            back to the device rate if unsupported)
+      --audio-buses <n>    audio buses (default 128, the hard maximum)
+      --control-buses <n>  control buses (default 1024)
       --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
                            default port 57110)
       --midi [name]        open a virtual MIDI input port (RT only; default
@@ -98,6 +100,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
 
     use clausters::server::defstore::{DefStore, resolve_data_dir};
+    use clausters::server::engine::{DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES};
     use clausters::server::ipc::{IpcPeer, Role, Segment};
 
     let mut workers = 0usize;
@@ -109,6 +112,8 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
     // means "follow the device's default rate". `None` => follow the device.
     let mut sample_rate: Option<u32> = Some(48_000);
+    let mut audio_buses = DEFAULT_AUDIO_BUSES;
+    let mut control_buses = DEFAULT_CONTROL_BUSES;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -159,16 +164,36 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 // 0 = follow the device default; otherwise impose the rate.
                 sample_rate = (hz != 0).then_some(hz);
             }
+            "--audio-buses" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--audio-buses needs a value\n{USAGE}"))?;
+                audio_buses = value.parse().map_err(|e| format!("--audio-buses: {e}"))?;
+            }
+            "--control-buses" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--control-buses needs a value\n{USAGE}"))?;
+                control_buses = value.parse().map_err(|e| format!("--control-buses: {e}"))?;
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
 
     let segment = match &shm_path {
-        Some(path) => Some(Segment::create(std::path::Path::new(path))?),
+        Some(path) => Some(Segment::create_with(
+            std::path::Path::new(path),
+            control_buses,
+        )?),
         None => None,
     };
-    let (backend, handle) =
-        clausters::server::backend::start(workers, segment.clone(), sample_rate)?;
+    let (backend, handle) = clausters::server::backend::start(
+        workers,
+        segment.clone(),
+        sample_rate,
+        audio_buses,
+        control_buses,
+    )?;
     // Nominal = what we asked for; actual = what the device gave us. They differ
     // only when the host could not honor the requested rate (see backend.rs).
     let nominal = sample_rate.map_or(backend.sample_rate as f64, f64::from);

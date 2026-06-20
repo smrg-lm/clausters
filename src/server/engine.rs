@@ -21,7 +21,7 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::BusUsage;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
-use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, ProcessCtx};
+use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -265,6 +265,8 @@ pub struct Engine {
 pub struct EngineHandle {
     pub sample_rate: f32,
     pub channels: usize,
+    /// Configured audio bus count (after clamping to the 128 ceiling).
+    pub audio_buses: usize,
     cmd_tx: Producer<Cmd>,
     garbage_rx: Consumer<Garbage>,
     events_rx: Consumer<NodeEvent>,
@@ -277,6 +279,12 @@ pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) 
     engine_pair_with_workers(sample_rate, channels, 0)
 }
 
+/// Default bus counts (scsynth `-a`/`-c`), used by the simple constructors and
+/// the NRT renderer. The live server can override them with `--audio-buses`/
+/// `--control-buses`; audio is capped at 128 (the `BusUsage` mask is a `u128`).
+pub const DEFAULT_AUDIO_BUSES: usize = NUM_AUDIO_BUSES;
+pub const DEFAULT_CONTROL_BUSES: usize = NUM_CONTROL_BUSES;
+
 /// Like [`engine_pair`], plus an M13 worker pool of `workers` DSP threads
 /// for parallel groups (`/g_parallel`). `workers == 0` is fully sequential
 /// — identical behavior and output either way (stages are bit-identical to
@@ -286,7 +294,14 @@ pub fn engine_pair_with_workers(
     channels: usize,
     workers: usize,
 ) -> (Engine, EngineHandle) {
-    engine_pair_full(sample_rate, channels, workers, None)
+    engine_pair_full(
+        sample_rate,
+        channels,
+        workers,
+        None,
+        DEFAULT_AUDIO_BUSES,
+        DEFAULT_CONTROL_BUSES,
+    )
 }
 
 /// Full form (M14): with an IPC segment, the control buses live *inside the
@@ -297,8 +312,12 @@ pub fn engine_pair_full(
     channels: usize,
     workers: usize,
     ipc: Option<Arc<Segment>>,
+    audio_buses: usize,
+    control_buses: usize,
 ) -> (Engine, EngineHandle) {
-    assert!(channels > 0 && channels <= NUM_AUDIO_BUSES);
+    // The mask is a `u128`, so 128 is the hard ceiling for audio buses.
+    let audio_buses = audio_buses.clamp(channels.max(1), NUM_AUDIO_BUSES);
+    assert!(channels > 0 && channels <= audio_buses);
     let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY);
     let (events_tx, events_rx) = RingBuffer::new(EVENT_FIFO_CAPACITY);
@@ -308,12 +327,14 @@ pub fn engine_pair_full(
         // The root group exists before the first tick publishes counts.
         groups: AtomicU32::new(1),
     });
+    // With an IPC segment the control buses live inside it, so their count is
+    // whatever the segment was created with (read back from its header).
     let control_buses = match &ipc {
         Some(segment) => {
             segment.set_sample_rate(sample_rate as f64);
             segment.control_buses()
         }
-        None => ControlBuses::new(),
+        None => ControlBuses::new(control_buses),
     };
     let sample_clock = Arc::new(AtomicU64::new(0));
     let engine = Engine {
@@ -321,7 +342,7 @@ pub fn engine_pair_full(
         channels,
         tree: NodeTree::new(),
         pool: WorkerPool::new(workers),
-        buses: Buses::new(control_buses.clone()),
+        buses: Buses::new(control_buses.clone(), audio_buses),
         buffers: empty_pool(),
         now: 0,
         sched: Vec::with_capacity(SCHED_CAPACITY),
@@ -336,6 +357,7 @@ pub fn engine_pair_full(
     let handle = EngineHandle {
         sample_rate,
         channels,
+        audio_buses,
         cmd_tx,
         garbage_rx,
         events_rx,

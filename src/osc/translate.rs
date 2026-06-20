@@ -22,7 +22,7 @@ use crate::midi::{ChannelVoiceMessage, MidiBinding, MidiBindings, convert};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
 use crate::osc::graphdef::{
-    BusRate, ControlValue, GRAPH_AUDIO_BUS_BASE, GRAPH_CONTROL_BUS_BASE, GraphDefSpec,
+    BusRate, ControlValue, GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED, GraphDefSpec,
     GraphInstance, GraphVoice, RangeAllocator, ResolvedSurface,
 };
 use crate::server::engine::Cmd;
@@ -123,7 +123,18 @@ pub struct CmdTranslator {
 }
 
 impl CmdTranslator {
+    /// Translator with the default bus counts (used by the NRT renderer and
+    /// tests). The live server passes its configured counts via
+    /// [`with_buses`](Self::with_buses).
     pub fn new(sample_rate: f32) -> Self {
+        Self::with_buses(sample_rate, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES)
+    }
+
+    pub fn with_buses(sample_rate: f32, audio_buses: usize, control_buses: usize) -> Self {
+        // Reserve the top of each bus space for GraphDef private buses, shrinking
+        // the reservation if the configured count is smaller than the default.
+        let audio_reserved = GRAPH_AUDIO_BUS_RESERVED.min(audio_buses);
+        let control_reserved = GRAPH_CONTROL_BUS_RESERVED.min(control_buses);
         let mut defs = HashMap::new();
         let default = compile(default_spec()).expect("built-in default def must compile");
         defs.insert(default.name.clone(), Arc::new(default));
@@ -139,13 +150,10 @@ impl CmdTranslator {
             graph_defs: HashMap::new(),
             graph_instances: HashMap::new(),
             graph_voices: HashMap::new(),
-            graph_audio_buses: RangeAllocator::new(
-                GRAPH_AUDIO_BUS_BASE,
-                NUM_AUDIO_BUSES - GRAPH_AUDIO_BUS_BASE,
-            ),
+            graph_audio_buses: RangeAllocator::new(audio_buses - audio_reserved, audio_reserved),
             graph_control_buses: RangeAllocator::new(
-                GRAPH_CONTROL_BUS_BASE,
-                NUM_CONTROL_BUSES - GRAPH_CONTROL_BUS_BASE,
+                control_buses - control_reserved,
+                control_reserved,
             ),
         }
     }

@@ -148,24 +148,31 @@ pub unsafe extern "C" fn clausters_open(
 
     let segment = Segment::in_memory();
     // Embedded hosts follow the device's default rate (None); they can resample
-    // on their side if they need a specific rate.
-    let opened = crate::server::backend::start(workers as usize, Some(Arc::clone(&segment)), None)
-        .map_err(|e| e.to_string())
-        .and_then(|(backend, handle)| {
-            let info = ServerInfo {
-                nominal_sample_rate: backend.sample_rate as f64,
-                actual_sample_rate: backend.sample_rate as f64,
-            };
-            // The socket is an ephemeral localhost port: unused by the embed
-            // client (commands go through the ring), it just drives the
-            // loop's tick — and doubles as an escape hatch for debugging.
-            let mut server =
-                OscServer::bind(("127.0.0.1", 0), info, handle).map_err(|e| e.to_string())?;
-            server
-                .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
-                .map_err(|e| e.to_string())?;
-            Ok((backend, server))
-        });
+    // on their side if they need a specific rate. Default bus counts (the
+    // in-memory segment is sized to match).
+    let opened = crate::server::backend::start(
+        workers as usize,
+        Some(Arc::clone(&segment)),
+        None,
+        crate::server::engine::DEFAULT_AUDIO_BUSES,
+        crate::server::engine::DEFAULT_CONTROL_BUSES,
+    )
+    .map_err(|e| e.to_string())
+    .and_then(|(backend, handle)| {
+        let info = ServerInfo {
+            nominal_sample_rate: backend.sample_rate as f64,
+            actual_sample_rate: backend.sample_rate as f64,
+        };
+        // The socket is an ephemeral localhost port: unused by the embed
+        // client (commands go through the ring), it just drives the
+        // loop's tick — and doubles as an escape hatch for debugging.
+        let mut server =
+            OscServer::bind(("127.0.0.1", 0), info, handle).map_err(|e| e.to_string())?;
+        server
+            .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+            .map_err(|e| e.to_string())?;
+        Ok((backend, server))
+    });
     match opened {
         Ok((backend, mut server)) => {
             let thread = std::thread::Builder::new()

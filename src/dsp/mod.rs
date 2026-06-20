@@ -52,6 +52,7 @@ pub const MAX_UGEN_INPUTS: usize = 8;
 /// backing alive (the `Vec` or the mapped segment).
 pub struct ControlBuses {
     ptr: *const AtomicU32,
+    len: usize,
     _owner: Arc<dyn std::any::Any + Send + Sync>,
 }
 
@@ -64,6 +65,7 @@ impl Clone for ControlBuses {
     fn clone(&self) -> Self {
         Self {
             ptr: self.ptr,
+            len: self.len,
             _owner: Arc::clone(&self._owner),
         }
     }
@@ -71,20 +73,21 @@ impl Clone for ControlBuses {
 
 impl Default for ControlBuses {
     fn default() -> Self {
-        Self::new()
+        Self::new(NUM_CONTROL_BUSES)
     }
 }
 
 impl ControlBuses {
-    pub fn new() -> Self {
+    pub fn new(count: usize) -> Self {
         let storage: Arc<Vec<AtomicU32>> = Arc::new(
-            (0..NUM_CONTROL_BUSES)
+            (0..count)
                 .map(|_| AtomicU32::new(0.0f32.to_bits()))
                 .collect(),
         );
         let ptr = storage.as_ptr();
         Self {
             ptr,
+            len: count,
             _owner: storage,
         }
     }
@@ -92,19 +95,35 @@ impl ControlBuses {
     /// Control buses backed by external memory (the M14 IPC segment).
     ///
     /// # Safety
-    /// `ptr` must point to [`NUM_CONTROL_BUSES`] initialized `AtomicU32`s
-    /// that stay valid and pinned for as long as `owner` is alive.
+    /// `ptr` must point to `count` initialized `AtomicU32`s that stay valid
+    /// and pinned for as long as `owner` is alive.
     pub unsafe fn from_raw(
         ptr: *const AtomicU32,
+        count: usize,
         owner: Arc<dyn std::any::Any + Send + Sync>,
     ) -> Self {
-        Self { ptr, _owner: owner }
+        Self {
+            ptr,
+            len: count,
+            _owner: owner,
+        }
+    }
+
+    /// Number of control buses backing this view.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     #[inline]
     fn slot(&self, index: usize) -> Option<&AtomicU32> {
-        // SAFETY: in-range offsets into the fixed array `_owner` keeps alive.
-        (index < NUM_CONTROL_BUSES).then(|| unsafe { &*self.ptr.add(index) })
+        // SAFETY: in-range offsets into the array `_owner` keeps alive.
+        (index < self.len).then(|| unsafe { &*self.ptr.add(index) })
     }
 
     pub fn get(&self, index: usize) -> f32 {
@@ -176,13 +195,19 @@ unsafe impl Send for Buses {}
 unsafe impl Sync for Buses {}
 
 impl Buses {
-    pub fn new(control: ControlBuses) -> Self {
+    pub fn new(control: ControlBuses, audio_count: usize) -> Self {
         Self {
-            audio: (0..NUM_AUDIO_BUSES)
+            audio: (0..audio_count.max(1))
                 .map(|_| UnsafeCell::new(Block::SILENCE))
                 .collect(),
             control,
         }
+    }
+
+    /// Number of audio buses (the hardware outputs are buses `0..channels`).
+    #[inline]
+    pub fn audio_count(&self) -> usize {
+        self.audio.len()
     }
 
     pub fn clear_audio(&mut self) {
@@ -191,12 +216,16 @@ impl Buses {
         }
     }
 
-    /// Shared read of one audio bus.
+    /// Shared read of one audio bus. The index is clamped to the configured
+    /// bus count, so an out-of-range index degrades to the last bus instead
+    /// of an out-of-bounds panic (the same safety net as the `min` clamps at
+    /// the call sites, but here it also covers a reduced `--audio-buses`).
     ///
     /// During a parallel stage this may race only with writes to *other*
     /// buses (scheduler invariant), so the plain reference is sound.
     #[inline]
     pub fn audio(&self, bus: usize) -> &[f32; BLOCK_SIZE] {
+        let bus = bus.min(self.audio.len() - 1);
         unsafe { &(*self.audio[bus].get()).0 }
     }
 
@@ -210,6 +239,7 @@ impl Buses {
     #[inline]
     #[allow(clippy::mut_from_ref)]
     pub unsafe fn audio_mut(&self, bus: usize) -> &mut [f32; BLOCK_SIZE] {
+        let bus = bus.min(self.audio.len() - 1);
         unsafe { &mut (*self.audio[bus].get()).0 }
     }
 }

@@ -47,7 +47,7 @@ use crate::dsp::{ControlBuses, NUM_CONTROL_BUSES};
 /// "CLAU" little-endian.
 pub const MAGIC: u32 = 0x5541_4C43;
 /// Bump on **any** layout change: attaching rejects mismatches.
-pub const ABI_VERSION: u32 = 1;
+pub const ABI_VERSION: u32 = 2;
 /// Byte capacity of each ring (power of two).
 pub const RING_CAPACITY: usize = 64 * 1024;
 
@@ -75,17 +75,26 @@ struct Ring {
     data: [u8; RING_CAPACITY],
 }
 
+/// Fixed prefix of the segment. The `header.control_buses` control slots
+/// (`AtomicU32`) are a **trailing dynamically-sized array** right after this
+/// struct, so the control-bus count is a runtime parameter (`--control-buses`)
+/// without the rings moving — they stay fixed fields here.
 #[repr(C)]
 struct Layout {
     header: Header,
-    controls: [AtomicU32; NUM_CONTROL_BUSES],
     /// Client → server commands.
     c2s: Ring,
     /// Server → client replies.
     s2c: Ring,
 }
 
-pub const SEGMENT_SIZE: usize = size_of::<Layout>();
+/// Total byte size of a segment carrying `control_buses` control slots.
+const fn segment_size(control_buses: usize) -> usize {
+    size_of::<Layout>() + control_buses * size_of::<AtomicU32>()
+}
+
+/// Default segment size (the `--control-buses` default count).
+pub const SEGMENT_SIZE: usize = segment_size(NUM_CONTROL_BUSES);
 
 enum Backing {
     // `u128` words keep the heap allocation 16-aligned — `Layout` holds
@@ -122,31 +131,47 @@ unsafe impl Send for Segment {}
 unsafe impl Sync for Segment {}
 
 impl Segment {
-    /// A heap-backed segment for the in-process (embed) transport.
+    /// A heap-backed segment for the in-process (embed) transport, with the
+    /// default control-bus count.
     pub fn in_memory() -> Arc<Self> {
-        let mut words = vec![0u128; SEGMENT_SIZE.div_ceil(16)].into_boxed_slice();
+        Self::in_memory_with(NUM_CONTROL_BUSES)
+    }
+
+    /// A heap-backed segment carrying `control_buses` control slots.
+    pub fn in_memory_with(control_buses: usize) -> Arc<Self> {
+        let size = segment_size(control_buses);
+        let mut words = vec![0u128; size.div_ceil(16)].into_boxed_slice();
         let layout = words.as_mut_ptr() as *mut Layout;
         let seg = Self {
             layout,
             _backing: Backing::Heap(words),
         };
-        seg.init_header();
+        seg.init_header(control_buses);
         Arc::new(seg)
     }
 
-    /// Creates (or truncates) the segment file and maps it shared. Put it on
-    /// a memory filesystem — `/dev/shm/...` on Linux — to avoid disk writes.
+    /// Creates (or truncates) the segment file and maps it shared, with the
+    /// default control-bus count. Put it on a memory filesystem —
+    /// `/dev/shm/...` on Linux — to avoid disk writes.
     #[cfg(unix)]
     pub fn create(path: &Path) -> io::Result<Arc<Self>> {
+        Self::create_with(path, NUM_CONTROL_BUSES)
+    }
+
+    /// Like [`create`](Self::create), sizing the control-bus region to
+    /// `control_buses` (`--control-buses`).
+    #[cfg(unix)]
+    pub fn create_with(path: &Path, control_buses: usize) -> io::Result<Arc<Self>> {
+        let size = segment_size(control_buses);
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(true)
             .open(path)?;
-        file.set_len(SEGMENT_SIZE as u64)?;
-        let seg = Self::map_file(&file)?;
-        seg.init_header();
+        file.set_len(size as u64)?;
+        let seg = Self::map_file(&file, size)?;
+        seg.init_header(control_buses);
         Ok(Arc::new(seg))
     }
 
@@ -154,10 +179,11 @@ impl Segment {
     #[cfg(unix)]
     pub fn open(path: &Path) -> io::Result<Arc<Self>> {
         let file = OpenOptions::new().read(true).write(true).open(path)?;
-        if file.metadata()?.len() != SEGMENT_SIZE as u64 {
-            return Err(io::Error::other("segment size mismatch"));
+        let len = file.metadata()?.len() as usize;
+        if len < size_of::<Layout>() {
+            return Err(io::Error::other("segment size too small"));
         }
-        let seg = Self::map_file(&file)?;
+        let seg = Self::map_file(&file, len)?;
         let header = &seg.layout().header;
         if header.magic != MAGIC {
             return Err(io::Error::other("not a clausters segment (bad magic)"));
@@ -168,17 +194,21 @@ impl Segment {
                 header.abi_version
             )));
         }
+        // The mapped length must match the control-bus count the header claims.
+        if len != segment_size(header.control_buses as usize) {
+            return Err(io::Error::other("segment size mismatch"));
+        }
         Ok(Arc::new(seg))
     }
 
     #[cfg(unix)]
-    fn map_file(file: &std::fs::File) -> io::Result<Self> {
+    fn map_file(file: &std::fs::File, len: usize) -> io::Result<Self> {
         use std::os::fd::AsRawFd;
         // SAFETY: anonymous-address shared mapping of a file we just sized.
         let ptr = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
-                SEGMENT_SIZE,
+                len,
                 libc::PROT_READ | libc::PROT_WRITE,
                 libc::MAP_SHARED,
                 file.as_raw_fd(),
@@ -192,17 +222,17 @@ impl Segment {
             layout: ptr as *mut Layout,
             _backing: Backing::Mapped {
                 ptr: ptr as *mut u8,
-                len: SEGMENT_SIZE,
+                len,
             },
         })
     }
 
     /// Runs at creation time, before any other process can have attached
     /// (the file was just created/truncated), so plain writes are sound.
-    fn init_header(&self) {
+    fn init_header(&self, control_buses: usize) {
         let header = unsafe { &mut (*self.layout).header };
         header.ring_capacity = RING_CAPACITY as u32;
-        header.control_buses = NUM_CONTROL_BUSES as u32;
+        header.control_buses = control_buses as u32;
         header.abi_version = ABI_VERSION;
         // Written last: a client that sees the magic sees a full header.
         header.magic = MAGIC;
@@ -210,6 +240,14 @@ impl Segment {
 
     fn layout(&self) -> &Layout {
         unsafe { &*self.layout }
+    }
+
+    /// The control-bus array, a trailing region right after the fixed
+    /// [`Layout`] prefix (see its doc comment).
+    fn controls_ptr(&self) -> *const AtomicU32 {
+        // SAFETY: `create`/`in_memory` sized the backing to hold the control
+        // region immediately after the `Layout` prefix.
+        unsafe { (self.layout as *const u8).add(size_of::<Layout>()) as *const AtomicU32 }
     }
 
     pub fn set_sample_rate(&self, rate: f64) {
@@ -236,9 +274,10 @@ impl Segment {
     /// Control buses living inside the segment; hand this to
     /// `engine_pair_full` so `InCtl` and `/c_set` operate on shared memory.
     pub fn control_buses(self: &Arc<Self>) -> ControlBuses {
-        let ptr = self.layout().controls.as_ptr();
-        // SAFETY: the array is part of the segment, kept alive by the Arc.
-        unsafe { ControlBuses::from_raw(ptr, Arc::clone(self) as _) }
+        let count = self.layout().header.control_buses as usize;
+        let ptr = self.controls_ptr();
+        // SAFETY: the region is part of the segment, kept alive by the Arc.
+        unsafe { ControlBuses::from_raw(ptr, count, Arc::clone(self) as _) }
     }
 }
 

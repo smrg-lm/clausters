@@ -3,7 +3,8 @@
 //! a GraphDef expands into existing primitives (group + member synths +
 //! `/n_map`), so we assert on the mirrored node tree and the resolved surface.
 
-use clausters::osc::graphdef::GRAPH_AUDIO_BUS_BASE;
+use clausters::dsp::NUM_AUDIO_BUSES;
+use clausters::osc::graphdef::GRAPH_AUDIO_BUS_RESERVED;
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::engine::Cmd;
@@ -91,7 +92,7 @@ fn graph_new_wires_members_to_private_buses() {
     // sink reads the *same* bus and writes to hardware bus 0 ("OUT").
     let mix = control(&t, src, 0); // gsrc.out
     assert!(
-        mix as usize >= GRAPH_AUDIO_BUS_BASE,
+        mix as usize >= NUM_AUDIO_BUSES - GRAPH_AUDIO_BUS_RESERVED,
         "mix bus {mix} is private"
     );
     assert_eq!(control(&t, sink, 0), mix); // gsink.in == mix

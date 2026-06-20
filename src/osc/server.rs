@@ -118,7 +118,11 @@ impl OscServer {
         let socket = UdpSocket::bind(addr)?;
         // Periodic wakeups so garbage gets collected even without traffic.
         socket.set_read_timeout(Some(GC_INTERVAL))?;
-        let translator = CmdTranslator::new(handle.sample_rate);
+        let translator = CmdTranslator::with_buses(
+            handle.sample_rate,
+            handle.audio_buses,
+            handle.control_buses().len(),
+        );
         Ok(Self {
             socket,
             info,
@@ -646,6 +650,7 @@ impl OscServer {
         }
         match msg.addr.as_str() {
             "/status" => self.send_status(from),
+            "/server_info" => self.send_server_info(from),
             "/notify" => self.handle_notify(&msg, from),
             // The translator covers the whole schedulable subset (and keeps
             // the M12 tree mirror in sync), so the immediate forms share one
@@ -703,6 +708,22 @@ impl OscServer {
             OscType::Double(self.info.actual_sample_rate),
         ];
         self.reply(to, "/status.reply", args);
+    }
+
+    /// Reports the server's static configuration so a client can size its own
+    /// bus/allocator state from the server instead of hardcoding it:
+    /// `/server_info.reply [audio_buses, control_buses, output_channels,
+    /// block_size, nominal_sr, actual_sr]`.
+    fn send_server_info(&mut self, to: ClientId) {
+        let args = vec![
+            OscType::Int(self.handle.audio_buses as i32),
+            OscType::Int(self.handle.control_buses().len() as i32),
+            OscType::Int(self.handle.channels as i32),
+            OscType::Int(crate::dsp::BLOCK_SIZE as i32),
+            OscType::Double(self.info.nominal_sample_rate),
+            OscType::Double(self.info.actual_sample_rate),
+        ];
+        self.reply(to, "/server_info.reply", args);
     }
 
     /// M8: the sample-clock query. Replies `/clock.reply` with the engine's

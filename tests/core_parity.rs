@@ -25,7 +25,7 @@ fn ctx<'a>(buses: &'a Buses, buffers: &'a [Option<Arc<Buffer>>]) -> ProcessCtx<'
 
 #[test]
 fn binary_ops_match_the_core_bit_for_bit() {
-    let buses = Buses::new(ControlBuses::new());
+    let buses = Buses::new(ControlBuses::new(1024), 128);
     let buffers: Vec<Option<Arc<Buffer>>> = vec![];
     let mut ctx = ctx(&buses, &buffers);
 
@@ -58,7 +58,7 @@ fn binary_ops_match_the_core_bit_for_bit() {
 /// in range and not a constant.
 #[test]
 fn white_noise_delegation_runs() {
-    let buses = Buses::new(ControlBuses::new());
+    let buses = Buses::new(ControlBuses::new(1024), 128);
     let buffers: Vec<Option<Arc<Buffer>>> = vec![];
     let mut ctx = ctx(&buses, &buffers);
 

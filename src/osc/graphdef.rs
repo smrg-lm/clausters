@@ -24,13 +24,13 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dsp::{NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
-
-/// Reserved private-bus ranges for GraphDef instances, at the top of the bus
-/// space so they never collide with client-allocated buses. Documented in
-/// `docs/schemas.md`.
-pub const GRAPH_AUDIO_BUS_BASE: usize = NUM_AUDIO_BUSES - 32; // 96..128
-pub const GRAPH_CONTROL_BUS_BASE: usize = NUM_CONTROL_BUSES - 128; // 896..1024
+/// Width of the reserved private-bus range for GraphDef instances, at the top
+/// of each bus space so it never collides with client-allocated buses. The
+/// base is `bus_count - reserved`, computed from the live counts in
+/// `CmdTranslator::new` (so it tracks `--audio-buses`/`--control-buses`).
+/// Documented in `docs/schemas.md`.
+pub const GRAPH_AUDIO_BUS_RESERVED: usize = 32; // top 32 audio buses
+pub const GRAPH_CONTROL_BUS_RESERVED: usize = 128; // top 128 control buses
 
 /// Rate of an internal GraphDef bus.
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Debug)]

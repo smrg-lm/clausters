@@ -52,6 +52,8 @@ pub fn start(
     workers: usize,
     ipc: Option<std::sync::Arc<crate::server::ipc::Segment>>,
     requested_sample_rate: Option<u32>,
+    audio_buses: usize,
+    control_buses: usize,
 ) -> Result<(AudioBackend, EngineHandle), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
     let device = host
@@ -79,8 +81,14 @@ pub fn start(
             sample_rate: rate,
             buffer_size: cpal::BufferSize::Default,
         };
-        let (engine, handle) =
-            engine_pair_full(rate as f32, channels as usize, workers, ipc.clone());
+        let (engine, handle) = engine_pair_full(
+            rate as f32,
+            channels as usize,
+            workers,
+            ipc.clone(),
+            audio_buses,
+            control_buses,
+        );
         let adapter = BlockAdapter::new(engine);
         let built = match format {
             cpal::SampleFormat::F32 => build_stream::<f32>(&device, cfg, adapter),
