@@ -370,6 +370,33 @@ La identidad bit a bit está clavada por `tests/parallel.rs` (en vivo, en
 NRT, y tras un `/n_set` que re-apunta un bus); la RT-safety del conductor
 por `tests/rt_safety.rs`. Detalle en `docs/parallel.md`.
 
+### Probar la configuración del servidor (`--sample-rate`, `--audio-buses`, `--control-buses`, `/server_info`)
+
+El servidor impone su sample rate (default 48000; con `0` sigue al device) y
+fija los conteos de buses al bootear. PipeWire honra el rate por aplicación,
+así que se puede pedir uno distinto al del device sin tocar el sistema:
+
+```sh
+cargo run --release -- --sample-rate 44100 --audio-buses 64 --control-buses 2048 &
+# el banner muestra "44100 Hz"; consultá la config con la query:
+./target/debug/examples/osc_ping info
+#   /server_info.reply [Int(64), Int(2048), Int(2), Int(64), Double(44100.0), Double(44100.0)]
+#   = [audio_buses, control_buses, channels, block_size, nominal_sr, actual_sr]
+```
+
+`nominal != actual` solo si el host no pudo honrar el rate (cae al device). El
+cliente Python define la config y la consulta: `ServerOptions(audio_buses=64,
+control_buses=2048).args()` da los flags de lanzamiento, y `Server.query_info()`
+lee `/server_info` de vuelta. El segmento `--shm` dimensiona su región de
+control buses según `--control-buses` (ABI v2; el array va al final, los rings
+quedan en offsets fijos):
+
+```sh
+cargo run --release -- --shm /dev/shm/clausters --control-buses 2048 &
+# ls -l muestra el tamaño = prefijo_fijo + 2048*4; el ShmClient lo mapea entero
+# y lee control_buses del header.
+```
+
 ### Probar la memoria acotada y la alineación (M10)
 
 Toda estructura pre-alocada tiene un comportamiento definido y no-fatal al

@@ -12,15 +12,13 @@ All three coexist: a `--shm` server still serves UDP; the embedded server keeps 
 
 ## The segment
 
-A single memory region (135 360 bytes, ABI v1) holding:
+A single memory region (ABI v2; 135 360 bytes with the default 1024 control buses, `fixed_prefix + control_buses × 4` in general) holding, in order:
 
-- **Header**: magic `"CLAU"`, **layout version** — checked on attach, a mismatch refuses to connect (the scsynth plugin-ABI lesson: every binary boundary is versioned) — and the device sample rate.
-- **Data plane**:
-  - the **sample clock**, mirrored by the audio thread every block: an M8 anchor read costs a memory load with zero transport jitter;
-  - the **1024 control buses** as raw `f32`-bit atomics. These are *the* control buses: the engine's `InCtl` reads these very words, so a client write is live on the next 64-sample block with no command, no round trip, no scheduling. (For sample-accurate changes, keep using a timed `/c_set` — the data plane trades precision timing for immediacy.)
+- **Header**: magic `"CLAU"`, **layout version** — checked on attach, a mismatch refuses to connect (the scsynth plugin-ABI lesson: every binary boundary is versioned) — the device sample rate, the sample clock, and the **control-bus count** (so a client maps the whole file and reads how many buses the server was launched with).
 - **Command plane**: two SPSC byte rings (64 KiB each) of length-prefixed OSC packets — client→server commands, server→client replies. Unlike UDP, a full ring gives **backpressure** (the push fails and you retry) instead of silently dropping packets. Ring contents are untrusted bytes: the server validates exactly as it does UDP datagrams, and garbage resyncs the ring instead of wedging it.
+- **Data plane** (trailing): the **control buses** as raw `f32`-bit atomics — `--control-buses` of them, a region whose size is the only thing that varies between segments, which is why it sits last (the header and rings keep fixed offsets). These are *the* control buses: the engine's `InCtl` reads these very words, so a client write is live on the next 64-sample block with no command, no round trip, no scheduling. (For sample-accurate changes, keep using a timed `/c_set` — the data plane trades precision timing for immediacy.) The sample clock in the header is the M8 anchor: a read costs a memory load with zero transport jitter.
 
-For two processes, put the segment on a memory filesystem (`/dev/shm/...`). v1 keeps one ring client per segment and the server polls the ring on a 2 ms tick instead of a cross-process semaphore — command latency is bounded by that tick; the data plane has no latency at all. (Semaphore wakeups, multiple ring clients and Windows named mappings are explicitly future work.)
+For two processes, put the segment on a memory filesystem (`/dev/shm/...`). The transport keeps one ring client per segment and the server polls the ring on a 2 ms tick instead of a cross-process semaphore — command latency is bounded by that tick; the data plane has no latency at all. (Semaphore wakeups, multiple ring clients and Windows named mappings are explicitly future work.)
 
 ## The embed C ABI
 

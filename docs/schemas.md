@@ -26,7 +26,7 @@ Both reply asynchronously: `/done` with the command (and the def name for `/d_fa
 /d_free name...                                          # SynthDef JSON only
 ```
 
-Engine facts that apply to every def: blocks of 64 samples; 128 audio buses (`0..channels` are the hardware outputs, bus 0 = left) and 1024 control buses; a pool of 1024 sample buffers filled by the `/b_*` commands; all signals are `f32` at the device sample rate.
+Engine facts that apply to every def: blocks of 64 samples; **by default** 128 audio buses (`0..channels` are the hardware outputs, bus 0 = left) and 1024 control buses; a pool of 1024 sample buffers filled by the `/b_*` commands; all signals are `f32` at the configured sample rate. The bus counts are set at boot by `--audio-buses` (≤128) and `--control-buses`, and the sample rate by `--sample-rate` (default 48000; PipeWire honors it per-application). A client reads the live configuration with **`/server_info`** → `/server_info.reply [audio_buses, control_buses, output_channels, block_size, nominal_sr, actual_sr]`, so it can size its own bus allocators from the server instead of assuming the defaults.
 
 ### Mapping controls to buses (`/n_map`, `/n_mapa`)
 
@@ -299,7 +299,7 @@ A **GraphDef** is a third kind of persistent def. Where a SynthDef/FaustDef stor
 ```
 
 - `members` — each references an existing SynthDef **or** FaustDef by `def` (resolved at instantiation, both kinds identically), with initial `controls`. A control **value** that is a number is a literal; a **string** names an internal bus to wire that control to (its bus-selecting control — `out`/`in` on a Faust def, or whatever control feeds an `Out`/`In` UGen). The reserved string `"OUT"` wires to hardware bus 0. A member with `"voice": true` is a **per-voice** member (see below); the default (`false`) is a **shared** member.
-- `buses` — internal buses, **private to each instance** (`rate` `"audio"` or `"control"`, `channels` default 1). They are allocated per instantiation from a reserved range at the top of the bus space — audio buses `96..128`, control buses `896..1024` — so they never collide with client-allocated buses (the same idea as the reserved MIDI/auto node-id ranges). Two instances of one GraphDef get disjoint buses.
+- `buses` — internal buses, **private to each instance** (`rate` `"audio"` or `"control"`, `channels` default 1). They are allocated per instantiation from a reserved range at the **top of the bus space** — the top 32 audio buses and top 128 control buses (so `96..128` and `896..1024` at the default counts, shifting with `--audio-buses`/`--control-buses`) — so they never collide with client-allocated buses (the same idea as the reserved MIDI/auto node-id ranges). Two instances of one GraphDef get disjoint buses.
 - `maps` (per member, optional) — binds a member control to an internal **control** bus via `/n_map`.
 - `surface` — the named ports. Each maps to a list of `{member, control}` targets, with optional `mul`/`add` linear scaling of the incoming value. One port may drive several inner controls, each scaled differently (e.g. a `freq` port playing a detuned pair). This is the difference from a bare group `/n_set`, which can only broadcast one value to controls that happen to share a name.
 - `defaults` — surface-port values applied at instantiation, overridable per instance.
