@@ -2,8 +2,11 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]] [--midi [name]]
+  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]] [--midi [name]] [--sample-rate <hz>]
                                                real-time server (OSC on UDP 57110)
+      --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
+                           device (PipeWire honors it per-app; other hosts fall
+                           back to the device rate if unsupported)
       --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
                            default port 57110)
       --midi [name]        open a virtual MIDI input port (RT only; default
@@ -103,6 +106,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut no_persist = false;
     let mut tcp_port: Option<u16> = None;
     let mut midi_port: Option<String> = None;
+    // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
+    // means "follow the device's default rate". `None` => follow the device.
+    let mut sample_rate: Option<u32> = Some(48_000);
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -145,6 +151,14 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 data_dir = Some(value.clone());
             }
             "--no-persist" => no_persist = true,
+            "--sample-rate" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--sample-rate needs a value\n{USAGE}"))?;
+                let hz: u32 = value.parse().map_err(|e| format!("--sample-rate: {e}"))?;
+                // 0 = follow the device default; otherwise impose the rate.
+                sample_rate = (hz != 0).then_some(hz);
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
@@ -153,11 +167,21 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         Some(path) => Some(Segment::create(std::path::Path::new(path))?),
         None => None,
     };
-    let (backend, handle) = clausters::server::backend::start(workers, segment.clone())?;
+    let (backend, handle) =
+        clausters::server::backend::start(workers, segment.clone(), sample_rate)?;
+    // Nominal = what we asked for; actual = what the device gave us. They differ
+    // only when the host could not honor the requested rate (see backend.rs).
+    let nominal = sample_rate.map_or(backend.sample_rate as f64, f64::from);
     let info = ServerInfo {
-        nominal_sample_rate: backend.sample_rate as f64,
+        nominal_sample_rate: nominal,
         actual_sample_rate: backend.sample_rate as f64,
     };
+    if nominal != backend.sample_rate as f64 {
+        eprintln!(
+            "requested {nominal} Hz but the device runs at {} Hz",
+            backend.sample_rate
+        );
+    }
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
     if !no_persist && let Some(dir) = resolve_data_dir(data_dir.as_deref()) {
         match DefStore::open(&dir) {

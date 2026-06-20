@@ -147,7 +147,9 @@ pub unsafe extern "C" fn clausters_open(
     use crate::osc::server::{OscServer, ServerInfo};
 
     let segment = Segment::in_memory();
-    let opened = crate::server::backend::start(workers as usize, Some(Arc::clone(&segment)))
+    // Embedded hosts follow the device's default rate (None); they can resample
+    // on their side if they need a specific rate.
+    let opened = crate::server::backend::start(workers as usize, Some(Arc::clone(&segment)), None)
         .map_err(|e| e.to_string())
         .and_then(|(backend, handle)| {
             let info = ServerInfo {

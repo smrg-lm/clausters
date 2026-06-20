@@ -8,7 +8,7 @@
 # restart. Needs `oscsend` (liblo-tools). No `faust` feature required.
 #
 #   cargo build --release
-#   examples/midi_standalone.sh
+#   examples/midi_standalone.sh [play-seconds]   # session-2 hold, default 0.5
 set -euo pipefail
 
 PORT=57110
@@ -66,7 +66,7 @@ echo "  (or wire it visually in qpwgraph)."
 echo "on a plain-ALSA build instead, route the native ALSA-seq port with"
 echo "aconnect (routing that ALSA port through PipeWire is what midi-jack fixes)."
 echo "...then each note spawns a voice. CC/pitch-bend map via /midi_map."
-sleep 0.5
+sleep "${1:-0.5}"
 oscsend localhost $PORT /quit
 wait $PID
 

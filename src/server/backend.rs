@@ -51,34 +51,62 @@ impl BlockAdapter {
 pub fn start(
     workers: usize,
     ipc: Option<std::sync::Arc<crate::server::ipc::Segment>>,
+    requested_sample_rate: Option<u32>,
 ) -> Result<(AudioBackend, EngineHandle), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
     let device = host
         .default_output_device()
         .ok_or("no output device available")?;
-    let config = device.default_output_config()?;
+    let default = device.default_output_config()?;
+    let format = default.sample_format();
+    let channels = default.channels();
+    let device_rate = default.sample_rate();
 
-    let sample_rate = config.sample_rate() as f32;
-    let channels = config.channels() as usize;
-    let (engine, handle) = engine_pair_full(sample_rate, channels, workers, ipc);
-    let adapter = BlockAdapter::new(engine);
-
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build_stream::<f32>(&device, config.into(), adapter)?,
-        cpal::SampleFormat::I16 => build_stream::<i16>(&device, config.into(), adapter)?,
-        cpal::SampleFormat::U16 => build_stream::<u16>(&device, config.into(), adapter)?,
-        fmt => return Err(format!("unsupported sample format: {fmt}").into()),
+    // Impose the requested rate by building the stream at it directly: PipeWire
+    // honors arbitrary per-application rates (resampling to the graph rate
+    // transparently), so we do not gate on `supported_output_configs`, which
+    // under-reports there. Hosts that reject the rate (CoreAudio, WASAPI, plain
+    // ALSA) make `build_*_stream` fail, and we fall back to the device's own
+    // rate — the gap then shows up as `nominal != actual` in `/status.reply`.
+    let rates = match requested_sample_rate {
+        Some(hz) if hz != device_rate => [Some(hz), Some(device_rate)],
+        _ => [Some(device_rate), None],
     };
-    stream.play()?;
-
-    Ok((
-        AudioBackend {
-            sample_rate,
+    let mut last_err: Option<cpal::Error> = None;
+    for rate in rates.into_iter().flatten() {
+        let cfg = cpal::StreamConfig {
             channels,
-            _stream: stream,
-        },
-        handle,
-    ))
+            sample_rate: rate,
+            buffer_size: cpal::BufferSize::Default,
+        };
+        let (engine, handle) =
+            engine_pair_full(rate as f32, channels as usize, workers, ipc.clone());
+        let adapter = BlockAdapter::new(engine);
+        let built = match format {
+            cpal::SampleFormat::F32 => build_stream::<f32>(&device, cfg, adapter),
+            cpal::SampleFormat::I16 => build_stream::<i16>(&device, cfg, adapter),
+            cpal::SampleFormat::U16 => build_stream::<u16>(&device, cfg, adapter),
+            fmt => return Err(format!("unsupported sample format: {fmt}").into()),
+        };
+        match built {
+            Ok(stream) => {
+                stream.play()?;
+                return Ok((
+                    AudioBackend {
+                        sample_rate: rate as f32,
+                        channels: channels as usize,
+                        _stream: stream,
+                    },
+                    handle,
+                ));
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| "could not open an output stream".to_string())
+        .into())
 }
 
 fn build_stream<T>(
