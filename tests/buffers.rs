@@ -19,7 +19,12 @@ const NRT_DEADLINE: Duration = Duration::from_secs(10);
 
 /// A throwaway path in the test temp dir.
 fn tmp_wav(name: &str) -> String {
-    let path = std::env::temp_dir().join(format!("clausters_{name}_{}.wav", std::process::id()));
+    tmp_path(name, "wav")
+}
+
+/// Same, with an arbitrary extension (used to force the non-WAV read path).
+fn tmp_path(name: &str, ext: &str) -> String {
+    let path = std::env::temp_dir().join(format!("clausters_{name}_{}.{ext}", std::process::id()));
     path.to_str().unwrap().to_string()
 }
 
@@ -417,6 +422,51 @@ fn int16_write_quantizes_to_the_expected_grid() {
         0.0,
     ];
     assert_eq!(read.data(), &expected[..]);
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
+fn non_wav_extensions_decode_through_symphonia() {
+    // Lossless float PCM written to a `.dat` file: `read_audio` routes it
+    // through symphonia (not hound), which detects the container by content,
+    // not the extension. Exercises the decode + interleave + slice path that
+    // every compressed format (FLAC, OGG, MP3, ...) shares.
+    let path = tmp_path("symphonia", "dat");
+    let frames = 200;
+    let data: Vec<f32> = (0..frames * 2)
+        .map(|i| (i as f32 * 0.013).sin() * 0.5)
+        .collect();
+    let original = Arc::new(Buffer::new(data, 2, frames, 44_100.0));
+    run_nrt(NrtJob::Write {
+        path: path.clone(),
+        sample_format: "float".into(),
+        buf_start: 0,
+        num_frames: -1,
+        buffer: Arc::clone(&original),
+    })
+    .unwrap();
+
+    let read = installed(run_nrt(NrtJob::AllocRead {
+        path: path.clone(),
+        file_start: 0,
+        num_frames: 0,
+    }));
+    assert_eq!((read.frames(), read.channels()), (frames, 2));
+    assert_eq!(read.sample_rate(), 44_100.0);
+    assert_eq!(
+        read.data(),
+        original.data(),
+        "float PCM via symphonia must be lossless"
+    );
+
+    // The slice window (file_start / num_frames) applies on this path too.
+    let sliced = installed(run_nrt(NrtJob::AllocRead {
+        path: path.clone(),
+        file_start: 10,
+        num_frames: 5,
+    }));
+    assert_eq!(sliced.frames(), 5);
+    assert_eq!(sliced.data(), &original.data()[10 * 2..15 * 2]);
     std::fs::remove_file(&path).ok();
 }
 

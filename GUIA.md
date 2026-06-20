@@ -41,15 +41,17 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 111 tests, no necesita placa de audio
+cargo test                       # 179 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
 (`tests/osc.rs`), el motor offline con asserts de señal — frecuencia por
 cruces por cero, RMS — (`tests/engine.rs`), el formato de SynthDefs
 (`tests/synthdef.rs`), los buffers: hilo NRT, round-trips de WAV con
-`hound`, `PlayBuf`/`BufRd` con igualdad exacta muestra a muestra y el ciclo
-`/b_*` por OSC (`tests/buffers.rs`), el scheduling sample-accurate de
+`hound`, lectura multi-formato vía `symphonia` (detecta el contenedor por
+contenido, no por extensión), `PlayBuf`/`BufRd` con igualdad exacta muestra
+a muestra y el ciclo `/b_*` por OSC (`tests/buffers.rs`), el scheduling
+sample-accurate de
 bundles con timetag — cortes exactos a mitad de bloque, orden estable,
 bundles tardíos, conversión NTP→samples por OSC — (`tests/scheduling.rs`),
 el modo NRT con sus tests dorados — render offline comparado por sample
@@ -110,6 +112,22 @@ oscsend localhost 57110 /b_query i 10          # responde /b_info: frames, canal
 oscsend localhost 57110 /b_write isssii 10 /tmp/copia.wav wav float -1 0
 oscsend localhost 57110 /b_zero i 10
 oscsend localhost 57110 /b_free i 10
+```
+
+`/b_allocRead` y `/b_read` aceptan, además de WAV, formatos comprimidos y
+otros contenedores (FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF, CAF): el
+WAV pasa por `hound` (exacto, soporta int24) y el resto se decodifica con
+`symphonia`. La detección es por **contenido**, no por extensión. `/b_write`
+sigue escribiendo solo WAV. Para probarlo con archivos reales, generá unos
+con `ffmpeg` y cargalos:
+
+```sh
+ffmpeg -f lavfi -i "sine=frequency=440:duration=1:sample_rate=44100" -ac 2 /tmp/t.wav
+ffmpeg -i /tmp/t.wav /tmp/t.flac        # tambien /tmp/t.ogg, /tmp/t.mp3
+(cargo run --release & PID=$!; sleep 1.5; \
+ oscsend localhost 57110 /b_allocRead is 10 /tmp/t.flac; \
+ oscsend localhost 57110 /b_query i 10; sleep 0.5; kill $PID)
+# /b_info debe reportar 44100 frames, 2 canales, sr 44100 (igual que el WAV)
 ```
 
 Para *escuchar* un buffer hace falta un def con `PlayBuf` (4 entradas:

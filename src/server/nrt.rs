@@ -1,8 +1,9 @@
 //! NRT (non-real-time) thread: disk I/O and buffer building (M5).
 //!
 //! Every `/b_*` command that touches sample memory runs here, off both the
-//! audio and the network threads: allocation, WAV reading/writing (hound)
-//! and zeroing. The network thread submits [`NrtRequest`]s and drains
+//! audio and the network threads: allocation, file reading (WAV via hound,
+//! other formats via symphonia), WAV writing (hound) and zeroing. The
+//! network thread submits [`NrtRequest`]s and drains
 //! [`NrtResult`]s on its own schedule, installs the produced buffer in the
 //! engine via `Cmd::SetBuffer`, and sends the async `/done`/`/fail` reply —
 //! same pattern as the Faust compiler thread.
@@ -171,7 +172,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             file_start,
             num_frames,
         } => {
-            let buffer = read_wav(&path, file_start, num_frames)?;
+            let buffer = read_audio(&path, file_start, num_frames)?;
             Ok(NrtAction::Install(Arc::new(buffer)))
         }
         NrtJob::Read {
@@ -181,7 +182,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             buf_start,
             current,
         } => {
-            let file = read_wav(&path, file_start, num_frames)?;
+            let file = read_audio(&path, file_start, num_frames)?;
             if file.channels() != current.channels() {
                 return Err(format!(
                     "channel count mismatch: buffer has {}, {path} has {}",
@@ -215,6 +216,120 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
         }
         NrtJob::Free => Ok(NrtAction::Clear),
     }
+}
+
+/// Reads an audio-file slice into an interleaved buffer. WAV goes through
+/// hound (exact, int24-aware, cheap frame seek); every other extension decodes
+/// through symphonia (FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF, ...). Both
+/// keep the file's own sample rate — the engine never resamples; clients
+/// compensate via `PlayBuf`'s rate.
+fn read_audio(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
+    let is_wav = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("wav") || e.eq_ignore_ascii_case("wave"));
+    if is_wav {
+        read_wav(path, file_start, num_frames)
+    } else {
+        read_symphonia(path, file_start, num_frames)
+    }
+}
+
+/// Decodes a compressed/other-format file fully into an interleaved f32 buffer,
+/// then slices `[file_start, file_start + frames)`. Compressed formats have no
+/// cheap exact frame seek, so we decode the whole file and slice afterwards;
+/// this runs on the NRT thread, where allocation is fine.
+fn read_symphonia(path: &str, file_start: usize, num_frames: i64) -> Result<Buffer, String> {
+    use symphonia::core::codecs::CodecParameters;
+    use symphonia::core::codecs::audio::AudioDecoderOptions;
+    use symphonia::core::errors::Error as SymError;
+    use symphonia::core::formats::probe::Hint;
+    use symphonia::core::formats::{FormatOptions, TrackType};
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+
+    let err = |e: String| format!("{path}: {e}");
+    let file = std::fs::File::open(path).map_err(|e| err(e.to_string()))?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
+        hint.with_extension(ext);
+    }
+    let mut format = symphonia::default::get_probe()
+        .probe(
+            &hint,
+            stream,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| err(e.to_string()))?;
+
+    // Pick the default audio track and build its decoder. This borrow of
+    // `format` ends before the decode loop, which needs `format` mutably.
+    let (track_id, mut channels, mut sample_rate, mut decoder) = {
+        let track = format
+            .default_track(TrackType::Audio)
+            .ok_or_else(|| err("no audio track".into()))?;
+        let params = match track.codec_params.as_ref() {
+            Some(CodecParameters::Audio(params)) => params,
+            _ => return Err(err("default track is not audio".into())),
+        };
+        let decoder = symphonia::default::get_codecs()
+            .make_audio_decoder(params, &AudioDecoderOptions::default())
+            .map_err(|e| err(e.to_string()))?;
+        (
+            track.id,
+            params.channels.as_ref().map_or(0, |c| c.count()),
+            params.sample_rate.unwrap_or(0),
+            decoder,
+        )
+    };
+
+    let mut data: Vec<f32> = Vec::new();
+    let mut packet_buf: Vec<f32> = Vec::new();
+    loop {
+        // `next_packet` returns `Ok(None)` at clean end of stream.
+        let packet = match format.next_packet() {
+            Ok(Some(packet)) => packet,
+            Ok(None) => break,
+            Err(e) => return Err(err(e.to_string())),
+        };
+        if packet.track_id != track_id {
+            continue;
+        }
+        match decoder.decode(&packet) {
+            Ok(decoded) => {
+                let spec = decoded.spec();
+                if channels == 0 {
+                    channels = spec.channels().count();
+                }
+                if sample_rate == 0 {
+                    sample_rate = spec.rate();
+                }
+                decoded.copy_to_vec_interleaved(&mut packet_buf);
+                data.extend_from_slice(&packet_buf);
+            }
+            // A recoverable decode error skips one packet; keep going.
+            Err(SymError::DecodeError(_)) => continue,
+            Err(e) => return Err(err(e.to_string())),
+        }
+    }
+    if channels == 0 {
+        return Err(err("could not determine channel count".into()));
+    }
+
+    let total = data.len() / channels;
+    let start = file_start.min(total);
+    let frames = if num_frames <= 0 {
+        total - start
+    } else {
+        (num_frames as usize).min(total - start)
+    };
+    let slice = data[start * channels..(start + frames) * channels].to_vec();
+    Ok(Buffer::new(slice, channels, frames, sample_rate as f64))
 }
 
 /// Reads a WAV slice into an interleaved buffer. Integer samples are scaled

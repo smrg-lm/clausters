@@ -2421,3 +2421,29 @@ new audio-thread state.
 Server-side counterpart of the client OSCFunc/MIDIFunc (C13): the server can be
 played directly by MIDI (M17/M19) or by a client that emits OSC; both coexist.
 Core green with and without `faust`; `cargo fmt` clean. **M19 done.**
+
+## Multi-format buffer reading (2026-06-20)
+
+`/b_read` and `/b_allocRead` now accept compressed and other container formats,
+not just WAV. Reading dispatches by **content**, not extension:
+
+- WAV stays on hound (`read_wav`): exact, int24-aware, cheap frame seek, and the
+  format `/b_write` emits.
+- Everything else decodes through **symphonia** 0.6 (`read_symphonia`): FLAC,
+  OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF, CAF. Pure-Rust, decode-only. Compressed
+  formats have no cheap exact frame seek, so it decodes the whole file into an
+  interleaved f32 buffer and then applies the `fileStart`/`numFrames` slice. This
+  runs on the NRT thread, where allocation is fine; the buffer keeps the file's
+  own sample rate (the engine never resamples).
+
+`read_audio` is the new dispatcher both jobs call. No OSC, engine or RT-thread
+changes — buffers are still immutable `Arc<Buffer>`s installed via `SetBuffer`.
+
+- **Tests**: `tests/buffers.rs` (+1: `non_wav_extensions_decode_through_symphonia`
+  writes lossless float PCM to a `.dat` path and reads it back through the
+  symphonia branch, checking the full-read and the sliced read). Verified
+  end-to-end out of band against real `ffmpeg`-generated FLAC/OGG/MP3 (FLAC
+  bit-identical to the WAV; OGG/MP3 RMS within tolerance).
+- **Docs**: `schemas.md` (the `/b_*` format note), `architecture.md` (NRT
+  thread), `GUIA.md` (manual ffmpeg-based step). Dependency: `symphonia` added to
+  `Cargo.toml` (default-features off, explicit codec/container feature list).

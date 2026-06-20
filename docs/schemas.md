@@ -126,7 +126,7 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 
 ```text
 /b_alloc     bufnum frames [channels=1]                  # zeroed buffer
-/b_allocRead bufnum path [fileStart=0] [numFrames=0=all] # shape from the WAV
+/b_allocRead bufnum path [fileStart=0] [numFrames=0=all] # shape from the file
 /b_read      bufnum path [fileStart=0] [numFrames=-1=all] [bufStart=0]
 /b_write     bufnum path [header="wav"] [format="int16"|"int24"|"float"] [numFrames=-1] [startFrame=0]
 /b_zero      bufnum
@@ -134,7 +134,7 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /b_query     bufnum...    →  /b_info  bufnum frames channels sampleRate ...
 ```
 
-All except `/b_query` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. WAV is the only file format in v1, and `leaveOpen` (streaming) is not supported.
+All except `/b_query` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
 
 ## Faust defs (`/d_faust`)
 

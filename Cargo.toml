@@ -53,7 +53,12 @@ pipewire = ["realtime", "cpal/pipewire"]
 # client binding use, so client-side results match the server by construction.
 clausters-core = { path = "crates/clausters-core" }
 cpal = { version = "0.18", optional = true }
+# WAV read/write: exact, supports int24, and what `/b_write` emits. Kept as the
+# canonical WAV path; compressed/other formats decode through symphonia below.
 hound = "3"
+# Multi-format audio decoding for `/b_read`/`/b_allocRead` (FLAC, OGG/Vorbis,
+# MP3, MP4/AAC, ALAC, AIFF, ...). Pure Rust, decode-only; WAV stays on hound.
+symphonia = { version = "0.6", default-features = false, features = ["flac", "ogg", "vorbis", "mpa", "isomp4", "aac", "alac", "adpcm", "pcm", "wav", "aiff", "caf"] }
 # M17: live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
 # Rust over libasound (already pulled in by cpal); creates virtual ports.
 midir = { version = "0.11", optional = true }
