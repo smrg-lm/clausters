@@ -2281,6 +2281,10 @@ interface (the RT/NRT seam, mirroring the OSC `Server`).
   (`write(path, ppq, fmt="smf"|"clip")`); **`MidiRtInterface`** (real backend,
   replacing the stub) opens the port via `_midi.py` and `emit`s each message at
   its beat — note-on now, note-off scheduled with `clock.sched_abs`.
+  `MidiRtInterface.close()` sends an **all-notes-off (CC 123) on all 16
+  channels** (the standard MIDI panic) before dropping the port: stopping the
+  clock leaves note-offs scheduled past the stop unsent, so without it a partial
+  run would hang the last note on the destination.
   `_midi.py` gains `write_clip` and `output_open`/`_send`/`_close` (live symbols
   guarded: a clear error if the cdylib lacks `--features live`).
 - **Tests/examples**: `tests/test_midi.py` adds the clip file and a live-output

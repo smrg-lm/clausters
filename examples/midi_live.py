@@ -10,12 +10,22 @@ to this server's own MIDI input (`clausters --midi`) with `aconnect`.
 Needs the live cdylib:
 
     cargo build --release -p clausters-midi --features live
+
+The script **creates a virtual ALSA MIDI output port** (named `clausters` by
+default, or the `[port-name]` argument) and plays into it:
+
     python3 examples/midi_live.py [port-name] [seconds]
 
-Then, in another terminal, route it somewhere, e.g. into the server:
+That port is just a loose cable until you wire it to a destination. With the
+script still running, in another terminal start something that has a MIDI input
+-- e.g. this server's own MIDI input port `clausters-in`:
 
-    clausters --midi clausters-in
-    aconnect <this port> clausters-in        # see `aconnect -l`
+    cargo run -- --midi clausters-in
+
+then connect the two ALSA ports with `aconnect` (list all ports with
+`aconnect -l`):
+
+    aconnect clausters clausters-in
 """
 
 import os

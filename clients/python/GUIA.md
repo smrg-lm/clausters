@@ -358,16 +358,26 @@ de 7. El crate lo arma con los mensajes UMP de `midi2` (el `midi2-clip` pautado
 resultó un stub `todo!()`).
 
 **Salida en vivo (sub-parte 2):** con el cdylib construido con `--features live`,
-`MidiServer(interface=MidiRtInterface("clausters"))` abre un **puerto virtual de
-salida** (ALSA, vía `midir`) y emite cada nota en tiempo real (note-on en su
-beat, note-off programado con `clock.sched_abs`). Se enruta con `aconnect` a un
-synth o a la entrada MIDI del propio servidor (`clausters --midi`):
+`MidiServer(interface=MidiRtInterface("clausters"))` **crea un puerto virtual de
+salida ALSA** (vía `midir`) y emite cada nota en tiempo real (note-on en su beat,
+note-off programado con `clock.sched_abs`). Ese puerto es un cable suelto hasta
+que lo enrutás con `aconnect` a un destino con entrada MIDI (un synth, un DAW, o
+la entrada MIDI del propio servidor). Orden: primero corré el script (crea el
+puerto), después arrancá el destino, y al final conectalos:
 
 ```sh
 cargo build --release -p clausters-midi --features live
-python3 examples/midi_live.py clausters 4      # toca 4 s por el puerto "clausters"
-# en otra terminal: aconnect <puerto> <destino>   (ver `aconnect -l`)
+python3 examples/midi_live.py clausters 4         # crea el puerto "clausters" y toca 4 s
+# en otra terminal, el destino (la entrada MIDI del servidor):
+cargo run -- --midi clausters-in
+# y los unís (ver todos los puertos con `aconnect -l`):
+aconnect clausters clausters-in
 ```
+
+Al cerrar el puerto, `MidiRtInterface.close()` envía un **all-notes-off (CC 123)
+en los 16 canales** (el "panic" MIDI estándar): si el reloj se detiene a mitad
+del patrón, los note-off que quedaron agendados más allá del corte no se emiten,
+así que sin esto la última nota quedaría colgada sonando en el destino.
 
 El loop completo cliente→servidor (salida del cliente → `aconnect` → `--midi`
 del servidor → crea synths) está verificado en `LOG.md` (M17 sub-parte 2).

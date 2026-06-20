@@ -92,6 +92,12 @@ class MidiRtInterface:
 
     def close(self):
         if self._handle is not None:
+            # Stopping the clock leaves any note-off scheduled past the stop
+            # beat unsent, which would hang notes on the destination. Send an
+            # "all notes off" (CC 123) on every channel before dropping the
+            # port -- the standard MIDI panic, so a partial run ends silent.
+            for ch in range(16):
+                self._send(bytes((0xB0 | ch, 0x7B, 0)))
             self._midi.output_close(self._handle)
             self._handle = None
 
