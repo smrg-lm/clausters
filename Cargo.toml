@@ -63,6 +63,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Content checksum for the on-disk def cache (pure Rust, no C deps).
 sha2 = "0.10"
+# Leveled, target-filtered logging. The audio thread never logs (it reports via
+# FIFOs to the network thread); the subscriber is installed only by the binary,
+# so library/embed users keep their own. `env-filter` gives RUST_LOG + the
+# runtime-reloadable filter the `/verbosity` OSC command swaps.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [target.'cfg(unix)'.dependencies]
 # Only for mmap-ing the M14 shared-memory segment (already in the tree via

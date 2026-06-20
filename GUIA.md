@@ -101,8 +101,8 @@ python3 examples/json_client.py buffer
 ```
 
 A mano con `oscsend` (los `/b_*` son asíncronos: responden `/done` o
-`/fail`, visibles con `/dumpOSC` en la consola del servidor o desde el
-cliente Python):
+`/fail` al cliente; el tráfico OSC también se puede ver en el log del
+servidor activando `/dumpOSC` o con `RUST_LOG=clausters::osc=trace`):
 
 ```sh
 oscsend localhost 57110 /b_allocRead is 10 /ruta/a/un.wav
@@ -532,8 +532,11 @@ Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
 para ver replies usar `osc_ping`):
 
 ```sh
-# Eco de todo lo que llega, en la consola del servidor
+# Eco del trafico OSC en el LOG del servidor (target clausters::osc en trace).
+# Equivale a arrancar con RUST_LOG=clausters::osc=trace; /verbosity ajusta el
+# nivel general en vivo (entero -1..3 o un directivo EnvFilter).
 oscsend localhost 57110 /dumpOSC i 1
+oscsend localhost 57110 /verbosity i 2          # debug en vivo (o "info", etc.)
 
 # Un synth "default" dentro de un grupo, y orden de ejecución
 oscsend localhost 57110 /g_new iii 1 1 0        # grupo 1 al final del root
@@ -550,7 +553,7 @@ cargo run --example osc_ping -- status          # y /c_get vía tests
 ```
 
 Protocolo implementado hasta M6: `/status`, `/quit`, `/notify`, `/dumpOSC`,
-`/s_new` (add actions 0–4), `/n_free`, `/n_set`, `/n_map`, `/n_mapa`,
+`/verbosity`, `/s_new` (add actions 0–4), `/n_free`, `/n_set`, `/n_map`, `/n_mapa`,
 `/n_before`, `/n_after`,
 `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`,
 `/d_free`, los buffers `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`,
@@ -666,8 +669,8 @@ python3 examples/json_client.py quit    # apaga el servidor al terminar
 
 **Errores legibles**: un def roto responde `/fail` con el mensaje del
 compilador Faust verbatim, o con la ruta del nodo JSON inválido
-(p. ej. `at $.in[0].op: unknown op "zzz"`). Se ve con `/dumpOSC` o desde
-los tests.
+(p. ej. `at $.in[0].op: unknown op "zzz"`). El `/fail` llega al cliente
+(`osc_ping`/cliente Python) y desde los tests.
 
 **Interop**: synths UGen y Faust conviven en el mismo árbol y mezclan en
 los mismos buses — sonar `beep` (UGen) y `fsine` (Faust) a la vez.

@@ -27,6 +27,8 @@ How Clausters is built, where everything lives, and the invariants a change must
 
 The realtime backend (cpal) sits behind the `realtime` feature (on by default); the engine itself knows nothing about cpal, which is what makes the offline mode and the integration tests possible.
 
+**Logging** (`src/logging.rs`) uses `tracing`. The **binary** installs the subscriber (`logging::init`, stderr, level from `-v`/`-vv`/`-q` or `RUST_LOG`); the library and embed users do not, so the macros are no-ops for them. The filter is a runtime-reloadable `EnvFilter`, so the OSC commands `/verbosity` (set the level/directive) and `/dumpOSC` (overlay `clausters::osc=trace`) let a *client* retune the server's logs live. The audio thread never calls a `tracing` macro: every condition it detects (a rejected command, a dropped bundle) leaves through the garbage FIFO and is logged by the network thread, so logging stays clear of the real-time path.
+
 ## Module map
 
 | Path | Contents |
@@ -37,6 +39,7 @@ The realtime backend (cpal) sits behind the `realtime` feature (on by default); 
 | `src/server/workers.rs` | M13 worker pool: stage publish/steal/wait protocol for parallel groups |
 | `src/server/ipc.rs` | M14: the versioned shared segment — data plane (clock, control buses) + OSC byte rings (`--shm` and embed transports) |
 | `src/embed.rs` | M14: the embed C ABI (feature `embed`, exported by the cdylib) |
+| `src/logging.rs` | `tracing` setup: `init` (binary-only subscriber, stderr), runtime-reloadable filter behind `/verbosity` and `/dumpOSC` |
 | `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
 | `src/node/mod.rs` | `NodeTree` (fixed slab), `SynthNode` trait, groups, add actions, moves |
 | `src/dsp/mod.rs` | `UGen` trait, `ProcessCtx`, buses, the cache-line-aligned `Block` (M10), block/bus-count constants |

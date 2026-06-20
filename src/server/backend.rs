@@ -135,7 +135,7 @@ where
                 *s = T::from_sample(adapter.next_sample());
             }
         },
-        |err| eprintln!("stream error: {err}"),
+        |err| tracing::error!("stream error: {err}"),
         None,
     )
 }

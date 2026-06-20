@@ -101,7 +101,7 @@ impl TcpHub {
         if let Some(stream) = self.conns.get(&id)
             && let Err(e) = write_frame(stream, bytes)
         {
-            eprintln!("failed to send reply to tcp client {id}: {e}");
+            tracing::warn!("failed to send reply to tcp client {id}: {e}");
         }
     }
 }

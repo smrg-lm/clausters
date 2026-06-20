@@ -23,23 +23,43 @@ usage:
       --data-dir <dir>     where defs are persisted/reloaded (RT only;
                            default $CLAUSTERS_DATA_DIR or the XDG data dir)
       --no-persist         disable def persistence for this run (RT only)
+  -v, -vv, -vvv            log verbosity: warn (default) -> info -> debug ->
+                           trace; -q for errors only. RUST_LOG overrides it
+                           (e.g. RUST_LOG=clausters::osc=trace); a client can
+                           retune it live with /verbosity and /dumpOSC. Logs go
+                           to stderr.
 
 A score is the scsynth binary format: length-prefixed OSC bundles whose
 timetags count seconds from the start; the render ends at the last bundle.";
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Verbosity flags are consumed here (anywhere on the line) and removed
+    // before dispatch, so the subcommand parsers never see them. `RUST_LOG`
+    // overrides the level; the `/verbosity` OSC command retunes it live.
+    let mut verbosity: i8 = 0;
+    let mut args: Vec<String> = Vec::new();
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "-v" | "--verbose" => verbosity += 1,
+            "-vv" => verbosity += 2,
+            "-vvv" => verbosity += 3,
+            "-q" | "--quiet" => verbosity -= 1,
+            _ => args.push(arg),
+        }
+    }
+    clausters::logging::init(verbosity);
+
     match args.first().map(String::as_str) {
         Some("--nrt") => {
             if let Err(e) = nrt_main(&args[1..]) {
-                eprintln!("error: {e}");
+                tracing::error!("{e}");
                 std::process::exit(1);
             }
         }
         Some("--help" | "-h") => println!("{USAGE}"),
         _ => {
             if let Err(e) = realtime_main(&args) {
-                eprintln!("error: {e}");
+                tracing::error!("{e}");
                 std::process::exit(1);
             }
         }
@@ -202,7 +222,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         actual_sample_rate: backend.sample_rate as f64,
     };
     if nominal != backend.sample_rate as f64 {
-        eprintln!(
+        tracing::warn!(
             "requested {nominal} Hz but the device runs at {} Hz",
             backend.sample_rate
         );
@@ -212,9 +232,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         match DefStore::open(&dir) {
             Ok(store) => {
                 osc.attach_store(store);
-                println!("persisting defs in {}", dir.display());
+                tracing::info!("persisting defs in {}", dir.display());
             }
-            Err(e) => eprintln!(
+            Err(e) => tracing::warn!(
                 "def persistence disabled: cannot open {}: {e}",
                 dir.display()
             ),
@@ -222,7 +242,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(segment) = segment {
         osc.attach_ipc(IpcPeer::new(segment, Role::Server))?;
-        println!(
+        tracing::info!(
             "shared segment at {} (ABI v{})",
             shm_path.as_deref().unwrap_or(""),
             clausters::server::ipc::ABI_VERSION
@@ -230,16 +250,16 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(port) = tcp_port {
         let bound = osc.listen_tcp(("0.0.0.0", port))?;
-        println!("OSC on TCP {bound} (length-prefixed)");
+        tracing::info!("OSC on TCP {bound} (length-prefixed)");
     }
     if let Some(name) = &midi_port {
         #[cfg(feature = "midi")]
         {
             osc.listen_midi(name)?;
             #[cfg(feature = "midi-jack")]
-            println!("MIDI input on virtual JACK port \"{name}\" (connect with qpwgraph)");
+            tracing::info!("MIDI input on virtual JACK port \"{name}\" (connect with qpwgraph)");
             #[cfg(not(feature = "midi-jack"))]
-            println!("MIDI input on virtual ALSA port \"{name}\" (connect with aconnect)");
+            tracing::info!("MIDI input on virtual ALSA port \"{name}\" (connect with aconnect)");
         }
         #[cfg(not(feature = "midi"))]
         return Err("built without the `midi` feature: rebuild with --features midi".into());
@@ -254,7 +274,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // The OSC server runs on the main thread; the audio runs in cpal's
     // callback thread until `backend` is dropped.
     osc.run()?;
-    println!("received /quit, shutting down");
+    tracing::info!("received /quit, shutting down");
     Ok(())
 }
 

@@ -626,7 +626,9 @@ impl EngineHandle {
         let mut n = 0;
         while let Some(g) = self.pop_garbage() {
             if let Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } = &g {
-                eprintln!("engine rejected node {id} (duplicate ID, bad target or full table)");
+                tracing::warn!(
+                    "engine rejected node {id} (duplicate ID, bad target or full table)"
+                );
             }
             drop(g);
             n += 1;

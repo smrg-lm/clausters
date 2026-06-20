@@ -154,10 +154,10 @@ pub fn persist(factory: &FaustFactory, name: &str, payload: &CompilePayload, dir
     match serde_json::to_vec_pretty(&record) {
         Ok(bytes) => {
             if let Err(e) = atomic_write(&record_path(dir, name), &bytes) {
-                eprintln!("faust cache: could not write record for {name}: {e}");
+                tracing::warn!("faust cache: could not write record for {name}: {e}");
             }
         }
-        Err(e) => eprintln!("faust cache: could not serialize record for {name}: {e}"),
+        Err(e) => tracing::warn!("faust cache: could not serialize record for {name}: {e}"),
     }
 }
 

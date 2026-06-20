@@ -1,5 +1,5 @@
 //! UDP OSC server implementing the M5 subset of the scsynth protocol:
-//! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/s_new` (add actions 0-4),
+//! `/status`, `/quit`, `/notify`, `/dumpOSC`, `/verbosity`, `/s_new` (add actions 0-4),
 //! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
 //! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; the buffer
 //! commands `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`,
@@ -26,6 +26,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
+use tracing::{error, warn};
 
 use crate::dsp::buffer::{BufferPool, empty_pool};
 #[cfg(feature = "faust")]
@@ -64,7 +65,6 @@ pub struct OscServer {
     /// Def tables, node→def mirror and message→command translation, shared
     /// with the NRT renderer (see [`crate::osc::translate`]).
     translator: CmdTranslator,
-    dump_osc: bool,
     /// Network-side mirror of the engine's buffer pool, updated when NRT
     /// results are installed. Serves `/b_query` and gives `/b_read`,
     /// `/b_write` and `/b_zero` the current contents/shape.
@@ -128,7 +128,6 @@ impl OscServer {
             info,
             handle,
             translator,
-            dump_osc: false,
             buffers: empty_pool(),
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
@@ -156,7 +155,7 @@ impl OscServer {
     pub fn attach_store(&mut self, store: DefStore) {
         for spec in store.load_synthdef_specs() {
             if let Err(e) = self.translator.d_recv(&[OscType::Blob(spec)]) {
-                eprintln!("persisted SynthDef failed to load: {e}");
+                warn!("persisted SynthDef failed to load: {e}");
             }
         }
         #[cfg(feature = "faust")]
@@ -171,7 +170,7 @@ impl OscServer {
                 })),
             };
             if self.faust_compiler.submit(request).is_err() {
-                eprintln!("compiler thread down: cannot reload persisted Faust defs");
+                warn!("compiler thread down: cannot reload persisted Faust defs");
                 break;
             }
             self.faust_submitted += 1;
@@ -181,7 +180,7 @@ impl OscServer {
         // missing member only fails later at /graph_new (M18).
         for spec in store.load_graphdef_specs() {
             if let Err(e) = self.translator.d_graph(&[OscType::Blob(spec)]) {
-                eprintln!("persisted GraphDef failed to load: {e}");
+                warn!("persisted GraphDef failed to load: {e}");
             }
         }
         // M19 boot order: defs -> graphdefs -> bindings -> boot preset, so a
@@ -191,7 +190,7 @@ impl OscServer {
             let mut cmds = Vec::new();
             match self.translator.restore_binding(pb, &mut cmds) {
                 Ok(()) => self.ship_boot_cmds(cmds),
-                Err(e) => eprintln!("persisted MIDI binding (channel {channel}) failed: {e}"),
+                Err(e) => warn!("persisted MIDI binding (channel {channel}) failed: {e}"),
             }
         }
         for boot in store.load_boot() {
@@ -212,7 +211,7 @@ impl OscServer {
             let mut cmds = Vec::new();
             match self.translator.translate(&msg, &mut cmds) {
                 Ok(()) => self.ship_boot_cmds(cmds),
-                Err(e) => eprintln!("boot graph '{}' failed: {e}", boot.graph),
+                Err(e) => warn!("boot graph '{}' failed: {e}", boot.graph),
             }
         }
         self.store = Some(store);
@@ -223,7 +222,7 @@ impl OscServer {
     fn ship_boot_cmds(&mut self, cmds: Vec<Cmd>) {
         for cmd in cmds {
             if self.handle.send(cmd).is_err() {
-                eprintln!("command FIFO full during boot reload");
+                warn!("command FIFO full during boot reload");
                 break;
             }
         }
@@ -322,7 +321,7 @@ impl OscServer {
             let packet = match crate::osc::decode_packet(&self.recv_buf[..len]) {
                 Ok(packet) => packet,
                 Err(e) => {
-                    eprintln!("malformed OSC packet from {from}: {e}");
+                    warn!("malformed OSC packet from {from}: {e}");
                     continue;
                 }
             };
@@ -354,7 +353,7 @@ impl OscServer {
             let packet = match crate::osc::decode_packet(&self.recv_buf[..len]) {
                 Ok(packet) => packet,
                 Err(e) => {
-                    eprintln!("malformed OSC packet from ring client: {e}");
+                    warn!("malformed OSC packet from ring client: {e}");
                     continue;
                 }
             };
@@ -381,7 +380,7 @@ impl OscServer {
             let packet = match crate::osc::decode_packet(&bytes) {
                 Ok(packet) => packet,
                 Err(e) => {
-                    eprintln!("malformed OSC packet from tcp client {id}: {e}");
+                    warn!("malformed OSC packet from tcp client {id}: {e}");
                     continue;
                 }
             };
@@ -407,12 +406,12 @@ impl OscServer {
         while let Some(msg) = self.midi.as_ref().and_then(|hub| hub.try_next()) {
             cmds.clear();
             if let Err(e) = self.translator.translate_midi(msg, &mut cmds) {
-                eprintln!("midi: {e}");
+                warn!("midi: {e}");
                 continue;
             }
             for cmd in cmds.drain(..) {
                 if self.handle.send(cmd).is_err() {
-                    eprintln!("midi: command FIFO full");
+                    warn!("midi: command FIFO full");
                     break;
                 }
             }
@@ -449,7 +448,7 @@ impl OscServer {
                 }
                 Err(error) => match result.client {
                     Some(client) => self.fail(client, "/d_faust", error),
-                    None => eprintln!("persisted Faust def '{}' failed: {error}", result.name),
+                    None => warn!("persisted Faust def '{}' failed: {error}", result.name),
                 },
             }
         }
@@ -545,13 +544,13 @@ impl OscServer {
                     // Empty: the executed shell of a timed bundle. Non-empty:
                     // the engine's schedule queue was full.
                     if !cmds.is_empty() {
-                        eprintln!("engine rejected a timed bundle (schedule queue full)");
+                        warn!("engine rejected a timed bundle (schedule queue full)");
                     }
                 }
                 Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
                     // original node is still alive under this ID.
-                    eprintln!("engine rejected node {id} (duplicate ID, bad target or full table)");
+                    warn!("engine rejected node {id} (duplicate ID, bad target or full table)");
                 }
             }
         }
@@ -593,7 +592,7 @@ impl OscServer {
                 Flow::Continue
             }
             Some(delta) => {
-                eprintln!("late bundle ({:.3}s): executing immediately", -delta);
+                warn!("late bundle ({:.3}s): executing immediately", -delta);
                 self.run_bundle_now(bundle, from)
             }
             None => self.run_bundle_now(bundle, from),
@@ -618,9 +617,7 @@ impl OscServer {
         for packet in bundle.content {
             match packet {
                 OscPacket::Message(msg) => {
-                    if self.dump_osc {
-                        println!("[dumpOSC] {} {:?} (in {delta:.3}s)", msg.addr, msg.args);
-                    }
+                    tracing::trace!(target: crate::logging::OSC_TARGET, "{} {:?} (in {delta:.3}s)", msg.addr, msg.args);
                     if let Err(e) = self.schedule_message(&msg, &mut cmds) {
                         self.fail(from, &msg.addr, e);
                     }
@@ -645,9 +642,7 @@ impl OscServer {
     }
 
     fn handle_message(&mut self, msg: OscMessage, from: ClientId) -> Flow {
-        if self.dump_osc {
-            println!("[dumpOSC] {} {:?}", msg.addr, msg.args);
-        }
+        tracing::trace!(target: crate::logging::OSC_TARGET, "{} {:?}", msg.addr, msg.args);
         match msg.addr.as_str() {
             "/status" => self.send_status(from),
             "/server_info" => self.send_server_info(from),
@@ -681,9 +676,8 @@ impl OscServer {
             "/d_faust" => self.handle_d_faust(&msg, from),
             "/d_graph" => self.handle_d_graph(&msg, from),
             "/d_free" => self.handle_d_free(&msg, from),
-            "/dumpOSC" => {
-                self.dump_osc = matches!(msg.args.first(), Some(OscType::Int(n)) if *n != 0);
-            }
+            "/dumpOSC" => self.handle_dump_osc(&msg, from),
+            "/verbosity" => self.handle_verbosity(&msg, from),
             "/quit" => {
                 self.reply(from, "/done", vec![OscType::String("/quit".into())]);
                 return Flow::Quit;
@@ -691,6 +685,35 @@ impl OscServer {
             other => self.fail(from, other, "unknown command"),
         }
         Flow::Continue
+    }
+
+    /// `/dumpOSC flag`: toggles the OSC-traffic log overlay (the `clausters::osc`
+    /// trace target). Unlike scsynth's console dump, this routes through the
+    /// logging system the client also controls with `/verbosity`; output is on
+    /// the server's stderr. Replies `/done`.
+    fn handle_dump_osc(&mut self, msg: &OscMessage, from: ClientId) {
+        let on = matches!(msg.args.first(), Some(OscType::Int(n)) if *n != 0);
+        match crate::logging::set_osc_dump(on) {
+            Ok(()) => self.reply(from, "/done", vec![OscType::String("/dumpOSC".into())]),
+            Err(e) => self.fail(from, "/dumpOSC", e),
+        }
+    }
+
+    /// `/verbosity level`: the client retunes the server's log level live.
+    /// `level` is an int (`-1` errors, `0` warn, `1` info, `2` debug, `3+`
+    /// trace) or a string `EnvFilter` directive (e.g. `"clausters::osc=trace"`).
+    /// Replies `/done`. (Uncommon, but it lets a client steer server logs
+    /// without restarting; the initial level comes from `-v`/`RUST_LOG`.)
+    fn handle_verbosity(&mut self, msg: &OscMessage, from: ClientId) {
+        let result = match msg.args.first() {
+            Some(OscType::Int(n)) => crate::logging::set_verbosity(*n as i8),
+            Some(OscType::String(s)) => crate::logging::set_base(s),
+            _ => Err("expected an int level or a string filter directive".to_string()),
+        };
+        match result {
+            Ok(()) => self.reply(from, "/done", vec![OscType::String("/verbosity".into())]),
+            Err(e) => self.fail(from, "/verbosity", e),
+        }
     }
 
     fn send_status(&mut self, to: ClientId) {
@@ -795,9 +818,7 @@ impl OscServer {
     ) {
         match packet {
             OscPacket::Message(msg) => {
-                if self.dump_osc {
-                    println!("[dumpOSC] {} {:?} (at sample {target})", msg.addr, msg.args);
-                }
+                tracing::trace!(target: crate::logging::OSC_TARGET, "{} {:?} (at sample {target})", msg.addr, msg.args);
                 if let Err(e) = self.schedule_message(msg, cmds) {
                     self.fail(from, &msg.addr, e);
                 }
@@ -817,7 +838,7 @@ impl OscServer {
                     && let Some(spec) = synthdef_spec_bytes(&msg.args)
                     && let Err(e) = store.save_synthdef(&name, spec)
                 {
-                    eprintln!("could not persist SynthDef '{name}': {e}");
+                    error!("could not persist SynthDef '{name}': {e}");
                 }
                 self.reply(from, "/done", vec![OscType::String("/d_recv".into())]);
             }
@@ -834,7 +855,7 @@ impl OscServer {
                     && let Some(spec) = synthdef_spec_bytes(&msg.args)
                     && let Err(e) = store.save_graphdef(&name, spec)
                 {
-                    eprintln!("could not persist GraphDef '{name}': {e}");
+                    error!("could not persist GraphDef '{name}': {e}");
                 }
                 self.reply(from, "/done", vec![OscType::String("/d_graph".into())]);
             }
@@ -864,7 +885,7 @@ impl OscServer {
         if let Some(store) = &self.store
             && let Err(e) = store.save_bindings(&self.translator.midi.persist())
         {
-            eprintln!("could not persist MIDI bindings: {e}");
+            error!("could not persist MIDI bindings: {e}");
         }
     }
 
@@ -1075,12 +1096,12 @@ impl OscServer {
         });
         let bytes = match encoder::encode(&packet) {
             Ok(bytes) => bytes,
-            Err(e) => return eprintln!("failed to encode {addr}: {e}"),
+            Err(e) => return warn!("failed to encode {addr}: {e}"),
         };
         match to {
             ClientId::Udp(addr_to) => {
                 if let Err(e) = self.socket.send_to(&bytes, addr_to) {
-                    eprintln!("failed to send {addr} to {addr_to}: {e}");
+                    warn!("failed to send {addr} to {addr_to}: {e}");
                 }
             }
             ClientId::Tcp(id) => {
@@ -1097,7 +1118,7 @@ impl OscServer {
                 if let Some(ipc) = &self.ipc
                     && !ipc.push(&bytes)
                 {
-                    eprintln!("reply ring full: dropping {addr}");
+                    warn!("reply ring full: dropping {addr}");
                 }
             }
         }

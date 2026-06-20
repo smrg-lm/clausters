@@ -393,7 +393,7 @@ impl Renderer {
                     }
                 }
                 Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
-                    eprintln!(
+                    tracing::warn!(
                         "nrt render: engine rejected node {id} (duplicate ID, bad target or full table)"
                     );
                 }
