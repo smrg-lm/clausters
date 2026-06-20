@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use rosc::OscType;
 
-use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS};
+use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS, empty_pool};
 use crate::dsp::{NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
@@ -108,6 +108,10 @@ pub struct CmdTranslator {
     /// Network-side tree mirror: topology, per-node controls and bus usage,
     /// auto-sorted groups (M12). Fed by the same commands the engine gets.
     pub mirror: TreeMirror,
+    /// Mirror of the engine's buffer pool, kept in step with `/b_*` results
+    /// (installed by the server). Read when building a Faust instance so its
+    /// `soundfile` zones can be filled from a server buffer.
+    pub buffers: BufferPool,
     /// M17: per-channel MIDI bindings and the live voice table. Channel-voice
     /// messages actuate nodes through [`Self::translate_midi`].
     pub midi: MidiBindings,
@@ -146,6 +150,7 @@ impl CmdTranslator {
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
             mirror: TreeMirror::new(),
+            buffers: empty_pool(),
             midi: MidiBindings::new(),
             graph_defs: HashMap::new(),
             graph_instances: HashMap::new(),
@@ -179,7 +184,7 @@ impl CmdTranslator {
         }
         #[cfg(feature = "faust")]
         if let Some(def) = self.faust_defs.get(name) {
-            let synth = FaustSynth::new(Arc::clone(def), self.sample_rate)?;
+            let synth = FaustSynth::new(Arc::clone(def), self.sample_rate, &self.buffers)?;
             return Ok((Box::new(synth), NodeDef::Faust(Arc::clone(def))));
         }
         Err(format!("SynthDef not found: {name}"))

@@ -2495,3 +2495,32 @@ so arbitrarily long files never load into the buffer pool.
   order). **Example**: `examples/json_client.py disk` (record a sine with
   DiskOut, stream it back with DiskIn). **Docs**: `schemas.md` (UGen table +
   streaming note), `architecture.md` (the disk I/O threads), `GUIA.md`.
+
+## Faust soundfile bridge: read server buffers (2026-06-20)
+
+Stage 3 of the buffer/disk follow-up, and a reversal of the earlier "deliberately
+no soundfile" decision. Faust's `soundfile("<bufnum>", n)` primitive now binds to
+the server buffer named by its (integer) label, so a Faust def can read sample
+memory directly, not only through an audio bus.
+
+- **FFI** (`faust::ffi`): the packed `Soundfile` struct (`#[repr(C, packed)]`,
+  matching `gui/Soundfile.h`) plus the `MAX_CHAN`/`MAX_SOUNDFILE_PARTS` constants.
+- **Fill** (`faust::synth`): `SoundfileData` owns the `Soundfile` and all memory
+  it points at (planar f32 channels, the length/SR/offset part arrays, the
+  MAX_CHAN pointer table with channel aliasing). The previously-stub
+  `add_soundfile` UI callback parses the label/url as a bufnum, deinterleaves the
+  server buffer into a one-part Soundfile, and writes it into the zone; a
+  non-numeric label or empty slot yields a silent placeholder so `compute` is
+  always safe. Channel arrays are padded one sample (the read index is
+  inclusive). The instance keeps the `SoundfileData` alive and drops it after
+  `deleteCDSPInstance` (network thread, via the garbage FIFO).
+- **Plumbing**: the network-side buffer mirror moved from `OscServer` into
+  `CmdTranslator` (which already owns every other mirror), so `make_synth` can
+  pass it to `FaustSynth::new(def, sr, &buffers)`. The bind is a snapshot at
+  `/s_new`.
+- **Tests**: `tests/faust_synth.rs` (+1: a def reading `soundfile("0", 1)`
+  returns the buffer's length and sample rate, and a self-incrementing index
+  streams the channel back, clamping past the end). **Example**:
+  `examples/json_client.py soundfile` (load a WAV into buffer 5, loop it from a
+  Faust def). **Docs**: `schemas.md` (rewrote the soundfile note), `GUIA.md` (F6
+  section, replacing the old "no soundfile" note), `architecture.md`.

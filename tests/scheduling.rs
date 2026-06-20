@@ -349,7 +349,9 @@ fn faust_synths_survive_block_splits() {
     );
 
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
-    let synth = Box::new(FaustSynth::new(Arc::clone(&def), SR).unwrap());
+    let synth = Box::new(
+        FaustSynth::new(Arc::clone(&def), SR, &clausters::dsp::buffer::empty_pool()).unwrap(),
+    );
     handle
         .send(at(
             100,

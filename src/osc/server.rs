@@ -28,7 +28,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 use tracing::{error, warn};
 
-use crate::dsp::buffer::{BufferPool, empty_pool};
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
 use crate::osc::ClientId;
@@ -64,11 +63,11 @@ pub struct OscServer {
     handle: EngineHandle,
     /// Def tables, node→def mirror and message→command translation, shared
     /// with the NRT renderer (see [`crate::osc::translate`]).
+    /// Owns the network-side buffer mirror (`translator.buffers`), updated
+    /// when NRT results are installed: serves `/b_query` and gives `/b_read`,
+    /// `/b_write` and `/b_zero` the current contents/shape, and a Faust
+    /// instance its `soundfile` data.
     translator: CmdTranslator,
-    /// Network-side mirror of the engine's buffer pool, updated when NRT
-    /// results are installed. Serves `/b_query` and gives `/b_read`,
-    /// `/b_write` and `/b_zero` the current contents/shape.
-    buffers: BufferPool,
     nrt: NrtThread,
     /// Clients registered via `/notify 1`; the client ID is index + 1.
     clients: Vec<ClientId>,
@@ -128,7 +127,6 @@ impl OscServer {
             info,
             handle,
             translator,
-            buffers: empty_pool(),
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
             ipc: None,
@@ -994,11 +992,11 @@ impl OscServer {
             let index = result.index as usize;
             let swap = match action {
                 NrtAction::Install(buffer) => {
-                    self.buffers[index] = Some(Arc::clone(&buffer));
+                    self.translator.buffers[index] = Some(Arc::clone(&buffer));
                     Some(Some(buffer))
                 }
                 NrtAction::Clear => {
-                    self.buffers[index] = None;
+                    self.translator.buffers[index] = None;
                     Some(None)
                 }
                 NrtAction::None => None,
@@ -1026,11 +1024,15 @@ impl OscServer {
     /// through the queue so it cannot overtake a pending alloc/read on the
     /// same index.
     fn handle_b_cmd(&mut self, msg: &OscMessage, from: ClientId, cmd: &'static str) {
-        let (index, job) =
-            match parse_buffer_msg(cmd, &msg.args, &self.buffers, self.info.nominal_sample_rate) {
-                Ok(parsed) => parsed,
-                Err(e) => return self.fail(from, cmd, e),
-            };
+        let (index, job) = match parse_buffer_msg(
+            cmd,
+            &msg.args,
+            &self.translator.buffers,
+            self.info.nominal_sample_rate,
+        ) {
+            Ok(parsed) => parsed,
+            Err(e) => return self.fail(from, cmd, e),
+        };
         let request = NrtRequest {
             cmd,
             index,
@@ -1069,7 +1071,7 @@ impl OscServer {
     fn mirror_buffer(&self, index: i32) -> Option<Arc<crate::dsp::buffer::Buffer>> {
         usize::try_from(index)
             .ok()
-            .and_then(|i| self.buffers.get(i))
+            .and_then(|i| self.translator.buffers.get(i))
             .and_then(|b| b.as_ref().map(Arc::clone))
     }
 

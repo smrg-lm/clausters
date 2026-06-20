@@ -238,7 +238,7 @@ The `faust` op is the bridge to the stdlib — an embedded program becomes a box
 
 `rdtable` also accepts the explicit (size, init, ridx) form with plain boxes, and `rwtable` (size, init, widx, wsig, ridx) is a table written and read at audio rate. Sizes must be constant expressions and indexes integers (`intcast`), as in Faust.
 
-There is deliberately no `soundfile` op: sample data lives in the server's buffers. Play a buffer with `PlayBuf`/`BufRd` in a UGen synth, route it through an audio bus, and let the Faust def read that bus via its reserved `in` control — the signal crosses over without copying anything into the Faust world, and both def families stay composable on the same buses.
+**Soundfiles read server buffers.** Faust's `soundfile("<bufnum>", n)` primitive binds to the server buffer whose index is its label (a plain integer string), e.g. `soundfile("0", 1)` reads buffer 0. At `/s_new` the instance's soundfile is filled from that buffer's current contents (deinterleaved to Faust's planar layout); a non-numeric label or an empty/missing slot yields a silent placeholder, so a def always instantiates. The primitive's outputs are `[length, sampleRate, channel0 … channel_{n-1}]` and the read index saturates at the part length, exactly as in stock Faust. The bind is a **snapshot** taken at instantiation — re-`/s_new` to pick up a buffer that changed; loading is mono-or-more by the buffer's own channel count (Faust reads up to `n`). For *streaming* a bus instead of a static buffer, the older path still works too: route a `PlayBuf`/`BufRd` through an audio bus and read it via the def's reserved `in` control, so both def families stay composable on the same buses.
 
 ### Errors
 

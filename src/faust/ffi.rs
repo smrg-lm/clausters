@@ -85,6 +85,41 @@ pub type AddSoundfileFun = unsafe extern "C" fn(
     url: *const c_char,
     sf_zone: *mut *mut c_void,
 );
+
+// ---- soundfile (faust/gui/Soundfile.h) ----
+// The DSP reads `fBuffers[chan][fOffset[part] + clamp(i, 0, fLength[part])]`,
+// so each channel array needs `fOffset + fLength + 1` samples (the index is
+// inclusive). `fBuffers` holds `FAUST_MAX_CHAN` pointers; channels past the
+// real ones alias earlier ones (Faust's `shareBuffers`).
+
+/// Max channel pointers in a `Soundfile`'s `fBuffers` (`MAX_CHAN`).
+pub const FAUST_MAX_CHAN: usize = 64;
+/// Parts array length (`MAX_SOUNDFILE_PARTS`); we fill them all with one part.
+pub const FAUST_MAX_SOUNDFILE_PARTS: usize = 256;
+/// Length/SR of an empty (silent) soundfile (`BUFFER_SIZE`/`SAMPLE_RATE`).
+pub const FAUST_SOUNDFILE_EMPTY_FRAMES: i32 = 1024;
+pub const FAUST_SOUNDFILE_EMPTY_SR: i32 = 44100;
+
+/// Faust's `Soundfile` struct. **Packed** — the LLVM backend accesses it with
+/// no padding (the header is `__attribute__((packed))`). We build and own one
+/// per `soundfile` zone; Faust never frees it.
+#[repr(C, packed)]
+pub struct Soundfile {
+    /// `float**`: `FAUST_MAX_CHAN` non-interleaved channel arrays.
+    pub fBuffers: *mut c_void,
+    /// `int[FAUST_MAX_SOUNDFILE_PARTS]`: frames per part.
+    pub fLength: *mut c_int,
+    /// `int[FAUST_MAX_SOUNDFILE_PARTS]`: sample rate per part.
+    pub fSR: *mut c_int,
+    /// `int[FAUST_MAX_SOUNDFILE_PARTS]`: start frame of each part.
+    pub fOffset: *mut c_int,
+    /// Number of real (non-aliased) channels.
+    pub fChannels: c_int,
+    /// Number of loaded parts.
+    pub fParts: c_int,
+    /// Sample format: always `false` (we compile `-single`, f32).
+    pub fIsDouble: bool,
+}
 pub type DeclareFun =
     unsafe extern "C" fn(ui: *mut c_void, zone: *mut f32, key: *const c_char, value: *const c_char);
 

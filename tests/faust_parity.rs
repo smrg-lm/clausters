@@ -54,7 +54,10 @@ fn ugen_synth(spec_json: &str) -> Box<dyn SynthNode> {
 }
 
 fn faust_synth(def: &Arc<FaustDef>, controls: &[(&str, f32)]) -> Box<dyn SynthNode> {
-    let mut synth = Box::new(FaustSynth::new(Arc::clone(def), SR).expect("instantiation"));
+    let mut synth = Box::new(
+        FaustSynth::new(Arc::clone(def), SR, &clausters::dsp::buffer::empty_pool())
+            .expect("instantiation"),
+    );
     for (name, value) in controls {
         let index = def.control_index(name).expect("control must exist");
         synth.set_control(index, *value);

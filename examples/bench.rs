@@ -132,7 +132,14 @@ fn bench_ugen_vs_faust() {
         let ugen = bench(n, move |_| Box::new(UGenSynth::new(Arc::clone(&ud))));
         let fd = Arc::clone(&faust_def);
         let faust = bench(n, move |_| {
-            Box::new(FaustSynth::new(Arc::clone(&fd), SAMPLE_RATE as f32).expect("faust instance"))
+            Box::new(
+                FaustSynth::new(
+                    Arc::clone(&fd),
+                    SAMPLE_RATE as f32,
+                    &clausters::dsp::buffer::empty_pool(),
+                )
+                .expect("faust instance"),
+            )
         });
         let u_xrt = ugen * BLOCK_SIZE as f64 / SAMPLE_RATE;
         let f_xrt = faust * BLOCK_SIZE as f64 / SAMPLE_RATE;
@@ -210,8 +217,14 @@ fn bench_gain_overhead() {
         });
         let fg = Arc::clone(&faust_gain);
         let faust = bench_chain(n, &src_def, move || {
-            let mut s =
-                Box::new(FaustSynth::new(Arc::clone(&fg), SAMPLE_RATE as f32).expect("instance"));
+            let mut s = Box::new(
+                FaustSynth::new(
+                    Arc::clone(&fg),
+                    SAMPLE_RATE as f32,
+                    &clausters::dsp::buffer::empty_pool(),
+                )
+                .expect("instance"),
+            );
             s.set_control(in_idx, 4.0);
             s.set_control(out_idx, 0.0);
             s

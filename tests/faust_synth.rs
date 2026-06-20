@@ -55,7 +55,10 @@ fn compile_def(name: &str, src: &str) -> Arc<FaustDef> {
 /// Builds the instance on this (network-style) thread, with named controls
 /// resolved exactly like `/s_new` does.
 fn add_faust(id: i32, def: &Arc<FaustDef>, controls: &[(&str, f32)]) -> Cmd {
-    let mut synth = Box::new(FaustSynth::new(Arc::clone(def), SR).expect("instantiation"));
+    let mut synth = Box::new(
+        FaustSynth::new(Arc::clone(def), SR, &clausters::dsp::buffer::empty_pool())
+            .expect("instantiation"),
+    );
     for (name, value) in controls {
         let index = def.control_index(name).expect("control must exist");
         synth.set_control(index, *value);
@@ -106,6 +109,81 @@ fn probed_def_exposes_params_and_reserved_bus_controls() {
     let freq = &def.params[def.control_index("freq").unwrap() as usize];
     assert_eq!(freq.init, 440.0);
     assert_eq!((freq.min, freq.max), (20.0, 20_000.0));
+}
+
+#[test]
+fn soundfile_reads_a_server_buffer() {
+    use clausters::dsp::buffer::{Buffer, empty_pool};
+
+    // `soundfile("0", 1)` binds to server buffer 0. The primitive's outputs
+    // are [length, sampleRate, channel0]; we route one of them to bus 0 per
+    // def and read it back. A self-incrementing index streams the channel.
+    let len_def = compile_def(
+        "sflen",
+        r#"process = (0, 0) : soundfile("0", 1) : (_, !, !);"#,
+    );
+    let sr_def = compile_def(
+        "sfsr",
+        r#"process = (0, 0) : soundfile("0", 1) : (!, _, !);"#,
+    );
+    let read_def = compile_def(
+        "sfread",
+        r#"
+counter = (+(1) ~ _) - 1;          // 0, 1, 2, ... per sample
+process = (0, int(counter)) : soundfile("0", 1) : (!, !, _);
+"#,
+    );
+
+    // Buffer 0: four known mono samples at the engine's own sample rate.
+    let samples = [0.1f32, 0.2, 0.3, 0.4];
+    let mut pool = empty_pool();
+    pool[0] = Some(Arc::new(Buffer::new(samples.to_vec(), 1, 4, SR as f64)));
+
+    let build = |def: &Arc<FaustDef>| -> Cmd {
+        let synth = Box::new(FaustSynth::new(Arc::clone(def), SR, &pool).expect("instantiation"));
+        Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth,
+            usage: Default::default(),
+        }
+    };
+
+    // Length and sample rate come straight from the buffer's shape.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(build(&len_def)).ok().unwrap();
+    assert_eq!(
+        render_channel(&mut engine, 1, 0)[0],
+        4.0,
+        "soundfile length"
+    );
+
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(build(&sr_def)).ok().unwrap();
+    assert_eq!(
+        render_channel(&mut engine, 1, 0)[0],
+        SR,
+        "soundfile sample rate"
+    );
+
+    // Streaming the channel reproduces the buffer, then clamps at the last
+    // frame (the read index saturates at the part length).
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle.send(build(&read_def)).ok().unwrap();
+    let out = render_channel(&mut engine, 1, 0);
+    for (i, &expected) in samples.iter().enumerate() {
+        assert!(
+            (out[i] - expected).abs() < 1e-6,
+            "frame {i}: {} vs {expected}",
+            out[i]
+        );
+    }
+    assert!(
+        (out[4] - 0.4).abs() < 1e-6,
+        "index past the end clamps to the last frame: {}",
+        out[4]
+    );
 }
 
 #[test]

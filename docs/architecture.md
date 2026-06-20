@@ -56,7 +56,7 @@ The realtime backend (cpal) sits behind the `realtime` feature (on by default); 
 | `src/osc/graph.rs` | M12: bus-usage analysis, the network-side `TreeMirror`, the stable topological sort behind `/g_sortMode` |
 | `src/osc/graphdef.rs` | M18: GraphDef spec/instance types + the private-bus `RangeAllocator`; instantiation lives in `translate.rs` |
 | `src/midi/` | M17: standard channel-voice MIDI actuation — message-type conversions (`convert.rs`), bindings/voice state, MIDI 1.0→2.0 widening; live input via `midir`/ALSA (`live.rs`, feature `midi`). `CmdTranslator::translate_midi` realizes a message as the equivalent `/s_new`/`/n_set`/`/n_free` on the **network thread** (the audio thread is untouched) |
-| `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth` |
+| `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth`; `soundfile("<bufnum>", n)` is filled from a server buffer at instantiation (`SoundfileData` in `synth.rs`) |
 | `src/main.rs` | CLI: realtime server (default) or `--nrt` renderer |
 
 ## Memory lifecycle

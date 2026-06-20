@@ -371,7 +371,14 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     for i in 0..8i32 {
-        let mut synth = Box::new(FaustSynth::new(Arc::clone(&def), 48_000.0).unwrap());
+        let mut synth = Box::new(
+            FaustSynth::new(
+                Arc::clone(&def),
+                48_000.0,
+                &clausters::dsp::buffer::empty_pool(),
+            )
+            .unwrap(),
+        );
         synth.set_control(0, 100.0 + i as f32);
         handle
             .send(Cmd::AddSynth {

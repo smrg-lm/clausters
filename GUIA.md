@@ -789,10 +789,26 @@ sleep 1
 oscsend localhost 57110 /n_free i 2002
 ```
 
-Nota: **no hay op `soundfile`** a propósito — los archivos de audio van a
-buffers (`/b_allocRead`) y se cruzan a un def Faust como señal:
-`PlayBuf`/`BufRd` → bus de audio → control reservado `in` del synth Faust
-(ver `docs/schemas.md`, «Tables and waveforms»).
+### Probar `soundfile` leyendo un buffer del servidor (F6)
+
+El op `soundfile("<bufnum>", n)` de Faust se enlaza al **buffer del servidor**
+cuyo índice es la etiqueta: `soundfile("5", 1)` lee el buffer 5. Al hacer
+`/s_new`, la instancia se llena con el contenido actual de ese buffer
+(des-interleaveado al layout planar de Faust); sus salidas son
+`[length, sampleRate, canal0 … canalN-1]` y el índice de lectura satura en el
+largo de la parte. Es una **foto** tomada al instanciar (re-`/s_new` para
+tomar un buffer que cambió); no remuestrea (un frame de archivo por sample del
+servidor). La demo carga un WAV en el buffer 5 y lo loopea desde adentro del
+DSP Faust:
+
+```sh
+cargo run --release --features faust              # en una terminal
+python3 examples/json_client.py soundfile quit    # en otra (220 Hz en loop)
+```
+
+Para *streaming* de un bus en vez de un buffer estático sigue estando el otro
+camino: `PlayBuf`/`BufRd` → bus de audio → control reservado `in` del synth
+Faust (ver `docs/schemas.md`).
 
 ### Probar la persistencia de defs entre sesiones
 

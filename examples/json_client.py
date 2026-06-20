@@ -14,6 +14,8 @@ then run one or more demos (default: status):
 `ugen`   defines an amplitude-modulated noise synth via /d_recv and plays it.
 `faust`  builds two Faust defs as JSON box trees via /d_faust (needs the
          feature): a sine from primitives and one importing the Faust stdlib.
+`soundfile` loads a WAV into a buffer and plays it from inside a Faust def
+         via `soundfile("<bufnum>", n)` (needs the feature).
 `wavetable` computes a 256-point table in Python and plays it through
          `waveform` + `rdtable` (needs the faust feature).
 `buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
@@ -278,6 +280,49 @@ def demo_faust(client: Client):
     client.send("/n_free", 3002)
 
 
+def demo_soundfile(client: Client):
+    """A Faust def reads a server buffer through `soundfile("<bufnum>", n)`:
+    load a WAV into buffer 5, then play it looping from inside the Faust DSP.
+    Needs the faust feature."""
+    client.send("/status")
+    _, status = client.reply()
+    server_sr = int(status[7])
+
+    # Write the test tone at the server rate (soundfile does not resample).
+    path = os.path.join("/tmp", f"clausters_sf_{os.getpid()}.wav")
+    write_test_wav(path, freq=220.0, seconds=1.0, sample_rate=server_sr)
+    client.send("/b_allocRead", 5, path)
+    addr, _ = client.reply()
+    if addr == "/fail":
+        return
+
+    # `soundfile("5", 1)` binds to buffer 5. Read the length from one instance,
+    # loop a sample counter over it, and stream the channel from another.
+    src = (
+        'sf(p, i) = (p, i) : soundfile("5", 1);\n'
+        "len = sf(0, 0) : (_, !, !);\n"
+        "counter = (+(1) ~ _) - 1;\n"
+        "idx = int(counter) % max(1, int(len));\n"
+        "process = (sf(0, idx) : (!, !, _)) * 0.5;\n"
+    )
+    print("soundfile demo: /d_faust sfplay (reads buffer 5 via soundfile)")
+    client.send("/d_faust", "sfplay", src)
+    addr, _ = client.reply()
+    if addr == "/fail":
+        print("  (is the server running with --features faust?)")
+        client.send("/b_free", 5)
+        os.remove(path)
+        return
+
+    print("  /s_new sfplay 3008 (loops the buffer from inside Faust)")
+    client.send("/s_new", "sfplay", 3008, 1, 0)
+    time.sleep(2.5)
+    client.send("/n_free", 3008)
+    client.send("/b_free", 5)
+    client.reply()
+    os.remove(path)
+
+
 # ---- /b_*: buffers and PlayBuf ----
 
 
@@ -521,6 +566,8 @@ def main():
             demo_ugen(client)
         elif demo == "faust":
             demo_faust(client)
+        elif demo == "soundfile":
+            demo_soundfile(client)
         elif demo == "wavetable":
             demo_wavetable(client)
         elif demo == "buffer":
@@ -540,7 +587,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, disk, bundle, feedback, signal, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, buffer, disk, bundle, feedback, signal, score, quit)"
             )
 
 
