@@ -64,7 +64,7 @@ Terminal 1:
 
 ```sh
 cargo run --release
-# clausters M14 — silent until /s_new | 44100 Hz, 2 channels | 0 DSP worker(s) | OSC on 127.0.0.1:57110 | ...
+# clausters — silent until /s_new | 44100 Hz, 2 channels | 0 DSP worker(s) | OSC on 127.0.0.1:57110 | ...
 # (la sample rate es la del dispositivo de audio default)
 ```
 

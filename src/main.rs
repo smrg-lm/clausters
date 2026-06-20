@@ -193,7 +193,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Err("built without the `midi` feature: rebuild with --features midi".into());
     }
     println!(
-        "clausters M14 — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
+        "clausters — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
         workers,
