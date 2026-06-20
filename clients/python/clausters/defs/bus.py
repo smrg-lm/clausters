@@ -1,9 +1,14 @@
 """Audio and control buses, with client-side allocation.
 
-Mirrors the server's bus model (`dsp`): 128 audio buses (``0..channels`` are the
-hardware outputs) and 1024 single-float control buses. Like scsynth, the client
-owns allocation; the server just indexes. A :class:`Bus` is a flat
+Mirrors the server's bus model (`dsp`): audio buses (``0..channels`` are the
+hardware outputs) and single-float control buses. Like scsynth, the client owns
+allocation; the server just indexes. A :class:`Bus` is a flat
 ``(index, channels, rate)`` — only flat data ever leaves for the wire.
+
+The constants below are the **server defaults**; a server launched with
+``--audio-buses``/``--control-buses`` differs, so size the allocators from a
+:class:`~clausters.defs.server.ServerOptions` (or from
+:meth:`~clausters.defs.server.Server.query_info`) instead of assuming these.
 """
 
 NUM_AUDIO_BUSES = 128

@@ -16,6 +16,7 @@ touching clock or routine.
 """
 
 import time
+from dataclasses import dataclass
 
 from ..base import _osclib
 from ..errors import CommandError, ReplyTimeout
@@ -23,7 +24,13 @@ from ..base.main import main
 from ..base.netaddr import NetAddr
 from ..base._oscinterface import OscNrtInterface, OscUDPInterface
 from ..base.timebase import SampleClockTimebase
-from .bus import AudioBusAllocator, Bus, ControlBusAllocator
+from .bus import (
+    NUM_AUDIO_BUSES,
+    NUM_CONTROL_BUSES,
+    AudioBusAllocator,
+    Bus,
+    ControlBusAllocator,
+)
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
@@ -41,9 +48,45 @@ def _flatten_controls(controls) -> list:
     return flat
 
 
+@dataclass
+class ServerOptions:
+    """Client-owned server configuration, the way SuperCollider's
+    ``ServerOptions`` works: it both **sizes the client's bus allocators** and
+    emits the **CLI flags** to launch a matching server (:meth:`args`), so the
+    two agree by construction. Verify a running server with
+    :meth:`Server.query_info`.
+    """
+
+    audio_buses: int = NUM_AUDIO_BUSES
+    control_buses: int = NUM_CONTROL_BUSES
+    sample_rate: int = 48000
+
+    def args(self) -> list[str]:
+        """The ``clausters`` CLI flags that launch a server matching these
+        options (pass to ``subprocess`` after the binary path)."""
+        return [
+            "--audio-buses", str(self.audio_buses),
+            "--control-buses", str(self.control_buses),
+            "--sample-rate", str(self.sample_rate),
+        ]
+
+
+@dataclass
+class ServerInfo:
+    """The static configuration a running server reports over ``/server_info``
+    (read-only; the result of :meth:`Server.query_info`)."""
+
+    audio_buses: int
+    control_buses: int
+    channels: int
+    block_size: int
+    nominal_sample_rate: float
+    actual_sample_rate: float
+
+
 class Server:
     def __init__(self, host: str = "127.0.0.1", port: int = 57110, interface=None,
-                 latency: float = 0.0):
+                 latency: float = 0.0, options: "ServerOptions | None" = None):
         self.target = NetAddr(host, port)
         #: the communication interface (RT/UDP, NRT/score, …). The Server owns
         #: it; swapping it is the RT/NRT seam.
@@ -51,9 +94,14 @@ class Server:
         #: seconds added to RT timetags so they land in the (near) future,
         #: sample-accurate, instead of "as soon as possible" (scsynth latency).
         self.latency = latency
+        #: the client-owned server configuration; sizes the allocators below so
+        #: they never hand out a bus the server does not have. Override it to
+        #: match a server launched with `--audio-buses`/`--control-buses`, or
+        #: reconcile it from a running server with :meth:`query_info`.
+        self.options = options if options is not None else ServerOptions()
         self.nodes = NodeIDAllocator()
-        self.audio_buses = AudioBusAllocator()
-        self.control_buses = ControlBusAllocator()
+        self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
+        self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator()
         self._sync_counter = 0      # ids for /sync -> /synced round-trips
 
@@ -138,6 +186,23 @@ class Server:
             if expect is None or raddr in expect:
                 return raddr, rargs
         raise ReplyTimeout(f"no reply to {addr}")
+
+    def query_info(self, timeout: float = 5.0) -> ServerInfo:
+        """Asks the running server for its static configuration (RT only):
+        bus counts, output channels, block size and sample rate. Use it to
+        size or check allocators against a server you did not launch; compare
+        the result with :attr:`options`."""
+        _, args = self.request(
+            "/server_info", timeout=timeout, expect=("/server_info.reply",)
+        )
+        return ServerInfo(
+            audio_buses=int(args[0]),
+            control_buses=int(args[1]),
+            channels=int(args[2]),
+            block_size=int(args[3]),
+            nominal_sample_rate=float(args[4]),
+            actual_sample_rate=float(args[5]),
+        )
 
     # ---- definitions ----
 

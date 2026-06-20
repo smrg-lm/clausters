@@ -41,9 +41,13 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 1
+ABI_VERSION = 2
 
 # ---- segment layout (must match src/server/ipc.rs; pinned by tests) ----
+# Fixed prefix: the header, then the c2s and s2c rings. The control-bus array
+# is a trailing, dynamically-sized region after the rings (its length lives in
+# the header), so `--control-buses` changes the segment size but not these
+# ring offsets. The whole file is mmap'd, so any control count is supported.
 
 _MAGIC = 0x5541_4C43  # "CLAU"
 _HEADER_SIZE = 64
@@ -51,13 +55,16 @@ _OFF_MAGIC = 0
 _OFF_VERSION = 4
 _OFF_SAMPLE_RATE = 8  # f64 bits
 _OFF_CLOCK = 16  # u64
-_NUM_CONTROL_BUSES = 1024
-_OFF_CONTROLS = 64  # 1024 × u32 (f32 bits)
+_OFF_CONTROL_BUSES = 28  # u32: number of slots in the trailing control region
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
-_OFF_C2S = _OFF_CONTROLS + 4 * _NUM_CONTROL_BUSES  # 4160
-_OFF_S2C = _OFF_C2S + _RING_HEADER + _RING_CAPACITY  # 69760
-SEGMENT_SIZE = _OFF_S2C + _RING_HEADER + _RING_CAPACITY  # 135360
+_OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
+_OFF_S2C = _OFF_C2S + _RING_HEADER + _RING_CAPACITY  # 65664
+_OFF_CONTROLS = _OFF_S2C + _RING_HEADER + _RING_CAPACITY  # 131264 (trailing)
+_DEFAULT_CONTROL_BUSES = 1024
+# Segment size for the default control-bus count (the actual size is the file's
+# length; the server sizes it from `--control-buses`).
+SEGMENT_SIZE = _OFF_CONTROLS + 4 * _DEFAULT_CONTROL_BUSES  # 135360
 
 
 class _Ring:
@@ -121,12 +128,15 @@ class ShmClient:
 
     def __init__(self, path: str):
         self._file = open(path, "r+b")
-        self.mm = mmap.mmap(self._file.fileno(), SEGMENT_SIZE)
+        # Map the whole file: its length is the server's --control-buses count.
+        self.mm = mmap.mmap(self._file.fileno(), 0)
         magic, version = struct.unpack_from("<II", self.mm, 0)
         if magic != _MAGIC:
             raise SegmentError(f"{path} is not a clausters segment")
         if version != ABI_VERSION:
             raise SegmentError(f"segment ABI v{version}, this client speaks v{ABI_VERSION}")
+        #: control-bus count the server created the segment with.
+        self.control_buses = struct.unpack_from("<I", self.mm, _OFF_CONTROL_BUSES)[0]
         self._c2s = _Ring(self.mm, _OFF_C2S)  # we produce here
         self._s2c = _Ring(self.mm, _OFF_S2C)  # we consume here
 
@@ -142,10 +152,14 @@ class ShmClient:
         return struct.unpack_from("<d", self.mm, _OFF_SAMPLE_RATE)[0]
 
     def ctl_get(self, index: int) -> float:
+        if not 0 <= index < self.control_buses:
+            raise IndexError(f"control bus {index} out of range 0..{self.control_buses}")
         return struct.unpack_from("<f", self.mm, _OFF_CONTROLS + 4 * index)[0]
 
     def ctl_set(self, index: int, value: float):
         """Writes the very atomic the engine's InCtl reads next block."""
+        if not 0 <= index < self.control_buses:
+            raise IndexError(f"control bus {index} out of range 0..{self.control_buses}")
         struct.pack_into("<f", self.mm, _OFF_CONTROLS + 4 * index, value)
 
     # -- command plane: OSC packets through the ring --

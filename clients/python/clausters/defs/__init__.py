@@ -25,7 +25,7 @@ from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
-from .server import Server
+from .server import Server, ServerInfo, ServerOptions
 from .signals import Signal
 from .synthdef import SynthDef
 from .ugens import (
@@ -77,6 +77,8 @@ __all__ = [
     "NodeIDAllocator",
     "ROOT_NODE_ID",
     "Server",
+    "ServerOptions",
+    "ServerInfo",
     "UdpSampleClock",
     "SampleClockModel",
 ]
