@@ -357,7 +357,7 @@ print(server.dump_graph(group.id))      # /g_dumpGraph -> texto legible del graf
 
 Los logs del server (stderr) son aparte y los controla el cliente con `/verbosity` (nivel) y `/dumpOSC` (target OSC), o el binario con `-v`/`RUST_LOG` (ver `GUIA.md` raíz).
 
-Para recorrerlo paso a paso al estilo notebook (config + boot + grupos + nodos + buses, logueando el árbol en cada paso): `examples/interactive_session.py`, en celdas `# %%` (se ejecuta por partes en IPython/VS Code/Jupyter, o entero como script).
+Para recorrerlo paso a paso (config + boot + grupos + nodos + buses, logueando el árbol en cada paso): el notebook `examples/interactive_session.ipynb` (`jupyter lab`/`jupyter notebook`, o el editor de notebooks de VS Code). El kernel mantiene vivo el server-subproceso entre celdas.
 
 ## 5. Secuenciación: patterns y eventos (C5)
 
