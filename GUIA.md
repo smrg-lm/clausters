@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 180 tests, no necesita placa de audio
+cargo test                       # 181 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -109,6 +109,26 @@ transparente y el cliente no necesita conocer ninguna de las dos
 frecuencias. La familia completa es `BufSampleRate`, `BufRateScale`,
 `BufFrames`, `BufChannels` y `BufDur` (todas toman el bufnum y devuelven un
 valor constante por bloque).
+
+### Streaming de disco: DiskIn / DiskOut
+
+A diferencia de `PlayBuf`/`BufRd` (que cargan el archivo entero a memoria),
+`DiskIn` y `DiskOut` hacen streaming desde/hacia disco en tiempo real, así
+que un archivo arbitrariamente largo nunca toca el pool de buffers. Cada una
+es **auto-contenida**: un thread de I/O de fondo por instancia más un ring
+lock-free compartido con el hilo de audio; el hilo de audio nunca hace I/O.
+Llevan campos estáticos en el spec del UGen: `path` (obligatorio), `loop`
+(DiskIn) y `format` (DiskOut: `int16`/`int24`/`float`). Son **mono por
+UGen** (un `DiskIn` por canal; un `DiskOut` escribe WAV mono). `DiskIn`
+streamea un frame de archivo por sample del servidor (sin remuestreo, como
+en scsynth).
+
+La demo `disk` del cliente Python graba una sine a disco con `DiskOut` y
+después la reproduce con `DiskIn`:
+
+```sh
+python3 examples/json_client.py disk
+```
 
 A mano con `oscsend` (los `/b_*` son asíncronos: responden `/done` o
 `/fail` al cliente; el tráfico OSC también se puede ver en el log del

@@ -18,6 +18,8 @@ then run one or more demos (default: status):
          `waveform` + `rdtable` (needs the faust feature).
 `buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
          the file's pitch (rate from /b_info and /status), then frees it.
+`disk`   records a sine straight to a WAV with DiskOut, then streams it back
+         from disk with DiskIn (real-time disk I/O, no buffer load).
 `bundle` schedules a melody in advance with NTP-timetagged bundles: the
          server fires each note sample-accurately on its own clock.
 `feedback` plays a resonant comb built with LocalIn/LocalOut: the graph's
@@ -156,9 +158,11 @@ class SynthDefBuilder:
         self.controls.append({"name": name, "default": default})
         return {"control": len(self.controls) - 1}
 
-    def add(self, kind: str, *inputs) -> dict:
+    def add(self, kind: str, *inputs, **static) -> dict:
+        """`static` carries non-signal fields (DiskIn/DiskOut `path`, `loop`,
+        `format`); most UGens take only signal inputs."""
         resolved = [i if isinstance(i, dict) else {"const": float(i)} for i in inputs]
-        self.ugens.append({"kind": kind, "inputs": resolved})
+        self.ugens.append({"kind": kind, "inputs": resolved, **static})
         return {"ugen": len(self.ugens) - 1}
 
     def blob(self) -> bytes:
@@ -328,6 +332,40 @@ def demo_buffer(client: Client):
     os.remove(path)
 
 
+def demo_disk(client: Client):
+    """Streaming disk I/O: record a sine straight to a WAV with DiskOut, then
+    stream it back from disk with DiskIn (no buffer load). Both stream in real
+    time, so the file can be arbitrarily long."""
+    path = os.path.join("/tmp", f"clausters_diskdemo_{os.getpid()}.wav")
+
+    # 1. DiskOut: SinOsc(440)*0.2 -> mono float WAV. No Out, so it only records.
+    rec = SynthDefBuilder("drec")
+    sig = rec.add("Mul", rec.add("SinOsc", 440.0), 0.2)
+    rec.add("DiskOut", sig, path=path, format="float")
+    client.send("/d_recv", rec.blob())
+    client.reply()
+    print(f"disk demo: recording 440 Hz to {path} for ~1.2 s (DiskOut)")
+    client.send("/s_new", "drec", 3006, 1, 0)
+    time.sleep(1.2)
+    # Freeing the synth joins the writer thread, which finalizes the WAV.
+    client.send("/n_free", 3006)
+    time.sleep(0.3)
+
+    # 2. DiskIn: stream the file back (looping) to both outputs.
+    play = SynthDefBuilder("dplay")
+    streamed = play.add("DiskIn", 0.0, path=path, loop=True)
+    play.add("Out", 0, streamed)
+    play.add("Out", 1, streamed)
+    client.send("/d_recv", play.blob())
+    client.reply()
+    print("  streaming it back from disk for ~2 s (DiskIn, looping)")
+    client.send("/s_new", "dplay", 3007, 1, 0)
+    time.sleep(2.0)
+    client.send("/n_free", 3007)
+    time.sleep(0.2)
+    os.remove(path)
+
+
 # ---- timed bundles (M6) ----
 
 
@@ -487,6 +525,8 @@ def main():
             demo_wavetable(client)
         elif demo == "buffer":
             demo_buffer(client)
+        elif demo == "disk":
+            demo_disk(client)
         elif demo == "bundle":
             demo_bundle(client)
         elif demo == "feedback":
@@ -500,7 +540,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, bundle, feedback, signal, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, wavetable, buffer, disk, bundle, feedback, signal, score, quit)"
             )
 
 

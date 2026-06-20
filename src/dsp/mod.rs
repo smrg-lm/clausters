@@ -10,6 +10,7 @@ pub mod binop;
 pub mod buf;
 pub mod buffer;
 pub mod denormals;
+pub mod disk;
 pub mod impulse;
 pub mod io;
 pub mod local;

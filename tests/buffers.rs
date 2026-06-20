@@ -518,6 +518,104 @@ fn int16_write_quantizes_to_the_expected_grid() {
 }
 
 #[test]
+fn diskout_records_then_diskin_streams_it_back() {
+    // End-to-end streaming I/O: play a buffer into DiskOut (a float WAV on
+    // disk), then stream that file back through DiskIn and check the samples.
+    // The signal `(i+1)/1000` starts non-zero, so DiskIn output is
+    // distinguishable from underrun silence.
+    let path = tmp_path("diskio", "wav");
+    let frames = 300;
+    let signal: Vec<f32> = (0..frames).map(|i| (i + 1) as f32 / 1000.0).collect();
+
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(Buffer::new(signal.clone(), 1, frames, SR as f64))),
+        })
+        .ok()
+        .unwrap();
+
+    // PlayBuf (rate 1, no loop) -> DiskOut(float). No Out: the synth is silent
+    // on the buses, it only records.
+    let recorder = spec_synth(json!({
+        "name": "rec",
+        "ugens": [
+            {"kind": "PlayBuf", "inputs": [
+                {"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}
+            ]},
+            {"kind": "DiskOut", "inputs": [{"ugen": 0}], "path": path, "format": "float"}
+        ]
+    }));
+    handle.send(add_synth(1000, recorder)).ok().unwrap();
+    // Render enough blocks to push the whole buffer through the ring.
+    let blocks = frames.div_ceil(BLOCK_SIZE) + 2;
+    render_channel(&mut engine, blocks, 0);
+
+    // Free the recorder; dropping its synth (on garbage collection) joins the
+    // writer thread, which drains the ring and finalizes the WAV header.
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    let deadline = std::time::Instant::now() + NRT_DEADLINE;
+    while handle.collect_garbage() == 0 {
+        render_channel(&mut engine, 1, 0);
+        assert!(std::time::Instant::now() < deadline, "recorder never freed");
+    }
+
+    // Sanity: the file holds the signal (read it straight back).
+    let read = installed(run_nrt(NrtJob::AllocRead {
+        path: path.clone(),
+        file_start: 0,
+        num_frames: frames as i64,
+    }));
+    assert_eq!(read.frames(), frames);
+    assert_eq!(read.data(), &signal[..], "DiskOut must write the signal");
+
+    // Now stream the same file back through DiskIn -> Out(bus 0) and look for
+    // the signal in the left channel. The disk thread fills the ring
+    // asynchronously, so poll (with a tiny yield) until data arrives.
+    let player = spec_synth(json!({
+        "name": "play",
+        "ugens": [
+            {"kind": "DiskIn", "inputs": [{"const": 0.0}], "path": path},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }));
+    handle.send(add_synth(2000, player)).ok().unwrap();
+
+    let mut collected: Vec<f32> = Vec::new();
+    let deadline = std::time::Instant::now() + NRT_DEADLINE;
+    let found = loop {
+        collected.extend(render_channel(&mut engine, 1, 0));
+        // The stream emits the file in order; find where signal[0] (0.001) is
+        // followed by signal[1], signal[2], ... to confirm ordered streaming.
+        if let Some(p) = collected
+            .windows(8)
+            .position(|w| (0..8).all(|k| (w[k] - signal[k]).abs() < 1e-9))
+        {
+            break Some(p);
+        }
+        if std::time::Instant::now() >= deadline {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    let start = found.expect("DiskIn never produced the streamed signal");
+    // Verify a longer ordered run from that point.
+    for (k, expected) in signal.iter().enumerate().take(64) {
+        assert_eq!(
+            collected[start + k],
+            *expected,
+            "DiskIn frame {k} must stream in order"
+        );
+    }
+
+    handle.send(Cmd::FreeNode { id: 2000 }).ok().unwrap();
+    render_channel(&mut engine, 2, 0);
+    while handle.collect_garbage() > 0 {}
+    std::fs::remove_file(&path).ok();
+}
+
+#[test]
 fn non_wav_extensions_decode_through_symphonia() {
     // Lossless float PCM written to a `.dat` file: `read_audio` routes it
     // through symphonia (not hound), which detects the container by content,

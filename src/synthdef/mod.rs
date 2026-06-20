@@ -29,7 +29,7 @@ pub mod instance;
 use serde::{Deserialize, Serialize};
 
 use crate::dsp::MAX_UGEN_INPUTS;
-use crate::dsp::registry::{UGenKind, arity, parse_kind};
+use crate::dsp::registry::{UGenConfig, UGenKind, arity, parse_kind};
 
 // ---- wire format (serde) ----
 
@@ -47,11 +47,20 @@ pub struct ControlSpec {
     pub default: f32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct UGenSpec {
     pub kind: String,
     #[serde(default)]
     pub inputs: Vec<InputSpec>,
+    /// `DiskIn`/`DiskOut`: file path. Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// `DiskIn`: restart from the top of the file at end of stream.
+    #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
+    pub looping: bool,
+    /// `DiskOut`: WAV sample format (`int16` | `int24` | `float`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
 }
 
 /// An input is a constant, a named control, or the output of an earlier UGen.
@@ -76,6 +85,9 @@ pub enum InputRef {
 pub struct UGenDef {
     pub kind: UGenKind,
     pub inputs: Vec<InputRef>,
+    /// Static per-UGen parameters (e.g. `DiskIn`/`DiskOut` paths). Default for
+    /// every other kind.
+    pub config: UGenConfig,
 }
 
 #[derive(Debug)]
@@ -157,6 +169,22 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
+        // DiskIn/DiskOut carry a file path as a static parameter; require it
+        // at compile time so a bad def fails fast with `/fail`.
+        if matches!(kind, UGenKind::DiskIn | UGenKind::DiskOut)
+            && u.path.as_deref().is_none_or(str::is_empty)
+        {
+            return Err(format!(
+                "ugens[{i}] ({}): requires a non-empty path",
+                u.kind
+            ));
+        }
+        let config = UGenConfig {
+            path: u.path.clone(),
+            looping: u.looping,
+            format: u.format.clone(),
+        };
+
         let mut inputs = Vec::with_capacity(want);
         for (k, inp) in u.inputs.iter().enumerate() {
             inputs.push(match *inp {
@@ -185,7 +213,11 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 }
             });
         }
-        ugens.push(UGenDef { kind, inputs });
+        ugens.push(UGenDef {
+            kind,
+            inputs,
+            config,
+        });
     }
 
     Ok(SynthDef {
@@ -218,18 +250,22 @@ pub fn default_spec() -> SynthDefSpec {
             UGenSpec {
                 kind: "SinOsc".into(),
                 inputs: vec![InputSpec::Control(0)],
+                ..Default::default()
             },
             UGenSpec {
                 kind: "Mul".into(),
                 inputs: vec![InputSpec::Ugen(0), InputSpec::Control(1)],
+                ..Default::default()
             },
             UGenSpec {
                 kind: "Out".into(),
                 inputs: vec![InputSpec::Const(0.0), InputSpec::Ugen(1)],
+                ..Default::default()
             },
             UGenSpec {
                 kind: "Out".into(),
                 inputs: vec![InputSpec::Const(1.0), InputSpec::Ugen(1)],
+                ..Default::default()
             },
         ],
     }

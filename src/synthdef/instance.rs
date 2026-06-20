@@ -27,7 +27,11 @@ impl UGenSynth {
     pub fn new(def: Arc<SynthDef>) -> Self {
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
-        let ugens: Vec<_> = def.ugens.iter().map(|u| registry::build(u.kind)).collect();
+        let ugens: Vec<_> = def
+            .ugens
+            .iter()
+            .map(|u| registry::build(u.kind, &u.config))
+            .collect();
         let wires = vec![Block::SILENCE; ugens.len()];
         let locals = vec![Block::SILENCE; def.num_locals];
         Self {

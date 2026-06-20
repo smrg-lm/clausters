@@ -2468,3 +2468,30 @@ at run time:
   RateScale 0.5, plus SampleRate/Frames/Dur/Channels).
 - **Docs**: `schemas.md` (UGen table rows + the `PlayBuf` note now points at
   `BufRateScale`), `GUIA.md`.
+
+## DiskIn / DiskOut: streaming disk I/O UGens (2026-06-20)
+
+Stage 2 of the buffer/disk follow-up. Stream audio to/from disk in real time,
+so arbitrarily long files never load into the buffer pool.
+
+- **Self-contained design** (`dsp::disk`): each `DiskIn`/`DiskOut` owns one
+  background I/O thread plus an `rtrb` SPSC ring shared with the audio thread.
+  Built on the network thread at `/s_new` (open file, spawn thread); the audio
+  thread only pops/pushes the ring (RT-safe — underrun plays silence, DiskOut
+  overrun drops samples); the synth `Box` dropped on the network thread (via the
+  garbage FIFO) signals stop and joins the thread. No engine, OSC, `ProcessCtx`
+  or M13-worker changes — the whole feature lives in the UGen.
+- **DiskIn**: streams via symphonia (any decodable format), one file frame per
+  server sample (no resampling, like scsynth); `loop` restarts from the top of
+  the file (re-open, exact). **DiskOut**: encodes a mono WAV via hound; the
+  server sample rate reaches the writer thread through an atomic published on the
+  first `process`. Both are **mono per UGen** (the `chan` input / one file each).
+- **Static UGen params**: `UGenSpec`/`UGenDef` gained `path`/`loop`/`format`
+  (serde-default, omitted when empty), compiled into a new
+  `registry::UGenConfig` that `build(kind, &config)` consumes. `compile` rejects
+  a `DiskIn`/`DiskOut` without a path.
+- **Tests**: `tests/buffers.rs` (+1: PlayBuf -> DiskOut writes a float WAV,
+  read back exactly, then DiskIn streams the same file and the samples arrive in
+  order). **Example**: `examples/json_client.py disk` (record a sine with
+  DiskOut, stream it back with DiskIn). **Docs**: `schemas.md` (UGen table +
+  streaming note), `architecture.md` (the disk I/O threads), `GUIA.md`.
