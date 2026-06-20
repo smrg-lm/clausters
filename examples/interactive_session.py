@@ -1,4 +1,3 @@
-
 """Clausters as an interactive session, in `# %%` cells.
 
 A guided, step-by-step tour of driving a live Clausters server from the Python
