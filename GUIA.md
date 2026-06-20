@@ -559,6 +559,9 @@ Protocolo implementado hasta M6: `/status`, `/quit`, `/notify`, `/dumpOSC`,
 `/d_free`, los buffers `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`,
 `/b_zero`, `/b_free` (asíncronos vía hilo NRT, responden `/done cmd
 bufnum`) y `/b_query` (responde `/b_info`), más `/d_faust` con el feature.
+Introspección del árbol: `/g_queryTree` (responde `/g_queryTree.reply`),
+`/n_query` (responde `/n_info` por nodo: padre, hermanos, def, controles,
+maps y buses leídos/escritos) y `/g_dumpGraph` (texto legible).
 Notificaciones `/n_go`/`/n_end` para clientes registrados con `/notify 1`.
 Bundles con timetag NTP futuro se agendan y disparan sample-accurate
 (sección M6 más arriba); con timetag inmediato o pasado se ejecutan al

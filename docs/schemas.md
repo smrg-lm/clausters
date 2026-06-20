@@ -333,6 +333,16 @@ Actuation semantics, per message type (each with its named conversion):
 
 Conversions (`note → midi2freq`, `velocity → velocity2amp`, `aftertouch`, `bend`, `cc`, `program`) take **MIDI 2.0 / UMP resolution** (16-bit velocity, 32-bit controllers/pressure/bend) and produce the `f32` a control zone wants — no 7-bit quantization. **MIDI 1.0 is backward-compatible**: classic 7/14-bit input is accepted and widened up to those, so the same controls are driven either way. Because a MIDI voice is realized as the *same* `/s_new`/`/n_set`/`/n_free` an OSC client would send, it is byte-identical to the OSC equivalent (`tests/midi.rs` guards this).
 
+## Node tree introspection
+
+The node tree is delivered to clients as **structured replies** — never scraped from the server's logs. Three queries (all answered by the network-side tree mirror, so they never touch the audio thread):
+
+- **`/g_queryTree <groupID> [flag]`** → `/g_queryTree.reply` — the whole subtree from `groupID` (use `0` for the root), scsynth-compatible. Args: `flag`, the group and its child count, then depth-first per node: ID and child count (`-1` marks a synth), the def name for synths, and — when `flag` is 1 — the control count followed by (name|index, value) pairs.
+- **`/n_query <nodeID>...`** → one `/n_info` per node — per-node detail beyond the tree shape. Layout: `nodeID, parentID, prevID, nextID, isGroup`; then for a **group** `headID, tailID` (`-1` if empty); for a **synth** `defName`, control count + (name|index, value) pairs, map count + (controlIndex, bus, audio) triples (the `/n_map`/`/n_mapa` bindings), and the inferred `reads`/`writes` bus lists as two strings (`"0,16"`, or `"-"` when none). Siblings are `-1` when absent.
+- **`/g_dumpGraph <groupID>`** → `/g_dumpGraph.reply [groupID, text]` — a human-readable rendering of the inferred bus graph (what each child reads/writes and the current order). A debugging aid; for machine use prefer `/g_queryTree`/`/n_query`.
+
+The Python client wraps these as `Server.query_tree()` (nested dict), `Server.node_query()` (per-node dict) and `Server.dump_graph()` (string).
+
 ## Server logging and verbosity
 
 The server logs to **stderr** through `tracing`, at five levels (`error`, `warn`, `info`, `debug`, `trace`). The startup banner and the NRT render summary go to **stdout** (they are program output, not logs). The **audio thread never logs**: it reports conditions over the lock-free FIFOs and the network thread emits them, so logging never breaks real-time safety.
@@ -345,7 +355,7 @@ The level is set, in increasing precedence, by:
   - `/verbosity <int|string>` — an int level (`-1` errors … `3` trace) or an `EnvFilter` directive string. Lets a client retune the server's logs without restarting.
   - `/dumpOSC <flag>` — toggles the OSC-traffic dump (the `clausters::osc` trace target). Unlike scsynth, this is **not** an ad-hoc console print: it routes through the same logging system, controllable by `/verbosity`/`RUST_LOG`, on stderr.
 
-Note that these control the **server's own** logs (on the server's stderr); the **node tree** is delivered to clients as structured data, never scraped from logs — query it with `/g_queryTree` (scsynth-compatible reply, controls included with flag 1) and the inferred bus graph with `/g_dumpGraph`.
+Note that these control the **server's own** logs (on the server's stderr); the **node tree** is delivered to clients as structured data, never scraped from logs — see [Node tree introspection](#node-tree-introspection) above (`/g_queryTree`, `/n_query`, `/g_dumpGraph`).
 
 ## Persisting defs across restarts
 

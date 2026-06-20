@@ -345,6 +345,18 @@ python3 examples/persistent_graphdef.py   # lo anterior, empaquetado como GraphD
 
 `persistent_graphdef.py` muestra la persistencia: lanza el server con `--data-dir` en un **subdirectorio dentro de la carpeta del ejemplo** (`examples/defs_store/`, gitignoreado), manda los defs miembro y el `GraphDef` (el server los agrupa bajo `defs/`: `defs/synthdefs/`, `defs/faustdefs/`, `defs/graphdefs/`), y en una **segunda fase** relanza un server nuevo sobre el mismo `--data-dir` e instancia el GraphDef **sin reenviar nada** (solo suena porque los defs se recargaron de disco al bootear; `server.status()[4]` reporta el conteo). El directorio **queda en disco** para que abras los JSON persistidos y los explores; borralo a mano cuando termines (`rm -rf examples/defs_store`).
 
+### Introspección del árbol de nodos (`query_tree`, `node_query`, `dump_graph`)
+
+El estado del árbol (nodos, ids, def, controles, maps, buses) se obtiene del server como **datos estructurados** (nunca se parsea el log). Tres métodos del `Server`, demostrados en `python3 examples/introspect_tree.py`:
+
+```python
+tree = server.query_tree()              # /g_queryTree -> dict anidado {id, children|def+controls}
+info = server.node_query(node)          # /n_query -> {id, parent, prev, next, is_group, def, controls, maps, reads, writes}
+print(server.dump_graph(group.id))      # /g_dumpGraph -> texto legible del grafo de buses
+```
+
+Los logs del server (stderr) son aparte y los controla el cliente con `/verbosity` (nivel) y `/dumpOSC` (target OSC), o el binario con `-v`/`RUST_LOG` (ver `GUIA.md` raíz).
+
 ## 5. Secuenciación: patterns y eventos (C5)
 
 Un `Pbind` toca una secuencia de notas; corre **NRT** (score → `render()`) o

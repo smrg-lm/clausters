@@ -46,6 +46,80 @@ def _flatten_controls(controls) -> list:
     return flat
 
 
+def _control_key(key):
+    """A control identifier in a reply is a name string, or an int index when
+    the server could not resolve a name."""
+    return key if isinstance(key, str) else int(key)
+
+
+def _parse_tree_nodes(args, i, count, flag):
+    """Recursively parse `count` nodes of a ``/g_queryTree.reply`` starting at
+    index `i`; returns (nodes, next_index). A synth has child-count -1."""
+    out = []
+    for _ in range(count):
+        node_id, child_count = int(args[i]), int(args[i + 1])
+        i += 2
+        if child_count == -1:
+            node = {"id": node_id, "def": str(args[i])}
+            i += 1
+            if flag:
+                ncon = int(args[i])
+                i += 1
+                controls = {}
+                for _ in range(ncon):
+                    controls[_control_key(args[i])] = float(args[i + 1])
+                    i += 2
+                node["controls"] = controls
+            out.append(node)
+        else:
+            children, i = _parse_tree_nodes(args, i, child_count, flag)
+            out.append({"id": node_id, "children": children})
+    return out, i
+
+
+def _parse_query_tree(args) -> dict:
+    """``/g_queryTree.reply`` -> a nested ``{"id", "children"|"def"+"controls"}``
+    tree. A standalone function so it can be unit-tested without a server."""
+    flag = int(args[0])
+    root_id = int(args[1])
+    count = int(args[2])
+    children, _ = _parse_tree_nodes(args, 3, count, flag)
+    return {"id": root_id, "children": children}
+
+
+def _parse_n_info(args) -> dict:
+    """``/n_info`` -> a per-node dict (see ``CmdTranslator::node_info``)."""
+    info = {
+        "id": int(args[0]),
+        "parent": int(args[1]),
+        "prev": int(args[2]),
+        "next": int(args[3]),
+        "is_group": bool(int(args[4])),
+    }
+    if info["is_group"]:
+        info["head"], info["tail"] = int(args[5]), int(args[6])
+        return info
+    i = 5
+    info["def"] = str(args[i])
+    i += 1
+    ncon = int(args[i])
+    i += 1
+    controls = {}
+    for _ in range(ncon):
+        controls[_control_key(args[i])] = float(args[i + 1])
+        i += 2
+    info["controls"] = controls
+    nmaps = int(args[i])
+    i += 1
+    maps = []
+    for _ in range(nmaps):
+        maps.append({"control": int(args[i]), "bus": int(args[i + 1]), "audio": bool(args[i + 2])})
+        i += 3
+    info["maps"] = maps
+    info["reads"], info["writes"] = str(args[i]), str(args[i + 1])
+    return info
+
+
 # Server defaults, mirroring the Rust server's `DEFAULT_AUDIO_BUSES` /
 # `DEFAULT_CONTROL_BUSES` (128 is the hard audio ceiling) and `--sample-rate`.
 # They live here, on the server-config object, not in the bus module: how many
@@ -211,6 +285,45 @@ class Server:
             nominal_sample_rate=float(args[4]),
             actual_sample_rate=float(args[5]),
         )
+
+    # ---- node tree introspection (RT only) ----
+
+    def query_tree(self, group=ROOT_NODE_ID, *, controls: bool = True,
+                   timeout: float = 5.0) -> dict:
+        """The node tree from `group` down (scsynth ``/g_queryTree``), as a
+        nested dict: a group is ``{"id", "children": [...]}``, a synth is
+        ``{"id", "def", "controls": {name: value}}`` (controls only when
+        ``controls=True``). This is the **structured** way to read the tree —
+        never scrape the server's logs."""
+        gid = group.id if hasattr(group, "id") else group
+        addr, args = self.request("/g_queryTree", int(gid), 1 if controls else 0,
+                                  timeout=timeout, expect=("/g_queryTree.reply", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/g_queryTree failed: {args}")
+        return _parse_query_tree(args)
+
+    def node_query(self, node, timeout: float = 5.0) -> dict:
+        """Per-node detail (``/n_query`` -> ``/n_info``): ``id``, ``parent``,
+        ``prev``/``next`` siblings, ``is_group``; for a group ``head``/``tail``;
+        for a synth ``def``, ``controls``, ``maps`` (``/n_map`` bindings) and the
+        inferred ``reads``/``writes`` bus lists."""
+        nid = node.id if hasattr(node, "id") else node
+        addr, args = self.request("/n_query", int(nid),
+                                  timeout=timeout, expect=("/n_info", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/n_query failed: {args}")
+        return _parse_n_info(args)
+
+    def dump_graph(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> str:
+        """The inferred bus graph of `group` as a human-readable string
+        (``/g_dumpGraph``): what each child reads/writes and the current order.
+        A debugging aid; for machine use prefer :meth:`query_tree`."""
+        gid = group.id if hasattr(group, "id") else group
+        addr, args = self.request("/g_dumpGraph", int(gid),
+                                  timeout=timeout, expect=("/g_dumpGraph.reply", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/g_dumpGraph failed: {args}")
+        return str(args[1])
 
     # ---- definitions ----
 

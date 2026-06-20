@@ -1455,6 +1455,78 @@ impl CmdTranslator {
         }
     }
 
+    /// `/n_info` arguments for `/n_query`: per-node detail beyond the tree
+    /// structure `/g_queryTree` gives. Layout: `nodeID, parentID, prevID,
+    /// nextID, isGroup`; then for a **group** `headID, tailID` (`-1` if empty);
+    /// for a **synth** `defName`, `numControls` + (name|index, value) pairs,
+    /// `numMaps` + (controlIndex, bus, audio) triples, and the inferred
+    /// `reads`/`writes` bus lists as two strings (same format as
+    /// `/g_dumpGraph`). Siblings are `-1` when absent.
+    pub fn node_info(&self, id: i32) -> Result<Vec<OscType>, String> {
+        let Some(node) = self.mirror.get(id) else {
+            return Err(format!("node {id} not found"));
+        };
+        let parent = self.mirror.parent(id).unwrap_or(-1);
+        let (prev, next) = self.siblings(id, parent);
+        let mut args = vec![
+            OscType::Int(id),
+            OscType::Int(parent),
+            OscType::Int(prev),
+            OscType::Int(next),
+        ];
+        match &node.body {
+            MirrorBody::Group { children, .. } => {
+                args.push(OscType::Int(1));
+                args.push(OscType::Int(children.first().copied().unwrap_or(-1)));
+                args.push(OscType::Int(children.last().copied().unwrap_or(-1)));
+            }
+            MirrorBody::Synth {
+                def_name,
+                controls,
+                maps,
+                ..
+            } => {
+                args.push(OscType::Int(0));
+                args.push(OscType::String(def_name.clone()));
+                args.push(OscType::Int(controls.len() as i32));
+                let def = self.node_defs.get(&id);
+                for (i, value) in controls.iter().enumerate() {
+                    let name = def.and_then(|d| d.control_name(i)).unwrap_or("");
+                    if name.is_empty() {
+                        args.push(OscType::Int(i as i32));
+                    } else {
+                        args.push(OscType::String(name.into()));
+                    }
+                    args.push(OscType::Float(*value));
+                }
+                args.push(OscType::Int(maps.len() as i32));
+                for (ctl, bus, audio) in maps {
+                    args.push(OscType::Int(*ctl as i32));
+                    args.push(OscType::Int(*bus));
+                    args.push(OscType::Int(*audio as i32));
+                }
+                let usage = self.mirror.usage_of(id);
+                args.push(OscType::String(bus_list(usage.reads)));
+                args.push(OscType::String(bus_list(usage.writes)));
+            }
+        }
+        Ok(args)
+    }
+
+    /// Previous and next sibling of `id` within `parent`'s children (`-1` if
+    /// there is none or `id` is the root).
+    fn siblings(&self, id: i32, parent: i32) -> (i32, i32) {
+        let Some(sibs) = self.mirror.children(parent) else {
+            return (-1, -1);
+        };
+        let Some(pos) = sibs.iter().position(|&c| c == id) else {
+            return (-1, -1);
+        };
+        let prev = if pos > 0 { sibs[pos - 1] } else { -1 };
+        let next = sibs.get(pos + 1).copied().unwrap_or(-1);
+        (prev, next)
+    }
+
     /// `/g_dumpGraph`: a human-readable view of the inferred bus graph of
     /// one group — what each child reads/writes and the current order.
     pub fn dump_graph(&self, group: i32) -> Result<String, String> {

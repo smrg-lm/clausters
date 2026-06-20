@@ -659,6 +659,7 @@ impl OscServer {
                 self.persist_bindings();
             }
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),
+            "/n_query" => self.handle_n_query(&msg, from),
             "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
             "/c_set" => self.handle_c_set(&msg, from),
             "/c_get" => self.handle_c_get(&msg, from),
@@ -913,6 +914,21 @@ impl OscServer {
         match self.translator.query_tree(group, flag != 0) {
             Ok(args) => self.reply(from, "/g_queryTree.reply", args),
             Err(e) => self.fail(from, "/g_queryTree", e),
+        }
+    }
+
+    /// Per-node detail: replies `/n_info` for each queried node ID (scsynth's
+    /// `/n_query`, extended with the def name, controls, maps and inferred
+    /// bus usage — see [`CmdTranslator::node_info`]).
+    fn handle_n_query(&mut self, msg: &OscMessage, from: ClientId) {
+        for arg in &msg.args {
+            let OscType::Int(id) = arg else {
+                return self.fail(from, "/n_query", "expected int node ids");
+            };
+            match self.translator.node_info(*id) {
+                Ok(args) => self.reply(from, "/n_info", args),
+                Err(e) => self.fail(from, "/n_query", e),
+            }
         }
     }
 

@@ -238,3 +238,36 @@ if __name__ == "__main__":
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
                 if not skip:
                     traceback.print_exc()
+
+
+# ---- node-tree reply parsers (server-free) ----
+
+def test_parse_query_tree():
+    from clausters.defs.server import _parse_query_tree
+    # flag=1; root 0 -> group 1000 -> synth 1001 (beep, freq/amp)
+    args = [1, 0, 1, 1000, 1, 1001, -1, "beep", 2, "freq", 330.0, "amp", 0.2]
+    tree = _parse_query_tree(args)
+    assert tree == {
+        "id": 0,
+        "children": [{
+            "id": 1000,
+            "children": [{
+                "id": 1001, "def": "beep",
+                "controls": {"freq": 330.0, "amp": pytest.approx(0.2)},
+            }],
+        }],
+    }
+
+
+def test_parse_n_info_synth_and_group():
+    from clausters.defs.server import _parse_n_info
+    synth = [1001, 1000, -1, -1, 0, "beep", 1, "freq", 330.0, 1, 0, 5, 0, "-", "0"]
+    info = _parse_n_info(synth)
+    assert info["id"] == 1001 and info["parent"] == 1000 and not info["is_group"]
+    assert info["def"] == "beep" and info["controls"] == {"freq": pytest.approx(330.0)}
+    assert info["maps"] == [{"control": 0, "bus": 5, "audio": False}]
+    assert info["reads"] == "-" and info["writes"] == "0"
+
+    group = [1000, 0, -1, -1, 1, 1001, 1001]
+    g = _parse_n_info(group)
+    assert g["is_group"] and g["head"] == 1001 and g["tail"] == 1001

@@ -667,3 +667,48 @@ fn faust_synths_sort_by_their_reserved_buses() {
     );
     server.quit();
 }
+
+#[test]
+fn n_query_reports_node_detail() {
+    // `/n_query` -> `/n_info`: per-node detail (parent, siblings, def, inferred
+    // bus usage) and the group head/tail, beyond what `/g_queryTree` carries.
+    let server = Server::spawn();
+    server.d_recv(&src_def());
+    server.d_recv(&fx_def());
+    let group = 100;
+    server.send(
+        "/g_new",
+        vec![OscType::Int(group), OscType::Int(1), OscType::Int(0)],
+    );
+    for (name, id) in [("src", 1000), ("fx", 1001)] {
+        server.send(
+            "/s_new",
+            vec![
+                OscType::String(name.into()),
+                OscType::Int(id),
+                OscType::Int(1), // TAIL
+                OscType::Int(group),
+            ],
+        );
+    }
+
+    server.send("/n_query", vec![OscType::Int(1001)]);
+    let info = server.recv_until("/n_info").args;
+    assert_eq!(info[0], OscType::Int(1001)); // id
+    assert_eq!(info[1], OscType::Int(group)); // parent
+    assert_eq!(info[2], OscType::Int(1000)); // prev sibling (src)
+    assert_eq!(info[3], OscType::Int(-1)); // next sibling
+    assert_eq!(info[4], OscType::Int(0)); // not a group
+    assert_eq!(info[5], OscType::String("fx".into())); // def name
+    // fx reads bus 16 and writes it back; those are the last two args.
+    assert_eq!(info[info.len() - 2], OscType::String("16".into())); // reads
+    assert_eq!(info[info.len() - 1], OscType::String("16".into())); // writes
+
+    server.send("/n_query", vec![OscType::Int(group)]);
+    let g = server.recv_until("/n_info").args;
+    assert_eq!(g[4], OscType::Int(1)); // is a group
+    assert_eq!(g[5], OscType::Int(1000)); // head
+    assert_eq!(g[6], OscType::Int(1001)); // tail
+
+    server.quit();
+}
