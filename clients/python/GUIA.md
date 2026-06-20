@@ -321,6 +321,16 @@ scsynth) está en `python3 examples/group_set.py`. El valor de un control miembr
 puede ser un número, una referencia de bus (`g.bus(...)`, se wirea el control a
 ese bus) o `"OUT"` (bus de hardware 0).
 
+**Partición shared/per-voz (instrumento polifónico).** Un miembro con
+`voice=True` es per-voz: la parte **compartida** se instancia una vez con
+`server.graph(...)` (el bus privado, el mixer) y cada nota agrega una voz con
+`server.graph_voice(instancia, {...})`, cableada al mismo bus. Un puerto de
+superficie apunta o a miembros compartidos o a per-voz (no mezcla). Ejemplo
+completo: `python3 examples/graphdef_poly.py` (mixer compartido + oscilador
+per-voz, arpegio de voces solapadas). Es el mismo modelo que usa
+`/midi_bind canal nombreGraph` en el servidor: instancia la parte compartida al
+bindear y cada nota spawnea una voz.
+
 ## 5. Secuenciación: patterns y eventos (C5)
 
 Un `Pbind` toca una secuencia de notas; corre **NRT** (score → `render()`) o

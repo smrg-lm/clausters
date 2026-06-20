@@ -764,15 +764,24 @@ PYTHONPATH=clients/python python3 examples/group_set.py
 # que maneja dos osciladores, el segundo escalado a una quinta):
 PYTHONPATH=clients/python python3 examples/graphdef.py
 #   imprime el JSON de /d_graph y luego: rendered 96000 frames | peak ~0.11
+
+# GraphDef polifónico: parte compartida (mixer, una vez) + miembro per-voz
+# (oscilador, voice=True) spawneado por nota con /graph_voice:
+PYTHONPATH=clients/python python3 examples/graphdef_poly.py
+#   -> rendered 43200 frames | peak ~0.12  (cuatro voces solapadas)
 ```
 
 A nivel servidor lo cubren `tests/group_nset.rs` (un `/n_set`/`/n_map` sobre un
 grupo se propaga al subárbol y para en cada synth) y `tests/graphdef.rs`
-(`/d_graph` valida + persiste, `/graph_new` instancia con buses privados y
-superficie, `/n_set` sobre la instancia resuelve contra la superficie,
-`/n_free` recupera los buses). Para probarlo en vivo por OSC: cargar las defs
-miembro con `/d_recv`, enviar el GraphDef con `/d_graph`, instanciar con
-`/graph_new nombre id 0 0` y mover un puerto con `/n_set id puerto valor`.
+(`/d_graph` valida + persiste, `/graph_new` instancia los miembros **compartidos**
+con buses privados y superficie, `/graph_voice` spawnea un subgrafo **per-voz**,
+`/n_set` sobre instancia o voz resuelve contra su superficie, `/n_free` libera y
+recupera buses, y `/midi_bind` a una GraphDef toca voces por nota). Para probarlo
+en vivo por OSC: cargar las defs miembro con `/d_recv`, enviar el GraphDef con
+`/d_graph`, instanciar con `/graph_new nombre id 0 0`, spawnear una voz con
+`/graph_voice id voz freq 440` y moverla con `/n_set voz puerto valor`. Por MIDI:
+`/midi_bind canal nombreGraph` (con `clausters --midi` y `aconnect`) y cada nota
+spawnea una voz.
 
 ## 4. Checklist de funcionalidades
 
@@ -807,6 +816,7 @@ miembro con `/d_recv`, enviar el GraphDef con `/d_graph`, instanciar con
 | Persistencia de defs en disco + caché de bitcode (M16) | `tests/persistence.rs` | `--data-dir`, dos sesiones de arriba |
 | `/n_set`/`/n_map` sobre un grupo: propagación scsynth (M18) | `tests/group_nset.rs` | `python3 examples/group_set.py` |
 | GraphDef: programa de grafo + superficie nombrada (M18) | `tests/graphdef.rs` | `python3 examples/graphdef.py` |
+| GraphDef per-voz `/graph_voice` + `/midi_bind` a GraphDef (M18) | `tests/graphdef.rs` | `python3 examples/graphdef_poly.py` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 | Documentación integral: README + libro mdBook + rustdoc (M15) | `mdbook build` y `cargo doc` limpios | leer `README.md` y el libro |

@@ -610,7 +610,7 @@ impl OscServer {
             // path: translate, then ship every command.
             "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
             | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel"
-            | "/graph_new" | "/midi_bind" | "/midi_unbind" | "/midi_map" => {
+            | "/graph_new" | "/graph_voice" | "/midi_bind" | "/midi_unbind" | "/midi_map" => {
                 self.handle_via_translate(&msg, from)
             }
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),

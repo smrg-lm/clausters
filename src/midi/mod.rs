@@ -174,6 +174,10 @@ pub struct MidiBinding {
     pub cc: HashMap<u8, String>,
     /// Program number → instrument def name (program change re-selects it).
     pub programs: HashMap<u8, String>,
+    /// M18: when the instrument is a **GraphDef**, the shared instance group
+    /// spawned at bind time. A note then spawns a per-voice sub-graph
+    /// (`/graph_voice`) inside it instead of a plain `/s_new`.
+    pub graph_instance: Option<i32>,
 }
 
 impl MidiBinding {
@@ -191,6 +195,7 @@ impl MidiBinding {
             poly_control: None,
             cc: HashMap::new(),
             programs: HashMap::new(),
+            graph_instance: None,
         }
     }
 }

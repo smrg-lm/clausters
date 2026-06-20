@@ -60,7 +60,8 @@ fn load_defs(t: &mut CmdTranslator) {
 }
 
 fn members(t: &CmdTranslator, group: i32) -> Vec<i32> {
-    t.graph_instances.get(&group).unwrap().members.clone()
+    let nodes = &t.graph_instances.get(&group).unwrap().shared_nodes;
+    (0..nodes.len()).map(|i| nodes[&i]).collect()
 }
 
 fn control(t: &CmdTranslator, id: i32, index: usize) -> f32 {
@@ -269,4 +270,287 @@ fn d_graph_rejects_bad_surface_and_bus_refs() {
     // A member references an undeclared internal bus.
     let bad_bus = r#"{"name":"y","members":[{"def":"d","controls":{"out":"ghost"}}]}"#;
     assert!(t.d_graph(&[OscType::String(bad_bus.into())]).is_err());
+}
+
+// ---- per-voice partition (/graph_voice) ----
+
+/// A per-voice oscillator: writes `SinOsc(freq) * level` to the bus `out`.
+const VTONE: &str = r#"{
+    "name": "vtone",
+    "controls": [{"name": "out", "default": 0.0}, {"name": "freq", "default": 440.0}, {"name": "level", "default": 0.2}],
+    "ugens": [
+        {"kind": "SinOsc", "inputs": [{"control": 1}]},
+        {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 2}]},
+        {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 1}]}
+    ]
+}"#;
+
+/// A shared mixer: reads the bus `in`, scales by `gain`, writes to hardware 0.
+const VGAIN: &str = r#"{
+    "name": "vgain",
+    "controls": [{"name": "in", "default": 0.0}, {"name": "gain", "default": 0.4}],
+    "ugens": [
+        {"kind": "In", "inputs": [{"control": 0}]},
+        {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 1}]},
+        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+    ]
+}"#;
+
+/// A polyphonic instrument: a shared mixer (member 0) + a per-voice oscillator
+/// (member 1, `voice: true`). `gain` is a shared port; `freq`/`amp` are voice
+/// ports (so they apply per `/graph_voice`).
+const POLY: &str = r#"{
+    "name": "poly",
+    "buses": [{"name": "mix", "rate": "audio"}],
+    "members": [
+        {"def": "vgain", "controls": {"in": "mix"}},
+        {"def": "vtone", "controls": {"out": "mix"}, "voice": true}
+    ],
+    "surface": {
+        "gain": [{"member": 0, "control": "gain"}],
+        "freq": [{"member": 1, "control": "freq"}],
+        "amp":  [{"member": 1, "control": "level"}]
+    },
+    "defaults": {"gain": 0.4, "amp": 0.2}
+}"#;
+
+fn load_poly(t: &mut CmdTranslator) {
+    t.d_recv(&[OscType::String(VTONE.into())]).unwrap();
+    t.d_recv(&[OscType::String(VGAIN.into())]).unwrap();
+    t.d_graph(&[OscType::String(POLY.into())]).unwrap();
+}
+
+/// The single tone node inside a voice sub-group.
+fn voice_tone(t: &CmdTranslator, voice: i32) -> i32 {
+    t.mirror.children(voice).unwrap()[0]
+}
+
+#[test]
+fn graph_new_only_instantiates_shared_members() {
+    let mut t = CmdTranslator::new(SR);
+    load_poly(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("poly".into()),
+            OscType::Int(700),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+
+    let inst = t.graph_instances.get(&700).unwrap();
+    // Only the shared mixer (member 0); the per-voice osc is absent until /graph_voice.
+    assert_eq!(inst.shared_nodes.len(), 1);
+    assert!(inst.shared_nodes.contains_key(&0));
+    assert!(inst.voices.is_empty());
+    // The shared port resolved; the voice ports did not (no voice yet).
+    assert!(inst.surface.contains_key("gain"));
+    assert!(!inst.surface.contains_key("freq"));
+}
+
+#[test]
+fn graph_voice_spawns_a_wired_voice_with_its_surface() {
+    let mut t = CmdTranslator::new(SR);
+    load_poly(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("poly".into()),
+            OscType::Int(700),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    let mix = control(&t, t.graph_instances.get(&700).unwrap().shared_nodes[&0], 0); // vgain.in
+
+    run(
+        &mut t,
+        "/graph_voice",
+        vec![
+            OscType::Int(700),
+            OscType::Int(710),
+            OscType::String("freq".into()),
+            OscType::Float(330.0),
+        ],
+    );
+
+    assert!(t.graph_voices.contains_key(&710));
+    assert_eq!(t.graph_voices.get(&710).unwrap().instance, 700);
+    assert!(t.graph_instances.get(&700).unwrap().voices.contains(&710));
+
+    let tone = voice_tone(&t, 710);
+    assert_eq!(control(&t, tone, 0), mix); // vtone.out wired to the shared mix bus
+    assert_eq!(control(&t, tone, 1), 330.0); // freq port override
+    assert_eq!(control(&t, tone, 2), 0.2); // amp port default -> level
+}
+
+#[test]
+fn n_set_on_a_voice_resolves_against_its_surface() {
+    let mut t = CmdTranslator::new(SR);
+    load_poly(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("poly".into()),
+            OscType::Int(700),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    run(
+        &mut t,
+        "/graph_voice",
+        vec![OscType::Int(700), OscType::Int(710)],
+    );
+    let tone = voice_tone(&t, 710);
+
+    run(
+        &mut t,
+        "/n_set",
+        vec![
+            OscType::Int(710),
+            OscType::String("freq".into()),
+            OscType::Float(550.0),
+        ],
+    );
+    assert_eq!(control(&t, tone, 1), 550.0);
+}
+
+#[test]
+fn graph_voice_needs_voice_members_and_a_live_instance() {
+    let mut t = CmdTranslator::new(SR);
+    load_defs(&mut t); // the voice-less "chain"
+    load_poly(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("chain".into()),
+            OscType::Int(500),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+
+    let mut cmds = Vec::new();
+    // "chain" has no voice members.
+    assert!(
+        t.translate(
+            &msg("/graph_voice", vec![OscType::Int(500), OscType::Int(-1)]),
+            &mut cmds
+        )
+        .is_err()
+    );
+    // unknown instance.
+    assert!(
+        t.translate(
+            &msg("/graph_voice", vec![OscType::Int(999), OscType::Int(-1)]),
+            &mut cmds
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn freeing_a_voice_and_the_instance_cleans_up() {
+    let mut t = CmdTranslator::new(SR);
+    load_poly(&mut t);
+    run(
+        &mut t,
+        "/graph_new",
+        vec![
+            OscType::String("poly".into()),
+            OscType::Int(700),
+            OscType::Int(0),
+            OscType::Int(0),
+        ],
+    );
+    run(
+        &mut t,
+        "/graph_voice",
+        vec![OscType::Int(700), OscType::Int(710)],
+    );
+    run(
+        &mut t,
+        "/graph_voice",
+        vec![OscType::Int(700), OscType::Int(711)],
+    );
+
+    // Free one voice: it leaves graph_voices and the instance's set.
+    run(&mut t, "/n_free", vec![OscType::Int(710)]);
+    assert!(!t.graph_voices.contains_key(&710));
+    assert!(!t.graph_instances.get(&700).unwrap().voices.contains(&710));
+
+    // Free the instance: it takes the remaining voice with it.
+    run(&mut t, "/n_free", vec![OscType::Int(700)]);
+    assert!(t.graph_instances.get(&700).is_none());
+    assert!(!t.graph_voices.contains_key(&711));
+}
+
+#[test]
+fn d_graph_rejects_a_port_mixing_shared_and_voice_members() {
+    let mut t = CmdTranslator::new(SR);
+    let bad = r#"{"name":"mix","members":[{"def":"a"},{"def":"b","voice":true}],
+                  "surface":{"p":[{"member":0,"control":"x"},{"member":1,"control":"y"}]}}"#;
+    assert!(t.d_graph(&[OscType::String(bad.into())]).is_err());
+}
+
+// ---- MIDI binding a GraphDef ----
+
+#[test]
+fn midi_bind_to_a_graphdef_plays_voices() {
+    use clausters::midi::ChannelVoiceMessage::{NoteOff, NoteOn};
+    use clausters::midi::convert;
+
+    let mut t = CmdTranslator::new(SR);
+    load_poly(&mut t);
+
+    // Binding spawns the shared instance.
+    run(
+        &mut t,
+        "/midi_bind",
+        vec![OscType::Int(0), OscType::String("poly".into())],
+    );
+    assert_eq!(t.graph_instances.len(), 1);
+    let instance = *t.graph_instances.keys().next().unwrap();
+
+    // A note spawns a voice into that instance; freq follows the note.
+    let mut cmds = Vec::new();
+    t.translate_midi(
+        NoteOn {
+            channel: 0,
+            note: 69,
+            velocity: 100,
+        },
+        &mut cmds,
+    )
+    .unwrap();
+    assert_eq!(t.graph_voices.len(), 1);
+    let voice = *t.graph_voices.keys().next().unwrap();
+    assert_eq!(t.graph_voices.get(&voice).unwrap().instance, instance);
+    let tone = voice_tone(&t, voice);
+    assert!((control(&t, tone, 1) - convert::midi2freq(69.0)).abs() < 1e-3); // A4 = 440
+
+    // Note off frees the voice.
+    cmds.clear();
+    t.translate_midi(
+        NoteOff {
+            channel: 0,
+            note: 69,
+            velocity: 0,
+        },
+        &mut cmds,
+    )
+    .unwrap();
+    assert!(t.graph_voices.is_empty());
+
+    // Unbind frees the shared instance.
+    cmds.clear();
+    t.translate(&msg("/midi_unbind", vec![OscType::Int(0)]), &mut cmds)
+        .unwrap();
+    assert!(t.graph_instances.is_empty());
 }

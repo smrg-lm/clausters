@@ -82,6 +82,12 @@ pub struct GraphMember {
     /// control-bus name), for controls fed continuously by a bus.
     #[serde(default)]
     pub maps: HashMap<String, String>,
+    /// `true` = a **per-voice** member, instantiated once per `/graph_voice`
+    /// (or per MIDI note) inside the instance, wired to the same private
+    /// buses. `false` (default) = a **shared** member, instantiated once at
+    /// `/graph_new` (the always-on part: buses, mixer, effects).
+    #[serde(default)]
+    pub voice: bool,
 }
 
 /// One inner target of a surface port: a member's control, with optional
@@ -152,6 +158,16 @@ impl GraphDefSpec {
                     ));
                 }
             }
+            // A port maps either to shared members or to voice members, never
+            // a mix: a shared port resolves at /graph_new, a voice port at
+            // /graph_voice, so they cannot share one name.
+            let any_voice = targets.iter().any(|t| self.members[t.member].voice);
+            let any_shared = targets.iter().any(|t| !self.members[t.member].voice);
+            if any_voice && any_shared {
+                return Err(format!(
+                    "surface port '{port}': mixes shared and per-voice members"
+                ));
+            }
         }
         for port in self.defaults.keys() {
             if !self.surface.contains_key(port) {
@@ -159,6 +175,21 @@ impl GraphDefSpec {
             }
         }
         Ok(())
+    }
+
+    /// `true` if the port's targets are per-voice members (so its default is
+    /// applied at `/graph_voice`, not `/graph_new`). A port with no targets or
+    /// only shared targets is shared.
+    pub fn is_voice_port(&self, port: &str) -> bool {
+        self.surface
+            .get(port)
+            .and_then(|ts| ts.first())
+            .is_some_and(|t| self.members[t.member].voice)
+    }
+
+    /// `true` if any member is per-voice (so `/graph_voice` / MIDI notes apply).
+    pub fn has_voice_members(&self) -> bool {
+        self.members.iter().any(|m| m.voice)
     }
 }
 
@@ -202,16 +233,35 @@ impl RangeAllocator {
     }
 }
 
-/// A live GraphDef instance: the group holding it, the private buses to
-/// reclaim on free, and the resolved surface used to translate a `/n_set`
-/// against the instance into concrete member control writes.
+use std::collections::HashSet;
+use std::sync::Arc;
+
+/// A resolved surface: port name → `(member node id, control index, mul, add)`.
+pub type ResolvedSurface = HashMap<String, Vec<(i32, u32, f32, f32)>>;
+
+/// A live GraphDef instance: the group holding its shared members, the private
+/// buses to reclaim on free, the resolved shared surface, and the per-voice
+/// sub-groups spawned inside it.
 pub struct GraphInstance {
-    /// Member node ids, in member order (parallel to `def.members`).
-    pub members: Vec<i32>,
+    /// The def, kept so `/graph_voice` can instantiate its per-voice members.
+    pub def: Arc<GraphDefSpec>,
+    /// Shared member index → node id (per-voice members are absent).
+    pub shared_nodes: HashMap<usize, i32>,
+    /// Resolved internal bus name → first index, shared by all voices.
+    pub bus_index: HashMap<String, usize>,
     /// Private audio buses `(first, width)` to free on teardown.
     pub audio_buses: Vec<(usize, usize)>,
     /// Private control buses `(first, width)` to free on teardown.
     pub control_buses: Vec<(usize, usize)>,
-    /// Resolved surface: port → `(member node id, control index, mul, add)`.
-    pub surface: HashMap<String, Vec<(i32, u32, f32, f32)>>,
+    /// Resolved shared surface (`/n_set` against the instance group id).
+    pub surface: ResolvedSurface,
+    /// The voice sub-group ids spawned inside this instance.
+    pub voices: HashSet<i32>,
+}
+
+/// A live per-voice sub-graph spawned by `/graph_voice` (or a MIDI note): its
+/// own resolved surface, and the instance it belongs to.
+pub struct GraphVoice {
+    pub instance: i32,
+    pub surface: ResolvedSurface,
 }

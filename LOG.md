@@ -2347,3 +2347,40 @@ Core green with and without `faust`; full Python suite green; `cargo fmt`
 clean. Deferred within M18 (noted in PLAN.md): MIDI-binding a GraphDef
 (`/midi_bind` → graph) and an explicit per-voice `/graph_voice`; both build on
 this core.
+
+## M18 (closed) — per-voice partition (/graph_voice) + MIDI-bind a GraphDef (2026-06-20)
+
+The two deferred M18 sub-parts, closing the milestone.
+
+- **Shared/per-voice partition + `/graph_voice`**: a member tagged
+  `"voice": true` is per-voice; `/graph_new` now instantiates only the
+  **shared** members, and `/graph_voice instanceID id [port value...]` spawns
+  the per-voice members as a sub-group at the head of the instance, wired to
+  the same private buses. The auto-sort orders the voice before the shared
+  mixer via the sub-group's aggregate `usage_of` (M12). A surface port maps to
+  shared *or* voice members, never a mix (`/d_graph` `/fail`s otherwise):
+  shared ports resolve at `/graph_new`, voice ports per voice; `/n_set` on an
+  instance or a voice id routes through the right surface. `/n_free` of a voice
+  forgets it; of an instance reclaims buses and drops its voices. The shared
+  steps were factored into `alloc_graph_buses`/`build_members`/`resolve_ports`,
+  reused by both paths. `GraphInstance` now stores the `Arc<GraphDefSpec>`, the
+  resolved `bus_index` and its voice set; new `GraphVoice` per voice.
+- **MIDI-bind a GraphDef**: `/midi_bind channel graphname ...` spawns the
+  shared instance at bind time (a reserved MIDI id) and each note becomes a
+  `/graph_voice` into it (note → `freq` port, velocity → `amp` port; note-off
+  frees the voice or, gate-aware, sets its `gate` port). `/midi_unbind` frees
+  the instance (and its voices with it). `MidiBinding` gains
+  `graph_instance: Option<i32>`; `midi_bind`/`midi_note_on`/`midi_unbind`
+  branch on it. A GraphDef with no per-voice members is rejected at bind.
+- **Client**: `GraphDef.add(..., voice=True)` and `Server.graph_voice(...)`.
+  Example `examples/graphdef_poly.py` (a shared mixer + a per-voice oscillator,
+  an arpeggio of overlapping voices; renders offline, peak ~0.12). Tests:
+  `tests/graphdef.rs` +7 (voice spawn/surface/free, mixed-port reject,
+  instance-frees-voices, `/midi_bind` to a GraphDef plays voices and
+  `/midi_unbind` frees the instance); `test_graphdef.py` +2.
+- **Docs**: `schemas.md` (the shared/per-voice + `/graph_voice` section,
+  `/midi_bind` to a GraphDef, `voice` member field, schedulable list),
+  `architecture.md`, `examples.md`, root and client `GUIA.md`.
+
+Core green with and without `faust`; full Python suite green; `cargo fmt`
+clean. **M18 fully done.**

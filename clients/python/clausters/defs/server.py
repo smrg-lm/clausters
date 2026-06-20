@@ -239,6 +239,17 @@ class Server:
                       *_flatten_controls(ports))
         return Group(node_id)
 
+    def graph_voice(self, instance, ports=None) -> Group:
+        """Spawns a per-voice sub-graph (``/graph_voice``, M18) inside a running
+        GraphDef ``instance`` (a :class:`~clausters.defs.node.Group` from
+        :meth:`graph`), wired to its shared private buses. ``ports`` overrides
+        the voice-port defaults. The returned group is the voice: drive it
+        through its surface with :meth:`set` and free it with :meth:`free`."""
+        inst_id = instance.id if hasattr(instance, "id") else instance
+        node_id = self.nodes.alloc()
+        self.send_msg("/graph_voice", inst_id, node_id, *_flatten_controls(ports))
+        return Group(node_id)
+
     def set(self, node, controls):
         self.send_msg("/n_set", node.id if hasattr(node, "id") else node,
                       *_flatten_controls(controls))

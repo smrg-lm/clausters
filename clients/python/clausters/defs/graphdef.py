@@ -117,13 +117,15 @@ class GraphDef:
         return GraphBusRef(name)
 
     def add(self, defname: str, controls: dict | None = None, *,
-            maps: dict | None = None, **control_kw) -> MemberRef:
+            maps: dict | None = None, voice: bool = False, **control_kw) -> MemberRef:
         """Adds a member: an instance of the SynthDef/FaustDef ``defname``.
         Control values may be numbers, a :class:`GraphBusRef` (to wire the
         control to an internal bus), or ``"OUT"`` (hardware bus 0). ``maps``
         binds controls to internal *control* buses via ``/n_map``. Pass
         controls as a dict (needed for reserved names like ``in``) and/or as
-        keywords."""
+        keywords. ``voice=True`` marks a **per-voice** member: instantiated once
+        per :meth:`Server.graph_voice` (or MIDI note) instead of at
+        instantiation — the per-note part of a polyphonic instrument."""
         merged = dict(controls or {})
         merged.update(control_kw)
         member: dict = {"def": str(defname)}
@@ -134,6 +136,8 @@ class GraphDef:
                 k: (v.name if isinstance(v, GraphBusRef) else str(v))
                 for k, v in maps.items()
             }
+        if voice:
+            member["voice"] = True
         index = len(self._members)
         self._members.append(member)
         return MemberRef(index)

@@ -9,7 +9,7 @@
 //! `/c_set`) plus the synchronous def-table commands (`/d_recv`, `/d_free`).
 //! Buffer commands parse into NRT jobs with [`parse_buffer_msg`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use rosc::OscType;
@@ -22,8 +22,8 @@ use crate::midi::{ChannelVoiceMessage, MidiBinding, MidiBindings, convert};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
 use crate::osc::graphdef::{
-    ControlValue, GRAPH_AUDIO_BUS_BASE, GRAPH_CONTROL_BUS_BASE, GraphDefSpec, GraphInstance,
-    RangeAllocator,
+    BusRate, ControlValue, GRAPH_AUDIO_BUS_BASE, GRAPH_CONTROL_BUS_BASE, GraphDefSpec,
+    GraphInstance, GraphVoice, RangeAllocator, ResolvedSurface,
 };
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
@@ -115,6 +115,9 @@ pub struct CmdTranslator {
     /// and the private-bus allocators they draw from.
     pub graph_defs: HashMap<String, Arc<GraphDefSpec>>,
     pub graph_instances: HashMap<i32, GraphInstance>,
+    /// Per-voice sub-graphs spawned by `/graph_voice` (or MIDI notes), keyed by
+    /// their sub-group id.
+    pub graph_voices: HashMap<i32, GraphVoice>,
     graph_audio_buses: RangeAllocator,
     graph_control_buses: RangeAllocator,
 }
@@ -135,6 +138,7 @@ impl CmdTranslator {
             midi: MidiBindings::new(),
             graph_defs: HashMap::new(),
             graph_instances: HashMap::new(),
+            graph_voices: HashMap::new(),
             graph_audio_buses: RangeAllocator::new(
                 GRAPH_AUDIO_BUS_BASE,
                 NUM_AUDIO_BUSES - GRAPH_AUDIO_BUS_BASE,
@@ -373,13 +377,175 @@ impl CmdTranslator {
         self.graph_defs.remove(name);
     }
 
+    /// Allocates a GraphDef's private buses (resolved name → first index).
+    /// On a shortfall it hands back everything it took, so the caller's later
+    /// steps stay side-effect-free until this succeeds.
+    fn alloc_graph_buses(
+        &mut self,
+        def: &GraphDefSpec,
+    ) -> Result<
+        (
+            HashMap<String, usize>,
+            Vec<(usize, usize)>,
+            Vec<(usize, usize)>,
+        ),
+        String,
+    > {
+        let mut bus_index = HashMap::new();
+        let mut audio: Vec<(usize, usize)> = Vec::new();
+        let mut control: Vec<(usize, usize)> = Vec::new();
+        for b in &def.buses {
+            let width = b.channels.max(1);
+            let first = match b.rate {
+                BusRate::Audio => self.graph_audio_buses.alloc(width),
+                BusRate::Control => self.graph_control_buses.alloc(width),
+            };
+            let Some(first) = first else {
+                for (f, w) in audio {
+                    self.graph_audio_buses.free(f, w);
+                }
+                for (f, w) in control {
+                    self.graph_control_buses.free(f, w);
+                }
+                return Err("out of private buses for GraphDef".into());
+            };
+            match b.rate {
+                BusRate::Audio => audio.push((first, width)),
+                BusRate::Control => control.push((first, width)),
+            }
+            bus_index.insert(b.name.clone(), first);
+        }
+        Ok((bus_index, audio, control))
+    }
+
+    /// Instantiates the members at `indices` inside `parent`, consuming the
+    /// pre-built synths (parallel to `indices`): sets each control (bus
+    /// references resolved against `bus_index`, `"OUT"` → bus 0) and applies
+    /// the `/n_map` wiring. Returns member index → node id. Infallible — the
+    /// fallible `make_synth` happened in the caller, so an instance is never
+    /// left half-built.
+    fn build_members(
+        &mut self,
+        def: &GraphDefSpec,
+        indices: &[usize],
+        built: Vec<(Box<dyn SynthNode>, NodeDef)>,
+        parent: i32,
+        bus_index: &HashMap<String, usize>,
+        cmds: &mut Vec<Cmd>,
+    ) -> HashMap<usize, i32> {
+        let mut node_of: HashMap<usize, i32> = HashMap::new();
+        for (&mi, (mut synth, ndef)) in indices.iter().zip(built) {
+            let member = &def.members[mi];
+            self.next_auto_id += 1;
+            let node_id = self.next_auto_id;
+            let mut controls = ndef.control_defaults();
+            for (cname, cval) in &member.controls {
+                let Some(index) = ndef.control_index(cname) else {
+                    continue;
+                };
+                let value = match cval {
+                    ControlValue::Num(v) => *v,
+                    ControlValue::Bus(b) if b == "OUT" => 0.0,
+                    // validate() guaranteed the name resolves.
+                    ControlValue::Bus(b) => bus_index[b.as_str()] as f32,
+                };
+                synth.set_control(index, value);
+                if let Some(slot) = controls.get_mut(index as usize) {
+                    *slot = value;
+                }
+            }
+            let (usage, bus_controls) = ndef.usage(&controls);
+            self.node_defs.insert(node_id, ndef);
+            cmds.push(Cmd::AddSynth {
+                id: node_id,
+                target: parent,
+                action: AddAction::Tail,
+                synth,
+                usage,
+            });
+            let _ = self.mirror.insert(
+                node_id,
+                MirrorBody::Synth {
+                    def_name: member.def.clone(),
+                    controls,
+                    usage,
+                    bus_controls,
+                    maps: Vec::new(),
+                },
+                parent,
+                AddAction::Tail,
+            );
+            node_of.insert(mi, node_id);
+        }
+        // `/n_map` wiring, once every member exists.
+        for &mi in indices {
+            let node_id = node_of[&mi];
+            for (cname, bname) in &def.members[mi].maps {
+                let Some(index) = self
+                    .node_defs
+                    .get(&node_id)
+                    .and_then(|d| d.control_index(cname))
+                else {
+                    continue;
+                };
+                let bus = bus_index[bname.as_str()] as i32;
+                cmds.push(Cmd::MapControl {
+                    id: node_id,
+                    index,
+                    bus,
+                    audio: false,
+                });
+                self.mirror.set_map(node_id, index, bus, false);
+            }
+        }
+        node_of
+    }
+
+    /// Resolves the surface ports whose targets are *all* present in
+    /// `node_of` → `(node id, control index, mul, add)`. So passing the shared
+    /// member map yields the shared ports and passing a voice's member map
+    /// yields the voice ports (a port never mixes the two — see `validate`).
+    fn resolve_ports(&self, def: &GraphDefSpec, node_of: &HashMap<usize, i32>) -> ResolvedSurface {
+        let mut surface = ResolvedSurface::new();
+        for (port, targets) in &def.surface {
+            if !targets.iter().all(|t| node_of.contains_key(&t.member)) {
+                continue;
+            }
+            let resolved = targets
+                .iter()
+                .filter_map(|t| {
+                    let node = node_of[&t.member];
+                    self.node_defs
+                        .get(&node)
+                        .and_then(|d| d.control_index(&t.control))
+                        .map(|index| (node, index, t.mul, t.add))
+                })
+                .collect();
+            surface.insert(port.clone(), resolved);
+        }
+        surface
+    }
+
+    /// Collects the per-instantiation `port value` overrides trailing a
+    /// `/graph_new`/`/graph_voice`.
+    fn port_overrides(rest: &[OscType]) -> Vec<(String, f32)> {
+        rest.chunks(2)
+            .filter_map(
+                |pair| match (pair.first(), pair.get(1).and_then(float_value)) {
+                    (Some(OscType::String(port)), Some(value)) => Some((port.clone(), value)),
+                    _ => None,
+                },
+            )
+            .collect()
+    }
+
     /// `/graph_new name id action target [port value ...]`: instantiate a
-    /// GraphDef as a group holding its wired members, with private buses and a
-    /// resolved named surface. It expands entirely into existing primitives
-    /// (a group, member `/s_new`s, `/n_map` wiring), so the engine sees
-    /// nothing new and RT-safety is untouched. Atomic: every fallible step
-    /// (member def resolution, bus allocation) happens before any command or
-    /// mirror change, so a failure leaves no partial instance.
+    /// GraphDef as a group holding its **shared** members, with private buses
+    /// and a resolved named surface. (Per-voice members wait for
+    /// `/graph_voice`.) It expands entirely into existing primitives (a group,
+    /// member `/s_new`s, `/n_map` wiring), so the engine sees nothing new and
+    /// RT-safety is untouched. Atomic: every fallible step (member def
+    /// resolution, bus allocation) happens before any command or mirror change.
     fn graph_new(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let [
             OscType::String(name),
@@ -407,40 +573,21 @@ impl CmdTranslator {
         };
 
         // --- fallible phase: nothing observable happens until it all passes.
-        // Pre-build every member synth (resolves the def, may allocate).
-        let mut built: Vec<(Box<dyn SynthNode>, NodeDef)> = Vec::with_capacity(def.members.len());
-        for member in &def.members {
-            built.push(self.make_synth(&member.def)?);
+        let shared: Vec<usize> = def
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| !m.voice)
+            .map(|(i, _)| i)
+            .collect();
+        let mut built = Vec::with_capacity(shared.len());
+        for &mi in &shared {
+            built.push(self.make_synth(&def.members[mi].def)?);
         }
-        // Allocate the private buses; on a shortfall, hand back what we took.
-        let mut bus_index: HashMap<&str, usize> = HashMap::new();
-        let mut audio_buses: Vec<(usize, usize)> = Vec::new();
-        let mut control_buses: Vec<(usize, usize)> = Vec::new();
-        for b in &def.buses {
-            use crate::osc::graphdef::BusRate;
-            let width = b.channels.max(1);
-            let first = match b.rate {
-                BusRate::Audio => self.graph_audio_buses.alloc(width),
-                BusRate::Control => self.graph_control_buses.alloc(width),
-            };
-            let Some(first) = first else {
-                for (f, w) in audio_buses {
-                    self.graph_audio_buses.free(f, w);
-                }
-                for (f, w) in control_buses {
-                    self.graph_control_buses.free(f, w);
-                }
-                return Err("out of private buses for GraphDef".into());
-            };
-            match b.rate {
-                BusRate::Audio => audio_buses.push((first, width)),
-                BusRate::Control => control_buses.push((first, width)),
-            }
-            bus_index.insert(b.name.as_str(), first);
-        }
+        let (bus_index, audio_buses, control_buses) = self.alloc_graph_buses(&def)?;
 
-        // --- infallible phase: build the instance.
-        // The instance group is auto-sorted so member order follows the bus
+        // --- infallible phase: build the instance. The instance group is
+        // auto-sorted so member (and voice sub-group) order follows the bus
         // connections (M12); manual ordering is the graph's, not the client's.
         cmds.push(Cmd::AddGroup {
             id: group_id,
@@ -458,125 +605,137 @@ impl CmdTranslator {
             *target,
             action,
         );
-
-        let mut member_ids = Vec::with_capacity(def.members.len());
-        for (member, (mut synth, ndef)) in def.members.iter().zip(built) {
-            self.next_auto_id += 1;
-            let node_id = self.next_auto_id;
-            let mut controls = ndef.control_defaults();
-            for (cname, cval) in &member.controls {
-                let Some(index) = ndef.control_index(cname) else {
-                    continue;
-                };
-                let value = match cval {
-                    ControlValue::Num(v) => *v,
-                    ControlValue::Bus(bname) if bname == "OUT" => 0.0,
-                    // validate() guaranteed the name resolves.
-                    ControlValue::Bus(bname) => bus_index[bname.as_str()] as f32,
-                };
-                synth.set_control(index, value);
-                if let Some(slot) = controls.get_mut(index as usize) {
-                    *slot = value;
-                }
-            }
-            let (usage, bus_controls) = ndef.usage(&controls);
-            self.node_defs.insert(node_id, ndef);
-            cmds.push(Cmd::AddSynth {
-                id: node_id,
-                target: group_id,
-                action: AddAction::Tail,
-                synth,
-                usage,
-            });
-            let _ = self.mirror.insert(
-                node_id,
-                MirrorBody::Synth {
-                    def_name: member.def.clone(),
-                    controls,
-                    usage,
-                    bus_controls,
-                    maps: Vec::new(),
-                },
-                group_id,
-                AddAction::Tail,
-            );
-            member_ids.push(node_id);
-        }
-
-        // `/n_map` wiring, once every member exists.
-        for (member, &node_id) in def.members.iter().zip(&member_ids) {
-            for (cname, bname) in &member.maps {
-                let Some(index) = self
-                    .node_defs
-                    .get(&node_id)
-                    .and_then(|d| d.control_index(cname))
-                else {
-                    continue;
-                };
-                let bus = bus_index[bname.as_str()] as i32;
-                cmds.push(Cmd::MapControl {
-                    id: node_id,
-                    index,
-                    bus,
-                    audio: false,
-                });
-                self.mirror.set_map(node_id, index, bus, false);
-            }
-        }
-        // Order the instance group now that members and wiring are in place.
+        let shared_nodes = self.build_members(&def, &shared, built, group_id, &bus_index, cmds);
         self.resort_from(Some(group_id), cmds);
-
-        // Resolve the named surface and record the instance.
-        let mut surface: HashMap<String, Vec<(i32, u32, f32, f32)>> = HashMap::new();
-        for (port, targets) in &def.surface {
-            let mut resolved = Vec::new();
-            for t in targets {
-                let node_id = member_ids[t.member];
-                if let Some(index) = self
-                    .node_defs
-                    .get(&node_id)
-                    .and_then(|d| d.control_index(&t.control))
-                {
-                    resolved.push((node_id, index, t.mul, t.add));
-                }
-            }
-            surface.insert(port.clone(), resolved);
-        }
+        let surface = self.resolve_ports(&def, &shared_nodes);
         self.graph_instances.insert(
             group_id,
             GraphInstance {
-                members: member_ids,
+                def: Arc::clone(&def),
+                shared_nodes,
+                bus_index,
                 audio_buses,
                 control_buses,
                 surface,
+                voices: HashSet::new(),
             },
         );
 
-        // Apply the def's defaults, then the per-instantiation port overrides.
-        let mut ports: Vec<(String, f32)> =
-            def.defaults.iter().map(|(p, v)| (p.clone(), *v)).collect();
-        for pair in rest.chunks(2) {
-            if let (Some(OscType::String(port)), Some(value)) =
-                (pair.first(), pair.get(1).and_then(float_value))
-            {
-                ports.push((port.clone(), value));
-            }
-        }
+        // Shared-port defaults, then the per-instantiation overrides.
+        let mut ports: Vec<(String, f32)> = def
+            .defaults
+            .iter()
+            .filter(|(p, _)| !def.is_voice_port(p))
+            .map(|(p, v)| (p.clone(), *v))
+            .collect();
+        ports.extend(Self::port_overrides(rest));
         for (port, value) in ports {
             self.apply_surface(group_id, &port, value, cmds);
         }
         Ok(())
     }
 
+    /// `/graph_voice instanceID id [port value ...]`: spawn a per-voice
+    /// sub-graph inside a running GraphDef instance, wired to its shared
+    /// private buses. The voice is a sub-group at the head of the instance
+    /// group (the auto-sort then orders it relative to the shared mixer by its
+    /// bus usage); freeing it (`/n_free`) frees its members. Same atomic
+    /// shape as `/graph_new`.
+    fn graph_voice(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let [OscType::Int(instance), OscType::Int(id), rest @ ..] = msg.args.as_slice() else {
+            return Err("expected: instanceID, voiceID [, port, value ...]".into());
+        };
+        let Some(inst) = self.graph_instances.get(instance) else {
+            return Err(format!("GraphDef instance {instance} not found"));
+        };
+        let def = Arc::clone(&inst.def);
+        let bus_index = inst.bus_index.clone();
+        if !def.has_voice_members() {
+            return Err("GraphDef has no per-voice members".into());
+        }
+        let voice_indices: Vec<usize> = def
+            .members
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.voice)
+            .map(|(i, _)| i)
+            .collect();
+        let voice_id = match *id {
+            -1 => {
+                self.next_auto_id += 1;
+                self.next_auto_id
+            }
+            n if n > 0 => n,
+            _ => return Err("voice ID must be positive or -1".into()),
+        };
+        // fallible: build the voice's synths before touching anything.
+        let mut built = Vec::with_capacity(voice_indices.len());
+        for &mi in &voice_indices {
+            built.push(self.make_synth(&def.members[mi].def)?);
+        }
+        // infallible: the voice sub-group, into the instance group.
+        cmds.push(Cmd::AddGroup {
+            id: voice_id,
+            target: *instance,
+            action: AddAction::Head,
+            group: Group::new(),
+        });
+        let _ = self.mirror.insert(
+            voice_id,
+            MirrorBody::Group {
+                children: Vec::new(),
+                auto: true,
+                parallel: false,
+            },
+            *instance,
+            AddAction::Head,
+        );
+        let voice_nodes =
+            self.build_members(&def, &voice_indices, built, voice_id, &bus_index, cmds);
+        // Resort the voice's own members and, up the chain, the instance group
+        // (so the voice runs before the shared mixer that reads its bus).
+        self.resort_from(Some(voice_id), cmds);
+        let surface = self.resolve_ports(&def, &voice_nodes);
+        self.graph_voices.insert(
+            voice_id,
+            GraphVoice {
+                instance: *instance,
+                surface,
+            },
+        );
+        if let Some(inst) = self.graph_instances.get_mut(instance) {
+            inst.voices.insert(voice_id);
+        }
+
+        // Voice-port defaults, then the per-spawn overrides.
+        let mut ports: Vec<(String, f32)> = def
+            .defaults
+            .iter()
+            .filter(|(p, _)| def.is_voice_port(p))
+            .map(|(p, v)| (p.clone(), *v))
+            .collect();
+        ports.extend(Self::port_overrides(rest));
+        for (port, value) in ports {
+            self.apply_surface(voice_id, &port, value, cmds);
+        }
+        Ok(())
+    }
+
     /// Writes a surface-port value to its resolved member controls, scaled per
     /// target (`mul`·v + `add`), mirroring each write and re-sorting if a
-    /// target turns out to be a bus-index control.
+    /// target turns out to be a bus-index control. `group` may be an instance
+    /// (shared surface) or a voice sub-group (voice surface).
     fn apply_surface(&mut self, group: i32, port: &str, value: f32, cmds: &mut Vec<Cmd>) {
-        let targets = match self
+        let targets = self
             .graph_instances
             .get(&group)
             .and_then(|inst| inst.surface.get(port))
-        {
+            .or_else(|| {
+                self.graph_voices
+                    .get(&group)
+                    .and_then(|v| v.surface.get(port))
+            });
+        let targets = match targets {
             Some(t) => t.clone(),
             None => return,
         };
@@ -595,13 +754,13 @@ impl CmdTranslator {
         }
     }
 
-    /// If `id` is a GraphDef instance group, apply each `(port, value)` pair
-    /// against its named surface and return true. Names absent from the
-    /// surface are ignored — the surface is the whole public interface; the
-    /// member node ids stay private. A non-instance returns false so `/n_set`
-    /// falls back to the synth/group path.
+    /// If `id` is a GraphDef instance or a voice sub-group, apply each
+    /// `(port, value)` pair against its named surface and return true. Names
+    /// absent from the surface are ignored — the surface is the whole public
+    /// interface; the member node ids stay private. Anything else returns
+    /// false so `/n_set` falls back to the synth/group path.
     fn graph_set(&mut self, id: i32, pairs: &[OscType], cmds: &mut Vec<Cmd>) -> bool {
-        if !self.graph_instances.contains_key(&id) {
+        if !self.graph_instances.contains_key(&id) && !self.graph_voices.contains_key(&id) {
             return false;
         }
         for pair in pairs.chunks(2) {
@@ -614,10 +773,21 @@ impl CmdTranslator {
         true
     }
 
-    /// Reclaims a GraphDef instance's private buses when its group is freed.
-    /// A no-op for ordinary nodes.
-    fn free_graph_instance(&mut self, id: i32) {
+    /// Drops the translator-side state of a freed GraphDef node: a voice
+    /// sub-group (forget it, detach from its instance) or an instance group
+    /// (reclaim its private buses and forget its voices). A no-op for ordinary
+    /// nodes. The actual node teardown is the `/n_free` `FreeNode` itself.
+    fn free_graph_node(&mut self, id: i32) {
+        if let Some(voice) = self.graph_voices.remove(&id) {
+            if let Some(inst) = self.graph_instances.get_mut(&voice.instance) {
+                inst.voices.remove(&id);
+            }
+            return;
+        }
         if let Some(inst) = self.graph_instances.remove(&id) {
+            for v in inst.voices {
+                self.graph_voices.remove(&v);
+            }
             for (first, width) in inst.audio_buses {
                 self.graph_audio_buses.free(first, width);
             }
@@ -730,8 +900,10 @@ impl CmdTranslator {
             "/n_mapa" => self.map_controls(msg, true, cmds),
             // M18: instantiate a GraphDef as a wired group with private buses.
             "/graph_new" => self.graph_new(msg, cmds),
+            // M18: spawn a per-voice sub-graph inside an instance.
+            "/graph_voice" => self.graph_voice(msg, cmds),
             // M17 MIDI binding config (no engine command; pure translator state).
-            "/midi_bind" => self.midi_bind(msg),
+            "/midi_bind" => self.midi_bind(msg, cmds),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
             "/midi_map" => self.midi_map(msg),
             "/n_free" => {
@@ -742,9 +914,10 @@ impl CmdTranslator {
                     cmds.push(Cmd::FreeNode { id: *id });
                     // Removals keep any topological order valid: no re-sort.
                     self.mirror.remove(*id);
-                    // Freeing a GraphDef instance group reclaims its private
-                    // buses (a no-op for ordinary nodes).
-                    self.free_graph_instance(*id);
+                    // Freeing a GraphDef voice or instance group drops its
+                    // translator state / reclaims private buses (a no-op for
+                    // ordinary nodes).
+                    self.free_graph_node(*id);
                 }
                 Ok(())
             }
@@ -824,7 +997,7 @@ impl CmdTranslator {
                     } else {
                         cmds.push(Cmd::DeepFreeGroup { id: *id });
                         self.mirror.deep_free(*id);
-                        self.free_graph_instance(*id);
+                        self.free_graph_node(*id);
                     }
                 }
                 Ok(())
@@ -890,9 +1063,11 @@ impl CmdTranslator {
     }
 
     /// `/midi_bind channel instrument [target] [addAction] [gate]`: bind a MIDI
-    /// channel to an instrument def (SynthDef *or* FaustDef). Default control
-    /// map is `freq`/`amp`; `/midi_map` extends it.
-    fn midi_bind(&mut self, msg: &rosc::OscMessage) -> Result<(), String> {
+    /// channel to an instrument def (SynthDef *or* FaustDef *or* GraphDef).
+    /// Default control map is `freq`/`amp`; `/midi_map` extends it. When the
+    /// instrument is a **GraphDef** (with per-voice members), the shared
+    /// instance is spawned now and each note becomes a `/graph_voice`.
+    fn midi_bind(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let [
             OscType::Int(channel),
             OscType::String(instrument),
@@ -908,24 +1083,57 @@ impl CmdTranslator {
         if AddAction::from_i32(action).is_none() {
             return Err("add action must be 0-4".into());
         }
-        self.midi.channels.insert(
-            channel,
-            MidiBinding::new(instrument.clone(), target, action, gate),
-        );
+        let mut binding = MidiBinding::new(instrument.clone(), target, action, gate);
+        // A GraphDef instrument: spawn its shared instance now (notes spawn
+        // voices into it). A GraphDef with no per-voice members is rejected —
+        // it has nothing to play per note.
+        if self.graph_defs.contains_key(instrument) {
+            if !self.graph_defs[instrument].has_voice_members() {
+                return Err(format!(
+                    "GraphDef {instrument:?} has no per-voice members to bind to MIDI"
+                ));
+            }
+            let instance = self.midi.alloc_id();
+            let new = midi_message(
+                "/graph_new",
+                vec![
+                    OscType::String(instrument.clone()),
+                    OscType::Int(instance),
+                    OscType::Int(action),
+                    OscType::Int(target),
+                ],
+            );
+            self.graph_new(&new, cmds)?;
+            binding.graph_instance = Some(instance);
+        }
+        self.midi.channels.insert(channel, binding);
         Ok(())
     }
 
     /// `/midi_unbind channel`: drop the binding and free every voice still
-    /// sounding on that channel.
+    /// sounding on that channel (and, for a GraphDef binding, its shared
+    /// instance — which frees the voices with it).
     fn midi_unbind(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
         let Some(OscType::Int(channel)) = msg.args.first() else {
             return Err("expected: channel".into());
         };
         let channel = midi_channel(*channel)?;
-        self.midi.channels.remove(&channel);
-        for id in self.midi.drain_channel(channel) {
-            cmds.push(Cmd::FreeNode { id });
-            self.mirror.remove(id);
+        let instance = self
+            .midi
+            .channels
+            .remove(&channel)
+            .and_then(|b| b.graph_instance);
+        let voices = self.midi.drain_channel(channel);
+        if let Some(instance) = instance {
+            // Freeing the instance group frees every voice sub-graph with it.
+            cmds.push(Cmd::FreeNode { id: instance });
+            self.mirror.remove(instance);
+            self.free_graph_node(instance);
+        } else {
+            for id in voices {
+                cmds.push(Cmd::FreeNode { id });
+                self.mirror.remove(id);
+            }
         }
         Ok(())
     }
@@ -1081,24 +1289,43 @@ impl CmdTranslator {
         let action = binding.action;
         let freq_control = binding.freq_control.clone();
         let amp_control = binding.amp_control.clone();
+        let graph_instance = binding.graph_instance;
         if self.midi.voices.contains_key(&(channel, note)) {
             self.midi_note_off(channel, note, cmds)?;
         }
         let id = self.midi.alloc_id();
-        let s_new = midi_message(
-            "/s_new",
-            vec![
-                OscType::String(instrument),
-                OscType::Int(id),
-                OscType::Int(action),
-                OscType::Int(target),
-                OscType::String(freq_control),
-                OscType::Float(convert::midi2freq(note as f32)),
-                OscType::String(amp_control),
-                OscType::Float(convert::velocity2amp(velocity)),
-            ],
-        );
-        self.translate(&s_new, cmds)?;
+        let freq = OscType::Float(convert::midi2freq(note as f32));
+        let amp = OscType::Float(convert::velocity2amp(velocity));
+        // A GraphDef binding spawns a per-voice sub-graph into the shared
+        // instance; a plain def spawns a synth. Both carry freq/amp as the
+        // surface/control values.
+        let msg = match graph_instance {
+            Some(instance) => midi_message(
+                "/graph_voice",
+                vec![
+                    OscType::Int(instance),
+                    OscType::Int(id),
+                    OscType::String(freq_control),
+                    freq,
+                    OscType::String(amp_control),
+                    amp,
+                ],
+            ),
+            None => midi_message(
+                "/s_new",
+                vec![
+                    OscType::String(instrument),
+                    OscType::Int(id),
+                    OscType::Int(action),
+                    OscType::Int(target),
+                    OscType::String(freq_control),
+                    freq,
+                    OscType::String(amp_control),
+                    amp,
+                ],
+            ),
+        };
+        self.translate(&msg, cmds)?;
         self.midi.voices.insert((channel, note), id);
         Ok(())
     }

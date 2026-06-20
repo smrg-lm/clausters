@@ -108,3 +108,70 @@ def test_graphdef_instantiates_and_sounds():
 
     assert frames > 0
     assert max(abs(s) for s in samples) > 0.05, "the GraphDef rendered silent"
+
+
+# ---- per-voice partition (graph_voice) ----
+
+
+def test_voice_flag_serializes():
+    g = GraphDef("poly")
+    mix = g.bus("mix")
+    g.add("vgain", **{"in": mix})
+    v = g.add("vtone", out=mix, voice=True)
+    g.port("freq", v["freq"], default=220.0)
+    spec = g.spec()
+    assert "voice" not in spec["members"][0]      # shared
+    assert spec["members"][1]["voice"] is True     # per-voice
+
+
+def _poly():
+    freq, out_bus, level = control("freq", 440.0), control("out", 0.0), control("level", 0.2)
+    vtone = SynthDef("vtone", out(out_bus, sin_osc(freq) * level))
+    in_bus, gain = control("in", 0.0), control("gain", 0.3)
+    vgain = SynthDef("vgain", out(0.0, in_(in_bus) * gain), out(1.0, in_(in_bus) * gain))
+
+    g = GraphDef("poly")
+    mix = g.bus("mix")
+    amp = g.add("vgain", **{"in": mix})
+    voice = g.add("vtone", out=mix, voice=True)
+    g.port("gain", amp["gain"], default=0.3)
+    g.port("freq", voice["freq"], default=220.0)
+    g.port("amp", voice["level"], default=0.2)
+    return vtone, vgain, g
+
+
+def test_polyphonic_graphdef_voices_render():
+    try:
+        from clausters import _native
+
+        _native.lib()
+    except OSError as e:
+        pytest.skip(f"embed library not built: {e}")
+
+    server = Server(interface=OscNrtInterface())
+    clock = TempoClock(tempo=2.0)
+
+    def play(srv):
+        vtone, vgain, g = _poly()
+        srv.add_synthdef(vtone)
+        srv.add_synthdef(vgain)
+        srv.add_graphdef(g)
+        inst = srv.graph("poly", {"gain": 0.3})
+        for freq in (220.0, 330.0, 440.0):
+            vid = srv.nodes.alloc()
+            srv.send_bundle(("/graph_voice", inst.id, vid, "freq", freq, "amp", 0.2))
+            srv.send_bundle(("/n_free", vid), delay_beats=0.5)
+            yield 0.3
+        yield 0.5
+        srv.send_bundle(("/n_free", inst.id))
+
+    clock.play(Routine(lambda: play(server)))
+    clock.render()
+
+    try:
+        samples, frames = render(server.interface.score.bytes())
+    except (OSError, RuntimeError, AttributeError) as e:
+        pytest.skip(f"embed library not usable: {e}")
+
+    assert frames > 0
+    assert max(abs(s) for s in samples) > 0.05, "the polyphonic GraphDef rendered silent"
