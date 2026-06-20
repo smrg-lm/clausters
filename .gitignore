@@ -4,3 +4,5 @@
 .claude/settings.local.json
 __pycache__/
 .pytest_cache/
+# Persisted defs left on disk by examples/persistent_graphdef.py (explore, then rm -rf)
+/examples/defs_store
