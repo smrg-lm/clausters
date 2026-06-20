@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 """Clausters as an interactive session, in `# %%` cells.
 
 A guided, step-by-step tour of driving a live Clausters server from the Python
@@ -30,14 +30,25 @@ import subprocess
 import sys
 import time
 
-# Make the in-repo client importable when running from the examples folder.
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                "..", "clients", "python"))
+# Locate the in-repo client. As a script we start from this file; in an
+# interactive window (VS Code/Jupyter) `__file__` is undefined, so we start from
+# the working directory. Either way, walk up until we find clients/python.
+def _repo_root():
+    start = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else os.getcwd()
+    here = start
+    for _ in range(6):
+        if os.path.isdir(os.path.join(here, "clients", "python")):
+            return here
+        here = os.path.dirname(here)
+    raise RuntimeError("run this from inside the clausters repo (clients/python not found)")
+
+
+REPO = _repo_root()
+sys.path.insert(0, os.path.join(REPO, "clients", "python"))
 
 from clausters.defs import Server, ServerOptions, SynthDef, control, out, sin_osc
 from clausters.defs.node import AddAction
 
-REPO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
 print("server binary:", BIN, "(ok)" if os.path.exists(BIN) else "(MISSING: cargo build --release)")
 
