@@ -288,6 +288,39 @@ print('synths/defs:', srv.status()[2], srv.status()[4]); srv.free(n); srv.close(
 "; kill $SRV 2>/dev/null)
 ```
 
+### Programa de grafo con `GraphDef` (M18, `/d_graph`)
+
+La tercera clase de def: donde `SynthDef`/`FaustDef` describen **un** nodo,
+`GraphDef` describe un **patch entero** — varios nodos miembro cableados por
+buses internos — que el servidor guarda e instancia como una unidad, con una
+**superficie de parámetros nombrados** (puertos que mapean a controles internos,
+con escala opcional). Se maneja la instancia por los nombres de puerto, nunca
+por los ids de los nodos miembro (encapsulamiento). Es un builder JSON fino,
+como las otras dos defs: se compone y se manda con `server.add_graphdef`
+(`/d_graph`).
+
+```sh
+PYTHONPATH=. python3 - <<'PY'
+from clausters.defs import GraphDef
+g = GraphDef("duo")
+mix = g.bus("mix")                          # un bus interno privado (audio)
+t1 = g.add("tone", out=mix)                 # dos osciladores suman en `mix`
+t2 = g.add("tone", out=mix)
+amp = g.add("gain", **{"in": mix})          # lee `mix` -> salida
+g.port("freq", t1["freq"], t2["freq"].scaled(1.5), default=220.0)  # un puerto, dos destinos
+g.port("gain", amp["gain"], default=0.4)
+print(g.payload())                          # el JSON que ve /d_graph
+PY
+```
+
+Ejemplo idiomático completo, renderizado offline (necesita `embed,realtime`):
+`python3 examples/graphdef.py` — imprime el JSON, instancia el grafo
+(`server.graph("duo", {...})`), barre el puerto `freq` y rinde audio. La
+contraparte de grupo (`/n_set` que se propaga a todo un grupo, semántica
+scsynth) está en `python3 examples/group_set.py`. El valor de un control miembro
+puede ser un número, una referencia de bus (`g.bus(...)`, se wirea el control a
+ese bus) o `"OUT"` (bus de hardware 0).
+
 ## 5. Secuenciación: patterns y eventos (C5)
 
 Un `Pbind` toca una secuencia de notas; corre **NRT** (score → `render()`) o
@@ -480,3 +513,4 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C9 | doc cross-lenguaje + ejemplo de secuenciación de alto nivel | `python3 examples/sequencing.py` (offline) y `--live` |
 | M17 s1 | `Pbind` → `.mid` / clip MIDI 2.0 (`MidiServer` + crate) | sección 5 (export MIDI), `tests/test_midi.py`, `examples/midi_file.py` |
 | M17 s2 | salida MIDI en vivo por puerto del SO (`MidiRtInterface`, `--features live`) | sección 5 (salida en vivo), `examples/midi_live.py`, smoke en `tests/test_midi.py` |
+| M18 | `GraphDef` builder (`/d_graph`) + `server.graph` (`/graph_new`); superficie nombrada | sección 4 (GraphDef), `tests/test_graphdef.py`, `examples/graphdef.py` / `group_set.py` |

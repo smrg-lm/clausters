@@ -15,7 +15,7 @@ It is conceptually compatible with scsynth (same node-tree model and `/s_new`, `
 - **Standard MIDI control**: `--midi` opens a virtual ALSA input port; bind a channel to an instrument def (`/midi_bind`, `/midi_map`) so note on/off, velocity, aftertouch, pitch-bend and CC drive nodes and their `f32` controls — the same system MIDI any controller or DAW speaks. The Python client also **exports** an event pattern to a Standard MIDI File (`.mid`) or a 16-bit-velocity **MIDI 2.0 clip**, and plays it **live** out a virtual OS MIDI port — all via the `clausters-midi` crate.
 - **Local transports**: shared memory (`--shm`) and an in-process **C ABI**.
 
-> **Status — proof of concept.** This was built in about three days and all code was generated with Claude. The automated test suite passes and covers a fair amount, but only a small portion has been manually reviewed or exercised in real use, and the implementation has **not** been independently audited. Treat it as unaudited: review and verify it before relying on it for anything that matters.
+> **Status — proof of concept.** All code was generated with Claude. The automated test suite passes and covers a fair amount, but only a small portion has been manually reviewed or exercised in real use, and the implementation has **not** been independently audited. Treat it as unaudited: review and verify it before relying on it for anything that matters.
 
 ## Quickstart
 

@@ -50,6 +50,7 @@ The realtime backend (cpal) sits behind the `realtime` feature (on by default); 
 | `src/osc/tcp.rs` | TCP transport (`--tcp`): acceptor/reader threads, length-prefixed framing, `TcpHub` |
 | `src/osc/translate.rs` | `CmdTranslator`: OSC message → `Cmd`, shared by the live server and the renderer; owns the M12 tree mirror |
 | `src/osc/graph.rs` | M12: bus-usage analysis, the network-side `TreeMirror`, the stable topological sort behind `/g_sortMode` |
+| `src/osc/graphdef.rs` | M18: GraphDef spec/instance types + the private-bus `RangeAllocator`; instantiation lives in `translate.rs` |
 | `src/midi/` | M17: standard channel-voice MIDI actuation — message-type conversions (`convert.rs`), bindings/voice state, MIDI 1.0→2.0 widening; live input via `midir`/ALSA (`live.rs`, feature `midi`). `CmdTranslator::translate_midi` realizes a message as the equivalent `/s_new`/`/n_set`/`/n_free` on the **network thread** (the audio thread is untouched) |
 | `src/faust/` | libfaust embedding: hand-written FFI, compiler thread, JSON→Box interpreter (`boxes.rs`), `FaustDef`/`FaustSynth` |
 | `src/main.rs` | CLI: realtime server (default) or `--nrt` renderer |
@@ -73,6 +74,14 @@ Two shared structures cross threads without the FIFOs:
 `/n_set` writes a control once; `/n_map`/`/n_mapa` make a control **follow a bus**, re-read at the start of every block. Each synth carries a `ControlMap` table parallel to its controls (`node::ControlMap`, pre-allocated at build — `map_control` only flips an entry, never grows it). At the top of `process`, before any UGen runs, the synth pulls each live mapping into its control/zone: a control bus value (`/n_map`), or one frame of an audio bus sampled at control rate (`/n_mapa` — controls are one value per block, and Faust zones are scalar, so there is no audio-rate control). Writing straight to the control storage, never through `set_control`, keeps the mapping intact; a `/n_set` *does* go through `set_control`, which clears the mapping first, so an explicit set always wins (scsynth semantics). `Cmd::MapControl` carries it to the engine and is schedulable in bundles like `/n_set`.
 
 This feeds the M12/M13 bus analysis: the network-side mirror records each node's live maps, and `fold_maps_into_usage` adds an audio map's bus to the node's `reads` and marks the node a dynamic barrier when a mapped control is used as a bus index — so auto/parallel groups stay correct under mappings.
+
+### Group `/n_set`/`/n_map` and GraphDef (M18)
+
+Both live entirely on the network thread, in `CmdTranslator`, and lower into the same `Cmd`s as a hand-written `/s_new`/`/n_set`/`/n_map` would — the audio thread learns nothing new.
+
+- **Group propagation.** `/n_set`/`/n_map`/`/n_mapa` addressed to a group walk the `TreeMirror` subtree (`control_targets` → `collect_subtree_synths`, recursing through subgroups, stopping at synths) and emit one `SetControl`/`MapControl` per descendant that has a control of that name (resolved through `node_defs`). Engine `SetControl`/`MapControl` on an unknown id are no-ops, so the fan-out is safe even against a node freed concurrently.
+
+- **GraphDef.** `osc::graphdef` holds the `GraphDefSpec`/`GraphInstance` types and a `RangeAllocator` (a contiguous-run busy map) over the reserved private-bus ranges (audio `96..128`, control `896..1024`). `/d_graph` parses, validates structurally and stores the spec (persisted by `defstore` as `graphdefs/<name>.json`, reloaded after the synth/faust defs). `/graph_new` instantiates: a **fallible phase** first (pre-build every member synth via `make_synth`, allocate the private buses — freeing them back on a shortfall) so the **infallible phase** that follows — `AddGroup` (auto-sorted, so M12 orders members by their bus wiring), member `AddSynth`s with their bus-selecting controls set to the allocated buses, `/n_map` wiring, then the resolved surface — never leaves a partial instance. The instance's resolved surface (`port → [(node_id, control_index, mul, add)]`) is kept in `graph_instances`; `/n_set` on the instance group id is intercepted (`graph_set`) and routed through the surface, never the member ids. `/n_free`/`/g_deepFree` of the instance group reclaim its private buses (`free_graph_instance`). All of it also runs in NRT scores (the renderer shares `translate`).
 
 ### Preallocated capacities and what happens when they fill
 

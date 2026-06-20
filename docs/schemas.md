@@ -34,13 +34,17 @@ Engine facts that apply to every def: blocks of 64 samples; 128 audio buses (`0.
 
 A `busIndex` of `-1` removes the mapping (the control keeps its last value); a later `/n_set` on the same control also clears it and fixes the value.
 
+### Addressing a group (scsynth group semantics)
+
+`/n_set`, `/n_map` and `/n_mapa` accept a **group** id as well as a synth id. Addressed to a group, the command transfers each named control **down the group's subtree** to every synth (and Faust node) that has a control of that name, recursing through subgroups and stopping at each synth — the standard scsynth behaviour, so one message moves a parameter across a whole bank of nodes. A node without a matching control name is simply skipped; an empty group is a no-op; an unknown id replies `/fail`. Addressed to a single synth, the command sets only that synth, as before.
+
 Because a control is one value per block, `/n_mapa` **samples** one frame of the audio bus per block (control rate) — this matches scsynth for a control-rate control; there are no audio-rate controls here (feed an audio signal through `In`/an input bus instead). Mapping a control that is used as a bus index makes the node a dynamic barrier for auto/parallel groups, and an audio map adds that bus to the node's reads so the dependency analysis stays correct.
 
 ## Timed bundles
 
 OSC bundles carry an NTP timetag. The immediate tag (`1`) executes on arrival; a **future** timetag is converted to a position on the server's sample clock and the whole bundle fires **sample-accurately**: the engine splits the audio block at the event's exact sample, so a `/s_new` scheduled mid-block starts on that very frame. Bundles with equal times run in arrival order; late bundles run immediately (and are logged). Nested bundles are scheduled independently by their own timetags.
 
-Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_map`, `/n_mapa`, `/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/g_sortMode`, `/g_parallel`. Anything else (defs, buffers, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
+Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_map`, `/n_mapa`, `/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/g_sortMode`, `/g_parallel`, `/graph_new`. Anything else (defs, buffers, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
 
 Also beyond scsynth: **auto-sorted groups**. `/g_sortMode groupID 1` makes a group keep its children in dependency order inferred from the buses each def reads and writes — no more manual `/n_before` bookkeeping; query what the server inferred with `/g_queryTree` (scsynth-compatible reply) and `/g_dumpGraph`. See [`auto-order.md`](auto-order.md) and `examples/auto_order.py`. The same analysis powers **parallel groups**: `/g_parallel groupID 1` (with the server started as `--workers N`) runs a group's independent children on several cores, bit-identically to the sequential result — see [`parallel.md`](parallel.md).
 
@@ -275,6 +279,33 @@ Example — a one-pole lowpass `y = (1-a)·x + a·y'` reading audio input 0, the
       {"op": "self"}]}]}]}]}
 ```
 
+## GraphDef (`/d_graph`, `/graph_new`) — node-graph programs
+
+A **GraphDef** is a third kind of persistent def. Where a SynthDef/FaustDef stores one synthesis node, a GraphDef stores a whole **configuration of member nodes wired by buses** — an effect chain, a mixer, a layered instrument — instantiated as one unit. It exposes a **named parameter surface**: ports that map to inner member controls (with optional scaling), so the running instance is driven through the port names, never the private member node ids. A GraphDef instantiates entirely into primitives the server already has (a group, member `/s_new`s, `/n_map` wiring), so nothing new touches the audio thread.
+
+`/d_graph <blob|string>` loads a GraphDef from a JSON spec: it validates the structure (cheap — no JIT) and stores it, replying `/done`/`/fail` like the other def commands and persisting it when a data directory is configured. `/d_free name...` removes it (and SynthDefs/FaustDefs of the same name).
+
+```json
+{
+  "name": "chain",
+  "buses": [{"name": "mix", "rate": "audio", "channels": 1}],
+  "members": [
+    {"def": "tone", "controls": {"out": "mix", "freq": 220.0}},
+    {"def": "amp",  "controls": {"in": "mix", "out": "OUT"}, "maps": {"level": "lfo"}}
+  ],
+  "surface": {"gain": [{"member": 1, "control": "level", "mul": 1.0, "add": 0.0}]},
+  "defaults": {"gain": 0.5}
+}
+```
+
+- `members` — each references an existing SynthDef **or** FaustDef by `def` (resolved at instantiation, both kinds identically), with initial `controls`. A control **value** that is a number is a literal; a **string** names an internal bus to wire that control to (its bus-selecting control — `out`/`in` on a Faust def, or whatever control feeds an `Out`/`In` UGen). The reserved string `"OUT"` wires to hardware bus 0.
+- `buses` — internal buses, **private to each instance** (`rate` `"audio"` or `"control"`, `channels` default 1). They are allocated per instantiation from a reserved range at the top of the bus space — audio buses `96..128`, control buses `896..1024` — so they never collide with client-allocated buses (the same idea as the reserved MIDI/auto node-id ranges). Two instances of one GraphDef get disjoint buses.
+- `maps` (per member, optional) — binds a member control to an internal **control** bus via `/n_map`.
+- `surface` — the named ports. Each maps to a list of `{member, control}` targets, with optional `mul`/`add` linear scaling of the incoming value. One port may drive several inner controls, each scaled differently (e.g. a `freq` port playing a detuned pair). This is the difference from a bare group `/n_set`, which can only broadcast one value to controls that happen to share a name.
+- `defaults` — surface-port values applied at instantiation, overridable per instance.
+
+`/graph_new name id addAction targetID [port value]...` instantiates a GraphDef: it creates an **auto-sorted group** (the member execution order follows the bus connections, M12) at `id` (or `-1` for a server-assigned id), holding the wired members, then applies `defaults` and the given `port value` overrides. `/n_set id port value...` on that group id resolves the port names against the surface (never the member ids); a port absent from the surface is ignored. `/n_free id` (or `/g_deepFree`) tears the instance down and reclaims its private buses. Instantiation is atomic: a missing member def or bus shortfall fails with no partial instance. GraphDefs work in NRT scores too (scored like any def at time 0).
+
 ## MIDI control protocol (standard channel-voice actuation)
 
 Besides OSC, the server can be driven by **standard channel-voice MIDI** — note on/off, velocity, aftertouch, pitch-bend, control change, program change. This is the **primary** MIDI path: a note actuates a synthesis node and an expressive message sets a named control, exactly the surface a sequencer or DAW already speaks. (SysEx, when it lands, is reserved for the non-musical control plane — def load, buffers, topology — and is never a tunnel for OSC commands.)
@@ -305,13 +336,16 @@ clausters --no-persist       # disable for this run
 
 With no `--data-dir`, the directory is `$CLAUSTERS_DATA_DIR` if set, else `$XDG_DATA_HOME/clausters`, else `~/.local/share/clausters`. Persistence applies to the real-time server only; offline `--nrt` renders never read or write it.
 
-Two subdirectories hold the two def kinds:
+Subdirectories hold the def kinds:
 
 | path | written on | content |
 |---|---|---|
 | `<dir>/synthdefs/<name>.json` | `/d_recv` | the `SynthDefSpec` JSON, verbatim |
 | `<dir>/faustdefs/<name>.json` | `/d_faust` | a record: the original Faust source/JSON, the libfaust version, and the payload's SHA-256 |
 | `<dir>/faustdefs/<name>.<sha>.bc` | `/d_faust` | the compiled LLVM **bitcode** (a speed cache) |
+| `<dir>/graphdefs/<name>.json` | `/d_graph` | the `GraphDefSpec` JSON, verbatim |
+
+GraphDefs reload after the synth/faust defs (their members reference those names); validation is structural only, so a member def that is still missing at load is caught later, at `/graph_new`.
 
 The stored **definition** (the JSON) is always the source of truth: it is transparent, human-readable, and what gets recompiled. The Faust `.bc` is a non-authoritative cache — on reload the server re-creates the factory from bitcode (skipping Faust's front-end) only when the libfaust version still matches and the file is intact; otherwise it silently recompiles from the source and rewrites the cache. A libfaust upgrade therefore invalidates every `.bc` automatically. `/d_free <name>` deletes both files. Re-sending a name overwrites them.
 

@@ -2294,3 +2294,56 @@ interface (the RT/NRT seam, mirroring the OSC `Server`).
   `aconnect` -> server `--midi` in port -> the server makes synths
   (`/status` reports synths 0 -> 2). Full Rust + Python suites green, golden
   included; `cargo fmt --check` clean.
+
+## M18 (server core + client) — GraphDef + scsynth group /n_set propagation (2026-06-19)
+
+Two related control-graph features (PLAN.md M18; the group-propagation half was
+a long-standing loose item). Both live entirely on the network thread in
+`CmdTranslator` and lower into the same `Cmd`s as hand-written commands, so the
+audio thread and RT-safety are untouched.
+
+- **Group `/n_set`/`/n_map`/`/n_mapa` propagation (scsynth semantics)**: a
+  command addressed to a **group** now transfers each named control down the
+  subtree to every synth/faust that has a matching control, recursing through
+  subgroups and stopping at each synth. New `control_targets` /
+  `collect_subtree_synths` helpers gather the targets off the `TreeMirror`; a
+  synth target is unchanged, an empty group is a no-op, an unknown id `/fail`s.
+  Engine `SetControl`/`MapControl` on an unknown id were already no-ops, so the
+  fan-out is safe against concurrent frees. `tests/group_nset.rs` (7).
+- **GraphDef (M18 server core)** — `src/osc/graphdef.rs`: a third persistent
+  def kind storing a wired configuration of member synth/faust nodes + internal
+  buses + a **named parameter surface** (ports → member controls, with mul/add
+  scaling). `/d_graph` parses + validates structurally (cheap, no JIT) + stores;
+  `defstore` persists `graphdefs/<name>.json`, reloaded at startup after the
+  synth/faust defs (members reference their names). `/graph_new` instantiates an
+  **auto-sorted** group (M12 orders members by their bus wiring) with
+  **instance-private buses** from a reserved top-of-range pool (audio 96..128,
+  control 896..1024, a contiguous-run `RangeAllocator`), wiring members via the
+  existing `/s_new` + `/n_map` primitives. Instantiation is **atomic** — all
+  fallible work (member build, bus alloc) precedes any command/mirror change.
+  `/n_set` on an instance group resolves names against the surface (`graph_set`),
+  never the private member ids; `/n_free`/`/g_deepFree` reclaim the private
+  buses. Works in NRT scores (the renderer shares `translate`). `/d_free` and
+  the persistence delete also cover graph names. `tests/graphdef.rs` (8).
+- **Client** (`clients/python`): `defs/graphdef.py` — a thin `GraphDef` JSON
+  builder (`bus`/`add`/`port`, member control values that are bus refs or
+  `"OUT"`, surface targets with `.scaled(mul, add)`), `Server.add_graphdef`
+  (`/d_graph`, the same async/`/done` shape as `add_synthdef`) and
+  `Server.graph(...)` (`/graph_new`). `tests/test_graphdef.py` (4): builder
+  structure + an NRT render that sounds.
+- **Examples**: `examples/group_set.py` (one `/n_set` on a group ramps three
+  voices) and `examples/graphdef.py` (a two-oscillator voice wired through a
+  private bus, one `freq` port driving both oscillators — the second scaled to
+  a fifth — which a bare group `/n_set` cannot do). Both render offline and were
+  run (peaks 0.52 / 0.11).
+- **Docs**: `docs/schemas.md` (group addressing semantics; the full GraphDef
+  section — spec, private-bus ranges, `/d_graph`/`/graph_new`/surface; the
+  persistence table row; `/graph_new` in the schedulable list),
+  `docs/architecture.md` (module-map row + a "Group `/n_set` and GraphDef"
+  subsection on the two-phase atomic instantiation and private-bus lifecycle),
+  `docs/examples.md`, root `GUIA.md` + `clients/python/GUIA.md`.
+
+Core green with and without `faust`; full Python suite green; `cargo fmt`
+clean. Deferred within M18 (noted in PLAN.md): MIDI-binding a GraphDef
+(`/midi_bind` → graph) and an explicit per-voice `/graph_voice`; both build on
+this core.

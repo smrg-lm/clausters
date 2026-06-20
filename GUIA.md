@@ -749,6 +749,31 @@ recompila desde el `.json` (la caché de bitcode es no autoritativa). `/d_free
 psine` borra ambos archivos. Con `--no-persist` no se escribe ni se recarga
 nada.
 
+### Probar la propagación por grupo y GraphDef (M18)
+
+Ambos renderizan offline (NRT), así que basta la librería embed
+(`cargo build --release --features embed,realtime`) y no hace falta placa de
+audio ni servidor corriendo:
+
+```sh
+# /n_set sobre un grupo llega a las tres voces (semántica scsynth):
+PYTHONPATH=clients/python python3 examples/group_set.py
+#   -> rendered 76800 frames | peak ~0.52  ("one /n_set ... drove all three voices")
+
+# GraphDef: un programa de grafo con superficie nombrada (un puerto "freq"
+# que maneja dos osciladores, el segundo escalado a una quinta):
+PYTHONPATH=clients/python python3 examples/graphdef.py
+#   imprime el JSON de /d_graph y luego: rendered 96000 frames | peak ~0.11
+```
+
+A nivel servidor lo cubren `tests/group_nset.rs` (un `/n_set`/`/n_map` sobre un
+grupo se propaga al subárbol y para en cada synth) y `tests/graphdef.rs`
+(`/d_graph` valida + persiste, `/graph_new` instancia con buses privados y
+superficie, `/n_set` sobre la instancia resuelve contra la superficie,
+`/n_free` recupera los buses). Para probarlo en vivo por OSC: cargar las defs
+miembro con `/d_recv`, enviar el GraphDef con `/d_graph`, instanciar con
+`/graph_new nombre id 0 0` y mover un puerto con `/n_set id puerto valor`.
+
 ## 4. Checklist de funcionalidades
 
 | Funcionalidad | Automático | A mano |
@@ -780,6 +805,8 @@ nada.
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |
 | Waveforms y tablas Faust (`waveform`/`rdtable`/`rwtable`) | `tests/faust_json.rs` | `json_client.py wavetable` |
 | Persistencia de defs en disco + caché de bitcode (M16) | `tests/persistence.rs` | `--data-dir`, dos sesiones de arriba |
+| `/n_set`/`/n_map` sobre un grupo: propagación scsynth (M18) | `tests/group_nset.rs` | `python3 examples/group_set.py` |
+| GraphDef: programa de grafo + superficie nombrada (M18) | `tests/graphdef.rs` | `python3 examples/graphdef.py` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 | Documentación integral: README + libro mdBook + rustdoc (M15) | `mdbook build` y `cargo doc` limpios | leer `README.md` y el libro |

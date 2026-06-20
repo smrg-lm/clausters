@@ -23,6 +23,7 @@ from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
+from .graphdef import GraphDef
 from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
 from .server import Server
 from .signals import Signal
@@ -50,6 +51,7 @@ __all__ = [
     "Signal",
     "FaustDef",
     "SynthDef",
+    "GraphDef",
     "Ugen",
     "Control",
     "control",

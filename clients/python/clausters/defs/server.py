@@ -187,6 +187,28 @@ class Server:
             raise CommandError(f"/d_recv {sdef.name!r} failed: {args}")
         return sdef.name
 
+    def add_graphdef(self, gdef, *, wait: bool = True, timeout: float = 10.0) -> str:
+        """Sends a :class:`~clausters.defs.graphdef.GraphDef` via ``/d_graph``
+        (M18). Like :meth:`add_synthdef`/:meth:`add_faustdef`: ``wait=True``
+        (default) blocks in RT until ``/done``/``/fail``; ``wait=False`` is
+        fire-and-forget (pair with :meth:`sync`). In NRT it scores ``/d_graph``
+        at time 0. Loading a GraphDef is cheap on the server (no JIT — it only
+        validates and references the member defs), but it is still asynchronous,
+        so the same barrier discipline applies."""
+        payload = gdef.payload()
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            self.send_msg("/d_graph", payload)
+            return gdef.name
+        if not wait:
+            self.send_msg("/d_graph", payload)
+            return gdef.name
+        addr, args = self.request(
+            "/d_graph", payload, timeout=timeout, expect=("/done", "/fail")
+        )
+        if addr == "/fail":
+            raise CommandError(f"/d_graph {gdef.name!r} failed: {args}")
+        return gdef.name
+
     def free_def(self, *names: str):
         self.send_msg("/d_free", *names)
 
@@ -202,6 +224,19 @@ class Server:
     def group(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL) -> Group:
         node_id = self.nodes.alloc()
         self.send_msg("/g_new", node_id, int(action), int(target))
+        return Group(node_id)
+
+    def graph(self, defname, ports=None, *, target=ROOT_NODE_ID,
+              action=AddAction.TAIL) -> Group:
+        """Instantiates a GraphDef (``/graph_new``, M18) as a wired group, with
+        ``ports`` (a ``{name: value}`` dict) overriding the def defaults. The
+        returned :class:`~clausters.defs.node.Group` is the instance: drive it
+        through the surface with :meth:`set` (``/n_set`` resolves names against
+        the surface, not the private members) and tear it down with
+        :meth:`free` (which also reclaims its private buses)."""
+        node_id = self.nodes.alloc()
+        self.send_msg("/graph_new", defname, node_id, int(action), int(target),
+                      *_flatten_controls(ports))
         return Group(node_id)
 
     def set(self, node, controls):
