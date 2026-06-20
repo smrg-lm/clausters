@@ -357,6 +357,8 @@ print(server.dump_graph(group.id))      # /g_dumpGraph -> texto legible del graf
 
 Los logs del server (stderr) son aparte y los controla el cliente con `/verbosity` (nivel) y `/dumpOSC` (target OSC), o el binario con `-v`/`RUST_LOG` (ver `GUIA.md` raíz).
 
+Para recorrerlo paso a paso al estilo notebook (config + boot + grupos + nodos + buses, logueando el árbol en cada paso): `examples/interactive_session.py`, en celdas `# %%` (se ejecuta por partes en IPython/VS Code/Jupyter, o entero como script).
+
 ## 5. Secuenciación: patterns y eventos (C5)
 
 Un `Pbind` toca una secuencia de notas; corre **NRT** (score → `render()`) o
