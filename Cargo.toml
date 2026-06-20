@@ -24,6 +24,15 @@ realtime = ["dep:cpal"]
 # DAW/controller uses; reuses the libasound cpal already links). Off in
 # `--no-default-features` builds, which have no system audio/MIDI deps.
 midi = ["dep:midir"]
+# Route live MIDI through midir's JACK backend instead of ALSA on Linux/BSD.
+# Needed on PipeWire systems: the ALSA-seq backend panics on the timestamp of
+# events delivered through pipewire's seq bridge (midir's get_time().unwrap());
+# the JACK backend uses the JACK clock and registers a first-class graph node.
+# midir pulls jack-sys, whose build script requires `jack.pc` at build time on
+# Linux: install `libjack-jackd2-dev` (headers + jack.pc). At runtime libjack
+# resolves to pipewire-jack via its ld.so.conf.d entry, so MIDI still goes
+# through PipeWire. The default `midi` feature keeps the ALSA backend.
+midi-jack = ["midi", "midir/jack"]
 # libfaust embedding (Box API + LLVM JIT). Needs libfaust built with the LLVM
 # backend; see build.rs for how the library is located (FAUST_PREFIX).
 faust = []

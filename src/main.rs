@@ -6,8 +6,8 @@ usage:
                                                real-time server (OSC on UDP 57110)
       --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
                            default port 57110)
-      --midi [name]        open a virtual MIDI input port (RT only; ALSA seq;
-                           default name \"clausters\"; connect with aconnect)
+      --midi [name]        open a virtual MIDI input port (RT only; default
+                           name \"clausters\"; connect with aconnect/qpwgraph)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
@@ -187,6 +187,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(feature = "midi")]
         {
             osc.listen_midi(name)?;
+            #[cfg(feature = "midi-jack")]
+            println!("MIDI input on virtual JACK port \"{name}\" (connect with qpwgraph)");
+            #[cfg(not(feature = "midi-jack"))]
             println!("MIDI input on virtual ALSA port \"{name}\" (connect with aconnect)");
         }
         #[cfg(not(feature = "midi"))]

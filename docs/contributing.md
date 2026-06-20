@@ -13,6 +13,21 @@ cargo doc --no-deps         # the API reference
 
 The core **must always build and test without any feature and without libfaust installed**.
 
+## System build dependencies (Ubuntu 26.04)
+
+```sh
+# default build (ALSA audio + ALSA-seq MIDI)
+sudo apt install build-essential libasound2-dev
+# only for the matching optional feature:
+sudo apt install libpipewire-0.3-dev clang   # --features pipewire
+sudo apt install libjack-jackd2-dev          # --features midi-jack
+```
+
+`clang` is only used at build time by bindgen (it parses the PipeWire C headers
+to generate bindings); the toolchain itself stays `rustc` + `gcc`. On a PipeWire
+system the `pipewire`/`midi-jack` builds link against these dev packages but
+resolve to PipeWire's own `libpipewire`/`libjack` at runtime.
+
 ## The `faust` feature
 
 `cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in the **F0 section of `LOG.md`**. `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.

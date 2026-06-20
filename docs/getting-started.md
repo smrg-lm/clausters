@@ -5,8 +5,21 @@ This chapter takes you from a checkout to a sound: build the server, run it, pla
 ## Requirements
 
 - A recent stable Rust toolchain (`rustup`, edition 2024).
-- On Linux, the ALSA development headers for the real-time backend (`libasound2-dev`).
-- Optional: `libfaust` built with the LLVM backend for the `faust` feature — see [Contributing](contributing.md). The core builds and runs without it.
+- On Linux, the ALSA development headers for the default real-time/MIDI backends (`libasound2-dev`).
+- Optional, only for the matching feature:
+  - `pipewire` (native PipeWire audio backend): `libpipewire-0.3-dev` and `clang`.
+  - `midi-jack` (route live MIDI through JACK, needed on PipeWire systems): `libjack-jackd2-dev`.
+  - `faust` (libfaust embedding): `libfaust` built with the LLVM backend — see [Contributing](contributing.md).
+
+  The core builds and runs without any of them. On Ubuntu 26.04:
+
+  ```sh
+  # default build (ALSA)
+  sudo apt install build-essential libasound2-dev
+  # extras per feature
+  sudo apt install libpipewire-0.3-dev clang   # --features pipewire
+  sudo apt install libjack-jackd2-dev          # --features midi-jack
+  ```
 
 ## Build
 
