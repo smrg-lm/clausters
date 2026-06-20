@@ -60,7 +60,7 @@ impl CompilePayload {
 /// Disk-cache work attached to a compile request (see
 /// [`crate::server::defstore`]). Present only when persistence is enabled.
 pub struct CacheJob {
-    /// `<data>/faustdefs`, where the record and bitcode live.
+    /// `<data>/defs/faustdefs`, where the record and bitcode live.
     pub dir: PathBuf,
     /// On a startup reload, the record to restore: the thread tries its
     /// bitcode first and recompiles only on a miss. `None` for a live

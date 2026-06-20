@@ -1,15 +1,19 @@
 //! On-disk persistence of compiled defs, reloaded when the server starts.
 //!
-//! Two kinds of def live in separate subdirectories of one data directory:
+//! All persisted definitions live under a `defs/` subdirectory of the data
+//! directory, one subdirectory per kind, so the data directory itself stays
+//! free for other persistent aspects (`midi.json`, `boot.json`, and whatever
+//! comes later):
 //!
-//! - `synthdefs/<name>.json` — the `SynthDefSpec` JSON of a `/d_recv` UGen
-//!   graph, stored verbatim. Reloading just re-parses and recompiles it
+//! - `defs/synthdefs/<name>.json` — the `SynthDefSpec` JSON of a `/d_recv`
+//!   UGen graph, stored verbatim. Reloading just re-parses and recompiles it
 //!   (cheap); there is no compiled artifact to cache.
-//! - `faustdefs/<name>.json` — a [`crate::faust::cache::FaustRecord`] holding
-//!   the original Faust source/JSON and metadata, plus a sibling
-//!   `faustdefs/<name>.<sha>.bc` bitcode cache (the "A" layer, see
+//! - `defs/faustdefs/<name>.json` — a [`crate::faust::cache::FaustRecord`]
+//!   holding the original Faust source/JSON and metadata, plus a sibling
+//!   `defs/faustdefs/<name>.<sha>.bc` bitcode cache (the "A" layer, see
 //!   `faust::cache`). The JSON record is always the source of truth; the
 //!   bitcode is a non-authoritative speed cache.
+//! - `defs/graphdefs/<name>.json` — the `/d_graph` GraphDef spec, verbatim.
 //!
 //! The original definition (the JSON) is the transparent source of truth in
 //! both cases: it is what gets recompiled on a libfaust upgrade or a corrupt
@@ -59,12 +63,14 @@ pub struct DefStore {
 }
 
 impl DefStore {
-    /// Opens (creating if needed) `<data_dir>/synthdefs`, `faustdefs` and
-    /// `graphdefs`.
+    /// Opens (creating if needed) the def subdirectories under `<data_dir>/defs`
+    /// (`synthdefs`, `faustdefs`, `graphdefs`). The data directory itself holds
+    /// the other persistent files (`midi.json`, `boot.json`).
     pub fn open(data_dir: &Path) -> io::Result<Self> {
-        let synthdefs_dir = data_dir.join("synthdefs");
-        let faustdefs_dir = data_dir.join("faustdefs");
-        let graphdefs_dir = data_dir.join("graphdefs");
+        let defs_dir = data_dir.join("defs");
+        let synthdefs_dir = defs_dir.join("synthdefs");
+        let faustdefs_dir = defs_dir.join("faustdefs");
+        let graphdefs_dir = defs_dir.join("graphdefs");
         std::fs::create_dir_all(&synthdefs_dir)?;
         std::fs::create_dir_all(&faustdefs_dir)?;
         std::fs::create_dir_all(&graphdefs_dir)?;

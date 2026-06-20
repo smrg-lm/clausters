@@ -17,7 +17,7 @@
 //! the same idea as the reserved auto node-id range).
 //!
 //! The spec ([`GraphDefSpec`]) is the transparent source of truth, persisted
-//! verbatim as `graphdefs/<name>.json` (M16). There is no compiled artifact
+//! verbatim as `defs/graphdefs/<name>.json` (M16). There is no compiled artifact
 //! to cache — a GraphDef references other defs, which carry their own.
 
 use std::collections::HashMap;

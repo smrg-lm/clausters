@@ -344,14 +344,16 @@ clausters --no-persist       # disable for this run
 
 With no `--data-dir`, the directory is `$CLAUSTERS_DATA_DIR` if set, else `$XDG_DATA_HOME/clausters`, else `~/.local/share/clausters`. Persistence applies to the real-time server only; offline `--nrt` renders never read or write it.
 
-Subdirectories hold the def kinds:
+The def kinds live in subdirectories of a `defs/` directory (so the data
+directory itself is free for other persistent aspects); `midi.json` and
+`boot.json` sit at the top level:
 
 | path | written on | content |
 |---|---|---|
-| `<dir>/synthdefs/<name>.json` | `/d_recv` | the `SynthDefSpec` JSON, verbatim |
-| `<dir>/faustdefs/<name>.json` | `/d_faust` | a record: the original Faust source/JSON, the libfaust version, and the payload's SHA-256 |
-| `<dir>/faustdefs/<name>.<sha>.bc` | `/d_faust` | the compiled LLVM **bitcode** (a speed cache) |
-| `<dir>/graphdefs/<name>.json` | `/d_graph` | the `GraphDefSpec` JSON, verbatim |
+| `<dir>/defs/synthdefs/<name>.json` | `/d_recv` | the `SynthDefSpec` JSON, verbatim |
+| `<dir>/defs/faustdefs/<name>.json` | `/d_faust` | a record: the original Faust source/JSON, the libfaust version, and the payload's SHA-256 |
+| `<dir>/defs/faustdefs/<name>.<sha>.bc` | `/d_faust` | the compiled LLVM **bitcode** (a speed cache) |
+| `<dir>/defs/graphdefs/<name>.json` | `/d_graph` | the `GraphDefSpec` JSON, verbatim |
 | `<dir>/midi.json` | `/midi_bind`/`/midi_unbind`/`/midi_map` | the MIDI bindings (channel → instrument + target + control map), M19 |
 | `<dir>/boot.json` | *authored by the user/client* | the boot preset: standalone GraphDefs to instantiate at startup, M19 |
 

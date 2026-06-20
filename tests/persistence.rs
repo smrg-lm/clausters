@@ -350,8 +350,8 @@ mod faust {
         assert_eq!(done.args[1], OscType::String("psine".into()));
         a.quit();
 
-        // The record and a bitcode file landed in faustdefs/.
-        let faustdefs = dir.path().join("faustdefs");
+        // The record and a bitcode file landed in defs/faustdefs/.
+        let faustdefs = dir.path().join("defs").join("faustdefs");
         assert!(faustdefs.join("psine.json").exists(), "record missing");
         let bc = std::fs::read_dir(&faustdefs)
             .unwrap()
@@ -376,7 +376,7 @@ mod faust {
         );
         s.recv_until("/done");
 
-        let faustdefs = dir.path().join("faustdefs");
+        let faustdefs = dir.path().join("defs").join("faustdefs");
         assert!(faustdefs.join("gone.json").exists());
 
         s.send("/d_free", vec![OscType::String("gone".into())]);

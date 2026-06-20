@@ -760,8 +760,8 @@ cargo build --release --features faust
     'process = sin(6.283185307179586 * ((+(440.0/48000.0) : _-floor(_)) ~ _)) * 0.2;'; \
   sleep 0.5; oscsend localhost 57110 /quit; wait $PID )
 
-ls "$D/faustdefs"        # psine.json + psine.<sha>.bc
-cat "$D/faustdefs/psine.json"   # el source original + versión de libfaust + sha
+ls "$D/defs/faustdefs"        # psine.json + psine.<sha>.bc
+cat "$D/defs/faustdefs/psine.json"   # el source original + version de libfaust + sha
 
 # Sesión 2: NO se reenvía el def; arranca, se instancia y suena.
 ( ./target/release/clausters --data-dir "$D" & PID=$!; sleep 1.0; \
