@@ -97,7 +97,7 @@ pub struct CmdTranslator {
     #[cfg_attr(not(feature = "faust"), allow(dead_code))]
     sample_rate: f32,
     /// Loaded SynthDefs; starts with the built-in "default".
-    pub defs: HashMap<String, Arc<SynthDef>>,
+    pub synth_defs: HashMap<String, Arc<SynthDef>>,
     /// Mirror of which def each live node was built from. Maintained from
     /// `/s_new` and from collected garbage (see [`CmdTranslator::forget_node`]).
     pub node_defs: HashMap<i32, NodeDef>,
@@ -135,12 +135,12 @@ impl CmdTranslator {
         // the reservation if the configured count is smaller than the default.
         let audio_reserved = GRAPH_AUDIO_BUS_RESERVED.min(audio_buses);
         let control_reserved = GRAPH_CONTROL_BUS_RESERVED.min(control_buses);
-        let mut defs = HashMap::new();
+        let mut synth_defs = HashMap::new();
         let default = compile(default_spec()).expect("built-in default def must compile");
-        defs.insert(default.name.clone(), Arc::new(default));
+        synth_defs.insert(default.name.clone(), Arc::new(default));
         Self {
             sample_rate,
-            defs,
+            synth_defs,
             node_defs: HashMap::new(),
             next_auto_id: AUTO_NODE_ID_BASE,
             #[cfg(feature = "faust")]
@@ -161,7 +161,7 @@ impl CmdTranslator {
     /// Total defs of both families, for `/status.reply`.
     pub fn def_count(&self) -> usize {
         #[allow(unused_mut)]
-        let mut n = self.defs.len();
+        let mut n = self.synth_defs.len();
         #[cfg(feature = "faust")]
         {
             n += self.faust_defs.len();
@@ -173,7 +173,7 @@ impl CmdTranslator {
     /// (`createCDSPInstance` + `init`) allocates — fine, this never runs on
     /// the audio thread; the boxed instance reaches it fully built.
     pub fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
-        if let Some(def) = self.defs.get(name) {
+        if let Some(def) = self.synth_defs.get(name) {
             let synth = Box::new(UGenSynth::new(Arc::clone(def)));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
         }
@@ -342,7 +342,7 @@ impl CmdTranslator {
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
         let def = compile(spec)?;
         let name = def.name.clone();
-        self.defs.insert(name.clone(), Arc::new(def));
+        self.synth_defs.insert(name.clone(), Arc::new(def));
         Ok(name)
     }
 
@@ -353,7 +353,7 @@ impl CmdTranslator {
             let OscType::String(name) = arg else {
                 return Err("expected synthdef names".into());
             };
-            self.defs.remove(name);
+            self.synth_defs.remove(name);
             #[cfg(feature = "faust")]
             self.faust_defs.remove(name);
             self.graph_defs.remove(name);

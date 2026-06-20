@@ -117,7 +117,7 @@ fn n_set_on_a_synth_sets_only_that_synth() {
         vec![OscType::Int(102), s("freq"), OscType::Float(660.0)],
     );
 
-    let default_freq = t.defs.get("default").unwrap().control_defaults[FREQ];
+    let default_freq = t.synth_defs.get("default").unwrap().control_defaults[FREQ];
     assert_eq!(freq_of(&t, 101), default_freq); // untouched
     assert_eq!(freq_of(&t, 102), 660.0);
 }
