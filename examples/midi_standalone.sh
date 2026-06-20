@@ -57,10 +57,14 @@ sleep 1.0
 oscsend localhost $PORT /g_queryTree i 0
 echo "the channel-0 GraphDef binding is live again (no /d_* or /midi_bind sent)."
 echo
-echo "to actually PLAY it, route a controller (or a .mid via aplaymidi) into the"
-echo "server's virtual port 'clausters' with aconnect, e.g.:"
-echo "    aconnect -l                       # list ALSA MIDI ports"
-echo "    aconnect <your-keyboard> clausters"
+echo "to actually PLAY it, route a controller into the server's MIDI input."
+echo "the PipeWire-native path uses the JACK MIDI backend: build with"
+echo "  --features midi-jack  and run the server under  pw-jack , then:"
+echo "    pw-link -i                        # find the 'clausters' input port"
+echo "    pw-link <your-controller> clausters:input_0"
+echo "  (or wire it visually in qpwgraph)."
+echo "on a plain-ALSA build instead, route the native ALSA-seq port with"
+echo "aconnect (routing that ALSA port through PipeWire is what midi-jack fixes)."
 echo "...then each note spawns a voice. CC/pitch-bend map via /midi_map."
 sleep 0.5
 oscsend localhost $PORT /quit

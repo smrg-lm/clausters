@@ -16,17 +16,20 @@ The core **must always build and test without any feature and without libfaust i
 ## System build dependencies (Ubuntu 26.04)
 
 ```sh
-# default build (ALSA audio + ALSA-seq MIDI)
-sudo apt install build-essential libasound2-dev
+# default build (PipeWire audio + ALSA-seq MIDI)
+sudo apt install build-essential libasound2-dev libpipewire-0.3-dev clang
 # only for the matching optional feature:
-sudo apt install libpipewire-0.3-dev clang   # --features pipewire
 sudo apt install libjack-jackd2-dev          # --features midi-jack
+# plain-ALSA build (no PipeWire libs):
+#   cargo build --no-default-features --features realtime,midi
 ```
 
-`clang` is only used at build time by bindgen (it parses the PipeWire C headers
-to generate bindings); the toolchain itself stays `rustc` + `gcc`. On a PipeWire
-system the `pipewire`/`midi-jack` builds link against these dev packages but
-resolve to PipeWire's own `libpipewire`/`libjack` at runtime.
+`pipewire` is a default feature (the target systems always ship PipeWire), so
+the default binary hard-links `libpipewire` and expects it at runtime. `clang`
+is only used at build time by bindgen (it parses the PipeWire C headers to
+generate bindings); the toolchain itself stays `rustc` + `gcc`. The `midi-jack`
+build links against jackd2's `libjack` but resolves to PipeWire's `libjack`
+under `pw-jack` at runtime.
 
 ## The `faust` feature
 

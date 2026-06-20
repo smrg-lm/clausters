@@ -5,13 +5,14 @@ The same `Pbind` that renders to a `.mid` can instead drive a live MIDI output
 port: `MidiServer(interface=MidiRtInterface(...))`. Each note goes out the port
 in real time (note-on at its beat, note-off scheduled after the sustain) — no
 timetags, best-effort, the way live MIDI works. Connect the port to a synth or
-to this server's own MIDI input (`clausters --midi`) with `aconnect`.
+to this server's own MIDI input (`clausters --midi`) with `pw-link` (or wire it
+visually in qpwgraph).
 
 Needs the live cdylib:
 
     cargo build --release -p clausters-midi --features live
 
-The script **creates a virtual ALSA MIDI output port** (named `clausters` by
+The script **creates a virtual MIDI output port** (named `clausters` by
 default, or the `[port-name]` argument) and plays into it:
 
     python3 examples/midi_live.py [port-name] [seconds]
@@ -22,10 +23,10 @@ script still running, in another terminal start something that has a MIDI input
 
     cargo run -- --midi clausters-in
 
-then connect the two ALSA ports with `aconnect` (list all ports with
-`aconnect -l`):
+then connect the two ports with `pw-link` (list MIDI ports with `pw-link -o`
+for sources and `pw-link -i` for sinks), or wire them in qpwgraph:
 
-    aconnect clausters clausters-in
+    pw-link clausters clausters-in
 """
 
 import os

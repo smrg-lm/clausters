@@ -38,5 +38,5 @@ fn main() {
         );
     }
     let _ = std::fs::remove_file(&source);
-    println!("listen to the new goldens before committing (e.g. ffplay/aplay).");
+    println!("listen to the new goldens before committing (e.g. pw-play <file.wav>).");
 }

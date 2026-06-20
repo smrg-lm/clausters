@@ -44,35 +44,39 @@ cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 |---|---|---|
 | `realtime` | yes | the cpal audio backend (the live server) |
 | `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
-| `pipewire` | no | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
-| `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (needed on PipeWire systems; avoids the ALSA-seq timestamp panic) — needs `libjack-jackd2-dev` |
+| `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
+| `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing; avoids the ALSA-seq timestamp panic) — needs `libjack-jackd2-dev`, run under `pw-jack` |
 | `faust` | no | libfaust embedding (Box API + LLVM JIT) — needs libfaust built with the LLVM backend |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
 
-The core builds and tests without any feature and without libfaust installed.
+The target systems always ship PipeWire, so `pipewire` is on by default and the
+default binary hard-links `libpipewire`. For a build that runs without PipeWire,
+drop it: `cargo build --no-default-features --features realtime,midi` (plain
+ALSA). The engine core still builds and tests with no feature at all.
 
 ### Build dependencies (Ubuntu 26.04)
 
 ```sh
-# default build (ALSA audio + ALSA-seq MIDI)
-sudo apt install build-essential libasound2-dev
-# extras, only for the matching feature:
-sudo apt install libpipewire-0.3-dev clang   # --features pipewire
+# default build (PipeWire audio + ALSA-seq MIDI)
+sudo apt install build-essential libasound2-dev libpipewire-0.3-dev clang
+# optional features:
 sudo apt install libjack-jackd2-dev          # --features midi-jack
+# plain-ALSA build (no PipeWire libs): cargo build --no-default-features --features realtime,midi
 ```
 
-On a PipeWire system the `pipewire` audio host talks to PipeWire directly. The
-`midi-jack` build links against jackd2's `libjack`, so to route MIDI through
-PipeWire's JACK implementation instead of a real `jackd`, run the server under
-`pw-jack` (which points `libjack` at PipeWire):
+Audio uses the native PipeWire host directly. For PipeWire-native MIDI routing,
+the `midi-jack` build links against jackd2's `libjack`; run the server under
+`pw-jack` so `libjack` resolves to PipeWire, which registers a JACK MIDI input
+port (`clausters:input_0`) you can wire in qpwgraph:
 
 ```sh
+cargo build --features midi-jack
 pw-jack ./target/debug/clausters --midi
 ```
 
-It then registers a JACK MIDI input port (`clausters:input_0`) you can wire in
-qpwgraph. Alternatively, activate PipeWire's JACK system-wide by enabling its
-`ld.so.conf.d` drop-in (see the `pipewire-jack` package docs).
+(Or activate PipeWire's JACK system-wide via its `ld.so.conf.d` drop-in — see
+the `pipewire-jack` package docs — and drop the `pw-jack` prefix.) The default
+`--midi` build keeps the ALSA-seq port, routable with `aconnect`.
 
 ## Documentation
 

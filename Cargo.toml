@@ -17,7 +17,7 @@ license = "GPL-3.0-or-later"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["realtime", "midi"]
+default = ["realtime", "midi", "pipewire"]
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
 # M17 live MIDI input via midir (ALSA seq on Linux — the same system MIDI any
@@ -38,12 +38,13 @@ midi-jack = ["midi", "midir/jack"]
 faust = []
 # M14: the C ABI for embedding the server in-process (clausters_* exports).
 embed = []
-# Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Opt-in:
-# `cpal::default_host()` already prefers PipeWire when this is on, falling back
-# to ALSA at runtime if PipeWire is unavailable, so no code change is needed.
-# Building it needs the dev libs: `libpipewire-0.3-dev` (pkg-config
-# libpipewire-0.3/libspa-0.2) and `clang` (bindgen). The core still builds
-# without this feature on plain ALSA.
+# Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Default,
+# since the target systems always ship PipeWire: `cpal::default_host()` prefers
+# PipeWire, falling back to ALSA at runtime if it is unavailable, so no code
+# change is needed. Building it needs the dev libs `libpipewire-0.3-dev`
+# (pkg-config libpipewire-0.3/libspa-0.2) and `clang` (bindgen), and the binary
+# then hard-links libpipewire (DT_NEEDED). Drop it with `--no-default-features`
+# (plus `realtime,midi`) for a plain-ALSA build that runs without PipeWire.
 pipewire = ["realtime", "cpal/pipewire"]
 
 [dependencies]

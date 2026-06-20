@@ -5,21 +5,21 @@ This chapter takes you from a checkout to a sound: build the server, run it, pla
 ## Requirements
 
 - A recent stable Rust toolchain (`rustup`, edition 2024).
-- On Linux, the ALSA development headers for the default real-time/MIDI backends (`libasound2-dev`).
+- On Linux, the default build targets PipeWire (the standard on current systems): `libasound2-dev`, `libpipewire-0.3-dev` and `clang`. The default binary hard-links `libpipewire`, so it expects PipeWire present at runtime.
 - Optional, only for the matching feature:
-  - `pipewire` (native PipeWire audio backend): `libpipewire-0.3-dev` and `clang`.
-  - `midi-jack` (route live MIDI through JACK, needed on PipeWire systems): `libjack-jackd2-dev`.
+  - `midi-jack` (route live MIDI through JACK for PipeWire-native MIDI): `libjack-jackd2-dev`.
   - `faust` (libfaust embedding): `libfaust` built with the LLVM backend — see [Contributing](contributing.md).
 
-  The core builds and runs without any of them. On Ubuntu 26.04:
+  On Ubuntu 26.04:
 
   ```sh
-  # default build (ALSA)
-  sudo apt install build-essential libasound2-dev
-  # extras per feature
-  sudo apt install libpipewire-0.3-dev clang   # --features pipewire
+  # default build (PipeWire audio + ALSA-seq MIDI)
+  sudo apt install build-essential libasound2-dev libpipewire-0.3-dev clang
+  # optional features
   sudo apt install libjack-jackd2-dev          # --features midi-jack
   ```
+
+  For a build with no PipeWire dependency, use plain ALSA: `cargo build --no-default-features --features realtime,midi`. The engine core builds and runs with no feature at all.
 
 ## Build
 
@@ -27,7 +27,7 @@ This chapter takes you from a checkout to a sound: build the server, run it, pla
 cargo build --release
 ```
 
-The default feature `realtime` pulls in the [cpal](https://crates.io/crates/cpal) audio backend. To build the engine without an audio device (CI, tests, offline rendering only), disable it: `cargo build --no-default-features`.
+The default features `realtime` + `pipewire` pull in the [cpal](https://crates.io/crates/cpal) audio backend with its native PipeWire host (it falls back to ALSA at runtime if PipeWire is absent). To build the engine without an audio device (CI, tests, offline rendering only), disable them: `cargo build --no-default-features`.
 
 ## Run the server
 
