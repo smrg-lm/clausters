@@ -2447,3 +2447,24 @@ changes — buffers are still immutable `Arc<Buffer>`s installed via `SetBuffer`
 - **Docs**: `schemas.md` (the `/b_*` format note), `architecture.md` (NRT
   thread), `GUIA.md` (manual ffmpeg-based step). Dependency: `symphonia` added to
   `Cargo.toml` (default-features off, explicit codec/container feature list).
+
+## BufRateScale + buffer-info UGen family (2026-06-20)
+
+Stage 1 of the buffer/disk follow-up. The server never resamples, so a file at
+a different sample rate than the server must be pitch-corrected at the UGen
+level via `PlayBuf`'s `rate`. Until now the client had to compute
+`file_sr / server_sr` itself; the new `BufInfo` family reads it from the buffer
+at run time:
+
+- `BufInfo(BufInfoKind)` in `dsp::buf`, registered under five scsynth names:
+  `BufSampleRate`, `BufRateScale` (`file_sr / server_sr`), `BufFrames`,
+  `BufChannels`, `BufDur` (`frames / file_sr`). All take the bufnum as their one
+  input and emit a block-constant value (control-rate-like); a missing slot
+  reports 0. They read `ProcessCtx::{buffers, sample_rate}` only — no bus use,
+  no allocation, no audio-thread state.
+- Idiomatic use: `PlayBuf(buf, rate: BufRateScale(buf) * pitch)` plays at the
+  file's true pitch without the client knowing either sample rate.
+- **Tests**: `tests/buffers.rs` (+1: a 24 kHz buffer on a 48 kHz engine returns
+  RateScale 0.5, plus SampleRate/Frames/Dur/Channels).
+- **Docs**: `schemas.md` (UGen table rows + the `PlayBuf` note now points at
+  `BufRateScale`), `GUIA.md`.

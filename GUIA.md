@@ -41,7 +41,7 @@ sudo apt install liblo-tools   # da el comando `oscsend`
 git clone <este-repo> clausters && cd clausters
 
 cargo build --release
-cargo test                       # 179 tests, no necesita placa de audio
+cargo test                       # 180 tests, no necesita placa de audio
 ```
 
 Los tests cubren: protocolo OSC con round-trips UDP reales
@@ -101,6 +101,14 @@ todo:
 ```sh
 python3 examples/json_client.py buffer
 ```
+
+Ese `rate = sr_archivo / sr_servidor` también lo calcula la UGen
+`BufRateScale` dentro del propio SynthDef: con
+`PlayBuf(buf, rate: BufRateScale(buf) * pitch)` la corrección de tono es
+transparente y el cliente no necesita conocer ninguna de las dos
+frecuencias. La familia completa es `BufSampleRate`, `BufRateScale`,
+`BufFrames`, `BufChannels` y `BufDur` (todas toman el bufnum y devuelven un
+valor constante por bloque).
 
 A mano con `oscsend` (los `/b_*` son asíncronos: responden `/done` o
 `/fail` al cliente; el tráfico OSC también se puede ver en el log del

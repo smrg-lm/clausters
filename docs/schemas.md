@@ -111,8 +111,13 @@ The blob is a JSON object:
 | `InCtl` | bus | a control-bus value, constant over the block |
 | `Out` | bus, signal | **sums** the signal into an audio bus |
 | `ReplaceOut` | bus, signal | overwrites the bus instead of summing |
-| `PlayBuf` | bufnum, chan, rate, loop | buffer player with linear interpolation; `rate` is frames per output sample (1.0 = the server rate — scale by `file_sr / server_sr` for the file's pitch); starts at frame 0, silent at the end unless looping |
+| `PlayBuf` | bufnum, chan, rate, loop | buffer player with linear interpolation; `rate` is frames per output sample (1.0 = the server rate — multiply by `BufRateScale(bufnum)`, i.e. `file_sr / server_sr`, for the file's pitch); starts at frame 0, silent at the end unless looping |
 | `BufRd` | bufnum, chan, phase, loop | reads the buffer at a `phase` signal in frames (linear interpolation); out-of-range phases wrap when looping, clamp otherwise |
+| `BufSampleRate` | bufnum | the buffer's own sample rate (Hz), block-constant |
+| `BufRateScale` | bufnum | `file_sr / server_sr`; feed `PlayBuf`'s `rate` (`rate: BufRateScale(buf) * pitch`) to play at the file's true pitch without the client knowing either rate |
+| `BufFrames` | bufnum | frame count, block-constant |
+| `BufChannels` | bufnum | channel count, block-constant |
+| `BufDur` | bufnum | duration in seconds (`frames / file_sr`), block-constant |
 | `LocalIn` | channel | reads synth-private feedback channel `channel` (a constant); see feedback note below |
 | `LocalOut` | channel, signal | writes `signal` into synth-private feedback channel `channel` (a constant); also passes `signal` through as its own output |
 

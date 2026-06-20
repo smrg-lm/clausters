@@ -2,7 +2,7 @@
 
 use crate::dsp::UGen;
 use crate::dsp::binop::{BinOp, BinaryOp};
-use crate::dsp::buf::{BufRd, PlayBuf};
+use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::local::{LocalIn, LocalOut};
@@ -24,6 +24,11 @@ pub enum UGenKind {
     ReplaceOut,
     PlayBuf,
     BufRd,
+    BufSampleRate,
+    BufRateScale,
+    BufFrames,
+    BufChannels,
+    BufDur,
     LocalIn,
     LocalOut,
 }
@@ -43,6 +48,11 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
         "ReplaceOut" => Some(UGenKind::ReplaceOut),
         "PlayBuf" => Some(UGenKind::PlayBuf),
         "BufRd" => Some(UGenKind::BufRd),
+        "BufSampleRate" => Some(UGenKind::BufSampleRate),
+        "BufRateScale" => Some(UGenKind::BufRateScale),
+        "BufFrames" => Some(UGenKind::BufFrames),
+        "BufChannels" => Some(UGenKind::BufChannels),
+        "BufDur" => Some(UGenKind::BufDur),
         "LocalIn" => Some(UGenKind::LocalIn),
         "LocalOut" => Some(UGenKind::LocalOut),
         _ => None,
@@ -56,7 +66,12 @@ pub fn arity(kind: UGenKind) -> usize {
         | UGenKind::Impulse
         | UGenKind::In
         | UGenKind::InCtl
-        | UGenKind::LocalIn => 1,
+        | UGenKind::LocalIn
+        | UGenKind::BufSampleRate
+        | UGenKind::BufRateScale
+        | UGenKind::BufFrames
+        | UGenKind::BufChannels
+        | UGenKind::BufDur => 1,
         UGenKind::Add
         | UGenKind::Sub
         | UGenKind::Mul
@@ -85,6 +100,11 @@ pub fn build(kind: UGenKind) -> Box<dyn UGen> {
         UGenKind::ReplaceOut => Box::new(ReplaceOut),
         UGenKind::PlayBuf => Box::new(PlayBuf::new()),
         UGenKind::BufRd => Box::new(BufRd),
+        UGenKind::BufSampleRate => Box::new(BufInfo(BufInfoKind::SampleRate)),
+        UGenKind::BufRateScale => Box::new(BufInfo(BufInfoKind::RateScale)),
+        UGenKind::BufFrames => Box::new(BufInfo(BufInfoKind::Frames)),
+        UGenKind::BufChannels => Box::new(BufInfo(BufInfoKind::Channels)),
+        UGenKind::BufDur => Box::new(BufInfo(BufInfoKind::Duration)),
         // Intercepted by UGenSynth::process; these are placeholders.
         UGenKind::LocalIn => Box::new(LocalIn),
         UGenKind::LocalOut => Box::new(LocalOut),

@@ -1,11 +1,12 @@
-//! Buffer-reading UGens (M5): `PlayBuf` and `BufRd`.
+//! Buffer-reading UGens (M5): `PlayBuf` and `BufRd`, plus the `BufInfo`
+//! family that reports a buffer's shape/rate at run time.
 //!
-//! Both are **mono**: our UGens have a single output, so multichannel
-//! buffers are read one channel per UGen via the `chan` input (two UGens
-//! with the same inputs stay sample-locked, so a stereo file is two readers).
-//! This diverges from scsynth's multi-output PlayBuf/BufRd — documented in
-//! `docs/schemas.md`. Both interpolate linearly between frames; neither has
-//! a trigger or done action yet.
+//! `PlayBuf`/`BufRd` are **mono**: our UGens have a single output, so
+//! multichannel buffers are read one channel per UGen via the `chan` input
+//! (two UGens with the same inputs stay sample-locked, so a stereo file is two
+//! readers). This diverges from scsynth's multi-output PlayBuf/BufRd —
+//! documented in `docs/schemas.md`. Both interpolate linearly between frames;
+//! neither has a trigger or done action yet.
 
 use crate::dsp::buffer::Buffer;
 use crate::dsp::{ProcessCtx, UGen, at};
@@ -108,5 +109,62 @@ impl UGen for BufRd {
             };
             *s = read_lin(buf, pos, channel, looping);
         }
+    }
+}
+
+/// What a [`BufInfo`] UGen reports about the buffer named by its single input
+/// (the buffer index). All are block-constant (control-rate-like), mirroring
+/// scsynth's `BufSampleRate`, `BufRateScale`, `BufFrames`, `BufChannels` and
+/// `BufDur`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BufInfoKind {
+    /// The file's own sample rate, in Hz.
+    SampleRate,
+    /// `file_sr / server_sr`: multiply `PlayBuf`'s rate by this so a file at a
+    /// different sample rate plays back at its true pitch (the server never
+    /// resamples on its own — see the module docs and `docs/schemas.md`).
+    RateScale,
+    /// Frame count.
+    Frames,
+    /// Channel count.
+    Channels,
+    /// Duration in seconds (`frames / file_sr`).
+    Duration,
+}
+
+/// Reports a static property of a buffer (see [`BufInfoKind`]). Input 0 is the
+/// buffer index; the output is constant over the block. An empty/missing slot
+/// reports `0`.
+pub struct BufInfo(pub BufInfoKind);
+
+impl UGen for BufInfo {
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let index = inputs[0][0].max(0.0) as usize;
+        let value = match ctx.buffers.get(index).and_then(|b| b.as_deref()) {
+            Some(buf) => {
+                let file_sr = buf.sample_rate() as f32;
+                match self.0 {
+                    BufInfoKind::SampleRate => file_sr,
+                    BufInfoKind::RateScale => {
+                        if ctx.sample_rate > 0.0 {
+                            file_sr / ctx.sample_rate
+                        } else {
+                            0.0
+                        }
+                    }
+                    BufInfoKind::Frames => buf.frames() as f32,
+                    BufInfoKind::Channels => buf.channels() as f32,
+                    BufInfoKind::Duration => {
+                        if file_sr > 0.0 {
+                            buf.frames() as f32 / file_sr
+                        } else {
+                            0.0
+                        }
+                    }
+                }
+            }
+            None => 0.0,
+        };
+        output.fill(value);
     }
 }

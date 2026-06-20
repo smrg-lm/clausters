@@ -238,6 +238,98 @@ fn bufrd_interpolates_wraps_and_clamps() {
 }
 
 #[test]
+fn buf_info_ugens_report_shape_and_rate_scale() {
+    // A 24 kHz, 100-frame mono buffer played on a 48 kHz server: BufRateScale
+    // must report 0.5 (file_sr / server_sr) so PlayBuf can correct the pitch.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    let data: Vec<f32> = vec![0.0; 100];
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(Buffer::new(data, 1, 100, 24_000.0))),
+        })
+        .ok()
+        .unwrap();
+
+    let info = |kind: &str, out_bus: f32| {
+        spec_synth(json!({
+            "name": "info",
+            "ugens": [
+                {"kind": kind, "inputs": [{"const": 0.0}]},
+                {"kind": "Out", "inputs": [{"const": out_bus}, {"ugen": 0}]}
+            ]
+        }))
+    };
+    for (i, kind) in ["BufRateScale", "BufSampleRate", "BufFrames", "BufDur"]
+        .iter()
+        .enumerate()
+    {
+        // Out bus 0 -> left channel, 1 -> right; reuse two channels twice.
+        handle
+            .send(add_synth(1000 + i as i32, info(kind, (i % 2) as f32)))
+            .ok()
+            .unwrap();
+        if i % 2 == 1 {
+            let mut out = vec![0.0f32; BLOCK_SIZE * CHANNELS];
+            engine.process_block(&mut out);
+            // i-1 went to bus 0, i to bus 1.
+            let prev = out[0];
+            let cur = out[1];
+            match i {
+                1 => {
+                    assert_eq!(prev, 0.5, "BufRateScale = 24000/48000");
+                    assert_eq!(cur, 24_000.0, "BufSampleRate");
+                }
+                3 => {
+                    assert_eq!(prev, 100.0, "BufFrames");
+                    assert_eq!(cur, 100.0 / 24_000.0, "BufDur = frames/file_sr");
+                }
+                _ => unreachable!(),
+            }
+            // Clear the nodes before the next pair so the buses are clean.
+            handle
+                .send(Cmd::FreeNode {
+                    id: 1000 + i as i32 - 1,
+                })
+                .ok()
+                .unwrap();
+            handle
+                .send(Cmd::FreeNode {
+                    id: 1000 + i as i32,
+                })
+                .ok()
+                .unwrap();
+            render_channel(&mut engine, 1, 0);
+        }
+    }
+
+    // BufChannels on a stereo buffer.
+    handle
+        .send(Cmd::SetBuffer {
+            index: 1,
+            buffer: Some(Arc::new(Buffer::new(vec![0.0; 8], 2, 4, 48_000.0))),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            2000,
+            spec_synth(json!({
+                "name": "ch",
+                "ugens": [
+                    {"kind": "BufChannels", "inputs": [{"const": 1.0}]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+    let mut out = vec![0.0f32; BLOCK_SIZE * CHANNELS];
+    engine.process_block(&mut out);
+    assert_eq!(out[0], 2.0, "BufChannels");
+}
+
+#[test]
 fn replaced_buffer_leaves_through_the_garbage_fifo() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
