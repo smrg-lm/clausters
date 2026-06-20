@@ -29,13 +29,20 @@ midi = ["dep:midir"]
 faust = []
 # M14: the C ABI for embedding the server in-process (clausters_* exports).
 embed = []
+# Native PipeWire audio backend (Linux/BSD) via cpal's pipewire host. Opt-in:
+# `cpal::default_host()` already prefers PipeWire when this is on, falling back
+# to ALSA at runtime if PipeWire is unavailable, so no code change is needed.
+# Building it needs the dev libs: `libpipewire-0.3-dev` (pkg-config
+# libpipewire-0.3/libspa-0.2) and `clang` (bindgen). The core still builds
+# without this feature on plain ALSA.
+pipewire = ["realtime", "cpal/pipewire"]
 
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,
 # the seeded RNG and the timing/OSC math that both the server and every
 # client binding use, so client-side results match the server by construction.
 clausters-core = { path = "crates/clausters-core" }
-cpal = { version = "0.15", optional = true }
+cpal = { version = "0.18", optional = true }
 hound = "3"
 # M17: live MIDI I/O over the OS's standard MIDI (ALSA seq on Linux). Pure
 # Rust over libasound (already pulled in by cpal); creates virtual ports.

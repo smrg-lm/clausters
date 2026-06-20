@@ -14,6 +14,7 @@ The engine (`server::engine`) knows nothing about the audio backend: it processe
 | feature | default | what it adds |
 |---|---|---|
 | `realtime` | yes | the cpal backend (the live server). Disable it for offline/embedded use with no audio device. |
+| `pipewire` | no | native PipeWire audio backend on Linux/BSD via cpal's pipewire host. `cpal::default_host()` prefers PipeWire when on, falling back to ALSA at runtime, so no code changes. Building it needs `libpipewire-0.3-dev` and `clang`. |
 | `faust` | no | libfaust embedding (Box API + LLVM JIT). Needs libfaust built with the LLVM backend — see [Contributing](contributing.md). |
 | `embed` | no | the C ABI (`clausters_*` exports) for embedding the server in another process — see [Local transports & embedding](ipc.md). |
 

@@ -58,15 +58,15 @@ pub fn start(
         .ok_or("no output device available")?;
     let config = device.default_output_config()?;
 
-    let sample_rate = config.sample_rate().0 as f32;
+    let sample_rate = config.sample_rate() as f32;
     let channels = config.channels() as usize;
     let (engine, handle) = engine_pair_full(sample_rate, channels, workers, ipc);
     let adapter = BlockAdapter::new(engine);
 
     let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config.into(), adapter)?,
-        cpal::SampleFormat::I16 => build_stream::<i16>(&device, &config.into(), adapter)?,
-        cpal::SampleFormat::U16 => build_stream::<u16>(&device, &config.into(), adapter)?,
+        cpal::SampleFormat::F32 => build_stream::<f32>(&device, config.into(), adapter)?,
+        cpal::SampleFormat::I16 => build_stream::<i16>(&device, config.into(), adapter)?,
+        cpal::SampleFormat::U16 => build_stream::<u16>(&device, config.into(), adapter)?,
         fmt => return Err(format!("unsupported sample format: {fmt}").into()),
     };
     stream.play()?;
@@ -83,9 +83,9 @@ pub fn start(
 
 fn build_stream<T>(
     device: &cpal::Device,
-    config: &cpal::StreamConfig,
+    config: cpal::StreamConfig,
     mut adapter: BlockAdapter,
-) -> Result<cpal::Stream, cpal::BuildStreamError>
+) -> Result<cpal::Stream, cpal::Error>
 where
     T: SizedSample + FromSample<f32>,
 {

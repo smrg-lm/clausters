@@ -43,6 +43,7 @@ cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 | feature | default | adds |
 |---|---|---|
 | `realtime` | yes | the cpal audio backend (the live server) |
+| `pipewire` | no | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
 | `faust` | no | libfaust embedding (Box API + LLVM JIT) — needs libfaust built with the LLVM backend |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
 
