@@ -68,6 +68,14 @@ built from source and installed under `~/.local` (see the F0 section of
 `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`. The core must
 always build and test without the feature and without libfaust installed.
 
+**Run the faust tests single-threaded:** `cargo test --features faust --
+--test-threads=1`. libfaust/LLVM is not safe for **concurrent** compilation in
+one process, so the default parallel test harness SIGSEGVs in the faust suites
+(`faust_compiler` and friends) — a known libfaust limitation, not a bug in our
+code. This only affects the test harness creating factories in parallel: the
+server itself compiles on a single thread holding `faust::ffi_lock()`, so
+production is unaffected.
+
 ## RT-safety (non-negotiable)
 
 The audio thread (`Engine::process_block` and everything it calls) must never
