@@ -136,7 +136,7 @@ print("controles:", fdef.control_names(), "+ reservados", fdef.reserved)
 print("payload (recorte):", fdef.payload()[:70], "...")
 
 ids = NodeIDAllocator(1000); print("ids:", ids.alloc(), ids.alloc())
-buses = AudioBusAllocator(reserved=2); b = buses.alloc(2)
+buses = AudioBusAllocator(size=128, reserved=2); b = buses.alloc(2)  # size = conteo del servidor
 print("bus audio:", b.index, b.channels)                 # 2 2 (arriba de las salidas)
 PY
 ```

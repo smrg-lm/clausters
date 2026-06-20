@@ -5,14 +5,12 @@ hardware outputs) and single-float control buses. Like scsynth, the client owns
 allocation; the server just indexes. A :class:`Bus` is a flat
 ``(index, channels, rate)`` — only flat data ever leaves for the wire.
 
-The constants below are the **server defaults**; a server launched with
-``--audio-buses``/``--control-buses`` differs, so size the allocators from a
-:class:`~clausters.defs.server.ServerOptions` (or from
-:meth:`~clausters.defs.server.Server.query_info`) instead of assuming these.
+The allocators carry **no default size of their own**: how many buses exist is a
+property of the server, not the bus module. The :class:`~clausters.defs.server.Server`
+sizes them from its :class:`~clausters.defs.server.ServerOptions` (which also emits
+the matching ``--audio-buses``/``--control-buses`` launch flags), and the live
+counts can be read back with :meth:`~clausters.defs.server.Server.query_info`.
 """
-
-NUM_AUDIO_BUSES = 128
-NUM_CONTROL_BUSES = 1024
 
 
 class Bus:
@@ -49,12 +47,16 @@ class _Allocator:
 
 
 class AudioBusAllocator(_Allocator):
-    """Allocates audio buses above the hardware outputs (``reserved``)."""
+    """Allocates audio buses above the hardware outputs (``reserved``). ``size``
+    is the server's audio-bus count (from ``ServerOptions``/``query_info``)."""
 
-    def __init__(self, size: int = NUM_AUDIO_BUSES, reserved: int = 2):
+    def __init__(self, size: int, reserved: int = 2):
         super().__init__("audio", size, reserved)
 
 
 class ControlBusAllocator(_Allocator):
-    def __init__(self, size: int = NUM_CONTROL_BUSES):
+    """``size`` is the server's control-bus count (from
+    ``ServerOptions``/``query_info``)."""
+
+    def __init__(self, size: int):
         super().__init__("control", size, 0)

@@ -25,8 +25,6 @@ from ..base.netaddr import NetAddr
 from ..base._oscinterface import OscNrtInterface, OscUDPInterface
 from ..base.timebase import SampleClockTimebase
 from .bus import (
-    NUM_AUDIO_BUSES,
-    NUM_CONTROL_BUSES,
     AudioBusAllocator,
     Bus,
     ControlBusAllocator,
@@ -48,6 +46,16 @@ def _flatten_controls(controls) -> list:
     return flat
 
 
+# Server defaults, mirroring the Rust server's `DEFAULT_AUDIO_BUSES` /
+# `DEFAULT_CONTROL_BUSES` (128 is the hard audio ceiling) and `--sample-rate`.
+# They live here, on the server-config object, not in the bus module: how many
+# buses exist is the server's property, and these are only the fallback when the
+# caller does not specify. The bus allocators carry no defaults of their own.
+DEFAULT_AUDIO_BUSES = 128
+DEFAULT_CONTROL_BUSES = 1024
+DEFAULT_SAMPLE_RATE = 48000
+
+
 @dataclass
 class ServerOptions:
     """Client-owned server configuration, the way SuperCollider's
@@ -57,9 +65,9 @@ class ServerOptions:
     :meth:`Server.query_info`.
     """
 
-    audio_buses: int = NUM_AUDIO_BUSES
-    control_buses: int = NUM_CONTROL_BUSES
-    sample_rate: int = 48000
+    audio_buses: int = DEFAULT_AUDIO_BUSES
+    control_buses: int = DEFAULT_CONTROL_BUSES
+    sample_rate: int = DEFAULT_SAMPLE_RATE
 
     def args(self) -> list[str]:
         """The ``clausters`` CLI flags that launch a server matching these
