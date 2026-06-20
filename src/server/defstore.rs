@@ -47,11 +47,15 @@ pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(".local/share/clausters"))
 }
 
-/// The on-disk def directories, created on open.
+/// The on-disk def directories and config files, created on open.
 pub struct DefStore {
     synthdefs_dir: PathBuf,
     faustdefs_dir: PathBuf,
     graphdefs_dir: PathBuf,
+    /// `<data_dir>/midi.json` — persisted MIDI bindings (M19).
+    bindings_path: PathBuf,
+    /// `<data_dir>/boot.json` — the boot preset of standalone graphs (M19).
+    boot_path: PathBuf,
 }
 
 impl DefStore {
@@ -68,6 +72,8 @@ impl DefStore {
             synthdefs_dir,
             faustdefs_dir,
             graphdefs_dir,
+            bindings_path: data_dir.join("midi.json"),
+            boot_path: data_dir.join("boot.json"),
         })
     }
 
@@ -127,6 +133,30 @@ impl DefStore {
             .into_iter()
             .map(|(_, bytes)| bytes)
             .collect()
+    }
+
+    /// Writes the MIDI bindings to `midi.json` (M19). Best-effort: the caller
+    /// logs an error, never fatal.
+    pub fn save_bindings(&self, bindings: &[crate::midi::PersistedBinding]) -> io::Result<()> {
+        let json = serde_json::to_vec_pretty(bindings).map_err(io::Error::other)?;
+        atomic_write(&self.bindings_path, &json)
+    }
+
+    /// Reads the persisted MIDI bindings (empty if absent or unreadable).
+    pub fn load_bindings(&self) -> Vec<crate::midi::PersistedBinding> {
+        std::fs::read(&self.bindings_path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
+    }
+
+    /// Reads the boot preset of standalone graphs (empty if absent). The file
+    /// is authored by the user / a client; the server only reads it.
+    pub fn load_boot(&self) -> Vec<crate::osc::graphdef::BootInstance> {
+        std::fs::read(&self.boot_path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_default()
     }
 }
 

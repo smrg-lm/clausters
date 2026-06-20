@@ -220,3 +220,65 @@ fn unbind_frees_sounding_voices() {
     );
     assert!(t.midi.voices.is_empty());
 }
+
+// ---- M19: a persisted binding survives restore and is immediately playable ----
+
+#[test]
+fn binding_persists_restores_and_plays() {
+    // Bind channel 0 -> default with a cc map, capture the persistable form,
+    // restore it into a fresh translator, and confirm a note plays through the
+    // default freq/amp map (playable with no further setup).
+    let mut a = CmdTranslator::new(SR);
+    let mut cmds = Vec::new();
+    a.translate(
+        &msg(
+            "/midi_bind",
+            vec![OscType::Int(0), OscType::String("default".into())],
+        ),
+        &mut cmds,
+    )
+    .unwrap();
+    a.translate(
+        &msg(
+            "/midi_map",
+            vec![
+                OscType::Int(0),
+                OscType::String("cc1".into()),
+                OscType::String("amp".into()),
+            ],
+        ),
+        &mut cmds,
+    )
+    .unwrap();
+
+    let persisted = a.midi.persist();
+    assert_eq!(persisted.len(), 1);
+
+    // A fresh server restores the binding (no OSC re-issued).
+    let mut b = CmdTranslator::new(SR);
+    let mut bc = Vec::new();
+    for pb in persisted {
+        b.restore_binding(pb, &mut bc).unwrap();
+    }
+    let binding = b.midi.channels.get(&0).expect("binding restored");
+    assert_eq!(binding.instrument, "default");
+    assert_eq!(binding.cc.get(&1).map(String::as_str), Some("amp"));
+
+    // And a note plays immediately: a default voice with freq/amp from the
+    // standard conversions.
+    bc.clear();
+    b.translate_midi(
+        NoteOn {
+            channel: 0,
+            note: 69,
+            velocity: 100,
+        },
+        &mut bc,
+    )
+    .unwrap();
+    let id = *b.midi.voices.get(&(0, 69)).expect("voice spawned");
+    let (def_name, controls) = b.mirror.synth_info(id).expect("voice mirrored");
+    assert_eq!(def_name, "default");
+    let fi = b.node_defs.get(&id).unwrap().control_index("freq").unwrap();
+    assert!((controls[fi as usize] - convert::midi2freq(69.0)).abs() < 1e-3);
+}

@@ -352,8 +352,16 @@ Subdirectories hold the def kinds:
 | `<dir>/faustdefs/<name>.json` | `/d_faust` | a record: the original Faust source/JSON, the libfaust version, and the payload's SHA-256 |
 | `<dir>/faustdefs/<name>.<sha>.bc` | `/d_faust` | the compiled LLVM **bitcode** (a speed cache) |
 | `<dir>/graphdefs/<name>.json` | `/d_graph` | the `GraphDefSpec` JSON, verbatim |
+| `<dir>/midi.json` | `/midi_bind`/`/midi_unbind`/`/midi_map` | the MIDI bindings (channel → instrument + target + control map), M19 |
+| `<dir>/boot.json` | *authored by the user/client* | the boot preset: standalone GraphDefs to instantiate at startup, M19 |
 
 GraphDefs reload after the synth/faust defs (their members reference those names); validation is structural only, so a member def that is still missing at load is caught later, at `/graph_new`.
+
+### MIDI-standalone: bindings + boot preset (M19)
+
+So the server can be **played from a MIDI controller with no OSC programming at all**, the MIDI bindings persist too. Every `/midi_bind`/`/midi_unbind`/`/midi_map` rewrites `midi.json`; at startup — **after** the defs and GraphDefs are in place, so a binding's instrument name resolves — each binding is re-established (a GraphDef binding re-instantiates its shared instance). The minimal workflow becomes: drop a SynthDef/FaustDef (or a GraphDef) and a binding in the data dir once, then every later `clausters --midi --data-dir <dir>` comes up already bound — connect a controller (`aconnect`) and play. The default control map (note→`freq`, velocity→`amp`, note-off→`/n_free`/gate) makes a restored binding immediately playable.
+
+`boot.json` is an optional, user-authored **boot preset**: a JSON array of standalone GraphDefs to instantiate at boot (an always-on reverb bus, a drone, a mixer), each `{"graph": "<name>", "ports": {"<port>": value, ...}}`. They are instantiated (the equivalent of `/graph_new <name> -1 0 0 ...`) after the bindings, so a fresh boot comes up already wired. The boot order is **defs → graphdefs → bindings → boot preset**. All of it honours `--no-persist` (off → nothing read or written) and the data-dir resolution; it applies to the real-time server only (NRT never persists).
 
 The stored **definition** (the JSON) is always the source of truth: it is transparent, human-readable, and what gets recompiled. The Faust `.bc` is a non-authoritative cache — on reload the server re-creates the factory from bitcode (skipping Faust's front-end) only when the libfaust version still matches and the file is intact; otherwise it silently recompiles from the source and rewrites the cache. A libfaust upgrade therefore invalidates every `.bc` automatically. `/d_free <name>` deletes both files. Re-sending a name overwrites them.
 

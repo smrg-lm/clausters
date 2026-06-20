@@ -66,6 +66,67 @@ fn synthdef_specs_round_trip_through_disk() {
     assert!(store.load_synthdef_specs().is_empty());
 }
 
+// ---- M19: persisted MIDI bindings + boot preset ----
+
+#[test]
+fn midi_bindings_round_trip_through_disk() {
+    use clausters::osc::translate::CmdTranslator;
+    use clausters::rosc::{OscMessage, OscType};
+
+    let dir = TempDir::new("bindings");
+    let store = DefStore::open(dir.path()).unwrap();
+    assert!(store.load_bindings().is_empty()); // absent file -> empty
+
+    // Build a binding (channel 3 -> default, with a cc->amp map) and persist it.
+    let mut t = CmdTranslator::new(48_000.0);
+    let mut cmds = Vec::new();
+    let bind = OscMessage {
+        addr: "/midi_bind".into(),
+        args: vec![OscType::Int(3), OscType::String("default".into())],
+    };
+    t.translate(&bind, &mut cmds).unwrap();
+    let map = OscMessage {
+        addr: "/midi_map".into(),
+        args: vec![
+            OscType::Int(3),
+            OscType::String("cc7".into()),
+            OscType::String("amp".into()),
+        ],
+    };
+    t.translate(&map, &mut cmds).unwrap();
+
+    store.save_bindings(&t.midi.persist()).unwrap();
+    assert!(dir.path().join("midi.json").exists());
+
+    let loaded = store.load_bindings();
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].channel, 3);
+    assert_eq!(loaded[0].binding.instrument, "default");
+    assert_eq!(
+        loaded[0].binding.cc.get(&7).map(String::as_str),
+        Some("amp")
+    );
+}
+
+#[test]
+fn boot_preset_loads_when_present() {
+    use clausters::osc::graphdef::BootInstance;
+
+    let dir = TempDir::new("boot");
+    let store = DefStore::open(dir.path()).unwrap();
+    assert!(store.load_boot().is_empty()); // absent -> empty
+
+    std::fs::write(
+        dir.path().join("boot.json"),
+        br#"[{"graph":"reverb","ports":{"mix":0.3}}]"#,
+    )
+    .unwrap();
+    let boot: Vec<BootInstance> = store.load_boot();
+    assert_eq!(boot.len(), 1);
+    assert_eq!(boot[0].graph, "reverb");
+    assert_eq!(boot[0].ports.get("mix"), Some(&0.3));
+}
+
 #[cfg(feature = "faust")]
 mod faust {
     use super::TempDir;

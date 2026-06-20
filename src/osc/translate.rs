@@ -1084,29 +1084,57 @@ impl CmdTranslator {
             return Err("add action must be 0-4".into());
         }
         let mut binding = MidiBinding::new(instrument.clone(), target, action, gate);
-        // A GraphDef instrument: spawn its shared instance now (notes spawn
-        // voices into it). A GraphDef with no per-voice members is rejected —
-        // it has nothing to play per note.
-        if self.graph_defs.contains_key(instrument) {
-            if !self.graph_defs[instrument].has_voice_members() {
-                return Err(format!(
-                    "GraphDef {instrument:?} has no per-voice members to bind to MIDI"
-                ));
-            }
-            let instance = self.midi.alloc_id();
-            let new = midi_message(
-                "/graph_new",
-                vec![
-                    OscType::String(instrument.clone()),
-                    OscType::Int(instance),
-                    OscType::Int(action),
-                    OscType::Int(target),
-                ],
-            );
-            self.graph_new(&new, cmds)?;
-            binding.graph_instance = Some(instance);
-        }
+        binding.graph_instance = self.bind_graph_instance(instrument, target, action, cmds)?;
         self.midi.channels.insert(channel, binding);
+        Ok(())
+    }
+
+    /// If `instrument` names a GraphDef, spawn its shared instance now (so each
+    /// note spawns a voice into it) and return the instance id; otherwise
+    /// `None` (a plain def is `/s_new`'d per note). A GraphDef with no
+    /// per-voice members is rejected — it has nothing to play per note. Shared
+    /// by `/midi_bind` and the M19 binding restore.
+    fn bind_graph_instance(
+        &mut self,
+        instrument: &str,
+        target: i32,
+        action: i32,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<Option<i32>, String> {
+        if !self.graph_defs.contains_key(instrument) {
+            return Ok(None);
+        }
+        if !self.graph_defs[instrument].has_voice_members() {
+            return Err(format!(
+                "GraphDef {instrument:?} has no per-voice members to bind to MIDI"
+            ));
+        }
+        let instance = self.midi.alloc_id();
+        let new = midi_message(
+            "/graph_new",
+            vec![
+                OscType::String(instrument.to_string()),
+                OscType::Int(instance),
+                OscType::Int(action),
+                OscType::Int(target),
+            ],
+        );
+        self.graph_new(&new, cmds)?;
+        Ok(Some(instance))
+    }
+
+    /// M19: re-establish a persisted binding at startup, re-instantiating its
+    /// shared GraphDef instance if needed. Mirrors `/midi_bind` but takes the
+    /// stored config directly (no re-issued OSC).
+    pub fn restore_binding(
+        &mut self,
+        pb: crate::midi::PersistedBinding,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let mut binding = pb.binding;
+        binding.graph_instance =
+            self.bind_graph_instance(&binding.instrument, binding.target, binding.action, cmds)?;
+        self.midi.channels.insert(pb.channel, binding);
         Ok(())
     }
 

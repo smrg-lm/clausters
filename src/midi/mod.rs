@@ -25,6 +25,8 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 pub mod convert;
 #[cfg(feature = "midi")]
 pub mod live;
@@ -153,7 +155,7 @@ pub fn parse_midi1(status: u8, data1: u8, data2: u8) -> Option<ChannelVoiceMessa
 /// per note, where, and which control each expressive message drives. Defaults
 /// match the client `Event` convention (`freq`/`amp`); `/midi_map` overrides
 /// or adds entries.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct MidiBinding {
     /// Instrument def name (SynthDef *or* FaustDef — actuated identically).
     pub instrument: String,
@@ -176,8 +178,19 @@ pub struct MidiBinding {
     pub programs: HashMap<u8, String>,
     /// M18: when the instrument is a **GraphDef**, the shared instance group
     /// spawned at bind time. A note then spawns a per-voice sub-graph
-    /// (`/graph_voice`) inside it instead of a plain `/s_new`.
+    /// (`/graph_voice`) inside it instead of a plain `/s_new`. Runtime only —
+    /// not persisted (it is re-instantiated on restore, M19).
+    #[serde(skip)]
     pub graph_instance: Option<i32>,
+}
+
+/// A persisted binding: a channel plus its config, written to `midi.json` and
+/// re-issued at startup so a MIDI-driven setup survives a restart (M19). The
+/// runtime `graph_instance` is excluded (re-instantiated on restore).
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PersistedBinding {
+    pub channel: u8,
+    pub binding: MidiBinding,
 }
 
 impl MidiBinding {
@@ -223,6 +236,21 @@ impl MidiBindings {
     pub fn alloc_id(&mut self) -> i32 {
         self.next_id += 1;
         self.next_id
+    }
+
+    /// The current bindings as a stable, persistable list (M19), sorted by
+    /// channel for a deterministic file.
+    pub fn persist(&self) -> Vec<PersistedBinding> {
+        let mut out: Vec<PersistedBinding> = self
+            .channels
+            .iter()
+            .map(|(&channel, binding)| PersistedBinding {
+                channel,
+                binding: binding.clone(),
+            })
+            .collect();
+        out.sort_by_key(|b| b.channel);
+        out
     }
 
     /// Drop all voices of a channel (on unbind), returning their node IDs.

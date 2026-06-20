@@ -2384,3 +2384,40 @@ The two deferred M18 sub-parts, closing the milestone.
 
 Core green with and without `faust`; full Python suite green; `cargo fmt`
 clean. **M18 fully done.**
+
+## M19 — MIDI-standalone operation: persisted bindings + boot preset (2026-06-20)
+
+The payoff of M16 + M17 + M18: boot the server and play it from a MIDI
+controller with **zero OSC programming**. All network-thread / boot-time, no
+new audio-thread state.
+
+- **Persisted MIDI bindings** (`midi.json`): `MidiBinding` derives
+  serde (the runtime `graph_instance` is `#[serde(skip)]`); `MidiBindings::
+  persist()` exports a channel-sorted `Vec<PersistedBinding>`. `defstore` gains
+  `save_bindings`/`load_bindings` (`<dir>/midi.json`). `OscServer` rewrites it
+  after every `/midi_bind`/`/midi_unbind`/`/midi_map` (`persist_bindings`).
+- **Boot reload** (`attach_store`): fixed order **defs -> graphdefs -> bindings
+  -> boot preset**, so a binding's instrument and a boot graph's name already
+  resolve. `CmdTranslator::restore_binding` re-establishes a binding from its
+  stored config, re-instantiating its shared GraphDef instance via the factored
+  `bind_graph_instance` (shared with `/midi_bind`). Restore/boot commands ship
+  to the engine through `ship_boot_cmds`.
+- **Boot preset** (`boot.json`): an optional user-authored
+  `[{"graph": name, "ports": {...}}]` of standalone GraphDefs (`BootInstance`),
+  instantiated at boot via the `/graph_new` path (`defstore::load_boot`).
+- **Playable-by-default**: the M17 default control map (note->freq, vel->amp,
+  note-off->/n_free or gate) already makes a restored binding immediately
+  playable — confirmed by tests.
+- **Tests**: `tests/midi_standalone.rs` (two real `OscServer`s on one data dir:
+  a GraphDef MIDI binding and a boot preset both revive at restart, observed via
+  `/g_queryTree`); `tests/persistence.rs` (+2: `midi.json` round-trip,
+  `boot.json` load); `tests/midi.rs` (+1: persist -> restore -> a note plays
+  through the default map).
+- **Example + docs**: `examples/midi_standalone.sh` (set up once, restart,
+  the binding is back — run end-to-end with `oscsend`). `schemas.md`
+  (the persisted-binding + boot-preset section, persistence-table rows),
+  `architecture.md` (boot order), `examples.md`, `GUIA.md`.
+
+Server-side counterpart of the client OSCFunc/MIDIFunc (C13): the server can be
+played directly by MIDI (M17/M19) or by a client that emits OSC; both coexist.
+Core green with and without `faust`; `cargo fmt` clean. **M19 done.**

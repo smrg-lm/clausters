@@ -180,7 +180,49 @@ impl OscServer {
                 eprintln!("persisted GraphDef failed to load: {e}");
             }
         }
+        // M19 boot order: defs -> graphdefs -> bindings -> boot preset, so a
+        // binding's instrument and a boot graph's name already resolve.
+        for pb in store.load_bindings() {
+            let channel = pb.channel;
+            let mut cmds = Vec::new();
+            match self.translator.restore_binding(pb, &mut cmds) {
+                Ok(()) => self.ship_boot_cmds(cmds),
+                Err(e) => eprintln!("persisted MIDI binding (channel {channel}) failed: {e}"),
+            }
+        }
+        for boot in store.load_boot() {
+            let mut args = vec![
+                OscType::String(boot.graph.clone()),
+                OscType::Int(-1),
+                OscType::Int(0),
+                OscType::Int(0),
+            ];
+            for (port, value) in boot.ports {
+                args.push(OscType::String(port));
+                args.push(OscType::Float(value));
+            }
+            let msg = OscMessage {
+                addr: "/graph_new".into(),
+                args,
+            };
+            let mut cmds = Vec::new();
+            match self.translator.translate(&msg, &mut cmds) {
+                Ok(()) => self.ship_boot_cmds(cmds),
+                Err(e) => eprintln!("boot graph '{}' failed: {e}", boot.graph),
+            }
+        }
         self.store = Some(store);
+    }
+
+    /// Ships commands produced during the boot reload (binding restore / boot
+    /// preset) to the engine. A full FIFO at boot is logged, not fatal.
+    fn ship_boot_cmds(&mut self, cmds: Vec<Cmd>) {
+        for cmd in cmds {
+            if self.handle.send(cmd).is_err() {
+                eprintln!("command FIFO full during boot reload");
+                break;
+            }
+        }
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
@@ -610,8 +652,11 @@ impl OscServer {
             // path: translate, then ship every command.
             "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
             | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel"
-            | "/graph_new" | "/graph_voice" | "/midi_bind" | "/midi_unbind" | "/midi_map" => {
-                self.handle_via_translate(&msg, from)
+            | "/graph_new" | "/graph_voice" => self.handle_via_translate(&msg, from),
+            // MIDI binding mutations also persist the binding set (M19).
+            "/midi_bind" | "/midi_unbind" | "/midi_map" => {
+                self.handle_via_translate(&msg, from);
+                self.persist_bindings();
             }
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),
             "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
@@ -789,6 +834,16 @@ impl OscServer {
                     crate::faust::cache::remove(store.faustdefs_dir(), name);
                 }
             }
+        }
+    }
+
+    /// M19: write the current MIDI bindings to disk after a mutation, if
+    /// persistence is on. Best-effort; a write error is logged, never fatal.
+    fn persist_bindings(&self) {
+        if let Some(store) = &self.store
+            && let Err(e) = store.save_bindings(&self.translator.midi.persist())
+        {
+            eprintln!("could not persist MIDI bindings: {e}");
         }
     }
 

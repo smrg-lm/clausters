@@ -783,6 +783,27 @@ en vivo por OSC: cargar las defs miembro con `/d_recv`, enviar el GraphDef con
 `/midi_bind canal nombreGraph` (con `clausters --midi` y `aconnect`) y cada nota
 spawnea una voz.
 
+### Probar la operación MIDI-standalone (M19)
+
+El payoff de M16+M17+M18: tocar el server desde un controlador **sin programar
+nada por OSC**. Los `/midi_bind` se persisten en `midi.json` y se restauran al
+arranque (después de las defs/graphdefs). Recipe completo (necesita `oscsend`):
+
+```sh
+cargo build --release
+examples/midi_standalone.sh
+```
+
+Sesión 1 define un SynthDef + un GraphDef y bindea el canal 0; sesión 2 reinicia
+con `--midi` y el binding vuelve solo (la instancia compartida de la GraphDef se
+re-crea — verificable con `/g_queryTree i 0`). Después se enruta un controlador
+(o `aplaymidi` de un `.mid`) al puerto virtual `clausters` con `aconnect` y cada
+nota suena. Un `boot.json` opcional (`[{"graph":"nombre","ports":{...}}]`)
+instancia grafos standalone al arranque. Cubierto por `tests/midi_standalone.rs`
+(dos servers reales sobre un mismo data dir: el binding GraphDef y el preset
+boot reviven) y `tests/persistence.rs`/`tests/midi.rs` (round-trip de `midi.json`
+y restore + nota tocable).
+
 ## 4. Checklist de funcionalidades
 
 | Funcionalidad | Automático | A mano |
@@ -817,6 +838,7 @@ spawnea una voz.
 | `/n_set`/`/n_map` sobre un grupo: propagación scsynth (M18) | `tests/group_nset.rs` | `python3 examples/group_set.py` |
 | GraphDef: programa de grafo + superficie nombrada (M18) | `tests/graphdef.rs` | `python3 examples/graphdef.py` |
 | GraphDef per-voz `/graph_voice` + `/midi_bind` a GraphDef (M18) | `tests/graphdef.rs` | `python3 examples/graphdef_poly.py` |
+| MIDI-standalone: bindings persistidos + boot preset (M19) | `tests/midi_standalone.rs`, `tests/persistence.rs`, `tests/midi.rs` | `examples/midi_standalone.sh` |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 | Documentación integral: README + libro mdBook + rustdoc (M15) | `mdbook build` y `cargo doc` limpios | leer `README.md` y el libro |

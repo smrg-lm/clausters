@@ -265,3 +265,14 @@ pub struct GraphVoice {
     pub instance: i32,
     pub surface: ResolvedSurface,
 }
+
+/// One entry of the boot preset (`boot.json`, M19): a standalone GraphDef to
+/// instantiate at startup (an always-on FX bus, a drone, a mixer), with
+/// initial surface-port values. Authored by the user / a client; read-only at
+/// boot.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct BootInstance {
+    pub graph: String,
+    #[serde(default)]
+    pub ports: HashMap<String, f32>,
+}
