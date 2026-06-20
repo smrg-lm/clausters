@@ -2,6 +2,7 @@
 //! commands.
 
 pub mod graph;
+pub mod graphdef;
 pub mod server;
 pub mod tcp;
 pub mod translate;

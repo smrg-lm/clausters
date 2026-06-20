@@ -172,6 +172,14 @@ impl OscServer {
             }
             self.faust_submitted += 1;
         }
+        // GraphDefs load after the synth/faust defs (their members may
+        // reference those names); validation is structural, so any still-
+        // missing member only fails later at /graph_new (M18).
+        for spec in store.load_graphdef_specs() {
+            if let Err(e) = self.translator.d_graph(&[OscType::Blob(spec)]) {
+                eprintln!("persisted GraphDef failed to load: {e}");
+            }
+        }
         self.store = Some(store);
     }
 
@@ -602,7 +610,9 @@ impl OscServer {
             // path: translate, then ship every command.
             "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
             | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel"
-            | "/midi_bind" | "/midi_unbind" | "/midi_map" => self.handle_via_translate(&msg, from),
+            | "/graph_new" | "/midi_bind" | "/midi_unbind" | "/midi_map" => {
+                self.handle_via_translate(&msg, from)
+            }
             "/g_queryTree" => self.handle_g_query_tree(&msg, from),
             "/g_dumpGraph" => self.handle_g_dump_graph(&msg, from),
             "/c_set" => self.handle_c_set(&msg, from),
@@ -619,6 +629,7 @@ impl OscServer {
             "/sync" => self.handle_sync(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
             "/d_faust" => self.handle_d_faust(&msg, from),
+            "/d_graph" => self.handle_d_graph(&msg, from),
             "/d_free" => self.handle_d_free(&msg, from),
             "/dumpOSC" => {
                 self.dump_osc = matches!(msg.args.first(), Some(OscType::Int(n)) if *n != 0);
@@ -748,6 +759,23 @@ impl OscServer {
         }
     }
 
+    /// `/d_graph <json>` (M18): load a GraphDef (validate + store), persist its
+    /// spec verbatim, and reply `/done`. Cheap — no JIT, just validation.
+    fn handle_d_graph(&mut self, msg: &OscMessage, from: ClientId) {
+        match self.translator.d_graph(&msg.args) {
+            Ok(name) => {
+                if let Some(store) = &self.store
+                    && let Some(spec) = synthdef_spec_bytes(&msg.args)
+                    && let Err(e) = store.save_graphdef(&name, spec)
+                {
+                    eprintln!("could not persist GraphDef '{name}': {e}");
+                }
+                self.reply(from, "/done", vec![OscType::String("/d_graph".into())]);
+            }
+            Err(e) => self.fail(from, "/d_graph", e),
+        }
+    }
+
     fn handle_d_free(&mut self, msg: &OscMessage, from: ClientId) {
         if let Err(e) = self.translator.d_free(&msg.args) {
             return self.fail(from, "/d_free", e);
@@ -756,6 +784,7 @@ impl OscServer {
             for arg in &msg.args {
                 if let OscType::String(name) = arg {
                     store.remove_synthdef(name);
+                    store.remove_graphdef(name);
                     #[cfg(feature = "faust")]
                     crate::faust::cache::remove(store.faustdefs_dir(), name);
                 }

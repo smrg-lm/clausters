@@ -335,6 +335,7 @@ impl Renderer {
             "/d_recv" => self.translator.d_recv(&msg.args).map(|_| ()),
             "/d_free" => self.translator.d_free(&msg.args),
             "/d_faust" => self.d_faust(&msg.args),
+            "/d_graph" => self.translator.d_graph(&msg.args).map(|_| ()),
             "/b_alloc" | "/b_allocRead" | "/b_read" | "/b_write" | "/b_zero" | "/b_free" => {
                 let (index, job) = parse_buffer_msg(
                     msg.addr.as_str(),

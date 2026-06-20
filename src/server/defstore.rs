@@ -47,23 +47,27 @@ pub fn resolve_data_dir(cli_override: Option<&str>) -> Option<PathBuf> {
         .map(|home| PathBuf::from(home).join(".local/share/clausters"))
 }
 
-/// The two on-disk def directories, created on open.
+/// The on-disk def directories, created on open.
 pub struct DefStore {
     synthdefs_dir: PathBuf,
     faustdefs_dir: PathBuf,
+    graphdefs_dir: PathBuf,
 }
 
 impl DefStore {
-    /// Opens (creating if needed) `<data_dir>/synthdefs` and
-    /// `<data_dir>/faustdefs`.
+    /// Opens (creating if needed) `<data_dir>/synthdefs`, `faustdefs` and
+    /// `graphdefs`.
     pub fn open(data_dir: &Path) -> io::Result<Self> {
         let synthdefs_dir = data_dir.join("synthdefs");
         let faustdefs_dir = data_dir.join("faustdefs");
+        let graphdefs_dir = data_dir.join("graphdefs");
         std::fs::create_dir_all(&synthdefs_dir)?;
         std::fs::create_dir_all(&faustdefs_dir)?;
+        std::fs::create_dir_all(&graphdefs_dir)?;
         Ok(Self {
             synthdefs_dir,
             faustdefs_dir,
+            graphdefs_dir,
         })
     }
 
@@ -94,6 +98,32 @@ impl DefStore {
     /// skipped.
     pub fn load_synthdef_specs(&self) -> Vec<Vec<u8>> {
         read_json_files(&self.synthdefs_dir)
+            .into_iter()
+            .map(|(_, bytes)| bytes)
+            .collect()
+    }
+
+    fn graphdef_path(&self, name: &str) -> PathBuf {
+        self.graphdefs_dir
+            .join(format!("{}.json", sanitize_name(name)))
+    }
+
+    /// Stores a `/d_graph` GraphDef's spec JSON verbatim (M18). Like a
+    /// SynthDef, the JSON is the transparent source of truth; there is no
+    /// compiled artifact (a GraphDef only references other defs).
+    pub fn save_graphdef(&self, name: &str, spec_json: &[u8]) -> io::Result<()> {
+        atomic_write(&self.graphdef_path(name), spec_json)
+    }
+
+    /// Removes a persisted GraphDef (no error if absent).
+    pub fn remove_graphdef(&self, name: &str) {
+        let _ = std::fs::remove_file(self.graphdef_path(name));
+    }
+
+    /// Reads every persisted GraphDef spec (raw JSON bytes) for the startup
+    /// reload, fed back through the normal `/d_graph` path.
+    pub fn load_graphdef_specs(&self) -> Vec<Vec<u8>> {
+        read_json_files(&self.graphdefs_dir)
             .into_iter()
             .map(|(_, bytes)| bytes)
             .collect()

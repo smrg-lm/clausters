@@ -15,11 +15,16 @@ use std::sync::Arc;
 use rosc::OscType;
 
 use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS};
+use crate::dsp::{NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
 use crate::midi::{ChannelVoiceMessage, MidiBinding, MidiBindings, convert};
 use crate::node::{AddAction, Group, Place, SynthNode};
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
+use crate::osc::graphdef::{
+    ControlValue, GRAPH_AUDIO_BUS_BASE, GRAPH_CONTROL_BUS_BASE, GraphDefSpec, GraphInstance,
+    RangeAllocator,
+};
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
 use crate::synthdef::instance::UGenSynth;
@@ -106,6 +111,12 @@ pub struct CmdTranslator {
     /// M17: per-channel MIDI bindings and the live voice table. Channel-voice
     /// messages actuate nodes through [`Self::translate_midi`].
     pub midi: MidiBindings,
+    /// M18: loaded GraphDefs by name, the live instances by their group id,
+    /// and the private-bus allocators they draw from.
+    pub graph_defs: HashMap<String, Arc<GraphDefSpec>>,
+    pub graph_instances: HashMap<i32, GraphInstance>,
+    graph_audio_buses: RangeAllocator,
+    graph_control_buses: RangeAllocator,
 }
 
 impl CmdTranslator {
@@ -122,6 +133,16 @@ impl CmdTranslator {
             faust_defs: HashMap::new(),
             mirror: TreeMirror::new(),
             midi: MidiBindings::new(),
+            graph_defs: HashMap::new(),
+            graph_instances: HashMap::new(),
+            graph_audio_buses: RangeAllocator::new(
+                GRAPH_AUDIO_BUS_BASE,
+                NUM_AUDIO_BUSES - GRAPH_AUDIO_BUS_BASE,
+            ),
+            graph_control_buses: RangeAllocator::new(
+                GRAPH_CONTROL_BUS_BASE,
+                NUM_CONTROL_BUSES - GRAPH_CONTROL_BUS_BASE,
+            ),
         }
     }
 
@@ -208,10 +229,58 @@ impl CmdTranslator {
         self.resort_from(self.mirror.parent(id), cmds);
     }
 
+    /// The synth nodes a `/n_set`/`/n_map`/`/n_mapa` targets. A synth targets
+    /// itself; a **group** propagates the named controls to every synth/faust
+    /// in its subtree, recursing through subgroups and stopping at each synth
+    /// — scsynth's group semantics, "transfer the named parameters down to the
+    /// subgroups until a synth/faust def is reached". A node whose name has no
+    /// matching control is simply skipped (its `control_key` is `None`).
+    /// Unknown ids yield an empty list, so the caller can `/fail`.
+    ///
+    /// A GraphDef instance group is intercepted *before* this (its named
+    /// surface, not raw member propagation — see [`Self::graph_set`]), so it
+    /// never reaches here.
+    fn control_targets(&self, id: i32) -> Vec<i32> {
+        match self.mirror.get(id).map(|n| &n.body) {
+            Some(MirrorBody::Synth { .. }) => vec![id],
+            Some(MirrorBody::Group { .. }) => {
+                let mut out = Vec::new();
+                self.collect_subtree_synths(id, &mut out);
+                out
+            }
+            // Not mirrored but a def we know (defensive: a synth whose mirror
+            // insert was rejected) still sets itself.
+            None if self.node_defs.contains_key(&id) => vec![id],
+            None => Vec::new(),
+        }
+    }
+
+    fn collect_subtree_synths(&self, group: i32, out: &mut Vec<i32>) {
+        let Some(children) = self.mirror.children(group) else {
+            return;
+        };
+        // Snapshot so the immutable borrow is released before recursing.
+        for child in children.to_vec() {
+            match self.mirror.get(child).map(|n| &n.body) {
+                Some(MirrorBody::Synth { .. }) => out.push(child),
+                Some(MirrorBody::Group { .. }) => self.collect_subtree_synths(child, out),
+                None => {}
+            }
+        }
+    }
+
+    /// True iff `id` is unknown (neither in the tree mirror nor a node whose
+    /// def we still hold), so a `/n_set`/`/n_map` on it should `/fail`. An
+    /// empty group is *known* — propagation is just a no-op.
+    fn node_unknown(&self, id: i32) -> bool {
+        self.mirror.get(id).is_none() && !self.node_defs.contains_key(&id)
+    }
+
     /// `/n_map` (control bus) and `/n_mapa` (audio bus): bind controls to
     /// buses the synth reads at the start of every block, `bus = -1` to
     /// unbind. Same pair-wise parsing as `/n_set`; an audio map (or mapping a
-    /// control used as a bus index) re-analyzes the node's bus usage.
+    /// control used as a bus index) re-analyzes the node's bus usage. Like
+    /// `/n_set`, a group target propagates the maps over its subtree.
     fn map_controls(
         &mut self,
         msg: &rosc::OscMessage,
@@ -221,27 +290,30 @@ impl CmdTranslator {
         let Some(OscType::Int(id)) = msg.args.first() else {
             return Err("expected: id, then control/bus pairs".into());
         };
-        let def = self
-            .node_defs
-            .get(id)
-            .cloned()
-            .ok_or_else(|| format!("node {id} not found"))?;
-        let mut usage_hit = false;
-        for pair in msg.args[1..].chunks(2) {
-            if let (Some(index), Some(bus)) =
-                (control_key(&pair[0], &def), pair.get(1).and_then(int_value))
-            {
-                cmds.push(Cmd::MapControl {
-                    id: *id,
-                    index,
-                    bus,
-                    audio,
-                });
-                usage_hit |= self.mirror.set_map(*id, index, bus, audio);
-            }
+        if self.node_unknown(*id) {
+            return Err(format!("node {id} not found"));
         }
-        if usage_hit {
-            self.reanalyze_and_resort(*id, cmds);
+        for node in self.control_targets(*id) {
+            let Some(def) = self.node_defs.get(&node).cloned() else {
+                continue;
+            };
+            let mut usage_hit = false;
+            for pair in msg.args[1..].chunks(2) {
+                if let (Some(index), Some(bus)) =
+                    (control_key(&pair[0], &def), pair.get(1).and_then(int_value))
+                {
+                    cmds.push(Cmd::MapControl {
+                        id: node,
+                        index,
+                        bus,
+                        audio,
+                    });
+                    usage_hit |= self.mirror.set_map(node, index, bus, audio);
+                }
+            }
+            if usage_hit {
+                self.reanalyze_and_resort(node, cmds);
+            }
         }
         Ok(())
     }
@@ -272,8 +344,287 @@ impl CmdTranslator {
             self.defs.remove(name);
             #[cfg(feature = "faust")]
             self.faust_defs.remove(name);
+            self.graph_defs.remove(name);
         }
         Ok(())
+    }
+
+    /// `/d_graph <json>`: parse and validate a GraphDef spec, store it under
+    /// its name. Returns the name so the caller can persist it. Cheap (no
+    /// JIT): a GraphDef only references other defs, each carrying its own
+    /// compile/cache.
+    pub fn d_graph(&mut self, args: &[OscType]) -> Result<String, String> {
+        let bytes: &[u8] = match args.first() {
+            Some(OscType::Blob(b)) => b,
+            Some(OscType::String(s)) => s.as_bytes(),
+            _ => return Err("expected a JSON blob or string".into()),
+        };
+        let spec: GraphDefSpec =
+            serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
+        spec.validate()?;
+        let name = spec.name.clone();
+        self.graph_defs.insert(name.clone(), Arc::new(spec));
+        Ok(name)
+    }
+
+    /// Drops a GraphDef. Live instances keep running (they hold no reference
+    /// to the def). Folded into `/d_free` alongside the synth/faust tables.
+    pub fn graph_def_free(&mut self, name: &str) {
+        self.graph_defs.remove(name);
+    }
+
+    /// `/graph_new name id action target [port value ...]`: instantiate a
+    /// GraphDef as a group holding its wired members, with private buses and a
+    /// resolved named surface. It expands entirely into existing primitives
+    /// (a group, member `/s_new`s, `/n_map` wiring), so the engine sees
+    /// nothing new and RT-safety is untouched. Atomic: every fallible step
+    /// (member def resolution, bus allocation) happens before any command or
+    /// mirror change, so a failure leaves no partial instance.
+    fn graph_new(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let [
+            OscType::String(name),
+            OscType::Int(id),
+            OscType::Int(action),
+            OscType::Int(target),
+            rest @ ..,
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: name, id, addAction, targetID [, port, value ...]".into());
+        };
+        let def = self
+            .graph_defs
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("GraphDef not found: {name}"))?;
+        let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
+        let group_id = match *id {
+            -1 => {
+                self.next_auto_id += 1;
+                self.next_auto_id
+            }
+            n if n > 0 => n,
+            _ => return Err("group ID must be positive or -1".into()),
+        };
+
+        // --- fallible phase: nothing observable happens until it all passes.
+        // Pre-build every member synth (resolves the def, may allocate).
+        let mut built: Vec<(Box<dyn SynthNode>, NodeDef)> = Vec::with_capacity(def.members.len());
+        for member in &def.members {
+            built.push(self.make_synth(&member.def)?);
+        }
+        // Allocate the private buses; on a shortfall, hand back what we took.
+        let mut bus_index: HashMap<&str, usize> = HashMap::new();
+        let mut audio_buses: Vec<(usize, usize)> = Vec::new();
+        let mut control_buses: Vec<(usize, usize)> = Vec::new();
+        for b in &def.buses {
+            use crate::osc::graphdef::BusRate;
+            let width = b.channels.max(1);
+            let first = match b.rate {
+                BusRate::Audio => self.graph_audio_buses.alloc(width),
+                BusRate::Control => self.graph_control_buses.alloc(width),
+            };
+            let Some(first) = first else {
+                for (f, w) in audio_buses {
+                    self.graph_audio_buses.free(f, w);
+                }
+                for (f, w) in control_buses {
+                    self.graph_control_buses.free(f, w);
+                }
+                return Err("out of private buses for GraphDef".into());
+            };
+            match b.rate {
+                BusRate::Audio => audio_buses.push((first, width)),
+                BusRate::Control => control_buses.push((first, width)),
+            }
+            bus_index.insert(b.name.as_str(), first);
+        }
+
+        // --- infallible phase: build the instance.
+        // The instance group is auto-sorted so member order follows the bus
+        // connections (M12); manual ordering is the graph's, not the client's.
+        cmds.push(Cmd::AddGroup {
+            id: group_id,
+            target: *target,
+            action,
+            group: Group::new(),
+        });
+        let _ = self.mirror.insert(
+            group_id,
+            MirrorBody::Group {
+                children: Vec::new(),
+                auto: true,
+                parallel: false,
+            },
+            *target,
+            action,
+        );
+
+        let mut member_ids = Vec::with_capacity(def.members.len());
+        for (member, (mut synth, ndef)) in def.members.iter().zip(built) {
+            self.next_auto_id += 1;
+            let node_id = self.next_auto_id;
+            let mut controls = ndef.control_defaults();
+            for (cname, cval) in &member.controls {
+                let Some(index) = ndef.control_index(cname) else {
+                    continue;
+                };
+                let value = match cval {
+                    ControlValue::Num(v) => *v,
+                    ControlValue::Bus(bname) if bname == "OUT" => 0.0,
+                    // validate() guaranteed the name resolves.
+                    ControlValue::Bus(bname) => bus_index[bname.as_str()] as f32,
+                };
+                synth.set_control(index, value);
+                if let Some(slot) = controls.get_mut(index as usize) {
+                    *slot = value;
+                }
+            }
+            let (usage, bus_controls) = ndef.usage(&controls);
+            self.node_defs.insert(node_id, ndef);
+            cmds.push(Cmd::AddSynth {
+                id: node_id,
+                target: group_id,
+                action: AddAction::Tail,
+                synth,
+                usage,
+            });
+            let _ = self.mirror.insert(
+                node_id,
+                MirrorBody::Synth {
+                    def_name: member.def.clone(),
+                    controls,
+                    usage,
+                    bus_controls,
+                    maps: Vec::new(),
+                },
+                group_id,
+                AddAction::Tail,
+            );
+            member_ids.push(node_id);
+        }
+
+        // `/n_map` wiring, once every member exists.
+        for (member, &node_id) in def.members.iter().zip(&member_ids) {
+            for (cname, bname) in &member.maps {
+                let Some(index) = self
+                    .node_defs
+                    .get(&node_id)
+                    .and_then(|d| d.control_index(cname))
+                else {
+                    continue;
+                };
+                let bus = bus_index[bname.as_str()] as i32;
+                cmds.push(Cmd::MapControl {
+                    id: node_id,
+                    index,
+                    bus,
+                    audio: false,
+                });
+                self.mirror.set_map(node_id, index, bus, false);
+            }
+        }
+        // Order the instance group now that members and wiring are in place.
+        self.resort_from(Some(group_id), cmds);
+
+        // Resolve the named surface and record the instance.
+        let mut surface: HashMap<String, Vec<(i32, u32, f32, f32)>> = HashMap::new();
+        for (port, targets) in &def.surface {
+            let mut resolved = Vec::new();
+            for t in targets {
+                let node_id = member_ids[t.member];
+                if let Some(index) = self
+                    .node_defs
+                    .get(&node_id)
+                    .and_then(|d| d.control_index(&t.control))
+                {
+                    resolved.push((node_id, index, t.mul, t.add));
+                }
+            }
+            surface.insert(port.clone(), resolved);
+        }
+        self.graph_instances.insert(
+            group_id,
+            GraphInstance {
+                members: member_ids,
+                audio_buses,
+                control_buses,
+                surface,
+            },
+        );
+
+        // Apply the def's defaults, then the per-instantiation port overrides.
+        let mut ports: Vec<(String, f32)> =
+            def.defaults.iter().map(|(p, v)| (p.clone(), *v)).collect();
+        for pair in rest.chunks(2) {
+            if let (Some(OscType::String(port)), Some(value)) =
+                (pair.first(), pair.get(1).and_then(float_value))
+            {
+                ports.push((port.clone(), value));
+            }
+        }
+        for (port, value) in ports {
+            self.apply_surface(group_id, &port, value, cmds);
+        }
+        Ok(())
+    }
+
+    /// Writes a surface-port value to its resolved member controls, scaled per
+    /// target (`mul`·v + `add`), mirroring each write and re-sorting if a
+    /// target turns out to be a bus-index control.
+    fn apply_surface(&mut self, group: i32, port: &str, value: f32, cmds: &mut Vec<Cmd>) {
+        let targets = match self
+            .graph_instances
+            .get(&group)
+            .and_then(|inst| inst.surface.get(port))
+        {
+            Some(t) => t.clone(),
+            None => return,
+        };
+        for (node, index, mul, add) in targets {
+            let v = mul * value + add;
+            cmds.push(Cmd::SetControl {
+                id: node,
+                index,
+                value: v,
+            });
+            let mut hit = self.mirror.set_control(node, index, v);
+            hit |= self.mirror.set_map(node, index, -1, false);
+            if hit {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+    }
+
+    /// If `id` is a GraphDef instance group, apply each `(port, value)` pair
+    /// against its named surface and return true. Names absent from the
+    /// surface are ignored — the surface is the whole public interface; the
+    /// member node ids stay private. A non-instance returns false so `/n_set`
+    /// falls back to the synth/group path.
+    fn graph_set(&mut self, id: i32, pairs: &[OscType], cmds: &mut Vec<Cmd>) -> bool {
+        if !self.graph_instances.contains_key(&id) {
+            return false;
+        }
+        for pair in pairs.chunks(2) {
+            if let (Some(OscType::String(port)), Some(value)) =
+                (pair.first(), pair.get(1).and_then(float_value))
+            {
+                self.apply_surface(id, port, value, cmds);
+            }
+        }
+        true
+    }
+
+    /// Reclaims a GraphDef instance's private buses when its group is freed.
+    /// A no-op for ordinary nodes.
+    fn free_graph_instance(&mut self, id: i32) {
+        if let Some(inst) = self.graph_instances.remove(&id) {
+            for (first, width) in inst.audio_buses {
+                self.graph_audio_buses.free(first, width);
+            }
+            for (first, width) in inst.control_buses {
+                self.graph_control_buses.free(first, width);
+            }
+        }
     }
 
     /// Translates one schedulable message into commands, appending to `cmds`.
@@ -339,35 +690,46 @@ impl CmdTranslator {
                 let Some(OscType::Int(id)) = msg.args.first() else {
                     return Err("expected: id, then control/value pairs".into());
                 };
-                let def = self
-                    .node_defs
-                    .get(id)
-                    .cloned()
-                    .ok_or_else(|| format!("node {id} not found"))?;
-                let mut bus_control_hit = false;
-                for pair in msg.args[1..].chunks(2) {
-                    if let (Some(index), Some(value)) = (
-                        control_key(&pair[0], &def),
-                        pair.get(1).and_then(float_value),
-                    ) {
-                        cmds.push(Cmd::SetControl {
-                            id: *id,
-                            index,
-                            value,
-                        });
-                        bus_control_hit |= self.mirror.set_control(*id, index, value);
-                        // An explicit set clears any mapping on that control
-                        // (scsynth); dropping an audio map changes usage.
-                        bus_control_hit |= self.mirror.set_map(*id, index, -1, false);
-                    }
+                // A GraphDef instance resolves names against its named surface
+                // (never the private member nodes); a plain group propagates
+                // to its subtree; a synth sets itself.
+                if self.graph_set(*id, &msg.args[1..], cmds) {
+                    return Ok(());
                 }
-                if bus_control_hit {
-                    self.reanalyze_and_resort(*id, cmds);
+                if self.node_unknown(*id) {
+                    return Err(format!("node {id} not found"));
+                }
+                for node in self.control_targets(*id) {
+                    let Some(def) = self.node_defs.get(&node).cloned() else {
+                        continue;
+                    };
+                    let mut bus_control_hit = false;
+                    for pair in msg.args[1..].chunks(2) {
+                        if let (Some(index), Some(value)) = (
+                            control_key(&pair[0], &def),
+                            pair.get(1).and_then(float_value),
+                        ) {
+                            cmds.push(Cmd::SetControl {
+                                id: node,
+                                index,
+                                value,
+                            });
+                            bus_control_hit |= self.mirror.set_control(node, index, value);
+                            // An explicit set clears any mapping on that control
+                            // (scsynth); dropping an audio map changes usage.
+                            bus_control_hit |= self.mirror.set_map(node, index, -1, false);
+                        }
+                    }
+                    if bus_control_hit {
+                        self.reanalyze_and_resort(node, cmds);
+                    }
                 }
                 Ok(())
             }
             "/n_map" => self.map_controls(msg, false, cmds),
             "/n_mapa" => self.map_controls(msg, true, cmds),
+            // M18: instantiate a GraphDef as a wired group with private buses.
+            "/graph_new" => self.graph_new(msg, cmds),
             // M17 MIDI binding config (no engine command; pure translator state).
             "/midi_bind" => self.midi_bind(msg),
             "/midi_unbind" => self.midi_unbind(msg, cmds),
@@ -380,6 +742,9 @@ impl CmdTranslator {
                     cmds.push(Cmd::FreeNode { id: *id });
                     // Removals keep any topological order valid: no re-sort.
                     self.mirror.remove(*id);
+                    // Freeing a GraphDef instance group reclaims its private
+                    // buses (a no-op for ordinary nodes).
+                    self.free_graph_instance(*id);
                 }
                 Ok(())
             }
@@ -459,6 +824,7 @@ impl CmdTranslator {
                     } else {
                         cmds.push(Cmd::DeepFreeGroup { id: *id });
                         self.mirror.deep_free(*id);
+                        self.free_graph_instance(*id);
                     }
                 }
                 Ok(())
