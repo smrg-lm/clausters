@@ -1,17 +1,17 @@
 """UGen graph as composable, lowercase callables (port of the UGen side of
 ``sc3/synth``, adapted to Clausters' server format).
 
-The UGen-graph counterpart of :mod:`clausters.defs.signals`: each function here
-is a small **lowercase** callable that returns a :class:`Ugen` node (one
+The UGen-graph counterpart of `clausters.defs.signals`: each function here
+is a small **lowercase** callable that returns a `Ugen` node (one
 output); composing nodes with Python operators or these functions builds the
-graph a :class:`~clausters.defs.synthdef.SynthDef` serializes into the JSON
+graph a `SynthDef` serializes into the JSON
 ``SynthDefSpec`` the server's ``/d_recv`` consumes (``{"controls": […],
 "ugens": […]}`` — see the server's ``synthdef`` module).
 
 **Instance-based, no global build context.** Unlike sclang — where ``SynthDef``
 build relies on a thread-global "current graph" that every ``UGen.new`` mutates
 (``UGen.buildSynthDef``) — the graph here *is* the tree of composed objects: a
-``Ugen``'s inputs hold its operands directly, and the :class:`SynthDef` walks
+``Ugen``'s inputs hold its operands directly, and the `SynthDef` walks
 that tree to emit the spec. Nothing is global, so several defs can be built
 concurrently (see the memory ``evitar-estados-globales-clausters``).
 
@@ -20,7 +20,7 @@ concurrently (see the memory ``evitar-estados-globales-clausters``).
 ``LocalIn``/``LocalOut`` and the four arithmetic ops). There are **no math
 UGens**: only ``+ - * /`` map to UGens (``Add``/``Sub``/``Mul``/``Div``); any
 other operator (``sin``, ``%``, ``min``, comparisons …) raises — reach for a
-Faust def (:mod:`clausters.defs.signals`) when you need them.
+Faust def (`clausters.defs.signals`) when you need them.
 
 Reserved controls ``in`` and ``out`` (the input/output buses, set with
 ``/s_new … "in" b "out" b``) are added by the server, not declared here.
@@ -33,8 +33,8 @@ _BINOP_UGEN = {"add": "Add", "sub": "Sub", "mul": "Mul", "div": "Div"}
 
 
 class _Node(AbstractObject):
-    """Shared operator dispatch for graph leaves (:class:`Ugen`,
-    :class:`Control`): the four arithmetic operators compose UGen nodes, every
+    """Shared operator dispatch for graph leaves (`Ugen`,
+    `Control`): the four arithmetic operators compose UGen nodes, every
     other operator is rejected (the server has no UGen for it)."""
 
     def _compose_binop(self, selector, other):
@@ -67,7 +67,7 @@ class _Node(AbstractObject):
 
 class Ugen(_Node):
     """One UGen node (one output). ``kind`` is a server UGen name; ``inputs``
-    is a list of operands, each a :class:`Ugen`, a :class:`Control`, or a plain
+    is a list of operands, each a `Ugen`, a `Control`, or a plain
     number (a constant). Build them with the lowercase callables below rather
     than directly."""
 
@@ -82,7 +82,7 @@ class Ugen(_Node):
 class Control(_Node):
     """A named control with a default — a ``/s_new``/``/n_set`` parameter. Used
     as a UGen input it serializes to a ``{"control": index}`` reference; the
-    :class:`SynthDef` gathers the controls a graph references, in first-seen
+    `SynthDef` gathers the controls a graph references, in first-seen
     order."""
 
     def __init__(self, name: str, default: float = 0.0):
@@ -151,8 +151,8 @@ def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
 
 def local_in(channel=0.0) -> Ugen:
     """Reads synth-private feedback channel ``channel`` (a constant); pairs with
-    :func:`local_out` for one-block feedback. ``LocalIn`` must precede its
-    ``LocalOut`` — the :class:`SynthDef`'s topological order does that as long
+    `local_out` for one-block feedback. ``LocalIn`` must precede its
+    ``LocalOut`` — the `SynthDef`'s topological order does that as long
     as the output graph reaches the ``local_in`` before the ``local_out``."""
     return Ugen("LocalIn", [channel])
 

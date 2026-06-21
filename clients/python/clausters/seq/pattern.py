@@ -1,11 +1,11 @@
 """Patterns (port of ``sc3/seq/pattern.py`` + ``patterns/``).
 
-A :class:`Pattern` is a reusable, lazy description of a value sequence; iterating
+A `Pattern` is a reusable, lazy description of a value sequence; iterating
 it yields the values (a fresh stream each time). Value patterns (``Pseq``,
-``Pwhite``, …) feed :class:`Pbind`, which combines per-key value patterns into a
-stream of :class:`~clausters.seq.event.Event` objects. An event pattern is
-played on a clock with :meth:`Pattern.play` (see
-:class:`~clausters.seq.eventstream.EventStreamPlayer`).
+``Pwhite``, …) feed `Pbind`, which combines per-key value patterns into a
+stream of `Event` objects. An event pattern is
+played on a clock with `Pattern.play` (see
+`EventStreamPlayer`).
 
 Patterns are plain Python generators under the hood, so nesting and composition
 are natural; a sub-pattern used as a value is embedded (iterated) in place.
@@ -36,7 +36,7 @@ class Pattern:
         raise NotImplementedError(f"{type(self).__name__}.__iter__")
 
     def stream(self):
-        """A :class:`~clausters.base.stream.Stream` over this pattern."""
+        """A `Stream` over this pattern."""
         from ..base.stream import FunctionStream
 
         it = iter(self)
@@ -183,7 +183,7 @@ class Pn(Pattern):
 # ---- event pattern ----
 
 class Pbind(Pattern):
-    """Binds keys to value patterns; yields an :class:`Event` per step, stopping
+    """Binds keys to value patterns; yields an `Event` per step, stopping
     when any key's stream stops. Constant values are held; sub-patterns advance
     one value per event."""
 

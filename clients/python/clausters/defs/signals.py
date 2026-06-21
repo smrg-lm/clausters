@@ -2,13 +2,13 @@
 
 The user-facing way to build a FaustDef. Each function here is a small
 **lowercase** callable (a design choice that keeps graph-building fluent in
-Python) that returns a :class:`Signal`; composing signals with Python operators
+Python) that returns a `Signal`; composing signals with Python operators
 or these functions builds the JSON **signal tree** the server's `/d_faust`
 consumes (``{"signals": [ <node>, … ]}``, one node per output — see the
 server's ``faust::signals``). The same lowercase pattern will return UGen-graph
 nodes for SynthDefs later.
 
-A :class:`Signal` is an :class:`~clausters.base.absobject.AbstractObject`, so
+A `Signal` is an `AbstractObject`, so
 ``hslider("freq", …).sin() * 0.2`` and ``sin(x) * 0.2`` both compose the graph.
 Plain numbers are constants (Faust ``int``/``real``); explicit feedback uses
 ``recursion``/``self_`` (one sample of delay), and ``input(n)`` reads audio
@@ -73,7 +73,7 @@ class Signal(AbstractObject):
 
 
 def signal(x) -> Signal:
-    """Coerces a number or :class:`Signal` into a :class:`Signal`."""
+    """Coerces a number or `Signal` into a `Signal`."""
     return x if isinstance(x, Signal) else Signal(x)
 
 
@@ -89,18 +89,18 @@ def input(index: int = 0) -> Signal:
 
 
 def self_() -> Signal:
-    """The one-sample-delayed output of the enclosing :func:`recursion`."""
+    """The one-sample-delayed output of the enclosing `recursion`."""
     return Signal({"op": "self"})
 
 
 def recursion(body) -> Signal:
-    """Single feedback: ``body`` is a signal that may reference :func:`self_`."""
+    """Single feedback: ``body`` is a signal that may reference `self_`."""
     return Signal({"op": "recursion", "in": [_n(body)]})
 
 
 def rec(fn) -> Signal:
     """Pythonic feedback: ``fn(s)`` builds the body from its own delayed
-    output ``s`` (sugar over :func:`recursion`/:func:`self_`)."""
+    output ``s`` (sugar over `recursion`/`self_`)."""
     return recursion(fn(self_()))
 
 
@@ -117,23 +117,23 @@ def fconst(ctype, name, file="") -> Signal:
     """A foreign **constant**: a scalar the server resolves once, at def-compile
     time, from its runtime (Faust ``CsigFConst``). ``ctype`` is ``"int"`` or
     ``"real"``, ``name`` the runtime symbol, ``file`` the include that declares
-    it. The building block of :func:`sr` -- prefer that helper for sample rate.
+    it. The building block of `sr` -- prefer that helper for sample rate.
     """
     return Signal({"op": "fconst", "ctype": ctype, "name": name, "file": file})
 
 
 def fvar(ctype, name, file="") -> Signal:
-    """A foreign **variable**: like :func:`fconst` but re-read each block
+    """A foreign **variable**: like `fconst` but re-read each block
     (Faust ``CsigFVar``)."""
     return Signal({"op": "fvar", "ctype": ctype, "name": name, "file": file})
 
 
 def sr() -> Signal:
-    """The engine's sample rate as a :class:`Signal`, read from the server at
+    """The engine's sample rate as a `Signal`, read from the server at
     def-compile time -- the port of Faust's ``ma.SR``.
 
     Use this instead of baking a Python ``SR`` constant: a def built with
-    :func:`sr` is correct at whatever rate the server (or NRT renderer) actually
+    `sr` is correct at whatever rate the server (or NRT renderer) actually
     runs, e.g. when normalizing a frequency (``freq / sr()``) or cooking filter
     coefficients. It reproduces ``ma.SR`` exactly, including the stdlib's
     ``[1, 192000]`` clamp around the raw ``fSamplingFreq`` constant.

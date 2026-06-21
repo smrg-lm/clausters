@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 # Persisted defs left on disk by examples/persistent_graphdef.py (explore, then rm -rf)
 /examples/defs_store
+# Personal scratch files (nombre.notrack.md): never committed.
+*.notrack.md

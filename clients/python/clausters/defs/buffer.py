@@ -1,9 +1,9 @@
 """Buffers, with client-side index allocation.
 
 The server has 1024 buffer slots, indices allocated by the client (like
-scsynth). :class:`Buffer` is a flat handle; the actual allocation/loading
+scsynth). `Buffer` is a flat handle; the actual allocation/loading
 happens on the server via ``/b_alloc``/``/b_allocRead``/… driven by
-:class:`~clausters.defs.server.Server`.
+`Server`.
 """
 
 NUM_BUFFERS = 1024

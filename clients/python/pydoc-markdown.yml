@@ -1,0 +1,58 @@
+# pydoc-markdown configuration for the Clausters Python client API reference.
+#
+# It reads the package source *statically* (docspec parses the AST; it does not
+# import the modules), so the API page is generated without building or loading
+# any native cdylib. Run it from this directory:
+#
+#   cd clients/python && pydoc-markdown      # writes docs/src/api.md
+#
+# Only the public modules are listed. The private loaders and wire helpers
+# (_native, _osclib, _libpath, _midi, _oscinterface, _midiinterface) are
+# intentionally excluded. The output is plain Markdown -- no Sphinx directives.
+loaders:
+  - type: python
+    search_path: ["."]
+    modules:
+      - clausters
+      - clausters.session
+      - clausters.transport
+      - clausters.errors
+      - clausters.base
+      - clausters.base.builtins
+      - clausters.base.absobject
+      - clausters.base.stream
+      - clausters.base.clock
+      - clausters.base.timebase
+      - clausters.base.netaddr
+      - clausters.base.main
+      - clausters.seq
+      - clausters.seq.event
+      - clausters.seq.pattern
+      - clausters.seq.eventstream
+      - clausters.defs
+      - clausters.defs.signals
+      - clausters.defs.ugens
+      - clausters.defs.faustdef
+      - clausters.defs.synthdef
+      - clausters.defs.graphdef
+      - clausters.defs.server
+      - clausters.defs.node
+      - clausters.defs.bus
+      - clausters.defs.buffer
+      - clausters.defs.clocksync
+processors:
+  - type: filter
+    documented_only: true
+    exclude_private: true
+    exclude_special: true
+    skip_empty_modules: true
+  - type: smart
+  - type: crossref
+renderer:
+  type: markdown
+  filename: docs/src/api.md
+  render_toc: true
+  render_toc_title: "API reference"
+  insert_header_anchors: true
+  descriptive_class_title: false
+  add_method_class_prefix: true

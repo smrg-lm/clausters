@@ -313,7 +313,7 @@ A **GraphDef** is a third kind of persistent def. Where a SynthDef/FaustDef stor
 - `surface` — the named ports. Each maps to a list of `{member, control}` targets, with optional `mul`/`add` linear scaling of the incoming value. One port may drive several inner controls, each scaled differently (e.g. a `freq` port playing a detuned pair). This is the difference from a bare group `/n_set`, which can only broadcast one value to controls that happen to share a name.
 - `defaults` — surface-port values applied at instantiation, overridable per instance.
 
-`/graph_new name id addAction targetID [port value]...` instantiates a GraphDef: it creates an **auto-sorted group** (the member execution order follows the bus connections, M12) at `id` (or `-1` for a server-assigned id), holding the **shared** members, then applies the shared `defaults` and the given `port value` overrides. `/n_set id port value...` on that group id resolves the port names against the surface (never the member ids); a port absent from the surface is ignored. `/n_free id` (or `/g_deepFree`) tears the instance down (with all its voices) and reclaims its private buses. Instantiation is atomic: a missing member def or bus shortfall fails with no partial instance. GraphDefs work in NRT scores too (scored like any def at time 0).
+`/graph_new name id addAction targetID [port value]...` instantiates a GraphDef: it creates an **auto-sorted group** (the member execution order follows the bus connections) at `id` (or `-1` for a server-assigned id), holding the **shared** members, then applies the shared `defaults` and the given `port value` overrides. `/n_set id port value...` on that group id resolves the port names against the surface (never the member ids); a port absent from the surface is ignored. `/n_free id` (or `/g_deepFree`) tears the instance down (with all its voices) and reclaims its private buses. Instantiation is atomic: a missing member def or bus shortfall fails with no partial instance. GraphDefs work in NRT scores too (scored like any def at time 0).
 
 ### Shared vs per-voice, and `/graph_voice`
 
@@ -329,7 +329,7 @@ Besides OSC, the server can be driven by **standard channel-voice MIDI** — not
 
 A channel must first be **bound** to an instrument. Binding and mapping are OSC commands (so they ride the same reliable path as the rest of the protocol); the note/control events themselves arrive over the OS's standard MIDI. Start the server with `--midi [name]` (RT only) to open a **virtual ALSA input port** (default name `clausters`) — the same system MIDI any controller or DAW uses; route anything into it (`aconnect`, a keyboard through the kernel, a DAW). Live input is MIDI 1.0 (7-bit, widened internally to the high-resolution form); the full MIDI 2.0/UMP resolution is preserved on the client's persistence path (the `clausters-midi` crate's MIDI 2.0 clip file). Network MIDI is a separate, deliberately out-of-scope idea.
 
-- `/midi_bind channel instrument [target] [addAction] [gate]`: bind a MIDI channel (`0`–`255`: the classic 16 plus the extended UMP group×channel space) to an **instrument def** — a SynthDef, a FaustDef, **or a GraphDef** (M18), actuated identically. Default target is the root group (`0`), default add-action `0` (head). `gate` non-zero marks the def gate-aware (see note off below). The default control map is `freq`/`amp`, matching the client `Event` convention. A **GraphDef** instrument spawns its shared instance at bind time and turns each note into a `/graph_voice` (see the GraphDef section); it must have per-voice members.
+- `/midi_bind channel instrument [target] [addAction] [gate]`: bind a MIDI channel (`0`–`255`: the classic 16 plus the extended UMP group×channel space) to an **instrument def** — a SynthDef, a FaustDef, **or a GraphDef**, actuated identically. Default target is the root group (`0`), default add-action `0` (head). `gate` non-zero marks the def gate-aware (see note off below). The default control map is `freq`/`amp`, matching the client `Event` convention. A **GraphDef** instrument spawns its shared instance at bind time and turns each note into a `/graph_voice` (see the GraphDef section); it must have per-voice members.
 - `/midi_unbind channel`: remove the binding and free every voice still sounding on that channel.
 - `/midi_map channel selector name`: route a message type to a control. Selectors: `note` (→ frequency control, default `freq`), `vel` (→ amplitude, default `amp`), `gate` (gate control name), `bend` (pitch-bend → control), `pressure` (channel aftertouch → control), `poly` (per-note aftertouch → the note's voice), `ccN` (control change number `N` → control), `progN` (program `N` → an instrument def `name` to switch to).
 
@@ -387,12 +387,12 @@ directory itself is free for other persistent aspects); `midi.json` and
 | `<dir>/defs/faustdefs/<name>.json` | `/d_faust` | a record: the original Faust source/JSON, the libfaust version, and the payload's SHA-256 |
 | `<dir>/defs/faustdefs/<name>.<sha>.bc` | `/d_faust` | the compiled LLVM **bitcode** (a speed cache) |
 | `<dir>/defs/graphdefs/<name>.json` | `/d_graph` | the `GraphDefSpec` JSON, verbatim |
-| `<dir>/midi.json` | `/midi_bind`/`/midi_unbind`/`/midi_map` | the MIDI bindings (channel → instrument + target + control map), M19 |
-| `<dir>/boot.json` | *authored by the user/client* | the boot preset: standalone GraphDefs to instantiate at startup, M19 |
+| `<dir>/midi.json` | `/midi_bind`/`/midi_unbind`/`/midi_map` | the MIDI bindings (channel → instrument + target + control map) |
+| `<dir>/boot.json` | *authored by the user/client* | the boot preset: standalone GraphDefs to instantiate at startup |
 
 GraphDefs reload after the synth/faust defs (their members reference those names); validation is structural only, so a member def that is still missing at load is caught later, at `/graph_new`.
 
-### MIDI-standalone: bindings + boot preset (M19)
+### MIDI-standalone: bindings + boot preset
 
 So the server can be **played from a MIDI controller with no OSC programming at all**, the MIDI bindings persist too. Every `/midi_bind`/`/midi_unbind`/`/midi_map` rewrites `midi.json`; at startup — **after** the defs and GraphDefs are in place, so a binding's instrument name resolves — each binding is re-established (a GraphDef binding re-instantiates its shared instance). The minimal workflow becomes: drop a SynthDef/FaustDef (or a GraphDef) and a binding in the data dir once, then every later `clausters --midi --data-dir <dir>` comes up already bound — connect a controller (`aconnect`) and play. The default control map (note→`freq`, velocity→`amp`, note-off→`/n_free`/gate) makes a restored binding immediately playable.
 

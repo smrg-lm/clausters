@@ -2,9 +2,9 @@
 
 The project rule is to avoid global state (see the memory
 ``evitar-estados-globales-clausters``), but sc3's ease of use came largely from
-its globals (`Server.default`, the default clock). A :class:`Session` gives that
-ergonomics back **explicitly**: it bundles a :class:`~clausters.defs.server.Server`
-and a :class:`~clausters.base.clock.TempoClock` into one handle with ``play`` /
+its globals (`Server.default`, the default clock). A `Session` gives that
+ergonomics back **explicitly**: it bundles a `Server`
+and a `TempoClock` into one handle with ``play`` /
 ``render`` / ``run``, and the ``nrt`` / ``live`` factories pick sensible
 defaults. Because it is an ordinary object, **several sessions coexist** — e.g.
 one offline NRT session for plotting next to a live RT one — in the same script,
@@ -31,7 +31,7 @@ class Session:
     @classmethod
     def nrt(cls, tempo: float = 1.0) -> "Session":
         """An offline session: an NRT server that accumulates a score to
-        :meth:`render`."""
+        `render`."""
         return cls(Server(interface=OscNrtInterface()), TempoClock(tempo))
 
     @classmethod

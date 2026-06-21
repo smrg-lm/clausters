@@ -83,11 +83,11 @@ class OscUDPInterface(OscInterface):
 
 
 class OscTCPInterface(OscInterface):
-    """Real-time TCP, length-prefixed (client C8). Each OSC packet — message or
+    """Real-time TCP, length-prefixed. Each OSC packet — message or
     bundle — goes out as a 4-byte big-endian length followed by the bytes, the
     same framing scsynth uses and the server's ``osc::tcp`` expects; replies
     arrive framed the same way over the one connection. A drop-in for
-    :class:`OscUDPInterface` (the ``target`` argument is ignored: the connection
+    `OscUDPInterface` (the ``target`` argument is ignored: the connection
     already knows its peer). Start the server with ``--tcp``."""
 
     time_mode = "unix"
@@ -175,7 +175,7 @@ class OscScore:
 
 class OscNrtInterface(OscInterface):
     """Non-real-time: instead of sending, accumulate timetagged bundles into an
-    :class:`OscScore` for an offline render."""
+    `OscScore` for an offline render."""
 
     time_mode = "score"
 
@@ -190,7 +190,7 @@ class OscNrtInterface(OscInterface):
         self.score.add(when, _osclib.score_bundle(when, *packets))
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2):
-        """Renders the accumulated score through the embed transport (C1).
+        """Renders the accumulated score through the embed transport.
 
         Schedule a closing bundle (e.g. ``/n_free 0``) at the end so the render
         has a defined duration — scsynth semantics (its commands do not sound).

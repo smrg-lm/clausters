@@ -54,7 +54,7 @@ use clausters::rosc::OscMessage;
 let (mut engine, mut handle) = engine_pair(48_000.0, 2);
 
 // Build commands from OSC messages with the same translator the server uses
-// (it resolves def names, allocates synths, keeps the M12 tree mirror):
+// (it resolves def names, allocates synths, keeps the tree mirror):
 let mut translator = CmdTranslator::new(48_000.0);
 let mut cmds = Vec::new();
 let msg = OscMessage { addr: "/s_new".into(), args: vec![/* … */] };

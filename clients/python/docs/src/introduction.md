@@ -1,0 +1,30 @@
+# clausters - Python client
+
+`clausters` is the reference high-level **Python client** for the [Clausters](https://github.com/) audio server, ported selectively from SuperCollider's class library ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**.
+
+It is **pure Python at runtime**: it reaches the shared native core through `ctypes` over the `clausters-ffi` cdylib, and speaks ordinary OSC bytes to the server (UDP, TCP, shared memory, or an in-process embedded server). A NumPy user can wrap a returned `array('f')`, but NumPy is never a dependency — only flat data crosses the binding.
+
+This is the **package documentation**. The server itself — the OSC protocol, the def formats (SynthDef JSON and Faust), the node-tree model, the C ABI contract, and how to embed it — is documented separately in the **[Clausters server book](https://clausters.readthedocs.io/)**; this site links to it rather than repeating it. Two books, one per platform.
+<!-- Cross-link to the companion book; update the URL if the Read the Docs slug differs. -->
+
+## Components
+
+- A **server-agnostic** timing and value layer (`clausters.base`): scalar/list math backed by the same core the server uses (so results match by construction), operator overloading, the `Routine`/`yield` coroutine layer, a `TempoClock` that does timing only, and a choice of timebase (monotonic or the server's sample clock).
+- **Definitions and server resources** (`clausters.defs`): a Faust-first signal API and `FaustDef`, their UGen-graph counterpart (`ugens` + `SynthDef`), and the `Node`/`Bus`/`Buffer` handles. The `Server` owns the communication interface and emits — swap its interface to retarget the *same* code from a live RT take to an offline NRT score.
+- **Sequencing** (`clausters.seq`): `Event`, the value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`, and `EventStreamPlayer`, with yield-exact timing.
+- **Ergonomic defaults without global state** (`clausters.Session`): bundles a `Server` and a clock; several sessions (e.g. an offline one for plots next to a live one) coexist in one script.
+
+## The RT / NRT / embed seam
+
+The key design property is a single seam: the `Server` holds a communication interface, and *which* interface it holds decides where the bytes go — a live UDP/TCP server, shared memory, or an in-process embedded engine that renders a score to WAV offline. The clock, the routines and the patterns do not change. The same script can drive a real-time take and render an offline score, with no global build context in between.
+
+## How to read this book
+
+- **New here?** Start with [Getting started](getting-started.md): install the package and play a sound.
+- **Want the mental model?** Read [The client, layer by layer](guide.md): `base`, `seq`, `defs` and the seam.
+- **Looking for runnable code?** See [Examples](examples.md).
+- **Looking for a symbol?** The [API reference](api.md) is generated from the package docstrings.
+
+## Status & license
+
+Licensed **GPL-3.0-or-later**. It is a proof of concept; treat it as unaudited and verify before relying on it.

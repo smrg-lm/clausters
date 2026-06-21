@@ -1,0 +1,25 @@
+# mdBook configuration for the Clausters Python client documentation.
+#
+# The book sources live in `src/`; `src/SUMMARY.md` is the table of contents.
+# The API reference page `src/api.md` is *generated* from the package docstrings
+# by pydoc-markdown (see ../pydoc-markdown.yml and ./build.sh) and is git-ignored
+# along with the build output `book/`.
+#
+# Build locally with `./build.sh` (generates the API page, then runs mdbook).
+# This is a separate book from the server/workspace documentation in the repo's
+# root `docs/` (built by the root book.toml): two books, one per platform,
+# cross-linked. See ../.readthedocs.yaml for the Read the Docs build.
+
+[book]
+title = "clausters - Python client"
+authors = ["Lucas Samaruga"]
+description = "High-level Python client for the Clausters audio server (Faust-first)."
+src = "src"
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"

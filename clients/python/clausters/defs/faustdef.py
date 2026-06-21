@@ -1,10 +1,10 @@
 """FaustDef: a named Faust definition ready for ``/d_faust``.
 
-Wraps a graph built with :mod:`clausters.defs.signals` (the **signal tree**
+Wraps a graph built with `clausters.defs.signals` (the **signal tree**
 form), a Faust **source** string, or a raw **box tree** dict — the three
 payloads the server's ``/d_faust`` accepts (it sniffs which by the first byte;
 see the server's ``faust`` module). Sending and instantiating is the
-:class:`~clausters.defs.server.Server`'s job; this only builds the payload and
+`Server`'s job; this only builds the payload and
 exposes the declared control names (UI labels), plus the reserved ``in``/``out``
 bus controls the server adds.
 """
@@ -52,7 +52,7 @@ class FaustDef:
     def control_names(self) -> list[str]:
         """The control names this def declares (UI labels), in tree order.
         The reserved ``in``/``out`` bus controls (added by the server) are not
-        included; see :attr:`reserved`."""
+        included; see `reserved`."""
         names: list[str] = []
         if self.kind in ("signals", "box"):
             _collect_labels(self._payload, names)

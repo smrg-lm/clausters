@@ -4,13 +4,13 @@ This is the **server-application** side of the client (see the memory note
 ``separacion-cliente-servidor-clausters`` and ``clients/PLAN.md``): it owns the
 **communication interface** (RT over UDP by default; an ``OscNrtInterface`` for
 offline; shared-memory/embed would be further interfaces), the client-side
-resource allocators (:mod:`node`/:mod:`bus`/:mod:`buffer`), builds the OSC and
+resource allocators (`node`/`bus`/`buffer`), builds the OSC and
 handles the async replies (``/done`` / ``/fail``) and notifications.
 
 Timing is **not** here and not in the clock-as-sender: the clock
-(:class:`clausters.base.clock.TempoClock`) only schedules and tells time; the
+(`clausters.base.clock.TempoClock`) only schedules and tells time; the
 Server emits, reading the logical time from the clock of the routine in flight.
-A routine sequences events by calling :meth:`send_bundle`; swapping the
+A routine sequences events by calling `send_bundle`; swapping the
 Server's interface retargets every routine from live RT to an NRT score without
 touching clock or routine.
 """
@@ -134,9 +134,9 @@ DEFAULT_SAMPLE_RATE = 48000
 class ServerOptions:
     """Client-owned server configuration, the way SuperCollider's
     ``ServerOptions`` works: it both **sizes the client's bus allocators** and
-    emits the **CLI flags** to launch a matching server (:meth:`args`), so the
+    emits the **CLI flags** to launch a matching server (`args`), so the
     two agree by construction. Verify a running server with
-    :meth:`Server.query_info`.
+    `Server.query_info`.
     """
 
     audio_buses: int = DEFAULT_AUDIO_BUSES
@@ -156,7 +156,7 @@ class ServerOptions:
 @dataclass
 class ServerInfo:
     """The static configuration a running server reports over ``/server_info``
-    (read-only; the result of :meth:`Server.query_info`)."""
+    (read-only; the result of `Server.query_info`)."""
 
     audio_buses: int
     control_buses: int
@@ -179,7 +179,7 @@ class Server:
         #: the client-owned server configuration; sizes the allocators below so
         #: they never hand out a bus the server does not have. Override it to
         #: match a server launched with `--audio-buses`/`--control-buses`, or
-        #: reconcile it from a running server with :meth:`query_info`.
+        #: reconcile it from a running server with `query_info`.
         self.options = options if options is not None else ServerOptions()
         self.nodes = NodeIDAllocator()
         self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
@@ -232,9 +232,9 @@ class Server:
             self.interface.send_bundle(self.target.addr(), wall + secs + self.latency, *messages)
 
     def play_event(self, event):
-        """Realize a note :class:`~clausters.seq.event.Event` as OSC: `/s_new`
+        """Realize a note `Event` as OSC: `/s_new`
         at the routine's logical beat, then `/n_free` (or `gate 0`) after the
-        sustain. The OSC side of the M17 double dispatch — a MIDI destination
+        sustain. The OSC side of the double dispatch — a MIDI destination
         realizes the same event as note on/off. Returns the synth node id (or
         None for a rest)."""
         if event.get("type") == "rest":
@@ -273,7 +273,7 @@ class Server:
         """Asks the running server for its static configuration (RT only):
         bus counts, output channels, block size and sample rate. Use it to
         size or check allocators against a server you did not launch; compare
-        the result with :attr:`options`."""
+        the result with `options`."""
         _, args = self.request(
             "/server_info", timeout=timeout, expect=("/server_info.reply",)
         )
@@ -317,7 +317,7 @@ class Server:
     def dump_graph(self, group=ROOT_NODE_ID, timeout: float = 5.0) -> str:
         """The inferred bus graph of `group` as a human-readable string
         (``/g_dumpGraph``): what each child reads/writes and the current order.
-        A debugging aid; for machine use prefer :meth:`query_tree`."""
+        A debugging aid; for machine use prefer `query_tree`."""
         gid = group.id if hasattr(group, "id") else group
         addr, args = self.request("/g_dumpGraph", int(gid),
                                   timeout=timeout, expect=("/g_dumpGraph.reply", "/fail"))
@@ -329,13 +329,13 @@ class Server:
 
     def add_faustdef(self, fdef: FaustDef, *, wait: bool = True,
                      timeout: float = 10.0) -> str:
-        """Sends a :class:`~clausters.defs.faustdef.FaustDef` via ``/d_faust``.
+        """Sends a `FaustDef` via ``/d_faust``.
 
         ``/d_faust`` JIT-compiles **asynchronously** on the server's network
         thread (answered later by ``/done``/``/fail``). In RT, ``wait=True``
-        (the default) blocks until that reply -- raising :class:`CommandError`
-        on ``/fail`` or :class:`ReplyTimeout` if it never lands; ``wait=False``
-        returns immediately (fire-and-forget), so use :meth:`sync` as a barrier
+        (the default) blocks until that reply -- raising `CommandError`
+        on ``/fail`` or `ReplyTimeout` if it never lands; ``wait=False``
+        returns immediately (fire-and-forget), so use `sync` as a barrier
         before relying on the def (e.g. ``yield`` it from a routine, never block
         in one). In NRT it always *scores* ``/d_faust`` at time 0 -- the
         renderer compiles it before time advances -- so ``wait`` does not
@@ -354,10 +354,10 @@ class Server:
         return fdef.name
 
     def add_synthdef(self, sdef, *, wait: bool = True, timeout: float = 10.0) -> str:
-        """Sends a UGen :class:`~clausters.defs.synthdef.SynthDef` via
-        ``/d_recv``. Like :meth:`add_faustdef`: ``wait=True`` (default) blocks
+        """Sends a UGen `SynthDef` via
+        ``/d_recv``. Like `add_faustdef`: ``wait=True`` (default) blocks
         in RT until ``/done``/``/fail``; ``wait=False`` is fire-and-forget
-        (pair with :meth:`sync`). In NRT it scores ``/d_recv`` at time 0 so the
+        (pair with `sync`). In NRT it scores ``/d_recv`` at time 0 so the
         renderer compiles it before time advances."""
         payload = sdef.payload()
         if getattr(self.interface, "time_mode", "unix") == "score":
@@ -374,10 +374,10 @@ class Server:
         return sdef.name
 
     def add_graphdef(self, gdef, *, wait: bool = True, timeout: float = 10.0) -> str:
-        """Sends a :class:`~clausters.defs.graphdef.GraphDef` via ``/d_graph``
-        (M18). Like :meth:`add_synthdef`/:meth:`add_faustdef`: ``wait=True``
+        """Sends a `GraphDef` via ``/d_graph``.
+        Like `add_synthdef`/`add_faustdef`: ``wait=True``
         (default) blocks in RT until ``/done``/``/fail``; ``wait=False`` is
-        fire-and-forget (pair with :meth:`sync`). In NRT it scores ``/d_graph``
+        fire-and-forget (pair with `sync`). In NRT it scores ``/d_graph``
         at time 0. Loading a GraphDef is cheap on the server (no JIT — it only
         validates and references the member defs), but it is still asynchronous,
         so the same barrier discipline applies."""
@@ -414,23 +414,23 @@ class Server:
 
     def graph(self, defname, ports=None, *, target=ROOT_NODE_ID,
               action=AddAction.TAIL) -> Group:
-        """Instantiates a GraphDef (``/graph_new``, M18) as a wired group, with
+        """Instantiates a GraphDef (``/graph_new``) as a wired group, with
         ``ports`` (a ``{name: value}`` dict) overriding the def defaults. The
-        returned :class:`~clausters.defs.node.Group` is the instance: drive it
-        through the surface with :meth:`set` (``/n_set`` resolves names against
+        returned `Group` is the instance: drive it
+        through the surface with `set` (``/n_set`` resolves names against
         the surface, not the private members) and tear it down with
-        :meth:`free` (which also reclaims its private buses)."""
+        `free` (which also reclaims its private buses)."""
         node_id = self.nodes.alloc()
         self.send_msg("/graph_new", defname, node_id, int(action), int(target),
                       *_flatten_controls(ports))
         return Group(node_id)
 
     def graph_voice(self, instance, ports=None) -> Group:
-        """Spawns a per-voice sub-graph (``/graph_voice``, M18) inside a running
-        GraphDef ``instance`` (a :class:`~clausters.defs.node.Group` from
-        :meth:`graph`), wired to its shared private buses. ``ports`` overrides
+        """Spawns a per-voice sub-graph (``/graph_voice``) inside a running
+        GraphDef ``instance`` (a `Group` from
+        `graph`), wired to its shared private buses. ``ports`` overrides
         the voice-port defaults. The returned group is the voice: drive it
-        through its surface with :meth:`set` and free it with :meth:`free`."""
+        through its surface with `set` and free it with `free`."""
         inst_id = instance.id if hasattr(instance, "id") else instance
         node_id = self.nodes.alloc()
         self.send_msg("/graph_voice", inst_id, node_id, *_flatten_controls(ports))
@@ -489,7 +489,7 @@ class Server:
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2):
         """Renders the accumulated score (the interface must be an
-        :class:`OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
+        `OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
         so the render has a defined duration."""
         if not isinstance(self.interface, OscNrtInterface):
             raise RuntimeError("render() needs a Server with an OscNrtInterface")
@@ -508,14 +508,14 @@ class Server:
         """The async barrier (scsynth ``/sync``): sends ``/sync id`` and blocks
         until the server answers ``/synced id``, which it does only once every
         async command sent earlier -- Faust/SynthDef compiles, buffer jobs --
-        has completed. Use it after a ``wait=False`` :meth:`add_faustdef` /
-        :meth:`add_synthdef` / buffer alloc. RT only (in NRT the renderer
+        has completed. Use it after a ``wait=False`` `add_faustdef` /
+        `add_synthdef` / buffer alloc. RT only (in NRT the renderer
         already serializes async work at time 0). Returns the id used.
 
         **Blocking — never call from a routine.** This (and any ``wait=True``)
         blocks the calling thread on a reply: fine on your own thread, but it
         would freeze the clock thread if called from inside a routine generator
-        (see :class:`~clausters.base.stream.Routine`). It also polls the socket
+        (see `Routine`). It also polls the socket
         synchronously; a non-blocking, notification-driven barrier you can
         ``yield`` from a routine is future work (``OSCFunc``)."""
         self._sync_counter += 1
@@ -527,8 +527,8 @@ class Server:
         self.send_msg("/quit")
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):
-        """A :class:`~clausters.defs.clocksync.UdpSampleClock` tracking this
-        server's sample clock over UDP (C6). Pass its ``.timebase()`` to a
+        """A `UdpSampleClock` tracking this
+        server's sample clock over UDP. Pass its ``.timebase()`` to a
         ``TempoClock`` to anchor timing to the server and schedule by ``/sched``."""
         from .clocksync import UdpSampleClock
 

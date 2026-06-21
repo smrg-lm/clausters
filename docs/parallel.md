@@ -26,7 +26,7 @@ Per processing block the engine scans the group's children **in order**, batchin
 
 A conflicting unit closes the stage and opens the next one, so anything that *must* be ordered (two writers summing into the same bus, a reader after its writer) is automatically serialized — same-bus mixing keeps the child order, exactly like sequential execution. A **dynamic** unit (a bus index computed by a signal: the engine cannot know what it touches) always runs alone. Nested parallel groups dispatched to a worker run sequentially inside it (parallelism does not nest in v1).
 
-The masks come from the same per-def analysis as M12 (`In`/`Out`/ `ReplaceOut` and the Faust reserved `in`/`out` buses, constants and controls; `/n_set` on a control used as a bus index re-ships the masks), but the copy the scheduler trusts lives **in the engine**, shipped with each synth — stage safety never depends on network-side state.
+The masks come from the same per-def analysis as the auto-sorted groups (`In`/`Out`/ `ReplaceOut` and the Faust reserved `in`/`out` buses, constants and controls; `/n_set` on a control used as a bus index re-ships the masks), but the copy the scheduler trusts lives **in the engine**, shipped with each synth — stage safety never depends on network-side state.
 
 ## Determinism
 

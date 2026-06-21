@@ -10,11 +10,10 @@ dispatch hooks a subclass implements:
 - ``_compose_narop(selector, *args)``   — n-ary
 
 The ``selector`` strings are the same operator names used by
-:mod:`clausters.base.builtins` (value side) and, later, by
-:mod:`clausters.defs.signals` (graph side) — so the *same* expression composes
+`clausters.base.builtins` (value side) and by
+`clausters.defs.signals` (graph side) — so the *same* expression composes
 either concrete numbers or a Faust/UGen graph depending on the subclass. This
-is what lets one piece of code describe both. C2 ships the base; the concrete
-graph subclass arrives in C3.
+is what lets one piece of code describe both.
 """
 
 

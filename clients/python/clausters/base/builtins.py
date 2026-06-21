@@ -2,7 +2,7 @@
 
 Port of the value side of ``sc3/base/builtins.py``: the operations the client
 applies to concrete numbers. The arithmetic/comparison/transcendental
-primitives go through :mod:`clausters._native` (the shared ``clausters-core``)
+primitives go through `clausters._native` (the shared ``clausters-core``)
 so they are computed in **f32**, matching the server by construction — Python's
 own ``float`` is f64 and would diverge. Music-theory helpers that the server
 only reaches through Faust composition (``midicps`` …) are pure Python with the

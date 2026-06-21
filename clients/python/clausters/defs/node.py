@@ -2,8 +2,8 @@
 
 The server's node tree (`node`): the root group is id 0; clients allocate
 positive ids. Add actions match the server: head/tail of a group, before/after
-a node, or replace. :class:`Synth` and :class:`Group` are flat handles holding
-an id; the :class:`~clausters.defs.server.Server` does the OSC.
+a node, or replace. `Synth` and `Group` are flat handles holding
+an id; the `Server` does the OSC.
 """
 
 from enum import IntEnum

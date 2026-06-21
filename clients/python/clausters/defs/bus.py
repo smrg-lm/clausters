@@ -2,14 +2,14 @@
 
 Mirrors the server's bus model (`dsp`): audio buses (``0..channels`` are the
 hardware outputs) and single-float control buses. Like scsynth, the client owns
-allocation; the server just indexes. A :class:`Bus` is a flat
+allocation; the server just indexes. A `Bus` is a flat
 ``(index, channels, rate)`` — only flat data ever leaves for the wire.
 
 The allocators carry **no default size of their own**: how many buses exist is a
-property of the server, not the bus module. The :class:`~clausters.defs.server.Server`
-sizes them from its :class:`~clausters.defs.server.ServerOptions` (which also emits
+property of the server, not the bus module. The `Server`
+sizes them from its `ServerOptions` (which also emits
 the matching ``--audio-buses``/``--control-buses`` launch flags), and the live
-counts can be read back with :meth:`~clausters.defs.server.Server.query_info`.
+counts can be read back with `query_info`.
 """
 
 

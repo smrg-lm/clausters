@@ -26,6 +26,6 @@ The API reference for the library crate is the **rustdoc**: `cargo doc --open`.
 
 ## Status & license
 
-The implementation plan (`PLAN.md`, in Spanish) is complete through its M0–M14 core and F0–F5 Faust fork. Licensed **GPL-3.0-or-later** (the embedded libfaust is GPLv2+).
+The implementation plan (`PLAN.md`, in Spanish) is complete through its core and Faust fork. Licensed **GPL-3.0-or-later** (the embedded libfaust is GPLv2+).
 
 Authored by Lucas Samaruga, generated with Claude. It is a proof of concept — treat the implementation as unaudited and verify it before relying on it.

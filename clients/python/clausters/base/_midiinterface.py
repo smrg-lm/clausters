@@ -1,10 +1,10 @@
 """MIDI destinations and interfaces (port of ``sc3/base/_midiinterface.py``).
 
-The same RT/NRT seam as the OSC side, for MIDI (M17). A :class:`MidiServer` is
+The same RT/NRT seam as the OSC side, for MIDI. A `MidiServer` is
 the double-dispatch counterpart of the OSC ``Server``: a clock + routine plays
 the *same* ``Pbind`` through it, and which **interface** it holds decides the
-realization — :class:`MidiNrtInterface` accumulates a :class:`MidiScore` (in
-beats) that writes a `.mid`/clip file offline, :class:`MidiRtInterface` sends
+realization — `MidiNrtInterface` accumulates a `MidiScore` (in
+beats) that writes a `.mid`/clip file offline, `MidiRtInterface` sends
 the notes out a virtual OS port live, through the ``clausters-midi`` crate.
 
 A *MIDI message* is raw status/data bytes (``bytes`` or an iterable of ints).
@@ -47,7 +47,7 @@ class MidiScore:
 
 class MidiNrtInterface:
     """Non-real-time MIDI: accumulate ``(beat, message)`` into a
-    :class:`MidiScore` to write offline."""
+    `MidiScore` to write offline."""
 
     is_realtime = False
 
@@ -62,7 +62,7 @@ class MidiNrtInterface:
 
 
 class MidiRtInterface:
-    """Real-time MIDI output (M17 sub-part 2): a virtual OS MIDI port via the
+    """Real-time MIDI output: a virtual OS MIDI port via the
     `clausters-midi` crate's `live` feature (midir / ALSA seq on Linux). Each
     message is sent at its beat — the current one now, future ones (the note
     off) scheduled on the clock — best-effort, no timetags."""
@@ -103,10 +103,10 @@ class MidiRtInterface:
 
 
 class MidiServer:
-    """A MIDI destination for event patterns (M17) — the double-dispatch
-    counterpart of the OSC :class:`~clausters.defs.server.Server`. A
-    :class:`~clausters.seq.pattern.Pbind` played on a clock with this as the
-    destination realizes each :class:`~clausters.seq.event.Event` as a note
+    """A MIDI destination for event patterns — the double-dispatch
+    counterpart of the OSC `Server`. A
+    `Pbind` played on a clock with this as the
+    destination realizes each `Event` as a note
     on/off pair, handed to the held interface (NRT score or live port). Note
     number from `event.midinote()`, velocity from `amp` (0..1 → 0..127)."""
 
@@ -117,7 +117,7 @@ class MidiServer:
 
     @property
     def score(self):
-        """The accumulated :class:`MidiScore` (NRT interface only)."""
+        """The accumulated `MidiScore` (NRT interface only)."""
         return getattr(self.interface, "score", None)
 
     def play_event(self, event):

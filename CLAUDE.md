@@ -7,14 +7,28 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   (client track), both in English.
 - Completion log per milestone: `LOG.md` (English) — update it when a
   milestone is finished.
-- English documentation is an **mdBook** in `docs/` (`docs/SUMMARY.md` is the
-  table of contents, `book.toml` the config, `README.md` the front door; build
-  with `mdbook build`, output `book/` is git-ignored). It reuses the existing
-  `docs/*.md` in place. Key chapters: developer docs (threads, memory
-  lifecycle, invariants, how to add a UGen) in `docs/architecture.md`;
-  user-facing wire formats and OSC reference in `docs/schemas.md`; library/
-  embedding use in `docs/using-as-a-library.md` and `docs/ipc.md`. The crate
-  API reference is the rustdoc (`cargo doc`). Keep all of it current.
+- English documentation is **two mdBooks, one per platform**, both Markdown and
+  ReadTheDocs-deployable (each has a `.readthedocs.yaml` driving the build with
+  `build.commands` — RTD has no native mdBook builder). Keep both current.
+  - **Server / workspace** — mdBook in `docs/` (`docs/SUMMARY.md` the table of
+    contents, the repo-root `book.toml` the config, `README.md` the front door;
+    build with `mdbook build .`, output `book/` git-ignored). Reuses the
+    existing `docs/*.md` in place. Key chapters: developer docs (threads, memory
+    lifecycle, invariants, how to add a UGen) in `docs/architecture.md`;
+    user-facing wire formats and OSC reference in `docs/schemas.md`; library/
+    embedding use in `docs/using-as-a-library.md` and `docs/ipc.md`; the
+    cross-language map in `docs/clients.md`. Crate API reference is the rustdoc
+    (`cargo doc`).
+  - **Python client** — mdBook in `clients/python/docs/` (its own `book.toml`
+    and `src/`; `clients/python/docs/build.sh` builds it). The API-reference
+    page `src/api.md` is **generated from the package docstrings by
+    pydoc-markdown** (`clients/python/pydoc-markdown.yml`; both it and `book/`
+    git-ignored). The two books cross-link by their RTD URLs.
+  - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
+    directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
+    — use backticks / Google-style sections), and **no milestone labels
+    (`Mx`/`Cx`/`Fx`) in any published doc or docstring** — those live only in
+    `PLAN.md`/`LOG.md`. `GUIA.md` is a personal file, not part of the docs.
 - **Closing a milestone always includes, whenever applicable**: the
   developer documentation (`docs/architecture.md`, module docs), the user
   documentation in `docs/` for new features, manual testing steps and

@@ -1,6 +1,6 @@
 """EventStreamPlayer (port of ``sc3/seq/eventstream.py``).
 
-Plays an **event pattern** (a :class:`~clausters.seq.pattern.Pbind`) on a clock:
+Plays an **event pattern** (a `Pbind`) on a clock:
 it is a routine that, for each event, plays it against the server (emitting at
 the routine's exact logical beat) and yields the event's ``delta`` to advance.
 Because the Server owns the interface, the *same* player runs live (RT) or

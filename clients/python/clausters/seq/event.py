@@ -1,10 +1,10 @@
 """Events (port of ``sc3/seq/event.py``, adapted to Clausters).
 
-An :class:`Event` is a dict of parameters with sensible defaults that knows how
-to **play itself** against a :class:`~clausters.defs.server.Server`. The default
+An `Event` is a dict of parameters with sensible defaults that knows how
+to **play itself** against a `Server`. The default
 ``'note'`` event creates a synth and schedules its release. Timing is the
 clock's job: an event emits at the running routine's exact logical beat (via
-``server.send_bundle``), and the player advances by the event's :meth:`delta`.
+``server.send_bundle``), and the player advances by the event's `delta`.
 
 Difference from scsynth: Clausters synths have no ``doneAction`` envelopes yet,
 so a note **frees** its synth after ``sustain`` (``/n_free``) rather than
@@ -38,7 +38,7 @@ DEFAULTS = {
 
 
 class Event(dict):
-    """A parameter dict with note-event defaults and a :meth:`play`."""
+    """A parameter dict with note-event defaults and a `play`."""
 
     def __init__(self, *args, **kwargs):
         merged = dict(DEFAULTS)
@@ -92,8 +92,8 @@ class Event(dict):
     # ---- play ----
 
     def play(self, destination):
-        """Realize this event on ``destination`` (double dispatch, M17): the OSC
-        :class:`~clausters.defs.server.Server` turns it into `/s_new` + release,
+        """Realize this event on ``destination`` (double dispatch): the OSC
+        `Server` turns it into `/s_new` + release,
         a MIDI destination into note on/off — without the clock or routine
         knowing which. Returns whatever the destination's ``play_event`` does
         (the synth node id for OSC, ``None`` for a rest or MIDI)."""

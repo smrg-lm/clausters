@@ -1,20 +1,20 @@
 """Definitions and server resources (port of ``sc3/synth``, Faust-first).
 
-C3 ships the Faust-first definition layer and the server resources:
+The Faust-first definition layer and the server resources:
 
-- :mod:`~clausters.defs.signals` — lowercase callables mapping Faust's Signal
+- `signals` — lowercase callables mapping Faust's Signal
   API; compose them (operators or functions) into the JSON signal tree.
-- :mod:`~clausters.defs.faustdef` — :class:`FaustDef`: build the ``/d_faust``
+- `faustdef` — `FaustDef`: build the ``/d_faust``
   payload (signal tree, source, or box tree) and list its controls.
-- :mod:`~clausters.defs.node` / :mod:`~clausters.defs.bus` /
-  :mod:`~clausters.defs.buffer` — :class:`Synth`/:class:`Group`/:class:`Bus`/
-  :class:`Buffer` and their client-side allocators.
-- :mod:`~clausters.defs.server` — :class:`Server`: the live OSC round-trip
+- `node` / `bus` /
+  `buffer` — `Synth`/`Group`/`Bus`/
+  `Buffer` and their client-side allocators.
+- `server` — `Server`: the live OSC round-trip
   (definitions, nodes, buses, buffers, ``/done``/``/fail``, ``/notify``).
-- :mod:`~clausters.defs.ugens` / :mod:`~clausters.defs.synthdef` — the UGen
-  graph (lowercase callables → :class:`Ugen`/:class:`Control`) and
-  :class:`SynthDef` (``/d_recv``), the UGen-graph counterpart of the Faust
-  :mod:`~clausters.defs.signals` / :class:`FaustDef` pair.
+- `ugens` / `synthdef` — the UGen
+  graph (lowercase callables → `Ugen`/`Control`) and
+  `SynthDef` (``/d_recv``), the UGen-graph counterpart of the Faust
+  `signals` / `FaustDef` pair.
 """
 
 from . import signals

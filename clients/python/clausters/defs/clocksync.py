@@ -1,6 +1,6 @@
-"""Track the server's sample clock over UDP (C6).
+"""Track the server's sample clock over UDP.
 
-To use a :class:`~clausters.base.timebase.SampleClockTimebase` over UDP — where
+To use a `SampleClockTimebase` over UDP — where
 the client can't read the sample counter directly (as shm/embed can) — it
 queries the server's ``/clock`` and models
 
@@ -142,7 +142,7 @@ class UdpSampleClock:
         return self.model.rate
 
     def timebase(self) -> SampleClockTimebase:
-        """A :class:`SampleClockTimebase` reading this tracker's model."""
+        """A `SampleClockTimebase` reading this tracker's model."""
         return SampleClockTimebase(self.now, self.rate)
 
     def close(self):

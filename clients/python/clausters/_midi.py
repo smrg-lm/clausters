@@ -1,10 +1,10 @@
 """ctypes binding over the MIDI file core (`clausters-midi`).
 
 Loads ``libclausters_midi`` (the C ABI over the SMF writer, built with
-``cargo build -p clausters-midi``) and exposes :func:`write_smf`: turn a list of
+``cargo build -p clausters-midi``) and exposes `write_smf`: turn a list of
 ``(tick, message_bytes)`` channel-voice events into Standard MIDI File bytes.
 
-Boundary rule (same as :mod:`clausters._native`): only flat data crosses — ints
+Boundary rule (same as `clausters._native`): only flat data crosses — ints
 and byte buffers in, ``bytes`` out. The library is loaded lazily and version
 checked on first use, so importing this module never fails just because the
 cdylib has not been built yet.

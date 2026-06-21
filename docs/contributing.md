@@ -33,7 +33,7 @@ under `pw-jack` at runtime.
 
 ## The `faust` feature
 
-`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in the **F0 section of `LOG.md`**. `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
+`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in `LOG.md` (the libfaust build section). `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
 
 ```sh
 FAUST_PREFIX=~/.local cargo test --features faust

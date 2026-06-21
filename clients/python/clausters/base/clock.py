@@ -2,22 +2,22 @@
 
 The seam between the native core and the host language. The clock owns the
 scheduling queue and the beat/second arithmetic — the latter delegated to
-``clausters-core`` through :mod:`clausters._native`, so timing matches the
+``clausters-core`` through `clausters._native`, so timing matches the
 server's sample clock. The queue holds **routines** (and one-shot callables);
 resuming a routine (the ``yield`` driver) stays in Python.
 
 One clock, two drives:
 
-- :meth:`run` / :meth:`start` — real time: a background thread sleeps between
+- `run` / `start` — real time: a background thread sleeps between
   events using a **monotonic** pacing clock; the logical beat still advances
   only by the routines' ``yield``s, so inter-event timing is exact and the OSC
   timetags (stamped from a separate wall clock) carry that exactness.
-- :meth:`render` — non-real time: drain the queue in beat order with no
+- `render` — non-real time: drain the queue in beat order with no
   sleeping, advancing a logical clock; used to build a score.
 
 The clock does **not** talk to the server: it only schedules and exposes the
-current time (:meth:`beats`, :meth:`beats2secs`, :attr:`start_time`). Sending
-events belongs to :class:`clausters.defs.server.Server`, which owns the
+current time (`beats`, `beats2secs`, `start_time`). Sending
+events belongs to `clausters.defs.server.Server`, which owns the
 destination/communication interface and reads the time from the clock of the
 routine being resumed (the clock sets ``routine.clock`` and
 ``main.current_tt`` around each wake). Swapping that interface (RT/NRT/MIDI) is
@@ -43,7 +43,7 @@ class TempoClock:
 
         #: pacing source — *only* used to decide how long to sleep between
         #: events. The default is the OS monotonic clock; pass a
-        #: :class:`~clausters.base.timebase.SampleClockTimebase` to anchor to the
+        #: `SampleClockTimebase` to anchor to the
         #: server's sample clock. The Server reads this to choose how to stamp
         #: events (NTP timetag vs ``/sched`` absolute sample).
         self.timebase = timebase if timebase is not None else MonotonicTimebase()
@@ -85,7 +85,7 @@ class TempoClock:
 
     @property
     def pacing_origin(self):
-        """The timebase value (seconds) captured at :meth:`start`. For a
+        """The timebase value (seconds) captured at `start`. For a
         sample-clock timebase this is ``sample_origin / sample_rate``, which the
         Server turns into the absolute sample for ``/sched``."""
         return self._mono_start

@@ -1,24 +1,25 @@
 """Clausters Python client.
 
 A high-level client for the Clausters audio server, ported selectively from
-SuperCollider's class library (sc3), Faust-first. It is built in milestones
-(see ``clients/PLAN.md``); this is the C1 scaffold.
+SuperCollider's class library (sc3), Faust-first.
 
 What is in place now:
 
-- :mod:`clausters.transport` — the low-level transports (embedded server, shared
+- `clausters.transport` — the low-level transports (embedded server, shared
   memory, offline render). Its public names are re-exported here, so existing
   code using ``from clausters import Clausters, ShmClient, render`` keeps
   working.
-- :mod:`clausters._native` — the ctypes binding over the shared native core
+- `clausters._native` — the ctypes binding over the shared native core
   (``clausters-ffi``): builtins, seeded white noise and clock/sample math, all
   matching the server by construction.
-- :mod:`clausters.base` — base layer (currently the minimal OSC wire encoder
-  ``base._osclib``); the rest (absobject, builtins, stream, clock, netaddr,
-  OSC/MIDI interfaces) lands in C2.
-- :mod:`clausters.seq`, :mod:`clausters.defs` — placeholders for the
-  sequencing layer (C4) and the Faust/SynthDef definitions and server resources
-  (C3).
+- `clausters.base` — the server-agnostic base layer: builtins, absobject,
+  stream, clock, netaddr, the OSC/MIDI destination interfaces and the OSC wire
+  encoder.
+- `clausters.seq` — the sequencing layer: events, value patterns and ``Pbind``,
+  and the event-stream player.
+- `clausters.defs` — the definition layer and server resources: the Faust-first
+  ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
+  node/bus/buffer handles and the `Server`.
 """
 
 from . import _native

@@ -1,0 +1,21 @@
+# Read the Docs build for the Clausters server/workspace documentation: the
+# mdBook in docs/, configured by the repo-root book.toml (src = "docs").
+#
+# Its companion is the Python client book, configured by
+# clients/python/.readthedocs.yaml. They are two separate Read the Docs projects
+# (one per platform), cross-linked. Read the Docs has no native mdBook builder,
+# so the build is driven with build.commands.
+version: 2
+
+build:
+  os: ubuntu-24.04
+  tools:
+    python: "3.12"
+  commands:
+    - mkdir -p "$HOME/bin"
+    - |
+      MDBOOK_VERSION=0.4.40
+      curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C "$HOME/bin"
+    - "$HOME/bin/mdbook build ."
+    - mkdir -p "$READTHEDOCS_OUTPUT/html"
+    - cp -r book/. "$READTHEDOCS_OUTPUT/html/"

@@ -1,8 +1,8 @@
-"""GraphDef: a named node-graph "program" ready for ``/d_graph`` (M18).
+"""GraphDef: a named node-graph "program" ready for ``/d_graph``.
 
-Where :class:`~clausters.defs.synthdef.SynthDef` and
-:class:`~clausters.defs.faustdef.FaustDef` each describe a *single* synthesis
-node, a :class:`GraphDef` describes a whole **configuration of member nodes
+Where `SynthDef` and
+`FaustDef` each describe a *single* synthesis
+node, a `GraphDef` describes a whole **configuration of member nodes
 wired by buses** — an effect chain, a mixer, a layered instrument — that the
 server stores and instantiates as one unit. It exposes a **named parameter
 surface**: ports that map to inner member controls, so the running instance is
@@ -37,7 +37,7 @@ import json
 
 
 class GraphBusRef:
-    """A reference to an internal GraphDef bus, returned by :meth:`GraphDef.bus`.
+    """A reference to an internal GraphDef bus, returned by `GraphDef.bus`.
     Used as a member control value (it serializes to the bus name)."""
 
     def __init__(self, name: str):
@@ -70,9 +70,9 @@ class _Target:
 
 
 class MemberRef:
-    """A handle to a member added with :meth:`GraphDef.add`. Index a control
+    """A handle to a member added with `GraphDef.add`. Index a control
     name (``member["cutoff"]`` or ``member.cutoff``) to get a surface
-    :class:`_Target`."""
+    `_Target`."""
 
     def __init__(self, index: int):
         self.index = index
@@ -97,8 +97,8 @@ def _control_value(v):
 
 
 class GraphDef:
-    """A named node graph. Build it with :meth:`bus`, :meth:`add` and
-    :meth:`port`, then send it with ``server.add_graphdef``."""
+    """A named node graph. Build it with `bus`, `add` and
+    `port`, then send it with ``server.add_graphdef``."""
 
     def __init__(self, name: str):
         self.name = str(name)
@@ -119,12 +119,12 @@ class GraphDef:
     def add(self, defname: str, controls: dict | None = None, *,
             maps: dict | None = None, voice: bool = False, **control_kw) -> MemberRef:
         """Adds a member: an instance of the SynthDef/FaustDef ``defname``.
-        Control values may be numbers, a :class:`GraphBusRef` (to wire the
+        Control values may be numbers, a `GraphBusRef` (to wire the
         control to an internal bus), or ``"OUT"`` (hardware bus 0). ``maps``
         binds controls to internal *control* buses via ``/n_map``. Pass
         controls as a dict (needed for reserved names like ``in``) and/or as
         keywords. ``voice=True`` marks a **per-voice** member: instantiated once
-        per :meth:`Server.graph_voice` (or MIDI note) instead of at
+        per `Server.graph_voice` (or MIDI note) instead of at
         instantiation — the per-note part of a polyphonic instrument."""
         merged = dict(controls or {})
         merged.update(control_kw)
@@ -144,7 +144,7 @@ class GraphDef:
 
     def port(self, name: str, *targets: _Target, default: float | None = None):
         """Defines a surface port mapping ``name`` to one or more member
-        controls (each a :class:`_Target`, optionally ``.scaled(...)``).
+        controls (each a `_Target`, optionally ``.scaled(...)``).
         ``default`` is applied at instantiation unless overridden."""
         if not targets:
             raise ValueError(f"surface port {name!r} needs at least one target")

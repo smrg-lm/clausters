@@ -3,8 +3,8 @@
 The low-level byte layer: build OSC messages and timetagged bundles, and frame
 an NRT score. It is deliberately tiny and matches the helpers in the repo's
 ``examples/json_client.py`` so scores produced here render identically. The
-higher-level destination abstraction (RT/NRT/MIDI interfaces, `NetAddr`) lands
-on top of this in milestone C2 (`base/_oscinterface.py`); the timetag↔sample
+higher-level destination abstraction (RT/NRT/MIDI interfaces, `NetAddr`) sits
+on top of this in `base/_oscinterface.py`; the timetag↔sample
 math lives in the native core (`clausters._native`).
 """
 
@@ -30,7 +30,7 @@ class Int64:
 
 
 def message(addr: str, *args) -> bytes:
-    """Encodes one OSC message. Supports int (`i`), :class:`Int64` (`h`), float
+    """Encodes one OSC message. Supports int (`i`), `Int64` (`h`), float
     (`f`), str (`s`) and bytes (`b`) arguments."""
     tags, data = ",", b""
     for a in args:

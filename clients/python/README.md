@@ -2,11 +2,10 @@
 
 High-level Python client for the [Clausters](../../README.md) audio server,
 ported selectively from SuperCollider's class library
-([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
-see [`../PLAN.md`](../PLAN.md).
+([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**.
 
-Milestones C0–C12 are done (C13 responders and the JavaScript client are the
-remaining tracks). In place now:
+In place now (client-side OSC/MIDI responders and a JavaScript client are still
+to come):
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -14,23 +13,22 @@ remaining tracks). In place now:
 - `clausters._native` — ctypes binding over the shared native core
   (`clausters-ffi`): numeric builtins, seeded white noise and clock/sample
   math, matching the server by construction.
-- `clausters.base` (C2) — the base layer: `builtins` (scalar/list math, f32 via
+- `clausters.base` — the base layer: `builtins` (scalar/list math, f32 via
   the core), `absobject` (operator overloading), `stream` (`Routine`/`Stream`,
   the `yield` layer), `clock` (`TempoClock`, RT + NRT drives — **timing only**),
   `timebase` (monotonic or, anchored to the server's sample clock, `/sched`),
-  `netaddr`, `main`, the destination interfaces `_oscinterface` (UDP / **TCP**
-  (C8) / NRT) and `_midiinterface`, and the minimal OSC wire encoder `_osclib`.
-- `clausters.defs` (C3) — Faust-first definitions and server resources:
+  `netaddr`, `main`, the destination interfaces `_oscinterface` (UDP / **TCP** / NRT) and `_midiinterface`, and the minimal OSC wire encoder `_osclib`.
+- `clausters.defs` — Faust-first definitions and server resources:
   `signals` (lowercase callables mapping Faust's Signal API, composed into the
   JSON graph), `FaustDef`, the `Synth`/`Group`/`Bus`/`Buffer` handles and
   allocators, and `Server`. The **`Server` owns the communication interface and
-  emits** (C4): swap its interface to retarget a routine from live RT to an NRT
+  emits**: swap its interface to retarget a routine from live RT to an NRT
   score without touching clock or routine. UGen-graph definitions are also here
   — `ugens` (lowercase callables → `Ugen`/`Control`) and `SynthDef` (`/d_recv`),
   the instance-based UGen counterpart of `signals`/`FaustDef`. `clocksync`
-  (C6) models the server's sample clock over UDP (`Server.sample_clock()`) for
+  models the server's sample clock over UDP (`Server.sample_clock()`) for
   drift-free `/sched` timing without shared memory.
-- `clausters.seq` (C5) — sequencing: `Event` (a note plays a synth and frees it
+- `clausters.seq` — sequencing: `Event` (a note plays a synth and frees it
   after its sustain), the value patterns (`Pseq`, `Pwhite`, `Pseries`, …) and
   `Pbind`, and `EventStreamPlayer`. `Pbind(...).play(clock, server)` runs live
   or builds an NRT score by which interface the `Server` holds — with
@@ -40,12 +38,12 @@ remaining tracks). In place now:
   `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist (an
   offline NRT one for plots next to a live RT one) in the same script.
 
-See [`GUIA.md`](GUIA.md) for a hands-on, milestone-by-
-milestone manual test guide (Spanish). Runnable, installed-package examples are
-in [`examples/`](examples/) (the broader catalog is the repo-root
+The full documentation (this client's guide and the generated API reference) is
+the mdBook in [`docs/`](docs/). Runnable, installed-package examples are in
+[`examples/`](examples/) (the broader catalog is the repo-root
 [`examples/`](../../examples/)).
 
-## Installing (C12 — pip / wheels)
+## Installing (pip / wheels)
 
 The package is pure Python at runtime but reaches Rust through two cdylibs that
 **cargo** builds (`libclausters_ffi` for the numeric core, `libclausters` built
@@ -96,6 +94,27 @@ won't reach the workspace) with the standalone script:
 
 ```sh
 python clients/python/build_native.py            # release; --debug for the debug profile
+```
+
+## Documentation
+
+This client has its own mdBook — a guide plus an API reference **generated from
+the package docstrings**. It is a separate book from the server/workspace book
+at the repo root (two books, one per platform, cross-linked). Build it:
+
+```sh
+pip install pydoc-markdown      # generates the API page from docstrings
+cargo install mdbook            # once (or use a distro / prebuilt mdbook)
+clients/python/docs/build.sh    # writes src/api.md, then runs `mdbook build`
+```
+
+`build.sh` runs two steps: `pydoc-markdown` (a **static AST parse** of the
+public modules — no cdylib needed) writes `docs/src/api.md`, then `mdbook build
+docs` renders the book to `docs/book/` (both git-ignored). For a live-reload
+preview, after generating the API page once:
+
+```sh
+mdbook serve --open clients/python/docs    # http://localhost:3000
 ```
 
 ## Running the tests

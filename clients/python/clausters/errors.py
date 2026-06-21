@@ -2,7 +2,7 @@
 
 A small hierarchy so callers can catch *what* went wrong concretely instead of
 guessing from a stray ``AttributeError`` or a generic ``OSError``. Everything
-derives from :class:`ClaustersError`, and each leaf *also* derives from the
+derives from `ClaustersError`, and each leaf *also* derives from the
 builtin it used to be raised as (``OSError``, ``RuntimeError``,
 ``BufferError``, ``TimeoutError``, ``ValueError``) — so existing
 ``except OSError:`` / ``except RuntimeError:`` code (and the test-suite skips)
@@ -38,7 +38,7 @@ class LibraryFeatureError(LibraryError, OSError):
 
     The concrete cause behind the otherwise cryptic ``undefined symbol`` /
     ``AttributeError``: a plain ``cargo build`` produces a ``libclausters.so``
-    with the FFI surface compiled out. :attr:`symbol` and :attr:`feature` say
+    with the FFI surface compiled out. `symbol` and `feature` say
     exactly what is missing and what to rebuild with.
     """
 

@@ -80,8 +80,20 @@ the `pipewire-jack` package docs — and drop the `pw-jack` prefix.) The default
 
 ## Documentation
 
-- **The book** — full guide, OSC reference and architecture: the mdBook in [`docs/`](docs/) (`mdbook build`, start at [`docs/introduction.md`](docs/introduction.md)).
-- **API reference** — `cargo doc --open` (the crate is usable as a library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
+Two mdBooks, one per platform (both Markdown, ReadTheDocs-deployable). To build
+the **server / workspace book** — full guide, OSC reference and architecture,
+the mdBook in [`docs/`](docs/):
+
+```sh
+cargo install mdbook        # once (or use a distro / prebuilt mdbook)
+mdbook build                # render to book/ (git-ignored)
+mdbook serve --open         # live-reload preview at http://localhost:3000
+```
+
+Start reading at [`docs/introduction.md`](docs/introduction.md).
+
+- **Crate API reference** — `cargo doc --open` (the crate is usable as a library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
+- **Python client book** — the client has its own mdBook (guide + an API reference generated from docstrings); build steps in [`clients/python/README.md`](clients/python/README.md#documentation).
 - **Contributing / dev setup** — [`docs/contributing.md`](docs/contributing.md).
 
 ## License

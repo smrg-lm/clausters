@@ -2564,3 +2564,41 @@ tests/examples" workflow trivial.
   `pip install -e . --group dev` + `pytest` -> 77 passed, 1 skipped.
 - **Docs**: `clients/python/README.md` (the install/wheel section), `GUIA.md`
   (C12 row), `docs/clients.md` and `docs/using-as-a-library.md` (packaging).
+
+## M20 — Documentation: dual mdBook (server + Python client) + pydoc-markdown API (2026-06-21)
+
+Unified the documentation **technically by content** while keeping **two
+separate books, one per platform**, both Markdown and ReadTheDocs-deployable.
+
+- **Python client book** (`clients/python/docs/`): a second mdBook with its own
+  `book.toml`/`src/` and the same theme as the server book. Hand-written
+  chapters (`introduction`, `getting-started`, `guide`, `examples`) distilled
+  from `README.md`/`docs/clients.md` (not from `GUIA.md`, which is a personal
+  file kept out of the docs). `build.sh` builds it.
+- **Python API reference from docstrings, no Sphinx**: `pydoc-markdown.yml`
+  generates `src/api.md` from the public modules' docstrings via a **static AST
+  parse** (no import, so no cdylib needed). `src/api.md` and `book/` are
+  git-ignored.
+- **Docstrings cleaned to plain Markdown**: converted ~200 RST cross-reference
+  roles (`:mod:`/`:class:`/`:meth:`/`:func:`/`:attr:`/`:data:`, including the
+  `~`-last-component form) to backtick code spans across all 32 modules; double
+  backtick RST literals left as-is (valid Markdown, render as `<code>`).
+- **Milestone labels removed from every published doc and docstring**
+  (`Mx`/`Cx`/`Fx`): all of `docs/*.md` (in `architecture.md` the labels were
+  subsystem nicknames — "the M12 tree mirror" -> "the tree mirror", etc.),
+  `clients/python/README.md`, and the private module docstrings. They remain
+  only in `PLAN.md`/`LOG.md`. `docs/clients.md` was rewritten as the
+  cross-language **map** that links the Python book instead of duplicating its
+  layer-by-layer detail.
+- **ReadTheDocs**: two `build.commands`-driven configs — repo-root
+  `.readthedocs.yaml` (server book) and `clients/python/.readthedocs.yaml`
+  (Python book) — each fetches a prebuilt mdBook and copies HTML into
+  `$READTHEDOCS_OUTPUT/html`; the Python one also runs pydoc-markdown. Canonical
+  slugs `clausters` / `clausters-python`; cross-links use those RTD URLs. The
+  two RTD projects must still be created on readthedocs.org (each pointing at its
+  config-file path).
+- **Verified**: both books build with no errors/warnings; `python -m compileall`
+  of the package is clean; the generated `api.md` has zero RST roles and zero
+  milestone labels; the one cross-book anchor (`examples.md` ->
+  `schemas.md#midi-standalone-bindings--boot-preset`) still resolves after the
+  heading lost its `(M19)` suffix.

@@ -1,9 +1,9 @@
 """SynthDef: a named UGen graph ready for ``/d_recv`` (port of the ``SynthDef``
 side of ``sc3/synth``, adapted to Clausters' JSON ``SynthDefSpec``).
 
-The UGen-graph counterpart of :class:`~clausters.defs.faustdef.FaustDef`: it
-wraps one or more output :class:`~clausters.defs.ugens.Ugen` nodes (built with
-the lowercase callables in :mod:`clausters.defs.ugens`), walks the graph and
+The UGen-graph counterpart of `FaustDef`: it
+wraps one or more output `Ugen` nodes (built with
+the lowercase callables in `clausters.defs.ugens`), walks the graph and
 serializes the ``{"name", "controls", "ugens"}`` JSON the server compiles.
 
 ```python
@@ -100,7 +100,7 @@ class SynthDef:
 
     def control_names(self) -> list[str]:
         """The control names this def declares, in spec order (parallels
-        :meth:`FaustDef.control_names`)."""
+        `FaustDef.control_names`)."""
         return [c["name"] for c in self.spec()["controls"]]
 
     def __repr__(self):

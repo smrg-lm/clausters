@@ -1,9 +1,9 @@
 """Streams and routines (port of ``sc3/base/stream.py``).
 
-The coroutine layer. A :class:`Routine` wraps a Python **generator function**;
+The coroutine layer. A `Routine` wraps a Python **generator function**;
 driving it resumes the generator, and the value it ``yield``s is a *time to
 wait* (in beats) before the next resumption. The thing that resumes routines on
-a schedule is the clock (:mod:`clausters.base.clock`); here we only define the
+a schedule is the clock (`clausters.base.clock`); here we only define the
 protocol. This is the part that stays in the host language — ``yield`` is
 Python control flow and never moves to Rust (see ``clients/PLAN.md``).
 """
@@ -24,7 +24,7 @@ class YieldAndReset(Exception):
 
 
 class Stream:
-    """A lazy sequence: implements the iterator protocol over :meth:`next`."""
+    """A lazy sequence: implements the iterator protocol over `next`."""
 
     def __iter__(self):
         return self
@@ -43,7 +43,7 @@ class Stream:
 
 
 class FunctionStream(Stream):
-    """Wraps a plain callable: each :meth:`next` calls it with ``inval``."""
+    """Wraps a plain callable: each `next` calls it with ``inval``."""
 
     def __init__(self, func, reset_func=None):
         self.func = func
@@ -66,7 +66,7 @@ class Routine(Stream):
     """Wraps a generator function into a resumable timeline.
 
     The generator may take zero or one positional argument (the initial
-    ``inval``). Each :meth:`next` resumes it; a ``yield``ed number is the delay
+    ``inval``). Each `next` resumes it; a ``yield``ed number is the delay
     before the routine should be resumed again.
 
     **The generator must never block the thread — that is the user's

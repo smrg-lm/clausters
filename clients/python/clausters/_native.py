@@ -4,10 +4,10 @@ Loads ``libclausters_ffi`` (the C ABI over ``clausters-core``, built with
 ``cargo build -p clausters-ffi``) and exposes its builtins, seeded white noise
 and clock/sample conversions to Python. Because the server's native UGens use
 the very same ``clausters-core``, these results match the server by
-construction for the operators it computes natively (C0).
+construction for the operators it computes natively.
 
-Boundary rule (project-wide, same as :mod:`clausters.transport`): only flat
-data crosses — Python floats/ints in, :class:`array.array` ``'f'`` (or a plain
+Boundary rule (project-wide, same as `clausters.transport`): only flat
+data crosses — Python floats/ints in, `array.array` ``'f'`` (or a plain
 float for scalar calls) out. Nothing heavy is imported; a numpy user can wrap
 the returned ``array`` without copying.
 

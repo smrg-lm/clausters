@@ -3,8 +3,7 @@
 Clausters is a server; clients drive it. This chapter is the **cross-language
 map**: the one native contract every client sits on, the Python client built on
 it, and the path to a JavaScript client and to distributable packages. The
-client work and its milestones live in [`clients/PLAN.md`](https://github.com/)
-(the `clients/` tree); this is the architectural overview.
+client work lives in the `clients/` tree; this is the architectural overview.
 
 ## One contract: the C ABI
 
@@ -19,7 +18,7 @@ arrays, NUL-terminated error strings. Never a library type (a numpy array can
 |---|---|---|---|
 | `libclausters_ffi` | `clausters-ffi` over `clausters-core` | the **shared numeric/timing core** | `clausters_core_abi_version`, `clausters_core_unary`/`_binary` (builtins), `clausters_core_whitenoise`, `clausters_core_beats_to_secs`/`_secs_to_samples`/… |
 | `libclausters` | `clausters` (feature `embed`) | the **server as a library** | `clausters_abi_version`, `clausters_render` (offline), `clausters_open`/`_send`/`_poll`/`_clock`/`_ctl_*` (in-process live server) |
-| `libclausters_midi` | `clausters-midi` over `midly`/`midi2`/`midir` | **MIDI I/O** (M17) | `clausters_midi_write_smf` (`.mid`), `clausters_midi_write_clip` (MIDI 2.0 clip), `clausters_midi_free`; with `--features live`: `clausters_midi_output_open`/`_send`/`_close` (virtual port) |
+| `libclausters_midi` | `clausters-midi` over `midly`/`midi2`/`midir` | **MIDI I/O** | `clausters_midi_write_smf` (`.mid`), `clausters_midi_write_clip` (MIDI 2.0 clip), `clausters_midi_free`; with `--features live`: `clausters_midi_output_open`/`_send`/`_close` (virtual port) |
 
 Beside the in-process embed path, the same OSC reaches the server over **UDP**
 or **shared memory** (`--shm`); see [Local transports & embedding](ipc.md). So a
@@ -29,40 +28,21 @@ reach the native core (`libclausters_ffi`) — all language-agnostic.
 Why a shared core at all: the builtins, the seeded white noise and the
 beat/second/sample math are compiled **once** in `clausters-core` and used by
 both the server's UGens and every client, so client-side results match the
-server **by construction** for the operations the server computes natively (see
-the C0 notes in `LOG.md`).
+server **by construction** for the operations the server computes natively.
 
 ## The Python client
 
 `clients/python/` is the reference client, a Faust-first port of
 SuperCollider's class library (sc3). It is **pure Python at runtime**: it
 reaches the core through `ctypes` over `libclausters_ffi`, and speaks ordinary
-OSC bytes to the server (UDP, or shm/embed via the transport module). Layering:
+OSC bytes to the server (UDP, TCP, or shm/embed via the transport module). It
+mirrors the native contract in three layers — `base` (server-agnostic timing
+and values), `seq` (events and patterns) and `defs` (the Faust/UGen definitions
+and the `Server`, whose swappable interface is the live-RT / offline-NRT seam).
 
-- `clausters.base` — server-agnostic timing and value work: `builtins`
-  (scalar/list math via the core), `absobject` (operator overloading), `stream`
-  (`Routine`, the `yield` coroutine layer), `clock` (`TempoClock`, timing only),
-  `timebase` (monotonic or the server's sample clock), the OSC/MIDI destination
-  interfaces, `netaddr`, `main` (a thread-local execution context — **no global
-  state that blocks RT and NRT in one script**).
-- `clausters.seq` — sequencing: `Event`, the value patterns and `Pbind`,
-  `EventStreamPlayer`.
-- `clausters.defs` — the **server side**: `signals` (lowercase callables mapping
-  Faust's Signal API into the JSON graph) + `FaustDef` (`/d_faust`), and their
-  UGen-graph counterpart `ugens` (lowercase callables → `Ugen`/`Control`) +
-  `SynthDef` (`/d_recv`) — both built **instance-based, no global build
-  context**; the `Node`/`Bus`/`Buffer` handles and allocators, and `Server`
-  (owns the communication interface and emits; swapping its interface retargets
-  a routine from live RT to an NRT score — the seam).
-
-What is implemented (C0–C9 through TCP, the UGen `SynthDef`, and the
-cross-language docs + sequencing example; plus C12, the pip-installable wheel —
-see Distribution below) and what is planned (C11 MIDI interfaces — the old C7,
-now a future milestone; see the workspace `PLAN.md` M17 —, C13 responders, the
-JavaScript client in track J, …) is tracked in `clients/PLAN.md`;
-the hands-on guide is `clients/python/GUIA.md`. The destination interfaces include
-`OscUDPInterface` and `OscTCPInterface` (length-prefixed OSC; start the server
-with `--tcp`), both drop-in for the `Server`.
+It has its **own documentation** — a guide and the generated API reference:
+**[the clausters Python client book](https://clausters-python.readthedocs.io/)**.
+<!-- Cross-link to the companion book; update the URL if the Read the Docs slug differs. -->
 
 **This is also the proof the contract is language-agnostic**: Python — a
 non-Rust language — already drives the whole system (core math, offline render,
@@ -81,38 +61,39 @@ same C ABI and the same OSC.
 - **Mirror the layers**: `base`/`seq`/`defs` map across directly. The one
   language-specific piece is the coroutine driver — JS **generators / async**
   instead of Python's `yield`; the clock and the rest are the same value/time
-  logic. Per `clients/PLAN.md`, the client is written so a JS client "shares the
-  same characteristics".
+  logic.
 
 ## Distribution
 
-- **Python (C12, done)**: a platform-tagged **wheel** that bundles the
-  cargo-built cdylibs (`libclausters_ffi`, and `libclausters` with
-  `embed,realtime`) inside the package (`clausters/_libs/`), so an installed
-  package is self-contained — no `target/` directory, no build step at import.
-  The runtime stays stdlib-only; the loaders prefer the bundled copy, falling
-  back to the workspace `target/` in a source checkout. A `setup.py` build hook
-  runs `cargo build` and stages the libraries; `python -m build --wheel
-  clients/python` produces the wheel. See `clients/python/README.md` for the
-  install recipes and the env knobs (`CLAUSTERS_WORKSPACE`,
-  `CLAUSTERS_CARGO_FEATURES`, …). Cross-platform CI wheels (cibuildwheel /
-  manylinux) and a Faust-enabled build are still future work.
+- **Python (done)**: a platform-tagged **wheel** that bundles the cargo-built
+  cdylibs (`libclausters_ffi`, and `libclausters` with `embed,realtime`) inside
+  the package (`clausters/_libs/`), so an installed package is self-contained —
+  no `target/` directory, no build step at import. The runtime stays
+  stdlib-only; the loaders prefer the bundled copy, falling back to the
+  workspace `target/` in a source checkout. A `setup.py` build hook runs `cargo
+  build` and stages the libraries; `python -m build --wheel clients/python`
+  produces the wheel. See the [Python client
+  book](https://clausters-python.readthedocs.io/) for the install recipes and
+  the env knobs (`CLAUSTERS_WORKSPACE`, `CLAUSTERS_CARGO_FEATURES`, …).
+  Cross-platform CI wheels (cibuildwheel / manylinux) and a Faust-enabled build
+  are still future work.
 - **JavaScript (planned)**: an npm package with prebuilt N-API addons per
   platform and a wasm build for the browser.
 - **Reproducible Faust build (planned)**: the `faust` feature needs libfaust
   built with the LLVM backend; for the wasm target and for Faust-enabled
   wheels/npm builds this should be vendored under `third_party/` with documented
-  build steps (a backlog item — see `NOTAS_PARA_CLAUDE` / `clients/PLAN.md`).
-  The current C12 wheel ships the core embed build (no `faust` feature).
+  build steps. The current wheel ships the core embed build (no `faust`
+  feature).
 
 ## Status at a glance
 
 | Piece | State |
 |---|---|
 | Shared core + C ABI (`clausters-core`/`clausters-ffi`) | done |
-| Python client base/seq/defs, incl. UGen `SynthDef` (C0–C8) | done |
-| Cross-language docs + sequencing example (C9) | done |
-| MIDI interfaces (C11, ex-C7 → workspace M17) | planned |
-| Python wheels packaging (C12) | done |
-| JavaScript client + npm (track J) | planned |
+| Python client (`base`/`seq`/`defs`, incl. UGen `SynthDef`) | done |
+| Cross-language docs + sequencing example | done |
+| Python wheels packaging | done |
+| MIDI interfaces in the Python client | planned |
+| Client-side OSC/MIDI responders | planned |
+| JavaScript client + npm | planned |
 | `third_party` Faust build + Faust-enabled wheels | planned |

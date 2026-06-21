@@ -1,17 +1,17 @@
-"""Clausters Python bindings (M14). Standard library only, by design.
+"""Clausters Python bindings. Standard library only, by design.
 
 Two ways in, both speaking ordinary OSC bytes (build them however you like;
 ``examples/json_client.py`` has stdlib helpers):
 
-- :class:`Clausters` — the **embedded** server: loads the cdylib (build it
+- `Clausters` — the **embedded** server: loads the cdylib (build it
   with ``cargo build --release --features embed,realtime``) and runs the
   whole server in-process. Commands are function calls, no network anywhere.
-- :class:`ShmClient` — attaches to a **separate** server started with
+- `ShmClient` — attaches to a **separate** server started with
   ``clausters --shm <path>``: commands/replies travel through a
   shared-memory ring, and the *data plane* (sample clock, control buses) is
   read and written directly in mapped memory.
 
-Plus :func:`render` — the synchronous "scientific" call: hand it a binary
+Plus `render` — the synchronous "scientific" call: hand it a binary
 score, get the interleaved float32 samples back, no server running at all.
 
 Boundary rule (project-wide): only flat data crosses — ``bytes`` in,
@@ -214,7 +214,7 @@ def _find_library() -> str:
 
 def _require(lib: ctypes.CDLL, name: str, feature: str):
     """Fetch an FFI symbol, turning a missing one into a concrete
-    :class:`LibraryFeatureError` that names the symbol and the Cargo feature to
+    `LibraryFeatureError` that names the symbol and the Cargo feature to
     rebuild with — instead of the bare ``AttributeError``/``undefined symbol``
     ctypes raises when the library was built without that feature."""
     try:
@@ -260,7 +260,7 @@ def _load(path: str | None = None) -> ctypes.CDLL:
 
 
 def _bind_live(lib: ctypes.CDLL) -> LibraryFeatureError | None:
-    """Bind the live-server symbols. Returns the :class:`LibraryFeatureError`
+    """Bind the live-server symbols. Returns the `LibraryFeatureError`
     to raise if they are missing (built without `realtime`), else ``None``."""
     try:
         lib.clausters_open.restype = ctypes.c_void_p

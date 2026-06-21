@@ -33,7 +33,7 @@ The OSC encoding/decoding in these scripts is hand-rolled (stdlib only); they do
 
 ## Installed-package examples (`clients/python/examples/`)
 
-These import `clausters` from the **installed package** (no `sys.path` shim, no `target/`), so they show the C12 wheel workflow: `pip install ./clients/python` then run from anywhere. See the [client README](clients.md#distribution).
+These import `clausters` from the **installed package** (no `sys.path` shim, no `target/`), so they show the wheel workflow: `pip install ./clients/python` then run from anywhere. See the [client README](clients.md#distribution).
 
 | script | what it shows |
 |---|---|
@@ -45,7 +45,7 @@ These import `clausters` from the **installed package** (no `sys.path` shim, no 
 | script | what it shows |
 |---|---|
 | `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs the `faust` feature and `oscsend`. |
-| `midi_standalone.sh` | [MIDI-standalone (M19)](schemas.md#midi-standalone-bindings--boot-preset-m19): set up a SynthDef + a GraphDef + a `/midi_bind` once, quit, then restart with `--midi` and the binding is **back with no OSC** — play it from a controller via `aconnect`. Needs `oscsend`. |
+| `midi_standalone.sh` | [MIDI-standalone](schemas.md#midi-standalone-bindings--boot-preset): set up a SynthDef + a GraphDef + a `/midi_bind` once, quit, then restart with `--midi` and the binding is **back with no OSC** — play it from a controller via `aconnect`. Needs `oscsend`. |
 
 ## Python binding (`clients/python/clausters/transport.py`)
 
