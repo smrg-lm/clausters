@@ -552,3 +552,51 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | M17 s1 | `Pbind` → `.mid` / clip MIDI 2.0 (`MidiServer` + crate) | sección 5 (export MIDI), `tests/test_midi.py`, `examples/midi_file.py` |
 | M17 s2 | salida MIDI en vivo por puerto del SO (`MidiRtInterface`, `--features live`) | sección 5 (salida en vivo), `examples/midi_live.py`, smoke en `tests/test_midi.py` |
 | M18 | `GraphDef` builder (`/d_graph`) + `server.graph` (`/graph_new`); superficie nombrada | sección 4 (GraphDef), `tests/test_graphdef.py`, `examples/graphdef.py` / `group_set.py` |
+| C12 | wheel pip-instalable que empaqueta los cdylibs; venv autocontenido | sección 8 |
+
+## 8. Empaquetado e instalación (C12)
+
+El paquete es Python puro en runtime, pero alcanza Rust por dos cdylibs que
+**cargo** construye (`libclausters_ffi` y `libclausters` con `embed,realtime`).
+C12 los **empaqueta dentro del wheel**, así un paquete instalado es
+autocontenido: no necesita el directorio `target/` ni reconstruir nada al
+importar. Esto sirve también para instalar desde este repo y correr pruebas
+autocontenidas en un venv de forma simple y estándar.
+
+Instalación recomendada en un venv nuevo (corré desde el repo, así el hook de
+build encuentra el workspace de cargo):
+
+```sh
+python -m venv .venv && . .venv/bin/activate
+pip install -e ./clients/python --group dev     # editable + grupo dev (pytest)
+# o instalación normal:
+pip install ./clients/python
+```
+
+`pip install` dispara `setup.py`, que corre `cargo build` para los dos cdylibs y
+los deja en `clausters/_libs/` antes de empaquetarlos. Para construir un wheel
+redistribuible:
+
+```sh
+python -m build --wheel clients/python          # -> clients/python/dist/*.whl
+pip install clients/python/dist/clausters-*.whl # autocontenido, sin cargo
+```
+
+Para verificar que quedó autocontenido, importá y renderizá **desde otro
+directorio** (sin `target/` a la vista):
+
+```sh
+cd /tmp
+python -c "import clausters; print(clausters.__file__)"
+python /ruta/al/repo/clients/python/examples/offline_render.py /tmp/c12.wav
+```
+
+Perillas (variables de entorno), todas opcionales: `CLAUSTERS_WORKSPACE` (ruta
+al workspace si no se encuentra subiendo directorios), `CLAUSTERS_CARGO_FEATURES`
+(features del lib embed, por defecto `embed,realtime`),
+`CLAUSTERS_SKIP_NATIVE_BUILD` (empaquetar lo ya staged sin recompilar),
+`CLAUSTERS_FFI_LIB`/`CLAUSTERS_LIB` (en runtime, apuntar un loader a un cdylib
+concreto). Para stagear los libs a mano: `python clients/python/build_native.py`.
+
+En un checkout sin instalar, los loaders caen al `target/{release,debug}/` del
+workspace, así que el flujo histórico de compilar-y-correr sigue igual.

@@ -20,7 +20,12 @@ import os
 from array import array
 from enum import IntEnum
 
+from . import _libpath
+
 CORE_ABI_VERSION = 1
+
+# cdylib file names across platforms (Linux / macOS / Windows).
+_FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
 
 
 class BinaryOp(IntEnum):
@@ -77,18 +82,17 @@ _LIB = None
 
 
 def _find_library() -> str:
+    # Precedence (see _libpath): env override, the bundled wheel copy, then the
+    # workspace target/ of a source checkout.
     candidates = [os.environ.get("CLAUSTERS_FFI_LIB")]
-    here = os.path.dirname(os.path.abspath(__file__))
-    # clients/python/clausters/_native.py -> repo root is three levels up.
-    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    for profile in ("release", "debug"):
-        for name in ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll"):
-            candidates.append(os.path.join(root, "target", profile, name))
+    candidates += _libpath.bundled_candidates(_FFI_NAMES)
+    candidates += _libpath.workspace_candidates(_FFI_NAMES)
     for c in candidates:
         if c and os.path.exists(c):
             return c
     raise OSError(
-        "libclausters_ffi not found: build it with "
+        "libclausters_ffi not found: install the wheel (it bundles the "
+        "library) or, in a source checkout, build it with "
         "`cargo build -p clausters-ffi` (add --release for the release dir) "
         "or point CLAUSTERS_FFI_LIB at it"
     )

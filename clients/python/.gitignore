@@ -1,0 +1,10 @@
+# Native cdylibs staged into the package by build_native.py / setup.py.
+clausters/_libs/
+
+# Packaging / build artifacts.
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+__pycache__/
+*.pyc

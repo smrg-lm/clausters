@@ -2524,3 +2524,43 @@ memory directly, not only through an audio bus.
   `examples/json_client.py soundfile` (load a WAV into buffer 5, loop it from a
   Faust def). **Docs**: `schemas.md` (rewrote the soundfile note), `GUIA.md` (F6
   section, replacing the old "no soundfile" note), `architecture.md`.
+
+## C12 — Python client packaging: pip-installable wheels (2026-06-21)
+
+The `clausters` Python package is now pip-installable as a self-contained,
+platform-tagged **wheel** that bundles the two cargo-built cdylibs, so an
+installed package needs no `target/` directory and no build step at import. This
+also makes the standard "install from the repo into a venv and run self-contained
+tests/examples" workflow trivial.
+
+- **Staging** (`clients/python/build_native.py`): finds the cargo workspace
+  (upward search or `CLAUSTERS_WORKSPACE`), runs `cargo build -p clausters-ffi`
+  and `cargo build -p clausters --features embed,realtime` (features overridable
+  via `CLAUSTERS_CARGO_FEATURES`; `--debug`/`CLAUSTERS_CARGO_PROFILE` for the
+  profile), and copies the resulting `lib*.{so,dylib,dll}` into
+  `clausters/_libs/`. Runnable standalone, and imported by `setup.py`.
+- **Build hook** (`clients/python/setup.py`): a `build_py` subclass stages the
+  cdylibs before collecting package files (with `allow_skip` so an isolated build
+  of a pre-staged tree still works); a `bdist_wheel` subclass forces a
+  non-pure, `py3-none-<plat>`-tagged wheel (the code is pure Python + ctypes, so
+  it is platform- but not Python-version-specific). `pyproject.toml` adds `wheel`
+  to the build requires and `clausters/_libs/*.{so,dylib,dll}` as package data.
+- **Loader precedence** (`clients/python/clausters/_libpath.py`, shared by
+  `_native.py` and `transport.py`): env override (`CLAUSTERS_FFI_LIB` /
+  `CLAUSTERS_LIB`) -> the bundled `clausters/_libs/` (wheel / editable) -> the
+  workspace `target/{release,debug}/` (source checkout). The source-checkout
+  fallback keeps the historic build-and-run flow working unchanged.
+- **`.gitignore`** for `clients/python` (`clausters/_libs/`, `build/`, `dist/`,
+  `*.egg-info/`, caches): the staged cdylibs and packaging artifacts stay
+  untracked.
+- **Examples** (`clients/python/examples/`, the deferred split from the
+  2026-06-18 decision): installed-package examples with the `sys.path` shim
+  dropped — `offline_render.py` (fully self-contained NRT render to WAV, no
+  server/device) and `live_udp.py` (the same `Pbind` live over UDP to a running
+  server), plus a `README.md`. The repo-root `examples/` stays the broad catalog.
+- **Verified**: `python -m build --wheel` produces
+  `clausters-0.1.0-py3-none-linux_x86_64.whl` bundling both `.so`s; installed
+  into a fresh venv it imports and renders from an unrelated CWD (no `target/`).
+  `pip install -e . --group dev` + `pytest` -> 77 passed, 1 skipped.
+- **Docs**: `clients/python/README.md` (the install/wheel section), `GUIA.md`
+  (C12 row), `docs/clients.md` and `docs/using-as-a-library.md` (packaging).

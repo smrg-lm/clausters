@@ -55,10 +55,11 @@ OSC bytes to the server (UDP, or shm/embed via the transport module). Layering:
   (owns the communication interface and emits; swapping its interface retargets
   a routine from live RT to an NRT score — the seam).
 
-What is implemented (C0–C9: through TCP, the UGen `SynthDef`, and the
-cross-language docs + sequencing example) and what is planned (C11 MIDI
-interfaces — the old C7, now a future milestone; see the workspace `PLAN.md`
-M17 —, the JavaScript client in track J, …) is tracked in `clients/PLAN.md`;
+What is implemented (C0–C9 through TCP, the UGen `SynthDef`, and the
+cross-language docs + sequencing example; plus C12, the pip-installable wheel —
+see Distribution below) and what is planned (C11 MIDI interfaces — the old C7,
+now a future milestone; see the workspace `PLAN.md` M17 —, C13 responders, the
+JavaScript client in track J, …) is tracked in `clients/PLAN.md`;
 the hands-on guide is `clients/python/GUIA.md`. The destination interfaces include
 `OscUDPInterface` and `OscTCPInterface` (length-prefixed OSC; start the server
 with `--tcp`), both drop-in for the `Server`.
@@ -83,18 +84,26 @@ same C ABI and the same OSC.
   logic. Per `clients/PLAN.md`, the client is written so a JS client "shares the
   same characteristics".
 
-## Distribution (planned)
+## Distribution
 
-- **Python**: a wheel that bundles the prebuilt cdylibs (`libclausters_ffi`,
-  and `libclausters` with `embed`) per platform; the package stays stdlib-only,
-  locating the libraries it ships. (`pyproject.toml` already declares the
-  package and the `dev` dependency group.)
-- **JavaScript**: an npm package with prebuilt N-API addons per platform and a
-  wasm build for the browser.
-- **Reproducible Faust build**: the `faust` feature needs libfaust built with
-  the LLVM backend; for the wasm target and for reproducible wheels/npm builds
-  this should be vendored under `third_party/` with documented build steps
-  (a backlog item — see `NOTAS_PARA_CLAUDE` / `clients/PLAN.md`).
+- **Python (C12, done)**: a platform-tagged **wheel** that bundles the
+  cargo-built cdylibs (`libclausters_ffi`, and `libclausters` with
+  `embed,realtime`) inside the package (`clausters/_libs/`), so an installed
+  package is self-contained — no `target/` directory, no build step at import.
+  The runtime stays stdlib-only; the loaders prefer the bundled copy, falling
+  back to the workspace `target/` in a source checkout. A `setup.py` build hook
+  runs `cargo build` and stages the libraries; `python -m build --wheel
+  clients/python` produces the wheel. See `clients/python/README.md` for the
+  install recipes and the env knobs (`CLAUSTERS_WORKSPACE`,
+  `CLAUSTERS_CARGO_FEATURES`, …). Cross-platform CI wheels (cibuildwheel /
+  manylinux) and a Faust-enabled build are still future work.
+- **JavaScript (planned)**: an npm package with prebuilt N-API addons per
+  platform and a wasm build for the browser.
+- **Reproducible Faust build (planned)**: the `faust` feature needs libfaust
+  built with the LLVM backend; for the wasm target and for Faust-enabled
+  wheels/npm builds this should be vendored under `third_party/` with documented
+  build steps (a backlog item — see `NOTAS_PARA_CLAUDE` / `clients/PLAN.md`).
+  The current C12 wheel ships the core embed build (no `faust` feature).
 
 ## Status at a glance
 
@@ -104,5 +113,6 @@ same C ABI and the same OSC.
 | Python client base/seq/defs, incl. UGen `SynthDef` (C0–C8) | done |
 | Cross-language docs + sequencing example (C9) | done |
 | MIDI interfaces (C11, ex-C7 → workspace M17) | planned |
+| Python wheels packaging (C12) | done |
 | JavaScript client + npm (track J) | planned |
-| Python wheels packaging (C12), `third_party` Faust | planned |
+| `third_party` Faust build + Faust-enabled wheels | planned |

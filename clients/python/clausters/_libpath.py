@@ -1,0 +1,39 @@
+"""Where the native cdylibs live, preferring the copies bundled in the wheel.
+
+The package is pure Python at runtime but reaches the Rust core through two
+cdylibs (``clausters-ffi`` for :mod:`clausters._native`, and the ``clausters``
+crate built with ``embed,realtime`` for :mod:`clausters.transport`). A built
+**wheel** ships those cdylibs *inside* the package, under ``clausters/_libs/``,
+so an installed package is self-contained -- ``pip install`` then ``import
+clausters`` just works, no ``cargo`` and no ``target/`` directory needed.
+
+In a plain source checkout that ``_libs/`` directory is absent and the loaders
+fall back to the workspace's ``target/{release,debug}/`` (the developer build).
+Both loaders share the same precedence, defined here:
+
+1. an explicit override env var (``CLAUSTERS_FFI_LIB`` / ``CLAUSTERS_LIB``),
+2. the bundled ``clausters/_libs/`` (a wheel / editable install),
+3. the workspace ``target/{release,debug}/`` (a source checkout with cargo).
+"""
+
+import os
+
+_PKG_DIR = os.path.dirname(os.path.abspath(__file__))
+#: The directory a built wheel stages the cdylibs into (may not exist).
+LIBS_DIR = os.path.join(_PKG_DIR, "_libs")
+
+
+def bundled_candidates(names) -> list[str]:
+    """Absolute paths for ``names`` inside the bundled ``_libs/`` directory."""
+    return [os.path.join(LIBS_DIR, n) for n in names]
+
+
+def workspace_candidates(names) -> list[str]:
+    """Absolute paths for ``names`` under the workspace ``target/{release,debug}/``.
+
+    ``clients/python/clausters/`` -> the repo root is three levels up."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(_PKG_DIR)))
+    out = []
+    for profile in ("release", "debug"):
+        out += [os.path.join(root, "target", profile, n) for n in names]
+    return out

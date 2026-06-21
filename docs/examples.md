@@ -31,6 +31,15 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 
 The OSC encoding/decoding in these scripts is hand-rolled (stdlib only); they double as a compact reference for the wire format.
 
+## Installed-package examples (`clients/python/examples/`)
+
+These import `clausters` from the **installed package** (no `sys.path` shim, no `target/`), so they show the C12 wheel workflow: `pip install ./clients/python` then run from anywhere. See the [client README](clients.md#distribution).
+
+| script | what it shows |
+|---|---|
+| `offline_render.py` | Fully self-contained: a `Session.nrt` `Pbind` rendered to a WAV through the **bundled** embed renderer — no server, no audio device, no source checkout. |
+| `live_udp.py` | The same pattern live over UDP to a running server (`Session.live`), proving the offline/live seam from an installed package. |
+
 ## Shell
 
 | script | what it shows |

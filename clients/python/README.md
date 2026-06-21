@@ -5,8 +5,8 @@ ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)), **Faust-first**. Built in milestones;
 see [`../PLAN.md`](../PLAN.md).
 
-Milestones C0–C9 are done (the JavaScript client and the wheels/npm packaging
-are the remaining tracks). In place now:
+Milestones C0–C12 are done (C13 responders and the JavaScript client are the
+remaining tracks). In place now:
 
 - `clausters.transport` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
@@ -41,23 +41,64 @@ are the remaining tracks). In place now:
   offline NRT one for plots next to a live RT one) in the same script.
 
 See [`GUIA.md`](GUIA.md) for a hands-on, milestone-by-
-milestone manual test guide (Spanish).
+milestone manual test guide (Spanish). Runnable, installed-package examples are
+in [`examples/`](examples/) (the broader catalog is the repo-root
+[`examples/`](../../examples/)).
 
-## Building the native libraries
+## Installing (C12 — pip / wheels)
 
 The package is pure Python at runtime but reaches Rust through two cdylibs that
-**cargo** builds (not pip), found automatically under the workspace
-`target/{release,debug}/`:
+**cargo** builds (`libclausters_ffi` for the numeric core, `libclausters` built
+with `embed,realtime` for the embedded server / offline render). The packaging
+**bundles** them inside the wheel, so an installed package is self-contained —
+no `target/` directory, no separate build step at import time.
+
+The simplest, standard, self-contained setup in a fresh venv (run from the repo,
+so the build hook can find the cargo workspace):
 
 ```sh
-# from the repo root
-cargo build -p clausters-ffi                      # libclausters_ffi (the core: _native)
-cargo build --features embed,realtime             # libclausters    (transport: render/Clausters)
+python -m venv .venv && . .venv/bin/activate
+pip install -e ./clients/python --group dev      # editable + the pytest dev group
+# or a plain install:
+pip install ./clients/python
 ```
 
-Override the locations with `CLAUSTERS_FFI_LIB` / `CLAUSTERS_LIB` if needed.
+`pip install` triggers `setup.py`, which runs `cargo build` for both cdylibs and
+stages them in `clausters/_libs/` before packaging them into the wheel. Building
+a redistributable wheel explicitly:
 
-## Running the smoke tests
+```sh
+python -m build --wheel clients/python           # -> clients/python/dist/*.whl
+pip install clients/python/dist/clausters-*.whl  # self-contained, no cargo
+```
+
+Knobs (env vars), all optional:
+
+- `CLAUSTERS_WORKSPACE` — path to the cargo workspace, if it can't be found by
+  searching upward (e.g. an isolated build of a copied tree).
+- `CLAUSTERS_CARGO_FEATURES` — features for the embed library (default
+  `embed,realtime`).
+- `CLAUSTERS_SKIP_NATIVE_BUILD` — package the libs already staged in
+  `clausters/_libs/` without rebuilding.
+- `CLAUSTERS_FFI_LIB` / `CLAUSTERS_LIB` — at runtime, point a loader directly at
+  a cdylib (overrides the bundled copy and the workspace `target/`).
+
+In a plain source checkout (no install), the loaders fall back to the workspace
+`target/{release,debug}/`, so the historic build-and-run workflow still works:
+
+```sh
+cargo build -p clausters-ffi
+cargo build --features embed,realtime
+```
+
+You can also stage the native libs by hand (e.g. before a `pip install` that
+won't reach the workspace) with the standalone script:
+
+```sh
+python clients/python/build_native.py            # release; --debug for the debug profile
+```
+
+## Running the tests
 
 ```sh
 cd clients/python

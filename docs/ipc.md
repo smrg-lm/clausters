@@ -78,3 +78,5 @@ samples, frames = render(score_bytes)   # sync offline render
 ```
 
 Demos: `examples/shm_client.py` (attach, watch the clock, fade a synth by writing a control bus in shared memory) and `examples/embed_render.py` (render a score synchronously and write a WAV). Pure-Python caveat: the ring cursors rely on aligned 32-bit accesses being effectively atomic (true on x86-64/aarch64); the Rust sides use real atomics.
+
+The binding loads the cdylibs by this precedence: the `CLAUSTERS_LIB` / `CLAUSTERS_FFI_LIB` env override, then the copies **bundled in the wheel** (`clausters/_libs/`, staged at build time — milestone C12), then the workspace `target/{release,debug}/` of a source checkout. So an installed `pip` wheel is self-contained (no `target/` needed), while a plain checkout still works after `cargo build`. Packaging details and install recipes are in `clients/python/README.md` and [the clients chapter](clients.md#distribution).

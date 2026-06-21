@@ -30,6 +30,7 @@ import struct
 import time
 from array import array
 
+from . import _libpath
 from .errors import (
     AbiMismatchError,
     CommandRingFull,
@@ -42,6 +43,9 @@ from .errors import (
 )
 
 ABI_VERSION = 2
+
+# embed cdylib file names across platforms (Linux / macOS / Windows).
+_EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
 
 # ---- segment layout (must match src/server/ipc.rs; pinned by tests) ----
 # Fixed prefix: the header, then the c2s and s2c rings. The control-bus array
@@ -192,18 +196,17 @@ class ShmClient:
 
 
 def _find_library() -> str:
+    # Precedence (see _libpath): env override, the bundled wheel copy, then the
+    # workspace target/ of a source checkout.
     candidates = [os.environ.get("CLAUSTERS_LIB")]
-    here = os.path.dirname(os.path.abspath(__file__))
-    # clients/python/clausters/transport.py -> repo root is three levels up.
-    root = os.path.dirname(os.path.dirname(os.path.dirname(here)))
-    for profile in ("release", "debug"):
-        candidates.append(os.path.join(root, "target", profile, "libclausters.so"))
-        candidates.append(os.path.join(root, "target", profile, "libclausters.dylib"))
+    candidates += _libpath.bundled_candidates(_EMBED_NAMES)
+    candidates += _libpath.workspace_candidates(_EMBED_NAMES)
     for c in candidates:
         if c and os.path.exists(c):
             return c
     raise LibraryNotFoundError(
-        "libclausters not found: build it with "
+        "libclausters not found: install the wheel (it bundles the library) "
+        "or, in a source checkout, build it with "
         "`cargo build --release --features embed,realtime` "
         "or point CLAUSTERS_LIB at it"
     )
