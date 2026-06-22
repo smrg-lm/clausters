@@ -438,8 +438,9 @@ fn bundle_contents_execute() {
     server.quit();
 }
 
-/// M8: `/clock` exposes the engine's sample counter and the actual sample
-/// rate, the two numbers a client needs to anchor its clock model.
+/// M8/M21: `/clock` exposes the engine's sample counter, the actual sample
+/// rate and the server's OSC/NTP time captured with the counter — the anchor a
+/// client needs to place its clock on the server's sample axis.
 #[test]
 fn clock_reports_the_engine_sample_counter() {
     let mut server = TestServer::spawn();
@@ -448,6 +449,22 @@ fn clock_reports_the_engine_sample_counter() {
     let reply = server.recv_until("/clock.reply");
     assert_eq!(reply.args[0], OscType::Long(0), "fresh engine starts at 0");
     assert_eq!(reply.args[1], OscType::Double(48_000.0));
+    // The third field is the master-clock anchor: the server's OSC time, which
+    // must be within a few seconds of the test's own wall clock.
+    match reply.args[2] {
+        OscType::Time(t) => {
+            let secs = t.seconds as f64 - 2_208_988_800.0 + t.fractional as f64 / 2f64.powi(32);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64();
+            assert!(
+                (secs - now).abs() < 5.0,
+                "osc_time {secs} not near now {now}"
+            );
+        }
+        ref other => panic!("expected an OSC timetag as the third arg, got {other:?}"),
+    }
 
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
     for _ in 0..10 {

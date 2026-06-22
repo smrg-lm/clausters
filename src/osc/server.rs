@@ -749,16 +749,23 @@ impl OscServer {
     }
 
     /// M8: the sample-clock query. Replies `/clock.reply` with the engine's
-    /// sample counter (int64 `h`) and the actual sample rate (double `d`).
-    /// Clients pair the reply with their local monotonic clock to model
-    /// `sample(t_local) = a + b·t` and then schedule with [`/sched`]
-    /// (`Self::handle_sched`) directly in samples — see
-    /// `docs/sample-clock.md`. The counter counts *processed* samples: it
-    /// runs a device buffer ahead of the speakers and pauses on xruns.
+    /// sample counter (int64 `h`), the actual sample rate (double `d`) and the
+    /// server's OSC/NTP time captured with the counter (timetag `t`). The
+    /// `(osc_time, sample)` pair is the master-clock **anchor**: a client maps
+    /// its logical OSC time `T` to this server's sample axis with
+    /// `S0 + (T − T0)·rate` and schedules with [`/sched`] (`Self::handle_sched`)
+    /// directly in samples — see `docs/sample-clock.md`. Clients that only want
+    /// the older two-field form ignore the trailing timetag. The counter counts
+    /// *processed* samples: it runs a device buffer ahead of the speakers and
+    /// pauses on xruns.
     fn handle_clock(&mut self, from: ClientId) {
+        // Read the counter and the wall clock back-to-back so the published
+        // anchor pairs the same instant (the sub-microsecond gap is negligible).
+        let sample = self.handle.current_samples();
         let args = vec![
-            OscType::Long(self.handle.current_samples() as i64),
+            OscType::Long(sample as i64),
             OscType::Double(self.info.actual_sample_rate),
+            OscType::Time(now_ntp()),
         ];
         self.reply(from, "/clock.reply", args);
     }
@@ -1156,6 +1163,24 @@ fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
 
 /// Seconds between the NTP epoch (1900) and the Unix epoch (1970).
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
+
+/// The current wall-clock instant as an OSC/NTP timetag (seconds since 1900 in
+/// a 32-bit count, plus a 32-bit binary fraction) — the inverse of the NTP→Unix
+/// math in [`timetag_delta_secs`]. Published alongside the sample counter in
+/// `/clock.reply` so a client gets the anchor `(osc_time, sample)` it needs to
+/// place its logical OSC time on this server's sample axis.
+fn now_ntp() -> OscTime {
+    let unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64();
+    let ntp = unix + NTP_UNIX_OFFSET;
+    let seconds = ntp.trunc();
+    OscTime {
+        seconds: seconds as u32,
+        fractional: ((ntp - seconds) * 2f64.powi(32)) as u32,
+    }
+}
 
 /// Seconds from now until the timetag fires. `None` is the OSC
 /// "immediately" tag (seconds 0, fractional 1 — rosc keeps it verbatim).

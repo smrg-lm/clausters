@@ -277,6 +277,35 @@ for _ in range(3):
 "
 ```
 
+### Verificar el ancla de tiempo OSC en /clock.reply (M21)
+
+M21 agrega un **tercer campo** a `/clock.reply`: el **tiempo OSC** del servidor
+tomado junto con el contador de samples. El par `(tiempo OSC, sample)` es el
+**ancla** del reloj maestro — deja que varios clientes mapeen su tiempo OSC
+logico al eje de samples del servidor (`sample = S0 + (T - T0) * rate`).
+Compatible hacia atras: los clientes que solo leen `(sample, rate)` ignoran el
+timetag final.
+
+A mano, confirmar que la respuesta ahora trae 3 argumentos y que el tercero cae
+cerca de la hora actual del sistema:
+
+```sh
+cargo run --release                      # terminal 1
+python3 -c "
+import sys, time; sys.path.insert(0, 'examples')
+import json_client as osc
+c = osc.Client()
+c.send('/clock'); addr, args = c.reply(quiet=True)
+print('args:', args)                     # [samples, rate, tiempo_OSC_en_segundos_unix]
+print('campos:', len(args))              # 3
+print('delta vs reloj local:', args[2] - time.time(), 's')  # cerca de 0
+"                                        # terminal 2
+```
+
+Debe imprimir 3 campos; el tercero (tiempo OSC, ya convertido a segundos Unix
+por el decoder del ejemplo) debe diferir de `time.time()` en una fraccion de
+segundo.
+
 La columna `x real time` es el headroom: con N synths, cuántas veces más
 rápido que 48 kHz procesa. En esta máquina ≈1800 voces sinusoidales.
 

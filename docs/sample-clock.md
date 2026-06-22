@@ -13,11 +13,11 @@ Inverting the relationship removes the problem at the root: the client asks the 
 Two messages, coexisting with the NTP path (both feed the same engine queue — NTP-scheduling clients and sample-scheduling clients can talk to the same server simultaneously):
 
 ```text
-/clock                    →  /clock.reply  h <samples>  d <sampleRate>
+/clock                    →  /clock.reply  h <samples>  d <sampleRate>  t <oscTime>
 /sched  h <target> b <packet>
 ```
 
-- **`/clock`** replies with the engine's sample counter (int64 `h`: samples processed since the server started) and the actual device sample rate (double). The counter is the same clock NTP bundles are converted to.
+- **`/clock`** replies with the engine's sample counter (int64 `h`: samples processed since the server started), the actual device sample rate (double `d`) and the server's OSC/NTP time captured together with the counter (timetag `t`). The counter is the same clock NTP bundles are converted to. The `(oscTime, samples)` pair is an **anchor**: it ties the server's sample axis to OSC time at one instant, so a client can convert a logical OSC time `T` to a sample with `sample ≈ samples + (T − oscTime)·rate` and place events on the server's clock without first modelling the counter against its own local clock — the basis for one server acting as a **master clock** for several clients sharing one drift-free sample axis. Clients that only need the older two-field form ignore the trailing timetag.
 - **`/sched`** schedules a complete OSC packet (the blob) to execute **atomically at the absolute sample `target`** — sample-accurately, the engine splits the processing block at that exact frame, like a timed bundle. The blob may be a single message or a bundle; **all its leaf messages fire at the target** and any timetags inside the blob are ignored: one `/sched` is one instant. The schedulable command set is the same as for timed bundles (`/s_new`, `/n_set`, `/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`); anything else replies `/fail` naming the offending message. Past targets execute at the start of the next block, like late NTP bundles. An `i` (int32) target is tolerated for hand-written clients, but real targets outgrow int32 in under 13 hours at 48 kHz — use `h`.
 
 Why a container message instead of a special timetag: the OSC bundle timetag is NTP-formatted *by specification*, so reinterpreting it would silently break every standard client. `/sched` keeps the two timebases explicit and per-event.

@@ -108,6 +108,9 @@ def decode(packet: bytes) -> tuple[str, list]:
             args.append(struct.unpack(">f", rest[:4])[0]); rest = rest[4:]
         elif t == "d":
             args.append(struct.unpack(">d", rest[:8])[0]); rest = rest[8:]
+        elif t == "t":  # OSC timetag (NTP): decode to Unix seconds
+            secs, frac = struct.unpack(">II", rest[:8]); rest = rest[8:]
+            args.append(secs - 2_208_988_800 + frac / 2 ** 32)
         elif t == "s":
             s, rest = _read_string(rest); args.append(s)
         elif t == "b":
