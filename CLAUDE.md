@@ -35,7 +35,7 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   counts in `GUIA.md`, and a commented/explained example in `examples/`
   when the feature is user-facing — not just code and LOG.md.
 - Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
-  ugen-dsp, audio-testing, faust-embedding, clausters-python).
+  ugen-dsp, audio-testing, faust-embedding, clausters-python, documentation).
 
 ## Language conventions
 
