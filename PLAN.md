@@ -20,12 +20,12 @@ set parameters, manage buses and buffers, all with sample-accurate scheduling.
 ## Thread architecture
 
 ```
-┌─────────────┐  OSC/UDP   ┌──────────────┐  SPSC cmd FIFO  ┌──────────────┐
+┌─────────────┐  OSC/UDP   ┌───────────────┐  SPSC cmd FIFO  ┌──────────────┐
 │ OSC client  │ ─────────> │ Network thread│ ──────────────> │ Audio thread │
-│ (sclang,    │ <───────── │ (parse OSC,  │ <────────────── │ (cpal        │
-│  TouchOSC…) │  replies   │  alloc       │  SPSC garbage/  │  callback,   │
-└─────────────┘            │  pre-built)  │  reply FIFO     │  DSP)        │
-                           └──────┬───────┘                 └──────────────┘
+│             │ <───────── │ (parse OSC,   │ <────────────── │ (cpal        │
+└─────────────┘  replies   │  alloc        │  SPSC garbage/  │  callback,   │
+                           │  pre-built)   │  reply FIFO     │  DSP)        │
+                           └──────┬────────┘                 └──────────────┘
                                   │ slow tasks (disk, decode)
                            ┌──────▼───────┐
                            │ NRT thread   │  (loading files into buffers, etc.)
@@ -236,18 +236,22 @@ clients in any language only generate JSON, without depending on our UGen set.
   competing with buffers), Faust's interpreter backend (no LLVM) for platforms
   without JIT — it makes real sense with the M14 wasm target — and the Signal API
   as a low-level variant (low priority: the Box API has covered every case so
-  far). **Dropped**: `soundfile` — it duplicates the buffer system: a
-  `PlayBuf`/`BufRd` writing to a bus feeds any Faust node via its `in` control,
-  without copying data into the Faust world (document the pattern in
-  `docs/schemas.md`); and Faust's native polyphony — the node tree is already
+  far). **Dropped**: Faust's native polyphony — the node tree is already
   the voice allocator (one voice = one `/s_new`, instances share a factory) and
   the polyphonic mode imposes MIDI conventions (`freq`/`gain`/`gate`) alien to
   the scsynth model; the only real use case would be porting existing
-  polyphonic Faust DSP untouched, marginal here.
+  polyphonic Faust DSP untouched, marginal here. **`soundfile` — initially
+  dropped, decision reversed (2026-06-20)**: it was first deemed a duplicate of
+  the buffer system (a `PlayBuf`/`BufRd` writing to a bus already feeds any Faust
+  node via its `in` control), but the direct bridge proved worth having — Faust's
+  `soundfile("<bufnum>", n)` now reads the server buffer named by its integer
+  label as a snapshot at `/s_new`, alongside the bus-routing pattern (documented
+  in `docs/schemas.md`).
   *(Completed 2026-06-12 — see LOG.md. Ops `waveform`/`rdtable`/`rwtable`
   in the schema, `wavetable` demo in the Python client, the
   buffers-as-signal pattern documented in `docs/schemas.md`; interpreter backend
-  and Signal API stay part of the M14 wasm target.)*
+  and Signal API stay part of the M14 wasm target. The `soundfile` bridge landed
+  later, 2026-06-20, reversing the original drop — see LOG.md.)*
 
 ### Implementation foresight
 
@@ -606,9 +610,11 @@ as loose items when needed.
 - **Denormals** (from the memory/efficiency idea): already implemented post-M7
   (`dsp::denormals::flush_to_zero()` + `-ftz 2` + `tests/denormals.rs`);
   only the skill/documentation part was missing, absorbed by M10.
-- **Original F5**: `soundfile` and Faust's native polyphony dropped with
-  the rationale in F5 itself (above); `waveform`, interpreter backend and
-  Signal API are kept, with the interpreter tied to the M14 wasm target.
+- **Original F5**: Faust's native polyphony dropped with the rationale in F5
+  itself (above); `waveform`, interpreter backend and Signal API are kept, with
+  the interpreter tied to the M14 wasm target. (`soundfile` was also dropped
+  originally, but the decision was reversed on 2026-06-20 — it now reads server
+  buffers directly; see F5.)
 - **Faust UI**: the implementation is considered correct — using Faust's labels
   as control names is deliberate (the author of the def picks the names, as in
   the UGen JSON) —; what was pending was documenting the rationale (M9) and the
