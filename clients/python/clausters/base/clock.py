@@ -35,6 +35,35 @@ from .timebase import MonotonicTimebase
 
 
 class TempoClock:
+    """A scheduler that keeps musical time in beats and resumes routines on it.
+
+    A clock has a `tempo` (beats per second) and a queue of scheduled items --
+    routines and one-shot callables. Two drives share that queue:
+
+    - real time (`start` / `run`): a background thread sleeps between items,
+      pacing against the `timebase`, and fires them live.
+    - non-real time (`render`): the queue is drained in beat order with no
+      sleeping, advancing a logical clock as fast as possible -- used to build
+      a score offline.
+
+    The defining property is that the **logical beat advances only by the
+    routines' ``yield``s**, never by wall-clock drift: a routine that yields
+    ``0.25`` is resumed exactly a quarter-beat later, whichever drive is running
+    and whatever the OS scheduler does. That is what makes inter-event timing
+    exact -- and, with a `SampleClockTimebase`, sample-accurate.
+
+    The clock does not talk to the server. It only schedules and reports time
+    (`beats`, `beats2secs`, `start_time`); a `Server` reads the clock of the
+    routine it is resuming and emits from there. Choosing where events go (real
+    time, offline, MIDI) is the Server's job, not the clock's.
+
+    Args:
+        tempo: beats per second.
+        timebase: the pacing source -- the default monotonic clock, or a
+            `SampleClockTimebase` to anchor pacing and scheduling to the
+            server's own sample clock.
+    """
+
     def __init__(self, tempo: float = 1.0, timebase=None):
         #: beats per second
         self.tempo = tempo
@@ -62,9 +91,13 @@ class TempoClock:
     # ---- beat/second math (native) ----
 
     def beats2secs(self, beats: float) -> float:
+        """Convert a beat position to seconds under the current tempo (computed
+        in the native core, so it matches the server's own arithmetic)."""
         return _native.beats_to_secs(self.tempo, self._base_beats, self._base_secs, beats)
 
     def secs2beats(self, secs: float) -> float:
+        """Convert seconds to a beat position under the current tempo (native
+        core, server-matching)."""
         return _native.secs_to_beats(self.tempo, self._base_beats, self._base_secs, secs)
 
     def beats(self) -> float:
@@ -103,22 +136,39 @@ class TempoClock:
         heapq.heappush(self._queue, (beat, next(self._seq), item))
 
     def sched(self, delay_beats: float, item):
-        """Schedule ``item`` ``delay_beats`` from the current beat."""
+        """Schedule ``item`` to run ``delay_beats`` from the current beat.
+
+        ``item`` is a `Routine` (or any `Stream`), or a plain callable for a
+        one-shot. When resumed, a routine is rescheduled by whatever delay it
+        yields; a callable that returns a number is rescheduled by that number,
+        and one returning ``None`` runs once. Safe to call from another thread
+        or from inside a running routine.
+        """
         with self._cond:
             self._push(self.beats() + delay_beats, item)
             self._cond.notify()
 
     def sched_abs(self, beat: float, item):
+        """Schedule ``item`` at an absolute ``beat``, rather than relative to
+        the current beat as `sched` does."""
         with self._cond:
             self._push(beat, item)
             self._cond.notify()
 
     def play(self, routine, quant=None):
-        """Schedule a routine (or callable) to start now."""
+        """Schedule a routine (or callable) to start now; returns it.
+
+        Args:
+            routine: a `Routine`, any `Stream`, or a one-shot callable.
+            quant: intended start quantization -- a beat grid to snap the start
+                onto. Not yet implemented; the item currently starts
+                immediately.
+        """
         self.sched(0.0, routine)
         return routine
 
     def clear(self):
+        """Drop every item currently in the schedule queue."""
         with self._cond:
             self._queue.clear()
 
@@ -183,6 +233,8 @@ class TempoClock:
         return self
 
     def stop(self):
+        """Stop the real-time driver and join its background thread; returns
+        ``self``. Schedules built up by `run`/`start` end here."""
         with self._cond:
             self._running = False
             self._cond.notify_all()
