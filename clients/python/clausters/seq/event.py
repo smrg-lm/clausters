@@ -21,6 +21,12 @@ _RESERVED = {
     "midinote", "degree", "octave", "root", "scale",
 }
 
+#: Default parameters merged into every `Event`. ``type`` selects behaviour
+#: (``note`` or ``rest``); ``instrument`` is the def name; ``dur`` is the beats
+#: to the next event, scaled by ``legato``/``stretch`` into the sounding time;
+#: ``amp`` is linear amplitude; ``add_action``/``target`` place the synth in the
+#: node tree; ``has_gate`` picks release-by-free vs ``gate 0``; and
+#: ``octave``/``root``/``scale`` define the pitch space that ``degree`` indexes.
 DEFAULTS = {
     "type": "note",
     "instrument": "default",
@@ -38,7 +44,21 @@ DEFAULTS = {
 
 
 class Event(dict):
-    """A parameter dict with note-event defaults and a `play`."""
+    """A note event: a ``dict`` of parameters that knows how to play itself.
+
+    Built from `DEFAULTS` overlaid with whatever you pass, exactly like a dict
+    (``Event(freq=440, amp=0.2)``), so unknown keys are simply stored. The keys
+    split in two: a fixed **reserved** set drives timing and structure (``dur``,
+    ``legato``, ``stretch``, ``add_action``/``target``, the pitch keys, ...) and
+    is never sent to the synth; every other numeric key is forwarded as a synth
+    control.
+
+    The derived quantities compute the values actually used: `midinote` and
+    `freq` resolve pitch (an explicit ``freq`` wins, else ``midinote``, else
+    ``degree`` within ``octave``/``root``/``scale``), `delta` is the beats to
+    the next event and `sustain` the beats the synth sounds. `play` realizes the
+    event on a destination -- a `Server` or a MIDI destination.
+    """
 
     def __init__(self, *args, **kwargs):
         merged = dict(DEFAULTS)
@@ -65,6 +85,8 @@ class Event(dict):
         return float(midinote)
 
     def freq(self) -> float:
+        """The frequency in Hz this event sounds: an explicit ``freq`` if given,
+        otherwise `midinote` converted through the native ``midicps``."""
         if self.get("freq") is not None:
             return float(self["freq"])
         return float(midicps(self.midinote()))
@@ -101,5 +123,6 @@ class Event(dict):
 
 
 def rest(dur: float = 1.0) -> Event:
-    """A silent event that still advances time by ``dur``."""
+    """A silent `Event` that sounds nothing but still advances time by ``dur``
+    beats -- a rest in the sequence."""
     return Event(type="rest", dur=dur)
