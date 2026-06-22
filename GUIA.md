@@ -810,6 +810,13 @@ Para *streaming* de un bus en vez de un buffer estático sigue estando el otro
 camino: `PlayBuf`/`BufRd` → bus de audio → control reservado `in` del synth
 Faust (ver `docs/schemas.md`).
 
+La versión idiomática desde el cliente Python (allocator de buffers, barrera
+`/done`, `/n_set` en vivo y la semántica de foto con una segunda voz) está en
+`examples/faust_soundfile.py` — ver la sección de ejemplos en vivo de
+`clients/python/GUIA.md`. Ojo: `soundfile` solo anda en el servidor RT; el
+renderer NRT offline lo deja en silencio (su espejo de buffers no llega al
+traductor).
+
 ### Probar la persistencia de defs entre sesiones
 
 El servidor guarda los defs cargados (`/d_recv` y `/d_faust`) en un directorio

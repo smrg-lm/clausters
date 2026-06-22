@@ -331,7 +331,7 @@ per-voz, arpegio de voces solapadas). Es el mismo modelo que usa
 `/midi_bind canal nombreGraph` en el servidor: instancia la parte compartida al
 bindear y cada nota spawnea una voz.
 
-### Ejemplos combinados: el ciclo de vida en vivo (`live_patch.py`, `persistent_graphdef.py`)
+### Ejemplos combinados: el ciclo de vida en vivo (`live_patch.py`, `persistent_graphdef.py`, `faust_soundfile.py`)
 
 Necesitan hardware de audio real y el server con Faust. Construilo y corré (cada ejemplo **arranca y para su propio servidor** vía `subprocess`, usando `ServerOptions.args()`):
 
@@ -339,9 +339,12 @@ Necesitan hardware de audio real y el server con Faust. Construilo y corré (cad
 cargo build --release --features faust
 python3 examples/live_patch.py            # config + launch + grupos + FaustDef + SynthDef + buses + buffer
 python3 examples/persistent_graphdef.py   # lo anterior, empaquetado como GraphDef persistente
+python3 examples/faust_soundfile.py       # FaustDef que lee un buffer del servidor via soundfile
 ```
 
 `live_patch.py` cablea el patch a mano: `ServerOptions(audio_buses, control_buses, sample_rate)` lanza un server y dimensiona los allocators (verificado con `query_info`); dos grupos (fuentes y salida) dan orden de ejecución; una voz **FaustDef** y un reproductor de buffer **SynthDef** escriben a buses de audio privados que un mixer **SynthDef** suma a las salidas; un bus de **control** mapeado a `freq` reafina la voz con un solo `/c_set`; el buffer se genera (WAV con `wave`) y se carga por `/b_allocRead` (vía `server.request`, ya que `alloc_buffer` solo hace el `/b_alloc` vacío). Debe sonar (RMS verificado capturando la salida con `pw-record`).
+
+`faust_soundfile.py` lleva el op `soundfile` de Faust al cliente idiomático: genera un motivo corto (WAV con `wave`), lo carga por `/b_allocRead` (mismo idiom que `live_patch.py`: índice del allocator + `server.request`) y lo loopea desde **adentro** de un `FaustDef` que lo lee con `soundfile("<bufnum>", 1)` — sin `PlayBuf` ni bus de por medio. El def se arma con `FaustDef.from_source` (la API de señales `signals` no expone `soundfile`); la etiqueta del op es el índice que el cliente asignó. `gain`/`speed` se modulan en vivo con `/n_set`. Dos puntos que demuestra: (1) el bind es una **foto** tomada en `/s_new` — recarga el buffer a mitad de reproducción y la voz que ya suena no cambia; solo un `/s_new` nuevo ve el contenido nuevo (el ejemplo lanza una segunda voz para mostrarlo); (2) `soundfile` solo anda en el **servidor RT en vivo** — el renderer NRT offline no sincroniza su espejo de buffers con el del traductor (el que `make_synth` pasa a `FaustSynth::new`), así que daría silencio (verificado: pico 0.0 en NRT vs. lectura correcta en vivo). Debe sonar.
 
 `persistent_graphdef.py` muestra la persistencia: lanza el server con `--data-dir` en un **subdirectorio dentro de la carpeta del ejemplo** (`examples/defs_store/`, gitignoreado), manda los defs miembro y el `GraphDef` (el server los agrupa bajo `defs/`: `defs/synthdefs/`, `defs/faustdefs/`, `defs/graphdefs/`), y en una **segunda fase** relanza un server nuevo sobre el mismo `--data-dir` e instancia el GraphDef **sin reenviar nada** (solo suena porque los defs se recargaron de disco al bootear; `server.status()[4]` reporta el conteo). El directorio **queda en disco** para que abras los JSON persistidos y los explores; borralo a mano cuando termines (`rm -rf examples/defs_store`).
 
