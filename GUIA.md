@@ -343,6 +343,32 @@ print('timebase:', type(clock.timebase).__name__)        # MonotonicTimebase
 "
 ```
 
+### Servidor: transport compartido para alinear fase (M22)
+
+M22 agrega `/transport`: una grilla de beats `(origin_sample, tempo)` que el
+servidor guarda y sirve para que varios clientes arranquen en el mismo beat (la
+parte cliente, `quant`/`join_transport`, es C15). Sin args consulta; con
+`(int64 origin, double tempo)` la fija. El servidor no agenda desde ella, solo
+la almacena (en memoria, se resetea al reiniciar).
+
+A mano con el decoder del ejemplo:
+
+```sh
+cargo run --release                      # terminal 1
+python3 -c "
+import sys; sys.path.insert(0,'examples')
+import json_client as osc
+c = osc.Client()
+c.send('/transport'); print('inicial:', c.reply(quiet=True)[1])           # [0, 0.0, 0]  sin definir
+c.send('/transport', osc.Int64(96000), 2.0); print('set:', c.reply(quiet=True)[0])  # /done
+c.send('/transport'); print('despues:', c.reply(quiet=True)[1])           # [96000, 2.0, 1]
+c.send('/transport', osc.Int64(0), 0.0); print('malo:', c.reply(quiet=True)[0])     # /fail (tempo<=0)
+"                                        # terminal 2
+```
+
+Debe verse `[0, 0.0, 0]` antes de fijar, `[96000, 2.0, 1]` despues, y `/fail`
+ante un tempo invalido (la grilla previa queda intacta).
+
 La columna `x real time` es el headroom: con N synths, cuántas veces más
 rápido que 48 kHz procesa. En esta máquina ≈1800 voces sinusoidales.
 

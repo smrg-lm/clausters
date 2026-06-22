@@ -37,6 +37,22 @@ Two properties make this robust where it sounds fragile:
 - **Query latency does not matter.** The anchor only needs *bounded* uncertainty, not low latency, because nothing fires at query time — events are scheduled ahead. An anchor error shifts the entire grid by a constant; it cannot accumulate.
 - **Relative timing is exact by construction.** Two targets N samples apart fire exactly N samples apart, forever — no clock conversion sits between scheduled events. The OS clock's drift only affects how *early* each `/sched` is sent, which the scheduling margin absorbs.
 
+## A shared transport (phase alignment)
+
+The sample clock gives every client a common, drift-free **sample axis**, so two clients locked to one server schedule on the same timeline. It does not, by itself, put them in **phase**: each client's routine still starts whenever it starts, at an arbitrary point on that axis. Aligning several clients on the *same* beat needs a shared **beat grid** — an origin and a tempo everyone agrees on.
+
+`/transport` is that grid, hosted on the server so any client can join it:
+
+```text
+/transport                                →  /transport.reply  h <originSample>  d <tempo>  i <defined>
+/transport  h <originSample> d <tempo>    →  /done  "/transport"
+```
+
+- With no arguments it **queries** the grid; `defined` is 0 until a client has set one.
+- With `(originSample, tempo)` it **sets** it (last writer wins). Beat `b` maps to sample `originSample + b·rate/tempo`, so a client joins by reading the grid and quantizing its routine's start onto the next beat boundary. Because the grid lives on the sample axis, the alignment is sample-exact for clients locked to the master.
+
+The transport is a pure `(origin, tempo)` pair: the server stores and serves it but **never schedules from it** — it is shared metadata, not a sequencer. It is in-memory (the sample counter resets on restart, so an origin only means anything within one run) and ownership is last-writer-wins for now. A running/stopped transport state, and a push to clients on change, are deliberate future extensions.
+
 ## Caveats
 
 - The counter counts **processed** samples, not heard ones: it runs one device buffer (plus the output latency) ahead of the speakers. For aligning with the outside world (recording overdubs, syncing to video), add the device latency; for pure scheduling it cancels out.

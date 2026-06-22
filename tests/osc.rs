@@ -476,6 +476,54 @@ fn clock_reports_the_engine_sample_counter() {
     server.quit();
 }
 
+/// M22: `/transport` is the shared beat grid for phase alignment — a query
+/// reports "undefined" until a client sets it, then echoes it back; bad args
+/// fail and leave the previous grid intact.
+#[test]
+fn transport_query_and_set() {
+    let server = TestServer::spawn();
+
+    // Unset: defined flag 0, zeros.
+    server.send("/transport", vec![]);
+    let reply = server.recv_until("/transport.reply");
+    assert_eq!(
+        reply.args,
+        vec![OscType::Long(0), OscType::Double(0.0), OscType::Int(0)]
+    );
+
+    // Set origin sample + tempo; replies /done.
+    server.send(
+        "/transport",
+        vec![OscType::Long(96_000), OscType::Double(2.0)],
+    );
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/transport".into())
+    );
+
+    // Query now reports the grid with defined 1.
+    server.send("/transport", vec![]);
+    let reply = server.recv_until("/transport.reply");
+    assert_eq!(
+        reply.args,
+        vec![OscType::Long(96_000), OscType::Double(2.0), OscType::Int(1)]
+    );
+
+    // Bad tempo fails and does not clobber the stored grid.
+    server.send("/transport", vec![OscType::Long(0), OscType::Double(0.0)]);
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/transport".into())
+    );
+    server.send("/transport", vec![]);
+    assert_eq!(
+        server.recv_until("/transport.reply").args[2],
+        OscType::Int(1)
+    );
+
+    server.quit();
+}
+
 /// M8: `/sched` argument validation and per-message translation failures.
 #[test]
 fn sched_rejects_bad_arguments() {

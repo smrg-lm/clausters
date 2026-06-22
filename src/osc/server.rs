@@ -98,6 +98,18 @@ pub struct OscServer {
     faust_submitted: u64,
     faust_drained: u64,
     pending_syncs: Vec<PendingSync>,
+    /// The shared beat grid (`/transport`), once a client defines one.
+    transport: Option<Transport>,
+}
+
+/// The shared transport: a beat grid clients read to phase-align on the master
+/// sample clock. Beat `b` maps to sample `origin_sample + b·rate/tempo`. The
+/// server only stores and serves it (in-memory; the sample axis resets on
+/// restart) — it never schedules from it. See [`OscServer::handle_transport`].
+#[derive(Clone, Copy)]
+struct Transport {
+    origin_sample: i64,
+    tempo: f64,
 }
 
 /// A `/sync` waiting for the async pipelines to drain up to its targets.
@@ -142,6 +154,7 @@ impl OscServer {
             faust_submitted: 0,
             faust_drained: 0,
             pending_syncs: Vec::new(),
+            transport: None,
         })
     }
 
@@ -677,6 +690,7 @@ impl OscServer {
             "/d_free" => self.handle_d_free(&msg, from),
             "/dumpOSC" => self.handle_dump_osc(&msg, from),
             "/verbosity" => self.handle_verbosity(&msg, from),
+            "/transport" => self.handle_transport(&msg, from),
             "/quit" => {
                 self.reply(from, "/done", vec![OscType::String("/quit".into())]);
                 return Flow::Quit;
@@ -768,6 +782,70 @@ impl OscServer {
             OscType::Time(now_ntp()),
         ];
         self.reply(from, "/clock.reply", args);
+    }
+
+    /// `/transport` — the shared beat grid for phase-aligning several clients on
+    /// the master sample clock. **No args queries** it; replies
+    /// `/transport.reply (origin_sample:int64, tempo:double, defined:int32)`,
+    /// where `defined` is 0 when none has been set (and the other two are 0).
+    /// Two args `(origin_sample:int64, tempo:double)` **set** it (last writer
+    /// wins) and reply `/done`. The grid is a pure pair: beat `b` is sample
+    /// `origin_sample + b·rate/tempo`; a client joins by reading it and
+    /// quantizing its routine start onto it. The server only stores/serves it —
+    /// it is in-memory (the sample axis resets on restart) and the server never
+    /// schedules from it. Ownership is last-writer-wins for now; a push on
+    /// change pairs with client-side responders (future).
+    fn handle_transport(&mut self, msg: &OscMessage, from: ClientId) {
+        if msg.args.is_empty() {
+            let (origin, tempo, defined) = match self.transport {
+                Some(t) => (t.origin_sample, t.tempo, 1),
+                None => (0, 0.0, 0),
+            };
+            self.reply(
+                from,
+                "/transport.reply",
+                vec![
+                    OscType::Long(origin),
+                    OscType::Double(tempo),
+                    OscType::Int(defined),
+                ],
+            );
+            return;
+        }
+        let origin = match msg.args.first() {
+            Some(OscType::Long(v)) => *v,
+            Some(OscType::Int(v)) => *v as i64,
+            _ => {
+                return self.fail(
+                    from,
+                    "/transport",
+                    "expected (int64 originSample, double tempo)",
+                );
+            }
+        };
+        let tempo = match msg.args.get(1) {
+            Some(OscType::Double(v)) => *v,
+            Some(OscType::Float(v)) => *v as f64,
+            _ => {
+                return self.fail(
+                    from,
+                    "/transport",
+                    "expected (int64 originSample, double tempo)",
+                );
+            }
+        };
+        if origin < 0 || !(tempo > 0.0) {
+            return self.fail(
+                from,
+                "/transport",
+                "originSample must be >= 0 and tempo > 0",
+            );
+        }
+        self.transport = Some(Transport {
+            origin_sample: origin,
+            tempo,
+        });
+        self.reply(from, "/done", vec![OscType::String("/transport".into())]);
     }
 
     /// M8: `/sched <int64 target> <blob packet>` — a timed bundle whose time
