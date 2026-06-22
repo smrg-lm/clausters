@@ -8,7 +8,7 @@
 - [The client, layer by layer](guide.md)
 - [Sessions](sessions.md)
 - [Routines and clocks](routines-and-clocks.md)
-- [Timing references](timing.md)
+- [Timing models](timing-models.md)
 - [Examples](examples.md)
 
 # Reference

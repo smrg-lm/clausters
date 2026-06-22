@@ -19,7 +19,7 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/live_udp.py
   ```
 
-- **`transport_sync.py`** — two independent clients lock to a **running** server's sample clock and join its shared transport, so a `quant`-ed routine on each lands on the same bar (sample-aligned). Prints the matching next-bar sample and plays a note on each. See [Timing references](timing.md).
+- **`transport_sync.py`** — two independent clients lock to a **running** server's sample clock and join its shared transport, so a `quant`-ed routine on each lands on the same bar (sample-aligned). Prints the matching next-bar sample and plays a note on each. See [Timing models](timing-models.md).
 
   ```sh
   python clients/python/examples/transport_sync.py

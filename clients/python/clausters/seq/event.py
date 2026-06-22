@@ -92,11 +92,19 @@ class Event(dict):
         return float(midicps(self.midinote()))
 
     def delta(self) -> float:
-        """Beats until the next event (``dur * stretch``)."""
-        return float(self["dur"]) * float(self["stretch"])
+        """Beats until the next event: an explicit ``delta`` key if given,
+        otherwise ``dur * stretch``. As in SuperCollider, the key overrides the
+        calculation when it is present."""
+        d = self.get("delta")
+        return float(d) if d is not None else float(self["dur"]) * float(self["stretch"])
 
     def sustain(self) -> float:
-        """Beats the synth sounds (``dur * legato * stretch``)."""
+        """Beats the synth sounds: an explicit ``sustain`` key if given,
+        otherwise ``dur * legato * stretch``. As in SuperCollider, the key
+        overrides the calculation when it is present."""
+        s = self.get("sustain")
+        if s is not None:
+            return float(s)
         return float(self["dur"]) * float(self["legato"]) * float(self["stretch"])
 
     def _control_args(self) -> list:

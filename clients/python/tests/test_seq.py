@@ -45,6 +45,13 @@ def test_event_defaults_and_derived():
     assert e.sustain() == pytest.approx(1.6)    # dur * legato * stretch
 
 
+def test_explicit_delta_and_sustain_override_the_calculation():
+    # SuperCollider semantics: an explicit key wins over dur*stretch / dur*legato.
+    e = Event(dur=0.5, delta=2.0, sustain=0.4)
+    assert e.delta() == 2.0
+    assert e.sustain() == 0.4
+
+
 def test_event_pitch_from_midinote_and_degree():
     assert Event(midinote=69).freq() == pytest.approx(midicps(69))
     # degree 0 on the default major scale at octave 5 -> midinote 60

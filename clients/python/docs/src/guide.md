@@ -11,7 +11,7 @@ The package is three layers plus a thin convenience wrapper. The split is delibe
 - `timebase` — monotonic, or anchored to the server's sample clock (`/sched`) for drift-free timing.
 - `netaddr`, `main` — addressing and a thread-local execution context. No global state that would block running RT and NRT in one script.
 
-See [Routines and clocks](routines-and-clocks.md) for driving these directly with a `Server` — writing a routine by hand and logging sample-accurate timing.
+See [Routines and clocks](routines-and-clocks.md) for driving these directly — writing a routine by hand — and [Timing models](timing-models.md) for the clock's timing modes (wall-clock, sample-locked, shared transport) and how to observe each.
 
 ## `clausters.seq` — sequencing
 
