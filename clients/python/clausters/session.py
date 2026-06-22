@@ -135,6 +135,19 @@ class Session:
         self.clock.render()
         return self.server.render(sample_rate=sample_rate, channels=channels)
 
+    def lock_to_server(self):
+        """Lock this session's clock to its server's sample clock — the
+        sample-accurate, drift-free timebase, with the server as the master
+        clock. Returns ``self``, so it chains after a factory:
+        ``Session.live(...).lock_to_server()``.
+
+        Safe when the server is not a reachable master (offline, or no server
+        running): the clock simply stays on wall-clock OSC time. See
+        `TempoClock.lock_to`.
+        """
+        self.clock.lock_to(self.server)
+        return self
+
     def run(self, seconds: float):
         """Run the clock in real time for ``seconds``, then stop (live only).
 
@@ -161,8 +174,10 @@ class Session:
         return self
 
     def close(self):
-        """Close the underlying `Server` and its interface. Done automatically
-        when the session is used as a context manager."""
+        """Close the underlying `Server` and release the clock's master-clock
+        tracker (from `lock_to_server`), if any. Done automatically when the
+        session is used as a context manager."""
+        self.clock.close()
         self.server.close()
 
     def __enter__(self):

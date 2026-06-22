@@ -87,6 +87,7 @@ class TempoClock:
         self._unix_start = None       # wall-clock origin for OSC timetags
         self._running = False
         self._thread = None
+        self._sample_clock = None     # the master-clock tracker, set by lock_to()
 
     # ---- beat/second math (native) ----
 
@@ -129,6 +130,57 @@ class TempoClock:
         self._base_beats = at
         self._base_secs = self.beats2secs(at)
         self.tempo = tempo
+
+    # ---- master-clock lock (sample timebase) ----
+
+    def lock_to(self, server, warmup: bool = True, timeout: float = 2.0):
+        """Lock this clock to a master ``server``'s sample clock, so events
+        schedule on the server's own sample axis (drift-free) instead of a
+        wall-clock OSC timetag.
+
+        Opt-in: a plain clock paces against wall-clock OSC time, which works
+        standalone, against another program, or across a network. `lock_to`
+        switches it to the server's sample clock — over UDP it tracks the
+        server's published `/clock` anchor on its own socket. The switch is
+        **graceful**: an offline (score) server, or a master that does not
+        answer, leaves the clock on wall-clock time, so a client with no
+        Clausters server keeps working. Returns ``self``.
+
+        **Blocking — call it before `start`/`run`, never from inside a
+        routine** (it does `/clock` round trips). Release it with `unlock` or
+        `close`.
+        """
+        # An offline (score) destination has no live clock to lock to.
+        if getattr(getattr(server, "interface", None), "time_mode", "unix") == "score":
+            return self
+        sc = server.sample_clock(timeout=timeout)
+        try:
+            sc.anchor()           # one round trip: detect a reachable master
+        except (TimeoutError, OSError, RuntimeError):
+            sc.close()
+            return self           # graceful: no master -> stay on wall clock
+        if warmup:
+            sc.warmup(n=4)        # firm up the model before scheduling
+        sc.track()
+        self._sample_clock = sc
+        self.timebase = sc.timebase()
+        self._now = self.timebase
+        return self
+
+    def unlock(self):
+        """Undo a `lock_to`: close the tracker and return to wall-clock OSC
+        time. Returns ``self``."""
+        if self._sample_clock is not None:
+            self._sample_clock.close()
+            self._sample_clock = None
+        self.timebase = MonotonicTimebase()
+        self._now = self.timebase
+        return self
+
+    def close(self):
+        """Stop the clock and release a `lock_to` tracker, if any."""
+        self.stop()
+        self.unlock()
 
     # ---- scheduling ----
 

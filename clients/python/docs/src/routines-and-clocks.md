@@ -14,7 +14,7 @@ It stays on the high-level API throughout: you build `Event`s and call `play`, n
 
 This is the idea that makes routines worth using, inherited from SuperCollider.
 
-A routine `yield`s numbers, and each one is a wait *in beats* before the clock resumes it. Those waits play out in **physical time** — the actual wall-clock seconds the OS sleeps — and under load they jitter, a millisecond here or there. But a routine also keeps a **logical time**: the running sum of everything it has yielded so far, relative to when it started and the clock's tempo. The logical time has no jitter — a routine that yields `0.5` four times is at logical beats `0, 0.5, 1.0, 1.5` exactly, whatever the scheduler did in between.
+A routine `yield`s numbers, and each one is a wait *in beats* before the clock resumes it. Those waits play out in **physical time** — the actual wall-clock seconds the OS sleeps — and under load they jitter. But a routine also keeps a **logical time**: the running sum of everything it has yielded so far, relative to when it started and the clock's tempo. The logical time has no jitter — a routine that yields `0.5` four times is at logical beats `0, 0.5, 1.0, 1.5` exactly, whatever the scheduler did in between.
 
 The Server stamps every event from the routine's **logical** time, not from "now". So even though the routine is woken at slightly irregular physical instants, the timing it asks the server for is precise. That is the only way to get jitter-free rhythmic sequences in real time, and everything below builds on it.
 
@@ -66,6 +66,8 @@ clock = TempoClock(tempo=2.0, timebase=sc.timebase())
 ```
 
 Passing `sc.timebase()` is the whole switch. Nothing in `melody` changes; the events now land on exact samples, and the small, fixed query latency only shifts the whole grid by a constant — it does not accumulate, so the spacing between notes stays sample-exact.
+
+When you do not need the tracker handle yourself (the next section does, to read the clock), the same lock is one call on the clock — `clock.lock_to(server)` — which also falls back to wall-clock time if no master answers. See [Timing references](timing.md) for the two references and when to pick each.
 
 ## Logging it, for real
 

@@ -306,6 +306,43 @@ Debe imprimir 3 campos; el tercero (tiempo OSC, ya convertido a segundos Unix
 por el decoder del ejemplo) debe diferir de `time.time()` en una fraccion de
 segundo.
 
+### Cliente: enganchar el reloj al master con lock_to (C14)
+
+C14 agrega `clock.lock_to(server)` / `Session.lock_to_server()`: el reloj del
+cliente, que por defecto usa tiempo OSC (anda sin servidor), se engancha al
+**reloj de samples** del servidor (timebase `SampleClockTimebase`, agenda por
+`/sched`). Si no hay master alcanzable, queda en tiempo OSC sin fallar.
+
+Verificar el cambio de timebase y que toca sonido, con un servidor vivo:
+
+```sh
+cargo run --release                      # terminal 1
+PYTHONPATH=clients/python python3 -c "
+from clausters import Session
+from clausters.base import MonotonicTimebase, SampleClockTimebase
+from clausters.seq import Pbind, Pseq
+s = Session.live(tempo=2.0)
+print('antes:', type(s.clock.timebase).__name__)   # MonotonicTimebase
+s.lock_to_server()
+print('despues:', type(s.clock.timebase).__name__)  # SampleClockTimebase
+s.play(Pbind(instrument='default', freq=Pseq([440.0, 550.0, 660.0]), dur=0.25, amp=0.1))
+s.run(1.5)                                # se escuchan las notas, agendadas por /sched
+s.close()
+"                                        # terminal 2
+```
+
+Y el fallback sin servidor (no debe fallar, queda en tiempo OSC):
+
+```sh
+PYTHONPATH=clients/python python3 -c "
+from clausters.base import TempoClock, MonotonicTimebase
+from clausters.defs import Server
+clock = TempoClock(tempo=1.0)
+clock.lock_to(Server('127.0.0.1', 59999), timeout=0.2)  # nada escuchando
+print('timebase:', type(clock.timebase).__name__)        # MonotonicTimebase
+"
+```
+
 La columna `x real time` es el headroom: con N synths, cuántas veces más
 rápido que 48 kHz procesa. En esta máquina ≈1800 voces sinusoidales.
 

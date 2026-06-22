@@ -4,6 +4,8 @@ Server and a clock explicitly, and several coexist (no globals)."""
 import pytest
 
 from clausters import Session
+from clausters.base import MonotonicTimebase, TempoClock
+from clausters.defs import Server
 from clausters.seq import Pbind, Pseq
 
 
@@ -43,6 +45,30 @@ def test_two_sessions_are_independent():
     # and they are genuinely separate objects — no shared global
     assert a.server is not b.server
     assert a.clock is not b.clock
+
+
+def test_lock_to_offline_session_is_a_noop():
+    # An NRT (score) server has no live clock; lock_to must leave the clock on
+    # wall-clock OSC time (and not raise), so offline scripts keep working.
+    s = Session.nrt(tempo=2.0)
+    assert isinstance(s.clock.timebase, MonotonicTimebase)
+    assert s.lock_to_server() is s            # chainable, no-op here
+    assert isinstance(s.clock.timebase, MonotonicTimebase)
+    assert s.clock._sample_clock is None
+    s.close()
+
+
+def test_lock_to_unreachable_master_falls_back_to_wall_clock():
+    # No server is listening on this port: lock_to detects no master within the
+    # timeout and stays on wall-clock OSC time (the "client with no Clausters
+    # server" case), rather than raising.
+    server = Server("127.0.0.1", 59999)
+    clock = TempoClock(tempo=1.0)
+    assert clock.lock_to(server, timeout=0.2) is clock
+    assert isinstance(clock.timebase, MonotonicTimebase)
+    assert clock._sample_clock is None
+    clock.close()
+    server.close()
 
 
 if __name__ == "__main__":
