@@ -16,7 +16,8 @@ class StopStream(StopIteration):
 
 
 class YieldAndReset(Exception):
-    """Yield ``value`` and reset the routine to its initial state."""
+    """Raise from inside a routine to yield ``value`` and then reset the routine
+    to its initial state, so its next resumption restarts the generator."""
 
     def __init__(self, value=None):
         super().__init__()
@@ -36,9 +37,14 @@ class Stream:
             raise StopIteration from None
 
     def next(self, inval=None):
+        """Produce the next value, optionally fed ``inval``; raise `StopStream`
+        to end. Subclasses implement this -- the base raises
+        ``NotImplementedError``."""
         raise NotImplementedError(f"{type(self).__name__}.next")
 
     def reset(self):
+        """Return the stream to its initial state so iteration restarts. A no-op
+        on the base; stateful subclasses override it."""
         pass
 
 
@@ -101,11 +107,16 @@ class Routine(Stream):
         return cls(func)
 
     def reset(self):
+        """Discard the running generator and return to the ``init`` state, so
+        the next `next` or `play` starts the generator function afresh."""
         self._gen = None
         self._started = False
         self.state = "init"
 
     def next(self, inval=None):
+        """Resume the generator once (sending it ``inval``) and return the value
+        it yields -- a delay in beats -- or raise `StopStream` when it finishes.
+        The clock calls this on each wake; you rarely call it directly."""
         if self.state == "done":
             raise StopStream
         try:
@@ -123,7 +134,14 @@ class Routine(Stream):
             return e.value
 
     def play(self, clock=None, quant=None):
-        """Schedule this routine on ``clock`` (the default clock if None)."""
+        """Schedule this routine to start on ``clock``; returns ``self``.
+
+        Args:
+            clock: the `TempoClock` to run on; when ``None`` it falls back to
+                ``main.default_clock`` and raises if that is unset.
+            quant: start quantization, forwarded to the clock (see
+                `TempoClock.play`; not yet implemented).
+        """
         from .main import main
 
         clock = clock or main.default_clock
