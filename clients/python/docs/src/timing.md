@@ -58,7 +58,7 @@ With each client also `lock_to` the master, the shared bar is an exact sample �
 
 ## MIDI always rides OSC time
 
-MIDI output never uses the sample clock. A `MidiServer` writing a score keeps its timeline in beats (logical/OSC time) and quantizes to ticks only when it writes the file; live MIDI output is emitted on the clock's logical time. `lock_to` changes only how the *OSC* `Server` schedules; it does not touch MIDI timing — MIDI is not sample-exact by design, and the client may have no sample clock at all. (Jitter-free MIDI *delivery* through hardware timestamps is a separate, future refinement.)
+MIDI output never uses the sample clock. A `MidiServer` writing a score keeps its timeline in beats (logical/OSC time) and quantizes to ticks only when it writes the file; live MIDI output is emitted on the clock's logical time. `lock_to` changes only how the *OSC* `Server` schedules; it does not touch MIDI timing — MIDI is not sample-exact by design, and the client may have no sample clock at all. Live OS MIDI output is therefore best-effort; for exact MIDI timing, write a score offline (its ticks come from logical time). Tighter live-MIDI timing is a possible future refinement.
 
 ## See also
 
