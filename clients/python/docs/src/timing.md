@@ -47,6 +47,15 @@ The time reference is **orthogonal to the destination** (where the OSC actually 
 
 `lock_to` is **blocking** (it does `/clock` round trips to find and measure the master), so call it before `start`/`run` and **never from inside a routine**. It is also safe to call when no master answers: it just stays on wall-clock time.
 
+## Starting together: quant and the transport
+
+Locking to a master gives every client the same sample axis, but each routine still *starts* whenever you play it. To make several clients begin on the **same beat**, two pieces work together:
+
+- **`quant`** — `clock.play(routine, quant=4)` (or `session.play(pattern, quant=4)`) snaps the routine's start to the next beat that is a multiple of `quant` (a bar in 4/4). `None` or `0` starts immediately. On its own it snaps to the clock's own grid — handy for a single client adding a voice cleanly on the next bar.
+- **A shared transport** — `clock.join_transport(server)` (or `Session.join_transport()`) adopts the server's `/transport` grid: its tempo and an origin every client shares. Now `quant` snaps to *that* grid, so every client on it hits the same bar. One client (the conductor) defines it with `server.set_transport(origin_sample, tempo)`; the others join.
+
+With each client also `lock_to` the master, the shared bar is an exact sample — the clients are sample-aligned; in plain wall-clock mode they are beat-aligned (drift-bounded, via the server's OSC-time anchor). Start the clock before playing a quantized routine, so `quant` snaps against the running grid. The `transport_sync.py` example shows two clients landing on the same bar.
+
 ## MIDI always rides OSC time
 
 MIDI output never uses the sample clock. A `MidiServer` writing a score keeps its timeline in beats (logical/OSC time) and quantizes to ticks only when it writes the file; live MIDI output is emitted on the clock's logical time. `lock_to` changes only how the *OSC* `Server` schedules; it does not touch MIDI timing — MIDI is not sample-exact by design, and the client may have no sample clock at all. (Jitter-free MIDI *delivery* through hardware timestamps is a separate, future refinement.)

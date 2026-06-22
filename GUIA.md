@@ -369,6 +369,32 @@ c.send('/transport', osc.Int64(0), 0.0); print('malo:', c.reply(quiet=True)[0]) 
 Debe verse `[0, 0.0, 0]` antes de fijar, `[96000, 2.0, 1]` despues, y `/fail`
 ante un tempo invalido (la grilla previa queda intacta).
 
+### Cliente: alineamiento de fase con quant + join_transport (C15)
+
+C15 honra `quant` (antes se ignoraba) y agrega `clock.join_transport(server)`:
+varios clientes unidos a la misma transport del servidor arrancan una rutina
+`quant`-eada en el **mismo beat** (a la muestra si ademas hacen `lock_to`).
+
+El ejemplo lo demuestra con dos clientes independientes en un proceso:
+
+```sh
+cargo run --release                                                          # terminal 1
+PYTHONPATH=clients/python python3 clients/python/examples/transport_sync.py  # terminal 2
+```
+
+Debe imprimir el mismo `next bar -> sample N` para A y B (`aligned to the
+sample`) y tocar las dos notas juntas.
+
+Y el `quant` solo (un cliente, sin transport), determinista:
+
+```sh
+PYTHONPATH=clients/python python3 -c "
+from clausters.base import TempoClock
+c = TempoClock(tempo=2.0); c._logical_beat = 3.5
+print('delay al proximo bar (quant=4):', c._quant_delay(4))   # 0.5
+"
+```
+
 La columna `x real time` es el headroom: con N synths, cuántas veces más
 rápido que 48 kHz procesa. En esta máquina ≈1800 voces sinusoidales.
 

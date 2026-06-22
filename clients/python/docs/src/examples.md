@@ -19,6 +19,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/live_udp.py
   ```
 
-The two share their pattern code and differ only in the `Server` interface — the seam from [The client, layer by layer](guide.md) in practice.
+- **`transport_sync.py`** — two independent clients lock to a **running** server's sample clock and join its shared transport, so a `quant`-ed routine on each lands on the same bar (sample-aligned). Prints the matching next-bar sample and plays a note on each. See [Timing references](timing.md).
+
+  ```sh
+  python clients/python/examples/transport_sync.py
+  ```
+
+The first two share their pattern code and differ only in the `Server` interface — the seam from [The client, layer by layer](guide.md) in practice.
 
 The broader catalog of examples (the low-level transports and the raw OSC helpers) lives in the repository-root `examples/`; those use a `sys.path` shim so they run straight from a source checkout without an install.

@@ -26,12 +26,13 @@ the seam — and it lives on the Server, not here.
 
 import heapq
 import itertools
+import math
 import threading
 import time
 
 from .. import _native
 from .stream import Stream, StopStream
-from .timebase import MonotonicTimebase
+from .timebase import MonotonicTimebase, SampleClockTimebase
 
 
 class TempoClock:
@@ -88,6 +89,7 @@ class TempoClock:
         self._running = False
         self._thread = None
         self._sample_clock = None     # the master-clock tracker, set by lock_to()
+        self._transport = None        # joined shared beat grid, set by join_transport()
 
     # ---- beat/second math (native) ----
 
@@ -182,6 +184,62 @@ class TempoClock:
         self.stop()
         self.unlock()
 
+    # ---- shared transport (phase alignment) ----
+
+    def join_transport(self, server):
+        """Adopt a master ``server``'s shared `/transport` beat grid as this
+        clock's tempo and grid, so a `quant`-ed routine starts on the **same**
+        beat as every other client joined to it.
+
+        Reads the transport once; if the server has none defined, the clock
+        keeps its own grid (no-op). A sample-locked clock (`lock_to`) aligns
+        **sample-exactly**; a plain wall-clock clock aligns to beats through the
+        server's OSC-time anchor (drift-bounded). Returns ``self``.
+
+        **Blocking — call it before `start`/`run`, never from a routine.**
+        """
+        info = server.transport()
+        if info is None:
+            return self
+        origin_sample, tempo = info
+        self.tempo = tempo
+        if isinstance(self.timebase, SampleClockTimebase):
+            self._transport = ("sample", float(origin_sample), tempo)
+        else:
+            # Map the sample-defined origin to OSC time via the /clock anchor,
+            # so a wall-clock client quantizes on the same grid.
+            _, args = server.request("/clock", expect=("/clock.reply",))
+            sample0, rate, osc0 = float(args[0]), float(args[1]), float(args[2])
+            origin_osc = osc0 + (origin_sample - sample0) / rate
+            self._transport = ("wall", origin_osc, tempo)
+        return self
+
+    def leave_transport(self):
+        """Stop following a joined transport; `quant` returns to the clock's own
+        grid. Returns ``self``."""
+        self._transport = None
+        return self
+
+    def _grid_beat(self) -> float:
+        """Current position, in beats, on the grid `quant` snaps to: the shared
+        transport grid when joined, else the clock's own elapsed beats."""
+        if self._transport is None:
+            return self.beats()
+        kind, origin, tempo = self._transport
+        if kind == "sample":
+            now = self.timebase.current_sample()
+            return (now - origin) * tempo / self.timebase.sample_rate
+        return (time.time() - origin) * tempo
+
+    def _quant_delay(self, quant) -> float:
+        """Beats to wait so a routine starts on the next ``quant`` boundary of
+        the grid (``None``/``0`` -> now)."""
+        if not quant:
+            return 0.0
+        pos = self._grid_beat()
+        target = math.ceil(pos / quant) * quant
+        return max(0.0, target - pos)
+
     # ---- scheduling ----
 
     def _push(self, beat: float, item):
@@ -208,15 +266,18 @@ class TempoClock:
             self._cond.notify()
 
     def play(self, routine, quant=None):
-        """Schedule a routine (or callable) to start now; returns it.
+        """Schedule a routine (or callable), snapping its start to a beat grid.
 
         Args:
             routine: a `Routine`, any `Stream`, or a one-shot callable.
-            quant: intended start quantization -- a beat grid to snap the start
-                onto. Not yet implemented; the item currently starts
-                immediately.
+            quant: start quantization -- the routine starts on the next beat
+                that is a multiple of ``quant`` (e.g. ``4`` = the next bar in
+                4/4). ``None`` or ``0`` starts immediately. The grid is the
+                clock's own elapsed beats, or a shared one when the clock has
+                joined a transport (`join_transport`); for multi-client
+                alignment start the clock before playing the quantized routine.
         """
-        self.sched(0.0, routine)
+        self.sched(self._quant_delay(quant), routine)
         return routine
 
     def clear(self):

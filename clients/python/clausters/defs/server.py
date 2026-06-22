@@ -533,5 +533,25 @@ class Server:
 
         return UdpSampleClock(self, window=window, timeout=timeout)
 
+    def transport(self, timeout: float = 5.0):
+        """The server's shared transport grid (``/transport``) as
+        ``(origin_sample, tempo)``, or ``None`` if none is set. The grid lets
+        several clients phase-align on the master clock; join it from a clock
+        with `clausters.base.clock.TempoClock.join_transport`. RT only."""
+        _, args = self.request("/transport", timeout=timeout, expect=("/transport.reply",))
+        origin, tempo, defined = int(args[0]), float(args[1]), int(args[2])
+        return (origin, tempo) if defined else None
+
+    def set_transport(self, origin_sample: int, tempo: float, timeout: float = 5.0):
+        """Define the server's shared transport grid (``/transport``): beat 0 at
+        ``origin_sample`` on the sample clock, advancing at ``tempo`` beats per
+        second. One client (the conductor) sets it; the others
+        `join_transport`. Last writer wins."""
+        addr, args = self.request("/transport", _osclib.Int64(int(origin_sample)), float(tempo),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport failed: {args}")
+        return self
+
     def close(self):
         self.interface.close()

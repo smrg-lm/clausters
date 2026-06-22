@@ -148,6 +148,15 @@ class Session:
         self.clock.lock_to(self.server)
         return self
 
+    def join_transport(self):
+        """Join this session's server's shared transport, so a ``quant``-ed
+        pattern starts on the same beat as every other client on it (see
+        `TempoClock.join_transport`). Returns ``self`` for chaining:
+        ``Session.live(...).lock_to_server().join_transport()``. No-op if the
+        server has no transport defined."""
+        self.clock.join_transport(self.server)
+        return self
+
     def run(self, seconds: float):
         """Run the clock in real time for ``seconds``, then stop (live only).
 

@@ -71,6 +71,31 @@ def test_lock_to_unreachable_master_falls_back_to_wall_clock():
     server.close()
 
 
+def test_quant_snaps_to_the_clock_grid():
+    # quant delays the start to the next multiple of `quant` beats on the
+    # clock's own grid (beats() is the logical beat while not running).
+    clock = TempoClock(tempo=2.0)
+    clock._logical_beat = 0.0
+    assert clock._quant_delay(4) == 0.0          # on a boundary -> now
+    clock._logical_beat = 3.5
+    assert clock._quant_delay(4) == pytest.approx(0.5)
+    clock._logical_beat = 5.0
+    assert clock._quant_delay(2) == pytest.approx(1.0)   # next even beat is 6
+    assert clock._quant_delay(None) == 0.0       # no quant -> now
+    assert clock._quant_delay(0) == 0.0
+
+
+def test_quant_on_a_joined_wall_clock_transport():
+    import time as _t
+
+    # A wall-clock client joined to a transport whose origin was ~1 s ago at
+    # tempo 2 bps -> ~2 beats elapsed; the next bar (quant 4) is ~2 beats off.
+    clock = TempoClock(tempo=2.0)
+    clock._transport = ("wall", _t.time() - 1.0, 2.0)
+    assert 1.8 < clock._grid_beat() < 2.2
+    assert 1.8 < clock._quant_delay(4) < 2.2
+
+
 if __name__ == "__main__":
     import traceback
 
