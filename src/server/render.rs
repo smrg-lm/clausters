@@ -21,7 +21,6 @@ use std::sync::Arc;
 use rosc::{OscMessage, OscPacket, OscTime};
 
 use crate::dsp::NUM_AUDIO_BUSES;
-use crate::dsp::buffer::{BufferPool, empty_pool};
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_d_faust;
 use crate::osc::translate::{CmdTranslator, parse_buffer_msg};
@@ -197,7 +196,6 @@ pub fn render(
         engine,
         handle,
         translator: CmdTranslator::new(sr as f32),
-        buffers: empty_pool(),
         block: vec![0.0; BLOCK_SIZE * cfg.channels],
         now: 0,
         channels: cfg.channels,
@@ -291,8 +289,6 @@ struct Renderer {
     engine: Engine,
     handle: EngineHandle,
     translator: CmdTranslator,
-    /// Mirror of the engine's buffer pool (the renderer's "network side").
-    buffers: BufferPool,
     block: Vec<f32>,
     /// Frames processed so far; tracked here rather than read back from the
     /// engine's published clock.
@@ -340,21 +336,24 @@ impl Renderer {
                 let (index, job) = parse_buffer_msg(
                     msg.addr.as_str(),
                     &msg.args,
-                    &self.buffers,
+                    &self.translator.buffers,
                     self.sample_rate,
                 )?;
                 // The buffer is built now, but installed sample-accurately
-                // with the rest of the event's commands.
+                // with the rest of the event's commands. It lands in the
+                // translator's pool — the same one `make_synth` reads to fill a
+                // Faust `soundfile("<bufnum>", n)` zone, so soundfile resolves
+                // offline exactly as it does on the live server.
                 match run_job(job)? {
                     NrtAction::Install(buffer) => {
-                        self.buffers[index as usize] = Some(Arc::clone(&buffer));
+                        self.translator.buffers[index as usize] = Some(Arc::clone(&buffer));
                         cmds.push(Cmd::SetBuffer {
                             index: index as usize,
                             buffer: Some(buffer),
                         });
                     }
                     NrtAction::Clear => {
-                        self.buffers[index as usize] = None;
+                        self.translator.buffers[index as usize] = None;
                         cmds.push(Cmd::SetBuffer {
                             index: index as usize,
                             buffer: None,

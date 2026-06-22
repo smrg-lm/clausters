@@ -813,9 +813,9 @@ Faust (ver `docs/schemas.md`).
 La versión idiomática desde el cliente Python (allocator de buffers, barrera
 `/done`, `/n_set` en vivo y la semántica de foto con una segunda voz) está en
 `examples/faust_soundfile.py` — ver la sección de ejemplos en vivo de
-`clients/python/GUIA.md`. Ojo: `soundfile` solo anda en el servidor RT; el
-renderer NRT offline lo deja en silencio (su espejo de buffers no llega al
-traductor).
+`clients/python/GUIA.md`. `soundfile` anda igual en el servidor RT y en el
+renderer NRT offline (el espejo de buffers se llena en ambos; regresión en
+`tests/golden.rs::soundfile_reads_a_score_buffer_in_nrt`).
 
 ### Probar la persistencia de defs entre sesiones
 

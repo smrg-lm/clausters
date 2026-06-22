@@ -2602,3 +2602,33 @@ separate books, one per platform**, both Markdown and ReadTheDocs-deployable.
   milestone labels; the one cross-book anchor (`examples.md` ->
   `schemas.md#midi-standalone-bindings--boot-preset`) still resolves after the
   heading lost its `(M19)` suffix.
+
+## Faust soundfile: offline NRT fix + idiomatic Python example (2026-06-22)
+
+Follow-up to the soundfile bridge (2026-06-20). Two parts.
+
+- **Idiomatic Python example** (`examples/faust_soundfile.py`): a live RT demo
+  that loads a generated motif into a server buffer (`/b_allocRead` via the
+  client's buffer allocator) and loops it from inside a `FaustDef` reading
+  `soundfile("<bufnum>", 1)` -- built with `FaustDef.from_source`, since the
+  signal-tree builder (`clausters.defs.signals`) has no `soundfile` op. Sweeps
+  `gain`/`speed` with `/n_set` and demonstrates the snapshot-at-`/s_new`
+  semantics by reloading the buffer mid-play and spawning a second voice. Docs in
+  `clients/python/GUIA.md` (live-examples section) and a cross-ref in the root
+  `GUIA.md` F6 note.
+- **NRT soundfile fix** (`server::render`): how Faust stores a soundfile is
+  host-filled, not compiled in -- the DSP holds a `Soundfile*` and the host fills
+  `fBuffers`/`fLength`/... at instantiation (canonically a `SoundfileReader`
+  reading files; here, our `add_soundfile` reads a clausters server buffer named
+  by the integer label). So both RT and NRT must hand `make_synth` the server
+  buffer pool. The offline renderer kept its own `Renderer::buffers` separate
+  from `CmdTranslator::buffers` (the pool `make_synth` fills the zone from), so an
+  offline soundfile got the empty placeholder (length 1024) and rendered silent,
+  while the live server (which updates `translator.buffers`) read it. Fix: drop
+  the redundant `Renderer::buffers` field and route every `/b_*` install and
+  lookup through `translator.buffers`, the single source of truth -- the NRT path
+  now uses the same buffer infrastructure as RT. **Test**: `tests/golden.rs`
+  (`soundfile_reads_a_score_buffer_in_nrt`): a score `/b_alloc`s a 300-frame
+  buffer and renders a def whose output is the soundfile length -- 300 when wired,
+  1024 (the placeholder) when not. Verified end to end: an offline render of the
+  example's def went from peak 0.0 to a correct read.

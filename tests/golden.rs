@@ -274,6 +274,65 @@ fn faust_def_renders_in_nrt() {
     }
 }
 
+/// A Faust `soundfile("<bufnum>", n)` reads a *server buffer* installed by the
+/// score. Regression: the NRT renderer must land the buffer in the translator's
+/// pool — the one `make_synth` fills the soundfile zone from — not only in the
+/// engine's. Before that wiring, an offline soundfile got the empty placeholder
+/// (length 1024) and was silent. The def here outputs the soundfile *length*,
+/// which is the buffer's frame count (300) when wired and 1024 when not, so a
+/// zeroed `/b_alloc` buffer is enough — no sample data needed.
+#[cfg(feature = "faust")]
+#[test]
+fn soundfile_reads_a_score_buffer_in_nrt() {
+    let score = Score::new([
+        (
+            0.0,
+            vec![
+                msg(
+                    "/b_alloc",
+                    vec![OscType::Int(0), OscType::Int(300), OscType::Int(1)],
+                ),
+                msg(
+                    "/d_faust",
+                    vec![
+                        OscType::String("sflen".into()),
+                        OscType::String(
+                            r#"process = (0, 0) : soundfile("0", 1) : (_, !, !);"#.into(),
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        (
+            100.0 / 48000.0,
+            vec![msg(
+                "/s_new",
+                vec![
+                    OscType::String("sflen".into()),
+                    OscType::Int(1),
+                    OscType::Int(0),
+                    OscType::Int(0),
+                ],
+            )],
+        ),
+        (200.0 / 48000.0, vec![msg("/n_free", vec![OscType::Int(1)])]),
+    ])
+    .unwrap();
+    let cfg = RenderConfig {
+        sample_rate: 48000.0,
+        channels: 1,
+        ..RenderConfig::default()
+    };
+    let (out, _) = render_to_vec(&score, &cfg).unwrap();
+    // Once the synth starts (sample 100) the output is the buffer's frame count.
+    // 1024 would mean the soundfile fell back to the empty placeholder.
+    assert_eq!(out[50], 0.0, "silent before the synth starts");
+    assert_eq!(
+        out[150], 300.0,
+        "soundfile length = the score buffer's frames"
+    );
+}
+
 /// A decaying recursion must die to exact zero instead of lingering in
 /// subnormals: factories are compiled with `-ftz 2` and the render thread
 /// runs in flush-to-zero mode (see `dsp::denormals`). y[n] = 0.9^n leaves

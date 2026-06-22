@@ -23,10 +23,12 @@ Two things worth knowing:
     The example shows this: it reloads the buffer mid-play and spawns a second
     voice, which reads the new motif while the first keeps playing the old one.
 
-This needs a **live server built with the Faust feature** (``soundfile`` reads
-go through the network thread's buffer mirror, which only the RT server wires up
--- the offline NRT renderer does not). Build it, then run this; it starts and
-stops its own server::
+This is a **live RT** demo (live playback, ``/n_set`` automation, overlapping
+voices), so it needs a server built with the Faust feature. (``soundfile`` reads
+the buffer mirror at ``/s_new``; that mirror is wired both on the live server and
+in the offline NRT renderer, so a `soundfile` def renders offline too -- this
+example just shows the live side.) Build the server, then run this; it starts and
+stops its own::
 
     cargo build --release --features faust
     python3 examples/faust_soundfile.py
