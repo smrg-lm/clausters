@@ -149,4 +149,5 @@ server.close()
 
 - [API reference](api.md) — the generated reference for `Session` and every method.
 - [The client, layer by layer](guide.md) — where the `Server`, the clock and the seam fit in the whole client.
+- [Routines and clocks](routines-and-clocks.md) — the level below a session: driving a `Routine`, a `TempoClock` and a `Server` yourself, with sample-accurate timing.
 - [Examples](examples.md) — `offline_render.py` and `live_udp.py`, the session in runnable form.
