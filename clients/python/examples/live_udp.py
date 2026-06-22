@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Play live over UDP from the *installed* package (client C12).
+"""Play live over UDP from the *installed* package.
 
 The live counterpart of ``offline_render.py``: the same ``Session`` / ``Pbind``
 API, but a live RT session sends OSC over UDP to a running Clausters server. The

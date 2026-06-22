@@ -27,7 +27,7 @@ The package is three layers plus a thin convenience wrapper. The split is delibe
 
 ## `clausters.Session` — ergonomic defaults, no globals
 
-`Session` bundles a `Server` and a clock, with `Session.nrt()` / `Session.live()` factories and `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist — an offline NRT one for plots next to a live RT one — in the same script.
+`Session` bundles a `Server` and a clock, with `Session.nrt()` / `Session.live()` factories and `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist — an offline NRT one for plots next to a live RT one — in the same script. See [Sessions](sessions.md) for the full picture.
 
 ## The seam, restated
 

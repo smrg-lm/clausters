@@ -13,7 +13,7 @@ build relies on a thread-global "current graph" that every ``UGen.new`` mutates
 (``UGen.buildSynthDef``) — the graph here *is* the tree of composed objects: a
 ``Ugen``'s inputs hold its operands directly, and the `SynthDef` walks
 that tree to emit the spec. Nothing is global, so several defs can be built
-concurrently (see the memory ``evitar-estados-globales-clausters``).
+concurrently.
 
 **The server's UGen set is small** (``SinOsc``, ``Impulse``, ``WhiteNoise``,
 ``In``/``InCtl``, ``Out``/``ReplaceOut``, ``PlayBuf``/``BufRd``,

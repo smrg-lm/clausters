@@ -6,6 +6,7 @@
 
 - [Getting started](getting-started.md)
 - [The client, layer by layer](guide.md)
+- [Sessions](sessions.md)
 - [Examples](examples.md)
 
 # Reference

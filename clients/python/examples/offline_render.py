@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-contained offline render with the *installed* package (client C12).
+"""Self-contained offline render with the *installed* package.
 
 Unlike the examples under the repo-root ``examples/`` (which insert
 ``clients/python`` onto ``sys.path``), these ship with the wheel and import

@@ -1,7 +1,6 @@
 """Server facade: the running Clausters server, its resources and comms.
 
-This is the **server-application** side of the client (see the memory note
-``separacion-cliente-servidor-clausters`` and ``clients/PLAN.md``): it owns the
+This is the **server-application** side of the client: it owns the
 **communication interface** (RT over UDP by default; an ``OscNrtInterface`` for
 offline; shared-memory/embed would be further interfaces), the client-side
 resource allocators (`node`/`bus`/`buffer`), builds the OSC and

@@ -1,8 +1,7 @@
 """Execution context (port of ``sc3/base/main.py``).
 
 A small singleton holding what routines and clocks need to find each other. The
-project rule is to **avoid global state** (see the memory
-``evitar-estados-globales-clausters``): the server and clock are passed
+client deliberately **avoids global state**: the server and clock are passed
 explicitly, so RT and NRT can coexist in one script. The one piece of ambient
 context that must exist — "which routine is running right now" — is
 **thread-local**, so several `TempoClock` threads (and a live RT clock next to

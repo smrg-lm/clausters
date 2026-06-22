@@ -5,7 +5,7 @@ driving it resumes the generator, and the value it ``yield``s is a *time to
 wait* (in beats) before the next resumption. The thing that resumes routines on
 a schedule is the clock (`clausters.base.clock`); here we only define the
 protocol. This is the part that stays in the host language — ``yield`` is
-Python control flow and never moves to Rust (see ``clients/PLAN.md``).
+Python control flow and never moves to Rust.
 """
 
 import inspect

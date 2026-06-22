@@ -22,8 +22,7 @@ list is topologically ordered (every ``{"ugen": w}`` reference points at an
 earlier node, as the server requires) and shared sub-graphs are emitted once
 (dedup by object identity). Controls are gathered in first-seen order; reusing
 the same name with a different default is an error. No thread-global build
-context is touched, so defs build concurrently — the project's
-no-global-state rule (memory ``evitar-estados-globales-clausters``).
+context is touched, so defs build concurrently.
 """
 
 import json

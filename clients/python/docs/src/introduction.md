@@ -22,6 +22,7 @@ The key design property is a single seam: the `Server` holds a communication int
 
 - **New here?** Start with [Getting started](getting-started.md): install the package and play a sound.
 - **Want the mental model?** Read [The client, layer by layer](guide.md): `base`, `seq`, `defs` and the seam.
+- **Want the ergonomic entry point?** [Sessions](sessions.md) shows how one handle drives a live take or an offline render.
 - **Looking for runnable code?** See [Examples](examples.md).
 - **Looking for a symbol?** The [API reference](api.md) is generated from the package docstrings.
 
