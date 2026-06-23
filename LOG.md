@@ -2701,3 +2701,51 @@ the existing server-agnostic vs server-specific seam.
   test); live E2E of `osc_responder.py` against a running server printed the
   relayed notes and the `transport changed -> re-aligning` reaction. `cargo fmt
   --check` clean, core builds without features.
+
+## C16 — Static timelines + a playhead (random-access sequencing) (2026-06-23)
+
+The generative layer (`Routine`/`Pbind`) is forward-only — its state lives in the
+generator's locals, so it cannot be *seeked*. C16 adds the static counterpart: a
+materialized, editable, random-access-by-time structure, which is what makes
+DAW-style transport controls (play/stop/locate/loop + a song position) possible.
+A playhead scans it forward as the clock advances; the random access lives only
+at the boundaries (play/seek/loop wrap). Designed with the user (AskUserQuestion,
+2026-06-23): **client-only** playhead first (a server-broadcast transport layers
+on later), and items are **realizable** (high-level `Event`s plus raw OSC/MIDI).
+
+- **`clausters/seq/timeline.py`**:
+  - `Timeline` — a sorted list of `(beat, item)` (stable `bisect.insort`), edited
+    with `add` (returns a handle) / `remove` / `move` / `clear` and read by time
+    with `index_at` (the seek primitive) / `range` (`[t0, t1)`) / `at` /
+    `duration`. `from_pattern(pattern, dur)` captures a `Pbind` offline into a
+    timeline ("bounce to a clip"), recording each event at its logical beat.
+  - `Playhead` — `play(at, quant)` / `stop` / `locate(beat)` / `loop(start, end)`
+    / `unloop` / `position`, over a timeline on a clock + destination. It is a
+    cursor walk fed to the clock as a `Routine`: `index_at` re-seeks at the
+    boundaries, the body yields the gaps between items. Rides the clock's logical
+    time, so it inherits `quant` / `lock_to` / `join_transport` unchanged.
+    `position()` interpolates from the clock while playing. An epoch counter +
+    `clock.unsched` make `stop`/`locate` cancel the in-flight feeder cleanly.
+  - `OscEvent(addr, *args)` / `MidiEvent(message)` — raw OSC/MIDI items (a
+    timeline can be a plain editable OSC/MIDI score), realized via
+    `Server.send_bundle` / the new `MidiServer.send_message`.
+- **Supporting additions**: `TempoClock.unsched(item)` (remove one scheduled
+  routine by identity, heapify the rest — cancel without `clear`'s scorched
+  earth); `MidiServer.send_message` (emit a raw message at the logical beat, the
+  MIDI counterpart of `send_bundle`). Exports from `clausters.seq`.
+- **Tests**: `clients/python/tests/test_timeline.py` (10) — Timeline edits and
+  random access (pure), and the Playhead driven **offline** into a recording
+  destination so play order, `locate` (skip + offset), `loop` wrap and raw-item
+  realization are asserted by the logical beats each item lands on; `stop` checked
+  at the queue level (it unscheds the feeder); `from_pattern`.
+- **Example**: `clients/python/examples/timeline_transport.py` — captures a
+  pattern, edits the timeline, then drives it live (`play` -> `locate` -> `loop`
+  -> `stop`), printing the song position. Live E2E against a running server: exit
+  0, position interpolation read 2.40 beats at ~1.2 s / 2 bps.
+- **Docs**: new Python-book page `timelines.md` (the static-vs-generative split,
+  the timeline, the playhead, capture, offline render, the relation to the shared
+  transport) in `SUMMARY.md`; `transport.md` "what it is not" reconciled (the
+  client now has a local playhead; only the *server* transport lacks play/stop);
+  `examples.md` + examples `README.md` cataloged; `clausters.seq.timeline` added
+  to the pydoc-markdown config; `GUIA.md` section 10 + checklist row.
+- **Verified**: full client suite 101 passed / 4 skipped (10 new); live E2E clean.

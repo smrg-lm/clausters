@@ -30,6 +30,7 @@ loaders:
       - clausters.seq.event
       - clausters.seq.pattern
       - clausters.seq.eventstream
+      - clausters.seq.timeline
       - clausters.defs
       - clausters.defs.signals
       - clausters.defs.ugens

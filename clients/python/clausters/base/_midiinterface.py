@@ -179,6 +179,14 @@ class MidiServer:
         self.interface.emit(beat + event.sustain(), bytes((0x80 | ch, note, 0)))
         return None
 
+    def send_message(self, message):
+        """Emit a raw MIDI message at the running routine's logical beat — the
+        MIDI counterpart of ``Server.send_bundle`` for a raw OSC message, used by
+        `clausters.seq.timeline.MidiEvent`."""
+        beat = getattr(main.current_tt, "_logical_beat", 0.0) or 0.0
+        self.interface.emit(beat, bytes(message))
+        return None
+
     def write(self, path, ppq: int | None = None, fmt: str = "smf"):
         """Write the accumulated score (NRT only) as a `.mid` (`fmt="smf"`) or a
         MIDI 2.0 clip (`fmt="clip"`)."""

@@ -285,6 +285,16 @@ class TempoClock:
         with self._cond:
             self._queue.clear()
 
+    def unsched(self, item):
+        """Remove a specific scheduled ``item`` from the queue (by identity),
+        leaving the rest in order. Used to cancel one routine — e.g. a
+        `clausters.seq.timeline.Playhead` stopping or seeking — without clearing
+        everything else `clear` would drop."""
+        with self._cond:
+            self._queue = [entry for entry in self._queue if entry[2] is not item]
+            heapq.heapify(self._queue)
+            self._cond.notify()
+
     # ---- driving ----
 
     def _wake(self, item, beat):

@@ -37,6 +37,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/midi_responder.py
   ```
 
+- **`timeline_transport.py`** — DAW-style transport over a static `Timeline`: captures a pattern into a timeline, edits it, then drives it live with a `Playhead` — `play`, `locate` (seek), `loop`, and a song `position`. Needs a **running** server. See [Timelines and the playhead](timelines.md).
+
+  ```sh
+  python clients/python/examples/timeline_transport.py
+  ```
+
 The first two share their pattern code and differ only in the `Server` interface — the seam from [The client, layer by layer](guide.md) in practice.
 
 The broader catalog of examples (the low-level transports and the raw OSC helpers) lives in the repository-root `examples/`; those use a `sys.path` shim so they run straight from a source checkout without an install.

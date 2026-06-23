@@ -530,7 +530,7 @@ afecta *cuándo* dispara un comando agendado.
 
 ```sh
 cd clients/python
-python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef, test_tcp, test_responders
+python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef, test_tcp, test_responders, test_timeline
 ```
 
 `pytest` es la dependencia de dev (PEP 735 `[dependency-groups] dev`): a nivel
@@ -557,6 +557,7 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | M18 | `GraphDef` builder (`/d_graph`) + `server.graph` (`/graph_new`); superficie nombrada | sección 4 (GraphDef), `tests/test_graphdef.py`, `examples/graphdef.py` / `group_set.py` |
 | C12 | wheel pip-instalable que empaqueta los cdylibs; venv autocontenido | sección 8 |
 | C13 | responders `OscFunc`/`MidiFunc` (camino de entrada); `/transport` push-on-change | sección 9, `tests/test_responders.py`, `examples/osc_responder.py` / `midi_responder.py` |
+| C16 | `Timeline` (estatica, acceso aleatorio) + `Playhead` (play/stop/locate/loop/position) | seccion 10, `tests/test_timeline.py`, `examples/timeline_transport.py` |
 
 ## 8. Empaquetado e instalación (C12)
 
@@ -660,3 +661,37 @@ Abre un puerto MIDI de entrada virtual `clausters-in`. Cableá una fuente
 (teclado / DAW) con `pw-link` (listá puertos con `pw-link -o`/`-i`) o en
 qpwgraph; con ALSA crudo, `aconnect`. Cada tecla suena un synth en el servidor
 hasta que la soltás (note-on → `/s_new`, note-off → `/n_free`).
+
+## 10. Timelines y playhead: transporte estilo DAW (C16)
+
+Las rutinas/patterns son **generativas** (un generador que avanza, sin seek).
+Una `Timeline` es lo opuesto: una lista estatica y editable de `(beat, item)`
+ordenada por beat, con **acceso aleatorio por tiempo**. Eso habilita controles
+de transporte de DAW sobre un `Playhead`: play/stop/locate/loop + song position
+(el acceso aleatorio ocurre en los bordes; entre medio es un escaneo adelante).
+
+### Tests unitarios (offline, sin servidor)
+
+```sh
+cd clients/python
+python3 -m pytest -q tests/test_timeline.py   # 10 tests
+```
+
+Cubren: edicion (add/remove/move, orden estable), acceso aleatorio
+(`index_at`/`range`/`at`), orden de reproduccion, `locate` (saltea + offsetea),
+`loop` (wrap), items OSC/MIDI crudos, `stop` (desagenda el feeder), `position`,
+y `from_pattern` (capturar un `Pbind` a una timeline).
+
+### E2E del transporte en vivo (`timeline_transport.py`)
+
+```sh
+cargo build -p clausters-ffi --bin clausters
+(./target/debug/clausters >/dev/null 2>&1 & PID=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python clients/python/examples/timeline_transport.py; \
+ kill $PID 2>/dev/null; true)
+```
+
+Esperado: captura un patron a una `Timeline`, la edita, y la toca en vivo con el
+`Playhead` — imprime la position interpolada (~2.40 beats tras 1.2 s a 2 bps),
+hace `locate(1.0)`, `loop(0,2)` y `stop`, todo sin error. Las notas suenan en el
+servidor.
