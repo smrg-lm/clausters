@@ -14,6 +14,28 @@ Server schedules every event by absolute sample with ``/sched`` — drift-free.
 Query latency does not accumulate: an anchor is paired with the *midpoint* of
 its round trip, whose half-width is a bounded uncertainty that only shifts the
 whole grid by a constant. Relative timing stays sample-exact by construction.
+
+Why this is drift-free, and what *can* fail. Each event's target is an absolute
+sample recomputed from the routine's absolute logical beat — ``round((origin +
+beat / tempo) * sample_rate)`` — not stepped from the previous event, so error
+never accumulates: at 48 kHz the target stays integer-exact within ``float64``
+for hours. The fitted line above only sizes the *lead* (how far ahead the
+``/sched`` is queued), never the event time, which the server's own counter
+resolves exactly. So the only failure mode is **binary, not cumulative**: a
+``/sched`` that arrives *after* its target sample (lead < worst-case client +
+network + model jitter) lands late; one that arrives in time lands exact. A long
+run at perfect spacing just means the lead was never violated.
+
+Surviving suspend. The server's counter counts samples *actually emitted*, so it
+freezes when the audio device suspends (system sleep, or the sink going idle)
+and resumes in place — it is not a wall clock. A ``/sched`` keyed to an absolute
+sample simply waits in the server's queue and fires when the counter reaches it,
+so the audio grid stays sample-exact across the gap (consecutive events keep
+their exact spacing; the freeze just drops out of the timeline). The tracker
+rides this automatically: while the counter is stalled its anchors fit a flat
+slope, so the predictor stops running ahead and the lead/backlog stays bounded;
+on resume the slope recovers. Only the wall-clock *phase* shifts, by the suspend
+duration — relative sample spacing is preserved.
 """
 
 import threading
