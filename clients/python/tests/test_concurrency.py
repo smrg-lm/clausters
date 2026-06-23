@@ -8,7 +8,7 @@ import threading
 
 import pytest
 
-from clausters.base import OscNrtInterface, OscUDPInterface, Routine, TempoClock
+from clausters.base import OscNrtInterface, OscUdpInterface, Routine, TempoClock
 from clausters.base import _osclib as osc
 from clausters.base.main import main
 from clausters.defs import Server
@@ -87,7 +87,7 @@ def test_rt_and_nrt_in_the_same_script():
     _embed_or_skip()
     # A live RT clock churning on a background thread (emits to a socket with no
     # listener — harmless), set up to thrash the execution context fast.
-    rt_server = Server(interface=OscUDPInterface().start())
+    rt_server = Server(interface=OscUdpInterface().start())
     rt_clock = TempoClock(tempo=50.0)
 
     def churn():

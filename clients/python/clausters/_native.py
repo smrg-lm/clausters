@@ -6,7 +6,7 @@ and clock/sample conversions to Python. Because the server's native UGens use
 the very same ``clausters-core``, these results match the server by
 construction for the operators it computes natively.
 
-Boundary rule (project-wide, same as `clausters.transport`): only flat
+Boundary rule (project-wide, same as `clausters.ipc`): only flat
 data crosses — Python floats/ints in, `array.array` ``'f'`` (or a plain
 float for scalar calls) out. Nothing heavy is imported; a numpy user can wrap
 the returned ``array`` without copying.

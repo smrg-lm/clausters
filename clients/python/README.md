@@ -7,7 +7,7 @@ ported selectively from SuperCollider's class library
 In place now (client-side OSC/MIDI responders and a JavaScript client are still
 to come):
 
-- `clausters.transport` — low-level transports (embedded server, shared memory,
+- `clausters.ipc` — low-level transports (embedded server, shared memory,
   offline render); stdlib only. Its public names (`Clausters`, `ShmClient`,
   `render`) are re-exported from the top-level `clausters` package.
 - `clausters._native` — ctypes binding over the shared native core

@@ -13,7 +13,7 @@ from clausters.base import builtins as B
 from clausters.base import (
     AbstractObject,
     OscNrtInterface,
-    OscTCPInterface,
+    OscTcpInterface,
     Routine,
     StopStream,
     TempoClock,
@@ -126,7 +126,7 @@ def test_tcp_interface_constructs_and_frames():
     # C8: no longer a stub. It constructs without connecting and frames an OSC
     # packet with a 4-byte big-endian length prefix (full framing/reassembly
     # coverage is in tests/test_tcp.py).
-    iface = OscTCPInterface(host="127.0.0.1", port=57110)
+    iface = OscTcpInterface(host="127.0.0.1", port=57110)
     assert iface.time_mode == "unix"
     framed = iface._frame(b"abcdef")
     assert framed == (6).to_bytes(4, "big") + b"abcdef"
@@ -137,7 +137,7 @@ def test_tcp_interface_constructs_and_frames():
 def test_routine_renders_through_nrt_interface():
     _ffi_or_skip()
     # The Server owns the interface and emits; the clock only times. Swap the
-    # interface for an OscUDPInterface and the same routine plays live.
+    # interface for an OscUdpInterface and the same routine plays live.
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=2.0)
 

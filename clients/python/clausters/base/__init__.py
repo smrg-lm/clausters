@@ -36,8 +36,8 @@ from ._oscinterface import (
     OscNrtInterface,
     OscReceiver,
     OscScore,
-    OscTCPInterface,
-    OscUDPInterface,
+    OscTcpInterface,
+    OscUdpInterface,
 )
 
 __all__ = [
@@ -55,8 +55,8 @@ __all__ = [
     "StopStream",
     "YieldAndReset",
     "OscInterface",
-    "OscUDPInterface",
-    "OscTCPInterface",
+    "OscUdpInterface",
+    "OscTcpInterface",
     "OscNrtInterface",
     "OscReceiver",
     "OscScore",

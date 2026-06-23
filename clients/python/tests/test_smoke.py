@@ -21,7 +21,7 @@ def _native_or_skip():
     return _native
 
 
-def test_package_reexports_transport():
+def test_package_reexports_ipc():
     assert hasattr(clausters, "render")
     assert hasattr(clausters, "ShmClient")
     assert hasattr(clausters, "Clausters")

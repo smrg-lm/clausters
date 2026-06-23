@@ -148,7 +148,7 @@ class OscInterface:
         pass
 
 
-class OscUDPInterface(OscInterface):
+class OscUdpInterface(OscInterface):
     """Real-time UDP: messages and bundles go out the socket immediately, and
     the server's replies come back to the bound socket (so the Server can do
     request/reply over the same interface)."""
@@ -194,12 +194,12 @@ class OscUDPInterface(OscInterface):
             return None
 
 
-class OscTCPInterface(OscInterface):
+class OscTcpInterface(OscInterface):
     """Real-time TCP, length-prefixed. Each OSC packet — message or
     bundle — goes out as a 4-byte big-endian length followed by the bytes, the
     same framing scsynth uses and the server's ``osc::tcp`` expects; replies
     arrive framed the same way over the one connection. A drop-in for
-    `OscUDPInterface` (the ``target`` argument is ignored: the connection
+    `OscUdpInterface` (the ``target`` argument is ignored: the connection
     already knows its peer). Start the server with ``--tcp``."""
 
     time_mode = "unix"
@@ -307,6 +307,6 @@ class OscNrtInterface(OscInterface):
         Schedule a closing bundle (e.g. ``/n_free 0``) at the end so the render
         has a defined duration — scsynth semantics (its commands do not sound).
         """
-        from .. import transport
+        from .. import ipc
 
-        return transport.render(self.score.bytes(), sample_rate=sample_rate, channels=channels)
+        return ipc.render(self.score.bytes(), sample_rate=sample_rate, channels=channels)

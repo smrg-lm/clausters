@@ -11,7 +11,7 @@ from clausters.defs import (
     AudioBusAllocator,
     BufferAllocator,
     FaustDef,
-    NodeIDAllocator,
+    NodeIdAllocator,
     Server,
 )
 from clausters.defs import signals as S
@@ -93,7 +93,7 @@ def test_faustdef_source_payload():
 # ---- resource allocators ----
 
 def test_node_id_allocator_reuses_freed():
-    a = NodeIDAllocator(start=1000)
+    a = NodeIdAllocator(start=1000)
     assert (a.alloc(), a.alloc()) == (1000, 1001)
     a.free(1000)
     assert a.alloc() == 1000

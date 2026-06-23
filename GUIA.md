@@ -608,7 +608,7 @@ ffplay -autoexit /tmp/arp.wav                     # el arpegio de 5 notas
 
 `clausters.render(score)` bloquea al *llamador* (nunca al servidor: no hay
 servidor) y devuelve los floats planos — el flujo científico de consultar y
-graficar. El binding (`clients/python/clausters/transport.py`, stdlib pura) también
+graficar. El binding (`clients/python/clausters/ipc.py`, stdlib pura) también
 trae `Clausters(workers=N)` para el servidor vivo in-process: comandos por
 llamada de función, replies por `poll()`/`request()` (la fachada síncrona),
 y `clock`/`ctl_set` directos al data plane.

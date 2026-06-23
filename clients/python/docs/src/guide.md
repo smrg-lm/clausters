@@ -25,7 +25,7 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 - `ugens` — the UGen-graph counterpart, lowercase callables producing `Ugen`/`Control`, and `SynthDef` (sent with `/d_recv`). Both are built **instance-based, with no global build context**.
 - `Node`/`Bus`/`Buffer` handles and their allocators.
 - `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched` timing without shared memory.
-- `Server` — **owns the communication interface and emits.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUDPInterface` and `OscTCPInterface` (length-prefixed OSC; start the server with `--tcp`), both drop-in.
+- `Server` — **owns the communication interface and emits.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface` and `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), both drop-in.
 
 ## `clausters.Session` — ergonomic defaults, no globals
 

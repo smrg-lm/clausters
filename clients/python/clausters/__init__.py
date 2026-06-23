@@ -5,7 +5,7 @@ SuperCollider's class library (sc3), Faust-first.
 
 What is in place now:
 
-- `clausters.transport` — the low-level transports (embedded server, shared
+- `clausters.ipc` — the low-level local transports (embedded server, shared
   memory, offline render). Its public names are re-exported here, so existing
   code using ``from clausters import Clausters, ShmClient, render`` keeps
   working.
@@ -38,7 +38,7 @@ from .errors import (
 )
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .session import Session
-from .transport import (
+from .ipc import (
     ABI_VERSION,
     SEGMENT_SIZE,
     Clausters,

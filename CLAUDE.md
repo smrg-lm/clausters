@@ -45,6 +45,15 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 - `PLAN.md`, `clients/PLAN.md` and `LOG.md` (the dev-history files) are in
   English. `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation
   with the user are in Spanish.
+- **Type and class names** are CamelCase, with an acronym inside a name
+  taking only its first letter in uppercase — `OscFunc`, `MidiFunc`,
+  `OscUdpInterface`, `OscTcpInterface`, `NodeIdAllocator` — never all-caps
+  (`OSCFunc`, `OscUDPInterface`). This holds both for the Python client (and
+  any later class-based client) and for Rust, which already follows it by
+  idiomatic style (clippy's `upper_case_acronyms`). The only all-caps
+  acronyms left are verbatim external-API symbols, kept as cited: Faust's C
+  API FFI in `src/faust` (`UIGlue`, `CsigFConst`, `CboxHSlider`, ...) and, in
+  docstrings, sclang's `OSCFunc`/`MIDIFunc`.
 
 ## Commit workflow
 

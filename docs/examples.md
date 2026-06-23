@@ -16,7 +16,7 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 |---|---|
 | `sequencing.py` | The high-level [`clausters` client](clients.md): pattern sequencing with `Session` + `Pbind` + value patterns, and the one seam that runs the *same* phrase offline (NRT render) or live (UDP) by swapping the session. The flagship intro to the client library. |
 | `synthdef.py` | Builds a UGen `SynthDef` from Python (lowercase callables → graph → `/d_recv`), instance-based with no global build context, and proves it renders **byte-identically** to the server's built-in `default` def. |
-| `tcp_client.py` | The same `Server` facade over **TCP** (`OscTCPInterface`, length-prefixed OSC; start the server with `--tcp`) instead of UDP. |
+| `tcp_client.py` | The same `Server` facade over **TCP** (`OscTcpInterface`, length-prefixed OSC; start the server with `--tcp`) instead of UDP. |
 | `midi_file.py` | Renders an event pattern to a **Standard MIDI File** (`.mid`, or `--clip` for a 16-bit-velocity MIDI 2.0 clip): the *same* `Pbind`/`TempoClock` targets a `MidiServer` destination instead of the OSC `Server` (double dispatch), realizing each note as MIDI on/off and writing the file through the `clausters-midi` crate. No server, no audio. |
 | `midi_live.py` | Plays the same pattern **live** out a virtual OS MIDI port (`MidiRtInterface`, `clausters-midi --features live`): note-ons at the beat, note-offs scheduled — route it to a synth or the server's own `--midi` input with `aconnect`. |
 | `json_client.py` | Generates defs as JSON and drives the server over OSC. Subcommands: `status`, `ugen`, `faust` (box API), `signal` (Faust Signal API: a `recursion`/`self` sine + a one-pole lowpass on noise), `wavetable`, `buffer`, `bundle`, `feedback` (a LocalIn/LocalOut resonant comb), `score` (writes an NRT score to `/tmp/clausters_score.osc`). |
@@ -47,6 +47,6 @@ These import `clausters` from the **installed package** (no `sys.path` shim, no 
 | `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs the `faust` feature and `oscsend`. |
 | `midi_standalone.sh` | [MIDI-standalone](schemas.md#midi-standalone-bindings--boot-preset): set up a SynthDef + a GraphDef + a `/midi_bind` once, quit, then restart with `--midi` and the binding is **back with no OSC** — play it from a controller via `aconnect`. Needs `oscsend`. |
 
-## Python binding (`clients/python/clausters/transport.py`)
+## Python binding (`clients/python/clausters/ipc.py`)
 
-The reusable transport library (standard library + `ctypes`): a shared-memory client and the embed façade with a synchronous `request()` call. It is the `clausters.transport` module of the high-level Python client package (`clients/python/clausters/`), and its `Clausters`/`ShmClient`/`render` are re-exported from the top-level `clausters` package. See [Local transports & embedding](ipc.md) for the API.
+The reusable local-transport library (standard library + `ctypes`): a shared-memory client and the embed façade with a synchronous `request()` call. It is the `clausters.ipc` module of the high-level Python client package (`clients/python/clausters/`), and its `Clausters`/`ShmClient`/`render` are re-exported from the top-level `clausters` package. See [Local transports & embedding](ipc.md) for the API.

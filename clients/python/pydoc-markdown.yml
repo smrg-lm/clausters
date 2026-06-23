@@ -16,7 +16,7 @@ loaders:
       - clausters
       - clausters.session
       - clausters.responders
-      - clausters.transport
+      - clausters.ipc
       - clausters.errors
       - clausters.base
       - clausters.base.builtins

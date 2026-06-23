@@ -98,7 +98,7 @@ PY
 **La costura** (lo central): el **reloj solo agenda y mide el tiempo**; la
 **`Server` posee la interfaz de comunicación y emite** (C4). Una misma rutina
 produce un score NRT si la `Server` tiene una `OscNrtInterface`; cambiando la
-interfaz por `OscUDPInterface` la misma rutina se manda en vivo, sin tocarla.
+interfaz por `OscUdpInterface` la misma rutina se manda en vivo, sin tocarla.
 
 ```sh
 PYTHONPATH=. python3 - <<'PY'
@@ -127,7 +127,7 @@ allocators de recursos:
 
 ```sh
 PYTHONPATH=. python3 - <<'PY'
-from clausters.defs import signals as S, FaustDef, NodeIDAllocator, AudioBusAllocator
+from clausters.defs import signals as S, FaustDef, NodeIdAllocator, AudioBusAllocator
 freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
 phasor = S.rec(lambda s: (s + freq/S.sr()) % 1.0)        # feedback explícito; S.sr() = ma.SR
 sine = S.sin(phasor * S.TAU) * 0.2
@@ -135,7 +135,7 @@ fdef = FaustDef.from_signals("sine", sine)
 print("controles:", fdef.control_names(), "+ reservados", fdef.reserved)
 print("payload (recorte):", fdef.payload()[:70], "...")
 
-ids = NodeIDAllocator(1000); print("ids:", ids.alloc(), ids.alloc())
+ids = NodeIdAllocator(1000); print("ids:", ids.alloc(), ids.alloc())
 buses = AudioBusAllocator(size=128, reserved=2); b = buses.alloc(2)  # size = conteo del servidor
 print("bus audio:", b.index, b.channels)                 # 2 2 (arriba de las salidas)
 PY
@@ -494,16 +494,16 @@ PY
 ### Transporte TCP (C8)
 
 El servidor también habla **OSC por TCP** con `--tcp` (length-prefixed: prefijo
-de 4 bytes big-endian + bytes OSC, mismo framing que scsynth). `OscTCPInterface`
-es drop-in de `OscUDPInterface`: la `Server` lo usa igual (request/reply,
+de 4 bytes big-endian + bytes OSC, mismo framing que scsynth). `OscTcpInterface`
+es drop-in de `OscUdpInterface`: la `Server` lo usa igual (request/reply,
 `/d_recv`, synths). Regla E2E (misma invocación Bash):
 
 ```sh
 (./target/debug/clausters --tcp --no-persist & SRV=$!; sleep 1.5; \
  PYTHONPATH=clients/python python3 -c "
-from clausters.base import OscTCPInterface
+from clausters.base import OscTcpInterface
 from clausters.defs import Server
-srv = Server(interface=OscTCPInterface().start())   # conecta por TCP
+srv = Server(interface=OscTcpInterface().start())   # conecta por TCP
 print('status:', srv.status())                      # round-trip enmarcado
 import time; n = srv.synth('default', {'freq': 440.}); time.sleep(0.2)
 print('synths:', srv.status()[2]); srv.free(n); srv.close()
@@ -550,7 +550,7 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | C5 | patterns/eventos; `Pbind` NRT/vivo; timing exacto | sección 5 |
 | C5 leftover | `SynthDef` UGen (`/d_recv`); paridad byte-idéntica con `default` | sección 4 (def UGen) |
 | C6 | anclaje sample-clock por UDP (`/clock` → modelo → `/sched`) | sección 5 (anclado) |
-| C8 | transporte TCP (`--tcp`, length-prefixed); `OscTCPInterface` | sección 5 (TCP) |
+| C8 | transporte TCP (`--tcp`, length-prefixed); `OscTcpInterface` | sección 5 (TCP) |
 | C9 | doc cross-lenguaje + ejemplo de secuenciación de alto nivel | `python3 examples/sequencing.py` (offline) y `--live` |
 | M17 s1 | `Pbind` → `.mid` / clip MIDI 2.0 (`MidiServer` + crate) | sección 5 (export MIDI), `tests/test_midi.py`, `examples/midi_file.py` |
 | M17 s2 | salida MIDI en vivo por puerto del SO (`MidiRtInterface`, `--features live`) | sección 5 (salida en vivo), `examples/midi_live.py`, smoke en `tests/test_midi.py` |

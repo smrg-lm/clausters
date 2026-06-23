@@ -20,7 +20,7 @@ import threading
 import time
 
 from ..base import _osclib
-from ..base._oscinterface import OscUDPInterface
+from ..base._oscinterface import OscUdpInterface
 from ..base.timebase import SampleClockTimebase
 
 
@@ -82,7 +82,7 @@ class UdpSampleClock:
 
     def __init__(self, server, window: int = 64, timeout: float = 2.0):
         self.target = server.target.addr()
-        self._iface = OscUDPInterface().start()
+        self._iface = OscUdpInterface().start()
         self.model = SampleClockModel(window=window)
         self._timeout = timeout
         self._tracking = False

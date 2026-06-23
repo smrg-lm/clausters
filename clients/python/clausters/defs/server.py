@@ -21,7 +21,7 @@ from ..base import _osclib
 from ..errors import CommandError, ReplyTimeout
 from ..base.main import main
 from ..base.netaddr import NetAddr
-from ..base._oscinterface import OscNrtInterface, OscUDPInterface
+from ..base._oscinterface import OscNrtInterface, OscUdpInterface
 from ..base.timebase import SampleClockTimebase
 from .bus import (
     AudioBusAllocator,
@@ -30,7 +30,7 @@ from .bus import (
 )
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
-from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
+from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
 
 
 def _flatten_controls(controls) -> list:
@@ -171,7 +171,7 @@ class Server:
         self.target = NetAddr(host, port)
         #: the communication interface (RT/UDP, NRT/score, …). The Server owns
         #: it; swapping it is the RT/NRT seam.
-        self.interface = interface if interface is not None else OscUDPInterface().start()
+        self.interface = interface if interface is not None else OscUdpInterface().start()
         #: seconds added to RT timetags so they land in the (near) future,
         #: sample-accurate, instead of "as soon as possible" (scsynth latency).
         self.latency = latency
@@ -180,7 +180,7 @@ class Server:
         #: match a server launched with `--audio-buses`/`--control-buses`, or
         #: reconcile it from a running server with `query_info`.
         self.options = options if options is not None else ServerOptions()
-        self.nodes = NodeIDAllocator()
+        self.nodes = NodeIdAllocator()
         self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator()

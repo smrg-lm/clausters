@@ -37,7 +37,7 @@ class Group(Node):
     pass
 
 
-class NodeIDAllocator:
+class NodeIdAllocator:
     """Hands out node ids from ``start`` (scsynth clients use 1000+)."""
 
     def __init__(self, start: int = 1000):

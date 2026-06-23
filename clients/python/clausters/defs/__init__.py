@@ -24,7 +24,7 @@ from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .graphdef import GraphDef
-from .node import AddAction, Group, NodeIDAllocator, ROOT_NODE_ID, Synth
+from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
 from .server import Server, ServerInfo, ServerOptions
 from .signals import Signal
 from .synthdef import SynthDef
@@ -74,7 +74,7 @@ __all__ = [
     "AddAction",
     "Group",
     "Synth",
-    "NodeIDAllocator",
+    "NodeIdAllocator",
     "ROOT_NODE_ID",
     "Server",
     "ServerOptions",

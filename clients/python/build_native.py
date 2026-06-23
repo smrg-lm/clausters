@@ -6,7 +6,7 @@ core through two cdylibs built by cargo, not pip:
 
 - ``clausters-ffi`` -> ``libclausters_ffi`` (the numeric core: :mod:`clausters._native`)
 - the ``clausters`` crate built with ``embed,realtime`` -> ``libclausters``
-  (the embedded server / offline render: :mod:`clausters.transport`)
+  (the embedded server / offline render: :mod:`clausters.ipc`)
 
 This module builds both and copies the resulting shared libraries into
 ``clausters/_libs/`` so they ship with the wheel (and are picked up by an

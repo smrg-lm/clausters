@@ -18,7 +18,7 @@ is the idiomatic map, to be refined over time.
   never sends; the `Server` sends, reading the running routine's logical time.
 - **The seam.** `Server` owns a *communication interface*. Swap the interface to
   retarget the *same* code:
-  - live RT → `Server()` (UDP) / `OscTCPInterface` / `Server(latency=...)`,
+  - live RT → `Server()` (UDP) / `OscTcpInterface` / `Server(latency=...)`,
   - offline NRT → `Server(interface=OscNrtInterface())` (accumulates a score),
   - embedded → the `transport` layer (`Clausters`, `render`) over the cdylib.
 - **Three actors:** `Server` (comms + resource allocators), `TempoClock` (tells

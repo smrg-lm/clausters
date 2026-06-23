@@ -2,7 +2,7 @@
 
 The package is pure Python at runtime but reaches the Rust core through two
 cdylibs (``clausters-ffi`` for `clausters._native`, and the ``clausters``
-crate built with ``embed,realtime`` for `clausters.transport`). A built
+crate built with ``embed,realtime`` for `clausters.ipc`). A built
 **wheel** ships those cdylibs *inside* the package, under ``clausters/_libs/``,
 so an installed package is self-contained -- ``pip install`` then ``import
 clausters`` just works, no ``cargo`` and no ``target/`` directory needed.
