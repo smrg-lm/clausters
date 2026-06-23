@@ -117,3 +117,25 @@ def decode(packet: bytes) -> tuple[str, list]:
             size = struct.unpack(">i", rest[:4])[0]
             args.append(rest[4:4 + size]); rest = rest[4 + (size + 3) // 4 * 4:]
     return addr, args
+
+
+def decode_packet(packet: bytes, time=None) -> list:
+    """Decodes an incoming OSC packet into a flat list of ``(addr, args,
+    time)`` messages, unwrapping bundles recursively. A bundle's NTP timetag is
+    decoded to Unix seconds and carried as each contained message's ``time``
+    (``None`` for the immediate timetag ``{0,1}``); a bare message carries the
+    ``time`` passed in. The single entry point for received packets — the
+    counterpart of the server's ``osc::decode_packet`` — so the responder
+    layer handles bundles transparently."""
+    if packet[:8] == b"#bundle\x00":
+        secs, frac = struct.unpack(">II", packet[8:16])
+        btime = None if (secs, frac) == (0, 1) else secs - NTP_UNIX_OFFSET + frac / 2 ** 32
+        out = []
+        rest = packet[16:]
+        while len(rest) >= 4:
+            size = struct.unpack(">i", rest[:4])[0]
+            out += decode_packet(rest[4:4 + size], btime)
+            rest = rest[4 + size:]
+        return out
+    addr, args = decode(packet)
+    return [(addr, args, time)]

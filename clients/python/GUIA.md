@@ -530,7 +530,7 @@ afecta *cuándo* dispara un comando agendado.
 
 ```sh
 cd clients/python
-python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef, test_tcp
+python3 -m pytest -q   # test_smoke, test_base, test_defs, test_seq, test_synthdef, test_tcp, test_responders
 ```
 
 `pytest` es la dependencia de dev (PEP 735 `[dependency-groups] dev`): a nivel
@@ -556,6 +556,7 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 | M17 s2 | salida MIDI en vivo por puerto del SO (`MidiRtInterface`, `--features live`) | sección 5 (salida en vivo), `examples/midi_live.py`, smoke en `tests/test_midi.py` |
 | M18 | `GraphDef` builder (`/d_graph`) + `server.graph` (`/graph_new`); superficie nombrada | sección 4 (GraphDef), `tests/test_graphdef.py`, `examples/graphdef.py` / `group_set.py` |
 | C12 | wheel pip-instalable que empaqueta los cdylibs; venv autocontenido | sección 8 |
+| C13 | responders `OscFunc`/`MidiFunc` (camino de entrada); `/transport` push-on-change | sección 9, `tests/test_responders.py`, `examples/osc_responder.py` / `midi_responder.py` |
 
 ## 8. Empaquetado e instalación (C12)
 
@@ -603,3 +604,59 @@ concreto). Para stagear los libs a mano: `python clients/python/build_native.py`
 
 En un checkout sin instalar, los loaders caen al `target/{release,debug}/` del
 workspace, así que el flujo histórico de compilar-y-correr sigue igual.
+
+## 9. Responders: recibir OSC y MIDI (C13)
+
+Hasta acá el cliente era solo salida. C13 agrega el **camino de entrada**:
+`OscFunc`/`MidiFunc` reciben OSC/MIDI de cualquier aplicación, hacen match y
+despachan a un callback (que puede a su vez emitir al servidor o a otros
+programas). El servidor ganó además el **push-on-change** de `/transport`:
+al fijar el transporte avisa a los clientes `/notify` con `/transport.reply`.
+
+### Tests unitarios (OSC en loopback, MIDI inyectado)
+
+```sh
+cd clients/python
+python3 -m pytest -q tests/test_responders.py   # 12 tests
+```
+
+El lado OSC corre de punta a punta sobre un socket UDP de loopback (un
+`OscReceiver` real recibe y dispara el `OscFunc`); el lado MIDI prueba
+`parse_midi` y el match de `MidiFunc` con mensajes inyectados (el puerto ALSA
+real es la prueba manual de abajo).
+
+### E2E del hub OSC contra un servidor vivo (`osc_responder.py`)
+
+```sh
+cargo build -p clausters-ffi --bin clausters
+(./target/debug/clausters & PID=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python clients/python/examples/osc_responder.py; \
+ kill $PID 2>/dev/null)
+```
+
+Esperado: imprime las cuatro `/note` recibidas (relayadas al servidor como
+synths) y luego `transport changed: ... -> re-aligning` — el `OscFunc` sobre
+`/transport.reply` reaccionó al push que el servidor emitió al fijar el
+transporte. Una app externa haría lo mismo enviando, p.ej., `/note 60 0.5` al
+puerto UDP 57121.
+
+### Push-on-change del servidor (lado Rust)
+
+```sh
+cargo test --test osc transport   # transport_query_and_set + transport_pushes_on_change_to_notify_clients
+```
+
+### MIDI en vivo: tocar el servidor desde un teclado (manual, `midi_responder.py`)
+
+Necesita el cdylib con `live` (puerto de entrada virtual ALSA):
+
+```sh
+cargo build --release -p clausters-midi --features live
+cargo run --release   # servidor, en otra terminal
+python clients/python/examples/midi_responder.py
+```
+
+Abre un puerto MIDI de entrada virtual `clausters-in`. Cableá una fuente
+(teclado / DAW) con `pw-link` (listá puertos con `pw-link -o`/`-i`) o en
+qpwgraph; con ALSA crudo, `aconnect`. Cada tecla suena un synth en el servidor
+hasta que la soltás (note-on → `/s_new`, note-off → `/n_free`).

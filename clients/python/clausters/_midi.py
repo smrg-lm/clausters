@@ -14,7 +14,7 @@ import ctypes
 import os
 from array import array
 
-MIDI_ABI_VERSION = 1
+MIDI_ABI_VERSION = 2
 
 _LIB = None
 
@@ -52,13 +52,20 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         fn.restype = u8p
         fn.argtypes = writer_argtypes
     lib.clausters_midi_free.argtypes = [u8p, ctypes.c_size_t]
-    # Live output (only present if the cdylib was built with `--features live`).
+    # Live I/O (only present if the cdylib was built with `--features live`).
     if hasattr(lib, "clausters_midi_output_open"):
         lib.clausters_midi_output_open.restype = ctypes.c_void_p
         lib.clausters_midi_output_open.argtypes = [u8p, ctypes.c_size_t]
         lib.clausters_midi_output_send.restype = ctypes.c_int32
         lib.clausters_midi_output_send.argtypes = [ctypes.c_void_p, u8p, ctypes.c_size_t]
         lib.clausters_midi_output_close.argtypes = [ctypes.c_void_p]
+        lib.clausters_midi_input_open.restype = ctypes.c_void_p
+        lib.clausters_midi_input_open.argtypes = [u8p, ctypes.c_size_t]
+        lib.clausters_midi_input_poll.restype = ctypes.c_int32
+        lib.clausters_midi_input_poll.argtypes = [
+            ctypes.c_void_p, u8p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)
+        ]
+        lib.clausters_midi_input_close.argtypes = [ctypes.c_void_p]
     return lib
 
 
@@ -146,3 +153,38 @@ def output_send(handle, message) -> None:
 
 def output_close(handle) -> None:
     lib().clausters_midi_output_close(handle)
+
+
+# ---- live input (needs the cdylib built with `--features live`) ----
+
+
+def input_open(name: str = "clausters-in"):
+    """Open a virtual MIDI input port other apps route into; returns an opaque
+    handle. Drain it with `input_poll`."""
+    _require_live()
+    nb = name.encode("utf-8")
+    buf = (ctypes.c_uint8 * len(nb)).from_buffer_copy(nb)
+    ptr = ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8))
+    handle = lib().clausters_midi_input_open(ptr, len(nb))
+    if not handle:
+        raise OSError(f"could not open MIDI input port {name!r}")
+    return handle
+
+
+def input_poll(handle) -> bytes | None:
+    """Dequeue the next pending input message as ``bytes``, or ``None`` when the
+    queue is empty. Poll in a loop to drain everything received since last
+    time."""
+    buf = (ctypes.c_uint8 * 256)()
+    ptr = ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8))
+    out_len = ctypes.c_size_t(0)
+    rc = lib().clausters_midi_input_poll(handle, ptr, 256, ctypes.byref(out_len))
+    if rc == 1:
+        return bytes(buf[: out_len.value])
+    if rc == 0:
+        return None
+    raise RuntimeError(f"MIDI input poll failed ({rc})")
+
+
+def input_close(handle) -> None:
+    lib().clausters_midi_input_close(handle)

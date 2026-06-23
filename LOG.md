@@ -2632,3 +2632,72 @@ Follow-up to the soundfile bridge (2026-06-20). Two parts.
   buffer and renders a def whose output is the soundfile length -- 300 when wired,
   1024 (the placeholder) when not. Verified end to end: an offline render of the
   example's def went from peak 0.0 to a correct read.
+
+## C13 — Responders (OscFunc/MidiFunc): the client's input path (2026-06-23)
+
+The Python client was output-only — it built OSC/MIDI and sent it. C13 adds the
+**receive** path and the client's role as an OSC/MIDI hub, mirroring sclang's
+`OSCFunc`/`MIDIFunc`: receive from any app, match/dispatch to a callback, and let
+that callback emit onward (to the Clausters server or elsewhere). It splits along
+the existing server-agnostic vs server-specific seam.
+
+- **MIDI input transport** (`crates/clausters-midi`, ABI v1 -> **v2**): the
+  `live` feature was output-only; added a virtual MIDI **input** port
+  (`clausters_midi_input_open`/`_poll`/`_close`, ALSA seq via midir, mirroring
+  the server's `src/midi/live.rs`). `midir` runs the input callback on its own
+  thread and pushes raw messages into an `mpsc` channel the host **drains by
+  polling** — no callback crosses the C boundary, keeping the flat-data
+  contract. Python `ctypes` side in `clausters/_midi.py` (`input_open` /
+  `input_poll` -> `bytes | None` / `input_close`), `MIDI_ABI_VERSION` bumped.
+- **OSC receive** (client-side, stdlib): `clausters/base/_osclib.decode_packet`
+  (bundle-aware, the recv counterpart of the server's single decode door) and
+  `clausters/base/_oscinterface.OscReceiver` (binds a UDP socket, a demux thread
+  decodes each datagram and calls every registered handler `(addr, args, time,
+  src)`; a `send` method so it is a bidirectional endpoint — a responder can
+  reply, and a client can register `/notify` from this socket so server pushes
+  return here). MIDI counterpart `MidiReceiver` + `parse_midi` (raw channel-voice
+  bytes -> a `{type, channel, …}` dict, mido/sc3-style) in
+  `clausters/base/_midiinterface.py`.
+- **Dispatch layer** (`clausters/responders.py`): `OscFunc(func, path, *, src,
+  arg_template, recv)` and `MidiFunc(func, midi_msg, *, chan, arg_template,
+  recv)`, plus `oscfunc`/`midifunc` decorators. Each registers a self-filtering
+  handler with its receiver; `one_shot()`, `enable`/`disable`/`free`. Lazily
+  created module-default receivers (`default_osc_receiver`/`_midi_receiver`) are
+  the one bit of process-wide state, opt-in like `main.default_clock`; explicit
+  receivers always available. **Threading discipline**: callbacks run on the
+  receiver thread (or, with a `clock`, via `clock.sched`); the golden rule holds
+  (never block) — to *sequence* in response, `clock.play(Routine(...))`.
+- **Server-specific convenience**: the responder callbacks turn incoming
+  notes/messages into `/s_new` etc. on the `Server`, reusing the existing
+  `Server`/`Event` machinery — the client-side mirror of the server's own direct
+  MIDI path (M17/M19): the server can be played by MIDI/OSC it receives, or by a
+  client that listens and forwards. Both coexist.
+- **`/transport` push-on-change** (server, the M22 deferred half, decided with
+  the user): setting `/transport` now **pushes** the new grid as a
+  `/transport.reply` to every `/notify` client (reusing the existing `clients`
+  notify list), so a responder on `/transport.reply` re-`join_transport`s live
+  when a conductor changes tempo/origin — no polling. (Transport model kept
+  **single global**, M22 as-is, per the user; named/multiple transports were
+  considered and deferred.)
+- **Tests**: `clients/python/tests/test_responders.py` (12) — OSC end to end over
+  a loopback UDP socket (address/arg-template match, bundle unwrap with time,
+  one-shot, disable/enable, decorator) and MIDI parsing + `MidiFunc` match
+  against injected messages (the real ALSA port is the manual E2E). Server:
+  `tests/osc.rs::transport_pushes_on_change_to_notify_clients`.
+- **Examples** (`clients/python/examples/`): `osc_responder.py` (the OSC hub —
+  relay `/note` to the server, react to a `/transport.reply` push; self-feeds to
+  demonstrate, verified live E2E) and `midi_responder.py` (a `MidiFunc` turning a
+  MIDI keyboard into server synths; manual, needs the `live` cdylib + a wired
+  source).
+- **Docs**: new Python-book page `responders.md` (receivers, matching, the golden
+  rule, the transport reaction) in `SUMMARY.md`; `examples.md` + the examples
+  `README.md` cataloged; `clausters.responders` added to the pydoc-markdown API
+  config; `clients/python/GUIA.md` section 9 + checklist row. Also a dedicated
+  DAW-style transport guide `transport.md` (conductor/follower, `quant` bars,
+  beat-vs-sample alignment, the live tempo-change reaction, what it is/isn't vs a
+  DAW), cross-linked from `timing-models.md`.
+- **Verified**: full client suite 91 passed / 4 skipped (12 new in
+  `test_responders.py`); `cargo test --test osc` green (25, incl. the new push
+  test); live E2E of `osc_responder.py` against a running server printed the
+  relayed notes and the `transport changed -> re-aligning` reaction. `cargo fmt
+  --check` clean, core builds without features.

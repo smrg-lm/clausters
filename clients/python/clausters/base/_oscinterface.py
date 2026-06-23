@@ -13,9 +13,121 @@ the native core; this layer only encodes and routes.
 """
 
 import socket
+import threading
 import time
 
 from . import _osclib
+
+
+class OscReceiver:
+    """A UDP listener that demuxes incoming OSC to registered handlers — the
+    **input** counterpart of the output interfaces above, and the transport
+    under `clausters.responders.OscFunc`.
+
+    It binds its own socket (an ephemeral port by default, or a fixed ``port``
+    so external apps can target it), runs a background thread that decodes each
+    datagram through `clausters.base._osclib.decode_packet` (bundles unwrapped),
+    and calls every registered handler with ``(addr, args, time, src)``. Each
+    handler self-filters (by address, args, …); the receiver itself stays a thin
+    transport + demux, mirroring the server's single decode door.
+
+    Dispatch threading:
+
+    - With no ``clock``, handlers run **inline on the receiver thread** — keep
+      them quick and non-blocking (the golden rule), and to *sequence* in
+      response, schedule a routine on a clock (non-blocking) rather than looping
+      here.
+    - With a ``clock``, each matched handler is dispatched via
+      ``clock.sched(0.0, …)`` so it runs on the clock thread with the running
+      routine's logical time available. The same golden rule applies: a handler
+      must not block the clock thread.
+    """
+
+    def __init__(self, port: int = 0, host: str = "127.0.0.1", clock=None):
+        self._host = host
+        self._port = port
+        self.clock = clock
+        self._sock = None
+        self._thread = None
+        self._running = False
+        self._handlers = []
+        self._lock = threading.Lock()
+
+    @property
+    def port(self) -> int:
+        """The actually bound UDP port (resolves an ephemeral 0 once started)."""
+        if self._sock is not None:
+            return self._sock.getsockname()[1]
+        return self._port
+
+    def start(self):
+        if self._running:
+            return self
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._sock.bind((self._host, self._port))
+        self._sock.settimeout(0.1)
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, name="OscReceiver", daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+        if self._sock is not None:
+            self._sock.close()
+            self._sock = None
+        return self
+
+    close = stop
+
+    def send(self, target, addr, *args):
+        """Send an OSC message out the receiver's own socket. Lets a responder
+        reply on the port it listens on, and lets a client register ``/notify``
+        from here so the server's pushes (e.g. ``/transport.reply``) come back to
+        *this* socket and reach the responders. ``target`` is ``(host, port)``."""
+        if self._sock is None:
+            raise RuntimeError("OscReceiver.send before start()")
+        self._sock.sendto(_osclib.message(addr, *args), target)
+
+    def add(self, handler):
+        """Register ``handler(addr, args, time, src)``; called for every
+        decoded message. Returns ``handler`` so it can later be `remove`d."""
+        with self._lock:
+            self._handlers.append(handler)
+        return handler
+
+    def remove(self, handler):
+        with self._lock:
+            if handler in self._handlers:
+                self._handlers.remove(handler)
+
+    def _loop(self):
+        while self._running:
+            try:
+                data, src = self._sock.recvfrom(65536)
+            except (TimeoutError, OSError):
+                continue
+            if not data:
+                continue
+            try:
+                messages = _osclib.decode_packet(data)
+            except Exception:
+                continue  # untrusted bytes: drop anything that won't decode
+            for addr, args, when in messages:
+                self._dispatch(addr, args, when, src)
+
+    def _dispatch(self, addr, args, when, src):
+        with self._lock:
+            handlers = list(self._handlers)
+        for handler in handlers:
+            if self.clock is not None:
+                self.clock.sched(0.0, lambda h=handler: h(addr, args, when, src))
+            else:
+                handler(addr, args, when, src)
 
 
 class OscInterface:

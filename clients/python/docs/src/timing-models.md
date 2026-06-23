@@ -59,6 +59,8 @@ print(f"counter advanced {after - before} samples = {(after - before) / sc.rate:
 
 ## Shared transport — phase-aligning several clients
 
+> This section is the *model* in brief; [A DAW-style transport](transport.md) is the full workflow guide — conducting, following, starting together on a bar, and following a tempo change live.
+
 Locking to a master gives every client the same sample axis, but each routine still *starts* whenever you play it. To make several clients begin on the **same beat**, two pieces work together:
 
 - **`quant`** — `clock.play(routine, quant=4)` (or `session.play(pattern, quant=4)`) snaps the routine's start to the next beat that is a multiple of `quant` (a bar in 4/4). `None` or `0` starts immediately. On its own it snaps to the clock's own grid — handy for one client adding a voice cleanly on the next bar.

@@ -25,6 +25,18 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/transport_sync.py
   ```
 
+- **`osc_responder.py`** — the client as an OSC hub: an `OscFunc` relays incoming `/note` messages to a **running** server as synths, and an `OscFunc` on `/transport.reply` re-aligns when a conductor changes the shared transport. Self-feeds a few messages to demonstrate. See [Receiving OSC and MIDI](responders.md).
+
+  ```sh
+  python clients/python/examples/osc_responder.py
+  ```
+
+- **`midi_responder.py`** — a `MidiFunc` turning a MIDI keyboard into synths on a **running** server: note-on starts a synth, note-off frees it. Opens a virtual MIDI input port (`clausters-in`) to wire a source into. Needs the `live` cdylib (`cargo build --release -p clausters-midi --features live`).
+
+  ```sh
+  python clients/python/examples/midi_responder.py
+  ```
+
 The first two share their pattern code and differ only in the `Server` interface — the seam from [The client, layer by layer](guide.md) in practice.
 
 The broader catalog of examples (the low-level transports and the raw OSC helpers) lives in the repository-root `examples/`; those use a `sys.path` shim so they run straight from a source checkout without an install.

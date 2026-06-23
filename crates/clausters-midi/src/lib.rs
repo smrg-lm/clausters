@@ -11,8 +11,11 @@
 //! Clip File** (SMF2CLIP, assembled from `midi2`'s typed UMP messages) that
 //! carries note velocities at 16-bit resolution instead of SMF's 7 bits. With
 //! the `live` feature, also a virtual MIDI **output port** (midir/ALSA) for
-//! real-time playback. (The planned `midi2-clip` crate is a v0.1.0 stub —
-//! `write_clip_file` is `todo!()` — so the clip container is built here.)
+//! real-time playback, and — for the client's responder layer — a virtual MIDI
+//! **input port** that other apps/devices route into, drained by polling (no
+//! callback crosses the boundary, keeping the flat-data contract). (The planned
+//! `midi2-clip` crate is a v0.1.0 stub — `write_clip_file` is `todo!()` — so
+//! the clip container is built here.)
 
 use midi2::channel_voice2::{NoteOff, NoteOn};
 use midi2::prelude::*;
@@ -22,7 +25,11 @@ use midly::live::LiveEvent;
 use midly::{Format, Header, MetaMessage, Smf, Timing, Track, TrackEvent, TrackEventKind};
 
 /// The C ABI version of this surface. Bump on any incompatible change.
-pub const MIDI_ABI_VERSION: u32 = 1;
+///
+/// v2 added the live virtual MIDI **input** port (`clausters_midi_input_*`) for
+/// the client's responder layer; the v1 surface (file writers + live output)
+/// is unchanged.
+pub const MIDI_ABI_VERSION: u32 = 2;
 
 /// One timed MIDI event: an absolute `tick` (in the file's PPQ time base) and
 /// up to three raw channel-voice bytes (`status`, `data1`, `data2`). The byte
@@ -345,6 +352,108 @@ mod live {
     /// `handle` must come from [`clausters_midi_output_open`], closed once.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn clausters_midi_output_close(handle: *mut Output) {
+        if handle.is_null() {
+            return;
+        }
+        // SAFETY: reconstitute and drop the box we leaked.
+        drop(unsafe { Box::from_raw(handle) });
+    }
+
+    use midir::os::unix::VirtualInput;
+    use midir::{MidiInput, MidiInputConnection};
+    use std::sync::mpsc::{Receiver, channel};
+
+    /// Opaque live input handle. `midir` runs the input callback on its own
+    /// thread; it pushes each raw message into an `mpsc` channel the caller
+    /// drains by polling — so no callback ever crosses the C boundary (the
+    /// flat-data contract) and the host language keeps control of its threads.
+    /// Dropping the handle closes the virtual port and stops the input thread.
+    pub struct Input {
+        events: Receiver<Vec<u8>>,
+        _conn: MidiInputConnection<()>,
+    }
+
+    /// Opens a virtual MIDI input port named `name` (UTF-8, `name_len` bytes)
+    /// that other apps/devices route into. Returns an opaque handle or null on
+    /// failure. Drain it with [`clausters_midi_input_poll`]; close with
+    /// [`clausters_midi_input_close`].
+    ///
+    /// # Safety
+    /// `name` must be readable for `name_len` bytes.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn clausters_midi_input_open(
+        name: *const u8,
+        name_len: usize,
+    ) -> *mut Input {
+        if name.is_null() {
+            return std::ptr::null_mut();
+        }
+        // SAFETY: caller guarantees the range.
+        let bytes = unsafe { std::slice::from_raw_parts(name, name_len) };
+        let Ok(name) = std::str::from_utf8(bytes) else {
+            return std::ptr::null_mut();
+        };
+        let Ok(input) = MidiInput::new("clausters") else {
+            return std::ptr::null_mut();
+        };
+        let (tx, events) = channel();
+        match input.create_virtual(
+            name,
+            move |_timestamp, msg, _| {
+                // Forward every raw message verbatim; the host decodes/filters.
+                let _ = tx.send(msg.to_vec());
+            },
+            (),
+        ) {
+            Ok(conn) => Box::into_raw(Box::new(Input {
+                events,
+                _conn: conn,
+            })),
+            Err(_) => std::ptr::null_mut(),
+        }
+    }
+
+    /// Dequeues the next pending input message into `out` (capacity `cap`
+    /// bytes), writing its byte length to `out_len`. Returns 1 when a message
+    /// was written, 0 when the queue is empty, or <0 on a null argument or a
+    /// message longer than `cap`. Poll in a loop until it returns 0.
+    ///
+    /// # Safety
+    /// `handle` must come from [`clausters_midi_input_open`] (not yet closed);
+    /// `out` must be writable for `cap` bytes and `out_len` a valid
+    /// `*mut usize`.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn clausters_midi_input_poll(
+        handle: *mut Input,
+        out: *mut u8,
+        cap: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        if handle.is_null() || out.is_null() || out_len.is_null() {
+            return -1;
+        }
+        // SAFETY: per the contract.
+        let input = unsafe { &*handle };
+        let Ok(msg) = input.events.try_recv() else {
+            return 0;
+        };
+        if msg.len() > cap {
+            return -2;
+        }
+        // SAFETY: msg.len() <= cap, out writable for cap bytes.
+        unsafe {
+            std::ptr::copy_nonoverlapping(msg.as_ptr(), out, msg.len());
+            *out_len = msg.len();
+        }
+        1
+    }
+
+    /// Closes a port opened with [`clausters_midi_input_open`].
+    ///
+    /// # Safety
+    /// `handle` must come from [`clausters_midi_input_open`], closed once.
+    #[unsafe(no_mangle)]
+    pub unsafe extern "C" fn clausters_midi_input_close(handle: *mut Input) {
         if handle.is_null() {
             return;
         }

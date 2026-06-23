@@ -15,6 +15,7 @@ loaders:
     modules:
       - clausters
       - clausters.session
+      - clausters.responders
       - clausters.transport
       - clausters.errors
       - clausters.base

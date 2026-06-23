@@ -524,6 +524,30 @@ fn transport_query_and_set() {
     server.quit();
 }
 
+/// A `/notify` client is pushed the new grid as a `/transport.reply` whenever
+/// the transport is set, so its responders re-align without polling (M22
+/// push-on-change paired with client responders).
+#[test]
+fn transport_pushes_on_change_to_notify_clients() {
+    let server = TestServer::spawn();
+
+    server.send("/notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], OscType::Int(1));
+
+    // Setting the transport replies /done to the setter and pushes the grid.
+    server.send(
+        "/transport",
+        vec![OscType::Long(48_000), OscType::Double(2.0)],
+    );
+    let push = server.recv_until("/transport.reply");
+    assert_eq!(
+        push.args,
+        vec![OscType::Long(48_000), OscType::Double(2.0), OscType::Int(1)]
+    );
+
+    server.quit();
+}
+
 /// M8: `/sched` argument validation and per-message translation failures.
 #[test]
 fn sched_rejects_bad_arguments() {

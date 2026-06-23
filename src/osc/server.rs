@@ -793,8 +793,12 @@ impl OscServer {
     /// `origin_sample + b·rate/tempo`; a client joins by reading it and
     /// quantizing its routine start onto it. The server only stores/serves it —
     /// it is in-memory (the sample axis resets on restart) and the server never
-    /// schedules from it. Ownership is last-writer-wins for now; a push on
-    /// change pairs with client-side responders (future).
+    /// schedules from it. Ownership is last-writer-wins.
+    ///
+    /// On a successful set, the new grid is **pushed** to every `/notify` client
+    /// as a `/transport.reply` (the same shape as a query reply), so a client
+    /// with a responder on `/transport.reply` re-joins and re-quantizes live
+    /// when the conductor changes tempo or origin — no polling.
     fn handle_transport(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() {
             let (origin, tempo, defined) = match self.transport {
@@ -846,6 +850,16 @@ impl OscServer {
             tempo,
         });
         self.reply(from, "/done", vec![OscType::String("/transport".into())]);
+        // Push the new grid to every /notify client so their responders
+        // re-align live (the M22 push-on-change paired with client responders).
+        let push = vec![
+            OscType::Long(origin),
+            OscType::Double(tempo),
+            OscType::Int(1),
+        ];
+        for client in &self.clients {
+            self.reply(*client, "/transport.reply", push.clone());
+        }
     }
 
     /// M8: `/sched <int64 target> <blob packet>` — a timed bundle whose time

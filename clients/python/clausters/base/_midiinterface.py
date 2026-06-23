@@ -9,9 +9,56 @@ the notes out a virtual OS port live, through the ``clausters-midi`` crate.
 
 A *MIDI message* is raw status/data bytes (``bytes`` or an iterable of ints).
 MIDI carries no timetags: timing comes from the clock at emit time.
+
+The **input** side — a virtual port other apps/devices route into, decoded into
+message dicts and demuxed to `clausters.responders.MidiFunc` responders — lives
+in `MidiReceiver` at the bottom, the MIDI counterpart of
+`clausters.base._oscinterface.OscReceiver`.
 """
 
+import threading
+
 from .main import main
+
+
+# Channel-voice status nibbles -> (message type name, data-field names). A
+# parsed message is a dict ``{'type', 'channel', <fields…>}`` in the style of
+# mido / sc3's responder layer, so `MidiFunc` matches on ``type``.
+_CV_TYPES = {
+    0x80: ("note_off", ("note", "velocity")),
+    0x90: ("note_on", ("note", "velocity")),
+    0xA0: ("polytouch", ("note", "value")),
+    0xB0: ("control_change", ("control", "value")),
+    0xC0: ("program_change", ("program",)),
+    0xD0: ("aftertouch", ("value",)),
+    0xE0: ("pitchwheel", ("pitch",)),
+}
+
+
+def parse_midi(message) -> dict | None:
+    """Decode raw channel-voice bytes into a message dict (``{'type',
+    'channel', …}``), or ``None`` for a non-channel-voice / malformed message.
+
+    ``pitchwheel`` combines the two 7-bit data bytes into a single 14-bit
+    ``pitch`` (0..16383, centre 8192); every other field is a raw 7-bit value.
+    """
+    b = bytes(message)
+    if not b or b[0] < 0x80:
+        return None
+    kind = _CV_TYPES.get(b[0] & 0xF0)
+    if kind is None:
+        return None
+    name, fields = kind
+    d1 = b[1] if len(b) > 1 else 0
+    d2 = b[2] if len(b) > 2 else 0
+    msg = {"type": name, "channel": b[0] & 0x0F}
+    if name == "pitchwheel":
+        msg["pitch"] = (d1 & 0x7F) | ((d2 & 0x7F) << 7)
+    elif len(fields) == 1:
+        msg[fields[0]] = d1
+    else:
+        msg[fields[0]], msg[fields[1]] = d1, d2
+    return msg
 
 
 class MidiScore:
@@ -146,3 +193,91 @@ class MidiServer:
 
     def close(self):
         self.interface.close()
+
+
+class MidiReceiver:
+    """A virtual MIDI **input** port that demuxes to registered handlers — the
+    MIDI counterpart of `clausters.base._oscinterface.OscReceiver`, and the
+    transport under `clausters.responders.MidiFunc`.
+
+    It opens a virtual port through the ``clausters-midi`` crate's ``live``
+    feature (midir / ALSA seq on Linux) that other apps and devices route into,
+    runs a background thread that polls the crate for raw messages, decodes each
+    with `parse_midi`, and calls every registered handler with ``(message,
+    src)`` — ``message`` a dict (``{'type', 'channel', …}``), ``src`` the port
+    name. Same dispatch threading as `OscReceiver`: inline on the poll thread by
+    default, or via ``clock.sched`` when a ``clock`` is given. The golden rule
+    holds — a handler must not block its thread.
+    """
+
+    def __init__(self, port: str = "clausters-in", clock=None, poll_interval: float = 0.002):
+        self.port = port
+        self.clock = clock
+        self.poll_interval = poll_interval
+        self._handle = None
+        self._thread = None
+        self._running = False
+        self._handlers = []
+        self._lock = threading.Lock()
+
+    def start(self):
+        if self._running:
+            return self
+        from .. import _midi
+
+        self._midi = _midi
+        self._handle = _midi.input_open(self.port)
+        self._running = True
+        self._thread = threading.Thread(target=self._loop, name="MidiReceiver", daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+            self._thread = None
+        if self._handle is not None:
+            self._midi.input_close(self._handle)
+            self._handle = None
+        return self
+
+    close = stop
+
+    def add(self, handler):
+        """Register ``handler(message, src)``; called for every decoded
+        channel-voice message. Returns ``handler`` so it can later be
+        `remove`d."""
+        with self._lock:
+            self._handlers.append(handler)
+        return handler
+
+    def remove(self, handler):
+        with self._lock:
+            if handler in self._handlers:
+                self._handlers.remove(handler)
+
+    def _loop(self):
+        import time
+
+        while self._running:
+            drained = False
+            while self._running:
+                raw = self._midi.input_poll(self._handle)
+                if raw is None:
+                    break
+                drained = True
+                msg = parse_midi(raw)
+                if msg is not None:
+                    self._dispatch(msg)
+            if not drained:
+                time.sleep(self.poll_interval)
+
+    def _dispatch(self, msg):
+        with self._lock:
+            handlers = list(self._handlers)
+        for handler in handlers:
+            if self.clock is not None:
+                self.clock.sched(0.0, lambda h=handler: h(msg, self.port))
+            else:
+                handler(msg, self.port)

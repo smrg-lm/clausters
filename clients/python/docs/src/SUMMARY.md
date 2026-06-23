@@ -9,6 +9,8 @@
 - [Sessions](sessions.md)
 - [Routines and clocks](routines-and-clocks.md)
 - [Timing models](timing-models.md)
+- [A DAW-style transport](transport.md)
+- [Receiving OSC and MIDI](responders.md)
 - [Examples](examples.md)
 
 # Reference

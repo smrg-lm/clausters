@@ -36,6 +36,7 @@ from .errors import (
     SegmentError,
     ServerError,
 )
+from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .session import Session
 from .transport import (
     ABI_VERSION,
@@ -51,6 +52,10 @@ __all__ = [
     "Clausters",
     "ShmClient",
     "Session",
+    "OscFunc",
+    "MidiFunc",
+    "oscfunc",
+    "midifunc",
     "render",
     "_native",
     # error types
