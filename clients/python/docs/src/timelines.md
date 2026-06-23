@@ -97,9 +97,17 @@ session.clock.render()                       # drain the playhead in logical tim
 samples, frames = session.server.render()    # the offline render
 ```
 
-## Where it sits relative to the shared transport
+## Following a conductor
 
-This playhead is **client-side**: each one is a local transport over its own timeline. Several clients still phase-align the way [A DAW-style transport](transport.md) describes — with `quant` and the server's shared `/transport` grid — so two clients each playing their own timeline can start their bars together. A single conductor's play/stop/locate driving every client's playhead in lockstep (a server-broadcast transport) is a layer that can be added on top later without changing any of this.
+A playhead is a local transport, but it can also obey a **shared** one. `head.follow_transport(server)` binds it to the server's transport so that a conductor's `transport_play` / `transport_stop` / `transport_locate` rolls, halts and seeks *this* playhead too — several clients in lockstep. It is built on the responder layer (an `OscFunc` on the transport broadcast) and the shared grid:
+
+```python
+head = Playhead(timeline, clock, server)
+clock.start()
+head.follow_transport(server, quant=4)   # roll when the conductor presses play
+```
+
+Beat-aligned in plain wall-clock mode, sample-exact when the clock is also `lock_to` the server. See [A DAW-style transport](transport.md) for the conductor side (`Server.transport_play` and friends) and `transport_conductor.py` in [Examples](examples.md).
 
 ## See also
 

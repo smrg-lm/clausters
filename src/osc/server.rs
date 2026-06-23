@@ -103,13 +103,19 @@ pub struct OscServer {
 }
 
 /// The shared transport: a beat grid clients read to phase-align on the master
-/// sample clock. Beat `b` maps to sample `origin_sample + b·rate/tempo`. The
-/// server only stores and serves it (in-memory; the sample axis resets on
-/// restart) — it never schedules from it. See [`OscServer::handle_transport`].
+/// sample clock, plus a DAW-style **rolling state** (play / stop / position).
+/// Beat `b` of the grid maps to sample `origin_sample + b·rate/tempo`; the
+/// `playing` flag and `position` (the song-position beat where playback is or
+/// will start) are the transport control a conductor sets and every client's
+/// playhead obeys. The server only stores and **broadcasts** this (in-memory;
+/// resets on restart) — it never schedules audio from it; each client rolls its
+/// own playhead on the shared grid. See [`OscServer::handle_transport`].
 #[derive(Clone, Copy)]
 struct Transport {
     origin_sample: i64,
     tempo: f64,
+    playing: bool,
+    position: f64,
 }
 
 /// A `/sync` waiting for the async pipelines to drain up to its targets.
@@ -691,6 +697,9 @@ impl OscServer {
             "/dumpOSC" => self.handle_dump_osc(&msg, from),
             "/verbosity" => self.handle_verbosity(&msg, from),
             "/transport" => self.handle_transport(&msg, from),
+            "/transport_play" => self.handle_transport_play(&msg, from),
+            "/transport_stop" => self.handle_transport_stop(from),
+            "/transport_locate" => self.handle_transport_locate(&msg, from),
             "/quit" => {
                 self.reply(from, "/done", vec![OscType::String("/quit".into())]);
                 return Flow::Quit;
@@ -784,36 +793,51 @@ impl OscServer {
         self.reply(from, "/clock.reply", args);
     }
 
+    /// The `/transport.reply` payload: the grid plus the rolling state,
+    /// `(origin_sample:int64, tempo:double, defined:int32, playing:int32,
+    /// position:double)`. The first three fields are the original M22 grid reply
+    /// (older clients read just those); `playing`/`position` are appended.
+    fn transport_reply_args(&self) -> Vec<OscType> {
+        let (origin, tempo, defined, playing, position) = match self.transport {
+            Some(t) => (t.origin_sample, t.tempo, 1, t.playing as i32, t.position),
+            None => (0, 0.0, 0, 0, 0.0),
+        };
+        vec![
+            OscType::Long(origin),
+            OscType::Double(tempo),
+            OscType::Int(defined),
+            OscType::Int(playing),
+            OscType::Double(position),
+        ]
+    }
+
+    /// Pushes the current transport state to every `/notify` client, so a
+    /// responder on `/transport.reply` re-aligns or rolls its playhead live when
+    /// the conductor changes the grid, plays, stops or locates — no polling.
+    fn broadcast_transport(&self) {
+        let push = self.transport_reply_args();
+        for client in &self.clients {
+            self.reply(*client, "/transport.reply", push.clone());
+        }
+    }
+
     /// `/transport` — the shared beat grid for phase-aligning several clients on
     /// the master sample clock. **No args queries** it; replies
-    /// `/transport.reply (origin_sample:int64, tempo:double, defined:int32)`,
-    /// where `defined` is 0 when none has been set (and the other two are 0).
-    /// Two args `(origin_sample:int64, tempo:double)` **set** it (last writer
-    /// wins) and reply `/done`. The grid is a pure pair: beat `b` is sample
-    /// `origin_sample + b·rate/tempo`; a client joins by reading it and
-    /// quantizing its routine start onto it. The server only stores/serves it —
-    /// it is in-memory (the sample axis resets on restart) and the server never
-    /// schedules from it. Ownership is last-writer-wins.
+    /// `/transport.reply (origin_sample:int64, tempo:double, defined:int32,
+    /// playing:int32, position:double)`, all zeros (and `defined` 0) when none is
+    /// set. Two args `(origin_sample:int64, tempo:double)` **set** the grid (last
+    /// writer wins), stopped at position 0, and reply `/done`. The grid is `beat
+    /// b -> sample origin_sample + b·rate/tempo`; a client joins by reading it
+    /// and quantizing its start onto it. The server only stores/broadcasts it —
+    /// in-memory (resets on restart), never scheduling audio from it.
     ///
-    /// On a successful set, the new grid is **pushed** to every `/notify` client
-    /// as a `/transport.reply` (the same shape as a query reply), so a client
-    /// with a responder on `/transport.reply` re-joins and re-quantizes live
-    /// when the conductor changes tempo or origin — no polling.
+    /// The rolling state (play/stop/locate) rides on top: see
+    /// [`Self::handle_transport_play`]. Any change is **pushed** to every
+    /// `/notify` client (the C13 responder path).
     fn handle_transport(&mut self, msg: &OscMessage, from: ClientId) {
         if msg.args.is_empty() {
-            let (origin, tempo, defined) = match self.transport {
-                Some(t) => (t.origin_sample, t.tempo, 1),
-                None => (0, 0.0, 0),
-            };
-            self.reply(
-                from,
-                "/transport.reply",
-                vec![
-                    OscType::Long(origin),
-                    OscType::Double(tempo),
-                    OscType::Int(defined),
-                ],
-            );
+            let args = self.transport_reply_args();
+            self.reply(from, "/transport.reply", args);
             return;
         }
         let origin = match msg.args.first() {
@@ -845,21 +869,78 @@ impl OscServer {
                 "originSample must be >= 0 and tempo > 0",
             );
         }
+        // Setting the grid (re)defines the transport: stopped, at position 0.
         self.transport = Some(Transport {
             origin_sample: origin,
             tempo,
+            playing: false,
+            position: 0.0,
         });
         self.reply(from, "/done", vec![OscType::String("/transport".into())]);
-        // Push the new grid to every /notify client so their responders
-        // re-align live (the M22 push-on-change paired with client responders).
-        let push = vec![
-            OscType::Long(origin),
-            OscType::Double(tempo),
-            OscType::Int(1),
-        ];
-        for client in &self.clients {
-            self.reply(*client, "/transport.reply", push.clone());
+        self.broadcast_transport();
+    }
+
+    /// `/transport_play [position:double]` — start the transport rolling. With a
+    /// `position` argument, playback starts from that song-position beat;
+    /// without one, from where it last stopped/located. Every client's playhead
+    /// obeys the broadcast (starting from `position`, quantized to the shared
+    /// grid). Needs a grid defined first (`/transport`).
+    fn handle_transport_play(&mut self, msg: &OscMessage, from: ClientId) {
+        let Some(mut t) = self.transport else {
+            return self.fail(from, "/transport_play", "no transport defined");
+        };
+        if let Some(pos) = msg.args.first() {
+            match pos {
+                OscType::Double(v) => t.position = *v,
+                OscType::Float(v) => t.position = *v as f64,
+                _ => return self.fail(from, "/transport_play", "expected (double position)"),
+            }
         }
+        t.playing = true;
+        self.transport = Some(t);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_play".into())],
+        );
+        self.broadcast_transport();
+    }
+
+    /// `/transport_stop` — stop the transport. Every client's playhead halts at
+    /// its current point; `position` holds for the next play.
+    fn handle_transport_stop(&mut self, from: ClientId) {
+        let Some(mut t) = self.transport else {
+            return self.fail(from, "/transport_stop", "no transport defined");
+        };
+        t.playing = false;
+        self.transport = Some(t);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_stop".into())],
+        );
+        self.broadcast_transport();
+    }
+
+    /// `/transport_locate <position:double>` — set the song position (where play
+    /// starts or, while playing, seeks to). Every client's playhead locates to
+    /// it; the `playing` flag is unchanged.
+    fn handle_transport_locate(&mut self, msg: &OscMessage, from: ClientId) {
+        let Some(mut t) = self.transport else {
+            return self.fail(from, "/transport_locate", "no transport defined");
+        };
+        match msg.args.first() {
+            Some(OscType::Double(v)) => t.position = *v,
+            Some(OscType::Float(v)) => t.position = *v as f64,
+            _ => return self.fail(from, "/transport_locate", "expected (double position)"),
+        }
+        self.transport = Some(t);
+        self.reply(
+            from,
+            "/done",
+            vec![OscType::String("/transport_locate".into())],
+        );
+        self.broadcast_transport();
     }
 
     /// M8: `/sched <int64 target> <blob packet>` — a timed bundle whose time

@@ -695,3 +695,29 @@ Esperado: captura un patron a una `Timeline`, la edita, y la toca en vivo con el
 `Playhead` — imprime la position interpolada (~2.40 beats tras 1.2 s a 2 bps),
 hace `locate(1.0)`, `loop(0,2)` y `stop`, todo sin error. Las notas suenan en el
 servidor.
+
+### Transporte difundido por el servidor: director en lockstep (`transport_conductor.py`)
+
+El `/transport` del servidor lleva un estado de reproduccion DAW (playing +
+position): un director hace `transport_play`/`transport_stop`/`transport_locate`
+y el servidor lo difunde a los clientes `/notify`; cada `Playhead.follow_transport`
+rueda/para/busca en consecuencia. El servidor difunde CONTROL, no agenda audio.
+
+Lado Rust (estado + difusion):
+
+```sh
+cargo test --test osc transport   # query_and_set + play_stop_locate + push_on_change
+```
+
+E2E multi-cliente:
+
+```sh
+cargo build -p clausters-ffi --bin clausters
+(./target/debug/clausters >/dev/null 2>&1 & PID=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python clients/python/examples/transport_conductor.py; \
+ kill $PID 2>/dev/null; true)
+```
+
+Esperado: dos followers (cada uno `lock_to` + `join_transport` + `follow_transport`)
+arrancan juntos al `transport_play` del director e imprimen posiciones que
+coinciden (lockstep; sample-exacto por el `lock_to`), luego `locate`/`stop`.

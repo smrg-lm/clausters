@@ -2749,3 +2749,48 @@ on later), and items are **realizable** (high-level `Event`s plus raw OSC/MIDI).
   `examples.md` + examples `README.md` cataloged; `clausters.seq.timeline` added
   to the pydoc-markdown config; `GUIA.md` section 10 + checklist row.
 - **Verified**: full client suite 101 passed / 4 skipped (10 new); live E2E clean.
+
+## C16 follow-up — server-broadcast transport (conductor play/stop/locate) (2026-06-23)
+
+The deferred layer above C16's client-only playhead, decided with the user: a
+conductor's play/stop/locate driving every client's playhead in **lockstep**.
+This also closes M22's deferred "running/stopped state." The server broadcasts
+transport *control* — it never schedules audio; each client rolls its own
+playhead on the shared grid.
+
+- **Server** (`src/osc/server.rs`): `Transport` gained `playing: bool` + a
+  `position: f64` (the song-position beat). New commands `/transport_play
+  [position:double]` (start rolling, from `position` or where it stopped),
+  `/transport_stop`, `/transport_locate <position:double>` — each needs a grid
+  defined, replies `/done`, and is **broadcast** to `/notify` clients (the C13
+  push, factored into `broadcast_transport`). `/transport.reply` extended to
+  `(origin_sample:int64, tempo:double, defined:int32, playing:int32,
+  position:double)` — backward-compatible (older clients read the first three).
+  Setting the grid resets to stopped at 0. Tests: `tests/osc.rs::transport_play_
+  stop_locate` (play/stop/locate update the state, fail before a grid exists) and
+  the push test extended to assert a play also pushes.
+- **Client**: `Server.transport_play` / `transport_stop` / `transport_locate` /
+  `transport_state` (`defs/server.py`). `Playhead.follow_transport(server, recv,
+  quant)` (+ `unfollow_transport`) in `seq/timeline.py`: registers `/notify` and
+  an `OscFunc` on `/transport.reply` (the C13 responder layer) that rolls / halts
+  / seeks the local playhead to match the broadcast, then applies the current
+  state once. Every follower computes from the *same* broadcast, so they are
+  beat-aligned (sample-exact when each clock is also `lock_to` the server). The
+  design is symmetric — every client follows; whoever issues the commands is the
+  conductor.
+- **Tests**: `tests/test_timeline.py::test_playhead_follows_transport_broadcast`
+  (feeds a simulated `/transport.reply` over loopback, no live server — the
+  playhead rolls on play, halts + locates on stop).
+- **Example**: `clients/python/examples/transport_conductor.py` — two independent
+  followers (`lock_to` + `join_transport` + `follow_transport`) roll together
+  when a conductor `transport_play`s. Live E2E: positions matched
+  (1.04/1.04, 2.45/2.43, 3.86/3.83 — the deltas are just the two sequential
+  `position()` reads, both sample-locked to one grid), exit 0.
+- **Docs**: `transport.md` gained a "Rolling the transport: a conductor" section
+  and its "what it is not" / cheat-sheet reconciled (the server now broadcasts a
+  rolling state but still never schedules audio); `timelines.md` "Following a
+  conductor"; `examples.md` + examples `README.md`; server `docs/schemas.md` and
+  `docs/sample-clock.md` (the new commands + extended reply). `clients/PLAN.md`
+  C16 deferred-note marked done; root `PLAN.md` M22 note updated.
+- **Verified**: `cargo test --test osc` 26 green; full client suite 102 passed /
+  4 skipped (1 new); both books build; `cargo fmt --check` clean.

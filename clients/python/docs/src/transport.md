@@ -77,6 +77,31 @@ OscFunc(follow_transport, "/transport.reply", recv=recv)
 
 Now the conductor doing `server.set_transport(0, 3.0)` later in the session re-tempos every follower at once — the bar grid they quantize against moves together. (Register `/notify` from the *receiver's* socket, as above, so the push lands where the responder is listening.) The shipped `osc_responder.py` example wires exactly this reaction; see [Examples](examples.md).
 
+## Rolling the transport: a conductor with play / stop / locate
+
+The shared transport also carries a DAW-style **rolling state** — whether it is playing and the song position — that a conductor drives and every client's [playhead](timelines.md) obeys. The server holds the state and broadcasts each change; it still never schedules audio, so each client rolls its own playhead on the shared grid.
+
+A conductor (any client) drives it through the `Server`:
+
+```python
+server.set_transport(0, 2.0)     # define the grid (stopped at position 0)
+server.transport_play(0.0)       # roll from beat 0 -- every follower starts
+server.transport_locate(16.0)    # seek the song position to beat 16
+server.transport_stop()          # halt every follower
+```
+
+A follower binds a `Playhead` to the transport with `follow_transport`, and from then on the playhead mirrors the conductor — it rolls on `transport_play`, halts on `transport_stop`, and seeks on `transport_locate`:
+
+```python
+from clausters.seq import Playhead
+
+head = Playhead(timeline, clock, server)
+clock.start()
+head.follow_transport(server, quant=4)   # obey the transport; start on a bar
+```
+
+`follow_transport` registers `/notify` and an `OscFunc` on `/transport.reply` (the [responder layer](responders.md)) so it reacts to the broadcast, then applies the current state once. Because every follower computes from the *same* broadcast state, they roll in lockstep: beat-aligned in plain wall-clock mode, and **sample-exact** when each clock is also `lock_to` the server. The everyone-is-symmetric design makes this simple — every client (including the one issuing the commands, if it follows too) reacts to the same broadcast identically. `transport_conductor.py` ([Examples](examples.md)) shows two followers rolling together; `unfollow_transport()` releases it.
+
 ## A worked example: two clients, one bar
 
 `transport_sync.py` runs two completely independent client pairs — each its own `Server` and `TempoClock`, the state two separate programs would hold — and lands a note from each on the same bar. The check uses public state only, so any client on the same transport computes the same number:
@@ -96,14 +121,14 @@ Sampled back to back, the two clients return the same next-bar sample — that e
 
 ## What it is, and what it is not
 
-The analogy to a DAW transport is the **bar grid and tempo** — the part that makes clients lock to the same bars and the same tempo. The rest of a DAW's transport is intentionally not here:
+The analogy to a DAW transport is the **bar grid and tempo plus a play/stop/position state** — enough to lock clients to the same bars, tempo, and rolling playhead. The rest of a DAW's transport is intentionally not here:
 
-- **No *server-side* global play/stop or song position.** The server does not roll a playhead. "Pressing play" is starting *your* clock with a `quant` onto the shared bar; stopping is stopping your clock. Each client owns its own transport-rolling — a client-side `Playhead` over a static `Timeline` gives you actual play/stop/locate/loop and a song position locally (see [Timelines and the playhead](timelines.md)); a single conductor driving every client's playhead in lockstep is a layer that can be added on top later.
+- **The server broadcasts transport *control*, it does not schedule audio.** It holds the grid and the rolling state (playing + position) and pushes changes; the actual rolling — which note sounds when — is each client's own `Playhead` on the shared grid (see [Timelines and the playhead](timelines.md)). The audio scheduling stays per-client (via `/sched`), so the server never becomes an audio clock.
 - **One grid per server, last-writer-wins.** There is a single shared transport; whoever calls `set_transport` most recently defines it. Several conductors are a coordination choice you make, not something the server arbitrates. (Multiple independently named transports on one server were considered and deferred.)
 - **Tempo and origin only — no meter object.** A "bar" is whatever beat multiple you pass as `quant`; there is no separate time-signature the server stores. Pick a `quant` that matches your meter (4 for 4/4, 3 for 3/4).
-- **The grid is a ruler, not a schedule.** The server stores and serves it but never schedules from it; all timing still comes from your clock's logical time (see [Routines and clocks](routines-and-clocks.md)).
+- **No server-side recording or arrangement.** The timeline a playhead rolls lives in the client; the server holds only the shared position and tempo, not the notes.
 
-These are the honest edges of a small, composable feature: it gives you shared bars and a shared tempo that several clients phase-align on, and leaves the playhead in each client's hands.
+These are the honest edges of a small, composable feature: shared bars, a shared tempo, and a shared play/stop/position that several clients phase-align on, with each client owning its own playhead and arrangement.
 
 ## Cheat-sheet
 
@@ -116,6 +141,8 @@ These are the honest edges of a small, composable feature: it gives you shared b
 | Start on the next bar | `clock.play(routine, quant=4)` / `session.play(pattern, quant=4)` |
 | Align to the sample, not just the beat | `clock.lock_to(server)` as well (see [Timing models](timing-models.md)) |
 | Follow live tempo changes | an `OscFunc("/transport.reply", …)` that re-`join_transport`s (see [Receiving OSC and MIDI](responders.md)) |
+| Roll a playhead from a conductor | `server.transport_play()` / `transport_stop()` / `transport_locate(beat)`; followers `playhead.follow_transport(server, quant=4)` |
+| Read the rolling state | `server.transport_state()` → `{tempo, playing, position, …}` |
 
 ## See also
 

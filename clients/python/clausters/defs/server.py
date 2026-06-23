@@ -546,11 +546,60 @@ class Server:
         """Define the server's shared transport grid (``/transport``): beat 0 at
         ``origin_sample`` on the sample clock, advancing at ``tempo`` beats per
         second. One client (the conductor) sets it; the others
-        `join_transport`. Last writer wins."""
+        `join_transport`. Last writer wins. Defining the grid resets the rolling
+        state to stopped at position 0."""
         addr, args = self.request("/transport", _osclib.Int64(int(origin_sample)), float(tempo),
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             raise CommandError(f"/transport failed: {args}")
+        return self
+
+    def transport_state(self, timeout: float = 5.0):
+        """The full shared transport state as a dict ``{origin_sample, tempo,
+        playing, position}``, or ``None`` if no grid is defined. ``playing`` is
+        whether the transport is rolling and ``position`` the song-position beat
+        (where play starts, or where a stopped transport sits). A
+        `clausters.seq.timeline.Playhead` follows this with `follow_transport`.
+        RT only."""
+        _, args = self.request("/transport", timeout=timeout, expect=("/transport.reply",))
+        if not int(args[2]):
+            return None
+        return {
+            "origin_sample": int(args[0]),
+            "tempo": float(args[1]),
+            "playing": bool(int(args[3])),
+            "position": float(args[4]),
+        }
+
+    def transport_play(self, position: "float | None" = None, timeout: float = 5.0):
+        """Start the shared transport rolling (``/transport_play``). With
+        ``position`` playback starts from that song-position beat; without it,
+        from where it last stopped or located. The server broadcasts the change
+        to every `/notify` client, so all playheads following the transport roll
+        together. Needs a grid defined (`set_transport`)."""
+        extra = [float(position)] if position is not None else []
+        addr, args = self.request("/transport_play", *extra,
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_play failed: {args}")
+        return self
+
+    def transport_stop(self, timeout: float = 5.0):
+        """Stop the shared transport (``/transport_stop``); every following
+        playhead halts. Broadcast to `/notify` clients."""
+        addr, args = self.request("/transport_stop", timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_stop failed: {args}")
+        return self
+
+    def transport_locate(self, position: float, timeout: float = 5.0):
+        """Set the shared transport's song position (``/transport_locate``) —
+        where play starts, or where it seeks to while playing. Every following
+        playhead locates to it. Broadcast to `/notify` clients."""
+        addr, args = self.request("/transport_locate", float(position),
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/transport_locate failed: {args}")
         return self
 
     def close(self):

@@ -43,6 +43,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/timeline_transport.py
   ```
 
+- **`transport_conductor.py`** — a conductor's play/stop/locate driving several clients' playheads **in lockstep**: two followers `follow_transport` a **running** server's shared transport and roll together (sample-exact, since they also `lock_to`). Prints their matching song positions. See [A DAW-style transport](transport.md).
+
+  ```sh
+  python clients/python/examples/transport_conductor.py
+  ```
+
 The first two share their pattern code and differ only in the `Server` interface — the seam from [The client, layer by layer](guide.md) in practice.
 
 The broader catalog of examples (the low-level transports and the raw OSC helpers) lives in the repository-root `examples/`; those use a `sys.path` shim so they run straight from a source checkout without an install.

@@ -41,17 +41,21 @@ Two properties make this robust where it sounds fragile:
 
 The sample clock gives every client a common, drift-free **sample axis**, so two clients locked to one server schedule on the same timeline. It does not, by itself, put them in **phase**: each client's routine still starts whenever it starts, at an arbitrary point on that axis. Aligning several clients on the *same* beat needs a shared **beat grid** — an origin and a tempo everyone agrees on.
 
-`/transport` is that grid, hosted on the server so any client can join it:
+`/transport` is that grid, hosted on the server so any client can join it. It also carries a DAW-style **rolling state** — whether it is playing and the song position:
 
 ```text
-/transport                                →  /transport.reply  h <originSample>  d <tempo>  i <defined>
-/transport  h <originSample> d <tempo>    →  /done  "/transport"
+/transport                                →  /transport.reply  h <originSample>  d <tempo>  i <defined>  i <playing>  d <position>
+/transport  h <originSample> d <tempo>    →  /done  "/transport"          (set the grid, stopped at 0)
+/transport_play  [d <position>]           →  /done  "/transport_play"     (start rolling)
+/transport_stop                           →  /done  "/transport_stop"
+/transport_locate  d <position>           →  /done  "/transport_locate"   (set the song position)
 ```
 
-- With no arguments it **queries** the grid; `defined` is 0 until a client has set one.
-- With `(originSample, tempo)` it **sets** it (last writer wins). Beat `b` maps to sample `originSample + b·rate/tempo`, so a client joins by reading the grid and quantizing its routine's start onto the next beat boundary. Because the grid lives on the sample axis, the alignment is sample-exact for clients locked to the master.
+- With no arguments `/transport` **queries** the grid; `defined` is 0 until a client has set one. The `playing`/`position` fields are appended, so a client reading only the first three still works.
+- With `(originSample, tempo)` it **sets** the grid (last writer wins), stopped at position 0. Beat `b` maps to sample `originSample + b·rate/tempo`, so a client joins by reading the grid and quantizing its routine's start onto the next beat boundary. Because the grid lives on the sample axis, the alignment is sample-exact for clients locked to the master.
+- `/transport_play`/`/transport_stop`/`/transport_locate` drive the rolling state (a conductor): play from a song position, stop, or seek. Each needs a grid defined first.
 
-The transport is a pure `(origin, tempo)` pair: the server stores and serves it but **never schedules from it** — it is shared metadata, not a sequencer. It is in-memory (the sample counter resets on restart, so an origin only means anything within one run) and ownership is last-writer-wins for now. A running/stopped transport state, and a push to clients on change, are deliberate future extensions.
+Every change is **pushed** to every `/notify` client as a `/transport.reply`, so a client with a responder on it re-aligns or rolls its playhead live — no polling. The server stores, serves and broadcasts the transport but **never schedules audio from it** — it is shared control, not a sequencer; each client rolls its own playhead on the shared grid. It is in-memory (the sample counter resets on restart, so an origin only means anything within one run) and ownership is last-writer-wins.
 
 ## Caveats
 

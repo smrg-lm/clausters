@@ -57,6 +57,14 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/timeline_transport.py
   ```
 
+- **`transport_conductor.py`** — a conductor's play/stop/locate driving two
+  clients' playheads in lockstep (`follow_transport` on a **running** server's
+  shared transport; sample-exact via `lock_to`). Prints matching positions.
+
+  ```sh
+  python clients/python/examples/transport_conductor.py
+  ```
+
 The broader catalog of examples (including the low-level transports and the raw
 OSC helpers) lives in the repo-root [`examples/`](../../../examples/); those use
 a `sys.path` shim so they run straight from a source checkout without an install.

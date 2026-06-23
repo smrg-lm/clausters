@@ -4,10 +4,17 @@ The `Timeline` edits and time-queries are pure unit tests. The `Playhead` is
 driven offline (`clock.render()`) into a recording destination, so play / locate
 / loop are checked deterministically by the logical beats each item lands on —
 no server, no real time. `stop` is checked at the queue level (it unscheds the
-feeder).
+feeder). `follow_transport` is checked by feeding a simulated `/transport.reply`
+broadcast over loopback (no live server). The full multi-client lockstep is the
+manual E2E in `clients/python/GUIA.md` / `examples/transport_conductor.py`.
 """
 
-from clausters.base import TempoClock
+import socket
+import time
+import types
+
+from clausters.base import OscReceiver, TempoClock
+from clausters.base import _osclib as osc
 from clausters.base.main import main
 from clausters.seq import (
     Event,
@@ -152,3 +159,50 @@ def test_timeline_from_pattern_records_beats():
     assert len(tl) == 3
     assert [b for b, _ in tl] == [0.0, 0.5, 1.0]
     assert [e["freq"] for _, e in tl] == [440, 550, 660]
+
+
+# ---- following a server transport (simulated broadcast, no live server) ----
+
+
+def _wait(predicate, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.005)
+    return False
+
+
+def _feed_transport(recv, *, defined=1, playing=0, position=0.0):
+    """Send a simulated /transport.reply broadcast to a receiver's port."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.sendto(
+        osc.message("/transport.reply", osc.Int64(0), 2.0, int(defined),
+                    int(playing), float(position)),
+        ("127.0.0.1", recv.port),
+    )
+    sock.close()
+
+
+def test_playhead_follows_transport_broadcast():
+    recv = OscReceiver().start()
+    # A fake server: follow_transport only needs target.addr() (where /notify
+    # goes -- a discard port here) and transport_state() for the initial apply.
+    server = types.SimpleNamespace(
+        target=types.SimpleNamespace(addr=lambda: ("127.0.0.1", 57199)),
+        transport_state=lambda: None,
+    )
+    try:
+        ph = Playhead(_arp(), TempoClock(1.0), RecordDest())
+        ph.follow_transport(server, recv=recv)
+
+        # A "play" broadcast rolls the playhead.
+        _feed_transport(recv, playing=1, position=0.0)
+        assert _wait(lambda: ph.playing)
+
+        # A "stop" broadcast halts it.
+        _feed_transport(recv, playing=0, position=4.0)
+        assert _wait(lambda: not ph.playing)
+        assert ph.position() == 4.0       # located to the broadcast position
+    finally:
+        recv.stop()

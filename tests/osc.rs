@@ -483,12 +483,19 @@ fn clock_reports_the_engine_sample_counter() {
 fn transport_query_and_set() {
     let server = TestServer::spawn();
 
-    // Unset: defined flag 0, zeros.
+    // Unset: defined flag 0, zeros. Reply is (origin, tempo, defined, playing,
+    // position) -- the grid plus the rolling state.
     server.send("/transport", vec![]);
     let reply = server.recv_until("/transport.reply");
     assert_eq!(
         reply.args,
-        vec![OscType::Long(0), OscType::Double(0.0), OscType::Int(0)]
+        vec![
+            OscType::Long(0),
+            OscType::Double(0.0),
+            OscType::Int(0),
+            OscType::Int(0),
+            OscType::Double(0.0),
+        ]
     );
 
     // Set origin sample + tempo; replies /done.
@@ -501,12 +508,18 @@ fn transport_query_and_set() {
         OscType::String("/transport".into())
     );
 
-    // Query now reports the grid with defined 1.
+    // Query now reports the grid with defined 1, stopped at position 0.
     server.send("/transport", vec![]);
     let reply = server.recv_until("/transport.reply");
     assert_eq!(
         reply.args,
-        vec![OscType::Long(96_000), OscType::Double(2.0), OscType::Int(1)]
+        vec![
+            OscType::Long(96_000),
+            OscType::Double(2.0),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::Double(0.0),
+        ]
     );
 
     // Bad tempo fails and does not clobber the stored grid.
@@ -520,6 +533,49 @@ fn transport_query_and_set() {
         server.recv_until("/transport.reply").args[2],
         OscType::Int(1)
     );
+
+    server.quit();
+}
+
+/// The DAW-style rolling state: play / stop / locate update `playing` and
+/// `position`, reply `/done`, and need a grid defined first.
+#[test]
+fn transport_play_stop_locate() {
+    let server = TestServer::spawn();
+
+    // play/stop/locate before a grid is defined -> /fail.
+    server.send("/transport_play", vec![]);
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/transport_play".into())
+    );
+
+    server.send("/transport", vec![OscType::Long(0), OscType::Double(2.0)]);
+    server.recv_until("/done");
+
+    // Play from beat 8: playing=1, position=8.
+    server.send("/transport_play", vec![OscType::Double(8.0)]);
+    server.recv_until("/done");
+    server.send("/transport", vec![]);
+    let reply = server.recv_until("/transport.reply");
+    assert_eq!(reply.args[3], OscType::Int(1)); // playing
+    assert_eq!(reply.args[4], OscType::Double(8.0)); // position
+
+    // Locate to 16 while playing: position moves, playing unchanged.
+    server.send("/transport_locate", vec![OscType::Double(16.0)]);
+    server.recv_until("/done");
+    server.send("/transport", vec![]);
+    let reply = server.recv_until("/transport.reply");
+    assert_eq!(reply.args[3], OscType::Int(1));
+    assert_eq!(reply.args[4], OscType::Double(16.0));
+
+    // Stop: playing=0, position holds.
+    server.send("/transport_stop", vec![]);
+    server.recv_until("/done");
+    server.send("/transport", vec![]);
+    let reply = server.recv_until("/transport.reply");
+    assert_eq!(reply.args[3], OscType::Int(0));
+    assert_eq!(reply.args[4], OscType::Double(16.0));
 
     server.quit();
 }
@@ -542,8 +598,20 @@ fn transport_pushes_on_change_to_notify_clients() {
     let push = server.recv_until("/transport.reply");
     assert_eq!(
         push.args,
-        vec![OscType::Long(48_000), OscType::Double(2.0), OscType::Int(1)]
+        vec![
+            OscType::Long(48_000),
+            OscType::Double(2.0),
+            OscType::Int(1),
+            OscType::Int(0),
+            OscType::Double(0.0),
+        ]
     );
+
+    // A play also pushes the rolling state to the /notify client.
+    server.send("/transport_play", vec![OscType::Double(4.0)]);
+    let push = server.recv_until("/transport.reply");
+    assert_eq!(push.args[3], OscType::Int(1));
+    assert_eq!(push.args[4], OscType::Double(4.0));
 
     server.quit();
 }

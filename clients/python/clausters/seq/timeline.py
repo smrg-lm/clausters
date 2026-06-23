@@ -209,6 +209,7 @@ class Playhead:
         self._start_beat = 0.0     # the beat the current run started from
         self._pos_beat = 0.0       # timeline beat at the last wake
         self._pos_clock = None     # clock beat at the last wake (for interpolation)
+        self._follow = None        # (OscFunc, OscReceiver | None) when following a transport
 
     # ---- transport ----
 
@@ -276,6 +277,66 @@ class Playhead:
     @property
     def playing(self) -> bool:
         return self._running
+
+    # ---- follow a server's shared transport (DAW conductor) ----
+
+    def follow_transport(self, server, recv=None, quant=None):
+        """Make this playhead obey a ``server``'s shared transport: when a
+        conductor calls `transport_play` / `transport_stop` /
+        `transport_locate` on the server, the server broadcasts the new state and
+        this playhead rolls / halts / seeks to match — so several clients run in
+        lockstep on the shared grid.
+
+        It registers ``/notify`` (so the server's `/transport.reply` pushes
+        arrive) and an `clausters.responders.OscFunc` on ``/transport.reply``
+        that drives this playhead, then applies the current state once. Pass a
+        started `clausters.base.OscReceiver` as ``recv`` (it must be subscribable
+        on its own socket); one is created if omitted. ``quant`` snaps each
+        rolling start to a beat boundary of the shared grid, so all followers
+        land together. Release with `unfollow_transport`. Returns ``self``.
+
+        Beat-aligned in plain wall-clock mode; sample-exact when the clock is
+        also `lock_to` the server (see the timing docs)."""
+        from ..base import OscReceiver
+        from ..responders import OscFunc
+
+        owns_recv = recv is None
+        if recv is None:
+            recv = OscReceiver().start()
+        recv.send(server.target.addr(), "/notify", 1)
+
+        def on_transport(msg, time, src):
+            # msg == ["/transport.reply", origin, tempo, defined, playing, position]
+            if len(msg) < 6 or not int(msg[3]):
+                return
+            playing, position = int(msg[4]), float(msg[5])
+            if playing:
+                self.play(at=position, quant=quant)
+            else:
+                self.stop()
+                self.locate(position)
+
+        func = OscFunc(on_transport, "/transport.reply", recv=recv)
+        self._follow = (func, recv if owns_recv else None)
+
+        state = server.transport_state()
+        if state is not None:
+            if state["playing"]:
+                self.play(at=state["position"], quant=quant)
+            else:
+                self.locate(state["position"])
+        return self
+
+    def unfollow_transport(self):
+        """Stop following a server transport (see `follow_transport`): frees the
+        responder and closes the receiver it created. Returns ``self``."""
+        if self._follow is not None:
+            func, owned_recv = self._follow
+            func.free()
+            if owned_recv is not None:
+                owned_recv.close()
+            self._follow = None
+        return self
 
     # ---- the feeder: a cursor walk fed to the clock ----
 
