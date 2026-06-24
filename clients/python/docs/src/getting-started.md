@@ -2,7 +2,7 @@
 
 ## Install
 
-The package is pure Python at runtime, but it reaches Rust through two cdylibs that **cargo** builds: `libclausters_ffi` (the numeric/timing core) and `libclausters` (built with `embed,realtime` for the in-process server and offline render). The packaging **bundles** them inside the wheel, so an installed package is self-contained — no `target/` directory and no build step at import time.
+The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: two cdylibs — `libclausters_ffi` (the numeric/timing core) and `libclausters` (built with `embed,realtime` for the in-process server and offline render) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
 
 The simplest setup, in a fresh virtualenv, run from the repository so the build hook can find the cargo workspace:
 
@@ -27,6 +27,10 @@ cargo build -p clausters-ffi
 cargo build --features embed,realtime
 ```
 
+### Runtime requirement: PipeWire (Linux)
+
+The bundled artifacts that touch an audio device — the in-process embedded server and the standalone `clausters` binary — are built with the project's default features, which include the PipeWire audio backend. They therefore **hard-link `libpipewire`** and expect PipeWire present at runtime (the standard on current Linux systems); on a host without it the library and the binary will not load. The offline renderer and the numeric core need no audio device, so `Session.nrt()` and `clausters._native` work anywhere. For an audio build that does not depend on PipeWire, build the server from source with plain ALSA — see the server guide's [getting started](https://clausters.readthedocs.io/en/latest/getting-started.html) (`cargo build --no-default-features --features realtime`).
+
 ### Environment knobs (all optional)
 
 - `CLAUSTERS_WORKSPACE` — path to the cargo workspace, if it can't be found by searching upward.
@@ -36,19 +40,26 @@ cargo build --features embed,realtime
 
 ## Play a sound
 
-Two paths, the same code shape. **Offline** (no server, no audio device) renders a score to a WAV through the bundled embed renderer:
+Three paths, the same code shape — they differ only in the session factory. **Embedded** runs the whole server inside the Python process (the bundled library); nothing to start:
+
+```sh
+python clients/python/examples/embedded.py
+```
+
+**Offline** (no server, no audio device) renders a score to a WAV through the bundled renderer:
 
 ```sh
 python clients/python/examples/offline_render.py out.wav
 ```
 
-**Live** sends the same pattern over UDP to a running server (start one with `cargo run --release`, or the installed `clausters` binary):
+**Live** sends the same pattern over UDP to a *separate* server. The wheel ships that server too, as the `clausters` command:
 
 ```sh
-python clients/python/examples/live_udp.py
+clausters                                    # start the standalone server (its own process)
+python clients/python/examples/live_udp.py   # in another shell
 ```
 
-See [Examples](examples.md) for what these do, and [The client, layer by layer](guide.md) for the model behind them.
+See [Sessions](sessions.md) for when to pick which, [Examples](examples.md) for what these do, and [The client, layer by layer](guide.md) for the model behind them.
 
 ## Run the tests
 

@@ -32,6 +32,7 @@ from ._midiinterface import (
     parse_midi,
 )
 from ._oscinterface import (
+    OscEmbedInterface,
     OscInterface,
     OscNrtInterface,
     OscReceiver,
@@ -58,6 +59,7 @@ __all__ = [
     "OscUdpInterface",
     "OscTcpInterface",
     "OscNrtInterface",
+    "OscEmbedInterface",
     "OscReceiver",
     "OscScore",
     "MidiRtInterface",

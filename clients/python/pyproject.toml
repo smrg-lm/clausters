@@ -18,6 +18,12 @@ authors = [{ name = "Lucas Samaruga" }]
 # without it ever being a dependency here.
 dependencies = []
 
+# `clausters` on the PATH: runs the bundled standalone server binary (a separate
+# networked / shared-memory server). The in-process embedded server needs no
+# command — it is imported (`clausters.Clausters`).
+[project.scripts]
+clausters = "clausters._cli:main"
+
 # Development-only dependencies (PEP 735): the test runner. Not part of the
 # published package — install with `pip install --group dev` (or `uv sync`).
 [dependency-groups]
@@ -26,10 +32,12 @@ dev = ["pytest>=7"]
 [tool.setuptools]
 packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs"]
 
-# The cargo-built cdylibs that build_native.py stages into clausters/_libs/.
-# They are bundled in the wheel so an installed package is self-contained.
+# The cargo-built artifacts that build_native.py stages into the package: the
+# cdylibs in _libs/ (embedded server / numeric core) and the standalone server
+# binary in _bin/ (run via the `clausters` console-script). Bundled in the wheel
+# so an installed package is self-contained.
 [tool.setuptools.package-data]
-clausters = ["_libs/*.so", "_libs/*.dylib", "_libs/*.dll"]
+clausters = ["_libs/*.so", "_libs/*.dylib", "_libs/*.dll", "_bin/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

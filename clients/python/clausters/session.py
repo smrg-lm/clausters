@@ -16,7 +16,7 @@ samples, frames = s.render()        # drains the clock, renders the score
 ```
 """
 
-from .base import OscNrtInterface, TempoClock
+from .base import OscEmbedInterface, OscNrtInterface, TempoClock
 from .defs import Server
 
 
@@ -100,6 +100,38 @@ class Session:
             A `Session` you drive with `run` (or `start` / `stop`).
         """
         return cls(Server(host, port, latency=latency), TempoClock(tempo, timebase=timebase))
+
+    @classmethod
+    def embed(cls, tempo: float = 1.0, latency: float = 0.0, workers: int = 0,
+              timebase=None, server=None) -> "Session":
+        """Build a real-time session backed by an in-process embedded server.
+
+        The whole server — audio device and engine — runs in this process
+        through the bundled native library; there is no socket and no separate
+        server process. Otherwise it is identical to `live`: the same routines,
+        patterns and defs drive it, because only the `Server`'s communication
+        interface differs (an `OscEmbedInterface` instead of UDP). So an
+        embedded, a live and an offline session can run side by side in one
+        script.
+
+        Args:
+            tempo: the clock's tempo, in beats per second.
+            latency: seconds added to each event's timetag so it lands a touch
+                in the future and sounds on time; a small value such as 0.05 is
+                typical even in-process.
+            workers: engine worker threads for parallel node processing (0 lets
+                the server choose).
+            timebase: the clock's pacing source (default monotonic wall clock).
+            server: an existing `clausters.Clausters` handle to reuse; when
+                omitted the session opens and owns a fresh embedded server and
+                closes it on `close`.
+
+        Returns:
+            A `Session` you drive with `run` (or `start` / `stop`), exactly like
+            `live`.
+        """
+        iface = OscEmbedInterface(server, workers=workers)
+        return cls(Server(interface=iface, latency=latency), TempoClock(tempo, timebase=timebase))
 
     # ---- driving ----
 

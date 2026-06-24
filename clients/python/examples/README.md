@@ -10,18 +10,28 @@ python -m venv .venv && . .venv/bin/activate
 pip install ./clients/python          # builds + bundles the native libs
 ```
 
+- **`embedded.py`** — the same pattern, live from a server running **inside the
+  process** (`Session.embed`): the bundled engine, no separate process and no
+  socket. Nothing to start.
+
+  ```sh
+  python clients/python/examples/embedded.py
+  ```
+
 - **`offline_render.py`** — fully self-contained: renders a short arpeggio to a
-  WAV through the bundled embed renderer. No server, no audio device.
+  WAV through the bundled renderer. No server, no audio device.
 
   ```sh
   python clients/python/examples/offline_render.py out.wav
   ```
 
-- **`live_udp.py`** — the same pattern, live over UDP to a **running** server
-  (start one with `cargo run --release`, or the installed `clausters` binary).
+- **`live_udp.py`** — the same pattern, live over UDP to a **separate, running**
+  server. The wheel ships that server as the `clausters` command (or use
+  `cargo run --release`).
 
   ```sh
-  python clients/python/examples/live_udp.py
+  clausters                                    # standalone server, own process
+  python clients/python/examples/live_udp.py   # in another shell
   ```
 
 - **`transport_sync.py`** — two clients lock to a **running** server's sample

@@ -21,11 +21,18 @@ import os
 _PKG_DIR = os.path.dirname(os.path.abspath(__file__))
 #: The directory a built wheel stages the cdylibs into (may not exist).
 LIBS_DIR = os.path.join(_PKG_DIR, "_libs")
+#: The directory a built wheel stages the standalone server binary into.
+BIN_DIR = os.path.join(_PKG_DIR, "_bin")
 
 
 def bundled_candidates(names) -> list[str]:
     """Absolute paths for ``names`` inside the bundled ``_libs/`` directory."""
     return [os.path.join(LIBS_DIR, n) for n in names]
+
+
+def bundled_bin_candidates(names) -> list[str]:
+    """Absolute paths for ``names`` inside the bundled ``_bin/`` directory."""
+    return [os.path.join(BIN_DIR, n) for n in names]
 
 
 def workspace_candidates(names) -> list[str]:

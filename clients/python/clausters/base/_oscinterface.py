@@ -310,3 +310,62 @@ class OscNrtInterface(OscInterface):
         from .. import ipc
 
         return ipc.render(self.score.bytes(), sample_rate=sample_rate, channels=channels)
+
+
+class OscEmbedInterface(OscInterface):
+    """Real-time, in-process: the embedded server as just another OSC
+    destination.
+
+    It encodes exactly like `OscUdpInterface` — same wire bytes, same
+    NTP-timetagged bundles — but instead of a socket it delivers each packet to
+    an in-process `clausters.ipc.Clausters` server by function call, and reads
+    replies by polling it. The embedded server decodes those bytes through the
+    very same command path as the networked one, and (running in this process)
+    shares the wall clock the timetags are written against, so the timing
+    semantics match UDP exactly.
+
+    The point is uniformity: a `Server` / `Session` driven through this
+    interface behaves identically to one over UDP/TCP — the same routines,
+    patterns and defs — because the only thing that changed is the transport.
+    ``target`` is ignored, like `OscTcpInterface` (the handle already knows its
+    server).
+
+    Pass an existing `Clausters` handle to share one embedded server across
+    interfaces, or leave ``server=None`` to open (and own) a fresh one;
+    `close` shuts down only a handle this interface created.
+    """
+
+    time_mode = "unix"
+
+    def __init__(self, server=None, *, workers: int = 0, lib_path: str | None = None):
+        from .. import ipc
+
+        #: the embedded `clausters.ipc.Clausters` server this interface drives;
+        #: reach its sample clock / control buses through ``interface.server``.
+        self.server = server if server is not None else ipc.Clausters(workers=workers, lib_path=lib_path)
+        #: only close the handle if we opened it (a shared one outlives us).
+        self._owned = server is None
+
+    def send_msg(self, target, addr, *args):
+        self.server.send(_osclib.message(addr, *args))
+
+    def send_bundle(self, target, when, *messages):
+        packets = [_osclib.message(*m) for m in messages]
+        self.server.send(_osclib.bundle_at(when, *packets))
+
+    def recv(self, timeout):
+        """One reply packet from the embedded server, or ``None`` within
+        ``timeout``. Polls the reply ring (the server never blocks the caller)."""
+        deadline = time.monotonic() + timeout
+        while True:
+            reply = self.server.poll()
+            if reply is not None:
+                return reply
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.001)
+
+    def close(self):
+        if self._owned and self.server is not None:
+            self.server.close()
+            self.server = None

@@ -561,12 +561,14 @@ tests que necesitan los cdylibs hacen *skip* si no están construidos (apuntá
 
 ## 8. Empaquetado e instalación (C12)
 
-El paquete es Python puro en runtime, pero alcanza Rust por dos cdylibs que
-**cargo** construye (`libclausters_ffi` y `libclausters` con `embed,realtime`).
-C12 los **empaqueta dentro del wheel**, así un paquete instalado es
-autocontenido: no necesita el directorio `target/` ni reconstruir nada al
-importar. Esto sirve también para instalar desde este repo y correr pruebas
-autocontenidas en un venv de forma simple y estándar.
+El paquete es Python puro en runtime, pero alcanza Rust por artefactos que
+**cargo** construye: dos cdylibs (`libclausters_ffi` y `libclausters` con
+`embed,realtime`) y, desde C17, el **binario standalone** del servidor. El wheel
+los **empaqueta a todos**, así un paquete instalado es autocontenido: no necesita
+el directorio `target/` ni reconstruir nada al importar, y el servidor standalone
+queda en el PATH como el comando `clausters` (ver seccion 11). Esto sirve también
+para instalar desde este repo y correr pruebas autocontenidas en un venv de forma
+simple y estándar.
 
 Instalación recomendada en un venv nuevo (corré desde el repo, así el hook de
 build encuentra el workspace de cargo):
@@ -721,3 +723,73 @@ cargo build -p clausters-ffi --bin clausters
 Esperado: dos followers (cada uno `lock_to` + `join_transport` + `follow_transport`)
 arrancan juntos al `transport_play` del director e imprimen posiciones que
 coinciden (lockstep; sample-exacto por el `lock_to`), luego `locate`/`stop`.
+
+## 11. Servidor embebido como destino + wheel con todo (C17)
+
+El servidor embebido (`clausters.Clausters`, que corre el motor en proceso vía el
+cdylib) pasa a ser **un destino mas** del cliente de alto nivel, igual que UDP,
+TCP o NRT. La pieza nueva es `OscEmbedInterface`: codifica el mismo OSC que UDP
+(bundles NTP) pero entrega los bytes por *llamada a funcion* al servidor en
+proceso y lee respuestas por polling. Como decodifica por el mismo camino que el
+de red y comparte el wall clock, el timing es identico a UDP. Factory:
+`Session.embed(...)`, hermana de `Session.nrt`/`Session.live`.
+
+Ademas, el wheel ahora empaqueta tambien el **binario standalone**: queda en el
+PATH del venv como el comando `clausters` (servidor separado, por red/memoria
+compartida). Asi un solo `pip install` deja: cliente + servidor embebido +
+servidor standalone.
+
+### Tests unitarios (se saltean limpio sin audio)
+
+```sh
+cd clients/python
+python3 -m pytest -q tests/test_session.py   # incluye 2 nuevos de embed
+```
+
+Cubren: `Session.embed` maneja el servidor en proceso con la misma API
+(`status()`/`query_tree()` round-trip por la interfaz embed, el motor avanza al
+tocar un `Pbind`), y una sesion embebida convive con una NRT sin estado global.
+
+### E2E del servidor embebido (`embedded.py`)
+
+No hay que arrancar nada: el motor corre en el proceso.
+
+```sh
+cargo build --features embed,realtime          # el cdylib que carga el embebido
+PYTHONPATH=clients/python python clients/python/examples/embedded.py
+```
+
+Esperado: imprime el sample rate del servidor embebido (48000.0 Hz), toca el
+arpegio y libera los synths tras su sustain; exit 0.
+
+### El wheel: embebido + standalone en un solo paquete
+
+```sh
+python clients/python/build_native.py          # stagea cdylibs + binario en _libs/ y _bin/
+python -m pip wheel clients/python --no-deps --no-build-isolation -w clients/python/dist
+```
+
+Verificar en un venv limpio, **desde un cwd neutro** (sin el arbol fuente en
+`sys.path`, p. ej. `/tmp`), que estan las dos cosas:
+
+```sh
+python -m venv /tmp/venv && /tmp/venv/bin/pip install clients/python/dist/clausters-*.whl
+cd /tmp
+# 1) comando standalone instalado en el PATH (ejecuta el binario embebido en el wheel):
+/tmp/venv/bin/clausters --help | head -1            # imprime "usage:"
+# 2) servidor embebido en proceso:
+/tmp/venv/bin/python -c "from clausters import Session; s=Session.embed(); print(s.server.status()[0]); s.close()"
+```
+
+E2E del standalone instalado contra un cliente UDP (servidor + cliente en la
+misma invocacion, regla E2E):
+
+```sh
+(/tmp/venv/bin/clausters >/tmp/srv.log 2>&1 & PID=$!; sleep 1.5; \
+ /tmp/venv/bin/python -c "from clausters import Session; s=Session.live(); print(s.server.status()); s.close()"; \
+ kill $PID 2>/dev/null; true)
+```
+
+Esperado: (1) `clausters --help` imprime el usage del servidor; (2) la sesion
+embebida responde `status()[0] == 1`; (3) el standalone responde el
+`/status.reply` por UDP.

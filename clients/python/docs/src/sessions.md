@@ -10,9 +10,9 @@ This client deliberately has none of those globals. The clock does timing and no
 
 `Session` gives the convenience back **explicitly**. It is just an object that holds a `Server` and a `TempoClock` and offers `play` / `render` / `run`, plus two factories that pick sensible defaults. Because it is a plain object and not a global, you can have as many as you like.
 
-## Two kinds of session
+## Three kinds of session
 
-You almost always build a session with one of the two factories rather than the constructor.
+You almost always build a session with one of the three factories rather than the constructor. They differ only in *where the bytes go* — offline into a score, over UDP to a separate server, or by function call to a server running inside this process — and otherwise behave identically.
 
 `Session.nrt()` is an **offline** (non-real-time) session. Its server accumulates a timetagged *score* instead of sending anything, and `render()` turns that score into samples through the renderer bundled with the package. No server process and no audio device are involved.
 
@@ -51,17 +51,43 @@ Two arguments are worth knowing on `live()`:
 - `latency` — seconds added to each event's timetag so it arrives a touch ahead of its play time and the server sounds it *on* time rather than late. `0.0` means "as soon as possible"; a small value such as `0.1` is typical for a live take.
 - `timebase` — the clock's pacing source. The default paces in wall-clock seconds (monotonic); passing a `SampleClockTimebase` anchors timing to the server's own sample clock, for drift-free, sample-accurate scheduling. See [The client, layer by layer](guide.md) for the timebase distinction.
 
+`Session.embed()` is a **real-time** session whose server runs *inside this process*. It opens the whole engine — audio device and all — through the native library bundled with the package, and OSC is delivered by function call rather than over a socket. There is no separate process to start and no port to connect to, yet it is real-time: it sounds on a device just like `live()`.
+
+```python
+from clausters import Session
+from clausters.seq import Pbind, Pseq, Pwhite
+
+with Session.embed(tempo=2.0, latency=0.1) as session:
+    session.play(Pbind(
+        instrument="default",
+        degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
+        dur=0.25,
+        amp=Pwhite(0.1, 0.2, seed=1),
+    ))
+    session.run(3.5)
+```
+
+It takes the same `latency` and `timebase` as `live()`, plus `workers` (engine threads for parallel node processing) and an optional `server=` to reuse an existing `clausters.Clausters` handle instead of opening a fresh one. Because the server lives in this process, you can read its sample clock and control buses directly through `session.server.interface.server` (the `Clausters` handle), with no OSC round trip.
+
+Which factory to reach for:
+
+| Factory | Server | Use it when |
+| --- | --- | --- |
+| `Session.nrt()` | none (a score + renderer) | rendering offline — a plot, an analysis, a `.wav`; no device. |
+| `Session.embed()` | in-process (bundled library) | making sound from one script, no setup — the batteries-included path. |
+| `Session.live()` | a separate process over UDP | a server shared by several clients or machines, or one that outlives the script. Start it with the bundled `clausters` command (or `cargo run --release`). |
+
 ## Driving a session
 
 Once you have a session, a small set of methods drives it. Some are offline-only, some live-only — the table makes the split explicit.
 
 | Call | Kind | What it does |
 | --- | --- | --- |
-| `play(pattern, quant=None)` | both | Plays an event pattern (e.g. a `Pbind`) on this session's clock and server. Returns the `EventStreamPlayer`. `quant` is the beat grid to start on; `None` starts immediately. |
+| `play(pattern, quant=None)` | all | Plays an event pattern (e.g. a `Pbind`) on this session's clock and server. Returns the `EventStreamPlayer`. `quant` is the beat grid to start on; `None` starts immediately. |
 | `render(sample_rate, channels)` | offline | Drains the clock logically (no waiting), then renders the score. Returns `(samples, frames)` — interleaved float32 in a stdlib `array('f')`, and the frame count. |
-| `run(seconds)` | live | Starts the clock, advances it in real time for `seconds`, then stops. Returns `self`. |
-| `start()` / `stop()` | live | Start or stop the real-time clock yourself when `run` (which does both) is not enough. Both return `self`. |
-| `close()` | both | Closes the underlying `Server` and its interface. |
+| `run(seconds)` | real-time | Starts the clock, advances it in real time for `seconds`, then stops. Returns `self`. (`live` and `embed`.) |
+| `start()` / `stop()` | real-time | Start or stop the real-time clock yourself when `run` (which does both) is not enough. Both return `self`. |
+| `close()` | all | Closes the underlying `Server` and its interface (for `embed`, shuts the in-process server down). |
 
 `play` is the one call shared by both kinds, and that is the whole point — see the next section.
 

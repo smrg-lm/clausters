@@ -1,5 +1,7 @@
-# Native cdylibs staged into the package by build_native.py / setup.py.
+# Native cdylibs + standalone binary staged into the package by
+# build_native.py / setup.py.
 clausters/_libs/
+clausters/_bin/
 
 # Packaging / build artifacts.
 build/

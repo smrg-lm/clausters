@@ -2794,3 +2794,64 @@ playhead on the shared grid.
   C16 deferred-note marked done; root `PLAN.md` M22 note updated.
 - **Verified**: `cargo test --test osc` 26 green; full client suite 102 passed /
   4 skipped (1 new); both books build; `cargo fmt --check` clean.
+
+## C17 — Embedded server as a first-class destination + one self-contained wheel (2026-06-23)
+
+Until now the in-process embedded server (`clausters.Clausters`) was reachable
+only at the low level — raw OSC bytes through `send`/`poll` — while the ergonomic
+layer (`Server`/`Session`/`Pbind`/defs) spoke only UDP, TCP or an NRT score. C17
+makes the embedded server **just another destination**: the same routines,
+patterns and defs drive it unchanged. The seam is the `Server`'s communication
+interface, so the addition is one new interface plus a session factory; no client
+behaviour above the interface changed. Decided with the user (2026-06-23): the
+embedded server is a first-class variant handled identically to the others, and
+the standalone server binary ships **in the same wheel** (one artifact, no
+optional extras — pip extras add dependencies, they cannot gate files inside a
+wheel).
+
+- **`OscEmbedInterface`** (`clausters/base/_oscinterface.py`): encodes exactly
+  like `OscUdpInterface` — same wire bytes, same NTP-timetagged bundles — but
+  delivers each packet to an in-process `clausters.ipc.Clausters` by function
+  call and reads replies by polling it. The embedded server decodes through the
+  same command path as the networked one and (running in this process) shares the
+  wall clock the timetags are written against, so the timing semantics match UDP
+  exactly. `target` is ignored (like `OscTcpInterface`). Opens and owns a fresh
+  `Clausters` by default, or wraps an existing handle (then it does not close
+  it). Exported from `clausters.base`.
+- **`Session.embed(...)`** (`clausters/session.py`): the real-time factory whose
+  server runs in-process, twin of `nrt`/`live` — same `latency`/`timebase`, plus
+  `workers` and an optional `server=` to reuse a handle. `session.server.interface.server`
+  is the live `Clausters` handle (direct sample-clock / control-bus reads, no OSC
+  round trip).
+- **One self-contained wheel** (`build_native.py`, `setup.py`, `pyproject.toml`,
+  new `clausters/_cli.py`, `_libpath.py`): `build_native.py` now also builds
+  (`cargo build --release --bin clausters`, default features) and stages the
+  standalone binary into `clausters/_bin/`. It travels as **package data**;
+  the `clausters` **console-script** (`clausters._cli:main`) locates and execs
+  it, so `pip install` puts the standalone server on the PATH with the executable
+  bit set. (The wheel's `scripts=` slot does not work for a native binary:
+  setuptools' `build_scripts` parses every script as Python source via
+  `tokenize.open` and chokes on the ELF's null bytes — documented in `setup.py`.)
+  `_libpath.bundled_bin_candidates` gives `_cli` the same lookup precedence the
+  cdylib loaders use (`CLAUSTERS_BIN` env → bundled `_bin/` → workspace
+  `target/`). One `pip install clausters-…whl` now yields: the client library,
+  the in-process embedded server (`Clausters` / `Session.embed`), and the
+  standalone server (`clausters` command).
+- **Tests**: `clients/python/tests/test_session.py` (+2) — `Session.embed` drives
+  the in-process server with the same API (request/reply over embed, the engine
+  advances on play) and coexists with an NRT session with no global state. Both
+  skip cleanly when no audio device / no `embed,realtime` build is available.
+- **Example**: `clients/python/examples/embedded.py` — the third session flavour
+  next to `offline_render.py` and `live_udp.py`; `Session.embed` plays the shared
+  phrase from an in-process server. Verified: exit 0, embedded server at 48000 Hz.
+- **Docs**: Python book `sessions.md` (now "Three kinds of session" + a
+  when-to-use table and an `embed()` section), `getting-started.md` (the wheel
+  bundles the standalone binary as the `clausters` command; three play-a-sound
+  paths), `examples.md` + examples `README.md` (the new example); `GUIA.md`
+  section 11 (embedded session + the all-in-one wheel, with manual E2E steps) and
+  section 8 updated.
+- **Verified** (from a clean venv, neutral cwd): wheel 4.18 MB carries the binary
+  as package data, mode 0o775; installed `clausters --help` runs the bundled
+  server; `Session.embed` plays in-process; standalone server + `Session.live`
+  E2E over UDP (status / play / query_tree) clean; full client suite 104 passed /
+  4 skipped (2 new). No Rust changed (so no `cargo fmt`).

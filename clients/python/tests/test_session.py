@@ -30,6 +30,50 @@ def test_nrt_session_plays_and_renders():
     assert max(abs(x) for x in samples) > 0.0
 
 
+def _embed_session_or_skip():
+    """An embedded live session, or skip if the embed library is unusable here
+    (not built with embed,realtime, or no audio device available)."""
+    _embed_or_skip()
+    from clausters import Session
+    from clausters.errors import LibraryError, ServerError
+    try:
+        return Session.embed(tempo=4.0, latency=0.1)
+    except (LibraryError, ServerError, OSError) as e:
+        pytest.skip(f"embedded server not available: {e}")
+
+
+def test_embed_session_drives_in_process_server():
+    # The embedded server is just another OSC destination: the same Session /
+    # Pbind API drives it, request/reply works through the embed interface, and
+    # the in-process engine actually advances.
+    s = _embed_session_or_skip()
+    try:
+        embed = s.server.interface.server          # the Clausters handle
+        assert s.server.status()[0] == 1           # request/reply over embed
+
+        s.play(Pbind(instrument="default", freq=Pseq([440.0, 550.0, 660.0]),
+                     dur=0.25, amp=0.2))
+        c0 = embed.clock
+        s.run(0.6)
+        assert embed.clock > c0                     # engine ran in-process
+        assert isinstance(s.server.query_tree(), dict)  # another reply path
+    finally:
+        s.close()
+
+
+def test_embed_session_is_independent_from_others():
+    # No global state: an embedded session coexists with an offline one, each
+    # with its own server and clock.
+    s = _embed_session_or_skip()
+    try:
+        b = Session.nrt(tempo=1.0)
+        assert s.server is not b.server
+        assert s.clock is not b.clock
+        b.close()
+    finally:
+        s.close()
+
+
 def test_two_sessions_are_independent():
     _embed_or_skip()
     a = Session.nrt(tempo=1.0)
