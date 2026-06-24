@@ -11,6 +11,10 @@ edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Exploratory GUI client track for Clausters: a GPU waveform prototype and the widget-protocol design."
 
+[lib]
+name = "clausters_gui"
+path = "src/lib.rs"
+
 [[bin]]
 name = "waveform"
 path = "src/main.rs"

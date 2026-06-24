@@ -1,16 +1,15 @@
 //! Native entry point for the waveform prototype.
 //!
-//! This window is only a *driver* for `WaveformRenderer`: it owns a wgpu
-//! surface tied to a `winit` window and forwards input (scroll = zoom around
-//! the cursor, drag = pan) into the renderer's `View`. The renderer itself is
-//! windowing-agnostic, so the exact same `waveform.rs`/`waveform.wgsl` pair is
-//! what a browser build would drive against a `<canvas>` WebGPU surface.
+//! This window is only a *driver* for the reusable machinery in the library
+//! crate (`viewport`, `peaks`, `waveform`): it owns a wgpu surface tied to a
+//! `winit` window and forwards input (scroll = zoom around the cursor, drag =
+//! pan) into a shared `viewport::View`. Everything that draws is
+//! windowing-agnostic, so the same library would drive a `<canvas>` WebGPU
+//! surface in a browser build.
 //!
 //! Run with `cargo run` (needs a display and a Vulkan/Metal/DX12/GL adapter).
 //! Controls: mouse wheel zooms toward the pointer, left-drag pans, `R` resets,
 //! `Esc` quits.
-
-mod waveform;
 
 use std::f64::consts::PI;
 use std::sync::Arc;
@@ -21,7 +20,8 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
-use waveform::{Envelope, View, WaveformRenderer};
+use clausters_gui::viewport::View;
+use clausters_gui::waveform::{WaveformData, WaveformRenderer};
 
 const SAMPLE_RATE: f64 = 48_000.0;
 const SIGNAL_LEN: usize = 4_000_000; // ~83 s of mono audio.
@@ -108,7 +108,7 @@ impl Gpu {
 struct State {
     gpu: Gpu,
     renderer: WaveformRenderer,
-    env: Envelope,
+    data: WaveformData,
     view: View,
     cursor_x: f64,
     dragging: bool,
@@ -117,17 +117,14 @@ struct State {
 
 impl State {
     fn new(gpu: Gpu) -> Self {
-        let samples = make_test_signal(SIGNAL_LEN);
-        let env = Envelope::build(&samples, BASE_BUCKET);
+        let samples: Arc<[f32]> = make_test_signal(SIGNAL_LEN).into();
+        let data = WaveformData::new(samples, BASE_BUCKET);
         let renderer = WaveformRenderer::new(&gpu.device, gpu.config.format);
-        let view = View {
-            start: 0.0,
-            len: env.total_samples() as f64,
-        };
+        let view = View::full(data.total_samples());
         Self {
             gpu,
             renderer,
-            env,
+            data,
             view,
             cursor_x: 0.0,
             dragging: false,
@@ -139,7 +136,7 @@ impl State {
         self.renderer.upload_geometry(
             &self.gpu.device,
             &self.gpu.queue,
-            &self.env,
+            &self.data,
             &self.view,
             self.gpu.config.width,
         );
@@ -213,7 +210,7 @@ impl ApplicationHandler for App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
-        let total = state.env.total_samples();
+        let total = state.data.total_samples();
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -252,10 +249,7 @@ impl ApplicationHandler for App {
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => event_loop.exit(),
                     Key::Character(ref c) if c.as_str() == "r" || c.as_str() == "R" => {
-                        state.view = View {
-                            start: 0.0,
-                            len: total as f64,
-                        };
+                        state.view = View::full(total);
                         state.gpu.window.request_redraw();
                     }
                     _ => {}

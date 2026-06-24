@@ -1,166 +1,73 @@
-//! GPU-agnostic waveform rendering for an editor-style, navigable view of a
-//! large audio buffer (millions of samples), with zoom and pan.
+//! Waveform view: the audio-specific data holder and its GPU renderer, built on
+//! the reusable `viewport::View` and `peaks::Pyramid`.
 //!
-//! The core idea is the same one Audacity-class editors use, expressed for the
-//! GPU: never try to draw every sample. Precompute a *min/max envelope pyramid*
-//! once (`Envelope`), then each frame pick the pyramid level whose resolution
-//! matches the current zoom and emit one quad per pixel column spanning that
-//! column's [min, max]. Zoom and pan are just changes to the visible sample
-//! range, so they are effectively free; the per-frame work is proportional to
-//! the window width in pixels, not to the buffer length.
+//! The renderer resolves the signal to exactly the rendered resolution, picking
+//! one of three regimes by `samples_per_px` so it never wastes work:
 //!
-//! `WaveformRenderer` takes a `wgpu::Device`/`Queue` and a target texture
-//! format, so it is independent of the windowing backend: the native
-//! (`winit`) entry point in `main.rs` drives it today, and the identical code
-//! drives a `<canvas>` surface under WebGPU in a browser tomorrow.
+//! - **Line** (`samples_per_px <= LINE_THRESHOLD`): so few samples are visible
+//!   that individual ones matter; draw a polyline through the raw samples in
+//!   range. Vertex count is bounded by the window width, not the buffer.
+//! - **Raw columns** (`LINE_THRESHOLD < samples_per_px < base_bucket`): one
+//!   min/max column per pixel, computed directly from the raw samples - exact,
+//!   and bounded because we only enter here below `base_bucket` samples/px.
+//! - **Pyramid columns** (`samples_per_px >= base_bucket`): one min/max column
+//!   per pixel, read from the peak pyramid level matching the zoom.
+//!
+//! `WaveformRenderer` takes a `wgpu::Device`/`Queue` and a target format and
+//! owns nothing windowing-specific, so the identical code drives a native
+//! `winit` surface or a `<canvas>` WebGPU surface in a browser.
+
+use std::sync::Arc;
 
 use wgpu::util::DeviceExt;
 
-/// One resolution level of the min/max pyramid. `bucket` is how many source
-/// samples each `(min[i], max[i])` pair summarizes.
-struct Lod {
-    bucket: usize,
-    min: Vec<f32>,
-    max: Vec<f32>,
+use crate::peaks::{self, Pyramid};
+use crate::viewport::View;
+
+/// At or below this many samples per pixel, draw the raw sample polyline rather
+/// than min/max columns.
+const LINE_THRESHOLD: f64 = 2.0;
+
+/// A waveform's data: the raw samples (shared, for the zoomed-in regimes) plus
+/// its peak pyramid (for the zoomed-out regime). The pyramid is the cache that
+/// can be persisted via `peaks::Pyramid::write_cache`.
+pub struct WaveformData {
+    samples: Arc<[f32]>,
+    pyramid: Pyramid,
 }
 
-/// A min/max pyramid over an audio buffer. Level 0 buckets `base_bucket`
-/// samples each; every higher level halves the resolution (min of mins, max of
-/// maxs) until a single bucket spans the whole buffer. Total storage is ~2x the
-/// level-0 size, i.e. a small constant fraction of the source buffer.
-pub struct Envelope {
-    total_samples: usize,
-    lods: Vec<Lod>,
-}
+impl WaveformData {
+    pub fn new(samples: Arc<[f32]>, base_bucket: usize) -> Self {
+        let pyramid = Pyramid::build(&samples, base_bucket);
+        Self { samples, pyramid }
+    }
 
-impl Envelope {
-    /// Build the pyramid from mono `samples`. `base_bucket` is the level-0
-    /// bucket size (e.g. 256 samples); smaller means finer detail when fully
-    /// zoomed in, at the cost of more level-0 storage.
-    pub fn build(samples: &[f32], base_bucket: usize) -> Self {
-        assert!(base_bucket >= 1);
-        let total_samples = samples.len();
-
-        // Level 0: scan the raw samples once.
-        let n0 = total_samples.div_ceil(base_bucket);
-        let mut min0 = vec![0.0f32; n0];
-        let mut max0 = vec![0.0f32; n0];
-        for (b, chunk) in samples.chunks(base_bucket).enumerate() {
-            let mut lo = f32::INFINITY;
-            let mut hi = f32::NEG_INFINITY;
-            for &s in chunk {
-                lo = lo.min(s);
-                hi = hi.max(s);
-            }
-            min0[b] = lo;
-            max0[b] = hi;
-        }
-
-        let mut lods = vec![Lod {
-            bucket: base_bucket,
-            min: min0,
-            max: max0,
-        }];
-
-        // Higher levels: merge adjacent pairs of the previous level.
-        while lods.last().unwrap().min.len() > 1 {
-            let prev = lods.last().unwrap();
-            let n = prev.min.len().div_ceil(2);
-            let mut min = vec![0.0f32; n];
-            let mut max = vec![0.0f32; n];
-            for i in 0..n {
-                let a = 2 * i;
-                let b = (2 * i + 1).min(prev.min.len() - 1);
-                min[i] = prev.min[a].min(prev.min[b]);
-                max[i] = prev.max[a].max(prev.max[b]);
-            }
-            lods.push(Lod {
-                bucket: prev.bucket * 2,
-                min,
-                max,
-            });
-        }
-
-        Self {
-            total_samples,
-            lods,
-        }
+    /// Build from samples and an already-computed pyramid (e.g. read back from a
+    /// cache file with `Pyramid::read_cache`).
+    pub fn with_pyramid(samples: Arc<[f32]>, pyramid: Pyramid) -> Self {
+        Self { samples, pyramid }
     }
 
     pub fn total_samples(&self) -> usize {
-        self.total_samples
+        self.samples.len()
     }
 
-    /// Pick the finest level whose bucket size does not exceed
-    /// `samples_per_px`, so each pixel column aggregates at least one bucket
-    /// (no gaps) while keeping the per-column work bounded. When zoomed in
-    /// past level 0, level 0 is used.
-    fn pick_lod(&self, samples_per_px: f64) -> &Lod {
-        let mut chosen = &self.lods[0];
-        for lod in &self.lods {
-            if (lod.bucket as f64) <= samples_per_px {
-                chosen = lod;
-            } else {
-                break;
-            }
-        }
-        chosen
+    pub fn pyramid(&self) -> &Pyramid {
+        &self.pyramid
     }
 
-    /// Min/max of the source samples in `[start, end)` at the given level,
-    /// reading only the buckets that overlap the range.
-    fn column_min_max(&self, lod: &Lod, start: f64, end: f64) -> (f32, f32) {
-        let b0 = (start / lod.bucket as f64).floor().max(0.0) as usize;
-        let last = lod.min.len().saturating_sub(1);
-        let b1 = (((end / lod.bucket as f64).ceil() as usize).saturating_sub(1)).min(last);
-        let mut lo = f32::INFINITY;
-        let mut hi = f32::NEG_INFINITY;
-        for b in b0..=b1.max(b0) {
-            if b > last {
-                break;
-            }
-            lo = lo.min(lod.min[b]);
-            hi = hi.max(lod.max[b]);
-        }
-        if !lo.is_finite() {
-            (0.0, 0.0)
+    /// Min/max for a pixel column spanning `[s0, s1)`, choosing the cheapest
+    /// accurate source for the given `samples_per_px`: raw samples when finer
+    /// than the pyramid's base bucket, the pyramid otherwise.
+    pub fn column(&self, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
+        if samples_per_px < self.pyramid.base_bucket() as f64 {
+            let a = (s0.floor().max(0.0) as usize).min(self.samples.len());
+            let b = (s1.ceil() as usize).clamp(a, self.samples.len());
+            peaks::min_max(&self.samples[a..b]).unwrap_or((0.0, 0.0))
         } else {
-            (lo, hi)
+            let level = self.pyramid.level_for(samples_per_px);
+            self.pyramid.column(level, s0, s1).unwrap_or((0.0, 0.0))
         }
-    }
-}
-
-/// The visible window into the buffer, in source-sample units (f64 so that
-/// deep zoom stays precise over multi-million-sample buffers).
-#[derive(Clone, Copy)]
-pub struct View {
-    pub start: f64,
-    pub len: f64,
-}
-
-impl View {
-    /// Zoom by `factor` (<1 zooms in) keeping the sample under `anchor`
-    /// (0..1 across the window) fixed, then clamp to the buffer bounds.
-    pub fn zoom(&mut self, factor: f64, anchor: f64, total: usize) {
-        let pivot = self.start + self.len * anchor;
-        let new_len = (self.len * factor).clamp(1.0, total as f64);
-        self.start = pivot - new_len * anchor;
-        self.len = new_len;
-        self.clamp(total);
-    }
-
-    /// Pan by `dx` fraction of the window width (drag-to-scroll).
-    pub fn pan(&mut self, dx: f64, total: usize) {
-        self.start += dx * self.len;
-        self.clamp(total);
-    }
-
-    fn clamp(&mut self, total: usize) {
-        let total = total as f64;
-        if self.len > total {
-            self.len = total;
-        }
-        self.start = self.start.clamp(0.0, (total - self.len).max(0.0));
     }
 }
 
@@ -169,14 +76,24 @@ fn amp_to_clip(amp: f32) -> f32 {
     (amp * 0.92).clamp(-1.0, 1.0)
 }
 
-/// Backend-independent renderer: hand it a device/queue and the target format
-/// and it owns the pipeline; call `upload_geometry` then `draw`.
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    Columns,
+    Line,
+}
+
+/// Backend-independent waveform renderer. Holds a triangle pipeline (min/max
+/// columns) and a line pipeline (raw sample polyline) sharing one shader, bind
+/// group and vertex buffer; `upload_geometry` selects the regime per frame.
 pub struct WaveformRenderer {
-    pipeline: wgpu::RenderPipeline,
+    column_pipeline: wgpu::RenderPipeline,
+    line_pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     capacity_vertices: u64,
     num_vertices: u32,
+    mode: Mode,
+    scratch: Vec<[f32; 2]>,
 }
 
 impl WaveformRenderer {
@@ -186,7 +103,6 @@ impl WaveformRenderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("waveform.wgsl").into()),
         });
 
-        // Fill color uniform (waveform body).
         let color: [f32; 4] = [0.30, 0.78, 0.55, 1.0];
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("waveform uniforms"),
@@ -214,7 +130,6 @@ impl WaveformRenderer {
                 resource: uniform_buffer.as_entire_binding(),
             }],
         });
-
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("waveform pipeline layout"),
             bind_group_layouts: &[Some(&bind_group_layout)],
@@ -231,34 +146,40 @@ impl WaveformRenderer {
             }],
         };
 
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("waveform pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[vertex_layout],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let make_pipeline = |topology: wgpu::PrimitiveTopology, label: &str| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    buffers: std::slice::from_ref(&vertex_layout),
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let column_pipeline =
+            make_pipeline(wgpu::PrimitiveTopology::TriangleList, "waveform columns");
+        let line_pipeline = make_pipeline(wgpu::PrimitiveTopology::LineStrip, "waveform line");
 
-        // Start with a modest vertex buffer; `upload_geometry` grows it as the
-        // window widens (6 vertices per pixel column).
         let capacity_vertices = 8192 * 6;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("waveform vertices"),
@@ -268,50 +189,62 @@ impl WaveformRenderer {
         });
 
         Self {
-            pipeline,
+            column_pipeline,
+            line_pipeline,
             bind_group,
             vertex_buffer,
             capacity_vertices,
             num_vertices: 0,
+            mode: Mode::Columns,
+            scratch: Vec::new(),
         }
     }
 
-    /// Rebuild the per-column geometry for `view` at `width_px` pixels and
-    /// upload it. Cheap enough to call every frame: O(width_px).
+    /// Rebuild and upload the geometry for `view` at `render_width_px` device
+    /// pixels. O(render_width_px) in the column regimes, O(visible samples) in
+    /// the line regime - both bounded by the screen, never by the buffer.
     pub fn upload_geometry(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        env: &Envelope,
+        data: &WaveformData,
         view: &View,
-        width_px: u32,
+        render_width_px: u32,
     ) {
-        let width_px = width_px.max(1);
-        let samples_per_px = (view.len / width_px as f64).max(1e-9);
-        let lod = env.pick_lod(samples_per_px);
+        let w = render_width_px.max(1);
+        let spp = view.samples_per_px(w);
+        let total = data.total_samples();
+        self.scratch.clear();
 
-        let mut verts: Vec<[f32; 2]> = Vec::with_capacity(width_px as usize * 6);
-        for x in 0..width_px {
-            let s0 = view.start + view.len * (x as f64 / width_px as f64);
-            let s1 = view.start + view.len * ((x + 1) as f64 / width_px as f64);
-            let (lo, hi) = env.column_min_max(lod, s0, s1);
-
-            let xl = -1.0 + 2.0 * (x as f32 / width_px as f32);
-            let xr = -1.0 + 2.0 * ((x + 1) as f32 / width_px as f32);
-            // Guarantee a visible 1px-ish band even for near-silence.
-            let yb = amp_to_clip(lo.min(0.0));
-            let yt = amp_to_clip(hi.max(0.0));
-
-            // Two triangles for the column quad.
-            verts.push([xl, yb]);
-            verts.push([xr, yb]);
-            verts.push([xr, yt]);
-            verts.push([xl, yb]);
-            verts.push([xr, yt]);
-            verts.push([xl, yt]);
+        if spp <= LINE_THRESHOLD {
+            self.mode = Mode::Line;
+            let a = (view.start.floor().max(0.0) as usize).min(total);
+            let b = ((view.start + view.len).ceil() as usize).min(total);
+            for i in a..b {
+                let frac = (i as f64 - view.start) / view.len;
+                let x = (-1.0 + 2.0 * frac) as f32;
+                self.scratch.push([x, amp_to_clip(data.samples_at(i))]);
+            }
+        } else {
+            self.mode = Mode::Columns;
+            for x in 0..w {
+                let s0 = view.start + view.len * (x as f64 / w as f64);
+                let s1 = view.start + view.len * ((x + 1) as f64 / w as f64);
+                let (lo, hi) = data.column(spp, s0, s1);
+                let xl = -1.0 + 2.0 * (x as f32 / w as f32);
+                let xr = -1.0 + 2.0 * ((x + 1) as f32 / w as f32);
+                let yb = amp_to_clip(lo.min(0.0));
+                let yt = amp_to_clip(hi.max(0.0));
+                self.scratch.push([xl, yb]);
+                self.scratch.push([xr, yb]);
+                self.scratch.push([xr, yt]);
+                self.scratch.push([xl, yb]);
+                self.scratch.push([xr, yt]);
+                self.scratch.push([xl, yt]);
+            }
         }
 
-        let needed = verts.len() as u64;
+        let needed = self.scratch.len() as u64;
         if needed > self.capacity_vertices {
             self.capacity_vertices = needed.next_power_of_two();
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -321,8 +254,8 @@ impl WaveformRenderer {
                 mapped_at_creation: false,
             });
         }
-        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&verts));
-        self.num_vertices = verts.len() as u32;
+        queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.scratch));
+        self.num_vertices = self.scratch.len() as u32;
     }
 
     /// Record the draw into an existing render pass.
@@ -330,9 +263,20 @@ impl WaveformRenderer {
         if self.num_vertices == 0 {
             return;
         }
-        pass.set_pipeline(&self.pipeline);
+        let pipeline = match self.mode {
+            Mode::Columns => &self.column_pipeline,
+            Mode::Line => &self.line_pipeline,
+        };
+        pass.set_pipeline(pipeline);
         pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         pass.draw(0..self.num_vertices, 0..1);
+    }
+}
+
+impl WaveformData {
+    /// Single-sample access for the line regime, clamped to bounds.
+    fn samples_at(&self, i: usize) -> f32 {
+        self.samples.get(i).copied().unwrap_or(0.0)
     }
 }

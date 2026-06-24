@@ -91,28 +91,49 @@ This 1:1 reuse of the node-tree semantics is intentional: id allocation, add-act
 
 ## Heavy widgets: the rendering strategy
 
-An editor-grade waveform or spectrogram cannot draw every sample. The strategy, validated by the prototype:
+An editor-grade waveform or spectrogram cannot draw every sample, and does not need to: it only needs to resolve the signal to the *rendered resolution*. The work is therefore driven by `samples_per_px` (visible length / render width in device pixels), never by buffer length.
 
-- Precompute a **min/max envelope pyramid** over the buffer once (a small constant fraction of its size).
-- Each frame, pick the pyramid level matching the current zoom and emit **one quad per pixel column** spanning that column's [min, max]. Per-frame cost is proportional to window width in pixels, not buffer length, so zoom/pan over millions of samples stay smooth.
-- A spectrogram is the same navigation logic over a precomputed STFT, sampled into a texture instead of min/max columns - a natural next step reusing the same `View`/zoom/pan machinery.
+### Reusable machinery (the modules)
 
-Notation (`"score"` widget) is out of the GPU path entirely: it is Verovio-rendered SVG hosted by the web surface, made interactive there.
+The navigation and analysis are factored out of the renderer so the waveform and the future spectrogram share them, in `src/lib.rs`:
+
+- `viewport::View` - the visible window in sample units (`f64`), with `zoom`/`pan`/`clamp` and `samples_per_px`. Pure, unit-tested, renderer-agnostic. The spectrogram reuses it verbatim.
+- `peaks::Pyramid` - the resolution-matched **min/max peak analysis**: level 0 summarizes every `base_bucket` samples into a `(min, max)` pair, each higher level halves the resolution, and `level_for(samples_per_px)` selects the level whose bucket matches the zoom so each pixel column reads ~one bucket.
+- `waveform::{WaveformData, WaveformRenderer}` - the audio-specific holder and GPU renderer built on the two above.
+
+### Peak analysis is a cache (memory or temp file)
+
+Computing peaks for a long file is the one expensive pass, so `Pyramid` is treated as a cache, the way audio editors keep an overview/peak file beside the audio: it lives in memory and serializes to/from a flat byte buffer (`to_bytes`/`from_bytes`) or a temp/cache file (`write_cache`/`read_cache`). The layout is a flat sequence of `f32` arrays so a production build can **memory-map** it instead of reading it into RAM. Storage is ~2x the level-0 size (a small constant fraction of the source).
+
+### Three render regimes (no wasted work, and never "by samples" naively)
+
+Per frame the renderer picks one by `samples_per_px`, so it is always bounded by the screen:
+
+- **Line** (`samples_per_px <= 2`): few enough samples are visible that individual ones matter - draw a polyline through the raw samples in range (vertex count bounded by window width). This is the only regime that touches raw samples directly, and only when it is cheap to.
+- **Raw columns** (`2 < samples_per_px < base_bucket`): one min/max column per pixel computed directly from raw samples - exact, and bounded because we are below `base_bucket` samples/px.
+- **Pyramid columns** (`samples_per_px >= base_bucket`): one min/max column per pixel read from the peak level matching the zoom.
+
+A spectrogram is the same navigation over a precomputed STFT sampled into a texture instead of min/max columns - it reuses `viewport::View` and the same cache idea.
+
+Notation (`"score"` widget) is out of the GPU path entirely: Verovio-rendered SVG hosted by the web surface, made interactive there.
 
 ## The prototype in this crate
 
-`src/waveform.rs` + `src/waveform.wgsl` + `src/main.rs` implement the waveform widget's renderer and a native `winit` driver for it. Build/run with a display and a GPU:
-
 ```
-cd gui && cargo run
+src/lib.rs         module index
+src/viewport.rs    View + zoom/pan (unit-tested)
+src/peaks.rs       Pyramid peak analysis + cache (unit-tested)
+src/waveform.rs    WaveformData + WaveformRenderer (3 regimes)
+src/waveform.wgsl  passthrough shader (columns + line pipelines)
+src/main.rs        native winit driver
 ```
 
-Controls: mouse wheel zooms toward the pointer, left-drag pans, `R` resets the view, `Esc` quits. It generates ~4 million samples (a frequency sweep with a tremolo envelope plus light noise) so that zooming in shows individual cycles and zooming out shows the amplitude bursts.
+`cargo test` exercises the reusable machinery without a GPU (navigation math, peak correctness vs brute force, cache round-trip through memory and a temp file). `cargo run` opens the waveform window (needs a display and a Vulkan/Metal/DX12/GL adapter): mouse wheel zooms toward the pointer, left-drag pans, `R` resets, `Esc` quits. It generates ~4 million samples (a frequency sweep with a tremolo envelope plus light noise) so zooming in shows individual cycles (line regime) and zooming out shows the amplitude bursts (pyramid regime).
 
 The split is the point:
 
-- `WaveformRenderer` takes a `wgpu::Device`/`Queue` and a target texture format and owns nothing windowing-specific. The native window in `main.rs` is just a driver.
-- The identical `WaveformRenderer` + WGSL would be driven by a `<canvas>` WebGPU surface in a browser build - which is how this prototype maps onto host option A/B above.
+- `WaveformRenderer` takes a `wgpu::Device`/`Queue` and a target format and owns nothing windowing-specific. The native window in `main.rs` is just a driver.
+- The identical renderer + WGSL would be driven by a `<canvas>` WebGPU surface in a browser build - how this prototype maps onto host option A/B above.
 
 This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can be written once against `wgpu`/WGSL and run both natively and on the web, while the *composition* of widgets is a scripted protocol, not compiled Rust.
 
@@ -120,8 +141,9 @@ This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can 
 
 - Transport: OSC-over-WebSocket bridge vs. a dedicated host protocol; reuse `osc::decode_packet` regardless.
 - Where the GUI host lives: standalone process, or embedded next to the embed-server surface.
-- Spectrogram widget: STFT precompute + texture sampling reusing `View`.
-- Multi-LOD for extreme zoom-out accuracy (the prototype uses a single pyramid walk; production may interpolate between adjacent levels) and a raw-sample polyline path for extreme zoom-in.
+- Spectrogram widget: STFT precompute + texture sampling reusing `viewport::View` and the cache pattern.
+- Peak cache lifecycle: a cache key (source path + mtime + `base_bucket`) and memory-mapping the cache file instead of reading it into RAM.
+- Multi-channel waveforms (stacked or overlaid), plus interpolating between adjacent pyramid levels for smoother zoom-out.
 - Verovio integration spike (wasm/JS build) behind a `"score"` widget.
 - Selection/playhead overlays and time-axis rulers as shared widget chrome.
 ```
