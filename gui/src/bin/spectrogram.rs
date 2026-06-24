@@ -1,8 +1,11 @@
 //! Spectrogram prototype: a navigable STFT of a large buffer, sharing the
 //! waveform's zoom/pan navigation.
 //!
-//! Controls: mouse wheel zooms toward the pointer, left-drag pans, `R` resets,
-//! `Esc` quits. Needs a display and a Vulkan/Metal/DX12/GL adapter.
+//! Controls: wheel zooms time toward the pointer, left-drag pans time;
+//! Shift+wheel / Shift+drag zoom and pan frequency; `L` toggles linear/log
+//! frequency; `[` / `]` lower/raise the dB floor (contrast); `/` cycles the
+//! colormap; `R` resets time, `Esc` quits. Needs a display and a
+//! Vulkan/Metal/DX12/GL adapter.
 
 use std::sync::Arc;
 
@@ -18,9 +21,14 @@ fn main() {
     let samples = demo::sweep(SIGNAL_LEN);
     // The STFT is the one-time analysis (the cache); compute it before opening
     // the window so the factory just uploads it as a texture.
-    let stft = Arc::new(Stft::compute(&samples, WINDOW, HOP));
+    let stft = Arc::new(Stft::compute(
+        &samples,
+        WINDOW,
+        HOP,
+        demo::SAMPLE_RATE as f32,
+    ));
     native::run(
-        "Clausters - spectrogram (wheel: zoom, drag: pan, R: reset)",
+        "Clausters - spectrogram (wheel: time, Shift+wheel: freq, L: lin/log, [ ]: dB, /: color)",
         Box::new(move |device, queue, format| {
             Box::new(SpectrogramView::new(device, queue, format, stft))
         }),

@@ -80,8 +80,15 @@ struct State {
     view_obj: Box<dyn TimelineView>,
     view: View,
     cursor_x: f64,
+    cursor_y: f64,
     dragging: bool,
-    last_drag_x: f64,
+    shift: bool,
+    // Absolute-drag anchor: cursor position and time-view start at mouse-down
+    // (or at a Shift change mid-drag). Panning recomputes from these so a
+    // clamped edge never accumulates drift.
+    drag_origin_x: f64,
+    drag_origin_y: f64,
+    drag_view_start: f64,
 }
 
 impl State {
@@ -93,9 +100,21 @@ impl State {
             view_obj,
             view,
             cursor_x: 0.0,
+            cursor_y: 0.0,
             dragging: false,
-            last_drag_x: 0.0,
+            shift: false,
+            drag_origin_x: 0.0,
+            drag_origin_y: 0.0,
+            drag_view_start: 0.0,
         }
+    }
+
+    /// Re-anchor an absolute drag to the current cursor and view state.
+    fn anchor_drag(&mut self) {
+        self.drag_origin_x = self.cursor_x;
+        self.drag_origin_y = self.cursor_y;
+        self.drag_view_start = self.view.start;
+        self.view_obj.on_vertical_drag_begin();
     }
 
     fn render(&mut self) {
@@ -176,21 +195,44 @@ impl ApplicationHandler for App {
             return;
         };
         let total = state.view_obj.total_samples();
+        let (w, h) = (
+            state.gpu.config.width.max(1) as f64,
+            state.gpu.config.height.max(1) as f64,
+        );
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 state.gpu.resize(size.width, size.height);
                 state.gpu.window.request_redraw();
             }
-            WindowEvent::CursorMoved { position, .. } => {
-                if state.dragging {
-                    let dx_px = position.x - state.last_drag_x;
-                    let dx_frac = -dx_px / state.gpu.config.width.max(1) as f64;
-                    state.view.pan(dx_frac, total);
-                    state.gpu.window.request_redraw();
+            WindowEvent::ModifiersChanged(mods) => {
+                let new_shift = mods.state().shift_key();
+                // Switching axis mid-drag: re-anchor so it does not jump.
+                if new_shift != state.shift && state.dragging {
+                    state.anchor_drag();
                 }
+                state.shift = new_shift;
+            }
+            WindowEvent::CursorMoved { position, .. } => {
                 state.cursor_x = position.x;
-                state.last_drag_x = position.x;
+                state.cursor_y = position.y;
+                if state.dragging {
+                    let redraw = if state.shift {
+                        // Absolute vertical drag from the snapshot (low at bottom,
+                        // so dragging down moves the view down with the cursor).
+                        let total_y = (position.y - state.drag_origin_y) / h;
+                        state.view_obj.on_vertical_drag(total_y)
+                    } else {
+                        let total_x = (position.x - state.drag_origin_x) / w;
+                        state
+                            .view
+                            .set_start(state.drag_view_start - total_x * state.view.len, total);
+                        true
+                    };
+                    if redraw {
+                        state.gpu.window.request_redraw();
+                    }
+                }
             }
             WindowEvent::MouseInput {
                 state: btn_state,
@@ -198,16 +240,28 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 state.dragging = btn_state == ElementState::Pressed;
+                if state.dragging {
+                    state.anchor_drag();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,
                     MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
                 };
-                let anchor =
-                    (state.cursor_x / state.gpu.config.width.max(1) as f64).clamp(0.0, 1.0);
-                state.view.zoom(0.85f64.powf(steps), anchor, total);
-                state.gpu.window.request_redraw();
+                let factor = 0.85f64.powf(steps);
+                let redraw = if state.shift {
+                    // anchor measured from the bottom for the frequency axis.
+                    let anchor = (1.0 - state.cursor_y / h).clamp(0.0, 1.0);
+                    state.view_obj.on_vertical_zoom(factor, anchor)
+                } else {
+                    let anchor = (state.cursor_x / w).clamp(0.0, 1.0);
+                    state.view.zoom(factor, anchor, total);
+                    true
+                };
+                if redraw {
+                    state.gpu.window.request_redraw();
+                }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.logical_key {
@@ -215,6 +269,13 @@ impl ApplicationHandler for App {
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         state.view = View::full(total);
                         state.gpu.window.request_redraw();
+                    }
+                    Key::Character(ref c) => {
+                        if let Some(ch) = c.chars().next()
+                            && state.view_obj.on_char(ch)
+                        {
+                            state.gpu.window.request_redraw();
+                        }
                     }
                     _ => {}
                 }

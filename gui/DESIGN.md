@@ -120,7 +120,16 @@ Per frame the renderer picks one by `samples_per_px`, so it is always bounded by
 
 ### The spectrogram: same navigation, constant render cost
 
-The spectrogram is the time-frequency analogue and deliberately reuses the navigation machinery. The STFT magnitudes are uploaded once as a 2D texture (x = time/frame, y = frequency bin). Rendering is a single full-screen quad whose fragment shader samples that texture; `viewport::View` only reshapes the sampled time slice, so the GPU cost is **constant regardless of zoom** (it is bounded by screen pixels, and the one-time analysis is the cache). The GPU's linear filtering gives resolution-matched down-sampling on zoom-out; magnitude is mapped to colour with a viridis colormap in the shader. So the waveform bounds work by *picking a resolution-matched LOD per frame*, while the spectrogram bounds it *structurally* (one texture sample per pixel) - two expressions of the same "never resolve finer than the screen" rule.
+The spectrogram is the time-frequency analogue and deliberately reuses the navigation machinery. The STFT magnitudes are uploaded once as a 2D texture (x = time/frame, y = frequency bin). Rendering is a single full-screen quad whose fragment shader samples that texture; `viewport::View` only reshapes the sampled time slice, so the GPU cost is **constant regardless of zoom** (it is bounded by screen pixels, and the one-time analysis is the cache). The GPU's linear filtering gives resolution-matched down-sampling on zoom-out. So the waveform bounds work by *picking a resolution-matched LOD per frame*, while the spectrogram bounds it *structurally* (one texture sample per pixel) - two expressions of the same "never resolve finer than the screen" rule.
+
+Display controls live entirely in the fragment shader as cheap uniforms, so they change live without re-analyzing:
+
+- **Frequency axis, linear or log** (`L`): the shader maps screen-y to a normalized bin either linearly or geometrically - log is the audibly useful default.
+- **Frequency zoom/pan** (Shift+wheel / Shift+drag): a *second* `viewport::View` supplies the visible window, the clearest payoff of factoring `View` out. The window is kept in **display coordinates** (the screen's vertical axis), not in bins, so the linear screen anchor of a zoom holds the point under the cursor fixed *in both linear and log modes* - the log nonlinearity lives entirely in the shader's display->bin mapping over the full axis.
+- **dB window / contrast** (`[` / `]`): magnitudes are stored normalized over a fixed reference range (-120..0 dB), and the shader remaps a movable display window within it. So contrast is a uniform, not a recompute.
+- **Colormap** (`/`): cycles viridis / magma / grayscale, a shader branch on a uniform index.
+
+The analysis parameters that *do* require recomputation - window size, hop, sample rate - are arguments to `Stft::compute`.
 
 Notation (`"score"` widget) is out of the GPU path entirely: Verovio-rendered SVG hosted by the web surface, made interactive there.
 
@@ -134,19 +143,19 @@ src/spectrogram.rs   Stft analysis + FFT + cache + renderer (unit-tested)
 src/spectrogram.wgsl full-screen quad, texture sample, viridis colormap
 src/waveform.rs      WaveformData + WaveformRenderer (3 regimes)
 src/waveform.wgsl    passthrough shader (columns + line pipelines)
-src/view.rs          TimelineView trait
+src/view.rs          TimelineView trait (incl. optional char/vertical hooks)
 src/native.rs        winit + wgpu harness driving any TimelineView
 src/demo.rs          synthetic test signal
 src/bin/waveform.rs      waveform binary
 src/bin/spectrogram.rs   spectrogram binary
 ```
 
-`cargo test` exercises the reusable machinery without a GPU: navigation math, peak correctness vs brute force, FFT correctness (impulse -> flat spectrum, cosine -> peak at its bin), STFT frequency localization, and cache round-trips (memory and temp file). `cargo run --bin waveform` and `cargo run --bin spectrogram` open the two windows (need a display and a Vulkan/Metal/DX12/GL adapter); both share the controls: wheel zooms toward the pointer, left-drag pans, `R` resets, `Esc` quits. Both render the same ~4 M-sample sweep, so the waveform shows cycles/bursts and the spectrogram shows a rising frequency ridge.
+`cargo test` exercises the reusable machinery without a GPU: navigation math, peak correctness vs brute force, FFT correctness (impulse -> flat spectrum, cosine -> peak at its bin), STFT frequency localization, and cache round-trips (memory and temp file). `cargo run --bin waveform` and `cargo run --bin spectrogram` open the two windows (need a display and a Vulkan/Metal/DX12/GL adapter). Shared time navigation: wheel zooms toward the pointer, left-drag pans, `R` resets, `Esc` quits. The spectrogram adds: Shift+wheel / Shift+drag for frequency zoom/pan, `L` to toggle linear/log frequency, and `[` / `]` for the dB floor. Both render the same ~4 M-sample sweep, so the waveform shows cycles/bursts and the spectrogram shows a rising frequency ridge.
 
 The split is the point:
 
 - The renderers take a `wgpu::Device`/`Queue` and a target format and own nothing windowing-specific; `native` is just a driver, swappable for a `<canvas>` WebGPU surface in a browser build.
-- Adding a view (e.g. a level meter, an FFT curve) is a new module implementing `TimelineView` plus a one-screen binary - no new windowing or input code.
+- Adding a view (e.g. a level meter, an FFT curve) is a new module implementing `TimelineView` plus a one-screen binary - no new windowing or input code. View-specific input rides the trait's optional `on_char`/`on_vertical_*` hooks, so the harness stays generic.
 
 This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can be written once against `wgpu`/WGSL and run both natively and on the web, while the *composition* of widgets is a scripted protocol, not compiled Rust.
 
@@ -155,7 +164,7 @@ This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can 
 - Transport: OSC-over-WebSocket bridge vs. a dedicated host protocol; reuse `osc::decode_packet` regardless.
 - Where the GUI host lives: standalone process, or embedded next to the embed-server surface.
 - Cache lifecycle: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
-- Spectrogram refinements: log-frequency axis, vertical (frequency) zoom reusing a second `View`, selectable window/hop and dB range, and time-axis mipmaps or tiling for buffers wider than the max texture size.
+- Spectrogram: time-axis mipmaps or tiling for buffers wider than the max texture size; frequency-axis labels/ruler in Hz; a smoother (interpolating) log resample. (Log axis, frequency zoom via a second `View`, and a live dB window are done.)
 - Multi-channel waveforms (stacked or overlaid), plus interpolating between adjacent pyramid levels for smoother zoom-out.
 - Verovio integration spike (wasm/JS build) behind a `"score"` widget.
 - Selection/playhead overlays and time-axis rulers as shared widget chrome.

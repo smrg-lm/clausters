@@ -24,4 +24,33 @@ pub trait TimelineView {
 
     /// Record the draw into an existing render pass.
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>);
+
+    // --- Optional interactions (default no-op). Each returns whether the view
+    // changed and should be redrawn. Kept windowing-agnostic: the harness
+    // translates native events into these, so a web host can do the same. ---
+
+    /// A printable character was typed (view-specific shortcuts).
+    fn on_char(&mut self, c: char) -> bool {
+        let _ = c;
+        false
+    }
+
+    /// Zoom the secondary (e.g. frequency) axis by `factor` (<1 zooms in),
+    /// keeping `anchor` (0 = bottom, 1 = top) fixed.
+    fn on_vertical_zoom(&mut self, factor: f64, anchor: f64) -> bool {
+        let _ = (factor, anchor);
+        false
+    }
+
+    /// Snapshot the secondary axis at the start of a drag (mouse-down).
+    fn on_vertical_drag_begin(&mut self) {}
+
+    /// Update an in-progress secondary-axis drag. `total` is the cursor's total
+    /// displacement since `on_vertical_drag_begin`, as a fraction of the window
+    /// height. Panning is absolute (from the snapshot), so a clamped edge never
+    /// drifts and the view re-aligns with the cursor when it returns.
+    fn on_vertical_drag(&mut self, total: f64) -> bool {
+        let _ = total;
+        false
+    }
 }

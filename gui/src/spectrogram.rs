@@ -16,9 +16,18 @@ use crate::view::TimelineView;
 use crate::viewport::View;
 
 const MAGIC: &[u8; 4] = b"CLSG";
-const VERSION: u32 = 1;
-/// Magnitudes below this many dB map to 0 (floor of the colour scale).
-const DB_FLOOR: f32 = -90.0;
+const VERSION: u32 = 2;
+/// Reference dB range the stored magnitudes are normalized over. The *display*
+/// dB window (which controls contrast) is a cheap shader uniform within this
+/// range, so it can change live without recomputing the STFT.
+const REF_FLOOR: f32 = -120.0;
+
+/// Frequency axis mapping for the spectrogram's vertical axis.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FreqScale {
+    Linear,
+    Log,
+}
 
 /// In-place iterative radix-2 Cooley-Tukey FFT. `re`/`im` must be the same
 /// power-of-two length. A compact, testable stand-in; a production build would
@@ -79,13 +88,15 @@ pub struct Stft {
     n_bins: usize,
     hop: usize,
     window_size: usize,
+    sample_rate: f32,
     mags: Vec<f32>,
 }
 
 impl Stft {
     /// Compute the STFT of mono `samples`. `window_size` must be a power of two;
-    /// `hop` is the frame advance (e.g. `window_size / 2`).
-    pub fn compute(samples: &[f32], window_size: usize, hop: usize) -> Self {
+    /// `hop` is the frame advance (e.g. `window_size / 2`); `sample_rate` is used
+    /// for the frequency axis.
+    pub fn compute(samples: &[f32], window_size: usize, hop: usize, sample_rate: f32) -> Self {
         assert!(window_size.is_power_of_two() && hop >= 1);
         let total_samples = samples.len();
         let n_bins = window_size / 2;
@@ -115,7 +126,7 @@ impl Stft {
             for b in 0..n_bins {
                 let mag = (re[b] * re[b] + im[b] * im[b]).sqrt() / win_gain;
                 let db = 20.0 * (mag + 1e-9).log10();
-                mags[f * n_bins + b] = ((db - DB_FLOOR) / -DB_FLOOR).clamp(0.0, 1.0);
+                mags[f * n_bins + b] = ((db - REF_FLOOR) / -REF_FLOOR).clamp(0.0, 1.0);
             }
         }
 
@@ -125,8 +136,14 @@ impl Stft {
             n_bins,
             hop,
             window_size,
+            sample_rate,
             mags,
         }
+    }
+
+    /// Nyquist frequency in Hz (the top of the frequency axis).
+    pub fn nyquist(&self) -> f32 {
+        self.sample_rate * 0.5
     }
 
     pub fn total_samples(&self) -> usize {
@@ -160,6 +177,7 @@ impl Stft {
         bytes::push_u64(&mut out, self.n_bins);
         bytes::push_u64(&mut out, self.hop);
         bytes::push_u64(&mut out, self.window_size);
+        bytes::push_u32(&mut out, self.sample_rate.to_bits());
         bytes::push_f32s(&mut out, &self.mags);
         out
     }
@@ -175,6 +193,7 @@ impl Stft {
         let n_bins = r.usize()?;
         let hop = r.usize()?;
         let window_size = r.usize()?;
+        let sample_rate = f32::from_bits(r.u32()?);
         let mags = r.f32_vec(n_frames.checked_mul(n_bins)?)?;
         Some(Self {
             total_samples,
@@ -182,6 +201,7 @@ impl Stft {
             n_bins,
             hop,
             window_size,
+            sample_rate,
             mags,
         })
     }
@@ -198,18 +218,23 @@ impl Stft {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
-    /// `start_frac`, `len_frac` of the visible time window, then padding to 16.
+    /// x = start_frac, y = len_frac of the visible time window.
     time: [f32; 4],
+    /// x = d0, y = d1 of the visible frequency window in display coordinates
+    /// [0, 1]; z = 1.0 for log scale else 0.0; w = normalized log-axis floor.
+    freq: [f32; 4],
+    /// x = lo_frac, y = hi_frac of the display dB window within the stored
+    /// reference range (the colour scale); z = colormap index.
+    db: [f32; 4],
 }
 
 /// GPU renderer for an `Stft`: one full-screen quad samples the magnitude
-/// texture; `set_view` updates the visible time slice; a colormap turns
-/// magnitude into colour in the shader.
+/// texture; `write_uniforms` sets the visible time/frequency window and dB
+/// scale; a colormap turns magnitude into colour in the shader.
 pub struct SpectrogramRenderer {
     pipeline: wgpu::RenderPipeline,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
-    time: [f32; 4],
 }
 
 impl SpectrogramRenderer {
@@ -372,18 +397,11 @@ impl SpectrogramRenderer {
             pipeline,
             bind_group,
             uniform_buffer,
-            time: [0.0, 1.0, 0.0, 0.0],
         }
     }
 
-    fn set_view(&mut self, queue: &wgpu::Queue, stft: &Stft, view: &View) {
-        let (start, len) = stft.time_fraction(view);
-        self.time = [start, len, 0.0, 0.0];
-        queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            bytemuck::bytes_of(&Uniforms { time: self.time }),
-        );
+    fn write_uniforms(&self, queue: &wgpu::Queue, u: &Uniforms) {
+        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(u));
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
@@ -393,10 +411,21 @@ impl SpectrogramRenderer {
     }
 }
 
-/// An `Stft` paired with its renderer, satisfying [`TimelineView`].
+/// An `Stft` paired with its renderer and the display state (frequency window,
+/// scale, dB window), satisfying [`TimelineView`].
 pub struct SpectrogramView {
     stft: Arc<Stft>,
     renderer: SpectrogramRenderer,
+    /// Visible frequency window, in display coordinates (reuses the navigation
+    /// `View` over `n_bins` so `start/n_bins` is the bottom of the axis).
+    freq_view: View,
+    scale: FreqScale,
+    db_floor: f32,
+    db_ceil: f32,
+    /// 0 = viridis, 1 = magma, 2 = grayscale.
+    colormap: u32,
+    /// `freq_view.start` snapshot for absolute drag panning.
+    drag_freq_start: f64,
 }
 
 impl SpectrogramView {
@@ -407,7 +436,45 @@ impl SpectrogramView {
         stft: Arc<Stft>,
     ) -> Self {
         let renderer = SpectrogramRenderer::new(device, queue, format, &stft);
-        Self { stft, renderer }
+        let freq_view = View::full(stft.n_bins());
+        Self {
+            stft,
+            renderer,
+            freq_view,
+            scale: FreqScale::Log,
+            db_floor: -90.0,
+            db_ceil: 0.0,
+            colormap: 0,
+            drag_freq_start: 0.0,
+        }
+    }
+
+    /// Build the GPU uniforms from the current time `view` and display state.
+    ///
+    /// The frequency window is expressed in *display* coordinates `[0, 1]`
+    /// (the screen's vertical axis), not in bins. The linear/log mapping from
+    /// that display coordinate to a normalized bin happens in the shader over
+    /// the full axis, so zoom/pan use a plain linear screen anchor and the
+    /// point under the cursor stays fixed in both modes.
+    fn uniforms(&self, view: &View) -> Uniforms {
+        let (start, len) = self.stft.time_fraction(view);
+
+        let nb = self.stft.n_bins().max(1) as f64;
+        let d0 = (self.freq_view.start / nb) as f32;
+        let d1 = ((self.freq_view.start + self.freq_view.len) / nb) as f32;
+        let is_log = self.scale == FreqScale::Log;
+        // Bottom of the log axis (~20 Hz), normalized to Nyquist.
+        let f_lo = (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5);
+
+        let span = -REF_FLOOR;
+        let lo = ((self.db_floor - REF_FLOOR) / span).clamp(0.0, 1.0);
+        let hi = ((self.db_ceil - REF_FLOOR) / span).clamp(0.0, 1.0);
+
+        Uniforms {
+            time: [start, len, 0.0, 0.0],
+            freq: [d0, d1, if is_log { 1.0 } else { 0.0 }, f_lo],
+            db: [lo, hi, self.colormap as f32, 0.0],
+        }
     }
 }
 
@@ -423,11 +490,56 @@ impl TimelineView for SpectrogramView {
         view: &View,
         _render_width_px: u32,
     ) {
-        self.renderer.set_view(queue, &self.stft, view);
+        let u = self.uniforms(view);
+        self.renderer.write_uniforms(queue, &u);
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         self.renderer.draw(pass);
+    }
+
+    /// `L` toggles linear/log frequency; `[` / `]` lower/raise the dB floor
+    /// (contrast); `/` cycles the colormap.
+    fn on_char(&mut self, c: char) -> bool {
+        match c {
+            'l' | 'L' => {
+                self.scale = match self.scale {
+                    FreqScale::Linear => FreqScale::Log,
+                    FreqScale::Log => FreqScale::Linear,
+                };
+                true
+            }
+            '[' => {
+                self.db_floor = (self.db_floor - 5.0).max(REF_FLOOR + 5.0);
+                true
+            }
+            ']' => {
+                self.db_floor = (self.db_floor + 5.0).min(self.db_ceil - 5.0);
+                true
+            }
+            '/' => {
+                self.colormap = (self.colormap + 1) % 3;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn on_vertical_zoom(&mut self, factor: f64, anchor: f64) -> bool {
+        self.freq_view.zoom(factor, anchor, self.stft.n_bins());
+        true
+    }
+
+    fn on_vertical_drag_begin(&mut self) {
+        self.drag_freq_start = self.freq_view.start;
+    }
+
+    fn on_vertical_drag(&mut self, total: f64) -> bool {
+        // Low frequency is at the bottom, so dragging down (total > 0) moves the
+        // window down with the cursor. Absolute from the snapshot.
+        let start = self.drag_freq_start + total * self.freq_view.len;
+        self.freq_view.set_start(start, self.stft.n_bins());
+        true
     }
 }
 
@@ -477,7 +589,7 @@ mod tests {
         let samples: Vec<f32> = (0..48_000)
             .map(|i| (2.0 * PI * freq * i as f32 / sr).sin())
             .collect();
-        let stft = Stft::compute(&samples, 1024, 512);
+        let stft = Stft::compute(&samples, 1024, 512, sr);
         let nb = stft.n_bins();
         // Average magnitude per bin across frames; the max should be near bin 21.
         let mut acc = vec![0.0f32; nb];
@@ -499,11 +611,12 @@ mod tests {
     #[test]
     fn cache_round_trip() {
         let samples: Vec<f32> = (0..5000).map(|i| (i as f32 * 0.02).sin()).collect();
-        let stft = Stft::compute(&samples, 256, 128);
+        let stft = Stft::compute(&samples, 256, 128, 44_100.0);
         let back = Stft::from_bytes(&stft.to_bytes()).expect("parse");
         assert_eq!(stft.n_frames(), back.n_frames());
         assert_eq!(stft.n_bins(), back.n_bins());
         assert_eq!(stft.total_samples(), back.total_samples());
+        assert_eq!(stft.nyquist(), back.nyquist());
         assert_eq!(stft.magnitudes(), back.magnitudes());
     }
 }

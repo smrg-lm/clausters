@@ -48,6 +48,15 @@ impl View {
         self.clamp(total);
     }
 
+    /// Set the window start (clamped). Used for *absolute* drag panning: the
+    /// caller recomputes `start` from a snapshot taken at mouse-down plus the
+    /// total cursor displacement, so hitting a bound never accumulates drift and
+    /// the view re-aligns with the cursor exactly when it returns.
+    pub fn set_start(&mut self, start: f64, total: usize) {
+        self.start = start;
+        self.clamp(total);
+    }
+
     fn clamp(&mut self, total: usize) {
         let total = total.max(1) as f64;
         if self.len > total {
