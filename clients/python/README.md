@@ -126,3 +126,8 @@ python -m pytest          # or: python tests/test_smoke.py
 
 Boundary rule (project-wide): only flat data crosses any binding — Python
 floats/ints in, `array('f')`/bytes out.
+
+## License
+
+**GPL-3.0-or-later** — see [COPYING](COPYING), shipped inside the wheel. The
+bundled cdylibs embed the Clausters server, whose optional libfaust is GPLv2+.

@@ -1,7 +1,8 @@
 [build-system]
 # `wheel` for the platform-tagged wheel (the package ships compiled cdylibs;
-# see setup.py). cargo builds the cdylibs themselves, outside pip.
-requires = ["setuptools>=61", "wheel"]
+# see setup.py). cargo builds the cdylibs themselves, outside pip. setuptools>=77
+# for PEP 639: the SPDX `license` expression and the `license-files` key below.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,6 +12,8 @@ description = "High-level Python client for the Clausters audio server (Faust-fi
 readme = "README.md"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"
+# Ship the full license text in the wheel (PEP 639 -> .dist-info/licenses/).
+license-files = ["COPYING"]
 authors = [{ name = "Lucas Samaruga" }]
 # Stdlib only at runtime: the native core is reached through ctypes over the
 # `clausters-ffi` cdylib (and the embed/shm transports over `clausters`), both
