@@ -19,6 +19,8 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use crate::bytes;
+
 const MAGIC: &[u8; 4] = b"CLPK";
 const VERSION: u32 = 1;
 
@@ -152,35 +154,33 @@ impl Pyramid {
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
-        out.extend_from_slice(&VERSION.to_le_bytes());
-        out.extend_from_slice(&(self.base_bucket as u64).to_le_bytes());
-        out.extend_from_slice(&(self.total_samples as u64).to_le_bytes());
-        out.extend_from_slice(&(self.levels.len() as u64).to_le_bytes());
+        bytes::push_u32(&mut out, VERSION);
+        bytes::push_u64(&mut out, self.base_bucket);
+        bytes::push_u64(&mut out, self.total_samples);
+        bytes::push_u64(&mut out, self.levels.len());
         for lvl in &self.levels {
-            out.extend_from_slice(&(lvl.bucket as u64).to_le_bytes());
-            out.extend_from_slice(&(lvl.min.len() as u64).to_le_bytes());
-            out.extend_from_slice(bytemuck::cast_slice(&lvl.min));
-            out.extend_from_slice(bytemuck::cast_slice(&lvl.max));
+            bytes::push_u64(&mut out, lvl.bucket);
+            bytes::push_u64(&mut out, lvl.min.len());
+            bytes::push_f32s(&mut out, &lvl.min);
+            bytes::push_f32s(&mut out, &lvl.max);
         }
         out
     }
 
     /// Parse a buffer produced by `to_bytes`, or `None` if malformed.
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        let mut r = Reader { bytes, pos: 0 };
-        if r.take(4)? != MAGIC {
-            return None;
-        }
+    pub fn from_bytes(data: &[u8]) -> Option<Self> {
+        let mut r = bytes::Reader::new(data);
+        r.tag(MAGIC)?;
         if r.u32()? != VERSION {
             return None;
         }
-        let base_bucket = r.u64()? as usize;
-        let total_samples = r.u64()? as usize;
-        let n_levels = r.u64()? as usize;
+        let base_bucket = r.usize()?;
+        let total_samples = r.usize()?;
+        let n_levels = r.usize()?;
         let mut levels = Vec::with_capacity(n_levels);
         for _ in 0..n_levels {
-            let bucket = r.u64()? as usize;
-            let len = r.u64()? as usize;
+            let bucket = r.usize()?;
+            let len = r.usize()?;
             let min = r.f32_vec(len)?;
             let max = r.f32_vec(len)?;
             levels.push(Level { bucket, min, max });
@@ -201,39 +201,6 @@ impl Pyramid {
     /// (e.g. an older format), so the caller can recompute.
     pub fn read_cache(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
         Ok(Self::from_bytes(&fs::read(path)?))
-    }
-}
-
-/// Minimal little-endian cursor for `from_bytes`.
-struct Reader<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        let end = self.pos.checked_add(n)?;
-        let slice = self.bytes.get(self.pos..end)?;
-        self.pos = end;
-        Some(slice)
-    }
-    fn u32(&mut self) -> Option<u32> {
-        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
-    }
-    fn u64(&mut self) -> Option<u64> {
-        Some(u64::from_le_bytes(self.take(8)?.try_into().ok()?))
-    }
-    fn f32_vec(&mut self, len: usize) -> Option<Vec<f32>> {
-        let bytes = self.take(len.checked_mul(4)?)?;
-        // `from_ne_bytes` over chunks is alignment-independent (the bytes come
-        // from a `Vec<u8>`/mmap with no f32 alignment guarantee) and matches the
-        // native-endian `cast_slice` used in `to_bytes`.
-        Some(
-            bytes
-                .chunks_exact(4)
-                .map(|c| f32::from_ne_bytes(c.try_into().unwrap()))
-                .collect(),
-        )
     }
 }
 

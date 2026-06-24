@@ -22,6 +22,7 @@ use std::sync::Arc;
 use wgpu::util::DeviceExt;
 
 use crate::peaks::{self, Pyramid};
+use crate::view::TimelineView;
 use crate::viewport::View;
 
 /// At or below this many samples per pixel, draw the raw sample polyline rather
@@ -278,5 +279,39 @@ impl WaveformData {
     /// Single-sample access for the line regime, clamped to bounds.
     fn samples_at(&self, i: usize) -> f32 {
         self.samples.get(i).copied().unwrap_or(0.0)
+    }
+}
+
+/// A `WaveformData` paired with its renderer, satisfying [`TimelineView`].
+pub struct WaveformView {
+    data: WaveformData,
+    renderer: WaveformRenderer,
+}
+
+impl WaveformView {
+    pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, data: WaveformData) -> Self {
+        let renderer = WaveformRenderer::new(device, format);
+        Self { data, renderer }
+    }
+}
+
+impl TimelineView for WaveformView {
+    fn total_samples(&self) -> usize {
+        self.data.total_samples()
+    }
+
+    fn upload(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        view: &View,
+        render_width_px: u32,
+    ) {
+        self.renderer
+            .upload_geometry(device, queue, &self.data, view, render_width_px);
+    }
+
+    fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+        self.renderer.draw(pass);
     }
 }

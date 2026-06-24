@@ -15,12 +15,10 @@ description = "Exploratory GUI client track for Clausters: a GPU waveform protot
 name = "clausters_gui"
 path = "src/lib.rs"
 
-[[bin]]
-name = "waveform"
-path = "src/main.rs"
+# Binaries are auto-discovered from src/bin/ (waveform, spectrogram).
 
 [dependencies]
-bytemuck = "1.25.0"
+bytemuck = { version = "1.25.0", features = ["derive"] }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"
