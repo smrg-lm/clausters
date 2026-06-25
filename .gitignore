@@ -2,6 +2,8 @@
 /book
 /third_party
 .claude/settings.local.json
+# Persistent per-session memory (local only, never versioned).
+.claude/projects/
 __pycache__/
 .pytest_cache/
 .venv

@@ -1,0 +1,24 @@
+# Independent workspace: this crate is intentionally NOT a member of the root
+# `clausters` workspace. It is the GUI client track under `clients/gui` and must
+# never entangle the core server build. Building from `clients/gui/` uses this
+# manifest; building the core from the repo root ignores it.
+[workspace]
+
+[package]
+name = "clausters-gui"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Exploratory GUI client track for Clausters: a GPU waveform prototype and the widget-protocol design."
+
+[lib]
+name = "clausters_gui"
+path = "src/lib.rs"
+
+# Binaries are auto-discovered from src/bin/ (waveform, spectrogram).
+
+[dependencies]
+bytemuck = { version = "1.25.0", features = ["derive"] }
+pollster = "0.4.0"
+wgpu = "29.0.3"
+winit = "0.30.13"
