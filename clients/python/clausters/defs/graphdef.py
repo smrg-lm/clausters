@@ -165,6 +165,8 @@ class GraphDef:
             spec["defaults"] = self._defaults
         return spec
 
-    def payload(self) -> str:
-        """The JSON string sent over ``/d_graph``."""
+    def dump_def(self) -> str:
+        """The def serialized to text -- the ``/d_graph`` wire payload, the JSON
+        ``GraphDefSpec`` (see `spec`). Useful to inspect the composition before
+        sending it."""
         return json.dumps(self.spec())

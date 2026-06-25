@@ -93,8 +93,10 @@ class SynthDef:
             ],
         }
 
-    def payload(self) -> str:
-        """The wire payload for ``/d_recv <payload>`` (JSON text)."""
+    def dump_def(self) -> str:
+        """The def serialized to text -- the ``/d_recv`` wire payload, the JSON
+        ``SynthDefSpec`` (see `spec`). Useful to inspect the built graph before
+        sending it."""
         return json.dumps(self.spec())
 
     def control_names(self) -> list[str]:

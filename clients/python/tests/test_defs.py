@@ -74,20 +74,20 @@ def test_pi_and_tau_are_plain_literals():
 
 # ---- FaustDef payloads and controls ----
 
-def test_faustdef_signal_payload_and_controls():
+def test_faustdef_signal_dump_and_controls():
     import json
 
     freq = S.hslider("freq", 330.0, 20.0, 20000.0, 0.01)
     fdef = FaustDef.from_signals("d", S.sin(freq) * 0.2)
-    payload = json.loads(fdef.payload())
+    payload = json.loads(fdef.dump_def())
     assert list(payload) == ["signals"] and len(payload["signals"]) == 1
     assert fdef.control_names() == ["freq"]
     assert fdef.reserved == ("out", "in")
 
 
-def test_faustdef_source_payload():
+def test_faustdef_source_dump():
     fdef = FaustDef.from_source("s", "process = _;")
-    assert fdef.payload() == "process = _;"
+    assert fdef.dump_def() == "process = _;"
 
 
 # ---- resource allocators ----
@@ -206,7 +206,7 @@ def test_faustdef_renders_through_the_seam():
 
     def play():
         # def first, then instantiate (same beat; score keeps insertion order)
-        server.send_bundle(("/d_faust", fdef.name, fdef.payload()))
+        server.send_bundle(("/d_faust", fdef.name, fdef.dump_def()))
         server.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
         yield 0.5
         server.send_bundle(("/n_set", 1000, "freq", 660.0))  # control by clock

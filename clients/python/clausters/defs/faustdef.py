@@ -39,10 +39,12 @@ class FaustDef:
     def from_box(cls, name: str, box: dict) -> "FaustDef":
         return cls(name, box, "box")
 
-    # --- payload ---
+    # --- serialization ---
 
-    def payload(self) -> str:
-        """The wire payload for ``/d_faust <name> <payload>``."""
+    def dump_def(self) -> str:
+        """The def serialized to text -- the ``/d_faust <name> <payload>`` wire
+        payload: a JSON signal/box tree, or the Faust source string verbatim.
+        Useful to inspect the built graph before sending it."""
         if self.kind == "source":
             return self._payload
         return json.dumps(self._payload)

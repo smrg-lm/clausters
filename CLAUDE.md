@@ -23,7 +23,12 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     and `src/`; `clients/python/docs/build.sh` builds it). The API-reference
     page `src/api.md` is **generated from the package docstrings by
     pydoc-markdown** (`clients/python/pydoc-markdown.yml`; both it and `book/`
-    git-ignored). The two books cross-link by their RTD URLs.
+    git-ignored). Install the generator in **user space** (no sudo) with
+    `uv tool install --python 3.12 pydoc-markdown` — pin 3.12 because its deps
+    lag the newest CPython, and that is also Read the Docs' version; then
+    `clients/python/docs/build.sh` regenerates `api.md` and rebuilds the book
+    (`uvx pydoc-markdown`, or `pip install` on a non-PEP-668 env, also work —
+    see `clients/python/README.md`). The two books cross-link by their RTD URLs.
   - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels
@@ -54,6 +59,14 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   acronyms left are verbatim external-API symbols, kept as cited: Faust's C
   API FFI in `src/faust` (`UIGlue`, `CsigFConst`, `CboxHSlider`, ...) and, in
   docstrings, sclang's `OSCFunc`/`MIDIFunc`.
+- **Naming the components** (in the documentation and in our conversations),
+  keep these three distinct — each form, English or Spanish:
+  - `clausters-server` / "servidor clausters" / "clausters server" — the
+    **Rust server**.
+  - `clausters-python` / "clausters python" — the **Python client**.
+  - `clausters-cliente` / "clausters cliente" / "clausters client" — **an
+    unspecified client** of the clausters server (a protocol consumer in
+    general, not the Python one specifically).
 
 ## Commit workflow
 

@@ -340,13 +340,13 @@ class Server:
         renderer compiles it before time advances -- so ``wait`` does not
         apply."""
         if getattr(self.interface, "time_mode", "unix") == "score":
-            self.send_msg("/d_faust", fdef.name, fdef.payload())
+            self.send_msg("/d_faust", fdef.name, fdef.dump_def())
             return fdef.name
         if not wait:
-            self.send_msg("/d_faust", fdef.name, fdef.payload())
+            self.send_msg("/d_faust", fdef.name, fdef.dump_def())
             return fdef.name
         addr, args = self.request(
-            "/d_faust", fdef.name, fdef.payload(), timeout=timeout, expect=("/done", "/fail")
+            "/d_faust", fdef.name, fdef.dump_def(), timeout=timeout, expect=("/done", "/fail")
         )
         if addr == "/fail":
             raise CommandError(f"/d_faust {fdef.name!r} failed: {args}")
@@ -358,7 +358,7 @@ class Server:
         in RT until ``/done``/``/fail``; ``wait=False`` is fire-and-forget
         (pair with `sync`). In NRT it scores ``/d_recv`` at time 0 so the
         renderer compiles it before time advances."""
-        payload = sdef.payload()
+        payload = sdef.dump_def()
         if getattr(self.interface, "time_mode", "unix") == "score":
             self.send_msg("/d_recv", payload)
             return sdef.name
@@ -380,7 +380,7 @@ class Server:
         at time 0. Loading a GraphDef is cheap on the server (no JIT — it only
         validates and references the member defs), but it is still asynchronous,
         so the same barrier discipline applies."""
-        payload = gdef.payload()
+        payload = gdef.dump_def()
         if getattr(self.interface, "time_mode", "unix") == "score":
             self.send_msg("/d_graph", payload)
             return gdef.name

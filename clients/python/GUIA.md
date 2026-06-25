@@ -133,7 +133,7 @@ phasor = S.rec(lambda s: (s + freq/S.sr()) % 1.0)        # feedback explícito; 
 sine = S.sin(phasor * S.TAU) * 0.2
 fdef = FaustDef.from_signals("sine", sine)
 print("controles:", fdef.control_names(), "+ reservados", fdef.reserved)
-print("payload (recorte):", fdef.payload()[:70], "...")
+print("dump_def (recorte):", fdef.dump_def()[:70], "...")
 
 ids = NodeIdAllocator(1000); print("ids:", ids.alloc(), ids.alloc())
 buses = AudioBusAllocator(size=128, reserved=2); b = buses.alloc(2)  # size = conteo del servidor
@@ -154,7 +154,7 @@ phasor = S.rec(lambda s: (s + freq/S.sr()) % 1.0)        # S.sr() lo da el servi
 fdef = FaustDef.from_signals("c3sine", S.sin(phasor*S.TAU)*0.2)
 server = Server(interface=OscNrtInterface()); clock = TempoClock(tempo=1.0)
 def play():
-    server.send_bundle(("/d_faust", fdef.name, fdef.payload()))   # def primero
+    server.send_bundle(("/d_faust", fdef.name, fdef.dump_def()))   # def primero
     server.send_bundle(("/s_new", fdef.name, 1000, 1, 0))
     yield 0.5
     server.send_bundle(("/n_set", 1000, "freq", 660.0))           # control por reloj
@@ -269,7 +269,7 @@ from clausters.defs import SynthDef, control, sin_osc, out
 freq, amp = control("freq", 440.0), control("amp", 0.2)
 sig = sin_osc(freq) * amp                      # los operadores → UGens Mul/Add/…
 sd = SynthDef("py_default", out(0.0, sig), out(1.0, sig))
-print(sd.payload())                            # el JSON que ve /d_recv
+print(sd.dump_def())                           # el JSON que ve /d_recv
 PY
 ```
 
@@ -309,7 +309,7 @@ t2 = g.add("tone", out=mix)
 amp = g.add("gain", **{"in": mix})          # lee `mix` -> salida
 g.port("freq", t1["freq"], t2["freq"].scaled(1.5), default=220.0)  # un puerto, dos destinos
 g.port("gain", amp["gain"], default=0.4)
-print(g.payload())                          # el JSON que ve /d_graph
+print(g.dump_def())                         # el JSON que ve /d_graph
 PY
 ```
 

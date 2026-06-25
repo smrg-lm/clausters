@@ -6,6 +6,7 @@
 
 - [Getting started](getting-started.md)
 - [The client, layer by layer](guide.md)
+- [Defining instruments: FaustDef and SynthDef](defs.md)
 - [Sessions](sessions.md)
 - [Routines and clocks](routines-and-clocks.md)
 - [Timelines and the playhead](timelines.md)

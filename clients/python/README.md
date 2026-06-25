@@ -103,10 +103,17 @@ the package docstrings**. It is a separate book from the server/workspace book
 at the repo root (two books, one per platform, cross-linked). Build it:
 
 ```sh
-pip install pydoc-markdown      # generates the API page from docstrings
-cargo install mdbook            # once (or use a distro / prebuilt mdbook)
-clients/python/docs/build.sh    # writes src/api.md, then runs `mdbook build`
+uv tool install --python 3.12 pydoc-markdown   # user-space CLI in ~/.local/bin
+cargo install mdbook                            # once (or use a distro / prebuilt mdbook)
+clients/python/docs/build.sh                    # writes src/api.md, then runs `mdbook build`
 ```
+
+`pydoc-markdown` is installed here as a **user-space** [uv](https://docs.astral.sh/uv/)
+tool (no venv to manage, no sudo) **pinned to Python 3.12** — its dependencies
+lag the newest CPython, and 3.12 is also what Read the Docs builds with.
+`uvx pydoc-markdown` runs it without installing; a plain `pip install
+pydoc-markdown` works too in any environment that is not externally managed
+(PEP 668).
 
 `build.sh` runs two steps: `pydoc-markdown` (a **static AST parse** of the
 public modules — no cdylib needed) writes `docs/src/api.md`, then `mdbook build

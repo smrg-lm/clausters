@@ -1,0 +1,233 @@
+# Defining instruments: FaustDef and SynthDef
+
+An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`:
+
+- **`FaustDef`** — a Faust definition, sent with `/d_faust`. Its graph is the full Faust **Signal API**, so it has the complete maths vocabulary (trigonometry, `exp`/`log`, comparisons, tables, sample-accurate feedback). Reach for it for any actual DSP.
+- **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's **structural** UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback) plus the four arithmetic operators (`+ - * /`). The wider unary/binary maths that SuperCollider exposes as UGens — and that the client already computes in `clausters.base.builtins` — is **not implemented yet** in the UGen graph (see [Maths is `+ - * /` for now](#maths-is------for-now)), so today that maths goes in a `FaustDef`.
+
+Both are built the same way: **lowercase callables** that compose with ordinary Python operators into a JSON tree. Both are **instance-based** — there is no thread-global "current graph" as in sclang, so the tree *is* the composed objects and several defs build concurrently. And both are sent **asynchronously**, behind the `/sync` barrier (see [Sending a def](#sending-a-def)).
+
+This page is the conceptual map and the catalog of what each callable does. The exact wire format — the JSON node shapes, the UGen registry, the `/d_faust` / `/d_recv` signatures and their `/done` / `/fail` replies — is specified in the **[Clausters server book](https://clausters.readthedocs.io/)** (the schemas / OSC reference chapter); this client is one consumer of it. The generated [API reference](api.md) carries the per-symbol signatures.
+
+## The shared shape
+
+Every graph node is an `AbstractObject`, the operator-overloading base shared with the value layer. Composing two nodes — or a node and a plain number — returns a new node rather than a computed value:
+
+```python
+from clausters.defs import signals as S
+
+freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)   # a Signal (a control)
+detuned = freq * 1.5                                    # another Signal, not a float
+```
+
+A plain number that meets a node becomes a **constant** in the graph. The operators map identically on both def kinds *where the client implements them today*: a `FaustDef` accepts the full set below, while a `SynthDef` accepts only `+ - * /` and raises a `TypeError` (naming Faust as the alternative) for anything else — a current limitation of the UGen path, not a permanent boundary (see [Maths is `+ - * /` for now](#maths-is------for-now)).
+
+## FaustDef
+
+### Building one
+
+Three constructors, one per payload the server's `/d_faust` accepts:
+
+| Constructor | Payload | Use it for |
+| --- | --- | --- |
+| `FaustDef.from_signals(name, *outputs)` | a **signal tree** built with `clausters.defs.signals` | graphs assembled in Python from the primitives below |
+| `FaustDef.from_source(name, src)` | a Faust **source** string | hand-written Faust (`process = ...;`) |
+| `FaustDef.from_box(name, box)` | a raw **box tree** dict | a pre-built Box-API tree |
+
+Each argument to `from_signals` is one **output** (a `Signal` or a number): one argument is mono, two is stereo, and so on.
+
+```python
+from clausters.defs import signals as S, FaustDef
+
+freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
+phase = S.rec(lambda s: (s + freq / S.sr()) % 1.0)   # one-sample feedback phasor
+sine = S.sin(phase * S.TAU) * 0.2
+fdef = FaustDef.from_signals("fsine", sine)          # one output -> mono
+```
+
+A source def is the escape hatch when you would rather write Faust directly:
+
+```python
+FaustDef.from_source("organ", "import(\"stdfaust.lib\"); process = os.osc(220) * 0.2;")
+```
+
+### The signal API
+
+`clausters.defs.signals` (imported as `S` by convention) is the Signal API as lowercase callables. Arithmetic, comparison and bitwise **operators** compose nodes directly; the rest are functions or methods.
+
+**Maths via operators and methods.** These compose a `Signal`:
+
+| Group | How |
+| --- | --- |
+| Arithmetic | `+ - * /`, `%` (modulo), `**` (power), unary `-` |
+| Comparison | `< <= > >=` — return a 0/1 signal, for gating with `select2` / `select3` |
+| Bitwise | `& \| ^ << >>` |
+| Unary methods | `.abs() .floor() .ceil() .sin() .cos() .tan() .asin() .acos() .atan() .exp() .log() .log10() .sqrt() .as_int() .as_float()` |
+| Binary methods | `.min(b) .max(b) .atan2(b) .pow(b) .mod(b)` |
+
+The same unary/binary maths is also available as **module functions** (so you can write `S.sin(x)` as well as `x.sin()`), plus a few that have no method form:
+
+| Kind | Functions |
+| --- | --- |
+| Unary | `sin cos tan asin acos atan exp exp10 log log10 sqrt abs floor ceil rint` |
+| Binary | `min max pow atan2 fmod rem` |
+
+**Sources and structure:**
+
+| Callable | Builds |
+| --- | --- |
+| `input(index=0)` | audio input channel `index` |
+| `delay(x, n)` | `x` delayed by `n` samples |
+| `delay1(x)` | `x` delayed by one sample (Faust `'`) |
+| `recursion(body)` | single-sample feedback; `body` may reference `self_()` |
+| `self_()` | the one-sample-delayed output of the enclosing `recursion` |
+| `rec(fn)` | Pythonic feedback sugar: `fn(s)` builds the body from its own delayed output `s` |
+| `select2(sel, a, b)` | picks `a` or `b` by a 0/1 selector |
+| `select3(sel, a, b, c)` | picks `a`, `b` or `c` by a 0/1/2 selector |
+| `signal(x)` | coerces a number (or `Signal`) into a `Signal` |
+
+`rec` is the everyday way to write feedback; `recursion`/`self_` are the explicit form it desugars to. The phasor above (`S.rec(lambda s: (s + freq / S.sr()) % 1.0)`) is the canonical example — one sample of delay, exactly as in Faust's `~`. Filters are built the same way (a biquad is `rec` plus a `delay1` per tap).
+
+**Sample rate and constants.** These two look alike but resolve differently, and the distinction matters:
+
+| Callable | What it is |
+| --- | --- |
+| `sr()` | the engine's sample rate, a **foreign constant** resolved at def-compile time (Faust's `ma.SR`, with its `[1, 192000]` clamp) |
+| `PI`, `TAU` | plain Python float **literals** (`TAU = 2*PI`) |
+| `fconst(ctype, name, file="")` | a foreign scalar resolved once at compile time — the building block of `sr` |
+| `fvar(ctype, name, file="")` | like `fconst` but re-read each block |
+
+Use `sr()` — never a baked-in `SR` constant — wherever the maths depends on the rate (`freq / S.sr()`, filter coefficients): the def then stays in tune at whatever rate the live engine or the NRT renderer runs. `PI` / `TAU` are literals because they are literals in Faust too, so they involve no server round-trip and become constant signals as soon as they meet a `Signal`.
+
+**Integer vs real constants — `2` is not `2.0`.** Faust distinguishes an *integer* constant from a *real* one, and so does this graph. JSON has only one "number" type, so it is tempting to assume `2` and `2.0` are interchangeable, but they are **not**: the distinction rides on the literal's form, which survives the whole way through. The client takes the constant straight from your Python value (it does not coerce it), so a Python `int` serializes as `2` and a `float` as `2.0`; the server then reads an integral token as an **integer** constant and a token with a decimal point as a **real** one — a `2.0` is stored as a float and is *not* folded back to an integer. This matters wherever the operation is integer-typed — the bitwise and shift ops (`& | ^ << >>`), `rem`, `as_int()`, table indices — while ordinary `+ - * /` promote an int constant to real and so are unaffected. When it matters, write the literal the way you want it read: `2` for an integer, `2.0` for a real. (A `SynthDef` offers no such choice — it coerces every constant to `float`, since UGens compute only in f32.)
+
+**Controls.** A control callable's **label becomes the control name** — the parameter you later set with `/s_new` / `/n_set`:
+
+| Callable | Control kind |
+| --- | --- |
+| `hslider(label, init, lo, hi, step)` | horizontal slider |
+| `vslider(label, init, lo, hi, step)` | vertical slider |
+| `nentry(label, init, lo, hi, step)` | number entry |
+| `button(label)` | momentary button |
+| `checkbox(label)` | toggle |
+
+**Tables:**
+
+| Callable | Builds |
+| --- | --- |
+| `waveform(values)` | a constant table from a list of floats |
+| `rdtable(size, init, ridx)` | a read-only table |
+| `rwtable(size, init, widx, wsig, ridx)` | a read/write table |
+
+### Controls and reserved ports
+
+`fdef.control_names()` lists the control names the def declares, in tree order — the UI labels, deduplicated. On top of those, every Faust synth also accepts the two **reserved** bus-selecting controls the server adds (`fdef.reserved == ("out", "in")`): set them at `/s_new` time (`"in" bus "out" bus`) to choose the input and output buses. They are not declared in the graph.
+
+`fdef.dump_def()` returns the wire payload (JSON for a signal/box tree, the string itself for a source).
+
+## SynthDef
+
+### Building one
+
+A `SynthDef` takes a name and one or more **output UGens** — the things that actually write to a bus. A def with no output UGen is silent on the server.
+
+```python
+from clausters.defs import SynthDef, control, sin_osc, out
+
+freq = control("freq", 440.0)
+amp = control("amp", 0.2)
+sig = sin_osc(freq) * amp
+sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # two outputs -> stereo
+```
+
+`control(name, default)` declares a parameter; the def gathers every control its graph references, in first-seen order. Reusing the same name with a **conflicting default** is an error, caught when the spec is built.
+
+### The UGen set
+
+`clausters.defs.ugens` exposes the UGen callables the client implements today — a subset of the server's registry. The set is small for now:
+
+| Group | Callable | Does |
+| --- | --- | --- |
+| Sources | `sin_osc(freq=440.0)` | sine by f64 phase accumulation, starting at phase 0 |
+| | `impulse(freq=1.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence) |
+| | `white_noise()` | uniform white noise in ±1 |
+| Bus input | `in_(bus=0.0)` | reads an audio bus (sampled per block) |
+| | `in_ctl(bus=0.0)` | reads a control bus (constant over the block) |
+| Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |
+| | `replace_out(bus, signal)` | **overwrites** an audio bus instead of summing |
+| Buffers | `play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0)` | mono buffer player, linear interpolation; `rate` in frames per output sample |
+| | `buf_rd(bufnum, chan, phase, loop=0.0)` | reads a buffer at a `phase` signal in frames |
+| Feedback | `local_in(channel=0.0)` | reads a synth-private feedback channel |
+| | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
+
+Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
+
+### Maths is `+ - * /` for now
+
+The four arithmetic operators map to the server's `Add` / `Sub` / `Mul` / `Div` UGens. **Every other operator and maths method currently raises a `TypeError`** — `%`, `min`/`max`, the comparisons, `.sin()`, `.midicps()` and the rest.
+
+That is a limitation of what is wired today, **not** a property of UGen graphs. In the SuperCollider model these operations *are* ordinary UGens — `UnaryOpUGen` and `BinaryOpUGen`, one generic UGen each whose **special index** selects the actual operation — and they are backed by the very same operation set the client's `clausters.base.builtins` already computes in f32 against the shared core (`UnaryOp` / `BinaryOp`). Clausters has not exposed that path yet: neither the server's UGen registry nor the client's `ugens` callables wire anything beyond `Add` / `Sub` / `Mul` / `Div`. So the duplication exists on the value side but has no UGen-graph counterpart to reach.
+
+Until it does, build that maths in a `FaustDef` (the `TypeError` points there). In practice, then, a SynthDef today is for *wiring* — mix a few sources, scale by a control, send to a bus, play a buffer — while per-sample maths and synthesis live in a FaustDef.
+
+Feedback within a block uses the `LocalIn` / `LocalOut` pair. `LocalIn` must be emitted before its `LocalOut`; the topological walk guarantees that as long as the output graph reaches the `local_in` before the `local_out`. Make the `local_out` one of the def's outputs so its write stays in the graph:
+
+```python
+from clausters.defs import SynthDef, sin_osc, local_in, local_out, out
+
+fb = local_in(0.0)                            # private channel 0
+sig = sin_osc(440.0) * 0.2 + fb * 0.5
+echo = local_out(0.0, sig)                    # writes channel 0, passes sig through
+sdef = SynthDef("fb", out(0.0, sig), echo)    # echo as an output keeps the write
+```
+
+### Spec, dump and controls
+
+The graph is serialized by a plain post-order walk of the output UGens, so a UGen is always emitted after its inputs (the `ugens` list is topologically ordered) and a shared sub-graph is emitted once (deduplicated by object identity).
+
+- `sdef.spec()` — the `{"name", "controls", "ugens"}` dict the server compiles.
+- `sdef.dump_def()` — that spec as JSON text, the `/d_recv` payload.
+- `sdef.control_names()` — the control names in spec order (parallels `FaustDef.control_names()`).
+
+## Inspecting the built graph
+
+Before sending a def you can look at exactly what you composed: both `FaustDef` and `SynthDef` expose `dump_def()`, the JSON string that goes on the wire (the `/d_faust` / `/d_recv` argument). Printing it shows the resulting graph — handy to confirm a tree built the way you intended.
+
+```python
+import json
+
+print(sdef.dump_def())                                   # the raw wire string
+print(json.dumps(sdef.spec(), indent=2))                 # SynthDef: spec() is already a dict — pretty-print it
+print(json.dumps(json.loads(fdef.dump_def()), indent=2)) # FaustDef signal/box tree, pretty-printed
+```
+
+`SynthDef.spec()` returns the `{"name", "controls", "ugens"}` dict directly, so it is the most convenient handle for a SynthDef. For a `FaustDef` built `from_signals` / `from_box`, `dump_def()` is JSON you can `json.loads`; one built `from_source` returns the Faust source string verbatim, not JSON. Either way, `control_names()` gives just the declared control names when that is all you need.
+
+## Choosing between the two
+
+| | FaustDef | SynthDef |
+| --- | --- | --- |
+| Sent with | `/d_faust` | `/d_recv` |
+| Built from | `clausters.defs.signals` | `clausters.defs.ugens` |
+| Maths | full (trig, `exp`/`log`, comparisons, tables) | `+ - * /` for now (the rest not yet implemented) |
+| Feedback | `rec` / `self_` (one sample) | `local_in` / `local_out` |
+| Best for | oscillators, filters, any DSP | routing, mixing, buffer playback, bus I/O |
+
+A common pattern is to combine them: a FaustDef for the voice, a SynthDef to route or play back buffers. Both run as ordinary nodes in the same tree.
+
+## Sending a def
+
+Sending a def is **asynchronous**: `/d_faust` JIT-compiles on the server's network thread, answered later by `/done` or `/fail`. The `Server` mirrors scsynth:
+
+```python
+server.add_faustdef(fdef)                 # RT: BLOCKS until /done (raises CommandError on /fail, ReplyTimeout on silence)
+server.add_synthdef(sdef, wait=False)     # fire-and-forget: only sends
+server.sync()                             # barrier: /sync -> /synced, waits for ALL earlier async work
+server.synth("fsine", {"freq": 330.0})    # safe now — the def is installed
+```
+
+- `wait=True` (the default) blocks on `/done`; `wait=False` only sends, after which `sync()` is the barrier before the `/s_new` that needs the def.
+- In **NRT** (a score interface) `add_*` always *scores* the def at time 0 — the renderer compiles it before time advances — so `wait` does not apply.
+- `server.free_def(*names)` removes defs (`/d_free`).
+
+The same shape applies to `add_synthdef`. There is one rule that overrides the convenience of the blocking default: **inside a routine, never block the clock thread.** Send the def `wait=False` and `yield` enough beats before the dependent `/s_new`, rather than calling a blocking `add_*` or `sync()`. See [Routines and clocks](routines-and-clocks.md) for why, and [Getting started](getting-started.md) and the [Examples](examples.md) for end-to-end defs that play.
