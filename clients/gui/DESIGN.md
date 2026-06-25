@@ -1,6 +1,6 @@
 # Clausters GUI track - design notes
 
-This is the **design rationale** for the Clausters GUI track; the staged milestones live in its companion `PLAN.md`. The crate is an **independent workspace** under `clients/gui`, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds these design notes, a working GPU waveform/spectrogram prototype (`src/`) that validates the heavy-rendering path, and the GUI host that the milestones build around it - the `/gui_*` widget-protocol interpreter and its transport front (`src/host/`, headless as of G2, no GPU yet).
+This is the **design rationale** for the Clausters GUI track; the staged milestones live in its companion `PLAN.md`. The crate is an **independent workspace** under `clients/gui`, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds these design notes, a working GPU waveform/spectrogram prototype (`src/`) that validates the heavy-rendering path, and the GUI host that the milestones build around it - the `/gui_*` widget-protocol interpreter, its transport fronts and its windowing (`src/host/`: a headless protocol front and a winit + wgpu windowed front that renders the heavy views from a GuiDef).
 
 Where `PLAN.md` is the canonical reference for the `/gui_*` command/event tables, the widget catalog and the `Gx` milestones, this note explains *why* the system has the shape it does: why the GUI is a separate host rather than code in the audio server, why a web-capable rendering substrate, and how the heavy widgets resolve a signal to the screen and no finer.
 
@@ -51,7 +51,15 @@ An earlier sketch built the tree with one OSC message per widget (`/w_new parent
 
 This 1:1 reuse of the node-tree semantics is intentional: id allocation, add-actions, and subtree freeing already exist conceptually in the codebase. The address family is the generic `/gui_*`, not `/win_*`, because a def's root is not always a window (it may equally be an embeddable panel).
 
-Property values are OSC primitives (int/float/string/blob) - the binding technology never leaks across the wire, in line with the project's "flat primitives at the boundary" rule. A `"waveform"`/`"spectrogram"` widget is fed a buffer reference (a server buffer number) or a blob, and owns its own GPU rendering (the prototype here is exactly that widget's renderer).
+Property values are OSC primitives (int/float/string/blob) - the binding technology never leaks across the wire, in line with the project's "flat primitives at the boundary" rule. A `"waveform"`/`"spectrogram"` widget is fed a buffer reference (a server buffer number) or a blob, and owns its own GPU rendering (the prototype here is exactly that widget's renderer). A widget's bulk data (waveform samples) rides as an OSC blob *beside* the JSON in the same `/gui_def` message and is referenced by index, so JSON stays the structure and binary stays binary - no base64 in the tree.
+
+### Generic on the wire, typed in the renderer
+
+The wire form is deliberately *generic* - any `{id, type, props, children}` - so the protocol never changes when a widget type is added. The renderer is the other half of that rule: it turns the generic tree into a *typed* model it knows how to lay out and draw, where adding a type is a new variant plus a handler, not a wire change. An unrecognized type is not an error - it is laid out (reserving its space) but not painted, so a host built today renders the parts of a newer GuiDef it understands and ignores the rest. That keeps the catalog extensible from both ends: the script may send types this host predates, and this host may render types a future script does not yet use.
+
+### The host's two fronts and the windowing thread
+
+The host has a headless protocol front (for tests, automation and no-display machines) and a windowed front; both run the same protocol logic, which is transport- and GPU-agnostic and *returns* its effects (replies, window open/close) rather than performing I/O, so it is unit-testable without a socket or a GPU. Windowing forces a threading shape: the GPU toolkit (winit) must own the main thread, so the OSC transport runs on a background thread and hands each datagram to the main thread through the event loop's proxy. All host state then lives on one thread, lock-free, mirroring the audio server's single-threaded command loop; replies go back out the shared socket. A web build replaces only the windowed front (a `<canvas>` surface), leaving the protocol logic untouched.
 
 ### Bindings: the value can bypass the script
 

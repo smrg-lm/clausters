@@ -14,7 +14,9 @@ keeps them apart in the JSON text and the host's serde parse keeps them apart on
 the wire (ids stay integers, control values stay floats).
 """
 
+import array
 import json
+import sys
 
 __all__ = [
     "node",
@@ -25,6 +27,7 @@ __all__ = [
     "slider",
     "waveform",
     "to_json",
+    "samples_to_blob",
 ]
 
 
@@ -76,16 +79,38 @@ def slider(id: int, *, label: str | None = None, min: float | None = None,
     return node("slider", id=id, **extra, **props)
 
 
-def waveform(id: int, *, buffer: int | None = None, **props) -> dict:
-    """The heavy ``waveform`` view, fed a server ``buffer`` number (or, later, a
-    blob). The renderer arrives in a later milestone; the node is valid now."""
-    extra = _drop_none(buffer=buffer)
+def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None = None,
+             base_bucket: int | None = None, **props) -> dict:
+    """The heavy ``waveform`` view, fed its samples one of three ways:
+
+    - ``data`` — a list of floats embedded inline in the JSON (simplest; keep it
+      small enough to fit a datagram);
+    - ``blob`` — the index of a binary blob carried beside the JSON in the same
+      ``/gui_def`` message (the bulk path; see `samples_to_blob` and
+      `GuiHost.define`);
+    - ``buffer`` — a server buffer number (resolved once the host attaches to the
+      audio server, a later milestone).
+
+    ``base_bucket`` sets the peak-pyramid bucket size (default 256).
+    """
+    extra = _drop_none(data=list(data) if data is not None else None,
+                       blob=blob, buffer=buffer, base_bucket=base_bucket)
     return node("waveform", id=id, **extra, **props)
 
 
 def to_json(tree: dict) -> str:
     """Serializes a GuiDef tree to the JSON string carried in ``/gui_def``."""
     return json.dumps(tree)
+
+
+def samples_to_blob(samples) -> bytes:
+    """Packs an iterable of floats into a little-endian ``f32`` blob, the bulk
+    form a ``waveform`` reads via ``blob``. Flat bytes at the boundary — the same
+    rule the rest of the client follows."""
+    buf = array.array("f", samples)
+    if sys.byteorder != "little":
+        buf.byteswap()
+    return buf.tobytes()
 
 
 def _drop_none(**kwargs) -> dict:

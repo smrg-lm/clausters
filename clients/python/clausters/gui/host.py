@@ -46,9 +46,12 @@ class GuiHost:
     def __exit__(self, *exc):
         self.stop()
 
-    def define(self, id: int, tree: dict):
-        """``/gui_def <id> <json>`` — build a whole widget tree in one message."""
-        self._osc.send_msg(self.target, "/gui_def", id, to_json(tree))
+    def define(self, id: int, tree: dict, *blobs: bytes):
+        """``/gui_def <id> <json> [blob…]`` — build a whole widget tree in one
+        message. Any trailing ``blobs`` (e.g. waveform samples from
+        `clausters.gui.guidef.samples_to_blob`) ride alongside the JSON and are
+        referenced by index from a widget's ``blob`` property."""
+        self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
 
     def set(self, id: int, **props):
         """``/gui_set <id> <k> <v> ...`` — update one live widget. Property types

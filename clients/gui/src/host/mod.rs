@@ -28,8 +28,19 @@
 
 pub mod client;
 pub mod guidef;
+pub mod layout;
 pub mod registry;
 pub mod transport;
+pub mod widget;
+
+// The windowed host (winit + wgpu) is native-only; a wasm build swaps it for a
+// `<canvas>` surface. Everything above is windowing-agnostic and web-portable.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod gui;
+#[cfg(not(target_arch = "wasm32"))]
+mod rects;
+
+use std::collections::HashMap;
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use serde_json::Value;
@@ -39,6 +50,7 @@ pub use client::ServerLeg;
 pub use guidef::GuiNode;
 pub use registry::Registry;
 pub use transport::ClientId;
+pub use widget::Widget;
 
 // The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).
 pub const GUI_DEF: &str = "/gui_def";
@@ -49,13 +61,30 @@ pub const GUI_BIND: &str = "/gui_bind";
 pub const GUI_LOAD: &str = "/gui_load";
 pub const GUI_INFO: &str = "/gui_info";
 
-/// The widget-protocol interpreter. Transport-agnostic and side-effect-free
-/// except for its own state: [`handle_packet`](Self::handle_packet) mutates the
-/// registry and *returns* the reply messages, so the transport layer (or a
-/// test) decides how to deliver them. That keeps the protocol logic unit-testable
-/// without a socket.
+/// What handling a packet asks the host's *front* to do, beyond mutating the
+/// host's own state. The protocol logic stays transport- and GPU-agnostic and
+/// *returns* these, so the caller decides how to act: the windowed front opens
+/// and closes OS windows and sends replies; the headless front sends replies and
+/// logs the window effects (no display). That keeps the logic unit-testable
+/// without a socket or a GPU.
+#[derive(Debug)]
+pub enum HostEffect {
+    /// Send this message back to the requesting client.
+    Reply(OscMessage),
+    /// Open (or rebuild) the window for the GuiDef rooted at this id.
+    OpenWindow(i32),
+    /// Close the window for the GuiDef rooted at this id, if any.
+    CloseWindow(i32),
+}
+
+/// The widget-protocol interpreter (transport- and GPU-agnostic). See
+/// [`handle_packet`](Self::handle_packet) and [`HostEffect`].
 pub struct Host {
     registry: Registry,
+    /// Typed widget trees for window-rooted defs, by def id — the renderable
+    /// documents the windowed front builds windows from. Non-window roots live
+    /// only in the generic registry.
+    window_defs: HashMap<i32, Widget>,
     /// The audio-server client leg (the third topology leg). Present when the
     /// host was started with a `--server` target; bindings (a later milestone)
     /// forward bound-widget values through it.
@@ -72,6 +101,7 @@ impl Host {
     pub fn new() -> Self {
         Self {
             registry: Registry::new(),
+            window_defs: HashMap::new(),
             server: None,
         }
     }
@@ -87,46 +117,54 @@ impl Host {
         &self.registry
     }
 
-    /// Handles one decoded packet from `from`, returning the reply messages to
-    /// send back to it. A bundle is unwrapped and its messages run in order
-    /// (the timetag is treated as immediate at this milestone — no scheduling
-    /// yet).
-    pub fn handle_packet(&mut self, packet: OscPacket, from: ClientId) -> Vec<OscMessage> {
-        let mut replies = Vec::new();
-        self.dispatch_packet(packet, from, &mut replies);
-        replies
+    /// The typed window document for def `id`, if it is a window-rooted def the
+    /// front should render.
+    pub fn window_def(&self, id: i32) -> Option<&Widget> {
+        self.window_defs.get(&id)
+    }
+
+    /// Handles one decoded packet from `from`, returning the effects its front
+    /// should carry out (replies plus window open/close). A bundle is unwrapped
+    /// and its messages run in order (the timetag is treated as immediate at this
+    /// milestone — no scheduling yet).
+    pub fn handle_packet(&mut self, packet: OscPacket, from: ClientId) -> Vec<HostEffect> {
+        let mut effects = Vec::new();
+        self.dispatch_packet(packet, from, &mut effects);
+        effects
     }
 
     fn dispatch_packet(
         &mut self,
         packet: OscPacket,
         from: ClientId,
-        replies: &mut Vec<OscMessage>,
+        effects: &mut Vec<HostEffect>,
     ) {
         match packet {
-            OscPacket::Message(msg) => self.dispatch(msg, from, replies),
+            OscPacket::Message(msg) => self.dispatch(msg, from, effects),
             OscPacket::Bundle(bundle) => {
                 for inner in bundle.content {
-                    self.dispatch_packet(inner, from, replies);
+                    self.dispatch_packet(inner, from, effects);
                 }
             }
         }
     }
 
-    fn dispatch(&mut self, msg: OscMessage, from: ClientId, replies: &mut Vec<OscMessage>) {
+    fn dispatch(&mut self, msg: OscMessage, from: ClientId, effects: &mut Vec<HostEffect>) {
         match msg.addr.as_str() {
-            GUI_DEF => self.on_def(&msg.args, from),
+            GUI_DEF => self.on_def(&msg.args, from, effects),
             GUI_SET => self.on_set(&msg.args, from),
-            GUI_FREE => self.on_free(&msg.args, from),
-            GUI_QUERY => self.on_query(&msg.args, from, replies),
+            GUI_FREE => self.on_free(&msg.args, from, effects),
+            GUI_QUERY => self.on_query(&msg.args, from, effects),
             GUI_BIND => warn!("{from}: {GUI_BIND} is not implemented yet (a later milestone)"),
             GUI_LOAD => warn!("{from}: {GUI_LOAD} is not implemented yet (a later milestone)"),
             other => debug!("{from}: ignoring unhandled address {other}"),
         }
     }
 
-    /// `/gui_def <id> <json>` — build a whole widget tree from one JSON GuiDef.
-    fn on_def(&mut self, args: &[OscType], from: ClientId) {
+    /// `/gui_def <id> <json> [blob…]` — build a whole widget tree from one JSON
+    /// GuiDef (with any bulk data, e.g. waveform samples, as trailing blobs). A
+    /// `window` root also opens (or rebuilds) a window.
+    fn on_def(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
             return warn!("{from}: {GUI_DEF} needs an integer id");
         };
@@ -150,6 +188,17 @@ impl Host {
             },
             node.dump(id).trim_end(),
         );
+        // A window root becomes a renderable typed document; the front opens it.
+        if node.kind == "window" {
+            let blobs = blob_args(&args[2.min(args.len())..]);
+            match Widget::from_node(id, &node, &blobs) {
+                Ok(tree) => {
+                    self.window_defs.insert(id, tree);
+                    effects.push(HostEffect::OpenWindow(id));
+                }
+                Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
+            }
+        }
     }
 
     /// `/gui_set <id> <k> <v> ...` — update one live widget's properties.
@@ -169,12 +218,16 @@ impl Host {
         }
     }
 
-    /// `/gui_free <id>` — destroy a widget and its subtree.
-    fn on_free(&mut self, args: &[OscType], from: ClientId) {
+    /// `/gui_free <id>` — destroy a widget and its subtree (and its window, if
+    /// `id` is a window-rooted def).
+    fn on_free(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
             return warn!("{from}: {GUI_FREE} needs an integer id");
         };
         let removed = self.registry.free(id);
+        if self.window_defs.remove(&id).is_some() {
+            effects.push(HostEffect::CloseWindow(id));
+        }
         if removed > 0 {
             info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
@@ -183,7 +236,7 @@ impl Host {
     }
 
     /// `/gui_query <id>` — reply `/gui_info <id> <type> <k> <v> ...`.
-    fn on_query(&mut self, args: &[OscType], from: ClientId, replies: &mut Vec<OscMessage>) {
+    fn on_query(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
             return warn!("{from}: {GUI_QUERY} needs an integer id");
         };
@@ -206,11 +259,22 @@ impl Host {
                 warn!("{from}: {GUI_QUERY} {id}: no such widget");
             }
         }
-        replies.push(OscMessage {
+        effects.push(HostEffect::Reply(OscMessage {
             addr: GUI_INFO.into(),
             args: out,
-        });
+        }));
     }
+}
+
+/// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
+/// waveform samples) into a list a `Widget` can index by `"blob"`.
+fn blob_args(args: &[OscType]) -> Vec<Vec<u8>> {
+    args.iter()
+        .filter_map(|a| match a {
+            OscType::Blob(b) => Some(b.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The i-th argument as an `i32`, if present and integer-typed.
@@ -288,23 +352,56 @@ mod tests {
         })
     }
 
+    /// The reply messages among a batch of effects.
+    fn replies(effects: Vec<HostEffect>) -> Vec<OscMessage> {
+        effects
+            .into_iter()
+            .filter_map(|e| match e {
+                HostEffect::Reply(m) => Some(m),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The def ids of any OpenWindow effects.
+    fn opened(effects: &[HostEffect]) -> Vec<i32> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                HostEffect::OpenWindow(id) => Some(*id),
+                _ => None,
+            })
+            .collect()
+    }
+
     const TREE: &str = r#"{"type":"window","title":"Filter","children":[
         {"id":10,"type":"knob","label":"cutoff","min":20.0,"max":20000.0,"value":800.0}
     ]}"#;
 
     #[test]
+    fn window_def_opens_a_window_and_stores_the_typed_def() {
+        let mut host = Host::new();
+        let effects = host.handle_packet(def_msg(1, TREE), from());
+        assert_eq!(opened(&effects), vec![1], "a window root opens a window");
+        assert_eq!(host.registry().len(), 2, "window + knob in the registry");
+        assert!(
+            host.window_def(1).is_some(),
+            "the typed window def is stored"
+        );
+    }
+
+    #[test]
     fn def_then_query_replies_with_gui_info() {
         let mut host = Host::new();
-        assert!(host.handle_packet(def_msg(1, TREE), from()).is_empty());
-        assert_eq!(host.registry().len(), 2);
+        host.handle_packet(def_msg(1, TREE), from());
 
         let query = OscPacket::Message(OscMessage {
             addr: GUI_QUERY.into(),
             args: vec![OscType::Int(10)],
         });
-        let replies = host.handle_packet(query, from());
-        assert_eq!(replies.len(), 1);
-        let info = &replies[0];
+        let out = replies(host.handle_packet(query, from()));
+        assert_eq!(out.len(), 1);
+        let info = &out[0];
         assert_eq!(info.addr, GUI_INFO);
         assert_eq!(info.args[0], OscType::Int(10));
         assert_eq!(info.args[1], OscType::String("knob".into()));
@@ -325,10 +422,10 @@ mod tests {
             addr: GUI_QUERY.into(),
             args: vec![OscType::Int(42)],
         });
-        let replies = host.handle_packet(query, from());
-        assert_eq!(replies.len(), 1);
-        assert_eq!(replies[0].args[0], OscType::Int(42));
-        assert_eq!(replies[0].args[1], OscType::String(String::new()));
+        let out = replies(host.handle_packet(query, from()));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].args[0], OscType::Int(42));
+        assert_eq!(out[0].args[1], OscType::String(String::new()));
     }
 
     #[test]
@@ -351,15 +448,47 @@ mod tests {
     }
 
     #[test]
-    fn free_drops_the_subtree() {
+    fn free_drops_the_subtree_and_closes_the_window() {
         let mut host = Host::new();
         host.handle_packet(def_msg(1, TREE), from());
         let free = OscPacket::Message(OscMessage {
             addr: GUI_FREE.into(),
             args: vec![OscType::Int(1)],
         });
-        host.handle_packet(free, from());
+        let effects = host.handle_packet(free, from());
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, HostEffect::CloseWindow(1))),
+            "freeing a window def closes its window"
+        );
         assert!(host.registry().is_empty());
+        assert!(host.window_def(1).is_none());
+    }
+
+    #[test]
+    fn waveform_blob_rides_the_def_message() {
+        let mut host = Host::new();
+        let blob: Vec<u8> = [0.5f32, -0.5]
+            .iter()
+            .flat_map(|x| x.to_le_bytes())
+            .collect();
+        let json = r#"{"type":"window","children":[{"id":9,"type":"waveform","blob":0}]}"#;
+        let msg = OscPacket::Message(OscMessage {
+            addr: GUI_DEF.into(),
+            args: vec![
+                OscType::Int(2),
+                OscType::String(json.into()),
+                OscType::Blob(blob),
+            ],
+        });
+        let effects = host.handle_packet(msg, from());
+        assert_eq!(opened(&effects), vec![2]);
+        let tree = host.window_def(2).unwrap();
+        match &tree.children[0].kind {
+            widget::WidgetKind::Waveform { samples, .. } => assert_eq!(&samples[..], &[0.5, -0.5]),
+            other => panic!("expected a waveform, got {other:?}"),
+        }
     }
 
     #[test]
@@ -376,8 +505,8 @@ mod tests {
                 }),
             ],
         });
-        let replies = host.handle_packet(bundle, from());
-        assert_eq!(replies.len(), 1, "the query inside the bundle is answered");
-        assert_eq!(replies[0].args[1], OscType::String("window".into()));
+        let out = replies(host.handle_packet(bundle, from()));
+        assert_eq!(out.len(), 1, "the query inside the bundle is answered");
+        assert_eq!(out[0].args[1], OscType::String("window".into()));
     }
 }

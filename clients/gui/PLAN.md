@@ -187,9 +187,11 @@ A separate crate/binary that speaks OSC over the reused transport layer with a w
 - A script (Python) connects to `clausters-gui`, sends a `/gui_def`, and the host logs the parsed tree and replies to `/gui_query`; run as a single Bash invocation per the E2E rule.
 - `cargo fmt --check` clean, clippy clean; the core still builds/tests with no optional features.
 
-## G3 - `/gui_def` + JSON widget tree + a real window
+## G3 - `/gui_def` + JSON widget tree + a real window - DONE (2026-06-25)
 
 The GuiDef schema and the first pixels.
+
+**Landed:** a typed widget schema (`host::widget`, the *renderer's* interpretation of the generic `GuiNode` - adding a type is a new variant, not a protocol change; an unknown type is laid out but not painted) for `window`/`panel`/`label`/`waveform`, with inline (`data`) or trailing-OSC-blob (`blob`) waveform samples and the int/float distinction kept; a pure layout engine (`host::layout`, `row`/`col`/`grid`/`free` -> pixel rects, unit-tested); the windowed front (`host::gui`) - winit on the main thread, the OSC transport on a background thread feeding it via an `EventLoopProxy`, multi-window by def id, a `window` root opening an OS window and `/gui_free` closing it; rendering the heavy `waveform` (the existing `WaveformView`) into each widget's viewport with wheel-zoom/drag-pan/`R`-reset navigation, and panels/labels as flat chrome rects (`host::rects`; glyph text deferred). The binary gains `--headless` (protocol with no display; the default opens windows). Python: `clausters.gui.waveform(data=/blob=)`, `samples_to_blob`, `GuiHost.define(id, tree, *blobs)`, and `examples/gui_window.py`. See `LOG.md`.
 
 ### Scope
 

@@ -2989,3 +2989,66 @@ the topology against a real client before any windowing lands.
   and tests with `--no-default-features`; E2E in one shell (the host plus the
   Python driver) round-trips `/gui_def`→log, `/gui_query`→`/gui_info`,
   `/gui_set`, `/gui_free`, with the int/float distinction intact end to end.
+
+## G3 — GuiDef schema + the first window (waveform pixels) (2026-06-25)
+
+The GUI track's "first pixels": a `window`-rooted GuiDef now instantiates an
+actual winit + wgpu window hosting the existing renderers. The headless protocol
+of G2 stays; the host gains a windowed front and a typed schema/layout/render
+path around the prototype's `WaveformView`.
+
+- **Typed widget schema** (`host::widget`) — the renderer's *interpretation* of
+  the generic `host::guidef::GuiNode`, not a second protocol: `WidgetKind` for
+  `window`/`panel`/`label`/`waveform`, plus `Unknown(tag)` for any type this
+  build does not paint yet (laid out, ignored — so a host renders the parts of a
+  newer GuiDef it understands). Adding a widget type is a new variant + handler,
+  never a wire change. serde keeps the int/float distinction; `w`/`h`/`layout`/
+  `title`/`text`/`base_bucket` are typed fields.
+- **Waveform data: inline or blob.** A `waveform` reads its samples from inline
+  `"data": [f32…]` or — for bulk — `"blob": <index>` into the OSC blobs carried
+  *beside the JSON in the same `/gui_def` message* (raw little-endian `f32`), so
+  `/gui_def` is now `id, json, [blob…]`. A `"buffer"` (server buffer) reference
+  is recognized but deferred to the milestone where the host attaches to the
+  audio server. Datagram-bounded for now (UDP ~64 KB); a bulk/streamed path is a
+  later milestone.
+- **Layout engine** (`host::layout`) — pure geometry, unit-tested: a container
+  splits its area among children by `row`/`col`/`grid`/`free` into device-pixel
+  `Rect`s (top-left origin, what `set_viewport` wants), evenly sized with a small
+  margin/gap (editor-grade per-widget sizing is future work).
+- **Windowed front** (`host::gui`) — winit owns the main thread; the OSC
+  transport runs on a **background thread** and forwards each datagram to it
+  through an `EventLoopProxy` (window creation must happen on the main thread),
+  so all host state stays single-threaded and lock-free. Multi-window, keyed by
+  def id: a `window` root opens an OS window (rebuilt on re-`/gui_def`, closed by
+  `/gui_free` or the window's close button/`Esc`); the host keeps running with
+  zero windows. Replies go back out the shared `Arc<UdpSocket>` to the requester.
+- **Rendering** — each `waveform` renders into its laid-out rectangle's viewport
+  via the existing, verified `WaveformView`/`WaveformRenderer` (the three-regime,
+  resolution-matched path), navigable with the prototype's bindings (wheel zooms
+  toward the cursor, left-drag pans, `R` resets), routed to the waveform under
+  the pointer. Panels/labels paint as flat chrome rectangles through a tiny
+  `host::rects` pipeline (modeled on the waveform's column pipeline); **glyph
+  text for labels is deferred** to the control-widget milestone. `native::Gpu`
+  was made `pub(crate)` and reused so the surface/device setup lives once.
+- **Effects model.** `Host::handle_packet` now returns `Vec<HostEffect>`
+  (`Reply`/`OpenWindow`/`CloseWindow`) instead of bare replies, so the protocol
+  logic stays transport- and GPU-agnostic and unit-testable: the windowed front
+  opens/closes windows and sends replies; the headless front sends replies and
+  logs the window effects.
+- **Binary.** `clausters-gui` now opens windows by default; `--headless` runs
+  the protocol with no display (tests, automation, no-GPU machines). A missing
+  display fails with a clear "use --headless" message.
+- **Python.** `clausters.gui.waveform(data=…/blob=…)`, `samples_to_blob` (LE
+  `f32` packing), `GuiHost.define(id, tree, *blobs)`; `examples/gui_window.py`
+  opens a real window showing a decaying sine fed as a blob (`gui_skeleton.py`
+  stays the headless protocol example, now run with `--headless`).
+- **Tests:** 38 in the gui crate (widget schema parse incl. blob/unknown/errors,
+  layout row/col/grid/nesting, host effects + window def storage + waveform-blob
+  through the def message), all GPU-free; plus runtime verification on this
+  machine — the windowed host opens a window and renders the waveform with no
+  panic or wgpu validation error.
+- **Verified:** gui `cargo test` green, `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` clean; the core server is
+  untouched and still builds/tests with `--no-default-features`; E2E in one shell
+  both ways — `--headless` round-trips `/gui_def`→log, `/gui_query`→`/gui_info`,
+  `/gui_set`, `/gui_free`; windowed opens a waveform window from one `/gui_def`.

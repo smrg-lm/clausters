@@ -13,9 +13,9 @@ use std::io;
 use std::net::{SocketAddr, UdpSocket};
 
 use clausters_core::osc::{OscMessage, OscPacket, encode};
-use tracing::warn;
+use tracing::{info, warn};
 
-use super::Host;
+use super::{Host, HostEffect};
 
 /// The default UDP port for the GUI host's server front. Chosen clear of the
 /// audio server's family (UDP/TCP 57110, WebSocket 57120) so both can run on
@@ -38,9 +38,12 @@ impl std::fmt::Display for ClientId {
     }
 }
 
-/// Runs the UDP server front until an unrecoverable socket error: receive a
-/// datagram, decode it, let `host` interpret it, send each reply back to the
-/// sender. Single-threaded, like the audio server's command loop.
+/// Runs the **headless** UDP server front until an unrecoverable socket error:
+/// receive a datagram, decode it, let `host` interpret it, send each reply back
+/// to the sender. Single-threaded, like the audio server's command loop. Window
+/// effects are logged rather than acted on — this front has no display (the
+/// windowed front lives in [`super::gui`]); it is for tests, automation and
+/// no-display environments.
 pub fn serve(mut host: Host, socket: UdpSocket) -> io::Result<()> {
     let mut buf = vec![0u8; 65536];
     loop {
@@ -63,9 +66,14 @@ pub fn serve(mut host: Host, socket: UdpSocket) -> io::Result<()> {
                 continue;
             }
         };
-        let replies = host.handle_packet(packet, ClientId::Udp(from));
-        for msg in replies {
-            send_reply(&socket, from, msg);
+        for effect in host.handle_packet(packet, ClientId::Udp(from)) {
+            match effect {
+                HostEffect::Reply(msg) => send_reply(&socket, from, msg),
+                HostEffect::OpenWindow(id) => {
+                    info!("gui_def {id}: window requested (headless front: not opening a window)")
+                }
+                HostEffect::CloseWindow(id) => info!("gui_free {id}: window closed (headless)"),
+            }
         }
     }
 }

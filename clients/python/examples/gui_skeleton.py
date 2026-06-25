@@ -5,12 +5,12 @@ The smallest round trip over the widget protocol, the GUI counterpart of
 ``live_udp.py``. A GuiDef is built exactly the way a ``SynthDef``/``GraphDef``
 is — a tree of ``{id, type, ...props, children}`` nodes serialized to JSON — and
 sent in one ``/gui_def`` message; the host registers the tree and answers
-``/gui_query`` with ``/gui_info``. There is no window yet (the host is a
-skeleton at this milestone): this exercises the protocol and the dual-role host.
+``/gui_query`` with ``/gui_info``. This exercises the protocol and the dual-role
+host with no display (see ``gui_window.py`` for the windowed version).
 
-Start the host in one terminal (built from ``clients/gui``)::
+Start the host **headless** in one terminal (built from ``clients/gui``)::
 
-    cd clients/gui && cargo run --bin clausters-gui -- -v
+    cd clients/gui && cargo run --bin clausters-gui -- --headless -v
 
 then, with the client importable (``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::

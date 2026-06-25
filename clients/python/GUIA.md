@@ -809,9 +809,10 @@ se compila y corre desde ahi.
 # 1) compilar el host (desde clients/gui, su propio workspace):
 cd clients/gui && cargo build --bin clausters-gui && cd ../..
 
-# 2) E2E (host + cliente Python en la MISMA invocacion, regla E2E). El driver
-#    Python esta en clausters.gui; el ejemplo arma un panel y lee un widget:
-(clients/gui/target/debug/clausters-gui --port 57219 -v 2>/tmp/gui_host.log & \
+# 2) E2E del protocolo (host + cliente Python en la MISMA invocacion, regla
+#    E2E). `--headless` corre el protocolo sin display (por defecto abre
+#    ventanas, ver seccion 13). El driver Python esta en clausters.gui:
+(clients/gui/target/debug/clausters-gui --headless --port 57219 -v 2>/tmp/gui_host.log & \
  PID=$!; sleep 1.0; \
  PYTHONPATH=clients/python python3 -c "
 from clausters.gui import GuiHost, knob, slider, waveform, window
@@ -841,10 +842,45 @@ Esperado:
 Tambien hay un ejemplo comentado equivalente:
 
 ```sh
-clients/gui/target/debug/clausters-gui -v &        # en una terminal (puerto 57210)
+clients/gui/target/debug/clausters-gui --headless -v &   # puerto 57210
 PYTHONPATH=clients/python python clients/python/examples/gui_skeleton.py
 ```
 
 El host acepta `--server host:port` para enganchar la tercera pata (host ->
 servidor de audio); en G2 solo se construye y se loguea (los bindings que la
 usan llegan en un milestone posterior).
+
+## 13. GUI host: primera ventana real (G3)
+
+Por defecto (sin `--headless`) el host abre ventanas: un `/gui_def` con raiz
+`window` instancia una ventana winit con superficie wgpu que hostea los
+renderers. G3 estandariza `window` + `panel`/layout (`row`/`col`/`grid`/`free`) +
+`label`, mas la vista pesada `waveform` alimentada por datos inline (`data`) o por
+un blob binario que viaja en el mismo `/gui_def` (`blob`). Los paneles/labels se
+pintan como rectangulos de chrome; el texto de los labels (glifos) llega en un
+milestone posterior. La waveform navega: rueda = zoom hacia el cursor, arrastrar =
+pan, `R` = reset, `Esc`/cerrar = cierra esa ventana (el host sigue vivo).
+
+Necesita display y un adaptador Vulkan/Metal/DX12/GL.
+
+```sh
+# host en modo ventana (una terminal):
+cd clients/gui && cargo run --bin clausters-gui -- -v
+# en otra, con el cliente importable:
+PYTHONPATH=clients/python python clients/python/examples/gui_window.py
+```
+
+Esperado: se abre una ventana "clausters-gui - waveform" mostrando un seno que
+decae; el log del host imprime `gui_def 1: ...`, el arbol indentado y
+`gui_def 1: opened window`. Probar rueda/arrastre/`R`. Cerrar la ventana no mata
+el host (sigue escuchando OSC).
+
+Notas:
+
+- El tamano del `/gui_def` esta acotado por el datagrama UDP (~64 KB), asi que un
+  `blob` de waveform entra hasta ~16000 `f32`; mover buffers grandes sin
+  reenviarlos es un milestone posterior (`samples_to_blob` arma el blob LE).
+- Varias ventanas a la vez: un `/gui_def` por id de def abre su propia ventana;
+  re-enviar el mismo id la reconstruye; `/gui_free <id>` la cierra.
+- En una maquina sin display, el modo ventana falla con un mensaje claro
+  (`use --headless`); usar `--headless` para el protocolo.

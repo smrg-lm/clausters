@@ -23,16 +23,17 @@ use crate::viewport::View;
 pub type ViewFactory =
     Box<dyn FnOnce(&wgpu::Device, &wgpu::Queue, wgpu::TextureFormat) -> Box<dyn TimelineView>>;
 
-struct Gpu {
-    window: Arc<Window>,
-    surface: wgpu::Surface<'static>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+// Shared with the GUI host (`host::gui`) so the surface/device setup lives once.
+pub(crate) struct Gpu {
+    pub(crate) window: Arc<Window>,
+    pub(crate) surface: wgpu::Surface<'static>,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) config: wgpu::SurfaceConfiguration,
 }
 
 impl Gpu {
-    async fn new(window: Arc<Window>) -> Self {
+    pub(crate) async fn new(window: Arc<Window>) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::default();
         let surface = instance
@@ -66,7 +67,7 @@ impl Gpu {
         }
     }
 
-    fn resize(&mut self, width: u32, height: u32) {
+    pub(crate) fn resize(&mut self, width: u32, height: u32) {
         if width > 0 && height > 0 {
             self.config.width = width;
             self.config.height = height;
