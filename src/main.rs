@@ -2,7 +2,7 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]] [--midi [name]] [--sample-rate <hz>]
+  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
                                                real-time server (OSC on UDP 57110)
       --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
                            device (PipeWire honors it per-app; other hosts fall
@@ -11,6 +11,8 @@ usage:
       --control-buses <n>  control buses (default 1024)
       --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
                            default port 57110)
+      --ws [port]          also accept OSC over WebSocket, reachable from a
+                           browser (RT only; default port 57120; ws://host:port/)
       --midi [name]        open a virtual MIDI input port (RT only; default
                            name \"clausters\"; connect with aconnect/qpwgraph)
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
@@ -128,6 +130,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut data_dir: Option<String> = None;
     let mut no_persist = false;
     let mut tcp_port: Option<u16> = None;
+    let mut ws_port: Option<u16> = None;
     let mut midi_port: Option<String> = None;
     // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
     // means "follow the device's default rate". `None` => follow the device.
@@ -147,6 +150,18 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     it.next();
                 }
                 tcp_port = Some(port);
+            }
+            "--ws" => {
+                // Optional port; defaults away from --tcp's, since both bind a
+                // TCP listener and would collide on the same port.
+                let mut port = DEFAULT_PORT + 10;
+                if let Some(next) = it.clone().next()
+                    && let Ok(p) = next.parse::<u16>()
+                {
+                    port = p;
+                    it.next();
+                }
+                ws_port = Some(port);
             }
             "--midi" => {
                 // Optional virtual-port name; the next token unless it's a flag.
@@ -251,6 +266,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(port) = tcp_port {
         let bound = osc.listen_tcp(("0.0.0.0", port))?;
         tracing::info!("OSC on TCP {bound} (length-prefixed)");
+    }
+    if let Some(port) = ws_port {
+        let bound = osc.listen_ws(("0.0.0.0", port))?;
+        tracing::info!("OSC on WebSocket {bound} (ws://, browser-reachable)");
     }
     if let Some(name) = &midi_port {
         #[cfg(feature = "midi")]

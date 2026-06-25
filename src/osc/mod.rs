@@ -6,6 +6,7 @@ pub mod graphdef;
 pub mod server;
 pub mod tcp;
 pub mod translate;
+pub mod ws;
 
 use std::net::SocketAddr;
 
@@ -20,6 +21,8 @@ use rosc::{OscPacket, decoder};
 pub enum ClientId {
     Udp(SocketAddr),
     Tcp(u64),
+    /// A connected WebSocket client (the per-connection id from `ws`).
+    Ws(u64),
     Ring,
 }
 
@@ -28,6 +31,7 @@ impl std::fmt::Display for ClientId {
         match self {
             ClientId::Udp(addr) => write!(f, "{addr}"),
             ClientId::Tcp(id) => write!(f, "tcp client {id}"),
+            ClientId::Ws(id) => write!(f, "ws client {id}"),
             ClientId::Ring => write!(f, "ring client"),
         }
     }

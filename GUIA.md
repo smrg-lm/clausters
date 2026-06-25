@@ -618,6 +618,33 @@ Tests del segmento y la C ABI: `cargo test --test ipc` (núcleo) y
 layout está versionado (ABI v1): un cliente con versión distinta es
 rechazado al conectar. Detalles y referencia C en `docs/ipc.md`.
 
+### Probar el transporte WebSocket (navegador y Python)
+
+WebSocket es el cuarto portador de la **misma** codificación OSC (además
+de UDP, TCP y el ring de memoria compartida): el único que alcanza un
+navegador, que no puede abrir UDP crudo ni mapear memoria compartida.
+Siempre está disponible, como TCP y shm (no detrás de una feature). Cada
+paquete OSC viaja como **un** mensaje binario de WebSocket — el frame *es*
+el límite del paquete, sin prefijo de longitud (a diferencia de TCP).
+
+El WS del **cliente** Python vive en el core nativo (`clausters-ffi`,
+vía ctypes, igual que shm/embed) — una sola implementación del protocolo,
+no una copia en Python — así que hay que tener ese cdylib compilado:
+
+```sh
+cargo build -p clausters-ffi               # el WS del cliente (una vez)
+cargo run -- --ws                          # terminal 1 (OSC sobre WebSocket 57120)
+python3 examples/ws_ping.py                # terminal 2: el facade Server sobre WS
+```
+
+Debe verse el `/status` ida y vuelta, el `add_synthdef`
+(`/d_recv` -> `/done`), la nota sonando ~1 s y el `free` — todo sobre
+frames binarios. Desde el **navegador**, abrir `examples/ws_ping.html`
+(sin dependencias ni cdylib): hace el mismo `/status` con la API nativa
+`WebSocket` e imprime `/status.reply`. Tests del framing y round-trip:
+`cargo test --lib osc::ws` (hub) y
+`cargo test -p clausters-ffi` (cliente C ABI).
+
 ### Verificar el reloj de samples grabando la salida (M8 + M14)
 
 `clock_recorder.py` cierra el lazo: lee el reloj **directo del segmento**
@@ -1050,6 +1077,7 @@ y restore + nota tocable).
 | Grupos paralelos, `/g_parallel` + `--workers` (M13) | `tests/parallel.rs`, `tests/rt_safety.rs` | `cargo run --release --example bench` (sección parallel) |
 | Transporte shm + data plane (M14) | `tests/ipc.rs` | `--shm` + `python3 examples/shm_client.py` |
 | C ABI embebida, render síncrono (M14) | `tests/ipc.rs` (feature embed) | `python3 examples/embed_render.py` |
+| Transporte WebSocket, navegador-alcanzable (`--ws`, siempre activo) | `osc::ws` (`cargo test --lib osc::ws`) | `--ws` + `python3 examples/ws_ping.py` (y `examples/ws_ping.html`) |
 | Memoria acotada + alineación (M10) | `tests/capacity.rs` | leer la tabla en `docs/architecture.md` |
 | Modo NRT, partituras, tests dorados | `tests/golden.rs` | `json_client.py score` + `clausters --nrt` |
 | Denormales (FTZ/DAZ por hilo + `-ftz 2` Faust) | `tests/denormals.rs`, tail en `tests/golden.rs` | — |

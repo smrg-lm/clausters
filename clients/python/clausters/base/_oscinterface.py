@@ -270,6 +270,62 @@ class OscTcpInterface(OscInterface):
                 return None
 
 
+class OscWsInterface(OscInterface):
+    """Real-time WebSocket. Each OSC packet — message or bundle — goes out as one
+    WebSocket binary message and replies arrive the same way, the framing the
+    server's ``osc::ws`` expects (the frame *is* the packet boundary, so there is
+    no length prefix, unlike `OscTcpInterface`). A drop-in for the other
+    interfaces (the ``target`` argument is ignored: the connection already knows
+    its peer). Start the server with ``--ws`` (a ``ws``-feature build).
+
+    The handshake and framing live in the **native core**
+    (`clausters._native.WsClient`, ``tungstenite``) — the same WebSocket
+    implementation the server uses, reached by ctypes like the shm/embed
+    transports — so there is no second implementation to maintain here. This is
+    the transport a browser can reach (it cannot open raw UDP or map shared
+    memory); the browser itself uses the native ``WebSocket`` API
+    (`examples/ws_ping.html`), not this class. ``wss://`` (TLS) is out of scope."""
+
+    time_mode = "unix"
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 57120, path: str = "/"):
+        self.host = host
+        self.port = port
+        self.path = path
+        self._conn = None
+
+    def start(self):
+        from .._native import WsClient
+
+        self._conn = WsClient(self.host, self.port, self.path)
+        return self
+
+    def stop(self):
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    close = stop
+
+    def _ensure(self):
+        if self._conn is None:
+            self.start()
+
+    def send_msg(self, target, addr, *args):
+        self._ensure()
+        self._conn.send(_osclib.message(addr, *args))
+
+    def send_bundle(self, target, when, *messages):
+        self._ensure()
+        packets = [_osclib.message(*m) for m in messages]
+        self._conn.send(_osclib.bundle_at(when, *packets))
+
+    def recv(self, timeout):
+        """One reply packet (a binary message's bytes), or ``None`` on timeout."""
+        self._ensure()
+        return self._conn.recv(timeout)
+
+
 class OscScore:
     """Accumulated NRT bundles, ordered by time, serialized to a binary score
     (`[i32 len][packet]…`) that the offline renderer consumes."""

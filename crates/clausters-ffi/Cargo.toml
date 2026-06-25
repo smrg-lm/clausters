@@ -12,3 +12,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clausters-core = { path = "../clausters-core" }
+# WebSocket *client* transport (`clausters_ws_*`): the same crate the server's
+# `osc::ws` listener uses, here for the client side, so the protocol has one
+# implementation. Non-optional: every binding can reach a `--ws` server without
+# a second WebSocket implementation. Default features only (handshake, no TLS):
+# we speak `ws://`, not `wss://`.
+tungstenite = "0.21"

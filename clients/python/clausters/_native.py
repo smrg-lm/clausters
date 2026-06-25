@@ -22,7 +22,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 1
+CORE_ABI_VERSION = 2
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -125,6 +125,19 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_unix_to_sample.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_int64, ctypes.c_double,
     ]
+    # WebSocket client transport (ABI v2). A connection is an opaque handle;
+    # bytes (with embedded NULs) cross via c_char_p + an explicit length, so OSC
+    # packets are passed whole, not NUL-truncated.
+    lib.clausters_ws_connect.restype = ctypes.c_void_p
+    lib.clausters_ws_connect.argtypes = [ctypes.c_char_p, ctypes.c_uint16, ctypes.c_char_p]
+    lib.clausters_ws_send.restype = ctypes.c_int32
+    lib.clausters_ws_send.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t]
+    lib.clausters_ws_recv.restype = ctypes.c_ssize_t
+    lib.clausters_ws_recv.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t, ctypes.c_uint32]
+    lib.clausters_ws_close.restype = None
+    lib.clausters_ws_close.argtypes = [ctypes.c_void_p]
+    lib.clausters_ws_last_error.restype = ctypes.c_char_p
+    lib.clausters_ws_last_error.argtypes = []
     return lib
 
 
@@ -211,3 +224,56 @@ def samples_to_secs(samples: int, sample_rate: float) -> float:
 
 def unix_to_sample(unix_secs: float, anchor_unix: float, anchor_sample: int, sample_rate: float) -> int:
     return lib().clausters_core_unix_to_sample(unix_secs, anchor_unix, anchor_sample, sample_rate)
+
+
+# ---- WebSocket client transport ----
+
+
+def _ws_error(handle_lib) -> str:
+    p = handle_lib.clausters_ws_last_error()
+    return p.decode(errors="replace") if p else ""
+
+
+class WsClient:
+    """A WebSocket client connection backed by the native core (clausters-ffi,
+    ``tungstenite``) — the **same** WebSocket implementation the server's
+    ``--ws`` listener uses, reached by ctypes like the shm/embed handles. OSC
+    packets cross as whole binary messages; the handshake and framing live in
+    Rust, not here, so there is no second implementation to maintain.
+
+    `recv` returns the bytes of one packet, or ``None`` on timeout. The handle is
+    freed by `close` (and by ``__del__`` as a backstop)."""
+
+    def __init__(self, host: str = "127.0.0.1", port: int = 57120, path: str = "/"):
+        self._lib = lib()
+        handle = self._lib.clausters_ws_connect(host.encode(), port, path.encode())
+        if not handle:
+            raise ConnectionError(_ws_error(self._lib) or "WebSocket connect failed")
+        self._handle = handle
+        self._buf = ctypes.create_string_buffer(65536)
+
+    def send(self, data: bytes) -> None:
+        rc = self._lib.clausters_ws_send(self._handle, data, len(data))
+        if rc != 0:
+            raise ConnectionError(_ws_error(self._lib) or f"WebSocket send failed ({rc})")
+
+    def recv(self, timeout: float) -> bytes | None:
+        ms = max(1, int(timeout * 1000))
+        n = self._lib.clausters_ws_recv(self._handle, self._buf, len(self._buf), ms)
+        if n > 0:
+            return bytes(self._buf.raw[:n])
+        if n == -2:
+            raise ConnectionError(_ws_error(self._lib) or "WebSocket closed")
+        return None  # 0 = timeout (or -3 oversize, impossible at 64 KiB for OSC)
+
+    def close(self) -> None:
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._lib.clausters_ws_close(handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass

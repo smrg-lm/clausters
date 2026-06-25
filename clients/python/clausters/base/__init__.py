@@ -39,6 +39,7 @@ from ._oscinterface import (
     OscScore,
     OscTcpInterface,
     OscUdpInterface,
+    OscWsInterface,
 )
 
 __all__ = [
@@ -58,6 +59,7 @@ __all__ = [
     "OscInterface",
     "OscUdpInterface",
     "OscTcpInterface",
+    "OscWsInterface",
     "OscNrtInterface",
     "OscEmbedInterface",
     "OscReceiver",

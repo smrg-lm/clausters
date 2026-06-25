@@ -6,17 +6,22 @@
 //! library type. A thin per-language wrapper (Python `ctypes` now, JS N-API or
 //! wasm later) sits on top. Check [`clausters_core_abi_version`] first.
 //!
-//! Scope (milestone C0): the numeric builtins, the seeded RNG and the
-//! timing/sample-conversion scalars. OSC bundle assembly stays in
-//! `clausters_core::osc` (Rust-tested) and gets an FFI surface when the
-//! Python client needs it (C2).
+//! Scope: the numeric builtins, the seeded RNG and the timing/sample-conversion
+//! scalars, plus a **WebSocket client transport** (`clausters_ws_*`, in
+//! [`ws`]) — the carrier a browser-less binding uses to reach a `--ws` server,
+//! sharing the server's WebSocket implementation (`tungstenite`) instead of
+//! re-implementing the framing per language. OSC bundle assembly stays in
+//! `clausters_core::osc` (Rust-tested).
 
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::rng::WhiteNoise;
 use clausters_core::tempoclock;
 
-/// The C ABI version of this surface. Bump on any incompatible change.
-pub const CORE_ABI_VERSION: u32 = 1;
+mod ws;
+
+/// The C ABI version of this surface. Bump on any incompatible change. v2 added
+/// the `clausters_ws_*` WebSocket client transport.
+pub const CORE_ABI_VERSION: u32 = 2;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

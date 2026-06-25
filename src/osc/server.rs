@@ -77,6 +77,10 @@ pub struct OscServer {
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
     /// connections multiplexed into the same loop. See [`crate::osc::tcp`].
     tcp: Option<crate::osc::tcp::TcpHub>,
+    /// WebSocket transport, when `listen_ws` was called: the same OSC encoding
+    /// over WebSocket binary messages, reachable from a browser. Multiplexed
+    /// into the same loop as TCP. See [`crate::osc::ws`].
+    ws: Option<crate::osc::ws::WsHub>,
     /// M17 live MIDI input, when `listen_midi` was called: a virtual ALSA port
     /// whose decoded messages the loop drains. See [`crate::midi::live`].
     #[cfg(feature = "midi")]
@@ -149,6 +153,7 @@ impl OscServer {
             clients: Vec::new(),
             ipc: None,
             tcp: None,
+            ws: None,
             #[cfg(feature = "midi")]
             midi: None,
             store: None,
@@ -270,6 +275,25 @@ impl OscServer {
         Ok(bound)
     }
 
+    /// Starts accepting OSC over WebSocket on `addr`. Same loop multiplexing and
+    /// zero-length-UDP wake as [`Self::listen_tcp`]: the run loop drains
+    /// WebSocket frames every iteration and a connection thread pings our UDP
+    /// socket the moment a frame arrives. Returns the bound address; connect a
+    /// browser with `ws://<addr>/`.
+    pub fn listen_ws(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
+        let mut wake_target = self.socket.local_addr()?;
+        if wake_target.ip().is_unspecified() {
+            wake_target.set_ip(match wake_target {
+                SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+                SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+            });
+        }
+        let hub = crate::osc::ws::WsHub::bind(addr, wake_target)?;
+        let bound = hub.local_addr();
+        self.ws = Some(hub);
+        Ok(bound)
+    }
+
     /// M17: opens a virtual MIDI input port named `port_name`. The `midir`
     /// input thread wakes the loop with a zero-length UDP datagram (same
     /// mechanism as TCP), so MIDI messages are served without waiting for the
@@ -307,6 +331,9 @@ impl OscServer {
                 return Ok(());
             }
             if let Flow::Quit = self.drain_tcp() {
+                return Ok(());
+            }
+            if let Flow::Quit = self.drain_ws() {
                 return Ok(());
             }
             self.drain_midi();
@@ -402,6 +429,38 @@ impl OscServer {
                 }
             };
             let flow = self.handle_packet(packet, ClientId::Tcp(id));
+            self.collect_garbage();
+            self.collect_nrt_results();
+            #[cfg(feature = "faust")]
+            self.collect_faust_results();
+            if let Flow::Quit = flow {
+                return Flow::Quit;
+            }
+        }
+    }
+
+    /// Handles every complete WebSocket frame currently queued. Same validation
+    /// path as UDP (`decode_packet`); WebSocket bytes are untrusted. Replies
+    /// route back to the originating connection via [`ClientId::Ws`].
+    fn drain_ws(&mut self) -> Flow {
+        loop {
+            // Scope the `&mut self.ws` borrow so `handle_packet(&mut self)` and
+            // its replies (which read `self.ws`) can run.
+            let next = match &mut self.ws {
+                Some(hub) => hub.next_frame(),
+                None => return Flow::Continue,
+            };
+            let Some((id, bytes)) = next else {
+                return Flow::Continue;
+            };
+            let packet = match crate::osc::decode_packet(&bytes) {
+                Ok(packet) => packet,
+                Err(e) => {
+                    warn!("malformed OSC packet from ws client {id}: {e}");
+                    continue;
+                }
+            };
+            let flow = self.handle_packet(packet, ClientId::Ws(id));
             self.collect_garbage();
             self.collect_nrt_results();
             #[cfg(feature = "faust")]
@@ -1306,6 +1365,13 @@ impl OscServer {
                 // Length-prefixed reply on the originating connection; dropped
                 // if it has since closed.
                 if let Some(hub) = &self.tcp {
+                    hub.reply(id, &bytes);
+                }
+            }
+            ClientId::Ws(id) => {
+                // Binary-message reply on the originating connection; dropped if
+                // it has since closed.
+                if let Some(hub) = &self.ws {
                     hub.reply(id, &bytes);
                 }
             }

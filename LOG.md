@@ -2855,3 +2855,71 @@ wheel).
   server; `Session.embed` plays in-process; standalone server + `Session.live`
   E2E over UDP (status / play / query_tree) clean; full client suite 104 passed /
   4 skipped (2 new). No Rust changed (so no `cargo fmt`).
+
+## WebSocket transport for the OSC server (`--ws`) (2026-06-25)
+
+A fourth carrier of the same OSC encoding beside UDP, TCP and the shared-memory
+ring — the one a **browser** can reach (a browser cannot open a raw UDP socket
+or map shared memory, but speaks WebSocket natively), so it is what lets a
+web-hosted client drive the server and the server "run in the browser". Decided
+with the user (2026-06-25) while planning a scriptable GUI peer: "JSON vs OSC"
+for that peer is a false dichotomy — OSC stays the single encoding (structured
+payloads already ride as JSON inside an OSC arg, as `/d_recv` does), and
+WebSocket is just one more transport through the same decode door, not a new
+protocol — and, like UDP/TCP/shm, a first-class one, so it is **always built**,
+not behind a feature (decided with the user 2026-06-25). Landed on `main` as a
+generic server feature, independent of the GUI work.
+
+- **`src/osc/ws.rs` (`WsHub`)**: mirrors `osc::tcp` — an acceptor thread plus one
+  thread per connection turn the socket into whole OSC packets handed to the
+  single-threaded command loop over an `mpsc` channel, and a zero-length UDP
+  datagram to the server's own address wakes the loop the instant a frame or a
+  disconnect is queued. The one structural difference: a `tungstenite`
+  `WebSocket` owns its stream (read/write are not split like a `TcpStream`), so
+  instead of the loop owning a write half, each connection thread drains a
+  per-connection reply channel and writes the bytes itself, polling with a 5 ms
+  read timeout to interleave reads with queued replies (the same bounded-latency
+  trade-off the IPC ring documents, here for the reply leg).
+- **Framing**: each WebSocket **binary** message carries exactly one OSC packet,
+  so — unlike TCP — there is no length prefix; the frame boundary *is* the packet
+  boundary, and replies go back as binary messages. Every inbound packet
+  validates through the single `osc::decode_packet` door; `tungstenite` enforces
+  its own max message size (the DoS ceiling TCP gets from `MAX_FRAME`).
+- **Routing**: a new `ClientId::Ws(u64)` variant (kept in the enum
+  unconditionally so reply routing stays a total match) carries replies back to
+  the originating connection.
+- **Always built** (not feature-gated): `tungstenite` 0.21 is a base dependency,
+  synchronous, no async runtime, no TLS (we serve `ws://`, not `wss://`) — the
+  same first-class status UDP/TCP/shm have. `--ws` always works.
+- **CLI**: `clausters --ws [port]` (default `57120`, away from `--tcp`'s `57110`
+  since both bind a TCP listener), wired through `OscServer::listen_ws`.
+- **Client transport in the shared core** (`crates/clausters-ffi`, ABI bumped to
+  v2): a WebSocket **client** C ABI — `clausters_ws_connect`/`_send`/`_recv`/
+  `_close`/`_last_error`, an opaque connection handle — reusing the **same**
+  `tungstenite` the server uses, so the protocol has one implementation. Decided
+  with the user (2026-06-25): rather than a second WebSocket implementation in
+  Python, the client takes WS from Rust the way it already takes shm/embed — the
+  project's "transport in Rust, thin ctypes binding" pattern. `tungstenite` is a
+  non-optional dependency of the ffi cdylib, so any binding can reach a `--ws`
+  server. Only flat data crosses (byte buffers, integers, an error string).
+- **Python client**: `_native.WsClient` binds those calls; `OscWsInterface`
+  (`clients/python/clausters/base/_oscinterface.py`) is now a thin wrapper over
+  it — no hand-rolled handshake/framing — a drop-in beside `OscUdpInterface`/
+  `OscTcpInterface`, exported from `clausters.base`. The same `Server`/`Session`
+  facade runs over WebSocket. (The browser leg is unchanged: it uses the native
+  `WebSocket`, so it needs none of this.)
+- **Tests**: `src/osc/ws.rs` unit test (one OSC packet per binary message
+  round-trips through the hub and `decode_packet`, a reply routes back) and
+  `clausters-ffi` `ws::tests` (connect/send/recv/close through a real WebSocket,
+  embedded NULs and all, against an inline echo server) — both in-process.
+- **Examples**: `examples/ws_ping.py` (the `Server` facade over WebSocket, twin
+  of `tcp_client.py`) and `examples/ws_ping.html` (the same `/status` round trip
+  from a browser, native `WebSocket`, zero deps).
+- **Docs**: `docs/schemas.md` (the WebSocket transport alongside TCP, with the
+  browser rationale and the no-length-prefix framing); Python `guide.md`
+  (`OscWsInterface` in the interface list).
+- **Verified**: `cargo build` green; `cargo test --lib osc::ws` and `cargo test
+  -p clausters-ffi` pass; `cargo fmt --check` clean; clippy adds no new warnings;
+  E2E (`clausters --ws` + the ffi-backed `examples/ws_ping.py` in one shell)
+  round-trips `/status`, `/d_recv`→`/done`, `/s_new`, `/sync`→`/synced`,
+  `/n_free`.

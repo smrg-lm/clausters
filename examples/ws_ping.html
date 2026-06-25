@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Clausters: OSC over WebSocket from a browser</title>
+<!--
+  The browser counterpart of ws_ping.py: the same /status round trip, straight
+  from a page with no dependencies. This is the leg the WebSocket transport
+  exists for - a browser cannot open raw UDP or map shared memory, but it speaks
+  WebSocket natively. OSC is encoded/decoded inline here (a no-arg message and
+  the reply address are all this demo needs); a real client reuses a JS OSC codec.
+
+  Start the server first, then open this file:
+      cargo run -- --ws
+-->
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; }
+  #log { white-space: pre-wrap; background: #111; color: #b8f; padding: 1rem; border-radius: 6px; }
+</style>
+<h1>OSC over WebSocket</h1>
+<p>Sends <code>/status</code> to <code>ws://127.0.0.1:57120/</code> and shows the reply.</p>
+<div id="log"></div>
+<script>
+  const out = document.getElementById("log");
+  const log = (s) => { out.textContent += s + "\n"; };
+
+  // Minimal OSC: a string is the UTF-8 bytes plus a NUL, padded to a multiple
+  // of 4; a message with no args is just the address followed by the "," tag.
+  function oscString(s) {
+    const bytes = new TextEncoder().encode(s);
+    const padded = (Math.floor(bytes.length / 4) + 1) * 4; // room for >= 1 NUL
+    const buf = new Uint8Array(padded);
+    buf.set(bytes, 0);
+    return buf;
+  }
+  function oscMessage(addr) {
+    const a = oscString(addr);
+    const t = oscString(","); // empty type-tag list
+    const msg = new Uint8Array(a.length + t.length);
+    msg.set(a, 0);
+    msg.set(t, a.length);
+    return msg;
+  }
+  function oscAddress(arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer);
+    let end = 0;
+    while (end < bytes.length && bytes[end] !== 0) end++;
+    return new TextDecoder().decode(bytes.subarray(0, end));
+  }
+
+  const ws = new WebSocket("ws://127.0.0.1:57120/");
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { log("connected; sending /status"); ws.send(oscMessage("/status")); };
+  ws.onmessage = (ev) => { log("reply: " + oscAddress(ev.data)); };
+  ws.onerror = () => { log("error: is the server running with --ws?"); };
+  ws.onclose = () => { log("closed"); };
+</script>
