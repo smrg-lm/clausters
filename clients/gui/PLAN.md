@@ -43,7 +43,7 @@ The widget tree is a hierarchy with client-allocated integer ids and subtree fre
 
 ### Crate / packaging boundary
 
-`clausters-gui` is its **own crate**, kept out of the root `clausters` workspace so it can never break the core server build (the `gui/` crate already validates this). For end users it ships as a **separate package/binary** from the audio server and the Python client, because the GPU/windowing stack (`wgpu`, `winit`, font/shader assets, later Verovio) is large and should not bloat a headless server install or a `pip` wheel. The two move and version independently.
+`clausters-gui` is its **own crate**, kept out of the root `clausters` workspace so it can never break the core server build (the `clients/gui` crate already validates this). For end users it ships as a **separate package/binary** from the audio server and the Python client, because the GPU/windowing stack (`wgpu`, `winit`, font/shader assets, later Verovio) is large and should not bloat a headless server install or a `pip` wheel. The two move and version independently.
 
 ## Guiding principle: serve the server and its clients, and reuse what exists
 
@@ -63,7 +63,7 @@ Concrete reuse map (the things already implemented that the GUI builds on):
 | `clausters-midi` | the MIDI path | Feeds the future `timeline`/DAW sequencing view (G13). |
 | Python client (`session.Server`, `responders` `OscFunc`/`MidiFunc`, `ipc`, `_native`) | the reference client model and the encoder over the FFI | The script drives `clausters-gui` the same way it drives the server; the GUI's client leg reuses the client encoder rather than a parallel one; events mirror the responder model. |
 | node-tree / group-node semantics (scsynth model) | client-allocated ids, add-actions, subtree free, `/g_query`-style introspection | The widget tree reuses this shape verbatim; the `nodetree` view (G8) reads the server's real tree through its existing query/notification path. |
-| `gui/` crate renderers (`viewport`/`peaks`/`Stft`/`TimelineView`/`bytes`) | the heavy GPU views and resolution-matched analysis with a cache | The heavy widgets; the analysis is a candidate to migrate behind the FFI so signal code lives once (G7). |
+| `clients/gui` crate renderers (`viewport`/`peaks`/`Stft`/`TimelineView`/`bytes`) | the heavy GPU views and resolution-matched analysis with a cache | The heavy widgets; the analysis is a candidate to migrate behind the FFI so signal code lives once (G7). |
 
 ## The OSC vocabulary (generic terminology)
 
@@ -139,11 +139,11 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `timeline` | view | DAW-style tracks + MIDI/OSC sequencing - **future**. |
 | `bpf` | view | Drawable break-point-function envelope with curves - **future**. |
 
-Heavy views never reimplement DSP the server already owns: when a widget needs analysis/processing not already provided by `clausters-server` (peaks, STFT, FFT, resampling), `clausters-gui` reaches for `clausters-ffi`/`libclausters` rather than duplicating signal code. The `gui/` crate's own `peaks`/`spectrogram` modules are the prototype of that shared machinery and are a candidate to migrate behind the FFI.
+Heavy views never reimplement DSP the server already owns: when a widget needs analysis/processing not already provided by `clausters-server` (peaks, STFT, FFT, resampling), `clausters-gui` reaches for `clausters-ffi`/`libclausters` rather than duplicating signal code. The `clients/gui` crate's own `peaks`/`spectrogram` modules are the prototype of that shared machinery and are a candidate to migrate behind the FFI.
 
 ## Status: foundation in place
 
-The `gui/` crate (an independent workspace, so it can never break the core build) already validates the heavy-rendering path - the `Gx` work below builds the protocol/host around it:
+The `clients/gui` crate (an independent workspace, so it can never break the core build) already validates the heavy-rendering path - the `Gx` work below builds the protocol/host around it:
 
 - `viewport::View` - reusable time/secondary-axis navigation (zoom/pan/clamp, `samples_per_px`), unit-tested.
 - `peaks::Pyramid` - resolution-matched min/max peak analysis with a memory/temp-file cache (mmap-ready), unit-tested.
@@ -244,7 +244,7 @@ How large payloads move, and the rule against duplicating server DSP.
 ### Scope
 
 - For large payloads (raw samples / STFT, when *not* referencing a server buffer): decide between binary WS frames, a shared resource, and an mmap cache keyed by source + analysis params. Decide against a real case, not in the abstract.
-- Route heavy analysis through `clausters-ffi`/`libclausters` rather than the `gui/` crate's private copies, so signal code lives once. Migrate `peaks`/`Stft` behind the FFI where it pays off.
+- Route heavy analysis through `clausters-ffi`/`libclausters` rather than the `clients/gui` crate's private copies, so signal code lives once. Migrate `peaks`/`Stft` behind the FFI where it pays off.
 
 ### Acceptance
 

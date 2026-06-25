@@ -1,8 +1,8 @@
 # Clausters GUI track - design notes
 
-Exploratory branch (`gui`). This crate is an **independent workspace**, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds two things: this design note for a scriptable widget protocol, and a working GPU waveform prototype (`src/`) that validates the heavy-rendering path.
+This is the **design rationale** for the Clausters GUI track; the staged milestones live in its companion `PLAN.md`. The crate is an **independent workspace** under `clients/gui`, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds two things: these design notes, and a working GPU waveform/spectrogram prototype (`src/`) that validates the heavy-rendering path the milestones build the protocol and host around.
 
-Nothing here is committed to. It exists to make the architecture concrete enough to argue about before any of it lands in `PLAN.md`.
+Where `PLAN.md` is the canonical reference for the `/gui_*` command/event tables, the widget catalog and the `Gx` milestones, this note explains *why* the system has the shape it does: why the GUI is a separate host rather than code in the audio server, why a web-capable rendering substrate, and how the heavy widgets resolve a signal to the screen and no finer.
 
 ## The one decision that drives everything
 
@@ -10,15 +10,18 @@ The goal is not "a GUI for Clausters". It is a system of graphical elements that
 
 SuperCollider does not embed a GUI library into a language. `sclang` sends messages to a separate widget engine (Qt) over a protocol; the engine owns the windows and the pixels. That decoupling is exactly the Clausters philosophy already in place for audio: a server owns the real-time work, and any number of clients drive it over OSC.
 
-So the GUI is **another client peer**, not code compiled into the audio server, and not a fixed Rust API that scripts cannot reach. Concretely there is a **GUI host** process that owns windows, widgets and the GPU, and speaks a widget protocol. Scripts (Python now, JS later) send it widget commands and receive interaction events. The audio server is untouched by any of this.
+So the GUI is **another peer in the system**, not code compiled into the audio server, and not a fixed Rust API that scripts cannot reach. Concretely there is a **GUI host** process that owns windows, widgets and the GPU, and speaks a widget protocol. Scripts (Python now, JS later) send it widget commands and receive interaction events. The audio server is untouched by any of this.
 
 ```
-  Python / JS script  ──widget protocol──▶  GUI host (windows, widgets, GPU)
-        │                                        │
-        └──────────── OSC ───────────────▶  Audio server (scsynth-style)
-                                                 ▲
-                 (a widget may be bound to forward its value straight here)
+  Python / JS script  ──GuiDef + control──▶  GUI host (windows, widgets, GPU)
+        │                                        │   ▲
+        │                                        │   │ (a bound widget forwards
+        └──────────── OSC ───────────────▶  Audio server   its value straight here)
+                                                 ▲   │
+                                      OSC (the host is also a client)
 ```
+
+The host therefore plays **two roles in one process**: a GUI server for the languages (it owns the windows and exposes the widget protocol) and a client of the audio server (it reads buffers, control buses and the node tree, and sends control). The three legs and the naming are spelled out in `PLAN.md`; the load-bearing idea here is that the host is a *sibling OSC front*, not engine code.
 
 ### Why web / hybrid for the pixels
 
@@ -28,65 +31,46 @@ The varied uses pull toward a web-capable rendering substrate, for three concret
 2. **Music notation = Verovio.** Verovio is a C++ engraving library that renders MEI/MusicXML to **SVG**, and ships a **WebAssembly/JS** build. In a web surface it drops in directly; MuseScore (a whole Qt app) is not embeddable, so what we actually want - its notation capability - is Verovio rendering SVG. Editable notation then means making that SVG interactive, which the browser does natively.
 3. **One GPU stack, two targets.** `wgpu` *is* the WebGPU implementation. The heavy widgets (waveform, spectrogram) are custom GPU rendering either way; written against `wgpu`/WGSL they run natively today and under WebGPU in a browser unchanged. The prototype in this crate exists to prove that seam.
 
-Two ways to ship the host, sharing ~90% of the frontend:
-
-- **A - Web frontend over WebSocket.** Host the widget surface in a browser; the audio server (or a thin bridge) speaks OSC-over-WebSocket. Maximum scriptability and reach (the browser is the ultimate cross-platform target), Verovio for free.
-- **B - Tauri desktop app.** Rust core + system-webview frontend (same web stack), packaged as a native app, with FFI available to Rust/C++ when a widget needs a native library directly.
-
-Start with A for iteration speed; B reuses the frontend when a packaged desktop app is wanted.
+That substrate gives **one frontend and one GPU stack across all the targets**, which is why the staging in `PLAN.md` is incremental rather than a fork: the **native desktop host comes first** (it reuses the server's existing transports and a winit/wgpu surface, fastest to iterate); the **browser/WebGPU target** is reached later by swapping the native surface for a `<canvas>` while the renderers run unchanged; an **optional Tauri wrapper** repackages the same web frontend as a native app with FFI to Rust/C++ where a widget needs a native library directly.
 
 What we explicitly reject: betting the whole thing on a single native Rust toolkit (egui/iced/Vizia/Makepad) as the scriptable layer. That would force us to invent a widget protocol *and* solve Verovio over FFI *and* give up the web - paying all three costs. Those toolkits are excellent for a monolithic Rust app, which is not what this is.
 
 ## The widget protocol (mini-design)
 
-The protocol is between a **script (client)** and the **GUI host**, carried over the same OSC encoding Clausters already uses (`osc::decode_packet` is the single decode door), transported over WebSocket for the web host. It deliberately mirrors the scsynth node-tree model the project already implements, so the mental model is reused rather than reinvented.
+The protocol is between a **script (client)** and the **GUI host**, carried over the **same OSC encoding** Clausters already uses (`osc::decode_packet` is the single decode door), over any of the server's existing transports (shared-memory ring / TCP / WebSocket / UDP). It deliberately mirrors the model the server already implements - and, crucially, the **def** model: a whole widget tree is one declarative document, not a stream of per-widget messages. `PLAN.md` holds the canonical `/gui_*` command/event tables and the widget catalog; what follows is the reasoning behind their shape.
+
+### Declarative, not per-widget (the corrected model)
+
+An earlier sketch built the tree with one OSC message per widget (`/w_new parent id type ...`). That was a mistake on two counts: it invented a parallel construction protocol the server does not use, and it made a window a *conversation* rather than a *document*. The corrected model matches `SynthDef`/`GraphDef`: a GUI is a **def**. The whole window/widget tree rides as **JSON inside one OSC argument**, exactly as a `SynthDef` does through `/d_recv` - JSON is the payload, OSC is the framing, and serde's number handling keeps ids `i32` and control values `f32` across the wire. So `/gui_def <id> <json tree>` builds the tree in one message, `/gui_set <id> ...` updates one live widget (the `/n_set` analogue), and `/gui_free <id>` frees a subtree. No per-widget construction chatter.
 
 ### Addressing model
 
-- Widgets form a **tree**. Every widget has a client-allocated integer id, exactly like scsynth node ids (the client owns an id allocator; no server round-trip to create one).
-- A **window** is a root container. Containers hold children; layout is a property of the container.
-- Destroying a widget destroys its subtree, like freeing a group frees its nodes.
+- Widgets form a **tree**. Every widget has a client-allocated integer id, exactly like scsynth node ids (the client owns the id allocator; no server round-trip to create one).
+- A **window** - or an embeddable **panel** - is a root container. Containers hold children; layout is a property of the container.
+- Freeing a widget frees its subtree, like freeing a group frees its nodes.
 
-This 1:1 reuse of the node-tree semantics is intentional: id allocation, add-actions, and subtree freeing already exist conceptually in the codebase.
+This 1:1 reuse of the node-tree semantics is intentional: id allocation, add-actions, and subtree freeing already exist conceptually in the codebase. The address family is the generic `/gui_*`, not `/win_*`, because a def's root is not always a window (it may equally be an embeddable panel).
 
-### Commands (client -> host)
-
-| Address | Args | Meaning |
-|---|---|---|
-| `/win_new` | `id, title, w, h` | Create a top-level window (root container). |
-| `/w_new` | `parent_id, id, type, [k, v]...` | Create a widget of `type` under `parent_id` with initial properties. |
-| `/w_set` | `id, [k, v]...` | Update properties (value, range, label, color, ...). |
-| `/w_layout` | `container_id, type, [params]...` | Set a container's layout (`row`/`col`/`grid`/`free`). |
-| `/w_bind` | `id, target...` | Bind this widget's value to a destination (see below). |
-| `/w_free` | `id` | Destroy a widget and its subtree. |
-| `/w_query` | `id` | Request a `/w_info` reply. |
-
-`type` is a short string (`"knob"`, `"slider"`, `"button"`, `"label"`, `"waveform"`, `"spectrogram"`, `"score"`, ...). Property values are OSC primitives (int/float/string/blob) - the binding technology never leaks across the wire, in line with the project's "flat primitives at the boundary" rule. A `"waveform"`/`"spectrogram"` widget is fed a buffer reference (a server buffer number) or a blob, and owns its own GPU rendering (the prototype here is exactly that widget's renderer).
-
-### Events and replies (host -> client)
-
-| Address | Args | Meaning |
-|---|---|---|
-| `/w_event` | `id, value...` | A widget was interacted with (knob turned, button pressed, region selected). |
-| `/w_info` | `id, type, [k, v]...` | Reply to `/w_query`. |
-| `/win_closed` | `id` | A window was closed by the user. |
+Property values are OSC primitives (int/float/string/blob) - the binding technology never leaks across the wire, in line with the project's "flat primitives at the boundary" rule. A `"waveform"`/`"spectrogram"` widget is fed a buffer reference (a server buffer number) or a blob, and owns its own GPU rendering (the prototype here is exactly that widget's renderer).
 
 ### Bindings: the value can bypass the script
 
-`/w_bind` lets a widget's value flow **straight to the audio server** without a round-trip through the script - the same idea already used for MIDI in this project, where a control source is bound to a server-side destination instead of being polled. A knob bound to a synth control sends an OSC `/n_set` (or equivalent) to the audio server itself on every change; an unbound knob just emits `/w_event` back to the script. This keeps interactive control low-latency while leaving scripted/computed widgets fully in the script's hands.
+`/gui_bind` lets a widget's value flow **straight to the audio server** without a round-trip through the script - the same idea already used for MIDI in this project, where a control source is bound to a server-side destination instead of being polled. A knob bound to a synth control sends an OSC `/n_set` (or equivalent) to the audio server itself on every change; an unbound knob just emits `/gui_event` back to the script. This keeps interactive control low-latency while leaving scripted/computed widgets fully in the script's hands.
 
 ### Example session
 
 ```
-# script -> host
-/win_new      1 "Filter" 480 240
-/w_new        1 10 "knob"   "label" "cutoff" "min" 20.0 "max" 20000.0 "value" 800.0
-/w_new        1 11 "slider" "label" "res"    "min" 0.0  "max" 1.0     "value" 0.2
-/w_new        1 12 "waveform" "buffer" 0          # renders server buffer 0 (prototype renderer)
-/w_bind       10 "server" "/n_set" 1000 "cutoff"  # knob 10 drives synth node 1000's cutoff directly
+# script -> gui host: one declarative def builds the whole tree
+/gui_def  1  { "type":"window", "title":"Filter", "w":480, "h":240, "layout":"col",
+               "children":[
+                 {"id":10,"type":"knob",  "label":"cutoff","min":20.0,"max":20000.0,"value":800.0},
+                 {"id":11,"type":"slider","label":"res",   "min":0.0, "max":1.0,    "value":0.2},
+                 {"id":12,"type":"waveform","buffer":0}      # renders server buffer 0 (prototype renderer)
+               ] }
+/gui_bind 10 "server" "/n_set" 1000 "cutoff"   # knob 10 drives synth node 1000's cutoff directly
 
-# host -> script  (only for the unbound slider; the knob talks to the server itself)
-/w_event      11 0.35
+# gui host -> script  (only for the unbound slider; the knob talks to the server itself)
+/gui_event 11 0.35
 ```
 
 ## Heavy widgets: the rendering strategy
@@ -144,6 +128,7 @@ src/spectrogram.wgsl full-screen quad, texture sample, viridis colormap
 src/waveform.rs      WaveformData + WaveformRenderer (3 regimes)
 src/waveform.wgsl    passthrough shader (columns + line pipelines)
 src/view.rs          TimelineView trait (incl. optional char/vertical hooks)
+src/bytes.rs         shared little-endian cache (de)serialization
 src/native.rs        winit + wgpu harness driving any TimelineView
 src/demo.rs          synthetic test signal
 src/bin/waveform.rs      waveform binary
@@ -159,13 +144,13 @@ The split is the point:
 
 This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can be written once against `wgpu`/WGSL and run both natively and on the web, while the *composition* of widgets is a scripted protocol, not compiled Rust.
 
-## Open questions / next steps
+## Open design questions
 
-- Transport: OSC-over-WebSocket bridge vs. a dedicated host protocol; reuse `osc::decode_packet` regardless.
-- Where the GUI host lives: standalone process, or embedded next to the embed-server surface.
+The milestone staging is in `PLAN.md`; what follows are questions still open at the design level that those milestones will have to answer.
+
 - Cache lifecycle: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
 - Spectrogram: time-axis mipmaps or tiling for buffers wider than the max texture size; frequency-axis labels/ruler in Hz; a smoother (interpolating) log resample. (Log axis, frequency zoom via a second `View`, and a live dB window are done.)
 - Multi-channel waveforms (stacked or overlaid), plus interpolating between adjacent pyramid levels for smoother zoom-out.
-- Verovio integration spike (wasm/JS build) behind a `"score"` widget.
 - Selection/playhead overlays and time-axis rulers as shared widget chrome.
-```
+- Edit-back-to-data: the heavy views today *receive* data to visualize; the design must keep room for them to *modify* it (drawing into a buffer, editing an envelope) and write it back to a client or the server.
+- Migrating the `peaks`/`Stft` machinery behind `clausters-ffi`/`libclausters` so the signal code lives once, shared with the server's DSP rather than duplicated here.
