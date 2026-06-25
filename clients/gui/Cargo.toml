@@ -15,9 +15,21 @@ description = "Exploratory GUI client track for Clausters: a GPU waveform protot
 name = "clausters_gui"
 path = "src/lib.rs"
 
-# Binaries are auto-discovered from src/bin/ (waveform, spectrogram).
+# Binaries are auto-discovered from src/bin/ (waveform, spectrogram, and the
+# headless GUI host `clausters-gui`).
 
 [dependencies]
+# The shared OSC seam (single `decode_packet` door, encode/bundle/message,
+# timetag math) the host's transports ride. A path dependency on the core only:
+# it pulls `rosc`, never the server crate, so the gui crate stays independent.
+clausters-core = { path = "../../crates/clausters-core" }
+# GuiDef = JSON inside one OSC argument, exactly as a SynthDef/GraphDef. serde's
+# number handling keeps ids i32 and control values f32 across the wire.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Structured logging, like the server (the host logs the parsed tree).
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
 pollster = "0.4.0"
 wgpu = "29.0.3"

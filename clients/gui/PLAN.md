@@ -167,9 +167,13 @@ A WebSocket transport carrying the existing OSC encoding, with a minimal client 
 
 **Remaining for this branch:** merge `main` into `gui` so `WsHub` and the ffi client are present here; nothing else in G1 to build.
 
-## G2 - GUI host skeleton (`clausters-gui` binary)
+## G2 - GUI host skeleton (`clausters-gui` binary) - DONE (2026-06-25)
 
 A separate crate/binary that speaks OSC over the reused transport layer with a widget command interpreter instead of the audio engine - the dual-role process from the naming section, starting headless.
+
+**Transport decision (the milestone asked to record one):** the host does *not* extract or link the audio server's transport layer (`src/osc/{server,tcp,ws}.rs`) - it is tangled with the audio `ServerState`, the engine wake and the IPC ring, so lifting it now would drag server concerns into the independent gui crate for no gain. Instead the host **links `clausters-core`** (a path dependency that pulls only `rosc`, never the server crate) for the shared OSC seam - the single decode door (`clausters_core::osc::decode_packet`, which the server now delegates to as well, so the whole system decodes through one function), plus encode/bundle/message - and owns a **thin transport front** of its own (`host::transport`). G2 ships the **UDP** front (the default Clausters carrier, minimal to drive from a Python client); TCP/WebSocket/ring follow in later milestones behind the same `ClientId`/reply seam, which is shaped to generalize.
+
+**Landed:** the `clausters-gui` binary (`--port` default 57210, `--server host:port`, `-v`/`-q`/`RUST_LOG`); a generic GuiDef node (`host::guidef`, `{id,type,...props,children}`, serde-parsed with the int/float distinction kept); the widget `host::registry` reusing the node-tree shape (client ids, parent/children, subtree free, redefine-replaces); the transport-agnostic `host::Host` command loop (interprets def/set/free/query, logs the parsed tree, answers `/gui_query` with `/gui_info`, reserves `/gui_bind`/`/gui_load`); the scaffolded client leg `host::client::ServerLeg`; the Python driver `clients/python/clausters/gui/` (`guidef` builders + `GuiHost` over `OscUdpInterface`); `examples/gui_skeleton.py`; 13 host unit tests. See `LOG.md` for detail.
 
 ### Scope
 

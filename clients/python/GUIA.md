@@ -793,3 +793,58 @@ misma invocacion, regla E2E):
 Esperado: (1) `clausters --help` imprime el usage del servidor; (2) la sesion
 embebida responde `status()[0] == 1`; (3) el standalone responde el
 `/status.reply` por UDP.
+
+## 12. GUI host: protocolo de widgets (G2)
+
+El host de GUI (`clausters-gui`) es un par mas del sistema: un *servidor de GUI*
+para los lenguajes (habla el vocabulario `/gui_*` sobre OSC, la misma codificacion
+que el servidor de audio) y a la vez un *cliente del servidor de audio*. En G2 es
+un esqueleto sin ventana (sin GPU todavia): registra y consulta el arbol de
+widgets y responde `/gui_query` con `/gui_info`.
+
+El host vive en el crate independiente `clients/gui` (no romper el build del core):
+se compila y corre desde ahi.
+
+```sh
+# 1) compilar el host (desde clients/gui, su propio workspace):
+cd clients/gui && cargo build --bin clausters-gui && cd ../..
+
+# 2) E2E (host + cliente Python en la MISMA invocacion, regla E2E). El driver
+#    Python esta en clausters.gui; el ejemplo arma un panel y lee un widget:
+(clients/gui/target/debug/clausters-gui --port 57219 -v 2>/tmp/gui_host.log & \
+ PID=$!; sleep 1.0; \
+ PYTHONPATH=clients/python python3 -c "
+from clausters.gui import GuiHost, knob, slider, waveform, window
+tree = window(knob(10, label='cutoff', min=20.0, max=20000.0, value=800.0),
+              slider(11, label='res', min=0.0, max=1.0, value=0.2),
+              waveform(12, buffer=0),
+              title='Filter', w=480, h=240, layout='col')
+with GuiHost(port=57219) as g:
+    g.define(1, tree)
+    print('query 10 ->', g.query(10))
+    g.set(10, value=440.0); print('tras set ->', g.query(10))
+    g.free(1); print('tras free ->', g.query(10))
+"; kill $PID 2>/dev/null; true); cat /tmp/gui_host.log
+```
+
+Esperado:
+
+- En el log del host: la linea de arranque (`listening on udp://...`) y el
+  **arbol parseado** indentado tras `/gui_def 1: 4 widget(s)`
+  (`[1] window ...`, `  [10] knob ...`, etc.), luego lineas por cada
+  `/gui_query`/`/gui_set`/`/gui_free`.
+- En stdout del cliente: `query 10 -> ('knob', {... 'value': 800.0})` (el float
+  vuelve float, el int `buffer` vuelve int), `tras set -> ('knob', {... 'value':
+  440.0})`, y `tras free -> ('', {})` (tipo vacio = no existe el widget; igual
+  responde, como el servidor en un miss).
+
+Tambien hay un ejemplo comentado equivalente:
+
+```sh
+clients/gui/target/debug/clausters-gui -v &        # en una terminal (puerto 57210)
+PYTHONPATH=clients/python python clients/python/examples/gui_skeleton.py
+```
+
+El host acepta `--server host:port` para enganchar la tercera pata (host ->
+servidor de audio); en G2 solo se construye y se loguea (los bindings que la
+usan llegan en un milestone posterior).

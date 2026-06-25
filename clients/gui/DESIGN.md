@@ -1,6 +1,6 @@
 # Clausters GUI track - design notes
 
-This is the **design rationale** for the Clausters GUI track; the staged milestones live in its companion `PLAN.md`. The crate is an **independent workspace** under `clients/gui`, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds two things: these design notes, and a working GPU waveform/spectrogram prototype (`src/`) that validates the heavy-rendering path the milestones build the protocol and host around.
+This is the **design rationale** for the Clausters GUI track; the staged milestones live in its companion `PLAN.md`. The crate is an **independent workspace** under `clients/gui`, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds these design notes, a working GPU waveform/spectrogram prototype (`src/`) that validates the heavy-rendering path, and the GUI host that the milestones build around it - the `/gui_*` widget-protocol interpreter and its transport front (`src/host/`, headless as of G2, no GPU yet).
 
 Where `PLAN.md` is the canonical reference for the `/gui_*` command/event tables, the widget catalog and the `Gx` milestones, this note explains *why* the system has the shape it does: why the GUI is a separate host rather than code in the audio server, why a web-capable rendering substrate, and how the heavy widgets resolve a signal to the screen and no finer.
 

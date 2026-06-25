@@ -10,7 +10,7 @@ pub mod ws;
 
 use std::net::SocketAddr;
 
-use rosc::{OscPacket, decoder};
+use rosc::OscPacket;
 
 /// Where a request came from and where its replies go (M14): the OSC
 /// *encoding* is transport-independent, so client identity is too. `Udp` is
@@ -37,12 +37,13 @@ impl std::fmt::Display for ClientId {
     }
 }
 
-/// Decodes one OSC packet through rosc — the single decode entry point every
-/// transport funnels through (UDP datagrams and IPC ring contents alike), so
-/// decoding and any future hardening live in one place.
+/// Decodes one OSC packet — the single decode entry point every transport
+/// funnels through (UDP datagrams and IPC ring contents alike), so decoding and
+/// any future hardening live in one place. Delegates to
+/// [`clausters_core::osc::decode_packet`], the door shared with every client
+/// (the GUI host included), so there is one decoder across the whole system.
 pub fn decode_packet(bytes: &[u8]) -> Result<OscPacket, String> {
-    let (_, packet) = decoder::decode_udp(bytes).map_err(|e| e.to_string())?;
-    Ok(packet)
+    clausters_core::osc::decode_packet(bytes)
 }
 
 #[cfg(test)]

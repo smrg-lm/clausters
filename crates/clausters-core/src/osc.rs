@@ -62,6 +62,17 @@ pub fn encode(packet: &OscPacket) -> Result<Vec<u8>, rosc::OscError> {
     rosc::encoder::encode(packet)
 }
 
+/// Decodes one OSC packet through rosc — the single **decode** entry point every
+/// transport funnels through, on the server and on every client alike (UDP
+/// datagrams, the IPC ring, WebSocket frames, the GUI host's fronts), so
+/// decoding and any future hardening live in one place. A thin wrapper over
+/// `rosc::decoder::decode_udp`; the error is stringified so callers need not
+/// depend on `rosc`'s error type.
+pub fn decode_packet(bytes: &[u8]) -> Result<OscPacket, String> {
+    let (_, packet) = rosc::decoder::decode_udp(bytes).map_err(|e| e.to_string())?;
+    Ok(packet)
+}
+
 /// Convenience: build a message from an address and arguments.
 pub fn message(addr: impl Into<String>, args: Vec<OscType>) -> OscMessage {
     OscMessage {
@@ -93,10 +104,8 @@ mod tests {
         let msg = message("/n_set", vec![OscType::Int(1000), OscType::Float(440.0)]);
         let b = bundle(unix_to_ntp(1_700_000_000.0), vec![msg]);
         let bytes = encode(&OscPacket::Bundle(b)).unwrap();
-        // Decodes through rosc the same way the server's `osc::decode_packet`
-        // does.
-        let (_, packet) = rosc::decoder::decode_udp(&bytes).unwrap();
-        match packet {
+        // Decodes back through the single shared door.
+        match decode_packet(&bytes).unwrap() {
             OscPacket::Bundle(b) => assert_eq!(b.content.len(), 1),
             _ => panic!("expected a bundle"),
         }

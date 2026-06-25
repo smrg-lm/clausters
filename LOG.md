@@ -2923,3 +2923,69 @@ generic server feature, independent of the GUI work.
   E2E (`clausters --ws` + the ffi-backed `examples/ws_ping.py` in one shell)
   round-trips `/status`, `/d_recv`→`/done`, `/s_new`, `/sync`→`/synced`,
   `/n_free`.
+
+## G2 — GUI host skeleton (`clausters-gui`) (2026-06-25)
+
+The first milestone of the GUI track's protocol/host work (the heavy-rendering
+prototype was already in place). `clausters-gui` grows a headless **GUI host**:
+the dual-role process from the design — a *GUI server* for the language clients
+(it speaks the `/gui_*` widget protocol) and a *client of the audio server* — but
+with a widget command interpreter where the audio engine would be, and no GPU
+yet (G3 brings the first pixels). The whole point is to validate the protocol and
+the topology against a real client before any windowing lands.
+
+- **Transport decision (the milestone asked to record one):** the host does
+  **not** extract or link the audio server's transport layer
+  (`src/osc/{server,tcp,ws}.rs`) — it is tangled with the audio `ServerState`,
+  the engine wake and the IPC ring, so lifting it now would drag server concerns
+  into the independent gui crate for no gain. Instead the host **links
+  `clausters-core`** (a path dependency that pulls only `rosc`, never the server
+  crate, so the gui crate stays independent of the core build) for the shared OSC
+  seam, and owns a **thin transport front** of its own. G2 ships the **UDP**
+  front (the default Clausters carrier, minimal to drive from a Python client);
+  TCP/WebSocket/ring follow in later milestones behind the same `ClientId`/reply
+  seam, which is shaped to generalize.
+- **One decode door for the whole system:** `clausters_core::osc::decode_packet`
+  is the new single decode entry point, and the server's `osc::decode_packet`
+  now delegates to it — so the audio server and every client (the gui host
+  included) validate incoming bytes through one function, honoring the
+  project-wide "single door" rule across processes, not just inside the server.
+- **The GuiDef is JSON-in-OSC, like a SynthDef.** `host::guidef::GuiNode` is a
+  deliberately **generic** node — `{ id, type, <props…>, children }` — parsed
+  with serde so integer ids stay `i64` and continuous values `f64` (the int/float
+  distinction the wire relies on). The widget *catalog* grows by adding a
+  renderer/handler later, never by changing this shape; the host registers and
+  introspects any tree without knowing concrete widget types yet.
+- **The widget registry reuses the node-tree shape verbatim** (`host::registry`):
+  client-allocated integer ids, a parent/children hierarchy, and **subtree
+  freeing** (freeing a widget frees its descendants, like freeing a group).
+  `/gui_def` flattens a tree into one record per widget (redefining a root
+  replaces the old def; duplicate/idless children are skipped with a warning),
+  `/gui_set` mutates props, `/gui_free` removes a subtree, `/gui_query` reads one
+  back.
+- **The command loop** (`host::Host`, transport-agnostic and unit-testable —
+  `handle_packet` mutates state and *returns* replies) interprets
+  `/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`, **logs the parsed tree**, and
+  answers `/gui_query` with `/gui_info <id> <type> <k> <v>…` (an empty type means
+  "no such widget" — it still answers, like the server on a miss). `/gui_bind`
+  and `/gui_load` are reserved (log "not implemented yet"). Bundles are unwrapped
+  immediately (no scheduling yet). The client leg (`host::client::ServerLeg`) is
+  scaffolded — a UDP sender through the same encode door — and attached with
+  `--server host:port`; bindings (G6) build on it.
+- **Binary:** `clausters-gui` (`--port`, default 57210, clear of the audio
+  server's 57110/57120 family; `--server`; `-v`/`-q`; `RUST_LOG`).
+- **Python driver** (`clients/python/clausters/gui/`): `guidef` composes the
+  tree as plain dicts (host-agnostic, the way building a SynthDef is
+  server-agnostic) with `node`/`window`/`panel`/`label`/`knob`/`slider`/
+  `waveform`; `GuiHost` points the existing `OscUdpInterface` at the host's port
+  and exposes `define`/`set`/`free`/`query` — no parallel wire code.
+- **Example:** `examples/gui_skeleton.py` — build a small instrument panel, send
+  one `/gui_def`, read a widget back over `/gui_info`.
+- **Tests:** 13 host unit tests (parse/dump/registry/dispatch, bundle unwrap,
+  int/float preservation), all GPU-free; the existing prototype tests still pass
+  (27 total in the gui crate).
+- **Verified:** gui crate `cargo test` green, `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` clean; the core server still builds
+  and tests with `--no-default-features`; E2E in one shell (the host plus the
+  Python driver) round-trips `/gui_def`→log, `/gui_query`→`/gui_info`,
+  `/gui_set`, `/gui_free`, with the int/float distinction intact end to end.

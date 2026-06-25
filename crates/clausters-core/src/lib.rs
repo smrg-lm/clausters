@@ -23,8 +23,9 @@
 //!   `dsp::noise`, so a client can reproduce a noise stream sample for sample.
 //! - [`tempoclock`] — beat/second/sample arithmetic and a beat-ordered event
 //!   queue: the timing math a `TempoClock` is built on.
-//! - [`osc`] — OSC bundle/timetag assembly and timetag↔sample conversion
-//!   (depends on `rosc`; not allocation-free).
+//! - [`osc`] — the OSC seam shared by the server and every client: the single
+//!   `decode_packet` door, bundle/timetag assembly and timetag↔sample
+//!   conversion (depends on `rosc`; not allocation-free).
 
 pub mod builtins;
 pub mod osc;

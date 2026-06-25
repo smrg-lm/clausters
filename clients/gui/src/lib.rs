@@ -15,8 +15,14 @@
 //! - [`demo`]: a synthetic test signal for the prototype binaries.
 //!
 //! See `DESIGN.md` for the scriptable widget protocol these views plug into.
+//!
+//! The widget protocol itself — the GUI host that speaks `/gui_*` over OSC and
+//! drives these views — lives in [`host`] (native-only; it owns sockets).
 
 mod bytes;
+
+#[cfg(not(target_arch = "wasm32"))]
+pub mod host;
 
 pub mod peaks;
 pub mod spectrogram;
