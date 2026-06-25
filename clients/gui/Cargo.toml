@@ -1,7 +1,7 @@
 # Independent workspace: this crate is intentionally NOT a member of the root
-# `clausters` workspace. It lives on the `gui` branch as an exploratory client
-# track and must never entangle the core server build. Building from `gui/`
-# uses this manifest; building the core from the repo root ignores it.
+# `clausters` workspace. It is the GUI client track under `clients/gui` and must
+# never entangle the core server build. Building from `clients/gui/` uses this
+# manifest; building the core from the repo root ignores it.
 [workspace]
 
 [package]
