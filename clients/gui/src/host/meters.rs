@@ -46,7 +46,7 @@ pub fn draw_meter(mesh: &mut Mesh, rect: Rect, value: f32, fraction: f32, label:
         Rect::new(body.x, body.y + body.h - fill_h, body.w, fill_h),
         ACCENT,
     );
-    border(mesh, body, 1.0, FRAME);
+    mesh.border(body, 1.0, FRAME);
     value_text(mesh, &fmt(value), body);
 }
 
@@ -67,7 +67,7 @@ pub fn draw_scope(
         return;
     }
     mesh.rect(body, FIELD);
-    border(mesh, body, 1.0, FRAME);
+    mesh.border(body, 1.0, FRAME);
     if history.len() >= 2 {
         let dx = body.w / (history.len() - 1) as f32;
         let y_at = |v: &f32| body.y + body.h * (1.0 - fraction(*v, min, max));
@@ -85,14 +85,6 @@ fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect) {
     if let Some(text) = label {
         font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
     }
-}
-
-/// A 1-color outline of `rect`, `w` pixels thick.
-fn border(mesh: &mut Mesh, rect: Rect, w: f32, color: Color) {
-    mesh.rect(Rect::new(rect.x, rect.y, rect.w, w), color);
-    mesh.rect(Rect::new(rect.x, rect.y + rect.h - w, rect.w, w), color);
-    mesh.rect(Rect::new(rect.x, rect.y, w, rect.h), color);
-    mesh.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
 }
 
 /// A value read-out at the top-right of a body.

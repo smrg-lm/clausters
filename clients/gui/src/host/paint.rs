@@ -88,6 +88,14 @@ impl Mesh {
         );
     }
 
+    /// A `w`-pixel-thick outline of `rect` (four edge rectangles).
+    pub fn border(&mut self, rect: Rect, w: f32, color: Color) {
+        self.rect(Rect::new(rect.x, rect.y, rect.w, w), color);
+        self.rect(Rect::new(rect.x, rect.y + rect.h - w, rect.w, w), color);
+        self.rect(Rect::new(rect.x, rect.y, w, rect.h), color);
+        self.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
+    }
+
     /// A filled circle approximated by a triangle fan.
     pub fn disc(&mut self, cx: f32, cy: f32, radius: f32, color: Color) {
         const SEGMENTS: usize = 32;

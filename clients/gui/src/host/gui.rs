@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
@@ -38,9 +38,10 @@ use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
 use super::layout::{self, Rect};
+use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
 use super::widget::{Widget, WidgetKind};
-use super::{BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls, meters};
+use super::{BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls, meters, plot};
 
 /// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
 /// enough for smooth meters/scopes without spinning the CPU.
@@ -50,6 +51,10 @@ const SCOPE_HISTORY: usize = 512;
 /// Samples per `/b_getn` request when pulling a server buffer (each reply must
 /// fit a datagram; the bulk-transfer optimization is a later milestone).
 const BUFFER_CHUNK: usize = 8192;
+/// How often a window with a `nodetree` re-queries the server's tree. Node
+/// creation/removal is caught immediately through `/n_go`/`/n_end`; this low-rate
+/// poll picks up `/n_set` control changes (which raise no notification).
+const NODETREE_POLL: Duration = Duration::from_millis(200);
 
 const CLEAR: wgpu::Color = wgpu::Color {
     r: 0.05,
@@ -177,6 +182,16 @@ struct WaveformSlot {
     nav: View,
 }
 
+/// A placed `plot` widget and the data its (static) draw needs, copied out of
+/// the host tree so the mesh is built after the tree borrow is released.
+struct PlotItem {
+    rect: Rect,
+    samples: Arc<[f32]>,
+    min: f32,
+    max: f32,
+    label: Option<String>,
+}
+
 /// An in-progress pointer drag, by what it is driving.
 enum Drag {
     /// A horizontal slider: the value follows the cursor x within `body`.
@@ -246,6 +261,14 @@ struct App {
     wants: HashMap<i32, Vec<WaveWant>>,
     /// In-progress server-buffer fetches, by buffer number.
     fetches: HashMap<i32, BufferFetch>,
+    /// The node tree last read from the server, by group id, feeding `nodetree`
+    /// widgets (filled by `/g_queryTree.reply`).
+    node_trees: HashMap<i32, NodeTree>,
+    /// Whether the client leg has registered for node notifications
+    /// (`/notify 1`), so it is sent once even with several node-tree windows.
+    notified: bool,
+    /// Next scheduled re-query of the server's node tree (the `/n_set` poll).
+    next_query: Instant,
 }
 
 impl App {
@@ -261,6 +284,9 @@ impl App {
             next_frame: Instant::now(),
             wants: HashMap::new(),
             fetches: HashMap::new(),
+            node_trees: HashMap::new(),
+            notified: false,
+            next_query: Instant::now(),
         }
     }
 
@@ -411,11 +437,24 @@ impl App {
             },
         );
         info!("gui_def {id}: opened window \"{title}\"");
+        // Plots that name a local file map it now (the bulk path, no OSC); the
+        // samples land in the host tree the renderer reads each frame.
+        if let Some(root) = self.host.window_def_mut(id) {
+            load_plot_paths(root);
+        }
         if let Some(ws) = self.windows.get(&id) {
             ws.gpu.window.request_redraw();
         }
         // Kick off fetches for any waveform that references a server buffer.
         self.start_buffer_fetches(id, buffer_refs);
+        // A node-tree view drives the client leg: register for notifications and
+        // query at once, so it shows the tree without waiting for the first poll.
+        if self.host.window_def(id).is_some_and(tree_has_node_tree) && self.host.server().is_some()
+        {
+            self.ensure_notify();
+            self.requery_node_trees();
+            self.next_query = Instant::now() + NODETREE_POLL;
+        }
     }
 
     /// Registers waveform widgets that reference a server buffer and queries the
@@ -495,8 +534,91 @@ impl App {
                 }
             }
             "/b_setn" => self.on_buffer_data(&msg.args),
+            "/g_queryTree.reply" => self.on_query_tree_reply(&msg.args),
+            // A node was created or freed (on any client): refresh the tree
+            // promptly instead of waiting for the next poll.
+            "/n_go" | "/n_end" => self.next_query = Instant::now(),
             "/fail" => warn!("audio server replied /fail: {:?}", msg.args),
             _ => {}
+        }
+    }
+
+    /// `/g_queryTree.reply`: parse the server's node tree, store it by group and
+    /// repaint the windows showing it (only when it actually changed, so an
+    /// idle tree polled at a few Hz does not repaint needlessly).
+    fn on_query_tree_reply(&mut self, args: &[OscType]) {
+        let Some(tree) = NodeTree::parse(args) else {
+            return warn!("malformed /g_queryTree.reply ({} args)", args.len());
+        };
+        let group = tree.group;
+        if self.node_trees.get(&group) == Some(&tree) {
+            return;
+        }
+        debug!(
+            "node tree for group {group} updated ({} top-level node(s))",
+            tree.root.len()
+        );
+        self.node_trees.insert(group, tree);
+        let ids: Vec<i32> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|id| self.window_shows_group(*id, group))
+            .collect();
+        for id in ids {
+            self.redraw(id);
+        }
+    }
+
+    /// The distinct server groups any open window's `nodetree` widgets mirror.
+    fn node_tree_groups(&self) -> Vec<i32> {
+        let mut groups = Vec::new();
+        for id in self.windows.keys() {
+            if let Some(tree) = self.host.window_def(*id) {
+                collect_node_tree_groups(tree, &mut groups);
+            }
+        }
+        groups
+    }
+
+    /// Whether window `def_id` has a `nodetree` mirroring `group`.
+    fn window_shows_group(&self, def_id: i32, group: i32) -> bool {
+        let mut groups = Vec::new();
+        if let Some(tree) = self.host.window_def(def_id) {
+            collect_node_tree_groups(tree, &mut groups);
+        }
+        groups.contains(&group)
+    }
+
+    /// Registers for node lifecycle notifications (`/notify 1`) once, so a
+    /// `nodetree` refreshes as soon as nodes appear or disappear.
+    fn ensure_notify(&mut self) {
+        if self.notified {
+            return;
+        }
+        if let Some(server) = self.host.server() {
+            if let Err(e) = server.send(OscMessage {
+                addr: "/notify".into(),
+                args: vec![OscType::Int(1)],
+            }) {
+                return warn!("failed to register for node notifications: {e}");
+            }
+            self.notified = true;
+        }
+    }
+
+    /// Sends a `/g_queryTree <group> 1` for every group an open `nodetree` shows.
+    fn requery_node_trees(&self) {
+        let Some(server) = self.host.server() else {
+            return;
+        };
+        for group in self.node_tree_groups() {
+            if let Err(e) = server.send(OscMessage {
+                addr: "/g_queryTree".into(),
+                args: vec![OscType::Int(group), OscType::Int(1)],
+            }) {
+                warn!("failed to query node tree for group {group}: {e}");
+            }
         }
     }
 
@@ -841,6 +963,11 @@ impl App {
         // scope history can be read after the host-tree borrow is released.
         let mut meter_rects: Vec<(Rect, i32, f32, f32, Option<String>)> = Vec::new();
         let mut scope_rects: Vec<(i32, Rect, i32, f32, f32, Option<String>)> = Vec::new();
+        // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
+        // likewise copied out so the host-tree borrow can be released before the
+        // node-tree models and the GPU resources are read.
+        let mut plot_rects: Vec<PlotItem> = Vec::new();
+        let mut nodetree_rects: Vec<(Rect, i32, bool, Option<String>)> = Vec::new();
         let active_button = match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
             Some(Drag::Button { id }) => Some(*id),
             _ => None,
@@ -872,6 +999,24 @@ impl App {
                         scope_rects.push((id, p.rect, *bus, *min, *max, label.clone()));
                     }
                 }
+                WidgetKind::Plot {
+                    samples,
+                    min,
+                    max,
+                    label,
+                    ..
+                } => plot_rects.push(PlotItem {
+                    rect: p.rect,
+                    samples: Arc::clone(samples),
+                    min: *min,
+                    max: *max,
+                    label: label.clone(),
+                }),
+                WidgetKind::NodeTree {
+                    group,
+                    controls,
+                    label,
+                } => nodetree_rects.push((p.rect, *group, *controls, label.clone())),
                 WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
                 kind => controls::draw(&mut mesh, kind, p.rect, p.widget.id == active_button),
             }
@@ -896,6 +1041,31 @@ impl App {
                 let samples: Vec<f32> = history.iter().copied().collect();
                 meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
             }
+        }
+
+        // Static plots draw from their (already mapped) samples; node trees draw
+        // from the model last read off the client leg. Both are pure mesh work
+        // with the host-tree borrow already released.
+        for item in &plot_rects {
+            plot::draw(
+                &mut mesh,
+                item.rect,
+                &item.samples,
+                item.min,
+                item.max,
+                item.label.as_deref(),
+            );
+        }
+        let server_attached = self.host.server().is_some();
+        for (rect, group, controls, label) in &nodetree_rects {
+            nodetree::draw(
+                &mut mesh,
+                *rect,
+                self.node_trees.get(group),
+                *controls,
+                label.as_deref(),
+                server_attached,
+            );
         }
 
         let Some(ws) = self.windows.get_mut(&def_id) else {
@@ -1127,6 +1297,70 @@ fn tree_has_live_widget(widget: &Widget) -> bool {
     widget.kind.live_bus().is_some() || widget.children.iter().any(tree_has_live_widget)
 }
 
+/// Whether a widget tree contains a `nodetree` view (so the window drives the
+/// node-tree query/notify path).
+fn tree_has_node_tree(widget: &Widget) -> bool {
+    widget.kind.node_tree_group().is_some() || widget.children.iter().any(tree_has_node_tree)
+}
+
+/// Appends the distinct server groups every `nodetree` in `widget` mirrors.
+fn collect_node_tree_groups(widget: &Widget, out: &mut Vec<i32>) {
+    if let Some(group) = widget.kind.node_tree_group()
+        && !out.contains(&group)
+    {
+        out.push(group);
+    }
+    for child in &widget.children {
+        collect_node_tree_groups(child, out);
+    }
+}
+
+/// Maps a `plot`'s local resource into its tree node: a `path` of raw
+/// little-endian `f32` mapped read-only and de-interleaved to channel 0 (the
+/// bulk path, no OSC). Walks children too. Already-loaded (inline) plots and
+/// plots without a path are left as they are.
+fn load_plot_paths(widget: &mut Widget) {
+    if let WidgetKind::Plot {
+        samples,
+        path,
+        channels,
+        ..
+    } = &mut widget.kind
+        && samples.is_empty()
+        && let Some(p) = path.clone()
+        && let Some(loaded) = map_plot_samples(&p, *channels)
+    {
+        *samples = loaded;
+    }
+    for child in &mut widget.children {
+        load_plot_paths(child);
+    }
+}
+
+/// Reads `path` as raw little-endian `f32`, de-interleaving channel 0 of
+/// `channels` — the same read-only `mmap` the waveform bulk path uses. Unix-only;
+/// returns `None` (with a warning) elsewhere or on an I/O error.
+#[cfg(unix)]
+fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
+    use super::mapfile::MappedFile;
+    let map = MappedFile::open(path)
+        .map_err(|e| warn!("plot path {}: {e}", path.display()))
+        .ok()?;
+    let samples: Arc<[f32]> = map.channel0_f32(channels).into();
+    info!(
+        "plot: mapped {} samples from {} (no OSC)",
+        samples.len(),
+        path.display()
+    );
+    Some(samples)
+}
+
+#[cfg(not(unix))]
+fn map_plot_samples(_path: &Path, _channels: usize) -> Option<Arc<[f32]>> {
+    warn!("plot path (mapped local resource) is only supported on Unix");
+    None
+}
+
 fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
     let x = r.x.clamp(0.0, fb_w as f32);
     let y = r.y.clamp(0.0, fb_h as f32);
@@ -1160,30 +1394,46 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
-    /// After handling events, schedule the next repaint for animated (meter/
-    /// scope) windows so their shared-memory values keep updating; idle windows
-    /// stay event-driven (`Wait`).
+    /// After handling events, schedule the next wake-up: a ~30 fps repaint for
+    /// animated (meter/scope) windows so their shared-memory values keep moving,
+    /// and a low-rate re-query for node-tree windows so `/n_set` changes show.
+    /// With neither, windows stay event-driven (`Wait`).
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        let mut next_wake: Option<Instant> = None;
+
+        // Meter/scope animation, driven from the shared segment.
         let animated: Vec<i32> = self
             .windows
             .keys()
             .copied()
             .filter(|id| self.window_is_animated(*id))
             .collect();
-        if animated.is_empty() {
-            event_loop.set_control_flow(ControlFlow::Wait);
-            return;
-        }
-        let now = Instant::now();
-        if now >= self.next_frame {
-            for id in &animated {
-                if let Some(ws) = self.windows.get(id) {
-                    ws.gpu.window.request_redraw();
+        if !animated.is_empty() {
+            if now >= self.next_frame {
+                for id in &animated {
+                    if let Some(ws) = self.windows.get(id) {
+                        ws.gpu.window.request_redraw();
+                    }
                 }
+                self.next_frame = now + FRAME;
             }
-            self.next_frame = now + FRAME;
+            next_wake = Some(self.next_frame);
         }
-        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+
+        // Node-tree polling, driven from the client leg (the `/n_set` poll).
+        if self.host.server().is_some() && !self.node_tree_groups().is_empty() {
+            if now >= self.next_query {
+                self.requery_node_trees();
+                self.next_query = now + NODETREE_POLL;
+            }
+            next_wake = Some(next_wake.map_or(self.next_query, |t| t.min(self.next_query)));
+        }
+
+        match next_wake {
+            Some(t) => event_loop.set_control_flow(ControlFlow::WaitUntil(t)),
+            None => event_loop.set_control_flow(ControlFlow::Wait),
+        }
     }
 
     fn window_event(

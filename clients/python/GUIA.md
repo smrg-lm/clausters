@@ -1080,3 +1080,54 @@ Notas:
 - `/b_export bufnum path` es la version servidor: vuelca un buffer RT a un archivo
   local que el host mmapea (en vez de traerlo por `/b_getn`). Es sincrono en el
   hilo de red, no en el de audio.
+
+
+## 18. GUI host: arbol de nodos en vivo + plot de un render NRT (G8)
+
+G8 agrega dos vistas de solo lectura que ejercitan la pata "el gui es cliente del servidor de audio", ambas baratas (el painter de geometria plana + texto bitmap, sin pipeline GPU propia) y agregadas por extension (un `WidgetKind` nuevo + su renderer, sin cambio de protocolo). El servidor no se toca: G8 reusa su camino de query/notificacion que ya existia (`/g_queryTree`, `/notify`, `/n_go`/`/n_end`).
+
+- **`nodetree`** muestra el arbol de nodos del servidor (grupos, synths, def, controles) y lo mantiene al dia: el host lo espeja por su pata cliente (`/g_queryTree`), refrescando al crearse o liberarse un nodo (`/n_go`/`/n_end`) y con un poll de baja frecuencia (200 ms) que toma los cambios de `/n_set` (que no generan notificacion). Nada en el script empuja el arbol al gui; el host lo lee del servidor. Necesita arrancar el host con `--server`.
+- **`plot`** es la version liviana del `waveform` pesado: dibuja una senal una vez (una polilinea si entra en el ancho, una envolvente min/max por columna si no), sin zoom ni pan. Su senal se produce **offline** con el renderer NRT (sin servidor ni placa) y se le pasa al host como un **archivo local mmapeado** (el camino masivo de G7: los samples no viajan por OSC).
+
+### 18a. Arbol de nodos en vivo (`gui_nodetree.py`)
+
+```sh
+# servidor de audio (una terminal, desde la raiz):
+cargo run
+
+# host en modo ventana, atado al servidor (otra terminal, desde clients/gui):
+cd clients/gui && cargo run --bin clausters-gui -- --server 127.0.0.1:57110 -v
+
+# el script: crea un grupo con synths, abre una ventana con el arbol y mueve cosas:
+PYTHONPATH=clients/python python clients/python/examples/gui_nodetree.py
+```
+
+Esperado:
+
+- El log del host: `opened window "Live node tree"`. Con `-vv` (debug) ademas `node tree for group 0 updated (N top-level node(s))` cada vez que el arbol cambia.
+- En la ventana, el arbol indentado muestra el grupo y sus synths. Un `freq` barre (un `/n_set` por tick) y se ve cambiar el valor del control en vivo; un tercer synth aparece y desaparece (un hijo del grupo entrando y saliendo). Todo se refleja sin que el script le mande nada al host.
+- Si dice `no server` en la vista: el host se arranco sin `--server`; relanzarlo atado al servidor.
+
+### 18b. Plot de un render NRT (`gui_plot.py`)
+
+Solo dos procesos: el **host** y el **script** (no hace falta servidor de audio, el audio ya se renderizo offline). Necesita el cdylib embed (el renderer): `cargo build --release --features embed,realtime`.
+
+```sh
+# host en modo ventana (una terminal, desde clients/gui); SIN --server:
+cd clients/gui && cargo run --bin clausters-gui -- -v
+
+# el script: renderiza un arpegio offline, lo escribe a archivo y lo plotea:
+PYTHONPATH=clients/python python clients/python/examples/gui_plot.py
+```
+
+Esperado:
+
+- El script imprime `rendered N frames ... offline, no server` y el tamano del archivo f32.
+- El log del host: `plot: mapped N samples from ... (no OSC)` y `opened window "Plot of an NRT render"`. La ventana dibuja la senal renderizada (la envolvente del arpegio). **Ningun sample viaja por OSC.**
+
+Notas:
+
+- Las dos vistas son de **solo lectura**: no responden a clicks (un click sobre ellas no hace nada). El scroll del arbol queda para mas adelante (hoy se corta al alto del cuerpo).
+- El `nodetree` toma un `group` (default 0, el grupo raiz) y un flag `controls` (default true, muestra los pares nombre/valor de cada synth).
+- El `plot` toma sus samples por `path=` (archivo f32 crudo mmapeado, el camino sin OSC; `channels=` desentrelaza el canal 0), o inline por `data=`/`blob=` para senales chicas. El rango vertical es `min`/`max` (default bipolar -1/1).
+- Un host viejo (anterior a G8) ignora `nodetree`/`plot` y los deja sin pintar (los "tipos desconocidos" se maquetan pero no se dibujan): recompilar el binario.

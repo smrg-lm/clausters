@@ -279,9 +279,11 @@ Concretely:
 
 - A multi-megabyte buffer - client-origin (a mapped file/cache) and server-origin (an exported RT buffer) - renders without re-sending it per frame and without riding OSC; the analysis path is documented, the FFT and peaks live once in the shared core, and peaks is callable from the Python client through the FFI.
 
-## G8 - Node-tree view + NRT plots
+## G8 - Node-tree view + NRT plots - DONE (2026-06-26)
 
 Two read-only views that exercise the "gui is a client of the server" leg.
+
+**Landed:** both views are cheap (the flat-geometry painter + bitmap text, no dedicated GPU pipeline) and added by extension - a new `WidgetKind` plus a renderer, no protocol change - and the audio server is untouched (G8 reuses its existing `/g_queryTree`/`/notify`/`/n_go`/`/n_end` path). The `nodetree` view (`host::nodetree`) mirrors the server's node tree: a pure, unit-tested model + parser of scsynth's depth-first `/g_queryTree.reply` (nested groups, named/index controls, empty and truncated replies), drawn as indented lines in a framed field with `no server`/`querying...` placeholders; the windowed front (`host::gui`) registers `/notify 1` once, re-queries on every `/n_go`/`/n_end` and polls every 200 ms for `/n_set` changes, and repaints a group's windows only when the parsed tree actually changed. The `plot` view (`host::plot`) is the lightweight static counterpart of the heavy `waveform`: it decimates to the pixel width (a polyline when the data fits, a per-column min/max envelope otherwise, with a zero baseline), fed inline (`data`/`blob`) or from a mapped local `path` of raw little-endian `f32` (the bulk path, no OSC, reusing `host::mapfile`). Python: `clausters.gui.nodetree`/`plot`; `examples/gui_nodetree.py` (a live tree with a swept control and a synth coming and going) and `examples/gui_plot.py` (a `Session.nrt()` render written to a file and plotted). Runtime-verified against the real server + a GPU window: the tree refreshes ~5 Hz tracking a live `/n_set` sweep, the plot maps and renders a file, no panic. See `LOG.md`.
 
 ### Scope
 

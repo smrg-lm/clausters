@@ -33,6 +33,8 @@ __all__ = [
     "waveform",
     "meter",
     "scope",
+    "nodetree",
+    "plot",
     "to_json",
     "samples_to_blob",
     "samples_to_file",
@@ -168,6 +170,41 @@ def scope(id: int, bus: int, *, min: float | None = None, max: float | None = No
     set the vertical range (default the bipolar ``-1``/``1``)."""
     extra = _drop_none(min=min, max=max, label=label)
     return node("scope", id=id, bus=bus, **extra, **props)
+
+
+def nodetree(id: int, *, group: int = 0, controls: bool | None = None,
+             label: str | None = None, **props) -> dict:
+    """A live ``nodetree`` view of the audio server's node tree rooted at ``group``
+    (default the root group ``0``). The host mirrors the server's tree over its
+    client leg (it must be started with ``--server``), refreshing on node
+    creation/removal and a low-rate poll, so group/synth changes and ``/n_set``
+    edits show live. ``controls`` (default true) shows each synth's control
+    name/value pairs. A read-only view."""
+    extra = _drop_none(label=label)
+    if controls is not None:
+        extra["controls"] = 1 if controls else 0
+    return node("nodetree", id=id, group=group, **extra, **props)
+
+
+def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None,
+         channels: int | None = None, min: float | None = None, max: float | None = None,
+         label: str | None = None, **props) -> dict:
+    """A simple static ``plot`` of a signal over ``[min, max]`` (default the
+    bipolar ``-1``/``1``) — a line when the data fits the width, a min/max envelope
+    when it does not. Unlike the heavy `waveform`, it does not zoom or pan; it is
+    the catalog's "plot of an NRT-generated signal/file". Its samples come from:
+
+    - ``path`` — a file of raw little-endian ``f32`` (see `samples_to_file`, or an
+      NRT render written out) the host memory-maps; the **bulk path**, no OSC.
+      ``channels`` de-interleaves channel 0 (default 1).
+    - ``data`` — a small list of floats inline in the JSON;
+    - ``blob`` — the index of a binary blob carried beside the JSON (see
+      `samples_to_blob` and `GuiHost.define`).
+    """
+    extra = _drop_none(data=list(data) if data is not None else None,
+                       blob=blob, path=path, channels=channels, min=min, max=max,
+                       label=label)
+    return node("plot", id=id, **extra, **props)
 
 
 def to_json(tree: dict) -> str:

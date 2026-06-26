@@ -3275,3 +3275,53 @@ G11); this generalizes G5's zero-message control buses to bulk audio.
   green; the core builds/tests with `--no-default-features`. (Pre-existing
   rust-1.95 clippy lints in `translate.rs`/`server.rs:929`/`graphdef.rs` are
   unrelated to G7 and left as-is.)
+
+## G8 — Node-tree view + NRT plots (2026-06-26)
+
+Two read-only views that exercise the *gui is a client of the audio server* leg,
+both cheap (the flat-geometry painter + bitmap text, no dedicated GPU pipeline),
+both added by extension — a new `WidgetKind` plus a renderer, no protocol change.
+The server is untouched: G8 reuses the node-tree query/notification path that
+already exists (`/g_queryTree`, `/notify`, `/n_go`/`/n_end`).
+
+- **`nodetree` (`host::nodetree`).** A live text view of the server's node tree.
+  The model (`NodeTree`/`NodeEntry`/`NodeBody`) and the parser of scsynth's
+  depth-first `/g_queryTree.reply` are pure and unit-tested (nested groups, named
+  vs index controls, an empty tree, and a truncated reply returning `None` rather
+  than panicking). The widget carries `group` (root group, default 0) and a
+  `controls` flag (show each synth's name/value pairs). `draw` renders the
+  flattened, indented lines into a framed field, clipped to the body height
+  (scrolling is future work), with `no server`/`querying...` placeholders for the
+  empty states.
+- **`plot` (`host::plot`).** A simple static signal view — the lightweight
+  counterpart of the heavy navigable `waveform`. It honors the one graphics rule
+  (never resolve finer than the screen) by decimating to the pixel width: a
+  connected polyline when the data fits, a per-column min/max envelope when it
+  does not, plus a zero baseline when the range straddles 0. Samples arrive
+  inline (`data`/`blob`) or — the bulk path for an NRT render's output — from a
+  mapped local `path` of raw little-endian `f32` (`channels` de-interleaves
+  channel 0), reusing the `host::mapfile` mmap, so the samples never ride OSC.
+- **Windowed wiring (`host::gui`).** The front mirrors the tree by group
+  (`node_trees`), routing `/g_queryTree.reply` into the model and repainting only
+  when it actually changed. A node-tree window registers for notifications once
+  (`/notify 1`), re-queries immediately on `/n_go`/`/n_end` (node creation/removal
+  is snappy) and otherwise polls every 200 ms (`/n_set` control changes raise no
+  notification). `about_to_wait` now schedules both the ~30 fps meter/scope
+  animation and the node-tree poll. Plots that name a `path` are mapped into the
+  host tree on window open (`load_plot_paths`); rendering both views copies their
+  rects out of the host-tree borrow exactly as the meters/scopes do. A small
+  `Mesh::border` (factored from `meters`) draws the shared framed chrome.
+- **Python + examples.** `clausters.gui` gains `nodetree` and `plot` builders;
+  `examples/gui_nodetree.py` (a live tree, with a swept `freq` and a synth coming
+  and going) and `examples/gui_plot.py` (a `Session.nrt()` render written to a raw
+  file and plotted, no server). `GUIA.md` section 18.
+- **Tests:** gui 68 (`nodetree` parse/lines/draw ×6, `plot` regimes ×3, the
+  `WidgetKind` parse/apply ×2). `cargo fmt --check`/`clippy -D warnings` clean.
+- **Verified:** runtime end-to-end against the real server and a GPU window — the
+  node-tree window opens and refreshes ~5 Hz tracking a live `/n_set` freq sweep
+  (30 distinct updates, host log `node tree for group 0 updated`), and a `plot`
+  window maps a 4000-sample file and renders the envelope (`plot: mapped 4000
+  samples … (no OSC)`), both with no panic. Headless E2E round-trips a
+  `nodetree`+`plot` `/gui_def` and reads them back via `/gui_query` with the
+  int/float distinction kept. The core is untouched and still builds/tests with
+  no optional features.

@@ -95,6 +95,29 @@ pub enum WidgetKind {
         max: f32,
         label: Option<String>,
     },
+    /// A live text view of the audio server's node tree rooted at `group`,
+    /// queried over the client leg (`/g_queryTree`) and refreshed on node
+    /// lifecycle notifications and a low-rate poll. `controls` shows each
+    /// synth's control name/value pairs. A read-only client-of-the-server view.
+    NodeTree {
+        group: i32,
+        controls: bool,
+        label: Option<String>,
+    },
+    /// A simple static plot of a signal over `[min, max]`: a polyline when the
+    /// data fits the width, a min/max envelope when it does not. Its samples
+    /// arrive inline (`data`/`blob`) or — the bulk path for an NRT render's
+    /// output — from a mapped local `path` of raw little-endian `f32`
+    /// (`channels` de-interleaves channel 0, default 1), filled when the host
+    /// maps it. Unlike the heavy `waveform`, it does not navigate.
+    Plot {
+        samples: Arc<[f32]>,
+        path: Option<PathBuf>,
+        channels: usize,
+        min: f32,
+        max: f32,
+        label: Option<String>,
+    },
     /// A continuous slider over `[min, max]`.
     Slider(Range),
     /// A rotary control over `[min, max]`.
@@ -206,7 +229,7 @@ impl Widget {
                     .to_string(),
             },
             "waveform" => WidgetKind::Waveform {
-                samples: waveform_samples(id, &node.props, blobs)?,
+                samples: inline_samples("waveform", id, &node.props, blobs)?,
                 base_bucket: node
                     .props
                     .get("base_bucket")
@@ -243,6 +266,28 @@ impl Widget {
             },
             "scope" => WidgetKind::Scope {
                 bus: int_prop(&node.props, "bus", 0),
+                min: number(&node.props, "min", -1.0),
+                max: number(&node.props, "max", 1.0),
+                label: label(&node.props),
+            },
+            "nodetree" => WidgetKind::NodeTree {
+                group: int_prop(&node.props, "group", 0),
+                controls: node.props.get("controls").and_then(truthy).unwrap_or(true),
+                label: label(&node.props),
+            },
+            "plot" => WidgetKind::Plot {
+                samples: inline_samples("plot", id, &node.props, blobs)?,
+                path: node
+                    .props
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from),
+                channels: node
+                    .props
+                    .get("channels")
+                    .and_then(Value::as_u64)
+                    .map(|n| (n as usize).max(1))
+                    .unwrap_or(1),
                 min: number(&node.props, "min", -1.0),
                 max: number(&node.props, "max", 1.0),
                 label: label(&node.props),
@@ -332,6 +377,15 @@ impl WidgetKind {
         }
     }
 
+    /// The server group a `nodetree` widget mirrors, if this is one. The windowed
+    /// front uses it to know which groups to query and which windows to refresh.
+    pub fn node_tree_group(&self) -> Option<i32> {
+        match self {
+            WidgetKind::NodeTree { group, .. } => Some(*group),
+            _ => None,
+        }
+    }
+
     /// Applies one `/gui_set` key/value to a live widget, returning whether it
     /// changed anything the renderer cares about.
     pub fn apply(&mut self, key: &str, v: &Value) -> bool {
@@ -349,6 +403,24 @@ impl WidgetKind {
                 label,
             } => match key {
                 "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
+                "min" => set_f(min, v),
+                "max" => set_f(max, v),
+                "label" => set_label(label, v),
+                _ => false,
+            },
+            WidgetKind::NodeTree {
+                group,
+                controls,
+                label,
+            } => match key {
+                "group" => v.as_i64().map(|n| *group = n as i32).is_some(),
+                "controls" => truthy(v).map(|b| *controls = b).is_some(),
+                "label" => set_label(label, v),
+                _ => false,
+            },
+            WidgetKind::Plot {
+                min, max, label, ..
+            } => match key {
                 "min" => set_f(min, v),
                 "max" => set_f(max, v),
                 "label" => set_label(label, v),
@@ -469,14 +541,16 @@ fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
     }
 }
 
-/// Resolves a waveform widget's samples: inline `"data": [f32…]`, or `"blob":
-/// <index>` into the OSC blobs carried with the def (raw little-endian `f32`).
-fn waveform_samples(
+/// Resolves a sample-view widget's inline samples: inline `"data": [f32…]`, or
+/// `"blob": <index>` into the OSC blobs carried with the def (raw little-endian
+/// `f32`). Shared by `waveform` and `plot`; `kind` names the widget in errors.
+fn inline_samples(
+    kind: &str,
     id: Option<i32>,
     props: &serde_json::Map<String, Value>,
     blobs: &[Vec<u8>],
 ) -> Result<Arc<[f32]>, String> {
-    let label = id.map_or_else(|| "waveform".to_string(), |i| format!("waveform {i}"));
+    let label = id.map_or_else(|| kind.to_string(), |i| format!("{kind} {i}"));
     if let Some(Value::Array(items)) = props.get("data") {
         let samples: Vec<f32> = items
             .iter()
@@ -636,6 +710,67 @@ mod tests {
         assert!(meter.kind.apply("bus", &Value::from(8)));
         assert!(meter.kind.apply("max", &Value::from(4.0)));
         assert_eq!(meter.kind.live_bus(), Some(8));
+    }
+
+    #[test]
+    fn nodetree_and_plot_parse_with_defaults_and_apply() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"nodetree","group":2,"controls":0,"label":"tree"},
+                {"id":2,"type":"plot","data":[0.0,1.0,-1.0],"max":2.0,"label":"sig"}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::NodeTree {
+                group,
+                controls,
+                label,
+            } => {
+                assert_eq!((*group, *controls), (2, false));
+                assert_eq!(label.as_deref(), Some("tree"));
+            }
+            other => panic!("expected nodetree, got {other:?}"),
+        }
+        assert_eq!(w.children[0].kind.node_tree_group(), Some(2));
+        // A nodetree is non-interactive and reads no bus.
+        assert_eq!(w.children[0].kind.event_value(), None);
+        assert_eq!(w.children[0].kind.live_bus(), None);
+        match &w.children[1].kind {
+            WidgetKind::Plot {
+                samples, min, max, ..
+            } => {
+                assert_eq!(&samples[..], &[0.0, 1.0, -1.0]);
+                // The plot keeps an explicit range; min defaults bipolar.
+                assert_eq!((*min, *max), (-1.0, 2.0));
+            }
+            other => panic!("expected plot, got {other:?}"),
+        }
+        // Live `/gui_set` retargets the tree's group and rescales the plot.
+        assert!(w.find_mut(1).unwrap().kind.apply("group", &Value::from(0)));
+        assert!(w.find_mut(2).unwrap().kind.apply("max", &Value::from(1.0)));
+        assert_eq!(w.children[0].kind.node_tree_group(), Some(0));
+    }
+
+    #[test]
+    fn plot_by_path_defers_empty_with_its_props() {
+        let n = node(
+            r#"{"type":"window","children":[{"id":3,"type":"plot","path":"/tmp/sig.f32","channels":2}]}"#,
+        );
+        let w = Widget::from_node(1, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Plot {
+                samples,
+                path,
+                channels,
+                ..
+            } => {
+                assert!(samples.is_empty(), "mapped later, not inline");
+                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/sig.f32")));
+                assert_eq!(*channels, 2);
+            }
+            other => panic!("expected plot, got {other:?}"),
+        }
     }
 
     #[test]

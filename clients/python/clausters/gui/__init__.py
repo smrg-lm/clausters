@@ -8,16 +8,18 @@ widget tree as JSON (the GUI analogue of a ``SynthDef``), and
 `clausters.gui.host.GuiHost` sends it and reads widgets back.
 
 The windowed host opens an OS window per ``window``-rooted GuiDef and renders
-containers, the standard controls, the heavy ``waveform`` view and the
-shared-memory-backed ``meter``/``scope``; live updates flow through ``/gui_set``
-and interactions come back as ``/gui_event``/``/gui_closed``. A ``waveform`` can
-also name a server buffer, and a ``meter``/``scope`` reads a control bus from the
-audio server's shared-memory segment. A widget can also be *bound*
-(`clausters.gui.host.GuiHost.bind`) so its value flows straight to the audio
-server, bypassing this script. See the ``examples/gui_*.py`` family
+containers, the standard controls, the heavy ``waveform`` view, the
+shared-memory-backed ``meter``/``scope``, a live ``nodetree`` of the server's
+node graph and a static ``plot`` of a signal; live updates flow through
+``/gui_set`` and interactions come back as ``/gui_event``/``/gui_closed``. A
+``waveform`` can also name a server buffer, and a ``meter``/``scope`` reads a
+control bus from the audio server's shared-memory segment. A widget can also be
+*bound* (`clausters.gui.host.GuiHost.bind`) so its value flows straight to the
+audio server, bypassing this script. See the ``examples/gui_*.py`` family
 (``gui_skeleton`` for the headless protocol, ``gui_window``/``gui_panel`` for
 windows and controls, ``gui_meters`` for the audio-server client paths,
-``gui_bind`` for the bound low-latency control path).
+``gui_bind`` for the bound low-latency control path, ``gui_nodetree`` for the
+live node tree, ``gui_plot`` for an NRT render plotted).
 """
 
 from .guidef import (
@@ -27,9 +29,11 @@ from .guidef import (
     menu,
     meter,
     node,
+    nodetree,
     number,
     panel,
     peaks_cache_file,
+    plot,
     samples_to_blob,
     samples_to_file,
     scope,
@@ -58,6 +62,8 @@ __all__ = [
     "waveform",
     "meter",
     "scope",
+    "nodetree",
+    "plot",
     "samples_to_blob",
     "samples_to_file",
     "peaks_cache_file",
