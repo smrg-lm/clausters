@@ -27,8 +27,11 @@
 //! talks to the audio server with one encoder, not a parallel one.
 
 pub mod client;
+pub mod controls;
+pub mod font;
 pub mod guidef;
 pub mod layout;
+pub mod paint;
 pub mod registry;
 pub mod transport;
 pub mod widget;
@@ -37,8 +40,6 @@ pub mod widget;
 // `<canvas>` surface. Everything above is windowing-agnostic and web-portable.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gui;
-#[cfg(not(target_arch = "wasm32"))]
-mod rects;
 
 use std::collections::HashMap;
 
@@ -60,6 +61,8 @@ pub const GUI_QUERY: &str = "/gui_query";
 pub const GUI_BIND: &str = "/gui_bind";
 pub const GUI_LOAD: &str = "/gui_load";
 pub const GUI_INFO: &str = "/gui_info";
+pub const GUI_EVENT: &str = "/gui_event";
+pub const GUI_CLOSED: &str = "/gui_closed";
 
 /// What handling a packet asks the host's *front* to do, beyond mutating the
 /// host's own state. The protocol logic stays transport- and GPU-agnostic and
@@ -75,6 +78,9 @@ pub enum HostEffect {
     OpenWindow(i32),
     /// Close the window for the GuiDef rooted at this id, if any.
     CloseWindow(i32),
+    /// A live `/gui_set` changed a widget in the window rooted at this id; the
+    /// front should repaint it (the typed tree is already updated in place).
+    Redraw(i32),
 }
 
 /// The widget-protocol interpreter (transport- and GPU-agnostic). See
@@ -118,9 +124,17 @@ impl Host {
     }
 
     /// The typed window document for def `id`, if it is a window-rooted def the
-    /// front should render.
+    /// front should render. The single source of truth: the windowed front
+    /// renders and hit-tests from it, and live `/gui_set`s mutate it in place
+    /// (see [`window_def_mut`](Self::window_def_mut)).
     pub fn window_def(&self, id: i32) -> Option<&Widget> {
         self.window_defs.get(&id)
+    }
+
+    /// Mutable access to a window document, for the front to write back a value
+    /// a user interaction produced (a turned knob, a moved slider).
+    pub fn window_def_mut(&mut self, id: i32) -> Option<&mut Widget> {
+        self.window_defs.get_mut(&id)
     }
 
     /// Handles one decoded packet from `from`, returning the effects its front
@@ -152,7 +166,7 @@ impl Host {
     fn dispatch(&mut self, msg: OscMessage, from: ClientId, effects: &mut Vec<HostEffect>) {
         match msg.addr.as_str() {
             GUI_DEF => self.on_def(&msg.args, from, effects),
-            GUI_SET => self.on_set(&msg.args, from),
+            GUI_SET => self.on_set(&msg.args, from, effects),
             GUI_FREE => self.on_free(&msg.args, from, effects),
             GUI_QUERY => self.on_query(&msg.args, from, effects),
             GUI_BIND => warn!("{from}: {GUI_BIND} is not implemented yet (a later milestone)"),
@@ -201,8 +215,10 @@ impl Host {
         }
     }
 
-    /// `/gui_set <id> <k> <v> ...` — update one live widget's properties.
-    fn on_set(&mut self, args: &[OscType], from: ClientId) {
+    /// `/gui_set <id> <k> <v> ...` — update one live widget's properties, in the
+    /// generic registry (for `/gui_query`) and, if it is inside an open window,
+    /// in the typed render tree (so the change shows live).
+    fn on_set(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
         let Some(id) = int_arg(args, 0) else {
             return warn!("{from}: {GUI_SET} needs an integer id");
         };
@@ -211,10 +227,22 @@ impl Host {
             return warn!("{from}: {GUI_SET} {id}: no key/value pairs");
         }
         let keys: Vec<&String> = props.iter().map(|(k, _)| k).collect();
-        if self.registry.set(id, props.clone()) {
-            info!("{from}: {GUI_SET} {id}: updated {keys:?}");
-        } else {
-            warn!("{from}: {GUI_SET} {id}: no such widget");
+        if !self.registry.set(id, props.clone()) {
+            return warn!("{from}: {GUI_SET} {id}: no such widget");
+        }
+        info!("{from}: {GUI_SET} {id}: updated {keys:?}");
+        // Mirror the change into the typed window tree the front renders.
+        if let Some(root) = self.registry.root_of(id)
+            && let Some(tree) = self.window_defs.get_mut(&root)
+            && let Some(widget) = tree.find_mut(id)
+        {
+            let mut changed = false;
+            for (k, v) in &props {
+                changed |= widget.kind.apply(k, v);
+            }
+            if changed {
+                effects.push(HostEffect::Redraw(root));
+            }
         }
     }
 

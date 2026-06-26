@@ -20,6 +20,7 @@
 
 use std::sync::Arc;
 
+use clausters_core::osc::OscType;
 use serde_json::Value;
 
 use super::guidef::GuiNode;
@@ -64,9 +65,68 @@ pub enum WidgetKind {
         samples: Arc<[f32]>,
         base_bucket: usize,
     },
-    /// A type this build does not render yet (a newer or control widget). Laid
-    /// out so it reserves space, but not painted. Carries the type tag for logs.
+    /// A continuous slider over `[min, max]`.
+    Slider(Range),
+    /// A rotary control over `[min, max]`.
+    Knob(Range),
+    /// A draggable numeric read-out over `[min, max]`.
+    Number(Range),
+    /// A momentary push button.
+    Button { label: Option<String> },
+    /// A boolean on/off control.
+    Toggle { value: bool, label: Option<String> },
+    /// A free-text field showing its value (script-driven at this milestone).
+    Text {
+        value: String,
+        label: Option<String>,
+    },
+    /// A drop/cycle selector over `options`, holding the chosen index.
+    Menu {
+        index: usize,
+        options: Vec<String>,
+        label: Option<String>,
+    },
+    /// A type this build does not render yet. Laid out so it reserves space, but
+    /// not painted. Carries the type tag for logs.
     Unknown(String),
+}
+
+/// The shared payload of the continuous controls (`slider`/`knob`/`number`): a
+/// value clamped to a range, with an optional label.
+#[derive(Debug, Clone)]
+pub struct Range {
+    pub value: f32,
+    pub min: f32,
+    pub max: f32,
+    pub label: Option<String>,
+}
+
+impl Range {
+    fn parse(props: &serde_json::Map<String, Value>) -> Range {
+        let min = number(props, "min", 0.0);
+        let max = number(props, "max", 1.0);
+        let value = number(props, "value", min).clamp(min.min(max), min.max(max));
+        Range {
+            value,
+            min,
+            max,
+            label: label(props),
+        }
+    }
+
+    /// The value as a 0..1 fraction of the range (for rendering).
+    pub fn fraction(&self) -> f32 {
+        if (self.max - self.min).abs() < f32::EPSILON {
+            0.0
+        } else {
+            ((self.value - self.min) / (self.max - self.min)).clamp(0.0, 1.0)
+        }
+    }
+
+    /// Sets the value from a 0..1 fraction of the range (for interaction).
+    pub fn set_fraction(&mut self, t: f32) {
+        self.value = self.min + t.clamp(0.0, 1.0) * (self.max - self.min);
+    }
 }
 
 /// The default window size when a GuiDef omits `w`/`h`.
@@ -124,6 +184,34 @@ impl Widget {
                     .map(|n| (n as usize).max(1))
                     .unwrap_or(DEFAULT_BASE_BUCKET),
             },
+            "slider" => WidgetKind::Slider(Range::parse(&node.props)),
+            "knob" => WidgetKind::Knob(Range::parse(&node.props)),
+            "number" => WidgetKind::Number(Range::parse(&node.props)),
+            "button" => WidgetKind::Button {
+                label: label(&node.props),
+            },
+            "toggle" => WidgetKind::Toggle {
+                value: node.props.get("value").and_then(truthy).unwrap_or(false),
+                label: label(&node.props),
+            },
+            "text" => WidgetKind::Text {
+                value: node
+                    .props
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                label: label(&node.props),
+            },
+            "menu" => {
+                let options = options(&node.props);
+                let index = node.props.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                WidgetKind::Menu {
+                    index: index.min(options.len().saturating_sub(1)),
+                    options,
+                    label: label(&node.props),
+                }
+            }
             other => WidgetKind::Unknown(other.to_string()),
         };
         // Only containers carry children into the typed tree; a leaf's children
@@ -143,6 +231,74 @@ impl Widget {
     pub fn is_waveform(&self) -> bool {
         matches!(self.kind, WidgetKind::Waveform { .. })
     }
+
+    /// The widget with id `id` anywhere in this tree, mutably (for `/gui_set`
+    /// and interaction).
+    pub fn find_mut(&mut self, id: i32) -> Option<&mut Widget> {
+        if self.id == Some(id) {
+            return Some(self);
+        }
+        self.children.iter_mut().find_map(|c| c.find_mut(id))
+    }
+}
+
+impl WidgetKind {
+    /// The current value as an OSC primitive for a `/gui_event`, or `None` for a
+    /// non-interactive widget. A `button` reports `1` (it is momentary; the press
+    /// is the event).
+    pub fn event_value(&self) -> Option<OscType> {
+        match self {
+            WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
+                Some(OscType::Float(r.value))
+            }
+            WidgetKind::Toggle { value, .. } => Some(OscType::Int(*value as i32)),
+            WidgetKind::Menu { index, .. } => Some(OscType::Int(*index as i32)),
+            WidgetKind::Text { value, .. } => Some(OscType::String(value.clone())),
+            WidgetKind::Button { .. } => Some(OscType::Int(1)),
+            _ => None,
+        }
+    }
+
+    /// Applies one `/gui_set` key/value to a live widget, returning whether it
+    /// changed anything the renderer cares about.
+    pub fn apply(&mut self, key: &str, v: &Value) -> bool {
+        match self {
+            WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => match key {
+                "value" => set_f(&mut r.value, v),
+                "min" => set_f(&mut r.min, v),
+                "max" => set_f(&mut r.max, v),
+                "label" => set_label(&mut r.label, v),
+                _ => false,
+            },
+            WidgetKind::Toggle { value, label } => match key {
+                "value" => truthy(v).map(|b| *value = b).is_some(),
+                "label" => set_label(label, v),
+                _ => false,
+            },
+            WidgetKind::Text { value, label } => match key {
+                "value" => v.as_str().map(|s| *value = s.to_string()).is_some(),
+                "label" => set_label(label, v),
+                _ => false,
+            },
+            WidgetKind::Menu {
+                index,
+                options,
+                label,
+            } => match key {
+                "index" => v
+                    .as_u64()
+                    .map(|n| *index = (n as usize).min(options.len().saturating_sub(1)))
+                    .is_some(),
+                "label" => set_label(label, v),
+                _ => false,
+            },
+            WidgetKind::Button { label } => key == "label" && set_label(label, v),
+            WidgetKind::Label { text } => {
+                key == "text" && v.as_str().map(|s| *text = s.to_string()).is_some()
+            }
+            _ => false,
+        }
+    }
 }
 
 /// A non-negative integer dimension property, defaulted when absent.
@@ -152,6 +308,65 @@ fn dimension(props: &serde_json::Map<String, Value>, key: &str, default: u32) ->
         .and_then(Value::as_u64)
         .map(|n| n.clamp(1, u32::MAX as u64) as u32)
         .unwrap_or(default)
+}
+
+/// A float property, defaulted when absent or non-numeric.
+fn number(props: &serde_json::Map<String, Value>, key: &str, default: f32) -> f32 {
+    props
+        .get(key)
+        .and_then(Value::as_f64)
+        .map(|n| n as f32)
+        .unwrap_or(default)
+}
+
+/// The `label` property as an owned string, if present.
+fn label(props: &serde_json::Map<String, Value>) -> Option<String> {
+    props
+        .get("label")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+/// The `options` property as a list of strings (for a menu).
+fn options(props: &serde_json::Map<String, Value>) -> Vec<String> {
+    match props.get("options") {
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A JSON value as a boolean: real bool, or a number where non-zero is true.
+fn truthy(v: &Value) -> Option<bool> {
+    match v {
+        Value::Bool(b) => Some(*b),
+        Value::Number(n) => n.as_f64().map(|x| x != 0.0),
+        _ => None,
+    }
+}
+
+/// Sets `slot` from a numeric JSON value, reporting whether it applied.
+fn set_f(slot: &mut f32, v: &Value) -> bool {
+    match v.as_f64() {
+        Some(x) => {
+            *slot = x as f32;
+            true
+        }
+        None => false,
+    }
+}
+
+/// Sets an optional label from a string JSON value.
+fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
+    match v.as_str() {
+        Some(s) => {
+            *slot = Some(s.to_string());
+            true
+        }
+        None => false,
+    }
 }
 
 /// Resolves a waveform widget's samples: inline `"data": [f32…]`, or `"blob":
@@ -255,7 +470,8 @@ mod tests {
 
     #[test]
     fn defaults_and_unknown_type() {
-        let n = node(r#"{"type":"window","children":[{"id":7,"type":"knob"}]}"#);
+        // `scope` is in the catalog but not yet a rendered WidgetKind variant.
+        let n = node(r#"{"type":"window","children":[{"id":7,"type":"scope"}]}"#);
         let w = Widget::from_node(1, &n, &[]).unwrap();
         // Window size defaults when w/h are omitted.
         match w.kind {
@@ -272,7 +488,7 @@ mod tests {
         }
         // An unrecognized type is kept (laid out), not rejected.
         match &w.children[0].kind {
-            WidgetKind::Unknown(t) => assert_eq!(t, "knob"),
+            WidgetKind::Unknown(t) => assert_eq!(t, "scope"),
             other => panic!("expected unknown, got {other:?}"),
         }
     }
@@ -281,5 +497,45 @@ mod tests {
     fn bad_blob_index_is_an_error() {
         let n = node(r#"{"type":"window","children":[{"id":2,"type":"waveform","blob":3}]}"#);
         assert!(Widget::from_node(1, &n, &[]).is_err());
+    }
+
+    #[test]
+    fn parses_controls_and_clamps_value() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"slider","min":20.0,"max":2000.0,"value":5000.0,"label":"cut"},
+                {"id":2,"type":"toggle","value":1},
+                {"id":3,"type":"menu","options":["a","b","c"],"index":1}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Slider(r) => {
+                assert_eq!(r.value, 2000.0, "value clamps into the range");
+                assert_eq!(r.label.as_deref(), Some("cut"));
+                assert_eq!(r.fraction(), 1.0);
+            }
+            other => panic!("expected slider, got {other:?}"),
+        }
+        assert!(matches!(
+            w.children[1].kind,
+            WidgetKind::Toggle { value: true, .. }
+        ));
+        assert!(matches!(
+            &w.children[2].kind,
+            WidgetKind::Menu { index: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn apply_updates_value_and_event_value_reports_it() {
+        let n =
+            node(r#"{"type":"window","children":[{"id":5,"type":"knob","min":0.0,"max":10.0}]}"#);
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        let knob = w.find_mut(5).unwrap();
+        assert!(knob.kind.apply("value", &Value::from(4.0)));
+        assert_eq!(knob.kind.event_value(), Some(OscType::Float(4.0)));
+        // An unknown key is a no-op.
+        assert!(!knob.kind.apply("nonesuch", &Value::from(1.0)));
     }
 }

@@ -73,6 +73,7 @@ pub fn serve(mut host: Host, socket: UdpSocket) -> io::Result<()> {
                     info!("gui_def {id}: window requested (headless front: not opening a window)")
                 }
                 HostEffect::CloseWindow(id) => info!("gui_free {id}: window closed (headless)"),
+                HostEffect::Redraw(_) => {} // nothing to repaint headless
             }
         }
     }

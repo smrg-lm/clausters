@@ -84,3 +84,28 @@ class GuiHost:
         kind = args[1] if len(args) > 1 else ""
         props = {args[i]: args[i + 1] for i in range(2, len(args) - 1, 2)}
         return kind, props
+
+    def poll(self, timeout: float = 0.0):
+        """One inbound message as ``(addr, args)``, or ``None`` within ``timeout``.
+
+        The receive side of the protocol: the host pushes ``/gui_event`` (a widget
+        was interacted with) and ``/gui_closed`` (a window was closed) back to the
+        script that built the window. Drive an interactive panel by polling this
+        in a loop, or wrap it with a `clausters.responders.OscFunc`-style dispatch.
+        """
+        data = self._osc.recv(timeout)
+        if data is None:
+            return None
+        return _osclib.decode(data)
+
+    def listen(self, duration: float, handler):
+        """Polls events for ``duration`` seconds, calling ``handler(addr, args)``
+        for each. A small convenience for scripts and demos; for anything richer,
+        use `poll` with your own loop or the responder model."""
+        import time
+
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            msg = self.poll(timeout=0.1)
+            if msg is not None:
+                handler(*msg)

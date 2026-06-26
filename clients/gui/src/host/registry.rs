@@ -63,6 +63,19 @@ impl Registry {
         self.widgets.get(&id)
     }
 
+    /// The def-root id of the subtree containing `id` (walking parents), or
+    /// `None` if `id` is unknown. Used to find which window a `/gui_set` lands in.
+    pub fn root_of(&self, id: i32) -> Option<i32> {
+        let mut cur = id;
+        loop {
+            let widget = self.widgets.get(&cur)?;
+            match widget.parent {
+                Some(parent) => cur = parent,
+                None => return Some(cur),
+            }
+        }
+    }
+
     /// Installs a GuiDef rooted at `root_id`. If that id already names a def it
     /// is freed first (redefinition, like re-sending a `SynthDef`). Descendants
     /// without an id, or whose id is already taken, are skipped with a warning

@@ -1,6 +1,6 @@
-// Solid colored rectangles for the GUI host's container/label chrome.
-// Vertices arrive already in clip space with a per-vertex RGBA color; the
-// fragment stage just passes the color through (alpha blending does the rest).
+// 2D colored geometry for the GUI host's chrome, controls and text. Vertices
+// arrive in clip space with a per-vertex RGBA color; the fragment stage passes
+// the color through (alpha blending does the rest).
 
 struct VsIn {
     @location(0) pos: vec2<f32>,

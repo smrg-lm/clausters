@@ -12,7 +12,21 @@ and introspects the widget tree and answers ``/gui_query``. See
 ``examples/gui_skeleton.py``.
 """
 
-from .guidef import knob, label, node, panel, samples_to_blob, slider, waveform, window
+from .guidef import (
+    button,
+    knob,
+    label,
+    menu,
+    node,
+    number,
+    panel,
+    samples_to_blob,
+    slider,
+    text,
+    toggle,
+    waveform,
+    window,
+)
 from .host import DEFAULT_PORT, GuiHost
 
 __all__ = [
@@ -24,6 +38,11 @@ __all__ = [
     "label",
     "knob",
     "slider",
+    "number",
+    "button",
+    "toggle",
+    "text",
+    "menu",
     "waveform",
     "samples_to_blob",
 ]

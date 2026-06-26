@@ -25,6 +25,11 @@ __all__ = [
     "label",
     "knob",
     "slider",
+    "number",
+    "button",
+    "toggle",
+    "text",
+    "menu",
     "waveform",
     "to_json",
     "samples_to_blob",
@@ -77,6 +82,40 @@ def slider(id: int, *, label: str | None = None, min: float | None = None,
     """A continuous ``slider`` over a range."""
     extra = _drop_none(label=label, min=min, max=max, value=value)
     return node("slider", id=id, **extra, **props)
+
+
+def number(id: int, *, label: str | None = None, min: float | None = None,
+           max: float | None = None, value: float | None = None, **props) -> dict:
+    """A draggable numeric read-out over a range."""
+    extra = _drop_none(label=label, min=min, max=max, value=value)
+    return node("number", id=id, **extra, **props)
+
+
+def button(id: int, *, label: str | None = None, **props) -> dict:
+    """A momentary push ``button`` (emits ``1`` on press, ``0`` on release)."""
+    extra = _drop_none(label=label)
+    return node("button", id=id, **extra, **props)
+
+
+def toggle(id: int, *, label: str | None = None, value: bool | None = None, **props) -> dict:
+    """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool)."""
+    extra = _drop_none(label=label)
+    if value is not None:
+        extra["value"] = 1 if value else 0
+    return node("toggle", id=id, **extra, **props)
+
+
+def text(id: int, *, value: str | None = None, label: str | None = None, **props) -> dict:
+    """A ``text`` field showing ``value`` (script-driven via ``/gui_set``)."""
+    extra = _drop_none(value=value, label=label)
+    return node("text", id=id, **extra, **props)
+
+
+def menu(id: int, options, *, index: int | None = None, label: str | None = None, **props) -> dict:
+    """A ``menu`` selector over ``options`` (a list of strings); a click cycles
+    to the next and emits the chosen ``index``."""
+    extra = _drop_none(index=index, label=label)
+    return node("menu", id=id, options=list(options), **extra, **props)
 
 
 def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None = None,

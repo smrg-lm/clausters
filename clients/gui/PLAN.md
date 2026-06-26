@@ -203,9 +203,11 @@ The GuiDef schema and the first pixels.
 
 - The test client creates an actual window showing the waveform from one declarative `/gui_def` message.
 
-## G4 - Standard control widgets + `/gui_set` + events
+## G4 - Standard control widgets + `/gui_set` + events - DONE (2026-06-25)
 
 The essentials of any GUI, plus the live update and event paths.
+
+**Landed:** the standard controls (`host::widget` typed kinds + `host::controls`) - `slider`/`knob`/`number` over a value range, `button` (momentary), `toggle`, `menu` (click-cycles), `text` (script-driven); the G3 rect renderer generalized into `host::paint` (a triangle `Mesh` + one `Painter`: rect/quad/line/disc) so knobs and a small embedded 5x7 bitmap font (`host::font`, the glyph text deferred from G3) need no new GPU code; the typed tree made the single source of truth in the `Host` so a live `/gui_set` and a user drag update the same tree (`Registry::root_of` + `HostEffect::Redraw`); interaction routed by hit-test to set values and emit `/gui_event <id> <value>` to the def's origin (button press/release 1/0, toggle/menu/slider/knob/number), `/gui_closed <id>` on user close, and the waveform's zoom/pan emitting `/gui_event <id> "view" start len`. Python `clausters.gui` gained `number`/`button`/`toggle`/`text`/`menu` builders and `GuiHost.poll`/`listen`; `examples/gui_panel.py`. Runtime-verified (window opens, controls render, live set + real drags round-trip events, no panic). See `LOG.md`.
 
 ### Scope
 

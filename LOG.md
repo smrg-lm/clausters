@@ -3052,3 +3052,55 @@ path around the prototype's `WaveformView`.
   untouched and still builds/tests with `--no-default-features`; E2E in one shell
   both ways — `--headless` round-trips `/gui_def`→log, `/gui_query`→`/gui_info`,
   `/gui_set`, `/gui_free`; windowed opens a waveform window from one `/gui_def`.
+
+## G4 — Standard control widgets + live `/gui_set` + events (2026-06-25)
+
+The GUI host gains the essentials of any GUI: the standard control widgets, the
+live-update path, and the host->script event path. Built on G3's window/layout/
+render foundation; the glyph text deferred in G3 lands here as a small embedded
+bitmap font, so labels and values are legible.
+
+- **Control widgets** (`host::widget` typed kinds + `host::controls` rendering/
+  hit-math): `slider`, `knob`, `number` (a draggable read-out) over a `Range`
+  (value/min/max/label); `button` (momentary), `toggle` (boolean), `menu`
+  (click-cycles its options), and `text` (shows its value, script-driven). All
+  parse from the generic GuiNode, keep the int/float distinction, and an
+  unrecognized type is still `Unknown` (laid out, not painted) — the protocol
+  never changed.
+- **One drawing primitive.** The G3 rect renderer became `host::paint` — a
+  `Mesh` of flat-colored triangles (rect/quad/line/disc) and a one-pipeline
+  `Painter` — so knobs (a disc + a swept pointer) and glyphs need no new GPU
+  code. `host::font` is a compact embedded **5x7 bitmap font** drawn as one quad
+  per lit pixel into that mesh (no texture, no second pipeline); it renders
+  labels and numeric values (uppercase, with a box fallback). A control is thus
+  composed from the painter's primitives + text, never bespoke pipelines.
+- **Single source of truth.** The typed window tree now lives only in the
+  `Host` (`window_def`/`window_def_mut`); the windowed front renders and
+  hit-tests from it and writes interaction results back into it, so a live
+  `/gui_set` and a user drag update the same tree and the next frame reflects
+  both. `/gui_set` updates the generic registry (for `/gui_query`) and, via
+  `Registry::root_of`, the typed widget in its window, emitting a new
+  `HostEffect::Redraw`.
+- **Interaction -> events.** The front hit-tests the widget under the cursor and
+  routes the gesture: a slider follows the cursor x, a knob/number a vertical
+  drag (`host::controls::{slider_fraction, drag_fraction_delta}`, unit-tested),
+  a toggle flips, a menu cycles, a button is momentary. Each change writes the
+  value back into the host tree and emits `/gui_event <id> <value>` to the script
+  that built the window (its address is captured at `/gui_def`); a `button`
+  reports `1` on press and `0` on release. Closing a window (button or `Esc`)
+  emits `/gui_closed <id>`. The waveform's zoom/pan/reset emit
+  `/gui_event <id> "view" start len`, wiring the `TimelineView` interactions out.
+- **Binary/Python.** Unchanged CLI (`--headless` still runs the protocol with no
+  display). Python `clausters.gui` gains `number`/`button`/`toggle`/`text`/`menu`
+  builders and `GuiHost.poll`/`listen` for the event path (the receive side of
+  the responder model); `examples/gui_panel.py` is a scripted instrument panel
+  that drives a widget with `/gui_set` and prints the `/gui_event`s/`/gui_closed`
+  your interactions emit.
+- **Tests:** 49 in the gui crate (control parse/clamp, `apply`+`event_value`,
+  slider/knob value math, font pixel-quad emission, layout, host effects), all
+  GPU-free; runtime-verified on this machine — the panel window opens and renders
+  every control with no panic or wgpu validation error, a live `/gui_set` moves a
+  knob, and a real knob drag round-trips a `/gui_event` to the script.
+- **Verified:** gui `cargo test` green, `cargo fmt --check` and
+  `cargo clippy --all-targets -- -D warnings` clean; the core server is untouched
+  and still builds/tests with `--no-default-features`.

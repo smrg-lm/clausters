@@ -884,3 +884,42 @@ Notas:
   re-enviar el mismo id la reconstruye; `/gui_free <id>` la cierra.
 - En una maquina sin display, el modo ventana falla con un mensaje claro
   (`use --headless`); usar `--headless` para el protocolo.
+
+## 14. GUI host: controles, /gui_set en vivo y eventos (G4)
+
+G4 agrega los controles estandar y los dos caminos que faltaban: actualizar un
+widget en vivo (`/gui_set`) y recibir interacciones del usuario (`/gui_event`,
+`/gui_closed`). Controles: `slider`, `knob`, `number` (rango con valor),
+`button` (momentaneo), `toggle`, `menu` (un click cicla la opcion) y `text`
+(muestra su valor, lo cambia el script). Los labels y valores se dibujan con una
+fuente bitmap 5x7 embebida (el texto que G3 habia diferido). Interaccion: arrastrar
+slider (sigue el cursor en x), knob/number (arrastre vertical), click en
+toggle/menu/button; cada cambio emite `/gui_event <id> <valor>` al script que creo
+la ventana; cerrar la ventana emite `/gui_closed <id>`.
+
+Necesita display y un adaptador Vulkan/Metal/DX12/GL.
+
+```sh
+# host en modo ventana (una terminal):
+cd clients/gui && cargo run --bin clausters-gui -- -v
+# en otra, con el cliente importable: arma un panel, hace un /gui_set y escucha:
+PYTHONPATH=clients/python python clients/python/examples/gui_panel.py
+```
+
+Esperado:
+
+- Se abre una ventana "Filter" con dos filas: knobs (cutoff/res/gain) y
+  slider/toggle/button/menu. El script imprime `set cutoff to 2000` (un
+  `/gui_set` desde el script mueve el knob al instante).
+- Al mover un knob/slider, hacer click en el toggle/menu o apretar el boton, el
+  script imprime `event from widget <id>: [<valor>]` (el boton da `[1]` al apretar
+  y `[0]` al soltar; el toggle `[0]/[1]`; el menu el indice; knob/slider el float).
+- Al cerrar la ventana, imprime `window 1 closed` y el script termina.
+
+Notas:
+
+- El valor preserva tipo: knob/slider/number emiten float, toggle/menu/button int.
+- `/gui_set` tambien se ve por `/gui_query` (modo `--headless`, seccion 12): el
+  registro generico y el arbol tipado de la ventana se actualizan juntos.
+- El texto de los labels es una fuente bitmap mayuscula (suficiente para paneles);
+  tipografia proporcional/grande es una mejora posterior.
