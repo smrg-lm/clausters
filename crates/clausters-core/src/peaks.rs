@@ -1,19 +1,26 @@
 //! Min/max peak pyramid: resolution-matched peak analysis for navigable views.
 //!
-//! The waveform is never drawn sample-by-sample and never processes millions of
-//! samples per frame. Instead a min/max *peak* pyramid is computed once: level 0
-//! summarizes every `base_bucket` samples into a `(min, max)` pair, and each
-//! higher level halves the resolution. At draw time the level whose bucket size
-//! matches the current `samples_per_px` is selected, so each rendered pixel
-//! column reads only ~one bucket - work proportional to the window width, not to
+//! A waveform view is never drawn sample-by-sample and never processes millions
+//! of samples per frame. Instead a min/max *peak* pyramid is computed once:
+//! level 0 summarizes every `base_bucket` samples into a `(min, max)` pair, and
+//! each higher level halves the resolution. At draw time the level whose bucket
+//! size matches the current `samples_per_px` is selected, so each rendered pixel
+//! column reads only ~one bucket — work proportional to the window width, not to
 //! the buffer length.
 //!
-//! Computing peaks for a long file is the expensive part, so the result is a
-//! cache: it lives in memory and can be serialized to a temp/cache file (the way
-//! audio editors keep an overview/peak file beside the audio) and read back -
-//! `to_bytes`/`from_bytes` and `write_cache`/`read_cache`. The layout is a flat
-//! sequence of `f32` arrays, so a production build can memory-map it instead of
-//! reading it into RAM. The format is machine-local (native float byte order).
+//! This is **general Clausters client functionality**, not real-time audio
+//! processing: any client with a waveform view wants it, so it lives once in the
+//! shared core (and is reachable from non-Rust clients through the FFI) rather
+//! than re-implemented per client. The server itself never needs it.
+//!
+//! Computing peaks for a long buffer is the expensive part, so the result is a
+//! cache: it lives in memory and can be serialized to a file (the way audio
+//! editors keep an overview/peak file beside the audio) and read back —
+//! `to_bytes`/`from_bytes` and `write_cache`/`read_cache`. The layout (see
+//! [`crate::bytes`]) is a flat sequence of `f32` arrays, so a build can
+//! memory-map it instead of reading it into RAM — the local shared-resource
+//! path the GUI host uses to render a multi-megabyte buffer with no per-frame or
+//! over-the-wire re-send. The format is machine-local (native float byte order).
 
 use std::fs;
 use std::io;
@@ -114,7 +121,7 @@ impl Pyramid {
     /// Pick the finest level whose bucket does not exceed `samples_per_px`, so
     /// each pixel column aggregates ~one bucket (no gaps, minimal work). When
     /// zoomed in finer than level 0, level 0 is returned and the caller should
-    /// read raw samples instead (see `waveform::WaveformData::column`).
+    /// read raw samples instead (see the waveform view's `column`).
     pub fn level_for(&self, samples_per_px: f64) -> usize {
         let mut chosen = 0;
         for (i, lvl) in self.levels.iter().enumerate() {
@@ -192,7 +199,7 @@ impl Pyramid {
         })
     }
 
-    /// Write the cache to `path` (e.g. a temp file beside the audio).
+    /// Write the cache to `path` (e.g. a file beside the audio).
     pub fn write_cache(&self, path: impl AsRef<Path>) -> io::Result<()> {
         fs::write(path, self.to_bytes())
     }
@@ -202,6 +209,28 @@ impl Pyramid {
     pub fn read_cache(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
         Ok(Self::from_bytes(&fs::read(path)?))
     }
+}
+
+/// The exact [`Pyramid::to_bytes`] length for a pyramid of `total_samples`
+/// samples at `base_bucket`, computed **without** building it. A client (e.g.
+/// over the FFI) sizes its output buffer with this before calling `build`. It
+/// mirrors the level structure `build` produces (level 0 of `ceil(n /
+/// base_bucket)` buckets, each higher level halving until length 1), so the
+/// `cache_size_matches_to_bytes_len` test pins the two together.
+pub fn cache_size(total_samples: usize, base_bucket: usize) -> usize {
+    assert!(base_bucket >= 1);
+    // Header: MAGIC(4) + VERSION(4) + base_bucket(8) + total_samples(8) + n_levels(8).
+    let mut size = 4 + 4 + 8 + 8 + 8;
+    let mut level_len = total_samples.div_ceil(base_bucket);
+    loop {
+        // Per level: bucket(8) + len(8) + min(4*len) + max(4*len).
+        size += 8 + 8 + 8 * level_len;
+        if level_len <= 1 {
+            break;
+        }
+        level_len = level_len.div_ceil(2);
+    }
+    size
 }
 
 #[cfg(test)]
@@ -248,8 +277,8 @@ mod tests {
     fn cache_round_trip() {
         let s = ramp(5000);
         let p = Pyramid::build(&s, 64);
-        let bytes = p.to_bytes();
-        let q = Pyramid::from_bytes(&bytes).expect("parse");
+        let raw = p.to_bytes();
+        let q = Pyramid::from_bytes(&raw).expect("parse");
         assert_eq!(p.base_bucket(), q.base_bucket());
         assert_eq!(p.total_samples(), q.total_samples());
         assert_eq!(p.num_levels(), q.num_levels());
@@ -279,5 +308,15 @@ mod tests {
     fn from_bytes_rejects_garbage() {
         assert!(Pyramid::from_bytes(b"not a pyramid").is_none());
         assert!(Pyramid::from_bytes(&[]).is_none());
+    }
+
+    #[test]
+    fn cache_size_matches_to_bytes_len() {
+        // The size predicted without building must equal the built cache length,
+        // across small/large and exact/ragged bucket counts (and the empty case).
+        for &(n, base) in &[(0, 256), (1, 256), (1000, 4), (5000, 64), (100_000, 256)] {
+            let built = Pyramid::build(&ramp(n), base).to_bytes().len();
+            assert_eq!(cache_size(n, base), built, "n={n} base={base}");
+        }
     }
 }

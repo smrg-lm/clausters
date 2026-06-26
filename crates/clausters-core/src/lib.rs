@@ -2,7 +2,7 @@
 //!
 //! The single source of truth for the value- and time-level computations that
 //! must agree between the server (`clausters`) and every client (Python now,
-//! JavaScript later). Three of the four modules are dependency-free and
+//! JavaScript later). The builtins/rng/tempoclock hot paths (and [`fft`]) are
 //! allocation-free so the audio thread can call them directly; the server
 //! refactors its native UGens onto them, which makes client-side results match
 //! the server **by construction** for the operations the server computes
@@ -26,8 +26,20 @@
 //! - [`osc`] — the OSC seam shared by the server and every client: the single
 //!   `decode_packet` door, bundle/timetag assembly and timetag↔sample
 //!   conversion (depends on `rosc`; not allocation-free).
+//! - [`fft`] — a forward real FFT (over `microfft`, zero-allocation), shared by
+//!   the GUI spectrogram and the server's coming `FFT`/`IFFT` UGens so the
+//!   transform lives once.
+//! - [`peaks`] — the min/max peak pyramid behind any client's navigable
+//!   waveform view, with its memory-mappable cache. General client
+//!   functionality (not real-time), shared so every client builds the identical
+//!   cache.
+//! - [`bytes`] — little-endian cache (de)serialization the analysis caches
+//!   share.
 
 pub mod builtins;
+pub mod bytes;
+pub mod fft;
 pub mod osc;
+pub mod peaks;
 pub mod rng;
 pub mod tempoclock;

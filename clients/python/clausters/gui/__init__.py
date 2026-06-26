@@ -29,7 +29,9 @@ from .guidef import (
     node,
     number,
     panel,
+    peaks_cache_file,
     samples_to_blob,
+    samples_to_file,
     scope,
     slider,
     text,
@@ -57,4 +59,6 @@ __all__ = [
     "meter",
     "scope",
     "samples_to_blob",
+    "samples_to_file",
+    "peaks_cache_file",
 ]

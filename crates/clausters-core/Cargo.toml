@@ -9,3 +9,8 @@ description = "Shared native core for Clausters: numeric builtins, seeded RNG an
 # Only the `osc` module needs it; the builtins/rng/tempoclock hot paths are
 # dependency-free and allocation-free so the audio thread can call them.
 rosc = "0.11"
+# The `fft` module's forward real FFT, shared by the GUI spectrogram and the
+# server's coming FFT/IFFT UGens. `no_std` and zero-allocation (compile-time
+# power-of-two sizes), so a real-time caller never allocates. The default
+# `size-4096` covers the STFT window sizes; a small, task-specific dep tree.
+microfft = "0.6"

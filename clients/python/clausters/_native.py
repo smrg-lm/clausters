@@ -22,7 +22,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 2
+CORE_ABI_VERSION = 3
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -125,6 +125,13 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_unix_to_sample.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_int64, ctypes.c_double,
     ]
+    # Peak-pyramid cache builder (ABI v3): the shared analysis the GUI host maps
+    # to render a waveform without re-sending samples (the bulk path).
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    lib.clausters_core_peaks_cache_size.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_cache_size.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
+    lib.clausters_core_peaks_build.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_build.argtypes = [f32p, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t]
     # WebSocket client transport (ABI v2). A connection is an opaque handle;
     # bytes (with embedded NULs) cross via c_char_p + an explicit length, so OSC
     # packets are passed whole, not NUL-truncated.
@@ -224,6 +231,24 @@ def samples_to_secs(samples: int, sample_rate: float) -> float:
 
 def unix_to_sample(unix_secs: float, anchor_unix: float, anchor_sample: int, sample_rate: float) -> int:
     return lib().clausters_core_unix_to_sample(unix_secs, anchor_unix, anchor_sample, sample_rate)
+
+
+def peaks_cache(samples, base_bucket: int = 256) -> bytes:
+    """The min/max peak-pyramid cache for mono `samples`, built by the shared
+    native core so it is **byte-identical** to one the GUI host (or the server)
+    builds. These bytes are the GUI's mmap-able waveform overview: write them to
+    a file a ``waveform(cache=...)`` maps, so a multi-megabyte buffer never rides
+    OSC. `base_bucket` is the level-0 bucket size (default 256)."""
+    a, _ = _as_array(samples)
+    n = len(a)
+    size = lib().clausters_core_peaks_cache_size(n, base_bucket)
+    if size == 0:
+        raise ValueError("clausters_core_peaks_cache_size returned 0 (base_bucket must be > 0)")
+    out = (ctypes.c_ubyte * size)()
+    written = lib().clausters_core_peaks_build(_ptr(a), n, base_bucket, out, size)
+    if written != size:
+        raise ValueError(f"clausters_core_peaks_build wrote {written} of {size} bytes")
+    return bytes(out)
 
 
 # ---- WebSocket client transport ----

@@ -43,6 +43,12 @@ pub mod widget;
 #[cfg(unix)]
 pub mod shm;
 
+// Mapping a local file (raw samples or a prebuilt peak cache) for the bulk-data
+// path: a multi-megabyte buffer rendered from a shared resource, not over OSC
+// (G7). Unix-only, like `shm`.
+#[cfg(unix)]
+pub mod mapfile;
+
 // The windowed host (winit + wgpu) is native-only; a wasm build swaps it for a
 // `<canvas>` surface. Everything above is windowing-agnostic and web-portable.
 #[cfg(not(target_arch = "wasm32"))]

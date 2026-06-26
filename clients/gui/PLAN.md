@@ -251,18 +251,33 @@ The low-latency interactive control path.
 
 - A bound knob drives a running synth's control with no round-trip through the script; unbinding restores the event path.
 
-## G7 - Bulk data path + shared DSP
+## G7 - Bulk data path + shared DSP - DONE (2026-06-26)
 
-How large payloads move, and the rule against duplicating server DSP.
+Two principles the rest of the system already implies, made concrete - and both are implemented here, so the milestone splits into two subsections. First, heavy data moves between Clausters processes through **local shared resources** rather than the wire. Second, an algorithm used by more than one process lives **once**, in the shared core, never reimplemented per client. The "DSP" here is the GUI's *analysis-for-plotting* - the peak pyramid (waveform level-of-detail) and the FFT/STFT (spectrogram) - which today lives only in this crate (the server owns no peak/FFT analysis: `clausters-core` is builtins/osc/rng/tempoclock, and `spectrogram.rs` carries a handrolled radix-2 FFT).
+
+### G7a - Bulk data transfer: local shared resources, not the network
+
+**Decision** (the milestone asked to record one, against the real constraint rather than in the abstract): large payloads - sample buffers, analysis caches (peaks/STFT), rendered or filtered files - move between processes via **local shared resources** (memory-mapped files, and the shared segment where it already exists), **never re-encoded over OSC**. The reasons are concrete: a UDP datagram caps near 64 KB, so a multi-megabyte buffer cannot ride one `/gui_def` blob, and chunking it over `/b_getn` re-traverses the network *asynchronously* for data that already sits in local RAM; a mapped file is read once, zero-copy, with no re-send. The network buffer primitives stay available - they work, and the browser, which can map neither shared memory nor files, needs them (G11) - but they are the **async fallback**, not the bulk path. This is the same move G5 made for control buses (read from the shared segment with zero messages), generalized to bulk audio.
+
+Concretely:
+- A `waveform`/`spectrogram` names a **local resource**: a memory-mapped file of raw little-endian `f32` samples (`path`, with `channels` to de-interleave, default 1) or a prebuilt analysis cache (`cache`, a `peaks` pyramid). The host maps it read-only and reads it zero-copy - reusing the `host::shm` mmap path - instead of receiving an OSC blob. A multi-megabyte buffer renders with no network traffic and no re-send; a built pyramid is cached as a sibling file keyed by `base_bucket`, so re-opening is instant.
+- **Server RT buffers are plottable through the same shared-resource path**, not only client files: a server command exports a buffer's raw `f32` samples to a mapped file (mirroring the existing buffer disk I/O), which the host maps like any other resource. So a live server buffer is shown without pulling it over `/b_getn`. (A buffer pool natively backed by shared memory - a live, updating view - is the follow-on once a consumer needs the live case; G7 ships the snapshot export. The `--shm` segment's fixed ABI is untouched.)
+- The principle "audio processing happens once, in the server" makes this natural: a client that needs processed audio (an FFT buffer, a filtered file) runs it in a server instance - live, or a parallel NRT instance via `clausters_render`/`DiskOut`, which already yield flat samples / a WAV file - and hands the **result resource** to the host, rather than computing audio client-side.
+
+### G7b - Shared analysis algorithms in the core: FFT (and peaks)
+
+**Principle**: an algorithm used by more than one Clausters process lives **once**, in `clausters-core`, reached by clients through the FFI - never reimplemented per client. Two land here.
+- **FFT** is shared between the server and the clients. The server will grow `FFT`/`IFFT` UGens (the SuperCollider spectral chain) and the GUI spectrogram already needs a forward FFT (today a handrolled radix-2 in `spectrogram.rs`, with a standing note to swap in a crate). The forward FFT moves into `clausters-core` on a **lightweight, RT-capable, task-specific** crate - `microfft` (`no_std`, zero-allocation, compile-time power-of-two sizes, which are exactly the STFT's window sizes) so `process` never allocates, the property the future RT UGens require. The gui `spectrogram::Stft` drops its private `fft()` for the core one. (`microfft` is forward-only; if the later `IFFT`/`PV_*` UGens need the inverse, that crate choice is revisited then, behind the same core API - out of scope here.)
+- **Peaks** - the min/max pyramid - is not real-time and the server will not use it for processing, but it is **general Clausters client functionality** (any waveform view, in any client). It moves into `clausters-core` (pure, no GPU) and is exposed over the FFI so the Python client (and a future JS one) build the **identical** cache the host reads - which is what feeds G7a's bulk path (the client builds the compact cache; the host maps it). The gui crate's `peaks.rs` delegates to the core implementation; the renderer is unchanged.
 
 ### Scope
 
-- For large payloads (raw samples / STFT, when *not* referencing a server buffer): decide between binary WS frames, a shared resource, and an mmap cache keyed by source + analysis params. Decide against a real case, not in the abstract.
-- Route heavy analysis through `clausters-ffi`/`libclausters` rather than the `clients/gui` crate's private copies, so signal code lives once. Migrate `peaks`/`Stft` behind the FFI where it pays off.
+- Bulk path for large client payloads via mapped files / cache, and for server RT buffers via a shared-resource export; the network buffer reads remain the async fallback.
+- The forward FFT and the peak pyramid live once in `clausters-core`; peaks is reachable from clients over the FFI. The inverse FFT, STFT-as-a-server-product, and a live shared buffer pool are deferred with their reasons recorded.
 
 ### Acceptance
 
-- A multi-megabyte buffer renders without re-sending it per frame; the analysis path is documented and (where migrated) shared with the server's DSP.
+- A multi-megabyte buffer - client-origin (a mapped file/cache) and server-origin (an exported RT buffer) - renders without re-sending it per frame and without riding OSC; the analysis path is documented, the FFT and peaks live once in the shared core, and peaks is callable from the Python client through the FFI.
 
 ## G8 - Node-tree view + NRT plots
 

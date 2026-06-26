@@ -4,8 +4,9 @@
 //! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; the buffer
 //! commands `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`,
 //! `/b_free` (all async via the NRT thread, replying `/done cmd bufnum`),
-//! `/b_query` (synchronous `/b_info`) and the synchronous reads `/b_get`
-//! (`/b_set`) and `/b_getn` (`/b_setn`); `/n_go` and
+//! `/b_query` (synchronous `/b_info`), the synchronous reads `/b_get`
+//! (`/b_set`) and `/b_getn` (`/b_setn`), and `/b_export` (dump raw samples to a
+//! local file for the shared-resource bulk path); `/n_go` and
 //! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
 //! `/d_faust name def` compiles a def — JSON box graph (F2) or raw Faust
 //! source (F1) — on the dedicated compiler thread and replies
@@ -751,6 +752,7 @@ impl OscServer {
             "/b_query" => self.handle_b_query(&msg, from),
             "/b_get" => self.handle_b_get(&msg, from),
             "/b_getn" => self.handle_b_getn(&msg, from),
+            "/b_export" => self.handle_b_export(&msg, from),
             "/sync" => self.handle_sync(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
             "/d_faust" => self.handle_d_faust(&msg, from),
@@ -1367,6 +1369,38 @@ impl OscServer {
             args.extend(slice.iter().map(|s| OscType::Float(*s)));
         }
         self.reply(from, "/b_setn", args);
+    }
+
+    /// `/b_export bufnum path` → `/done /b_export bufnum`: write the buffer's raw
+    /// samples (flat, interleaved, little-endian `f32`) to `path` as a **local
+    /// shared resource**, so a same-machine client (the GUI host) can map and read
+    /// a multi-megabyte buffer with no per-sample OSC traffic — the bulk-data path,
+    /// the efficient counterpart of `/b_getn`'s chunked over-the-wire reads. The
+    /// reader pairs it with the buffer's channel count (from `/b_query`) to
+    /// de-interleave. Synchronous on the network thread (not the audio thread),
+    /// like `/b_get`/`/b_getn`; replies `/fail` on a missing buffer or a write
+    /// error.
+    fn handle_b_export(&mut self, msg: &OscMessage, from: ClientId) {
+        let (Some(OscType::Int(bufnum)), Some(OscType::String(path))) =
+            (msg.args.first(), msg.args.get(1))
+        else {
+            return self.fail(from, "/b_export", "expected bufnum then a path string");
+        };
+        let Some(buffer) = self.mirror_buffer(*bufnum) else {
+            return self.fail(from, "/b_export", "no such buffer");
+        };
+        let mut bytes = Vec::with_capacity(buffer.data().len() * 4);
+        for &s in buffer.data() {
+            bytes.extend_from_slice(&s.to_le_bytes());
+        }
+        match std::fs::write(path, &bytes) {
+            Ok(()) => self.reply(
+                from,
+                "/done",
+                vec![OscType::String("/b_export".into()), OscType::Int(*bufnum)],
+            ),
+            Err(e) => self.fail(from, "/b_export", format!("write {path}: {e}")),
+        }
     }
 
     fn mirror_buffer(&self, index: i32) -> Option<Arc<crate::dsp::buffer::Buffer>> {

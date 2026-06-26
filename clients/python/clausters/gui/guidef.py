@@ -35,6 +35,8 @@ __all__ = [
     "scope",
     "to_json",
     "samples_to_blob",
+    "samples_to_file",
+    "peaks_cache_file",
 ]
 
 
@@ -121,21 +123,31 @@ def menu(id: int, options, *, index: int | None = None, label: str | None = None
 
 
 def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None = None,
+             path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, **props) -> dict:
-    """The heavy ``waveform`` view, fed its samples one of three ways:
+    """The heavy ``waveform`` view, fed its samples one of several ways (in the
+    host's precedence order):
 
-    - ``data`` — a list of floats embedded inline in the JSON (simplest; keep it
-      small enough to fit a datagram);
-    - ``blob`` — the index of a binary blob carried beside the JSON in the same
-      ``/gui_def`` message (the bulk path; see `samples_to_blob` and
-      `GuiHost.define`);
+    - ``cache`` — a path to a prebuilt peak-pyramid file (see `peaks_cache_file`)
+      the host memory-maps and renders directly; the raw samples are never
+      loaded. The most compact **bulk path**: nothing rides OSC.
+    - ``path`` — a path to a file of raw little-endian ``f32`` samples (see
+      `samples_to_file`, or the server's ``/b_export``) the host memory-maps; a
+      **multi-megabyte buffer renders with no OSC and no re-send**. ``channels``
+      de-interleaves channel 0 (default 1).
     - ``buffer`` — a server buffer number; the host fetches its samples from the
-      audio server (it must be started with ``--server``) and renders them.
+      audio server over OSC (it must be started with ``--server``). The async
+      fallback when a shared file is not available.
+    - ``data`` — a small list of floats embedded inline in the JSON;
+    - ``blob`` — the index of a binary blob carried beside the JSON in the same
+      ``/gui_def`` message (see `samples_to_blob` and `GuiHost.define`).
 
-    ``base_bucket`` sets the peak-pyramid bucket size (default 256).
+    ``base_bucket`` sets the peak-pyramid bucket size (default 256); for ``path``
+    it also keys the sibling cache the host writes beside the file.
     """
     extra = _drop_none(data=list(data) if data is not None else None,
-                       blob=blob, buffer=buffer, base_bucket=base_bucket)
+                       blob=blob, buffer=buffer, path=path, cache=cache,
+                       channels=channels, base_bucket=base_bucket)
     return node("waveform", id=id, **extra, **props)
 
 
@@ -171,6 +183,32 @@ def samples_to_blob(samples) -> bytes:
     if sys.byteorder != "little":
         buf.byteswap()
     return buf.tobytes()
+
+
+def samples_to_file(samples, path: str) -> str:
+    """Writes `samples` to `path` as raw little-endian ``f32`` — the **local
+    shared resource** a ``waveform(path=...)`` maps. Unlike `samples_to_blob`
+    (which rides the ``/gui_def`` message and so must fit a datagram), a file has
+    no size limit: this is how a multi-megabyte buffer reaches the host without
+    OSC. Returns `path`."""
+    buf = array.array("f", samples)
+    if sys.byteorder != "little":
+        buf.byteswap()
+    with open(path, "wb") as f:
+        f.write(buf.tobytes())
+    return path
+
+
+def peaks_cache_file(samples, path: str, base_bucket: int = 256) -> str:
+    """Builds the peak-pyramid cache for `samples` (via the shared native core,
+    so it is byte-identical to the host's own) and writes it to `path` — the most
+    compact bulk path, mapped by a ``waveform(cache=...)``. The host renders the
+    overview without ever loading the raw samples. Returns `path`."""
+    from .._native import peaks_cache  # lazy: only needs the cdylib if used
+
+    with open(path, "wb") as f:
+        f.write(peaks_cache(samples, base_bucket))
+    return path
 
 
 def _drop_none(**kwargs) -> dict:

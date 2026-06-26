@@ -145,11 +145,14 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /b_query     bufnum...                 →  /b_info  bufnum frames channels sampleRate ...
 /b_get       bufnum index...           →  /b_set   bufnum index value ...
 /b_getn      bufnum [start count]...   →  /b_setn  bufnum start count value ...
+/b_export    bufnum path               →  /done /b_export bufnum
 ```
 
 `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero` and `/b_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
 
 `/b_query`, `/b_get` and `/b_getn` are **synchronous** reads, answered from the network-side buffer mirror (state as of the last completed command). `/b_get` reads single samples by flat (interleaved) index; `/b_getn` reads ranges, with `count` clamped to what the buffer holds from `start` — a request past the end returns only the available samples, and an unallocated buffer returns count 0. Sample indices are flat across channels (`frame * channels + channel`), so a stereo buffer reads as interleaved `L R L R ...`. Each reply must fit one datagram, so large buffers are read in client-chosen chunks.
+
+`/b_export bufnum path` writes the buffer's raw samples — flat, interleaved, little-endian `f32` — to a local file and replies `/done /b_export bufnum` (or `/fail` on a missing buffer or write error). It is the **bulk-data path** for a same-machine consumer: where `/b_getn` chunks a buffer over the network, `/b_export` puts a multi-megabyte buffer in a file the consumer memory-maps and reads zero-copy, with no per-sample OSC. It is synchronous on the network thread (not the audio thread), reading the same mirror as `/b_query`. The reader pairs the file with the buffer's channel count (from `/b_query`) to de-interleave. (This is what the GUI host's mapped-`path` waveform reads.)
 
 ## Faust defs (`/d_faust`)
 

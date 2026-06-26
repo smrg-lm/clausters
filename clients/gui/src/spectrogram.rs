@@ -11,7 +11,8 @@
 
 use std::sync::Arc;
 
-use crate::bytes;
+use clausters_core::{bytes, fft};
+
 use crate::view::TimelineView;
 use crate::viewport::View;
 
@@ -27,56 +28,6 @@ const REF_FLOOR: f32 = -120.0;
 pub enum FreqScale {
     Linear,
     Log,
-}
-
-/// In-place iterative radix-2 Cooley-Tukey FFT. `re`/`im` must be the same
-/// power-of-two length. A compact, testable stand-in; a production build would
-/// swap in `rustfft` without touching the rest of the module.
-fn fft(re: &mut [f32], im: &mut [f32]) {
-    let n = re.len();
-    debug_assert!(n.is_power_of_two() && im.len() == n);
-
-    // Bit-reversal permutation.
-    let mut j = 0usize;
-    for i in 1..n {
-        let mut bit = n >> 1;
-        while j & bit != 0 {
-            j ^= bit;
-            bit >>= 1;
-        }
-        j ^= bit;
-        if i < j {
-            re.swap(i, j);
-            im.swap(i, j);
-        }
-    }
-
-    // Butterflies.
-    let mut len = 2;
-    while len <= n {
-        let ang = -2.0 * std::f32::consts::PI / len as f32;
-        let (wstep_r, wstep_i) = (ang.cos(), ang.sin());
-        let half = len / 2;
-        let mut base = 0;
-        while base < n {
-            let (mut wr, mut wi) = (1.0f32, 0.0f32);
-            for k in 0..half {
-                let a = base + k;
-                let b = base + k + half;
-                let tr = wr * re[b] - wi * im[b];
-                let ti = wr * im[b] + wi * re[b];
-                re[b] = re[a] - tr;
-                im[b] = im[a] - ti;
-                re[a] += tr;
-                im[a] += ti;
-                let nwr = wr * wstep_r - wi * wstep_i;
-                wi = wr * wstep_i + wi * wstep_r;
-                wr = nwr;
-            }
-            base += len;
-        }
-        len <<= 1;
-    }
 }
 
 /// A short-time Fourier transform: `n_frames` x `n_bins` normalized magnitudes
@@ -97,7 +48,11 @@ impl Stft {
     /// `hop` is the frame advance (e.g. `window_size / 2`); `sample_rate` is used
     /// for the frequency axis.
     pub fn compute(samples: &[f32], window_size: usize, hop: usize, sample_rate: f32) -> Self {
-        assert!(window_size.is_power_of_two() && hop >= 1);
+        assert!(
+            fft::supports(window_size) && hop >= 1,
+            "window_size must be a supported FFT size {:?}",
+            fft::SUPPORTED_SIZES
+        );
         let total_samples = samples.len();
         let n_bins = window_size / 2;
         let n_frames = if total_samples < window_size {
@@ -114,17 +69,17 @@ impl Stft {
         let win_gain: f32 = hann.iter().sum::<f32>() * 0.5;
 
         let mut mags = vec![0.0f32; n_frames * n_bins];
-        let mut re = vec![0.0f32; window_size];
-        let mut im = vec![0.0f32; window_size];
+        let mut windowed = vec![0.0f32; window_size];
+        let mut spectrum = vec![0.0f32; n_bins]; // n_bins == window_size / 2
         for f in 0..n_frames {
             let start = f * hop;
-            for i in 0..window_size {
-                re[i] = samples.get(start + i).copied().unwrap_or(0.0) * hann[i];
-                im[i] = 0.0;
+            for (i, w) in windowed.iter_mut().enumerate() {
+                *w = samples.get(start + i).copied().unwrap_or(0.0) * hann[i];
             }
-            fft(&mut re, &mut im);
+            // The forward FFT lives once in the shared core (`clausters_core::fft`).
+            fft::rfft_magnitudes_into(&windowed, &mut spectrum);
             for b in 0..n_bins {
-                let mag = (re[b] * re[b] + im[b] * im[b]).sqrt() / win_gain;
+                let mag = spectrum[b] / win_gain;
                 let db = 20.0 * (mag + 1e-9).log10();
                 mags[f * n_bins + b] = ((db - REF_FLOOR) / -REF_FLOOR).clamp(0.0, 1.0);
             }
@@ -548,38 +503,9 @@ mod tests {
     use super::*;
     use std::f32::consts::PI;
 
-    #[test]
-    fn fft_delta_is_flat_spectrum() {
-        // FFT of a unit impulse is all-ones magnitude.
-        let n = 16;
-        let mut re = vec![0.0f32; n];
-        let mut im = vec![0.0f32; n];
-        re[0] = 1.0;
-        fft(&mut re, &mut im);
-        for k in 0..n {
-            let mag = (re[k] * re[k] + im[k] * im[k]).sqrt();
-            assert!((mag - 1.0).abs() < 1e-4, "bin {k} mag {mag}");
-        }
-    }
-
-    #[test]
-    fn fft_cosine_peaks_at_its_bin() {
-        let n = 64;
-        let k0 = 5;
-        let mut re: Vec<f32> = (0..n)
-            .map(|i| (2.0 * PI * k0 as f32 * i as f32 / n as f32).cos())
-            .collect();
-        let mut im = vec![0.0f32; n];
-        fft(&mut re, &mut im);
-        let peak = (0..n / 2)
-            .max_by(|&a, &b| {
-                let ma = re[a] * re[a] + im[a] * im[a];
-                let mb = re[b] * re[b] + im[b] * im[b];
-                ma.partial_cmp(&mb).unwrap()
-            })
-            .unwrap();
-        assert_eq!(peak, k0);
-    }
+    // The FFT correctness tests (impulse -> flat, cosine -> single bin) now live
+    // with the shared implementation in `clausters_core::fft`; here we test the
+    // STFT built on it.
 
     #[test]
     fn stft_locates_sine_frequency() {

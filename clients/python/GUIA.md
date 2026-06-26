@@ -1024,3 +1024,59 @@ Notas:
   binding, asi que un id viejo no sigue reenviando.
 - Cualquier direccion sirve, no solo `/n_set`: `/c_set <bus>`, `/n_setn`, etc. El
   valor del widget se agrega siempre al final del prefijo fijo del `bind`.
+
+## 17. Transferencia masiva por recursos compartidos + DSP compartido (G7)
+
+G7 separa dos cosas que el sistema ya pedia:
+
+- **Los datos masivos NO van por OSC.** Un datagrama UDP corta cerca de 64 KB y
+  trocear un buffer por `/b_getn` re-recorre la red para datos que ya estan en
+  RAM local. Un `waveform` ahora referencia un **archivo local** que el host
+  **mmapea** y lee sin copia: `path=` (f32 little-endian crudo) o `cache=` (una
+  pirámide de picos prearmada, la forma mas compacta, el host no carga ni los
+  samples crudos). La red (`/b_getn`) queda como fallback asíncrono.
+- **El algoritmo (FFT, picos) vive una sola vez** en `clausters-core`: el
+  spectrogram usa el FFT del core (`microfft`), y los picos (`peaks`) viven en el
+  core y se exponen por el FFI, asi un cliente arma la **misma** cache que el host
+  lee. El FFT queda listo para las futuras UGens FFT/IFFT del servidor.
+
+**IMPORTANTE: tras G7 hay que recompilar.** El binario `clausters-gui` y el cdylib
+`libclausters_ffi` cambiaron (un host viejo ignora `path`/`cache` y dibuja una
+ventana vacia; el FFI subio a ABI v3). En un checkout fuente, `cargo run --bin
+clausters-gui` recompila el host, y `cargo build -p clausters-ffi` el cdylib
+(refrescar el bundle `clients/python/clausters/_libs/` o usar `CLAUSTERS_FFI_LIB`).
+
+```sh
+# servidor de audio (una terminal, desde la raiz):
+cargo run
+
+# host en modo ventana, atado al servidor (otra terminal, desde clients/gui):
+cd clients/gui && cargo run --bin clausters-gui -- --server 127.0.0.1:57110 -v
+
+# el script: arma archivos grandes (raw + cache), exporta un buffer y los muestra:
+PYTHONPATH=clients/python python clients/python/examples/gui_bulk.py
+```
+
+Esperado:
+
+- El script imprime el tamano del archivo crudo (~2 MB para 500k samples) y de la
+  cache de picos (decenas de KB), y `server exported buffer N -> ... B`.
+- El log del host muestra, por cada waveform, `waveform: mapped 500000 samples
+  from ... (no OSC, no re-send)` y `waveform: mapped peak cache ... (no raw data,
+  no OSC)`, y `opened window`. La ventana dibuja las tres ondas; se hace zoom/pan
+  con rueda/arrastre. **Ningun sample viaja por OSC.**
+- Si la ventana sale vacia: casi seguro el host es viejo (no tiene el codigo de
+  `path`/`cache`) — recompilar el binario y reabrir.
+
+Notas:
+
+- Las rutas se pasan **absolutas**: el host es otro proceso y resuelve la ruta
+  desde su propio directorio.
+- Para `path`, el host construye la pirámide una vez y la cachea al lado como
+  `<path>.<base_bucket>.peaks`, asi reabrir un buffer grande no recalcula.
+- `samples_to_file` (crudo) y `peaks_cache_file` (cache via FFI) son las dos
+  formas de preparar los datos; `peaks_cache_file` usa `clausters_core_peaks_*`
+  del FFI, asi la cache es byte-identica a la que arma el host.
+- `/b_export bufnum path` es la version servidor: vuelca un buffer RT a un archivo
+  local que el host mmapea (en vez de traerlo por `/b_getn`). Es sincrono en el
+  hilo de red, no en el de audio.

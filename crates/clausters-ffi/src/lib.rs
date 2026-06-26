@@ -14,14 +14,16 @@
 //! `clausters_core::osc` (Rust-tested).
 
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
+use clausters_core::peaks::{self, Pyramid};
 use clausters_core::rng::WhiteNoise;
 use clausters_core::tempoclock;
 
 mod ws;
 
 /// The C ABI version of this surface. Bump on any incompatible change. v2 added
-/// the `clausters_ws_*` WebSocket client transport.
-pub const CORE_ABI_VERSION: u32 = 2;
+/// the `clausters_ws_*` WebSocket client transport; v3 the `clausters_core_peaks_*`
+/// peak-pyramid cache builder.
+pub const CORE_ABI_VERSION: u32 = 3;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -100,6 +102,49 @@ pub unsafe extern "C" fn clausters_core_whitenoise(seed: u64, out: *mut f32, n: 
     // SAFETY: caller guarantees `out` is writable for `n`.
     let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
     WhiteNoise::from_seed(seed).fill(o);
+}
+
+/// The exact byte length of the peak-pyramid cache for `n` samples at
+/// `base_bucket` — call it to size the buffer for [`clausters_core_peaks_build`]
+/// without building the pyramid. Returns 0 if `base_bucket == 0`.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_peaks_cache_size(n: usize, base_bucket: usize) -> usize {
+    if base_bucket == 0 {
+        return 0;
+    }
+    peaks::cache_size(n, base_bucket)
+}
+
+/// Builds a min/max peak pyramid from `samples` (mono, `n` `f32`s) at
+/// `base_bucket` and writes its cache bytes — the memory-mappable format the GUI
+/// host maps to render a waveform without re-sending the samples — into `out`
+/// (capacity `out_cap`). Returns the number of bytes written, or 0 on a null
+/// pointer, `base_bucket == 0`, or `out_cap` below
+/// [`clausters_core_peaks_cache_size`]`(n, base_bucket)`.
+///
+/// # Safety
+/// `samples` must be readable for `n` `f32`s and `out` writable for `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_peaks_build(
+    samples: *const f32,
+    n: usize,
+    base_bucket: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    if samples.is_null() || out.is_null() || base_bucket == 0 {
+        return 0;
+    }
+    // SAFETY: caller guarantees `samples` is readable for `n` `f32`s.
+    let s = unsafe { std::slice::from_raw_parts(samples, n) };
+    let cache = Pyramid::build(s, base_bucket).to_bytes();
+    if cache.len() > out_cap {
+        return 0;
+    }
+    // SAFETY: out is writable for out_cap >= cache.len().
+    let o = unsafe { std::slice::from_raw_parts_mut(out, cache.len()) };
+    o.copy_from_slice(&cache);
+    cache.len()
 }
 
 /// Seconds at `beats` for the affine clock `(tempo, base_beats, base_seconds)`.
@@ -211,5 +256,47 @@ mod tests {
         // 120 bpm = 2 bps, beat 0 at second 0.
         assert_eq!(clausters_core_beats_to_secs(2.0, 0.0, 0.0, 2.0), 1.0);
         assert_eq!(clausters_core_secs_to_samples(1.0, 48_000.0), 48_000);
+    }
+
+    #[test]
+    fn peaks_build_writes_a_parseable_cache() {
+        let samples: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.01).sin()).collect();
+        let base = 64;
+        let size = clausters_core_peaks_cache_size(samples.len(), base);
+        assert!(size > 0);
+        let mut out = vec![0u8; size];
+        let written = unsafe {
+            clausters_core_peaks_build(
+                samples.as_ptr(),
+                samples.len(),
+                base,
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        };
+        assert_eq!(written, size, "writes exactly the predicted size");
+        // The bytes are the same cache the GUI host parses, identical to a
+        // pyramid built in-process (the algorithm lives once in the core).
+        let from_ffi = Pyramid::from_bytes(&out).expect("parse");
+        assert_eq!(from_ffi.total_samples(), samples.len());
+        assert_eq!(
+            Pyramid::build(&samples, base).to_bytes(),
+            out,
+            "FFI cache is byte-identical to the in-process build"
+        );
+        // A buffer one byte short writes nothing.
+        let mut tiny = vec![0u8; size - 1];
+        assert_eq!(
+            unsafe {
+                clausters_core_peaks_build(
+                    samples.as_ptr(),
+                    samples.len(),
+                    base,
+                    tiny.as_mut_ptr(),
+                    tiny.len(),
+                )
+            },
+            0
+        );
     }
 }

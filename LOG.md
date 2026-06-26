@@ -3205,3 +3205,73 @@ source wired to a server-side destination instead of being polled).
   `cargo test` green, `cargo fmt --check` and `cargo clippy --all-targets -- -D
   warnings` clean; the core still builds/tests with `--no-default-features`
   (unchanged this milestone — no server code touched).
+
+## G7 — Bulk data path + shared DSP (2026-06-26)
+
+Two principles the system already implied, made concrete (both implemented, so
+the milestone split into two parts): heavy data moves between Clausters
+processes through **local shared resources**, not the wire; and an analysis
+algorithm used by more than one process lives **once**, in the shared core.
+
+**Part B — shared analysis algorithms in `clausters-core`.** The "DSP" here is
+the GUI's analysis-for-plotting; investigation confirmed the server owns none of
+it today (the gui crate was the sole owner, with a handrolled radix-2 FFT in
+`spectrogram.rs`).
+
+- **FFT (`clausters_core::fft`).** A forward real FFT (`rfft_magnitudes_into`)
+  over `microfft` — `no_std`, zero-allocation, compile-time power-of-two sizes
+  (256..4096, the STFT's window sizes), so `process` never allocates, the
+  property the server's coming `FFT`/`IFFT` UGens need. The gui
+  `spectrogram::Stft` dropped its private `fft()` for this; the magnitude
+  convention (bin 0 = `|DC|`, the Nyquist `microfft` packs into the DC bin's
+  imaginary part not exposed) matches the old output, so the STFT tests still
+  localize a sine to the right bin. `microfft` is forward-only; the inverse (for
+  resynthesis UGens) is deferred behind the same API, recorded.
+- **Peaks (`clausters_core::peaks`) + `bytes`.** The min/max peak pyramid moved
+  out of the gui crate into the core (pure, no GPU): general client
+  functionality (any waveform view, any client), not RT, with its
+  memory-mappable `CLPK` cache unchanged. A new `cache_size(n, base_bucket)`
+  predicts the cache length without building, for sizing an FFI buffer. The gui
+  `peaks.rs` is now a re-export; the renderer is untouched.
+- **FFI (`clausters-ffi`, ABI v2→v3).** `clausters_core_peaks_cache_size` and
+  `clausters_core_peaks_build` let a client build the **byte-identical** cache
+  the host maps. Python (`_native.peaks_cache`, `clausters.gui.peaks_cache_file`)
+  builds a `.peaks` file over the FFI.
+
+**Part A — bulk transfer via local shared resources (the recorded decision).**
+Large payloads — sample buffers, peak caches — move as **memory-mapped files**,
+never re-encoded over OSC (a datagram caps near 64 KB; chunking a buffer over
+`/b_getn` re-traverses the network asynchronously for data already in local
+RAM). The network reads stay the **async fallback** (and the browser's path,
+G11); this generalizes G5's zero-message control buses to bulk audio.
+
+- **Mapped waveform sources (`host::mapfile` + `host::gui`).** A `waveform` names
+  a local resource: `cache` (a prebuilt pyramid file mapped and used directly —
+  raw samples never loaded) or `path` (raw little-endian `f32` mapped and
+  de-interleaved by `channels`, pyramid built once and cached as a sibling
+  `<path>.<base_bucket>.peaks`). `host::mapfile::MappedFile` is the same
+  read-only `libc::mmap` as `host::shm`, over an arbitrary file. `WaveformData`
+  now takes its length from the pyramid, so a cache-only view (no raw samples)
+  renders the overview.
+- **Server RT buffers via the same path (`/b_export`).** `/b_export bufnum path`
+  dumps a buffer's raw interleaved `f32` to a local file the host maps — so a
+  live server buffer is plotted without `/b_getn`. Synchronous on the network
+  thread (not the audio thread), from the buffer mirror, like `/b_get`/`/b_getn`.
+  Doc in `docs/schemas.md`; round-trip test in `tests/osc.rs`.
+- **Python + example.** `clausters.gui` gains `waveform(path=/cache=/channels=)`,
+  `samples_to_file`, `peaks_cache_file`; `examples/gui_bulk.py` shows all three
+  forms (a multi-megabyte client sweep from its raw file and its peak cache, plus
+  a server buffer exported with `/b_export`).
+- **Tests:** core 24 (FFT impulse/cosine, peaks moved, `cache_size` vs
+  `to_bytes`), ffi 6 (`peaks_build` byte-identical to the in-process build), gui
+  57 (mapfile de-interleave + empty-file reject, `path`/`cache` parse),
+  `tests/osc.rs` 28 (`/b_export` round trip + missing-buffer fail).
+- **Verified:** runtime end-to-end — the windowed host maps a 500k-sample
+  (2 MB) raw `f32` file and its 31 KB peak cache from a `/gui_def` and renders
+  both with **no OSC for the samples** (host logs `mapped 500000 samples from
+  … (no OSC, no re-send)` and `mapped peak cache … (no raw data, no OSC)`), no
+  panic. Python FFI builds a `CLPK` cache byte-identical to the Rust build. gui
+  `cargo fmt --check`/`clippy -D warnings` clean and `cargo test` green; core/ffi
+  green; the core builds/tests with `--no-default-features`. (Pre-existing
+  rust-1.95 clippy lints in `translate.rs`/`server.rs:929`/`graphdef.rs` are
+  unrelated to G7 and left as-is.)

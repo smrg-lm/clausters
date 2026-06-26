@@ -434,6 +434,75 @@ fn b_getn_and_b_get_read_buffer_samples() {
 }
 
 #[test]
+fn b_export_dumps_raw_samples_to_a_local_file() {
+    let server = TestServer::spawn();
+
+    // A 6-frame mono WAV loaded into buffer 0.
+    let samples: Vec<f32> = vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5];
+    let wav =
+        std::env::temp_dir().join(format!("clausters_b_export_src_{}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(&wav, spec).unwrap();
+    for s in &samples {
+        w.write_sample(*s).unwrap();
+    }
+    w.finalize().unwrap();
+    server.send(
+        "/b_allocRead",
+        vec![
+            OscType::Int(0),
+            OscType::String(wav.to_str().unwrap().into()),
+        ],
+    );
+    server.recv_until("/done");
+
+    // Export the buffer to a raw little-endian f32 file (the bulk shared-resource
+    // path) and confirm the /done names the command and buffer.
+    let out =
+        std::env::temp_dir().join(format!("clausters_b_export_out_{}.f32", std::process::id()));
+    server.send(
+        "/b_export",
+        vec![
+            OscType::Int(0),
+            OscType::String(out.to_str().unwrap().into()),
+        ],
+    );
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/b_export".into()));
+    assert_eq!(done.args[1], OscType::Int(0));
+
+    // The file is exactly the samples as little-endian f32 (what the GUI host maps).
+    let bytes = std::fs::read(&out).unwrap();
+    let got: Vec<f32> = bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    assert_eq!(got, samples);
+
+    // Exporting an unallocated buffer fails (and writes no file).
+    server.send(
+        "/b_export",
+        vec![
+            OscType::Int(7),
+            OscType::String(out.to_str().unwrap().into()),
+        ],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/b_export".into())
+    );
+
+    let _ = std::fs::remove_file(&wav);
+    let _ = std::fs::remove_file(&out);
+    server.quit();
+}
+
+#[test]
 fn notify_clients_receive_n_go_and_n_end() {
     let mut server = TestServer::spawn();
     server.send("/notify", vec![OscType::Int(1)]);

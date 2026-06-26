@@ -18,6 +18,7 @@
 //! rule; a server buffer reference (`"buffer"`) is recognized but deferred to the
 //! milestone where the host attaches to the audio server.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use clausters_core::osc::OscType;
@@ -61,14 +62,22 @@ pub enum WidgetKind {
     /// Static text.
     Label { text: String },
     /// The heavy waveform view: its samples and the peak-pyramid bucket size.
-    /// When `buffer` is set, the samples are fetched from that audio-server
-    /// buffer number by the windowed front once the host is attached to the
-    /// server (until then `samples` is empty); otherwise the samples come inline
-    /// (`data`) or from a blob.
+    /// The samples reach the view one of several ways, in precedence order:
+    /// `cache` (a prebuilt peak-pyramid file the host maps — the most compact
+    /// bulk path, raw samples never loaded), `path` (a file of raw little-endian
+    /// `f32` the host maps — the bulk path for a multi-megabyte buffer, no OSC),
+    /// `buffer` (an audio-server buffer number the windowed front fetches over
+    /// the client leg), or inline `data`/`blob`. `channels` de-interleaves
+    /// channel 0 of a multi-channel `path` (default 1). For `cache`/`path`/
+    /// `buffer`, `samples` starts empty and is filled when the resource is
+    /// mapped/fetched.
     Waveform {
         samples: Arc<[f32]>,
         base_bucket: usize,
         buffer: Option<i32>,
+        path: Option<PathBuf>,
+        cache: Option<PathBuf>,
+        channels: usize,
     },
     /// A level meter reading control bus `bus` from the shared-memory segment
     /// each frame (zero messages), shown as a bar over `[min, max]`.
@@ -209,6 +218,22 @@ impl Widget {
                     .get("buffer")
                     .and_then(Value::as_i64)
                     .map(|n| n as i32),
+                path: node
+                    .props
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from),
+                cache: node
+                    .props
+                    .get("cache")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from),
+                channels: node
+                    .props
+                    .get("channels")
+                    .and_then(Value::as_u64)
+                    .map(|n| (n as usize).max(1))
+                    .unwrap_or(1),
             },
             "meter" => WidgetKind::Meter {
                 bus: int_prop(&node.props, "bus", 0),
@@ -479,11 +504,8 @@ fn waveform_samples(
             .collect();
         return Ok(samples.into());
     }
-    if props.contains_key("buffer") {
-        // The server-buffer path needs the host's audio-server client leg, which
-        // a later milestone adds. Render empty until then rather than fail.
-        return Ok(Arc::from([] as [f32; 0]));
-    }
+    // A `buffer` (audio-server fetch) or a `path`/`cache` (mapped local
+    // resource) is loaded later by the windowed front; start empty.
     Ok(Arc::from([] as [f32; 0]))
 }
 
@@ -522,6 +544,7 @@ mod tests {
                 samples,
                 base_bucket,
                 buffer,
+                ..
             } => {
                 assert_eq!(&samples[..], &[0.0, 0.5, -0.5, 1.0]);
                 assert_eq!(*base_bucket, 2);
@@ -541,6 +564,39 @@ mod tests {
             } => {
                 assert!(samples.is_empty(), "no inline data yet — fetched later");
                 assert_eq!(*buffer, Some(7));
+            }
+            other => panic!("expected waveform, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn waveform_by_path_and_cache_defer_with_their_props() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","path":"/tmp/buf.f32","channels":2},
+                {"id":2,"type":"waveform","cache":"/tmp/buf.peaks"}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Waveform {
+                samples,
+                path,
+                channels,
+                ..
+            } => {
+                assert!(samples.is_empty(), "samples are mapped later, not inline");
+                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/buf.f32")));
+                assert_eq!(*channels, 2);
+            }
+            other => panic!("expected waveform, got {other:?}"),
+        }
+        match &w.children[1].kind {
+            WidgetKind::Waveform { cache, .. } => {
+                assert_eq!(
+                    cache.as_deref(),
+                    Some(std::path::Path::new("/tmp/buf.peaks"))
+                );
             }
             other => panic!("expected waveform, got {other:?}"),
         }

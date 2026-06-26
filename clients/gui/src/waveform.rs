@@ -44,13 +44,20 @@ impl WaveformData {
     }
 
     /// Build from samples and an already-computed pyramid (e.g. read back from a
-    /// cache file with `Pyramid::read_cache`).
+    /// cache file with `Pyramid::read_cache`). The samples may be **empty** — a
+    /// cache-only view (the bulk path where the host maps just the compact
+    /// pyramid, never the raw buffer): it renders the resolution-matched overview
+    /// from the pyramid, and the zoomed-in raw-sample regimes simply have nothing
+    /// finer to show.
     pub fn with_pyramid(samples: Arc<[f32]>, pyramid: Pyramid) -> Self {
         Self { samples, pyramid }
     }
 
+    /// The buffer length the view spans. Taken from the pyramid (which is built
+    /// over the whole buffer), so a cache-only view with no raw `samples` still
+    /// reports the right length.
     pub fn total_samples(&self) -> usize {
-        self.samples.len()
+        self.pyramid.total_samples()
     }
 
     pub fn pyramid(&self) -> &Pyramid {
