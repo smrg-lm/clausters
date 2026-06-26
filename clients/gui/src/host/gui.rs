@@ -37,6 +37,7 @@ use crate::view::TimelineView;
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
+use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
@@ -192,6 +193,16 @@ struct PlotItem {
     label: Option<String>,
 }
 
+/// A placed `canvas` widget, copied out of the host tree: its viewport body, the
+/// shader source (for an in-place recompile when it changed) and the param
+/// vector, with the bus-mapped slots already resolved from shared memory.
+struct CanvasFrame {
+    id: i32,
+    body: Rect,
+    shader: String,
+    params: [f32; canvas::PARAM_COUNT],
+}
+
 /// An in-progress pointer drag, by what it is driving.
 enum Drag {
     /// A horizontal slider: the value follows the cursor x within `body`.
@@ -221,6 +232,8 @@ enum Drag {
 struct WindowState {
     gpu: Gpu,
     waveforms: HashMap<i32, WaveformSlot>,
+    /// Per-`canvas` GPU resources (the compiled user shader + uniforms).
+    canvases: HashMap<i32, CanvasView>,
     painter: Painter,
     origin: SocketAddr,
     cursor: (f64, f64),
@@ -299,14 +312,12 @@ impl App {
         self.shm.as_ref().map_or(0.0, |s| s.control(bus as usize))
     }
 
-    /// Whether window `def_id` should repaint continuously: it has a meter/scope
-    /// and there is a shared segment to feed it.
+    /// Whether window `def_id` should repaint continuously: it has a `canvas`
+    /// (time-driven, always), or a meter/scope with a shared segment to feed it.
     fn window_is_animated(&self, def_id: i32) -> bool {
-        self.shm.is_some()
-            && self
-                .host
-                .window_def(def_id)
-                .is_some_and(tree_has_live_widget)
+        self.host.window_def(def_id).is_some_and(|tree| {
+            tree_has_canvas(tree) || (self.shm.is_some() && tree_has_live_widget(tree))
+        })
     }
 
     fn apply(&mut self, event_loop: &ActiveEventLoop, from: SocketAddr, effects: Vec<HostEffect>) {
@@ -418,8 +429,10 @@ impl App {
 
         let mut waveforms = HashMap::new();
         let mut buffer_refs = Vec::new();
+        let mut canvases = HashMap::new();
         if let Some(tree) = self.host.window_def(id) {
             collect_waveforms(tree, &gpu, &mut waveforms, &mut buffer_refs);
+            collect_canvases(tree, &gpu, &mut canvases);
         }
         let painter = Painter::new(&gpu.device, gpu.config.format);
 
@@ -429,6 +442,7 @@ impl App {
             WindowState {
                 gpu,
                 waveforms,
+                canvases,
                 painter,
                 origin,
                 cursor: (0.0, 0.0),
@@ -968,6 +982,7 @@ impl App {
         // node-tree models and the GPU resources are read.
         let mut plot_rects: Vec<PlotItem> = Vec::new();
         let mut nodetree_rects: Vec<(Rect, i32, bool, Option<String>)> = Vec::new();
+        let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
         let active_button = match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
             Some(Drag::Button { id }) => Some(*id),
             _ => None,
@@ -1017,6 +1032,40 @@ impl App {
                     controls,
                     label,
                 } => nodetree_rects.push((p.rect, *group, *controls, label.clone())),
+                WidgetKind::Canvas {
+                    shader,
+                    params,
+                    buses,
+                    label,
+                } => {
+                    if let Some(id) = p.widget.id {
+                        if let Some(text) = label {
+                            super::font::text(
+                                &mut mesh,
+                                text,
+                                p.rect.x + 4.0,
+                                p.rect.y + 4.0,
+                                LABEL_SCALE,
+                                LABEL_COLOR,
+                            );
+                        }
+                        // Resolve the param vector: a `-1` slot keeps its
+                        // script-set value; a bus slot is read from shared memory
+                        // this frame (zero messages, like a meter).
+                        let mut resolved = *params;
+                        for (slot, &bus) in resolved.iter_mut().zip(buses.iter()) {
+                            if bus >= 0 {
+                                *slot = self.read_bus(bus);
+                            }
+                        }
+                        canvas_frames.push(CanvasFrame {
+                            id,
+                            body: controls::body_rect(p.rect, label.is_some()),
+                            shader: shader.clone(),
+                            params: resolved,
+                        });
+                    }
+                }
                 WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
                 kind => controls::draw(&mut mesh, kind, p.rect, p.widget.id == active_button),
             }
@@ -1083,6 +1132,16 @@ impl App {
                 );
             }
         }
+        // Recompile any canvas whose shader changed, then push its per-frame
+        // uniforms (viewport size, elapsed time, resolved params).
+        for frame in &canvas_frames {
+            if let Some(view) = ws.canvases.get_mut(&frame.id) {
+                view.set_shader(&ws.gpu.device, &frame.shader);
+                let time = view.elapsed();
+                let res = [frame.body.w.max(1.0), frame.body.h.max(1.0)];
+                view.upload(&ws.gpu.queue, res, time, frame.params);
+            }
+        }
 
         let frame = match ws.gpu.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(f)
@@ -1127,6 +1186,16 @@ impl App {
                     let (x, y, w, h) = clamp_viewport(*rect, fb_w, fb_h);
                     pass.set_viewport(x, y, w, h, 0.0, 1.0);
                     slot.view.draw(&mut pass);
+                }
+            }
+            for frame in &canvas_frames {
+                if frame.body.w >= 1.0
+                    && frame.body.h >= 1.0
+                    && let Some(view) = ws.canvases.get(&frame.id)
+                {
+                    let (x, y, w, h) = clamp_viewport(frame.body, fb_w, fb_h);
+                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                    view.draw(&mut pass);
                 }
             }
         }
@@ -1295,6 +1364,24 @@ fn mapped_waveform_slot(
 /// Whether a widget tree contains a live (shared-memory-backed) meter or scope.
 fn tree_has_live_widget(widget: &Widget) -> bool {
     widget.kind.live_bus().is_some() || widget.children.iter().any(tree_has_live_widget)
+}
+
+/// Whether a widget tree contains a `canvas` (so the window animates each frame).
+fn tree_has_canvas(widget: &Widget) -> bool {
+    matches!(widget.kind, WidgetKind::Canvas { .. }) || widget.children.iter().any(tree_has_canvas)
+}
+
+/// Builds a [`CanvasView`] (compiling the user shader) for every `canvas` in the
+/// tree, keyed by widget id.
+fn collect_canvases(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, CanvasView>) {
+    if let WidgetKind::Canvas { shader, .. } = &widget.kind
+        && let Some(id) = widget.id
+    {
+        out.insert(id, CanvasView::new(&gpu.device, gpu.config.format, shader));
+    }
+    for child in &widget.children {
+        collect_canvases(child, gpu, out);
+    }
 }
 
 /// Whether a widget tree contains a `nodetree` view (so the window drives the

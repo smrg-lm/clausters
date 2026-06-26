@@ -1131,3 +1131,33 @@ Notas:
 - El `nodetree` toma un `group` (default 0, el grupo raiz) y un flag `controls` (default true, muestra los pares nombre/valor de cada synth).
 - El `plot` toma sus samples por `path=` (archivo f32 crudo mmapeado, el camino sin OSC; `channels=` desentrelaza el canal 0), o inline por `data=`/`blob=` para senales chicas. El rango vertical es `min`/`max` (default bipolar -1/1).
 - Un host viejo (anterior a G8) ignora `nodetree`/`plot` y los deja sin pintar (los "tipos desconocidos" se maquetan pero no se dibujan): recompilar el binario.
+
+
+## 19. GUI host: canvas con shader WGSL (G9)
+
+G9 agrega un widget `canvas` que corre un **shader WGSL provisto por el script** sobre su area (estilo ShaderToy), agregado por extension (un `WidgetKind` nuevo + una vista GPU, sin cambio de protocolo, el servidor de audio no se toca). El usuario escribe una funcion `shade`; el host la envuelve con un preludio fijo (el bloque de uniforms + un vertex shader de triangulo a pantalla completa) y un `fs_main`, compila el pipeline y le pasa `u.resolution`, `u.time` y un `u.params` (vec4 de 4 floats). Los 4 params se manejan de **dos formas** -- el punto del widget: desde el **script** (`gui.set(id, param0=...)`, un valor OSC -> `u.params.x..w`) y desde un **bus de control leido de la memoria compartida cada frame** (cero OSC, el mismo camino que los meters); `buses=[..]` mapea un bus a un slot de param (`-1` lo deja script-driven). Asi un mismo shader anima desde un parametro OSC y desde audio del servidor en vivo a la vez. Un shader que no compila se atrapa (un error scope de validacion de wgpu): la canvas queda sin pintar con un warning, sin tirar el host. Una ventana con canvas se anima sola (~30fps, por el tiempo, sin depender de `--shm`).
+
+Tres procesos cooperan, como en `gui_meters.py`: el **servidor** (con el segmento), el **host** (que lo mapea con `--shm`) y el **script**.
+
+```sh
+# servidor de audio con segmento compartido (una terminal, desde la raiz):
+cargo run -- --shm /dev/shm/clausters_g9
+
+# host en modo ventana, atado al servidor y al segmento (otra terminal, desde clients/gui):
+cd clients/gui && cargo run --bin clausters-gui -- --server 127.0.0.1:57110 --shm /dev/shm/clausters_g9 -v
+
+# el script: define la canvas, barre param0 (OSC) y escribe el bus (shm):
+PYTHONPATH=clients/python python clients/python/examples/gui_canvas.py
+```
+
+Esperado:
+
+- El log del host: `shared segment mapped at ... (1024 control buses ...)` y `opened window "Canvas (shader)"`. NO debe aparecer `canvas shader failed` (el shader del ejemplo es valido) ni panic.
+- En la ventana, un shader animado: el anillo pulsa siguiendo `param0` (el valor OSC que barre el script) y el canal verde sigue el bus de control (que el host lee de la memoria compartida). Ambas fuentes mueven el mismo shader.
+- Si el shader tiene un error de WGSL: el log muestra `canvas shader failed to compile: Validation Error`, la ventana igual abre (la canvas queda en negro), sin panic. Util para iterar el shader en vivo con `gui.set(id, shader=...)`.
+
+Notas:
+
+- El shader es el cuerpo de `fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32>`; adentro hay `u.resolution`, `u.time`, `u.params`. `uv` va 0..1 con origen arriba-izquierda.
+- `param0`..`param3` -> `u.params.x`..`.w`. Se setean por `gui.set(id, param0=...)` (OSC) o por bus (`buses=[busPara0, busPara1, ...]`, `-1` = script). El bus pisa al valor del script en ese slot cada frame.
+- `gui.set(id, shader=...)` recompila el shader en vivo (solo si el texto cambio); sin `--shm` los slots de bus leen 0 (el shader igual anima por `u.time` y los params de script).

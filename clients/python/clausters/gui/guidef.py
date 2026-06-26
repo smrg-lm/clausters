@@ -35,6 +35,7 @@ __all__ = [
     "scope",
     "nodetree",
     "plot",
+    "canvas",
     "to_json",
     "samples_to_blob",
     "samples_to_file",
@@ -205,6 +206,35 @@ def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None
                        blob=blob, path=path, channels=channels, min=min, max=max,
                        label=label)
     return node("plot", id=id, **extra, **props)
+
+
+def canvas(id: int, shader: str | None = None, *, params=None, buses=None,
+           label: str | None = None, **props) -> dict:
+    """A ``canvas`` running a script-supplied WGSL shader over the widget area --
+    custom visuals (ShaderToy-style).
+
+    ``shader`` is the body of a ``shade`` function the host wraps and runs::
+
+        fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> { ... }
+
+    Inside it, the host exposes ``u.resolution`` (the viewport size in px),
+    ``u.time`` (seconds), and ``u.params`` (a ``vec4<f32>`` of four values). The
+    four params are driven two ways, which is the point of the widget:
+
+    - from the **script** -- ``GuiHost.set(id, param0=...)`` sends an OSC value
+      that lands in ``u.params.x`` (``param0``..``param3`` -> ``.x``..``.w``);
+    - from a **control bus**, read straight from the audio server's shared memory
+      each frame (zero messages) -- ``buses=[busA, busB, ...]`` maps each control
+      bus onto the param of the same index; a ``-1`` (or absent) slot stays
+      script-driven. Needs the host started with ``--shm`` (like `meter`).
+
+    So a shader can animate from OSC parameters and from live server audio at
+    once. Omitting ``shader`` uses a default moving color field. ``params`` is an
+    optional initial list of floats."""
+    extra = _drop_none(shader=shader, label=label,
+                       params=[float(x) for x in params] if params is not None else None,
+                       buses=[int(b) for b in buses] if buses is not None else None)
+    return node("canvas", id=id, **extra, **props)
 
 
 def to_json(tree: dict) -> str:

@@ -27,6 +27,7 @@
 //! talks to the audio server with one encoder, not a parallel one.
 
 pub mod bind;
+pub mod canvas;
 pub mod client;
 pub mod controls;
 pub mod font;

@@ -294,9 +294,11 @@ Two read-only views that exercise the "gui is a client of the server" leg.
 
 - The node-tree widget reflects group/synth creation and `/n_set` changes live; a `plot` renders an NRT render's output.
 
-## G9 - Canvas + shaders
+## G9 - Canvas + shaders - DONE (2026-06-26)
 
 Custom visuals from the script.
+
+**Landed:** a `canvas` widget that runs a **script-supplied WGSL shader** over its area (ShaderToy-style), added by extension (a new `WidgetKind` + a GPU view, `host::canvas::CanvasView`), no protocol change, the audio server untouched. The user writes a `shade` function; the host wraps it with a fixed prelude (the uniform block + a full-screen-triangle vertex shader) and a `fs_main`, compiles a pipeline, and exposes uniforms `resolution`, `time` and a `params` vec4. The four params are driven two ways - the point of the widget: from the **script** (`/gui_set param0...`, an OSC value -> `u.params.x..w`) and from a **control bus read out of shared memory each frame** (`buses[i]` maps a bus onto param `i`, `-1` keeps it script-driven), the zero-message path the meters use. A shader that fails to compile is caught with a wgpu validation error scope (no panic, the canvas stays un-painted with a warning); `set_shader` recompiles in place only when the source changed. A canvas window is animated (~30 fps, time-driven, independent of `--shm`). Python: `clausters.gui.canvas(id, shader, params=, buses=)`; `examples/gui_canvas.py` (a shader whose ring follows an OSC param and whose green channel follows a control bus). Runtime-verified against the real server + a GPU window (shader compiles and animates from the OSC param and the shm bus at once; an invalid shader is caught with the window still opening), no panic. See `LOG.md`.
 
 ### Scope
 

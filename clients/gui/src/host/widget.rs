@@ -24,6 +24,7 @@ use std::sync::Arc;
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
+use super::canvas;
 use super::guidef::GuiNode;
 
 /// How a container arranges its children.
@@ -102,6 +103,18 @@ pub enum WidgetKind {
     NodeTree {
         group: i32,
         controls: bool,
+        label: Option<String>,
+    },
+    /// A script-supplied WGSL shader run over the widget area. `shader` is the
+    /// user's `shade` source; `params` are four floats fed to the shader, each
+    /// set from the script (`/gui_set param0…`) and/or overwritten every frame by
+    /// the control bus named in `buses` (a `-1` slot is script-only), read from
+    /// shared memory like a meter — so the shader animates from OSC parameters
+    /// and from live server audio at once.
+    Canvas {
+        shader: String,
+        params: [f32; canvas::PARAM_COUNT],
+        buses: [i32; canvas::PARAM_COUNT],
         label: Option<String>,
     },
     /// A simple static plot of a signal over `[min, max]`: a polyline when the
@@ -275,6 +288,17 @@ impl Widget {
                 controls: node.props.get("controls").and_then(truthy).unwrap_or(true),
                 label: label(&node.props),
             },
+            "canvas" => WidgetKind::Canvas {
+                shader: node
+                    .props
+                    .get("shader")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| canvas::DEFAULT_SHADER.to_string()),
+                params: f32_array(&node.props, "params", 0.0),
+                buses: i32_array(&node.props, "buses", -1),
+                label: label(&node.props),
+            },
             "plot" => WidgetKind::Plot {
                 samples: inline_samples("plot", id, &node.props, blobs)?,
                 path: node
@@ -426,6 +450,24 @@ impl WidgetKind {
                 "label" => set_label(label, v),
                 _ => false,
             },
+            WidgetKind::Canvas {
+                shader,
+                params,
+                buses,
+                label,
+            } => match key {
+                "shader" => v.as_str().map(|s| *shader = s.to_string()).is_some(),
+                "label" => set_label(label, v),
+                _ => {
+                    if let Some(i) = index_suffix(key, "param").filter(|i| *i < params.len()) {
+                        set_f(&mut params[i], v)
+                    } else if let Some(i) = index_suffix(key, "bus").filter(|i| *i < buses.len()) {
+                        v.as_i64().map(|n| buses[i] = n as i32).is_some()
+                    } else {
+                        false
+                    }
+                }
+            },
             WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => match key {
                 "value" => set_f(&mut r.value, v),
                 "min" => set_f(&mut r.min, v),
@@ -489,6 +531,48 @@ fn number(props: &serde_json::Map<String, Value>, key: &str, default: f32) -> f3
         .and_then(Value::as_f64)
         .map(|n| n as f32)
         .unwrap_or(default)
+}
+
+/// A fixed-size `[f32; N]` from a JSON array property, taking the first `N`
+/// numbers and padding the rest with `default`.
+fn f32_array<const N: usize>(
+    props: &serde_json::Map<String, Value>,
+    key: &str,
+    default: f32,
+) -> [f32; N] {
+    let mut out = [default; N];
+    if let Some(Value::Array(items)) = props.get(key) {
+        for (slot, v) in out.iter_mut().zip(items) {
+            if let Some(x) = v.as_f64() {
+                *slot = x as f32;
+            }
+        }
+    }
+    out
+}
+
+/// A fixed-size `[i32; N]` from a JSON array property, taking the first `N`
+/// integers and padding the rest with `default`.
+fn i32_array<const N: usize>(
+    props: &serde_json::Map<String, Value>,
+    key: &str,
+    default: i32,
+) -> [i32; N] {
+    let mut out = [default; N];
+    if let Some(Value::Array(items)) = props.get(key) {
+        for (slot, v) in out.iter_mut().zip(items) {
+            if let Some(n) = v.as_i64() {
+                *slot = n as i32;
+            }
+        }
+    }
+    out
+}
+
+/// The integer suffix of `key` after `prefix` (e.g. `"param2"` -> `2`), if `key`
+/// is exactly `prefix` followed by digits.
+fn index_suffix(key: &str, prefix: &str) -> Option<usize> {
+    key.strip_prefix(prefix).and_then(|s| s.parse().ok())
 }
 
 /// The `label` property as an owned string, if present.
@@ -750,6 +834,71 @@ mod tests {
         assert!(w.find_mut(1).unwrap().kind.apply("group", &Value::from(0)));
         assert!(w.find_mut(2).unwrap().kind.apply("max", &Value::from(1.0)));
         assert_eq!(w.children[0].kind.node_tree_group(), Some(0));
+    }
+
+    #[test]
+    fn canvas_parses_shader_params_buses_and_applies() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"canvas","shader":"fn shade(){}","params":[0.5,0.25],"buses":[7]}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Canvas {
+                shader,
+                params,
+                buses,
+                ..
+            } => {
+                assert_eq!(shader, "fn shade(){}");
+                // The given params/buses fill the front of the fixed arrays; the
+                // rest default (0.0 / -1).
+                assert_eq!(*params, [0.5, 0.25, 0.0, 0.0]);
+                assert_eq!(*buses, [7, -1, -1, -1]);
+            }
+            other => panic!("expected canvas, got {other:?}"),
+        }
+        // A canvas is non-interactive and reads no single bus.
+        assert_eq!(w.children[0].kind.event_value(), None);
+        assert_eq!(w.children[0].kind.live_bus(), None);
+        // Live `/gui_set`: a param from the script, a bus remap, a new shader.
+        let c = w.find_mut(1).unwrap();
+        assert!(c.kind.apply("param1", &Value::from(0.75)));
+        assert!(c.kind.apply("bus0", &Value::from(9)));
+        assert!(c.kind.apply("shader", &Value::from("fn shade2(){}")));
+        assert!(
+            !c.kind.apply("param9", &Value::from(1.0)),
+            "out-of-range slot"
+        );
+        match &c.kind {
+            WidgetKind::Canvas {
+                shader,
+                params,
+                buses,
+                ..
+            } => {
+                assert_eq!(params[1], 0.75);
+                assert_eq!(buses[0], 9);
+                assert_eq!(shader, "fn shade2(){}");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn canvas_without_a_shader_gets_the_default() {
+        let n = node(r#"{"type":"window","children":[{"id":1,"type":"canvas"}]}"#);
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Canvas { shader, .. } => {
+                assert!(
+                    shader.contains("fn shade"),
+                    "falls back to the default shader"
+                )
+            }
+            other => panic!("expected canvas, got {other:?}"),
+        }
     }
 
     #[test]

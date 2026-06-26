@@ -3325,3 +3325,46 @@ already exists (`/g_queryTree`, `/notify`, `/n_go`/`/n_end`).
   `nodetree`+`plot` `/gui_def` and reads them back via `/gui_query` with the
   int/float distinction kept. The core is untouched and still builds/tests with
   no optional features.
+
+## G9 — Canvas + shaders (2026-06-26)
+
+A `canvas` widget that runs a **script-supplied WGSL shader** over its area
+(ShaderToy-style), driven by OSC params and by control buses read from shared
+memory. Added by extension — a new `WidgetKind` plus a GPU view — with no
+protocol change and the audio server untouched.
+
+- **`host::canvas::CanvasView`.** The GPU piece: it wraps the user's `shade`
+  function with a fixed prelude (the uniform block + a full-screen-triangle
+  vertex shader) and a `fs_main` that calls it, then compiles a pipeline. The
+  uniform block is 8 `f32` — `resolution`, `time`, a pad, and a `params` vec4 —
+  written each frame. A shader that fails to compile is **caught with a wgpu
+  validation error scope** (`push_error_scope`/`pop`), leaving the canvas
+  un-painted with a warning instead of crashing the host. `set_shader`
+  recompiles in place only when the source changed (so a `/gui_set shader` is
+  cheap and a broken shader is not retried every frame).
+- **`WidgetKind::Canvas { shader, params: [f32;4], buses: [i32;4], label }`.**
+  The four params are driven two ways, the point of the widget: from the script
+  (`/gui_set param0…`, an OSC value → `u.params.x…w`) and from a **control bus
+  read out of shared memory each frame** (`buses[i]` ≥ 0 maps a bus onto param
+  `i`; `-1` keeps it script-driven) — the same zero-message path the meters use.
+  `/gui_set bus0…` remaps a slot live. Generic `f32_array`/`i32_array`/
+  `index_suffix` prop helpers added.
+- **Windowed wiring (`host::gui`).** A canvas builds its `CanvasView` on window
+  open (`collect_canvases`); a canvas window is **animated** (continuous ~30 fps
+  redraw — time-driven, independent of `--shm`) so `u.time` advances and the
+  buses are re-read. Each frame the param vector is resolved (bus slots from
+  `read_bus`), the shader recompiled if it changed, the uniforms uploaded, and
+  the shader drawn into the widget's viewport (a `body_rect` below an optional
+  label) — the same `set_viewport`+draw path the waveform uses. `Mesh::border`
+  and the per-view label strip are shared with the other views.
+- **Python + example.** `clausters.gui.canvas(id, shader, params=, buses=)`;
+  `examples/gui_canvas.py` — an animated shader whose ring pulse follows an OSC
+  `param0` the script sweeps and whose green channel follows a control bus the
+  script writes (read by the host from shared memory).
+- **Tests:** gui 70 (canvas parse/apply/default-shader ×2). `cargo fmt --check`/
+  `clippy -D warnings` clean; core untouched.
+- **Verified:** runtime end-to-end against the real server + a GPU window — the
+  canvas window opens with the segment mapped, the user shader compiles and
+  animates from the swept OSC param and the shared-memory bus at once, no panic;
+  and a deliberately invalid shader is caught (`canvas shader failed to compile:
+  Validation Error`) with the window still opening and no panic.
