@@ -31,6 +31,8 @@ __all__ = [
     "text",
     "menu",
     "waveform",
+    "meter",
+    "scope",
     "to_json",
     "samples_to_blob",
 ]
@@ -127,14 +129,33 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
     - ``blob`` — the index of a binary blob carried beside the JSON in the same
       ``/gui_def`` message (the bulk path; see `samples_to_blob` and
       `GuiHost.define`);
-    - ``buffer`` — a server buffer number (resolved once the host attaches to the
-      audio server, a later milestone).
+    - ``buffer`` — a server buffer number; the host fetches its samples from the
+      audio server (it must be started with ``--server``) and renders them.
 
     ``base_bucket`` sets the peak-pyramid bucket size (default 256).
     """
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, base_bucket=base_bucket)
     return node("waveform", id=id, **extra, **props)
+
+
+def meter(id: int, bus: int, *, min: float | None = None, max: float | None = None,
+          label: str | None = None, **props) -> dict:
+    """A level ``meter`` reading control ``bus`` straight from the audio server's
+    shared-memory segment each frame (zero OSC messages). The host must be started
+    with ``--shm`` pointing at the server's segment. ``min``/``max`` scale the bar
+    (default ``0``/``1``)."""
+    extra = _drop_none(min=min, max=max, label=label)
+    return node("meter", id=id, bus=bus, **extra, **props)
+
+
+def scope(id: int, bus: int, *, min: float | None = None, max: float | None = None,
+          label: str | None = None, **props) -> dict:
+    """A time-domain ``scope`` plotting the recent history of control ``bus`` (read
+    from shared memory each frame; needs ``--shm`` like `meter`). ``min``/``max``
+    set the vertical range (default the bipolar ``-1``/``1``)."""
+    extra = _drop_none(min=min, max=max, label=label)
+    return node("scope", id=id, bus=bus, **extra, **props)
 
 
 def to_json(tree: dict) -> str:

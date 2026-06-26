@@ -3104,3 +3104,55 @@ bitmap font, so labels and values are legible.
 - **Verified:** gui `cargo test` green, `cargo fmt --check` and
   `cargo clippy --all-targets -- -D warnings` clean; the core server is untouched
   and still builds/tests with `--no-default-features`.
+
+## G5 — GUI as a client of the audio server + shared-memory meters/scopes (2026-06-26)
+
+The third leg of the topology lands: the GUI host attaches to `clausters-server`
+as a client, meters/scopes read a control bus straight from shared memory (zero
+messages), and a `waveform` can name a server buffer instead of carrying its own
+samples.
+
+- **Standard buffer reads on the server.** `/b_get` (reply `/b_set`) and `/b_getn`
+  (reply `/b_setn`) — the scsynth client reads, absent only because no client had
+  needed them. Synchronous, answered from the network-side buffer mirror exactly
+  like `/b_query`, so RT-safety is untouched; `count` clamps to what the buffer
+  holds (a request past the end returns the available samples; an unallocated
+  buffer returns count 0). Indices are flat/interleaved. Benefits every client,
+  not just the GUI. Doc in `docs/schemas.md`; round-trip test in `tests/osc.rs`.
+- **Shared-memory reader (`clients/gui` `host::shm`).** A read-only `mmap` of the
+  server's `--shm` segment that mirrors its versioned `#[repr(C)]` ABI and
+  rejects a magic/`ABI_VERSION` mismatch on attach. The recorded reuse decision:
+  the GUI crate must stay independent of the **server** crate (linking it would
+  pull the engine, cpal and Faust), so it plays the same role against this
+  versioned binary boundary that any independent peer does (the Python `ctypes`
+  client, a future JS one) rather than reimplementing or importing `server::ipc`.
+  Reading a control bus is one atomic load of the very word the engine uses.
+  Unix-only, as the server's segment is; a small `BusSource` trait keeps the
+  windowed front free of platform `cfg`s. Tested against a fabricated segment.
+- **Meter and scope widgets (`host::widget` + `host::meters`).** New `WidgetKind`s
+  carrying a control-bus index and a range; drawn with the existing flat painter
+  (a bar that fills to the bus value; a rolling polyline of the bus's recent
+  history kept per window). No new pipeline, no analysis. The windowed front reads
+  the bus from `host::shm` each frame and animates any window holding a live
+  widget at ~30 fps via `ControlFlow::WaitUntil`; idle windows stay event-driven.
+  Pure drawing/`fraction` math is unit-tested without a GPU.
+- **Server-buffer waveform.** `WidgetKind::Waveform` gained an optional `buffer`
+  number; the windowed front fetches it over the now-bidirectional client leg
+  (`ServerLeg` over a shared `Arc<UdpSocket>`): a second thread drains the leg and
+  routes `/b_info`/`/b_setn` into a buffer-fetch state machine (`/b_query` then
+  chunked `/b_getn`, de-interleaved to channel 0), building a `WaveformView` when
+  the samples arrive. The bulk-transfer optimization for very large buffers is
+  G7.
+- **Binary/Python.** `clausters-gui --shm <path>` maps the segment for meters
+  (Unix; no effect headless). Python `clausters.gui` gains `meter`/`scope`
+  builders and `waveform(buffer=)`; `examples/gui_meters.py` runs the audio
+  server, the host and the script together — a moving meter/scope on a control
+  bus and a waveform of a sine buffer pulled from the server.
+- **Tests:** 56 in the gui crate (shm reader round-trip + bad magic/ABI, meter/
+  scope parse+apply+`live_bus`, `meters::fraction`/draw geometry, waveform buffer
+  ref), all GPU-free; `/b_getn`/`/b_get` round trip in `tests/osc.rs`.
+- **Verified:** runtime end-to-end against the real server — the host maps the
+  live `--shm` segment (1024 buses), opens the window, and loads a 24000-frame
+  buffer over the leg with no panic or wgpu validation error. gui `cargo test`
+  green, `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
+  clean; the core still builds/tests with `--no-default-features`.

@@ -66,7 +66,7 @@ clausters --nrt score.osc out.wav [--rate 48000] [--channels 2] [--format float|
 
 A score is the scsynth binary format: OSC packets back to back, each preceded by its byte count as a big-endian `int32`. Timetags count **seconds from the start of the render** (the immediate tag is time 0); bundles fire sample-accurately exactly like in real time, so an offline render equals a perfectly timed live take. The render ends at the time of the **last** bundle, whose commands produce no sound — close every score with a dummy bundle (a final `/n_free`) to set the duration.
 
-Unlike the live server, a score bundle may also contain the asynchronous commands `/d_recv`, `/d_faust`, `/d_free` and the `/b_*` family: they complete synchronously before time advances (scsynth NRT semantics), and any failure aborts the render with the offending event's time and message. Queries (`/status`, `/b_query`, `/c_get`) are errors in a score.
+Unlike the live server, a score bundle may also contain the asynchronous commands `/d_recv`, `/d_faust`, `/d_free` and the `/b_*` family: they complete synchronously before time advances (scsynth NRT semantics), and any failure aborts the render with the offending event's time and message. Queries (`/status`, `/b_query`, `/b_get`, `/b_getn`, `/c_get`) are errors in a score.
 
 `python3 examples/json_client.py score` writes an example score; `cargo run --release --example bench` measures graph throughput offline.
 
@@ -142,10 +142,14 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /b_write     bufnum path [header="wav"] [format="int16"|"int24"|"float"] [numFrames=-1] [startFrame=0]
 /b_zero      bufnum
 /b_free      bufnum
-/b_query     bufnum...    →  /b_info  bufnum frames channels sampleRate ...
+/b_query     bufnum...                 →  /b_info  bufnum frames channels sampleRate ...
+/b_get       bufnum index...           →  /b_set   bufnum index value ...
+/b_getn      bufnum [start count]...   →  /b_setn  bufnum start count value ...
 ```
 
-All except `/b_query` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
+`/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero` and `/b_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
+
+`/b_query`, `/b_get` and `/b_getn` are **synchronous** reads, answered from the network-side buffer mirror (state as of the last completed command). `/b_get` reads single samples by flat (interleaved) index; `/b_getn` reads ranges, with `count` clamped to what the buffer holds from `start` — a request past the end returns only the available samples, and an unallocated buffer returns count 0. Sample indices are flat across channels (`frame * channels + channel`), so a stereo buffer reads as interleaved `L R L R ...`. Each reply must fit one datagram, so large buffers are read in client-chosen chunks.
 
 ## Faust defs (`/d_faust`)
 

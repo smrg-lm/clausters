@@ -3,8 +3,9 @@
 //! `/n_free`, `/n_set`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`,
 //! `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`, `/d_free`; the buffer
 //! commands `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`,
-//! `/b_free` (all async via the NRT thread, replying `/done cmd bufnum`)
-//! and `/b_query` (synchronous `/b_info`); `/n_go` and
+//! `/b_free` (all async via the NRT thread, replying `/done cmd bufnum`),
+//! `/b_query` (synchronous `/b_info`) and the synchronous reads `/b_get`
+//! (`/b_set`) and `/b_getn` (`/b_setn`); `/n_go` and
 //! `/n_end` notifications go to `/notify` clients. With the `faust` feature,
 //! `/d_faust name def` compiles a def — JSON box graph (F2) or raw Faust
 //! source (F1) — on the dedicated compiler thread and replies
@@ -748,6 +749,8 @@ impl OscServer {
             "/b_zero" => self.handle_b_cmd(&msg, from, "/b_zero"),
             "/b_free" => self.handle_b_cmd(&msg, from, "/b_free"),
             "/b_query" => self.handle_b_query(&msg, from),
+            "/b_get" => self.handle_b_get(&msg, from),
+            "/b_getn" => self.handle_b_getn(&msg, from),
             "/sync" => self.handle_sync(&msg, from),
             "/d_recv" => self.handle_d_recv(&msg, from),
             "/d_faust" => self.handle_d_faust(&msg, from),
@@ -1305,6 +1308,65 @@ impl OscServer {
             ));
         }
         self.reply(from, "/b_info", args);
+    }
+
+    /// `/b_get bufnum index...` → `/b_set bufnum index value...`: read single
+    /// samples (flat, interleaved) from the buffer mirror. Out-of-range indices
+    /// (and any index into an unallocated buffer) read as `0.0`, mirroring how
+    /// `Buffer::sample` and the audio-rate UGens treat them. Synchronous, like
+    /// `/b_query`.
+    fn handle_b_get(&mut self, msg: &OscMessage, from: ClientId) {
+        let Some((OscType::Int(bufnum), indices)) = msg.args.split_first() else {
+            return self.fail(from, "/b_get", "expected bufnum then int sample indices");
+        };
+        let buffer = self.mirror_buffer(*bufnum);
+        let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
+        let mut args = vec![OscType::Int(*bufnum)];
+        for arg in indices {
+            let OscType::Int(index) = arg else {
+                return self.fail(from, "/b_get", "expected int sample indices");
+            };
+            let value = usize::try_from(*index)
+                .ok()
+                .and_then(|i| data.get(i))
+                .copied()
+                .unwrap_or(0.0);
+            args.push(OscType::Int(*index));
+            args.push(OscType::Float(value));
+        }
+        self.reply(from, "/b_set", args);
+    }
+
+    /// `/b_getn bufnum [start count]...` → `/b_setn bufnum start count value...`:
+    /// read ranges of samples (flat, interleaved) from the buffer mirror — the
+    /// client-side counterpart of `/b_setn`, and how a GUI client pulls a buffer
+    /// to display it. `count` is clamped to what the buffer holds from `start`,
+    /// so a request past the end returns only the available samples (none for an
+    /// unallocated buffer). Large buffers are read in client-chosen chunks (each
+    /// reply must fit a datagram); the bulk-transfer optimization is future work.
+    fn handle_b_getn(&mut self, msg: &OscMessage, from: ClientId) {
+        let Some((OscType::Int(bufnum), pairs)) = msg.args.split_first() else {
+            return self.fail(from, "/b_getn", "expected bufnum then (start, count) pairs");
+        };
+        if pairs.len() % 2 != 0 {
+            return self.fail(from, "/b_getn", "expected (start, count) pairs");
+        }
+        let buffer = self.mirror_buffer(*bufnum);
+        let data = buffer.as_deref().map(|b| b.data()).unwrap_or(&[]);
+        let mut args = vec![OscType::Int(*bufnum)];
+        for pair in pairs.chunks_exact(2) {
+            let (OscType::Int(start), OscType::Int(count)) = (&pair[0], &pair[1]) else {
+                return self.fail(from, "/b_getn", "expected int start and count");
+            };
+            let start = (*start).max(0) as usize;
+            let count = (*count).max(0) as usize;
+            let end = start.saturating_add(count).min(data.len());
+            let slice = data.get(start..end).unwrap_or(&[]);
+            args.push(OscType::Int(start as i32));
+            args.push(OscType::Int(slice.len() as i32));
+            args.extend(slice.iter().map(|s| OscType::Float(*s)));
+        }
+        self.reply(from, "/b_setn", args);
     }
 
     fn mirror_buffer(&self, index: i32) -> Option<Arc<crate::dsp::buffer::Buffer>> {

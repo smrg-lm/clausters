@@ -61,9 +61,30 @@ pub enum WidgetKind {
     /// Static text.
     Label { text: String },
     /// The heavy waveform view: its samples and the peak-pyramid bucket size.
+    /// When `buffer` is set, the samples are fetched from that audio-server
+    /// buffer number by the windowed front once the host is attached to the
+    /// server (until then `samples` is empty); otherwise the samples come inline
+    /// (`data`) or from a blob.
     Waveform {
         samples: Arc<[f32]>,
         base_bucket: usize,
+        buffer: Option<i32>,
+    },
+    /// A level meter reading control bus `bus` from the shared-memory segment
+    /// each frame (zero messages), shown as a bar over `[min, max]`.
+    Meter {
+        bus: i32,
+        min: f32,
+        max: f32,
+        label: Option<String>,
+    },
+    /// A time-domain scope plotting the recent history of control bus `bus`
+    /// (read from shared memory each frame) over `[min, max]`.
+    Scope {
+        bus: i32,
+        min: f32,
+        max: f32,
+        label: Option<String>,
     },
     /// A continuous slider over `[min, max]`.
     Slider(Range),
@@ -183,6 +204,23 @@ impl Widget {
                     .and_then(Value::as_u64)
                     .map(|n| (n as usize).max(1))
                     .unwrap_or(DEFAULT_BASE_BUCKET),
+                buffer: node
+                    .props
+                    .get("buffer")
+                    .and_then(Value::as_i64)
+                    .map(|n| n as i32),
+            },
+            "meter" => WidgetKind::Meter {
+                bus: int_prop(&node.props, "bus", 0),
+                min: number(&node.props, "min", 0.0),
+                max: number(&node.props, "max", 1.0),
+                label: label(&node.props),
+            },
+            "scope" => WidgetKind::Scope {
+                bus: int_prop(&node.props, "bus", 0),
+                min: number(&node.props, "min", -1.0),
+                max: number(&node.props, "max", 1.0),
+                label: label(&node.props),
             },
             "slider" => WidgetKind::Slider(Range::parse(&node.props)),
             "knob" => WidgetKind::Knob(Range::parse(&node.props)),
@@ -259,10 +297,38 @@ impl WidgetKind {
         }
     }
 
+    /// The control bus a live (shared-memory-backed) widget reads each frame, if
+    /// this is one. The windowed front uses it to know which windows to animate
+    /// and which bus to sample.
+    pub fn live_bus(&self) -> Option<i32> {
+        match self {
+            WidgetKind::Meter { bus, .. } | WidgetKind::Scope { bus, .. } => Some(*bus),
+            _ => None,
+        }
+    }
+
     /// Applies one `/gui_set` key/value to a live widget, returning whether it
     /// changed anything the renderer cares about.
     pub fn apply(&mut self, key: &str, v: &Value) -> bool {
         match self {
+            WidgetKind::Meter {
+                bus,
+                min,
+                max,
+                label,
+            }
+            | WidgetKind::Scope {
+                bus,
+                min,
+                max,
+                label,
+            } => match key {
+                "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
+                "min" => set_f(min, v),
+                "max" => set_f(max, v),
+                "label" => set_label(label, v),
+                _ => false,
+            },
             WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => match key {
                 "value" => set_f(&mut r.value, v),
                 "min" => set_f(&mut r.min, v),
@@ -307,6 +373,15 @@ fn dimension(props: &serde_json::Map<String, Value>, key: &str, default: u32) ->
         .get(key)
         .and_then(Value::as_u64)
         .map(|n| n.clamp(1, u32::MAX as u64) as u32)
+        .unwrap_or(default)
+}
+
+/// An integer property, defaulted when absent or non-integer.
+fn int_prop(props: &serde_json::Map<String, Value>, key: &str, default: i32) -> i32 {
+    props
+        .get(key)
+        .and_then(Value::as_i64)
+        .map(|n| n as i32)
         .unwrap_or(default)
 }
 
@@ -446,12 +521,65 @@ mod tests {
             WidgetKind::Waveform {
                 samples,
                 base_bucket,
+                buffer,
             } => {
                 assert_eq!(&samples[..], &[0.0, 0.5, -0.5, 1.0]);
                 assert_eq!(*base_bucket, 2);
+                assert_eq!(*buffer, None);
             }
             other => panic!("expected waveform, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn waveform_by_server_buffer_starts_empty_with_the_buffer_number() {
+        let n = node(r#"{"type":"window","children":[{"id":3,"type":"waveform","buffer":7}]}"#);
+        let w = Widget::from_node(1, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Waveform {
+                samples, buffer, ..
+            } => {
+                assert!(samples.is_empty(), "no inline data yet — fetched later");
+                assert_eq!(*buffer, Some(7));
+            }
+            other => panic!("expected waveform, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn meter_and_scope_parse_with_defaults_and_apply() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"meter","bus":5,"max":2.0,"label":"out"},
+                {"id":2,"type":"scope","bus":6}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Meter {
+                bus,
+                min,
+                max,
+                label,
+            } => {
+                assert_eq!((*bus, *min, *max), (5, 0.0, 2.0));
+                assert_eq!(label.as_deref(), Some("out"));
+            }
+            other => panic!("expected meter, got {other:?}"),
+        }
+        // The scope defaults to the bipolar [-1, 1] range.
+        match &w.children[1].kind {
+            WidgetKind::Scope { bus, min, max, .. } => {
+                assert_eq!((*bus, *min, *max), (6, -1.0, 1.0))
+            }
+            other => panic!("expected scope, got {other:?}"),
+        }
+        assert_eq!(w.children[0].kind.live_bus(), Some(5));
+        // A live `/gui_set` can retarget the bus and rescale the meter.
+        let meter = w.find_mut(1).unwrap();
+        assert!(meter.kind.apply("bus", &Value::from(8)));
+        assert!(meter.kind.apply("max", &Value::from(4.0)));
+        assert_eq!(meter.kind.live_bus(), Some(8));
     }
 
     #[test]
@@ -471,7 +599,8 @@ mod tests {
     #[test]
     fn defaults_and_unknown_type() {
         // `scope` is in the catalog but not yet a rendered WidgetKind variant.
-        let n = node(r#"{"type":"window","children":[{"id":7,"type":"scope"}]}"#);
+        // `spectrum` is in the catalog but not yet a rendered WidgetKind variant.
+        let n = node(r#"{"type":"window","children":[{"id":7,"type":"spectrum"}]}"#);
         let w = Widget::from_node(1, &n, &[]).unwrap();
         // Window size defaults when w/h are omitted.
         match w.kind {
@@ -488,7 +617,7 @@ mod tests {
         }
         // An unrecognized type is kept (laid out), not rejected.
         match &w.children[0].kind {
-            WidgetKind::Unknown(t) => assert_eq!(t, "scope"),
+            WidgetKind::Unknown(t) => assert_eq!(t, "spectrum"),
             other => panic!("expected unknown, got {other:?}"),
         }
     }

@@ -923,3 +923,55 @@ Notas:
   registro generico y el arbol tipado de la ventana se actualizan juntos.
 - El texto de los labels es una fuente bitmap mayuscula (suficiente para paneles);
   tipografia proporcional/grande es una mejora posterior.
+
+## 15. GUI host: cliente del servidor de audio + meters/scope por memoria (G5)
+
+G5 cierra la tercera pata de la topologia: el host se conecta al servidor de
+audio como cliente. Dos caminos nuevos:
+
+- `meter` y `scope` leen un **bus de control directo desde el segmento de memoria
+  compartida** del servidor, cada frame, sin un solo mensaje OSC; el script solo
+  escribe el bus con `/c_set`.
+- un `waveform` puede referenciar un **numero de buffer del servidor**; el host lo
+  trae con `/b_query` + `/b_getn` y lo dibuja.
+
+Para el meter ambos procesos mapean el *mismo* archivo de segmento, asi que el
+servidor va con `--shm <path>` y el host con el mismo `--shm <path>`; el host
+ademas necesita `--server` para traer el buffer. Necesita display y un adaptador
+Vulkan/Metal/DX12/GL.
+
+```sh
+# servidor de audio con segmento compartido (una terminal, desde la raiz):
+cargo run -- --shm /dev/shm/clausters_g5
+
+# host en modo ventana, atado a ese servidor y segmento (otra terminal):
+cd clients/gui && cargo run --bin clausters-gui -- \
+    --server 127.0.0.1:57110 --shm /dev/shm/clausters_g5 -v
+
+# el script: carga un buffer, anima un bus, arma la escena (otra terminal):
+PYTHONPATH=clients/python python clients/python/examples/gui_meters.py
+```
+
+Esperado:
+
+- El log del host muestra `shared segment mapped at /dev/shm/clausters_g5 (1024
+  control buses, ...)` y, al llegar el `/gui_def`, `opened window "Meters + server
+  buffer"`.
+- En la ventana, el `meter` (barra) y el `scope` (traza) se mueven siguiendo el
+  bus que el script anima con una sinusoide de 0.5 Hz; ningun mensaje OSC viaja al
+  host por eso (lo confirma que solo hay `/gui_def`/`/gui_free` en su log).
+- El log del host muestra `buffer 0: 24000 frames loaded into 1 waveform(s)` y el
+  `waveform` dibuja la onda del seno cargado en el servidor; se puede hacer
+  zoom/pan con rueda/arrastre como cualquier waveform.
+- Cerrar la ventana termina el script.
+
+Notas:
+
+- Sin `--shm` el meter/scope leen 0 (no animan); sin `--server` el waveform por
+  buffer queda vacio y el host avisa por log.
+- El lector de memoria es **solo lectura** y valida `MAGIC`/`ABI_VERSION` del
+  segmento: si el ABI del servidor cambia, el host rechaza el mapeo en vez de leer
+  basura. Es Unix-only, igual que el segmento del servidor.
+- `/b_get`/`/b_getn` son lecturas estandar de scsynth que sirven a cualquier
+  cliente (no solo la GUI); para buffers muy grandes el camino de transferencia
+  masiva es un milestone posterior.

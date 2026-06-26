@@ -350,6 +350,90 @@ fn c_set_and_c_get_roundtrip() {
 }
 
 #[test]
+fn b_getn_and_b_get_read_buffer_samples() {
+    let server = TestServer::spawn();
+
+    // A 6-frame mono WAV with known samples, loaded into buffer 0.
+    let samples: Vec<f32> = vec![0.0, 0.1, 0.2, 0.3, 0.4, 0.5];
+    let path = std::env::temp_dir().join(format!("clausters_b_getn_{}.wav", std::process::id()));
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 48_000,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut w = hound::WavWriter::create(&path, spec).unwrap();
+    for s in &samples {
+        w.write_sample(*s).unwrap();
+    }
+    w.finalize().unwrap();
+
+    server.send(
+        "/b_allocRead",
+        vec![
+            OscType::Int(0),
+            OscType::String(path.to_str().unwrap().into()),
+        ],
+    );
+    // Wait for the async load to install the buffer.
+    server.recv_until("/done");
+
+    // A range read, asking for more than the buffer holds: count clamps to 6.
+    server.send(
+        "/b_getn",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Int(100)],
+    );
+    let reply = server.recv_until("/b_setn");
+    assert_eq!(reply.args[0], OscType::Int(0)); // bufnum
+    assert_eq!(reply.args[1], OscType::Int(0)); // start
+    assert_eq!(reply.args[2], OscType::Int(6)); // count, clamped
+    let got: Vec<f32> = reply.args[3..]
+        .iter()
+        .map(|a| match a {
+            OscType::Float(f) => *f,
+            other => panic!("expected float, got {other:?}"),
+        })
+        .collect();
+    assert_eq!(got, samples);
+
+    // A mid-range slice.
+    server.send(
+        "/b_getn",
+        vec![OscType::Int(0), OscType::Int(2), OscType::Int(3)],
+    );
+    let reply = server.recv_until("/b_setn");
+    assert_eq!(reply.args[1], OscType::Int(2));
+    assert_eq!(reply.args[2], OscType::Int(3));
+    // args = [bufnum, start, count, samples[2], samples[3], samples[4]]
+    assert_eq!(reply.args[3], OscType::Float(0.2));
+    assert_eq!(reply.args[5], OscType::Float(0.4));
+
+    // Indexed reads; an out-of-range index reads as 0.0.
+    server.send(
+        "/b_get",
+        vec![OscType::Int(0), OscType::Int(3), OscType::Int(99)],
+    );
+    let reply = server.recv_until("/b_set");
+    assert_eq!(reply.args[0], OscType::Int(0));
+    assert_eq!(reply.args[1], OscType::Int(3));
+    assert_eq!(reply.args[2], OscType::Float(0.3));
+    assert_eq!(reply.args[3], OscType::Int(99));
+    assert_eq!(reply.args[4], OscType::Float(0.0));
+
+    // An unallocated buffer yields an empty range (count 0), not an error.
+    server.send(
+        "/b_getn",
+        vec![OscType::Int(7), OscType::Int(0), OscType::Int(4)],
+    );
+    let reply = server.recv_until("/b_setn");
+    assert_eq!(reply.args[0], OscType::Int(7));
+    assert_eq!(reply.args[2], OscType::Int(0));
+
+    let _ = std::fs::remove_file(&path);
+    server.quit();
+}
+
+#[test]
 fn notify_clients_receive_n_go_and_n_end() {
     let mut server = TestServer::spawn();
     server.send("/notify", vec![OscType::Int(1)]);

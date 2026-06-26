@@ -31,10 +31,16 @@ pub mod controls;
 pub mod font;
 pub mod guidef;
 pub mod layout;
+pub mod meters;
 pub mod paint;
 pub mod registry;
 pub mod transport;
 pub mod widget;
+
+// Reading the audio server's shared-memory segment for zero-message meters/
+// scopes (G5). Unix-only, as the server's segment is.
+#[cfg(unix)]
+pub mod shm;
 
 // The windowed host (winit + wgpu) is native-only; a wasm build swaps it for a
 // `<canvas>` surface. Everything above is windowing-agnostic and web-portable.
@@ -52,6 +58,15 @@ pub use guidef::GuiNode;
 pub use registry::Registry;
 pub use transport::ClientId;
 pub use widget::Widget;
+
+/// A source of live control-bus values for the meter/scope views. Implemented by
+/// the shared-memory segment ([`shm::SharedSegment`]) on Unix; the trait lets the
+/// windowed front hold the source without platform `cfg`s and read a bus each
+/// frame with no OSC traffic.
+pub trait BusSource: Send + Sync {
+    /// The current value of control bus `index` (`0.0` if out of range).
+    fn control(&self, index: usize) -> f32;
+}
 
 // The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).
 pub const GUI_DEF: &str = "/gui_def";
@@ -116,6 +131,12 @@ impl Host {
     pub fn with_server(mut self, server: ServerLeg) -> Self {
         self.server = Some(server);
         self
+    }
+
+    /// The audio-server client leg, if one was attached (`--server`). The
+    /// windowed front uses it to query and fetch server buffers.
+    pub fn server(&self) -> Option<&ServerLeg> {
+        self.server.as_ref()
     }
 
     /// Read access to the widget tree (for tests and introspection).

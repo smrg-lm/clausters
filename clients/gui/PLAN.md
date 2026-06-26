@@ -219,9 +219,13 @@ The essentials of any GUI, plus the live update and event paths.
 
 - A scripted instrument panel (knobs/sliders/buttons) round-trips: `/gui_set` updates a live widget, user interaction emits `/gui_event`, closing the window emits `/gui_closed`.
 
-## G5 - GUI as a client of the audio server + shared-memory meters/scopes
+## G5 - GUI as a client of the audio server + shared-memory meters/scopes - DONE (2026-06-26)
 
 The host attaches to the audio server and the zero-message metering path lands.
+
+**Landed:** the host's client leg is now bidirectional (`host::client::ServerLeg` over a shared `Arc<UdpSocket>`: send queries, receive replies); the windowed front spawns a second thread draining the leg and routing `/b_info`/`/b_setn` to a buffer-fetch state machine. **Shared-memory meters/scopes:** a read-only `host::shm::SharedSegment` mmaps the audio server's `--shm` segment, mirroring its versioned `#[repr(C)]` ABI and rejecting a magic/version mismatch (the transport/reuse decision, recorded below); `meter` and `scope` are new `WidgetKind`s drawn from `host::meters` (a bar / a rolling polyline) that read a control bus straight from the segment every frame, with the windowed front animating such windows at ~30 fps (`ControlFlow::WaitUntil`) and reading **zero** OSC. **Server-buffer waveform:** a `waveform` with a `buffer` number is fetched over the leg (`/b_query` then chunked `/b_getn`, de-interleaved to channel 0) and built into a `WaveformView` once it arrives. The server gained the standard scsynth reads `/b_get` (`/b_set`) and `/b_getn` (`/b_setn`), synchronous from the buffer mirror, benefiting every client. Binary: `--shm <path>`. Python: `clausters.gui.meter`/`scope` builders, `waveform(buffer=)`, and `examples/gui_meters.py`. Runtime-verified against the real server: the host maps the live segment (1024 buses), opens the window, and loads a 24000-frame buffer over the leg with no panic. See `LOG.md`.
+
+**Transport / reuse decision (the milestone's recurring "record it"):** the GUI crate stays independent of the **server** crate (it would drag in the engine, cpal and Faust). For the zero-message meter path it therefore **mirrors the shared segment's versioned binary ABI** in a small read-only reader (`host::shm`) rather than linking `server::ipc` - the same role any independent peer (the Python `ctypes` client, a future JS one) plays against this boundary. The safety net against drift is the segment's `MAGIC`/`ABI_VERSION`, checked on attach, so a layout change fails loudly instead of reading stale memory. The command plane (buffer reads, later bound widgets) rides the existing UDP leg through the one `clausters_core::osc` encode/decode door; only what shared memory cannot carry goes over messages.
 
 ### Scope
 

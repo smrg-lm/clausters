@@ -34,3 +34,9 @@ bytemuck = { version = "1.25.0", features = ["derive"] }
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"
+
+# Read-only mmap of the audio server's shared-memory segment, for zero-message
+# meters/scopes (`host::shm`). Unix-only — the same raw-mmap path the server's
+# IPC uses, and the server's segment is itself Unix-only.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

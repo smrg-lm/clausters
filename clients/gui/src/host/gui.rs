@@ -17,9 +17,10 @@
 //! `/gui_set` repaints. Only this module touches winit; a wasm build swaps it for
 //! a `<canvas>` surface and the rest is unchanged.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 use tracing::{info, warn};
@@ -38,7 +39,16 @@ use crate::waveform::{WaveformData, WaveformView};
 use super::layout::{self, Rect};
 use super::paint::{Color, Mesh, Painter};
 use super::widget::{Widget, WidgetKind};
-use super::{ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls};
+use super::{BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls, meters};
+
+/// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
+/// enough for smooth meters/scopes without spinning the CPU.
+const FRAME: Duration = Duration::from_millis(33);
+/// Most recent control-bus samples a `scope` keeps and plots.
+const SCOPE_HISTORY: usize = 512;
+/// Samples per `/b_getn` request when pulling a server buffer (each reply must
+/// fit a datagram; the bulk-transfer optimization is a later milestone).
+const BUFFER_CHUNK: usize = 8192;
 
 const CLEAR: wgpu::Color = wgpu::Color {
     r: 0.05,
@@ -50,30 +60,44 @@ const PANEL_COLOR: Color = [0.10, 0.11, 0.14, 0.55];
 const LABEL_COLOR: Color = [0.85, 0.87, 0.90, 1.0];
 const LABEL_SCALE: f32 = 2.0;
 
-/// What the background transport thread hands the main (winit) thread.
+/// What the background transport threads hand the main (winit) thread.
 #[derive(Debug)]
 pub enum UserEvent {
-    /// One OSC datagram and where it came from (decoded on the main thread,
-    /// through the single shared door, to keep all logic on one thread).
+    /// One OSC datagram from a script and where it came from (decoded on the main
+    /// thread, through the single shared door, to keep all logic on one thread).
     Osc { from: SocketAddr, bytes: Vec<u8> },
+    /// One OSC reply from the audio server (the client leg): `/b_info`, `/b_setn`.
+    ServerOsc { bytes: Vec<u8> },
 }
 
-/// Runs the windowed host: spawn the OSC transport thread, then own the winit
-/// event loop on this (main) thread until the process is stopped.
-pub fn run(host: Host, socket: Arc<UdpSocket>) -> Result<(), String> {
+/// Runs the windowed host: spawn the transport thread(s), map the shared segment
+/// if one was given, then own the winit event loop on this (main) thread until
+/// the process is stopped. `shm_path` is the audio server's `--shm` segment, read
+/// each frame for meters/scopes; `None` leaves those views reading zero.
+pub fn run(host: Host, socket: Arc<UdpSocket>, shm_path: Option<String>) -> Result<(), String> {
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
         .map_err(|e| format!("cannot create the window event loop ({e}); use --headless on a machine with no display"))?;
     event_loop.set_control_flow(ControlFlow::Wait);
 
     let proxy = event_loop.create_proxy();
+    // The script -> host front.
     let recv_socket = Arc::clone(&socket);
+    let script_proxy = proxy.clone();
     std::thread::Builder::new()
         .name("clausters-gui-osc".into())
-        .spawn(move || transport_loop(recv_socket, proxy))
+        .spawn(move || transport_loop(recv_socket, script_proxy))
         .map_err(|e| e.to_string())?;
+    // The host <- audio-server reply path (only when a client leg is attached).
+    if let Some(leg_socket) = host.server().map(|s| s.socket()) {
+        std::thread::Builder::new()
+            .name("clausters-gui-server".into())
+            .spawn(move || server_reply_loop(leg_socket, proxy))
+            .map_err(|e| e.to_string())?;
+    }
 
-    let mut app = App::new(host, socket);
+    let shm = open_shm(shm_path);
+    let mut app = App::new(host, socket, shm);
     event_loop.run_app(&mut app).map_err(|e| e.to_string())
 }
 
@@ -95,6 +119,55 @@ fn transport_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
             Err(_) => return,
         }
     }
+}
+
+/// Drains the client leg's socket, forwarding the audio server's replies to the
+/// main thread (which routes `/b_info`/`/b_setn` into the buffer-fetch path).
+fn server_reply_loop(socket: Arc<UdpSocket>, proxy: EventLoopProxy<UserEvent>) {
+    let mut buf = vec![0u8; 65536];
+    loop {
+        match socket.recv_from(&mut buf) {
+            Ok((0, _)) => {}
+            Ok((len, _)) => {
+                let event = UserEvent::ServerOsc {
+                    bytes: buf[..len].to_vec(),
+                };
+                if proxy.send_event(event).is_err() {
+                    return;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {}
+            Err(_) => return,
+        }
+    }
+}
+
+/// Maps the audio server's shared segment read-only (Unix only), for the
+/// zero-message meters/scopes. A failure is logged and treated as "no segment".
+#[cfg(unix)]
+fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
+    let path = path?;
+    match super::shm::SharedSegment::open(std::path::Path::new(&path)) {
+        Ok(seg) => {
+            info!(
+                "shared segment mapped at {path} ({} control buses, zero-message meters)",
+                seg.control_buses()
+            );
+            Some(Arc::new(seg))
+        }
+        Err(e) => {
+            warn!("cannot map shared segment {path}: {e}; meters will read zero");
+            None
+        }
+    }
+}
+
+#[cfg(not(unix))]
+fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
+    if path.is_some() {
+        warn!("--shm (shared-memory meters) is only supported on Unix");
+    }
+    None
 }
 
 /// A waveform widget's GPU view plus its own navigation window.
@@ -126,8 +199,9 @@ enum Drag {
 }
 
 /// One open window: its GPU surface, the per-waveform slots, the painter, the
-/// script address its events go to, and the pointer/drag state. The widget tree
-/// itself lives in the [`Host`] (single source of truth).
+/// script address its events go to, the pointer/drag state, and the per-`scope`
+/// rolling history. The widget tree itself lives in the [`Host`] (single source
+/// of truth).
 struct WindowState {
     gpu: Gpu,
     waveforms: HashMap<i32, WaveformSlot>,
@@ -135,28 +209,77 @@ struct WindowState {
     origin: SocketAddr,
     cursor: (f64, f64),
     drag: Option<Drag>,
+    /// Recent control-bus samples per `scope` widget id (oldest .. newest).
+    scopes: HashMap<i32, VecDeque<f32>>,
+}
+
+/// A waveform widget waiting on a server buffer fetch.
+struct WaveWant {
+    def_id: i32,
+    widget_id: i32,
+    base_bucket: usize,
+}
+
+/// An in-progress fetch of a server buffer over the client leg: the flat
+/// interleaved samples filled in as `/b_setn` chunks arrive.
+struct BufferFetch {
+    channels: usize,
+    total: usize,
+    samples: Vec<f32>,
+    received: usize,
 }
 
 struct App {
     host: Host,
     socket: Arc<UdpSocket>,
+    /// Live control-bus source (the shared segment) for meters/scopes, if mapped.
+    shm: Option<Arc<dyn BusSource>>,
     windows: HashMap<i32, WindowState>,
     by_winit: HashMap<WindowId, i32>,
     /// Window opens requested before the first `resumed`, flushed on resume.
     pending: Vec<(i32, SocketAddr)>,
     resumed: bool,
+    /// Next scheduled repaint for animated (meter/scope) windows.
+    next_frame: Instant,
+    /// Waveform widgets awaiting each server buffer number.
+    wants: HashMap<i32, Vec<WaveWant>>,
+    /// In-progress server-buffer fetches, by buffer number.
+    fetches: HashMap<i32, BufferFetch>,
 }
 
 impl App {
-    fn new(host: Host, socket: Arc<UdpSocket>) -> Self {
+    fn new(host: Host, socket: Arc<UdpSocket>, shm: Option<Arc<dyn BusSource>>) -> Self {
         Self {
             host,
             socket,
+            shm,
             windows: HashMap::new(),
             by_winit: HashMap::new(),
             pending: Vec::new(),
             resumed: false,
+            next_frame: Instant::now(),
+            wants: HashMap::new(),
+            fetches: HashMap::new(),
         }
+    }
+
+    /// The current value of control bus `bus` from the shared segment (`0.0`
+    /// without a segment or for a negative/out-of-range bus).
+    fn read_bus(&self, bus: i32) -> f32 {
+        if bus < 0 {
+            return 0.0;
+        }
+        self.shm.as_ref().map_or(0.0, |s| s.control(bus as usize))
+    }
+
+    /// Whether window `def_id` should repaint continuously: it has a meter/scope
+    /// and there is a shared segment to feed it.
+    fn window_is_animated(&self, def_id: i32) -> bool {
+        self.shm.is_some()
+            && self
+                .host
+                .window_def(def_id)
+                .is_some_and(tree_has_live_widget)
     }
 
     fn apply(&mut self, event_loop: &ActiveEventLoop, from: SocketAddr, effects: Vec<HostEffect>) {
@@ -254,8 +377,9 @@ impl App {
         let gpu = pollster::block_on(Gpu::new(window));
 
         let mut waveforms = HashMap::new();
+        let mut buffer_refs = Vec::new();
         if let Some(tree) = self.host.window_def(id) {
-            collect_waveforms(tree, &gpu, &mut waveforms);
+            collect_waveforms(tree, &gpu, &mut waveforms, &mut buffer_refs);
         }
         let painter = Painter::new(&gpu.device, gpu.config.format);
 
@@ -269,11 +393,181 @@ impl App {
                 origin,
                 cursor: (0.0, 0.0),
                 drag: None,
+                scopes: HashMap::new(),
             },
         );
         info!("gui_def {id}: opened window \"{title}\"");
         if let Some(ws) = self.windows.get(&id) {
             ws.gpu.window.request_redraw();
+        }
+        // Kick off fetches for any waveform that references a server buffer.
+        self.start_buffer_fetches(id, buffer_refs);
+    }
+
+    /// Registers waveform widgets that reference a server buffer and queries the
+    /// audio server for each distinct buffer's shape (the fetch proceeds on the
+    /// `/b_info` reply). `refs` is `(widget_id, bufnum, base_bucket)`.
+    fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32, usize)>) {
+        for (widget_id, bufnum, base_bucket) in refs {
+            let first = !self.wants.contains_key(&bufnum);
+            self.wants.entry(bufnum).or_default().push(WaveWant {
+                def_id,
+                widget_id,
+                base_bucket,
+            });
+            if first && !self.fetches.contains_key(&bufnum) {
+                self.query_buffer(bufnum);
+            }
+        }
+    }
+
+    /// Asks the audio server for buffer `bufnum`'s shape (`/b_query` -> `/b_info`).
+    fn query_buffer(&self, bufnum: i32) {
+        let Some(server) = self.host.server() else {
+            return warn!(
+                "waveform references buffer {bufnum} but no audio server is attached (--server)"
+            );
+        };
+        if let Err(e) = server.send(OscMessage {
+            addr: "/b_query".into(),
+            args: vec![OscType::Int(bufnum)],
+        }) {
+            warn!("failed to query buffer {bufnum}: {e}");
+        }
+    }
+
+    /// Requests the next sample range of `bufnum` starting at `start`.
+    fn request_chunk(&self, bufnum: i32, start: usize, total: usize) {
+        let count = BUFFER_CHUNK.min(total.saturating_sub(start));
+        if count == 0 {
+            return;
+        }
+        if let Some(server) = self.host.server()
+            && let Err(e) = server.send(OscMessage {
+                addr: "/b_getn".into(),
+                args: vec![
+                    OscType::Int(bufnum),
+                    OscType::Int(start as i32),
+                    OscType::Int(count as i32),
+                ],
+            })
+        {
+            warn!("failed to read buffer {bufnum} at {start}: {e}");
+        }
+    }
+
+    /// Routes one decoded reply from the audio server (the client leg).
+    fn handle_server_packet(&mut self, packet: OscPacket) {
+        let OscPacket::Message(msg) = packet else {
+            return; // bundles are not used on the reply path yet
+        };
+        match msg.addr.as_str() {
+            "/b_info" => {
+                // (bufnum, frames, channels, sampleRate) per buffer.
+                for group in msg.args.chunks(4) {
+                    if let [
+                        OscType::Int(bufnum),
+                        OscType::Int(frames),
+                        OscType::Int(channels),
+                        _,
+                    ] = group
+                    {
+                        self.on_buffer_info(
+                            *bufnum,
+                            (*frames).max(0) as usize,
+                            (*channels).max(0) as usize,
+                        );
+                    }
+                }
+            }
+            "/b_setn" => self.on_buffer_data(&msg.args),
+            "/fail" => warn!("audio server replied /fail: {:?}", msg.args),
+            _ => {}
+        }
+    }
+
+    /// `/b_info`: start fetching a buffer we are waiting on (or finalize empty
+    /// when it is unallocated).
+    fn on_buffer_info(&mut self, bufnum: i32, frames: usize, channels: usize) {
+        if !self.wants.contains_key(&bufnum) || self.fetches.contains_key(&bufnum) {
+            return;
+        }
+        let channels = channels.max(1);
+        let total = frames * channels;
+        if total == 0 {
+            return self.finalize_buffer(bufnum, Vec::new(), channels);
+        }
+        self.fetches.insert(
+            bufnum,
+            BufferFetch {
+                channels,
+                total,
+                samples: vec![0.0; total],
+                received: 0,
+            },
+        );
+        self.request_chunk(bufnum, 0, total);
+    }
+
+    /// `/b_setn bufnum start count value...`: store a chunk, then request the
+    /// next one or finalize when the whole buffer has arrived.
+    fn on_buffer_data(&mut self, args: &[OscType]) {
+        let [
+            OscType::Int(bufnum),
+            OscType::Int(start),
+            OscType::Int(count),
+            rest @ ..,
+        ] = args
+        else {
+            return;
+        };
+        let (bufnum, start) = (*bufnum, (*start).max(0) as usize);
+        let count = (*count).max(0) as usize;
+        let (done, total) = {
+            let Some(fetch) = self.fetches.get_mut(&bufnum) else {
+                return;
+            };
+            let end = start.saturating_add(count).min(fetch.total);
+            let n = end.saturating_sub(start);
+            for (i, arg) in rest.iter().take(n).enumerate() {
+                if let OscType::Float(v) = arg {
+                    fetch.samples[start + i] = *v;
+                }
+            }
+            fetch.received += n;
+            (fetch.received >= fetch.total, fetch.total)
+        };
+        if done {
+            let fetch = self.fetches.remove(&bufnum).unwrap();
+            self.finalize_buffer(bufnum, fetch.samples, fetch.channels);
+        } else {
+            self.request_chunk(bufnum, start + count, total);
+        }
+    }
+
+    /// A buffer finished downloading: de-interleave channel 0 and build a
+    /// waveform view in each window that was waiting on it.
+    fn finalize_buffer(&mut self, bufnum: i32, interleaved: Vec<f32>, channels: usize) {
+        let mono: Arc<[f32]> = if channels <= 1 {
+            interleaved.into()
+        } else {
+            interleaved.iter().step_by(channels).copied().collect()
+        };
+        let wants = self.wants.remove(&bufnum).unwrap_or_default();
+        info!(
+            "buffer {bufnum}: {} frames loaded into {} waveform(s)",
+            mono.len(),
+            wants.len()
+        );
+        for want in wants {
+            if let Some(ws) = self.windows.get_mut(&want.def_id) {
+                let data = WaveformData::new(Arc::clone(&mono), want.base_bucket);
+                let nav = View::full(data.total_samples());
+                let view = WaveformView::new(&ws.gpu.device, ws.gpu.config.format, data);
+                ws.waveforms
+                    .insert(want.widget_id, WaveformSlot { view, nav });
+                ws.gpu.window.request_redraw();
+            }
         }
     }
 
@@ -281,6 +575,12 @@ impl App {
         if let Some(ws) = self.windows.remove(&id) {
             self.by_winit.remove(&ws.gpu.window.id());
         }
+        // Drop any pending buffer wants this window had, so a finished fetch does
+        // not try to fill a window that is gone (or being rebuilt).
+        for wants in self.wants.values_mut() {
+            wants.retain(|w| w.def_id != id);
+        }
+        self.wants.retain(|_, wants| !wants.is_empty());
     }
 
     /// User-initiated close: tell the script, then drop the window.
@@ -523,6 +823,10 @@ impl App {
         let placed = layout::layout(area, tree);
         let mut mesh = Mesh::new();
         let mut waveform_rects: Vec<(i32, Rect)> = Vec::new();
+        // Meter/scope rects, copied out so their shared-memory values and the
+        // scope history can be read after the host-tree borrow is released.
+        let mut meter_rects: Vec<(Rect, i32, f32, f32, Option<String>)> = Vec::new();
+        let mut scope_rects: Vec<(i32, Rect, i32, f32, f32, Option<String>)> = Vec::new();
         let active_button = match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
             Some(Drag::Button { id }) => Some(*id),
             _ => None,
@@ -538,8 +842,45 @@ impl App {
                         waveform_rects.push((id, p.rect));
                     }
                 }
+                WidgetKind::Meter {
+                    bus,
+                    min,
+                    max,
+                    label,
+                } => meter_rects.push((p.rect, *bus, *min, *max, label.clone())),
+                WidgetKind::Scope {
+                    bus,
+                    min,
+                    max,
+                    label,
+                } => {
+                    if let Some(id) = p.widget.id {
+                        scope_rects.push((id, p.rect, *bus, *min, *max, label.clone()));
+                    }
+                }
                 WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
                 kind => controls::draw(&mut mesh, kind, p.rect, p.widget.id == active_button),
+            }
+        }
+
+        // Meters and scopes read their control bus straight from shared memory
+        // each frame (zero messages); the scope keeps a per-widget rolling
+        // history in this window's state.
+        for (rect, bus, min, max, label) in &meter_rects {
+            let value = self.read_bus(*bus);
+            let frac = meters::fraction(value, *min, *max);
+            meters::draw_meter(&mut mesh, *rect, value, frac, label.as_deref());
+        }
+        for (id, rect, bus, min, max, label) in &scope_rects {
+            let value = self.read_bus(*bus);
+            if let Some(ws) = self.windows.get_mut(&def_id) {
+                let history = ws.scopes.entry(*id).or_default();
+                history.push_back(value);
+                while history.len() > SCOPE_HISTORY {
+                    history.pop_front();
+                }
+                let samples: Vec<f32> = history.iter().copied().collect();
+                meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
             }
         }
 
@@ -641,21 +982,41 @@ fn font_left(mesh: &mut Mesh, text: &str, rect: Rect) {
     );
 }
 
-fn collect_waveforms(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, WaveformSlot>) {
+/// Walks the tree building waveform views: a slot now for inline/blob (and empty)
+/// samples, and for a server-buffer reference a `(widget_id, bufnum, base_bucket)`
+/// entry in `buffer_refs` so the caller can fetch it over the client leg.
+fn collect_waveforms(
+    widget: &Widget,
+    gpu: &Gpu,
+    out: &mut HashMap<i32, WaveformSlot>,
+    buffer_refs: &mut Vec<(i32, i32, usize)>,
+) {
     if let WidgetKind::Waveform {
         samples,
         base_bucket,
+        buffer,
     } = &widget.kind
         && let Some(id) = widget.id
     {
-        let data = WaveformData::new(Arc::clone(samples), *base_bucket);
-        let nav = View::full(data.total_samples());
-        let view = WaveformView::new(&gpu.device, gpu.config.format, data);
-        out.insert(id, WaveformSlot { view, nav });
+        match buffer {
+            // A server buffer with no inline data: fetch it later.
+            Some(bufnum) if samples.is_empty() => buffer_refs.push((id, *bufnum, *base_bucket)),
+            _ => {
+                let data = WaveformData::new(Arc::clone(samples), *base_bucket);
+                let nav = View::full(data.total_samples());
+                let view = WaveformView::new(&gpu.device, gpu.config.format, data);
+                out.insert(id, WaveformSlot { view, nav });
+            }
+        }
     }
     for child in &widget.children {
-        collect_waveforms(child, gpu, out);
+        collect_waveforms(child, gpu, out, buffer_refs);
     }
+}
+
+/// Whether a widget tree contains a live (shared-memory-backed) meter or scope.
+fn tree_has_live_widget(widget: &Widget) -> bool {
+    widget.kind.live_bus().is_some() || widget.children.iter().any(tree_has_live_widget)
 }
 
 fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
@@ -675,13 +1036,46 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
-        let UserEvent::Osc { from, bytes } = event;
-        let packet = match clausters_core::osc::decode_packet(&bytes) {
-            Ok(p) => p,
-            Err(e) => return warn!("malformed OSC packet from {from}: {e}"),
-        };
-        let effects = self.host.handle_packet(packet, ClientId::Udp(from));
-        self.apply(event_loop, from, effects);
+        match event {
+            UserEvent::Osc { from, bytes } => {
+                let packet = match clausters_core::osc::decode_packet(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => return warn!("malformed OSC packet from {from}: {e}"),
+                };
+                let effects = self.host.handle_packet(packet, ClientId::Udp(from));
+                self.apply(event_loop, from, effects);
+            }
+            UserEvent::ServerOsc { bytes } => match clausters_core::osc::decode_packet(&bytes) {
+                Ok(packet) => self.handle_server_packet(packet),
+                Err(e) => warn!("malformed OSC reply from the audio server: {e}"),
+            },
+        }
+    }
+
+    /// After handling events, schedule the next repaint for animated (meter/
+    /// scope) windows so their shared-memory values keep updating; idle windows
+    /// stay event-driven (`Wait`).
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let animated: Vec<i32> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|id| self.window_is_animated(*id))
+            .collect();
+        if animated.is_empty() {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
+        let now = Instant::now();
+        if now >= self.next_frame {
+            for id in &animated {
+                if let Some(ws) = self.windows.get(id) {
+                    ws.gpu.window.request_redraw();
+                }
+            }
+            self.next_frame = now + FRAME;
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
     }
 
     fn window_event(

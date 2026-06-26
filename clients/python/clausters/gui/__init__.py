@@ -7,9 +7,14 @@ submodule is the Python side of that protocol: `clausters.gui.guidef` composes a
 widget tree as JSON (the GUI analogue of a ``SynthDef``), and
 `clausters.gui.host.GuiHost` sends it and reads widgets back.
 
-At this milestone the host is a headless skeleton (no window yet): it registers
-and introspects the widget tree and answers ``/gui_query``. See
-``examples/gui_skeleton.py``.
+The windowed host opens an OS window per ``window``-rooted GuiDef and renders
+containers, the standard controls, the heavy ``waveform`` view and the
+shared-memory-backed ``meter``/``scope``; live updates flow through ``/gui_set``
+and interactions come back as ``/gui_event``/``/gui_closed``. A ``waveform`` can
+also name a server buffer, and a ``meter``/``scope`` reads a control bus from the
+audio server's shared-memory segment. See the ``examples/gui_*.py`` family
+(``gui_skeleton`` for the headless protocol, ``gui_window``/``gui_panel`` for
+windows and controls, ``gui_meters`` for the audio-server client paths).
 """
 
 from .guidef import (
@@ -17,10 +22,12 @@ from .guidef import (
     knob,
     label,
     menu,
+    meter,
     node,
     number,
     panel,
     samples_to_blob,
+    scope,
     slider,
     text,
     toggle,
@@ -44,5 +51,7 @@ __all__ = [
     "text",
     "menu",
     "waveform",
+    "meter",
+    "scope",
     "samples_to_blob",
 ]

@@ -17,11 +17,16 @@ use clausters_gui::host::{Host, ServerLeg, gui};
 
 const USAGE: &str = "\
 usage:
-  clausters-gui [--port <n>] [--server <host:port>] [--headless]
+  clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
       --port <n>            UDP port for the GUI host's server front
                             (script -> host); default 57210
       --server <host:port>  also attach the client leg to a running audio
-                            server (host -> audio server); default off
+                            server (host -> audio server); default off.
+                            Needed for waveform widgets that reference a
+                            server buffer number.
+      --shm <path>          map the audio server's shared-memory segment (its
+                            own --shm path) for zero-message meters/scopes;
+                            Unix only, default off
       --headless            run the protocol with no display (tests / no GPU);
                             the default opens windows (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->
@@ -57,6 +62,7 @@ fn main() -> ExitCode {
 fn run(args: &[String]) -> Result<(), String> {
     let mut port = DEFAULT_PORT;
     let mut server: Option<String> = None;
+    let mut shm: Option<String> = None;
     let mut headless = false;
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -72,6 +78,12 @@ fn run(args: &[String]) -> Result<(), String> {
                     .next()
                     .ok_or_else(|| format!("--server needs host:port\n{USAGE}"))?;
                 server = Some(v.clone());
+            }
+            "--shm" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| format!("--shm needs a path\n{USAGE}"))?;
+                shm = Some(v.clone());
             }
             "--headless" => headless = true,
             "--help" | "-h" => {
@@ -97,9 +109,12 @@ fn run(args: &[String]) -> Result<(), String> {
     let mode = if headless { "headless" } else { "windowed" };
     tracing::info!("clausters-gui host listening on udp://{local} ({mode}; script -> host)");
     if headless {
+        if shm.is_some() {
+            tracing::warn!("--shm has no effect headless (meters need a window)");
+        }
         transport::serve(host, socket).map_err(|e| e.to_string())
     } else {
-        gui::run(host, Arc::new(socket))
+        gui::run(host, Arc::new(socket), shm)
     }
 }
 
