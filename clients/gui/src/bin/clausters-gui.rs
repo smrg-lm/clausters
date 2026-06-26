@@ -23,7 +23,8 @@ usage:
       --server <host:port>  also attach the client leg to a running audio
                             server (host -> audio server); default off.
                             Needed for waveform widgets that reference a
-                            server buffer number.
+                            server buffer number, and for bound widgets
+                            (/gui_bind) to forward their value to the server.
       --shm <path>          map the audio server's shared-memory segment (its
                             own --shm path) for zero-message meters/scopes;
                             Unix only, default off

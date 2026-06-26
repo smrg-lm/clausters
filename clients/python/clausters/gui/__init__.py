@@ -12,9 +12,12 @@ containers, the standard controls, the heavy ``waveform`` view and the
 shared-memory-backed ``meter``/``scope``; live updates flow through ``/gui_set``
 and interactions come back as ``/gui_event``/``/gui_closed``. A ``waveform`` can
 also name a server buffer, and a ``meter``/``scope`` reads a control bus from the
-audio server's shared-memory segment. See the ``examples/gui_*.py`` family
+audio server's shared-memory segment. A widget can also be *bound*
+(`clausters.gui.host.GuiHost.bind`) so its value flows straight to the audio
+server, bypassing this script. See the ``examples/gui_*.py`` family
 (``gui_skeleton`` for the headless protocol, ``gui_window``/``gui_panel`` for
-windows and controls, ``gui_meters`` for the audio-server client paths).
+windows and controls, ``gui_meters`` for the audio-server client paths,
+``gui_bind`` for the bound low-latency control path).
 """
 
 from .guidef import (

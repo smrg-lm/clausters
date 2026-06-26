@@ -975,3 +975,52 @@ Notas:
 - `/b_get`/`/b_getn` son lecturas estandar de scsynth que sirven a cualquier
   cliente (no solo la GUI); para buffers muy grandes el camino de transferencia
   masiva es un milestone posterior.
+
+## 16. GUI host: bindings (`/gui_bind`), el valor saltea al script (G6)
+
+G6 agrega el camino interactivo de baja latencia: un widget *bindeado* manda su
+valor **directo al servidor de audio**, sin pasar por el script. Un knob
+bindeado a `freq` de un synth manda `/n_set <node> freq <valor>` al servidor en
+cada giro; uno sin bindear emite `/gui_event` al script como siempre. `bind`
+cambia uno por el otro; `unbind` lo devuelve. El host necesita `--server` para
+que el valor llegue al servidor de audio. Necesita display y un adaptador
+Vulkan/Metal/DX12/GL.
+
+```sh
+# servidor de audio (una terminal, desde la raiz):
+cargo run
+
+# host en modo ventana, atado a ese servidor (otra terminal, desde clients/gui):
+cd clients/gui && cargo run --bin clausters-gui -- --server 127.0.0.1:57110 -v
+
+# el script: arma un knob, un synth seno y bindea el knob a su freq (otra terminal):
+PYTHONPATH=clients/python python clients/python/examples/gui_bind.py
+```
+
+Esperado:
+
+- El log del host muestra `opened window "Bound knob -> synth freq"` y luego
+  `/gui_bind 10 -> audio server /n_set [Int(1000), String("freq")]` (el nodo real
+  varia). Notar que el id va como `Int` y el nombre como `String`: se preserva la
+  distincion int/float en el prefijo del binding.
+- **Fase bindeada (~8 s):** girar el knob cambia el tono del seno en el acto y la
+  terminal del script **no imprime nada** por el knob: el valor fue del host al
+  servidor sin volver a Python (lo confirma que en el log del servidor de audio
+  aparecen `/n_set` que el script nunca mando).
+- **Fase desbindeada:** el script llama `unbind(10)` (log del host: `/gui_bind 10:
+  unbound (events restored)`); ahora girar el knob imprime `event from widget 10:
+  [<freq>]` en el script y el synth queda fijo en su ultima frecuencia.
+- Cerrar la ventana termina el script (libera el synth).
+
+Notas:
+
+- Sin `--server` el host acepta el `bind` igual pero avisa por log que no tiene a
+  donde reenviar; el valor se traga (no vuelve al script como evento) - el binding
+  expresa la intencion "no es del script", aunque no haya servidor.
+- El reenvio solo ocurre por **interaccion del usuario** (arrastre/click): un
+  `/gui_set` del script no se reenvia (ya viene del script, que puede hablarle al
+  servidor por su cuenta).
+- Liberar el widget (`/gui_free`, o un `/gui_def` que lo redefine afuera) tira su
+  binding, asi que un id viejo no sigue reenviando.
+- Cualquier direccion sirve, no solo `/n_set`: `/c_set <bus>`, `/n_setn`, etc. El
+  valor del widget se agrega siempre al final del prefijo fijo del `bind`.

@@ -3156,3 +3156,52 @@ samples.
   buffer over the leg with no panic or wgpu validation error. gui `cargo test`
   green, `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings`
   clean; the core still builds/tests with `--no-default-features`.
+
+## G6 — Bindings (`/gui_bind`): bypass the script (2026-06-26)
+
+A widget can now be *bound* so its value flows **straight to the audio server**,
+with no round-trip through the script — the low-latency interactive path the
+topology promised (and the same idea as the server's MIDI bindings, a control
+source wired to a server-side destination instead of being polled).
+
+- **The binding (`clients/gui` `host::bind`).** A `Binding` is an OSC `addr` plus
+  a fixed `prefix` of arguments, parsed from a `/gui_bind <id> "server" <addr>
+  <prefix…>` target. The leading `"server"` destination keyword is deliberate: it
+  is kept in the wire form so the message shape can grow later (binding to another
+  widget, or back to the script with a transform) without a protocol change, even
+  though only the audio server is meaningful now. `Binding::message(value)` builds
+  `addr prefix… value`, keeping the int/float distinction of the prefix verbatim.
+  Parse/build are unit-tested in isolation.
+- **Host state and forwarding (`host::mod`).** The `Host` holds a `widget id ->
+  Binding` map. `on_bind` registers a binding (and warns when no `--server` leg is
+  attached, since the value then has nowhere to go); `/gui_bind <id>` with **no**
+  target removes it, restoring the event path; `forward(widget_id, value)` sends
+  the binding's message through the existing client leg (`host::client::ServerLeg`,
+  the same `clausters_core::osc` encode door — one encoder, not a parallel one) and
+  returns whether it handled the value. A bound widget with no server still returns
+  `true` (the value is swallowed, never leaked to the script). Bindings are pruned
+  when their widget is freed or redefined away (`/gui_free`, a replacing
+  `/gui_def`), so a stale id cannot keep forwarding.
+- **One delivery seam in the windowed front (`host::gui`).** Every value-bearing
+  interaction (slider/knob/number drag, toggle, menu, button press and release)
+  now routes through a single `deliver`, which calls `Host::forward` first and only
+  emits a `/gui_event` when the widget is unbound. So the bound vs. unbound choice
+  is made in exactly one place, for all controls; the waveform's structural `view`
+  event is unaffected. No new GPU or transport code.
+- **Python.** `GuiHost.bind(id, address, *prefix)` sends the `"server"` form, and
+  `unbind(id)` removes it; `examples/gui_bind.py` runs the audio server, the host
+  and the script together — a knob bound to a sine synth's `freq` drives the pitch
+  directly (nothing prints in the script while bound), then unbinds and the same
+  knob starts emitting `/gui_event` again.
+- **Tests:** 62 in the gui crate (6 new): three for `Binding` (parse/message, its
+  rejections, an optional prefix) and three on `Host` (a bind that forwards the
+  exact `/n_set 1000 cutoff 440.0` over a real loopback leg and stops after
+  unbind; a free-drops-the-binding case; a no-server bind that still swallows the
+  value). All GPU-free.
+- **Verified:** a headless E2E round-trips bind/unbind from the Python client (the
+  host logs `/gui_bind 10 -> audio server /n_set [Int(1000), String("freq")]` then
+  `unbound (events restored)`, the int/float distinction kept); the windowed host
+  opens a window with a bound knob and registers the binding with no panic. gui
+  `cargo test` green, `cargo fmt --check` and `cargo clippy --all-targets -- -D
+  warnings` clean; the core still builds/tests with `--no-default-features`
+  (unchanged this milestone — no server code touched).

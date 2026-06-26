@@ -66,6 +66,26 @@ class GuiHost:
         """``/gui_free <id>`` — destroy a widget and its subtree."""
         self._osc.send_msg(self.target, "/gui_free", id)
 
+    def bind(self, id: int, address: str, *prefix):
+        """``/gui_bind <id> "server" <address> <prefix…>`` — forward this widget's
+        value **straight to the audio server**, bypassing this script.
+
+        On every change the host sends ``address`` (an OSC path like ``/n_set``
+        or ``/c_set``) with the fixed ``prefix`` arguments followed by the
+        widget's value — e.g. ``bind(10, "/n_set", node_id, "freq")`` makes knob
+        10 send ``/n_set <node_id> freq <value>`` to the server itself, so the
+        control responds with no round-trip through Python (the low-latency
+        path). A bound widget stops emitting ``/gui_event``; `unbind` restores it.
+        The host must have been started with ``--server`` for the value to reach
+        the audio server. ``prefix`` items keep their type (an ``int`` rides as an
+        OSC int, a ``str`` as a string)."""
+        self._osc.send_msg(self.target, "/gui_bind", id, "server", address, *prefix)
+
+    def unbind(self, id: int):
+        """``/gui_bind <id>`` (no target) — remove a widget's binding, so its value
+        flows back to this script as ``/gui_event`` again."""
+        self._osc.send_msg(self.target, "/gui_bind", id)
+
     def query(self, id: int, timeout: float = 1.0):
         """``/gui_query <id>`` -> the ``/gui_info`` reply as ``(type, props)``.
 

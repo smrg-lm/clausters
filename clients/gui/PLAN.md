@@ -237,9 +237,11 @@ The host attaches to the audio server and the zero-message metering path lands.
 
 - A meter widget tracks a live control bus with no per-frame OSC traffic; a waveform widget renders a server buffer by number.
 
-## G6 - Bindings (`/gui_bind`): bypass the script
+## G6 - Bindings (`/gui_bind`): bypass the script - DONE (2026-06-26)
 
 The low-latency interactive control path.
+
+**Landed:** a `host::bind::Binding` (an OSC `addr` plus a fixed `prefix` of arguments) parsed from a `/gui_bind <id> "server" <addr> <prefix…>` target - the leading `"server"` destination keyword is kept in the wire form so the message shape can grow later (binding to another widget, or to the script with a transform) without a protocol change. The `Host` holds a `widget id -> Binding` map: `on_bind` registers it (warning when no `--server` leg is attached, since the value then has nowhere to go), `/gui_bind <id>` with **no** target removes it (restoring the event path), and `forward(widget_id, value)` sends `addr prefix… value` through the existing client leg (`host::client::ServerLeg`, the same `clausters_core::osc` encode door) and reports whether the binding handled the value. The windowed front routes **every** value-bearing interaction (slider/knob/number drag, toggle, menu, button press/release) through one `deliver` that calls `forward` first and only emits a `/gui_event` when unbound - so a bound widget's value reaches the audio server with no script round-trip. Bindings are pruned when their widget is freed or redefined away (`/gui_free`, a replacing `/gui_def`), so a stale id cannot keep forwarding. Python: `GuiHost.bind(id, address, *prefix)` / `unbind(id)` and `examples/gui_bind.py` (a knob bound to a sine synth's `freq`, then unbound). Verified: a unit test forwards `/n_set 1000 cutoff 440.0` over a real loopback leg and stops after unbind; a headless E2E round-trips bind/unbind from the Python client with the int/float distinction kept; the windowed host opens a window with a bound knob and registers the binding with no panic. See `LOG.md`.
 
 ### Scope
 

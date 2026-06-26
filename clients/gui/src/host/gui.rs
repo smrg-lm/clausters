@@ -332,15 +332,28 @@ impl App {
         );
     }
 
-    /// Emits a control's current value as a `/gui_event`.
+    /// Delivers a control's current value: straight to the audio server when the
+    /// widget is bound (`/gui_bind` — no script round-trip), otherwise as a
+    /// `/gui_event` to the script.
     fn emit_value(&self, def_id: i32, widget_id: i32) {
         if let Some(value) = self
             .host
             .window_def(def_id)
             .and_then(|t| value_of(t, widget_id))
         {
-            self.emit(def_id, widget_id, vec![value]);
+            self.deliver(def_id, widget_id, value);
         }
+    }
+
+    /// Routes a widget's new `value` to the audio server when it is bound
+    /// (`/gui_bind`, the low-latency path that bypasses the script), or to the
+    /// script as a `/gui_event` otherwise. Every interaction that produces a
+    /// value goes through here, so a single binding check covers them all.
+    fn deliver(&self, def_id: i32, widget_id: i32, value: OscType) {
+        if self.host.forward(widget_id, value.clone()) {
+            return; // bound: the value went straight to the audio server
+        }
+        self.emit(def_id, widget_id, vec![value]);
     }
 
     fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: SocketAddr) {
@@ -677,7 +690,7 @@ impl App {
                 );
             }
             WidgetKind::Button { .. } => {
-                self.emit(def_id, id, vec![OscType::Int(1)]);
+                self.deliver(def_id, id, OscType::Int(1));
                 self.set_drag(def_id, Drag::Button { id });
                 self.redraw(def_id);
             }
@@ -807,7 +820,7 @@ impl App {
     fn on_release(&mut self, def_id: i32) {
         let drag = self.windows.get_mut(&def_id).and_then(|w| w.drag.take());
         if let Some(Drag::Button { id }) = drag {
-            self.emit(def_id, id, vec![OscType::Int(0)]);
+            self.deliver(def_id, id, OscType::Int(0));
             self.redraw(def_id);
         }
     }

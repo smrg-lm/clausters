@@ -26,6 +26,7 @@
 //! client leg ([`client::ServerLeg`]) reuses that same encode door, so the gui
 //! talks to the audio server with one encoder, not a parallel one.
 
+pub mod bind;
 pub mod client;
 pub mod controls;
 pub mod font;
@@ -53,6 +54,7 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
+pub use bind::Binding;
 pub use client::ServerLeg;
 pub use guidef::GuiNode;
 pub use registry::Registry;
@@ -107,9 +109,13 @@ pub struct Host {
     /// only in the generic registry.
     window_defs: HashMap<i32, Widget>,
     /// The audio-server client leg (the third topology leg). Present when the
-    /// host was started with a `--server` target; bindings (a later milestone)
-    /// forward bound-widget values through it.
+    /// host was started with a `--server` target; [`forward`](Self::forward)
+    /// sends bound-widget values through it.
     server: Option<ServerLeg>,
+    /// Widget id -> the audio-server destination its value forwards to
+    /// (`/gui_bind`). A bound widget bypasses the script: its value goes
+    /// straight to the audio server instead of emitting a `/gui_event`.
+    bindings: HashMap<i32, Binding>,
 }
 
 impl Default for Host {
@@ -124,6 +130,7 @@ impl Host {
             registry: Registry::new(),
             window_defs: HashMap::new(),
             server: None,
+            bindings: HashMap::new(),
         }
     }
 
@@ -190,7 +197,7 @@ impl Host {
             GUI_SET => self.on_set(&msg.args, from, effects),
             GUI_FREE => self.on_free(&msg.args, from, effects),
             GUI_QUERY => self.on_query(&msg.args, from, effects),
-            GUI_BIND => warn!("{from}: {GUI_BIND} is not implemented yet (a later milestone)"),
+            GUI_BIND => self.on_bind(&msg.args, from),
             GUI_LOAD => warn!("{from}: {GUI_LOAD} is not implemented yet (a later milestone)"),
             other => debug!("{from}: ignoring unhandled address {other}"),
         }
@@ -233,6 +240,11 @@ impl Host {
                 }
                 Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
             }
+        }
+        // A redefine frees the old subtree first; drop any binding whose widget
+        // did not survive into the new tree.
+        if outcome.replaced {
+            self.prune_bindings();
         }
     }
 
@@ -277,6 +289,8 @@ impl Host {
         if self.window_defs.remove(&id).is_some() {
             effects.push(HostEffect::CloseWindow(id));
         }
+        // A freed widget can no longer forward (its subtree is gone).
+        self.prune_bindings();
         if removed > 0 {
             info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
@@ -312,6 +326,69 @@ impl Host {
             addr: GUI_INFO.into(),
             args: out,
         }));
+    }
+
+    /// `/gui_bind <id> "server" <addr> <prefix…>` — forward this widget's value
+    /// straight to the audio server on every change, bypassing the script (the
+    /// low-latency interactive path). With no target (`/gui_bind <id>`) the
+    /// binding is removed and the `/gui_event` path restored.
+    fn on_bind(&mut self, args: &[OscType], from: ClientId) {
+        let Some(id) = int_arg(args, 0) else {
+            return warn!("{from}: {GUI_BIND} needs an integer id");
+        };
+        if args.len() <= 1 {
+            if self.bindings.remove(&id).is_some() {
+                info!("{from}: {GUI_BIND} {id}: unbound (events restored)");
+            } else {
+                warn!("{from}: {GUI_BIND} {id}: no binding to remove");
+            }
+            return;
+        }
+        let binding = match Binding::parse(&args[1..]) {
+            Ok(b) => b,
+            Err(e) => return warn!("{from}: {GUI_BIND} {id}: {e}"),
+        };
+        if self.server.is_none() {
+            warn!(
+                "{from}: {GUI_BIND} {id}: no audio server attached (--server); the binding \
+                 will swallow the value but cannot forward it"
+            );
+        }
+        info!(
+            "{from}: {GUI_BIND} {id} -> audio server {} {:?}",
+            binding.addr, binding.prefix
+        );
+        self.bindings.insert(id, binding);
+    }
+
+    /// Forwards `widget_id`'s `value` to the audio server when it is bound,
+    /// returning whether the binding handled it. When it returns `true` the
+    /// caller must **not** also emit a `/gui_event` — bypassing the script is
+    /// the whole point. A bound widget with no audio server attached still
+    /// returns `true` (the value is swallowed, not sent to the script); the
+    /// missing `--server` was already warned about at bind time.
+    pub fn forward(&self, widget_id: i32, value: OscType) -> bool {
+        let Some(binding) = self.bindings.get(&widget_id) else {
+            return false;
+        };
+        if let Some(server) = self.server.as_ref()
+            && let Err(e) = server.send(binding.message(value))
+        {
+            warn!("{GUI_BIND} {widget_id}: failed to forward to the audio server: {e}");
+        }
+        true
+    }
+
+    /// Whether widget `id` currently has a binding (its value goes to the audio
+    /// server, not the script).
+    pub fn is_bound(&self, id: i32) -> bool {
+        self.bindings.contains_key(&id)
+    }
+
+    /// Drops bindings whose widget no longer exists (after a `/gui_free` or a
+    /// redefining `/gui_def`), so a freed id cannot keep forwarding.
+    fn prune_bindings(&mut self) {
+        self.bindings.retain(|id, _| self.registry.contains(*id));
     }
 }
 
@@ -557,5 +634,121 @@ mod tests {
         let out = replies(host.handle_packet(bundle, from()));
         assert_eq!(out.len(), 1, "the query inside the bundle is answered");
         assert_eq!(out[0].args[1], OscType::String("window".into()));
+    }
+
+    fn bind_msg(id: i32, target: Vec<OscType>) -> OscPacket {
+        let mut args = vec![OscType::Int(id)];
+        args.extend(target);
+        OscPacket::Message(OscMessage {
+            addr: GUI_BIND.into(),
+            args,
+        })
+    }
+
+    #[test]
+    fn bound_widget_forwards_to_the_audio_server_and_unbinds() {
+        use clausters_core::osc::decode_packet;
+        use std::net::UdpSocket;
+        use std::time::Duration;
+
+        // A throwaway socket standing in for the audio server, to capture the
+        // message a bound widget forwards (one process, so loopback delivers).
+        let fake_server = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
+        fake_server
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let leg = ServerLeg::connect(fake_server.local_addr().unwrap()).unwrap();
+
+        let mut host = Host::new().with_server(leg);
+        host.handle_packet(def_msg(1, TREE), from()); // a window with knob id 10
+
+        host.handle_packet(
+            bind_msg(
+                10,
+                vec![
+                    OscType::String("server".into()),
+                    OscType::String("/n_set".into()),
+                    OscType::Int(1000),
+                    OscType::String("cutoff".into()),
+                ],
+            ),
+            from(),
+        );
+        assert!(host.is_bound(10));
+
+        // A value change goes straight to the server (bypassing the script).
+        assert!(host.forward(10, OscType::Float(440.0)));
+        let mut buf = [0u8; 1024];
+        let (len, _) = fake_server.recv_from(&mut buf).expect("forwarded datagram");
+        let msg = match decode_packet(&buf[..len]).unwrap() {
+            OscPacket::Message(m) => m,
+            other => panic!("expected a message, got {other:?}"),
+        };
+        assert_eq!(msg.addr, "/n_set");
+        assert_eq!(
+            msg.args,
+            vec![
+                OscType::Int(1000),
+                OscType::String("cutoff".into()),
+                OscType::Float(440.0)
+            ]
+        );
+
+        // Unbinding (no target) restores the event path: forward stops handling.
+        host.handle_packet(bind_msg(10, vec![]), from());
+        assert!(!host.is_bound(10));
+        assert!(!host.forward(10, OscType::Float(1.0)));
+    }
+
+    #[test]
+    fn freeing_a_bound_widget_drops_its_binding() {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        host.handle_packet(
+            bind_msg(
+                10,
+                vec![
+                    OscType::String("server".into()),
+                    OscType::String("/c_set".into()),
+                    OscType::Int(7),
+                ],
+            ),
+            from(),
+        );
+        assert!(host.is_bound(10));
+        // Freeing the window (root 1) takes knob 10 — and its binding — with it.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(1)],
+            }),
+            from(),
+        );
+        assert!(!host.is_bound(10));
+    }
+
+    #[test]
+    fn binding_without_a_server_is_registered_but_swallows() {
+        // No --server: the bind is accepted (and warned), and forward still
+        // reports it handled the value so it does not leak to the script.
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, TREE), from());
+        host.handle_packet(
+            bind_msg(
+                10,
+                vec![
+                    OscType::String("server".into()),
+                    OscType::String("/n_set".into()),
+                    OscType::Int(1000),
+                    OscType::String("cutoff".into()),
+                ],
+            ),
+            from(),
+        );
+        assert!(host.is_bound(10));
+        assert!(
+            host.forward(10, OscType::Float(1.0)),
+            "swallowed, not emitted"
+        );
     }
 }
