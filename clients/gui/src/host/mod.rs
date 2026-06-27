@@ -15,11 +15,13 @@
 //! The host does **not** extract or link the audio server's transport layer
 //! (`src/osc/{server,tcp,ws}.rs`): that code is tangled with the audio
 //! `ServerState`, the engine wake and the IPC ring, so lifting it now would drag
-//! server concerns into this independent crate for no gain. Instead the host
-//! **links `clausters-core`** — a path dependency that pulls only `rosc`, never
-//! the server crate — for the shared OSC seam (the single
-//! [`clausters_core::osc::decode_packet`] door, plus encode/bundle/message), and
-//! owns a **thin transport front** of its own ([`transport`]). G2 ships the
+//! server concerns into this crate for no gain. Instead the host **links
+//! `clausters-core`** — a path dependency that pulls only `rosc` — for the shared
+//! OSC seam (the single [`clausters_core::osc::decode_packet`] door, plus
+//! encode/bundle/message), and owns a **thin transport front** of its own
+//! ([`transport`]). The default build links no server code; only the optional
+//! `standalone` feature pulls the full `clausters` crate, for the in-process
+//! embedded server ([`embed`]). G2 ships the
 //! **UDP** front (the default Clausters carrier, minimal to drive from a Python
 //! client); TCP/WebSocket/ring are added in later milestones behind the same
 //! [`transport::ClientId`] and reply seam, which is shaped to generalize. The
@@ -38,6 +40,7 @@ pub mod nodetree;
 pub mod paint;
 pub mod plot;
 pub mod registry;
+pub mod store;
 pub mod transport;
 pub mod widget;
 
@@ -45,6 +48,12 @@ pub mod widget;
 // scopes (G5). Unix-only, as the server's segment is.
 #[cfg(unix)]
 pub mod shm;
+
+// The in-process embedded server for the standalone mode, a direct dependency on
+// the `clausters` crate behind the optional `standalone` feature (off by default,
+// since it pulls the engine + audio backend). Native-only.
+#[cfg(feature = "standalone")]
+pub mod embed;
 
 // Mapping a local file (raw samples or a prebuilt peak cache) for the bulk-data
 // path: a multi-megabyte buffer rendered from a shared resource, not over OSC
@@ -69,6 +78,59 @@ pub use guidef::GuiNode;
 pub use registry::Registry;
 pub use transport::ClientId;
 pub use widget::Widget;
+
+/// Where the host's client leg points: a UDP audio server (the normal case) or
+/// an in-process embedded server (standalone, the `standalone` feature). Both
+/// speak the same OSC through the one encode door, so the host forwards
+/// bound-widget values and queries the same way regardless of which is behind
+/// the link.
+pub enum ServerLink {
+    /// A UDP audio server (the `--server host:port` leg).
+    Udp(ServerLeg),
+    /// An in-process server linked directly from the `clausters` crate
+    /// (standalone boot; the `standalone` feature).
+    #[cfg(feature = "standalone")]
+    Embed(embed::EmbedServer),
+}
+
+impl ServerLink {
+    /// Sends one OSC message to the server (a UDP datagram, or the embed ring).
+    pub fn send(&self, msg: OscMessage) -> std::io::Result<()> {
+        match self {
+            ServerLink::Udp(leg) => leg.send(msg),
+            #[cfg(feature = "standalone")]
+            ServerLink::Embed(srv) => {
+                let bytes = clausters_core::osc::encode(&OscPacket::Message(msg)).map_err(|e| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())
+                })?;
+                if srv.send(&bytes) {
+                    Ok(())
+                } else {
+                    Err(std::io::Error::other("embed command ring full"))
+                }
+            }
+        }
+    }
+
+    /// The UDP socket of a `Udp` link, for the background reply thread; `None`
+    /// for the embed link, whose replies are polled in the event loop instead.
+    pub fn udp_socket(&self) -> Option<std::sync::Arc<std::net::UdpSocket>> {
+        match self {
+            ServerLink::Udp(leg) => Some(leg.socket()),
+            #[cfg(feature = "standalone")]
+            ServerLink::Embed(_) => None,
+        }
+    }
+
+    /// The embedded server behind this link, if any (the front polls its replies).
+    #[cfg(feature = "standalone")]
+    pub fn embed(&self) -> Option<&embed::EmbedServer> {
+        match self {
+            ServerLink::Embed(srv) => Some(srv),
+            _ => None,
+        }
+    }
+}
 
 /// A source of live control-bus values for the meter/scope views. Implemented by
 /// the shared-memory segment ([`shm::SharedSegment`]) on Unix; the trait lets the
@@ -118,13 +180,21 @@ pub struct Host {
     /// only in the generic registry.
     window_defs: HashMap<i32, Widget>,
     /// The audio-server client leg (the third topology leg). Present when the
-    /// host was started with a `--server` target; [`forward`](Self::forward)
-    /// sends bound-widget values through it.
-    server: Option<ServerLeg>,
+    /// host was started with a `--server` target or, in standalone mode, an
+    /// embedded server; [`forward`](Self::forward) sends bound-widget values
+    /// through it.
+    server: Option<ServerLink>,
     /// Widget id -> the audio-server destination its value forwards to
     /// (`/gui_bind`). A bound widget bypasses the script: its value goes
     /// straight to the audio server instead of emitting a `/gui_event`.
     bindings: HashMap<i32, Binding>,
+    /// The verbatim `/gui_def` JSON per def id — the source of truth for
+    /// persistence (a GuiDef with a `name` is saved as-is) and for replaying a
+    /// `/gui_load`.
+    def_json: HashMap<i32, Vec<u8>>,
+    /// The on-disk GuiDef store, when a data directory is configured. Enables
+    /// auto-persist of named GuiDefs and `/gui_load`.
+    store: Option<store::GuiStore>,
 }
 
 impl Default for Host {
@@ -140,18 +210,46 @@ impl Host {
             window_defs: HashMap::new(),
             server: None,
             bindings: HashMap::new(),
+            def_json: HashMap::new(),
+            store: None,
         }
     }
 
-    /// Attaches the audio-server client leg (host -> audio server).
+    /// Attaches the audio-server client leg (host -> audio server) over UDP.
     pub fn with_server(mut self, server: ServerLeg) -> Self {
-        self.server = Some(server);
+        self.server = Some(ServerLink::Udp(server));
         self
     }
 
-    /// The audio-server client leg, if one was attached (`--server`). The
-    /// windowed front uses it to query and fetch server buffers.
-    pub fn server(&self) -> Option<&ServerLeg> {
+    /// Attaches an arbitrary server link (UDP or, for standalone, an embedded
+    /// server).
+    pub fn with_server_link(mut self, link: ServerLink) -> Self {
+        self.server = Some(link);
+        self
+    }
+
+    /// Attaches the on-disk GuiDef store (named GuiDefs auto-persist; `/gui_load`
+    /// reads from it).
+    pub fn with_store(mut self, store: store::GuiStore) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// The GuiDef store, if a data directory was configured.
+    pub fn store(&self) -> Option<&store::GuiStore> {
+        self.store.as_ref()
+    }
+
+    /// The ids of the currently-defined window GuiDefs (for the standalone front
+    /// to open a pre-loaded def on resume).
+    pub fn window_def_ids(&self) -> Vec<i32> {
+        self.window_defs.keys().copied().collect()
+    }
+
+    /// The audio-server client link, if one was attached (`--server` or the
+    /// standalone embed). The windowed front uses it to query and fetch buffers,
+    /// and to forward bound-widget values.
+    pub fn server(&self) -> Option<&ServerLink> {
         self.server.as_ref()
     }
 
@@ -207,7 +305,7 @@ impl Host {
             GUI_FREE => self.on_free(&msg.args, from, effects),
             GUI_QUERY => self.on_query(&msg.args, from, effects),
             GUI_BIND => self.on_bind(&msg.args, from),
-            GUI_LOAD => warn!("{from}: {GUI_LOAD} is not implemented yet (a later milestone)"),
+            GUI_LOAD => self.on_load(&msg.args, from, effects),
             other => debug!("{from}: ignoring unhandled address {other}"),
         }
     }
@@ -226,6 +324,8 @@ impl Host {
             Ok(node) => node,
             Err(e) => return warn!("{from}: {GUI_DEF} {id}: invalid GuiDef JSON: {e}"),
         };
+        // Keep the verbatim JSON: the source of truth for persistence and reload.
+        self.def_json.insert(id, bytes.to_vec());
         let outcome = self.registry.define(id, &node);
         // The acceptance criterion: log the parsed tree.
         info!(
@@ -255,6 +355,45 @@ impl Host {
         if outcome.replaced {
             self.prune_bindings();
         }
+        // Inline `bind` props register a binding declaratively, so a saved GuiDef
+        // carries its own bindings (the standalone path) and a live script may
+        // bind without a separate `/gui_bind`.
+        self.register_inline_bindings(&node);
+        // A GuiDef with a `name` persists to the store the way a named SynthDef
+        // does on `/d_recv` — no separate save command.
+        if let Some(name) = node.props.get("name").and_then(Value::as_str)
+            && let Some(store) = self.store.as_ref()
+        {
+            match store.save(name, id, bytes) {
+                Ok(()) => info!("{from}: {GUI_DEF} {id}: saved as \"{name}\""),
+                Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot save \"{name}\": {e}"),
+            }
+        }
+    }
+
+    /// `/gui_load <name>` — load a persisted GuiDef and instantiate it (build its
+    /// tree and open its window), replaying it as a `/gui_def` under the id it was
+    /// saved with.
+    fn on_load(&mut self, args: &[OscType], from: ClientId, effects: &mut Vec<HostEffect>) {
+        let Some(name) = string_arg(args, 0) else {
+            return warn!("{from}: {GUI_LOAD} needs a name argument");
+        };
+        let Some(store) = self.store.as_ref() else {
+            return warn!("{from}: {GUI_LOAD} {name}: no data directory configured");
+        };
+        let (id, json) = match store.load(name) {
+            Ok(loaded) => loaded,
+            Err(e) => return warn!("{from}: {GUI_LOAD} {name}: {e}"),
+        };
+        info!("{from}: {GUI_LOAD} {name}: instantiating GuiDef {id}");
+        self.on_def(
+            &[
+                OscType::Int(id),
+                OscType::String(String::from_utf8_lossy(&json).into_owned()),
+            ],
+            from,
+            effects,
+        );
     }
 
     /// `/gui_set <id> <k> <v> ...` — update one live widget's properties, in the
@@ -295,6 +434,7 @@ impl Host {
             return warn!("{from}: {GUI_FREE} needs an integer id");
         };
         let removed = self.registry.free(id);
+        self.def_json.remove(&id);
         if self.window_defs.remove(&id).is_some() {
             effects.push(HostEffect::CloseWindow(id));
         }
@@ -399,6 +539,24 @@ impl Host {
     fn prune_bindings(&mut self) {
         self.bindings.retain(|id, _| self.registry.contains(*id));
     }
+
+    /// Registers a [`Binding`] for every widget that declares an inline `bind`
+    /// array in the GuiDef (`{"id":…,"type":…,"bind":["/n_set",node,"freq"]}`).
+    fn register_inline_bindings(&mut self, node: &GuiNode) {
+        if let Some(id) = node.id
+            && let Some(Value::Array(items)) = node.props.get("bind")
+        {
+            match Binding::from_json(items) {
+                Ok(binding) => {
+                    self.bindings.insert(id, binding);
+                }
+                Err(e) => warn!("widget {id}: invalid inline `bind`: {e}"),
+            }
+        }
+        for child in &node.children {
+            self.register_inline_bindings(child);
+        }
+    }
 }
 
 /// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
@@ -417,6 +575,14 @@ fn int_arg(args: &[OscType], i: usize) -> Option<i32> {
     match args.get(i) {
         Some(OscType::Int(n)) => Some(*n),
         Some(OscType::Long(n)) => Some(*n as i32),
+        _ => None,
+    }
+}
+
+/// The i-th argument as a string slice, if present and string-typed.
+fn string_arg(args: &[OscType], i: usize) -> Option<&str> {
+    match args.get(i) {
+        Some(OscType::String(s)) => Some(s.as_str()),
         _ => None,
     }
 }
@@ -624,6 +790,47 @@ mod tests {
             widget::WidgetKind::Waveform { samples, .. } => assert_eq!(&samples[..], &[0.5, -0.5]),
             other => panic!("expected a waveform, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn named_def_persists_and_gui_load_reinstantiates_it() {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!(
+            "clausters_gui_host_store_{:?}",
+            std::time::Instant::now()
+        ));
+        let store = store::GuiStore::open(&dir).unwrap();
+        let mut host = Host::new().with_store(store);
+
+        // A named GuiDef auto-persists on /gui_def.
+        let tree = r#"{"type":"window","name":"inst","title":"I","children":[
+            {"id":10,"type":"knob","value":0.5}
+        ]}"#;
+        host.handle_packet(def_msg(3, tree), from());
+        assert!(host.window_def(3).is_some());
+
+        // Free it: the live def is gone, but the persisted copy remains.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_FREE.into(),
+                args: vec![OscType::Int(3)],
+            }),
+            from(),
+        );
+        assert!(host.window_def(3).is_none());
+
+        // /gui_load rebuilds it under its saved id and reopens the window.
+        let effects = host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_LOAD.into(),
+                args: vec![OscType::String("inst".into())],
+            }),
+            from(),
+        );
+        assert_eq!(opened(&effects), vec![3], "loading reopens the window");
+        assert!(host.window_def(3).is_some());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

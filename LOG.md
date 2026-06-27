@@ -3368,3 +3368,70 @@ protocol change and the audio server untouched.
   animates from the swept OSC param and the shared-memory bus at once, no panic;
   and a deliberately invalid shader is caught (`canvas shader failed to compile:
   Validation Error`) with the window still opening and no panic.
+
+## G10 — Standalone GuiDef + GraphDef bundles (2026-06-27)
+
+A *bundle* — a data directory holding a named GuiDef beside the
+SynthDefs/GraphDefs it needs — that `clausters-gui --standalone <name>` boots as
+a self-contained instrument: an embedded audio server, no separate server
+process and no language client. GuiDefs persist the way the server's defs do,
+and a saved tree carries enough to drive itself.
+
+- **`host::store::GuiStore`.** The GUI's own def store, mirroring
+  `src/server/defstore.rs` (so it works in the default gui build, which does not
+  compile the server crate): the same data-dir resolution (CLI override →
+  `$CLAUSTERS_DATA_DIR` → `$XDG_DATA_HOME/clausters` → `$HOME/.local/share/
+  clausters`), `sanitize_name` and atomic temp-file-rename writes. A GuiDef is
+  saved as `defs/guidefs/<name>.json`, a record `{ "id": <i32>, "gui": <tree> }`
+  (the tree verbatim, JSON the source of truth), beside the sibling
+  `defs/synthdefs`/`defs/graphdefs` the store also reads. `boot_messages` parses
+  a GuiDef root `boot` array into OSC messages keeping the int/float distinction.
+- **Self-driving GuiDefs.** Two props make a saved tree need no live script: a
+  root `boot` list of `[addr, args…]` the standalone host sends once the defs
+  load (e.g. `["/s_new","drone",1000,0,0]`), and a widget `bind` prop, the
+  declarative form of `/gui_bind` — `Binding::from_json([addr, prefix…])`
+  registered at `/gui_def` time, so a knob in the file wires straight to the
+  server. A live `clausters-gui --data-dir` **auto-persists** any `/gui_def`
+  whose root carries a `name` prop, and `/gui_load <name>` replays a saved one
+  (`host::on_load`); `Host` now keeps each def's verbatim JSON (`def_json`) for
+  the save and the standalone open (`window_def_ids`).
+- **`host::embed::EmbedServer` (feature `standalone`).** The embedded server is a
+  **direct dependency on the `clausters` crate** (`embed,realtime`, default
+  features off) behind the optional `standalone` feature — the gui is part of the
+  same ecosystem as the server, so it just links it. `EmbedServer` is a thin
+  wrapper over `clausters::embed::Clausters`, constructed and driven through its
+  **direct Rust API** (`Clausters::open`/`send`/`poll_into`, `Drop` shuts it
+  down). To support that, `src/embed.rs` was refactored to expose that Rust API
+  and the C ABI (`clausters_open`/`_send`/`_poll`/`_close`, used by the Python
+  client) became a thin wrapper over it — behavior unchanged. The feature is off
+  by default because it pulls the engine + audio backend; keeping it opt-in is the
+  size/packaging reason the gui is a separate crate (the default build never
+  compiles the server). This is the native-Rust counterpart of how the Python
+  client reaches the same server over the C ABI; here it is a crate link, not FFI.
+- **`ServerLink::{Udp, Embed}`.** The host's client-of-server leg is now an enum,
+  so a bound widget's value and the def/boot messages flow to either a UDP server
+  or the in-process one through one `send`. In standalone the embed's replies are
+  drained each loop turn (`drain_embed_replies`) and fed through the same
+  `handle_server_packet` as UDP, so the node-tree view and friends work embedded.
+- **The binary.** `clausters-gui` gains `--data-dir <dir>` (opens the GuiDef
+  store; named GuiDefs persist, `/gui_load` reads) and `--standalone <name>`:
+  load the GuiDef, `EmbedServer::open`, replay the bundle's SynthDef/GraphDef
+  specs (`/d_recv`/`/d_graph`), send the GuiDef's `boot` messages, register the
+  GuiDef and open its window — a self-contained app. `--standalone` needs the
+  `standalone` feature; without it the flag returns a clear "rebuild with
+  `--features standalone`" error (the default binary does not link the server).
+- **Python + example.** Nothing new to learn: the `guidef` builders already pass
+  `name`/`boot`/`bind` through verbatim. `examples/gui_standalone.py` authors a
+  bundle on disk — a drone SynthDef (`SynthDef.dump_def` → `defs/synthdefs`) and a
+  one-knob GuiDef bound to its `freq`, with `boot` creating the synth (`{id,gui}`
+  → `defs/guidefs`) — and prints the `cargo run --features standalone …`
+  launch command.
+- **Tests:** gui 76, identical with and without the feature (store round-trip/
+  missing/boot-parse/sanitize, `from_json` inline binding, named-def persist +
+  `/gui_load` reinstantiation). `cargo fmt --check`/`clippy -D warnings` clean on
+  both configs; the core builds and tests without `embed`, and the embed cdylib
+  (the Python build) still compiles after the C-ABI refactor.
+- **Verified:** runtime end-to-end against a real GPU window — the feature-linked
+  binary starts the embedded server (no FFI load), the bundle's def loads, the
+  `boot` `/s_new` brings the instrument up, the window "Standalone drone" opens
+  and the bound knob drives the embedded server, no panic.

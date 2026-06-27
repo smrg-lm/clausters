@@ -122,6 +122,13 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
 
 /// An in-process live server: audio device + engine + network loop, with
 /// the host as the single ring client.
+///
+/// This is also the **direct Rust API** behind the C ABI: a Rust embedder
+/// (the GUI host's standalone mode, for one) constructs it with
+/// [`Clausters::open`] and drives it with [`Clausters::send`]/
+/// [`Clausters::poll_into`], dropping it to shut the server down — the same
+/// in-process server the `clausters_open`/`_send`/`_poll`/`_close` C exports
+/// wrap thinly for non-Rust callers.
 #[cfg(feature = "realtime")]
 pub struct Clausters {
     peer: IpcPeer,
@@ -131,9 +138,85 @@ pub struct Clausters {
     segment: Arc<Segment>,
 }
 
+#[cfg(feature = "realtime")]
+impl Clausters {
+    /// Opens the default audio device and starts a full server in-process
+    /// (`workers` engine helper threads; 0 picks a sensible default). The
+    /// returned handle owns the audio stream and the network thread; dropping
+    /// it shuts the server down.
+    pub fn open(workers: usize) -> Result<Clausters, String> {
+        use crate::osc::server::{OscServer, ServerInfo};
+
+        let segment = Segment::in_memory();
+        // Embedded hosts follow the device's default rate (None); they can
+        // resample on their side if they need a specific rate. Default bus
+        // counts (the in-memory segment is sized to match).
+        let (backend, handle) = crate::server::backend::start(
+            workers,
+            Some(Arc::clone(&segment)),
+            None,
+            crate::server::engine::DEFAULT_AUDIO_BUSES,
+            crate::server::engine::DEFAULT_CONTROL_BUSES,
+        )
+        .map_err(|e| e.to_string())?;
+        let info = ServerInfo {
+            nominal_sample_rate: backend.sample_rate as f64,
+            actual_sample_rate: backend.sample_rate as f64,
+        };
+        // The socket is an ephemeral localhost port: unused by the embed
+        // client (commands go through the ring), it just drives the loop's
+        // tick — and doubles as an escape hatch for debugging.
+        let mut server =
+            OscServer::bind(("127.0.0.1", 0), info, handle).map_err(|e| e.to_string())?;
+        server
+            .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+            .map_err(|e| e.to_string())?;
+        let thread = std::thread::Builder::new()
+            .name("clausters-embed-server".into())
+            .spawn(move || server.run())
+            .expect("failed to spawn the embedded server thread");
+        Ok(Clausters {
+            peer: IpcPeer::new(Arc::clone(&segment), Role::Client),
+            _backend: backend,
+            server: Some(thread),
+            segment,
+        })
+    }
+
+    /// Delivers one complete OSC packet (message or bundle) through the command
+    /// ring. Returns `false` when the ring is momentarily full (backpressure).
+    pub fn send(&self, packet: &[u8]) -> bool {
+        self.peer.push(packet)
+    }
+
+    /// Pops one pending reply into `buf`, returning its length, or `None` when
+    /// none is pending. A reply larger than `buf` is dropped (use 64 KiB).
+    pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
+        self.peer.try_pop(buf)
+    }
+}
+
+#[cfg(feature = "realtime")]
+impl Drop for Clausters {
+    fn drop(&mut self) {
+        // Sends `/quit` through the ring and joins the network thread (the cpal
+        // stream stops when `_backend` drops after this). Same shutdown the C
+        // ABI's `clausters_close` used to do inline.
+        let quit = rosc::encoder::encode(&rosc::OscPacket::Message(rosc::OscMessage {
+            addr: "/quit".into(),
+            args: vec![],
+        }))
+        .expect("static /quit message encodes");
+        let _ = self.peer.push(&quit);
+        if let Some(thread) = self.server.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// Opens the default audio device and starts a full server in-process.
 /// Returns NULL on failure (the error goes to `err`). Close with
-/// [`clausters_close`].
+/// [`clausters_close`]. Thin C wrapper over [`Clausters::open`].
 ///
 /// # Safety
 /// `err` either NULL or writable for `err_cap` bytes.
@@ -144,48 +227,8 @@ pub unsafe extern "C" fn clausters_open(
     err: *mut u8,
     err_cap: usize,
 ) -> *mut Clausters {
-    use crate::osc::server::{OscServer, ServerInfo};
-
-    let segment = Segment::in_memory();
-    // Embedded hosts follow the device's default rate (None); they can resample
-    // on their side if they need a specific rate. Default bus counts (the
-    // in-memory segment is sized to match).
-    let opened = crate::server::backend::start(
-        workers as usize,
-        Some(Arc::clone(&segment)),
-        None,
-        crate::server::engine::DEFAULT_AUDIO_BUSES,
-        crate::server::engine::DEFAULT_CONTROL_BUSES,
-    )
-    .map_err(|e| e.to_string())
-    .and_then(|(backend, handle)| {
-        let info = ServerInfo {
-            nominal_sample_rate: backend.sample_rate as f64,
-            actual_sample_rate: backend.sample_rate as f64,
-        };
-        // The socket is an ephemeral localhost port: unused by the embed
-        // client (commands go through the ring), it just drives the
-        // loop's tick — and doubles as an escape hatch for debugging.
-        let mut server =
-            OscServer::bind(("127.0.0.1", 0), info, handle).map_err(|e| e.to_string())?;
-        server
-            .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
-            .map_err(|e| e.to_string())?;
-        Ok((backend, server))
-    });
-    match opened {
-        Ok((backend, mut server)) => {
-            let thread = std::thread::Builder::new()
-                .name("clausters-embed-server".into())
-                .spawn(move || server.run())
-                .expect("failed to spawn the embedded server thread");
-            Box::into_raw(Box::new(Clausters {
-                peer: IpcPeer::new(Arc::clone(&segment), Role::Client),
-                _backend: backend,
-                server: Some(thread),
-                segment,
-            }))
-        }
+    match Clausters::open(workers as usize) {
+        Ok(c) => Box::into_raw(Box::new(c)),
         Err(e) => {
             write_error(&e, err, err_cap);
             std::ptr::null_mut()
@@ -209,7 +252,7 @@ pub unsafe extern "C" fn clausters_send(
         return -1;
     };
     let bytes = unsafe { std::slice::from_raw_parts(packet, len) };
-    if h.peer.push(bytes) { 0 } else { -1 }
+    if h.send(bytes) { 0 } else { -1 }
 }
 
 /// Pops one pending reply into (`buf`, `cap`). Returns the packet length,
@@ -225,7 +268,7 @@ pub unsafe extern "C" fn clausters_poll(handle: *mut Clausters, buf: *mut u8, ca
         return -1;
     };
     let slice = unsafe { std::slice::from_raw_parts_mut(buf, cap) };
-    match h.peer.try_pop(slice) {
+    match h.poll_into(slice) {
         Some(len) => len as i64,
         None => 0,
     }
@@ -285,7 +328,8 @@ pub unsafe extern "C" fn clausters_ctl_get(handle: *mut Clausters, index: u32) -
 }
 
 /// Shuts the embedded server down (sends `/quit` through the ring, joins
-/// the network thread, stops the audio stream) and frees the handle.
+/// the network thread, stops the audio stream) and frees the handle. The
+/// shutdown is [`Clausters`]'s `Drop`; this just reclaims the box.
 ///
 /// # Safety
 /// `handle` from [`clausters_open`], used at most once.
@@ -295,16 +339,7 @@ pub unsafe extern "C" fn clausters_close(handle: *mut Clausters) {
     if handle.is_null() {
         return;
     }
-    // SAFETY: ownership returns from clausters_open's Box::into_raw.
-    let mut h = unsafe { Box::from_raw(handle) };
-    // ",s" type tag, no args: a minimal /quit message.
-    let quit = rosc::encoder::encode(&rosc::OscPacket::Message(rosc::OscMessage {
-        addr: "/quit".into(),
-        args: vec![],
-    }))
-    .expect("static /quit message encodes");
-    let _ = h.peer.push(&quit);
-    if let Some(thread) = h.server.take() {
-        let _ = thread.join();
-    }
+    // SAFETY: ownership returns from clausters_open's Box::into_raw; dropping
+    // the box runs `Clausters::drop` (the /quit + join).
+    drop(unsafe { Box::from_raw(handle) });
 }

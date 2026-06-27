@@ -1161,3 +1161,32 @@ Notas:
 - El shader es el cuerpo de `fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32>`; adentro hay `u.resolution`, `u.time`, `u.params`. `uv` va 0..1 con origen arriba-izquierda.
 - `param0`..`param3` -> `u.params.x`..`.w`. Se setean por `gui.set(id, param0=...)` (OSC) o por bus (`buses=[busPara0, busPara1, ...]`, `-1` = script). El bus pisa al valor del script en ese slot cada frame.
 - `gui.set(id, shader=...)` recompila el shader en vivo (solo si el texto cambio); sin `--shm` los slots de bus leen 0 (el shader igual anima por `u.time` y los params de script).
+
+## 20. GUI host: bundle standalone (GuiDef + GraphDefs), sin cliente (G10)
+
+G10 cierra la pata "aplicacion guardada": un *bundle* es un directorio de datos que tiene un GuiDef con nombre al lado de los SynthDefs/GraphDefs que necesita, y `clausters-gui --standalone <nombre>` lo arranca como un instrumento autocontenido -- con un servidor de audio **embebido** en el propio proceso, sin servidor aparte y sin cliente de lenguaje corriendo. Es el equivalente GUI del preset MIDI-standalone del servidor (seccion 17 / M19): las definiciones guardadas alcanzan para lanzar un programa solo.
+
+Los GuiDef persisten como persisten los defs del servidor: `host::store::GuiStore` espeja `src/server/defstore.rs` (la misma resolucion de directorio de datos, `sanitize_name`, escritura atomica) y guarda `defs/guidefs/<nombre>.json`, un registro `{id, gui}`, al lado de `defs/synthdefs`/`defs/graphdefs`. La GUI tiene su propio store chico que espeja el del servidor. Dos props hacen que un arbol guardado se maneje solo, sin script: un `boot` en la raiz (una lista de mensajes OSC que el host standalone manda apenas cargan los defs, p.ej. un `/s_new`) y un prop `bind` en el widget (la forma declarativa de `/gui_bind`). El servidor embebido se linkea directo del crate `clausters` (con `embed,realtime`) **detras de la feature `standalone`**: `clausters-gui` compilado con esa feature crea un `clausters::embed::Clausters` in-process por su API Rust (`Clausters::open`/`send`/`poll_into`). Esta off por defecto porque arrastra el engine + backend de audio; tenerlo opt-in es la razon de tamano por la que la gui es un crate aparte. (El cliente Python alcanza ese mismo server por la C ABI con ctypes; aca es un link de crate directo, no FFI.)
+
+El ejemplo `gui_standalone.py` **escribe** el bundle (no habla con nada) e imprime el comando de lanzamiento. La distincion int/float se preserva: los ids de nodo se escriben enteros (`1000`) y siguen enteros en el cable; los valores de control son floats.
+
+```sh
+# 1) autorear el bundle: escribe el SynthDef y el GuiDef en el directorio de datos:
+PYTHONPATH=clients/python python clients/python/examples/gui_standalone.py /tmp/clausters-bundle
+
+# 2) lanzar el bundle como instrumento autocontenido (desde clients/gui, con la feature standalone):
+cd clients/gui && cargo run --features standalone --bin clausters-gui -- --standalone drone --data-dir /tmp/clausters-bundle -v
+```
+
+Esperado:
+
+- El paso 1 imprime `wrote .../defs/synthdefs/gui_standalone_drone.json` y `wrote .../defs/guidefs/drone.json`, y debajo el comando exacto del paso 2.
+- El log del host (paso 2) en orden: `standalone: embedded audio server started`, `standalone: loaded 1 def(s) ...`, `standalone: sent 1 boot message(s)`, `/gui_def 1: 2 widget(s)`, `opened window "Standalone drone"`. NO debe aparecer panic.
+- Se abre una ventana con una perilla; girarla cambia el `freq` del drone en el servidor **embebido** (el binding `/n_set 1000 freq` va directo, sin script de por medio). Se escucha el cambio de tono. Cerrar la ventana detiene todo.
+
+Notas:
+
+- El bundle es solo archivos: se puede inspeccionar (`cat .../defs/guidefs/drone.json`) y editar a mano. El registro del GuiDef es `{"id":1,"gui":<arbol>}`; el del SynthDef es el spec crudo de `/d_recv`.
+- El `--data-dir` por defecto es el mismo que usa el servidor (`$CLAUSTERS_DATA_DIR`, `$XDG_DATA_HOME/clausters`, `~/.local/share/clausters`); pasarlo explicito sirve para un bundle de prueba aislado.
+- Camino en vivo (sin `--standalone`): un `clausters-gui --data-dir <dir>` corriente **autopersiste** cualquier `/gui_def` cuyo arbol raiz tenga un prop `name`, y `/gui_load <name>` reinstancia uno guardado. Asi se arma el bundle interactivamente y despues se lo lanza standalone.
+- Si compilas `clausters-gui` SIN la feature `standalone` y pasas `--standalone`, da un error claro: `this clausters-gui was built without standalone support; rebuild with --features standalone`. El binario por defecto (sin la feature) no compila el crate server.

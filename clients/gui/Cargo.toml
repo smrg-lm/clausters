@@ -18,11 +18,24 @@ path = "src/lib.rs"
 # Binaries are auto-discovered from src/bin/ (waveform, spectrogram, and the
 # headless GUI host `clausters-gui`).
 
+[features]
+# Standalone mode: boot a saved GuiDef bundle against an in-process embedded
+# server. Off by default because it links the `clausters` server crate (engine +
+# audio backend), which is heavy — keeping it opt-in is the size/packaging reason
+# the gui is a separate crate. Build with `cargo build --features standalone`.
+standalone = ["dep:clausters"]
+
 [dependencies]
 # The shared OSC seam (single `decode_packet` door, encode/bundle/message,
-# timetag math) the host's transports ride. A path dependency on the core only:
-# it pulls `rosc`, never the server crate, so the gui crate stays independent.
+# timetag math) the host's transports ride. A path dependency on the core: it
+# pulls only `rosc`, so the default gui build stays light.
 clausters-core = { path = "../../crates/clausters-core" }
+# The full server crate, linked ONLY under the `standalone` feature for the
+# in-process embedded server (`host::embed`). `embed` exposes the in-process
+# `Clausters` API; `realtime` brings the audio backend. Default features off so
+# the standalone build does not also pull MIDI/PipeWire. A normal gui build never
+# compiles this.
+clausters = { path = "../..", default-features = false, features = ["embed", "realtime"], optional = true }
 # GuiDef = JSON inside one OSC argument, exactly as a SynthDef/GraphDef. serde's
 # number handling keeps ids i32 and control values f32 across the wire.
 serde = { version = "1", features = ["derive"] }

@@ -18,7 +18,7 @@
 //! a `<canvas>` surface and the rest is unchanged.
 
 use std::collections::{HashMap, VecDeque};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -95,8 +95,9 @@ pub fn run(host: Host, socket: Arc<UdpSocket>, shm_path: Option<String>) -> Resu
         .name("clausters-gui-osc".into())
         .spawn(move || transport_loop(recv_socket, script_proxy))
         .map_err(|e| e.to_string())?;
-    // The host <- audio-server reply path (only when a client leg is attached).
-    if let Some(leg_socket) = host.server().map(|s| s.socket()) {
+    // The host <- audio-server reply path: a background thread only for the UDP
+    // leg (the embed link is polled in the event loop, no socket to drain).
+    if let Some(leg_socket) = host.server().and_then(|s| s.udp_socket()) {
         std::thread::Builder::new()
             .name("clausters-gui-server".into())
             .spawn(move || server_reply_loop(leg_socket, proxy))
@@ -522,6 +523,35 @@ impl App {
             warn!("failed to read buffer {bufnum} at {start}: {e}");
         }
     }
+
+    /// Pops every pending reply from an embedded server and routes it, the
+    /// embed counterpart of the UDP reply thread. Only built with the
+    /// `standalone` feature (the only way to get an embed link); otherwise a
+    /// no-op (see the stub below).
+    #[cfg(feature = "standalone")]
+    fn drain_embed_replies(&mut self) {
+        if self.host.server().and_then(|s| s.embed()).is_none() {
+            return;
+        }
+        let mut packets: Vec<Vec<u8>> = Vec::new();
+        if let Some(embed) = self.host.server().and_then(|s| s.embed()) {
+            let mut buf = vec![0u8; 65536];
+            while let Some(n) = embed.poll_into(&mut buf) {
+                packets.push(buf[..n].to_vec());
+            }
+        }
+        for bytes in packets {
+            match clausters_core::osc::decode_packet(&bytes) {
+                Ok(packet) => self.handle_server_packet(packet),
+                Err(e) => warn!("malformed OSC reply from the embedded server: {e}"),
+            }
+        }
+    }
+
+    /// Without the `standalone` feature there is no embed link, so draining its
+    /// replies is nothing — kept so the event loop calls it unconditionally.
+    #[cfg(not(feature = "standalone"))]
+    fn drain_embed_replies(&mut self) {}
 
     /// Routes one decoded reply from the audio server (the client leg).
     fn handle_server_packet(&mut self, packet: OscPacket) {
@@ -1462,6 +1492,15 @@ impl ApplicationHandler<UserEvent> for App {
         for (id, origin) in std::mem::take(&mut self.pending) {
             self.open_window(event_loop, id, origin);
         }
+        // Standalone: a GuiDef pre-loaded into the host before the loop started
+        // (no `/gui_def` over the wire) is opened now. Its events have no script
+        // to return to, so they go to a placeholder origin.
+        let standalone_origin = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        for id in self.host.window_def_ids() {
+            if !self.windows.contains_key(&id) {
+                self.open_window(event_loop, id, standalone_origin);
+            }
+        }
     }
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
@@ -1488,6 +1527,10 @@ impl ApplicationHandler<UserEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let mut next_wake: Option<Instant> = None;
+
+        // Drain replies from an embedded server (standalone): the UDP leg uses a
+        // background thread, but the embed ring is polled here on the main thread.
+        self.drain_embed_replies();
 
         // Meter/scope animation, driven from the shared segment.
         let animated: Vec<i32> = self

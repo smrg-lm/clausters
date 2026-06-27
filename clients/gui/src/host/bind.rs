@@ -15,6 +15,7 @@
 //! milestone.
 
 use clausters_core::osc::{OscMessage, OscType};
+use serde_json::Value;
 
 /// The destination keyword selecting where a bound value goes — only the audio
 /// server for now (see the module docs for why it is spelled out in the wire
@@ -59,6 +60,20 @@ impl Binding {
         })
     }
 
+    /// Builds a binding from a GuiDef inline `bind` array `[addr, prefix…]` — the
+    /// declarative equivalent of a `/gui_bind`, so a **saved GuiDef carries its
+    /// own bindings** (the standalone path) and a live script can bind without a
+    /// separate `/gui_bind`. `addr` must be an OSC path; the rest is the fixed
+    /// prefix, the int/float distinction kept.
+    pub fn from_json(items: &[Value]) -> Result<Binding, String> {
+        let addr = match items.first() {
+            Some(Value::String(s)) if s.starts_with('/') => s.clone(),
+            _ => return Err("`bind` needs an OSC address first (e.g. \"/n_set\")".into()),
+        };
+        let prefix = items[1..].iter().filter_map(json_to_osc).collect();
+        Ok(Binding { addr, prefix })
+    }
+
     /// The OSC message that forwards `value`: `addr prefix… value`.
     pub fn message(&self, value: OscType) -> OscMessage {
         let mut args = self.prefix.clone();
@@ -67,6 +82,18 @@ impl Binding {
             addr: self.addr.clone(),
             args,
         }
+    }
+}
+
+/// One JSON value as an OSC primitive for a `bind` prefix, keeping integers and
+/// floats apart.
+fn json_to_osc(v: &Value) -> Option<OscType> {
+    match v {
+        Value::Number(n) if n.is_i64() || n.is_u64() => Some(OscType::Int(n.as_i64()? as i32)),
+        Value::Number(n) => Some(OscType::Float(n.as_f64()? as f32)),
+        Value::String(s) => Some(OscType::String(s.clone())),
+        Value::Bool(b) => Some(OscType::Int(*b as i32)),
+        _ => None,
     }
 }
 
@@ -118,6 +145,32 @@ mod tests {
         assert!(Binding::parse(&not_path).is_err());
         // An empty target (the unbind case) is handled by the host, not here.
         assert!(Binding::parse(&[]).is_err());
+    }
+
+    #[test]
+    fn from_json_builds_an_inline_binding_keeping_int_float() {
+        let items = vec![
+            Value::from("/n_set"),
+            Value::from(1000),
+            Value::from("freq"),
+        ];
+        let b = Binding::from_json(&items).unwrap();
+        assert_eq!(b.addr, "/n_set");
+        assert_eq!(
+            b.prefix,
+            vec![OscType::Int(1000), OscType::String("freq".into())]
+        );
+        // A value rides as a float; the node id stayed an int.
+        assert_eq!(
+            b.message(OscType::Float(440.0)).args,
+            vec![
+                OscType::Int(1000),
+                OscType::String("freq".into()),
+                OscType::Float(440.0)
+            ]
+        );
+        // The address must look like an OSC path.
+        assert!(Binding::from_json(&[Value::from("n_set")]).is_err());
     }
 
     #[test]
