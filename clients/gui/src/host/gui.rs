@@ -322,6 +322,35 @@ impl App {
         self.shm.as_ref().map_or(0.0, |s| s.control(bus as usize))
     }
 
+    /// Pushes one fresh sample into every `scope`'s rolling history, read from the
+    /// shared segment. Called once per animation frame tick (not per `render`), so
+    /// the scope scrolls at a steady, time-based rate regardless of how often the
+    /// window happens to repaint.
+    fn advance_scopes(&mut self) {
+        // Collect (window, scope id, bus value) under immutable borrows, then push
+        // — keeps the shared-segment read and the per-window history mutation
+        // from overlapping borrows of `self`.
+        let mut samples: Vec<(i32, i32, f32)> = Vec::new();
+        for def_id in self.windows.keys() {
+            if let Some(tree) = self.host.window_def(*def_id) {
+                let mut scopes = Vec::new();
+                collect_scopes(tree, &mut scopes);
+                for (id, bus) in scopes {
+                    samples.push((*def_id, id, self.read_bus(bus)));
+                }
+            }
+        }
+        for (def_id, id, value) in samples {
+            if let Some(ws) = self.windows.get_mut(&def_id) {
+                let history = ws.scopes.entry(id).or_default();
+                history.push_back(value);
+                while history.len() > SCOPE_HISTORY {
+                    history.pop_front();
+                }
+            }
+        }
+    }
+
     /// Whether window `def_id` should repaint continuously: it has a `canvas`
     /// (time-driven, always), or a meter/scope with a shared segment to feed it.
     fn window_is_animated(&self, def_id: i32) -> bool {
@@ -1086,7 +1115,9 @@ impl App {
         // Meter/scope rects, copied out so their shared-memory values and the
         // scope history can be read after the host-tree borrow is released.
         let mut meter_rects: Vec<(Rect, i32, f32, f32, Option<String>)> = Vec::new();
-        let mut scope_rects: Vec<(i32, Rect, i32, f32, f32, Option<String>)> = Vec::new();
+        // Scope rects carry no bus: the value is sampled on the frame tick
+        // (`advance_scopes`); the render only draws the stored history.
+        let mut scope_rects: Vec<(i32, Rect, f32, f32, Option<String>)> = Vec::new();
         // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
         // likewise copied out so the host-tree borrow can be released before the
         // node-tree models and the GPU resources are read.
@@ -1115,13 +1146,10 @@ impl App {
                     label,
                 } => meter_rects.push((p.rect, *bus, *min, *max, label.clone())),
                 WidgetKind::Scope {
-                    bus,
-                    min,
-                    max,
-                    label,
+                    min, max, label, ..
                 } => {
                     if let Some(id) = p.widget.id {
-                        scope_rects.push((id, p.rect, *bus, *min, *max, label.clone()));
+                        scope_rects.push((id, p.rect, *min, *max, label.clone()));
                     }
                 }
                 WidgetKind::Plot {
@@ -1189,17 +1217,16 @@ impl App {
             let frac = meters::fraction(value, *min, *max);
             meters::draw_meter(&mut mesh, *rect, value, frac, label.as_deref());
         }
-        for (id, rect, bus, min, max, label) in &scope_rects {
-            let value = self.read_bus(*bus);
-            if let Some(ws) = self.windows.get_mut(&def_id) {
-                let history = ws.scopes.entry(*id).or_default();
-                history.push_back(value);
-                while history.len() > SCOPE_HISTORY {
-                    history.pop_front();
-                }
-                let samples: Vec<f32> = history.iter().copied().collect();
-                meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
-            }
+        // The history is advanced on the frame tick (`advance_scopes`), not here,
+        // so a repaint only ever *draws* the current samples — never adds one.
+        for (id, rect, min, max, label) in &scope_rects {
+            let samples: Vec<f32> = self
+                .windows
+                .get(&def_id)
+                .and_then(|ws| ws.scopes.get(id))
+                .map(|h| h.iter().copied().collect())
+                .unwrap_or_default();
+            meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
         }
 
         // Static plots draw from their (already mapped) samples; node trees draw
@@ -1476,6 +1503,19 @@ fn tree_has_live_widget(widget: &Widget) -> bool {
     widget.kind.live_bus().is_some() || widget.children.iter().any(tree_has_live_widget)
 }
 
+/// Appends `(widget_id, bus)` for every `scope` in the tree, so the frame tick
+/// can sample each one's bus into its rolling history.
+fn collect_scopes(widget: &Widget, out: &mut Vec<(i32, i32)>) {
+    if let WidgetKind::Scope { bus, .. } = &widget.kind
+        && let Some(id) = widget.id
+    {
+        out.push((id, *bus));
+    }
+    for child in &widget.children {
+        collect_scopes(child, out);
+    }
+}
+
 /// Whether a widget tree contains a `canvas` (so the window animates each frame).
 fn tree_has_canvas(widget: &Widget) -> bool {
     matches!(widget.kind, WidgetKind::Canvas { .. }) || widget.children.iter().any(tree_has_canvas)
@@ -1654,6 +1694,11 @@ impl ApplicationHandler<UserEvent> for App {
             .collect();
         if !animated.is_empty() {
             if now >= self.next_frame {
+                // Advance each scope's rolling history exactly once per frame tick
+                // (time-based), then repaint. Sampling here rather than in `render`
+                // keeps the scroll speed constant: extra repaints from a drag or a
+                // resize no longer push extra samples and speed the scope up.
+                self.advance_scopes();
                 for id in &animated {
                     if let Some(ws) = self.windows.get(id) {
                         ws.gpu.window.request_redraw();
