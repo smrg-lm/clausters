@@ -64,15 +64,27 @@ impl WaveformData {
         &self.pyramid
     }
 
+    /// Whether raw samples are present. A cache-only view (`with_pyramid` with an
+    /// empty buffer) has only the peak pyramid, so every regime — including the
+    /// zoomed-in ones — must render from it; reading the empty raw buffer would
+    /// instead collapse the wave to a flat line (it "disappears" on zoom-in).
+    pub fn has_raw(&self) -> bool {
+        !self.samples.is_empty()
+    }
+
     /// Min/max for a pixel column spanning `[s0, s1)`, choosing the cheapest
     /// accurate source for the given `samples_per_px`: raw samples when finer
     /// than the pyramid's base bucket, the pyramid otherwise.
     pub fn column(&self, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
-        if samples_per_px < self.pyramid.base_bucket() as f64 {
+        if samples_per_px < self.pyramid.base_bucket() as f64 && self.has_raw() {
             let a = (s0.floor().max(0.0) as usize).min(self.samples.len());
             let b = (s1.ceil() as usize).clamp(a, self.samples.len());
             peaks::min_max(&self.samples[a..b]).unwrap_or((0.0, 0.0))
         } else {
+            // At or above the base bucket, or whenever there is no raw buffer to
+            // resolve finer (a cache-only view): read the pyramid. `level_for`
+            // clamps to level 0, so zooming past the cache shows its finest
+            // overview rather than collapsing to a flat line.
             let level = self.pyramid.level_for(samples_per_px);
             self.pyramid.column(level, s0, s1).unwrap_or((0.0, 0.0))
         }
@@ -224,7 +236,7 @@ impl WaveformRenderer {
         let total = data.total_samples();
         self.scratch.clear();
 
-        if spp <= LINE_THRESHOLD {
+        if spp <= LINE_THRESHOLD && data.has_raw() {
             self.mode = Mode::Line;
             let a = (view.start.floor().max(0.0) as usize).min(total);
             let b = ((view.start + view.len).ceil() as usize).min(total);
@@ -320,5 +332,44 @@ impl TimelineView for WaveformView {
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         self.renderer.draw(pass);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An alternating +/-0.5 signal: every base bucket has min -0.5, max +0.5.
+    fn envelope_signal(n: usize) -> Vec<f32> {
+        (0..n)
+            .map(|i| if i % 2 == 0 { 0.5 } else { -0.5 })
+            .collect()
+    }
+
+    #[test]
+    fn cache_only_view_resolves_zoom_in_from_the_pyramid() {
+        // Cache-only: no raw samples, only the pyramid (the bulk `cache=` path).
+        let pyramid = Pyramid::build(&envelope_signal(4096), 256);
+        let data = WaveformData::with_pyramid(Arc::from([] as [f32; 0]), pyramid);
+        assert!(!data.has_raw());
+        // Zoomed in past the base bucket (spp < 256): the raw regime would read
+        // the empty buffer and collapse to (0, 0) — the disappearing wave. The
+        // fallback reads the pyramid's finest level, so the envelope survives.
+        let (lo, hi) = data.column(8.0, 0.0, 8.0);
+        assert!(
+            lo <= -0.4 && hi >= 0.4,
+            "cache-only zoom-in should show the pyramid envelope, got ({lo}, {hi})"
+        );
+    }
+
+    #[test]
+    fn raw_view_still_uses_raw_samples_when_zoomed_in() {
+        let data = WaveformData::new(Arc::from(envelope_signal(4096)), 256);
+        assert!(data.has_raw());
+        let (lo, hi) = data.column(8.0, 0.0, 8.0);
+        assert!(
+            lo <= -0.4 && hi >= 0.4,
+            "raw zoom-in lost the signal: ({lo}, {hi})"
+        );
     }
 }
