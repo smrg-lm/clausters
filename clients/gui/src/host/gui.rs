@@ -27,10 +27,12 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 use tracing::{debug, info, warn};
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
+use winit::event::{
+    DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent,
+};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
-use winit::window::{Window, WindowId};
+use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::native::Gpu;
 use crate::view::TimelineView;
@@ -208,12 +210,19 @@ struct CanvasFrame {
 enum Drag {
     /// A horizontal slider: the value follows the cursor x within `body`.
     Slider { id: i32, body: Rect },
-    /// A knob or number: the value moves with the vertical drag from a snapshot.
+    /// A knob or number: the value moves incrementally with the vertical drag.
+    /// On press the pointer is grabbed (see [`App::grab_pointer`]) so motion does
+    /// not stop over the window's title bar or past its edges, where `CursorMoved`
+    /// is otherwise swallowed. `locked` records which grab won: when `true` the
+    /// pointer is locked and motion arrives as relative `DeviceEvent::MouseMotion`;
+    /// when `false` (confined or ungrabbed) `CursorMoved` still drives it, and
+    /// `last_y` re-anchors on every step so a value pinned at an end has no dead
+    /// zone — reversing direction moves it at once instead of sticking and jumping.
     Vertical {
         id: i32,
-        start_fraction: f32,
-        origin_y: f64,
+        last_y: f64,
         body_h: f32,
+        locked: bool,
     },
     /// A momentary button held down (emits 0 on release).
     Button { id: i32 },
@@ -805,6 +814,23 @@ impl App {
         found
     }
 
+    /// The current 0..1 fraction of a continuous control (slider/knob/number) in
+    /// the host tree — the live value used to drive an incremental drag.
+    fn fraction_of(&self, def_id: i32, widget_id: i32) -> Option<f32> {
+        fn walk(w: &Widget, id: i32) -> Option<f32> {
+            if w.id == Some(id) {
+                return match &w.kind {
+                    WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
+                        Some(r.fraction())
+                    }
+                    _ => None,
+                };
+            }
+            w.children.iter().find_map(|c| walk(c, id))
+        }
+        walk(self.host.window_def(def_id)?, widget_id)
+    }
+
     /// Sets a continuous control's value from a 0..1 fraction, in the host tree.
     fn set_fraction(&mut self, def_id: i32, widget_id: i32, t: f32) {
         if let Some(tree) = self.host.window_def_mut(def_id)
@@ -846,13 +872,14 @@ impl App {
             }
             WidgetKind::Knob(r) | WidgetKind::Number(r) => {
                 let body = controls::body_rect(rect, r.label.is_some());
+                let locked = self.grab_pointer(def_id);
                 self.set_drag(
                     def_id,
                     Drag::Vertical {
                         id,
-                        start_fraction: r.fraction(),
-                        origin_y: cy,
+                        last_y: cy,
                         body_h: body.h,
+                        locked,
                     },
                 );
             }
@@ -894,6 +921,37 @@ impl App {
         }
     }
 
+    /// Grabs the pointer for a knob/number drag so motion keeps arriving even
+    /// over the window decorations or past its edges, where `CursorMoved`
+    /// otherwise stops (the title-bar/out-of-surface gap). Tries `Locked` first —
+    /// the cursor stays put and motion comes as relative `DeviceEvent::MouseMotion`
+    /// (the canonical knob feel, unbounded range) — and falls back to `Confined`,
+    /// which keeps the cursor inside the client area (so it cannot reach the title
+    /// bar) and is still driven by `CursorMoved`. Returns whether the pointer was
+    /// *locked* (which motion source the drag should read).
+    fn grab_pointer(&self, def_id: i32) -> bool {
+        let Some(ws) = self.windows.get(&def_id) else {
+            return false;
+        };
+        let window = &ws.gpu.window;
+        if window.set_cursor_grab(CursorGrabMode::Locked).is_ok() {
+            window.set_cursor_visible(false);
+            return true;
+        }
+        if let Err(e) = window.set_cursor_grab(CursorGrabMode::Confined) {
+            debug!("gui_def {def_id}: no pointer grab for the drag ({e})");
+        }
+        false
+    }
+
+    /// Releases the pointer grab a knob/number drag took and restores the cursor.
+    fn release_pointer(&self, def_id: i32) {
+        if let Some(ws) = self.windows.get(&def_id) {
+            let _ = ws.gpu.window.set_cursor_grab(CursorGrabMode::None);
+            ws.gpu.window.set_cursor_visible(true);
+        }
+    }
+
     fn flip_toggle(&mut self, def_id: i32, id: i32) {
         if let Some(tree) = self.host.window_def_mut(def_id)
             && let Some(w) = tree.find_mut(id)
@@ -922,12 +980,20 @@ impl App {
             .and_then(|w| w.drag.as_ref())
             .map(|d| match d {
                 Drag::Slider { id, body } => DragMove::Slider(*id, *body),
+                // A locked drag is driven by relative motion in `device_event`,
+                // not by these cursor positions, so skip it here.
                 Drag::Vertical {
                     id,
-                    start_fraction,
-                    origin_y,
+                    last_y,
                     body_h,
-                } => DragMove::Vertical(*id, *start_fraction, *origin_y, *body_h),
+                    locked,
+                } => {
+                    if *locked {
+                        DragMove::None
+                    } else {
+                        DragMove::Vertical(*id, *last_y, *body_h)
+                    }
+                }
                 Drag::Button { .. } => DragMove::None,
                 Drag::Waveform {
                     id,
@@ -943,9 +1009,18 @@ impl App {
                 self.emit_value(def_id, id);
                 self.redraw(def_id);
             }
-            Some(DragMove::Vertical(id, start_fraction, origin_y, body_h)) => {
-                let t = start_fraction + controls::drag_fraction_delta(cy - origin_y, body_h);
-                self.set_fraction(def_id, id, t.clamp(0.0, 1.0));
+            Some(DragMove::Vertical(id, last_y, body_h)) => {
+                // Incremental: add this step's delta to the *current* (clamped)
+                // fraction and re-anchor `last_y`. A value pinned at an end stays
+                // put, but reversing moves it immediately — no snapshot dead zone.
+                let cur = self.fraction_of(def_id, id).unwrap_or(0.0);
+                let t = (cur + controls::drag_fraction_delta(cy - last_y, body_h)).clamp(0.0, 1.0);
+                self.set_fraction(def_id, id, t);
+                if let Some(Drag::Vertical { last_y, .. }) =
+                    self.windows.get_mut(&def_id).and_then(|w| w.drag.as_mut())
+                {
+                    *last_y = cy;
+                }
                 self.emit_value(def_id, id);
                 self.redraw(def_id);
             }
@@ -983,12 +1058,17 @@ impl App {
         }
     }
 
-    /// Release: a held button emits 0; any drag ends.
+    /// Release: a held button emits 0; a knob/number drag releases its pointer
+    /// grab; any drag ends.
     fn on_release(&mut self, def_id: i32) {
         let drag = self.windows.get_mut(&def_id).and_then(|w| w.drag.take());
-        if let Some(Drag::Button { id }) = drag {
-            self.deliver(def_id, id, OscType::Int(0));
-            self.redraw(def_id);
+        match drag {
+            Some(Drag::Button { id }) => {
+                self.deliver(def_id, id, OscType::Int(0));
+                self.redraw(def_id);
+            }
+            Some(Drag::Vertical { .. }) => self.release_pointer(def_id),
+            _ => {}
         }
     }
 
@@ -1237,7 +1317,7 @@ impl App {
 /// A drag step, copied out of the borrow so the host tree can be mutated.
 enum DragMove {
     Slider(i32, Rect),
-    Vertical(i32, f32, f64, f32),
+    Vertical(i32, f64, f32),
     Waveform(i32, f64, f64, f64),
     None,
 }
@@ -1489,6 +1569,9 @@ fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.resumed = true;
+        // Deliver raw motion while focused, so a locked knob/number drag reads its
+        // relative `DeviceEvent::MouseMotion` (the pointer-lock path in `on_press`).
+        event_loop.listen_device_events(DeviceEvents::WhenFocused);
         for (id, origin) in std::mem::take(&mut self.pending) {
             self.open_window(event_loop, id, origin);
         }
@@ -1518,6 +1601,36 @@ impl ApplicationHandler<UserEvent> for App {
                 Err(e) => warn!("malformed OSC reply from the audio server: {e}"),
             },
         }
+    }
+
+    /// Raw relative motion drives a *locked* knob/number drag. The pointer is
+    /// locked in place (so it cannot wander onto the title bar or out of the
+    /// window, where `CursorMoved` is lost), and its movement arrives here as a
+    /// device delta instead — applied incrementally to the dragged control.
+    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        let DeviceEvent::MouseMotion { delta: (_, dy) } = event else {
+            return;
+        };
+        // The window (if any) whose active drag is a locked knob/number. Only one
+        // pointer drag runs at a time, so the first match is the target.
+        let Some((def_id, id, body_h)) =
+            self.windows.iter().find_map(|(def_id, ws)| match &ws.drag {
+                Some(Drag::Vertical {
+                    id,
+                    body_h,
+                    locked: true,
+                    ..
+                }) => Some((*def_id, *id, *body_h)),
+                _ => None,
+            })
+        else {
+            return;
+        };
+        let cur = self.fraction_of(def_id, id).unwrap_or(0.0);
+        let t = (cur + controls::drag_fraction_delta(dy, body_h)).clamp(0.0, 1.0);
+        self.set_fraction(def_id, id, t);
+        self.emit_value(def_id, id);
+        self.redraw(def_id);
     }
 
     /// After handling events, schedule the next wake-up: a ~30 fps repaint for

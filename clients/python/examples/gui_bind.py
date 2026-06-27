@@ -7,13 +7,17 @@ server** on every turn, with no round-trip through this Python process. An
 unbound knob would instead emit a ``/gui_event`` back here; binding swaps that
 for a direct ``/n_set`` to the server.
 
+The point of the binding is that it lives **in the GUI host, not in this
+script**: ``/gui_bind`` registers ``knob 10 -> /n_set <node> freq`` inside the
+host, and the host forwards every change to the audio server on its own. So the
+control keeps working **after this script exits** — the binding (and the synth)
+outlive the Python process, which is exactly the bypass-the-script promise. This
+script only sets the scene; it deliberately leaves the knob bound and the synth
+running when it returns, so you can keep turning the knob with no client at all.
+
 Three processes cooperate, as in ``gui_meters.py``: the **audio server**, the
 **GUI host** (which needs ``--server`` to reach the audio server), and this
-**script**. Here the script only sets the scene — builds a one-knob window and a
-sine synth, then binds the knob to the synth's ``freq``. After that, turning the
-knob changes the pitch on the server itself; the script prints *nothing* while
-the binding is live (proof the value never came back). Then it ``unbind``s and
-the same knob starts emitting ``/gui_event`` again.
+**script**.
 
 Start the audio server (built from the repo root)::
 
@@ -28,10 +32,12 @@ Then, with the client importable (``pip install ./clients/python`` or
 
     python clients/python/examples/gui_bind.py
 
-A window opens with one knob over the audible range. While it is *bound* (the
-first phase) turn it: the pitch follows it directly and nothing prints here.
-After ~8 s the script unbinds; now turning the knob prints ``/gui_event`` lines
-and the synth holds its last frequency. Close the window to stop.
+A window opens with one knob over the audible range. Turn it: the pitch follows
+directly and nothing prints here (proof the value never came back through
+Python). After a short demo the script exits **without unbinding or freeing the
+synth** — keep turning the knob and the pitch still follows, because the binding
+runs in the host. Close the window when you are done; to silence the synth,
+free it from another client or stop the audio server (``/quit``).
 
 Needs a display and a Vulkan/Metal/DX12/GL adapter (the host opens a window).
 """
@@ -68,37 +74,28 @@ def main():
         with GuiHost() as gui:  # 127.0.0.1:57210 by default
             gui.define(1, scene())
             # Bind knob 10 to the synth's freq: turning it sends
-            # /n_set <synth.id> freq <value> straight to the audio server.
+            # /n_set <synth.id> freq <value> straight to the audio server. The
+            # binding now lives in the host, independent of this script.
             gui.bind(10, "/n_set", synth.id, "freq")
             print(f"knob bound to synth {synth.id} freq; turn it — the pitch "
                   "follows directly and nothing prints here (no script round-trip)")
 
-            # Phase 1: bound. Drain any stray messages just to show none are
-            # /gui_events from the knob.
+            # Demo window: drain events just to show the bound knob sends none
+            # back here, and bail out early if the window is closed.
             start = time.monotonic()
-            while time.monotonic() - start < 8.0:
+            while time.monotonic() - start < 12.0:
                 msg = gui.poll(timeout=0.1)
                 if msg is not None and msg[0] == "/gui_closed":
-                    print("window closed")
+                    print("window closed — freeing the synth")
                     server.free(synth)
                     return
 
-            # Phase 2: unbind. The knob now emits /gui_event to this script
-            # again; the synth keeps its last frequency.
-            gui.unbind(10)
-            print("unbound — now the knob emits events here and stops driving "
-                  "the synth; turn it and watch the lines:")
-            start = time.monotonic()
-            while time.monotonic() - start < 10.0:
-                msg = gui.poll(timeout=0.1)
-                if msg is None:
-                    continue
-                if msg[0] == "/gui_closed":
-                    print("window closed")
-                    break
-                print(f"event from widget {msg[1][0]}: {msg[1][1:]}")
-
-        server.free(synth)
+        # The script exits here, but it does NOT unbind or free the synth: the
+        # binding keeps running in the host, so the knob still drives the pitch
+        # on the server with no client at all. That is the whole point of
+        # /gui_bind. Close the window or /quit the server to stop the sound.
+        print(f"script exiting; knob 10 stays bound to synth {synth.id} freq — "
+              "keep turning it, the host forwards the value to the server")
 
 
 if __name__ == "__main__":

@@ -1003,14 +1003,26 @@ Esperado:
   `/gui_bind 10 -> audio server /n_set [Int(1000), String("freq")]` (el nodo real
   varia). Notar que el id va como `Int` y el nombre como `String`: se preserva la
   distincion int/float en el prefijo del binding.
-- **Fase bindeada (~8 s):** girar el knob cambia el tono del seno en el acto y la
-  terminal del script **no imprime nada** por el knob: el valor fue del host al
-  servidor sin volver a Python (lo confirma que en el log del servidor de audio
-  aparecen `/n_set` que el script nunca mando).
-- **Fase desbindeada:** el script llama `unbind(10)` (log del host: `/gui_bind 10:
-  unbound (events restored)`); ahora girar el knob imprime `event from widget 10:
-  [<freq>]` en el script y el synth queda fijo en su ultima frecuencia.
-- Cerrar la ventana termina el script (libera el synth).
+- Girar el knob cambia el tono del seno en el acto y la terminal del script **no
+  imprime nada** por el knob: el valor fue del host al servidor sin volver a
+  Python (lo confirma que en el log del servidor de audio aparecen `/n_set` que el
+  script nunca mando).
+- **El binding vive en el host, no en el script.** El ejemplo corre una demo
+  corta y termina **sin desbindear ni liberar el synth**: el knob sigue
+  controlando el tono despues de que el script salio (probarlo: tras el mensaje
+  `script exiting...`, un `/g_queryTree 0 1` al servidor muestra que el nodo
+  sigue vivo; girar el knob sigue cambiando el tono). Ese es el sentido del
+  `/gui_bind`: saltea el script y le sobrevive. Para silenciar, liberar el synth
+  desde otro cliente o cerrar el servidor (`/quit`).
+- **Arrastrar el knob fuera de la ventana:** al presionar un knob/number el host
+  bloquea el puntero (`CursorGrabMode::Locked`, oculta el cursor) y mueve el valor
+  con el movimiento relativo del mouse (`DeviceEvent::MouseMotion`). Asi el
+  arrastre no depende de donde esta el cursor: no se traba al pasar por la barra
+  de titulo (donde Wayland se traga los `CursorMoved`) ni al salir de la ventana,
+  y tiene rango ilimitado. Si el compositor no soporta lock, cae a `Confined` (el
+  cursor no puede salir del area de cliente) y sigue andando por `CursorMoved`. Al
+  soltar se libera el grab y reaparece el cursor. (El slider mapea la posicion
+  absoluta del cursor en su body, sin ese problema.)
 
 Notas:
 
