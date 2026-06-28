@@ -19,7 +19,6 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
-use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -39,12 +38,16 @@ use crate::view::TimelineView;
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
 
+use super::bulk::MmapLoader;
 use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
 use super::widget::{Widget, WidgetKind};
-use super::{BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls, meters, plot};
+use super::{
+    BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls, meters,
+    plot,
+};
 
 /// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
 /// enough for smooth meters/scopes without spinning the CPU.
@@ -1426,15 +1429,12 @@ fn collect_waveforms(
         && let Some(id) = widget.id
     {
         if cache.is_some() || path.is_some() {
-            // Bulk path: map a local resource (raw samples or a prebuilt cache).
-            if let Some(slot) = mapped_waveform_slot(
-                cache.as_deref(),
-                path.as_deref(),
-                *channels,
-                *base_bucket,
-                gpu,
-            ) {
-                out.insert(id, slot);
+            // Bulk path: map a local resource (raw samples or a prebuilt cache)
+            // through the BulkLoader seam, then build the GPU slot from the data.
+            if let Some(data) =
+                MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
+            {
+                out.insert(id, waveform_slot(data, gpu));
             }
         } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
             // A server buffer with no inline data: fetch it over the client leg.
@@ -1456,78 +1456,6 @@ fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
     let nav = View::full(data.total_samples());
     let view = WaveformView::new(&gpu.device, gpu.config.format, data);
     WaveformSlot { view, nav }
-}
-
-/// Loads a waveform from a mapped local resource — the G7 bulk path that keeps a
-/// multi-megabyte buffer off OSC. `cache` is a prebuilt peak-pyramid file mapped
-/// and used directly (raw samples never loaded); `path` is a file of raw
-/// little-endian `f32` mapped and de-interleaved (channel 0 of `channels`),
-/// whose pyramid is built once and cached as a sibling `<path>.<base_bucket>.peaks`
-/// so a re-open skips the rebuild. Unix-only; returns `None` (with a warning) on
-/// a non-Unix host or an I/O/format error.
-#[cfg(unix)]
-fn mapped_waveform_slot(
-    cache: Option<&Path>,
-    path: Option<&Path>,
-    channels: usize,
-    base_bucket: usize,
-    gpu: &Gpu,
-) -> Option<WaveformSlot> {
-    use super::mapfile::MappedFile;
-    use crate::peaks::Pyramid;
-
-    if let Some(cache) = cache {
-        let map = MappedFile::open(cache)
-            .map_err(|e| warn!("waveform cache {}: {e}", cache.display()))
-            .ok()?;
-        let pyramid = Pyramid::from_bytes(map.bytes()).or_else(|| {
-            warn!("waveform cache {}: malformed peak pyramid", cache.display());
-            None
-        })?;
-        info!(
-            "waveform: mapped peak cache {} ({} samples, no raw data, no OSC)",
-            cache.display(),
-            pyramid.total_samples()
-        );
-        let data = WaveformData::with_pyramid(Arc::from([] as [f32; 0]), pyramid);
-        return Some(waveform_slot(data, gpu));
-    }
-
-    let path = path?;
-    let map = MappedFile::open(path)
-        .map_err(|e| warn!("waveform path {}: {e}", path.display()))
-        .ok()?;
-    let samples: Arc<[f32]> = map.channel0_f32(channels).into();
-    // Reuse a sibling cache keyed by base_bucket if it matches, else build it.
-    let sibling = path.with_extension(format!("{base_bucket}.peaks"));
-    let data = match Pyramid::read_cache(&sibling) {
-        Ok(Some(p)) if p.total_samples() == samples.len() && p.base_bucket() == base_bucket => {
-            WaveformData::with_pyramid(samples, p)
-        }
-        _ => {
-            let data = WaveformData::new(Arc::clone(&samples), base_bucket);
-            let _ = data.pyramid().write_cache(&sibling);
-            data
-        }
-    };
-    info!(
-        "waveform: mapped {} samples from {} (no OSC, no re-send)",
-        data.total_samples(),
-        path.display()
-    );
-    Some(waveform_slot(data, gpu))
-}
-
-#[cfg(not(unix))]
-fn mapped_waveform_slot(
-    _cache: Option<&Path>,
-    _path: Option<&Path>,
-    _channels: usize,
-    _base_bucket: usize,
-    _gpu: &Gpu,
-) -> Option<WaveformSlot> {
-    warn!("waveform path/cache (mapped local resource) is only supported on Unix");
-    None
 }
 
 /// Whether a widget tree contains a live (shared-memory-backed) meter or scope.
@@ -1597,37 +1525,13 @@ fn load_plot_paths(widget: &mut Widget) {
     } = &mut widget.kind
         && samples.is_empty()
         && let Some(p) = path.clone()
-        && let Some(loaded) = map_plot_samples(&p, *channels)
+        && let Some(loaded) = MmapLoader.plot_samples(&p, *channels)
     {
         *samples = loaded;
     }
     for child in &mut widget.children {
         load_plot_paths(child);
     }
-}
-
-/// Reads `path` as raw little-endian `f32`, de-interleaving channel 0 of
-/// `channels` — the same read-only `mmap` the waveform bulk path uses. Unix-only;
-/// returns `None` (with a warning) elsewhere or on an I/O error.
-#[cfg(unix)]
-fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
-    use super::mapfile::MappedFile;
-    let map = MappedFile::open(path)
-        .map_err(|e| warn!("plot path {}: {e}", path.display()))
-        .ok()?;
-    let samples: Arc<[f32]> = map.channel0_f32(channels).into();
-    info!(
-        "plot: mapped {} samples from {} (no OSC)",
-        samples.len(),
-        path.display()
-    );
-    Some(samples)
-}
-
-#[cfg(not(unix))]
-fn map_plot_samples(_path: &Path, _channels: usize) -> Option<Arc<[f32]>> {
-    warn!("plot path (mapped local resource) is only supported on Unix");
-    None
 }
 
 fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {

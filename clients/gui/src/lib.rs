@@ -19,9 +19,13 @@
 //! See `DESIGN.md` for the scriptable widget protocol these views plug into.
 //!
 //! The widget protocol itself — the GUI host that speaks `/gui_*` over OSC and
-//! drives these views — lives in [`host`] (native-only; it owns sockets).
+//! drives these views — lives in [`host`]. It is split along the platform seam:
+//! a web-portable agnostic core (the widget tree, layout, protocol dispatch, the
+//! `Transport`/`BusSource`/`BulkLoader`/`DefStore` traits) that compiles for
+//! `wasm32`, and a native I/O shell behind those traits (UDP transport, on-disk
+//! persistence, shared-memory bus source, mmap bulk loader, the winit/wgpu
+//! driver) that is excluded from `wasm32`.
 
-#[cfg(not(target_arch = "wasm32"))]
 pub mod host;
 
 /// The peak pyramid lives in the shared core (general client functionality);

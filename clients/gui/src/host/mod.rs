@@ -28,9 +28,12 @@
 //! client leg ([`client::ServerLeg`]) reuses that same encode door, so the gui
 //! talks to the audio server with one encoder, not a parallel one.
 
+// The platform-agnostic core: the widget/protocol logic, web-portable (it
+// compiles for `wasm32` unchanged). No sockets, no filesystem, no GPU bring-up —
+// every such coupling lives behind a trait whose impl is in the native shell
+// below.
 pub mod bind;
 pub mod canvas;
-pub mod client;
 pub mod controls;
 pub mod font;
 pub mod guidef;
@@ -40,12 +43,22 @@ pub mod nodetree;
 pub mod paint;
 pub mod plot;
 pub mod registry;
-pub mod store;
-pub mod transport;
 pub mod widget;
 
+// The native I/O shell, excluded from `wasm32`: the UDP client leg
+// ([`Transport`]), on-disk GuiDef persistence ([`DefStore`]) and the UDP server
+// front. The browser fills the same seams over WebSocket/fetch in later
+// milestones. The winit/wgpu driver ([`gui`]) and the mmap bulk loader
+// ([`bulk`]) are gated below.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod client;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod store;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod transport;
+
 // Reading the audio server's shared-memory segment for zero-message meters/
-// scopes (G5). Unix-only, as the server's segment is.
+// scopes (G5), the native [`BusSource`]. Unix-only, as the server's segment is.
 #[cfg(unix)]
 pub mod shm;
 
@@ -61,31 +74,66 @@ pub mod embed;
 #[cfg(unix)]
 pub mod mapfile;
 
+// The native [`BulkLoader`]: resolves a waveform/plot's local `path`/`cache` to
+// samples or a peak pyramid through the mmap path above. The browser resolves
+// the same references over the network in a later milestone.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod bulk;
+
 // The windowed host (winit + wgpu) is native-only; a wasm build swaps it for a
 // `<canvas>` surface. Everything above is windowing-agnostic and web-portable.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gui;
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::Path;
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use serde_json::Value;
 use tracing::{debug, info, warn};
 
 pub use bind::Binding;
+#[cfg(not(target_arch = "wasm32"))]
 pub use client::ServerLeg;
 pub use guidef::GuiNode;
 pub use registry::Registry;
-pub use transport::ClientId;
 pub use widget::Widget;
 
+/// Where a request reached the host and where its replies go. The `/gui_*`
+/// *encoding* is transport-independent, so client identity is too — UDP today
+/// (the native front), with other carriers (a browser WebSocket) added behind
+/// the same seam. It lives in the agnostic core, not the UDP front, so the
+/// protocol dispatch names it on every platform.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum ClientId {
+    /// A UDP datagram source (the native server front).
+    Udp(SocketAddr),
+}
+
+impl std::fmt::Display for ClientId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClientId::Udp(addr) => write!(f, "{addr}"),
+        }
+    }
+}
+
+/// A source of live control-bus values for the meter/scope views (see
+/// [`BusSource`] below) — kept near the other platform seams.
+///
 /// Where the host's client leg points: a UDP audio server (the normal case) or
 /// an in-process embedded server (standalone, the `standalone` feature). Both
 /// speak the same OSC through the one encode door, so the host forwards
 /// bound-widget values and queries the same way regardless of which is behind
-/// the link.
+/// the link. The link is a concrete native enum (its reply path differs per
+/// carrier); the protocol logic reaches it only through [`Transport::send`], so
+/// a browser WebSocket carrier plugs in behind the same seam. On `wasm32` no
+/// variant exists yet, so the enum is uninhabited and the host simply runs with
+/// no audio-server leg until the web carrier lands.
 pub enum ServerLink {
     /// A UDP audio server (the `--server host:port` leg).
+    #[cfg(not(target_arch = "wasm32"))]
     Udp(ServerLeg),
     /// An in-process server linked directly from the `clausters` crate
     /// (standalone boot; the `standalone` feature).
@@ -97,6 +145,7 @@ impl ServerLink {
     /// Sends one OSC message to the server (a UDP datagram, or the embed ring).
     pub fn send(&self, msg: OscMessage) -> std::io::Result<()> {
         match self {
+            #[cfg(not(target_arch = "wasm32"))]
             ServerLink::Udp(leg) => leg.send(msg),
             #[cfg(feature = "standalone")]
             ServerLink::Embed(srv) => {
@@ -109,11 +158,19 @@ impl ServerLink {
                     Err(std::io::Error::other("embed command ring full"))
                 }
             }
+            // No variant exists on wasm32; this arm makes the match exhaustive
+            // over the (uninhabited) enum and is never reached.
+            #[cfg(target_arch = "wasm32")]
+            _ => {
+                let _ = msg;
+                unreachable!("ServerLink has no variant on wasm32")
+            }
         }
     }
 
     /// The UDP socket of a `Udp` link, for the background reply thread; `None`
     /// for the embed link, whose replies are polled in the event loop instead.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn udp_socket(&self) -> Option<std::sync::Arc<std::net::UdpSocket>> {
         match self {
             ServerLink::Udp(leg) => Some(leg.socket()),
@@ -127,9 +184,66 @@ impl ServerLink {
     pub fn embed(&self) -> Option<&embed::EmbedServer> {
         match self {
             ServerLink::Embed(srv) => Some(srv),
+            #[allow(unreachable_patterns)]
             _ => None,
         }
     }
+}
+
+/// The host's outbound link to the audio server (the third topology leg): send
+/// one OSC message. The native carriers are UDP ([`ServerLeg`]) and the embedded
+/// ring ([`ServerLink`]); a browser WebSocket carrier plugs in behind this same
+/// trait in the web milestones. The protocol logic ([`Host::forward`] and the
+/// buffer/node-tree queries) sends through this seam, so it never names a
+/// concrete transport.
+pub trait Transport: Send {
+    /// Sends one OSC message to the audio server.
+    fn send(&self, msg: OscMessage) -> std::io::Result<()>;
+}
+
+impl Transport for ServerLink {
+    fn send(&self, msg: OscMessage) -> std::io::Result<()> {
+        ServerLink::send(self, msg)
+    }
+}
+
+/// On-disk (or otherwise persisted) GuiDefs: named-GuiDef auto-save and the
+/// `/gui_load` path. The native filesystem store ([`store::GuiStore`])
+/// implements it; a browser has no filesystem, so a wasm host simply runs
+/// without one. Behind the trait so the protocol dispatch saves and loads
+/// without naming the filesystem store.
+pub trait DefStore: Send {
+    /// Persists GuiDef `id` (its verbatim tree JSON) under `name`.
+    fn save(&self, name: &str, id: i32, tree_json: &[u8]) -> std::io::Result<()>;
+    /// Loads the GuiDef saved under `name`: its id and tree JSON, ready to replay
+    /// as a `/gui_def`.
+    fn load(&self, name: &str) -> std::io::Result<(i32, Vec<u8>)>;
+}
+
+/// Resolves a waveform/plot widget's **local** bulk resource (its `path` or
+/// prebuilt `cache`) to ready data, off the OSC path (the G7 bulk principle).
+/// The native loader ([`bulk::MmapLoader`]) maps the file read-only; a browser
+/// fetches the same reference over the network in a later milestone. The seam
+/// returns platform-agnostic data ([`WaveformData`]/samples) so the GPU views
+/// are built the same way on either platform.
+///
+/// [`WaveformData`]: crate::waveform::WaveformData
+pub trait BulkLoader {
+    /// Resolves a waveform's local resource: a prebuilt peak-pyramid `cache`
+    /// (used directly, no raw samples), or a raw-`f32` `path` de-interleaved to
+    /// channel 0 of `channels` whose pyramid is built at `base_bucket`. `None`
+    /// on an unsupported platform or an I/O/format error (already logged).
+    fn waveform(
+        &self,
+        cache: Option<&Path>,
+        path: Option<&Path>,
+        channels: usize,
+        base_bucket: usize,
+    ) -> Option<crate::waveform::WaveformData>;
+
+    /// Resolves a plot's local `path` of raw `f32` to mono samples (channel 0 of
+    /// `channels`). `None` on an unsupported platform or an I/O error.
+    fn plot_samples(&self, path: &Path, channels: usize) -> Option<std::sync::Arc<[f32]>>;
 }
 
 /// A source of live control-bus values for the meter/scope views. Implemented by
@@ -192,9 +306,10 @@ pub struct Host {
     /// persistence (a GuiDef with a `name` is saved as-is) and for replaying a
     /// `/gui_load`.
     def_json: HashMap<i32, Vec<u8>>,
-    /// The on-disk GuiDef store, when a data directory is configured. Enables
-    /// auto-persist of named GuiDefs and `/gui_load`.
-    store: Option<store::GuiStore>,
+    /// The GuiDef store, when persistence is configured (the native filesystem
+    /// store). Enables auto-persist of named GuiDefs and `/gui_load`. Held behind
+    /// [`DefStore`] so the dispatch never names the filesystem store.
+    store: Option<Box<dyn DefStore>>,
 }
 
 impl Default for Host {
@@ -216,6 +331,7 @@ impl Host {
     }
 
     /// Attaches the audio-server client leg (host -> audio server) over UDP.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn with_server(mut self, server: ServerLeg) -> Self {
         self.server = Some(ServerLink::Udp(server));
         self
@@ -228,16 +344,16 @@ impl Host {
         self
     }
 
-    /// Attaches the on-disk GuiDef store (named GuiDefs auto-persist; `/gui_load`
-    /// reads from it).
-    pub fn with_store(mut self, store: store::GuiStore) -> Self {
-        self.store = Some(store);
+    /// Attaches the GuiDef store (named GuiDefs auto-persist; `/gui_load` reads
+    /// from it).
+    pub fn with_store<S: DefStore + 'static>(mut self, store: S) -> Self {
+        self.store = Some(Box::new(store));
         self
     }
 
-    /// The GuiDef store, if a data directory was configured.
-    pub fn store(&self) -> Option<&store::GuiStore> {
-        self.store.as_ref()
+    /// The GuiDef store, if persistence was configured.
+    pub fn store(&self) -> Option<&dyn DefStore> {
+        self.store.as_deref()
     }
 
     /// The ids of the currently-defined window GuiDefs (for the standalone front

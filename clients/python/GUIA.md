@@ -1187,6 +1187,39 @@ Los GuiDef persisten como persisten los defs del servidor: `host::store::GuiStor
 
 El ejemplo `gui_standalone.py` **escribe** el bundle (no habla con nada) e imprime el comando de lanzamiento. La distincion int/float se preserva: los ids de nodo se escriben enteros (`1000`) y siguen enteros en el cable; los valores de control son floats.
 
+## 21. GUI host: costura de plataforma (nucleo agnostico + traits, build wasm) (G11)
+
+G11 no agrega codigo de browser: solo parte el host por la costura de plataforma, para que los hitos web siguientes sean rellenar traits y no reescribir. El host queda dividido en un **nucleo agnostico** (el arbol de widgets, el layout, el dispatch del protocolo, el dibujo de los widgets livianos) que compila para `wasm32` tal cual, y una **cascara de E/S nativa** detras de cuatro traits chicos: `Transport` (mandar OSC al servidor de audio), `BusSource` (un bus de control, leido de memoria compartida en nativo), `BulkLoader` (resolver el `path`/`cache` local de un waveform/plot a samples o a una piramide de picos) y `DefStore` (persistir GuiDefs con nombre). Lo unico nativo-y-punto es el servidor embebido (standalone); un host de browser siempre habla con un servidor de audio **aparte** por WebSocket.
+
+No es una feature de usuario: es una refactorizacion estructural cuya prueba es que el nativo siga **identico** y que el nucleo compile para el browser. La verificacion manual (desde `clients/gui`, su propio workspace):
+
+```sh
+# 1) el nativo, identico: build + tests + clippy (todo verde, 81 tests)
+cd clients/gui
+cargo build && cargo test && cargo clippy --all-targets
+
+# 2) E2E del protocolo igual que la seccion 12 (host headless + cliente, misma invocacion):
+(./target/debug/clausters-gui --headless --port 57219 -v 2>/tmp/gui_host.log & \
+ PID=$!; sleep 1; \
+ PYTHONPATH=../python python ../python/examples/gui_skeleton.py; \
+ kill $PID 2>/dev/null)
+
+# 3) la puerta de browser: el nucleo agnostico compila para wasm32 con la cascara nativa excluida
+rustup target add wasm32-unknown-unknown   # una sola vez
+./check-wasm.sh
+```
+
+Esperado:
+
+- Paso 1: build, 81 tests y clippy limpios (igual que antes de G11).
+- Paso 2: el cliente imprime `widget 10 is a 'knob' ...`; el log del host muestra `/gui_def 1: 4 widget(s)` y `/gui_query 10 -> /gui_info (knob)`. Identico a la seccion 12.
+- Paso 3: `Finished ... target(s)` sin errores. `check-wasm.sh` corre `cargo build --lib --target wasm32-unknown-unknown` (solo la lib, no los binarios nativos), que falla si algun hito posterior vuelve a acoplar el nucleo a E/S nativa.
+
+Notas:
+
+- El unico `#[cfg(not(target_arch = "wasm32"))]` que queda dentro de `host` esta sobre la cascara de E/S (los modulos `client`/`store`/`transport`/`bulk`/`gui`, la variante `ServerLink::Udp`, los metodos que devuelven el socket), nunca sobre la logica de widgets/protocolo.
+- `wgpu` compila al backend WebGPU en `wasm32`, asi que los renderers (`waveform`/`spectrogram`/`canvas`) y el `Painter` ya viajan con el nucleo; lo que falta para el browser es la superficie `<canvas>` y el bring-up async del GPU (G12) y el transporte WebSocket (G13).
+
 ```sh
 # 1) autorear el bundle: escribe el SynthDef y el GuiDef en el directorio de datos:
 PYTHONPATH=clients/python python clients/python/examples/gui_standalone.py /tmp/clausters-bundle

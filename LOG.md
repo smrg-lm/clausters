@@ -3435,3 +3435,64 @@ and a saved tree carries enough to drive itself.
   binary starts the embedded server (no FFI load), the bundle's def loads, the
   `boot` `/s_new` brings the instrument up, the window "Standalone drone" opens
   and the bound knob drives the embedded server, no panic.
+
+## G11 — Host platform seam (agnostic core + Platform traits) (2026-06-28)
+
+No browser code yet: this milestone carves the platform seam so the later web
+milestones are trait-fills, not rewrites, and turns browser-readiness into an
+invariant a build gate enforces. The host splits into a **platform-agnostic
+core** (the widget/protocol logic) that compiles for `wasm32` unchanged and a
+**native I/O shell** behind small traits.
+
+- **`pub mod host` is now unconditional** (`src/lib.rs`): the host compiles for
+  `wasm32`. Only the I/O shell modules stay `#[cfg(not(target_arch = "wasm32"))]`
+  — `client` (the UDP leg), `store` (filesystem persistence), `transport` (the
+  UDP server front), `bulk` (the mmap loader) and `gui` (the winit/wgpu driver);
+  `shm`/`mapfile` keep their existing `#[cfg(unix)]` (which already excludes
+  wasm) and `embed` its `standalone` feature. The pure modules — `widget`,
+  `layout`, `guidef`, `registry`, `controls`, `paint`, `font`, `nodetree`,
+  `plot`, `meters`, `bind`, `canvas` and the protocol dispatch in `mod` — moved
+  out from behind the wasm exclusion and now build for `wasm32` as they are.
+- **The traits are the only new surface; the logic behind them moved, not
+  rewritten.** `Transport` (send one OSC message to the audio server — the third
+  leg; `ServerLink` implements it, a browser WebSocket carrier plugs in behind
+  the same trait later), `DefStore` (named-GuiDef save / `/gui_load`; `GuiStore`
+  implements it, a wasm host runs with none), `BulkLoader` (resolve a
+  waveform/plot `path`/`cache` to `WaveformData`/samples; the new native
+  `host::bulk::MmapLoader` is the desktop fill, returning the platform-agnostic
+  data the GPU views build from — the `gui` mmap helpers moved into it verbatim),
+  and `BusSource` kept **as-is** (already a `dyn` trait the shared segment fills).
+- **`Host` no longer names a native type.** `store` is a `Box<dyn DefStore>`
+  (was `GuiStore`), `with_store` is generic over `DefStore`; `ClientId` moved
+  from the UDP front into the agnostic core so the dispatch names it on every
+  platform. `ServerLink`'s `Udp` variant is `#[cfg(not(wasm32))]`, so on `wasm32`
+  the enum is uninhabited and the host simply runs with no audio-server leg until
+  the web carrier lands (G13) — the bulk-data decision (G7) already reserved the
+  network "async fallback" for the browser, which can map neither shared memory
+  nor files.
+- **Decision (recorded):** for the browser GUI track (G11-G16) the browser host
+  always talks to a *separate* audio server over WebSocket, with no in-process
+  engine in the browser (the `standalone` `EmbedServer` stays native-only behind
+  its feature). This is a **scope boundary, not a fundamental constraint**:
+  porting the engine to the browser (a Web Audio / AudioWorklet backend) is a
+  larger, separate future track (recorded in `PLAN.md`, "In-browser audio
+  engine"). If it lands, the browser gains a second link kind - the wasm analogue
+  of the native `Embed` - and the host<->engine OSC rides an in-process channel,
+  not WebSocket, exactly as `ServerLink::Embed` does natively; the
+  `Transport`/`ServerLink` seam built here takes that variant without a protocol
+  change. WebSocket stays the carrier for the *remote* leg, so it never goes away
+  - it stops being the only option. The GPU / surface + loop driver stays the
+  native `gui` module for now; the web surface is G12, where `Gpu::new` (already
+  `async`) is awaited instead of `block_on`.
+- **Build gate.** `clients/gui/check-wasm.sh` runs
+  `cargo build --lib --target wasm32-unknown-unknown` (the agnostic core, native
+  shell excluded), so no later milestone can re-couple the core to native I/O
+  unnoticed.
+- **Tests:** gui 81, unchanged. `cargo fmt --check` and `clippy -D warnings`
+  clean on native **and** on `wasm32`; the standalone-feature build still links
+  the embed. The agnostic core builds for `wasm32` (wgpu compiles to the WebGPU
+  backend). The only `#[cfg(not(wasm32))]` left inside `host` is the I/O shell,
+  never the widget/protocol logic.
+- **Verified:** the native host behaves byte-identically — the headless E2E
+  round-trip (`gui_skeleton.py` against the running host) parses the GuiDef and
+  answers `/gui_query` with `/gui_info` exactly as before, no panic.

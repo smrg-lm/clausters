@@ -15,28 +15,12 @@ use std::net::{SocketAddr, UdpSocket};
 use clausters_core::osc::{OscMessage, OscPacket, encode};
 use tracing::{info, warn};
 
-use super::{Host, HostEffect};
+use super::{ClientId, Host, HostEffect};
 
 /// The default UDP port for the GUI host's server front. Chosen clear of the
 /// audio server's family (UDP/TCP 57110, WebSocket 57120) so both can run on
 /// one machine without colliding.
 pub const DEFAULT_PORT: u16 = 57210;
-
-/// Where a request reached the host and where its replies go. The `/gui_*`
-/// *encoding* is transport-independent, so client identity is too — UDP here,
-/// the other carriers added in later milestones.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub enum ClientId {
-    Udp(SocketAddr),
-}
-
-impl std::fmt::Display for ClientId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ClientId::Udp(addr) => write!(f, "{addr}"),
-        }
-    }
-}
 
 /// Runs the **headless** UDP server front until an unrecoverable socket error:
 /// receive a datagram, decode it, let `host` interpret it, send each reply back

@@ -129,6 +129,20 @@ impl GuiStore {
     }
 }
 
+/// The filesystem store is the native fill of the [`DefStore`](super::DefStore)
+/// seam: the protocol dispatch persists named GuiDefs and serves `/gui_load`
+/// through this trait, so it never names the filesystem directly (a browser host
+/// simply runs without a store).
+impl super::DefStore for GuiStore {
+    fn save(&self, name: &str, id: i32, tree_json: &[u8]) -> io::Result<()> {
+        GuiStore::save(self, name, id, tree_json)
+    }
+
+    fn load(&self, name: &str) -> io::Result<(i32, Vec<u8>)> {
+        GuiStore::load(self, name)
+    }
+}
+
 /// The `boot` messages declared at a GuiDef's root: a list of `[addr, args…]`
 /// the standalone host sends to the server right after the defs load, to bring
 /// the instrument up (e.g. `["/s_new", "drone", 1000, 0, 0]`). The int/float
