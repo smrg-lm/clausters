@@ -4,6 +4,17 @@ This plan covers the **Python** client (the first target) but is written to serv
 
 > **Note — sc3 as the reference model.** For any design or semantics question (module structure, clock/routine behavior, events, patterns, OSC/MIDI interfaces, names, conventions), fall back to [sc3](https://github.com/smrg-lm/sc3) as the model. This client is a clean, pruned rewrite (Faust-first), but sc3 is the source of truth on how these pieces should combine and behave; deviate from it only with an explicit reason (the Clausters-specific parts: FaustDefs, server resources, native Rust core).
 
+## Build strategy — finish one client, then port (keep the seam modular)
+
+"Build all clients at once vs. finish one then port" is a false binary: what makes a port cheap is **where the logic lives**, not the order. The rule for this project, across all clients (Python now, JS/TS later, any future language/platform):
+
+- **One reference client at a time.** Finish and polish the Python client first — it is the most mature. Do not grow two full clients in parallel: that duplicates tests and bugs and lets them diverge.
+- **Push every language-agnostic piece down into the shared core as you write it** (not "later"). If you find yourself writing protocol/value/time logic inside Python, it belongs in `clausters-core`/`clausters-ffi`. This is what makes the later port mechanical rather than a rewrite. The GUI track proved it: carving the platform seam first (the `host` traits) made the browser port reuse the native code verbatim.
+- **Porting reuses the core, never reimplements it.** A new client = rebind the same core (ctypes/N-API natively, wasm in the browser, mirroring `clients/gui`'s wasm path) + add only the parts that genuinely cannot be shared.
+- **What is never shared (and should not be forced into the core):** the idiomatic/ergonomic API surface and the concurrency/scheduling model (Python threads + TempoClock vs. JS event loop/async). The core provides the time/value primitives; each language writes its own coroutine driver and ergonomics. See "Guiding principle of the seam" below.
+
+Net: each milestone is built and finished on the reference client, but always factored so that only the thin language-specific shell remains to write per platform.
+
 ## Context
 
 Clausters is the Rust audio server (scsynth-style) controlled over OSC. Today the only client in the repo is `clients/python/clausters.py`: the **low-level transport layer** (embed cdylib / shm / render), stdlib-only, with the boundary rule "only flat data crosses" (bytes in, `array('f')`/floats/ints out). There is no high-level layer: building defs, resources, events and sequencing is currently left to the user.

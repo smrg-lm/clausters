@@ -42,6 +42,19 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 - Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
   ugen-dsp, audio-testing, faust-embedding, clausters-python, documentation).
 
+## Cross-client build strategy
+
+Multiple clients exist or are planned (Python, a future JS/TS protocol client,
+the GUI host native + browser/wasm). The rule: **finish and polish one reference
+client at a time, then port** — never grow two full clients in parallel. What
+makes a port cheap is keeping all language-agnostic logic in the shared core
+(`clausters-core`/`clausters-ffi`, plus the agnostic `host` traits in
+`clients/gui`) and pushing logic down there **as you write it**, so each client
+stays a thin language-specific shell (idiomatic API + concurrency/scheduling).
+Porting then = rebind the same core (ctypes/N-API/wasm), not reimplement it.
+Full rationale in `clients/PLAN.md` ("Build strategy"). Always factor new work
+with this modularity in mind.
+
 ## Language conventions
 
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
