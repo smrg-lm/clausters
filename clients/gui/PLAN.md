@@ -356,9 +356,11 @@ The first browser pixels, with no transport yet, so the surface/GPU/loop port is
 
 **Acceptance:** a compiled-in GuiDef renders in a browser tab over WebGPU - controls, chrome, bitmap text and an inline waveform - pixel-faithful to the native host; no `block_on`, socket or mmap on the wasm path.
 
-### G13 - Web transport: drive the browser host live over WebSocket
+### G13 - Web transport: drive the browser host live over WebSocket - DONE (2026-06-28)
 
 The browser host stops being static. Reuses the entire protocol dispatch and the G1 WS wire format; the only new code is a `Transport` impl over the browser `WebSocket` plus the small wasm-bindgen surface that lets in-page code feed the host a GuiDef and pump its events.
+
+**Landed:** the browser front now runs the **real** `Host` (the same protocol dispatch, tree, bindings and `forward`) and reuses the shared render (`frame`) and a new shared interaction module `host::interact` (hit-test + value/toggle/menu mutation, extracted verbatim from the native front so both platforms decide bound-vs-event identically; native delegates to it). The binding surface is a wasm-bindgen `GuiBridge`: `feed(packet)` / `def(id, json)` push an OSC packet (a `/gui_def`, `/gui_set`, `/gui_bind`, …) to the host through the one `decode_packet` door, `poll()` drains the outbound `/gui_event`/`/gui_info` packets (encoded OSC) the page reads, and `connect_server(url)` attaches the audio-server leg. That leg is `host::web::WsServerLink`, a new `ServerLink::Ws` variant (a browser-native `WebSocket` to a `--ws` server, frames buffered until open), so a bound widget forwards straight to the audio server with no script round-trip - the browser bypass path. `ClientId::Web` names the in-page origin; `Host::set_server_link` attaches the leg on demand. A throwaway inline HTML/JS harness (`web/index.html`) drives it by emitting the same GuiDef JSON the Python builders emit. Native unchanged (gui 81 tests, `clippy -D warnings` clean native + wasm); verified in Chrome over WebGPU - the console confirms `start` returning the bridge, the binding surface feeding the GuiDef and the host opening the window from the page (`/gui_def 1: window opened from the page`), no panic. Interaction (knob -> `/gui_event`) reuses the shared `interact` path; the `bind` -> `--ws` server bypass is a manual end-to-end test (needs a running `--ws` server). The full TypeScript client stays a separate, unplanned `clients/web` track (the harness here is only to test the host). See `LOG.md`.
 
 **Scope:**
 

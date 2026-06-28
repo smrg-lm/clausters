@@ -38,6 +38,7 @@ pub mod controls;
 pub mod font;
 pub mod frame;
 pub mod guidef;
+pub mod interact;
 pub mod layout;
 pub mod meters;
 pub mod nodetree;
@@ -116,12 +117,16 @@ pub use widget::Widget;
 pub enum ClientId {
     /// A UDP datagram source (the native server front).
     Udp(SocketAddr),
+    /// The browser's in-page binding surface (the wasm front feeds OSC packets
+    /// in and drains events out through it; there is no socket address).
+    Web,
 }
 
 impl std::fmt::Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ClientId::Udp(addr) => write!(f, "{addr}"),
+            ClientId::Web => write!(f, "web"),
         }
     }
 }
@@ -129,15 +134,14 @@ impl std::fmt::Display for ClientId {
 /// A source of live control-bus values for the meter/scope views (see
 /// [`BusSource`] below) — kept near the other platform seams.
 ///
-/// Where the host's client leg points: a UDP audio server (the normal case) or
-/// an in-process embedded server (standalone, the `standalone` feature). Both
-/// speak the same OSC through the one encode door, so the host forwards
-/// bound-widget values and queries the same way regardless of which is behind
-/// the link. The link is a concrete native enum (its reply path differs per
-/// carrier); the protocol logic reaches it only through [`Transport::send`], so
-/// a browser WebSocket carrier plugs in behind the same seam. On `wasm32` no
-/// variant exists yet, so the enum is uninhabited and the host simply runs with
-/// no audio-server leg until the web carrier lands.
+/// Where the host's client leg points: a UDP audio server (the normal case), an
+/// in-process embedded server (standalone, the `standalone` feature), or a
+/// browser WebSocket to a `--ws` server (wasm). All speak the same OSC through
+/// the one encode door, so the host forwards bound-widget values and queries the
+/// same way regardless of which is behind the link. The link is a concrete enum
+/// (its reply path differs per carrier); the protocol logic reaches it only
+/// through [`Transport::send`]/[`ServerLink::send`], so a new carrier plugs in
+/// behind the same seam as one more cfg-gated variant.
 pub enum ServerLink {
     /// A UDP audio server (the `--server host:port` leg).
     #[cfg(not(target_arch = "wasm32"))]
@@ -146,10 +150,15 @@ pub enum ServerLink {
     /// (standalone boot; the `standalone` feature).
     #[cfg(feature = "standalone")]
     Embed(embed::EmbedServer),
+    /// A browser WebSocket to a `--ws` audio server (the only carrier a browser
+    /// can open to a separate process). Bound widgets forward through it.
+    #[cfg(target_arch = "wasm32")]
+    Ws(web::WsServerLink),
 }
 
 impl ServerLink {
-    /// Sends one OSC message to the server (a UDP datagram, or the embed ring).
+    /// Sends one OSC message to the server (a UDP datagram, the embed ring, or a
+    /// browser WebSocket binary frame).
     pub fn send(&self, msg: OscMessage) -> std::io::Result<()> {
         match self {
             #[cfg(not(target_arch = "wasm32"))]
@@ -165,13 +174,8 @@ impl ServerLink {
                     Err(std::io::Error::other("embed command ring full"))
                 }
             }
-            // No variant exists on wasm32; this arm makes the match exhaustive
-            // over the (uninhabited) enum and is never reached.
             #[cfg(target_arch = "wasm32")]
-            _ => {
-                let _ = msg;
-                unreachable!("ServerLink has no variant on wasm32")
-            }
+            ServerLink::Ws(link) => link.send(msg),
         }
     }
 
@@ -208,6 +212,12 @@ pub trait Transport: Send {
     fn send(&self, msg: OscMessage) -> std::io::Result<()>;
 }
 
+// The native carriers are `Send`; the browser `Ws` link wraps a non-`Send`
+// `web_sys::WebSocket`, but it never crosses a thread (the browser is
+// single-threaded) and the host reaches it through the inherent
+// [`ServerLink::send`], so the `Transport` seam is only needed/implemented
+// natively.
+#[cfg(not(target_arch = "wasm32"))]
 impl Transport for ServerLink {
     fn send(&self, msg: OscMessage) -> std::io::Result<()> {
         ServerLink::send(self, msg)
@@ -349,6 +359,13 @@ impl Host {
     pub fn with_server_link(mut self, link: ServerLink) -> Self {
         self.server = Some(link);
         self
+    }
+
+    /// Attaches (or replaces) the server link in place — for a front that learns
+    /// its audio server after construction (the browser connecting a WebSocket
+    /// leg on demand).
+    pub fn set_server_link(&mut self, link: ServerLink) {
+        self.server = Some(link);
     }
 
     /// Attaches the GuiDef store (named GuiDefs auto-persist; `/gui_load` reads

@@ -1271,3 +1271,33 @@ Notas:
 - Sin transporte aun: la GuiDef esta compilada adentro (`host::web::demo_guidef`) y no hay eventos de vuelta. G13 trae el transporte WebSocket para manejar el host en vivo desde un cliente.
 - Los `.js`/`.wasm` generados quedan git-ignored; solo `web/index.html` y `web/build.sh` se trackean.
 - Headless no sirve para *ver* los pixeles (Chrome headless no lee de vuelta el canvas WebGPU a la captura), pero la consola confirma que el camino corre entero (device async arriba + `frame::render`). Para ver el render hay que abrirlo en un browser real.
+
+## 23. GUI host: manejarlo en vivo desde el browser (binding surface + WebSocket) (G13)
+
+G13 deja de ser estatico: el host del browser corre el **`Host` de verdad** (mismo dispatch del protocolo, mismo arbol, mismas bindings y `forward`), alimentado en vivo por una *binding surface* y forwardeando los widgets bindeados a un servidor de audio `--ws`. Reusa todo el dispatch, el formato WS de G1 y el render compartido; lo nuevo es el carrier y el pegamento de la pagina.
+
+La logica de interaccion (hit-test + setear valor/toggle/menu) se saco verbatim a `host::interact` (agnostico): el frente nativo delega ahi y el browser llama las mismas funciones, asi una perilla girada actualiza el arbol y decide bound-vs-evento igual en las dos plataformas. La *binding surface* es un `GuiBridge` (wasm-bindgen): `def(id, json)` mete un `/gui_def` (el mismo JSON que emiten los builders de Python), `feed(packet)` mete un paquete OSC crudo, `poll()` drena los `/gui_event`/`/gui_info` salientes, y `connect_server(url)` ata la pata del servidor de audio. Esa pata es `ServerLink::Ws` (un `WebSocket` nativo del browser a un servidor `--ws`), asi un widget bindeado forwardea directo al servidor sin pasar por script -- el camino de bypass, en el browser.
+
+Verificacion manual (necesita el target wasm32, `wasm-bindgen-cli`, y un browser con WebGPU; opcional un servidor `--ws` para probar el bind):
+
+```sh
+# 1) generar el bundle (desde clients/gui) y servirlo:
+cd clients/gui && ./web/build.sh
+(cd web && python3 -m http.server)   # abrir http://localhost:8000/
+
+# 2) (opcional, para el bind) un servidor de audio con --ws en otra terminal (desde la raiz):
+cargo run -- --ws &    # escucha WebSocket (57120); arranca un synth con node id 1000
+# ... y abrir la pagina con el server: http://localhost:8000/?server=ws://127.0.0.1:57120
+```
+
+Esperado:
+
+- Se abre el `<canvas>` con el panel (label, slider `cutoff`, perillas `res` y `freq`, toggle `gate`, boton `ping`, waveform). La consola del browser loguea `clausters-gui web host starting`, `opened window over <canvas>`, `/gui_def 1: window opened from the page`, `WebGPU ready`.
+- Girar `cutoff`/`res`, togglear o apretar el boton loguea en consola `-> /gui_event [...]` (la perilla/slider manda el valor a la pagina); el contador de eventos en el `#note` sube. El frente nativo y el browser deciden el evento por el mismo `host::interact`.
+- Con `?server=ws://127.0.0.1:57120`: la consola loguea `audio-server WebSocket open`; girar la perilla `freq` (bindeada con `["/n_set", 1000, "freq"]`) **no** emite `/gui_event` -- el valor va directo al servidor `--ws` como `/n_set 1000 freq <v>` (bypass del script), y se escucha el cambio de tono.
+
+Notas:
+
+- Sin `?server`, la perilla `freq` esta bindeada pero sin destino: el valor se traga (no emite `/gui_event`), igual que un bind sin `--server` en el nativo.
+- El harness `web/index.html` es **descartable**, no un cliente: solo prueba el host emitiendo el mismo GuiDef JSON que los builders de Python. El cliente TypeScript de verdad es el track aparte `clients/web` (no planificado aun), no parte de G11-G16.
+- Headless de Chrome confirma por consola que el camino corre entero (start -> ventana -> `/gui_def ... window opened` -> WebGPU ready) pero no captura los pixeles del canvas WebGPU; para ver e interactuar hay que abrirlo en un browser real.

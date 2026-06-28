@@ -3544,3 +3544,53 @@ WebGPU through the **same** render code the desktop runs.
   coming up, and `frame::render` running ("WebGPU ready; rendering the GuiDef"),
   no panic. Capturing the rendered pixels in a screenshot needs a non-headless
   WebGPU browser (a headless-Chrome WebGPU readback limitation, not a code issue).
+
+## G13 — Web transport: drive the browser host live over WebSocket (2026-06-28)
+
+The browser host stops being static: it runs the **real** `Host`, fed live
+through a binding surface and forwarding bound widgets to a `--ws` audio server.
+Reuses the whole protocol dispatch, the G1 WS wire format and the shared render;
+the new code is the carrier and the page glue.
+
+- **Shared interaction (`host::interact`).** Hit-testing and the value/toggle/
+  menu mutations were extracted verbatim out of the native front into an
+  agnostic module (`hit`, `fraction_of`, `set_fraction`, `flip_toggle`,
+  `cycle_menu`, `value_of`, `slider_t`) — pure work on the `Host` tree plus the
+  `layout`/`controls` math. The native front now delegates to it; the browser
+  front calls the same functions, so a turned knob updates the tree and decides
+  bound-vs-event identically on both platforms.
+- **The binding surface (`GuiBridge`, wasm-bindgen).** The in-page JS holds it:
+  `feed(packet)` pushes a raw OSC packet (a `/gui_def`/`/gui_set`/`/gui_bind`, the
+  G1 one-packet-per-frame format) to the host through the one `decode_packet`
+  door; `def(id, json)` is the convenience that builds the `/gui_def` from a
+  GuiDef JSON string (the same JSON the Python builders emit, so a page needs no
+  OSC encoder); `poll()` drains the outbound `/gui_event`/`/gui_info` packets
+  (encoded OSC) for the page; `connect_server(url)` attaches the audio-server
+  leg. The bridge reaches the running app through the winit web `EventLoopProxy`
+  and shares an outbox `VecDeque`. `start()` now **returns** the bridge (no
+  `#[wasm_bindgen(start)]`), so the page gets a handle.
+- **The audio-server leg over WebSocket (`ServerLink::Ws`, `WsServerLink`).** A
+  new cfg-gated `ServerLink` variant wrapping a browser-native `web_sys::WebSocket`
+  to a `--ws` server: `send` encodes one OSC message per binary frame, buffering
+  frames until the socket opens (so a `connect` immediately followed by a turn
+  loses nothing). `ServerLink::send` gained the `Ws` arm (replacing the wasm
+  `unreachable!`); `impl Transport for ServerLink` is now native-only (the `Ws`
+  link wraps a non-`Send` socket but never crosses a thread and is reached
+  through the inherent `send`). `Host::set_server_link` attaches it on demand;
+  `ClientId::Web` names the in-page origin in the dispatch. A bound widget's value
+  thus reaches the `--ws` server with no script round-trip — the bypass path, in
+  the browser.
+- **The throwaway harness (`web/index.html`).** A few lines, explicitly not a
+  product client (the TypeScript client is the separate `clients/web` track): it
+  builds the same GuiDef JSON a Python builder emits (a panel of controls + an
+  inline `waveform`, with a declaratively `bind`-ed `freq` knob), feeds it with
+  `gui.def(...)`, optionally `connect_server(?server=ws://…)`, and drains events.
+- **Verified:** native unchanged — gui 81 tests, `clippy -D warnings` clean on
+  native and `wasm32`, the windowed host opens a real GPU window with no panic.
+  In Chrome over WebGPU the live path runs: the console shows `start` returning
+  the bridge, the binding surface feeding the GuiDef and the host **opening the
+  window from the page** (`/gui_def 1: window opened from the page`), then the
+  async device up, no panic. The knob→`/gui_event` interaction reuses the shared
+  `interact` path (the same the native smoke exercises); the `bind`→`--ws`
+  server bypass is a manual end-to-end test (a running `--ws` server + a real
+  browser). The full TypeScript client remains a separate, unplanned track.

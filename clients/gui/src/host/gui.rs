@@ -41,7 +41,8 @@ use crate::waveform::WaveformData;
 use super::bulk::MmapLoader;
 use super::canvas::CanvasView;
 use super::frame::{self, WaveformSlot};
-use super::layout::{self, Rect};
+use super::interact::{self, slider_t, value_of};
+use super::layout::Rect;
 use super::nodetree::NodeTree;
 use super::paint::Painter;
 use super::widget::{Widget, WidgetKind};
@@ -807,55 +808,22 @@ impl App {
             .unwrap_or((1, 1))
     }
 
-    /// The deepest widget under `(x, y)`: its id, rect and a clone of its kind.
+    /// The deepest widget under `(x, y)`: its id, rect and a clone of its kind
+    /// (the shared hit-test over the host tree).
     fn hit(&self, def_id: i32, x: f64, y: f64) -> Option<(i32, Rect, WidgetKind)> {
         let (fb_w, fb_h) = self.fb(def_id);
-        let tree = self.host.window_def(def_id)?;
-        let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-        let mut found = None;
-        for p in layout::layout(area, tree) {
-            if p.rect.contains(x, y)
-                && let Some(id) = p.widget.id
-                && !matches!(
-                    p.widget.kind,
-                    WidgetKind::Window { .. } | WidgetKind::Panel { .. }
-                )
-            {
-                found = Some((id, p.rect, p.widget.kind.clone()));
-            }
-        }
-        found
+        interact::hit(&self.host, def_id, fb_w, fb_h, x, y)
     }
 
     /// The current 0..1 fraction of a continuous control (slider/knob/number) in
     /// the host tree — the live value used to drive an incremental drag.
     fn fraction_of(&self, def_id: i32, widget_id: i32) -> Option<f32> {
-        fn walk(w: &Widget, id: i32) -> Option<f32> {
-            if w.id == Some(id) {
-                return match &w.kind {
-                    WidgetKind::Slider { range: r, .. }
-                    | WidgetKind::Knob(r)
-                    | WidgetKind::Number(r) => Some(r.fraction()),
-                    _ => None,
-                };
-            }
-            w.children.iter().find_map(|c| walk(c, id))
-        }
-        walk(self.host.window_def(def_id)?, widget_id)
+        interact::fraction_of(&self.host, def_id, widget_id)
     }
 
     /// Sets a continuous control's value from a 0..1 fraction, in the host tree.
     fn set_fraction(&mut self, def_id: i32, widget_id: i32, t: f32) {
-        if let Some(tree) = self.host.window_def_mut(def_id)
-            && let Some(w) = tree.find_mut(widget_id)
-        {
-            match &mut w.kind {
-                WidgetKind::Slider { range: r, .. }
-                | WidgetKind::Knob(r)
-                | WidgetKind::Number(r) => r.set_fraction(t),
-                _ => {}
-            }
-        }
+        interact::set_fraction(&mut self.host, def_id, widget_id, t);
     }
 
     fn redraw(&self, def_id: i32) {
@@ -966,22 +934,11 @@ impl App {
     }
 
     fn flip_toggle(&mut self, def_id: i32, id: i32) {
-        if let Some(tree) = self.host.window_def_mut(def_id)
-            && let Some(w) = tree.find_mut(id)
-            && let WidgetKind::Toggle { value, .. } = &mut w.kind
-        {
-            *value = !*value;
-        }
+        interact::flip_toggle(&mut self.host, def_id, id);
     }
 
     fn cycle_menu(&mut self, def_id: i32, id: i32) {
-        if let Some(tree) = self.host.window_def_mut(def_id)
-            && let Some(w) = tree.find_mut(id)
-            && let WidgetKind::Menu { index, options, .. } = &mut w.kind
-            && !options.is_empty()
-        {
-            *index = (*index + 1) % options.len();
-        }
+        interact::cycle_menu(&mut self.host, def_id, id);
     }
 
     /// Pointer moved while a drag is active: drive the dragged target.
@@ -1126,28 +1083,6 @@ enum DragMove {
     Vertical(i32, f64, f32),
     Waveform(i32, f64, f64, f64),
     None,
-}
-
-/// The 0..1 fraction a slider press/drag at `(cx, cy)` maps to, by orientation:
-/// the cursor x along a horizontal track, or y (bottom = 0, top = 1) on a
-/// `vertical` one.
-fn slider_t(body: Rect, cx: f64, cy: f64, vertical: bool) -> f32 {
-    if vertical {
-        controls::slider_fraction_v(body, cy)
-    } else {
-        controls::slider_fraction(body, cx)
-    }
-}
-
-/// The current event value of widget `id` in `tree`.
-fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
-    fn walk(w: &Widget, id: i32) -> Option<OscType> {
-        if w.id == Some(id) {
-            return w.kind.event_value();
-        }
-        w.children.iter().find_map(|c| walk(c, id))
-    }
-    walk(tree, id)
 }
 
 /// Walks the tree building waveform views. A `cache`/`path` waveform is loaded

@@ -13,7 +13,6 @@
         color: #dddddd;
         font-family: system-ui, sans-serif;
       }
-      /* winit creates the <canvas> and appends it to <body>. */
       canvas {
         display: block;
       }
@@ -24,18 +23,79 @@
     </style>
   </head>
   <body>
-    <div id="note">
-      clausters-gui browser host (G12). Needs a WebGPU-capable browser served
-      over http/https (localhost counts).
-    </div>
+    <div id="note">clausters-gui browser host (G13). Needs a WebGPU browser.</div>
+
+    <!--
+      Throwaway harness — explicitly NOT a product client (the TypeScript client
+      is the separate clients/web track). It only proves the host: it builds the
+      same GuiDef JSON the Python builders emit and feeds it through the binding
+      surface; turning a control logs a /gui_event; with ?server=ws://host:port a
+      bound widget forwards straight to a --ws audio server.
+    -->
     <script type="module">
-      // The module's wasm-bindgen `start` runs automatically once instantiated;
-      // the compiled-in GuiDef then renders into the appended <canvas>.
-      import init from "./clausters_gui.js";
-      init().catch((e) => {
-        document.getElementById("note").textContent =
-          "failed to start (is WebGPU available in this browser?): " + e;
+      import init, { start } from "./clausters_gui.js";
+
+      // A short synthetic signal for the inline waveform view.
+      const N = 4096;
+      const data = Array.from({ length: N }, (_, i) => {
+        const t = i / N;
+        return Math.sin(t * Math.PI * 12) * (1 - t) * 0.85;
       });
+
+      // The same shape a Python GuiDef builder produces: a tree of
+      // {id, type, ...props, children}. The `freq` knob is bound declaratively
+      // (the /gui_bind form) so it forwards straight to the audio server.
+      const guidef = {
+        type: "window",
+        title: "clausters-gui (web)",
+        w: 480,
+        h: 420,
+        layout: "col",
+        children: [
+          { id: 1, type: "label", text: "clausters-gui over the binding surface (G13)" },
+          { id: 2, type: "slider", label: "cutoff", min: 20.0, max: 20000.0, value: 800.0 },
+          { id: 3, type: "knob", label: "res", min: 0.0, max: 1.0, value: 0.3 },
+          {
+            id: 4,
+            type: "knob",
+            label: "freq",
+            min: 50.0,
+            max: 2000.0,
+            value: 220.0,
+            bind: ["/n_set", 1000, "freq"],
+          },
+          { id: 5, type: "toggle", label: "gate", value: 1 },
+          { id: 6, type: "button", label: "ping" },
+          { id: 7, type: "waveform", data: data, base_bucket: 64 },
+        ],
+      };
+
+      init()
+        .then(() => {
+          const gui = start();
+          // Build the window from the GuiDef (the protocol, reused verbatim).
+          gui.def(1, JSON.stringify(guidef));
+
+          // A bound widget forwards to a --ws audio server when one is given:
+          //   open this page with ?server=ws://127.0.0.1:57120
+          const server = new URLSearchParams(location.search).get("server");
+          if (server) gui.connect_server(server);
+
+          // Drain the host's outbound events (also logged to the console by the
+          // host). A real client would decode these OSC packets; here we just
+          // count them so the queue does not grow.
+          let events = 0;
+          setInterval(() => {
+            while (gui.poll()) events += 1;
+            document.getElementById("note").textContent =
+              "clausters-gui (G13): turn a control — /gui_event count: " + events +
+              (server ? " | bound 'freq' -> " + server : "");
+          }, 150);
+        })
+        .catch((e) => {
+          document.getElementById("note").textContent =
+            "failed to start (is WebGPU available?): " + e;
+        });
     </script>
   </body>
 </html>
