@@ -53,6 +53,15 @@ pub fn slider_fraction(body: Rect, px: f64) -> f32 {
     (((px as f32) - body.x) / body.w).clamp(0.0, 1.0)
 }
 
+/// The 0..1 fraction along a vertical track at pixel `py` — bottom is 0, top is
+/// 1, so dragging up raises the value (for a `vertical` slider).
+pub fn slider_fraction_v(body: Rect, py: f64) -> f32 {
+    if body.h <= 0.0 {
+        return 0.0;
+    }
+    (1.0 - ((py as f32) - body.y) / body.h).clamp(0.0, 1.0)
+}
+
 /// The fraction change from a vertical drag of `dy` device pixels over a body of
 /// height `body_h`: dragging up (negative `dy`) increases the value. A full body
 /// height is one full range; the factor keeps fine control on tall bodies.
@@ -64,7 +73,7 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
 /// Draws a control into `mesh`. `active` highlights a pressed/dragged control.
 pub fn draw(mesh: &mut Mesh, kind: &WidgetKind, rect: Rect, active: bool) {
     match kind {
-        WidgetKind::Slider(r) => slider(mesh, r, rect),
+        WidgetKind::Slider { range, vertical } => slider(mesh, range, rect, *vertical),
         WidgetKind::Knob(r) => knob(mesh, r, rect),
         WidgetKind::Number(r) => number(mesh, r, rect),
         WidgetKind::Button { label } => button(mesh, label.as_deref(), rect, active),
@@ -89,25 +98,65 @@ fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect) {
     }
 }
 
-fn slider(mesh: &mut Mesh, r: &Range, rect: Rect) {
+/// Slider track thickness, handle thickness along the travel axis, and handle
+/// length across it. The handle is a short grip, **not** the full body span.
+const TRACK_THICK: f32 = 4.0;
+const HANDLE_THICK: f32 = 8.0;
+const HANDLE_GRIP: f32 = 18.0;
+
+fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool) {
     label_strip(mesh, r.label.as_deref(), rect);
     let body = body_rect(rect, r.label.is_some());
-    let mid = body.y + body.h * 0.5;
-    let track_h = 4.0;
-    mesh.rect(
-        Rect::new(body.x, mid - track_h * 0.5, body.w, track_h),
-        TRACK,
-    );
-    let hx = body.x + body.w * r.fraction();
-    mesh.rect(
-        Rect::new(body.x, mid - track_h * 0.5, (hx - body.x).max(0.0), track_h),
-        ACCENT_DIM,
-    );
-    let handle_w = 8.0;
-    mesh.rect(
-        Rect::new(hx - handle_w * 0.5, body.y, handle_w, body.h),
-        ACCENT,
-    );
+    let f = r.fraction();
+    if vertical {
+        // Track down the centre; min at the bottom, max at the top.
+        let cx = body.x + body.w * 0.5;
+        mesh.rect(
+            Rect::new(cx - TRACK_THICK * 0.5, body.y, TRACK_THICK, body.h),
+            TRACK,
+        );
+        let hy = body.y + body.h * (1.0 - f);
+        mesh.rect(
+            Rect::new(
+                cx - TRACK_THICK * 0.5,
+                hy,
+                TRACK_THICK,
+                (body.y + body.h - hy).max(0.0),
+            ),
+            ACCENT_DIM,
+        );
+        let grip = HANDLE_GRIP.min(body.w);
+        mesh.rect(
+            Rect::new(cx - grip * 0.5, hy - HANDLE_THICK * 0.5, grip, HANDLE_THICK),
+            ACCENT,
+        );
+    } else {
+        let mid = body.y + body.h * 0.5;
+        mesh.rect(
+            Rect::new(body.x, mid - TRACK_THICK * 0.5, body.w, TRACK_THICK),
+            TRACK,
+        );
+        let hx = body.x + body.w * f;
+        mesh.rect(
+            Rect::new(
+                body.x,
+                mid - TRACK_THICK * 0.5,
+                (hx - body.x).max(0.0),
+                TRACK_THICK,
+            ),
+            ACCENT_DIM,
+        );
+        let grip = HANDLE_GRIP.min(body.h);
+        mesh.rect(
+            Rect::new(
+                hx - HANDLE_THICK * 0.5,
+                mid - grip * 0.5,
+                HANDLE_THICK,
+                grip,
+            ),
+            ACCENT,
+        );
+    }
     value_text(mesh, &fmt(r.value), body);
 }
 
@@ -229,6 +278,15 @@ mod tests {
         assert_eq!(slider_fraction(body, 60.0), 0.5);
         assert_eq!(slider_fraction(body, 110.0), 1.0);
         assert_eq!(slider_fraction(body, 200.0), 1.0, "clamped past the end");
+    }
+
+    #[test]
+    fn vertical_slider_fraction_runs_bottom_to_top() {
+        let body = Rect::new(0.0, 10.0, 20.0, 100.0);
+        assert_eq!(slider_fraction_v(body, 110.0), 0.0, "bottom edge is min");
+        assert_eq!(slider_fraction_v(body, 60.0), 0.5, "centre is half");
+        assert_eq!(slider_fraction_v(body, 10.0), 1.0, "top edge is max");
+        assert_eq!(slider_fraction_v(body, -50.0), 1.0, "clamped above the top");
     }
 
     #[test]

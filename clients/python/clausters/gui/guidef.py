@@ -85,9 +85,13 @@ def knob(id: int, *, label: str | None = None, min: float | None = None,
 
 
 def slider(id: int, *, label: str | None = None, min: float | None = None,
-           max: float | None = None, value: float | None = None, **props) -> dict:
-    """A continuous ``slider`` over a range."""
+           max: float | None = None, value: float | None = None,
+           vertical: bool = False, **props) -> dict:
+    """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
+    the y axis (min at the bottom, max at the top) instead of horizontally."""
     extra = _drop_none(label=label, min=min, max=max, value=value)
+    if vertical:
+        extra["vertical"] = True
     return node("slider", id=id, **extra, **props)
 
 

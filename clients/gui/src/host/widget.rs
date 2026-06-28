@@ -131,8 +131,9 @@ pub enum WidgetKind {
         max: f32,
         label: Option<String>,
     },
-    /// A continuous slider over `[min, max]`.
-    Slider(Range),
+    /// A continuous slider over `[min, max]`. `vertical` lays it out along the
+    /// y axis (min at the bottom, max at the top) instead of the x axis.
+    Slider { range: Range, vertical: bool },
     /// A rotary control over `[min, max]`.
     Knob(Range),
     /// A draggable numeric read-out over `[min, max]`.
@@ -316,7 +317,10 @@ impl Widget {
                 max: number(&node.props, "max", 1.0),
                 label: label(&node.props),
             },
-            "slider" => WidgetKind::Slider(Range::parse(&node.props)),
+            "slider" => WidgetKind::Slider {
+                range: Range::parse(&node.props),
+                vertical: node.props.get("vertical").and_then(truthy).unwrap_or(false),
+            },
             "knob" => WidgetKind::Knob(Range::parse(&node.props)),
             "number" => WidgetKind::Number(Range::parse(&node.props)),
             "button" => WidgetKind::Button {
@@ -380,7 +384,7 @@ impl WidgetKind {
     /// is the event).
     pub fn event_value(&self) -> Option<OscType> {
         match self {
-            WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
+            WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
                 Some(OscType::Float(r.value))
             }
             WidgetKind::Toggle { value, .. } => Some(OscType::Int(*value as i32)),
@@ -468,13 +472,15 @@ impl WidgetKind {
                     }
                 }
             },
-            WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => match key {
-                "value" => set_f(&mut r.value, v),
-                "min" => set_f(&mut r.min, v),
-                "max" => set_f(&mut r.max, v),
-                "label" => set_label(&mut r.label, v),
-                _ => false,
-            },
+            WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
+                match key {
+                    "value" => set_f(&mut r.value, v),
+                    "min" => set_f(&mut r.min, v),
+                    "max" => set_f(&mut r.max, v),
+                    "label" => set_label(&mut r.label, v),
+                    _ => false,
+                }
+            }
             WidgetKind::Toggle { value, label } => match key {
                 "value" => truthy(v).map(|b| *value = b).is_some(),
                 "label" => set_label(label, v),
@@ -979,7 +985,7 @@ mod tests {
         );
         let w = Widget::from_node(9, &n, &[]).unwrap();
         match &w.children[0].kind {
-            WidgetKind::Slider(r) => {
+            WidgetKind::Slider { range: r, .. } => {
                 assert_eq!(r.value, 2000.0, "value clamps into the range");
                 assert_eq!(r.label.as_deref(), Some("cut"));
                 assert_eq!(r.fraction(), 1.0);
@@ -993,6 +999,23 @@ mod tests {
         assert!(matches!(
             &w.children[2].kind,
             WidgetKind::Menu { index: 1, .. }
+        ));
+    }
+
+    #[test]
+    fn slider_orientation_parses() {
+        let n = GuiNode::parse(br#"{"type":"slider","vertical":true}"#).unwrap();
+        let w = Widget::from_node(7, &n, &[]).unwrap();
+        assert!(matches!(w.kind, WidgetKind::Slider { vertical: true, .. }));
+        // Default (no `vertical`) is horizontal.
+        let h = GuiNode::parse(br#"{"type":"slider"}"#).unwrap();
+        let wh = Widget::from_node(8, &h, &[]).unwrap();
+        assert!(matches!(
+            wh.kind,
+            WidgetKind::Slider {
+                vertical: false,
+                ..
+            }
         ));
     }
 

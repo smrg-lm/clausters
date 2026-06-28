@@ -208,8 +208,9 @@ struct CanvasFrame {
 
 /// An in-progress pointer drag, by what it is driving.
 enum Drag {
-    /// A horizontal slider: the value follows the cursor x within `body`.
-    Slider { id: i32, body: Rect },
+    /// A slider: the value follows the cursor within `body` — along x, or along y
+    /// when `vertical`.
+    Slider { id: i32, body: Rect, vertical: bool },
     /// A knob or number: the value moves incrementally with the vertical drag.
     /// On press the pointer is grabbed (see [`App::grab_pointer`]) so motion does
     /// not stop over the window's title bar or past its edges, where `CursorMoved`
@@ -849,9 +850,9 @@ impl App {
         fn walk(w: &Widget, id: i32) -> Option<f32> {
             if w.id == Some(id) {
                 return match &w.kind {
-                    WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                        Some(r.fraction())
-                    }
+                    WidgetKind::Slider { range: r, .. }
+                    | WidgetKind::Knob(r)
+                    | WidgetKind::Number(r) => Some(r.fraction()),
                     _ => None,
                 };
             }
@@ -866,9 +867,9 @@ impl App {
             && let Some(w) = tree.find_mut(widget_id)
         {
             match &mut w.kind {
-                WidgetKind::Slider(r) | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                    r.set_fraction(t)
-                }
+                WidgetKind::Slider { range: r, .. }
+                | WidgetKind::Knob(r)
+                | WidgetKind::Number(r) => r.set_fraction(t),
                 _ => {}
             }
         }
@@ -891,12 +892,12 @@ impl App {
             return;
         };
         match kind {
-            WidgetKind::Slider(r) => {
+            WidgetKind::Slider { range: r, vertical } => {
                 let body = controls::body_rect(rect, r.label.is_some());
-                let t = controls::slider_fraction(body, cx);
+                let t = slider_t(body, cx, cy, vertical);
                 self.set_fraction(def_id, id, t);
                 self.emit_value(def_id, id);
-                self.set_drag(def_id, Drag::Slider { id, body });
+                self.set_drag(def_id, Drag::Slider { id, body, vertical });
                 self.redraw(def_id);
             }
             WidgetKind::Knob(r) | WidgetKind::Number(r) => {
@@ -1008,7 +1009,7 @@ impl App {
             .get(&def_id)
             .and_then(|w| w.drag.as_ref())
             .map(|d| match d {
-                Drag::Slider { id, body } => DragMove::Slider(*id, *body),
+                Drag::Slider { id, body, vertical } => DragMove::Slider(*id, *body, *vertical),
                 // A locked drag is driven by relative motion in `device_event`,
                 // not by these cursor positions, so skip it here.
                 Drag::Vertical {
@@ -1032,8 +1033,8 @@ impl App {
                 } => DragMove::Waveform(*id, *origin_x, *start, *body_w),
             });
         match action {
-            Some(DragMove::Slider(id, body)) => {
-                let t = controls::slider_fraction(body, cx);
+            Some(DragMove::Slider(id, body, vertical)) => {
+                let t = slider_t(body, cx, cy, vertical);
                 self.set_fraction(def_id, id, t);
                 self.emit_value(def_id, id);
                 self.redraw(def_id);
@@ -1343,10 +1344,21 @@ impl App {
 
 /// A drag step, copied out of the borrow so the host tree can be mutated.
 enum DragMove {
-    Slider(i32, Rect),
+    Slider(i32, Rect, bool),
     Vertical(i32, f64, f32),
     Waveform(i32, f64, f64, f64),
     None,
+}
+
+/// The 0..1 fraction a slider press/drag at `(cx, cy)` maps to, by orientation:
+/// the cursor x along a horizontal track, or y (bottom = 0, top = 1) on a
+/// `vertical` one.
+fn slider_t(body: Rect, cx: f64, cy: f64, vertical: bool) -> f32 {
+    if vertical {
+        controls::slider_fraction_v(body, cy)
+    } else {
+        controls::slider_fraction(body, cx)
+    }
 }
 
 /// The current event value of widget `id` in `tree`.

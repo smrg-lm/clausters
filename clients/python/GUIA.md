@@ -923,6 +923,11 @@ Notas:
   registro generico y el arbol tipado de la ventana se actualizan juntos.
 - El texto de los labels es una fuente bitmap mayuscula (suficiente para paneles);
   tipografia proporcional/grande es una mejora posterior.
+- **Slider vertical:** `slider(20, ..., vertical=True)` lo orienta en el eje y
+  (min abajo, max arriba; arrastrar hacia arriba sube el valor). Sin la prop es
+  horizontal como siempre. El **agarre** del slider es un grip corto centrado en
+  la pista (no abarca todo el ancho/alto del cuerpo): rectangulo transversal de
+  ~18px en el eje cruzado y 8px sobre el eje de recorrido.
 
 ## 15. GUI host: cliente del servidor de audio + meters/scope por memoria (G5)
 
