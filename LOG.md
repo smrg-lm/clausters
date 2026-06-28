@@ -3602,3 +3602,69 @@ the new code is the carrier and the page glue.
   `interact` path (the same the native smoke exercises); the `bind`→`--ws`
   server bypass is a manual end-to-end test (a running `--ws` server + a real
   browser). The full TypeScript client remains a separate, unplanned track.
+
+## G17 — WebGL2 fallback: browser reach where WebGPU is disabled (2026-06-28)
+
+Landed out of sequence (a reach fix on the G12 web surface, ahead of G14–G16):
+the browser host renders over **WebGPU where it works and WebGL2 otherwise**, so
+it keeps working on browsers — notably on Linux, and on older Android — whose
+WebGPU is disabled by the drivers. The motivation is accessibility: the point of
+the web target is reach, and WebGPU on Linux/Android is unreliable, so a
+universal fallback (WebGL2 is supported almost everywhere) is what makes the web
+host actually usable there.
+
+- **Cheap by design — no renderer, shader or DSP changes.** The crate already
+  avoids everything WebGL2 cannot do, partly from explicit G7 decisions: no
+  compute shaders and no storage buffers anywhere (only vertex/fragment render
+  pipelines, uniform buffers, one `R8Unorm` texture + a linear sampler); the
+  heavy numeric work (FFT via `microfft`, the peak pyramid) runs on the CPU in
+  `clausters-core`; the WGSL shaders — including the script-supplied `canvas`
+  shader (G9) — are translated to GLSL ES 3.0 by naga automatically (a shader
+  that fails to translate already falls into the existing `push_error_scope`,
+  staying unpainted with no panic). `R8Unorm` was chosen in G7 precisely for
+  being filterable everywhere, which is WebGL2-safe too. The whole change is
+  config + a few lines in `gpu.rs`.
+- **Both backends compiled, picked at runtime (`gpu.rs`).** The wasm build now
+  enables wgpu's `webgl` feature alongside the default `webgpu`
+  (`Cargo.toml`, in the `wasm32` target deps so native is untouched). `new`
+  builds the instance through wgpu's recommended
+  `util::new_instance_with_webgpu_detection` with
+  `Backends::BROWSER_WEBGPU | Backends::GL`: it keeps WebGPU only when the
+  browser can actually create a WebGPU adapter — it probes for one, not just for
+  `navigator.gpu`, which is exactly the Linux-Chrome case (the property exists
+  but no adapter can be made) — and otherwise drops to WebGL2. No branch logic of
+  our own; native keeps `Instance::default()`.
+- **Device limits (`gpu.rs`).** `request_device` with the full default limits
+  would fail on a WebGL2 adapter, so the web path requests
+  `Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())` —
+  the WebGL2 floor, but with the texture-size limits lifted back to what the
+  adapter actually reports (a long spectrogram texture needs the real maximum,
+  not the 2048 floor). On a WebGPU adapter this stays well within support. Native
+  keeps wgpu's defaults. `required_features` stays empty.
+- **Messaging.** The "no adapter" error and the page `#note`/harness text now
+  read in terms of "neither WebGPU nor WebGL2" (a near-impossible state, since
+  WebGL2 is ubiquitous) and per-platform hints (`gpu.rs` `NO_ADAPTER_HINT`,
+  `host::web` logs, `web/index.html`), replacing the WebGPU-only wording from
+  G13.
+- **Verified:** native unchanged — gui 81 tests pass, `cargo fmt --check` and
+  `clippy -D warnings` clean on both native and `wasm32`, and a native windowed
+  smoke (the `waveform` binary) brings the GPU up and stays alive with no panic.
+  The wasm `--lib` build for `wasm32-unknown-unknown` now compiles the GL backend
+  in (`glow`/`wgpu-hal`/`wgpu-core`), so `check-wasm.sh` covers it. **End-to-end
+  in a real Linux browser whose WebGPU is disabled:** the WebGPU probe fails
+  (`No available adapters.`), the host falls back to a WebGL2 adapter and renders
+  the panel, controls, bitmap text and the inline waveform — visually confirmed
+  (the first actual pixels of the browser host; G12/G13 were console-only). A
+  turned unbound control prints its `/gui_event`; a `bind`-ed widget stays silent
+  (the bypass path, to a `--ws` server when one is attached).
+- **Surface-size fix found in that verification (`host::web`).** The first build
+  rendered only the clear color (a gray canvas, no widgets): on the web the
+  `<canvas>` is often not laid out when `Gpu::new` reads its size (captured before
+  the async adapter/device awaits), so the surface came up configured to a stale
+  1x1 — the clear stretched to fill the canvas while every widget laid out into a
+  ~0 px area. `GpuReady` now re-reads the laid-out size (falling back to a
+  `pending_size` stashed from any `Resized` that arrived while the GPU was still
+  coming up) and reconfigures before the first frame; it logs the resolved
+  surface size. This was latent on the WebGPU path too, never caught because it
+  was only console-verified. Native is unaffected (its size is stable before the
+  awaits).

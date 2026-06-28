@@ -55,7 +55,8 @@ fn log(msg: &str) {
 }
 
 /// Writes a status line into the page's `#note` element (if present), so a
-/// failure the user must act on (no WebGPU) is visible without the console.
+/// failure the user must act on (no GPU adapter at all) is visible without the
+/// console.
 fn set_status(msg: &str) {
     if let Some(el) = web_sys::window()
         .and_then(|w| w.document())
@@ -153,6 +154,11 @@ struct WebApp {
     render: Option<WindowRender>,
     /// The window-rooted def currently shown (the browser shows one at a time).
     current_def: Option<i32>,
+    /// A canvas size from a `Resized` that arrived before the GPU was ready (so
+    /// `render` was `None` and it could not be applied yet); replayed on
+    /// `GpuReady` so the surface is configured to the real size for the first
+    /// frame, not a stale 1x1.
+    pending_size: Option<(u32, u32)>,
     cursor: (f64, f64),
     drag: Option<Drag>,
 }
@@ -165,6 +171,7 @@ impl WebApp {
             window: None,
             render: None,
             current_def: None,
+            pending_size: None,
             cursor: (0.0, 0.0),
             drag: None,
         }
@@ -404,7 +411,7 @@ impl ApplicationHandler<WebEvent> for WebApp {
             Err(e) => return log(&format!("cannot create the canvas window: {e}")),
         };
         self.window = Some(window.clone());
-        log("opened window over <canvas>; requesting WebGPU adapter...");
+        log("opened window over <canvas>; requesting GPU adapter (WebGPU, else WebGL2)...");
         // The proxy lives in the closure; rebuild it from the event loop.
         let proxy = WEB_PROXY.with(|p| p.borrow().clone());
         wasm_bindgen_futures::spawn_local(async move {
@@ -415,8 +422,9 @@ impl ApplicationHandler<WebEvent> for WebApp {
                     }
                 }
                 Err(e) => {
-                    // No WebGPU: surface a clear, actionable message instead of
-                    // aborting; the canvas stays blank but the page survives.
+                    // No GPU adapter at all (neither WebGPU nor WebGL2): surface a
+                    // clear, actionable message instead of aborting; the canvas
+                    // stays blank but the page survives.
                     log(&e);
                     set_status(&e);
                 }
@@ -426,14 +434,33 @@ impl ApplicationHandler<WebEvent> for WebApp {
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: WebEvent) {
         match event {
-            WebEvent::GpuReady(gpu) => {
+            WebEvent::GpuReady(mut gpu) => {
+                // On the web the `<canvas>` is often not laid out yet when
+                // `Gpu::new` reads its size (the size is captured before the async
+                // adapter/device awaits), so the surface can come up configured to
+                // a stale 1x1. Re-read the now-laid-out size and reconfigure before
+                // the first frame — otherwise the clear fills the canvas (a gray
+                // backdrop) but every widget lays out into a ~0 px area and nothing
+                // visible is drawn. A `Resized` that arrived while the GPU was
+                // pending was stashed in `pending_size`; prefer the live size and
+                // fall back to it.
+                let size = gpu.window.inner_size();
+                let (w, h) = if size.width > 0 && size.height > 0 {
+                    (size.width, size.height)
+                } else {
+                    self.pending_size.unwrap_or((size.width, size.height))
+                };
+                gpu.resize(w, h);
                 let painter = Painter::new(&gpu.device, gpu.config.format);
+                log(&format!(
+                    "GPU device ready; surface {}x{}",
+                    gpu.config.width, gpu.config.height
+                ));
                 self.render = Some(WindowRender {
                     gpu,
                     painter,
                     waveforms: HashMap::new(),
                 });
-                log("WebGPU ready");
                 if self.current_def.is_some() {
                     self.build_resources();
                 }
@@ -455,6 +482,10 @@ impl ApplicationHandler<WebEvent> for WebApp {
             WindowEvent::Resized(size) => {
                 if let Some(render) = self.render.as_mut() {
                     render.gpu.resize(size.width, size.height);
+                } else {
+                    // The GPU is still coming up; remember the size so `GpuReady`
+                    // can configure the surface to it instead of a stale 1x1.
+                    self.pending_size = Some((size.width, size.height));
                 }
                 self.request_redraw();
             }

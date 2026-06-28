@@ -26,13 +26,14 @@ impl Gpu {
     /// window's current size. `async` so the web path can await it (the native
     /// path blocks on it); the adapter/device requests are the only await points.
     ///
-    /// Returns an error rather than panicking when no GPU is available — most
-    /// importantly in a browser whose WebGPU is not enabled (e.g. Linux Chrome
-    /// without the WebGPU/Vulkan flags), where `request_adapter` finds none — so
-    /// the front can surface a clear message instead of aborting.
+    /// Returns an error rather than panicking when no GPU is available, so the
+    /// front can surface a clear message instead of aborting. On the web this is
+    /// rare: [`new_instance`] prefers WebGPU where the browser truly supports it
+    /// and otherwise falls back to **WebGL2**, which nearly every browser has —
+    /// so a Linux/older-Android browser whose WebGPU is disabled still renders.
     pub(crate) async fn new(window: Arc<Window>) -> Result<Self, String> {
         let size = window.inner_size();
-        let instance = wgpu::Instance::default();
+        let instance = new_instance().await;
         let surface = instance
             .create_surface(window.clone())
             .map_err(|e| format!("cannot create the GPU surface: {e}"))?;
@@ -45,16 +46,13 @@ impl Gpu {
                 force_fallback_adapter: false,
             })
             .await
-            .map_err(|e| {
-                format!(
-                    "no suitable GPU adapter ({e}); the browser may not have WebGPU enabled \
-                     (on Linux Chrome, enable chrome://flags/#enable-unsafe-webgpu and Vulkan, \
-                     or use a WebGPU-capable browser)"
-                )
-            })?;
+            .map_err(|e| format!("no suitable GPU adapter ({e}); {NO_ADAPTER_HINT}"))?;
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("clausters-gui device"),
+                // Native keeps wgpu's full defaults; the web caps to the WebGL2
+                // downlevel set so the device also comes up on a WebGL2 adapter.
+                required_limits: device_limits(&adapter),
                 ..Default::default()
             })
             .await
@@ -80,3 +78,47 @@ impl Gpu {
         }
     }
 }
+
+/// Builds the wgpu instance for the platform.
+///
+/// On the web it enables **both** the WebGPU and the WebGL2 backends and decides
+/// at instance creation through `new_instance_with_webgpu_detection`: it keeps
+/// WebGPU only when the browser can actually create a WebGPU adapter (the helper
+/// probes for one, not just for `navigator.gpu` — Linux Chrome exposes that
+/// property yet cannot create an adapter), and otherwise drops to WebGL2. That
+/// runtime fall-through is what gives the web host reach on browsers where
+/// WebGPU is disabled. Native uses the default backends unchanged.
+#[cfg(target_arch = "wasm32")]
+async fn new_instance() -> wgpu::Instance {
+    let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+    desc.backends = wgpu::Backends::BROWSER_WEBGPU | wgpu::Backends::GL;
+    wgpu::util::new_instance_with_webgpu_detection(desc).await
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn new_instance() -> wgpu::Instance {
+    wgpu::Instance::default()
+}
+
+/// The device limits to request. The web caps to the WebGL2 downlevel set so
+/// `request_device` also succeeds on a WebGL2 adapter, while `using_resolution`
+/// lifts the texture-size limits back to whatever the adapter actually reports
+/// (a long spectrogram texture needs the real maximum, not the 2048 floor). On a
+/// WebGPU adapter this stays well within support. Native keeps wgpu's defaults.
+#[cfg(target_arch = "wasm32")]
+fn device_limits(adapter: &wgpu::Adapter) -> wgpu::Limits {
+    wgpu::Limits::downlevel_webgl2_defaults().using_resolution(adapter.limits())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn device_limits(_adapter: &wgpu::Adapter) -> wgpu::Limits {
+    wgpu::Limits::default()
+}
+
+/// The hint appended to the "no GPU adapter" error, tailored per platform.
+#[cfg(target_arch = "wasm32")]
+const NO_ADAPTER_HINT: &str = "on the web this means neither WebGPU nor WebGL2 is available; \
+     almost every browser supports WebGL2, so check that hardware acceleration / WebGL is enabled, \
+     or try another browser";
+#[cfg(not(target_arch = "wasm32"))]
+const NO_ADAPTER_HINT: &str = "no Vulkan/Metal/DX12 device was found; check the GPU drivers";

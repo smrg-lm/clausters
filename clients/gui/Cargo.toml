@@ -63,6 +63,12 @@ libc = "0.2"
 # browser console, and `web-sys`/`js-sys` for the console logs and the native
 # `WebSocket` carrying the audio-server leg (G13). Native builds pull none.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+# Same wgpu as native, but with the WebGL2 backend compiled in alongside the
+# default WebGPU one (cargo unifies features, so the wasm build gets webgpu +
+# webgl while native stays webgpu/native-only). This is what lets `gpu.rs` fall
+# back to WebGL2 on browsers whose WebGPU is disabled (notably Linux), so the
+# web host keeps working where WebGPU is not available.
+wgpu = { version = "29.0.3", features = ["webgl"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1"

@@ -24,9 +24,9 @@
   </head>
   <body>
     <div id="note">
-      clausters-gui browser host (G13). Requires WebGPU — a recent Chrome/Edge,
-      or Firefox Nightly. On Linux Chrome you may need
-      chrome://flags/#enable-unsafe-webgpu (and Vulkan) enabled.
+      clausters-gui browser host. Renders over WebGPU where available and falls
+      back to WebGL2 otherwise, so it works on browsers (notably on Linux) whose
+      WebGPU is disabled — WebGL2 is supported almost everywhere.
     </div>
 
     <!--
@@ -98,7 +98,7 @@
         })
         .catch((e) => {
           document.getElementById("note").textContent =
-            "failed to start (is WebGPU available?): " + e;
+            "failed to start (no WebGPU or WebGL2 available?): " + e;
         });
     </script>
   </body>
