@@ -38,6 +38,11 @@ pub mod view;
 pub mod viewport;
 pub mod waveform;
 
+// The wgpu device/surface bring-up, agnostic (it compiles to the WebGPU backend
+// on wasm); shared by the native harness, the windowed host front and the
+// browser entry point.
+pub(crate) mod gpu;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub mod demo;
 #[cfg(not(target_arch = "wasm32"))]

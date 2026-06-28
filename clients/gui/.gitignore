@@ -1,2 +1,4 @@
 /target
 Cargo.lock
+/web/clausters_gui.js
+/web/clausters_gui_bg.wasm

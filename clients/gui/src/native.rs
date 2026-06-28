@@ -15,6 +15,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Window, WindowId};
 
+use crate::gpu::Gpu;
 use crate::view::TimelineView;
 use crate::viewport::View;
 
@@ -22,59 +23,6 @@ use crate::viewport::View;
 /// surface format to create pipelines and upload data/textures).
 pub type ViewFactory =
     Box<dyn FnOnce(&wgpu::Device, &wgpu::Queue, wgpu::TextureFormat) -> Box<dyn TimelineView>>;
-
-// Shared with the GUI host (`host::gui`) so the surface/device setup lives once.
-pub(crate) struct Gpu {
-    pub(crate) window: Arc<Window>,
-    pub(crate) surface: wgpu::Surface<'static>,
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    pub(crate) config: wgpu::SurfaceConfiguration,
-}
-
-impl Gpu {
-    pub(crate) async fn new(window: Arc<Window>) -> Self {
-        let size = window.inner_size();
-        let instance = wgpu::Instance::default();
-        let surface = instance
-            .create_surface(window.clone())
-            .expect("create surface");
-        let adapter = instance
-            .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                compatible_surface: Some(&surface),
-                force_fallback_adapter: false,
-            })
-            .await
-            .expect("no suitable GPU adapter");
-        let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor {
-                label: Some("clausters-gui device"),
-                ..Default::default()
-            })
-            .await
-            .expect("request device");
-        let config = surface
-            .get_default_config(&adapter, size.width.max(1), size.height.max(1))
-            .expect("surface unsupported by adapter");
-        surface.configure(&device, &config);
-        Self {
-            window,
-            surface,
-            device,
-            queue,
-            config,
-        }
-    }
-
-    pub(crate) fn resize(&mut self, width: u32, height: u32) {
-        if width > 0 && height > 0 {
-            self.config.width = width;
-            self.config.height = height;
-            self.surface.configure(&self.device, &self.config);
-        }
-    }
-}
 
 struct State {
     gpu: Gpu,

@@ -3496,3 +3496,51 @@ core** (the widget/protocol logic) that compiles for `wasm32` unchanged and a
 - **Verified:** the native host behaves byte-identically — the headless E2E
   round-trip (`gui_skeleton.py` against the running host) parses the GuiDef and
   answers `/gui_query` with `/gui_info` exactly as before, no panic.
+
+## G12 — Web surface: `<canvas>` WebGPU + async GPU + render loop (2026-06-28)
+
+The first browser pixels. With no transport yet, the surface/GPU/loop port is
+isolated from the protocol: a compiled-in GuiDef renders in a browser tab over
+WebGPU through the **same** render code the desktop runs.
+
+- **Shared frame path (`host::frame`).** The per-window render moved verbatim out
+  of the native `gui::App::render` into a platform-agnostic `frame::render(gpu,
+  painter, waveforms, canvases, scopes, tree, &FrameInputs)`. Both fronts now
+  draw a tree through one function, so the browser is pixel-faithful by
+  construction, not a parallel renderer. `FrameInputs` carries the live values the
+  native front has (the shared-memory `BusSource` for meters/canvas, the scope
+  histories, the node trees, the held-button highlight); its `Default` is the
+  no-transport case the browser uses at G12 (no bus, empty node tree). The native
+  `App::render` is now a thin wrapper that gathers those inputs (disjoint field
+  borrows) and calls it; `WaveformSlot` and the `CLEAR`/panel/label constants
+  moved with it.
+- **`Gpu` is agnostic (`crate::gpu`).** The wgpu device/surface bring-up moved out
+  of the native-only `native.rs` into a shared module (it compiles to the WebGPU
+  backend on wasm), used by the native harness, the windowed front and the web
+  entry. `Gpu::new` was already `async`; only *when* it is awaited differs per
+  platform.
+- **`host::web` (wasm-only).** A `wasm-bindgen` `start` entry that builds a winit
+  window over an HTML `<canvas>` (`WindowAttributesExtWebSys::with_append`),
+  requests the WebGPU adapter/device **asynchronously** via
+  `wasm_bindgen_futures::spawn_local` and hands it back through an
+  `EventLoopProxy` `GpuReady` user event (winit's web loop is single-threaded, so
+  moving the non-`Send` `Gpu` through the proxy is fine), and drives the render
+  from `RedrawRequested` — **no `block_on`, no socket, no mmap on the wasm path**.
+  The compiled-in GuiDef (a panel of controls + an inline-data `waveform`) is
+  authored as the same JSON a client would send and built through the unchanged
+  `GuiNode::parse` + `Widget::from_node` path.
+- **Packaging.** `[lib] crate-type = ["cdylib", "rlib"]` (cdylib for wasm-bindgen,
+  rlib so the native bins still link); wasm32-target deps (`wasm-bindgen`,
+  `wasm-bindgen-futures`, `console_error_panic_hook`, `web-sys` `console`).
+  `clients/gui/web/build.sh` runs the wasm build + `wasm-bindgen --target web`
+  into `web/`, loaded by `web/index.html` (the generated `.js`/`.wasm` are
+  git-ignored). Serve over http (WebGPU needs a secure context; localhost
+  counts) and open in a WebGPU browser.
+- **Verified:** native unchanged — gui 81 tests, `clippy -D warnings` clean on
+  native and `wasm32`, and the windowed host opens a real GPU window through the
+  shared `frame::render` with no panic. The wasm bundle generates with
+  `wasm-bindgen`; loaded in Chrome over WebGPU (Vulkan/ANGLE) the **full path
+  executes** — the console logs `start`, the `<canvas>` window, the async device
+  coming up, and `frame::render` running ("WebGPU ready; rendering the GuiDef"),
+  no panic. Capturing the rendered pixels in a screenshot needs a non-headless
+  WebGPU browser (a headless-Chrome WebGPU readback limitation, not a code issue).

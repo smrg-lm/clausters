@@ -36,6 +36,7 @@ pub mod bind;
 pub mod canvas;
 pub mod controls;
 pub mod font;
+pub mod frame;
 pub mod guidef;
 pub mod layout;
 pub mod meters;
@@ -80,10 +81,16 @@ pub mod mapfile;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bulk;
 
-// The windowed host (winit + wgpu) is native-only; a wasm build swaps it for a
-// `<canvas>` surface. Everything above is windowing-agnostic and web-portable.
+// The windowed host (winit + wgpu) is native-only; the wasm build swaps it for
+// the `<canvas>` surface in [`web`]. Both drive the shared [`frame`] render.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod gui;
+
+// The browser entry point: a `<canvas>` WebGPU surface with async GPU bring-up,
+// rendering a compiled-in GuiDef through the same `frame` path the native front
+// uses. No transport yet (G12); the WebSocket carrier lands in G13. wasm-only.
+#[cfg(target_arch = "wasm32")]
+pub mod web;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;

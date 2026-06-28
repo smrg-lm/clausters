@@ -33,21 +33,19 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, DeviceEvents, EventLoop, E
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
-use crate::native::Gpu;
+use crate::gpu::Gpu;
 use crate::view::TimelineView;
 use crate::viewport::View;
-use crate::waveform::{WaveformData, WaveformView};
+use crate::waveform::WaveformData;
 
 use super::bulk::MmapLoader;
-use super::canvas::{self, CanvasView};
+use super::canvas::CanvasView;
+use super::frame::{self, WaveformSlot};
 use super::layout::{self, Rect};
-use super::nodetree::{self, NodeTree};
-use super::paint::{Color, Mesh, Painter};
+use super::nodetree::NodeTree;
+use super::paint::Painter;
 use super::widget::{Widget, WidgetKind};
-use super::{
-    BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls, meters,
-    plot,
-};
+use super::{BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls};
 
 /// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
 /// enough for smooth meters/scopes without spinning the CPU.
@@ -61,16 +59,6 @@ const BUFFER_CHUNK: usize = 8192;
 /// creation/removal is caught immediately through `/n_go`/`/n_end`; this low-rate
 /// poll picks up `/n_set` control changes (which raise no notification).
 const NODETREE_POLL: Duration = Duration::from_millis(200);
-
-const CLEAR: wgpu::Color = wgpu::Color {
-    r: 0.05,
-    g: 0.05,
-    b: 0.07,
-    a: 1.0,
-};
-const PANEL_COLOR: Color = [0.10, 0.11, 0.14, 0.55];
-const LABEL_COLOR: Color = [0.85, 0.87, 0.90, 1.0];
-const LABEL_SCALE: f32 = 2.0;
 
 /// What the background transport threads hand the main (winit) thread.
 #[derive(Debug)]
@@ -181,32 +169,6 @@ fn open_shm(path: Option<String>) -> Option<Arc<dyn BusSource>> {
         warn!("--shm (shared-memory meters) is only supported on Unix");
     }
     None
-}
-
-/// A waveform widget's GPU view plus its own navigation window.
-struct WaveformSlot {
-    view: WaveformView,
-    nav: View,
-}
-
-/// A placed `plot` widget and the data its (static) draw needs, copied out of
-/// the host tree so the mesh is built after the tree borrow is released.
-struct PlotItem {
-    rect: Rect,
-    samples: Arc<[f32]>,
-    min: f32,
-    max: f32,
-    label: Option<String>,
-}
-
-/// A placed `canvas` widget, copied out of the host tree: its viewport body, the
-/// shader source (for an in-place recompile when it changed) and the param
-/// vector, with the bus-mapped slots already resolved from shared memory.
-struct CanvasFrame {
-    id: i32,
-    body: Rect,
-    shader: String,
-    params: [f32; canvas::PARAM_COUNT],
 }
 
 /// An in-progress pointer drag, by what it is driving.
@@ -789,10 +751,8 @@ impl App {
         for want in wants {
             if let Some(ws) = self.windows.get_mut(&want.def_id) {
                 let data = WaveformData::new(Arc::clone(&mono), want.base_bucket);
-                let nav = View::full(data.total_samples());
-                let view = WaveformView::new(&ws.gpu.device, ws.gpu.config.format, data);
-                ws.waveforms
-                    .insert(want.widget_id, WaveformSlot { view, nav });
+                let slot = frame::waveform_slot(data, &ws.gpu);
+                ws.waveforms.insert(want.widget_id, slot);
                 ws.gpu.window.request_redraw();
             }
         }
@@ -1125,243 +1085,38 @@ impl App {
         }
     }
 
+    /// Renders window `def_id` through the shared frame path ([`frame::render`]),
+    /// the same code the browser front drives — here fed the live inputs (the
+    /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
-        let (fb_w, fb_h) = self.fb(def_id);
-        // Build the frame mesh from the host tree (immutable borrow), then the
-        // window's GPU resources (mutable) upload and draw it.
-        let Some(tree) = self.host.window_def(def_id) else {
-            return;
-        };
-        let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-        let placed = layout::layout(area, tree);
-        let mut mesh = Mesh::new();
-        let mut waveform_rects: Vec<(i32, Rect)> = Vec::new();
-        // Meter/scope rects, copied out so their shared-memory values and the
-        // scope history can be read after the host-tree borrow is released.
-        let mut meter_rects: Vec<(Rect, i32, f32, f32, Option<String>)> = Vec::new();
-        // Scope rects carry no bus: the value is sampled on the frame tick
-        // (`advance_scopes`); the render only draws the stored history.
-        let mut scope_rects: Vec<(i32, Rect, f32, f32, Option<String>)> = Vec::new();
-        // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
-        // likewise copied out so the host-tree borrow can be released before the
-        // node-tree models and the GPU resources are read.
-        let mut plot_rects: Vec<PlotItem> = Vec::new();
-        let mut nodetree_rects: Vec<(Rect, i32, bool, Option<String>)> = Vec::new();
-        let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
         let active_button = match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
             Some(Drag::Button { id }) => Some(*id),
             _ => None,
         };
-        for p in &placed {
-            match &p.widget.kind {
-                WidgetKind::Panel { .. } => mesh.rect(p.rect, PANEL_COLOR),
-                WidgetKind::Label { text } => {
-                    font_left(&mut mesh, text, p.rect);
-                }
-                WidgetKind::Waveform { .. } => {
-                    if let Some(id) = p.widget.id {
-                        waveform_rects.push((id, p.rect));
-                    }
-                }
-                WidgetKind::Meter {
-                    bus,
-                    min,
-                    max,
-                    label,
-                } => meter_rects.push((p.rect, *bus, *min, *max, label.clone())),
-                WidgetKind::Scope {
-                    min, max, label, ..
-                } => {
-                    if let Some(id) = p.widget.id {
-                        scope_rects.push((id, p.rect, *min, *max, label.clone()));
-                    }
-                }
-                WidgetKind::Plot {
-                    samples,
-                    min,
-                    max,
-                    label,
-                    ..
-                } => plot_rects.push(PlotItem {
-                    rect: p.rect,
-                    samples: Arc::clone(samples),
-                    min: *min,
-                    max: *max,
-                    label: label.clone(),
-                }),
-                WidgetKind::NodeTree {
-                    group,
-                    controls,
-                    label,
-                } => nodetree_rects.push((p.rect, *group, *controls, label.clone())),
-                WidgetKind::Canvas {
-                    shader,
-                    params,
-                    buses,
-                    label,
-                } => {
-                    if let Some(id) = p.widget.id {
-                        if let Some(text) = label {
-                            super::font::text(
-                                &mut mesh,
-                                text,
-                                p.rect.x + 4.0,
-                                p.rect.y + 4.0,
-                                LABEL_SCALE,
-                                LABEL_COLOR,
-                            );
-                        }
-                        // Resolve the param vector: a `-1` slot keeps its
-                        // script-set value; a bus slot is read from shared memory
-                        // this frame (zero messages, like a meter).
-                        let mut resolved = *params;
-                        for (slot, &bus) in resolved.iter_mut().zip(buses.iter()) {
-                            if bus >= 0 {
-                                *slot = self.read_bus(bus);
-                            }
-                        }
-                        canvas_frames.push(CanvasFrame {
-                            id,
-                            body: controls::body_rect(p.rect, label.is_some()),
-                            shader: shader.clone(),
-                            params: resolved,
-                        });
-                    }
-                }
-                WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
-                kind => controls::draw(&mut mesh, kind, p.rect, p.widget.id == active_button),
-            }
-        }
-
-        // Meters and scopes read their control bus straight from shared memory
-        // each frame (zero messages); the scope keeps a per-widget rolling
-        // history in this window's state.
-        for (rect, bus, min, max, label) in &meter_rects {
-            let value = self.read_bus(*bus);
-            let frac = meters::fraction(value, *min, *max);
-            meters::draw_meter(&mut mesh, *rect, value, frac, label.as_deref());
-        }
-        // The history is advanced on the frame tick (`advance_scopes`), not here,
-        // so a repaint only ever *draws* the current samples — never adds one.
-        for (id, rect, min, max, label) in &scope_rects {
-            let samples: Vec<f32> = self
-                .windows
-                .get(&def_id)
-                .and_then(|ws| ws.scopes.get(id))
-                .map(|h| h.iter().copied().collect())
-                .unwrap_or_default();
-            meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
-        }
-
-        // Static plots draw from their (already mapped) samples; node trees draw
-        // from the model last read off the client leg. Both are pure mesh work
-        // with the host-tree borrow already released.
-        for item in &plot_rects {
-            plot::draw(
-                &mut mesh,
-                item.rect,
-                &item.samples,
-                item.min,
-                item.max,
-                item.label.as_deref(),
-            );
-        }
         let server_attached = self.host.server().is_some();
-        for (rect, group, controls, label) in &nodetree_rects {
-            nodetree::draw(
-                &mut mesh,
-                *rect,
-                self.node_trees.get(group),
-                *controls,
-                label.as_deref(),
-                server_attached,
-            );
-        }
-
+        // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
+        // and the window's GPU resources are separate fields of `self`.
+        let Some(tree) = self.host.window_def(def_id) else {
+            return;
+        };
+        let inputs = frame::FrameInputs {
+            bus: self.shm.as_deref(),
+            node_trees: &self.node_trees,
+            active_button,
+            server_attached,
+        };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
         };
-        ws.painter
-            .upload(&ws.gpu.device, &ws.gpu.queue, &mesh, fb_w, fb_h);
-        for (id, rect) in &waveform_rects {
-            if let Some(slot) = ws.waveforms.get_mut(id) {
-                slot.view.upload(
-                    &ws.gpu.device,
-                    &ws.gpu.queue,
-                    &slot.nav,
-                    rect.w.max(1.0) as u32,
-                );
-            }
-        }
-        // Recompile any canvas whose shader changed, then push its per-frame
-        // uniforms (viewport size, elapsed time, resolved params).
-        for frame in &canvas_frames {
-            if let Some(view) = ws.canvases.get_mut(&frame.id) {
-                view.set_shader(&ws.gpu.device, &frame.shader);
-                let time = view.elapsed();
-                let res = [frame.body.w.max(1.0), frame.body.h.max(1.0)];
-                view.upload(&ws.gpu.queue, res, time, frame.params);
-            }
-        }
-
-        let frame = match ws.gpu.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(f)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
-            _ => {
-                ws.gpu.surface.configure(&ws.gpu.device, &ws.gpu.config);
-                return;
-            }
-        };
-        let target = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = ws
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("gui frame"),
-            });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("gui pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(CLEAR),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            ws.painter.draw(&mut pass);
-            for (id, rect) in &waveform_rects {
-                if rect.w >= 1.0
-                    && rect.h >= 1.0
-                    && let Some(slot) = ws.waveforms.get(id)
-                {
-                    let (x, y, w, h) = clamp_viewport(*rect, fb_w, fb_h);
-                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                    slot.view.draw(&mut pass);
-                }
-            }
-            for frame in &canvas_frames {
-                if frame.body.w >= 1.0
-                    && frame.body.h >= 1.0
-                    && let Some(view) = ws.canvases.get(&frame.id)
-                {
-                    let (x, y, w, h) = clamp_viewport(frame.body, fb_w, fb_h);
-                    pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                    view.draw(&mut pass);
-                }
-            }
-        }
-        ws.gpu.queue.submit(std::iter::once(encoder.finish()));
-        frame.present();
+        frame::render(
+            &mut ws.gpu,
+            &mut ws.painter,
+            &mut ws.waveforms,
+            &mut ws.canvases,
+            &ws.scopes,
+            tree,
+            &inputs,
+        );
     }
 }
 
@@ -1395,18 +1150,6 @@ fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
     walk(tree, id)
 }
 
-fn font_left(mesh: &mut Mesh, text: &str, rect: Rect) {
-    let y = rect.y + (rect.h - super::font::height(LABEL_SCALE)) * 0.5;
-    super::font::text(
-        mesh,
-        text,
-        rect.x + 4.0,
-        y.max(rect.y),
-        LABEL_SCALE,
-        LABEL_COLOR,
-    );
-}
-
 /// Walks the tree building waveform views. A `cache`/`path` waveform is loaded
 /// **now** from a mapped local resource (the G7 bulk path, no OSC); a
 /// server-`buffer` reference with no data is deferred as a
@@ -1434,7 +1177,7 @@ fn collect_waveforms(
             if let Some(data) =
                 MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
             {
-                out.insert(id, waveform_slot(data, gpu));
+                out.insert(id, frame::waveform_slot(data, gpu));
             }
         } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
             // A server buffer with no inline data: fetch it over the client leg.
@@ -1442,20 +1185,13 @@ fn collect_waveforms(
         } else {
             out.insert(
                 id,
-                waveform_slot(WaveformData::new(Arc::clone(samples), *base_bucket), gpu),
+                frame::waveform_slot(WaveformData::new(Arc::clone(samples), *base_bucket), gpu),
             );
         }
     }
     for child in &widget.children {
         collect_waveforms(child, gpu, out, buffer_refs);
     }
-}
-
-/// A `WaveformSlot` (GPU view + a fresh full-range nav) for ready data.
-fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
-    let nav = View::full(data.total_samples());
-    let view = WaveformView::new(&gpu.device, gpu.config.format, data);
-    WaveformSlot { view, nav }
 }
 
 /// Whether a widget tree contains a live (shared-memory-backed) meter or scope.
@@ -1532,14 +1268,6 @@ fn load_plot_paths(widget: &mut Widget) {
     for child in &mut widget.children {
         load_plot_paths(child);
     }
-}
-
-fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
-    let x = r.x.clamp(0.0, fb_w as f32);
-    let y = r.y.clamp(0.0, fb_h as f32);
-    let w = r.w.min(fb_w as f32 - x).max(0.0);
-    let h = r.h.min(fb_h as f32 - y).max(0.0);
-    (x, y, w, h)
 }
 
 impl ApplicationHandler<UserEvent> for App {

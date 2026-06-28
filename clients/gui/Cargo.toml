@@ -14,6 +14,9 @@ description = "Exploratory GUI client track for Clausters: a GPU waveform protot
 [lib]
 name = "clausters_gui"
 path = "src/lib.rs"
+# `cdylib` so wasm-bindgen can emit the browser host's `.wasm` + JS bindings
+# (the G12 web surface); `rlib` so the native binaries still link the library.
+crate-type = ["cdylib", "rlib"]
 
 # Binaries are auto-discovered from src/bin/ (waveform, spectrogram, and the
 # headless GUI host `clausters-gui`).
@@ -53,3 +56,13 @@ winit = "0.30.13"
 # IPC uses, and the server's segment is itself Unix-only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The browser host (`host::web`, G12): wasm-bindgen for the JS entry point,
+# wasm-bindgen-futures to await the async WebGPU bring-up off the main thread,
+# the panic hook so a Rust panic shows in the browser console, and `web-sys`
+# `console` for a couple of startup logs. Native builds pull none of these.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = ["console"] }

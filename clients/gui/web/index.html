@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters-gui (web)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0d0d12;
+        color: #dddddd;
+        font-family: system-ui, sans-serif;
+      }
+      /* winit creates the <canvas> and appends it to <body>. */
+      canvas {
+        display: block;
+      }
+      #note {
+        padding: 8px 12px;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="note">
+      clausters-gui browser host (G12). Needs a WebGPU-capable browser served
+      over http/https (localhost counts).
+    </div>
+    <script type="module">
+      // The module's wasm-bindgen `start` runs automatically once instantiated;
+      // the compiled-in GuiDef then renders into the appended <canvas>.
+      import init from "./clausters_gui.js";
+      init().catch((e) => {
+        document.getElementById("note").textContent =
+          "failed to start (is WebGPU available in this browser?): " + e;
+      });
+    </script>
+  </body>
+</html>

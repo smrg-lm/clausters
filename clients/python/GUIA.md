@@ -1187,6 +1187,27 @@ Los GuiDef persisten como persisten los defs del servidor: `host::store::GuiStor
 
 El ejemplo `gui_standalone.py` **escribe** el bundle (no habla con nada) e imprime el comando de lanzamiento. La distincion int/float se preserva: los ids de nodo se escriben enteros (`1000`) y siguen enteros en el cable; los valores de control son floats.
 
+```sh
+# 1) autorear el bundle: escribe el SynthDef y el GuiDef en el directorio de datos:
+PYTHONPATH=clients/python python clients/python/examples/gui_standalone.py /tmp/clausters-bundle
+
+# 2) lanzar el bundle como instrumento autocontenido (desde clients/gui, con la feature standalone):
+cd clients/gui && cargo run --features standalone --bin clausters-gui -- --standalone drone --data-dir /tmp/clausters-bundle -v
+```
+
+Esperado:
+
+- El paso 1 imprime `wrote .../defs/synthdefs/gui_standalone_drone.json` y `wrote .../defs/guidefs/drone.json`, y debajo el comando exacto del paso 2.
+- El log del host (paso 2) en orden: `standalone: embedded audio server started`, `standalone: loaded 1 def(s) ...`, `standalone: sent 1 boot message(s)`, `/gui_def 1: 2 widget(s)`, `opened window "Standalone drone"`. NO debe aparecer panic.
+- Se abre una ventana con una perilla; girarla cambia el `freq` del drone en el servidor **embebido** (el binding `/n_set 1000 freq` va directo, sin script de por medio). Se escucha el cambio de tono. Cerrar la ventana detiene todo.
+
+Notas:
+
+- El bundle es solo archivos: se puede inspeccionar (`cat .../defs/guidefs/drone.json`) y editar a mano. El registro del GuiDef es `{"id":1,"gui":<arbol>}`; el del SynthDef es el spec crudo de `/d_recv`.
+- El `--data-dir` por defecto es el mismo que usa el servidor (`$CLAUSTERS_DATA_DIR`, `$XDG_DATA_HOME/clausters`, `~/.local/share/clausters`); pasarlo explicito sirve para un bundle de prueba aislado.
+- Camino en vivo (sin `--standalone`): un `clausters-gui --data-dir <dir>` corriente **autopersiste** cualquier `/gui_def` cuyo arbol raiz tenga un prop `name`, y `/gui_load <name>` reinstancia uno guardado. Asi se arma el bundle interactivamente y despues se lo lanza standalone.
+- Si compilas `clausters-gui` SIN la feature `standalone` y pasas `--standalone`, da un error claro: `this clausters-gui was built without standalone support; rebuild with --features standalone`. El binario por defecto (sin la feature) no compila el crate server.
+
 ## 21. GUI host: costura de plataforma (nucleo agnostico + traits, build wasm) (G11)
 
 G11 no agrega codigo de browser: solo parte el host por la costura de plataforma, para que los hitos web siguientes sean rellenar traits y no reescribir. El host queda dividido en un **nucleo agnostico** (el arbol de widgets, el layout, el dispatch del protocolo, el dibujo de los widgets livianos) que compila para `wasm32` tal cual, y una **cascara de E/S nativa** detras de cuatro traits chicos: `Transport` (mandar OSC al servidor de audio), `BusSource` (un bus de control, leido de memoria compartida en nativo), `BulkLoader` (resolver el `path`/`cache` local de un waveform/plot a samples o a una piramide de picos) y `DefStore` (persistir GuiDefs con nombre). Lo unico nativo-y-punto es el servidor embebido (standalone); un host de browser siempre habla con un servidor de audio **aparte** por WebSocket.
@@ -1220,23 +1241,33 @@ Notas:
 - El unico `#[cfg(not(target_arch = "wasm32"))]` que queda dentro de `host` esta sobre la cascara de E/S (los modulos `client`/`store`/`transport`/`bulk`/`gui`, la variante `ServerLink::Udp`, los metodos que devuelven el socket), nunca sobre la logica de widgets/protocolo.
 - `wgpu` compila al backend WebGPU en `wasm32`, asi que los renderers (`waveform`/`spectrogram`/`canvas`) y el `Painter` ya viajan con el nucleo; lo que falta para el browser es la superficie `<canvas>` y el bring-up async del GPU (G12) y el transporte WebSocket (G13).
 
-```sh
-# 1) autorear el bundle: escribe el SynthDef y el GuiDef en el directorio de datos:
-PYTHONPATH=clients/python python clients/python/examples/gui_standalone.py /tmp/clausters-bundle
+## 22. GUI host: primeros pixeles en el browser (`<canvas>` WebGPU) (G12)
 
-# 2) lanzar el bundle como instrumento autocontenido (desde clients/gui, con la feature standalone):
-cd clients/gui && cargo run --features standalone --bin clausters-gui -- --standalone drone --data-dir /tmp/clausters-bundle -v
+G12 son los **primeros pixeles en el browser**: una GuiDef compilada-adentro se renderiza en una pestana sobre WebGPU, por el **mismo** codigo de render que el host nativo. Todavia sin transporte (eso es G13), asi que el arbol se arma en Rust (parseado del mismo JSON que mandaria un cliente) y los meters leen cero.
+
+La pieza de reuso es `host::frame::render`: el render por ventana se saco **verbatim** del `gui::App::render` nativo a un modulo agnostico, asi los dos frentes (nativo y browser) dibujan por una sola funcion -> el browser es fiel al pixel por construccion, no un renderer paralelo. El nativo lo llama con sus entradas vivas (`FrameInputs`: el bus de memoria compartida, las historias de scope, los node-trees, el boton apretado); el browser con los defaults. El `Gpu` (bring-up de wgpu) se movio a `crate::gpu` (agnostico, compila al backend WebGPU). `host::web` es un `start` de `wasm-bindgen` que crea una ventana winit sobre un `<canvas>`, pide el adapter/device de WebGPU **async** (sin `block_on`, el main thread del browser nunca se bloquea) y dibuja en cada `RedrawRequested`.
+
+Verificacion manual (necesita el target wasm32, `wasm-bindgen-cli` de la version del `Cargo.lock`, y un browser con WebGPU):
+
+```sh
+# 1) una sola vez:
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.126   # la version de wasm-bindgen en Cargo.lock
+
+# 2) generar el bundle (desde clients/gui): compila a wasm + corre wasm-bindgen a web/
+cd clients/gui && ./web/build.sh
+
+# 3) servirlo (WebGPU necesita contexto seguro; localhost vale) y abrirlo en un browser con WebGPU:
+(cd web && python3 -m http.server)   # luego abrir http://localhost:8000/
 ```
 
 Esperado:
 
-- El paso 1 imprime `wrote .../defs/synthdefs/gui_standalone_drone.json` y `wrote .../defs/guidefs/drone.json`, y debajo el comando exacto del paso 2.
-- El log del host (paso 2) en orden: `standalone: embedded audio server started`, `standalone: loaded 1 def(s) ...`, `standalone: sent 1 boot message(s)`, `/gui_def 1: 2 widget(s)`, `opened window "Standalone drone"`. NO debe aparecer panic.
-- Se abre una ventana con una perilla; girarla cambia el `freq` del drone en el servidor **embebido** (el binding `/n_set 1000 freq` va directo, sin script de por medio). Se escucha el cambio de tono. Cerrar la ventana detiene todo.
+- Paso 2: imprime `bundle written to .../web/ (clausters_gui.js + clausters_gui_bg.wasm)`.
+- Paso 3: en una pestana con WebGPU (Chrome/Edge recientes, o Firefox Nightly) se abre el `<canvas>` con el panel: el label, un slider `cutoff`, una perilla `res`, un toggle `gate`, un boton `ping` y una waveform (un seno que decae) -- identico al panel nativo. La consola del browser loguea `clausters-gui web host starting`, `opened window over <canvas>`, `WebGPU ready; rendering the GuiDef`.
 
 Notas:
 
-- El bundle es solo archivos: se puede inspeccionar (`cat .../defs/guidefs/drone.json`) y editar a mano. El registro del GuiDef es `{"id":1,"gui":<arbol>}`; el del SynthDef es el spec crudo de `/d_recv`.
-- El `--data-dir` por defecto es el mismo que usa el servidor (`$CLAUSTERS_DATA_DIR`, `$XDG_DATA_HOME/clausters`, `~/.local/share/clausters`); pasarlo explicito sirve para un bundle de prueba aislado.
-- Camino en vivo (sin `--standalone`): un `clausters-gui --data-dir <dir>` corriente **autopersiste** cualquier `/gui_def` cuyo arbol raiz tenga un prop `name`, y `/gui_load <name>` reinstancia uno guardado. Asi se arma el bundle interactivamente y despues se lo lanza standalone.
-- Si compilas `clausters-gui` SIN la feature `standalone` y pasas `--standalone`, da un error claro: `this clausters-gui was built without standalone support; rebuild with --features standalone`. El binario por defecto (sin la feature) no compila el crate server.
+- Sin transporte aun: la GuiDef esta compilada adentro (`host::web::demo_guidef`) y no hay eventos de vuelta. G13 trae el transporte WebSocket para manejar el host en vivo desde un cliente.
+- Los `.js`/`.wasm` generados quedan git-ignored; solo `web/index.html` y `web/build.sh` se trackean.
+- Headless no sirve para *ver* los pixeles (Chrome headless no lee de vuelta el canvas WebGPU a la captura), pero la consola confirma que el camino corre entero (device async arriba + `frame::render`). Para ver el render hay que abrirlo en un browser real.
