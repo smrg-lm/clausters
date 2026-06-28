@@ -126,6 +126,11 @@ def main(argv):
           f"--standalone {GUI_NAME} --data-dir {data_dir}\n")
     print("a window opens; turning the knob drives the drone's freq on the "
           "embedded server (no other process).")
+    print("\nthis Python script only WRITES the bundle once. Re-launching it "
+          "needs no interpreter: the line above (or, with [standalone].gui set "
+          "in your config, just `clausters-gui --standalone`) runs the app "
+          "directly. The embedded server loads the data-dir's defs and "
+          "boot.json itself.")
 
 
 if __name__ == "__main__":

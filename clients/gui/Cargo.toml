@@ -27,6 +27,12 @@ crate-type = ["cdylib", "rlib"]
 # audio backend), which is heavy — keeping it opt-in is the size/packaging reason
 # the gui is a separate crate. Build with `cargo build --features standalone`.
 standalone = ["dep:clausters"]
+# Standalone with Faust support: also pull the server's `faust` feature so a
+# bundle's persisted FaustDefs reload into the embedded server. Needs libfaust
+# at build time (see the root LOG.md F0 recipe); without it standalone still
+# runs, just skipping FaustDefs (with a warning). Build with
+# `cargo build --features standalone-faust`.
+standalone-faust = ["standalone", "clausters/faust"]
 
 [dependencies]
 # The shared OSC seam (single `decode_packet` door, encode/bundle/message,

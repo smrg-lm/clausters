@@ -14,3 +14,13 @@ rosc = "0.11"
 # power-of-two sizes), so a real-time caller never allocates. The default
 # `size-4096` covers the STFT window sizes; a small, task-specific dep tree.
 microfft = "0.6"
+# The `config` module's deserialize derives. Agnostic (compiles on wasm); the
+# TOML parser that reads the files is native-only, gated below.
+serde = { version = "1", features = ["derive"] }
+
+# Reading config is a native-only, startup-time concern (a browser host never
+# touches the filesystem), so the TOML parser is gated off `wasm32` to keep the
+# wasm build lean — the config structs themselves are agnostic and compile
+# everywhere.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+toml = "0.8"

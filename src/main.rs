@@ -32,7 +32,11 @@ usage:
                            to stderr.
 
 A score is the scsynth binary format: length-prefixed OSC bundles whose
-timetags count seconds from the start; the render ends at the last bundle.";
+timetags count seconds from the start; the render ends at the last bundle.
+
+The flags above default to the `[server]` section of the config file
+($CLAUSTERS_CONFIG / $XDG_CONFIG_HOME/clausters/config.toml, overridden by a
+project clausters.toml); a flag on the command line wins over both.";
 
 fn main() {
     // Verbosity flags are consumed here (anywhere on the line) and removed
@@ -125,18 +129,28 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::server::engine::{DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES};
     use clausters::server::ipc::{IpcPeer, Role, Segment};
 
-    let mut workers = 0usize;
-    let mut shm_path: Option<String> = None;
-    let mut data_dir: Option<String> = None;
-    let mut no_persist = false;
-    let mut tcp_port: Option<u16> = None;
-    let mut ws_port: Option<u16> = None;
-    let mut midi_port: Option<String> = None;
+    // The config file (`[server]` of the user and project layers) supplies the
+    // defaults; the CLI flags below override them, and a still-unset field falls
+    // back to the compiled default. Precedence: flag > project > user > default.
+    let cfg = clausters_core::config::Config::load().server;
+    let mut workers = cfg.workers.unwrap_or(0);
+    let mut shm_path: Option<String> = cfg.shm.clone();
+    let mut data_dir: Option<String> = cfg.data_dir.clone();
+    // `persist = false` in config is the same as `--no-persist`; the flag can
+    // still force it off, there is no flag to force it back on.
+    let mut no_persist = cfg.persist == Some(false);
+    let mut tcp_port: Option<u16> = cfg.tcp.and_then(|t| t.resolve(DEFAULT_PORT));
+    let mut ws_port: Option<u16> = cfg.ws.and_then(|w| w.resolve(DEFAULT_PORT + 10));
+    let mut midi_port: Option<String> = cfg.midi.as_ref().and_then(|m| m.resolve("clausters"));
     // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
     // means "follow the device's default rate". `None` => follow the device.
-    let mut sample_rate: Option<u32> = Some(48_000);
-    let mut audio_buses = DEFAULT_AUDIO_BUSES;
-    let mut control_buses = DEFAULT_CONTROL_BUSES;
+    let mut sample_rate: Option<u32> = match cfg.sample_rate {
+        Some(0) => None,
+        Some(hz) => Some(hz),
+        None => Some(48_000),
+    };
+    let mut audio_buses = cfg.audio_buses.unwrap_or(DEFAULT_AUDIO_BUSES);
+    let mut control_buses = cfg.control_buses.unwrap_or(DEFAULT_CONTROL_BUSES);
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {

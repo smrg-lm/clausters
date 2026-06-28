@@ -5,6 +5,7 @@
 # User Guide
 
 - [Getting started](getting-started.md)
+- [Configuration](configuration.md)
 - [Defs, UGens & the OSC protocol](schemas.md)
 - [Timed bundles & the sample clock](sample-clock.md)
 - [Auto-sorted groups](auto-order.md)

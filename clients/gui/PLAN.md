@@ -427,6 +427,19 @@ Not part of G11-G16 and not yet scheduled; recorded here because the G11 seam wa
 
 This intersects the server track, not only the GUI track, so it becomes a numbered milestone on whichever track owns the engine port once its design converges. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
 
+## Done outside the numbered tracks
+
+- **Shared config + config-driven standalone.** Server, GUI host and Python
+  client read one TOML schema (`clausters-core::config`): a user file under
+  `clausters.toml`/`config.toml` overridden by a project `clausters.toml`, then
+  CLI flags. The GUI host reads `[gui]`/`[standalone]` as flag defaults, accepts
+  `--config <path>`, and `--standalone` with no name falls back to
+  `[standalone].gui`. Standalone now lets the embedded server load the whole
+  bundle from the data directory (`Clausters::open_with_data_dir` →
+  `attach_store`: SynthDefs, Faust defs, GraphDefs, bindings, `boot.json`),
+  instead of replaying specs by hand; a `standalone-faust` feature pulls
+  `clausters/faust` for Faust bundles. See `LOG.md` and `docs/configuration.md`.
+
 ## Future directions (to fold into milestones as they firm up)
 
 Captured here so the depth the editor-grade vision needs is not lost; each becomes a `Gx` when its design converges.

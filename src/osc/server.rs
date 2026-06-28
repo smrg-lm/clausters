@@ -199,6 +199,18 @@ impl OscServer {
             }
             self.faust_submitted += 1;
         }
+        // Without the `faust` feature there is no compiler to reload them, so a
+        // bundle's Faust defs are silently inert — warn so a standalone built
+        // without `faust` does not look like it "lost" instruments.
+        #[cfg(not(feature = "faust"))]
+        if std::fs::read_dir(store.faustdefs_dir())
+            .map(|mut entries| entries.any(|e| e.is_ok()))
+            .unwrap_or(false)
+        {
+            warn!(
+                "persisted Faust defs found but this build lacks the `faust` feature; skipping them"
+            );
+        }
         // GraphDefs load after the synth/faust defs (their members may
         // reference those names); validation is structural, so any still-
         // missing member only fails later at /graph_new (M18).

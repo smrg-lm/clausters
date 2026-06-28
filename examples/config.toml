@@ -1,0 +1,48 @@
+# Example Clausters configuration.
+#
+# Copy this to a config location to set defaults for the server and clients:
+#   - user level:    ~/.config/clausters/config.toml
+#                    (or $XDG_CONFIG_HOME/clausters/config.toml, or $CLAUSTERS_CONFIG)
+#   - project level: a clausters.toml at (or above) your working directory,
+#                    which overrides the user file field by field.
+#
+# Every key is optional and falls back to a built-in default; a command-line
+# flag (or an explicit argument in client code) always wins over this file.
+# See the "Configuration" chapter of the documentation for the full schema.
+
+[server]
+# DSP worker threads; 0 lets the server pick a sensible number.
+workers = 0
+# Imposed output rate in Hz; 0 follows the audio device's default rate.
+sample_rate = 48000
+audio_buses = 128
+control_buses = 1024
+# Persist and reload defs across runs (false behaves like --no-persist).
+persist = true
+# Extra transports, off unless set. A bare `true` uses the default port/name;
+# a number (or, for midi, a string) picks a specific one.
+# tcp = true
+# ws = 57120
+# midi = "clausters"
+# data_dir = "/home/you/.local/share/clausters"
+# shm = "/clausters"
+
+[client]
+# Defaults for the Python client's Session.live() / Server.
+host = "127.0.0.1"
+port = 57110
+latency = 0.0
+
+[gui]
+# Defaults for the clausters-gui host.
+host_port = 57210
+# server = "127.0.0.1:57110"
+# shm = "/clausters"
+# data_dir = "/home/you/.local/share/clausters"
+
+[standalone]
+# The saved GuiDef the standalone app opens when --standalone has no name.
+gui = "drone"
+# Run the GuiDef's boot messages and the boot.json preset on launch.
+boot = true
+# data_dir = "/home/you/.local/share/clausters"

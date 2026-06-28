@@ -27,6 +27,7 @@
 
 #![cfg(feature = "embed")]
 
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread::JoinHandle;
@@ -143,8 +144,23 @@ impl Clausters {
     /// Opens the default audio device and starts a full server in-process
     /// (`workers` engine helper threads; 0 picks a sensible default). The
     /// returned handle owns the audio stream and the network thread; dropping
-    /// it shuts the server down.
+    /// it shuts the server down. No def store is attached — use
+    /// [`Clausters::open_with_data_dir`] to also load persisted defs.
     pub fn open(workers: usize) -> Result<Clausters, String> {
+        Clausters::open_with_data_dir(workers, None)
+    }
+
+    /// Like [`Clausters::open`] but also attaches the on-disk def store at
+    /// `data_dir`, loading whatever it holds before the server starts serving:
+    /// persisted SynthDefs, Faust defs (with the `faust` feature), GraphDefs,
+    /// MIDI bindings and the `boot.json` preset — the same startup the
+    /// standalone server binary performs. This is how the GUI's standalone mode
+    /// brings a whole bundle up from a data directory. `None` keeps the server
+    /// empty. A store that cannot be opened is logged and skipped, not fatal.
+    pub fn open_with_data_dir(
+        workers: usize,
+        data_dir: Option<&Path>,
+    ) -> Result<Clausters, String> {
         use crate::osc::server::{OscServer, ServerInfo};
 
         let segment = Segment::in_memory();
@@ -171,6 +187,18 @@ impl Clausters {
         server
             .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
             .map_err(|e| e.to_string())?;
+        if let Some(dir) = data_dir {
+            match crate::server::defstore::DefStore::open(dir) {
+                Ok(store) => {
+                    server.attach_store(store);
+                    tracing::info!("embed: loaded persisted defs from {}", dir.display());
+                }
+                Err(e) => tracing::warn!(
+                    "embed: def store at {} unavailable, starting empty: {e}",
+                    dir.display()
+                ),
+            }
+        }
         let thread = std::thread::Builder::new()
             .name("clausters-embed-server".into())
             .spawn(move || server.run())

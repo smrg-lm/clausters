@@ -5,6 +5,7 @@
 # User Guide
 
 - [Getting started](getting-started.md)
+- [Configuration](configuration.md)
 - [The client, layer by layer](guide.md)
 - [Defining instruments: FaustDef and SynthDef](defs.md)
 - [Sessions](sessions.md)

@@ -26,6 +26,9 @@
 //! - [`osc`] — the OSC seam shared by the server and every client: the single
 //!   `decode_packet` door, bundle/timetag assembly and timetag↔sample
 //!   conversion (depends on `rosc`; not allocation-free).
+//! - [`config`] — the shared TOML configuration model (user + project layers,
+//!   the same schema the server and every client read), with the native path
+//!   resolution gated off `wasm32`.
 //! - [`fft`] — a forward real FFT (over `microfft`, zero-allocation), shared by
 //!   the GUI spectrogram and the server's coming `FFT`/`IFFT` UGens so the
 //!   transform lives once.
@@ -38,6 +41,7 @@
 
 pub mod builtins;
 pub mod bytes;
+pub mod config;
 pub mod fft;
 pub mod osc;
 pub mod peaks;

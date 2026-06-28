@@ -16,6 +16,8 @@
 //! native-Rust counterpart of how the Python client reaches the same server over
 //! the C ABI; here the dependency is a plain crate link, not an FFI load.
 
+use std::path::Path;
+
 use clausters::embed::Clausters;
 
 /// A live in-process server. Send it OSC, poll its replies; dropping it shuts
@@ -25,12 +27,20 @@ pub struct EmbedServer {
 }
 
 impl EmbedServer {
-    /// Starts an embedded server on the default audio device. The error carries
-    /// the device/engine failure verbatim.
+    /// Starts an embedded server on the default audio device, with no def store
+    /// attached. The error carries the device/engine failure verbatim.
     pub fn open() -> Result<EmbedServer, String> {
+        EmbedServer::open_with_data_dir(None)
+    }
+
+    /// Starts an embedded server that also loads the persisted defs at
+    /// `data_dir` (SynthDefs, Faust defs, GraphDefs, MIDI bindings and the
+    /// `boot.json` preset) before serving — how the standalone mode brings a
+    /// whole bundle up from disk. `None` starts the server empty.
+    pub fn open_with_data_dir(data_dir: Option<&Path>) -> Result<EmbedServer, String> {
         // 0 workers: the embedded server picks a sensible default.
         Ok(EmbedServer {
-            inner: Clausters::open(0)?,
+            inner: Clausters::open_with_data_dir(0, data_dir)?,
         })
     }
 

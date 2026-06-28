@@ -15,8 +15,9 @@ touching clock or routine.
 """
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from ..config import client_config, server_config
 from ..base import _osclib
 from ..errors import CommandError, ReplyTimeout
 from ..base.main import main
@@ -138,9 +139,18 @@ class ServerOptions:
     `Server.query_info`.
     """
 
-    audio_buses: int = DEFAULT_AUDIO_BUSES
-    control_buses: int = DEFAULT_CONTROL_BUSES
-    sample_rate: int = DEFAULT_SAMPLE_RATE
+    # The defaults come from the config file's ``[server]`` section (the same
+    # file the Rust server reads), falling back to the compiled constants. A
+    # value passed explicitly still wins, as a dataclass field.
+    audio_buses: int = field(
+        default_factory=lambda: server_config().get("audio_buses", DEFAULT_AUDIO_BUSES)
+    )
+    control_buses: int = field(
+        default_factory=lambda: server_config().get("control_buses", DEFAULT_CONTROL_BUSES)
+    )
+    sample_rate: int = field(
+        default_factory=lambda: server_config().get("sample_rate", DEFAULT_SAMPLE_RATE)
+    )
 
     def args(self) -> list[str]:
         """The ``clausters`` CLI flags that launch a server matching these
@@ -166,8 +176,15 @@ class ServerInfo:
 
 
 class Server:
-    def __init__(self, host: str = "127.0.0.1", port: int = 57110, interface=None,
-                 latency: float = 0.0, options: "ServerOptions | None" = None):
+    def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
+                 latency: "float | None" = None, options: "ServerOptions | None" = None):
+        # An explicit argument wins; otherwise the config file's ``[client]``
+        # section provides the default, then the built-in fallback. This is the
+        # client end of the same config the server reads.
+        cfg = client_config()
+        host = host if host is not None else cfg.get("host", "127.0.0.1")
+        port = port if port is not None else cfg.get("port", 57110)
+        latency = latency if latency is not None else cfg.get("latency", 0.0)
         self.target = NetAddr(host, port)
         #: the communication interface (RT/UDP, NRT/score, …). The Server owns
         #: it; swapping it is the RT/NRT seam.

@@ -9,9 +9,11 @@
 //! `gui_skeleton.py` (protocol only).
 
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
+use std::path::Path;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use clausters_core::config::Config;
 use clausters_gui::host::store::{self, GuiStore};
 use clausters_gui::host::transport::{self, DEFAULT_PORT};
 use clausters_gui::host::{Host, ServerLeg, gui};
@@ -30,7 +32,7 @@ use std::net::Ipv4Addr;
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
-                [--data-dir <dir>] [--standalone <name>]
+                [--data-dir <dir>] [--standalone [name]] [--config <path>]
       --port <n>            UDP port for the GUI host's server front
                             (script -> host); default 57210
       --server <host:port>  also attach the client leg to a running audio
@@ -45,15 +47,23 @@ usage:
                             persist there; /gui_load reads from it). Defaults to
                             the same place the server uses ($CLAUSTERS_DATA_DIR,
                             $XDG_DATA_HOME/clausters, ~/.local/share/clausters).
-      --standalone <name>   boot the saved GuiDef <name> against an embedded
+      --standalone [name]   boot the saved GuiDef <name> against an embedded
                             audio server (no separate server or language client):
-                            loads the bundle's SynthDefs/GraphDefs, runs the
-                            GuiDef's `boot` messages, and opens its window. A
-                            self-contained app.
+                            the embedded server loads the data directory's
+                            SynthDefs/FaustDefs/GraphDefs and boot.json, the
+                            GuiDef's `boot` messages run, and its window opens.
+                            A self-contained app. With no name, [standalone].gui
+                            from the config is used.
+      --config <path>       read configuration from this TOML file instead of
+                            the user+project chain (see below).
       --headless            run the protocol with no display (tests / no GPU);
                             the default opens windows (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->
                             trace; -q for errors only. RUST_LOG overrides it.
+
+The options above default to the config file: the `[gui]` and `[standalone]`
+sections of $CLAUSTERS_CONFIG / $XDG_CONFIG_HOME/clausters/config.toml, overridden
+by a project clausters.toml; a command-line flag wins over both.
 
 The host speaks the /gui_* widget protocol as JSON-in-OSC, the same encoding the
 audio server uses. A window-rooted /gui_def opens an actual window; /gui_set,
@@ -83,46 +93,61 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &[String]) -> Result<(), String> {
-    let mut port = DEFAULT_PORT;
-    let mut server: Option<String> = None;
-    let mut shm: Option<String> = None;
-    let mut headless = false;
-    let mut data_dir: Option<String> = None;
-    let mut standalone: Option<String> = None;
-    let mut it = args.iter();
+    // CLI overrides are collected as `Option`s, then resolved against the config
+    // file (the compiled default is the last fallback). Precedence per option:
+    // flag > project clausters.toml > user config.toml > default.
+    let mut cli_port: Option<u16> = None;
+    let mut cli_server: Option<String> = None;
+    let mut cli_shm: Option<String> = None;
+    let mut cli_headless = false;
+    let mut cli_data_dir: Option<String> = None;
+    let mut standalone_flag = false;
+    let mut cli_standalone_name: Option<String> = None;
+    let mut config_path: Option<String> = None;
+    let mut it = args.iter().peekable();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--port" => {
                 let v = it
                     .next()
                     .ok_or_else(|| format!("--port needs a value\n{USAGE}"))?;
-                port = v.parse().map_err(|e| format!("--port: {e}"))?;
+                cli_port = Some(v.parse().map_err(|e| format!("--port: {e}"))?);
             }
             "--server" => {
                 let v = it
                     .next()
                     .ok_or_else(|| format!("--server needs host:port\n{USAGE}"))?;
-                server = Some(v.clone());
+                cli_server = Some(v.clone());
             }
             "--shm" => {
                 let v = it
                     .next()
                     .ok_or_else(|| format!("--shm needs a path\n{USAGE}"))?;
-                shm = Some(v.clone());
+                cli_shm = Some(v.clone());
             }
             "--data-dir" => {
                 let v = it
                     .next()
                     .ok_or_else(|| format!("--data-dir needs a path\n{USAGE}"))?;
-                data_dir = Some(v.clone());
+                cli_data_dir = Some(v.clone());
             }
-            "--standalone" => {
+            "--config" => {
                 let v = it
                     .next()
-                    .ok_or_else(|| format!("--standalone needs a GuiDef name\n{USAGE}"))?;
-                standalone = Some(v.clone());
+                    .ok_or_else(|| format!("--config needs a path\n{USAGE}"))?;
+                config_path = Some(v.clone());
             }
-            "--headless" => headless = true,
+            "--standalone" => {
+                standalone_flag = true;
+                // Optional GuiDef name: consume the next token unless it is a flag.
+                if let Some(next) = it.peek()
+                    && !next.starts_with("--")
+                {
+                    cli_standalone_name = Some((*next).clone());
+                    it.next();
+                }
+            }
+            "--headless" => cli_headless = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -131,29 +156,64 @@ fn run(args: &[String]) -> Result<(), String> {
         }
     }
 
-    let store = open_store(data_dir.as_deref());
+    let cfg = match &config_path {
+        Some(p) => Config::from_path(Path::new(p))?,
+        None => Config::load(),
+    };
+    let port = cli_port.or(cfg.gui.host_port).unwrap_or(DEFAULT_PORT);
+    let server = cli_server.or_else(|| cfg.gui.server.clone());
+    let shm = cli_shm.or_else(|| cfg.gui.shm.clone());
+    let headless = cli_headless || cfg.gui.headless == Some(true);
+    // The data directory: an explicit flag wins; otherwise the standalone
+    // section (when booting one) then the gui section provide it; finally the
+    // XDG fallback resolves a default.
+    let data_dir = cli_data_dir
+        .or_else(|| {
+            standalone_flag
+                .then(|| cfg.standalone.data_dir.clone())
+                .flatten()
+        })
+        .or_else(|| cfg.gui.data_dir.clone());
+    let resolved_dir = store::resolve_data_dir(data_dir.as_deref());
 
     // Standalone: boot a saved GuiDef against an embedded server, no separate
     // server process and no language client. Built only with the `standalone`
     // feature (it links the server crate); otherwise it is a friendly error.
-    if let Some(name) = standalone {
-        #[cfg(feature = "standalone")]
-        {
-            let store = store.ok_or_else(|| {
-                "--standalone needs a data directory (--data-dir, or $CLAUSTERS_DATA_DIR / \
-                 $XDG_DATA_HOME / $HOME); none could be resolved"
+    if standalone_flag {
+        let name = cli_standalone_name
+            .or_else(|| cfg.standalone.gui.clone())
+            .ok_or_else(|| {
+                "--standalone needs a GuiDef name: give it on the command line or set \
+                 [standalone].gui in the config"
                     .to_string()
             })?;
-            return run_standalone(&name, store, port);
+        // `boot = false` in the config suppresses the GuiDef's own boot messages.
+        let run_boot = cfg.standalone.boot != Some(false);
+        #[cfg(feature = "standalone")]
+        {
+            let dir = resolved_dir.ok_or_else(|| {
+                "--standalone needs a data directory (--data-dir, [standalone].data_dir, or \
+                 $CLAUSTERS_DATA_DIR / $XDG_DATA_HOME / $HOME); none could be resolved"
+                    .to_string()
+            })?;
+            let store = GuiStore::open(&dir).map_err(|e| {
+                format!(
+                    "--standalone: cannot open the GuiDef store at {}: {e}",
+                    dir.display()
+                )
+            })?;
+            return run_standalone(&name, store, &dir, port, run_boot);
         }
         #[cfg(not(feature = "standalone"))]
         {
-            let _ = (&name, &store, port);
+            let _ = (&name, &resolved_dir, port, run_boot);
             return Err("this clausters-gui was built without standalone support; \
                         rebuild with `--features standalone` (it links the embedded server)"
                 .to_string());
         }
     }
+
+    let store = resolved_dir.as_deref().and_then(open_store);
 
     let socket = UdpSocket::bind(("127.0.0.1", port))
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
@@ -182,11 +242,10 @@ fn run(args: &[String]) -> Result<(), String> {
     }
 }
 
-/// Opens the GuiDef store for the resolved data directory, logging and disabling
+/// Opens the GuiDef store at the resolved data directory, logging and disabling
 /// persistence on failure (rather than refusing to start).
-fn open_store(cli_override: Option<&str>) -> Option<GuiStore> {
-    let dir = store::resolve_data_dir(cli_override)?;
-    match GuiStore::open(&dir) {
+fn open_store(dir: &Path) -> Option<GuiStore> {
+    match GuiStore::open(dir) {
         Ok(store) => {
             tracing::info!("GuiDef store at {}", dir.join("defs/guidefs").display());
             Some(store)
@@ -202,33 +261,36 @@ fn open_store(cli_override: Option<&str>) -> Option<GuiStore> {
 /// bundle's defs loaded into it, the GuiDef's `boot` messages run, then its
 /// window opened. No separate server process and no language client.
 #[cfg(feature = "standalone")]
-fn run_standalone(name: &str, store: GuiStore, port: u16) -> Result<(), String> {
+fn run_standalone(
+    name: &str,
+    store: GuiStore,
+    data_dir: &Path,
+    port: u16,
+    run_boot: bool,
+) -> Result<(), String> {
     let (id, json) = store
         .load(name)
         .map_err(|e| format!("--standalone: loading GuiDef \"{name}\": {e}"))?;
 
-    let embed = EmbedServer::open()?;
-    tracing::info!("standalone: embedded audio server started");
+    // The embedded server loads the bundle's defs itself from the data directory
+    // (SynthDefs, FaustDefs with the `faust` feature, GraphDefs, MIDI bindings
+    // and the boot.json preset) — the same startup the standalone server binary
+    // performs, so the GUI no longer replays specs by hand.
+    let embed = EmbedServer::open_with_data_dir(Some(data_dir))?;
+    tracing::info!(
+        "standalone: embedded audio server started, defs loaded from {}",
+        data_dir.display()
+    );
 
-    // Load the bundle's defs (order preserved by the ring, so a `boot` /s_new
-    // sees its def). Both ride the same encode door the rest of the host uses.
-    let mut defs = 0;
-    for spec in store.synthdef_specs() {
-        send_spec(&embed, "/d_recv", &spec)?;
-        defs += 1;
+    // Bring the instrument up: the GuiDef's own `boot` messages (e.g. an /s_new),
+    // unless the config disabled it.
+    if run_boot {
+        let boot = store::boot_messages(&json);
+        for msg in &boot {
+            send_osc(&embed, msg.clone())?;
+        }
+        tracing::info!("standalone: sent {} boot message(s)", boot.len());
     }
-    for spec in store.graphdef_specs() {
-        send_spec(&embed, "/d_graph", &spec)?;
-        defs += 1;
-    }
-    tracing::info!("standalone: loaded {defs} def(s) into the embedded server");
-
-    // Bring the instrument up: the GuiDef's `boot` messages (e.g. an /s_new).
-    let boot = store::boot_messages(&json);
-    for msg in &boot {
-        send_osc(&embed, msg.clone())?;
-    }
-    tracing::info!("standalone: sent {} boot message(s)", boot.len());
 
     // Register the GuiDef so the windowed front opens it on resume. The embed is
     // the host's server link, so bound widgets drive it directly.
@@ -252,19 +314,6 @@ fn run_standalone(name: &str, store: GuiStore, port: u16) -> Result<(), String> 
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
     tracing::info!("standalone: opening GuiDef \"{name}\" (id {id})");
     gui::run(host, Arc::new(socket), None)
-}
-
-/// Sends a def spec (`/d_recv` or `/d_graph` with the JSON as a string) to the
-/// embedded server.
-#[cfg(feature = "standalone")]
-fn send_spec(embed: &EmbedServer, addr: &str, spec: &[u8]) -> Result<(), String> {
-    send_osc(
-        embed,
-        OscMessage {
-            addr: addr.into(),
-            args: vec![OscType::String(String::from_utf8_lossy(spec).into_owned())],
-        },
-    )
 }
 
 /// Encodes and sends one OSC message to the embedded server, warning if the ring

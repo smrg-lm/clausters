@@ -1087,6 +1087,7 @@ y restore + nota tocable).
 | GraphDef: programa de grafo + superficie nombrada (M18) | `tests/graphdef.rs` | `python3 examples/graphdef.py` |
 | GraphDef per-voz `/graph_voice` + `/midi_bind` a GraphDef (M18) | `tests/graphdef.rs` | `python3 examples/graphdef_poly.py` |
 | MIDI-standalone: bindings persistidos + boot preset (M19) | `tests/midi_standalone.rs`, `tests/persistence.rs`, `tests/midi.rs` | `examples/midi_standalone.sh` |
+| Config TOML compartida (usuario + proyecto) | `cargo test -p clausters-core config` | ver "Config" abajo (`examples/config.toml`) |
 | Benchmarks del grafo | — | `cargo run --release --example bench` |
 | Documentación de desarrollo (M9) | `cargo doc --no-deps` sin warnings | leer `docs/architecture.md` |
 | Documentación integral: README + libro mdBook + rustdoc (M15) | `mdbook build` y `cargo doc` limpios | leer `README.md` y el libro |
@@ -1094,6 +1095,38 @@ y restore + nota tocable).
 Con esto el plan original (M0–M7), la bifurcación F (F0–F5) y M8–M14
 (salvo M11) están completos; de los «Milestones futuros» de PLAN.md queda
 solo M11 (`/n_map`).
+
+## Config: archivo TOML compartido
+
+Servidor y clientes leen un único archivo TOML de configuración (solo lectura
+para los programas; el esquema completo está en `docs/configuration.md` y un
+ejemplo comentado en `examples/config.toml`). Dos capas: la de **usuario**
+(`$CLAUSTERS_CONFIG`, o `~/.config/clausters/config.toml`) y la de **proyecto**
+(el `clausters.toml` más cercano subiendo desde el directorio actual), que pisa
+a la de usuario. Precedencia total: flag de CLI > proyecto > usuario > default.
+
+Prueba de precedencia (servidor), en una sola invocación de shell:
+
+```sh
+mkdir -p /tmp/cfgtest && cd /tmp/cfgtest
+printf '[server]\nsample_rate = 44100\n' > user.toml
+printf '[server]\nsample_rate = 48000\n' > clausters.toml   # proyecto pisa usuario
+export CLAUSTERS_CONFIG=/tmp/cfgtest/user.toml
+# sin flag: gana el proyecto (48000)
+( clausters & PID=$!; sleep 1.5; python3 -c "from clausters import Session; print(Session.live().server)"; \
+  kill $PID 2>/dev/null )
+# con flag: gana la CLI (96000)
+clausters --sample-rate 96000   # ver la linea de arranque "... 96000 Hz ..."
+```
+
+(La línea de arranque del servidor imprime el sample rate efectivo; con
+`--sample-rate 96000` debe decir 96000 aunque el archivo diga 48000.)
+
+App standalone sin intérprete: con un bundle guardado en un data-dir (GuiDef +
+SynthDefs/GraphDefs/FaustDefs + `boot.json`) y `[standalone].gui` en la config,
+`clausters-gui --standalone --data-dir <dir>` levanta servidor embebido + GUI y
+abre la ventana, cargando todo desde disco. El cliente Python escribe ese bundle
+(`clients/python/examples/gui_standalone.py`).
 
 ## 5. Problemas frecuentes
 

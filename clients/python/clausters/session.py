@@ -79,18 +79,21 @@ class Session:
         return cls(Server(interface=OscNrtInterface()), TempoClock(tempo))
 
     @classmethod
-    def live(cls, host: str = "127.0.0.1", port: int = 57110, tempo: float = 1.0,
-             latency: float = 0.0, timebase=None) -> "Session":
+    def live(cls, host: "str | None" = None, port: "int | None" = None, tempo: float = 1.0,
+             latency: "float | None" = None, timebase=None) -> "Session":
         """Build a real-time session talking to a running server over UDP.
 
         Args:
-            host: the server's host.
-            port: the server's UDP port (the Clausters default is 57110).
+            host: the server's host; ``None`` takes the config file's
+                ``[client].host`` (default ``127.0.0.1``).
+            port: the server's UDP port; ``None`` takes ``[client].port`` (the
+                Clausters default is 57110).
             tempo: the clock's tempo, in beats per second.
             latency: seconds added to each event's timetag so it reaches the
                 server slightly ahead of its play time and sounds on time
                 instead of late; a small value such as 0.1 is typical for a
-                live take.
+                live take. ``None`` takes the config file's ``[client].latency``
+                (default 0.0).
             timebase: the clock's pacing source. The default (monotonic) paces
                 in wall-clock seconds; a `SampleClockTimebase` anchors timing to
                 the server's sample clock for drift-free, sample-accurate
@@ -102,7 +105,7 @@ class Session:
         return cls(Server(host, port, latency=latency), TempoClock(tempo, timebase=timebase))
 
     @classmethod
-    def embed(cls, tempo: float = 1.0, latency: float = 0.0, workers: int = 0,
+    def embed(cls, tempo: float = 1.0, latency: "float | None" = None, workers: int = 0,
               timebase=None, server=None) -> "Session":
         """Build a real-time session backed by an in-process embedded server.
 

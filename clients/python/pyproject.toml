@@ -10,7 +10,9 @@ name = "clausters"
 version = "0.1.0"
 description = "High-level Python client for the Clausters audio server (Faust-first)."
 readme = "README.md"
-requires-python = ">=3.10"
+# 3.11 for the standard-library `tomllib`, used by `clausters.config` to read
+# the shared TOML config file (also Read the Docs' pinned version).
+requires-python = ">=3.11"
 license = "GPL-3.0-or-later"
 # Ship the full license text in the wheel (PEP 639 -> .dist-info/licenses/).
 license-files = ["COPYING"]

@@ -3668,3 +3668,49 @@ host actually usable there.
   surface size. This was latent on the WebGPU path too, never caught because it
   was only console-verified. Native is unaffected (its size is stable before the
   awaits).
+
+## Config — shared TOML configuration files (completed 2026-06-28)
+
+**What's there:** a single TOML configuration schema, read by the server, the
+GUI host and the Python client, plus a no-interpreter standalone launch that
+loads a whole bundle from a data directory.
+
+- **Shared model in the core (`clausters-core::config`).** Serde structs with
+  all-`Option` fields (`Config { server, client, gui, standalone }`), a
+  field-by-field `merge` (higher layer wins), and the native path resolution
+  (gated off `wasm32`, like the rest of the platform seam): user file
+  (`$CLAUSTERS_CONFIG`, `$XDG_CONFIG_HOME`, `%APPDATA%`, `~/.config`) merged
+  under the nearest project `clausters.toml` walking up from the CWD. The structs
+  are agnostic and compile to wasm; only the file reading is native, so the
+  `toml` dependency is gated to non-wasm. Precedence end to end: **CLI flag >
+  project file > user file > compiled default**. The config is read-only to the
+  programs; machine-written state (def store, `boot.json`, `midi.json`) is
+  untouched.
+- **Server (`src/main.rs`).** `realtime_main` seeds every option default from
+  `[server]` before parsing flags, so a flag still overrides the file. The
+  `tcp`/`ws`/`midi` toggles accept `true`/`false` or a concrete port/name.
+- **Embedded server loads the data-dir store (`src/embed.rs`).**
+  `Clausters::open_with_data_dir` attaches a `DefStore` and runs the same boot as
+  the standalone server binary (SynthDefs, Faust defs, GraphDefs, MIDI bindings,
+  `boot.json`). This closed a gap: the previous standalone path replayed only
+  SynthDefs/GraphDefs by hand and skipped Faust defs and `boot.json`. A bundle
+  with Faust defs warns when the build lacks the `faust` feature.
+- **GUI standalone (`clients/gui`).** `clausters-gui` reads `[gui]`/`[standalone]`
+  as flag defaults, takes a `--config <path>` override, and accepts
+  `--standalone` with no name (falling back to `[standalone].gui`).
+  `run_standalone` now lets the embedded server load the bundle itself; a new
+  `standalone-faust` feature pulls `clausters/faust` for Faust bundles.
+- **Python client.** `clausters.config.load_config()` reads the same files with
+  `tomllib` (so `requires-python` rises to 3.11), merging project over user.
+  `Server`/`ServerOptions` and `Session.live()` take their `[client]`/`[server]`
+  defaults from it; an explicit argument still wins.
+
+**Docs/examples:** `docs/configuration.md` (canonical schema/precedence) and a
+Python `configuration.md`, both linked from their SUMMARYs; a commented
+`examples/config.toml`; the standalone example notes that re-launching needs no
+interpreter; `GUIA.md` gains a Config section and a table row.
+
+**Verified:** `cargo test -p clausters-core config` and the Python
+`tests/test_config.py` cover the project-over-user merge in both languages
+(parity); `check-wasm.sh` still builds (config structs agnostic); server,
+`clausters-gui` (default + `standalone`) and the full Python suite build/pass.
