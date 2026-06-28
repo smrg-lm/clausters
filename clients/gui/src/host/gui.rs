@@ -293,6 +293,10 @@ struct App {
     notified: bool,
     /// Next scheduled re-query of the server's node tree (the `/n_set` poll).
     next_query: Instant,
+    /// Standalone mode: the host booted a pre-loaded GuiDef with no script front
+    /// (`--standalone`). Closing the last window then quits the app, so the
+    /// embedded audio server is dropped (and `/quit`ed) instead of left running.
+    standalone: bool,
 }
 
 impl App {
@@ -311,6 +315,7 @@ impl App {
             node_trees: HashMap::new(),
             notified: false,
             next_query: Instant::now(),
+            standalone: false,
         }
     }
 
@@ -802,9 +807,13 @@ impl App {
         self.wants.retain(|_, wants| !wants.is_empty());
     }
 
-    /// User-initiated close: tell the script, then drop the window.
+    /// User-initiated close: tell the script, then drop the window. A standalone
+    /// window has the placeholder origin (port 0) — there is no script to notify,
+    /// so the `/gui_closed` is skipped (sending to port 0 fails with EINVAL).
     fn close_by_user(&mut self, id: i32) {
-        if let Some(ws) = self.windows.get(&id) {
+        if let Some(ws) = self.windows.get(&id)
+            && ws.origin.port() != 0
+        {
             self.send(
                 ws.origin,
                 OscMessage {
@@ -814,6 +823,17 @@ impl App {
             );
         }
         self.drop_window(id);
+    }
+
+    /// Closes a window on user request, and quits the app once the last window is
+    /// gone in standalone mode — so the embedded audio server is dropped (and
+    /// `/quit`ed) rather than left running with no window. A script-driven host
+    /// stays alive (the script may open another window); only standalone exits.
+    fn user_close(&mut self, id: i32, event_loop: &ActiveEventLoop) {
+        self.close_by_user(id);
+        if self.standalone && self.windows.is_empty() {
+            event_loop.exit();
+        }
     }
 
     /// The framebuffer size of a window.
@@ -1629,9 +1649,12 @@ impl ApplicationHandler<UserEvent> for App {
         }
         // Standalone: a GuiDef pre-loaded into the host before the loop started
         // (no `/gui_def` over the wire) is opened now. Its events have no script
-        // to return to, so they go to a placeholder origin.
+        // to return to, so they go to a placeholder origin. Pre-loaded windows
+        // mean this is a standalone app — closing the last one quits it.
         let standalone_origin = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
-        for id in self.host.window_def_ids() {
+        let preloaded = self.host.window_def_ids();
+        self.standalone = !preloaded.is_empty();
+        for id in preloaded {
             if !self.windows.contains_key(&id) {
                 self.open_window(event_loop, id, standalone_origin);
             }
@@ -1738,7 +1761,7 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn window_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -1746,7 +1769,7 @@ impl ApplicationHandler<UserEvent> for App {
             return;
         };
         match event {
-            WindowEvent::CloseRequested => self.close_by_user(def_id),
+            WindowEvent::CloseRequested => self.user_close(def_id, event_loop),
             WindowEvent::Resized(size) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.gpu.resize(size.width, size.height);
@@ -1786,7 +1809,7 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.logical_key {
-                    Key::Named(NamedKey::Escape) => self.close_by_user(def_id),
+                    Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_waveforms(def_id)
                     }
