@@ -323,17 +323,80 @@ The saved-application mode: a GUI with no language client.
 
 - A saved GuiDef + its GraphDefs launch a working instrument from `clausters-gui` alone.
 
-## G11 - Browser / WebGPU target
+## Browser / WebGPU target (G11-G16)
 
-The web host becomes real.
+The earlier single milestone framed the web host as "swap the winit surface for a `<canvas>` surface; the renderers run unchanged" - true, but it describes the small part. The host is ~7150 lines, nearly all native-only behind `#[cfg(not(target_arch = "wasm32"))] pub mod host`, against ~1095 lines of genuinely portable renderers/analysis (`viewport`/`peaks`/`view`/`waveform`/`spectrogram`); inside the host sit 16 `UdpSocket`, 15 `SharedSegment` (shm), 12 `MappedFile` (mmap), 6 `EmbedServer` and 3 `pollster::block_on` couplings. Crucially, much of the host is **pure logic** (the typed widget tree, layout, GuiDef parse, the mesh `Painter`/`font`, the registry, the node-tree/scope models, bindings) that only sits behind the `wasm32` exclusion because it was never separated from the I/O glue. So the browser target is not a rewrite: it is **factor the host along the platform seam, then write one new I/O implementation per native coupling, reusing everything else**. The overriding constraint for every milestone below is **maximum reuse** - the protocol, the decode door, the analysis, the renderers and the whole pure host core are shared verbatim; only the platform shell (transport, bus source, bulk loader, GPU/surface bring-up) gets a second, web impl.
 
-### Scope
+### G11 - Host platform seam (agnostic core + Platform traits, wasm build kept green)
 
-- Swap the native winit surface for a `<canvas>` WebGPU surface; the JS client builds OSC over WS; the renderers run unchanged.
+No browser code yet: this milestone only carves the seam, so the later web milestones are trait-fills rather than rewrites, and it turns browser-readiness from a one-shot milestone into an invariant a build gate enforces.
 
-### Acceptance
+**Scope:**
 
-- The same GuiDef that opens a native window opens a browser window over WebGPU, driven by a JS client over WS.
+- Split `host` into a platform-agnostic core and a thin native shell, with the I/O couplings behind small traits: `Transport` (the script front and the audio-server leg: deliver an inbound OSC packet, send an outbound one), `BusSource` (already a `dyn` trait for meters/scopes - keep it as-is), `BulkLoader` (resolve a waveform/plot `path`/`cache`/`buffer` to samples or a peak pyramid; today inline mmap calls in `gui`), and a GPU/surface + loop driver (today `pollster::block_on(Gpu::new)` plus the winit `App`). The traits are the *only* new surface; the logic behind them is moved, not rewritten.
+- Move the pure-logic modules out from behind `#[cfg(not(wasm32))]` so they compile for `wasm32` unchanged (`widget`, `layout`, `guidef`, `registry`, `controls`, `paint`, `font`, `nodetree` model, `bind`, `plot` model, the protocol dispatch in `mod`); leave only the native shell cfg-gated (UDP `Transport`, shm `BusSource`, mmap `BulkLoader`, the winit driver, the `standalone` `EmbedServer`).
+- Add a `cargo build --target wasm32-unknown-unknown` of the agnostic core to the build/CI checks, so no later milestone can re-couple it to native I/O unnoticed.
+
+**Acceptance:** the native host behaves byte-identically (the existing examples and tests pass unchanged); the agnostic core compiles for `wasm32` with the native shell excluded; the only `#[cfg(not(wasm32))]` left inside `host` is the I/O shell, not the widget/protocol logic.
+
+**Decision (record it):** the browser host always talks to a *separate* audio server over WebSocket; there is no in-process engine in the browser (the `standalone` `EmbedServer` stays native-only behind its feature). The browser's data paths are the "async fallback" the bulk-data decision (G7) already reserved for exactly the client that can map neither shared memory nor files.
+
+### G12 - Web surface: `<canvas>` WebGPU + async GPU + render loop
+
+The first browser pixels, with no transport yet, so the surface/GPU/loop port is isolated from the protocol. Reuses the layout, `Painter`, `font` and `WaveformView` paths verbatim; the only new code is the wasm entry point and async bring-up.
+
+**Scope:**
+
+- A wasm entry point (wasm-bindgen) that creates a winit web window over an HTML `<canvas>`, requests a WebGPU adapter/device **asynchronously** (no `block_on`; `Gpu::new` is already `async`), and drives the existing render loop from the browser's animation frame via winit's web backend.
+- Render a window-rooted GuiDef built in Rust (a panel of controls plus a `waveform` from inline data) through the unchanged core render path.
+
+**Acceptance:** a compiled-in GuiDef renders in a browser tab over WebGPU - controls, chrome, bitmap text and an inline waveform - pixel-faithful to the native host; no `block_on`, socket or mmap on the wasm path.
+
+### G13 - Web transport: drive the browser host live over WebSocket
+
+The browser host stops being static. Reuses the entire protocol dispatch and the G1 WS wire format; the only new code is a `Transport` impl over the browser `WebSocket` plus the small wasm-bindgen surface that lets in-page code feed the host a GuiDef and pump its events.
+
+**Scope:**
+
+- A `Transport` web impl over the browser-native `WebSocket`: inbound binary frames decode through `osc::decode_packet` (the G1 format - one OSC packet per frame) into `/gui_def`/`/gui_set`/`/gui_free`/`/gui_bind`; outbound `/gui_event`/`/gui_closed` go back as binary frames; the host's audio-server leg rides the same `WebSocket` to a `--ws` server.
+- A small wasm-bindgen binding surface on the host (feed an OSC packet / GuiDef in, drain `/gui_event`/`/gui_closed` out), and a **throwaway** inline HTML/JS harness - a few lines, explicitly not a product client - that drives the examples by emitting the same GuiDef JSON the Python builders emit. The point is that the GuiDef authoring and the protocol are reused verbatim; only the carrier and the page glue are new.
+
+**Acceptance:** the same GuiDef a Python client sends to the native host, sent over WS (or handed to the binding surface) in a browser page, opens and drives a browser window; a turned knob/slider emits `/gui_event` back; a `bind`-ed widget drives a `--ws` audio server with no script round-trip (the bypass path, in the browser).
+
+**Note - the full client is its own track, not part of this milestone.** The throwaway harness here is *only* to test the host. A real browser/JS driver belongs to a **TypeScript client** that does not exist yet and is **not planned**: it should live in `clients/web` as its own package (a `clausters` package with the same client model as `clients/python` - GuiDef builders, a `GuiHost`-equivalent, the audio-server client - plus its own docs, examples and tests), and get its **own plan in `clients/web/PLAN.md`** (a parallel client track, the way the Python client has `clients/PLAN.md`). The wasm GUI host (G11-G16) and that TypeScript client are separate deliverables: the host is driven *through* the binding surface / WS, and the client is one more consumer of the same `/gui_*` protocol. Leave this as a forward dependency; do not fold the client into the GUI track.
+
+### G14 - Browser meters/scopes: control buses over the wire
+
+A browser cannot map the shared segment, so the zero-message meter path needs a message-based `BusSource` - a new trait impl, with the meter/scope drawing and the (already time-based) scope sampling reused unchanged.
+
+**Scope:**
+
+- A web `BusSource` fed from the audio server over WS instead of shared memory: the host subscribes to the buses its `meter`/`scope` widgets read and the server streams their values at an interactive rate (a small server-side bus-snapshot/stream command, the network counterpart of the shared segment - note the server addition).
+- Feed the existing meter/scope drawing from that source unchanged.
+
+**Acceptance:** a `meter` and a `scope` in the browser track a live control bus over WS, smoothly, against a `--ws` server - the same widgets that read shared memory natively.
+
+### G15 - Browser bulk data: fetch/blob and the `/b_getn` fallback
+
+The mmap bulk path has no browser equivalent; the network primitives the bulk-data decision (G7) deliberately kept become the browser's path. New code is the `BulkLoader` web impl; the `Pyramid`/`WaveformData` consumers and the analysis are reused as-is.
+
+**Scope:**
+
+- A web `BulkLoader`: a waveform/plot `path`/`cache` resolves to a URL fetched as an `ArrayBuffer` (raw `f32` -> samples, or a peak-pyramid cache mapped to the `Pyramid` the renderer already reads); a server `buffer` reference is pulled over `/b_getn` on the WS leg (the existing chunked path) and de-interleaved as natively.
+- When only raw samples are fetched, build the peak pyramid in wasm - the analysis already lives in `clausters-core` (in-crate, FFI-free), so it compiles to wasm unchanged.
+
+**Acceptance:** the bulk example's three waveforms (peak cache, raw file, server-exported buffer) render in the browser, fetched/streamed rather than mmap'd, at the same navigation quality (never resolving finer than the screen).
+
+### G16 - Packaging and native/browser parity
+
+Make the wasm GUI host shippable and prove the reuse held. This packages the **host**, not a client: the full TypeScript client is the separate `clients/web` track (see the G13 note), so this milestone uses the throwaway harness, or that client once it lands, to exercise the bundle.
+
+**Scope:**
+
+- A wasm bundle of the GUI host (wasm-bindgen + a thin JS loader; `wasm-pack`/`trunk`) with the binding surface exposed, plus a documented HTML quick-start that loads it.
+- A parity pass: the panel, meters and bulk examples run in the browser against a `--ws` server, cross-checked against the native host; the two books cross-link the browser quick-start.
+
+**Acceptance:** a produced bundle loads in a browser and opens the panel, meters and waveform examples against a `--ws` audio server; the same GuiDef yields the same tree and behaviour native and in-browser (the embed/standalone path is explicitly native-only and out of scope here; the product TypeScript client is the separate `clients/web` track, out of scope here too).
 
 ## Future directions (to fold into milestones as they firm up)
 
