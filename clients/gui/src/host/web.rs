@@ -54,6 +54,17 @@ fn log(msg: &str) {
     web_sys::console::log_1(&msg.into());
 }
 
+/// Writes a status line into the page's `#note` element (if present), so a
+/// failure the user must act on (no WebGPU) is visible without the console.
+fn set_status(msg: &str) {
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id("note"))
+    {
+        el.set_text_content(Some(msg));
+    }
+}
+
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
 /// Send-only at this milestone (bound-widget values); replies are a later
 /// milestone. Frames sent before the socket opens are buffered and flushed on
@@ -397,9 +408,18 @@ impl ApplicationHandler<WebEvent> for WebApp {
         // The proxy lives in the closure; rebuild it from the event loop.
         let proxy = WEB_PROXY.with(|p| p.borrow().clone());
         wasm_bindgen_futures::spawn_local(async move {
-            let gpu = Gpu::new(window).await;
-            if let Some(proxy) = proxy {
-                let _ = proxy.send_event(WebEvent::GpuReady(gpu));
+            match Gpu::new(window).await {
+                Ok(gpu) => {
+                    if let Some(proxy) = proxy {
+                        let _ = proxy.send_event(WebEvent::GpuReady(gpu));
+                    }
+                }
+                Err(e) => {
+                    // No WebGPU: surface a clear, actionable message instead of
+                    // aborting; the canvas stays blank but the page survives.
+                    log(&e);
+                    set_status(&e);
+                }
             }
         });
     }

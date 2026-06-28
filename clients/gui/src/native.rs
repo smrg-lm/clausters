@@ -134,7 +134,7 @@ impl ApplicationHandler for App {
         }
         let attrs = Window::default_attributes().with_title(self.title.clone());
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
-        let gpu = pollster::block_on(Gpu::new(window));
+        let gpu = pollster::block_on(Gpu::new(window)).expect("GPU init");
         let factory = self.factory.take().expect("factory consumed once");
         self.state = Some(State::new(gpu, factory));
     }

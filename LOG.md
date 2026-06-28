@@ -3585,6 +3585,14 @@ the new code is the carrier and the page glue.
   builds the same GuiDef JSON a Python builder emits (a panel of controls + an
   inline `waveform`, with a declaratively `bind`-ed `freq` knob), feeds it with
   `gui.def(...)`, optionally `connect_server(?server=ws://…)`, and drains events.
+- **Graceful no-WebGPU.** `Gpu::new` now returns `Result` instead of
+  `expect`-ing the adapter: a browser without WebGPU enabled (e.g. Linux Chrome
+  without the WebGPU/Vulkan flags) makes `request_adapter` return `NotFound`, so
+  the web front logs a clear, actionable message and writes it into the page's
+  `#note` (the canvas stays blank, the page survives) rather than aborting; the
+  native front warns and skips the window. The adapter request also drops the
+  `HighPerformance` preference (the permissive default) for broader
+  compatibility.
 - **Verified:** native unchanged — gui 81 tests, `clippy -D warnings` clean on
   native and `wasm32`, the windowed host opens a real GPU window with no panic.
   In Chrome over WebGPU the live path runs: the console shows `start` returning

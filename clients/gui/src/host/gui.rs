@@ -436,7 +436,10 @@ impl App {
             Err(e) => return warn!("gui_def {id}: cannot create window: {e}"),
         };
         let winit_id = window.id();
-        let gpu = pollster::block_on(Gpu::new(window));
+        let gpu = match pollster::block_on(Gpu::new(window)) {
+            Ok(gpu) => gpu,
+            Err(e) => return warn!("gui_def {id}: cannot start the GPU: {e}"),
+        };
 
         let mut waveforms = HashMap::new();
         let mut buffer_refs = Vec::new();
