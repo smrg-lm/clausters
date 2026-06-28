@@ -37,6 +37,14 @@ impl Mesh {
         self.verts.is_empty()
     }
 
+    /// The `(x, y)` of every accumulated vertex, for bounds/layout tests.
+    #[cfg(test)]
+    pub(crate) fn positions(&self) -> impl Iterator<Item = (f32, f32)> + '_ {
+        self.verts
+            .chunks_exact(FLOATS_PER_VERTEX)
+            .map(|v| (v[0], v[1]))
+    }
+
     fn vertex(&mut self, p: [f32; 2], c: Color) {
         self.verts
             .extend_from_slice(&[p[0], p[1], c[0], c[1], c[2], c[3]]);

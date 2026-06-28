@@ -114,9 +114,14 @@ fn slider(mesh: &mut Mesh, r: &Range, rect: Rect) {
 fn knob(mesh: &mut Mesh, r: &Range, rect: Rect) {
     label_strip(mesh, r.label.as_deref(), rect);
     let body = body_rect(rect, r.label.is_some());
-    let radius = (body.w.min(body.h) * 0.5 - 2.0).max(2.0);
+    // Reserve a strip at the bottom of the body for the value read-out and size
+    // the disc in the area above it, so the number stays inside the body — it
+    // never overlaps the disc nor spills past the cell into the row below.
+    let text_h = font::height(TEXT_SCALE) + PAD;
+    let disc_h = (body.h - text_h).max(0.0);
+    let radius = (body.w.min(disc_h) * 0.5 - 2.0).max(2.0);
     let cx = body.x + body.w * 0.5;
-    let cy = body.y + body.h * 0.5;
+    let cy = body.y + disc_h * 0.5;
     mesh.disc(cx, cy, radius, TRACK);
     mesh.disc(cx, cy, radius - 3.0, FIELD);
     // Pointer: 270-degree sweep, min at lower-left, max at lower-right.
@@ -126,7 +131,7 @@ fn knob(mesh: &mut Mesh, r: &Range, rect: Rect) {
     value_text(
         mesh,
         &fmt(r.value),
-        Rect::new(body.x, cy + radius * 0.5, body.w, body.h * 0.5),
+        Rect::new(body.x, body.y + body.h - text_h, body.w, text_h),
     );
 }
 
@@ -239,5 +244,29 @@ mod tests {
         let with = body_rect(rect, true);
         let without = body_rect(rect, false);
         assert!(with.y > without.y, "a label pushes the body down");
+    }
+
+    #[test]
+    fn knob_geometry_stays_within_its_cell() {
+        // A wide, short labelled cell like gui_panel's knob row: the disc is
+        // bounded by the short side, leaving little vertical room. The value
+        // read-out used to be placed past the body and spilled below the cell
+        // into the next row; it must now stay within the cell.
+        let cell = Rect::new(12.0, 34.0, 175.0, 103.0);
+        let r = Range {
+            value: 800.0,
+            min: 20.0,
+            max: 20000.0,
+            label: Some("cutoff".into()),
+        };
+        let mut mesh = Mesh::new();
+        knob(&mut mesh, &r, cell);
+        let bottom = cell.y + cell.h;
+        let max_y = mesh.positions().map(|(_, y)| y).fold(f32::MIN, f32::max);
+        assert!(
+            max_y <= bottom,
+            "knob geometry spills {:.1}px below the cell (max_y {max_y} > bottom {bottom})",
+            max_y - bottom
+        );
     }
 }
