@@ -11,6 +11,7 @@ pub mod buf;
 pub mod buffer;
 pub mod denormals;
 pub mod disk;
+pub mod envgen;
 pub mod impulse;
 pub mod io;
 pub mod local;
@@ -41,7 +42,8 @@ pub const NUM_AUDIO_BUSES: usize = 128;
 /// Control buses (scsynth `-c`).
 pub const NUM_CONTROL_BUSES: usize = 1024;
 /// Maximum inputs per UGen; lets the synth build its input list on the stack.
-pub const MAX_UGEN_INPUTS: usize = 8;
+/// EnvGen requires many inputs (e.g. 21 for ADSR).
+pub const MAX_UGEN_INPUTS: usize = 32;
 
 /// Control buses are single floats shared between threads: the network
 /// thread serves `/c_set`/`/c_get` directly, the audio thread reads them via
@@ -265,10 +267,23 @@ pub struct ProcessCtx<'a> {
     pub frames: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DoneAction {
+    None = 0,
+    PauseSelf = 1,
+    FreeSelf = 2,
+    FreeGroup = 14,
+}
+
 pub trait UGen: Send {
     /// Writes one block into `output`. `inputs` are full-block or length-1
     /// slices, already resolved by the synth.
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]);
+
+    /// Called after `process` to signal completion (e.g., EnvGen reaching its end).
+    fn done(&self) -> DoneAction {
+        DoneAction::None
+    }
 }
 
 /// Reads input `i` from a block or a single-sample slice.

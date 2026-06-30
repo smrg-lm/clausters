@@ -9,6 +9,7 @@ use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::sinosc::SinOsc;
+use crate::dsp::envgen::EnvGen;
 
 /// Static, per-UGen parameters that are not signal inputs: set in the SynthDef
 /// spec and resolved at compile time, consumed by [`build`]. Empty for almost
@@ -47,6 +48,7 @@ pub enum UGenKind {
     DiskOut,
     LocalIn,
     LocalOut,
+    EnvGen,
 }
 
 pub fn parse_kind(name: &str) -> Option<UGenKind> {
@@ -73,6 +75,7 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
         "DiskOut" => Some(UGenKind::DiskOut),
         "LocalIn" => Some(UGenKind::LocalIn),
         "LocalOut" => Some(UGenKind::LocalOut),
+        "EnvGen" => Some(UGenKind::EnvGen),
         _ => None,
     }
 }
@@ -101,6 +104,7 @@ pub fn arity(kind: UGenKind) -> usize {
         | UGenKind::LocalOut => 2,
         // (bufnum, chan, rate, loop) and (bufnum, chan, phase, loop).
         UGenKind::PlayBuf | UGenKind::BufRd => 4,
+        UGenKind::EnvGen => usize::MAX,
     }
 }
 
@@ -131,5 +135,6 @@ pub fn build(kind: UGenKind, config: &UGenConfig) -> Box<dyn UGen> {
         // Intercepted by UGenSynth::process; these are placeholders.
         UGenKind::LocalIn => Box::new(LocalIn),
         UGenKind::LocalOut => Box::new(LocalOut),
+        UGenKind::EnvGen => Box::new(EnvGen::new()),
     }
 }

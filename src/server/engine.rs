@@ -429,6 +429,23 @@ impl Engine {
         self.counters
             .groups
             .store(self.tree.group_count() as u32, Ordering::Relaxed);
+
+        let mut done_ids = [0i32; 64];
+        let mut n_done = 0;
+        self.tree.drain_done_nodes(|id| {
+            if n_done < 64 {
+                done_ids[n_done] = id;
+                n_done += 1;
+            }
+        });
+        for &id in &done_ids[..n_done] {
+            let mut sink = GarbageSink {
+                garbage_tx: &mut self.garbage_tx,
+                pending_garbage: &mut self.pending_garbage,
+                events_tx: &mut self.events_tx,
+            };
+            self.tree.free(id, &mut |f| sink.consume(f));
+        }
     }
 
     /// Runs the node tree over `offset..offset+frames` of the current block.

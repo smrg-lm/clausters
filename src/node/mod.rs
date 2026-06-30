@@ -9,8 +9,9 @@
 //! here.
 
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
-use crate::dsp::{BusUsage, ProcessCtx};
+use crate::dsp::{BusUsage, ProcessCtx, DoneAction};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
@@ -31,6 +32,8 @@ pub trait SynthNode: Send {
     fn map_control(&mut self, index: u32, bus: i32, audio: bool);
     /// How many UGens this synth contributes to `/status.reply`.
     fn ugen_count(&self) -> usize;
+    /// The maximum done action returned by any of this synth's UGens
+    fn done_action(&self) -> DoneAction { DoneAction::None }
 }
 
 /// One control's bus mapping (`/n_map`/`/n_mapa`), stored per synth parallel
@@ -175,6 +178,9 @@ pub struct NodeTree {
     synth_count: usize,
     group_count: usize,
     ugen_count: usize,
+    /// Lock-free queue for nodes that finished this block (DoneAction::FreeSelf)
+    done_nodes: Vec<AtomicI32>,
+    done_count: AtomicUsize,
 }
 
 impl NodeTree {
@@ -196,6 +202,8 @@ impl NodeTree {
             synth_count: 0,
             group_count: 1,
             ugen_count: 0,
+            done_nodes: (0..MAX_NODES).map(|_| AtomicI32::new(0)).collect(),
+            done_count: AtomicUsize::new(0),
         }
     }
 
@@ -209,6 +217,14 @@ impl NodeTree {
 
     pub fn ugen_count(&self) -> usize {
         self.ugen_count
+    }
+
+    /// Pulls all node IDs that finished this block with FreeSelf.
+    pub fn drain_done_nodes(&mut self, mut sink: impl FnMut(i32)) {
+        let count = self.done_count.swap(0, Ordering::Relaxed);
+        for i in 0..count.min(MAX_NODES) {
+            sink(self.done_nodes[i].load(Ordering::Relaxed));
+        }
     }
 
     /// Shared view of a slot. Sound outside `process` (no concurrency);
@@ -575,6 +591,12 @@ impl NodeTree {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
                 node.process(&mut ctx);
+                if node.done_action() == DoneAction::FreeSelf {
+                    let c = self.done_count.fetch_add(1, Ordering::Relaxed);
+                    if c < MAX_NODES {
+                        self.done_nodes[c].store(slot.id, Ordering::Relaxed);
+                    }
+                }
             }
             NodeKind::Group(group) if group.parallel => unsafe {
                 self.process_parallel(&group.children, ctx, pool);
@@ -601,6 +623,12 @@ impl NodeTree {
             NodeKind::Synth { node, .. } => {
                 let mut ctx = *ctx;
                 node.process(&mut ctx);
+                if node.done_action() == DoneAction::FreeSelf {
+                    let c = self.done_count.fetch_add(1, Ordering::Relaxed);
+                    if c < MAX_NODES {
+                        self.done_nodes[c].store(slot.id, Ordering::Relaxed);
+                    }
+                }
             }
             NodeKind::Group(group) => {
                 for &child in &group.children {

@@ -133,14 +133,20 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         let kind =
             parse_kind(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
         let want = arity(kind);
-        if u.inputs.len() != want {
+        if want != usize::MAX && u.inputs.len() != want {
             return Err(format!(
                 "ugens[{i}] ({}): expected {want} inputs, got {}",
                 u.kind,
                 u.inputs.len()
             ));
         }
-        debug_assert!(want <= MAX_UGEN_INPUTS);
+        if u.inputs.len() > MAX_UGEN_INPUTS {
+            return Err(format!(
+                "ugens[{i}] ({}): inputs ({}) exceed MAX_UGEN_INPUTS ({MAX_UGEN_INPUTS})",
+                u.kind,
+                u.inputs.len()
+            ));
+        }
 
         // LocalIn/LocalOut: channel index (input 0) must be a constant so the
         // buffer can be sized and routed at compile time.
@@ -185,7 +191,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             format: u.format.clone(),
         };
 
-        let mut inputs = Vec::with_capacity(want);
+        let mut inputs = Vec::with_capacity(u.inputs.len());
         for (k, inp) in u.inputs.iter().enumerate() {
             inputs.push(match *inp {
                 InputSpec::Const(x) => {

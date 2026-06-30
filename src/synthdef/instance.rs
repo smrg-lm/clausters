@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::dsp::registry::UGenKind;
-use crate::dsp::{Block, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, UGen, at, registry};
+use crate::dsp::{at, Block, DoneAction, ProcessCtx, UGen, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, registry};
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{InputRef, SynthDef};
 
@@ -126,5 +126,16 @@ impl SynthNode for UGenSynth {
 
     fn ugen_count(&self) -> usize {
         self.ugens.len()
+    }
+
+    fn done_action(&self) -> DoneAction {
+        let mut max_action = DoneAction::None;
+        for u in &self.ugens {
+            let act = u.done();
+            if (act as u8) > (max_action as u8) {
+                max_action = act;
+            }
+        }
+        max_action
     }
 }
