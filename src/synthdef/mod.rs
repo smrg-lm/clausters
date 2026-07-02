@@ -28,8 +28,10 @@ pub mod instance;
 
 use serde::{Deserialize, Serialize};
 
-use crate::dsp::MAX_UGEN_INPUTS;
-use crate::dsp::registry::{UGenConfig, UGenKind, arity, parse_kind};
+use crate::dsp::registry::{
+    DEMAND_SOURCE_SLOT, UGenConfig, UGenKind, arity, default_rate, parse_kind, rate_allowed,
+};
+use crate::dsp::{MAX_UGEN_INPUTS, Rate};
 
 // ---- wire format (serde) ----
 
@@ -52,6 +54,11 @@ pub struct UGenSpec {
     pub kind: String,
     #[serde(default)]
     pub inputs: Vec<InputSpec>,
+    /// Output calculation rate (`ir`/`kr`/`ar`/`dr`). Omitted means the kind's
+    /// default (see [`crate::dsp::registry::default_rate`]); the compiler
+    /// validates it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<String>,
     /// `DiskIn`/`DiskOut`: file path. Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
@@ -85,6 +92,8 @@ pub enum InputRef {
 pub struct UGenDef {
     pub kind: UGenKind,
     pub inputs: Vec<InputRef>,
+    /// Output calculation rate, inferred and validated at compile time (S1).
+    pub rate: Rate,
     /// Static per-UGen parameters (e.g. `DiskIn`/`DiskOut` paths). Default for
     /// every other kind.
     pub config: UGenConfig,
@@ -123,7 +132,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     }
     let n_controls = spec.controls.len();
     let mut constants = Vec::new();
-    let mut ugens = Vec::with_capacity(spec.ugens.len());
+    let mut ugens: Vec<UGenDef> = Vec::with_capacity(spec.ugens.len());
     // Synth-private feedback channels: size the buffer and require each
     // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
     let mut num_locals = 0usize;
@@ -219,9 +228,65 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 }
             });
         }
+
+        // Output rate (S1): the explicit `rate` field validated against the
+        // kind, or the kind's default. `ugens` already holds every earlier
+        // UGenDef, so a wire's producer rate is known here.
+        let rate = match &u.rate {
+            Some(name) => {
+                let r = Rate::parse(name)
+                    .ok_or_else(|| format!("ugens[{i}] ({}): unknown rate '{name}'", u.kind))?;
+                if !rate_allowed(kind, r) {
+                    return Err(format!(
+                        "ugens[{i}] ({}): rate '{}' is not allowed for this kind",
+                        u.kind,
+                        r.as_str()
+                    ));
+                }
+                r
+            }
+            None => default_rate(kind),
+        };
+
+        // Rate coercion (S1). Lower rates widen into higher-rate inputs for
+        // free, so the only illegal narrowings are:
+        //  - an `ir` UGen with a non-`ir` input (it is computed once at init —
+        //    a varying source cannot be frozen);
+        //  - demand rate crossing the block boundary: a `dr` wire may only
+        //    feed a demand driver's source slot, and that slot must be `dr`.
+        for (k, r) in inputs.iter().enumerate() {
+            let in_rate = match r {
+                InputRef::Const(_) => Rate::Ir,
+                InputRef::Control(_) => Rate::Kr,
+                InputRef::Wire(w) => ugens[*w].rate,
+            };
+            let is_demand_slot = kind == UGenKind::Demand && k == DEMAND_SOURCE_SLOT;
+            if in_rate == Rate::Dr {
+                if !is_demand_slot {
+                    return Err(format!(
+                        "ugens[{i}] ({}).inputs[{k}]: a demand-rate (dr) signal can only feed a \
+                         demand driver's source",
+                        u.kind
+                    ));
+                }
+            } else if is_demand_slot {
+                return Err(format!(
+                    "ugens[{i}] (Demand).inputs[{k}]: the demand source must be a demand-rate \
+                     (dr) UGen"
+                ));
+            } else if rate == Rate::Ir && in_rate != Rate::Ir {
+                return Err(format!(
+                    "ugens[{i}] ({}).inputs[{k}]: an ir-rate UGen requires ir inputs, got {}",
+                    u.kind,
+                    in_rate.as_str()
+                ));
+            }
+        }
+
         ugens.push(UGenDef {
             kind,
             inputs,
+            rate,
             config,
         });
     }

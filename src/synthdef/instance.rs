@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use crate::dsp::registry::UGenKind;
+use crate::dsp::registry::{DEMAND_SOURCE_SLOT, UGenKind};
 use crate::dsp::{
-    Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, UGen, at, registry,
+    Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, UGen, at, registry,
 };
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{InputRef, SynthDef};
@@ -23,6 +23,10 @@ pub struct UGenSynth {
     /// these **persist across blocks** — that persistence is the one-block
     /// feedback delay. Empty for defs without feedback.
     locals: Vec<Block>,
+    /// False until the first `process` runs. The `ir` init pass (S1) runs each
+    /// `ir` UGen exactly once, on that first block; its wire then holds the
+    /// value (wires persist across blocks) and the UGen is skipped thereafter.
+    initialized: bool,
 }
 
 impl UGenSynth {
@@ -43,6 +47,7 @@ impl UGenSynth {
             ugens,
             wires,
             locals,
+            initialized: false,
         }
     }
 }
@@ -64,11 +69,34 @@ impl SynthNode for UGenSynth {
             }
         }
         // `ctx.frames` < BLOCK_SIZE when a scheduled bundle split the block:
-        // every wire then carries only the slice being processed.
+        // every `ar` wire then carries only the slice being processed. A `kr`
+        // or `ir` wire is length-1 (one value per block / per node life); the
+        // `wire_len` helper picks the right slice length by the producer rate.
+        let wire_len = |def: &SynthDef, w: usize, frames: usize| {
+            if def.ugens[w].rate == Rate::Ar {
+                frames
+            } else {
+                1
+            }
+        };
         for i in 0..self.ugens.len() {
+            let rate = self.def.ugens[i].rate;
+            // Demand-rate UGens produce nothing in block order — their driver
+            // pulls them (see the Demand arm below).
+            if rate == Rate::Dr {
+                continue;
+            }
+            // `ir` UGens are computed once at init and then held: after the
+            // first block their wire already carries the value, so skip them.
+            if rate == Rate::Ir && self.initialized {
+                continue;
+            }
+            // `ar`: one value per sample; `kr`/`ir`: one value per block.
+            let out_len = if rate == Rate::Ar { ctx.frames } else { 1 };
+
             // Topological order guarantees inputs only reference earlier wires.
             let (earlier, rest) = self.wires.split_at_mut(i);
-            let output = &mut rest[0].0[..ctx.frames];
+            let output = &mut rest[0].0[..out_len];
 
             let mut inputs: [&[f32]; MAX_UGEN_INPUTS] = [&[]; MAX_UGEN_INPUTS];
             let refs = &self.def.ugens[i].inputs;
@@ -76,7 +104,7 @@ impl SynthNode for UGenSynth {
                 inputs[k] = match r {
                     InputRef::Const(c) => std::slice::from_ref(&self.def.constants[*c]),
                     InputRef::Control(c) => std::slice::from_ref(&self.controls[*c]),
-                    InputRef::Wire(w) => &earlier[*w].0[..ctx.frames],
+                    InputRef::Wire(w) => &earlier[*w].0[..wire_len(&self.def, *w, ctx.frames)],
                 };
             }
             // LocalIn/LocalOut feed back through the persistent `locals`
@@ -103,9 +131,50 @@ impl SynthNode for UGenSynth {
                         *o = at(signal, j);
                     }
                 }
+                // Demand driver (S1): pull the next value from its demand
+                // source on each trigger. The source (a `dr` UGen, skipped in
+                // block order) is reached only through the `step` callback, so
+                // there is a single mutable path to it and no allocation.
+                UGenKind::Demand => {
+                    let InputRef::Wire(j) = refs[DEMAND_SOURCE_SLOT] else {
+                        // Compile guarantees a `dr` wire in this slot.
+                        output.fill(0.0);
+                        continue;
+                    };
+                    // Resolve the source's own inputs (its value list, etc.).
+                    let src_refs = &self.def.ugens[j].inputs;
+                    let mut src_inputs: [&[f32]; MAX_UGEN_INPUTS] = [&[]; MAX_UGEN_INPUTS];
+                    for (k, r) in src_refs.iter().enumerate() {
+                        src_inputs[k] = match r {
+                            InputRef::Const(c) => std::slice::from_ref(&self.def.constants[*c]),
+                            InputRef::Control(c) => std::slice::from_ref(&self.controls[*c]),
+                            InputRef::Wire(w) => {
+                                &earlier[*w].0[..wire_len(&self.def, *w, ctx.frames)]
+                            }
+                        };
+                    }
+                    let sn = src_refs.len();
+                    let ctx_copy = *ctx; // Copy: shared refs, no aliasing
+                    let (trig, reset) = (inputs[0], inputs[1]);
+                    let (u_earlier, u_rest) = self.ugens.split_at_mut(i);
+                    let source = &mut u_earlier[j];
+                    let driver = &mut u_rest[0];
+                    let mut step = |reset: bool| -> f32 {
+                        if reset {
+                            source.reset_demand();
+                            f32::NAN
+                        } else {
+                            source.demand(&ctx_copy, &src_inputs[..sn])
+                        }
+                    };
+                    driver.drive(trig, reset, output, &mut step);
+                }
                 _ => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
             }
         }
+        // The `ir` init pass has now run (on the first block); mark it so `ir`
+        // UGens are skipped from here on.
+        self.initialized = true;
     }
 
     fn set_control(&mut self, index: u32, value: f32) {

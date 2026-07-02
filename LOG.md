@@ -3770,3 +3770,78 @@ frees the enclosing group, and `doneAction=2` freeing the node) and the no-alloc
 `envgen_free_self_...` scene in `tests/rt_safety.rs`; the client `test_env_*` in
 `test_synthdef.py` (input-layout, shapes, release/loop nodes, done-action
 constants); the example renders end to end through the embedded NRT renderer.
+
+## S1 — Calculation rates as a first-class property (completed 2026-07-02)
+
+**What's there:** the first S-track milestone — the **rate substrate** every
+future UGen leans on. Before S1 the wire model was implicit: a UGen output was
+either a full `Block` (audio-rate) or a scalar (a constant/control, effectively
+`kr`), decided by construction. Now the four scsynth rates are an explicit,
+validated property of every UGen output, with the engine plumbing behind each:
+`ar` (per sample), `kr` (once per block), `ir` (once at synth init, then held)
+and `dr` (pulled on demand). Infrastructure, not a UGen catalog: it ships two
+tiny `ir` UGens and a minimal `dr` driver to prove the contracts; the demand
+family, table oscillators and FFT chains build on them later.
+
+- **The `Rate` enum + trait hooks (`src/dsp/mod.rs`).** `Rate { Ir, Kr, Ar, Dr }`
+  with a coercion `rank` (`ir < kr < ar`; `dr` off-axis) and `parse`/`as_str` for
+  the wire names. The `UGen` trait gains three defaulted hooks for the pull
+  protocol: `demand(ctx, inputs) -> f32` (a source yields its next value, `NaN`
+  = exhausted), `reset_demand()`, and `drive(trig, reset, output, step)` (a
+  driver steps a block, pulling via a `step` callback). Non-demand UGens
+  implement none of them.
+- **Rate is registry data, not a per-UGen match (`src/dsp/registry.rs`).**
+  `default_rate(kind)` (the rate when a def omits one) and `rate_allowed(kind,
+  rate)` sit next to `arity`, and both are **default-friendly**: the fallthrough
+  is the signal-processor case (`ar`/`kr`), so the open-ended family —
+  oscillators, filters, arithmetic, every UGen added later — needs no entry.
+  Only the bounded exceptions are listed: the `ir` scalars and `dr` source that
+  *widen* the set, and the block-I/O kinds (bus/disk/feedback) that *narrow* it
+  to `ar`-only. This was a mid-implementation correction after the reviewer
+  flagged the original exhaustive enumeration as unscalable.
+- **New UGens.** `src/dsp/scalar.rs`: `SampleRate.ir` (the engine rate) and
+  `Rand.ir(lo, hi)` (one uniform value drawn once, held — the sharpest test of
+  the init pass, since recomputing it would differ). `src/dsp/demand.rs`:
+  `Dseq(repeats, values…)` (a demand source cycling a list) and `Demand(trig,
+  reset, source)` (the driver). Both `scalar` and `demand` sit in the shared
+  `clausters_core::rng` lineage for the RNG.
+- **Compiler inference + validation (`src/synthdef/mod.rs`).** `UGenSpec` gains
+  an optional `"rate"` (serde-default, so every existing def is unchanged);
+  `UGenDef` gains a resolved `Rate`. `compile` picks the explicit-or-default
+  rate, checks it against `rate_allowed`, and validates coercion: an `ir` UGen
+  must have only `ir` inputs (a varying source can't be frozen), and a `dr` wire
+  may feed **only** a `Demand`'s source slot (and that slot must be `dr`). Each
+  rejection names the offending node like the rest of `compile`.
+- **Rate-aware instance (`src/synthdef/instance.rs`).** Each output slice is
+  sized by rate (`ar` → `frames`, `kr`/`ir` → 1), and input wires are sliced by
+  their **producer's** rate, so a length-1 `kr`/`ir` wire flows through `at()` as
+  a block constant. The **`ir` init pass** runs each `ir` UGen once on the first
+  block (an `initialized` flag) and skips it thereafter — its wire persists and
+  holds the value. Chosen to run on the audio thread, not in `UGenSynth::new` as
+  the plan first suggested, because `ir` values often need `ctx` (sample rate,
+  buffer pool) that only exists there; it stays RT-safe because an `ir`
+  `process` only reads. `dr` UGens are skipped in block order; `Demand` is
+  special-cased like `LocalIn`/`LocalOut`, resolving its source and driving it
+  through a stack `step` closure — a single mutable path to the source, no
+  allocation.
+
+**Deviations from the plan (per the S-track design stance):** the `ir` init pass
+runs on the **first audio block**, not on the network thread in
+`UGenSynth::new`, for the `ctx`-availability reason above (still once, still
+held). The `dr` driver is deliberately minimal (one source per driver,
+end-of-stream = a held value) — enough to prove the pull protocol the demand
+family will extend.
+
+**Docs/examples:** a *Calculation rates* section in `docs/architecture.md`'s
+"How to add a UGen" (the rate table, the registry-as-data note, the `ir` init
+pass and the `dr` sub-list contract); the `"rate"` field, the four new UGen rows
+and two notes (rates; demand sequences) in `docs/schemas.md`; a `GUIA.md`
+section and checklist row.
+
+**Verified:** `cargo test --test rates` (a test per rate — `ar` varies per
+sample, `kr` is block-constant but tracks its input across blocks, `SampleRate`
+reports the engine rate, `Rand.ir` stays frozen in range, `Demand`/`Dseq` steps
+and loops a sequence and resets/exhausts — plus five compiler-rejection tests);
+the no-alloc `rate_substrate_does_not_allocate_on_the_audio_thread` scene in
+`tests/rt_safety.rs` (the `ir` init pass + the demand pull path); the full core
+suite (`--no-default-features`) stays green and `cargo fmt --check`/clippy clean.

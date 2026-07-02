@@ -9,6 +9,7 @@
 pub mod binop;
 pub mod buf;
 pub mod buffer;
+pub mod demand;
 pub mod denormals;
 pub mod disk;
 pub mod envgen;
@@ -17,6 +18,7 @@ pub mod io;
 pub mod local;
 pub mod noise;
 pub mod registry;
+pub mod scalar;
 pub mod sinosc;
 
 use std::cell::UnsafeCell;
@@ -275,14 +277,100 @@ pub enum DoneAction {
     FreeGroup = 14,
 }
 
+/// Calculation rate of a UGen output (S1) — scsynth's four rates, made an
+/// explicit, validated property of every UGen. It decides how much of the
+/// UGen's output wire is meaningful and when the UGen runs:
+/// - [`Ar`](Rate::Ar): one value per sample — a full [`Block`] wire, run every
+///   block. The default for signal UGens and the only shape before S1.
+/// - [`Kr`](Rate::Kr): one value per block — a length-1 wire computed once per
+///   block (read back through [`at`] as a constant across the block).
+/// - [`Ir`](Rate::Ir): one value computed at synth init and held for the
+///   node's life — also a length-1 wire, but written once (`SampleRate.ir`,
+///   `BufFrames.ir`, `Rand.ir`).
+/// - [`Dr`](Rate::Dr): demand rate — values *pulled* by a driver (`Demand`),
+///   not run in block order at all (see [`UGen::demand`]/[`UGen::drive`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rate {
+    /// Initial/scalar rate: computed once at synth init, then held.
+    Ir,
+    /// Control rate: one value per block.
+    Kr,
+    /// Audio rate: one value per sample.
+    Ar,
+    /// Demand rate: pulled on demand by a driver, off the block schedule.
+    Dr,
+}
+
+impl Rate {
+    /// Coercion rank over the block-producing rates: `ir < kr < ar`. A lower
+    /// rate widens into a higher-rate input for free (a constant broadcast, a
+    /// block-constant read); the reverse cannot be frozen. `dr` sits off this
+    /// axis (it only flows through a demand driver), so it ranks highest and
+    /// is handled by dedicated compiler rules rather than by this order.
+    pub fn rank(self) -> u8 {
+        match self {
+            Rate::Ir => 0,
+            Rate::Kr => 1,
+            Rate::Ar => 2,
+            Rate::Dr => 3,
+        }
+    }
+
+    /// The wire name used in the def format (`"ir"`/`"kr"`/`"ar"`/`"dr"`).
+    pub fn parse(name: &str) -> Option<Rate> {
+        match name {
+            "ir" => Some(Rate::Ir),
+            "kr" => Some(Rate::Kr),
+            "ar" => Some(Rate::Ar),
+            "dr" => Some(Rate::Dr),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Rate::Ir => "ir",
+            Rate::Kr => "kr",
+            Rate::Ar => "ar",
+            Rate::Dr => "dr",
+        }
+    }
+}
+
 pub trait UGen: Send {
     /// Writes one block into `output`. `inputs` are full-block or length-1
-    /// slices, already resolved by the synth.
+    /// slices, already resolved by the synth. `output.len()` reflects the
+    /// UGen's rate: [`Rate::Ar`] fills the whole slice, [`Rate::Kr`]/
+    /// [`Rate::Ir`] a length-1 slice.
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]);
 
     /// Called after `process` to signal completion (e.g., EnvGen reaching its end).
     fn done(&self) -> DoneAction {
         DoneAction::None
+    }
+
+    /// Demand-rate pull (S1): a demand *source* (`Dseq`, and later the rest of
+    /// the `D*` family) returns its next value when its driver pulls it, or
+    /// `NaN` once the stream is exhausted. Non-demand UGens never see this.
+    /// Runs on the audio thread — allocation-free, like `process`.
+    fn demand(&mut self, _ctx: &ProcessCtx, _inputs: &[&[f32]]) -> f32 {
+        f32::NAN
+    }
+
+    /// Resets a demand source's internal position (a driver's `reset` edge).
+    fn reset_demand(&mut self) {}
+
+    /// Demand *driver* (`Demand`): steps `output` one block, calling `step` to
+    /// pull the next value (`step(false)`) or reset the source (`step(true)`).
+    /// The synth wires `step` to the driver's demand source. Default: the UGen
+    /// is not a driver, so this is never called.
+    fn drive(
+        &mut self,
+        _trig: &[f32],
+        _reset: &[f32],
+        _output: &mut [f32],
+        _step: &mut dyn FnMut(bool) -> f32,
+    ) {
     }
 }
 

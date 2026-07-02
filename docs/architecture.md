@@ -178,10 +178,31 @@ Using a hypothetical `Lag` (one-pole smoother, inputs `in` and `time`):
    ```
 
    Rules: no allocation/locks/I/O in `process` (the struct is built on the network thread — allocate there, in `new()`); read inputs with `at()` so constants, controls and wires all work; `output.len()` is the slice length, **not** `BLOCK_SIZE` — scheduled bundles split blocks. Only bus-touching UGens need `ctx.offset` (see `src/dsp/io.rs`): bus slices must be indexed at `offset..offset+frames`.
-2. **Register** — `src/dsp/registry.rs`: add the `UGenKind` variant and its arms in `parse_kind` (wire name), `arity` (input count; must be ≤ `MAX_UGEN_INPUTS`) and `build`. Declare the module in `src/dsp/mod.rs`. That's the whole registration: the synthdef compiler validates arity against the registry, so a def with the wrong input count already fails in `/d_recv` with a pointed error. A **variable-arity** UGen (like `EnvGen`, whose envelope array grows with the segment count) returns `usize::MAX` from `arity`; the compiler then skips the exact-count check but still rejects a def whose inputs exceed `MAX_UGEN_INPUTS` (the per-synth input array is stack-sized to that bound).
+2. **Register** — `src/dsp/registry.rs`: add the `UGenKind` variant and its arms in `parse_kind` (wire name), `arity` (input count; must be ≤ `MAX_UGEN_INPUTS`) and `build`. Declare the module in `src/dsp/mod.rs`. That's the whole registration: the synthdef compiler validates arity against the registry, so a def with the wrong input count already fails in `/d_recv` with a pointed error. A **variable-arity** UGen (like `EnvGen`, whose envelope array grows with the segment count) returns `usize::MAX` from `arity`; the compiler then skips the exact-count check but still rejects a def whose inputs exceed `MAX_UGEN_INPUTS` (the per-synth input array is stack-sized to that bound). **Rate is data too** — see the next section; a normal signal UGen needs no rate entry at all.
    A UGen that **frees its own node** (an envelope reaching its end) also implements the `done(&self) -> DoneAction` trait method; it is polled after every `process`, and `FreeSelf` routes the node to the tree's finished-node queue and out through the garbage FIFO (see "Done actions" above). Default is `DoneAction::None`.
 3. **Tests** — a signal-level unit test (render offline, assert on the numbers: frequency by zero crossings, RMS, impulse/step response — see `tests/synthdef.rs` and the `audio-testing` skill). If the UGen has state, also assert it behaves across block splits (see `tests/scheduling.rs` patterns). RT-safety is covered as long as `process` follows rule 1 — `tests/rt_safety.rs` exercises the tree with `assert_no_alloc`, extend its scene if the UGen does something novel (first buffer reader, first bus feedback, …). Add a golden scene only if the UGen is meant to be regression-pinned (then regenerate with `cargo run --example render_golden` and **listen** before committing).
 4. **Document** — the UGen kinds table in `docs/schemas.md` (name, inputs, output semantics), and manual steps in `GUIA.md` if it is user-visible.
+
+### Calculation rates (`ir`/`kr`/`ar`/`dr`)
+
+Every UGen output carries an explicit **rate**, the same four scsynth uses, decided per instance in the def (`"rate": "kr"`) or by the kind's default. The rate is what makes the output wire's shape and schedule explicit instead of implied:
+
+| rate | wire | when it runs | example |
+|---|---|---|---|
+| `ar` | full [`Block`] (one value/sample) | every block | `SinOsc`, `Out` |
+| `kr` | length-1 (one value/block) | every block, once | a control-rate `Mul` |
+| `ir` | length-1 (one value, then held) | **once, at synth init** | `SampleRate`, `Rand`, `BufFrames.ir` |
+| `dr` | none — pulled | on demand by a driver | `Dseq` under `Demand` |
+
+Downstream this is invisible: a `kr`/`ir` wire is a length-1 slice, which `at()` broadcasts as a constant, so an `ar` consumer reads it the same as a constant. The synth (`synthdef::instance`) sizes each output slice by the producer's rate, and reads `ir` wires straight back on later blocks.
+
+The registry holds the rate metadata as data, next to `arity`: **`default_rate(kind)`** (the rate when the def omits one — `ar` for everything but the scalar/demand kinds) and **`rate_allowed(kind, rate)`** (which rates a kind implements). The default of `rate_allowed` is the signal-processor case (`ar`/`kr`), so a **new oscillator/filter/math UGen needs no entry there** — it is audio-or-control-rate for free. Only add an arm to *widen* (an `ir` scalar, a `dr` source) or *narrow* to `ar`-only (a UGen that reads/writes a whole block, like bus/disk I/O — a length-1 wire would drop that block).
+
+The compiler infers each output rate, checks it against `rate_allowed`, and validates coercion: lower rates widen into higher-rate inputs for free, so the only rejections are an **`ir` UGen fed anything non-`ir`** (it is frozen at init — a varying source can't be), and `dr` crossing the block boundary (below).
+
+**The `ir` init pass.** `ir` UGens are computed **once**, on the first `process` block; their wire then holds the value for the node's life (wires persist across blocks) and the UGen is skipped from then on (an `initialized` flag). This runs on the audio thread — not in `UGenSynth::new` — because the value often needs `ctx` (the sample rate, the buffer pool), which only exists there; it stays RT-safe because an `ir` `process` only reads. `Rand.ir` is the sharp test: recomputing it would give a new number every block, so it only stays constant because the pass runs it exactly once.
+
+**The `dr` sub-list contract.** A demand UGen is **not** in block-execution order. It is a sub-list its *driver* owns: the driver (`Demand`) pulls one value at a time through `UGen::demand`, the source (`Dseq`) yields the next value of its stream per pull (`NaN` = exhausted). The synth wires the two in `UGenSynth::process` exactly like `LocalIn`/`LocalOut` are special-cased: the source is skipped in block order and reached **only** through the driver's `step` callback, so there is a single mutable path to it (no aliasing) and no allocation. A `dr` wire may therefore feed **only** a demand driver's source slot — the compiler rejects a `dr` output anywhere else, and a driver whose source slot is not `dr`. This is the substrate the wider demand family (`Dseries`/`Dwhite`/`Duty`) builds on, and it shares its "not evaluated every block" idea with FFT's frame-rate chains.
 
 ## Faust integration notes
 

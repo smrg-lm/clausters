@@ -754,6 +754,47 @@ tener EnvGen — reconstruilo con `cargo build --release --features embed -p cla
 y refrescá `clients/python/clausters/_libs/libclausters.so` (o apuntá
 `CLAUSTERS_LIB` al `.so` recién compilado).
 
+### Probar las tasas de cálculo (`ir`/`kr`/`ar`/`dr`, S1)
+
+Cada salida de UGen tiene una **tasa** explícita, elegida con el campo opcional
+`"rate"` en el def (`"rate": "kr"`) o por defecto según el kind (`ar` para las
+UGens de señal). Son las cuatro de scsynth:
+
+- **`ar`** (audio): un valor por sample — el cable de señal normal, el default.
+- **`kr`** (control): un valor por bloque, recalculado cada bloque; aguas abajo
+  se lee como constante sobre el bloque.
+- **`ir`** (inicial/escalar): se computa **una vez al arrancar el synth** y se
+  sostiene toda la vida del nodo (`SampleRate`, una semilla `Rand`, un
+  `BufFrames.ir`); sus entradas deben ser constantes/`ir`.
+- **`dr`** (demanda): se **tira** (pull), no corre por bloque — la fuente
+  (`Dseq`) entrega el próximo valor cada vez que su driver (`Demand`) la tira en
+  un flanco de `trig`.
+
+El compilador valida la coerción: una tasa más lenta alimenta gratis una entrada
+más rápida (una constante difundida sobre el bloque), pero una señal `ar` no
+puede alimentar una entrada `ir`, y una salida `dr` sólo puede ir al slot fuente
+de un `Demand`. Un rechazo llega en `/fail` nombrando el nodo ofensor.
+
+Como es infraestructura, la verificación principal es por tests (el sandbox
+aísla la red de todos modos):
+
+```sh
+cargo test --no-default-features --test rates
+# ar varía por sample; kr es constante por bloque pero sigue a su entrada entre
+# bloques; SampleRate.ir da la tasa del motor; Rand.ir queda congelado en rango;
+# Demand/Dseq recorre y cicla una secuencia y resetea/agota; + 5 rechazos del
+# compilador (rate desconocida, rate no permitida para el kind, entrada no-ir a
+# una UGen ir, cable dr a una entrada normal, fuente no-dr en el slot de Demand)
+cargo test --no-default-features --test rt_safety rate_substrate
+# el ir init pass y el camino de pull demand no allocan en el hilo de audio
+```
+
+`Demand`/`Dseq` es un driver **mínimo** por ahora (una fuente por driver, fin de
+stream = valor sostenido): prueba el protocolo de pull sobre el que se construye
+después el resto de la familia demand (`Dseries`/`Dwhite`/`Duty`). El cliente
+Python todavía no arma `rate`/demand de forma idiomática — se usan por JSON
+crudo vía `/d_recv` (eso lo espeja el track de clientes más adelante).
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -1099,6 +1140,7 @@ y restore + nota tocable).
 | Feedback intra-synth, `LocalIn`/`LocalOut` (1 bloque) | `tests/feedback.rs`, `tests/rt_safety.rs` | `json_client.py feedback` (comb resonante) |
 | RT-safety (cero allocs en audio) | `tests/rt_safety.rs` | — |
 | Envolventes `EnvGen` (formas, sostén por gate, done actions) | `tests/envgen.rs`, `tests/rt_safety.rs`, `test_synthdef.py` | `python3 clients/python/examples/envelope.py` |
+| Tasas de cálculo `ir`/`kr`/`ar`/`dr` + init pass + driver demand (S1) | `tests/rates.rs`, `tests/rt_safety.rs` (`rate_substrate`) | por JSON crudo `/d_recv` (ver sección S1) |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

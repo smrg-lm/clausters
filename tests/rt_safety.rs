@@ -329,6 +329,61 @@ fn local_feedback_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
+/// The rate substrate (S1): the `ir` init pass and the demand pull path must
+/// not allocate on the audio thread. `Rand.ir` runs its init once on the first
+/// block; `Demand`/`Dseq` step the sub-list every block. Both live entirely in
+/// `UGenSynth::process`, so this guards the `step` closure and init skip.
+#[test]
+fn rate_substrate_does_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // ir: Rand drawn once at init, then held. dr: an Impulse-driven Dseq.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "rates",
+            "ugens": [
+                {"kind": "Rand", "inputs": [{"const": 100.0}, {"const": 200.0}]},
+                {"kind": "SampleRate", "inputs": []},
+                {"kind": "Impulse", "inputs": [{"const": 750.0}]},
+                {"kind": "Dseq", "rate": "dr",
+                 "inputs": [{"const": 0.0}, {"const": 1.0}, {"const": 2.0}, {"const": 3.0}]},
+                {"kind": "Demand", "inputs": [{"ugen": 2}, {"const": 0.0}, {"ugen": 3}]},
+                {"kind": "Mul", "rate": "kr", "inputs": [{"ugen": 4}, {"ugen": 0}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 5}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}
+
 /// Same guardian for the Faust path (F3): inserting, processing, recontrolling
 /// and freeing `FaustSynth`s must not allocate on the audio thread. This
 /// guards our wrapper (staging copies, zone stores, garbage routing) —

@@ -27,6 +27,8 @@ then run one or more demos (default: status):
 `feedback` plays a resonant comb built with LocalIn/LocalOut: the graph's
          one-block feedback delay makes a one-channel loop ring at
          sampleRate/64 (≈ 750 Hz at 48 kHz).
+`demand`  a demand-rate step sequencer (S1): an Impulse-driven `Demand` pulls
+         note frequencies from a `Dseq` (`"rate": "dr"`) into a SinOsc.
 `signal` builds Faust defs with the **Signal API** (`{"signals": […]}`): a
          sine from an explicit `recursion`/`self` phasor, and a one-pole
          lowpass on noise — explicit sample-accurate feedback (needs the
@@ -524,6 +526,33 @@ def demo_feedback(client: Client):
     client.send("/n_free", 3005)
 
 
+def demo_demand(client: Client):
+    """A demand-rate melody (S1). A `Dseq` holds a list of note frequencies and
+    yields the next one only when *pulled*; a `Demand` driver pulls it on each
+    tick of a 4 Hz `Impulse`, holding the frequency between ticks. That held
+    (control-like) signal drives a `SinOsc`, so the sine hops through the
+    sequence — a step sequencer with no per-note `/s_new`. The `"rate": "dr"`
+    on the `Dseq` marks it demand-rate; the compiler then only lets it feed the
+    `Demand`'s source slot. `repeats` 0 loops the list forever."""
+    d = SynthDefBuilder("dseqmelody")
+    trig = d.add("Impulse", 4.0)  # 4 steps per second
+    seq = d.add(
+        "Dseq", 0.0, 330.0, 392.0, 440.0, 587.0, 440.0, 392.0, rate="dr"
+    )  # repeats=0 -> loop
+    freq = d.add("Demand", trig, 0.0, seq)  # held note frequency
+    osc = d.add("Mul", d.add("SinOsc", freq), 0.2)
+    d.add("Out", 0, osc)
+    d.add("Out", 1, osc)
+
+    print("demand demo: /d_recv dseqmelody (Impulse -> Demand -> Dseq)")
+    client.send("/d_recv", d.blob())
+    client.reply()
+    print("  /s_new dseqmelody 3013 — a 4 Hz step sequence looping 6 notes")
+    client.send("/s_new", "dseqmelody", 3013, 1, 0)
+    time.sleep(3.0)
+    client.send("/n_free", 3013)
+
+
 def score_bundle(seconds: float, *packets: bytes) -> bytes:
     """An OSC bundle for an NRT score: the timetag counts seconds from the
     start of the render, not wall-clock time."""
@@ -582,6 +611,8 @@ def main():
             demo_bundle(client)
         elif demo == "feedback":
             demo_feedback(client)
+        elif demo == "demand":
+            demo_demand(client)
         elif demo == "signal":
             demo_signal(client)
         elif demo == "score":
@@ -591,7 +622,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, buffer, disk, bundle, feedback, signal, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, buffer, disk, bundle, feedback, demand, signal, score, quit)"
             )
 
 

@@ -1,15 +1,21 @@
 //! Registry of available UGen kinds: name parsing, input arity, construction.
 
-use crate::dsp::UGen;
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
+use crate::dsp::demand::{Demand, Dseq};
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
+use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sinosc::SinOsc;
+use crate::dsp::{Rate, UGen};
+
+/// Input slot of a [`UGenKind::Demand`] driver that names its demand source
+/// (after `trig`, `reset`): must be a wire to a demand-rate (`dr`) UGen.
+pub const DEMAND_SOURCE_SLOT: usize = 2;
 
 /// Static, per-UGen parameters that are not signal inputs: set in the SynthDef
 /// spec and resolved at compile time, consumed by [`build`]. Empty for almost
@@ -49,6 +55,10 @@ pub enum UGenKind {
     LocalIn,
     LocalOut,
     EnvGen,
+    SampleRate,
+    Rand,
+    Demand,
+    Dseq,
 }
 
 pub fn parse_kind(name: &str) -> Option<UGenKind> {
@@ -76,13 +86,17 @@ pub fn parse_kind(name: &str) -> Option<UGenKind> {
         "LocalIn" => Some(UGenKind::LocalIn),
         "LocalOut" => Some(UGenKind::LocalOut),
         "EnvGen" => Some(UGenKind::EnvGen),
+        "SampleRate" => Some(UGenKind::SampleRate),
+        "Rand" => Some(UGenKind::Rand),
+        "Demand" => Some(UGenKind::Demand),
+        "Dseq" => Some(UGenKind::Dseq),
         _ => None,
     }
 }
 
 pub fn arity(kind: UGenKind) -> usize {
     match kind {
-        UGenKind::WhiteNoise => 0,
+        UGenKind::WhiteNoise | UGenKind::SampleRate => 0,
         UGenKind::SinOsc
         | UGenKind::Impulse
         | UGenKind::In
@@ -101,10 +115,71 @@ pub fn arity(kind: UGenKind) -> usize {
         | UGenKind::Div
         | UGenKind::Out
         | UGenKind::ReplaceOut
-        | UGenKind::LocalOut => 2,
+        | UGenKind::LocalOut
+        // (lo, hi).
+        | UGenKind::Rand => 2,
+        // Demand: (trig, reset, source).
+        UGenKind::Demand => 3,
         // (bufnum, chan, rate, loop) and (bufnum, chan, phase, loop).
         UGenKind::PlayBuf | UGenKind::BufRd => 4,
-        UGenKind::EnvGen => usize::MAX,
+        // EnvGen: five fixed + the envelope array. Dseq: (repeats, values…).
+        UGenKind::EnvGen | UGenKind::Dseq => usize::MAX,
+    }
+}
+
+/// The output rate a kind takes when the def does not name one explicitly.
+/// Everything defaults to [`Rate::Ar`] (the pre-S1 shape, so existing defs are
+/// unchanged); the scalar-info UGens default to [`Rate::Ir`] and `Dseq` is
+/// demand-rate by nature.
+pub fn default_rate(kind: UGenKind) -> Rate {
+    match kind {
+        UGenKind::SampleRate | UGenKind::Rand => Rate::Ir,
+        UGenKind::Dseq => Rate::Dr,
+        _ => Rate::Ar,
+    }
+}
+
+/// Whether a kind may be instantiated at `rate`. The compiler rejects any
+/// explicit `rate` outside this set (naming the kind), so a def can only ask
+/// for rates a UGen actually implements.
+///
+/// **The default is the signal-processor case** (`kr`/`ar`), so the open-ended
+/// family — oscillators, filters, arithmetic, generators — needs no entry
+/// here: a new UGen is audio-or-control-rate for free (and `ar` by default,
+/// see [`default_rate`]). Only the two bounded exceptions are listed: the
+/// scalar/`ir` and demand/`dr` kinds that *widen* the set, and the block-I/O
+/// kinds that *narrow* it to `ar` only (a length-1 wire would drop the block
+/// they read or write).
+pub fn rate_allowed(kind: UGenKind, rate: Rate) -> bool {
+    use Rate::{Ar, Dr, Ir, Kr};
+    match kind {
+        // Demand source: demand-rate only.
+        UGenKind::Dseq => rate == Dr,
+        // Init-rate scalars.
+        UGenKind::Rand => rate == Ir,
+        UGenKind::SampleRate => matches!(rate, Ir | Kr),
+        // Buffer-info scalars: frozen (`ir`), per block (`kr`), or broadcast
+        // per sample (`ar`, the current default).
+        UGenKind::BufSampleRate
+        | UGenKind::BufRateScale
+        | UGenKind::BufFrames
+        | UGenKind::BufChannels
+        | UGenKind::BufDur => matches!(rate, Ir | Kr | Ar),
+        // Block I/O and stateful streamers: audio-rate only.
+        UGenKind::In
+        | UGenKind::InCtl
+        | UGenKind::Out
+        | UGenKind::ReplaceOut
+        | UGenKind::PlayBuf
+        | UGenKind::BufRd
+        | UGenKind::DiskIn
+        | UGenKind::DiskOut
+        | UGenKind::LocalIn
+        | UGenKind::LocalOut
+        | UGenKind::EnvGen => rate == Ar,
+        // Signal processors (oscillators, math, generators, the Demand
+        // driver, and every UGen added later): audio or control rate.
+        _ => matches!(rate, Kr | Ar),
     }
 }
 
@@ -136,5 +211,10 @@ pub fn build(kind: UGenKind, config: &UGenConfig) -> Box<dyn UGen> {
         UGenKind::LocalIn => Box::new(LocalIn),
         UGenKind::LocalOut => Box::new(LocalOut),
         UGenKind::EnvGen => Box::new(EnvGen::new()),
+        UGenKind::SampleRate => Box::new(SampleRate),
+        UGenKind::Rand => Box::new(Rand::new()),
+        // Demand is driven by UGenSynth::process; Dseq is pulled, not run.
+        UGenKind::Demand => Box::new(Demand::new()),
+        UGenKind::Dseq => Box::new(Dseq::new()),
     }
 }
