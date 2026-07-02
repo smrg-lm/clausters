@@ -3714,3 +3714,50 @@ interpreter; `GUIA.md` gains a Config section and a table row.
 `tests/test_config.py` cover the project-over-user merge in both languages
 (parity); `check-wasm.sh` still builds (config structs agnostic); server,
 `clausters-gui` (default + `standalone`) and the full Python suite build/pass.
+
+## EnvGen — segment envelopes with done actions (completed 2026-07-01)
+
+**What's there:** the first envelope UGen, `EnvGen`, modelled on SuperCollider's
+— all its shape curves, gate-driven sustain at the release node, and a
+`doneAction` that frees the node RT-safely — plus the client-side `Env`/`env_gen`
+builders. Started from a first pass (the previous commit) that implemented only
+linear/exponential shapes and, crucially, did not sustain at the release node;
+this entry is the correctness fix + completion.
+
+- **All shapes (`src/dsp/envgen.rs`).** A pure `shape_value(shape, curve, a, b, t)`
+  covers the SC set: 0 step, 1 linear, 2 exponential (same-sign non-zero, zeros
+  nudged), 3 sine, 4 welch, 5 custom-curvature (uses the `curve` value), 6
+  squared, 7 cubed, 8 hold. The generator interpolates by segment fraction (more
+  numerically robust than SC's per-sample recurrences), landing exactly on each
+  target when the segment completes.
+- **Gate + sustain.** A rising gate (re)triggers from `initLevel`; a persistent
+  `released` flag distinguishes "sustaining, waiting for release" from "released,
+  playing out". While the gate is open and the envelope reaches `releaseNode`, it
+  **holds** that level (the previous pass played straight through, breaking ADSR);
+  on release it resumes from that segment. `releaseNode < 0` = one-shot. `loopNode`
+  is decoded but not yet acted on.
+- **Done actions (`node`, `server::engine`).** The `UGen` trait gained a
+  `done()` hook, polled after `process`; `UGenSynth::done_action` aggregates. The
+  tree records `FreeSelf` nodes into a lock-free finished-node queue (concurrent
+  `fetch_add` reservation), drained once per block after the whole walk — each id
+  freed through the normal `NodeTree::free` path onto the garbage FIFO, never
+  dropped on the audio thread. Re-queue from a split block is a harmless no-op.
+  Replaced the earlier 64-per-block cap (which could leak frees) with an
+  unbounded drain via `take_done_count`/`done_node`. `MAX_UGEN_INPUTS` rose to 32
+  and the compiler now allows variable-arity UGens (`arity == usize::MAX`) while
+  still rejecting inputs beyond the cap.
+- **Client (`clients/python`).** `Env` (breakpoint builder with `perc`/`adsr`/
+  `asr`, per-segment shape names or numeric curvatures) and `env_gen`, plus a
+  `DoneAction` constant set, serializing to the flat `EnvGen` input list.
+
+**Docs/examples:** the UGen table + an envelope note in `docs/schemas.md`; a
+"Done actions" subsection and the variadic/`done()` steps in
+`docs/architecture.md`; a `GUIA.md` section and checklist row; a commented
+`clients/python/examples/envelope.py` (a self-freeing ADSR pad rendered offline).
+
+**Verified:** `cargo test --test envgen` (linear ramp + hold, constant
+exponential ratio, sustain that only advances on gate release, `doneAction=2`
+frees the node) and the no-alloc `envgen_free_self_...` scene in
+`tests/rt_safety.rs`; the client `test_env_*` in `test_synthdef.py` (input-layout
+and shape serialization); the example renders end to end through the embedded
+NRT renderer.

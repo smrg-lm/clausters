@@ -10,9 +10,12 @@ import pytest
 from clausters import render
 from clausters.base import OscNrtInterface, TempoClock
 from clausters.defs import (
+    DoneAction,
+    Env,
     SynthDef,
     Ugen,
     control,
+    env_gen,
     local_in,
     local_out,
     out,
@@ -122,6 +125,65 @@ def test_outputs_must_be_ugens():
 def test_non_node_input_rejected():
     with pytest.raises(TypeError):
         SynthDef("x", out(0.0, Ugen("Out", ["nope"]))).spec()
+
+
+# ---- envelopes (Env / env_gen) ----
+
+
+def test_env_adsr_serializes_to_the_envgen_input_layout():
+    # gate control, then the five fixed inputs, then the envelope array:
+    # initLevel, numSegments, releaseNode, loopNode, and per segment
+    # target/duration/shape/curve. ADSR's -4 curve maps to the custom shape 5.
+    gate = control("gate", 1.0)
+    node = env_gen(
+        Env.adsr(attack=0.01, decay=0.3, sustain=0.5, release=1.0),
+        gate=gate,
+        done_action=DoneAction.FREE_SELF,
+    )
+    spec = SynthDef("adsr", out(0.0, node)).spec()
+    env = spec["ugens"][0]
+    assert env["kind"] == "EnvGen"
+    assert env["inputs"] == [
+        {"control": 0},   # gate
+        {"const": 1.0},   # levelScale
+        {"const": 0.0},   # levelBias
+        {"const": 1.0},   # timeScale
+        {"const": 2.0},   # doneAction (freeSelf)
+        {"const": 0.0},   # initLevel
+        {"const": 3.0},   # numSegments
+        {"const": 2.0},   # releaseNode
+        {"const": -1.0},  # loopNode
+        {"const": 1.0}, {"const": 0.01}, {"const": 5.0}, {"const": -4.0},
+        {"const": 0.5}, {"const": 0.3}, {"const": 5.0}, {"const": -4.0},
+        {"const": 0.0}, {"const": 1.0}, {"const": 5.0}, {"const": -4.0},
+    ]
+
+
+def test_env_curve_names_and_numbers_resolve_to_shapes():
+    # A named shape carries curve 0; a number selects the custom shape (5).
+    e = Env([0.0, 1.0, 0.0], [0.1, 0.2], curve=["exp", -2.0])
+    assert e.to_inputs() == [
+        0.0, 2.0, -1.0, -1.0,
+        1.0, 0.1, 2.0, 0.0,   # "exp" -> shape 2, curve 0
+        0.0, 0.2, 5.0, -2.0,  # -2.0  -> shape 5, curve -2
+    ]
+
+
+def test_env_perc_has_no_release_node():
+    # A percussive env plays straight through: releaseNode = -1.
+    assert Env.perc().to_inputs()[2] == -1.0
+
+
+def test_env_rejects_mismatched_levels_and_times():
+    with pytest.raises(ValueError):
+        Env([0.0, 1.0], [0.1, 0.2])          # 2 levels need 1 time
+    with pytest.raises(ValueError):
+        Env([0.0, 1.0, 0.0], [0.1, 0.2], curve=["lin"])  # 1 curve, 2 segments
+
+
+def test_env_rejects_unknown_shape_name():
+    with pytest.raises(ValueError):
+        Env([0.0, 1.0], [0.1], curve="bogus").to_inputs()
 
 
 # ---- render parity (needs the embed render) ----

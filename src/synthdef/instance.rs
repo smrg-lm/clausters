@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use crate::dsp::registry::UGenKind;
-use crate::dsp::{at, Block, DoneAction, ProcessCtx, UGen, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, registry};
+use crate::dsp::{
+    Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, UGen, at, registry,
+};
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{InputRef, SynthDef};
 

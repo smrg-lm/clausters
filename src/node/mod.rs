@@ -11,7 +11,7 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
-use crate::dsp::{BusUsage, ProcessCtx, DoneAction};
+use crate::dsp::{BusUsage, DoneAction, ProcessCtx};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
@@ -33,7 +33,9 @@ pub trait SynthNode: Send {
     /// How many UGens this synth contributes to `/status.reply`.
     fn ugen_count(&self) -> usize;
     /// The maximum done action returned by any of this synth's UGens
-    fn done_action(&self) -> DoneAction { DoneAction::None }
+    fn done_action(&self) -> DoneAction {
+        DoneAction::None
+    }
 }
 
 /// One control's bus mapping (`/n_map`/`/n_mapa`), stored per synth parallel
@@ -219,12 +221,24 @@ impl NodeTree {
         self.ugen_count
     }
 
-    /// Pulls all node IDs that finished this block with FreeSelf.
-    pub fn drain_done_nodes(&mut self, mut sink: impl FnMut(i32)) {
-        let count = self.done_count.swap(0, Ordering::Relaxed);
-        for i in 0..count.min(MAX_NODES) {
-            sink(self.done_nodes[i].load(Ordering::Relaxed));
-        }
+    /// Resets the finished-node queue and returns how many IDs it holds; read
+    /// each with [`Self::done_node`]. Two accessors rather than a draining
+    /// closure so the caller can `free` each node between reads without a
+    /// second borrow of the tree. The count may exceed [`MAX_NODES`] if a
+    /// split block re-queued a node — the extra reads just miss (a `free` of an
+    /// already-gone id is a no-op), so it is clamped here.
+    ///
+    /// Relaxed is enough: the queue is written under the parallel scheduler and
+    /// drained only after the worker pool's join, whose happens-before edge
+    /// publishes every store; the atomics just keep the concurrent
+    /// index-reservation (`fetch_add`) race-free.
+    pub fn take_done_count(&mut self) -> usize {
+        self.done_count.swap(0, Ordering::Relaxed).min(MAX_NODES)
+    }
+
+    /// One finished-node ID from the queue captured by [`Self::take_done_count`].
+    pub fn done_node(&self, i: usize) -> i32 {
+        self.done_nodes[i].load(Ordering::Relaxed)
     }
 
     /// Shared view of a slot. Sound outside `process` (no concurrency);

@@ -430,15 +430,13 @@ impl Engine {
             .groups
             .store(self.tree.group_count() as u32, Ordering::Relaxed);
 
-        let mut done_ids = [0i32; 64];
-        let mut n_done = 0;
-        self.tree.drain_done_nodes(|id| {
-            if n_done < 64 {
-                done_ids[n_done] = id;
-                n_done += 1;
-            }
-        });
-        for &id in &done_ids[..n_done] {
+        // Free every node whose envelope finished this block with FreeSelf.
+        // Read the id and free it one at a time so the tree is never borrowed
+        // twice at once; `free` of an already-gone id (a split block can queue
+        // one twice) is a harmless no-op.
+        let n_done = self.tree.take_done_count();
+        for k in 0..n_done {
+            let id = self.tree.done_node(k);
             let mut sink = GarbageSink {
                 garbage_tx: &mut self.garbage_tx,
                 pending_garbage: &mut self.pending_garbage,

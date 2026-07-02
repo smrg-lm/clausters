@@ -292,9 +292,9 @@ Section added on 2026-06-12 from a list of ideas to review (M8 came out of that
 same list). The order reflects dependencies and cost/value, not urgency: M9–M11
 are small and independent of each other, M12 enables M13, M14 is independent of
 all. At the end, which ideas were dropped and why is noted. Minor directions that
-don't reach milestone status (more UGens — `Saw`/`Pulse`/filters/`EnvGen` with
-done actions, already listed above —, `/g_queryTree`, buffer streaming) are taken
-as loose items when needed.
+don't reach milestone status (more UGens — `Saw`/`Pulse`/filters, and `EnvGen`
+with done actions, **done** 2026-07-01, see LOG.md —, `/g_queryTree`, buffer
+streaming) are taken as loose items when needed.
 
 - ✅ **M9 — Developer documentation**: today `docs/` only has user documentation
   (`schemas.md`). Add `docs/architecture.md` (in English, like all of `docs/`):

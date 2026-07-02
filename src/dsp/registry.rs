@@ -4,12 +4,12 @@ use crate::dsp::UGen;
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::disk::{DiskIn, DiskOut};
+use crate::dsp::envgen::EnvGen;
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::sinosc::SinOsc;
-use crate::dsp::envgen::EnvGen;
 
 /// Static, per-UGen parameters that are not signal inputs: set in the SynthDef
 /// spec and resolved at compile time, consumed by [`build`]. Empty for almost

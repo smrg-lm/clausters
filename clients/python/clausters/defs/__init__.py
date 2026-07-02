@@ -30,9 +30,12 @@ from .signals import Signal
 from .synthdef import SynthDef
 from .ugens import (
     Control,
+    DoneAction,
+    Env,
     Ugen,
     buf_rd,
     control,
+    env_gen,
     impulse,
     in_,
     in_ctl,
@@ -66,6 +69,9 @@ __all__ = [
     "buf_rd",
     "local_in",
     "local_out",
+    "env_gen",
+    "Env",
+    "DoneAction",
     "Bus",
     "AudioBusAllocator",
     "ControlBusAllocator",

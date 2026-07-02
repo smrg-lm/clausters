@@ -425,6 +425,59 @@ fn faust_synths_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 8);
 }
 
+/// Same guardian for the envelope path: `EnvGen` running its segments, the
+/// gate release and — crucially — the `doneAction` free must all leave the
+/// audio thread through the garbage FIFO without allocating. The finished node
+/// is queued and freed inside `process_block`.
+#[test]
+fn envgen_free_self_does_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // 16 one-shot envelopes with doneAction = 2: each finishes and frees
+    // itself within a few blocks, exercising the queue-and-free path.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "env",
+            "ugens": [
+                {"kind": "EnvGen", "inputs": [
+                    {"const": 1.0}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                    {"const": 2.0}, {"const": 0.0}, {"const": 1.0}, {"const": -1.0},
+                    {"const": -1.0},
+                    {"const": 1.0}, {"const": 0.002}, {"const": 1.0}, {"const": 0.0}
+                ]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    for i in 0..16i32 {
+        handle
+            .send(Cmd::AddSynth {
+                id: 1000 + i,
+                target: ROOT_NODE_ID,
+                action: AddAction::Tail,
+                synth: Box::new(UGenSynth::new(Arc::clone(&def))),
+                usage: Default::default(),
+            })
+            .ok()
+            .unwrap();
+    }
+
+    // Running the envelopes and freeing every finished node: no allocation.
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // All 16 freed themselves and came back through the garbage FIFO.
+    assert_eq!(handle.collect_garbage(), 16);
+}
+
 /// M13: the conductor side of parallel dispatch — stage partition (bitops),
 /// the publish/steal/wait protocol (atomics, bounded spins, at worst an
 /// `unpark` syscall) — must not allocate either. The workers run the same

@@ -6,10 +6,10 @@ to **play itself** against a `Server`. The default
 clock's job: an event emits at the running routine's exact logical beat (via
 ``server.send_bundle``), and the player advances by the event's `delta`.
 
-Difference from scsynth: Clausters synths have no ``doneAction`` envelopes yet,
-so a note **frees** its synth after ``sustain`` (``/n_free``) rather than
-closing a gate — unless ``has_gate`` is set, in which case it sends
-``gate 0`` (for defs that expose a ``gate`` control).
+By default a note **frees** its synth after ``sustain`` (``/n_free``) rather
+than closing a gate — unless ``has_gate`` is set, in which case it sends
+``gate 0`` (for defs whose `env_gen` envelope has a release node and a
+``doneAction`` that frees the synth once the release finishes).
 """
 
 from ..base.builtins import cpsmidi, midicps

@@ -717,6 +717,39 @@ Tests: `cargo test --test feedback` (retardo exacto de 1 bloque, acumulador
 por bloques, dos canales, split de bloque, validaciones de compilación) y la
 escena no-alloc en `tests/rt_safety.rs`.
 
+### Probar envolventes con EnvGen (done actions)
+
+`EnvGen` toca una envolvente por segmentos (estilo scsynth): 5 entradas fijas
+(`gate, levelScale, levelBias, timeScale, doneAction`) y luego el array de
+envolvente (`initLevel, numSegments, releaseNode, loopNode` y por segmento
+`target, duration, shape, curve`). El `gate` la dispara: mientras está en alto
+**sostiene** en el `releaseNode`; al bajar toca los segmentos de release y, al
+terminar, aplica el `doneAction` (2 = libera el nodo por el garbage FIFO, sin
+`free` en el hilo de audio). Formas: 0 step, 1 lineal, 2 exponencial, 3 seno,
+4 welch, 5 curvatura custom (valor `curve`), 6 squared, 7 cubed, 8 hold.
+
+El cliente Python arma el array con el helper `Env` (`Env.adsr`, `Env.perc`,
+`Env.asr`) y el callable `env_gen`. Render offline de un pad ADSR que se
+autolibera al soltar la nota:
+
+```sh
+python3 clients/python/examples/envelope.py /tmp/env.wav
+ffplay -autoexit /tmp/env.wav        # 8 notas, cada una con ataque/decay y
+                                     # cola de release; el synth se va solo
+```
+
+Debe oírse cada nota con su ataque suave, sostén y una cola de release audible
+antes de la siguiente (el `sustain` del `Pbind` es menor que el `dur`). Tests:
+`cargo test --test envgen` (rampa lineal + hold, ratio exponencial constante,
+sostén en el release node que sólo avanza al soltar el gate, y `doneAction=2`
+que libera el nodo) y la escena no-alloc `envgen_free_self_...` en
+`tests/rt_safety.rs`; del lado cliente, los `test_env_*` en
+`clients/python/tests/test_synthdef.py` (serialización del layout y de las
+formas). Nota: si corrés el ejemplo desde un checkout, el cdylib embebido debe
+tener EnvGen — reconstruilo con `cargo build --release --features embed -p clausters`
+y refrescá `clients/python/clausters/_libs/libclausters.so` (o apuntá
+`CLAUSTERS_LIB` al `.so` recién compilado).
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -1061,6 +1094,7 @@ y restore + nota tocable).
 | Buses de audio/control, `In`/`Out` | `tests/engine.rs` | `/c_set`, `/n_set out` |
 | Feedback intra-synth, `LocalIn`/`LocalOut` (1 bloque) | `tests/feedback.rs`, `tests/rt_safety.rs` | `json_client.py feedback` (comb resonante) |
 | RT-safety (cero allocs en audio) | `tests/rt_safety.rs` | — |
+| Envolventes `EnvGen` (formas, sostén por gate, done actions) | `tests/envgen.rs`, `tests/rt_safety.rs`, `test_synthdef.py` | `python3 clients/python/examples/envelope.py` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |
