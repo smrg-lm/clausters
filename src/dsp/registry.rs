@@ -1,4 +1,15 @@
-//! Registry of available UGen kinds: name parsing, input arity, construction.
+//! The UGen catalog as **data**: one [`UGenDescriptor`] per kind, holding
+//! everything the compiler and engine need (name, arity, rates, bus role,
+//! execution mode, constructor). There is no central `match kind { … }`: the
+//! compiler and the bus analysis read descriptor fields, so they stay generic
+//! and **adding a UGen is a single entry in `UGENS`** — the catalog grows
+//! without touching general logic.
+//!
+//! The small closed sets that *are* general logic stay as enums: [`Rate`]
+//! (the four calculation rates), [`ExecMode`] (how the synth runs a UGen that
+//! needs cross-ugen coordination), [`BusRole`] (its audio-bus role for the
+//! M12 dependency analysis) and [`Arity`]. A UGen names one of each; it does
+//! not invent new control flow.
 
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
@@ -13,13 +24,15 @@ use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sinosc::SinOsc;
 use crate::dsp::{Rate, UGen};
 
-/// Input slot of a [`UGenKind::Demand`] driver that names its demand source
-/// (after `trig`, `reset`): must be a wire to a demand-rate (`dr`) UGen.
+/// Input slot of a demand driver ([`ExecMode::DemandDriver`]) that names its
+/// demand source (after `trig`, `reset`): must be a wire to a demand-rate
+/// (`dr`) UGen.
 pub const DEMAND_SOURCE_SLOT: usize = 2;
 
 /// Static, per-UGen parameters that are not signal inputs: set in the SynthDef
-/// spec and resolved at compile time, consumed by [`build`]. Empty for almost
-/// every UGen; `DiskIn`/`DiskOut` use it to carry their file path and options.
+/// spec and resolved at compile time, consumed by a descriptor's `build`.
+/// Empty for almost every UGen; `DiskIn`/`DiskOut` use it to carry their file
+/// path and options.
 #[derive(Clone, Debug, Default)]
 pub struct UGenConfig {
     /// File path for `DiskIn`/`DiskOut`.
@@ -28,193 +41,387 @@ pub struct UGenConfig {
     pub looping: bool,
     /// `DiskOut` WAV sample format (`int16` | `int24` | `float`).
     pub format: Option<String>,
+    // S3 hole: the special-index operator (`BinaryOpUGen`/`UnaryOpUGen` `op`)
+    // lands here as another static parameter, read by their `build`.
 }
 
+/// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum UGenKind {
-    SinOsc,
-    Impulse,
-    WhiteNoise,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    In,
-    InCtl,
-    Out,
-    ReplaceOut,
-    PlayBuf,
-    BufRd,
-    BufSampleRate,
-    BufRateScale,
-    BufFrames,
-    BufChannels,
-    BufDur,
-    DiskIn,
-    DiskOut,
+pub enum Arity {
+    Fixed(usize),
+    Variadic,
+}
+
+/// How the synth runs a UGen that needs coordination the plain `process` path
+/// cannot express — state shared across the whole ugen vector. Everything else
+/// is [`ExecMode::Normal`] and runs through [`UGen::process`]. This is
+/// the *only* per-UGen behavior the engine special-cases, and it is a small
+/// closed set (not a per-kind switch): see `synthdef::instance`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExecMode {
+    /// Runs through `UGen::process` like the vast majority of UGens.
+    Normal,
+    /// Reads a synth-private feedback channel (`LocalIn`).
     LocalIn,
+    /// Writes a synth-private feedback channel and passes through (`LocalOut`).
     LocalOut,
-    EnvGen,
-    SampleRate,
-    Rand,
-    Demand,
-    Dseq,
+    /// Pulls its demand source each block (`Demand`); see the `dr` contract.
+    DemandDriver,
 }
 
-pub fn parse_kind(name: &str) -> Option<UGenKind> {
-    match name {
-        "SinOsc" => Some(UGenKind::SinOsc),
-        "Impulse" => Some(UGenKind::Impulse),
-        "WhiteNoise" => Some(UGenKind::WhiteNoise),
-        "Add" => Some(UGenKind::Add),
-        "Sub" => Some(UGenKind::Sub),
-        "Mul" => Some(UGenKind::Mul),
-        "Div" => Some(UGenKind::Div),
-        "In" => Some(UGenKind::In),
-        "InCtl" => Some(UGenKind::InCtl),
-        "Out" => Some(UGenKind::Out),
-        "ReplaceOut" => Some(UGenKind::ReplaceOut),
-        "PlayBuf" => Some(UGenKind::PlayBuf),
-        "BufRd" => Some(UGenKind::BufRd),
-        "BufSampleRate" => Some(UGenKind::BufSampleRate),
-        "BufRateScale" => Some(UGenKind::BufRateScale),
-        "BufFrames" => Some(UGenKind::BufFrames),
-        "BufChannels" => Some(UGenKind::BufChannels),
-        "BufDur" => Some(UGenKind::BufDur),
-        "DiskIn" => Some(UGenKind::DiskIn),
-        "DiskOut" => Some(UGenKind::DiskOut),
-        "LocalIn" => Some(UGenKind::LocalIn),
-        "LocalOut" => Some(UGenKind::LocalOut),
-        "EnvGen" => Some(UGenKind::EnvGen),
-        "SampleRate" => Some(UGenKind::SampleRate),
-        "Rand" => Some(UGenKind::Rand),
-        "Demand" => Some(UGenKind::Demand),
-        "Dseq" => Some(UGenKind::Dseq),
-        _ => None,
+/// The audio-bus role a UGen plays, for the M12 dependency analysis
+/// (`osc::graph::ugen_usage`), read off input 0 (the bus index).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BusRole {
+    /// Touches no audio bus (the default).
+    None,
+    /// Reads the bus (`In`).
+    Read,
+    /// Writes the bus (`Out`).
+    Write,
+    /// Reads and writes the bus (`ReplaceOut` consumes what it overwrites).
+    ReadWrite,
+}
+
+/// Everything the compiler and engine need to know about one UGen kind, as
+/// data co-located per UGen. Adding a UGen is one `UGENS` entry; nothing
+/// else changes.
+pub struct UGenDescriptor {
+    /// Wire name (the def's `"kind"`).
+    pub name: &'static str,
+    pub arity: Arity,
+    /// Rate when the def omits `"rate"`.
+    pub default_rate: Rate,
+    /// Rates this UGen may be instantiated at (the compiler rejects the rest).
+    pub rates: &'static [Rate],
+    pub exec: ExecMode,
+    pub bus: BusRole,
+    /// Requires a non-empty `path` in the config (`DiskIn`/`DiskOut`).
+    pub needs_path: bool,
+    /// Builds an instance. Runs on the network thread (allocates); `config`
+    /// carries static per-UGen parameters, ignored by most kinds.
+    pub build: fn(&UGenConfig) -> Box<dyn UGen>,
+}
+
+impl UGenDescriptor {
+    /// Whether this kind may be instantiated at `rate`.
+    pub fn allows(&self, rate: Rate) -> bool {
+        self.rates.contains(&rate)
     }
 }
 
-pub fn arity(kind: UGenKind) -> usize {
-    match kind {
-        UGenKind::WhiteNoise | UGenKind::SampleRate => 0,
-        UGenKind::SinOsc
-        | UGenKind::Impulse
-        | UGenKind::In
-        | UGenKind::InCtl
-        | UGenKind::LocalIn
-        | UGenKind::BufSampleRate
-        | UGenKind::BufRateScale
-        | UGenKind::BufFrames
-        | UGenKind::BufChannels
-        | UGenKind::BufDur
-        | UGenKind::DiskIn
-        | UGenKind::DiskOut => 1,
-        UGenKind::Add
-        | UGenKind::Sub
-        | UGenKind::Mul
-        | UGenKind::Div
-        | UGenKind::Out
-        | UGenKind::ReplaceOut
-        | UGenKind::LocalOut
-        // (lo, hi).
-        | UGenKind::Rand => 2,
-        // Demand: (trig, reset, source).
-        UGenKind::Demand => 3,
-        // (bufnum, chan, rate, loop) and (bufnum, chan, phase, loop).
-        UGenKind::PlayBuf | UGenKind::BufRd => 4,
-        // EnvGen: five fixed + the envelope array. Dseq: (repeats, values…).
-        UGenKind::EnvGen | UGenKind::Dseq => usize::MAX,
+// Rate sets, shared by the table. The default (a plain signal processor) is
+// audio-or-control rate; the exceptions widen (`ir`/`dr` scalars and the
+// demand source) or narrow to audio-only (whole-block I/O).
+const R_KR_AR: &[Rate] = &[Rate::Kr, Rate::Ar];
+const R_AR: &[Rate] = &[Rate::Ar];
+const R_IR_KR: &[Rate] = &[Rate::Ir, Rate::Kr];
+const R_IR_KR_AR: &[Rate] = &[Rate::Ir, Rate::Kr, Rate::Ar];
+const R_IR: &[Rate] = &[Rate::Ir];
+const R_DR: &[Rate] = &[Rate::Dr];
+
+/// Compact descriptor constructor (keeps `UGENS` readable as a table).
+#[allow(clippy::too_many_arguments)]
+const fn desc(
+    name: &'static str,
+    arity: Arity,
+    default_rate: Rate,
+    rates: &'static [Rate],
+    exec: ExecMode,
+    bus: BusRole,
+    needs_path: bool,
+    build: fn(&UGenConfig) -> Box<dyn UGen>,
+) -> UGenDescriptor {
+    UGenDescriptor {
+        name,
+        arity,
+        default_rate,
+        rates,
+        exec,
+        bus,
+        needs_path,
+        build,
     }
 }
 
-/// The output rate a kind takes when the def does not name one explicitly.
-/// Everything defaults to [`Rate::Ar`] (the pre-S1 shape, so existing defs are
-/// unchanged); the scalar-info UGens default to [`Rate::Ir`] and `Dseq` is
-/// demand-rate by nature.
-pub fn default_rate(kind: UGenKind) -> Rate {
-    match kind {
-        UGenKind::SampleRate | UGenKind::Rand => Rate::Ir,
-        UGenKind::Dseq => Rate::Dr,
-        _ => Rate::Ar,
-    }
-}
+use Arity::{Fixed, Variadic};
+use BusRole::{Read, ReadWrite, Write};
+use ExecMode::{DemandDriver, LocalIn as ExecLocalIn, LocalOut as ExecLocalOut, Normal};
+use Rate::{Ar, Dr, Ir};
 
-/// Whether a kind may be instantiated at `rate`. The compiler rejects any
-/// explicit `rate` outside this set (naming the kind), so a def can only ask
-/// for rates a UGen actually implements.
-///
-/// **The default is the signal-processor case** (`kr`/`ar`), so the open-ended
-/// family — oscillators, filters, arithmetic, generators — needs no entry
-/// here: a new UGen is audio-or-control-rate for free (and `ar` by default,
-/// see [`default_rate`]). Only the two bounded exceptions are listed: the
-/// scalar/`ir` and demand/`dr` kinds that *widen* the set, and the block-I/O
-/// kinds that *narrow* it to `ar` only (a length-1 wire would drop the block
-/// they read or write).
-pub fn rate_allowed(kind: UGenKind, rate: Rate) -> bool {
-    use Rate::{Ar, Dr, Ir, Kr};
-    match kind {
-        // Demand source: demand-rate only.
-        UGenKind::Dseq => rate == Dr,
-        // Init-rate scalars.
-        UGenKind::Rand => rate == Ir,
-        UGenKind::SampleRate => matches!(rate, Ir | Kr),
-        // Buffer-info scalars: frozen (`ir`), per block (`kr`), or broadcast
-        // per sample (`ar`, the current default).
-        UGenKind::BufSampleRate
-        | UGenKind::BufRateScale
-        | UGenKind::BufFrames
-        | UGenKind::BufChannels
-        | UGenKind::BufDur => matches!(rate, Ir | Kr | Ar),
-        // Block I/O and stateful streamers: audio-rate only.
-        UGenKind::In
-        | UGenKind::InCtl
-        | UGenKind::Out
-        | UGenKind::ReplaceOut
-        | UGenKind::PlayBuf
-        | UGenKind::BufRd
-        | UGenKind::DiskIn
-        | UGenKind::DiskOut
-        | UGenKind::LocalIn
-        | UGenKind::LocalOut
-        | UGenKind::EnvGen => rate == Ar,
-        // Signal processors (oscillators, math, generators, the Demand
-        // driver, and every UGen added later): audio or control rate.
-        _ => matches!(rate, Kr | Ar),
-    }
-}
+/// The UGen catalog. **To add a UGen, add one row here** (plus its `dsp`
+/// module) — the compiler and bus analysis pick it up with no other change.
+static UGENS: &[UGenDescriptor] = &[
+    // --- generators (audio or control rate; the default shape) ---
+    desc(
+        "SinOsc",
+        Fixed(1),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(SinOsc::new()),
+    ),
+    desc(
+        "Impulse",
+        Fixed(1),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Impulse::new()),
+    ),
+    desc(
+        "WhiteNoise",
+        Fixed(0),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(WhiteNoise::new()),
+    ),
+    // --- arithmetic (thin kinds today; S3 folds these into table-driven
+    //     BinaryOpUGen/UnaryOpUGen aliases with an `op` special index) ---
+    desc(
+        "Add",
+        Fixed(2),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BinaryOp::new(BinOp::Add)),
+    ),
+    desc(
+        "Sub",
+        Fixed(2),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BinaryOp::new(BinOp::Sub)),
+    ),
+    desc(
+        "Mul",
+        Fixed(2),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BinaryOp::new(BinOp::Mul)),
+    ),
+    desc(
+        "Div",
+        Fixed(2),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BinaryOp::new(BinOp::Div)),
+    ),
+    // --- audio-bus I/O (audio rate only; carries a bus role) ---
+    desc("In", Fixed(1), Ar, R_AR, Normal, Read, false, |_| {
+        Box::new(In)
+    }),
+    desc(
+        "InCtl",
+        Fixed(1),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(InCtl),
+    ),
+    desc("Out", Fixed(2), Ar, R_AR, Normal, Write, false, |_| {
+        Box::new(Out)
+    }),
+    desc(
+        "ReplaceOut",
+        Fixed(2),
+        Ar,
+        R_AR,
+        Normal,
+        ReadWrite,
+        false,
+        |_| Box::new(ReplaceOut),
+    ),
+    // --- buffer readers and info ---
+    desc(
+        "PlayBuf",
+        Fixed(4),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(PlayBuf::new()),
+    ),
+    desc(
+        "BufRd",
+        Fixed(4),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BufRd),
+    ),
+    desc(
+        "BufSampleRate",
+        Fixed(1),
+        Ar,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BufInfo(BufInfoKind::SampleRate)),
+    ),
+    desc(
+        "BufRateScale",
+        Fixed(1),
+        Ar,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BufInfo(BufInfoKind::RateScale)),
+    ),
+    desc(
+        "BufFrames",
+        Fixed(1),
+        Ar,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BufInfo(BufInfoKind::Frames)),
+    ),
+    desc(
+        "BufChannels",
+        Fixed(1),
+        Ar,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BufInfo(BufInfoKind::Channels)),
+    ),
+    desc(
+        "BufDur",
+        Fixed(1),
+        Ar,
+        R_IR_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(BufInfo(BufInfoKind::Duration)),
+    ),
+    // --- streaming disk I/O (need a path) ---
+    desc(
+        "DiskIn",
+        Fixed(1),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        true,
+        |c| Box::new(DiskIn::open(c)),
+    ),
+    desc(
+        "DiskOut",
+        Fixed(1),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        true,
+        |c| Box::new(DiskOut::open(c)),
+    ),
+    // --- synth-private feedback (synth-coordinated execution) ---
+    desc(
+        "LocalIn",
+        Fixed(1),
+        Ar,
+        R_AR,
+        ExecLocalIn,
+        BusRole::None,
+        false,
+        |_| Box::new(LocalIn),
+    ),
+    desc(
+        "LocalOut",
+        Fixed(2),
+        Ar,
+        R_AR,
+        ExecLocalOut,
+        BusRole::None,
+        false,
+        |_| Box::new(LocalOut),
+    ),
+    // --- envelope ---
+    desc(
+        "EnvGen",
+        Variadic,
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(EnvGen::new()),
+    ),
+    // --- scalar / init-rate (S1) ---
+    desc(
+        "SampleRate",
+        Fixed(0),
+        Ir,
+        R_IR_KR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(SampleRate),
+    ),
+    desc(
+        "Rand",
+        Fixed(2),
+        Ir,
+        R_IR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Rand::new()),
+    ),
+    // --- demand rate (S1): the driver runs specially, the source is pulled ---
+    desc(
+        "Demand",
+        Fixed(3),
+        Ar,
+        R_KR_AR,
+        DemandDriver,
+        BusRole::None,
+        false,
+        |_| Box::new(Demand::new()),
+    ),
+    desc(
+        "Dseq",
+        Variadic,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Dseq::new()),
+    ),
+];
 
-/// Runs on the network thread (allocates). `config` carries static per-UGen
-/// parameters (e.g. `DiskIn`/`DiskOut` file paths); most kinds ignore it.
-pub fn build(kind: UGenKind, config: &UGenConfig) -> Box<dyn UGen> {
-    match kind {
-        UGenKind::SinOsc => Box::new(SinOsc::new()),
-        UGenKind::Impulse => Box::new(Impulse::new()),
-        UGenKind::WhiteNoise => Box::new(WhiteNoise::new()),
-        UGenKind::Add => Box::new(BinaryOp::new(BinOp::Add)),
-        UGenKind::Sub => Box::new(BinaryOp::new(BinOp::Sub)),
-        UGenKind::Mul => Box::new(BinaryOp::new(BinOp::Mul)),
-        UGenKind::Div => Box::new(BinaryOp::new(BinOp::Div)),
-        UGenKind::In => Box::new(In),
-        UGenKind::InCtl => Box::new(InCtl),
-        UGenKind::Out => Box::new(Out),
-        UGenKind::ReplaceOut => Box::new(ReplaceOut),
-        UGenKind::PlayBuf => Box::new(PlayBuf::new()),
-        UGenKind::BufRd => Box::new(BufRd),
-        UGenKind::BufSampleRate => Box::new(BufInfo(BufInfoKind::SampleRate)),
-        UGenKind::BufRateScale => Box::new(BufInfo(BufInfoKind::RateScale)),
-        UGenKind::BufFrames => Box::new(BufInfo(BufInfoKind::Frames)),
-        UGenKind::BufChannels => Box::new(BufInfo(BufInfoKind::Channels)),
-        UGenKind::BufDur => Box::new(BufInfo(BufInfoKind::Duration)),
-        UGenKind::DiskIn => Box::new(DiskIn::open(config)),
-        UGenKind::DiskOut => Box::new(DiskOut::open(config)),
-        // Intercepted by UGenSynth::process; these are placeholders.
-        UGenKind::LocalIn => Box::new(LocalIn),
-        UGenKind::LocalOut => Box::new(LocalOut),
-        UGenKind::EnvGen => Box::new(EnvGen::new()),
-        UGenKind::SampleRate => Box::new(SampleRate),
-        UGenKind::Rand => Box::new(Rand::new()),
-        // Demand is driven by UGenSynth::process; Dseq is pulled, not run.
-        UGenKind::Demand => Box::new(Demand::new()),
-        UGenKind::Dseq => Box::new(Dseq::new()),
-    }
+/// Looks a UGen up by its wire name. Returns the descriptor (the single source
+/// of truth for that kind) or `None` for an unknown name.
+pub fn lookup(name: &str) -> Option<&'static UGenDescriptor> {
+    UGENS.iter().find(|d| d.name == name)
 }

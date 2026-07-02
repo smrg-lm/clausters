@@ -29,7 +29,7 @@ pub mod instance;
 use serde::{Deserialize, Serialize};
 
 use crate::dsp::registry::{
-    DEMAND_SOURCE_SLOT, UGenConfig, UGenKind, arity, default_rate, parse_kind, rate_allowed,
+    Arity, DEMAND_SOURCE_SLOT, ExecMode, UGenConfig, UGenDescriptor, lookup,
 };
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
 
@@ -55,8 +55,8 @@ pub struct UGenSpec {
     #[serde(default)]
     pub inputs: Vec<InputSpec>,
     /// Output calculation rate (`ir`/`kr`/`ar`/`dr`). Omitted means the kind's
-    /// default (see [`crate::dsp::registry::default_rate`]); the compiler
-    /// validates it.
+    /// default (its [`UGenDescriptor::default_rate`]); the compiler validates
+    /// it against the descriptor's allowed rates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rate: Option<String>,
     /// `DiskIn`/`DiskOut`: file path. Ignored by every other kind.
@@ -88,15 +88,28 @@ pub enum InputRef {
     Wire(usize),
 }
 
-#[derive(Debug)]
 pub struct UGenDef {
-    pub kind: UGenKind,
+    /// The catalog descriptor for this UGen's kind (its name, arity, rates,
+    /// bus role, execution mode and constructor) — the compiler and engine
+    /// read it instead of matching on a kind enum.
+    pub desc: &'static UGenDescriptor,
     pub inputs: Vec<InputRef>,
     /// Output calculation rate, inferred and validated at compile time (S1).
     pub rate: Rate,
     /// Static per-UGen parameters (e.g. `DiskIn`/`DiskOut` paths). Default for
     /// every other kind.
     pub config: UGenConfig,
+}
+
+impl std::fmt::Debug for UGenDef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UGenDef")
+            .field("kind", &self.desc.name)
+            .field("inputs", &self.inputs)
+            .field("rate", &self.rate)
+            .field("config", &self.config)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -139,10 +152,11 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     let mut localin_channels = std::collections::HashSet::new();
 
     for (i, u) in spec.ugens.iter().enumerate() {
-        let kind =
-            parse_kind(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
-        let want = arity(kind);
-        if want != usize::MAX && u.inputs.len() != want {
+        let desc =
+            lookup(&u.kind).ok_or_else(|| format!("ugens[{i}]: unknown kind '{}'", u.kind))?;
+        if let Arity::Fixed(want) = desc.arity
+            && u.inputs.len() != want
+        {
             return Err(format!(
                 "ugens[{i}] ({}): expected {want} inputs, got {}",
                 u.kind,
@@ -159,7 +173,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
 
         // LocalIn/LocalOut: channel index (input 0) must be a constant so the
         // buffer can be sized and routed at compile time.
-        if matches!(kind, UGenKind::LocalIn | UGenKind::LocalOut) {
+        if matches!(desc.exec, ExecMode::LocalIn | ExecMode::LocalOut) {
             let channel = match u.inputs[0] {
                 InputSpec::Const(x) if x.is_finite() && x >= 0.0 => x as usize,
                 _ => {
@@ -170,11 +184,11 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 }
             };
             num_locals = num_locals.max(channel + 1);
-            match kind {
-                UGenKind::LocalIn => {
+            match desc.exec {
+                ExecMode::LocalIn => {
                     localin_channels.insert(channel);
                 }
-                UGenKind::LocalOut if !localin_channels.contains(&channel) => {
+                ExecMode::LocalOut if !localin_channels.contains(&channel) => {
                     return Err(format!(
                         "ugens[{i}] (LocalOut): local channel {channel} has no earlier LocalIn; \
                          LocalIn must precede LocalOut (one block of feedback delay)"
@@ -184,11 +198,9 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
-        // DiskIn/DiskOut carry a file path as a static parameter; require it
-        // at compile time so a bad def fails fast with `/fail`.
-        if matches!(kind, UGenKind::DiskIn | UGenKind::DiskOut)
-            && u.path.as_deref().is_none_or(str::is_empty)
-        {
+        // Some UGens (DiskIn/DiskOut) carry a file path as a static parameter;
+        // require it at compile time so a bad def fails fast with `/fail`.
+        if desc.needs_path && u.path.as_deref().is_none_or(str::is_empty) {
             return Err(format!(
                 "ugens[{i}] ({}): requires a non-empty path",
                 u.kind
@@ -236,7 +248,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             Some(name) => {
                 let r = Rate::parse(name)
                     .ok_or_else(|| format!("ugens[{i}] ({}): unknown rate '{name}'", u.kind))?;
-                if !rate_allowed(kind, r) {
+                if !desc.allows(r) {
                     return Err(format!(
                         "ugens[{i}] ({}): rate '{}' is not allowed for this kind",
                         u.kind,
@@ -245,7 +257,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 }
                 r
             }
-            None => default_rate(kind),
+            None => desc.default_rate,
         };
 
         // Rate coercion (S1). Lower rates widen into higher-rate inputs for
@@ -260,7 +272,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 InputRef::Control(_) => Rate::Kr,
                 InputRef::Wire(w) => ugens[*w].rate,
             };
-            let is_demand_slot = kind == UGenKind::Demand && k == DEMAND_SOURCE_SLOT;
+            let is_demand_slot = desc.exec == ExecMode::DemandDriver && k == DEMAND_SOURCE_SLOT;
             if in_rate == Rate::Dr {
                 if !is_demand_slot {
                     return Err(format!(
@@ -284,7 +296,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         }
 
         ugens.push(UGenDef {
-            kind,
+            desc,
             inputs,
             rate,
             config,

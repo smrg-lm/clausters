@@ -3845,3 +3845,41 @@ and loops a sequence and resets/exhausts — plus five compiler-rejection tests)
 the no-alloc `rate_substrate_does_not_allocate_on_the_audio_thread` scene in
 `tests/rt_safety.rs` (the `ir` init pass + the demand pull path); the full core
 suite (`--no-default-features`) stays green and `cargo fmt --check`/clippy clean.
+
+## Registry — the UGen catalog as descriptors, not central switches (2026-07-02)
+
+**What's there:** a follow-up refactor, prompted by review of S1: the UGen
+registry no longer enumerates every kind in parallel `match`es. It flagged a
+real coupling — the *general logic* (compiler, bus analysis) was reaching into
+per-kind switches, and the *wire schema* documentation enumerated the concrete
+Rust kinds as if they were part of the protocol. The fix separates the two.
+
+- **One `UGenDescriptor` per kind (`src/dsp/registry.rs`).** A descriptor holds
+  `name`, `arity` (`Fixed`/`Variadic`), `default_rate`, allowed `rates`,
+  `exec` mode, `bus` role, `needs_path`, and a `build` fn — all the metadata,
+  co-located. A single `UGENS` table is the catalog; `lookup(name)` finds a
+  descriptor. The old `UGenKind` enum and the parallel `parse_kind`/`arity`/
+  `build`/`default_rate`/`rate_allowed` switches are gone.
+- **The compiler and bus analysis went generic.** `synthdef::compile` reads
+  descriptor fields (arity, `allows(rate)`, `exec` for the LocalIn/LocalOut/
+  Demand special cases, `needs_path`); `UGenDef` carries a
+  `&'static UGenDescriptor` instead of a kind enum; `osc::graph::ugen_usage`
+  reads `desc.bus`. No file matches on a kind anymore.
+- **The small closed sets stayed enums** — because they *are* general logic,
+  not per-implementation data: `Rate`, plus new `ExecMode` (Normal / LocalIn /
+  LocalOut / DemandDriver — the only synth-coordinated behaviors, matched in
+  `instance.rs`), `BusRole` and `Arity`. Adding a UGen no longer touches any of
+  these; a new signal UGen copies a `SinOsc`-style row.
+- **Doc reframing (`docs/schemas.md`).** The kind table is now "UGen catalog
+  (built-in kinds)", explicitly *not* part of the wire schema: `kind` is an
+  opaque string the server resolves and the catalog grows independently. "How
+  to add a UGen" in `architecture.md` now says "add one `UGENS` row".
+- **Holes left for the S track:** an `op` field in `UGenConfig` is where S3's
+  special-index `BinaryOpUGen`/`UnaryOpUGen` land (a table entry, not a new
+  kind); S2's typed controls and its compile-time `Lag` insertion are a new
+  descriptor plus control-side work, unaffected by this change.
+
+**Verified:** the full core suite (`--no-default-features`, 207 tests) stays
+green — including the disk, buffer, auto-order, graphdef and parallel scenes
+that exercise every descriptor field — with `cargo fmt --check`, clippy and
+`cargo doc` clean.

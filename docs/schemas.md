@@ -103,7 +103,9 @@ The blob is a JSON object:
 
   Each ugen may also carry an optional **`"rate"`** — its output calculation rate, one of `"ir"`, `"kr"`, `"ar"`, `"dr"` (see *Calculation rates* below). Omitted, it defaults per kind (`ar` for signal UGens); the compiler rejects a rate a kind does not implement, or an illegal coercion, naming the node.
 
-### UGen kinds
+### UGen catalog (built-in kinds)
+
+The `kind` field is an **opaque string** as far as the protocol is concerned: the schema above is the whole contract (name + inputs + optional rate + static fields). What follows is a separate thing — the **catalog of UGens the server currently ships**, which the server resolves at runtime and grows independently of the wire format (each is one descriptor entry in `src/dsp/registry.rs`; a client never enumerates them, it just names one and the server validates). So this table is reference, not part of the protocol: an unknown name simply fails with `/fail … unknown kind`.
 
 | kind | inputs | output |
 |---|---|---|

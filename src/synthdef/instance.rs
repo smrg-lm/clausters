@@ -2,10 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::dsp::registry::{DEMAND_SOURCE_SLOT, UGenKind};
-use crate::dsp::{
-    Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, UGen, at, registry,
-};
+use crate::dsp::registry::{DEMAND_SOURCE_SLOT, ExecMode};
+use crate::dsp::{Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, UGen, at};
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{InputRef, SynthDef};
 
@@ -36,7 +34,7 @@ impl UGenSynth {
         let ugens: Vec<_> = def
             .ugens
             .iter()
-            .map(|u| registry::build(u.kind, &u.config))
+            .map(|u| (u.desc.build)(&u.config))
             .collect();
         let wires = vec![Block::SILENCE; ugens.len()];
         let locals = vec![Block::SILENCE; def.num_locals];
@@ -113,12 +111,12 @@ impl SynthNode for UGenSynth {
             // writing (LocalIn precedes LocalOut, enforced at compile) is the
             // one-block delay.
             let (lo, hi) = (ctx.offset, ctx.offset + ctx.frames);
-            match self.def.ugens[i].kind {
-                UGenKind::LocalIn => {
+            match self.def.ugens[i].desc.exec {
+                ExecMode::LocalIn => {
                     let ch = inputs[0][0] as usize;
                     output.copy_from_slice(&self.locals[ch].0[lo..hi]);
                 }
-                UGenKind::LocalOut => {
+                ExecMode::LocalOut => {
                     let ch = inputs[0][0] as usize;
                     let signal = inputs[1];
                     let dst = &mut self.locals[ch].0[lo..hi];
@@ -135,7 +133,7 @@ impl SynthNode for UGenSynth {
                 // source on each trigger. The source (a `dr` UGen, skipped in
                 // block order) is reached only through the `step` callback, so
                 // there is a single mutable path to it and no allocation.
-                UGenKind::Demand => {
+                ExecMode::DemandDriver => {
                     let InputRef::Wire(j) = refs[DEMAND_SOURCE_SLOT] else {
                         // Compile guarantees a `dr` wire in this slot.
                         output.fill(0.0);
@@ -169,7 +167,7 @@ impl SynthNode for UGenSynth {
                     };
                     driver.drive(trig, reset, output, &mut step);
                 }
-                _ => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
+                ExecMode::Normal => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
             }
         }
         // The `ir` init pass has now run (on the first block); mark it so `ir`

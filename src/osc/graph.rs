@@ -34,7 +34,7 @@ use crate::dsp::NUM_AUDIO_BUSES;
 use crate::node::{AddAction, Place, ROOT_NODE_ID};
 use crate::synthdef::{InputRef, SynthDef};
 
-use crate::dsp::registry::UGenKind;
+use crate::dsp::registry::BusRole;
 #[cfg(feature = "faust")]
 use crate::faust::synth::FaustDef;
 
@@ -49,11 +49,11 @@ pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
     let mut usage = BusUsage::default();
     let mut bus_controls = Vec::new();
     for ugen in &def.ugens {
-        let (read, write) = match ugen.kind {
-            UGenKind::In => (true, false),
-            UGenKind::Out => (false, true),
-            UGenKind::ReplaceOut => (true, true),
-            _ => continue,
+        let (read, write) = match ugen.desc.bus {
+            BusRole::Read => (true, false),
+            BusRole::Write => (false, true),
+            BusRole::ReadWrite => (true, true),
+            BusRole::None => continue,
         };
         match ugen.inputs[0] {
             InputRef::Const(c) => usage.mark(def.constants[c], read, write),
