@@ -21,4 +21,5 @@
 # Developer Guide
 
 - [Architecture](architecture.md)
+- [The node-tree model and DAWs](model-vs-daw.md)
 - [Contributing](contributing.md)

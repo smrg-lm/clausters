@@ -395,6 +395,26 @@ streaming) are taken as loose items when needed.
   were unified via `CmdTranslator::translate`. Example
   `examples/auto_order.py`, doc `docs/auto-order.md`. Zero changes on the
   audio thread, as planned.)*
+  - **Note — no plugin delay compensation (PDC), by absence not omission.**
+    The auto-sort solves *ordering*; a DAW's PDC solves the complementary
+    problem of *latency alignment* (delaying the short parallel paths so
+    summing points stay in phase). Clausters has no PDC because no UGen
+    reports intrinsic latency today (there is no `latency()` on the
+    `UGen`/`SynthNode` trait) and the only skew that exists is the
+    block-rate feedback delay — so the typical static chain sums with zero
+    inter-path skew. The gap becomes audible only once a UGen with real
+    intrinsic latency lands (an FFT convolver with lookahead, a
+    pitch-shifter, a linear-phase Faust filter): parallel paths of unequal
+    latency would misalign and the auto-sort would not compensate it. The
+    extension is natural and does not touch the engine — add `latency()`
+    (default 0), annotate the existing bus DAG edges with accumulated
+    latency, run longest-path on the same network-thread mirror, and insert
+    a compensating delay (a delay UGen, or a `ProcessCtx` offset) on the
+    short paths; the alignment being global across nested groups is the
+    non-trivial part, and the added latency must stay RT/NRT bit-identical.
+    Full rationale and the auto-sort/PDC comparison in
+    `docs/model-vs-daw.md`. Revisit if/when an intrinsic-latency UGen is
+    scheduled.
 
 - ✅ **M13 — Parallel tree processing** (requires M12): the M12 DAG
   is exactly the structure that enables parallelism — stages =
