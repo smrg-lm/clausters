@@ -9,7 +9,7 @@
 //! here.
 
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
 use crate::dsp::{BusUsage, DoneAction, ProcessCtx};
 use crate::server::workers::WorkerPool;
@@ -156,6 +156,10 @@ struct NodeSlot {
     id: i32,
     parent: usize,
     kind: NodeKind,
+    /// Set by a `DoneAction::PauseSelf`: the synth stays in the tree and keeps
+    /// its state but is skipped during processing (silent). Groups are never
+    /// paused. There is no resume path yet (no `/n_run`), so this is terminal.
+    paused: bool,
 }
 
 impl Default for NodeTree {
@@ -180,8 +184,11 @@ pub struct NodeTree {
     synth_count: usize,
     group_count: usize,
     ugen_count: usize,
-    /// Lock-free queue for nodes that finished this block (DoneAction::FreeSelf)
+    /// Lock-free queue of nodes that finished this block with a freeing done
+    /// action (`FreeSelf`/`FreeGroup`); `done_actions` is the parallel action
+    /// code per entry. `PauseSelf` is applied inline, not queued.
     done_nodes: Vec<AtomicI32>,
+    done_actions: Vec<AtomicU8>,
     done_count: AtomicUsize,
 }
 
@@ -196,6 +203,7 @@ impl NodeTree {
                 children: Vec::with_capacity(MAX_NODES),
                 parallel: false,
             }),
+            paused: false,
         });
         Self {
             slots,
@@ -205,6 +213,7 @@ impl NodeTree {
             group_count: 1,
             ugen_count: 0,
             done_nodes: (0..MAX_NODES).map(|_| AtomicI32::new(0)).collect(),
+            done_actions: (0..MAX_NODES).map(|_| AtomicU8::new(0)).collect(),
             done_count: AtomicUsize::new(0),
         }
     }
@@ -239,6 +248,28 @@ impl NodeTree {
     /// One finished-node ID from the queue captured by [`Self::take_done_count`].
     pub fn done_node(&self, i: usize) -> i32 {
         self.done_nodes[i].load(Ordering::Relaxed)
+    }
+
+    /// The freeing action for queue entry `i` (`FreeSelf` or `FreeGroup`).
+    pub fn done_action_at(&self, i: usize) -> DoneAction {
+        match self.done_actions[i].load(Ordering::Relaxed) {
+            2 => DoneAction::FreeSelf,
+            14 => DoneAction::FreeGroup,
+            1 => DoneAction::PauseSelf,
+            _ => DoneAction::None,
+        }
+    }
+
+    /// Records a node that finished with a freeing action, for the engine to
+    /// drain after the walk. Takes `&self` (interior-mutable atomics) so the
+    /// concurrent workers can push while holding their slot.
+    #[inline]
+    fn enqueue_done(&self, id: i32, action: DoneAction) {
+        let c = self.done_count.fetch_add(1, Ordering::Relaxed);
+        if c < MAX_NODES {
+            self.done_nodes[c].store(id, Ordering::Relaxed);
+            self.done_actions[c].store(action as u8, Ordering::Relaxed);
+        }
     }
 
     /// Shared view of a slot. Sound outside `process` (no concurrency);
@@ -427,6 +458,7 @@ impl NodeTree {
             id,
             parent: parent_idx,
             kind,
+            paused: false,
         });
         let g = self.group_of_mut(parent_idx).unwrap();
         let pos = pos.min(g.children.len());
@@ -448,6 +480,22 @@ impl NodeTree {
         self.unlink(idx);
         self.free_subtree(idx, parent_id, sink);
         true
+    }
+
+    /// `DoneAction::FreeGroup` (scsynth 14): frees the group that encloses node
+    /// `id` (and its whole subtree, `id` included). If the enclosing group is
+    /// the un-freeable root, frees just the node itself as a fallback. Returns
+    /// `false` if the node does not exist.
+    pub fn free_enclosing_group(&mut self, id: i32, sink: &mut dyn FnMut(FreedNode)) -> bool {
+        let Some(idx) = self.find(id) else {
+            return false;
+        };
+        let parent = self.slot(idx).unwrap().parent;
+        let parent_id = self.id_of(parent);
+        if parent == NO_PARENT || parent_id == ROOT_NODE_ID {
+            return self.free(id, sink);
+        }
+        self.free(parent_id, sink)
     }
 
     /// `/g_freeAll`: frees every child of the group (recursively); the group
@@ -603,12 +651,13 @@ impl NodeTree {
         };
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
-                let mut ctx = *ctx;
-                node.process(&mut ctx);
-                if node.done_action() == DoneAction::FreeSelf {
-                    let c = self.done_count.fetch_add(1, Ordering::Relaxed);
-                    if c < MAX_NODES {
-                        self.done_nodes[c].store(slot.id, Ordering::Relaxed);
+                if !slot.paused {
+                    let mut ctx = *ctx;
+                    node.process(&mut ctx);
+                    match node.done_action() {
+                        DoneAction::None => {}
+                        DoneAction::PauseSelf => slot.paused = true,
+                        action => self.enqueue_done(slot.id, action),
                     }
                 }
             }
@@ -635,12 +684,13 @@ impl NodeTree {
         };
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
-                let mut ctx = *ctx;
-                node.process(&mut ctx);
-                if node.done_action() == DoneAction::FreeSelf {
-                    let c = self.done_count.fetch_add(1, Ordering::Relaxed);
-                    if c < MAX_NODES {
-                        self.done_nodes[c].store(slot.id, Ordering::Relaxed);
+                if !slot.paused {
+                    let mut ctx = *ctx;
+                    node.process(&mut ctx);
+                    match node.done_action() {
+                        DoneAction::None => {}
+                        DoneAction::PauseSelf => slot.paused = true,
+                        action => self.enqueue_done(slot.id, action),
                     }
                 }
             }

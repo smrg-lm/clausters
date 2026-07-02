@@ -21,7 +21,7 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::BusUsage;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
-use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
+use crate::dsp::{Buses, ControlBuses, DoneAction, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -430,19 +430,28 @@ impl Engine {
             .groups
             .store(self.tree.group_count() as u32, Ordering::Relaxed);
 
-        // Free every node whose envelope finished this block with FreeSelf.
-        // Read the id and free it one at a time so the tree is never borrowed
-        // twice at once; `free` of an already-gone id (a split block can queue
-        // one twice) is a harmless no-op.
+        // Apply the freeing done actions collected during this block's walk
+        // (`PauseSelf` was applied inline in the tree). Read id + action and act
+        // one at a time so the tree is never borrowed twice at once; a `free` of
+        // an already-gone id (a split block can queue one twice, or two synths
+        // in a group both request `FreeGroup`) is a harmless no-op.
         let n_done = self.tree.take_done_count();
         for k in 0..n_done {
             let id = self.tree.done_node(k);
+            let action = self.tree.done_action_at(k);
             let mut sink = GarbageSink {
                 garbage_tx: &mut self.garbage_tx,
                 pending_garbage: &mut self.pending_garbage,
                 events_tx: &mut self.events_tx,
             };
-            self.tree.free(id, &mut |f| sink.consume(f));
+            match action {
+                DoneAction::FreeGroup => {
+                    self.tree.free_enclosing_group(id, &mut |f| sink.consume(f));
+                }
+                _ => {
+                    self.tree.free(id, &mut |f| sink.consume(f));
+                }
+            }
         }
     }
 

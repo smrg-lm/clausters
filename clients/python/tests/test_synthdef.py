@@ -174,6 +174,23 @@ def test_env_perc_has_no_release_node():
     assert Env.perc().to_inputs()[2] == -1.0
 
 
+def test_env_release_and_loop_nodes_serialize():
+    # releaseNode and loopNode are the 3rd and 4th values of the array; None
+    # becomes -1 (disabled).
+    header = Env([0.0, 1.0, 0.0, 0.3], [0.1, 0.1, 0.1], release_node=2, loop_node=0).to_inputs()[:4]
+    assert header == [0.0, 3.0, 2.0, 0.0]
+    assert Env([0.0, 1.0], [0.1]).to_inputs()[2:4] == [-1.0, -1.0]
+
+
+def test_done_action_constants_match_the_server():
+    assert (DoneAction.NONE, DoneAction.PAUSE_SELF, DoneAction.FREE_SELF, DoneAction.FREE_GROUP) == (
+        0,
+        1,
+        2,
+        14,
+    )
+
+
 def test_env_rejects_mismatched_levels_and_times():
     with pytest.raises(ValueError):
         Env([0.0, 1.0], [0.1, 0.2])          # 2 levels need 1 time

@@ -4,7 +4,8 @@
 //! previous level to a target over a duration, following one of the SC shape
 //! curves. A `gate` drives it: a rising edge (re)triggers from the initial
 //! level; while the gate stays open the envelope **sustains** at the
-//! `releaseNode` (holding that level) until the gate falls, then it plays the
+//! `releaseNode` (holding that level, or, with a `loopNode`, cycling the
+//! segments between the two) until the gate falls, then it plays the
 //! remaining segments. When the last segment ends the UGen reports its
 //! `doneAction` through [`UGen::done`], which the engine turns into freeing the
 //! node (see `node::NodeTree` and `server::engine`).
@@ -146,11 +147,17 @@ impl UGen for EnvGen {
         let num_segments = at(inputs[6], 0) as usize;
         // Index into the levels array (== the segment index to resume from) at
         // which the envelope sustains while the gate is open; < 0 disables the
-        // sustain, so the envelope plays straight through. `loopNode` (input 8)
-        // is not yet supported.
+        // sustain, so the envelope plays straight through.
         let release_node = at(inputs[7], 0) as i32;
         let has_release = release_node >= 0 && (release_node as usize) < num_segments;
         let release_node = release_node as usize;
+        // Sustain loop: while the gate is held, on reaching the release node
+        // jump back to the loop node instead of holding, replaying the segments
+        // in `[loopNode, releaseNode)` in a cycle. The loop node must sit before
+        // the release node so the cycle makes progress; otherwise it is ignored.
+        let loop_node = at(inputs[8], 0) as i32;
+        let has_loop = has_release && loop_node >= 0 && (loop_node as usize) < release_node;
+        let loop_node = loop_node.max(0) as usize;
 
         for (i, out) in output.iter_mut().enumerate() {
             let gate = at(inputs[0], i);
@@ -191,8 +198,14 @@ impl UGen for EnvGen {
                     self.finished = true;
                     break;
                 }
-                // Sustain: hold at the release node until the gate falls.
+                // Reached the release node with the gate still open: either
+                // loop back (carrying the current level as the loop's start) or
+                // sustain by holding here until the gate falls.
                 if has_release && self.current_segment == release_node && !self.released {
+                    if has_loop {
+                        self.current_segment = loop_node;
+                        continue;
+                    }
                     break;
                 }
                 let base = HEADER_INPUTS + self.current_segment * SEGMENT_INPUTS;

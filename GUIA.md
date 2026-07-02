@@ -723,10 +723,13 @@ escena no-alloc en `tests/rt_safety.rs`.
 (`gate, levelScale, levelBias, timeScale, doneAction`) y luego el array de
 envolvente (`initLevel, numSegments, releaseNode, loopNode` y por segmento
 `target, duration, shape, curve`). El `gate` la dispara: mientras está en alto
-**sostiene** en el `releaseNode`; al bajar toca los segmentos de release y, al
-terminar, aplica el `doneAction` (2 = libera el nodo por el garbage FIFO, sin
-`free` en el hilo de audio). Formas: 0 step, 1 lineal, 2 exponencial, 3 seno,
-4 welch, 5 curvatura custom (valor `curve`), 6 squared, 7 cubed, 8 hold.
+**sostiene** en el `releaseNode` (o, con `loopNode < releaseNode`, **cicla** los
+segmentos `[loopNode, releaseNode)`); al bajar toca los segmentos de release y,
+al terminar, aplica el `doneAction`: 1 = pausa el synth (se saltea pero queda en
+el árbol; no hay `/n_run` para reanudar aún), 2 = libera el nodo, 14 = libera el
+grupo contenedor (el synth incluido) — todo por el garbage FIFO, sin `free` en el
+hilo de audio. Formas: 0 step, 1 lineal, 2 exponencial, 3 seno, 4 welch,
+5 curvatura custom (valor `curve`), 6 squared, 7 cubed, 8 hold.
 
 El cliente Python arma el array con el helper `Env` (`Env.adsr`, `Env.perc`,
 `Env.asr`) y el callable `env_gen`. Render offline de un pad ADSR que se
@@ -741,11 +744,12 @@ ffplay -autoexit /tmp/env.wav        # 8 notas, cada una con ataque/decay y
 Debe oírse cada nota con su ataque suave, sostén y una cola de release audible
 antes de la siguiente (el `sustain` del `Pbind` es menor que el `dur`). Tests:
 `cargo test --test envgen` (rampa lineal + hold, ratio exponencial constante,
-sostén en el release node que sólo avanza al soltar el gate, y `doneAction=2`
-que libera el nodo) y la escena no-alloc `envgen_free_self_...` en
+sostén que sólo avanza al soltar el gate, loop que cicla y sale al release,
+`pauseSelf` que corta la salida sin liberar, `freeGroup` que libera el grupo, y
+`doneAction=2` que libera el nodo) y la escena no-alloc `envgen_free_self_...` en
 `tests/rt_safety.rs`; del lado cliente, los `test_env_*` en
-`clients/python/tests/test_synthdef.py` (serialización del layout y de las
-formas). Nota: si corrés el ejemplo desde un checkout, el cdylib embebido debe
+`clients/python/tests/test_synthdef.py` (layout, formas, release/loop nodes,
+constantes de done action). Nota: si corrés el ejemplo desde un checkout, el cdylib embebido debe
 tener EnvGen — reconstruilo con `cargo build --release --features embed -p clausters`
 y refrescá `clients/python/clausters/_libs/libclausters.so` (o apuntá
 `CLAUSTERS_LIB` al `.so` recién compilado).

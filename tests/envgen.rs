@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};
+use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
 use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
@@ -22,7 +22,13 @@ fn secs(n: usize) -> f64 {
 /// Builds an `EnvGen` synth whose output is written to bus 0. `gate` is a
 /// control (index 0) so tests can release it with `SetControl`. `segments` is a
 /// flat list of `[target, duration_secs, shape, curve]`.
-fn envgen_spec(init: f64, done_action: f64, release_node: f64, segments: &[[f64; 4]]) -> Value {
+fn envgen_spec(
+    init: f64,
+    done_action: f64,
+    release_node: f64,
+    loop_node: f64,
+    segments: &[[f64; 4]],
+) -> Value {
     let mut inputs = vec![
         json!({"control": 0}), // gate
         json!({"const": 1.0}), // levelScale
@@ -32,7 +38,7 @@ fn envgen_spec(init: f64, done_action: f64, release_node: f64, segments: &[[f64;
         json!({"const": init}),
         json!({"const": segments.len() as f64}),
         json!({"const": release_node}),
-        json!({"const": -1.0}), // loopNode (unused)
+        json!({"const": loop_node}),
     ];
     for s in segments {
         for v in s {
@@ -84,7 +90,13 @@ fn spawn(spec: Value) -> (Engine, EngineHandle) {
 #[test]
 fn linear_segment_ramps_then_holds_the_target() {
     // One 64-sample segment from 0 to 1; no release node, no done action.
-    let (mut engine, _handle) = spawn(envgen_spec(0.0, 0.0, -1.0, &[[1.0, secs(64), 1.0, 0.0]]));
+    let (mut engine, _handle) = spawn(envgen_spec(
+        0.0,
+        0.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 1.0, 0.0]],
+    ));
     let out = render(&mut engine, 2);
     for (i, s) in out[..BLOCK_SIZE].iter().enumerate() {
         // frac = i/64, value = frac.
@@ -101,7 +113,13 @@ fn linear_segment_ramps_then_holds_the_target() {
 fn exponential_segment_multiplies_by_a_constant_ratio() {
     // 0.01 -> 1.0 exponentially over 64 samples: each sample is the previous
     // times a fixed ratio (100^(1/64)).
-    let (mut engine, _handle) = spawn(envgen_spec(0.01, 0.0, -1.0, &[[1.0, secs(64), 2.0, 0.0]]));
+    let (mut engine, _handle) = spawn(envgen_spec(
+        0.01,
+        0.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 2.0, 0.0]],
+    ));
     let out = render(&mut engine, 1);
     assert!((out[0] - 0.01).abs() < 1e-6, "start: {}", out[0]);
     let ratio = 100f32.powf(1.0 / 64.0);
@@ -119,6 +137,7 @@ fn gate_sustains_at_the_release_node_then_releases() {
         0.0,
         0.0,
         2.0,
+        -1.0,
         &[
             [1.0, secs(64), 1.0, 0.0],
             [0.5, secs(64), 1.0, 0.0],
@@ -161,7 +180,13 @@ fn gate_sustains_at_the_release_node_then_releases() {
 fn done_action_free_self_frees_the_node() {
     // A one-shot envelope with doneAction = 2 (freeSelf): when the segment
     // ends the engine frees the node.
-    let (mut engine, mut handle) = spawn(envgen_spec(0.0, 2.0, -1.0, &[[1.0, secs(64), 1.0, 0.0]]));
+    let (mut engine, mut handle) = spawn(envgen_spec(
+        0.0,
+        2.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 1.0, 0.0]],
+    ));
 
     render(&mut engine, 1);
     assert_eq!(
@@ -182,5 +207,148 @@ fn done_action_free_self_frees_the_node() {
         handle.collect_garbage(),
         1,
         "the freed synth left through the garbage FIFO"
+    );
+}
+
+#[test]
+fn loop_node_cycles_while_gate_is_held_then_release_exits() {
+    // levels 0 -> 1 -> 0 -> 0.3, each leg 64 samples. releaseNode = 2,
+    // loopNode = 0: while the gate is held it cycles seg0 (0->1) and seg1
+    // (1->0) with period 128; on release it plays seg2 (-> 0.3) and holds.
+    let spec = envgen_spec(
+        0.0,
+        0.0,
+        2.0,
+        0.0,
+        &[
+            [1.0, secs(64), 1.0, 0.0],
+            [0.0, secs(64), 1.0, 0.0],
+            [0.3, secs(64), 1.0, 0.0],
+        ],
+    );
+    let (mut engine, mut handle) = spawn(spec);
+
+    // Four blocks held: the second 128-sample window repeats the first.
+    let held = render(&mut engine, 4);
+    for k in 0..2 * BLOCK_SIZE {
+        assert!(
+            (held[k] - held[2 * BLOCK_SIZE + k]).abs() < 1e-6,
+            "loop period at {k}: {} != {}",
+            held[k],
+            held[2 * BLOCK_SIZE + k]
+        );
+    }
+    // The window is a real cycle, not a stuck level: the peak of seg0 is 1.
+    assert!(
+        held[..BLOCK_SIZE].iter().any(|&s| s > 0.98),
+        "attack reaches 1"
+    );
+
+    // Release exits the loop: seg2 ramps to 0.3, then it holds there.
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value: 0.0,
+        })
+        .ok()
+        .unwrap();
+    let rel = render(&mut engine, 2);
+    for s in &rel[BLOCK_SIZE..] {
+        assert!(
+            (*s - 0.3).abs() < 1e-6,
+            "held at release target: {s} != 0.3"
+        );
+    }
+}
+
+#[test]
+fn done_action_pause_self_stops_processing_but_keeps_the_node() {
+    // doneAction = 1 (pauseSelf): when the segment ends the synth is paused —
+    // skipped from then on (so its Out stops writing, bus 0 goes silent) but
+    // never freed.
+    let (mut engine, mut handle) = spawn(envgen_spec(
+        0.0,
+        1.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 1.0, 0.0]],
+    ));
+
+    let out = render(&mut engine, 3);
+    // Block 2: the segment has finished (value held at 1) and it still ran, so
+    // the pause takes effect only from block 3.
+    for s in &out[BLOCK_SIZE..2 * BLOCK_SIZE] {
+        assert!((*s - 1.0).abs() < 1e-6, "last active output: {s} != 1.0");
+    }
+    // Block 3: paused, skipped — bus 0 is cleared and stays silent.
+    for s in &out[2 * BLOCK_SIZE..] {
+        assert!(s.abs() < 1e-6, "paused output must be silent: {s}");
+    }
+    // Paused, not freed: the node is still there and nothing hit the garbage.
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        1,
+        "still alive"
+    );
+    assert_eq!(handle.collect_garbage(), 0, "nothing freed");
+}
+
+#[test]
+fn done_action_free_group_frees_the_enclosing_group() {
+    // A synth inside group 1 whose envelope ends with doneAction = 14
+    // (freeGroup): the whole group (and the synth) is freed.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::AddGroup {
+            id: 1,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::new(),
+        })
+        .ok()
+        .unwrap();
+    let synth = synth_from(envgen_spec(
+        0.0,
+        14.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 1.0, 0.0]],
+    ));
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: 1,
+            action: AddAction::Tail,
+            synth,
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    render(&mut engine, 1);
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        handle.counters().groups.load(Ordering::Relaxed),
+        2,
+        "root + group 1"
+    );
+
+    // Block 2 ends the segment; the enclosing group is freed at its end.
+    render(&mut engine, 2);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        0,
+        "synth gone"
+    );
+    assert_eq!(
+        handle.counters().groups.load(Ordering::Relaxed),
+        1,
+        "group 1 gone"
+    );
+    assert_eq!(
+        handle.collect_garbage(),
+        2,
+        "group and synth left as garbage"
     );
 }
