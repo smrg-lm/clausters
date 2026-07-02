@@ -66,10 +66,10 @@ class SynthDef:
                 if seen is None:
                     ctl_index[node.name] = len(controls)
                     controls.append(node)
-                elif controls[seen].default != node.default:
+                elif controls[seen]._signature() != node._signature():
                     raise ValueError(
-                        f"control {node.name!r} used with conflicting defaults "
-                        f"({controls[seen].default} vs {node.default})"
+                        f"control {node.name!r} used with conflicting definitions "
+                        f"(default/type/lag differ)"
                     )
             elif isinstance(node, bool) or not isinstance(node, (int, float)):
                 raise TypeError(f"not a UGen graph node: {node!r}")
@@ -85,12 +85,26 @@ class SynthDef:
                 return {"control": ctl_index[inp.name]}
             return {"const": float(inp)}
 
+        def ser_control(c):
+            d = {"name": c.name, "default": c.default}
+            if c.rate is not None:
+                d["rate"] = c.rate
+            if c.lag is not None:
+                d["lag"] = c.lag
+            if c.lag_down is not None:
+                d["lag_down"] = c.lag_down
+            return d
+
+        def ser_ugen(u):
+            d = {"kind": u.kind, "inputs": [ser(i) for i in u.inputs]}
+            if u.rate is not None:
+                d["rate"] = u.rate
+            return d
+
         return {
             "name": self.name,
-            "controls": [{"name": c.name, "default": c.default} for c in controls],
-            "ugens": [
-                {"kind": u.kind, "inputs": [ser(i) for i in u.inputs]} for u in ordered
-            ],
+            "controls": [ser_control(c) for c in controls],
+            "ugens": [ser_ugen(u) for u in ordered],
         }
 
     def dump_def(self) -> str:

@@ -140,7 +140,23 @@ sig = sin_osc(freq) * amp
 sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # two outputs -> stereo
 ```
 
-`control(name, default)` declares a parameter; the def gathers every control its graph references, in first-seen order. Reusing the same name with a **conflicting default** is an error, caught when the spec is built.
+`control(name, default)` declares a parameter; the def gathers every control its graph references, in first-seen order. Reusing the same name with a **conflicting definition** — a different default, type or lag — is an error, caught when the spec is built.
+
+### Control types and rates
+
+A control can carry a **type** (and, for a smoothed control, a lag time), mirroring the server's control types. `control` takes them as keyword arguments:
+
+| Argument | Meaning |
+| --- | --- |
+| `control(name, default)` | a plain `kr` control: one value per block, read every block (the default) |
+| `control(name, default, rate="tr")` | a **trigger**: a `/n_set` holds for one block, then the server resets it to `0` — each set re-fires an `env_gen` gate, a sample-and-hold, a `Trig` |
+| `control(name, default, rate="ir")` | a **scalar**: read once at synth init and frozen; a later `/n_set` is ignored. As an `ir` value it may feed an `ir` input (`rand`, buffer-info UGens) |
+| `control(name, default, lag=t)` | a lagged `kr` control: changes are smoothed by an implicit one-pole `Lag` over `t` seconds (the server inserts the UGen) |
+| `control(name, default, lag=up, lag_down=down)` | separate rise (`up`) and fall (`down`) smoothing times (`VarLag`) |
+
+An unknown `rate`, or a `lag_down` without a `lag`, raises a `ValueError` at build. Audio-rate controls are not a control *type* here — read an audio signal off a bus with `in_` / `in_ctl` and map it with `/n_mapa`.
+
+Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (control), `ar` (audio), `dr` (demand). It defaults per kind (signal UGens are `ar`, `rand` / `sample_rate` are `ir`, the demand sources are `dr`); set it explicitly with `Ugen.at_rate`, e.g. `sin_osc(5.0).at_rate("kr")` for a control-rate LFO. The full rate model and its coercion rules live in the [Clausters server book](https://clausters.readthedocs.io/) (schemas / OSC reference).
 
 ### The UGen set
 
@@ -159,6 +175,12 @@ sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # two outputs -> stereo
 | | `buf_rd(bufnum, chan, phase, loop=0.0)` | reads a buffer at a `phase` signal in frames |
 | Feedback | `local_in(channel=0.0)` | reads a synth-private feedback channel |
 | | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
+| Smoothers | `lag(signal, time=0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |
+| | `var_lag(signal, up=0.1, down=0.1)` | one-pole smoother with separate rise / fall times |
+| Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
+| | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
+| Demand (`dr`) | `dseq(values, repeats=0.0)` | a demand-rate sequence source (`repeats` 0 loops forever); only valid as a `demand` source |
+| | `demand(trig, reset, source)` | pulls the next value from a demand `source` on each rising edge of `trig`, holding it between triggers |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
 

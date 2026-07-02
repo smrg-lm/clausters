@@ -3883,3 +3883,71 @@ Rust kinds as if they were part of the protocol. The fix separates the two.
 green — including the disk, buffer, auto-order, graphdef and parallel scenes
 that exercise every descriptor field — with `cargo fmt --check`, clippy and
 `cargo doc` clean.
+
+## S2 — Typed controls: tr, lag/varlag, and scalar (ir) controls (completed 2026-07-02)
+
+**What's there:** SynthDef controls now carry a **type** the def author chooses,
+the way scsynth's do. A control was one mutable `f32` read once per block (a
+plain `kr`); S2 adds the three other behaviors, each wired by the compiler and
+the engine, RT-safe.
+
+- **The type in the wire format (`src/synthdef/mod.rs`).** `ControlSpec` gains
+  an optional `"rate"` (`kr`/`tr`/`ir`, also spellable `control`/`trigger`/
+  `scalar`) plus `"lag"`/`"lag_down"` times; all serde-default, so every
+  existing def is unchanged. A `ControlType` enum rides on `SynthDef`
+  (`control_types`, parallel to the names). `compile` parses and validates them
+  (unknown type, lag only on a `kr` control, `lag_down` needs `lag`).
+- **Trigger (`tr`) — `src/synthdef/instance.rs`.** After the UGen loop,
+  `process` resets every trigger control to `0`, so a `/n_set` value holds for
+  exactly one block and a rising edge fires once (an `EnvGen` gate, a
+  sample-and-hold). Unconditional and cheap; no per-control "fired" flag needed.
+- **Scalar (`ir`).** `set_control` ignores a write to a scalar control once the
+  synth's `initialized` flag (reused from S1) is set — the `/s_new` init values,
+  applied before the first block, still take; a later `/n_set` is dropped, per
+  scsynth. In the compiler an `ir` control counts as `Rate::Ir` for input
+  coercion, so it may feed an `ir` UGen input (e.g. `Rand.ir`).
+- **Lag / varlag — an inserted UGen, not a bespoke path.** New `Lag(in, time)`
+  and `VarLag(in, up, down)` one-pole smoothers (`src/dsp/lag.rs`, scsynth's
+  `b1 = exp(ln(0.001)/(time·sr))`, primed to the first input). A control with a
+  `"lag"` compiles to a real `Lag`/`VarLag` **prepended** to the graph reading
+  the raw control; every reference to that control is rewritten to the
+  smoother's wire (the `lagged` pass in `compile` shifts the original UGens down
+  and remaps their wire indices). So there is one lag implementation, shared
+  with the client-facing UGen. The inserted smoothers run at audio rate, so a
+  stepped control glides per sample.
+
+- **Client mirror (`clients/python`).** `defs.control` gained `rate` (`tr`/`ir`,
+  also `trigger`/`scalar`), `lag` and `lag_down` keywords; `Control` validates
+  them (unknown type, `lag_down` without `lag`) and its `_signature` folds
+  type/lag into the conflicting-reuse check, and `SynthDef.spec` emits the
+  optional `rate`/`lag`/`lag_down` control fields plus a per-UGen output `rate`.
+  New UGen callables mirror the substrate: `lag`/`var_lag` (the smoothers),
+  `sample_rate`/`rand` (the `ir` scalars) and the `dseq`/`demand` pair (`dr`),
+  each `Ugen` carrying an optional output `rate` set fluently with `at_rate`.
+
+**Deviation:** the inserted lag runs at **audio rate**, not control rate as in
+scsynth. A `kr` Lag would need the control-block rate for its coefficient (a
+subtlety when a length-1 wire has no block context); an `ar` Lag over a
+block-constant target is simpler, correct, and glides without zipper — a
+strictly nicer result at a small cost, consistent with the S-track stance.
+
+**Docs/examples:** a *Control types* table in `docs/schemas.md` plus the
+`Lag`/`VarLag` catalog rows; a *Typed controls* section in `architecture.md`
+(the trigger reset, the `ir` freeze, the compile-time lag insertion + wire
+remap); a `GUIA.md` section and checklist row. Client side: a *Control types and
+rates* section and the new UGen rows in the Python book's `defs.md`, a
+`typed_controls.py` example (offline WAV render — a lagged glide, a `tr`
+re-pluck, an `ir` random detune, driven by a `send_bundle` routine) listed in
+`examples.md`, and a section in the Python `GUIA.md`.
+
+**Verified:** `cargo test --test controls` (a `tr` fires exactly one block then
+resets; an `ir` control freezes under `/n_set` but takes its init value; an `ir`
+control may feed `Rand.ir` while a `kr` one is rejected; `lag` glides a step
+rather than jumping and converges; `varlag` rises fast and falls slow — plus
+three compiler rejections); a no-alloc `typed_controls_...` scene in
+`tests/rt_safety.rs` (trigger reset + inserted Lag + scalar reject); the full
+core suite (215 tests) green, `cargo fmt --check`/clippy/`cargo doc` clean.
+Client: `clients/python` tests green (the typed-control/rate serialization and
+the validation rejections in `test_synthdef.py`), and `typed_controls.py`
+renders 8 distinct plucks offline (RMS envelope verified) proving the `tr` reset
+and lag glide end to end through the embedded renderer.

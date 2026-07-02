@@ -83,6 +83,15 @@ A UGen can ask for its node to be freed (or paused) once it finishes: the `UGen`
 
 This feeds the bus analysis: the network-side mirror records each node's live maps, and `fold_maps_into_usage` adds an audio map's bus to the node's `reads` and marks the node a dynamic barrier when a mapped control is used as a bus index — so auto/parallel groups stay correct under mappings.
 
+### Typed controls (`tr`/`ir`/lag)
+
+A control carries a **type** (`SynthDef::control_types`, from the def's `"rate"`) that shapes how the engine treats it. Two are handled inside `UGenSynth`, RT-safe:
+
+- **Trigger (`tr`).** After the UGen loop, `process` resets every trigger control to `0`. A `/n_set` therefore holds for exactly the one block it landed in, so a UGen watching for a rising edge (an `EnvGen` gate) fires once. No extra state — the reset is unconditional and cheap.
+- **Scalar (`ir`).** `set_control` ignores a write to a scalar control once `initialized` is set (the same S1 flag). The initial `/s_new` values are applied on the network thread before the first block, so they take; a later `/n_set` is dropped, matching scsynth. In the compiler an `ir` control counts as `Rate::Ir`, so it may feed an `ir` UGen input.
+
+**Lag is not a control type — it is an inserted UGen.** A control with a `"lag"` compiles to a real `Lag` (or `VarLag` with `lag_down`) prepended to the graph, reading the raw control; every reference to that control is rewritten to the smoother's wire (`synthdef::compile`, the `lagged` pass, which shifts the original UGens down by the number of inserted smoothers and remaps their wire indices). This keeps **one** lag implementation shared with the client-facing `Lag` UGen — no bespoke control-smoothing path. The inserted smoothers run at audio rate, so a stepped control glides per sample toward its block-constant target.
+
 ### Group `/n_set`/`/n_map` and GraphDef
 
 Both live entirely on the network thread, in `CmdTranslator`, and lower into the same `Cmd`s as a hand-written `/s_new`/`/n_set`/`/n_map` would — the audio thread learns nothing new.

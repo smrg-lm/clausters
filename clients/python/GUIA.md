@@ -288,6 +288,34 @@ print('synths/defs:', srv.status()[2], srv.status()[4]); srv.free(n); srv.close(
 "; kill $SRV 2>/dev/null)
 ```
 
+### Controles tipados y UGens nuevas (S2, offline)
+
+El espejo cliente de S2: un `control` lleva un **tipo** (`rate="tr"` gatillo,
+`rate="ir"` escalar) y/o un **lag** (`lag=`, con `lag_down=` opcional), que
+`SynthDef.spec()` emite como los campos `rate`/`lag`/`lag_down`; y se suman las
+UGens `lag`/`var_lag` (suavizadores), `sample_rate`/`rand` (escalares `ir`) y el
+par `dseq`/`demand` (`dr`), cada output con su `rate` (fijado con
+`Ugen.at_rate`). Un `rate` desconocido o un `lag_down` sin `lag` levanta
+`ValueError`. Cubierto por `tests/test_synthdef.py`
+(`test_control_types_and_lag_serialize`, `test_new_ugens_and_rates_serialize`,
+`test_bad_control_type_and_lag_down_raise`).
+
+```sh
+.venv/bin/python -m pytest tests/test_synthdef.py -q     # 20 tests, verdes
+```
+
+El ejemplo `typed_controls.py` rinde un WAV **offline** (como `offline_render.py`,
+sin servidor) con las tres formas: `freq` con `lag` (glissando/portamento),
+`gate` gatillo (`tr`, re-pulsa una envolvente perc en cada `/n_set`) y `detune`
+sorteado una vez con `rand` (`ir`). Un `Routine` setea `freq`/`gate` por nota con
+`send_bundle` (timetagged: en un score NRT los cambios inmediatos caerían todos
+en t=0). El RMS del WAV muestra 8 plucks distintos:
+
+```sh
+.venv/bin/python examples/typed_controls.py /tmp/typed.wav
+# -> rendered 120000 frames (2.50 s) | peak 0.200
+```
+
 ### Programa de grafo con `GraphDef` (M18, `/d_graph`)
 
 La tercera clase de def: donde `SynthDef`/`FaustDef` describen **un** nodo,

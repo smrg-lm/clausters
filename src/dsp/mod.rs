@@ -15,6 +15,7 @@ pub mod disk;
 pub mod envgen;
 pub mod impulse;
 pub mod io;
+pub mod lag;
 pub mod local;
 pub mod noise;
 pub mod registry;

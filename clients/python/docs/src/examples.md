@@ -19,6 +19,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/offline_render.py out.wav
   ```
 
+- **`typed_controls.py`** — also fully self-contained (renders a WAV, no server): a `SynthDef` whose controls show the three control **types** — a lagged `freq` (portamento glide), a `gate` **trigger** (`rate="tr"`, re-plucking a percussive envelope each set), and a `detune` drawn once with `rand` (an `ir` scalar). A `Routine` sets `freq` / `gate` per note through timetagged bundles. See [Building defs](defs.md#control-types-and-rates).
+
+  ```sh
+  python clients/python/examples/typed_controls.py out.wav
+  ```
+
 - **`live_udp.py`** — the same pattern, live over UDP to a **separate, running** server. The wheel ships that server as the `clausters` command (or use `cargo run --release`).
 
   ```sh

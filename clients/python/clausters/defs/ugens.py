@@ -15,12 +15,19 @@ build relies on a thread-global "current graph" that every ``UGen.new`` mutates
 that tree to emit the spec. Nothing is global, so several defs can be built
 concurrently.
 
-**The server's UGen set is small** (``SinOsc``, ``Impulse``, ``WhiteNoise``,
-``In``/``InCtl``, ``Out``/``ReplaceOut``, ``PlayBuf``/``BufRd``,
-``LocalIn``/``LocalOut``, ``EnvGen`` and the four arithmetic ops). There are
-**no math UGens**: only ``+ - * /`` map to UGens (``Add``/``Sub``/``Mul``/``Div``);
-any other operator (``sin``, ``%``, ``min``, comparisons …) raises — reach for a
-Faust def (`clausters.defs.signals`) when you need them.
+**The server's UGen set is deliberately focused**: oscillators/sources
+(``sin_osc``, ``impulse``, ``white_noise``, `rand`), bus and buffer I/O
+(``in_``/``in_ctl``, ``out``/``replace_out``, ``play_buf``/``buf_rd``),
+feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
+``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the four
+arithmetic ops. There are **no math UGens**: only ``+ - * /`` map to UGens
+(``Add``/``Sub``/``Mul``/``Div``); any other operator (``sin``, ``%``, ``min``,
+comparisons …) raises — reach for a Faust def (`clausters.defs.signals`) when
+you need them.
+
+Each UGen output carries a **rate** (``ir``/``kr``/``ar``/``dr``); it defaults
+per kind and can be set with `Ugen.at_rate`. Controls carry a **type** and an
+optional **lag** — see `control`/`Control`.
 
 Envelopes are the `Env` breakpoint builder plus the `env_gen` callable, which
 serialize to the ``EnvGen`` UGen's flat input list.
@@ -72,33 +79,76 @@ class Ugen(_Node):
     """One UGen node (one output). ``kind`` is a server UGen name; ``inputs``
     is a list of operands, each a `Ugen`, a `Control`, or a plain
     number (a constant). Build them with the lowercase callables below rather
-    than directly."""
+    than directly.
 
-    def __init__(self, kind: str, inputs):
+    ``rate`` is the optional output calculation rate (``"ir"``/``"kr"``/
+    ``"ar"``/``"dr"``); ``None`` lets the server pick the kind's default (``ar``
+    for signal UGens). Set it fluently with `at_rate`."""
+
+    def __init__(self, kind: str, inputs, rate=None):
         self.kind = kind
         self.inputs = list(inputs)
+        self.rate = None if rate is None else str(rate)
+
+    def at_rate(self, rate: str) -> "Ugen":
+        """Set this UGen's output rate (``"ir"``/``"kr"``/``"ar"``/``"dr"``) and
+        return it, e.g. ``sin_osc(5.0).at_rate("kr")`` for a control-rate LFO."""
+        self.rate = str(rate)
+        return self
 
     def __repr__(self):
         return f"Ugen({self.kind!r}, {self.inputs!r})"
 
 
+#: Control types the server accepts (with their spellings). ``None`` = default
+#: (``kr``). See ``docs/schemas.md`` "Control types".
+_CONTROL_RATES = {"kr", "control", "tr", "trigger", "ir", "scalar"}
+
+
 class Control(_Node):
-    """A named control with a default — a ``/s_new``/``/n_set`` parameter. Used
-    as a UGen input it serializes to a ``{"control": index}`` reference; the
-    `SynthDef` gathers the controls a graph references, in first-seen
+    """A named control (a ``/s_new``/``/n_set`` parameter) with a default and an
+    optional **type** and **lag** (S2), mirroring the server's control types:
+
+    - ``rate="tr"`` — a **trigger**: a ``/n_set`` holds for one block, then the
+      server resets it to 0 (drives an `env_gen` gate, a sample-and-hold).
+    - ``rate="ir"`` — a **scalar**: read once at init and frozen; a later
+      ``/n_set`` is ignored. As ``ir`` it may feed an ``ir`` input (`rand`,
+      buffer-info UGens).
+    - ``lag`` (seconds) — smooth a ``kr`` control's changes with an implicit
+      one-pole (a `lag`/`var_lag` UGen the server inserts); ``lag_down`` gives a
+      separate downward time.
+
+    Used as a UGen input it serializes to a ``{"control": index}`` reference;
+    the `SynthDef` gathers the controls a graph references, in first-seen
     order."""
 
-    def __init__(self, name: str, default: float = 0.0):
+    def __init__(self, name, default=0.0, rate=None, lag=None, lag_down=None):
         self.name = str(name)
         self.default = float(default)
+        self.rate = None if rate is None else str(rate)
+        self.lag = None if lag is None else float(lag)
+        self.lag_down = None if lag_down is None else float(lag_down)
+        if self.rate is not None and self.rate not in _CONTROL_RATES:
+            raise ValueError(
+                f"unknown control type {self.rate!r}; use one of "
+                f"{sorted(_CONTROL_RATES)}"
+            )
+        if self.lag_down is not None and self.lag is None:
+            raise ValueError("lag_down requires lag (the up time)")
+
+    def _signature(self):
+        """The full identity used to detect conflicting reuses of a name."""
+        return (self.default, self.rate, self.lag, self.lag_down)
 
     def __repr__(self):
         return f"Control({self.name!r}, {self.default!r})"
 
 
-def control(name: str, default: float = 0.0) -> Control:
-    """A named control (``/s_new``/``/n_set`` parameter) with a default."""
-    return Control(name, default)
+def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
+    """A named control (``/s_new``/``/n_set`` parameter). ``rate`` is its type
+    (``"tr"`` trigger, ``"ir"`` scalar, or the default ``kr``); ``lag`` (with an
+    optional ``lag_down``) smooths a ``kr`` control. See `Control`."""
+    return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
 
 
 # ---- lowercase UGen callables (the client's "instruction set") ----
@@ -165,6 +215,52 @@ def local_out(channel, signal) -> Ugen:
     constant); also passes ``signal`` through as its output (so it can be a
     SynthDef output to keep the write in the graph)."""
     return Ugen("LocalOut", [channel, signal])
+
+
+# ---- one-pole smoothers ----
+
+
+def lag(signal, time=0.1) -> Ugen:
+    """One-pole smoother: ``signal`` lagged over ``time`` seconds (symmetric);
+    ``time`` 0 passes through. The same UGen the server inserts for a lagged
+    control -- use it directly to smooth any signal."""
+    return Ugen("Lag", [signal, time])
+
+
+def var_lag(signal, up=0.1, down=0.1) -> Ugen:
+    """One-pole smoother with separate rise (``up``) and fall (``down``) times."""
+    return Ugen("VarLag", [signal, up, down])
+
+
+# ---- scalar / init-rate (ir) ----
+
+
+def sample_rate() -> Ugen:
+    """The engine sample rate in Hz, computed once at init (``ir``)."""
+    return Ugen("SampleRate", [], rate="ir")
+
+
+def rand(lo=0.0, hi=1.0) -> Ugen:
+    """One uniform random value in ``[lo, hi)``, drawn once at synth init and
+    held for the node's life (``ir``); ``lo``/``hi`` must be constants or ``ir``."""
+    return Ugen("Rand", [lo, hi], rate="ir")
+
+
+# ---- demand rate (dr) ----
+
+
+def dseq(values, repeats=0.0) -> Ugen:
+    """A demand-rate sequence source: yields ``values`` in order, ``repeats``
+    times (``0`` loops forever), then signals end-of-stream. Only valid as a
+    `demand` source."""
+    return Ugen("Dseq", [repeats, *values], rate="dr")
+
+
+def demand(trig, reset, source) -> Ugen:
+    """Demand driver: pulls the next value from a demand ``source`` (a `dseq`)
+    on each rising edge of ``trig`` and holds it between triggers; a rising
+    ``reset`` restarts the source."""
+    return Ugen("Demand", [trig, reset, source])
 
 
 # ---- envelopes (EnvGen) ----

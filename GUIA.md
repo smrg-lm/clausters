@@ -795,6 +795,41 @@ después el resto de la familia demand (`Dseries`/`Dwhite`/`Duty`). El cliente
 Python todavía no arma `rate`/demand de forma idiomática — se usan por JSON
 crudo vía `/d_recv` (eso lo espeja el track de clientes más adelante).
 
+### Probar los controles tipados (`tr`/`lag`/`ir`, S2)
+
+Un control de SynthDef ahora lleva un **tipo** (campo `"rate"` en el control) y
+opcionalmente un **lag**:
+
+- **`tr` (trigger)**: un `/n_set` vale por **un bloque** y el motor lo resetea a
+  0; sirve para disparar un gate de `EnvGen`, un sample-and-hold, etc.
+- **`ir` (escalar)**: se lee **una vez al arrancar** y queda congelado; un
+  `/n_set` posterior se ignora (como scsynth). Al ser `ir` puede alimentar una
+  entrada `ir` (p.ej. `Rand.ir`).
+- **`lag` / `lag_down`**: suaviza un control `kr` con un `Lag` (o `VarLag`)
+  **insertado en compile-time** — un `/n_set` escalonado *desliza* en vez de
+  saltar. Reusa la UGen real `Lag`, sin un camino de suavizado aparte.
+
+```json
+{"name": "freq", "default": 440.0, "lag": 0.1}        // glissando de 100 ms
+{"name": "gate", "default": 0.0, "rate": "tr"}        // trigger de un shot
+{"name": "seed", "default": 1.0, "rate": "ir"}        // escalar congelado
+```
+
+Verificación por tests (el sandbox aísla la red):
+
+```sh
+cargo test --no-default-features --test controls
+# tr dispara exactamente un bloque y se resetea; ir se congela bajo /n_set pero
+# toma su valor inicial; un control ir puede alimentar Rand.ir y uno kr no;
+# lag desliza un escalón y converge; varlag sube rápido y baja lento; + 3
+# rechazos del compilador (tipo desconocido, lag en control no-kr, lag_down sin lag)
+cargo test --no-default-features --test rt_safety typed_controls
+# el reset de tr, el Lag insertado y el reject de ir no allocan en el hilo de audio
+```
+
+Desde el cliente Python (`clients/python`): el helper de defs espeja el tipo y
+el lag del control (ver `clients/python/examples/typed_controls.py`).
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -1141,6 +1176,7 @@ y restore + nota tocable).
 | RT-safety (cero allocs en audio) | `tests/rt_safety.rs` | — |
 | Envolventes `EnvGen` (formas, sostén por gate, done actions) | `tests/envgen.rs`, `tests/rt_safety.rs`, `test_synthdef.py` | `python3 clients/python/examples/envelope.py` |
 | Tasas de cálculo `ir`/`kr`/`ar`/`dr` + init pass + driver demand (S1) | `tests/rates.rs`, `tests/rt_safety.rs` (`rate_substrate`) | por JSON crudo `/d_recv` (ver sección S1) |
+| Controles tipados `tr`/`ir` + lag/varlag insertado (S2) | `tests/controls.rs`, `tests/rt_safety.rs` (`typed_controls`) | `python3 clients/python/examples/typed_controls.py` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

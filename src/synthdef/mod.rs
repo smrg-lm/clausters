@@ -43,10 +43,50 @@ pub struct SynthDefSpec {
     pub ugens: Vec<UGenSpec>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ControlSpec {
     pub name: String,
     pub default: f32,
+    /// Control type (S2): `"kr"` (default, a plain control), `"tr"` (a
+    /// one-block trigger the engine resets to 0), or `"ir"` (scalar, read once
+    /// at init and frozen). Omitted means `"kr"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rate: Option<String>,
+    /// Lag time in seconds (S2): a `kr` control whose changes are smoothed by
+    /// an implicit one-pole `Lag` (or `VarLag` with `lag_down`) inserted at
+    /// compile time. `None` (or `0`) means no smoothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lag: Option<f32>,
+    /// Separate downward lag time (S2): when set alongside `lag`, the control
+    /// smooths with `VarLag` (`lag` up, `lag_down` down).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lag_down: Option<f32>,
+}
+
+/// A control's type (S2): scsynth's control rates for SynthDef controls. The
+/// lag time is separate (it compiles to an inserted `Lag`, not a type).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ControlType {
+    /// A plain control, read once per block, settable any time (`kr`).
+    #[default]
+    Control,
+    /// A one-block trigger: a `/n_set` holds for one block, then the engine
+    /// resets it to 0 (`tr`).
+    Trigger,
+    /// A scalar read once at init and frozen; a later `/n_set` is ignored
+    /// (`ir`, pairing with S1's `ir` rate).
+    Scalar,
+}
+
+impl ControlType {
+    fn parse(name: &str) -> Option<ControlType> {
+        match name {
+            "kr" | "control" => Some(ControlType::Control),
+            "tr" | "trigger" => Some(ControlType::Trigger),
+            "ir" | "scalar" => Some(ControlType::Scalar),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -117,6 +157,9 @@ pub struct SynthDef {
     pub name: String,
     pub control_names: Vec<String>,
     pub control_defaults: Vec<f32>,
+    /// Control types parallel to `control_names` (S2): trigger controls the
+    /// engine resets each block, scalar controls it freezes after init.
+    pub control_types: Vec<ControlType>,
     pub constants: Vec<f32>,
     /// Topologically ordered: inputs only reference earlier UGens.
     pub ugens: Vec<UGenDef>,
@@ -150,6 +193,37 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
     let mut num_locals = 0usize;
     let mut localin_channels = std::collections::HashSet::new();
+
+    // Control types + lag times (S2). `lagged` collects (control index, up
+    // time, optional down time) for the compile-time Lag insertion below.
+    let mut control_types = Vec::with_capacity(n_controls);
+    let mut lagged: Vec<(usize, f32, Option<f32>)> = Vec::new();
+    for (ci, c) in spec.controls.iter().enumerate() {
+        let ty = match &c.rate {
+            Some(name) => ControlType::parse(name).ok_or_else(|| {
+                format!("controls[{ci}] ({}): unknown control type '{name}'", c.name)
+            })?,
+            None => ControlType::Control,
+        };
+        if c.lag_down.is_some() && c.lag.is_none() {
+            return Err(format!(
+                "controls[{ci}] ({}): lag_down requires lag (the up time)",
+                c.name
+            ));
+        }
+        let up = c.lag.unwrap_or(0.0);
+        let down = c.lag_down;
+        if (up > 0.0 || down.is_some_and(|d| d > 0.0)) && ty != ControlType::Control {
+            return Err(format!(
+                "controls[{ci}] ({}): lag is only valid on a kr (plain) control",
+                c.name
+            ));
+        }
+        if up > 0.0 || down.is_some_and(|d| d > 0.0) {
+            lagged.push((ci, up.max(0.0), down));
+        }
+        control_types.push(ty);
+    }
 
     for (i, u) in spec.ugens.iter().enumerate() {
         let desc =
@@ -269,6 +343,9 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         for (k, r) in inputs.iter().enumerate() {
             let in_rate = match r {
                 InputRef::Const(_) => Rate::Ir,
+                // A scalar (`ir`) control is init-rate; every other control is
+                // control-rate (S2 pairs `ir` controls with S1's `ir` rate).
+                InputRef::Control(c) if control_types[*c] == ControlType::Scalar => Rate::Ir,
                 InputRef::Control(_) => Rate::Kr,
                 InputRef::Wire(w) => ugens[*w].rate,
             };
@@ -303,10 +380,66 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         });
     }
 
+    // Compile-time lag insertion (S2): a lagged control compiles to a `Lag`
+    // (or `VarLag`) UGen reading the raw control, prepended to the graph; every
+    // reference to that control is rewritten to the smoother's output. Reusing
+    // the real UGen keeps a single lag implementation shared with the library
+    // (no bespoke control path). The smoothers run at audio rate, so a lagged
+    // control glides per sample toward its block-constant target.
+    if !lagged.is_empty() {
+        let n_lag = lagged.len();
+        let lag_desc = lookup("Lag").expect("Lag is registered");
+        let varlag_desc = lookup("VarLag").expect("VarLag is registered");
+        // control index -> its lag UGen's position (0..n_lag), prepended.
+        let mut lag_pos: Vec<Option<usize>> = vec![None; n_controls];
+        let mut prefix: Vec<UGenDef> = Vec::with_capacity(n_lag);
+        for (pos, &(ci, up, down)) in lagged.iter().enumerate() {
+            lag_pos[ci] = Some(pos);
+            constants.push(up);
+            let up_ref = InputRef::Const(constants.len() - 1);
+            let (desc, lag_inputs) = match down {
+                Some(d) => {
+                    constants.push(d);
+                    let down_ref = InputRef::Const(constants.len() - 1);
+                    (varlag_desc, vec![InputRef::Control(ci), up_ref, down_ref])
+                }
+                None => (lag_desc, vec![InputRef::Control(ci), up_ref]),
+            };
+            prefix.push(UGenDef {
+                desc,
+                inputs: lag_inputs,
+                rate: Rate::Ar,
+                config: UGenConfig::default(),
+            });
+        }
+        // Original UGens shift down by `n_lag`; their wire refs shift too, and
+        // a reference to a lagged control becomes the smoother's wire.
+        let remapped = ugens.into_iter().map(|u| UGenDef {
+            desc: u.desc,
+            rate: u.rate,
+            config: u.config,
+            inputs: u
+                .inputs
+                .into_iter()
+                .map(|r| match r {
+                    InputRef::Wire(w) => InputRef::Wire(w + n_lag),
+                    InputRef::Control(c) => match lag_pos[c] {
+                        Some(pos) => InputRef::Wire(pos),
+                        None => InputRef::Control(c),
+                    },
+                    other => other,
+                })
+                .collect(),
+        });
+        prefix.extend(remapped);
+        ugens = prefix;
+    }
+
     Ok(SynthDef {
         name: spec.name,
         control_names: spec.controls.iter().map(|c| c.name.clone()).collect(),
         control_defaults: spec.controls.iter().map(|c| c.default).collect(),
+        control_types,
         constants,
         ugens,
         num_locals,
@@ -323,10 +456,12 @@ pub fn default_spec() -> SynthDefSpec {
             ControlSpec {
                 name: "freq".into(),
                 default: 440.0,
+                ..Default::default()
             },
             ControlSpec {
                 name: "amp".into(),
                 default: 0.2,
+                ..Default::default()
             },
         ],
         ugens: vec![

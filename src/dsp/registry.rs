@@ -18,6 +18,7 @@ use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
+use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::scalar::{Rand, SampleRate};
@@ -364,6 +365,27 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_| Box::new(LocalOut),
+    ),
+    // --- one-pole smoothers (also inserted by S2 lagged controls) ---
+    desc(
+        "Lag",
+        Fixed(2),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Lag::new()),
+    ),
+    desc(
+        "VarLag",
+        Fixed(3),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(VarLag::new()),
     ),
     // --- envelope ---
     desc(

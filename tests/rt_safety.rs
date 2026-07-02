@@ -384,6 +384,86 @@ fn rate_substrate_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
+/// Typed controls (S2): the trigger reset, the compile-inserted `Lag`, the
+/// scalar `/n_set` reject and ordinary sets must all stay allocation-free on
+/// the audio thread. The def mixes a `tr`, a lagged `kr` and an `ir` control.
+#[test]
+fn typed_controls_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "typed",
+            "controls": [
+                {"name": "gate", "default": 0.0, "rate": "tr"},
+                {"name": "freq", "default": 200.0, "lag": 0.05},
+                {"name": "seed", "default": 1.0, "rate": "ir"}
+            ],
+            "ugens": [
+                {"kind": "SinOsc", "inputs": [{"control": 1}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 0}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    // A trigger set, a lagged set, and an (ignored) scalar set — applied by the
+    // engine at the top of the block, all on the audio thread.
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value: 1.0,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 1,
+            value: 800.0,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 2,
+            value: 7.0,
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}
+
 /// Same guardian for the Faust path (F3): inserting, processing, recontrolling
 /// and freeing `FaustSynth`s must not allocate on the audio thread. This
 /// guards our wrapper (staging copies, zone stores, garbage routing) —

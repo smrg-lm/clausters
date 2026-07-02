@@ -90,7 +90,7 @@ The blob is a JSON object:
 ```
 
 - `name` — the key used by `/s_new` and `/d_free`. Re-sending a name replaces the def (existing synths keep playing the old one).
-- `controls` (optional) — named parameters addressable from `/s_new` and `/n_set`, with their default values.
+- `controls` (optional) — named parameters addressable from `/s_new` and `/n_set`, with their default values and an optional **type** and **lag** (see *Control types* below).
 - `ugens` — the signal graph in execution order. Each input is one of:
 
   | input form | meaning |
@@ -102,6 +102,20 @@ The blob is a JSON object:
   Forward references are rejected, which forces an acyclic, topologically ordered graph. Every ugen has exactly the arity listed below — wrong input counts, unknown kinds, out-of-range references and non-finite constants all come back in `/fail` naming the offending node (e.g. `ugens[2].inputs[0]: control 7 out of range (have 2)`).
 
   Each ugen may also carry an optional **`"rate"`** — its output calculation rate, one of `"ir"`, `"kr"`, `"ar"`, `"dr"` (see *Calculation rates* below). Omitted, it defaults per kind (`ar` for signal UGens); the compiler rejects a rate a kind does not implement, or an illegal coercion, naming the node.
+
+### Control types
+
+A control entry may carry a **`"rate"`** (its type) and a **`"lag"`** time, both optional:
+
+| field | meaning |
+|---|---|
+| `"rate": "kr"` | *(default)* a plain control: one value per block, settable any time with `/n_set`, mappable to a bus with `/n_map`/`/n_mapa` |
+| `"rate": "tr"` | a **trigger**: a `/n_set` value holds for exactly one block, then the engine resets it to `0` — so a rising edge fires once (drives an `EnvGen` gate, a sample-and-hold, …) |
+| `"rate": "ir"` | a **scalar**: read once when the synth starts and then frozen; a later `/n_set` is ignored (it pairs with the `ir` UGen rate, so it may feed an `ir` input like `Rand`/`BufFrames.ir`) |
+| `"lag": t` | on a `kr` control, smooth its changes with an implicit one-pole `Lag` over `t` seconds — the server inserts a real `Lag` UGen at compile time, so a stepped `/n_set` glides instead of jumping |
+| `"lag_down": t` | with `"lag"`, use separate up (`lag`) and down (`lag_down`) times (an inserted `VarLag`) |
+
+Example: `{"name": "freq", "default": 440.0, "lag": 0.1}` glides over 100 ms; `{"name": "gate", "default": 0.0, "rate": "tr"}` is a one-shot trigger. Audio-rate controls are not a control type — feed an audio signal through `In`/an input bus and `/n_mapa` instead.
 
 ### UGen catalog (built-in kinds)
 
@@ -129,6 +143,8 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `LocalIn` | channel | reads synth-private feedback channel `channel` (a constant); see feedback note below |
 | `LocalOut` | channel, signal | writes `signal` into synth-private feedback channel `channel` (a constant); also passes `signal` through as its own output |
 | `EnvGen` | gate, levelScale, levelBias, timeScale, doneAction, *envelope array* | breakpoint envelope; gate-driven, with a `doneAction` that can free the node — see the envelope note below |
+| `Lag` | in, time | one-pole smoother: `in` lagged over `time` seconds (symmetric); `time` 0 passes through; primed to the first input (no glide up from 0) |
+| `VarLag` | in, lagUp, lagDown | one-pole smoother with separate rise (`lagUp`) and fall (`lagDown`) times |
 | `SampleRate` | — | the engine sample rate in Hz; init-rate (`ir`) by default |
 | `Rand` | lo, hi | one uniform random value in `[lo, hi)`, drawn once at synth init and held; init-rate only (its inputs must be constants/`ir`) |
 | `Demand` | trig, reset, source | demand driver: pulls the next value from its demand `source` on each rising edge of `trig`, holds it between triggers; a rising `reset` restarts the source; 0 before the first trigger — see the demand note below |
