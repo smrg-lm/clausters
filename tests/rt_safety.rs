@@ -876,3 +876,101 @@ fn parallel_dispatch_does_not_allocate() {
         }
     });
 }
+
+/// OSC command-set completion (S6): the new commands that reach the audio
+/// thread must stay allocation-free. `Cmd::MoveNode` with `Place::Head`/`Tail`
+/// (`/g_head`/`/g_tail`/`/n_order`), a `/u_cmd` payload routed to a UGen
+/// instance, and `Cmd::ClearSched` draining the timed-bundle queue to the
+/// garbage FIFO all run inside `process_block` — none may allocate.
+#[test]
+fn command_set_completion_does_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::{UGenCmd, ugen_cmd_selector};
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // A group with two synths inside it.
+    let def = Arc::new(compile(default_spec()).unwrap());
+    handle
+        .send(Cmd::AddGroup {
+            id: 1,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::new(),
+        })
+        .ok()
+        .unwrap();
+    for id in [1000, 1001] {
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        synth.set_control(1, 0.01);
+        handle
+            .send(Cmd::AddSynth {
+                id,
+                target: 1,
+                action: AddAction::Tail,
+                synth,
+                usage: Default::default(),
+            })
+            .ok()
+            .unwrap();
+    }
+
+    // A far-future scheduled bundle so ClearSched has something to drain.
+    handle
+        .send(Cmd::Schedule {
+            time: 1_000_000,
+            cmds: vec![Cmd::SetControl {
+                id: 1000,
+                index: 0,
+                value: 440.0,
+            }],
+        })
+        .ok()
+        .unwrap();
+
+    // Move to head/tail, route a /u_cmd to UGen 0 (default handler ignores it),
+    // and flush the schedule queue — all applied at the top of a block.
+    handle
+        .send(Cmd::MoveNode {
+            id: 1001,
+            target: 1,
+            place: Place::Head,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::MoveNode {
+            id: 1001,
+            target: 1,
+            place: Place::Tail,
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::UGenCommand {
+            id: 1000,
+            ugen_index: 0,
+            command: UGenCmd {
+                selector: ugen_cmd_selector("noop"),
+                args: [1.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                num_args: 2,
+            },
+        })
+        .ok()
+        .unwrap();
+    handle.send(Cmd::ClearSched).ok().unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    // The drained bundle shell leaves through the garbage FIFO.
+    handle.send(Cmd::FreeNode { id: 1 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+}

@@ -15,7 +15,9 @@ use std::sync::Arc;
 use rosc::OscType;
 
 use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS, empty_pool};
-use crate::dsp::{NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
+use crate::dsp::{
+    MAX_UGEN_CMD_ARGS, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, UGenCmd, ugen_cmd_selector,
+};
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
 use crate::midi::{ChannelVoiceMessage, MidiBinding, MidiBindings, convert};
@@ -65,6 +67,16 @@ impl NodeDef {
                 Some(1) => Some("in"),
                 Some(_) => None,
             },
+        }
+    }
+
+    /// Number of addressable UGens (`/u_cmd`), or `None` for defs with no UGen
+    /// vector (a Faust synth is one opaque block, not a UGen graph).
+    fn ugen_count(&self) -> Option<usize> {
+        match self {
+            NodeDef::UGen(def) => Some(def.ugens.len()),
+            #[cfg(feature = "faust")]
+            NodeDef::Faust(_) => None,
         }
     }
 
@@ -332,6 +344,342 @@ impl CmdTranslator {
                 self.reanalyze_and_resort(node, cmds);
             }
         }
+        Ok(())
+    }
+
+    /// `/n_setn nodeID [ctrl numControls val...]...`: like `/n_set`, but each
+    /// group sets a **consecutive range** of controls starting at `ctrl`
+    /// (resolved by name or index). A group target propagates over its subtree.
+    fn set_controls_n(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let Some(OscType::Int(id)) = msg.args.first() else {
+            return Err("expected: id, then (control, numControls, values...) groups".into());
+        };
+        if self.node_unknown(*id) {
+            return Err(format!("node {id} not found"));
+        }
+        for node in self.control_targets(*id) {
+            let Some(def) = self.node_defs.get(&node).cloned() else {
+                continue;
+            };
+            let mut bus_control_hit = false;
+            let mut rest = &msg.args[1..];
+            while !rest.is_empty() {
+                let [ctrl, OscType::Int(count), tail @ ..] = rest else {
+                    return Err("expected (control, numControls, values...) groups".into());
+                };
+                let count = usize::try_from(*count).map_err(|_| "numControls must be >= 0")?;
+                if tail.len() < count {
+                    return Err("fewer values than numControls".into());
+                }
+                let base = control_key(ctrl, &def).ok_or("unknown control")?;
+                for (offset, value) in tail[..count].iter().enumerate() {
+                    let value = float_value(value).ok_or("expected number values")?;
+                    let index = base + offset as u32;
+                    cmds.push(Cmd::SetControl {
+                        id: node,
+                        index,
+                        value,
+                    });
+                    bus_control_hit |= self.mirror.set_control(node, index, value);
+                    bus_control_hit |= self.mirror.set_map(node, index, -1, false);
+                }
+                rest = &tail[count..];
+            }
+            if bus_control_hit {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+        Ok(())
+    }
+
+    /// `/n_fill nodeID [ctrl numControls value]...`: fills a consecutive range
+    /// of controls with a single value (each group a `(ctrl, numControls,
+    /// value)` triple). Propagates over a group target like `/n_set`.
+    fn fill_controls(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let Some(OscType::Int(id)) = msg.args.first() else {
+            return Err("expected: id, then (control, numControls, value) triples".into());
+        };
+        if self.node_unknown(*id) {
+            return Err(format!("node {id} not found"));
+        }
+        if !msg.args[1..].len().is_multiple_of(3) {
+            return Err("expected (control, numControls, value) triples".into());
+        }
+        for node in self.control_targets(*id) {
+            let Some(def) = self.node_defs.get(&node).cloned() else {
+                continue;
+            };
+            let mut bus_control_hit = false;
+            for group in msg.args[1..].chunks(3) {
+                let [ctrl, OscType::Int(count), val] = group else {
+                    return Err("expected (control, numControls, value) triples".into());
+                };
+                let count = u32::try_from(*count).map_err(|_| "numControls must be >= 0")?;
+                let value = float_value(val).ok_or("expected number value")?;
+                let base = control_key(ctrl, &def).ok_or("unknown control")?;
+                for offset in 0..count {
+                    let index = base + offset;
+                    cmds.push(Cmd::SetControl {
+                        id: node,
+                        index,
+                        value,
+                    });
+                    bus_control_hit |= self.mirror.set_control(node, index, value);
+                    bus_control_hit |= self.mirror.set_map(node, index, -1, false);
+                }
+            }
+            if bus_control_hit {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+        Ok(())
+    }
+
+    /// `/n_mapn` / `/n_mapan`: like `/n_map`/`/n_mapa`, but each group
+    /// `(ctrl, busIndex, numControls)` maps `numControls` **consecutive**
+    /// controls to `numControls` **consecutive** buses starting at `busIndex`
+    /// (`busIndex = -1` unbinds the whole range).
+    fn map_controls_n(
+        &mut self,
+        msg: &rosc::OscMessage,
+        audio: bool,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let Some(OscType::Int(id)) = msg.args.first() else {
+            return Err("expected: id, then (control, busIndex, numControls) groups".into());
+        };
+        if self.node_unknown(*id) {
+            return Err(format!("node {id} not found"));
+        }
+        if !msg.args[1..].len().is_multiple_of(3) {
+            return Err("expected (control, busIndex, numControls) groups".into());
+        }
+        for node in self.control_targets(*id) {
+            let Some(def) = self.node_defs.get(&node).cloned() else {
+                continue;
+            };
+            let mut usage_hit = false;
+            for group in msg.args[1..].chunks(3) {
+                let [ctrl, OscType::Int(bus), OscType::Int(count)] = group else {
+                    return Err("expected int busIndex and numControls".into());
+                };
+                let count = u32::try_from(*count).map_err(|_| "numControls must be >= 0")?;
+                let base = control_key(ctrl, &def).ok_or("unknown control")?;
+                for offset in 0..count {
+                    let index = base + offset;
+                    // -1 unbinds every control in the range; else buses advance.
+                    let bus = if *bus < 0 { -1 } else { *bus + offset as i32 };
+                    cmds.push(Cmd::MapControl {
+                        id: node,
+                        index,
+                        bus,
+                        audio,
+                    });
+                    usage_hit |= self.mirror.set_map(node, index, bus, audio);
+                }
+            }
+            if usage_hit {
+                self.reanalyze_and_resort(node, cmds);
+            }
+        }
+        Ok(())
+    }
+
+    /// `/n_order addAction targetID nodeID...`: moves several nodes to one
+    /// position in listed order. `addAction` 0 = head of the target group, 1 =
+    /// tail, 2 = before the target node, 3 = after it. The first node goes to
+    /// the position; each following node lands right after the previous one, so
+    /// they keep the given order. Auto-sorted groups (`/g_sortMode`) reject
+    /// manual moves, same as `/n_before`.
+    fn order_nodes(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let [OscType::Int(action), OscType::Int(target), nodes @ ..] = msg.args.as_slice() else {
+            return Err("expected: addAction, targetID, then node IDs".into());
+        };
+        // The first move is relative to the target; the rest chain after the
+        // previous node so the list order is preserved.
+        let (mut place, mut anchor) = match action {
+            0 => (Place::Head, *target),
+            1 => (Place::Tail, *target),
+            2 => (Place::Before, *target),
+            3 => (Place::After, *target),
+            _ => {
+                return Err("addAction must be 0 (head), 1 (tail), 2 (before) or 3 (after)".into());
+            }
+        };
+        for node in nodes {
+            let OscType::Int(id) = node else {
+                return Err("expected int node IDs".into());
+            };
+            self.move_one(*id, anchor, place, cmds)?;
+            place = Place::After;
+            anchor = *id;
+        }
+        Ok(())
+    }
+
+    /// `/g_head` / `/g_tail groupID nodeID...`: moves each node to the head/tail
+    /// of the given group (pairs of `groupID, nodeID`).
+    fn move_to_group(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let place = if msg.addr == "/g_head" {
+            Place::Head
+        } else {
+            Place::Tail
+        };
+        if msg.args.is_empty() || !msg.args.len().is_multiple_of(2) {
+            return Err("expected (groupID, nodeID) pairs".into());
+        }
+        for pair in msg.args.chunks(2) {
+            let [OscType::Int(group), OscType::Int(id)] = pair else {
+                return Err("expected int (groupID, nodeID) pairs".into());
+            };
+            self.move_one(*id, *group, place, cmds)?;
+        }
+        Ok(())
+    }
+
+    /// One node move shared by `/n_order`, `/g_head` and `/g_tail`: rejects
+    /// moving into an auto-sorted group, emits the `Cmd::MoveNode`, and re-sorts
+    /// the affected auto ancestors. `target` is a sibling (Before/After) or the
+    /// destination group (Head/Tail).
+    fn move_one(
+        &mut self,
+        id: i32,
+        target: i32,
+        place: Place,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        // The destination group is the target itself (Head/Tail) or the
+        // target's parent (Before/After); manual moves into it are the auto
+        // group's job (M12).
+        let dest = match place {
+            Place::Head | Place::Tail => target,
+            Place::Before | Place::After => self.mirror.parent(target).unwrap_or(target),
+        };
+        if self.mirror.is_auto_group(dest) {
+            return Err(format!(
+                "group {dest} is auto-sorted (/g_sortMode): manual moves are disabled there"
+            ));
+        }
+        cmds.push(Cmd::MoveNode { id, target, place });
+        if let Some((old_parent, new_parent)) = self.mirror.move_node(id, target, place) {
+            self.resort_from(Some(old_parent), cmds);
+            if new_parent != old_parent {
+                self.resort_from(Some(new_parent), cmds);
+            }
+        }
+        Ok(())
+    }
+
+    /// `/c_setn busIndex numBuses val...`: sets a consecutive range of control
+    /// buses (one or more `(busIndex, numBuses, values...)` groups). The
+    /// **immediate** form writes the shared atomics on the network thread; the
+    /// scheduled form (this) ships `Cmd::SetControlBus` per bus.
+    fn set_control_bus_n(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        let mut rest = msg.args.as_slice();
+        while !rest.is_empty() {
+            let [OscType::Int(base), OscType::Int(count), tail @ ..] = rest else {
+                return Err("expected (busIndex, numBuses, values...) groups".into());
+            };
+            if *base < 0 {
+                return Err("bus index must be non-negative".into());
+            }
+            let count = usize::try_from(*count).map_err(|_| "numBuses must be >= 0")?;
+            if tail.len() < count {
+                return Err("fewer values than numBuses".into());
+            }
+            for (offset, value) in tail[..count].iter().enumerate() {
+                let value = float_value(value).ok_or("expected number values")?;
+                cmds.push(Cmd::SetControlBus {
+                    index: *base as usize + offset,
+                    value,
+                });
+            }
+            rest = &tail[count..];
+        }
+        Ok(())
+    }
+
+    /// `/c_fill busIndex numBuses value...`: fills a consecutive range of
+    /// control buses with one value (groups of `(busIndex, numBuses, value)`).
+    fn fill_control_bus(
+        &mut self,
+        msg: &rosc::OscMessage,
+        cmds: &mut Vec<Cmd>,
+    ) -> Result<(), String> {
+        if msg.args.is_empty() || !msg.args.len().is_multiple_of(3) {
+            return Err("expected (busIndex, numBuses, value) triples".into());
+        }
+        for group in msg.args.chunks(3) {
+            let [OscType::Int(base), OscType::Int(count), val] = group else {
+                return Err("expected int busIndex and numBuses".into());
+            };
+            if *base < 0 {
+                return Err("bus index must be non-negative".into());
+            }
+            let count = usize::try_from(*count).map_err(|_| "numBuses must be >= 0")?;
+            let value = float_value(val).ok_or("expected number value")?;
+            for offset in 0..count {
+                cmds.push(Cmd::SetControlBus {
+                    index: *base as usize + offset,
+                    value,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// `/u_cmd nodeID ugenIndex commandName args...`: a typed command addressed
+    /// to one UGen instance — the discoverable replacement for scsynth's
+    /// untyped `/u_cmd`. The command name is hashed to a stable selector and
+    /// the numeric args are packed inline (no heap crosses to the audio
+    /// thread). Validates the node is a UGen synth and the index is in range;
+    /// the specific commands a UGen understands land with that UGen.
+    fn ugen_command(&mut self, msg: &rosc::OscMessage, cmds: &mut Vec<Cmd>) -> Result<(), String> {
+        let [
+            OscType::Int(id),
+            OscType::Int(ugen_index),
+            OscType::String(name),
+            rest @ ..,
+        ] = msg.args.as_slice()
+        else {
+            return Err("expected: nodeID, ugenIndex, commandName, args...".into());
+        };
+        let Some(def) = self.node_defs.get(id) else {
+            return Err(format!("synth {id} not found"));
+        };
+        let Some(count) = def.ugen_count() else {
+            return Err(format!("node {id} is not a UGen synth"));
+        };
+        let ugen_index = u32::try_from(*ugen_index).map_err(|_| "ugenIndex must be >= 0")?;
+        if ugen_index as usize >= count {
+            return Err(format!(
+                "ugenIndex {ugen_index} out of range (synth has {count})"
+            ));
+        }
+        if rest.len() > MAX_UGEN_CMD_ARGS {
+            return Err(format!("at most {MAX_UGEN_CMD_ARGS} command args"));
+        }
+        let mut args = [0.0; MAX_UGEN_CMD_ARGS];
+        for (slot, arg) in args.iter_mut().zip(rest) {
+            *slot = float_value(arg).ok_or("expected number command args")?;
+        }
+        cmds.push(Cmd::UGenCommand {
+            id: *id,
+            ugen_index,
+            command: UGenCmd {
+                selector: ugen_cmd_selector(name),
+                args,
+                num_args: rest.len() as u8,
+            },
+        });
         Ok(())
     }
 
@@ -911,6 +1259,12 @@ impl CmdTranslator {
             }
             "/n_map" => self.map_controls(msg, false, cmds),
             "/n_mapa" => self.map_controls(msg, true, cmds),
+            "/n_setn" => self.set_controls_n(msg, cmds),
+            "/n_fill" => self.fill_controls(msg, cmds),
+            "/n_mapn" => self.map_controls_n(msg, false, cmds),
+            "/n_mapan" => self.map_controls_n(msg, true, cmds),
+            "/n_order" => self.order_nodes(msg, cmds),
+            "/g_head" | "/g_tail" => self.move_to_group(msg, cmds),
             // M18: instantiate a GraphDef as a wired group with private buses.
             "/graph_new" => self.graph_new(msg, cmds),
             // M18: spawn a per-voice sub-graph inside an instance.
@@ -1088,6 +1442,9 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
+            "/c_setn" => self.set_control_bus_n(msg, cmds),
+            "/c_fill" => self.fill_control_bus(msg, cmds),
+            "/u_cmd" => self.ugen_command(msg, cmds),
             other => Err(format!("{other} cannot be scheduled in a timed bundle")),
         }
     }

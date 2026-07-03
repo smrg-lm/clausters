@@ -36,6 +36,10 @@ pub trait SynthNode: Send {
     fn done_action(&self) -> DoneAction {
         DoneAction::None
     }
+    /// Routes a `/u_cmd` payload to the UGen at `index`. Out-of-range indices
+    /// are ignored. The default has no addressable UGens (e.g. a Faust synth is
+    /// one opaque block). Runs on the audio thread — allocation-free.
+    fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
 }
 
 /// One control's bus mapping (`/n_map`/`/n_mapa`), stored per synth parallel
@@ -94,12 +98,16 @@ impl AddAction {
     }
 }
 
-/// Where to move an existing node relative to a sibling (`/n_before`,
-/// `/n_after`).
+/// Where to move an existing node. `Before`/`After` place it relative to a
+/// sibling (`/n_before`, `/n_after`); `Head`/`Tail` place it as the first/last
+/// child of a group (`/g_head`, `/g_tail`) — for those two the `target` is the
+/// destination **group** itself, not a sibling. `/n_order` uses all four.
 #[derive(Clone, Copy, Debug)]
 pub enum Place {
     Before,
     After,
+    Head,
+    Tail,
 }
 
 pub enum NodeKind {
@@ -714,20 +722,42 @@ impl NodeTree {
         }
     }
 
-    /// `/n_before` / `/n_after`: moves a node next to a sibling, possibly
-    /// under a different parent. Rejects moves of/into the node's own
-    /// subtree, of the root, and into a full group.
+    /// `/n_before` / `/n_after` / `/g_head` / `/g_tail`: moves a node, possibly
+    /// under a different parent. For `Before`/`After`, `target` is a sibling;
+    /// for `Head`/`Tail`, `target` is the destination group and the node lands
+    /// first/last in it. Rejects moves of/into the node's own subtree, of the
+    /// root, and into a full group.
     pub fn move_node(&mut self, id: i32, target: i32, place: Place) -> bool {
         if id == ROOT_NODE_ID || id == target {
             return false;
         }
-        let (Some(idx), Some(tidx)) = (self.find(id), self.find(target)) else {
+        let Some(idx) = self.find(id) else {
             return false;
         };
-        let new_parent = self.slot(tidx).unwrap().parent;
-        if new_parent == NO_PARENT {
-            return false; // cannot be a sibling of the root group
-        }
+        // Resolve the destination group and, for sibling moves, the insert
+        // anchor (the target's slot index).
+        let (new_parent, anchor) = match place {
+            Place::Before | Place::After => {
+                let Some(tidx) = self.find(target) else {
+                    return false;
+                };
+                let parent = self.slot(tidx).unwrap().parent;
+                if parent == NO_PARENT {
+                    return false; // cannot be a sibling of the root group
+                }
+                (parent, Some(tidx))
+            }
+            Place::Head | Place::Tail => {
+                // The target must itself be a group to move into.
+                let Some(gidx) = self.find(target) else {
+                    return false;
+                };
+                if self.group_of(gidx).is_none() {
+                    return false;
+                }
+                (gidx, None)
+            }
+        };
         if self.is_ancestor_or_self(idx, new_parent) {
             return false; // would create a cycle
         }
@@ -740,12 +770,19 @@ impl NodeTree {
         }
         self.unlink(idx);
         let g = self.group_of_mut(new_parent).unwrap();
-        let Some(at) = g.children.iter().position(|&c| c == tidx) else {
-            return false; // unreachable: target verified above
-        };
         let pos = match place {
-            Place::Before => at,
-            Place::After => at + 1,
+            Place::Head => 0,
+            Place::Tail => g.children.len(),
+            Place::Before | Place::After => {
+                let Some(at) = g.children.iter().position(|&c| c == anchor.unwrap()) else {
+                    return false; // unreachable: target verified above
+                };
+                if matches!(place, Place::After) {
+                    at + 1
+                } else {
+                    at
+                }
+            }
         };
         g.children.insert(pos, idx);
         self.slot_mut(idx).unwrap().parent = new_parent;

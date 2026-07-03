@@ -35,6 +35,10 @@ then run one or more demos (default: status):
          sine from an explicit `recursion`/`self` phasor, and a one-pole
          lowpass on noise — explicit sample-accurate feedback (needs the
          faust feature).
+`commands` exercises the S6 command-set completion: control-range setters
+         (`/n_setn`), value queries (`/s_getn`), tree reordering (`/g_head`),
+         control-bus ranges (`/c_setn`/`/c_getn`), a server command (`/cmd`)
+         and `/clearSched` — no Faust needed.
 """
 
 import json
@@ -641,6 +645,44 @@ def demo_score():
     print(f"  ./target/release/clausters --nrt {path} /tmp/out.wav")
 
 
+def demo_commands(client: Client):
+    """S6 OSC command-set completion: control ranges, value queries, tree
+    reordering, control-bus ranges, a server command, and /clearSched."""
+    print("commands demo: /g_new 1 with three quiet synths")
+    client.send("/g_new", 1, 1, 0)
+    for i, nid in enumerate((1001, 1002, 1003)):
+        client.send("/s_new", "default", nid, 1, 1, "freq", 300.0 + 110 * i, "amp", 0.05)
+    time.sleep(0.5)
+
+    # /n_setn sets a consecutive control range (freq@0, amp@1) in one message.
+    print("  /n_setn 1001 0 2 660 0.08  (freq + amp as one range)")
+    client.send("/n_setn", 1001, 0, 2, 660.0, 0.08)
+    # /s_getn reads a range back -> /n_set 1001 0 2 <freq> <amp>.
+    client.send("/s_getn", 1001, 0, 2)
+    print("  /s_getn ->", client.reply(quiet=True))
+
+    # Reorder the group: move 1003 to the head, then query the child order.
+    print("  /g_head 1 1003, then /g_queryTree")
+    client.send("/g_head", 1, 1003)
+    client.send("/g_queryTree", 1, 0)
+    print("  tree ->", client.reply(quiet=True))
+
+    # Control-bus range: set buses 10..12, read them back with /c_getn.
+    client.send("/c_setn", 10, 3, 0.1, 0.2, 0.3)
+    client.send("/c_getn", 10, 3)
+    print("  /c_getn ->", client.reply(quiet=True))
+
+    # A typed, discoverable server-wide command.
+    client.send("/cmd", "ping")
+    print("  /cmd ping ->", client.reply(quiet=True))
+
+    time.sleep(0.5)
+    client.send("/n_free", 1)  # frees the group and its synths
+    # /clearSched would flush any pending timed bundles (none scheduled here).
+    client.send("/clearSched")
+    print("  /clearSched ->", client.reply(quiet=True))
+
+
 def main():
     demos = sys.argv[1:] or ["status"]
     client = Client()
@@ -670,6 +712,8 @@ def main():
             demo_demand(client)
         elif demo == "signal":
             demo_signal(client)
+        elif demo == "commands":
+            demo_commands(client)
         elif demo == "score":
             demo_score()
         elif demo == "quit":
@@ -677,7 +721,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, commands, score, quit)"
             )
 
 

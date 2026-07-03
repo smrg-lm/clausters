@@ -4119,3 +4119,74 @@ sine; unknown command and unallocated target `/fail`), and a no-alloc
 `table_oscillators` scene in `tests/rt_safety.rs` (`Osc`/`VOsc`/`Shaper` reading
 the pool). `cargo fmt` clean. Live smoke: the `bgen` demo against a running
 server plays the wavetable and waveshaper voices.
+
+## S6 — Complete the scsynth OSC command set (completed 2026-07-03)
+
+**What's there:** the rest of scsynth's OSC vocabulary, so a client can rely on
+the full command surface. Every command is network-thread and RT-safe like its
+neighbours, mapping onto the existing tree/bus/def/schedule machinery — the
+audio thread learns two new `Cmd`s (`ClearSched`, `UGenCommand`) and one new
+`Place` axis (head/tail), nothing more.
+
+- **Node ranges (`src/osc/translate.rs`).** `/n_setn` (a consecutive control
+  range from a value list, repeatable groups), `/n_fill` (fill a range with one
+  value), `/n_mapn`/`/n_mapan` (map consecutive controls to consecutive buses,
+  `-1` unbinds the range). All expand to the existing `SetControl`/`MapControl`
+  per index, reuse the group-subtree propagation and the bus-control re-sort,
+  and are schedulable in timed bundles.
+- **Tree moves.** `Place` (`src/node/mod.rs`) grows `Head`/`Tail` beside
+  `Before`/`After`; `NodeTree::move_node` and its `TreeMirror` twin resolve the
+  destination group from the variant (the target's parent for sibling moves, the
+  target itself for head/tail). `/g_head`/`/g_tail` move a node to a group's
+  head/tail; `/n_order addAction target id...` moves several nodes to one place
+  keeping their listed order (first relative to the target, the rest chained
+  `After` the previous). A shared `move_one` rejects any manual move into an
+  auto-sorted group (`/g_sortMode`) with `/fail`.
+- **Control-bus ranges (`src/osc/server.rs`, `translate.rs`).** `/c_setn`,
+  `/c_fill` (immediate atomic writes, or `SetControlBus` per bus in a bundle),
+  `/c_getn` (reply `/c_setn bus numBuses val...`).
+- **Synth queries.** `/s_get`/`/s_getn` read the node mirror's control values
+  and reply `/n_set` (the read counterpart of `/n_set`); `/s_noid` is a
+  compatibility acknowledgement (Clausters assigns node IDs per client and never
+  reuses a live/freed one, so there is nothing to release); `/n_trace` logs a
+  node's mirror state to the console.
+- **Buffers/defs.** `/b_close` validates a live buffer and replies `/done`
+  (forward-looking for the future streaming UGens — no soundfile is ever left
+  open today); `/d_load path` / `/d_loadDir dir` load SynthDef spec JSON files
+  from disk on demand through the `/d_recv` path (persisting under their names).
+- **Scheduling.** `Cmd::ClearSched` (`/clearSched`) `drain`s the engine's
+  timed-bundle queue (keeping its capacity), shipping each bundle's `Vec<Cmd>`
+  and boxed synths back as `Garbage::SpentBundle` — flush the schedule without a
+  drop on the audio thread.
+- **Server/UGen commands + `/error`.** `/error mode` gates console error posting
+  (the `/fail` OSC reply always goes out; scsynth's bundle-local `-1`/`-2` are a
+  documented deviation — `0`/`1` is the model that fits our logging). `/cmd name
+  args...` is a typed, discoverable server command (built-in `ping`); `/u_cmd
+  nodeID ugenIndex name args...` addresses one UGen instance — it validates the
+  target, hashes the name to a stable selector (`dsp::ugen_cmd_selector`), packs
+  the numeric args inline (`UGenCmd`, up to 8 floats, no heap across the FIFO),
+  and `Cmd::UGenCommand` routes them to `SynthNode::ugen_command` →
+  `UGen::command` (default no-op — the mechanism for future FFT/streaming UGens,
+  the typed replacement for scsynth's untyped `/u_cmd` blob).
+
+**Docs:** `schemas.md` gains the node-range, tree-move, control-bus-range,
+synth-query, `/b_close`, `/d_load`/`/d_loadDir`, `/clearSched`, `/error`, and
+`/cmd`/`/u_cmd` sections, and updates the schedulable-in-bundle list;
+`architecture.md` adds "Node moves and the auto-order guard", "Range and query
+commands", the `UGen::command` hook in "how to add a UGen", and the
+`/clearSched` garbage path in "Clocks and scheduling". `GUIA.md` gets the S6
+manual-test section and a checklist row; the `commands` demo in
+`examples/json_client.py` exercises `/n_setn`, `/s_getn`, `/g_head`, `/c_setn`,
+`/cmd`, and `/clearSched`.
+
+**Verified:** `cargo test --no-default-features` green — 18 new `tests/osc.rs`
+cases (`n_setn`/`s_get`/`s_getn`, `n_fill`, `n_mapn`, `g_head`/`g_tail`/`n_order`
+ordering via `/g_queryTree` + auto-sort rejection, `c_setn`/`c_getn`/`c_fill`,
+`s_noid`, `b_close`, `d_load` + missing file, `clearSched` proving a flushed
+bundle never fires, `error_mode` still replying `/fail`, `cmd` ping/unknown,
+`u_cmd` target/index validation) plus a no-alloc `command_set_completion` scene
+in `tests/rt_safety.rs` (`MoveNode` head/tail, `UGenCommand`, `ClearSched`).
+`cargo fmt`/`clippy` clean. Live smoke: `json_client.py commands` against a
+running server round-trips every command (`/s_getn` returns the range,
+`/g_head` reorders, `/c_getn` reads back, `/cmd ping` and `/clearSched` reply
+`/done`).

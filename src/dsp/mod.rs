@@ -451,6 +451,43 @@ pub trait UGen: Send {
         _step: &mut dyn FnMut(bool) -> f32,
     ) {
     }
+
+    /// Receives a typed out-of-band command addressed to this instance
+    /// (`/u_cmd`). The mechanism the future FFT/streaming UGens use to take
+    /// parameters that are neither audio nor control inputs. Runs on the audio
+    /// thread — the payload is inline, so this must stay allocation-free. The
+    /// default ignores every command (an unknown selector is a no-op).
+    fn command(&mut self, _cmd: &UGenCmd) {}
+}
+
+/// Max inline float args a [`UGenCmd`] carries. Sized for realistic UGen
+/// commands (a selector plus a few scalar params); keeps the payload `Copy` and
+/// heap-free, so applying a `/u_cmd` on the audio thread allocates nothing.
+pub const MAX_UGEN_CMD_ARGS: usize = 8;
+
+/// A typed command addressed to one UGen instance (`/u_cmd`) — the discoverable
+/// replacement for scsynth's untyped `/u_cmd` blob. The command name is hashed
+/// to a stable `selector` on the network thread (so both sides agree without a
+/// shared table); `args` are inline floats. Consumers are future UGens; today
+/// every UGen's default [`UGen::command`] ignores it.
+#[derive(Clone, Copy, Debug)]
+pub struct UGenCmd {
+    /// Stable hash of the command name (see [`ugen_cmd_selector`]).
+    pub selector: u32,
+    pub args: [f32; MAX_UGEN_CMD_ARGS],
+    pub num_args: u8,
+}
+
+/// FNV-1a hash of a `/u_cmd` command name into its selector. Deterministic and
+/// shared by the network thread (which resolves the name) and any consumer
+/// UGen (which matches `ugen_cmd_selector("myCommand")` in its `command`).
+pub fn ugen_cmd_selector(name: &str) -> u32 {
+    let mut hash: u32 = 0x811c_9dc5;
+    for byte in name.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    hash
 }
 
 /// Reads input `i` from a block or a single-sample slice.

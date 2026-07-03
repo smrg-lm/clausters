@@ -126,6 +126,17 @@ pub enum Cmd {
         time: u64,
         cmds: Vec<Cmd>,
     },
+    /// `/clearSched`: drop every pending timed bundle. Each drained bundle's
+    /// `Vec<Cmd>` (with its boxed synths) leaves through the garbage FIFO as
+    /// [`Garbage::SpentBundle`], so nothing is freed on the audio thread.
+    ClearSched,
+    /// `/u_cmd`: a typed command addressed to one UGen instance inside a synth.
+    /// The payload is inline (no heap), so applying it allocates nothing.
+    UGenCommand {
+        id: i32,
+        ugen_index: u32,
+        command: crate::dsp::UGenCmd,
+    },
 }
 
 /// Heap memory leaving the audio thread to be dropped on the network side.
@@ -613,6 +624,22 @@ impl Engine {
                         // Vec::insert below capacity does not allocate.
                         let pos = self.sched.partition_point(|b| b.time <= time);
                         self.sched.insert(pos, ScheduledBundle { time, cmds });
+                    }
+                }
+                Cmd::ClearSched => {
+                    // `drain` keeps the queue's capacity (no dealloc here); each
+                    // bundle's heap is freed on the network side.
+                    for bundle in self.sched.drain(..) {
+                        sink.push(Garbage::SpentBundle(bundle.cmds));
+                    }
+                }
+                Cmd::UGenCommand {
+                    id,
+                    ugen_index,
+                    command,
+                } => {
+                    if let Some(synth) = self.tree.synth_mut(id) {
+                        synth.ugen_command(ugen_index, &command);
                     }
                 }
             }

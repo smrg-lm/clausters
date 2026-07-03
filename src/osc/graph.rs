@@ -392,8 +392,23 @@ impl TreeMirror {
         if !self.nodes.contains_key(&id) || !self.nodes.contains_key(&target) {
             return None;
         }
-        let new_parent = self.nodes[&target].parent;
-        if target == ROOT_NODE_ID || self.is_ancestor_or_self(id, new_parent) {
+        // For sibling moves the destination is the target's parent; for
+        // head/tail the target is the destination group itself (and must be one).
+        let new_parent = match place {
+            Place::Before | Place::After => {
+                if target == ROOT_NODE_ID {
+                    return None;
+                }
+                self.nodes[&target].parent
+            }
+            Place::Head | Place::Tail => {
+                if !matches!(self.nodes[&target].body, MirrorBody::Group { .. }) {
+                    return None;
+                }
+                target
+            }
+        };
+        if self.is_ancestor_or_self(id, new_parent) {
             return None;
         }
         let old_parent = self.nodes[&id].parent;
@@ -402,10 +417,15 @@ impl TreeMirror {
         {
             children.retain(|&c| c != id);
         }
-        let at = self.position(new_parent, target);
+        let child_count = self
+            .children(new_parent)
+            .map(<[i32]>::len)
+            .unwrap_or_default();
         let pos = match place {
-            Place::Before => at,
-            Place::After => at + 1,
+            Place::Head => 0,
+            Place::Tail => child_count,
+            Place::Before => self.position(new_parent, target),
+            Place::After => self.position(new_parent, target) + 1,
         };
         if let Some(MirrorBody::Group { children, .. }) =
             self.nodes.get_mut(&new_parent).map(|n| &mut n.body)

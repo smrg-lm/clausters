@@ -1130,3 +1130,459 @@ fn sync_waits_for_an_async_buffer_alloc() {
     }
     panic!("never received /synced");
 }
+
+// ---- S6: OSC command-set completion ----
+
+impl TestServer {
+    /// The ordered synth child IDs of a group, read from `/g_queryTree` (each
+    /// synth child is `Int(id), Int(-1), String(defName)`).
+    fn group_child_ids(&self, group: i32) -> Vec<i32> {
+        self.send("/g_queryTree", vec![OscType::Int(group), OscType::Int(0)]);
+        let reply = self.recv_until("/g_queryTree.reply");
+        let mut ids = Vec::new();
+        for pair in reply.args.windows(2) {
+            if let [OscType::Int(id), OscType::Int(-1)] = pair
+                && *id > 0
+            {
+                ids.push(*id);
+            }
+        }
+        ids
+    }
+
+    /// Fresh "default" synth `id` at the tail of group `parent`.
+    fn new_synth(&self, id: i32, parent: i32) {
+        self.new_synth_named("default", id, parent);
+    }
+
+    /// Fresh synth of def `name`, id `id`, at the tail of group `parent`.
+    fn new_synth_named(&self, name: &str, id: i32, parent: i32) {
+        self.send(
+            "/s_new",
+            vec![
+                OscType::String(name.into()),
+                OscType::Int(id),
+                OscType::Int(1),
+                OscType::Int(parent),
+            ],
+        );
+    }
+
+    /// Asserts the next reply to a just-sent command is *not* a `/fail` (a
+    /// following `/status.reply` proves the command was accepted silently).
+    fn assert_accepted(&self, cmd: &str) {
+        self.send("/status", vec![]);
+        let reply = self.recv();
+        assert_eq!(reply.addr, "/status.reply", "{cmd} unexpectedly failed");
+    }
+}
+
+#[test]
+fn n_setn_and_s_get_read_a_control_range() {
+    let mut server = TestServer::spawn();
+    server.new_synth(1000, 0);
+    server.wait_for_synth_count(1);
+
+    // Set both controls (freq@0, amp@1) as one range.
+    server.send(
+        "/n_setn",
+        vec![
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::Int(2),
+            OscType::Float(550.0),
+            OscType::Float(0.5),
+        ],
+    );
+    server.assert_accepted("/n_setn");
+
+    // /s_get by name echoes (control, value) pairs.
+    server.send(
+        "/s_get",
+        vec![OscType::Int(1000), OscType::String("freq".into())],
+    );
+    let reply = server.recv_until("/n_set");
+    assert_eq!(
+        reply.args,
+        vec![OscType::Int(1000), OscType::Int(0), OscType::Float(550.0)]
+    );
+
+    // /s_getn returns a whole range as (control, numControls, val...).
+    server.send(
+        "/s_getn",
+        vec![OscType::Int(1000), OscType::Int(0), OscType::Int(2)],
+    );
+    let reply = server.recv_until("/n_set");
+    assert_eq!(
+        reply.args,
+        vec![
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::Int(2),
+            OscType::Float(550.0),
+            OscType::Float(0.5),
+        ]
+    );
+
+    server.quit();
+}
+
+#[test]
+fn n_fill_fills_a_control_range() {
+    let mut server = TestServer::spawn();
+    server.new_synth(1000, 0);
+    server.wait_for_synth_count(1);
+
+    server.send(
+        "/n_fill",
+        vec![
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::Int(2),
+            OscType::Float(0.7),
+        ],
+    );
+    server.assert_accepted("/n_fill");
+
+    server.send(
+        "/s_getn",
+        vec![OscType::Int(1000), OscType::Int(0), OscType::Int(2)],
+    );
+    let reply = server.recv_until("/n_set");
+    assert_eq!(reply.args[3], OscType::Float(0.7));
+    assert_eq!(reply.args[4], OscType::Float(0.7));
+
+    server.quit();
+}
+
+#[test]
+fn n_mapn_is_accepted_and_rejects_unknown_node() {
+    let mut server = TestServer::spawn();
+    server.new_synth(1000, 0);
+    server.wait_for_synth_count(1);
+
+    // Map freq@0,amp@1 to control buses 3,4.
+    server.send(
+        "/n_mapn",
+        vec![
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::Int(3),
+            OscType::Int(2),
+        ],
+    );
+    server.assert_accepted("/n_mapn");
+
+    server.send(
+        "/n_mapn",
+        vec![
+            OscType::Int(4242),
+            OscType::Int(0),
+            OscType::Int(3),
+            OscType::Int(2),
+        ],
+    );
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/n_mapn".into()));
+
+    server.quit();
+}
+
+#[test]
+fn g_head_g_tail_and_n_order_reorder_children() {
+    let mut server = TestServer::spawn();
+    server.send(
+        "/g_new",
+        vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
+    );
+    server.wait_for_status(3, 2);
+    for id in [1001, 1002, 1003] {
+        server.new_synth(id, 1);
+    }
+    server.wait_for_synth_count(3);
+    assert_eq!(server.group_child_ids(1), vec![1001, 1002, 1003]);
+
+    // /g_head moves a node to the front, /g_tail to the back.
+    server.send("/g_head", vec![OscType::Int(1), OscType::Int(1003)]);
+    assert_eq!(server.group_child_ids(1), vec![1003, 1001, 1002]);
+    server.send("/g_tail", vec![OscType::Int(1), OscType::Int(1003)]);
+    assert_eq!(server.group_child_ids(1), vec![1001, 1002, 1003]);
+
+    // /n_order addAction 0 (head), keeping the listed order.
+    server.send(
+        "/n_order",
+        vec![
+            OscType::Int(0),
+            OscType::Int(1),
+            OscType::Int(1003),
+            OscType::Int(1002),
+        ],
+    );
+    assert_eq!(server.group_child_ids(1), vec![1003, 1002, 1001]);
+
+    server.quit();
+}
+
+#[test]
+fn g_head_rejects_auto_sorted_group() {
+    let mut server = TestServer::spawn();
+    server.send(
+        "/g_new",
+        vec![OscType::Int(1), OscType::Int(1), OscType::Int(0)],
+    );
+    server.wait_for_status(3, 2);
+    server.new_synth(1001, 1);
+    server.wait_for_synth_count(1);
+    // Turn on auto-sort: manual moves into the group must /fail.
+    server.send("/g_sortMode", vec![OscType::Int(1), OscType::Int(1)]);
+
+    server.send("/g_head", vec![OscType::Int(1), OscType::Int(1001)]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/g_head".into()));
+
+    server.quit();
+}
+
+#[test]
+fn c_setn_c_getn_and_c_fill_roundtrip() {
+    let server = TestServer::spawn();
+
+    // Set a 3-bus range from bus 10.
+    server.send(
+        "/c_setn",
+        vec![
+            OscType::Int(10),
+            OscType::Int(3),
+            OscType::Float(0.1),
+            OscType::Float(0.2),
+            OscType::Float(0.3),
+        ],
+    );
+    server.send("/c_getn", vec![OscType::Int(10), OscType::Int(3)]);
+    let reply = server.recv_until("/c_setn");
+    assert_eq!(
+        reply.args,
+        vec![
+            OscType::Int(10),
+            OscType::Int(3),
+            OscType::Float(0.1),
+            OscType::Float(0.2),
+            OscType::Float(0.3),
+        ]
+    );
+
+    // Fill overwrites the whole range with one value.
+    server.send(
+        "/c_fill",
+        vec![OscType::Int(10), OscType::Int(3), OscType::Float(0.9)],
+    );
+    server.send("/c_getn", vec![OscType::Int(10), OscType::Int(3)]);
+    let reply = server.recv_until("/c_setn");
+    assert_eq!(reply.args[2], OscType::Float(0.9));
+    assert_eq!(reply.args[4], OscType::Float(0.9));
+
+    server.quit();
+}
+
+#[test]
+fn s_noid_acknowledges_and_rejects_unknown() {
+    let mut server = TestServer::spawn();
+    server.new_synth(1000, 0);
+    server.wait_for_synth_count(1);
+
+    server.send("/s_noid", vec![OscType::Int(1000)]);
+    let reply = server.recv_until("/done");
+    assert_eq!(reply.args[0], OscType::String("/s_noid".into()));
+
+    server.send("/s_noid", vec![OscType::Int(4242)]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/s_noid".into()));
+
+    server.quit();
+}
+
+#[test]
+fn b_close_acknowledges_live_buffer_and_rejects_missing() {
+    let server = TestServer::spawn();
+    server.send(
+        "/b_alloc",
+        vec![OscType::Int(0), OscType::Int(64), OscType::Int(1)],
+    );
+    server.recv_until("/done");
+
+    server.send("/b_close", vec![OscType::Int(0)]);
+    let reply = server.recv_until("/done");
+    assert_eq!(reply.args[0], OscType::String("/b_close".into()));
+    assert_eq!(reply.args[1], OscType::Int(0));
+
+    server.send("/b_close", vec![OscType::Int(5)]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/b_close".into()));
+
+    server.quit();
+}
+
+#[test]
+fn d_load_reads_a_synthdef_from_disk() {
+    let mut server = TestServer::spawn();
+    let json = r#"{
+        "name": "loaded",
+        "controls": [{"name": "freq", "default": 210.0}],
+        "ugens": [
+            {"kind": "SinOsc", "inputs": [{"control": 0}]},
+            {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.1}]},
+            {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    }"#;
+    let path = std::env::temp_dir().join(format!("clausters_d_load_{}.json", std::process::id()));
+    std::fs::write(&path, json).unwrap();
+
+    server.send(
+        "/d_load",
+        vec![OscType::String(path.to_string_lossy().into())],
+    );
+    let reply = server.recv_until("/done");
+    assert_eq!(reply.args[0], OscType::String("/d_load".into()));
+
+    // The loaded def is now instantiable.
+    server.new_synth_named("loaded", 1000, 0);
+    server.wait_for_synth_count(1);
+
+    std::fs::remove_file(&path).ok();
+    server.quit();
+}
+
+#[test]
+fn d_load_missing_file_fails() {
+    let server = TestServer::spawn();
+    server.send("/d_load", vec![OscType::String("/no/such/def.json".into())]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/d_load".into()));
+    server.quit();
+}
+
+#[test]
+fn clear_sched_flushes_pending_bundles() {
+    use clausters::rosc::OscBundle;
+
+    let mut server = TestServer::spawn();
+    // Schedule a synth ~15 blocks out, then flush before the clock reaches it.
+    let bundle = OscPacket::Bundle(OscBundle {
+        timetag: clausters::rosc::OscTime {
+            seconds: 0,
+            fractional: 0,
+        },
+        content: vec![OscPacket::Message(OscMessage {
+            addr: "/s_new".into(),
+            args: vec![
+                OscType::String("default".into()),
+                OscType::Int(1000),
+                OscType::Int(1),
+                OscType::Int(0),
+            ],
+        })],
+    });
+    server.send(
+        "/sched",
+        vec![
+            OscType::Long(BLOCK_SIZE as i64 * 15),
+            OscType::Blob(encoder::encode(&bundle).unwrap()),
+        ],
+    );
+    server.send("/clearSched", vec![]);
+    let reply = server.recv_until("/done");
+    assert_eq!(reply.args[0], OscType::String("/clearSched".into()));
+
+    // Tick well past the target: the flushed bundle must never fire.
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..40 {
+        server.engine.process_block(&mut out);
+    }
+    server.send("/status", vec![]);
+    assert_eq!(
+        server.recv_until("/status.reply").args[2],
+        OscType::Int(0),
+        "a cleared bundle must not spawn its synth"
+    );
+
+    server.quit();
+}
+
+#[test]
+fn error_mode_still_replies_fail() {
+    let server = TestServer::spawn();
+    // Silence console posting; the /fail OSC reply must still be sent.
+    server.send("/error", vec![OscType::Int(0)]);
+    server.send("/n_set", vec![OscType::Int(4242), OscType::Float(1.0)]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    server.send("/error", vec![OscType::Int(1)]);
+    server.quit();
+}
+
+#[test]
+fn cmd_ping_and_unknown_command() {
+    let server = TestServer::spawn();
+    server.send("/cmd", vec![OscType::String("ping".into())]);
+    let reply = server.recv_until("/done");
+    assert_eq!(reply.args[0], OscType::String("/cmd".into()));
+    assert_eq!(reply.args[1], OscType::String("ping".into()));
+
+    server.send("/cmd", vec![OscType::String("bogus".into())]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/cmd".into()));
+
+    server.quit();
+}
+
+#[test]
+fn u_cmd_validates_target_and_index() {
+    let mut server = TestServer::spawn();
+    server.new_synth(1000, 0);
+    server.wait_for_synth_count(1);
+
+    // A valid /u_cmd to an in-range UGen (default synth has 3 UGens) is
+    // accepted silently — the default handler ignores it.
+    server.send(
+        "/u_cmd",
+        vec![
+            OscType::Int(1000),
+            OscType::Int(0),
+            OscType::String("noop".into()),
+            OscType::Float(1.0),
+        ],
+    );
+    server.assert_accepted("/u_cmd");
+
+    // Out-of-range UGen index fails.
+    server.send(
+        "/u_cmd",
+        vec![
+            OscType::Int(1000),
+            OscType::Int(99),
+            OscType::String("noop".into()),
+        ],
+    );
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/u_cmd".into()));
+
+    // Unknown node fails.
+    server.send(
+        "/u_cmd",
+        vec![
+            OscType::Int(4242),
+            OscType::Int(0),
+            OscType::String("noop".into()),
+        ],
+    );
+    assert_eq!(server.recv().addr, "/fail");
+
+    server.quit();
+}

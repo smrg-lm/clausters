@@ -212,6 +212,12 @@ impl SynthNode for UGenSynth {
         self.ugens.len()
     }
 
+    fn ugen_command(&mut self, index: u32, cmd: &crate::dsp::UGenCmd) {
+        if let Some(ugen) = self.ugens.get_mut(index as usize) {
+            ugen.command(cmd);
+        }
+    }
+
     fn done_action(&self) -> DoneAction {
         let mut max_action = DoneAction::None;
         for u in &self.ugens {

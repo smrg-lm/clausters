@@ -962,6 +962,63 @@ python3 examples/json_client.py bgen
 # /b_alloc 21 -> /b_gen 21 cheby -> un seno waveshapeado (Shaper), sube el drive
 ```
 
+### Probar el set completo de comandos OSC (S6)
+
+Cierra el vocabulario scsynth para que un cliente pueda apoyarse en el set
+completo. Cada comando es RT-safe como sus vecinos y se apoya en la maquinaria
+de árbol/bus/def que ya existía (no toca el hilo de audio con nada nuevo):
+
+- **Nodos por rango** — `/n_setn id ctl num vals…` (rango consecutivo de
+  controles), `/n_fill id ctl num val` (rellena un rango con un valor),
+  `/n_mapn`/`/n_mapan id ctl bus num` (mapea controles consecutivos a buses
+  consecutivos). Propagan por subárbol si el id es un grupo, como `/n_set`.
+- **Consultar controles** — `/s_get id ctl…` responde `/n_set id (ctl val)…`;
+  `/s_getn id ctl num…` responde con el rango. Leen del mirror de red.
+- **Mover en el árbol** — `/g_head`/`/g_tail group id` (a la cabeza/cola de un
+  grupo) y `/n_order addAction target id…` (varios nodos a una posición,
+  conservando el orden dado). Los rechaza un grupo auto-ordenado
+  (`/g_sortMode`), igual que `/n_before`.
+- **Buses de control por rango** — `/c_setn bus num vals…`, `/c_fill bus num
+  val`, `/c_getn bus num…` (responde `/c_setn`).
+- **`/s_noid`, `/n_trace`, `/b_close`** — de compatibilidad: `/s_noid` reconoce
+  (Clausters no reusa IDs de nodo); `/n_trace` loguea el estado del nodo a la
+  consola; `/b_close` valida el buffer y responde `/done` (aún no hay streaming).
+- **`/d_load path` / `/d_loadDir dir`** — cargan SynthDefs (JSON, el formato de
+  `/d_recv`) desde disco a demanda; persisten por su nombre.
+- **`/clearSched`** — vacía la cola de bundles temporizados (la heap se libera
+  fuera del hilo de audio). El botón de pánico de un score.
+- **`/error mode`** — `1` postea los fallos a la consola del servidor, `0` los
+  silencia; el `/fail` OSC siempre se envía (desviación deliberada: no está el
+  `-1`/`-2` por-bundle de scsynth).
+- **`/cmd name args…` / `/u_cmd id ugenIndex name args…`** — comandos tipados y
+  descubribles (el reemplazo del blob sin tipo de scsynth). `/cmd ping`
+  responde `/done /cmd ping`; `/u_cmd` valida el nodo y el índice de UGen y
+  enruta un payload inline a esa UGen en el hilo de audio (sus consumidores son
+  UGens futuras: FFT/streaming; hoy el handler por defecto lo ignora).
+
+Verificación por tests (el sandbox aísla la red, así que servidor y cliente van
+en la misma invocación):
+
+```sh
+cargo test --no-default-features --test osc
+# 44 tests: n_setn/s_get/s_getn, n_fill, n_mapn, g_head/g_tail/n_order (orden vía
+# /g_queryTree) + rechazo en grupo auto-ordenado, c_setn/c_getn/c_fill, s_noid,
+# b_close, d_load (+ archivo inexistente), clearSched (bundle no dispara),
+# error_mode (sigue enviando /fail), cmd ping/desconocido, u_cmd (índice/nodo)
+cargo test --no-default-features --test rt_safety command_set
+# MoveNode Head/Tail, Cmd::UGenCommand y Cmd::ClearSched no allocan en el audio
+```
+
+A mano, con el servidor corriendo (rango de controles, consultas, reorden de
+árbol, rango de buses, comando de servidor y `/clearSched`):
+
+```sh
+python3 examples/json_client.py commands
+# /g_new 1 con tres synths; /n_setn 1001 (freq+amp); /s_getn devuelve el rango;
+# /g_head mueve 1003 a la cabeza (mira el orden en /g_queryTree); /c_setn+/c_getn
+# roundtrip; /cmd ping -> /done; /n_free 1; /clearSched -> /done
+```
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -1312,6 +1369,7 @@ y restore + nota tocable).
 | Op UGens `BinaryOpUGen`/`UnaryOpUGen` + `MulAdd`/`Sum3`/`Sum4` (S3) | `tests/core_parity.rs`, `tests/ops.rs`, `tests/rt_safety.rs` (`operator_ugens`) | `python3 clients/python/examples/graph_maths.py` |
 | Done actions 0-15 completas + `/n_run` (pausa no terminal) (S4) | `node` unit tests, `tests/envgen.rs`, `tests/osc.rs` (`n_run`), `tests/rt_safety.rs` (`relative_done_actions_and_n_run`) | `python3 clients/python/examples/pause_resume.py` |
 | Wavetables `/b_gen` (sine1/2/3, cheby, copy) + `Osc`/`OscN`/`VOsc`/`Shaper` (S5) | `tests/wavetable.rs`, `tests/osc.rs` (`b_gen`), `tests/rt_safety.rs` (`table_oscillators`) | `python3 examples/json_client.py bgen` |
+| Set OSC completo: `/n_setn`/`/n_fill`/`/n_mapn`, `/s_get`/`/s_getn`, `/g_head`/`/g_tail`/`/n_order`, `/c_setn`/`/c_getn`/`/c_fill`, `/b_close`, `/d_load`, `/clearSched`, `/error`, `/cmd`/`/u_cmd` (S6) | `tests/osc.rs` (S6), `tests/rt_safety.rs` (`command_set_completion`) | `python3 examples/json_client.py commands` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

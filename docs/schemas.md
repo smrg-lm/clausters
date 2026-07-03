@@ -17,11 +17,19 @@ Both reply asynchronously: `/done` with the command (and the def name for `/d_fa
 
 ```text
 /s_new  name id addAction targetID [ctlName value]...   # ctl args: s f pairs
-/n_set  id ctlName value
-/n_map  id ctlName busIndex...                           # control bus -> control
-/n_mapa id ctlName busIndex...                           # audio bus  -> control
-/n_free id
-/d_free name...                                          # SynthDef JSON only
+/n_set  id ctlName value...                             # one control per pair
+/n_setn id ctl numControls value...                    # a consecutive range
+/n_fill id ctl numControls value                       # fill a range with one value
+/n_map  id ctlName busIndex...                          # control bus -> control
+/n_mapa id ctlName busIndex...                          # audio bus  -> control
+/n_mapn id ctl busIndex numControls...                 # map a range to consecutive buses
+/n_mapan id ctl busIndex numControls...                # audio-bus range variant
+/s_get  id ctl...                    -> /n_set id (ctl value)...        # read controls
+/s_getn id ctl numControls...        -> /n_set id (ctl numControls value...)...
+/n_free id...
+/n_trace id...                                          # log a node's state (debug)
+/s_noid id...                                           # acknowledged (see note)
+/d_free name...                                         # SynthDef JSON only
 ```
 
 Engine facts that apply to every def: blocks of 64 samples; **by default** 128 audio buses (`0..channels` are the hardware outputs, bus 0 = left) and 1024 control buses; a pool of 1024 sample buffers filled by the `/b_*` commands; all signals are `f32` at the configured sample rate. The bus counts are set at boot by `--audio-buses` (≤128) and `--control-buses`, and the sample rate by `--sample-rate` (default 48000; PipeWire honors it per-application). A client reads the live configuration with **`/server_info`** → `/server_info.reply [audio_buses, control_buses, output_channels, block_size, nominal_sr, actual_sr]`, so it can size its own bus allocators from the server instead of assuming the defaults.
@@ -31,6 +39,18 @@ Engine facts that apply to every def: blocks of 64 samples; **by default** 128 a
 `/n_set` writes a control once. `/n_map id ctl bus` instead **binds** the control to a **control bus**: the node re-reads that bus at the start of every block, so the control tracks whatever any client (`/c_set`) or synth (`Out` to a control bus) writes there — no further `/n_set`. `/n_mapa` is the same against an **audio bus**. Both take any number of `ctl bus` pairs, by control name or index, and work for UGen controls and Faust parameters alike.
 
 A `busIndex` of `-1` removes the mapping (the control keeps its last value); a later `/n_set` on the same control also clears it and fixes the value.
+
+### Ranges of controls (`/n_setn`, `/n_fill`, `/n_mapn`, `/n_mapan`)
+
+The `-n` variants address **consecutive** controls in one message, for defs with array-like control blocks. `/n_setn id ctl numControls value...` sets `numControls` controls starting at `ctl` (by name or index) from the value list; several `(ctl, numControls, values...)` groups may follow. `/n_fill id ctl numControls value` fills such a range with a single value (repeatable in `(ctl, numControls, value)` triples). `/n_mapn id ctl busIndex numControls` maps `numControls` consecutive controls to `numControls` **consecutive** buses starting at `busIndex` (`busIndex = -1` unbinds the whole range); `/n_mapan` is the audio-bus form. Like `/n_set`/`/n_map`, all four accept a **group** id and propagate down its subtree, and clearing/setting a control that is used as a bus index re-sorts auto/parallel groups.
+
+### Reading control values (`/s_get`, `/s_getn`)
+
+`/s_get id ctl...` is the read counterpart of `/n_set`: it replies `/n_set id (ctl value)...` with each requested control's current value (by name or index). `/s_getn id ctl numControls...` reads a **range**, replying `/n_set id (ctl numControls value...)...`. Values come from the server-side node mirror, so they reflect the latest `/n_set`/`/n_setn`/`/s_new`. An unknown node or out-of-range control replies `/fail`.
+
+### `/s_noid` and `/n_trace`
+
+`/s_noid id...` exists for scsynth compatibility. In scsynth it releases integer node IDs back to the pool; Clausters assigns IDs per client (auto IDs come from a reserved server range) and never reuses a live or freed ID under a new node, so there is nothing to release — the command validates the IDs name live synths and replies `/done`. `/n_trace id...` is a debug aid: it logs each node's current control values (or a group's children) to the server console through the `clausters::osc` trace target, no OSC reply (matching scsynth's console trace).
 
 ### Pausing and resuming nodes (`/n_run`)
 
@@ -42,11 +62,23 @@ A `busIndex` of `-1` removes the mapping (the control keeps its last value); a l
 
 Because a control is one value per block, `/n_mapa` **samples** one frame of the audio bus per block (control rate) — this matches scsynth for a control-rate control; there are no audio-rate controls here (feed an audio signal through `In`/an input bus instead). Mapping a control that is used as a bus index makes the node a dynamic barrier for auto/parallel groups, and an audio map adds that bus to the node's reads so the dependency analysis stays correct.
 
+### Moving nodes in the tree (`/n_before`, `/n_after`, `/g_head`, `/g_tail`, `/n_order`)
+
+Execution order within a group is the child order, and these commands rewrite it. `/n_before id target` / `/n_after id target` move a node just before/after a sibling (any number of `id target` pairs). `/g_head group id` / `/g_tail group id` move a node to the **head/tail** of a group (pairs of `group id`). `/n_order addAction target id...` moves **several** nodes to one place at once, keeping their listed order: `addAction` selects `0` head of the target group, `1` tail, `2` before the target node, `3` after it.
+
+All of these are disabled inside an **auto-sorted group** (`/g_sortMode … 1`): there the execution order is recomputed from the bus-connection DAG, so a manual move replies `/fail` — use auto-sort, or a manually-ordered group, but not both. (This is why `/n_order` earns its place only in manual groups: it is a batch `/n_before`/`/n_after`/`/g_head`/`/g_tail`.)
+
+### Control buses (`/c_set`, `/c_setn`, `/c_fill`, `/c_get`, `/c_getn`)
+
+Control buses are shared `f32` slots any client or synth reads and writes — the glue between `/c_set` and `/n_map`. `/c_set bus value...` writes single buses (pairs); `/c_setn bus numBuses value...` writes a **consecutive range** from a value list (repeatable groups); `/c_fill bus numBuses value` fills a range with one value (repeatable triples). `/c_get bus...` reads single buses, replying `/c_set (bus value)...`; `/c_getn bus numBuses...` reads ranges, replying `/c_setn (bus numBuses value...)...`. Unset buses read `0.0`. The immediate forms write the shared atomics on the network thread; inside a **timed bundle** the writes travel to the audio thread so they land on the exact scheduled sample.
+
 ## Timed bundles
 
 OSC bundles carry an NTP timetag. The immediate tag (`1`) executes on arrival; a **future** timetag is converted to a position on the server's sample clock and the whole bundle fires **sample-accurately**: the engine splits the audio block at the event's exact sample, so a `/s_new` scheduled mid-block starts on that very frame. Bundles with equal times run in arrival order; late bundles run immediately (and are logged). Nested bundles are scheduled independently by their own timetags.
 
-Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_map`, `/n_mapa`, `/n_free`, `/n_before`, `/n_after`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/g_sortMode`, `/g_parallel`, `/graph_new`, `/graph_voice`. Anything else (defs, buffers, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
+Schedulable inside a timed bundle: `/s_new`, `/n_set`, `/n_setn`, `/n_fill`, `/n_map`, `/n_mapa`, `/n_mapn`, `/n_mapan`, `/n_free`, `/n_before`, `/n_after`, `/n_order`, `/g_head`, `/g_tail`, `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/c_setn`, `/c_fill`, `/u_cmd`, `/g_sortMode`, `/g_parallel`, `/graph_new`, `/graph_voice`. Anything else (defs, buffers, queries, server commands) replies `/fail … cannot be scheduled in a timed bundle` — load defs and buffers first, then schedule the notes.
+
+**`/clearSched`** flushes the whole timed-bundle queue: every bundle waiting on the sample clock is dropped (their heap freed off the audio thread), and the command replies `/done /clearSched`. Use it to abort a scheduled score — the scsynth panic button.
 
 Also beyond scsynth: **auto-sorted groups**. `/g_sortMode groupID 1` makes a group keep its children in dependency order inferred from the buses each def reads and writes — no more manual `/n_before` bookkeeping; query what the server inferred with `/g_queryTree` (scsynth-compatible reply) and `/g_dumpGraph`. See [`auto-order.md`](auto-order.md) and `examples/auto_order.py`. The same analysis powers **parallel groups**: `/g_parallel groupID 1` (with the server started as `--workers N`) runs a group's independent children on several cores, bit-identically to the sequential result — see [`parallel.md`](parallel.md).
 
@@ -208,13 +240,14 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /b_zero      bufnum
 /b_gen       bufnum cmd flags args...  # fill/generate — see the wavetable section
 /b_free      bufnum
+/b_close     bufnum                    →  /done /b_close bufnum   # see note
 /b_query     bufnum...                 →  /b_info  bufnum frames channels sampleRate ...
 /b_get       bufnum index...           →  /b_set   bufnum index value ...
 /b_getn      bufnum [start count]...   →  /b_setn  bufnum start count value ...
 /b_export    bufnum path               →  /done /b_export bufnum
 ```
 
-`/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`, `/b_gen` and `/b_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
+`/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`, `/b_gen` and `/b_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported. `/b_close bufnum` closes the soundfile a streaming buffer left open — scsynth pairs it with `DiskIn`/`DiskOut`; since Clausters has no streaming buffers yet (every `/b_read`/`/b_write` reads or writes the whole file and closes it), it validates the buffer is live and replies `/done /b_close bufnum`, forward-compatible with the streaming UGens.
 
 ### Table generation and the wavetable format (`/b_gen`)
 
@@ -456,8 +489,16 @@ The level is set, in increasing precedence, by:
 - at runtime, **from a client**, with two OSC commands (both reply `/done`):
   - `/verbosity <int|string>` — an int level (`-1` errors … `3` trace) or an `EnvFilter` directive string. Lets a client retune the server's logs without restarting.
   - `/dumpOSC <flag>` — toggles the OSC-traffic dump (the `clausters::osc` trace target). Unlike scsynth, this is **not** an ad-hoc console print: it routes through the same logging system, controllable by `/verbosity`/`RUST_LOG`, on stderr.
+  - `/error <mode>` — `1` posts command failures to the server console (default), `0` silences them. The `/fail` **OSC reply is always sent** regardless (clients rely on it); `/error` only gates the server-side console logging. scsynth's bundle-local `-1`/`-2` forms are not separately supported — the persistent `0`/`1` toggle is the model that fits our logging (a deliberate deviation).
 
 Note that these control the **server's own** logs (on the server's stderr); the **node tree** is delivered to clients as structured data, never scraped from logs — see [Node tree introspection](#node-tree-introspection) above (`/g_queryTree`, `/n_query`, `/g_dumpGraph`).
+
+## Server and UGen commands (`/cmd`, `/u_cmd`)
+
+Two extension commands carry out-of-band instructions that are neither node nor bus state. Both are **typed and discoverable** — the deliberate replacement for scsynth's untyped `/cmd`/`/u_cmd` argument blobs (a command *name* plus validated typed args, errors naming the offending field, like `compile`).
+
+- `/cmd <name> args...` — a **server-wide** command. `name` selects a handler; the built-in `ping` replies `/done /cmd ping` (it proves the surface). An unknown name replies `/fail /cmd "unknown server command …"`. New server commands register here.
+- `/u_cmd <nodeID> <ugenIndex> <name> args...` — a command addressed to **one UGen instance** inside a synth. It validates the node is a UGen synth and `ugenIndex` is in range (a Faust synth is one opaque block, not a UGen graph, so it is rejected), packs the numeric args inline (up to 8, so nothing heap-allocated crosses to the audio thread), and routes them to that UGen on the audio thread; the command name is hashed to a stable selector both sides agree on. This is the mechanism future UGens (FFT/streaming) use to receive parameters; today every UGen's default handler ignores it, so a `/u_cmd` to a valid target is accepted silently.
 
 ## Persisting defs across restarts
 
@@ -469,6 +510,8 @@ clausters --no-persist       # disable for this run
 ```
 
 With no `--data-dir`, the directory is `$CLAUSTERS_DATA_DIR` if set, else `$XDG_DATA_HOME/clausters`, else `~/.local/share/clausters`. Persistence applies to the real-time server only; offline `--nrt` renders never read or write it.
+
+A client can also load defs **on demand** from an arbitrary path, complementing the boot-time reload: `/d_load <path>` loads one SynthDef spec file (the Clausters def format — the same `SynthDefSpec` JSON `/d_recv` carries), and `/d_loadDir <dir>` loads every `*.json` SynthDef in a directory (a single unreadable/invalid file fails the whole command, naming it). Both compile through the `/d_recv` path (so the def is also persisted under its name) and reply `/done`. GraphDefs load through `/d_graph`, Faust defs through `/d_faust`.
 
 The def kinds live in subdirectories of a `defs/` directory (so the data
 directory itself is free for other persistent aspects); `midi.json` and
