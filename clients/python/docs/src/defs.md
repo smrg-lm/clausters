@@ -3,7 +3,7 @@
 An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`:
 
 - **`FaustDef`** — a Faust definition, sent with `/d_faust`. Its graph is the full Faust **Signal API**, so it has the complete maths vocabulary (trigonometry, `exp`/`log`, comparisons, tables, sample-accurate feedback). Reach for it for any actual DSP.
-- **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's **structural** UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback) plus the four arithmetic operators (`+ - * /`). The wider unary/binary maths that SuperCollider exposes as UGens — and that the client already computes in `clausters.base.builtins` — is **not implemented yet** in the UGen graph (see [Maths is `+ - * /` for now](#maths-is------for-now)), so today that maths goes in a `FaustDef`.
+- **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's **structural** UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). Genuinely custom per-sample DSP (recursion, tables, sample-accurate feedback) still goes in a `FaustDef`.
 
 Both are built the same way: **lowercase callables** that compose with ordinary Python operators into a JSON tree. Both are **instance-based** — there is no thread-global "current graph" as in sclang, so the tree *is* the composed objects and several defs build concurrently. And both are sent **asynchronously**, behind the `/sync` barrier (see [Sending a def](#sending-a-def)).
 
@@ -20,7 +20,7 @@ freq = S.hslider("freq", 220.0, 20.0, 20000.0, 0.01)   # a Signal (a control)
 detuned = freq * 1.5                                    # another Signal, not a float
 ```
 
-A plain number that meets a node becomes a **constant** in the graph. The operators map identically on both def kinds *where the client implements them today*: a `FaustDef` accepts the full set below, while a `SynthDef` accepts only `+ - * /` and raises a `TypeError` (naming Faust as the alternative) for anything else — a current limitation of the UGen path, not a permanent boundary (see [Maths is `+ - * /` for now](#maths-is------for-now)).
+A plain number that meets a node becomes a **constant** in the graph. The operators map on both def kinds: a `FaustDef` accepts the full set below, and a `SynthDef` accepts the same unary/binary maths (`+ - * /` map to dedicated kinds, everything else to the generic operator UGens — see [Maths on a UGen graph](#maths-on-a-ugen-graph)). Only a selector with no server op raises `TypeError`.
 
 ## FaustDef
 
@@ -181,16 +181,26 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
 | Demand (`dr`) | `dseq(values, repeats=0.0)` | a demand-rate sequence source (`repeats` 0 loops forever); only valid as a `demand` source |
 | | `demand(trig, reset, source)` | pulls the next value from a demand `source` on each rising edge of `trig`, holding it between triggers |
+| Fused | `mul_add(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
+| | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
 
-### Maths is `+ - * /` for now
+### Maths on a UGen graph
 
-The four arithmetic operators map to the server's `Add` / `Sub` / `Mul` / `Div` UGens. **Every other operator and maths method currently raises a `TypeError`** — `%`, `min`/`max`, the comparisons, `.sin()`, `.midicps()` and the rest.
+Beyond the four arithmetic operators, the **full unary/binary maths** works on a SynthDef graph: `%`, `min`/`max`, the comparisons, `.sin()`, `.midicps()`, `.distort()`, `.clip2(x)` and the rest compose the server's generic **`BinaryOpUGen`/`UnaryOpUGen`**, each carrying the operator by name. It is the same operation set the value side (`clausters.base.builtins`) computes — one shared `clausters-core` implementation — so a value you compute ahead of time and the UGen on the audio thread agree **bit-for-bit** for the native ops.
 
-That is a limitation of what is wired today, **not** a property of UGen graphs. In the SuperCollider model these operations *are* ordinary UGens — `UnaryOpUGen` and `BinaryOpUGen`, one generic UGen each whose **special index** selects the actual operation — and they are backed by the very same operation set the client's `clausters.base.builtins` already computes in f32 against the shared core (`UnaryOp` / `BinaryOp`). Clausters has not exposed that path yet: neither the server's UGen registry nor the client's `ugens` callables wire anything beyond `Add` / `Sub` / `Mul` / `Div`. So the duplication exists on the value side but has no UGen-graph counterpart to reach.
+```python
+from clausters.defs import SynthDef, control, sin_osc, out
 
-Until it does, build that maths in a `FaustDef` (the `TypeError` points there). In practice, then, a SynthDef today is for *wiring* — mix a few sources, scale by a control, send to a bus, play a buffer — while per-sample maths and synthesis live in a FaustDef.
+note = control("note", 60.0)
+freq = note.midicps()                     # UnaryOpUGen (midicps)
+sig = sin_osc(freq).distort() * 0.3       # UnaryOpUGen (distort), then Mul
+lfo = (sin_osc(5.0) * 0.5 + 0.5).clip2(0.8)  # % min max > .fold/.clip … all compose
+sdef = SynthDef("lead", out(0.0, sig * lfo))
+```
+
+The `+ - * /` operators keep their dedicated `Add`/`Sub`/`Mul`/`Div` kinds (so existing defs are byte-identical); every other operator becomes an op UGen. Operators and math methods come from the shared `AbstractObject`, so the *same* expression composes a Faust graph, a UGen graph, or concrete numbers depending on what it is applied to. Only a selector with no server op raises `TypeError`. A `FaustDef` is still the tool for genuinely custom per-sample DSP (recursion, tables, sample-accurate feedback); a SynthDef now covers ordinary maths as well as wiring.
 
 Feedback within a block uses the `LocalIn` / `LocalOut` pair. `LocalIn` must be emitted before its `LocalOut`; the topological walk guarantees that as long as the output graph reaches the `local_in` before the `local_out`. Make the `local_out` one of the def's outputs so its write stays in the graph:
 

@@ -3951,3 +3951,61 @@ Client: `clients/python` tests green (the typed-control/rate serialization and
 the validation rejections in `test_synthdef.py`), and `typed_controls.py`
 renders 8 distinct plucks offline (RMS envelope verified) proving the `tr` reset
 and lag glide end to end through the embedded renderer.
+
+## S3 — Operator UGens (BinaryOpUGen/UnaryOpUGen) + MulAdd/Sum3/Sum4 (completed 2026-07-02)
+
+**What's there:** math on a UGen graph beyond the four arithmetic kinds. Two
+generic op UGens carry the operator by **name** in their `op` field; every
+operator is one entry in the shared `clausters_core::builtins`, so the server's
+audio-thread op and a client's off-RT value compute with the same code —
+bit-identical for the native ops (the C0 discipline applied to the operator
+layer).
+
+- **Naming, not numbering (decided with the user).** The wire `op` is the
+  operator's **name** (`"mul"`, `"midicps"`, …). scsynth's "special index" is an
+  implementation detail — internally each op still has a stable C-ABI integer in
+  `clausters_core` (`from_u32`, needed by the FFI), but that number never crosses
+  the wire and is not in any doc; the ops act as ordinary UGens addressed by
+  name. So scsynth's tables were only a checklist of *which* ops to include.
+- **Core (`crates/clausters-core/src/builtins.rs`).** Extended both `BinaryOp`/
+  `UnaryOp` enums with a broad, well-defined set — `hypot`, `ring1`–`ring4`,
+  `sumsqr`/`difsqr`/`sqrsum`/`sqrdif`, `absdif`, `thresh`, `clip2`, `excess`,
+  `round`, `trunc` (binary); `squared`/`cubed`/`recip`, `frac`, `sign`, `log2`,
+  `sinh`/`cosh`/`tanh`, the pitch/gain conversions `midicps`…`cpsoct`,
+  `distort`, `softclip` (unary) — with their `apply_*` formulas plus `name()`/
+  `from_name` (the wire spelling) and unit tests (incl. a name round-trip).
+- **Server op UGens.** `dsp::binop::BinaryOp::from_index` and a new
+  `dsp::unop::UnaryOp` map the resolved op to the core op and call the shared
+  `*_slice` per block; `dsp::fused` adds `MulAdd` (`a*b+c`), `Sum3`, `Sum4` as
+  ordinary fixed kinds composing the core operators. `Add`/`Sub`/`Mul`/`Div`
+  stay as thin alias kinds (existing defs byte-identical).
+- **Registry + compiler.** `UGenDescriptor` gains `op_family: Option<OpFamily>`
+  (set only on the two op rows via a `desc_op` helper; every other row unchanged
+  through a forwarding `desc`); `UGenSpec.op` is a name string; the compiler
+  resolves it to the internal index via `from_name` (missing/unknown → `/fail`
+  naming the node) and stores that index in `UGenConfig` for `build`.
+- **Client mirror.** `defs.ugens` maps every operator/method selector to the
+  operator **name** and emits `BinaryOpUGen`/`UnaryOpUGen` with `op` (the four
+  arithmetic keep their alias kinds); `Ugen` carries an `op`, `SynthDef.spec`
+  serializes it. `base.builtins` grows the new primitives and now routes the
+  pitch/gain **conversions through the core** (f32) too — they were pure-Python
+  f64 before, so this is what makes them bit-identical to the server. New
+  `AbstractObject` methods expose the ops (`.distort()`, `.clip2()`, …), so the
+  same expression composes a value, a Faust graph or a UGen graph; `mul_add`/
+  `sum3`/`sum4` callables for the fused kinds.
+
+**Scope note:** the RNG/approximation and fold/wrap opcodes (`randRange`,
+`expRandRange`, `hypotApx`, `fold2`, `wrap2`, `gcd`, `lcm`, `roundUp`) are left
+as future rows — each is one more `builtins` entry, the mechanism proven.
+
+**Verified:** `cargo test --no-default-features` green — `tests/core_parity.rs`
+drives the **whole** opcode table plus `MulAdd`/`Sum3`/`Sum4` through the real
+`UGen::process` and asserts bit-identity with the core (bit-pattern compare so
+equal NaNs match); `tests/ops.rs` the compile+render path and the `op` index
+validation (missing/unknown/arity); a no-alloc `operator_ugens_...` scene in
+`tests/rt_safety.rs`; core unit tests; `cargo fmt`/clippy clean (no new
+warnings). Client: `clients/python` suite green (graph serialization of the op
+UGens and value-side ops in `test_synthdef.py`/`test_base.py`), and a live E2E —
+`graph_maths.py` renders a lead built entirely from graph maths (`midicps`,
+`distort`, a `clip2` tremolo) offline through the rebuilt embed lib. Both mdBooks
+build clean.

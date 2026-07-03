@@ -13,6 +13,7 @@ pub mod demand;
 pub mod denormals;
 pub mod disk;
 pub mod envgen;
+pub mod fused;
 pub mod impulse;
 pub mod io;
 pub mod lag;
@@ -21,6 +22,7 @@ pub mod noise;
 pub mod registry;
 pub mod scalar;
 pub mod sinosc;
+pub mod unop;
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;

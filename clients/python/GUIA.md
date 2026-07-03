@@ -316,6 +316,33 @@ en t=0). El RMS del WAV muestra 8 plucks distintos:
 # -> rendered 120000 frames (2.50 s) | peak 0.200
 ```
 
+### Matemática en el grafo: op UGens (S3)
+
+Más allá de `+ - * /`, **todo** el set unario/binario funciona sobre un grafo de
+`SynthDef`: `%`, `min`/`max`, comparaciones, `.sin()`, `.midicps()`,
+`.distort()`, `.clip2(x)`, … componen las UGens genéricas `BinaryOpUGen`/
+`UnaryOpUGen` con un índice `op` del core. Es el mismo set que el value-side
+(`clausters.base.builtins`) calcula fuera de la ruta RT — una sola implementación
+`clausters-core` — así que un valor precalculado y la op en el hilo de audio dan
+**bit-idéntico** para las ops nativas. Los cuatro `+ - * /` conservan sus kinds
+`Add`/`Sub`/`Mul`/`Div`; se exponen además `mul_add`/`sum3`/`sum4`. Un valor de
+las conversiones (`midicps`, `dbamp`, …) ahora pasa por el core (f32), no Python
+f64. Cubierto por `tests/test_synthdef.py` (`test_math_operators_compose_op_ugens`)
+y `tests/test_base.py` (`test_extended_ops_s3`, `test_music_helpers`).
+
+```sh
+.venv/bin/python -m pytest tests/test_synthdef.py tests/test_base.py -q   # verdes
+```
+
+El ejemplo `graph_maths.py` rinde un WAV **offline** de un lead cuya altura
+(`.midicps()`), timbre (`.distort()`) y trémolo (una comparación + `.clip2()`)
+son toda matemática de grafo — sin Faust:
+
+```sh
+.venv/bin/python examples/graph_maths.py /tmp/maths.wav
+# -> rendered 120000 frames (2.50 s) | peak 0.120
+```
+
 ### Programa de grafo con `GraphDef` (M18, `/d_graph`)
 
 La tercera clase de def: donde `SynthDef`/`FaustDef` describen **un** nodo,

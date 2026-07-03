@@ -83,14 +83,37 @@ def test_operators_map_to_arithmetic_ugens():
     assert mul == {"kind": "Mul", "inputs": [{"const": 2.0}, {"ugen": 0}]}
 
 
-def test_unsupported_operators_raise():
+def test_math_operators_compose_op_ugens():
+    # S3: math beyond + - * / now composes generic BinaryOpUGen/UnaryOpUGen
+    # carrying the operator by NAME (mirrors the value side bit-for-bit; no
+    # numeric index crosses the wire).
+    a = sin_osc(100.0)
+    unary = SynthDef("u", out(0.0, a.sin())).spec()
+    assert unary["ugens"][-2] == {
+        "kind": "UnaryOpUGen", "op": "sin", "inputs": [{"ugen": 0}]
+    }
+    midi = SynthDef("m", out(0.0, sin_osc(control("n", 60.0).midicps()))).spec()
+    assert any(u.get("op") == "midicps" and u["kind"] == "UnaryOpUGen"
+               for u in midi["ugens"])
+    binary = SynthDef("b", out(0.0, a % 2.0)).spec()
+    assert binary["ugens"][-2] == {
+        "kind": "BinaryOpUGen", "op": "mod",
+        "inputs": [{"ugen": 0}, {"const": 2.0}],
+    }
+    cmp = SynthDef("c", out(0.0, a.min(0.5))).spec()
+    assert cmp["ugens"][-2]["op"] == "min"
+    # A reflected op keeps operand order.
+    refl = SynthDef("r", out(0.0, 2.0 - a)).spec()
+    assert refl["ugens"][-2]["kind"] == "Sub"  # + - * / keep their alias kinds
+
+
+def test_unknown_selector_raises():
+    # A selector with no UGen (not part of the operator surface) still fails.
     a = sin_osc(100.0)
     with pytest.raises(TypeError):
-        a.sin()          # no math UGen
+        a._compose_binop("bogus", 1.0)
     with pytest.raises(TypeError):
-        a % 2.0          # no Mod UGen
-    with pytest.raises(TypeError):
-        a.min(0.5)
+        a._compose_unop("bogus")
 
 
 def test_constant_only_inputs_and_no_controls():

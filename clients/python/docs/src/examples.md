@@ -25,6 +25,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/typed_controls.py out.wav
   ```
 
+- **`graph_maths.py`** — also self-contained (renders a WAV, no server): a `SynthDef` that does real per-sample **maths** — `.midicps()` for pitch, `.distort()` for timbre, a comparison-and-`.clip2()` tremolo — all composing the server's generic operator UGens (S3), bit-identical to the same maths computed off the RT path. See [Maths on a UGen graph](defs.md#maths-on-a-ugen-graph).
+
+  ```sh
+  python clients/python/examples/graph_maths.py out.wav
+  ```
+
 - **`live_udp.py`** — the same pattern, live over UDP to a **separate, running** server. The wheel ships that server as the `clausters` command (or use `cargo run --release`).
 
   ```sh

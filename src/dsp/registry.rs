@@ -16,6 +16,7 @@ use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::demand::{Demand, Dseq};
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
+use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::lag::{Lag, VarLag};
@@ -23,6 +24,7 @@ use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sinosc::SinOsc;
+use crate::dsp::unop::UnaryOp;
 use crate::dsp::{Rate, UGen};
 
 /// Input slot of a demand driver ([`ExecMode::DemandDriver`]) that names its
@@ -42,8 +44,10 @@ pub struct UGenConfig {
     pub looping: bool,
     /// `DiskOut` WAV sample format (`int16` | `int24` | `float`).
     pub format: Option<String>,
-    // S3 hole: the special-index operator (`BinaryOpUGen`/`UnaryOpUGen` `op`)
-    // lands here as another static parameter, read by their `build`.
+    /// Special-index operator for `BinaryOpUGen`/`UnaryOpUGen` — a
+    /// `clausters_core::builtins` opcode discriminant, validated at compile
+    /// time and read by their `build`.
+    pub op: Option<u32>,
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -68,6 +72,16 @@ pub enum ExecMode {
     LocalOut,
     /// Pulls its demand source each block (`Demand`); see the `dr` contract.
     DemandDriver,
+}
+
+/// The operator family of a generic op UGen (`BinaryOpUGen`/`UnaryOpUGen`):
+/// which `clausters_core::builtins` opcode table its `op` index selects. The
+/// compiler uses it to validate `op` before instantiation. `None` on every
+/// other kind (whose behavior is fixed by its name, not an index).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpFamily {
+    Unary,
+    Binary,
 }
 
 /// The audio-bus role a UGen plays, for the M12 dependency analysis
@@ -99,6 +113,10 @@ pub struct UGenDescriptor {
     pub bus: BusRole,
     /// Requires a non-empty `path` in the config (`DiskIn`/`DiskOut`).
     pub needs_path: bool,
+    /// Generic op UGen: requires a valid `op` index of this family in the
+    /// config (`BinaryOpUGen`/`UnaryOpUGen`). `None` for every fixed-behavior
+    /// kind.
+    pub op_family: Option<OpFamily>,
     /// Builds an instance. Runs on the network thread (allocates); `config`
     /// carries static per-UGen parameters, ignored by most kinds.
     pub build: fn(&UGenConfig) -> Box<dyn UGen>,
@@ -121,7 +139,34 @@ const R_IR_KR_AR: &[Rate] = &[Rate::Ir, Rate::Kr, Rate::Ar];
 const R_IR: &[Rate] = &[Rate::Ir];
 const R_DR: &[Rate] = &[Rate::Dr];
 
-/// Compact descriptor constructor (keeps `UGENS` readable as a table).
+/// Full descriptor constructor.
+#[allow(clippy::too_many_arguments)]
+const fn desc_full(
+    name: &'static str,
+    arity: Arity,
+    default_rate: Rate,
+    rates: &'static [Rate],
+    exec: ExecMode,
+    bus: BusRole,
+    needs_path: bool,
+    op_family: Option<OpFamily>,
+    build: fn(&UGenConfig) -> Box<dyn UGen>,
+) -> UGenDescriptor {
+    UGenDescriptor {
+        name,
+        arity,
+        default_rate,
+        rates,
+        exec,
+        bus,
+        needs_path,
+        op_family,
+        build,
+    }
+}
+
+/// Compact descriptor constructor (keeps `UGENS` readable as a table): a plain
+/// fixed-behavior kind, no `op` family.
 #[allow(clippy::too_many_arguments)]
 const fn desc(
     name: &'static str,
@@ -133,7 +178,7 @@ const fn desc(
     needs_path: bool,
     build: fn(&UGenConfig) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
-    UGenDescriptor {
+    desc_full(
         name,
         arity,
         default_rate,
@@ -141,8 +186,30 @@ const fn desc(
         exec,
         bus,
         needs_path,
+        None,
         build,
-    }
+    )
+}
+
+/// Descriptor for a generic op UGen (`BinaryOpUGen`/`UnaryOpUGen`): audio-or-
+/// control rate, no bus/path, its behavior chosen by the config `op` index.
+const fn desc_op(
+    name: &'static str,
+    arity: Arity,
+    family: OpFamily,
+    build: fn(&UGenConfig) -> Box<dyn UGen>,
+) -> UGenDescriptor {
+    desc_full(
+        name,
+        arity,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        Some(family),
+        build,
+    )
 }
 
 use Arity::{Fixed, Variadic};
@@ -184,8 +251,48 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_| Box::new(WhiteNoise::new()),
     ),
-    // --- arithmetic (thin kinds today; S3 folds these into table-driven
-    //     BinaryOpUGen/UnaryOpUGen aliases with an `op` special index) ---
+    // --- arithmetic: the generic op UGens (S3), selected by a core opcode
+    //     index; every math need is one more `clausters_core::builtins` entry,
+    //     not a new kind. `Add`/`Sub`/`Mul`/`Div` stay as thin aliases below
+    //     for back-compat with existing defs. ---
+    desc_op("BinaryOpUGen", Fixed(2), OpFamily::Binary, |c| {
+        Box::new(BinaryOp::from_index(c.op.unwrap_or(0)))
+    }),
+    desc_op("UnaryOpUGen", Fixed(1), OpFamily::Unary, |c| {
+        Box::new(UnaryOp::from_index(c.op.unwrap_or(0)))
+    }),
+    // Fused forms scsynth optimizes (fixed kinds, not op-table entries).
+    desc(
+        "MulAdd",
+        Fixed(3),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(MulAdd),
+    ),
+    desc(
+        "Sum3",
+        Fixed(3),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Sum3),
+    ),
+    desc(
+        "Sum4",
+        Fixed(4),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Sum4),
+    ),
+    // Aliases for the four operator kinds (back-compat).
     desc(
         "Add",
         Fixed(2),

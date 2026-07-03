@@ -48,8 +48,25 @@ def test_builtins_are_f32_not_python_float():
 
 
 def test_music_helpers():
+    # Now computed through the core (f32), so they need the FFI like the rest.
+    _ffi_or_skip()
     assert B.midicps(69) == pytest.approx(440.0)
     assert B.dbamp(0.0) == pytest.approx(1.0)
+    assert B.cpsmidi(440.0) == pytest.approx(69.0)
+    assert B.cpsoct(B.octcps(5.0)) == pytest.approx(5.0, abs=1e-4)
+
+
+def test_extended_ops_s3():
+    # S3: the new opcodes reach the core and compute the expected values.
+    _ffi_or_skip()
+    assert B.hypot(3.0, 4.0) == pytest.approx(5.0)
+    assert B.clip2(5.0, 1.0) == pytest.approx(1.0)
+    assert B.absdif(2.0, 5.0) == pytest.approx(3.0)
+    assert B.squared(3.0) == pytest.approx(9.0)
+    assert B.recip(4.0) == pytest.approx(0.25)
+    assert B.sign(-2.0) == pytest.approx(-1.0)
+    assert B.round(1.3, 0.5) == pytest.approx(1.5)
+    assert B.sumsqr([1.0, 2.0], [2.0, 1.0]) == [pytest.approx(5.0), pytest.approx(5.0)]
 
 
 # ---- absobject: operator overloading dispatches by selector ----

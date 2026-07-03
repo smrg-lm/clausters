@@ -830,6 +830,39 @@ cargo test --no-default-features --test rt_safety typed_controls
 Desde el cliente Python (`clients/python`): el helper de defs espeja el tipo y
 el lag del control (ver `clients/python/examples/typed_controls.py`).
 
+### Probar las op UGens (`BinaryOpUGen`/`UnaryOpUGen`, S3)
+
+La matemática en un grafo de UGens más allá de `+ - * /`: **dos UGens genéricas**
+que llevan el operador por **nombre** en un campo `op` (resuelto contra la tabla
+de `clausters_core::builtins`). Cada operador es una entrada del core compartido,
+así que el servidor en el hilo de audio y el cliente fuera de la ruta RT calculan
+con el **mismo** código (bit-idéntico para las ops nativas). `Add`/`Sub`/`Mul`/
+`Div` quedan como alias; se suman los fusionados `MulAdd`/`Sum3`/`Sum4`. (Cada
+operador tiene además un id entero interno para el C-ABI, pero no cruza el wire —
+las defs y los clientes usan el nombre.)
+
+```json
+{"kind": "BinaryOpUGen", "op": "mul",     "inputs": [a, b]}
+{"kind": "UnaryOpUGen",  "op": "midicps", "inputs": [x]}
+```
+
+Verificación por tests (el sandbox aísla la red):
+
+```sh
+cargo test --no-default-features --test core_parity
+# recorre TODA la tabla de opcodes (binaria 0-34, unaria 0-36) y los fusionados
+# por la ruta real UGen::process y afirma bit-identidad con el core
+cargo test --no-default-features --test ops
+# render de BinaryOpUGen/UnaryOpUGen/MulAdd/Sum3/Sum4 + validacion del indice op
+# (falta op, op desconocido, aridad) + los alias Add/Mul siguen andando
+cargo test --no-default-features --test rt_safety operator_ugens
+# las op UGens + fusionados no allocan en el hilo de audio
+```
+
+Desde el cliente Python: cada operador/método (`%`, `min`, `>`, `.midicps()`,
+`.distort()`, `.clip2()`, …) compone una op UGen automáticamente; ver
+`clients/python/examples/graph_maths.py` y la sección S3 de la GUIA de Python.
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -1177,6 +1210,7 @@ y restore + nota tocable).
 | Envolventes `EnvGen` (formas, sostén por gate, done actions) | `tests/envgen.rs`, `tests/rt_safety.rs`, `test_synthdef.py` | `python3 clients/python/examples/envelope.py` |
 | Tasas de cálculo `ir`/`kr`/`ar`/`dr` + init pass + driver demand (S1) | `tests/rates.rs`, `tests/rt_safety.rs` (`rate_substrate`) | por JSON crudo `/d_recv` (ver sección S1) |
 | Controles tipados `tr`/`ir` + lag/varlag insertado (S2) | `tests/controls.rs`, `tests/rt_safety.rs` (`typed_controls`) | `python3 clients/python/examples/typed_controls.py` |
+| Op UGens `BinaryOpUGen`/`UnaryOpUGen` + `MulAdd`/`Sum3`/`Sum4` (S3) | `tests/core_parity.rs`, `tests/ops.rs`, `tests/rt_safety.rs` (`operator_ugens`) | `python3 clients/python/examples/graph_maths.py` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

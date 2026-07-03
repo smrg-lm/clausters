@@ -28,8 +28,10 @@ pub mod instance;
 
 use serde::{Deserialize, Serialize};
 
+use clausters_core::builtins;
+
 use crate::dsp::registry::{
-    Arity, DEMAND_SOURCE_SLOT, ExecMode, UGenConfig, UGenDescriptor, lookup,
+    Arity, DEMAND_SOURCE_SLOT, ExecMode, OpFamily, UGenConfig, UGenDescriptor, lookup,
 };
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
 
@@ -108,6 +110,11 @@ pub struct UGenSpec {
     /// `DiskOut`: WAV sample format (`int16` | `int24` | `float`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
+    /// `BinaryOpUGen`/`UnaryOpUGen`: the operator, by **name** (`"mul"`,
+    /// `"midicps"`, `"clip2"`, …). Ignored by every other kind. The compiler
+    /// resolves it against the shared `clausters_core::builtins` operator table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub op: Option<String>,
 }
 
 /// An input is a constant, a named control, or the output of an earlier UGen.
@@ -280,10 +287,30 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 u.kind
             ));
         }
+        // The generic op UGens carry their operator by name; resolve it against
+        // the family's opcode table so a bad def fails fast, and keep the
+        // internal numeric index for `build` (the name never reaches the engine).
+        let mut op_index = None;
+        if let Some(family) = desc.op_family {
+            let name = u.op.as_deref().filter(|s| !s.is_empty()).ok_or_else(|| {
+                format!("ugens[{i}] ({}): requires an 'op' operator name", u.kind)
+            })?;
+            let resolved = match family {
+                OpFamily::Unary => builtins::UnaryOp::from_name(name).map(|o| o as u32),
+                OpFamily::Binary => builtins::BinaryOp::from_name(name).map(|o| o as u32),
+            };
+            op_index = Some(resolved.ok_or_else(|| {
+                format!(
+                    "ugens[{i}] ({}): unknown {family:?} operator '{name}'",
+                    u.kind
+                )
+            })?);
+        }
         let config = UGenConfig {
             path: u.path.clone(),
             looping: u.looping,
             format: u.format.clone(),
+            op: op_index,
         };
 
         let mut inputs = Vec::with_capacity(u.inputs.len());

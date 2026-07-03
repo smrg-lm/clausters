@@ -33,6 +33,15 @@ impl BinaryOp {
     pub fn new(op: BinOp) -> Self {
         Self { op: op.core() }
     }
+
+    /// Builds from a core opcode index (the `BinaryOpUGen` wire `op` field).
+    /// The compiler validates the index before instantiation, so an unknown
+    /// value cannot reach here; it falls back to `Add` defensively.
+    pub fn from_index(op: u32) -> Self {
+        Self {
+            op: CoreBinaryOp::from_u32(op).unwrap_or(CoreBinaryOp::Add),
+        }
+    }
 }
 
 impl UGen for BinaryOp {

@@ -4,9 +4,10 @@ Port of the value side of ``sc3/base/builtins.py``: the operations the client
 applies to concrete numbers. The arithmetic/comparison/transcendental
 primitives go through `clausters._native` (the shared ``clausters-core``)
 so they are computed in **f32**, matching the server by construction — Python's
-own ``float`` is f64 and would diverge. Music-theory helpers that the server
-only reaches through Faust composition (``midicps`` …) are pure Python with the
-standard formula.
+own ``float`` is f64 and would diverge. The music-theory conversions
+(``midicps`` …) go through the core too, so they are bit-identical to the
+server's ``UnaryOpUGen`` (S3) — a value computed off the RT path and the same op
+on the audio thread agree exactly.
 
 Each function accepts a scalar or a list/tuple. With a list it returns a list,
 extending the shorter operand cyclically (sc3 semantics). The boundary stays
@@ -14,7 +15,6 @@ flat: numbers in, numbers (or a list of them) out.
 """
 
 import builtins as _py
-import math
 
 from .. import _native
 
@@ -73,6 +73,21 @@ def bitor(a, b): return _binop(BinaryOp.OR, a, b)
 def bitxor(a, b): return _binop(BinaryOp.XOR, a, b)
 def lshift(a, b): return _binop(BinaryOp.LSH, a, b)
 def rshift(a, b): return _binop(BinaryOp.RSH, a, b)
+def hypot(a, b): return _binop(BinaryOp.HYPOT, a, b)
+def ring1(a, b): return _binop(BinaryOp.RING1, a, b)
+def ring2(a, b): return _binop(BinaryOp.RING2, a, b)
+def ring3(a, b): return _binop(BinaryOp.RING3, a, b)
+def ring4(a, b): return _binop(BinaryOp.RING4, a, b)
+def sumsqr(a, b): return _binop(BinaryOp.SUMSQR, a, b)
+def difsqr(a, b): return _binop(BinaryOp.DIFSQR, a, b)
+def sqrsum(a, b): return _binop(BinaryOp.SQRSUM, a, b)
+def sqrdif(a, b): return _binop(BinaryOp.SQRDIF, a, b)
+def absdif(a, b): return _binop(BinaryOp.ABSDIF, a, b)
+def thresh(a, b): return _binop(BinaryOp.THRESH, a, b)
+def clip2(a, b): return _binop(BinaryOp.CLIP2, a, b)
+def excess(a, b): return _binop(BinaryOp.EXCESS, a, b)
+def round(a, b): return _binop(BinaryOp.ROUND, a, b)
+def trunc(a, b): return _binop(BinaryOp.TRUNC, a, b)
 
 
 # ---- unary primitives (native, f32) ----
@@ -94,20 +109,29 @@ def ceil(x): return _unop(UnaryOp.CEIL, x)
 def rint(x): return _unop(UnaryOp.RINT, x)
 def as_int(x): return _unop(UnaryOp.INTCAST, x)
 def as_float(x): return _unop(UnaryOp.FLOATCAST, x)
+def squared(x): return _unop(UnaryOp.SQUARED, x)
+def cubed(x): return _unop(UnaryOp.CUBED, x)
+def recip(x): return _unop(UnaryOp.RECIP, x)
+def frac(x): return _unop(UnaryOp.FRAC, x)
+def sign(x): return _unop(UnaryOp.SIGN, x)
+def log2(x): return _unop(UnaryOp.LOG2, x)
+def sinh(x): return _unop(UnaryOp.SINH, x)
+def cosh(x): return _unop(UnaryOp.COSH, x)
+def tanh(x): return _unop(UnaryOp.TANH, x)
+def distort(x): return _unop(UnaryOp.DISTORT, x)
+def softclip(x): return _unop(UnaryOp.SOFTCLIP, x)
 
 
-# ---- music-theory helpers (pure Python, standard formulas) ----
+# ---- music-theory conversions (native, f32 — bit-identical to the server) ----
 
-def _elementwise(fn, x):
-    return [fn(float(v)) for v in x] if _is_seq(x) else fn(float(x))
-
-
-def midicps(x): return _elementwise(lambda m: 440.0 * 2.0 ** ((m - 69.0) / 12.0), x)
-def cpsmidi(x): return _elementwise(lambda f: 69.0 + 12.0 * math.log2(f / 440.0), x)
-def midiratio(x): return _elementwise(lambda i: 2.0 ** (i / 12.0), x)
-def ratiomidi(x): return _elementwise(lambda r: 12.0 * math.log2(r), x)
-def dbamp(x): return _elementwise(lambda db: 10.0 ** (db / 20.0), x)
-def ampdb(x): return _elementwise(lambda a: 20.0 * math.log10(a), x)
+def midicps(x): return _unop(UnaryOp.MIDICPS, x)
+def cpsmidi(x): return _unop(UnaryOp.CPSMIDI, x)
+def midiratio(x): return _unop(UnaryOp.MIDIRATIO, x)
+def ratiomidi(x): return _unop(UnaryOp.RATIOMIDI, x)
+def dbamp(x): return _unop(UnaryOp.DBAMP, x)
+def ampdb(x): return _unop(UnaryOp.AMPDB, x)
+def octcps(x): return _unop(UnaryOp.OCTCPS, x)
+def cpsoct(x): return _unop(UnaryOp.CPSOCT, x)
 
 
 # Selector → function, so AbstractObject value subclasses can dispatch by the
@@ -115,14 +139,20 @@ def ampdb(x): return _elementwise(lambda a: 20.0 * math.log10(a), x)
 UNARY = {
     "neg": neg, "abs": abso, "sin": sin, "cos": cos, "tan": tan, "asin": asin,
     "acos": acos, "atan": atan, "exp": exp, "log": log, "log10": log10,
-    "sqrt": sqrt, "floor": floor, "ceil": ceil, "rint": rint,
-    "as_int": as_int, "as_float": as_float, "midicps": midicps,
+    "log2": log2, "sqrt": sqrt, "floor": floor, "ceil": ceil, "rint": rint,
+    "as_int": as_int, "as_float": as_float, "squared": squared, "cubed": cubed,
+    "recip": recip, "frac": frac, "sign": sign, "sinh": sinh, "cosh": cosh,
+    "tanh": tanh, "distort": distort, "softclip": softclip, "midicps": midicps,
     "cpsmidi": cpsmidi, "midiratio": midiratio, "ratiomidi": ratiomidi,
-    "dbamp": dbamp, "ampdb": ampdb,
+    "dbamp": dbamp, "ampdb": ampdb, "octcps": octcps, "cpsoct": cpsoct,
 }
 BINARY = {
     "add": add, "sub": sub, "mul": mul, "div": div, "mod": mod, "pow": pow,
     "min": min, "max": max, "atan2": atan2, "gt": gt, "lt": lt, "ge": ge,
     "le": le, "eq": eq, "ne": ne, "bitand": bitand, "bitor": bitor,
-    "bitxor": bitxor, "lshift": lshift, "rshift": rshift,
+    "bitxor": bitxor, "lshift": lshift, "rshift": rshift, "hypot": hypot,
+    "ring1": ring1, "ring2": ring2, "ring3": ring3, "ring4": ring4,
+    "sumsqr": sumsqr, "difsqr": difsqr, "sqrsum": sqrsum, "sqrdif": sqrdif,
+    "absdif": absdif, "thresh": thresh, "clip2": clip2, "excess": excess,
+    "round": round, "trunc": trunc,
 }

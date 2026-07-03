@@ -51,6 +51,21 @@ class BinaryOp(IntEnum):
     XOR = 17
     LSH = 18
     RSH = 19
+    HYPOT = 20
+    RING1 = 21
+    RING2 = 22
+    RING3 = 23
+    RING4 = 24
+    SUMSQR = 25
+    DIFSQR = 26
+    SQRSUM = 27
+    SQRDIF = 28
+    ABSDIF = 29
+    THRESH = 30
+    CLIP2 = 31
+    EXCESS = 32
+    ROUND = 33
+    TRUNC = 34
 
 
 class UnaryOp(IntEnum):
@@ -74,6 +89,25 @@ class UnaryOp(IntEnum):
     RINT = 15
     INTCAST = 16
     FLOATCAST = 17
+    SQUARED = 18
+    CUBED = 19
+    RECIP = 20
+    FRAC = 21
+    SIGN = 22
+    LOG2 = 23
+    SINH = 24
+    COSH = 25
+    TANH = 26
+    MIDICPS = 27
+    CPSMIDI = 28
+    MIDIRATIO = 29
+    RATIOMIDI = 30
+    DBAMP = 31
+    AMPDB = 32
+    OCTCPS = 33
+    CPSOCT = 34
+    DISTORT = 35
+    SOFTCLIP = 36
 
 
 # ---- library loading (lazy, versioned) ----

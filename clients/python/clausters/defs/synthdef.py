@@ -99,6 +99,8 @@ class SynthDef:
             d = {"kind": u.kind, "inputs": [ser(i) for i in u.inputs]}
             if u.rate is not None:
                 d["rate"] = u.rate
+            if getattr(u, "op", None) is not None:
+                d["op"] = u.op
             return d
 
         return {

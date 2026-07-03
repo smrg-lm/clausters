@@ -19,11 +19,14 @@ concurrently.
 (``sin_osc``, ``impulse``, ``white_noise``, `rand`), bus and buffer I/O
 (``in_``/``in_ctl``, ``out``/``replace_out``, ``play_buf``/``buf_rd``),
 feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
-``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the four
-arithmetic ops. There are **no math UGens**: only ``+ - * /`` map to UGens
-(``Add``/``Sub``/``Mul``/``Div``); any other operator (``sin``, ``%``, ``min``,
-comparisons …) raises — reach for a Faust def (`clausters.defs.signals`) when
-you need them.
+``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the fused
+``mul_add``/``sum3``/``sum4``. **Maths works**: ``+ - * /`` map to the
+``Add``/``Sub``/``Mul``/``Div`` kinds and every other operator or method
+(``%``, ``min``/``max``, comparisons, ``.sin()``, ``.midicps()``,
+``.distort()`` …) composes a generic ``BinaryOpUGen``/``UnaryOpUGen`` carrying
+the operator name — the same op the value side computes, so the two agree
+bit-for-bit. Reach for a Faust def (`clausters.defs.signals`) only for genuinely
+custom per-sample DSP (recursion, tables, sample-accurate feedback).
 
 Each UGen output carries a **rate** (``ir``/``kr``/``ar``/``dr``); it defaults
 per kind and can be set with `Ugen.at_rate`. Controls carry a **type** and an
@@ -38,38 +41,57 @@ Reserved controls ``in`` and ``out`` (the input/output buses, set with
 
 from ..base.absobject import AbstractObject
 
-#: AbstractObject binary selector -> UGen kind. Only the four the server has.
+#: The four arithmetic selectors keep their dedicated alias kinds, so existing
+#: defs and their serialized graphs are unchanged.
 _BINOP_UGEN = {"add": "Add", "sub": "Sub", "mul": "Mul", "div": "Div"}
+
+#: Every other operator/method selector composes a generic ``BinaryOpUGen``/
+#: ``UnaryOpUGen`` whose ``op`` is the operator **name** (S3) — the same name
+#: the server's `clausters_core::builtins` table resolves, and the same op the
+#: value side (`clausters.base.builtins`) computes, so a graph op and an off-RT
+#: value agree. The selector *is* the wire name (no numeric index crosses the
+#: wire); these sets say which selectors have a server op.
+_BINOP_OPS = frozenset({
+    "mod", "pow", "min", "max", "atan2", "gt", "lt", "ge", "le", "eq", "ne",
+    "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
+    "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
+    "thresh", "clip2", "excess", "round", "trunc",
+})
+_UNOP_OPS = frozenset({
+    "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",
+    "log10", "log2", "sqrt", "floor", "ceil", "rint", "as_int", "as_float",
+    "squared", "cubed", "recip", "frac", "sign", "sinh", "cosh", "tanh",
+    "distort", "softclip", "midicps", "cpsmidi", "midiratio", "ratiomidi",
+    "dbamp", "ampdb", "octcps", "cpsoct",
+})
 
 
 class _Node(AbstractObject):
-    """Shared operator dispatch for graph leaves (`Ugen`,
-    `Control`): the four arithmetic operators compose UGen nodes, every
-    other operator is rejected (the server has no UGen for it)."""
+    """Shared operator dispatch for graph leaves (`Ugen`, `Control`): `+ - * /`
+    compose the dedicated alias kinds; every other operator and math method
+    (`%`, `min`, comparisons, `.sin()`, `.midicps()`, …) composes a generic
+    `BinaryOpUGen`/`UnaryOpUGen` carrying the operator name."""
 
     def _compose_binop(self, selector, other):
         kind = _BINOP_UGEN.get(selector)
-        if kind is None:
-            raise TypeError(
-                f"no UGen for operator {selector!r}: the server's UGen set has "
-                f"only + - * / — use a Faust def (clausters.defs.signals) for {selector!r}"
-            )
-        return Ugen(kind, [self, other])
+        if kind is not None:
+            return Ugen(kind, [self, other])
+        if selector not in _BINOP_OPS:
+            raise TypeError(f"no binary UGen for operator {selector!r}")
+        return Ugen("BinaryOpUGen", [self, other], op=selector)
 
     def _rcompose_binop(self, selector, other):
         kind = _BINOP_UGEN.get(selector)
-        if kind is None:
-            raise TypeError(
-                f"no UGen for operator {selector!r}: the server's UGen set has "
-                f"only + - * / — use a Faust def (clausters.defs.signals) for {selector!r}"
-            )
-        return Ugen(kind, [other, self])
+        if kind is not None:
+            return Ugen(kind, [other, self])
+        if selector not in _BINOP_OPS:
+            raise TypeError(f"no binary UGen for operator {selector!r}")
+        return Ugen("BinaryOpUGen", [other, self], op=selector)
 
     def _compose_unop(self, selector):
-        raise TypeError(
-            f"no UGen for unary {selector!r}: UGen graphs have no math UGens — "
-            f"use a Faust def (clausters.defs.signals)"
-        )
+        if selector not in _UNOP_OPS:
+            raise TypeError(f"no unary UGen for operator {selector!r}")
+        return Ugen("UnaryOpUGen", [self], op=selector)
 
     def _compose_narop(self, selector, *args):
         raise TypeError(f"no n-ary UGen for {selector!r}")
@@ -83,12 +105,15 @@ class Ugen(_Node):
 
     ``rate`` is the optional output calculation rate (``"ir"``/``"kr"``/
     ``"ar"``/``"dr"``); ``None`` lets the server pick the kind's default (``ar``
-    for signal UGens). Set it fluently with `at_rate`."""
+    for signal UGens). Set it fluently with `at_rate`. ``op`` is the operator
+    **name** carried by the generic ``BinaryOpUGen``/``UnaryOpUGen`` (S3), e.g.
+    ``"mul"`` / ``"midicps"``; ``None`` for every other kind."""
 
-    def __init__(self, kind: str, inputs, rate=None):
+    def __init__(self, kind: str, inputs, rate=None, op=None):
         self.kind = kind
         self.inputs = list(inputs)
         self.rate = None if rate is None else str(rate)
+        self.op = None if op is None else str(op)
 
     def at_rate(self, rate: str) -> "Ugen":
         """Set this UGen's output rate (``"ir"``/``"kr"``/``"ar"``/``"dr"``) and
@@ -215,6 +240,26 @@ def local_out(channel, signal) -> Ugen:
     constant); also passes ``signal`` through as its output (so it can be a
     SynthDef output to keep the write in the graph)."""
     return Ugen("LocalOut", [channel, signal])
+
+
+# ---- fused arithmetic (the forms the server optimizes) ----
+
+
+def mul_add(a, b, c) -> Ugen:
+    """``a*b + c`` in one UGen (the multiply-accumulate the server fuses). The
+    plain expression ``a * b + c`` builds the same value with two op UGens; this
+    is the fused equivalent."""
+    return Ugen("MulAdd", [a, b, c])
+
+
+def sum3(a, b, c) -> Ugen:
+    """``a + b + c`` in one UGen."""
+    return Ugen("Sum3", [a, b, c])
+
+
+def sum4(a, b, c, d) -> Ugen:
+    """``a + b + c + d`` in one UGen."""
+    return Ugen("Sum4", [a, b, c, d])
 
 
 # ---- one-pole smoothers ----

@@ -464,6 +464,62 @@ fn typed_controls_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
+/// Operator UGens (S3): the generic `UnaryOpUGen`/`BinaryOpUGen` selected by an
+/// opcode index and the fused `MulAdd`/`Sum3`/`Sum4` must stay allocation-free
+/// on the audio thread. They only call `clausters_core::builtins`, which writes
+/// into caller-provided slices, so there is nothing to allocate — this guards
+/// that the wiring keeps it so.
+#[test]
+fn operator_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // SinOsc -> distort -> *0.3 (mul) -> MulAdd -> Sum3 -> Sum4.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "ops",
+            "ugens": [
+                {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+                {"kind": "UnaryOpUGen", "op": "distort", "inputs": [{"ugen": 0}]},
+                {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"ugen": 1}, {"const": 0.3}]},
+                {"kind": "MulAdd", "inputs": [{"ugen": 2}, {"const": 1.0}, {"const": 0.0}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 3}, {"const": 0.0}, {"const": 0.0}]},
+                {"kind": "Sum4",
+                 "inputs": [{"ugen": 4}, {"const": 0.0}, {"const": 0.0}, {"const": 0.0}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 5}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}
+
 /// Same guardian for the Faust path (F3): inserting, processing, recontrolling
 /// and freeing `FaustSynth`s must not allocate on the audio thread. This
 /// guards our wrapper (staging copies, zone stores, garbage routing) —
