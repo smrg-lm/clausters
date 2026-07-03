@@ -276,6 +276,79 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 3);
 }
 
+/// The S5 table oscillators and waveshaper (`Osc`/`VOsc`/`Shaper`) read the
+/// wavetable pool on the audio thread the same way `PlayBuf` does — pointer
+/// lookups and interpolation, never an allocation. The buffers themselves are
+/// generated on the NRT thread (`/b_gen`), so the audio thread only reads.
+#[test]
+fn table_oscillators_do_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::dsp::wavetable::{GenCommand, GenFlags};
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // Two wavetables (built off the audio thread) for VOsc to crossfade, plus a
+    // cheby transfer table for Shaper.
+    let wt = |amps: Vec<f32>| {
+        let flags = GenFlags {
+            normalize: true,
+            wavetable: true,
+            clear: true,
+        };
+        Some(Arc::new(
+            GenCommand::Sine1 { flags, amps }.apply(&Buffer::zeroed(2048, 1, 48_000.0)),
+        ))
+    };
+    let cheby = Some(Arc::new(
+        GenCommand::Cheby {
+            flags: GenFlags {
+                normalize: true,
+                wavetable: true,
+                clear: true,
+            },
+            coeffs: vec![0.0, 0.0, 1.0],
+        }
+        .apply(&Buffer::zeroed(2048, 1, 48_000.0)),
+    ));
+    for (index, buffer) in [(0, wt(vec![1.0])), (1, wt(vec![0.0, 1.0])), (2, cheby)] {
+        handle.send(Cmd::SetBuffer { index, buffer }).ok().unwrap();
+    }
+
+    // Osc + VOsc + Shaper all reading the pool, summed to bus 0.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "tables",
+            "ugens": [
+                {"kind": "Osc",  "inputs": [{"const": 0.0}, {"const": 220.0}, {"const": 0.0}]},
+                {"kind": "VOsc", "inputs": [{"const": 0.5}, {"const": 110.0}, {"const": 0.0}]},
+                {"kind": "SinOsc", "inputs": [{"const": 55.0}]},
+                {"kind": "Shaper", "inputs": [{"const": 2.0}, {"ugen": 2}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 0}, {"ugen": 1}, {"ugen": 3}]},
+                {"kind": "Out",  "inputs": [{"const": 0.0}, {"ugen": 4}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()))),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+}
+
 /// Same guardian for the feedback path (`LocalIn`/`LocalOut`): the per-synth
 /// `locals` buffer is allocated at build time (network side); reading and
 /// writing it each block is plain slice copies, no allocation.

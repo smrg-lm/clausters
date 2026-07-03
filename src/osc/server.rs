@@ -33,10 +33,10 @@ use tracing::{error, warn};
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
 use crate::osc::ClientId;
-use crate::osc::translate::{CmdTranslator, float_value, int_arg, parse_buffer_msg};
+use crate::osc::translate::{CmdTranslator, float_value, int_arg, parse_b_gen, parse_buffer_msg};
 use crate::server::defstore::DefStore;
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
-use crate::server::nrt::{NrtAction, NrtRequest, NrtThread};
+use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtThread};
 
 /// Default scsynth port.
 pub const DEFAULT_PORT: u16 = 57110;
@@ -762,6 +762,7 @@ impl OscServer {
             "/b_read" => self.handle_b_cmd(&msg, from, "/b_read"),
             "/b_write" => self.handle_b_cmd(&msg, from, "/b_write"),
             "/b_zero" => self.handle_b_cmd(&msg, from, "/b_zero"),
+            "/b_gen" => self.handle_b_gen(&msg, from),
             "/b_free" => self.handle_b_cmd(&msg, from, "/b_free"),
             "/b_query" => self.handle_b_query(&msg, from),
             "/b_get" => self.handle_b_get(&msg, from),
@@ -1291,6 +1292,22 @@ impl OscServer {
             Ok(parsed) => parsed,
             Err(e) => return self.fail(from, cmd, e),
         };
+        self.submit_nrt(cmd, index, from, job);
+    }
+
+    /// `/b_gen bufnum cmd ...`: fills a buffer through the wavetable/generator
+    /// path (see [`parse_b_gen`]). Async on the NRT queue, in submission order
+    /// with the other `/b_*` commands, replying `/done`/`/fail` like them.
+    fn handle_b_gen(&mut self, msg: &OscMessage, from: ClientId) {
+        let (index, job) = match parse_b_gen(&msg.args, &self.translator.buffers) {
+            Ok(parsed) => parsed,
+            Err(e) => return self.fail(from, "/b_gen", e),
+        };
+        self.submit_nrt("/b_gen", index, from, job);
+    }
+
+    /// Queues a built NRT job, failing back to the client if the thread is gone.
+    fn submit_nrt(&mut self, cmd: &'static str, index: i32, from: ClientId, job: NrtJob) {
         let request = NrtRequest {
             cmd,
             index,

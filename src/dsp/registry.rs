@@ -22,6 +22,7 @@ use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
 use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
+use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sinosc::SinOsc;
 use crate::dsp::unop::UnaryOp;
@@ -380,6 +381,47 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_| Box::new(BufRd),
+    ),
+    // --- table oscillators & waveshaper (S5); read `/b_gen` wavetables ---
+    desc(
+        "Osc",
+        Fixed(3),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Osc::new()),
+    ),
+    desc(
+        "OscN",
+        Fixed(3),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(OscN::new()),
+    ),
+    desc(
+        "VOsc",
+        Fixed(3),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(VOsc::new()),
+    ),
+    desc(
+        "Shaper",
+        Fixed(2),
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(Shaper),
     ),
     desc(
         "BufSampleRate",

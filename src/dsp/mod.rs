@@ -19,10 +19,12 @@ pub mod io;
 pub mod lag;
 pub mod local;
 pub mod noise;
+pub mod osc;
 pub mod registry;
 pub mod scalar;
 pub mod sinosc;
 pub mod unop;
+pub mod wavetable;
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;

@@ -18,6 +18,8 @@ then run one or more demos (default: status):
          via `soundfile("<bufnum>", n)` (needs the feature).
 `wavetable` computes a 256-point table in Python and plays it through
          `waveform` + `rdtable` (needs the faust feature).
+`bgen`   fills server buffers with `/b_gen` (sine1 wavetable, cheby transfer)
+         and plays them through the `Osc` and `Shaper` UGens — no Faust needed.
 `buffer` writes a WAV, loads it with /b_allocRead, plays it with PlayBuf at
          the file's pitch (rate from /b_info and /status), then frees it.
 `disk`   records a sine straight to a WAV with DiskOut, then streams it back
@@ -383,6 +385,57 @@ def demo_buffer(client: Client):
     os.remove(path)
 
 
+def demo_bgen(client: Client):
+    """Table oscillators (S5): fill server buffers with `/b_gen` and read them
+    with `Osc` (wavetable) and `Shaper` (cheby waveshaping). No Faust needed —
+    this is the UGen-world counterpart of the `wavetable` demo above."""
+    # 1. A wavetable: buffer 20 = a 1024-point table (2048 samples), built from
+    #    the first few harmonics with sine1 (flags 7 = normalize+wavetable+clear).
+    print("bgen demo: /b_alloc 20 then /b_gen sine1")
+    client.send("/b_alloc", 20, 2048)
+    if client.reply()[0] == "/fail":  # async: /done /b_alloc 20
+        return
+    client.send("/b_gen", 20, "sine1", 1 + 2 + 4, 1.0, 0.5, 0.3, 0.25)
+    client.reply()  # /done /b_gen 20
+
+    osc = SynthDefBuilder("wtosc")
+    freq = osc.control("freq", 220.0)
+    osc.add("Out", 0, osc.add("Mul", osc.add("Osc", 20, freq, 0.0), 0.2))
+    client.send("/d_recv", osc.blob())
+    client.reply()
+    print("  /s_new wtosc 3050 (a bright harmonic tone)")
+    client.send("/s_new", "wtosc", 3050, 1, 0)
+    time.sleep(1.5)
+    client.send("/n_set", 3050, "freq", 330.0)
+    time.sleep(1.0)
+    client.send("/n_free", 3050)
+
+    # 2. A cheby transfer table for Shaper: buffer 21. Coefficients weight the
+    #    Chebyshev polynomials (here mostly T_3), so a clean sine comes out as a
+    #    richer waveshaped timbre; drive it with a swelling amplitude.
+    client.send("/b_alloc", 21, 2048)
+    client.reply()
+    client.send("/b_gen", 21, "cheby", 1 + 2 + 4, 1.0, 0.0, 1.0, 0.0, 0.5)
+    client.reply()
+    shp = SynthDefBuilder("wtshaper")
+    drive = shp.control("drive", 0.9)
+    tone = shp.add("Mul", shp.add("SinOsc", 220.0), drive)
+    shp.add("Out", 0, shp.add("Mul", shp.add("Shaper", 21, tone), 0.2))
+    client.send("/d_recv", shp.blob())
+    client.reply()
+    print("  /s_new wtshaper 3051 (waveshaped through a cheby transfer table)")
+    client.send("/s_new", "wtshaper", 3051, 1, 0, "drive", 0.3)
+    time.sleep(0.8)
+    client.send("/n_set", 3051, "drive", 1.0)  # more drive -> more harmonics
+    time.sleep(1.2)
+    client.send("/n_free", 3051)
+
+    client.send("/b_free", 20)
+    client.send("/b_free", 21)
+    client.reply()
+    client.reply()
+
+
 def demo_disk(client: Client):
     """Streaming disk I/O: record a sine straight to a WAV with DiskOut, then
     stream it back from disk with DiskIn (no buffer load). Both stream in real
@@ -603,6 +656,8 @@ def main():
             demo_soundfile(client)
         elif demo == "wavetable":
             demo_wavetable(client)
+        elif demo == "bgen":
+            demo_bgen(client)
         elif demo == "buffer":
             demo_buffer(client)
         elif demo == "disk":
@@ -622,7 +677,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, buffer, disk, bundle, feedback, demand, signal, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, score, quit)"
             )
 
 

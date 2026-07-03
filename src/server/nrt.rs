@@ -57,6 +57,14 @@ pub enum NrtJob {
         num_frames: i64,
         buffer: Arc<Buffer>,
     },
+    /// `/b_gen`: fill/generate into a same-shape replacement of the current
+    /// buffer (wavetable generators, waveshaping tables, buffer copies). Pure
+    /// computation — no I/O — but ordered through this queue like the rest so a
+    /// `/b_gen` cannot overtake a pending `/b_alloc` on the same buffer.
+    Gen {
+        current: Arc<Buffer>,
+        cmd: crate::dsp::wavetable::GenCommand,
+    },
     /// `/b_free`: ordered behind the other jobs (see module docs).
     Free,
 }
@@ -214,6 +222,7 @@ pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
             write_wav(&path, &sample_format, buf_start, num_frames, &buffer)?;
             Ok(NrtAction::None)
         }
+        NrtJob::Gen { current, cmd } => Ok(NrtAction::Install(Arc::new(cmd.apply(&current)))),
         NrtJob::Free => Ok(NrtAction::Clear),
     }
 }

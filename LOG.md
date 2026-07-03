@@ -4067,3 +4067,55 @@ guards the whitelist wiring), and a no-alloc `relative_done_actions_and_n_run`
 scene in `tests/rt_safety.rs`; `cargo fmt` clean. Client: `clients/python` suite
 green (`/n_run` emission + the full enum) and the `pause_resume.py` E2E offline
 render through the rebuilt embed lib.
+
+## S5 — Wavetable & table-generation infrastructure (`/b_gen`) + the table oscillators (completed 2026-07-03)
+
+**What's there:** the buffer-generation command `/b_gen`, scsynth's wavetable
+format, and the first UGens that consume it — so a client can synthesize a
+table (a harmonic spectrum, a waveshaping curve) into a server buffer and read
+it with an oscillator, all without a Faust def.
+
+- **The wavetable format + generators (`src/dsp/wavetable.rs`, new).** Pure and
+  off the audio thread. `signal_to_wavetable(signal, wrap)` builds scsynth's
+  interleaved layout — per point `[2·a[i]−a[i+1], a[i+1]−a[i]]` — so an
+  interpolating read is one fused multiply-add (`wt_interp`: `x0 + (1+frac)·x1`,
+  no branch). `GenFlags` unpacks `normalize`(1)/`wavetable`(2)/`clear`(4);
+  `GenCommand` is one parsed command — `Sine1` (harmonic amps), `Sine2`
+  (freq/amp), `Sine3` (freq/amp/phase), `Cheby` (a `Σ ampₖ·T_{k+1}(x)` transfer
+  curve, non-wrapping), `Copy` (overlay another buffer). `GenCommand::apply`
+  renders one period, optionally normalizes/accumulates, wavetable-encodes, and
+  returns a same-shape immutable `Buffer`.
+- **Table oscillators (`src/dsp/osc.rs`, new).** `Osc` (interpolating wavetable
+  oscillator), `OscN` (non-interpolating, plain buffer), `VOsc` (buffer number
+  is a signal, crossfading adjacent tables), `Shaper` (waveshaper over a `cheby`
+  transfer table, input in ±1 spanning the table). All mono, single-output, read
+  the immutable pool through `ctx.buffers` like `PlayBuf` — no allocation.
+  Registered as four rows in `src/dsp/registry.rs`; no other engine change.
+- **`/b_gen` on the NRT queue.** New `NrtJob::Gen { current, cmd }` (`run_job`
+  calls `cmd.apply`), so generation rides the same one-queue, submission-order,
+  build-and-swap path as `/b_read`/`/b_zero` — the audio thread only ever sees a
+  finished buffer. `parse_b_gen` (`src/osc/translate.rs`) resolves the command
+  (and, for `copy`, the source buffer) from the network-side mirror; like
+  `/b_read` it needs the target already allocated (so a `/b_gen` after a
+  `/b_alloc` waits on the alloc's `/done`). Wired into the live dispatch
+  (`src/osc/server.rs`, `handle_b_gen` + a shared `submit_nrt`) and the NRT
+  renderer (`src/server/render.rs`), so offline scores generate tables too.
+
+**Docs:** `schemas.md` gains the `/b_gen` command family, the wavetable-format
+explanation, and the `Osc`/`OscN`/`VOsc`/`Shaper` catalog rows, cross-linked
+both ways with the Faust `waveform` table (the same precompute-a-table idea at
+def scale); `architecture.md`'s buffer note lists `/b_gen` as a build-and-swap
+"mutation"; `GUIA.md` gets the S5 manual-test section. The `bgen` demo in
+`examples/json_client.py` fills buffers with `sine1` and `cheby` and plays them
+through `Osc` and `Shaper`.
+
+**Verified:** `cargo test --no-default-features` green — `tests/wavetable.rs`
+(the format round-trip reconstructs a sine; `sine1` wavetable vs a computed sine
+within tolerance; the `cheby` `T₂` transfer curve; `copy` overlay; no-clear
+accumulation; `Osc` renders a sine and `Shaper` with a linear `cheby [1]` passes
+its input through — both through the real engine), `tests/osc.rs::b_gen_...`
+(full OSC round-trip: `/b_alloc` → `/b_gen sine1` → `/b_getn` reconstructs the
+sine; unknown command and unallocated target `/fail`), and a no-alloc
+`table_oscillators` scene in `tests/rt_safety.rs` (`Osc`/`VOsc`/`Shaper` reading
+the pool). `cargo fmt` clean. Live smoke: the `bgen` demo against a running
+server plays the wavetable and waveshaper voices.

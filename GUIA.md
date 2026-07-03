@@ -915,6 +915,53 @@ ffplay -autoexit /tmp/pr.wav
 reconstruilo con `cargo build --release --features embed -p clausters` y apuntá
 `CLAUSTERS_LIB` al `.so`, o refrescá `clients/python/clausters/_libs/`.)
 
+### Probar las tablas de onda y `/b_gen` + osciladores de tabla (S5)
+
+Infraestructura de **wavetables**: `/b_gen bufnum cmd flags args…` rellena un
+buffer ya alocado con una señal calculada, por la misma ruta inmutable
+build-and-swap que `/b_read` (el hilo de audio sólo ve un buffer terminado).
+Comandos: `sine1` (amplitudes de armónicos), `sine2` (pares freq/amp), `sine3`
+(tríos freq/amp/fase), `cheby` (función de transferencia de waveshaping con
+polinomios de Chebyshev) y `copy` (desde otro buffer); flags
+`normalize`(1)/`wavetable`(2)/`clear`(4), el habitual es 7. El **formato
+wavetable** es el interleave de scsynth `[2·a[i]−a[i+1], a[i+1]−a[i]]`, que
+deja leer una muestra con un solo multiply-add. Las primeras UGens que lo
+consumen: `Osc` (oscilador de tabla interpolante), `OscN` (no interpolante,
+buffer normal), `VOsc` (número de buffer como señal, crossfade entre tablas
+vecinas) y `Shaper` (waveshaper sobre una tabla `cheby`).
+
+```json
+{"kind": "Osc",    "inputs": [{"const": 20.0}, {"control": 0}, {"const": 0.0}]}
+{"kind": "Shaper", "inputs": [{"const": 21.0}, {"ugen": 0}]}
+```
+
+Como `/b_gen` lee la forma del buffer actual (como `/b_read`), entre un
+`/b_alloc` y su `/b_gen` hace falta esperar el `/done` del alloc primero.
+
+Verificación por tests (el sandbox aísla la red):
+
+```sh
+cargo test --no-default-features --test wavetable
+# el round-trip del formato reconstruye un seno; b_gen sine1 en formato wavetable
+# vs un seno calculado (dentro de tolerancia); la curva de transferencia cheby
+# (T_2 = 2x^2-1); copy solapa un rango; sin clear acumula; Osc lee un seno y
+# Shaper con transferencia lineal (cheby [1]) pasa la señal sin tocar
+cargo test --no-default-features --test osc b_gen
+# el round-trip OSC completo: /b_alloc -> /b_gen sine1 -> /b_getn reconstruye el
+# seno; comando desconocido y buffer no alocado responden /fail
+cargo test --no-default-features --test rt_safety table_oscillators
+# Osc/VOsc/Shaper leyendo el pool no allocan en el hilo de audio
+```
+
+A mano, con el servidor corriendo (rellena buffers con `/b_gen` y los toca con
+`Osc` y `Shaper`):
+
+```sh
+python3 examples/json_client.py bgen
+# /b_alloc 20 -> /b_gen 20 sine1 -> un tono armónico brillante (Osc);
+# /b_alloc 21 -> /b_gen 21 cheby -> un seno waveshapeado (Shaper), sube el drive
+```
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -946,7 +993,7 @@ Protocolo implementado hasta M6: `/status`, `/quit`, `/notify`, `/dumpOSC`,
 `/n_before`, `/n_after`,
 `/g_new`, `/g_freeAll`, `/g_deepFree`, `/c_set`, `/c_get`, `/d_recv`,
 `/d_free`, los buffers `/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`,
-`/b_zero`, `/b_free` (asíncronos vía hilo NRT, responden `/done cmd
+`/b_zero`, `/b_gen`, `/b_free` (asíncronos vía hilo NRT, responden `/done cmd
 bufnum`) y `/b_query` (responde `/b_info`), más `/d_faust` con el feature.
 Introspección del árbol: `/g_queryTree` (responde `/g_queryTree.reply`),
 `/n_query` (responde `/n_info` por nodo: padre, hermanos, def, controles,
@@ -1264,6 +1311,7 @@ y restore + nota tocable).
 | Controles tipados `tr`/`ir` + lag/varlag insertado (S2) | `tests/controls.rs`, `tests/rt_safety.rs` (`typed_controls`) | `python3 clients/python/examples/typed_controls.py` |
 | Op UGens `BinaryOpUGen`/`UnaryOpUGen` + `MulAdd`/`Sum3`/`Sum4` (S3) | `tests/core_parity.rs`, `tests/ops.rs`, `tests/rt_safety.rs` (`operator_ugens`) | `python3 clients/python/examples/graph_maths.py` |
 | Done actions 0-15 completas + `/n_run` (pausa no terminal) (S4) | `node` unit tests, `tests/envgen.rs`, `tests/osc.rs` (`n_run`), `tests/rt_safety.rs` (`relative_done_actions_and_n_run`) | `python3 clients/python/examples/pause_resume.py` |
+| Wavetables `/b_gen` (sine1/2/3, cheby, copy) + `Osc`/`OscN`/`VOsc`/`Shaper` (S5) | `tests/wavetable.rs`, `tests/osc.rs` (`b_gen`), `tests/rt_safety.rs` (`table_oscillators`) | `python3 examples/json_client.py bgen` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

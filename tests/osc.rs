@@ -479,6 +479,82 @@ fn b_getn_and_b_get_read_buffer_samples() {
 }
 
 #[test]
+fn b_gen_fills_a_wavetable_then_reads_it_back() {
+    use clausters::dsp::wavetable::wt_interp;
+    let server = TestServer::spawn();
+
+    // A 256-sample buffer = a 128-point wavetable.
+    server.send("/b_alloc", vec![OscType::Int(0), OscType::Int(256)]);
+    server.recv_until("/done");
+
+    // Fill it with a single sine partial, wavetable format, normalized+cleared.
+    server.send(
+        "/b_gen",
+        vec![
+            OscType::Int(0),
+            OscType::String("sine1".into()),
+            OscType::Int(1 + 2 + 4),
+            OscType::Float(1.0),
+        ],
+    );
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/b_gen".into()));
+    assert_eq!(done.args[1], OscType::Int(0));
+
+    // Read the whole table back and confirm it reconstructs the sine.
+    server.send(
+        "/b_getn",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Int(256)],
+    );
+    let reply = server.recv_until("/b_setn");
+    assert_eq!(reply.args[2], OscType::Int(256));
+    let table: Vec<f32> = reply.args[3..]
+        .iter()
+        .map(|a| match a {
+            OscType::Float(f) => *f,
+            other => panic!("expected float, got {other:?}"),
+        })
+        .collect();
+    let points = table.len() / 2;
+    for k in 0..points {
+        let expect = (std::f32::consts::TAU * k as f32 / points as f32).sin();
+        assert!(
+            (wt_interp(&table, k, 0.0) - expect).abs() < 1e-3,
+            "point {k}"
+        );
+    }
+
+    // An unknown generator and an unallocated target both /fail.
+    server.send(
+        "/b_gen",
+        vec![
+            OscType::Int(0),
+            OscType::String("bogus".into()),
+            OscType::Int(0),
+        ],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/b_gen".into())
+    );
+    server.send(
+        "/b_gen",
+        vec![
+            OscType::Int(9),
+            OscType::String("sine1".into()),
+            OscType::Int(7),
+            OscType::Float(1.0),
+        ],
+    );
+    assert_eq!(
+        server.recv_until("/fail").args[0],
+        OscType::String("/b_gen".into())
+    );
+
+    server.quit();
+}
+
+#[test]
 fn b_export_dumps_raw_samples_to_a_local_file() {
     let server = TestServer::spawn();
 

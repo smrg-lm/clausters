@@ -23,7 +23,7 @@ use rosc::{OscMessage, OscPacket, OscTime};
 use crate::dsp::NUM_AUDIO_BUSES;
 #[cfg(feature = "faust")]
 use crate::osc::translate::parse_d_faust;
-use crate::osc::translate::{CmdTranslator, parse_buffer_msg};
+use crate::osc::translate::{CmdTranslator, parse_b_gen, parse_buffer_msg};
 use crate::server::engine::{
     BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair_with_workers,
 };
@@ -332,13 +332,18 @@ impl Renderer {
             "/d_free" => self.translator.d_free(&msg.args),
             "/d_faust" => self.d_faust(&msg.args),
             "/d_graph" => self.translator.d_graph(&msg.args).map(|_| ()),
-            "/b_alloc" | "/b_allocRead" | "/b_read" | "/b_write" | "/b_zero" | "/b_free" => {
-                let (index, job) = parse_buffer_msg(
-                    msg.addr.as_str(),
-                    &msg.args,
-                    &self.translator.buffers,
-                    self.sample_rate,
-                )?;
+            "/b_alloc" | "/b_allocRead" | "/b_read" | "/b_write" | "/b_zero" | "/b_gen"
+            | "/b_free" => {
+                let (index, job) = if msg.addr == "/b_gen" {
+                    parse_b_gen(&msg.args, &self.translator.buffers)?
+                } else {
+                    parse_buffer_msg(
+                        msg.addr.as_str(),
+                        &msg.args,
+                        &self.translator.buffers,
+                        self.sample_rate,
+                    )?
+                };
                 // The buffer is built now, but installed sample-accurately
                 // with the rest of the event's commands. It lands in the
                 // translator's pool — the same one `make_synth` reads to fill a

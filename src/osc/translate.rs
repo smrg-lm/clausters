@@ -1723,6 +1723,86 @@ pub fn parse_buffer_msg(
     Ok((index, job))
 }
 
+/// Parses a `/b_gen bufnum cmd ...` command into the buffer index and the NRT
+/// job that fills it. The named `cmd` selects a generator (`sine1`/`sine2`/
+/// `sine3`/`cheby`) or `copy`; the flag int and the trailing floats are pulled
+/// per command. Needs an allocated buffer (its shape drives generation), read
+/// from `mirror` — so a `/b_gen` right after a `/b_alloc` needs a `/sync`
+/// between them, exactly like `/b_read`.
+pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob), String> {
+    use crate::dsp::wavetable::{GenCommand, GenFlags};
+
+    let (index, cmd) = match args {
+        [OscType::Int(index), OscType::String(cmd), ..] => (*index, cmd.as_str()),
+        _ => return Err("expected: bufnum, command name, args...".into()),
+    };
+    if index < 0 || index as usize >= NUM_BUFFERS {
+        return Err(format!("buffer index out of range: {index}"));
+    }
+    let Some(current) = mirror_buffer(mirror, index) else {
+        return Err(format!("no buffer allocated at {index}"));
+    };
+    let rest = &args[2..];
+
+    let command = match cmd {
+        "copy" => {
+            // copy dstStart srcBufnum srcStart numSamples
+            let [
+                OscType::Int(dst_start),
+                OscType::Int(src_buf),
+                OscType::Int(src_start),
+                OscType::Int(num),
+            ] = rest
+            else {
+                return Err("copy expects: dstStart, srcBufnum, srcStart, numSamples".into());
+            };
+            let Some(src) = mirror_buffer(mirror, *src_buf) else {
+                return Err(format!("no source buffer allocated at {src_buf}"));
+            };
+            GenCommand::Copy {
+                dst_start: (*dst_start).max(0) as usize,
+                src,
+                src_start: (*src_start).max(0) as usize,
+                num: *num as i64,
+            }
+        }
+        "sine1" | "sine2" | "sine3" | "cheby" => {
+            let Some((OscType::Int(flag_bits), tail)) = rest.split_first() else {
+                return Err(format!("{cmd} expects: flags, then values"));
+            };
+            let flags = GenFlags::from_bits(*flag_bits);
+            let values: Vec<f32> = tail.iter().filter_map(float_value).collect();
+            match cmd {
+                "sine1" => GenCommand::Sine1 {
+                    flags,
+                    amps: values,
+                },
+                "cheby" => GenCommand::Cheby {
+                    flags,
+                    coeffs: values,
+                },
+                "sine2" => GenCommand::Sine2 {
+                    flags,
+                    partials: values.chunks_exact(2).map(|c| (c[0], c[1])).collect(),
+                },
+                // sine3
+                _ => GenCommand::Sine3 {
+                    flags,
+                    partials: values.chunks_exact(3).map(|c| (c[0], c[1], c[2])).collect(),
+                },
+            }
+        }
+        other => return Err(format!("unknown /b_gen command {other:?}")),
+    };
+    Ok((
+        index,
+        NrtJob::Gen {
+            current,
+            cmd: command,
+        },
+    ))
+}
+
 /// `/d_faust name payload` arguments: the payload string is Faust source or
 /// a JSON box tree (the caller sniffs the leading `{`).
 pub fn parse_d_faust(args: &[OscType]) -> Result<(String, String), String> {

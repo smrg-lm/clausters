@@ -147,6 +147,10 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `BufFrames` | bufnum | frame count, block-constant |
 | `BufChannels` | bufnum | channel count, block-constant |
 | `BufDur` | bufnum | duration in seconds (`frames / file_sr`), block-constant |
+| `Osc` | bufnum, freq (Hz), phase (rad) | interpolating wavetable oscillator; `bufnum` must hold a **wavetable-format** buffer (see `/b_gen` below); `phase` is an offset in radians |
+| `OscN` | bufnum, freq (Hz), phase (rad) | non-interpolating oscillator over a **plain** (non-wavetable) buffer; rawer/cheaper than `Osc` |
+| `VOsc` | bufpos, freq (Hz), phase (rad) | like `Osc` but the buffer number is a signal: reads wavetables `bufpos` and `bufpos+1` and crossfades by its fractional part, so sweeping `bufpos` morphs a bank of adjacent tables (allocate them contiguously, same size) |
+| `Shaper` | bufnum, in | waveshaper: maps `in` (in ±1, clamped) through a transfer table in wavetable format (typically `/b_gen cheby`); the table's first point is `in = −1`, its last `in = +1` |
 | `DiskIn` | chan | streams a file from disk (mono per UGen — `chan` picks the channel); needs a `path` field; `loop` restarts at end of stream; see streaming note below |
 | `DiskOut` | signal | streams `signal` to a mono WAV on disk; needs a `path` field; `format` is the WAV sample format; passes `signal` through as its output |
 | `LocalIn` | channel | reads synth-private feedback channel `channel` (a constant); see feedback note below |
@@ -202,6 +206,7 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /b_read      bufnum path [fileStart=0] [numFrames=-1=all] [bufStart=0]
 /b_write     bufnum path [header="wav"] [format="int16"|"int24"|"float"] [numFrames=-1] [startFrame=0]
 /b_zero      bufnum
+/b_gen       bufnum cmd flags args...  # fill/generate — see the wavetable section
 /b_free      bufnum
 /b_query     bufnum...                 →  /b_info  bufnum frames channels sampleRate ...
 /b_get       bufnum index...           →  /b_set   bufnum index value ...
@@ -209,7 +214,23 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 /b_export    bufnum path               →  /done /b_export bufnum
 ```
 
-`/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero` and `/b_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
+`/b_alloc`, `/b_allocRead`, `/b_read`, `/b_write`, `/b_zero`, `/b_gen` and `/b_free` are **asynchronous**: the work happens on a dedicated NRT thread (one queue, so commands on the same buffer complete in submission order) and the reply is `/done <cmd> bufnum` or `/fail <cmd> reason`. Buffers keep the file's sample rate (the server never resamples — see `PlayBuf`'s rate above); integer WAVs are scaled to ±1. `/b_read` requires an allocated buffer and keeps its shape; channel-count mismatches fail. Reading decodes by **content**, not extension: WAV goes through hound (exact, int24-aware), and FLAC, OGG/Vorbis, MP3, MP4/AAC, ALAC, AIFF and CAF decode through [symphonia](https://github.com/pdeljanov/Symphonia) (whole-file decode, then slice — compressed formats have no cheap exact frame seek). `/b_write` still emits WAV only, and `leaveOpen` (streaming) is not supported.
+
+### Table generation and the wavetable format (`/b_gen`)
+
+`/b_gen bufnum cmd flags args…` fills an **already-allocated** buffer with a computed signal — additive spectra, a waveshaping curve, or a copy from another buffer. Like `/b_read` it reads the target's shape from the current contents, so a `/b_gen` right after a `/b_alloc` must be separated by a `/sync` (the alloc has to complete first). It runs on the same NRT queue and replies `/done /b_gen bufnum`.
+
+The `flags` int packs three bits, `normalize`(1) + `wavetable`(2) + `clear`(4) — the usual value is `7` (all three). `normalize` scales the result to a peak magnitude of 1; `clear` starts from silence (without it the new signal is **added** on top of the buffer's current contents); `wavetable` stores the result in the interleaved wavetable format below (an `N`-sample buffer then holds `N/2` period points). `copy` takes no flags.
+
+| cmd | args | fills with |
+|---|---|---|
+| `sine1` | flags, amp… | additive sine partials; `amp[k]` is the amplitude of harmonic `k+1` |
+| `sine2` | flags, (freq amp)… | partials at arbitrary (possibly fractional) harmonic numbers |
+| `sine3` | flags, (freq amp phase)… | as `sine2` with a per-partial phase in radians |
+| `cheby` | flags, amp… | a waveshaping transfer function `Σ amp[k]·T_{k+1}(x)` of Chebyshev polynomials over `x∈[−1,1]` (`amp[0]` weights `T₁`, the linear/passthrough term); read by `Shaper` |
+| `copy` | dstStart srcBufnum srcStart numSamples | overlays `numSamples` of another buffer onto this one (`numSamples < 0` = to the end of the shorter side) |
+
+**The wavetable format.** An interpolating oscillator (`Osc`/`VOsc`) reads a period stored not as raw samples but as scsynth's interleaved offset/slope pairs: for each point `i` the buffer holds `[2·a[i] − a[i+1], a[i+1] − a[i]]`. With the fractional phase `frac∈[0,1)`, a sample is then one fused multiply-add — `x0 + (1+frac)·x1 = a[i] + frac·(a[i+1] − a[i])` — with no branch. `sine1/2/3` build periodic (wrapping) tables; `cheby` builds a non-wrapping one (it holds its endpoint, since a transfer curve is not periodic). A `wavetable`-format buffer is meant for `Osc`/`VOsc`/`Shaper`, not `PlayBuf`; a plain (non-`wavetable`) `/b_gen` buffer is a normal signal (read it with `OscN` or `BufRd`). This is the buffer-world counterpart of a Faust def's small embedded `waveform` table (see *Tables and waveforms* under Faust defs): the same idea — precompute a period or a transfer curve numerically — for the UGen graph instead of a JIT def.
 
 `/b_query`, `/b_get` and `/b_getn` are **synchronous** reads, answered from the network-side buffer mirror (state as of the last completed command). `/b_get` reads single samples by flat (interleaved) index; `/b_getn` reads ranges, with `count` clamped to what the buffer holds from `start` — a request past the end returns only the available samples, and an unallocated buffer returns count 0. Sample indices are flat across channels (`frame * channels + channel`), so a stereo buffer reads as interleaved `L R L R ...`. Each reply must fit one datagram, so large buffers are read in client-chosen chunks.
 
@@ -307,6 +328,8 @@ The `faust` op is the bridge to the stdlib — an embedded program becomes a box
 ```
 
 `rdtable` also accepts the explicit (size, init, ridx) form with plain boxes, and `rwtable` (size, init, widx, wsig, ridx) is a table written and read at audio rate. Sizes must be constant expressions and indexes integers (`intcast`), as in Faust.
+
+This `waveform` box is the Faust-side counterpart of `/b_gen`'s wavetables (see *Table generation and the wavetable format* under Buffers): `waveform` inlines a small table **inside one def** for a self-contained JIT program, whereas `/b_gen` fills a **server buffer** shared by the whole UGen graph and read by `Osc`/`Shaper`. Same idea — precompute a period or a transfer curve numerically — at two different scales.
 
 **Soundfiles read server buffers.** Faust's `soundfile("<bufnum>", n)` primitive binds to the server buffer whose index is its label (a plain integer string), e.g. `soundfile("0", 1)` reads buffer 0. At `/s_new` the instance's soundfile is filled from that buffer's current contents (deinterleaved to Faust's planar layout); a non-numeric label or an empty/missing slot yields a silent placeholder, so a def always instantiates. The primitive's outputs are `[length, sampleRate, channel0 … channel_{n-1}]` and the read index saturates at the part length, exactly as in stock Faust. The bind is a **snapshot** taken at instantiation — re-`/s_new` to pick up a buffer that changed; loading is mono-or-more by the buffer's own channel count (Faust reads up to `n`). For *streaming* a bus instead of a static buffer, the older path still works too: route a `PlayBuf`/`BufRd` through an audio bus and read it via the def's reserved `in` control, so both def families stay composable on the same buses.
 
