@@ -156,9 +156,10 @@ struct NodeSlot {
     id: i32,
     parent: usize,
     kind: NodeKind,
-    /// Set by a `DoneAction::PauseSelf`: the synth stays in the tree and keeps
-    /// its state but is skipped during processing (silent). Groups are never
-    /// paused. There is no resume path yet (no `/n_run`), so this is terminal.
+    /// Paused by `DoneAction::PauseSelf`, a `FreeSelfPause{Prev,Next}`, or
+    /// `/n_run 0`: the node stays in the tree and keeps its state but is skipped
+    /// during processing (silent). A paused **group** skips its whole subtree.
+    /// Cleared by `/n_run 1` (or `FreeSelfResumeNext` on the next sibling).
     paused: bool,
 }
 
@@ -184,9 +185,10 @@ pub struct NodeTree {
     synth_count: usize,
     group_count: usize,
     ugen_count: usize,
-    /// Lock-free queue of nodes that finished this block with a freeing done
-    /// action (`FreeSelf`/`FreeGroup`); `done_actions` is the parallel action
-    /// code per entry. `PauseSelf` is applied inline, not queued.
+    /// Lock-free queue of nodes that finished this block with a freeing/relative
+    /// done action (everything but `None`/`PauseSelf`); `done_actions` is the
+    /// parallel action code per entry, applied by `apply_done_action` in the
+    /// drain. `PauseSelf` is applied inline, not queued.
     done_nodes: Vec<AtomicI32>,
     done_actions: Vec<AtomicU8>,
     done_count: AtomicUsize,
@@ -250,14 +252,10 @@ impl NodeTree {
         self.done_nodes[i].load(Ordering::Relaxed)
     }
 
-    /// The freeing action for queue entry `i` (`FreeSelf` or `FreeGroup`).
+    /// The freeing action for queue entry `i` (any freeing/relative action; not
+    /// `None`/`PauseSelf`, which are applied inline).
     pub fn done_action_at(&self, i: usize) -> DoneAction {
-        match self.done_actions[i].load(Ordering::Relaxed) {
-            2 => DoneAction::FreeSelf,
-            14 => DoneAction::FreeGroup,
-            1 => DoneAction::PauseSelf,
-            _ => DoneAction::None,
-        }
+        DoneAction::from_u8(self.done_actions[i].load(Ordering::Relaxed))
     }
 
     /// Records a node that finished with a freeing action, for the engine to
@@ -556,6 +554,166 @@ impl NodeTree {
         true
     }
 
+    /// The node ID of the sibling `delta` positions from node `id` within its
+    /// parent group (`-1` = preceding, `+1` = following), or `None` at an edge
+    /// or for the root. RT-safe: index arithmetic over the child list.
+    fn sibling_id(&self, id: i32, delta: isize) -> Option<i32> {
+        let idx = self.find(id)?;
+        let parent = self.slot(idx)?.parent;
+        if parent == NO_PARENT {
+            return None;
+        }
+        let g = self.group_of(parent)?;
+        let pos = g.children.iter().position(|&c| c == idx)?;
+        let target = pos.checked_add_signed(delta)?;
+        g.children.get(target).map(|&c| self.id_of(c))
+    }
+
+    fn is_group(&self, id: i32) -> bool {
+        self.find(id)
+            .is_some_and(|idx| self.group_of(idx).is_some())
+    }
+
+    /// Pauses (`paused = true`) or resumes (`false`) a node — a synth or a
+    /// whole group. `/n_run` and the pause/resume done actions route here.
+    /// Returns `false` if the ID is unknown. Never allocates.
+    pub fn set_paused(&mut self, id: i32, paused: bool) -> bool {
+        match self.find(id).and_then(|idx| self.slot_mut(idx)) {
+            Some(slot) => {
+                slot.paused = paused;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Applies a queued freeing/relative [`DoneAction`] (everything except
+    /// `None`/`PauseSelf`, which are handled inline during the walk): frees this
+    /// node and, per the action, its previous/next sibling, the run of nodes to
+    /// the group's head/tail, or the enclosing group — or pauses/resumes/
+    /// deep-frees a neighbour. Runs on the audio thread during the done drain,
+    /// so it only reuses the allocation-free `free`/`free_all`/`deep_free`
+    /// machinery (the pre-allocated stacks). Neighbours are resolved *before*
+    /// self is freed, since freeing shifts positions.
+    pub fn apply_done_action(
+        &mut self,
+        id: i32,
+        action: DoneAction,
+        sink: &mut dyn FnMut(FreedNode),
+    ) {
+        use DoneAction::*;
+        match action {
+            None | PauseSelf => {} // applied inline, never queued
+            FreeSelf => {
+                self.free(id, sink);
+            }
+            FreeGroup => {
+                self.free_enclosing_group(id, sink);
+            }
+            FreeAllInGroup => {
+                // Free this node and every other node in its group.
+                if let Some(idx) = self.find(id) {
+                    let parent_id = self.id_of(self.slot(idx).unwrap().parent);
+                    self.free_all(parent_id, sink);
+                }
+            }
+            FreeSelfAndPrev => {
+                let prev = self.sibling_id(id, -1);
+                self.free(id, sink);
+                if let Some(p) = prev {
+                    self.free(p, sink);
+                }
+            }
+            FreeSelfAndNext => {
+                let next = self.sibling_id(id, 1);
+                self.free(id, sink);
+                if let Some(n) = next {
+                    self.free(n, sink);
+                }
+            }
+            FreeSelfToHead => {
+                while let Some(prev) = self.sibling_id(id, -1) {
+                    self.free(prev, sink);
+                }
+                self.free(id, sink);
+            }
+            FreeSelfToTail => {
+                while let Some(next) = self.sibling_id(id, 1) {
+                    self.free(next, sink);
+                }
+                self.free(id, sink);
+            }
+            FreeSelfPausePrev => {
+                let prev = self.sibling_id(id, -1);
+                self.free(id, sink);
+                if let Some(p) = prev {
+                    self.set_paused(p, true);
+                }
+            }
+            FreeSelfPauseNext => {
+                let next = self.sibling_id(id, 1);
+                self.free(id, sink);
+                if let Some(n) = next {
+                    self.set_paused(n, true);
+                }
+            }
+            FreeSelfResumeNext => {
+                let next = self.sibling_id(id, 1);
+                self.free(id, sink);
+                if let Some(n) = next {
+                    self.set_paused(n, false);
+                }
+            }
+            FreeSelfAndFreeAllInPrev => {
+                let prev = self.sibling_id(id, -1);
+                self.free(id, sink);
+                if let Some(p) = prev {
+                    self.free_or_free_all(p, sink);
+                }
+            }
+            FreeSelfAndFreeAllInNext => {
+                let next = self.sibling_id(id, 1);
+                self.free(id, sink);
+                if let Some(n) = next {
+                    self.free_or_free_all(n, sink);
+                }
+            }
+            FreeSelfAndDeepFreePrev => {
+                let prev = self.sibling_id(id, -1);
+                self.free(id, sink);
+                if let Some(p) = prev {
+                    self.free_or_deep_free(p, sink);
+                }
+            }
+            FreeSelfAndDeepFreeNext => {
+                let next = self.sibling_id(id, 1);
+                self.free(id, sink);
+                if let Some(n) = next {
+                    self.free_or_deep_free(n, sink);
+                }
+            }
+        }
+    }
+
+    /// A neighbour node: if it is a group, free its children (`free_all`); else
+    /// free the node itself.
+    fn free_or_free_all(&mut self, id: i32, sink: &mut dyn FnMut(FreedNode)) {
+        if self.is_group(id) {
+            self.free_all(id, sink);
+        } else {
+            self.free(id, sink);
+        }
+    }
+
+    /// A neighbour node: if it is a group, deep-free it; else free the node.
+    fn free_or_deep_free(&mut self, id: i32, sink: &mut dyn FnMut(FreedNode)) {
+        if self.is_group(id) {
+            self.deep_free(id, sink);
+        } else {
+            self.free(id, sink);
+        }
+    }
+
     /// `/n_before` / `/n_after`: moves a node next to a sibling, possibly
     /// under a different parent. Rejects moves of/into the node's own
     /// subtree, of the root, and into a full group.
@@ -649,16 +807,19 @@ impl NodeTree {
         let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
             return;
         };
+        // A paused node is skipped whole — a synth stays silent, a group skips
+        // its entire subtree.
+        if slot.paused {
+            return;
+        }
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
-                if !slot.paused {
-                    let mut ctx = *ctx;
-                    node.process(&mut ctx);
-                    match node.done_action() {
-                        DoneAction::None => {}
-                        DoneAction::PauseSelf => slot.paused = true,
-                        action => self.enqueue_done(slot.id, action),
-                    }
+                let mut ctx = *ctx;
+                node.process(&mut ctx);
+                match node.done_action() {
+                    DoneAction::None => {}
+                    DoneAction::PauseSelf => slot.paused = true,
+                    action => self.enqueue_done(slot.id, action),
                 }
             }
             NodeKind::Group(group) if group.parallel => unsafe {
@@ -682,16 +843,17 @@ impl NodeTree {
         let Some(slot) = (unsafe { &mut *self.slots[idx].get() }).as_mut() else {
             return;
         };
+        if slot.paused {
+            return;
+        }
         match &mut slot.kind {
             NodeKind::Synth { node, .. } => {
-                if !slot.paused {
-                    let mut ctx = *ctx;
-                    node.process(&mut ctx);
-                    match node.done_action() {
-                        DoneAction::None => {}
-                        DoneAction::PauseSelf => slot.paused = true,
-                        action => self.enqueue_done(slot.id, action),
-                    }
+                let mut ctx = *ctx;
+                node.process(&mut ctx);
+                match node.done_action() {
+                    DoneAction::None => {}
+                    DoneAction::PauseSelf => slot.paused = true,
+                    action => self.enqueue_done(slot.id, action),
                 }
             }
             NodeKind::Group(group) => {
@@ -755,5 +917,191 @@ impl NodeTree {
             }),
             None => BusUsage::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A structural-only synth: it never produces sound, it just carries a done
+    /// action so the tree tests can drive `apply_done_action`.
+    struct MockSynth {
+        done: DoneAction,
+    }
+
+    impl SynthNode for MockSynth {
+        fn process(&mut self, _ctx: &mut ProcessCtx) {}
+        fn set_control(&mut self, _index: u32, _value: f32) {}
+        fn map_control(&mut self, _index: u32, _bus: i32, _audio: bool) {}
+        fn ugen_count(&self) -> usize {
+            1
+        }
+        fn done_action(&self) -> DoneAction {
+            self.done
+        }
+    }
+
+    fn add_synth(tree: &mut NodeTree, id: i32, parent: i32) {
+        let kind = NodeKind::Synth {
+            node: Box::new(MockSynth {
+                done: DoneAction::None,
+            }),
+            usage: BusUsage::default(),
+        };
+        assert!(
+            tree.insert(id, kind, parent, AddAction::Tail, &mut |_| {})
+                .is_ok(),
+            "insert synth {id}"
+        );
+    }
+
+    fn add_group(tree: &mut NodeTree, id: i32, parent: i32) {
+        let kind = NodeKind::Group(Group::new());
+        assert!(
+            tree.insert(id, kind, parent, AddAction::Tail, &mut |_| {})
+                .is_ok(),
+            "insert group {id}"
+        );
+    }
+
+    fn alive(tree: &NodeTree, id: i32) -> bool {
+        tree.find(id).is_some()
+    }
+
+    fn is_paused(tree: &NodeTree, id: i32) -> bool {
+        tree.find(id)
+            .and_then(|idx| tree.slot(idx))
+            .is_some_and(|s| s.paused)
+    }
+
+    /// Fires a queued done action from `id` and returns the freed node IDs.
+    fn fire(tree: &mut NodeTree, id: i32, action: DoneAction) -> Vec<i32> {
+        let mut freed = Vec::new();
+        tree.apply_done_action(id, action, &mut |f| {
+            freed.push(match f {
+                FreedNode::Synth { id, .. } => id,
+                FreedNode::Group { id, .. } => id,
+            });
+        });
+        freed
+    }
+
+    /// Root with three sibling synths 1, 2, 3 (2 is the usual actor).
+    fn tree_1_2_3() -> NodeTree {
+        let mut t = NodeTree::new();
+        add_synth(&mut t, 1, ROOT_NODE_ID);
+        add_synth(&mut t, 2, ROOT_NODE_ID);
+        add_synth(&mut t, 3, ROOT_NODE_ID);
+        t
+    }
+
+    #[test]
+    fn free_self_leaves_siblings() {
+        let mut t = tree_1_2_3();
+        let freed = fire(&mut t, 2, DoneAction::FreeSelf);
+        assert_eq!(freed, vec![2]);
+        assert!(alive(&t, 1) && alive(&t, 3) && !alive(&t, 2));
+    }
+
+    #[test]
+    fn free_self_and_prev_and_next() {
+        let mut t = tree_1_2_3();
+        fire(&mut t, 2, DoneAction::FreeSelfAndPrev);
+        assert!(alive(&t, 3) && !alive(&t, 1) && !alive(&t, 2));
+
+        let mut t = tree_1_2_3();
+        fire(&mut t, 2, DoneAction::FreeSelfAndNext);
+        assert!(alive(&t, 1) && !alive(&t, 2) && !alive(&t, 3));
+    }
+
+    #[test]
+    fn free_self_to_head_and_to_tail() {
+        // [1,2,3,4]; from 3 to head frees 3,2,1 -> only 4 remains.
+        let mut t = tree_1_2_3();
+        add_synth(&mut t, 4, ROOT_NODE_ID);
+        fire(&mut t, 3, DoneAction::FreeSelfToHead);
+        assert!(alive(&t, 4) && !alive(&t, 1) && !alive(&t, 2) && !alive(&t, 3));
+
+        // [1,2,3,4]; from 2 to tail frees 2,3,4 -> only 1 remains.
+        let mut t = tree_1_2_3();
+        add_synth(&mut t, 4, ROOT_NODE_ID);
+        fire(&mut t, 2, DoneAction::FreeSelfToTail);
+        assert!(alive(&t, 1) && !alive(&t, 2) && !alive(&t, 3) && !alive(&t, 4));
+    }
+
+    #[test]
+    fn free_all_in_group_clears_the_group() {
+        let mut t = tree_1_2_3();
+        fire(&mut t, 2, DoneAction::FreeAllInGroup);
+        assert!(!alive(&t, 1) && !alive(&t, 2) && !alive(&t, 3));
+        assert_eq!(t.synth_count(), 0);
+    }
+
+    #[test]
+    fn free_group_frees_the_enclosing_group() {
+        // root -> group 10 -> [1,2,3]; FreeGroup from 2 frees 10 and its subtree.
+        let mut t = NodeTree::new();
+        add_group(&mut t, 10, ROOT_NODE_ID);
+        add_synth(&mut t, 1, 10);
+        add_synth(&mut t, 2, 10);
+        add_synth(&mut t, 3, 10);
+        fire(&mut t, 2, DoneAction::FreeGroup);
+        assert!(!alive(&t, 10) && !alive(&t, 1) && !alive(&t, 2) && !alive(&t, 3));
+    }
+
+    #[test]
+    fn free_self_pause_next_then_resume() {
+        let mut t = tree_1_2_3();
+        fire(&mut t, 2, DoneAction::FreeSelfPauseNext);
+        assert!(!alive(&t, 2) && alive(&t, 1) && alive(&t, 3));
+        assert!(is_paused(&t, 3) && !is_paused(&t, 1));
+        // A later FreeSelfResumeNext from 1 unpauses its next sibling (3).
+        fire(&mut t, 1, DoneAction::FreeSelfResumeNext);
+        assert!(!alive(&t, 1) && alive(&t, 3) && !is_paused(&t, 3));
+    }
+
+    #[test]
+    fn free_all_in_next_group_when_neighbour_is_a_group() {
+        // root -> [synth 1, group 10 -> {11, 12}]; from 1, free self and freeAll
+        // the next group: 11, 12 gone, group 10 stays (empty).
+        let mut t = NodeTree::new();
+        add_synth(&mut t, 1, ROOT_NODE_ID);
+        add_group(&mut t, 10, ROOT_NODE_ID);
+        add_synth(&mut t, 11, 10);
+        add_synth(&mut t, 12, 10);
+        fire(&mut t, 1, DoneAction::FreeSelfAndFreeAllInNext);
+        assert!(!alive(&t, 1) && alive(&t, 10) && !alive(&t, 11) && !alive(&t, 12));
+    }
+
+    #[test]
+    fn deep_free_next_group_keeps_subgroups() {
+        // root -> [synth 1, group 10 -> subgroup 11 -> synth 12]; from 1,
+        // deep-free the next group: synth 12 gone, groups 10 and 11 stay.
+        let mut t = NodeTree::new();
+        add_synth(&mut t, 1, ROOT_NODE_ID);
+        add_group(&mut t, 10, ROOT_NODE_ID);
+        add_group(&mut t, 11, 10);
+        add_synth(&mut t, 12, 11);
+        fire(&mut t, 1, DoneAction::FreeSelfAndDeepFreeNext);
+        assert!(!alive(&t, 1) && alive(&t, 10) && alive(&t, 11) && !alive(&t, 12));
+    }
+
+    #[test]
+    fn set_paused_round_trips_and_rejects_unknown() {
+        let mut t = tree_1_2_3();
+        assert!(t.set_paused(2, true) && is_paused(&t, 2));
+        assert!(t.set_paused(2, false) && !is_paused(&t, 2));
+        assert!(!t.set_paused(999, true)); // unknown id
+    }
+
+    #[test]
+    fn sibling_resolution_at_the_edges() {
+        let t = tree_1_2_3();
+        assert_eq!(t.sibling_id(2, -1), Some(1));
+        assert_eq!(t.sibling_id(2, 1), Some(3));
+        assert_eq!(t.sibling_id(1, -1), None); // first child: no prev
+        assert_eq!(t.sibling_id(3, 1), None); // last child: no next
+        assert_eq!(t.sibling_id(ROOT_NODE_ID, -1), None); // root has no siblings
     }
 }

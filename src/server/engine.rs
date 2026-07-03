@@ -21,7 +21,7 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::BusUsage;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
-use crate::dsp::{Buses, ControlBuses, DoneAction, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
+use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -64,6 +64,12 @@ pub enum Cmd {
     /// `/g_deepFree`: free all synths in a group and its subgroups.
     DeepFreeGroup {
         id: i32,
+    },
+    /// `/n_run`: pause (`run = false`) or resume (`true`) a node — a synth or a
+    /// whole group. Makes `DoneAction::PauseSelf` non-terminal.
+    RunNode {
+        id: i32,
+        run: bool,
     },
     /// `/n_before` / `/n_after`.
     MoveNode {
@@ -444,14 +450,8 @@ impl Engine {
                 pending_garbage: &mut self.pending_garbage,
                 events_tx: &mut self.events_tx,
             };
-            match action {
-                DoneAction::FreeGroup => {
-                    self.tree.free_enclosing_group(id, &mut |f| sink.consume(f));
-                }
-                _ => {
-                    self.tree.free(id, &mut |f| sink.consume(f));
-                }
-            }
+            self.tree
+                .apply_done_action(id, action, &mut |f| sink.consume(f));
         }
     }
 
@@ -567,6 +567,9 @@ impl Engine {
                 }
                 Cmd::DeepFreeGroup { id } => {
                     self.tree.deep_free(id, &mut |f| sink.consume(f));
+                }
+                Cmd::RunNode { id, run } => {
+                    self.tree.set_paused(id, !run);
                 }
                 Cmd::MoveNode { id, target, place } => {
                     self.tree.move_node(id, target, place);

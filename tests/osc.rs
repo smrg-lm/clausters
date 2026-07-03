@@ -269,6 +269,51 @@ fn s_new_and_n_free_update_status_counts() {
 }
 
 #[test]
+fn n_run_pauses_a_node_and_rejects_unknown() {
+    let mut server = TestServer::spawn();
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    // Pause then resume the node over the immediate (UDP) path: each is
+    // accepted with no reply (a following /status.reply arrives before any
+    // /fail — this guards the dispatch wiring, since a command that fell
+    // through to the default arm would answer /fail first), and the node stays
+    // in the tree (a paused node is not freed, so the count is unchanged).
+    server.send("/n_run", vec![OscType::Int(1000), OscType::Int(0)]);
+    server.send("/status", vec![]);
+    assert_eq!(
+        server.recv().addr,
+        "/status.reply",
+        "valid /n_run must not /fail"
+    );
+    server.send("/n_run", vec![OscType::Int(1000), OscType::Int(1)]);
+    server.send("/status", vec![]);
+    assert_eq!(
+        server.recv().addr,
+        "/status.reply",
+        "valid /n_run must not /fail"
+    );
+    server.wait_for_synth_count(1);
+
+    // An unknown node fails.
+    server.send("/n_run", vec![OscType::Int(9999), OscType::Int(0)]);
+    let reply = server.recv();
+    assert_eq!(reply.addr, "/fail");
+    assert_eq!(reply.args[0], OscType::String("/n_run".into()));
+
+    server.quit();
+}
+
+#[test]
 fn s_new_unknown_synthdef_fails() {
     let server = TestServer::spawn();
     server.send(

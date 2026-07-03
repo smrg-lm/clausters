@@ -190,6 +190,30 @@ def test_server_map_and_set_layout():
     assert iface.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
 
 
+def test_server_run_pause_resume_emit_n_run():
+    # S4: /n_run pauses (flag 0) / resumes (flag 1) a node.
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    node = srv.synth("foo")
+    srv.pause(node)
+    assert iface.sent[-1] == ("/n_run", [1000, 0])
+    srv.resume(node)
+    assert iface.sent[-1] == ("/n_run", [1000, 1])
+    srv.run(1234, False)                          # a bare id, a whole group
+    assert iface.sent[-1] == ("/n_run", [1234, 0])
+
+
+def test_done_action_full_set():
+    # S4: the client mirrors scsynth's full 0-15 done-action enum.
+    from clausters.defs import DoneAction
+
+    assert (DoneAction.NONE, DoneAction.PAUSE_SELF, DoneAction.FREE_SELF) == (0, 1, 2)
+    assert DoneAction.FREE_SELF_AND_NEXT == 4
+    assert DoneAction.FREE_ALL_IN_GROUP == 13
+    assert DoneAction.FREE_GROUP == 14
+    assert DoneAction.FREE_SELF_RESUME_NEXT == 15
+
+
 # ---- end-to-end vertical slice: graph -> /d_faust -> /s_new -> control -> render ----
 
 def _sine_def(name="c3sine", default_freq=330.0):

@@ -669,6 +669,78 @@ fn envgen_free_self_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 16);
 }
 
+/// S4: the relative done actions (sibling resolution + free/pause) and `/n_run`
+/// (pause/resume toggle) run on the audio thread — during the done drain and
+/// the command apply — and must not allocate. The scene fires a
+/// `freeSelfAndNext` inside a group and toggles the group's run flag.
+#[test]
+fn relative_done_actions_and_n_run_do_not_allocate() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // A one-shot envelope with doneAction = 4 (freeSelfAndNext).
+    let env: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "env",
+            "ugens": [
+                {"kind": "EnvGen", "inputs": [
+                    {"const": 1.0}, {"const": 1.0}, {"const": 0.0}, {"const": 1.0},
+                    {"const": 4.0}, {"const": 0.0}, {"const": 1.0}, {"const": -1.0},
+                    {"const": -1.0},
+                    {"const": 1.0}, {"const": 0.002}, {"const": 1.0}, {"const": 0.0}
+                ]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let plain: SynthDefSpec = serde_json::from_str(
+        r#"{"name":"p","ugens":[{"kind":"Out","inputs":[{"const":0.0},{"const":0.0}]}]}"#,
+    )
+    .unwrap();
+    let env = Arc::new(compile(env).unwrap());
+    let plain = Arc::new(compile(plain).unwrap());
+
+    handle
+        .send(Cmd::AddGroup {
+            id: 1,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::new(),
+        })
+        .ok()
+        .unwrap();
+    // Actor (fires freeSelfAndNext) plus neighbours, all inside the group.
+    for i in 0..4i32 {
+        let def = if i == 0 { &env } else { &plain };
+        handle
+            .send(Cmd::AddSynth {
+                id: 1000 + i,
+                target: 1,
+                action: AddAction::Tail,
+                synth: Box::new(UGenSynth::new(Arc::clone(def))),
+                usage: Default::default(),
+            })
+            .ok()
+            .unwrap();
+    }
+    // Toggle the whole group's run flag (pause then resume) — applied on the
+    // audio thread in the command loop.
+    handle
+        .send(Cmd::RunNode { id: 1, run: false })
+        .ok()
+        .unwrap();
+    handle.send(Cmd::RunNode { id: 1, run: true }).ok().unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+}
+
 /// M13: the conductor side of parallel dispatch — stage partition (bitops),
 /// the publish/steal/wait protocol (atomics, bounded spins, at worst an
 /// `unpark` syscall) — must not allocate either. The workers run the same

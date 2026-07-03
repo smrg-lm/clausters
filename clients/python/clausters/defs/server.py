@@ -468,6 +468,22 @@ class Server:
             if hasattr(n, "id"):
                 self.nodes.free(nid)
 
+    def run(self, node, flag: bool = True):
+        """Pauses (``flag=False``) or resumes (``flag=True``) a node — a synth
+        or a whole group — with ``/n_run``. A paused node stays in the tree and
+        keeps its state but is skipped (silent); this is what resumes a synth
+        parked by ``DoneAction.PAUSE_SELF``."""
+        self.send_msg("/n_run", node.id if hasattr(node, "id") else node,
+                      1 if flag else 0)
+
+    def pause(self, node):
+        """Pauses a node (``/n_run … 0``). See `run`."""
+        self.run(node, False)
+
+    def resume(self, node):
+        """Resumes a paused node (``/n_run … 1``). See `run`."""
+        self.run(node, True)
+
     # ---- buses ----
 
     def audio_bus(self, channels: int = 1) -> Bus:

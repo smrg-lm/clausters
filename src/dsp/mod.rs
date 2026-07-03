@@ -272,12 +272,86 @@ pub struct ProcessCtx<'a> {
     pub frames: usize,
 }
 
+/// What a UGen (via [`UGen::done`]) asks the engine to do when it finishes —
+/// scsynth's full done-action set (`Done.schelp`, values 0–15). `None`/
+/// `PauseSelf` are applied inline on the audio thread; every other action frees
+/// this node (and possibly a sibling or the group) and is queued for the drain
+/// after the block. The relative actions resolve the node's previous/next
+/// sibling and head/tail-of-group; see `node::NodeTree::apply_done_action`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
 pub enum DoneAction {
+    /// Do nothing (the envelope just holds its final level).
     None = 0,
+    /// Pause this synth (skip it from now on; it stays in the tree). Cleared by
+    /// `/n_run 1`.
     PauseSelf = 1,
+    /// Free this synth.
     FreeSelf = 2,
+    /// Free this synth and the preceding node.
+    FreeSelfAndPrev = 3,
+    /// Free this synth and the following node.
+    FreeSelfAndNext = 4,
+    /// Free this synth; if the preceding node is a group, free all its children
+    /// (else free it).
+    FreeSelfAndFreeAllInPrev = 5,
+    /// Free this synth; if the following node is a group, free all its children.
+    FreeSelfAndFreeAllInNext = 6,
+    /// Free this synth and every preceding node in its group.
+    FreeSelfToHead = 7,
+    /// Free this synth and every following node in its group.
+    FreeSelfToTail = 8,
+    /// Free this synth and pause the preceding node.
+    FreeSelfPausePrev = 9,
+    /// Free this synth and pause the following node.
+    FreeSelfPauseNext = 10,
+    /// Free this synth; if the preceding node is a group, deep-free it (free its
+    /// synths, keep the groups); else free it.
+    FreeSelfAndDeepFreePrev = 11,
+    /// Free this synth; if the following node is a group, deep-free it.
+    FreeSelfAndDeepFreeNext = 12,
+    /// Free this synth and every other node in its group.
+    FreeAllInGroup = 13,
+    /// Free the enclosing group (this synth included).
     FreeGroup = 14,
+    /// Free this synth and resume (unpause) the following node.
+    FreeSelfResumeNext = 15,
+}
+
+impl DoneAction {
+    /// Maps a wire/UGen integer (an `EnvGen` `doneAction` input, or a queued
+    /// action code) to the enum; out-of-range is [`DoneAction::None`].
+    pub fn from_u8(v: u8) -> DoneAction {
+        use DoneAction::*;
+        match v {
+            1 => PauseSelf,
+            2 => FreeSelf,
+            3 => FreeSelfAndPrev,
+            4 => FreeSelfAndNext,
+            5 => FreeSelfAndFreeAllInPrev,
+            6 => FreeSelfAndFreeAllInNext,
+            7 => FreeSelfToHead,
+            8 => FreeSelfToTail,
+            9 => FreeSelfPausePrev,
+            10 => FreeSelfPauseNext,
+            11 => FreeSelfAndDeepFreePrev,
+            12 => FreeSelfAndDeepFreeNext,
+            13 => FreeAllInGroup,
+            14 => FreeGroup,
+            15 => FreeSelfResumeNext,
+            _ => None,
+        }
+    }
+
+    /// As [`from_u8`](Self::from_u8) but from the `i32`/`f32`-derived value a
+    /// UGen carries; negative or too-large values are [`DoneAction::None`].
+    pub fn from_i32(v: i32) -> DoneAction {
+        if (0..=15).contains(&v) {
+            DoneAction::from_u8(v as u8)
+        } else {
+            DoneAction::None
+        }
+    }
 }
 
 /// Calculation rate of a UGen output (S1) — scsynth's four rates, made an

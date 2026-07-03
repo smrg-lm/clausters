@@ -725,10 +725,12 @@ envolvente (`initLevel, numSegments, releaseNode, loopNode` y por segmento
 `target, duration, shape, curve`). El `gate` la dispara: mientras está en alto
 **sostiene** en el `releaseNode` (o, con `loopNode < releaseNode`, **cicla** los
 segmentos `[loopNode, releaseNode)`); al bajar toca los segmentos de release y,
-al terminar, aplica el `doneAction`: 1 = pausa el synth (se saltea pero queda en
-el árbol; no hay `/n_run` para reanudar aún), 2 = libera el nodo, 14 = libera el
-grupo contenedor (el synth incluido) — todo por el garbage FIFO, sin `free` en el
-hilo de audio. Formas: 0 step, 1 lineal, 2 exponencial, 3 seno, 4 welch,
+al terminar, aplica el `doneAction` (el set completo 0-15 de scsynth; ver la
+sección S4): 1 = pausa el synth (se saltea pero queda en el árbol; se reanuda con
+`/n_run`), 2 = libera el nodo, 14 = libera el grupo contenedor (el synth
+incluido), y las acciones relativas (3-13, 15) actúan sobre los vecinos del synth
+en su grupo — todo por el garbage FIFO, sin `free` en el hilo de audio. Formas:
+0 step, 1 lineal, 2 exponencial, 3 seno, 4 welch,
 5 curvatura custom (valor `curve`), 6 squared, 7 cubed, 8 hold.
 
 El cliente Python arma el array con el helper `Env` (`Env.adsr`, `Env.perc`,
@@ -862,6 +864,56 @@ cargo test --no-default-features --test rt_safety operator_ugens
 Desde el cliente Python: cada operador/método (`%`, `min`, `>`, `.midicps()`,
 `.distort()`, `.clip2()`, …) compone una op UGen automáticamente; ver
 `clients/python/examples/graph_maths.py` y la sección S3 de la GUIA de Python.
+
+### Probar el set completo de done actions + `/n_run` (S4)
+
+Se completa el set de done actions de scsynth (**0-15**, antes sólo 0/1/2/14) y
+la pausa deja de ser terminal. Novedades:
+
+- **`/n_run id flag …`** (pares `nodeID, flag`): `flag 0` pausa un nodo, `flag 1`
+  lo reanuda — un synth **o un grupo entero** (un grupo pausado saltea todo su
+  subárbol). Un nodo pausado queda en el árbol con su estado, sólo se saltea al
+  procesar (silencio, sin CPU) y reanuda exactamente donde iba. Esto es lo que
+  reanuda un synth aparcado por `doneAction 1` (`pauseSelf`).
+- **Acciones relativas** (3-13, 15): actúan sobre los vecinos del nodo en su
+  grupo — liberar el previo/siguiente (3/4), hasta la cabeza/cola del grupo
+  (7/8), pausar (9/10) o reanudar (15) un vecino, liberar/`deepFree` un grupo
+  vecino (5/6, 11/12), o liberar todos los del grupo (13). El hilo de audio
+  resuelve el hermano previo/siguiente desde la lista ordenada de hijos **antes**
+  de liberarse a sí mismo, y reusa las rutas `free`/`free_all`/`deep_free` ya
+  existentes (sin alocar).
+
+Verificación por tests (el sandbox aísla la red):
+
+```sh
+cargo test --no-default-features --lib node
+# 10 tests de árbol: freeSelfAndPrev/Next, toHead/toTail, freeAllInGroup,
+# freeGroup, pauseNext+resume, freeAll/deepFree de un grupo vecino, set_paused
+# ida y vuelta (+ rechazo de id desconocido), y la resolución de hermanos en los
+# bordes
+cargo test --no-default-features --test envgen n_run_resumes done_action_free_self_and_next
+# la cadena real: pauseSelf aparca -> /n_run 1 reanuda (audible de nuevo); y
+# doneAction 4 (freeSelfAndNext) libera el actor y su siguiente por float ->
+# from_i32 -> cola -> apply_done_action
+cargo test --no-default-features --test osc n_run
+# el dispatch OSC de /n_run (un nodo válido no responde /fail, uno desconocido sí)
+cargo test --no-default-features --test rt_safety relative_done_actions_and_n_run
+# las acciones relativas y el toggle de /n_run no allocan en el hilo de audio
+```
+
+Desde el cliente Python: `Server.pause(node)` / `.resume(node)` / `.run(node,
+flag)` emiten `/n_run`, y `DoneAction` espeja el enum completo. Render offline de
+un drone que se pausa un beat y vuelve (con un hueco de silencio audible):
+
+```sh
+python3 clients/python/examples/pause_resume.py /tmp/pr.wav
+# beat RMS: 0.141 (on) 0.000 (paused) 0.141 (resumed)
+ffplay -autoexit /tmp/pr.wav
+```
+
+(Si lo corrés desde un checkout, el cdylib embebido debe tener `/n_run` —
+reconstruilo con `cargo build --release --features embed -p clausters` y apuntá
+`CLAUSTERS_LIB` al `.so`, o refrescá `clients/python/clausters/_libs/`.)
 
 ### Qué probar a mano (núcleo)
 
@@ -1211,6 +1263,7 @@ y restore + nota tocable).
 | Tasas de cálculo `ir`/`kr`/`ar`/`dr` + init pass + driver demand (S1) | `tests/rates.rs`, `tests/rt_safety.rs` (`rate_substrate`) | por JSON crudo `/d_recv` (ver sección S1) |
 | Controles tipados `tr`/`ir` + lag/varlag insertado (S2) | `tests/controls.rs`, `tests/rt_safety.rs` (`typed_controls`) | `python3 clients/python/examples/typed_controls.py` |
 | Op UGens `BinaryOpUGen`/`UnaryOpUGen` + `MulAdd`/`Sum3`/`Sum4` (S3) | `tests/core_parity.rs`, `tests/ops.rs`, `tests/rt_safety.rs` (`operator_ugens`) | `python3 clients/python/examples/graph_maths.py` |
+| Done actions 0-15 completas + `/n_run` (pausa no terminal) (S4) | `node` unit tests, `tests/envgen.rs`, `tests/osc.rs` (`n_run`), `tests/rt_safety.rs` (`relative_done_actions_and_n_run`) | `python3 clients/python/examples/pause_resume.py` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

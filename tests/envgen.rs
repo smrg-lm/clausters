@@ -352,3 +352,121 @@ fn done_action_free_group_frees_the_enclosing_group() {
         "group and synth left as garbage"
     );
 }
+
+// ---- S4: /n_run resume + the relative done actions through the real chain ----
+
+/// A plain synth that sums a constant `dc` into bus 0 every block (no envelope,
+/// no done action) — a marker to hear whether a node ran.
+fn dc_spec(dc: f64) -> Value {
+    json!({
+        "name": "dc",
+        "ugens": [{"kind": "Out", "inputs": [{"const": 0.0}, {"const": dc}]}]
+    })
+}
+
+#[test]
+fn n_run_resumes_a_paused_synth() {
+    // pauseSelf (doneAction 1) parks the synth; /n_run 1 (RunNode run=true)
+    // clears the pause so it runs again — PauseSelf is no longer terminal.
+    let (mut engine, mut handle) = spawn(envgen_spec(
+        0.0,
+        1.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 1.0, 0.0]],
+    ));
+    let out = render(&mut engine, 3);
+    assert!(
+        out[2 * BLOCK_SIZE..].iter().all(|s| s.abs() < 1e-6),
+        "block 3 is paused/silent"
+    );
+
+    handle
+        .send(Cmd::RunNode {
+            id: 1000,
+            run: true,
+        })
+        .ok()
+        .unwrap();
+    let out = render(&mut engine, 1);
+    assert!(
+        out.iter().any(|s| (*s - 1.0).abs() < 1e-6),
+        "resumed: the held envelope is audible again"
+    );
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
+    assert_eq!(handle.collect_garbage(), 0, "resume frees nothing");
+}
+
+#[test]
+fn done_action_free_self_and_next_frees_two_nodes() {
+    // doneAction = 4 (freeSelfAndNext) drives the whole chain: float ->
+    // DoneAction::from_i32 -> queue -> apply_done_action with next-sibling
+    // resolution. The actor (1000) and its next sibling (1001) go; 1002 stays.
+    let (mut engine, mut handle) = spawn(envgen_spec(
+        0.0,
+        4.0,
+        -1.0,
+        -1.0,
+        &[[1.0, secs(64), 1.0, 0.0]],
+    ));
+    handle
+        .send(add(1001, synth_from(dc_spec(0.0))))
+        .ok()
+        .unwrap();
+    handle
+        .send(add(1002, synth_from(dc_spec(0.0))))
+        .ok()
+        .unwrap();
+    // The first block applies the queued adds; the actor's one-block segment has
+    // not ended yet, so all three are present.
+    render(&mut engine, 1);
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 3);
+
+    render(&mut engine, 2); // the segment ends and the action fires
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        1,
+        "self + next freed, the third survives"
+    );
+}
+
+#[test]
+fn n_run_pauses_and_resumes_a_whole_group() {
+    // /n_run on a group pauses its entire subtree (skipped, silent) and resumes
+    // it. A DC synth inside the group is the marker.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::AddGroup {
+            id: 1,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::new(),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: 1,
+            action: AddAction::Tail,
+            synth: synth_from(dc_spec(0.5)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    let out = render(&mut engine, 1);
+    assert!(out.iter().any(|s| (*s - 0.5).abs() < 1e-6), "group runs");
+
+    handle
+        .send(Cmd::RunNode { id: 1, run: false })
+        .ok()
+        .unwrap();
+    let out = render(&mut engine, 1);
+    assert!(out.iter().all(|s| s.abs() < 1e-6), "paused group is silent");
+
+    handle.send(Cmd::RunNode { id: 1, run: true }).ok().unwrap();
+    let out = render(&mut engine, 1);
+    assert!(out.iter().any(|s| (*s - 0.5).abs() < 1e-6), "resumed group");
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
+}

@@ -934,6 +934,23 @@ impl CmdTranslator {
                 }
                 Ok(())
             }
+            "/n_run" => {
+                // Pairs of (nodeID, flag): flag 0 pauses the node, non-zero
+                // resumes it. A paused node stays in the tree (no mirror change).
+                for pair in msg.args.chunks(2) {
+                    let [OscType::Int(id), OscType::Int(flag)] = pair else {
+                        return Err("expected int (nodeID, flag) pairs".into());
+                    };
+                    if self.node_unknown(*id) {
+                        return Err(format!("node {id} not found"));
+                    }
+                    cmds.push(Cmd::RunNode {
+                        id: *id,
+                        run: *flag != 0,
+                    });
+                }
+                Ok(())
+            }
             "/n_before" | "/n_after" => {
                 let place = if msg.addr == "/n_before" {
                     Place::Before

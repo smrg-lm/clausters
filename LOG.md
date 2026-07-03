@@ -4009,3 +4009,61 @@ UGens and value-side ops in `test_synthdef.py`/`test_base.py`), and a live E2E �
 `graph_maths.py` renders a lead built entirely from graph maths (`midicps`,
 `distort`, a `clip2` tremolo) offline through the rebuilt embed lib. Both mdBooks
 build clean.
+
+## S4 — Complete the done-action set (0-15) + `/n_run` (resume) + non-terminal pause (completed 2026-07-03)
+
+**What's there:** the full scsynth done-action set and a resume path, so a
+finished node can act on its neighbours and a paused node is no longer stuck.
+`DoneAction` went from 4 values (`None`/`PauseSelf`/`FreeSelf`/`FreeGroup`) to
+all **16** (0-15), and **`PauseSelf` is no longer terminal**.
+
+- **The enum (`src/dsp/mod.rs`).** `DoneAction` is now `#[repr(u8)]` over 0-15
+  with the relative actions — `FreeSelfAndPrev`(3)/`Next`(4),
+  `FreeSelfAndFreeAllInPrev`(5)/`Next`(6), `FreeSelfToHead`(7)/`ToTail`(8),
+  `FreeSelfPausePrev`(9)/`Next`(10), `FreeSelfAndDeepFreePrev`(11)/`Next`(12),
+  `FreeAllInGroup`(13), `FreeSelfResumeNext`(15). A single `from_u8`/`from_i32`
+  maps the wire/UGen integer (out-of-range → `None`); `EnvGen` and
+  `NodeTree::done_action_at` both route through it, replacing the two ad-hoc
+  `match` ladders that only knew 1/2/14.
+- **Tree handlers (`src/node/mod.rs`).** New `apply_done_action(id, action,
+  sink)` resolves the previous/next sibling (`sibling_id`, index arithmetic over
+  the parent group's ordered child list) and the head/tail runs, **before**
+  freeing self (freeing shifts positions), then reuses the existing
+  `free`/`free_all`/`deep_free` machinery (`free_or_free_all`/`free_or_deep_free`
+  pick the group-vs-node branch). `set_paused(id, paused)` pauses/resumes a synth
+  **or a whole group** — the walk now checks `slot.paused` at the top, so a
+  paused group skips its entire subtree. All allocation-free (the pre-allocated
+  `free_stack`/`dfs_stack`), asserted by a no-alloc scene.
+- **`/n_run` command.** `Cmd::RunNode { id, run }` (`src/server/engine.rs` →
+  `set_paused(id, !run)`); the translator maps `/n_run` pairs `(nodeID, flag)`
+  (`flag 0` pause, non-zero resume). **Wired into both dispatch paths**: the
+  immediate/UDP whitelist in `src/osc/server.rs` (this was the one gap — the
+  arm was missing, so an immediate `/n_run` fell through to the default `/fail`
+  even though the translator handled it) and the scheduled-bundle path (already
+  covered by the translator). The done drain in `Engine` collapses to the single
+  `apply_done_action` call.
+- **Client mirror.** `defs.ugens.DoneAction` carries the full 0-15 enum;
+  `Server.run`/`pause`/`resume` emit `/n_run` (accept a node object or a bare id,
+  so a whole group works). Docstrings drive the generated `api.md`.
+
+**Docs:** `schemas.md` gains the `/n_run` section and the full 0-15 done-action
+table (was 0/1/2/14) and drops the "no `/n_run` to resume it yet" note;
+`architecture.md` explains the sibling resolution and the paused-group skip;
+`GUIA.md` gets the S4 manual-test section (and the summary-table row) and the
+EnvGen note is corrected. A user-facing `pause_resume.py` example renders a
+drone paused for a beat and resumed (RMS on/paused/resumed = 0.141/0.000/0.141).
+
+**Scope note:** the relative actions act within a node's **parent group** (the
+ordered child list); "previous/next" is sibling order, matching scsynth. Groups
+are pausable now, which `/n_run` on a group exercises.
+
+**Verified:** `cargo test --no-default-features` green — 10 `node` unit tests
+(each relative action's tree effect, `set_paused` round-trip + unknown-id
+reject, sibling resolution at the edges), `tests/envgen.rs` (`pauseSelf` parked
+then `/n_run 1` audible again; `freeSelfAndNext` through the real
+float→`from_i32`→queue→`apply_done_action` chain), `tests/osc.rs::n_run_...`
+(the OSC dispatch: a valid `/n_run` does not `/fail`, an unknown id does — this
+guards the whitelist wiring), and a no-alloc `relative_done_actions_and_n_run`
+scene in `tests/rt_safety.rs`; `cargo fmt` clean. Client: `clients/python` suite
+green (`/n_run` emission + the full enum) and the `pause_resume.py` E2E offline
+render through the rebuilt embed lib.

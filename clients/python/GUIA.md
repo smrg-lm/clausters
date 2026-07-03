@@ -343,6 +343,32 @@ son toda matemática de grafo — sin Faust:
 # -> rendered 120000 frames (2.50 s) | peak 0.120
 ```
 
+### Pausar y reanudar nodos: `/n_run` + done actions completas (S4)
+
+`Server.pause(node)` / `Server.resume(node)` / `Server.run(node, flag)` emiten
+`/n_run` (aceptan un objeto nodo o un id crudo, así que sirve para un synth **o
+un grupo entero**). Un nodo pausado queda en el árbol con su estado y se saltea al
+procesar (silencio, sin CPU); reanuda exactamente donde iba. Eso es lo que
+reanuda un synth aparcado por `DoneAction.PAUSE_SELF` — la pausa dejó de ser
+terminal. `DoneAction` espeja además el enum completo **0-15** de scsynth: las
+acciones relativas (`FREE_SELF_AND_NEXT`, `FREE_SELF_TO_TAIL`,
+`FREE_SELF_RESUME_NEXT`, …) actúan sobre los vecinos del synth en su grupo.
+Cubierto por `tests/test_defs.py` (`test_server_run_pause_resume_emit_n_run`,
+`test_done_action_full_set`).
+
+```sh
+.venv/bin/python -m pytest tests/test_defs.py -q   # verdes
+```
+
+El ejemplo `pause_resume.py` rinde un WAV **offline** de un drone que se pausa un
+beat y vuelve (en un score NRT los toggles van timetagged con `send_bundle`; en
+vivo se usaría `srv.pause`/`srv.resume` directo):
+
+```sh
+.venv/bin/python examples/pause_resume.py /tmp/pr.wav
+# -> beat RMS: 0.141 (on) 0.000 (paused) 0.141 (resumed)
+```
+
 ### Programa de grafo con `GraphDef` (M18, `/d_graph`)
 
 La tercera clase de def: donde `SynthDef`/`FaustDef` describen **un** nodo,

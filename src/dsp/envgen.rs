@@ -137,12 +137,7 @@ impl UGen for EnvGen {
             return;
         }
 
-        self.done_action = match at(inputs[4], 0) as i32 {
-            1 => DoneAction::PauseSelf,
-            2 => DoneAction::FreeSelf,
-            14 => DoneAction::FreeGroup,
-            _ => DoneAction::None,
-        };
+        self.done_action = DoneAction::from_i32(at(inputs[4], 0) as i32);
 
         let num_segments = at(inputs[6], 0) as usize;
         // Index into the levels array (== the segment index to resume from) at

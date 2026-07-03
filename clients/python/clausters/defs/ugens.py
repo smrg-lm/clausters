@@ -312,18 +312,44 @@ def demand(trig, reset, source) -> Ugen:
 
 
 class DoneAction:
-    """The action `env_gen` takes when its envelope finishes, mirroring the
-    subset of scsynth done actions the server implements. Pass one as
-    ``done_action``."""
+    """The action `env_gen` takes when its envelope finishes — scsynth's full
+    done-action set (0-15). Pass one as ``done_action``. The relative actions
+    (3-13, 15) act on the synth's neighbours in its group; a paused node is
+    resumed with `Server.run` (``/n_run``)."""
 
     #: Do nothing; the envelope just holds its final level.
     NONE = 0
-    #: Pause the synth (stops processing; it stays in the tree).
+    #: Pause the synth (stops processing; it stays in the tree). Resume with
+    #: `Server.run`.
     PAUSE_SELF = 1
     #: Free the synth — the usual choice for a one-shot or a released note.
     FREE_SELF = 2
+    #: Free the synth and the preceding node.
+    FREE_SELF_AND_PREV = 3
+    #: Free the synth and the following node.
+    FREE_SELF_AND_NEXT = 4
+    #: Free the synth; if the preceding node is a group, free all its children.
+    FREE_SELF_AND_FREE_ALL_IN_PREV = 5
+    #: Free the synth; if the following node is a group, free all its children.
+    FREE_SELF_AND_FREE_ALL_IN_NEXT = 6
+    #: Free the synth and every preceding node in its group.
+    FREE_SELF_TO_HEAD = 7
+    #: Free the synth and every following node in its group.
+    FREE_SELF_TO_TAIL = 8
+    #: Free the synth and pause the preceding node.
+    FREE_SELF_PAUSE_PREV = 9
+    #: Free the synth and pause the following node.
+    FREE_SELF_PAUSE_NEXT = 10
+    #: Free the synth; if the preceding node is a group, deep-free it.
+    FREE_SELF_AND_DEEP_FREE_PREV = 11
+    #: Free the synth; if the following node is a group, deep-free it.
+    FREE_SELF_AND_DEEP_FREE_NEXT = 12
+    #: Free the synth and every other node in its group.
+    FREE_ALL_IN_GROUP = 13
     #: Free the synth's whole enclosing group.
     FREE_GROUP = 14
+    #: Free the synth and resume (unpause) the following node.
+    FREE_SELF_RESUME_NEXT = 15
 
 
 #: Envelope shape name -> the server's shape number. A numeric curve value maps

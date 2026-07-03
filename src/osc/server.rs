@@ -740,9 +740,11 @@ impl OscServer {
             // The translator covers the whole schedulable subset (and keeps
             // the M12 tree mirror in sync), so the immediate forms share one
             // path: translate, then ship every command.
-            "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_set"
-            | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode" | "/g_parallel"
-            | "/graph_new" | "/graph_voice" => self.handle_via_translate(&msg, from),
+            "/s_new" | "/g_new" | "/g_freeAll" | "/g_deepFree" | "/n_free" | "/n_run"
+            | "/n_set" | "/n_map" | "/n_mapa" | "/n_before" | "/n_after" | "/g_sortMode"
+            | "/g_parallel" | "/graph_new" | "/graph_voice" => {
+                self.handle_via_translate(&msg, from)
+            }
             // MIDI binding mutations also persist the binding set (M19).
             "/midi_bind" | "/midi_unbind" | "/midi_map" => {
                 self.handle_via_translate(&msg, from);
