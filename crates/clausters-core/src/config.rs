@@ -51,6 +51,18 @@ pub struct ServerConfig {
     pub audio_buses: Option<usize>,
     /// Control bus count (`--control-buses`).
     pub control_buses: Option<usize>,
+    /// Hardware output channels (`--outputs`); unset follows the device default.
+    pub outputs: Option<usize>,
+    /// Hardware input channels (`--inputs`); unset/0 opens no input device.
+    pub inputs: Option<usize>,
+    /// Node slab capacity, root included (`--max-nodes`).
+    pub max_nodes: Option<usize>,
+    /// Buffer pool size (`--max-buffers`).
+    pub max_buffers: Option<usize>,
+    /// Per-group child capacity (`--max-graph-children`).
+    pub max_graph_children: Option<usize>,
+    /// Accepted inputs per UGen when compiling a def (`--max-ugen-inputs`).
+    pub max_ugen_inputs: Option<usize>,
     /// Whether to persist/reload defs; `false` is the `--no-persist` default.
     pub persist: Option<bool>,
     /// Data directory for the def store (`--data-dir`).
@@ -178,6 +190,12 @@ impl ServerConfig {
             sample_rate: pick(self.sample_rate, h.sample_rate),
             audio_buses: pick(self.audio_buses, h.audio_buses),
             control_buses: pick(self.control_buses, h.control_buses),
+            outputs: pick(self.outputs, h.outputs),
+            inputs: pick(self.inputs, h.inputs),
+            max_nodes: pick(self.max_nodes, h.max_nodes),
+            max_buffers: pick(self.max_buffers, h.max_buffers),
+            max_graph_children: pick(self.max_graph_children, h.max_graph_children),
+            max_ugen_inputs: pick(self.max_ugen_inputs, h.max_ugen_inputs),
             persist: pick(self.persist, h.persist),
             data_dir: pick(self.data_dir, h.data_dir),
             shm: pick(self.shm, h.shm),
@@ -335,6 +353,10 @@ mod tests {
             [server]
             sample_rate = 44100
             audio_buses = 64
+            outputs = 1
+            inputs = 2
+            max_nodes = 2048
+            max_ugen_inputs = 16
             persist = false
             tcp = true
             ws = 9000
@@ -352,6 +374,10 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.server.sample_rate, Some(44100));
         assert_eq!(cfg.server.audio_buses, Some(64));
+        assert_eq!(cfg.server.outputs, Some(1));
+        assert_eq!(cfg.server.inputs, Some(2));
+        assert_eq!(cfg.server.max_nodes, Some(2048));
+        assert_eq!(cfg.server.max_ugen_inputs, Some(16));
         assert_eq!(cfg.server.persist, Some(false));
         assert_eq!(cfg.server.tcp.unwrap().resolve(57110), Some(57110));
         assert_eq!(cfg.server.ws.unwrap().resolve(57120), Some(9000));

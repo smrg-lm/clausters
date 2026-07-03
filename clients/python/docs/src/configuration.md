@@ -40,10 +40,20 @@ Two sections feed the client's defaults:
   audio_buses = 128
   control_buses = 1024
   sample_rate = 48000
+  # Boot-time hardware channels and pre-allocated pools:
+  outputs = 2          # omit to follow the device default
+  inputs = 0           # >0 opens the input device; In reads it
+  max_nodes = 1024
+  max_buffers = 1024
+  max_graph_children = 256
+  max_ugen_inputs = 32
   ```
 
   `ServerOptions()` then reads those values; a field passed to the constructor
-  still wins.
+  still wins. `ServerOptions.args()` turns them into `clausters` CLI flags
+  (`--outputs` only when set), so a server launched from the object matches it;
+  `Server.query_info()` reads the same fields back from a running server
+  (including `input_channels` and the pool sizes) as a `ServerInfo`.
 
 ## Reading it yourself
 

@@ -683,6 +683,49 @@ def demo_commands(client: Client):
     print("  /clearSched ->", client.reply(quiet=True))
 
 
+def demo_serverinfo(client: Client):
+    """S7 boot-time configuration: discover the server's pool sizes and I/O
+    channels with /server_info, then, if the server was started with --inputs,
+    pass live device input straight to the output through an In -> Out synth."""
+    client.send("/server_info")
+    _, info = client.reply(quiet=True)
+    # [audio_buses, control_buses, out_ch, block, nom_sr, act_sr, in_ch,
+    #  max_nodes, max_buffers, max_graph_children, max_ugen_inputs]
+    labels = [
+        "audio_buses",
+        "control_buses",
+        "output_channels",
+        "block_size",
+        "nominal_sr",
+        "actual_sr",
+        "input_channels",
+        "max_nodes",
+        "max_buffers",
+        "max_graph_children",
+        "max_ugen_inputs",
+    ]
+    print("server_info:")
+    for name, value in zip(labels, info):
+        print(f"  {name:20} {value}")
+
+    outputs = int(info[2])
+    inputs = int(info[6])
+    if inputs <= 0:
+        print("  (no live input — start the server with `--inputs 1` to hear it)")
+        return
+
+    # Input channels live just above the outputs: bus `outputs` is input 0.
+    in_bus = float(outputs)
+    print(f"  passthru: In(bus {int(in_bus)}) -> Out(bus 0) for 3 s")
+    b = SynthDefBuilder("passthru")
+    b.add("Out", 0.0, b.add("In", in_bus))
+    client.send("/d_recv", b.blob())
+    client.reply(quiet=True)
+    client.send("/s_new", "passthru", 3100, 1, 0)
+    time.sleep(3.0)
+    client.send("/n_free", 3100)
+
+
 def main():
     demos = sys.argv[1:] or ["status"]
     client = Client()
@@ -714,6 +757,8 @@ def main():
             demo_signal(client)
         elif demo == "commands":
             demo_commands(client)
+        elif demo == "serverinfo":
+            demo_serverinfo(client)
         elif demo == "score":
             demo_score()
         elif demo == "quit":
@@ -721,7 +766,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, commands, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, commands, serverinfo, score, quit)"
             )
 
 

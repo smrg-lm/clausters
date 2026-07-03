@@ -15,14 +15,23 @@
 
 use std::sync::Arc;
 
-/// Size of the buffer pool, like scsynth's default `-b`.
+/// Default buffer-pool size, like scsynth's default `-b`. The live server sizes
+/// its pool at boot from `--max-buffers` (see [`empty_pool_with`]); this stays
+/// the fallback used by the NRT renderer and tests.
 pub const NUM_BUFFERS: usize = 1024;
 
 /// The engine-side pool: index → installed buffer.
 pub type BufferPool = Vec<Option<Arc<Buffer>>>;
 
+/// A pool of the default capacity ([`NUM_BUFFERS`]).
 pub fn empty_pool() -> BufferPool {
-    (0..NUM_BUFFERS).map(|_| None).collect()
+    empty_pool_with(NUM_BUFFERS)
+}
+
+/// A pool of exactly `count` empty slots (the boot-time `--max-buffers`). The
+/// pool's `len()` is the authoritative buffer-index bound everywhere.
+pub fn empty_pool_with(count: usize) -> BufferPool {
+    (0..count).map(|_| None).collect()
 }
 
 /// Interleaved f32 sample data plus its shape. See the module docs for the

@@ -9,6 +9,15 @@ usage:
                            back to the device rate if unsupported)
       --audio-buses <n>    audio buses (default 128, the hard maximum)
       --control-buses <n>  control buses (default 1024)
+      --outputs <n>        hardware output channels (default: the device's);
+                           audio buses 0..outputs are the hardware outs
+      --inputs <n>         hardware input channels (default 0 = no input); opens
+                           the default input device, readable via In on audio
+                           buses outputs..outputs+inputs
+      --max-nodes <n>          node slab capacity, root included (default 1024)
+      --max-buffers <n>        buffer pool size (default 1024)
+      --max-graph-children <n> per-group child capacity (default 256)
+      --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
       --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
                            default port 57110)
       --ws [port]          also accept OSC over WebSocket, reachable from a
@@ -125,6 +134,7 @@ fn nrt_main(args: &[String]) -> Result<(), String> {
 fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     use clausters::osc::server::{DEFAULT_PORT, OscServer, ServerInfo};
 
+    use clausters::dsp::Limits;
     use clausters::server::defstore::{DefStore, resolve_data_dir};
     use clausters::server::engine::{DEFAULT_AUDIO_BUSES, DEFAULT_CONTROL_BUSES};
     use clausters::server::ipc::{IpcPeer, Role, Segment};
@@ -151,6 +161,25 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut audio_buses = cfg.audio_buses.unwrap_or(DEFAULT_AUDIO_BUSES);
     let mut control_buses = cfg.control_buses.unwrap_or(DEFAULT_CONTROL_BUSES);
+    // Hardware I/O channel counts (scsynth `-o`/`-i`). `outputs = None` follows
+    // the device default; `inputs = 0` opens no input device.
+    let mut outputs: Option<usize> = cfg.outputs;
+    let mut inputs: usize = cfg.inputs.unwrap_or(0);
+    // Boot-time pool sizes, config over the compiled defaults (clamped later in
+    // the engine). Each is a slab built once at startup.
+    let mut limits = Limits::default();
+    if let Some(n) = cfg.max_nodes {
+        limits.max_nodes = n;
+    }
+    if let Some(n) = cfg.max_buffers {
+        limits.max_buffers = n;
+    }
+    if let Some(n) = cfg.max_graph_children {
+        limits.max_group_children = n;
+    }
+    if let Some(n) = cfg.max_ugen_inputs {
+        limits.max_ugen_inputs = n;
+    }
     let mut it = args.iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -225,6 +254,46 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or(format!("--control-buses needs a value\n{USAGE}"))?;
                 control_buses = value.parse().map_err(|e| format!("--control-buses: {e}"))?;
             }
+            "--outputs" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--outputs needs a value\n{USAGE}"))?;
+                outputs = Some(value.parse().map_err(|e| format!("--outputs: {e}"))?);
+            }
+            "--inputs" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--inputs needs a value\n{USAGE}"))?;
+                inputs = value.parse().map_err(|e| format!("--inputs: {e}"))?;
+            }
+            "--max-nodes" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-nodes needs a value\n{USAGE}"))?;
+                limits.max_nodes = value.parse().map_err(|e| format!("--max-nodes: {e}"))?;
+            }
+            "--max-buffers" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-buffers needs a value\n{USAGE}"))?;
+                limits.max_buffers = value.parse().map_err(|e| format!("--max-buffers: {e}"))?;
+            }
+            "--max-graph-children" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-graph-children needs a value\n{USAGE}"))?;
+                limits.max_group_children = value
+                    .parse()
+                    .map_err(|e| format!("--max-graph-children: {e}"))?;
+            }
+            "--max-ugen-inputs" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-ugen-inputs needs a value\n{USAGE}"))?;
+                limits.max_ugen_inputs = value
+                    .parse()
+                    .map_err(|e| format!("--max-ugen-inputs: {e}"))?;
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
@@ -242,6 +311,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         sample_rate,
         audio_buses,
         control_buses,
+        limits,
+        outputs,
+        inputs,
     )?;
     // Nominal = what we asked for; actual = what the device gave us. They differ
     // only when the host could not honor the requested rate (see backend.rs).
@@ -298,9 +370,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return Err("built without the `midi` feature: rebuild with --features midi".into());
     }
     println!(
-        "clausters — silent until /s_new | {} Hz, {} channels | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
+        "clausters — silent until /s_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",
         backend.sample_rate,
         backend.channels,
+        backend.input_channels,
         workers,
         osc.local_addr()?
     );

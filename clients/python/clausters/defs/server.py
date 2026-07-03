@@ -128,6 +128,15 @@ def _parse_n_info(args) -> dict:
 DEFAULT_AUDIO_BUSES = 128
 DEFAULT_CONTROL_BUSES = 1024
 DEFAULT_SAMPLE_RATE = 48000
+# Boot-time pre-allocated pool sizes, mirroring the Rust server's `Limits`
+# defaults (`--max-nodes`/`--max-buffers`/`--max-graph-children`/
+# `--max-ugen-inputs`). 32 is the hard ceiling on UGen inputs, like 128 for
+# audio buses. Hardware channels default to the device's outputs (``None`` =
+# no flag) and no live input.
+DEFAULT_MAX_NODES = 1024
+DEFAULT_MAX_BUFFERS = 1024
+DEFAULT_MAX_GRAPH_CHILDREN = 256
+DEFAULT_MAX_UGEN_INPUTS = 32
 
 
 @dataclass
@@ -151,21 +160,61 @@ class ServerOptions:
     sample_rate: int = field(
         default_factory=lambda: server_config().get("sample_rate", DEFAULT_SAMPLE_RATE)
     )
+    #: Hardware output channels; ``None`` follows the device default (no flag).
+    outputs: "int | None" = field(
+        default_factory=lambda: server_config().get("outputs", None)
+    )
+    #: Hardware input channels; ``0`` opens no input device.
+    inputs: int = field(default_factory=lambda: server_config().get("inputs", 0))
+    #: Node slab capacity, root included.
+    max_nodes: int = field(
+        default_factory=lambda: server_config().get("max_nodes", DEFAULT_MAX_NODES)
+    )
+    #: Buffer pool size.
+    max_buffers: int = field(
+        default_factory=lambda: server_config().get("max_buffers", DEFAULT_MAX_BUFFERS)
+    )
+    #: Per-group child capacity.
+    max_graph_children: int = field(
+        default_factory=lambda: server_config().get("max_graph_children", DEFAULT_MAX_GRAPH_CHILDREN)
+    )
+    #: Accepted inputs per UGen (clamped to 32 by the server).
+    max_ugen_inputs: int = field(
+        default_factory=lambda: server_config().get("max_ugen_inputs", DEFAULT_MAX_UGEN_INPUTS)
+    )
 
     def args(self) -> list[str]:
         """The ``clausters`` CLI flags that launch a server matching these
-        options (pass to ``subprocess`` after the binary path)."""
-        return [
+        options (pass to ``subprocess`` after the binary path). ``outputs`` is
+        emitted only when set (otherwise the server follows the device); the
+        pre-allocated pool sizes are always emitted so the launched server and
+        this object agree by construction."""
+        flags = [
             "--audio-buses", str(self.audio_buses),
             "--control-buses", str(self.control_buses),
             "--sample-rate", str(self.sample_rate),
+            "--inputs", str(self.inputs),
+            "--max-nodes", str(self.max_nodes),
+            "--max-buffers", str(self.max_buffers),
+            "--max-graph-children", str(self.max_graph_children),
+            "--max-ugen-inputs", str(self.max_ugen_inputs),
         ]
+        if self.outputs is not None:
+            flags += ["--outputs", str(self.outputs)]
+        return flags
 
 
 @dataclass
 class ServerInfo:
     """The static configuration a running server reports over ``/server_info``
-    (read-only; the result of `Server.query_info`)."""
+    (read-only; the result of `Server.query_info`).
+
+    The first six fields are the stable original set; the rest are the
+    boot-time capacities the server appends. ``channels`` is the hardware
+    **output** channel count, ``input_channels`` the live input count (0 when
+    the server was launched without ``--inputs``). Against a pre-S7 server that
+    reports only six fields, the appended ones fall back to the compiled
+    defaults."""
 
     audio_buses: int
     control_buses: int
@@ -173,6 +222,11 @@ class ServerInfo:
     block_size: int
     nominal_sample_rate: float
     actual_sample_rate: float
+    input_channels: int = 0
+    max_nodes: int = DEFAULT_MAX_NODES
+    max_buffers: int = DEFAULT_MAX_BUFFERS
+    max_graph_children: int = DEFAULT_MAX_GRAPH_CHILDREN
+    max_ugen_inputs: int = DEFAULT_MAX_UGEN_INPUTS
 
 
 class Server:
@@ -286,13 +340,19 @@ class Server:
         raise ReplyTimeout(f"no reply to {addr}")
 
     def query_info(self, timeout: float = 5.0) -> ServerInfo:
-        """Asks the running server for its static configuration (RT only):
-        bus counts, output channels, block size and sample rate. Use it to
-        size or check allocators against a server you did not launch; compare
-        the result with `options`."""
+        """Asks the running server for its static configuration (RT only): bus
+        counts, output/input channels, block size, sample rate and the
+        boot-time pool sizes. Use it to size or check allocators against a
+        server you did not launch; compare the result with `options`. The
+        appended capacity fields degrade to the defaults against a server too
+        old to report them."""
         _, args = self.request(
             "/server_info", timeout=timeout, expect=("/server_info.reply",)
         )
+
+        def at(i, cast, default):
+            return cast(args[i]) if i < len(args) else default
+
         return ServerInfo(
             audio_buses=int(args[0]),
             control_buses=int(args[1]),
@@ -300,6 +360,11 @@ class Server:
             block_size=int(args[3]),
             nominal_sample_rate=float(args[4]),
             actual_sample_rate=float(args[5]),
+            input_channels=at(6, int, 0),
+            max_nodes=at(7, int, DEFAULT_MAX_NODES),
+            max_buffers=at(8, int, DEFAULT_MAX_BUFFERS),
+            max_graph_children=at(9, int, DEFAULT_MAX_GRAPH_CHILDREN),
+            max_ugen_inputs=at(10, int, DEFAULT_MAX_UGEN_INPUTS),
         )
 
     # ---- node tree introspection (RT only) ----

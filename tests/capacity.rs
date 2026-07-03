@@ -5,12 +5,21 @@
 
 use std::sync::Arc;
 
+use clausters::dsp::Limits;
 use clausters::node::{AddAction, Group, ROOT_NODE_ID, SynthNode};
-use clausters::server::engine::{BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair};
+use clausters::server::engine::{
+    BLOCK_SIZE, Cmd, Engine, EngineHandle, engine_pair, engine_pair_full,
+};
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{compile, default_spec};
 
 const SR: f32 = 48_000.0;
+
+/// An engine sized by explicit boot-time [`Limits`] (S7), the RT counterpart of
+/// launching with `--max-nodes`/`--max-buffers`/`--max-graph-children`.
+fn engine_with_limits(limits: Limits) -> (Engine, EngineHandle) {
+    engine_pair_full(SR, 2, 0, None, 128, 1024, limits)
+}
 
 fn default_synth() -> Box<dyn SynthNode> {
     static DEF: std::sync::OnceLock<Arc<clausters::synthdef::SynthDef>> =
@@ -149,6 +158,53 @@ fn full_group_rejects_extra_children() {
     }
     assert_eq!(synth_count(&handle), 256, "group child capacity");
     assert_eq!(handle.collect_garbage(), 300 - 256);
+}
+
+/// S7: the node slab is boot-time configurable. A small `--max-nodes` overflows
+/// exactly at its capacity, root included — same graceful rejection as the
+/// default 1024, just sooner.
+#[test]
+fn small_max_nodes_overflows_predictably() {
+    let limits = Limits {
+        max_nodes: 16,
+        ..Limits::default()
+    };
+    let (mut engine, mut handle) = engine_with_limits(limits);
+    for i in 0..40 {
+        handle.send(add(1000 + i, ROOT_NODE_ID)).ok().unwrap();
+    }
+    tick(&mut engine, 1);
+    // 16 slots, one taken by the root: 15 synths fit, the other 25 bounce back.
+    assert_eq!(synth_count(&handle), 15, "slab capacity, root included");
+    assert_eq!(handle.collect_garbage(), 40 - 15, "the rest roll back");
+    tick(&mut engine, 2); // still processing
+}
+
+/// S7: `--max-graph-children` sizes each non-root group. A group built with a
+/// small child capacity rejects the extra children, exactly like the default.
+#[test]
+fn custom_group_child_cap_rejects_extra() {
+    let limits = Limits {
+        max_nodes: 64,
+        max_group_children: 8,
+        ..Limits::default()
+    };
+    let (mut engine, mut handle) = engine_with_limits(limits);
+    handle
+        .send(Cmd::AddGroup {
+            id: 1,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            group: Group::with_capacity(limits.max_group_children),
+        })
+        .ok()
+        .unwrap();
+    for i in 0..20 {
+        handle.send(add(1000 + i, 1)).ok().unwrap();
+    }
+    tick(&mut engine, 1);
+    assert_eq!(synth_count(&handle), 8, "group child capacity");
+    assert_eq!(handle.collect_garbage(), 20 - 8);
 }
 
 /// The cache-line alignment of `Block` (M10) is a compile-time guarantee.

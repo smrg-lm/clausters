@@ -48,9 +48,61 @@ impl Block {
 pub const NUM_AUDIO_BUSES: usize = 128;
 /// Control buses (scsynth `-c`).
 pub const NUM_CONTROL_BUSES: usize = 1024;
-/// Maximum inputs per UGen; lets the synth build its input list on the stack.
-/// EnvGen requires many inputs (e.g. 21 for ADSR).
+/// Hard ceiling on inputs per UGen: the synth builds its input list on a
+/// fixed stack array of this width (see `synthdef::instance`), so it is a
+/// compile-time invariant, not a tunable. EnvGen already needs 21 (ADSR).
+/// The boot-time `--max-ugen-inputs` (see [`Limits`]) is a *runtime* limit
+/// clamped to this ceiling, the same way `--audio-buses` clamps to 128.
 pub const MAX_UGEN_INPUTS: usize = 32;
+
+/// Boot-time capacities for the pre-allocated pools (scsynth's `-n`/`-b`/…).
+///
+/// Every one of these sizes a slab or `Vec` built **once at server startup**:
+/// they are fixed at runtime by the CLI/config, never at compile time. The
+/// defaults match the historical compile-time constants. `max_ugen_inputs` is
+/// clamped to the [`MAX_UGEN_INPUTS`] hard ceiling by [`Limits::clamped`]
+/// (that one *is* a compile-time array width; the runtime knob can only make
+/// it stricter, like audio buses cap at 128).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limits {
+    /// Node slab capacity, root included (`--max-nodes`, scsynth `-n`).
+    pub max_nodes: usize,
+    /// Buffer pool capacity (`--max-buffers`, scsynth `-b`).
+    pub max_buffers: usize,
+    /// Pre-reserved child capacity of a non-root group (`--max-graph-children`).
+    pub max_group_children: usize,
+    /// Accepted inputs per UGen when compiling a def (`--max-ugen-inputs`),
+    /// clamped to [`MAX_UGEN_INPUTS`].
+    pub max_ugen_inputs: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            // Kept in sync with `node::MAX_NODES` / `node::MAX_GROUP_CHILDREN`
+            // / `buffer::NUM_BUFFERS`; those consts stay the documented default.
+            max_nodes: 1024,
+            max_buffers: 1024,
+            max_group_children: 256,
+            max_ugen_inputs: MAX_UGEN_INPUTS,
+        }
+    }
+}
+
+impl Limits {
+    /// Clamps each field to a usable minimum and the ugen-input hard ceiling,
+    /// so an out-of-range CLI/config value degrades instead of panicking. The
+    /// node slab keeps at least the root; a group keeps room for one child.
+    #[must_use]
+    pub fn clamped(self) -> Self {
+        Self {
+            max_nodes: self.max_nodes.max(1),
+            max_buffers: self.max_buffers,
+            max_group_children: self.max_group_children.max(1),
+            max_ugen_inputs: self.max_ugen_inputs.clamp(1, MAX_UGEN_INPUTS),
+        }
+    }
+}
 
 /// Control buses are single floats shared between threads: the network
 /// thread serves `/c_set`/`/c_get` directly, the audio thread reads them via

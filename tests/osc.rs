@@ -7,9 +7,10 @@ use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
+use clausters::dsp::Limits;
 use clausters::osc::server::{OscServer, ServerInfo};
 use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
-use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair};
+use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair, engine_pair_full};
 
 struct TestServer {
     addr: SocketAddr,
@@ -20,7 +21,17 @@ struct TestServer {
 
 impl TestServer {
     fn spawn() -> Self {
-        let (engine, engine_handle) = engine_pair(48_000.0, 2);
+        Self::spawn_with(engine_pair(48_000.0, 2))
+    }
+
+    /// A server over an engine built with explicit boot-time [`Limits`] (S7),
+    /// to check `/server_info` reports the configured capacities.
+    fn spawn_with_limits(limits: Limits) -> Self {
+        Self::spawn_with(engine_pair_full(48_000.0, 2, 0, None, 128, 1024, limits))
+    }
+
+    fn spawn_with(pair: (Engine, clausters::server::engine::EngineHandle)) -> Self {
+        let (engine, engine_handle) = pair;
         let info = ServerInfo {
             nominal_sample_rate: 48_000.0,
             actual_sample_rate: 48_000.0,
@@ -1584,5 +1595,63 @@ fn u_cmd_validates_target_and_index() {
     );
     assert_eq!(server.recv().addr, "/fail");
 
+    server.quit();
+}
+
+/// S7: `/server_info.reply` reports the boot-time pool capacities and I/O
+/// channels so a client can size its own allocators from the server. The first
+/// six fields stay stable; the S7 fields are appended.
+#[test]
+fn server_info_reports_configured_limits() {
+    let limits = Limits {
+        max_nodes: 512,
+        max_buffers: 64,
+        max_group_children: 32,
+        max_ugen_inputs: 24,
+    };
+    let server = TestServer::spawn_with_limits(limits);
+    server.send("/server_info", vec![]);
+    let reply = server.recv_until("/server_info.reply");
+    let ints: Vec<i32> = reply
+        .args
+        .iter()
+        .map(|a| match a {
+            OscType::Int(n) => *n,
+            OscType::Double(_) => -1, // the two sample-rate fields
+            other => panic!("unexpected arg {other:?}"),
+        })
+        .collect();
+    // [audio_buses, control_buses, out_ch, block, sr, sr, in_ch, max_nodes,
+    //  max_buffers, max_graph_children, max_ugen_inputs]
+    assert_eq!(ints[0], 128, "audio buses");
+    assert_eq!(ints[2], 2, "output channels");
+    assert_eq!(ints[6], 0, "no live input attached in this harness");
+    assert_eq!(ints[7], 512, "max_nodes");
+    assert_eq!(ints[8], 64, "max_buffers");
+    assert_eq!(ints[9], 32, "max_graph_children");
+    assert_eq!(ints[10], 24, "max_ugen_inputs");
+    server.quit();
+}
+
+/// S7: `--max-ugen-inputs` is enforced when a def is received; a def whose UGen
+/// asks for more inputs than the configured limit is rejected with `/fail`.
+#[test]
+fn d_recv_rejects_over_max_ugen_inputs() {
+    let limits = Limits {
+        max_ugen_inputs: 2,
+        ..Limits::default()
+    };
+    let server = TestServer::spawn_with_limits(limits);
+    // Sum3 takes 3 inputs — over the limit of 2.
+    let def = serde_json::json!({
+        "name": "too_wide",
+        "ugens": [
+            {"kind": "Sum3", "inputs": [{"const": 1.0}, {"const": 2.0}, {"const": 3.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+    .to_string();
+    server.send("/d_recv", vec![OscType::String(def)]);
+    assert_eq!(server.recv_until("/fail").addr, "/fail");
     server.quit();
 }

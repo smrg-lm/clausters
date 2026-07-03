@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import clausters.config as config
-from clausters.defs.server import Server, ServerOptions
+from clausters.defs.server import Server, ServerInfo, ServerOptions
 
 
 @pytest.fixture(autouse=True)
@@ -72,3 +72,62 @@ def test_server_defaults_come_from_config(tmp_path, monkeypatch):
 
     # An explicit argument still wins over the config.
     assert Server(host="9.9.9.9", interface=object()).target.host == "9.9.9.9"
+
+
+def test_server_options_boot_config(tmp_path, monkeypatch):
+    """The boot-time channel and pool options come from ``[server]`` and are
+    emitted as CLI flags, so a launched server matches the object."""
+    _write(
+        tmp_path,
+        "config.toml",
+        "[server]\noutputs = 1\ninputs = 2\nmax_nodes = 2048\n"
+        "max_buffers = 64\nmax_graph_children = 32\nmax_ugen_inputs = 16\n",
+    )
+    monkeypatch.setenv("CLAUSTERS_CONFIG", str(tmp_path / "config.toml"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    config.load_config(refresh=True)
+
+    opts = ServerOptions()
+    assert (opts.outputs, opts.inputs) == (1, 2)
+    assert opts.max_nodes == 2048
+    assert opts.max_ugen_inputs == 16
+
+    args = opts.args()
+    for flag, value in [
+        ("--outputs", "1"),
+        ("--inputs", "2"),
+        ("--max-nodes", "2048"),
+        ("--max-buffers", "64"),
+        ("--max-graph-children", "32"),
+        ("--max-ugen-inputs", "16"),
+    ]:
+        assert value == args[args.index(flag) + 1], flag
+
+
+def test_server_options_outputs_flag_omitted_by_default(monkeypatch):
+    """With no ``outputs`` set the server follows the device, so no
+    ``--outputs`` flag is emitted; ``--inputs`` still defaults to 0."""
+    monkeypatch.delenv("CLAUSTERS_CONFIG", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    config.load_config(refresh=True)
+    opts = ServerOptions()
+    assert opts.outputs is None
+    args = opts.args()
+    assert "--outputs" not in args
+    assert args[args.index("--inputs") + 1] == "0"
+
+
+def test_server_info_capacity_fields_default_for_old_servers():
+    """A pre-S7 server reports only the six original fields; the appended
+    capacity fields fall back to the defaults on the dataclass."""
+    info = ServerInfo(
+        audio_buses=128,
+        control_buses=1024,
+        channels=2,
+        block_size=64,
+        nominal_sample_rate=48000.0,
+        actual_sample_rate=48000.0,
+    )
+    assert info.input_channels == 0
+    assert info.max_nodes == 1024
+    assert info.max_ugen_inputs == 32

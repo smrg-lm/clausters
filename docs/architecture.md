@@ -17,6 +17,7 @@ How Clausters is built, where everything lives, and the invariants a change must
 
 - **Network thread** (`osc::server::OscServer::run`): owns the UDP socket (100 ms read timeout — each timeout tick collects garbage and async results; 2 ms when an IPC ring is attached, which it also drains every iteration), parses every packet — datagram or ring — through `osc::decode_packet`, builds commands *fully allocated* — boxed synths, pre-reserved group child lists — and pushes them into the command FIFO. It also owns all lookup tables: the def tables, the node-ID→def mirror, the buffer mirror, and the **tree mirror** (`osc::graph::TreeMirror` inside `osc::translate::CmdTranslator`) — topology, per-node control values and bus usage, fed by the same `Cmd` stream the engine gets and rolled back by rejection garbage; it answers `/g_queryTree`, `/n_query` (per-node detail) and `/g_dumpGraph`, and drives the auto-sorted groups without touching the audio thread. All replies (`/done`, `/fail`, `/n_go`/`/n_end`, queries) are sent from here.
 - **Audio thread** (the cpal callback, `server::backend`): runs `Engine::process_block` on 64-frame blocks. Per block: drain the command FIFO, fire scheduled bundles whose time falls inside the block (splitting it at the exact sample), walk the node tree in depth-first order, push dead memory to the garbage FIFO. It never allocates, locks or does I/O, and re-arms `dsp::denormals::flush_to_zero()` on every callback.
+- **Audio input thread** (the cpal *input* callback, `server::backend`, opt-in via `--inputs N`): a second cpal stream on the default input device. Its callback runs on **its own real-time thread** and only pushes the decoded interleaved f32 frames into a lock-free ring; at the top of each block `Engine::process_block` pops one block's worth into audio buses `outputs..outputs+inputs` (before any node runs), where `In` reads them like any bus. The two streams are decoupled by the ring: an overrun drops input samples on the callback side, an underrun reads as silence on the engine side — neither ever blocks. The output-channel count (`--outputs`) is negotiated with the host the same way as the sample rate (requested first, device default as fallback).
 - **NRT thread** (`server::nrt`): all `/b_*` work — allocation, file reading (WAV via hound, compressed/other formats via symphonia), WAV writing via hound, zeroing. One queue, so commands on the same buffer complete in submission order. Produces immutable buffers the network thread installs with `Cmd::SetBuffer`.
 - **Disk I/O threads** (`dsp::disk`, `DiskIn`/`DiskOut`): one background thread per streaming UGen instance, spawned at `/s_new` (build) and joined when the synth's `Box` is dropped on the network thread (via the garbage FIFO). It decodes (symphonia) or encodes (hound) between disk and a lock-free `rtrb` ring the audio thread pops/pushes; the audio thread never does disk I/O. Self-contained: no engine, OSC or `ProcessCtx` involvement.
 - **DSP workers** (`server::workers`, opt-in via `--workers N`): a fork-join pool the audio thread conducts to process the stages of `/g_parallel` groups. Atomic work stealing, bounded spinning, park/unpark only across idle gaps; each worker arms flush-to-zero at spawn. With 0 workers (the default and the whole test suite) the pool is inert and everything is sequential.
@@ -114,18 +115,21 @@ Both live entirely on the network thread, in `CmdTranslator`, and lower into the
 
 Audited: `tests/capacity.rs` overflows each structure on purpose and pins the behavior below.
 
-| Structure | Capacity | When full |
-|---|---|---|
-| Command FIFO | 1024 | reply `/fail … command FIFO full` (render mode: abort with the event time) |
-| Garbage FIFO | 1024 | spills into a 64-slot holding list retried next block; if that also fills, the memory is **leaked** (`mem::forget`) — leaking is the only RT-safe option left |
-| Event FIFO (`/n_go`/`/n_end`) | 2048 | events are POD and best-effort: dropped silently |
-| Schedule queue (timed bundles) | 1024 | the bundle is rejected and returned whole as a non-empty `Garbage::SpentBundle` (render mode: abort) |
-| Node slab | 1024 (`node::MAX_NODES`) | command rejected → `Garbage::Rejected*` |
-| Children per non-root group | 256 | command rejected → `Garbage::Rejected*` |
-| Buffer pool | 1024 | `/b_*` validates the index up front and replies `/fail` |
-| Audio buses | 128 (`dsp::NUM_AUDIO_BUSES`) | bus-index inputs are clamped per block |
-| Control buses | 1024 | out-of-range reads return 0.0, writes are ignored |
-| IPC rings | 64 KiB each | backpressure: `push` fails, the producer retries; nothing is dropped (a full *reply* ring drops the reply with a log — the client stopped draining) |
+| Structure | Capacity (default) | Boot flag | When full |
+|---|---|---|---|
+| Command FIFO | 1024 | — | reply `/fail … command FIFO full` (render mode: abort with the event time) |
+| Garbage FIFO | 1024 | — | spills into a 64-slot holding list retried next block; if that also fills, the memory is **leaked** (`mem::forget`) — leaking is the only RT-safe option left |
+| Event FIFO (`/n_go`/`/n_end`) | 2048 | — | events are POD and best-effort: dropped silently |
+| Schedule queue (timed bundles) | 1024 | — | the bundle is rejected and returned whole as a non-empty `Garbage::SpentBundle` (render mode: abort) |
+| Node slab | 1024 (`node::MAX_NODES`) | `--max-nodes` | command rejected → `Garbage::Rejected*` |
+| Children per non-root group | 256 (`node::MAX_GROUP_CHILDREN`) | `--max-graph-children` | command rejected → `Garbage::Rejected*` |
+| Buffer pool | 1024 (`buffer::NUM_BUFFERS`) | `--max-buffers` | `/b_*` validates the index up front and replies `/fail` |
+| Inputs per UGen | 32 (`dsp::MAX_UGEN_INPUTS`, hard ceiling) | `--max-ugen-inputs` | `/d_recv` rejects the def with `/fail` |
+| Audio buses | 128 (`dsp::NUM_AUDIO_BUSES`, hard ceiling) | `--audio-buses` | bus-index inputs are clamped per block |
+| Control buses | 1024 | `--control-buses` | out-of-range reads return 0.0, writes are ignored |
+| IPC rings | 64 KiB each | `--shm` | backpressure: `push` fails, the producer retries; nothing is dropped (a full *reply* ring drops the reply with a log — the client stopped draining) |
+
+The **boot-flag** column marks what is configurable at server start (S7): the four pool sizes plus the buses and the hardware I/O channels (`--outputs`/`--inputs`). Every one sizes a slab or `Vec` built **once at startup** — fixed at runtime, never at compile time — fed by the same config-file → flag precedence as the other options (`[server]` keys `max_nodes`, `max_buffers`, `max_graph_children`, `max_ugen_inputs`, `outputs`, `inputs`). Two carry a compile-time hard ceiling the flag clamps to, because they size a fixed-width structure the audio thread relies on: audio buses at 128 (the `BusUsage` mask is a `u128`) and UGen inputs at 32 (the per-UGen input list is a stack array in `synthdef::instance`). A client discovers the live values with `/server_info` (see `schemas.md`). `tests/capacity.rs` overflows the configurable slabs at both the default and a small custom size.
 
 **No wire-buffer or RT-memory pool (vs scsynth).** scsynth builds the synth graph *on the audio thread*, so it cannot allocate there and instead pre-sizes global pools at boot: wire buffers (`-w`), real-time memory for UGen-internal buffers like delay lines (`-m`), plus max-nodes/-buffers/-buses (`-n`/`-b`/`-a`/`-c`). Clausters builds each synth on the **network thread** (off the audio thread) and ships the finished node over the command FIFO, so the per-graph memory is owned per synth and freed per synth through the garbage FIFO: the inter-UGen **wires** are a `Vec<Block>` sized to the UGen count in `synthdef::instance` (cache-line-aligned via `Block`'s `#[repr(C, align(64))]`), and any future buffer-owning UGen (a delay line, say) allocates its ring in `new()` the same way. There is therefore **no `-w` and no `-m`** to size — that memory scales with the synths actually running, is contiguous and aligned, never fragments a pool, and never touches the audio thread. Only the counts in the table above are fixed at boot; of those, the **buses** are the meaningful synthesis capacity (the rest are throughput/headroom limits).
 

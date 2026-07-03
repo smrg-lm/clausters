@@ -147,10 +147,11 @@ impl OscServer {
         let socket = UdpSocket::bind(addr)?;
         // Periodic wakeups so garbage gets collected even without traffic.
         socket.set_read_timeout(Some(GC_INTERVAL))?;
-        let translator = CmdTranslator::with_buses(
+        let translator = CmdTranslator::with_limits(
             handle.sample_rate,
             handle.audio_buses,
             handle.control_buses().len(),
+            handle.limits,
         );
         Ok(Self {
             socket,
@@ -859,8 +860,12 @@ impl OscServer {
     /// Reports the server's static configuration so a client can size its own
     /// bus/allocator state from the server instead of hardcoding it:
     /// `/server_info.reply [audio_buses, control_buses, output_channels,
-    /// block_size, nominal_sr, actual_sr]`.
+    /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
+    /// max_buffers, max_graph_children, max_ugen_inputs]`. The first six fields
+    /// are stable; the boot-time capacities (S7) are appended so older clients
+    /// that read only the six keep working.
     fn send_server_info(&mut self, to: ClientId) {
+        let limits = self.handle.limits;
         let args = vec![
             OscType::Int(self.handle.audio_buses as i32),
             OscType::Int(self.handle.control_buses().len() as i32),
@@ -868,6 +873,11 @@ impl OscServer {
             OscType::Int(crate::dsp::BLOCK_SIZE as i32),
             OscType::Double(self.info.nominal_sample_rate),
             OscType::Double(self.info.actual_sample_rate),
+            OscType::Int(self.handle.input_channels as i32),
+            OscType::Int(limits.max_nodes as i32),
+            OscType::Int(limits.max_buffers as i32),
+            OscType::Int(limits.max_group_children as i32),
+            OscType::Int(limits.max_ugen_inputs as i32),
         ];
         self.reply(to, "/server_info.reply", args);
     }

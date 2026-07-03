@@ -59,9 +59,11 @@ impl ControlMap {
     };
 }
 
-/// Fixed capacity of the node slab (scsynth's `-n` option; configurable later).
+/// Default capacity of the node slab (scsynth's `-n`). The live server sizes
+/// its tree at boot from `--max-nodes` (see [`NodeTree::with_capacity`]); this
+/// is the fallback for [`NodeTree::new`], the NRT renderer and tests.
 pub const MAX_NODES: usize = 1024;
-/// Pre-reserved child capacity of non-root groups.
+/// Default pre-reserved child capacity of non-root groups (`--max-graph-children`).
 pub const MAX_GROUP_CHILDREN: usize = 256;
 /// Root node ID, like scsynth.
 pub const ROOT_NODE_ID: i32 = 0;
@@ -130,10 +132,18 @@ pub struct Group {
 }
 
 impl Group {
-    /// For non-root groups, built on the network thread.
+    /// A non-root group with the default child capacity, built on the network
+    /// thread. The live server uses [`Group::with_capacity`] with its
+    /// `--max-graph-children`.
     pub fn new() -> Self {
+        Self::with_capacity(MAX_GROUP_CHILDREN)
+    }
+
+    /// A non-root group pre-reserving `capacity` child slots. Inserts past it
+    /// are rejected, never grown (growth would allocate on the audio thread).
+    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            children: Vec::with_capacity(MAX_GROUP_CHILDREN),
+            children: Vec::with_capacity(capacity.max(1)),
             parallel: false,
         }
     }
@@ -203,27 +213,37 @@ pub struct NodeTree {
 }
 
 impl NodeTree {
+    /// A tree with the default node-slab capacity ([`MAX_NODES`]). The live
+    /// server uses [`NodeTree::with_capacity`] with its `--max-nodes`.
     pub fn new() -> Self {
+        Self::with_capacity(MAX_NODES)
+    }
+
+    /// A tree whose slab holds exactly `max_nodes` nodes, root included. Every
+    /// pre-allocated structure (the slab, the DFS/free stacks, the done-action
+    /// queue) is sized to it once here; nothing grows on the audio thread.
+    pub fn with_capacity(max_nodes: usize) -> Self {
+        let max_nodes = max_nodes.max(1);
         let mut slots: Vec<UnsafeCell<Option<NodeSlot>>> =
-            (0..MAX_NODES).map(|_| UnsafeCell::new(None)).collect();
+            (0..max_nodes).map(|_| UnsafeCell::new(None)).collect();
         *slots[ROOT_SLOT].get_mut() = Some(NodeSlot {
             id: ROOT_NODE_ID,
             parent: NO_PARENT,
             kind: NodeKind::Group(Group {
-                children: Vec::with_capacity(MAX_NODES),
+                children: Vec::with_capacity(max_nodes),
                 parallel: false,
             }),
             paused: false,
         });
         Self {
             slots,
-            dfs_stack: Vec::with_capacity(MAX_NODES),
-            free_stack: Vec::with_capacity(MAX_NODES),
+            dfs_stack: Vec::with_capacity(max_nodes),
+            free_stack: Vec::with_capacity(max_nodes),
             synth_count: 0,
             group_count: 1,
             ugen_count: 0,
-            done_nodes: (0..MAX_NODES).map(|_| AtomicI32::new(0)).collect(),
-            done_actions: (0..MAX_NODES).map(|_| AtomicU8::new(0)).collect(),
+            done_nodes: (0..max_nodes).map(|_| AtomicI32::new(0)).collect(),
+            done_actions: (0..max_nodes).map(|_| AtomicU8::new(0)).collect(),
             done_count: AtomicUsize::new(0),
         }
     }
@@ -252,7 +272,9 @@ impl NodeTree {
     /// publishes every store; the atomics just keep the concurrent
     /// index-reservation (`fetch_add`) race-free.
     pub fn take_done_count(&mut self) -> usize {
-        self.done_count.swap(0, Ordering::Relaxed).min(MAX_NODES)
+        self.done_count
+            .swap(0, Ordering::Relaxed)
+            .min(self.done_nodes.len())
     }
 
     /// One finished-node ID from the queue captured by [`Self::take_done_count`].
@@ -272,7 +294,7 @@ impl NodeTree {
     #[inline]
     fn enqueue_done(&self, id: i32, action: DoneAction) {
         let c = self.done_count.fetch_add(1, Ordering::Relaxed);
-        if c < MAX_NODES {
+        if c < self.done_nodes.len() {
             self.done_nodes[c].store(id, Ordering::Relaxed);
             self.done_actions[c].store(action as u8, Ordering::Relaxed);
         }

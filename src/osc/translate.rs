@@ -14,9 +14,9 @@ use std::sync::Arc;
 
 use rosc::OscType;
 
-use crate::dsp::buffer::{Buffer, BufferPool, NUM_BUFFERS, empty_pool};
+use crate::dsp::buffer::{Buffer, BufferPool, empty_pool_with};
 use crate::dsp::{
-    MAX_UGEN_CMD_ARGS, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, UGenCmd, ugen_cmd_selector,
+    Limits, MAX_UGEN_CMD_ARGS, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, UGenCmd, ugen_cmd_selector,
 };
 #[cfg(feature = "faust")]
 use crate::faust::synth::{FaustDef, FaustSynth};
@@ -136,17 +136,35 @@ pub struct CmdTranslator {
     pub graph_voices: HashMap<i32, GraphVoice>,
     graph_audio_buses: RangeAllocator,
     graph_control_buses: RangeAllocator,
+    /// Boot-time pool capacities. `max_group_children` sizes every non-root
+    /// group this translator builds (`/g_new`, `/s_new`'s graph subgroups);
+    /// `max_ugen_inputs` caps accepted inputs when compiling a def; the buffer
+    /// pool `buffers` is already sized to `max_buffers` (its `len()` is the
+    /// buffer-index bound). Kept so `/server_info` can report them.
+    limits: Limits,
 }
 
 impl CmdTranslator {
-    /// Translator with the default bus counts (used by the NRT renderer and
-    /// tests). The live server passes its configured counts via
-    /// [`with_buses`](Self::with_buses).
+    /// Translator with the default bus counts and pool limits (used by the NRT
+    /// renderer and tests). The live server passes its configured counts via
+    /// [`with_limits`](Self::with_limits).
     pub fn new(sample_rate: f32) -> Self {
         Self::with_buses(sample_rate, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES)
     }
 
+    /// Configured bus counts with default pool limits.
     pub fn with_buses(sample_rate: f32, audio_buses: usize, control_buses: usize) -> Self {
+        Self::with_limits(sample_rate, audio_buses, control_buses, Limits::default())
+    }
+
+    /// Fully configured: bus counts plus the boot-time pool [`Limits`].
+    pub fn with_limits(
+        sample_rate: f32,
+        audio_buses: usize,
+        control_buses: usize,
+        limits: Limits,
+    ) -> Self {
+        let limits = limits.clamped();
         // Reserve the top of each bus space for GraphDef private buses, shrinking
         // the reservation if the configured count is smaller than the default.
         let audio_reserved = GRAPH_AUDIO_BUS_RESERVED.min(audio_buses);
@@ -162,7 +180,7 @@ impl CmdTranslator {
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
             mirror: TreeMirror::new(),
-            buffers: empty_pool(),
+            buffers: empty_pool_with(limits.max_buffers),
             midi: MidiBindings::new(),
             graph_defs: HashMap::new(),
             graph_instances: HashMap::new(),
@@ -172,7 +190,13 @@ impl CmdTranslator {
                 control_buses - control_reserved,
                 control_reserved,
             ),
+            limits,
         }
+    }
+
+    /// A non-root group sized to the configured `--max-graph-children`.
+    fn new_group(&self) -> Group {
+        Group::with_capacity(self.limits.max_group_children)
     }
 
     /// Total defs of both families, for `/status.reply`.
@@ -694,6 +718,20 @@ impl CmdTranslator {
         let spec: SynthDefSpec =
             serde_json::from_slice(bytes).map_err(|e| format!("invalid JSON: {e}"))?;
         let def = compile(spec)?;
+        // `compile` already enforced the hard ceiling; reject anything past the
+        // stricter boot-time `--max-ugen-inputs` too (default: the ceiling).
+        if let Some((i, u)) = def
+            .ugens
+            .iter()
+            .enumerate()
+            .find(|(_, u)| u.inputs.len() > self.limits.max_ugen_inputs)
+        {
+            return Err(format!(
+                "ugens[{i}]: inputs ({}) exceed --max-ugen-inputs ({})",
+                u.inputs.len(),
+                self.limits.max_ugen_inputs
+            ));
+        }
         let name = def.name.clone();
         self.synth_defs.insert(name.clone(), Arc::new(def));
         Ok(name)
@@ -954,7 +992,7 @@ impl CmdTranslator {
             id: group_id,
             target: *target,
             action,
-            group: Group::new(),
+            group: self.new_group(),
         });
         let _ = self.mirror.insert(
             group_id,
@@ -1039,7 +1077,7 @@ impl CmdTranslator {
             id: voice_id,
             target: *instance,
             action: AddAction::Head,
-            group: Group::new(),
+            group: self.new_group(),
         });
         let _ = self.mirror.insert(
             voice_id,
@@ -1358,7 +1396,7 @@ impl CmdTranslator {
                         id: *id,
                         target: *target,
                         action,
-                        group: Group::new(),
+                        group: self.new_group(),
                     });
                     let body = MirrorBody::Group {
                         children: Vec::new(),
@@ -2074,7 +2112,9 @@ pub fn parse_buffer_msg(
         }
         other => return Err(format!("{other} is not a buffer command")),
     };
-    if index < 0 || index as usize >= NUM_BUFFERS {
+    // The mirror pool is sized to the boot-time `--max-buffers`, so its length
+    // is the authoritative index bound.
+    if index < 0 || index as usize >= mirror.len() {
         return Err(format!("buffer index out of range: {index}"));
     }
     Ok((index, job))
@@ -2093,7 +2133,7 @@ pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob
         [OscType::Int(index), OscType::String(cmd), ..] => (*index, cmd.as_str()),
         _ => return Err("expected: bufnum, command name, args...".into()),
     };
-    if index < 0 || index as usize >= NUM_BUFFERS {
+    if index < 0 || index as usize >= mirror.len() {
         return Err(format!("buffer index out of range: {index}"));
     }
     let Some(current) = mirror_buffer(mirror, index) else {

@@ -1001,7 +1001,7 @@ en la misma invocación):
 
 ```sh
 cargo test --no-default-features --test osc
-# 44 tests: n_setn/s_get/s_getn, n_fill, n_mapn, g_head/g_tail/n_order (orden vía
+# 46 tests: n_setn/s_get/s_getn, n_fill, n_mapn, g_head/g_tail/n_order (orden vía
 # /g_queryTree) + rechazo en grupo auto-ordenado, c_setn/c_getn/c_fill, s_noid,
 # b_close, d_load (+ archivo inexistente), clearSched (bundle no dispara),
 # error_mode (sigue enviando /fail), cmd ping/desconocido, u_cmd (índice/nodo)
@@ -1017,6 +1017,69 @@ python3 examples/json_client.py commands
 # /g_new 1 con tres synths; /n_setn 1001 (freq+amp); /s_getn devuelve el rango;
 # /g_head mueve 1003 a la cabeza (mira el orden en /g_queryTree); /c_setn+/c_getn
 # roundtrip; /cmd ping -> /done; /n_free 1; /clearSched -> /done
+```
+
+### Probar la configuración de arranque: canales de E/S + pools (S7)
+
+Todas las opciones del servidor se fijan **en tiempo de ejecución** (flags o
+config), no en compilación. Antes sólo los buses eran configurables; ahora
+también los cuatro pools pre-asignados y los canales de hardware:
+
+- **Canales de audio** — `--outputs <n>` (canales de salida del hardware, por
+  defecto los del dispositivo) y `--inputs <n>` (entradas, por defecto 0 = sin
+  entrada). Con `--inputs` el servidor abre además el dispositivo de entrada por
+  defecto y expone sus canales en los buses de audio `outputs..outputs+inputs`,
+  así `In` (o `In.ar`) leyendo esos índices devuelve la entrada viva (micrófono,
+  loopback, otra app enrutada por PipeWire/JACK). Sin `--inputs` esos buses son
+  silencio. El conteo se negocia con el host y puede recortarse; el valor real
+  abierto se ve en `input_channels` de `/server_info`.
+- **Pools pre-asignados** — `--max-nodes` (slab de nodos, raíz incluida),
+  `--max-buffers` (pool de buffers), `--max-graph-children` (hijos por grupo no
+  raíz), `--max-ugen-inputs` (inputs aceptados por UGen al compilar un def).
+  Cada uno dimensiona un slab/`Vec` construido **una vez** al arrancar. Dos
+  llevan techo de compilación al que el flag se recorta (estructura de ancho
+  fijo que usa el hilo de audio): buses de audio a 128 (la máscara `BusUsage` es
+  `u128`) e inputs por UGen a 32 (lista de inputs en stack en
+  `synthdef::instance`).
+- **Descubrimiento** — `/server_info` responde ahora
+  `/server_info.reply [audio_buses, control_buses, output_channels, block_size,
+  nominal_sr, actual_sr, input_channels, max_nodes, max_buffers,
+  max_graph_children, max_ugen_inputs]`. Los seis primeros son el set estable;
+  las capacidades S7 van al final (un cliente que sólo lee seis sigue andando).
+- **Precedencia** — flag > proyecto > usuario > default, con claves `[server]`
+  homónimas (`outputs`, `inputs`, `max_nodes`, `max_buffers`,
+  `max_graph_children`, `max_ugen_inputs`).
+
+Verificación por tests (el sandbox no tiene dispositivo de audio real ni red
+entre invocaciones, así que la entrada de hardware se prueba en la costura del
+engine — un ring alimenta los buses de entrada — y OSC va por puerto efímero):
+
+```sh
+cargo test --no-default-features --test audio_io
+# 3 tests: In lee lo que entra por el ring (mismo bloque, sin latencia),
+# sin entrada -> silencio, underrun -> silencio sin bloquear
+cargo test --no-default-features --test capacity
+# 7 tests: overflow de cada slab al default y a un --max-nodes/--max-graph-children
+# chico (rechazo grácil exacto en la capacidad)
+cargo test --no-default-features --test osc server_info_reports_configured_limits
+cargo test --no-default-features --test osc d_recv_rejects_over_max_ugen_inputs
+# /server_info refleja los límites configurados; /d_recv rechaza un def que
+# excede --max-ugen-inputs
+cargo test --no-default-features --test rt_safety hardware_input
+# el pop del ring dentro de process_block no aloca en el hilo de audio
+```
+
+A mano, con el servidor corriendo (arrancado con entrada y salida mono):
+
+```sh
+# Servidor con 1 salida y 1 entrada de hardware (micro/loopback):
+./target/debug/clausters --outputs 1 --inputs 1 &
+python3 examples/json_client.py serverinfo
+# Imprime los 11 campos de /server_info; si input_channels > 0, arma un synth
+# In(bus outputs) -> Out(bus 0) durante 3 s: se oye la entrada pasar directa.
+# Con --max-nodes 16 el 16.º synth (raíz incluida) ya rebota:
+./target/debug/clausters --max-nodes 16 &
+oscsend localhost 57110 /d_recv ...   # y /s_new de más de 15 -> /fail al llenarse
 ```
 
 ### Qué probar a mano (núcleo)
@@ -1370,6 +1433,7 @@ y restore + nota tocable).
 | Done actions 0-15 completas + `/n_run` (pausa no terminal) (S4) | `node` unit tests, `tests/envgen.rs`, `tests/osc.rs` (`n_run`), `tests/rt_safety.rs` (`relative_done_actions_and_n_run`) | `python3 clients/python/examples/pause_resume.py` |
 | Wavetables `/b_gen` (sine1/2/3, cheby, copy) + `Osc`/`OscN`/`VOsc`/`Shaper` (S5) | `tests/wavetable.rs`, `tests/osc.rs` (`b_gen`), `tests/rt_safety.rs` (`table_oscillators`) | `python3 examples/json_client.py bgen` |
 | Set OSC completo: `/n_setn`/`/n_fill`/`/n_mapn`, `/s_get`/`/s_getn`, `/g_head`/`/g_tail`/`/n_order`, `/c_setn`/`/c_getn`/`/c_fill`, `/b_close`, `/d_load`, `/clearSched`, `/error`, `/cmd`/`/u_cmd` (S6) | `tests/osc.rs` (S6), `tests/rt_safety.rs` (`command_set_completion`) | `python3 examples/json_client.py commands` |
+| Config de arranque: canales E/S (`--outputs`/`--inputs`, entrada viva por `In`) + pools (`--max-nodes`/`--max-buffers`/`--max-graph-children`/`--max-ugen-inputs`), `/server_info` extendido (S7) | `tests/audio_io.rs`, `tests/capacity.rs`, `tests/osc.rs` (`server_info_reports_configured_limits`, `d_recv_rejects_over_max_ugen_inputs`), `tests/rt_safety.rs` (`hardware_input_path_does_not_allocate`) | `python3 examples/json_client.py serverinfo` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

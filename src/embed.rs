@@ -173,6 +173,9 @@ impl Clausters {
             None,
             crate::server::engine::DEFAULT_AUDIO_BUSES,
             crate::server::engine::DEFAULT_CONTROL_BUSES,
+            crate::dsp::Limits::default(),
+            None,
+            0,
         )
         .map_err(|e| e.to_string())?;
         let info = ServerInfo {

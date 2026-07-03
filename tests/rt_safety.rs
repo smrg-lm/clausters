@@ -974,3 +974,43 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
         }
     });
 }
+
+/// S7: live input feeds `process_block` at block start by popping a lock-free
+/// ring into the input buses — no allocation on the audio thread. Push frames,
+/// then process under the alloc guard.
+#[test]
+fn hardware_input_path_does_not_allocate() {
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    // 1 input channel -> audio bus 2; an In->Out passthru reads it.
+    let mut tx = engine.input_ring(1, BLOCK_SIZE * 16);
+    let spec: clausters::synthdef::SynthDefSpec = serde_json::from_value(serde_json::json!({
+        "name": "passthru",
+        "ugens": [
+            {"kind": "In", "inputs": [{"const": 2.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }))
+    .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()))),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            // Refill the ring (pushing is the "input callback" side, allowed to
+            // be exercised here); the pop inside process_block must not alloc.
+            for i in 0..BLOCK_SIZE {
+                let _ = tx.push(i as f32 * 1e-4);
+            }
+            engine.process_block(&mut out);
+        }
+    });
+}

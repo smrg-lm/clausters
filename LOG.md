@@ -4190,3 +4190,73 @@ in `tests/rt_safety.rs` (`MoveNode` head/tail, `UGenCommand`, `ClearSched`).
 running server round-trips every command (`/s_getn` returns the range,
 `/g_head` reorders, `/c_getn` reads back, `/cmd ping` and `/clearSched` reply
 `/done`).
+
+## S7 — Boot-time server configuration (audio I/O channels + every pre-allocated pool) (completed 2026-07-03)
+
+**What's there:** every operational size the server used to hard-code is now
+chosen **at boot** — at runtime, never at compile time — through the same
+config-file → flag precedence as the other options. Before S7 only the buses
+were configurable; now so are the four pre-allocated pools and the hardware I/O
+channel counts, and the server finally has a real audio-input path.
+
+- **The `Limits` type (`src/dsp/mod.rs`).** A small POD (`max_nodes`,
+  `max_buffers`, `max_group_children`, `max_ugen_inputs`) with `Default` (the
+  historical 1024/1024/256/32) and `clamped()`. It threads
+  `engine_pair_full(…, limits)` → `Engine` (which sizes `NodeTree::with_capacity`
+  and `empty_pool_with`) and `EngineHandle.limits`, and into
+  `CmdTranslator::with_limits` on the network side. `NodeTree::with_capacity` and
+  `Group::with_capacity`/`empty_pool_with` size every slab (the node slab, the
+  DFS/free stacks, the done-action queue, group child lists, the buffer pool)
+  from it; the old `MAX_NODES`/`MAX_GROUP_CHILDREN`/`NUM_BUFFERS` consts remain as
+  the documented defaults. The done-queue clamps now key off `done_nodes.len()`,
+  and the buffer-index bound is `mirror.len()`, so the whole thing is one number
+  per pool with no scattered constants.
+- **UGen-input limit.** `--max-ugen-inputs` is enforced in `d_recv` after
+  `compile` (rejecting a def whose UGen exceeds it with `/fail`, the offending
+  index in the message). Its ceiling stays the compile-time `MAX_UGEN_INPUTS`
+  (32): the per-UGen input list is a stack array in `synthdef::instance`, so like
+  audio buses at 128 (the `BusUsage` `u128` mask) the runtime knob can only make
+  it *stricter*, a documented deviation from a fully dynamic size — everything
+  else (nodes, buffers, group children) is a genuinely resized heap `Vec`.
+- **Audio I/O channels + live input (`src/server/backend.rs`).** `start` gains
+  `limits`, `outputs: Option<usize>` and `inputs: usize`. Output channels are
+  negotiated with the host (requested count first, device default as fallback,
+  same shape as the sample-rate fallback). With `inputs > 0` a **second cpal
+  stream** on the default input device pushes decoded interleaved f32 frames into
+  a lock-free ring; `Engine::process_block` pops one block's worth into audio
+  buses `outputs..outputs+inputs` at block start (before any node runs), so `In`
+  reads live device input like any bus. The two streams are decoupled by the
+  ring — overrun drops on the callback side, underrun reads silence on the engine
+  side, neither blocks. An unavailable input device leaves the server
+  output-only (logged, not fatal). `Engine::attach_input`/`input_ring` are the
+  seam; the input callback re-arms flush-to-zero like the output one.
+- **Flags & config.** `src/main.rs` parses `--outputs`, `--inputs`,
+  `--max-nodes`, `--max-buffers`, `--max-graph-children`, `--max-ugen-inputs`
+  (with `[server]` keys `outputs`/`inputs`/`max_nodes`/… in
+  `clausters-core::config`, merged and defaulted the usual way); `--help` and the
+  startup line report out/in channels.
+- **Discovery.** `/server_info.reply` appends `input_channels`, `max_nodes`,
+  `max_buffers`, `max_graph_children`, `max_ugen_inputs` after the original six
+  fields (stable prefix, so older clients that read six keep working).
+
+**Docs:** `docs/architecture.md` — the M10 capacity table gains a boot-flag
+column and a paragraph on what is boot-sized vs. ceiling-capped, plus an "audio
+input thread" bullet in the thread model. `docs/schemas.md` — the engine-facts
+paragraph lists every boot flag and the extended `/server_info` reply, and a new
+"Live audio input" note. `GUIA.md` — an S7 manual-test section and a checklist
+row. `examples/json_client.py` — a `serverinfo` demo that prints the eleven
+`/server_info` fields and, if the server was booted with `--inputs`, plays an
+`In → Out` passthrough of the live input.
+
+**Verified:** `cargo test --no-default-features` green. New `tests/audio_io.rs`
+(3: `In` reads the ring same-block with no latency, no-input → silence, underrun
+→ silence without blocking); `tests/capacity.rs` extended to 7 (a small
+`--max-nodes` and a small `--max-graph-children` overflow exactly at capacity
+alongside the defaults); `tests/osc.rs` +2 (`/server_info` reports the
+configured limits; `/d_recv` rejects a def over `--max-ugen-inputs`);
+`tests/rt_safety.rs` +1 (the input ring pop inside `process_block` allocates
+nothing). `crates/clausters-core` config test covers the new keys. `cargo fmt`
+clean; no new clippy warnings. The full-binary path (a second cpal input stream)
+can't run in the sandbox — no audio device, and the fixed UDP port collides with
+a running instance — so it is exercised at the engine seam instead; the
+`serverinfo` demo is the live smoke.

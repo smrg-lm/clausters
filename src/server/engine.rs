@@ -20,8 +20,8 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::BusUsage;
-use crate::dsp::buffer::{Buffer, BufferPool, empty_pool};
-use crate::dsp::{Buses, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
+use crate::dsp::buffer::{Buffer, BufferPool, empty_pool_with};
+use crate::dsp::{Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -260,6 +260,13 @@ pub struct Engine {
     pool: WorkerPool,
     buses: Buses,
     buffers: BufferPool,
+    /// Live hardware input (S7): decoded interleaved frames arriving from the
+    /// cpal input stream through a lock-free ring. `0` channels / `None`
+    /// consumer means no input stream is open. Read at each block start into
+    /// audio buses `channels..channels + input_channels`, which `In`/`In.ar`
+    /// then read like any bus.
+    input_channels: usize,
+    input_rx: Option<Consumer<f32>>,
     /// Samples processed since start; the stream clock scheduled bundles
     /// are measured against.
     now: u64,
@@ -284,6 +291,12 @@ pub struct EngineHandle {
     pub channels: usize,
     /// Configured audio bus count (after clamping to the 128 ceiling).
     pub audio_buses: usize,
+    /// Live hardware input channels (S7); `0` when no input stream is open.
+    /// Set by the backend once it has negotiated the input device.
+    pub input_channels: usize,
+    /// Boot-time pool capacities, surfaced in `/server_info.reply` so a client
+    /// can discover the server's limits instead of hardcoding them.
+    pub limits: Limits,
     cmd_tx: Producer<Cmd>,
     garbage_rx: Consumer<Garbage>,
     events_rx: Consumer<NodeEvent>,
@@ -318,6 +331,7 @@ pub fn engine_pair_with_workers(
         None,
         DEFAULT_AUDIO_BUSES,
         DEFAULT_CONTROL_BUSES,
+        Limits::default(),
     )
 }
 
@@ -331,7 +345,9 @@ pub fn engine_pair_full(
     ipc: Option<Arc<Segment>>,
     audio_buses: usize,
     control_buses: usize,
+    limits: Limits,
 ) -> (Engine, EngineHandle) {
+    let limits = limits.clamped();
     // The mask is a `u128`, so 128 is the hard ceiling for audio buses.
     let audio_buses = audio_buses.clamp(channels.max(1), NUM_AUDIO_BUSES);
     assert!(channels > 0 && channels <= audio_buses);
@@ -357,10 +373,12 @@ pub fn engine_pair_full(
     let engine = Engine {
         sample_rate,
         channels,
-        tree: NodeTree::new(),
+        tree: NodeTree::with_capacity(limits.max_nodes),
         pool: WorkerPool::new(workers),
         buses: Buses::new(control_buses.clone(), audio_buses),
-        buffers: empty_pool(),
+        buffers: empty_pool_with(limits.max_buffers),
+        input_channels: 0,
+        input_rx: None,
         now: 0,
         sched: Vec::with_capacity(SCHED_CAPACITY),
         sample_clock: Arc::clone(&sample_clock),
@@ -375,6 +393,8 @@ pub fn engine_pair_full(
         sample_rate,
         channels,
         audio_buses,
+        input_channels: 0,
+        limits,
         cmd_tx,
         garbage_rx,
         events_rx,
@@ -394,6 +414,47 @@ impl Engine {
         self.channels
     }
 
+    /// Wires live hardware input (S7) to this engine: `channels` interleaved
+    /// input channels arrive through `rx`, filled every block into audio buses
+    /// `channels..channels + input_channels` (scsynth's convention: outputs
+    /// first, then inputs). Call once, before the engine starts processing. The
+    /// producer end lives in the cpal input callback.
+    pub fn attach_input(&mut self, channels: usize, rx: Consumer<f32>) {
+        self.input_channels = channels;
+        self.input_rx = Some(rx);
+    }
+
+    /// Creates the input ring, attaches its consumer to this engine, and hands
+    /// back the producer to push interleaved frames — the test-side counterpart
+    /// of the cpal input stream. `capacity` is in samples (channels × frames).
+    pub fn input_ring(&mut self, channels: usize, capacity: usize) -> Producer<f32> {
+        let (tx, rx) = RingBuffer::new(capacity.max(1));
+        self.attach_input(channels, rx);
+        tx
+    }
+
+    /// Drains one block's worth of interleaved input frames into the hardware
+    /// input buses. An underrun (producer behind) reads as silence for the
+    /// missing samples — never a stall. RT-safe: ring pops and bus writes only.
+    fn fill_input_buses(&mut self) {
+        let Some(rx) = &mut self.input_rx else { return };
+        let ich = self.input_channels;
+        if ich == 0 {
+            return;
+        }
+        for f in 0..BLOCK_SIZE {
+            for ch in 0..ich {
+                let s = rx.pop().unwrap_or(0.0);
+                // The output buses are `0..channels`; inputs follow them.
+                // `audio_mut` is sound here: single-threaded at block start,
+                // before the parallel stage scheduler runs.
+                unsafe {
+                    self.buses.audio_mut(self.channels + ch)[f] = s;
+                }
+            }
+        }
+    }
+
     /// Processes one block. `out` is interleaved and its length must be
     /// `BLOCK_SIZE * channels`. Runs on the audio thread: does not allocate.
     ///
@@ -406,6 +467,9 @@ impl Engine {
         self.flush_pending_garbage();
 
         self.buses.clear_audio();
+        // Live input (S7): fill the input buses after clearing, before any node
+        // runs, so `In` reads this block's captured samples.
+        self.fill_input_buses();
         let block_start = self.now;
         let block_end = block_start + BLOCK_SIZE as u64;
         let mut offset = 0usize;
