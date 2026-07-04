@@ -199,6 +199,11 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `SendTrig` | in, id, value | on each trigger of `in`, sends `/tr nodeID id value` to `/notify` clients; output is silence — see the side-effect note below |
 | `SendReply` | trig, replyID, value0, value1, … | on each trigger of `trig`, sends a custom OSC message `cmdName nodeID replyID value…` (the `cmdName` is a static `label` field, default `/reply`); output is silence |
 | `Poll` | trig, in, trigid | on each trigger of `trig`, posts `label: value` (the `in` value) to the server console (a static `label` field) and, when `trigid ≥ 0`, also sends `/tr nodeID trigid value`; passes `in` through as its output |
+| `FFT` | in, active | opens a spectral chain: windows `in` and transforms it to a spectral frame once per hop (`active > 0` runs, `≤ 0` holds); static fields `fft_size` (default 1024), `hop` (fraction, default 0.5), `wintype` (default 0 = Hann); the window is also settable live via `/u_cmd` — see the FFT-chain note below |
+| `PV_MagAbove` | chain, threshold | passes only bins whose magnitude is **above** `threshold`, zeroing the rest; `chain` is the wire from an earlier `FFT`/`PV_*` |
+| `PV_MagBelow` | chain, threshold | passes only bins whose magnitude is **below** `threshold` |
+| `PV_BrickWall` | chain, wipe | brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (low pass), `wipe < 0` the bottom (high pass), `0` passes everything (`wipe` in −1..1) |
+| `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`wintype` are inherited from the chain's `FFT` (given only on the `FFT`) |
 
 **Envelopes (`EnvGen`).** `EnvGen` plays a breakpoint envelope, modelled on SuperCollider's. Its inputs are five fixed signals followed by a flat **envelope array**: `gate, levelScale, levelBias, timeScale, doneAction`, then `initLevel, numSegments, releaseNode, loopNode`, then four values **per segment** — `target, duration, shape, curve`. The output is `envelope · levelScale + levelBias`; `timeScale` stretches every segment's duration. A rising `gate` (re)triggers from `initLevel`; while the gate is held the envelope **sustains** at `releaseNode` (an index into the levels — hold that level until release); when the gate falls it plays the segments from `releaseNode` on. `releaseNode < 0` disables the sustain, so the envelope plays straight through (a one-shot). With a `loopNode` (an index `< releaseNode`), the held phase **cycles** the segments in `[loopNode, releaseNode)` instead of holding a single level, carrying the level at the release node back as the loop's start; the release still plays out from `releaseNode` when the gate falls. `loopNode < 0` disables looping. The **shape** numbers are `0` step, `1` linear, `2` exponential (needs same-sign, non-zero levels), `3` sine, `4` welch, `5` custom-curvature (bent by the `curve` value: 0 linear, positive starts slow, negative starts fast), `6` squared, `7` cubed, `8` hold. When the last segment finishes the UGen applies its `doneAction` — scsynth's full set (0–15), with the freeing done on the audio thread through the garbage FIFO, never a blocking free:
 
@@ -228,6 +233,40 @@ The tables are open — a new operator is one more `clausters_core::builtins` en
 **Demand-rate sequences (`Demand`/`Dseq`).** A demand ugen produces values only when *pulled*. `Dseq` is a source — a stream of numbers (`repeats` passes over a value list, then exhausted); it never runs in the normal per-block order. `Demand` is the driver that pulls it: on each rising edge of its `trig` it demands the next value and holds it until the next trigger (a rising `reset` restarts the stream; the output is 0 before the first trigger, and holds the last value once the source is exhausted). Wire a trigger source (an `Impulse`, a `/n_set` trigger later) into `Demand`'s `trig`, and a `Dseq` into its `source`, to step through a sequence sample-accurately — the foundation the rest of the demand family (`Dseries`/`Dwhite`/`Duty`, later) builds on. This is a **minimal** driver today: end-of-stream is a held value, and one demand source per driver.
 
 **Side-effect UGens (`SendTrig`/`SendReply`/`Poll`).** Some UGens exist for a **side effect** — an OSC reply or a console post — not for audio on a bus, and a def may contain *only* these with **no `Out` at all** (the server requires at least one UGen, never an `Out`). All three fire on a **trigger**: a signal crossing from `≤ 0` up to `> 0`. `SendTrig` replies `/tr nodeID id value`; `SendReply` replies at a custom address (its static `label` field, default `/reply`) carrying `nodeID replyID value…` for an arbitrary value list; `Poll` posts `label: value` to the server console and, with a non-negative `trigid`, also emits a `/tr`. The replies reach every client registered with `/notify` (`SendReply`'s custom address is delivered verbatim). Mechanically the reply leaves the audio thread through a lock-free FIFO — the same discipline as the `/n_go`/`/n_end` node events — so triggering never allocates or blocks; a burst of triggers beyond the per-block buffer is dropped (best-effort, like the node events). The `id`/`replyID`/`trigid` and `value`s can be any signal (sampled at the trigger). The Python client builds them with `send_trig`/`send_reply`/`poll` and passes them as `SynthDef` roots.
+
+**Frequency-domain chain (`FFT`/`PV_*`/`IFFT`).** Spectral processing bookends a
+chain of `PV_*` (phase-vocoder) UGens between an `FFT` and an `IFFT`: `FFT`
+windows an audio input and transforms it to a complex frame once per **hop**;
+each `PV_*` mutates that frame (only on the blocks a fresh one is ready); `IFFT`
+inverse-transforms and overlap-adds it back to audio. Wire them in order —
+`FFT`'s output feeds the first `PV_*`, whose output feeds the next, and the last
+feeds `IFFT` — exactly like scsynth's chain. A def may of course also feed
+`IFFT`'s audio into filters, `Out`, etc.
+
+The chain is **not** block-rate: `FFT`/`PV_*` are control rate (`kr`, a per-block
+ready marker on the wire) and only do work on hop boundaries; `IFFT` is audio
+rate. The window size is a **static** field (`fft_size`, a power of two in
+256/512/1024/2048/4096) given **only on the `FFT`** — the compiler propagates it
+(and the window type) to the rest of the chain, so `PV_*`/`IFFT` need no size. An
+unsupported size, or a `PV_*`/`IFFT` whose first input is not a spectral chain,
+fails the def with `/fail`.
+
+Analysis and resynthesis use the same window (Hann by default), and the
+overlap-add is **window-normalized** (divided by the accumulated window energy),
+so a plain `FFT`→`IFFT` reconstructs the signal at unity gain, delayed by the
+transform latency (one window). The window type is settable live per instance
+with `/u_cmd <nodeID> <ugenIndex> window <wintype>` (`-1` rectangular, `0` Hann,
+`1` sine, `2` Welch, `3` Hamming, `4` Blackman) — the first consumer of the typed
+per-UGen command surface.
+
+**Where the frame lives (deviation from scsynth).** scsynth threads the frame
+through a client-allocated buffer whose bins the audio thread mutates in place,
+which would break Clausters' rule that a pool buffer is immutable once built. So
+the frame lives in **synth-private scratch** allocated when the synth is
+instantiated (like the `LocalIn`/`LocalOut` feedback buffer, and the moral
+equivalent of SuperCollider's `LocalBuf`), freed with the synth — **no `/b_alloc`
+is required** and the sample-buffer pool stays fully immutable. A future
+extension may add copying the frame into a buffer for inspection/sharing.
 
 **Feedback (`LocalIn`/`LocalOut`).** The graph is a DAG — UGens cannot be wired in a cycle. To feed a signal back, write it with `LocalOut` and read it with `LocalIn`: they share a per-synth buffer that persists across blocks, so the value read is what was written **one control block (64 samples) earlier**. `LocalIn` for a channel must appear *before* its `LocalOut` (the compiler enforces this; it is what makes the delay exactly one block), and the channel index must be a constant. Use any number of channels (mono each, like buses). This is **block-rate** feedback — good for feedback delays, block feedback-FM, resonant combs (a one-channel loop resonates at `sampleRate / 64`). Sample-accurate (sub-block) feedback is not possible across composed UGens; fuse the loop into one node — a recursive UGen or a Faust def (`/d_faust` with `~`).
 
@@ -505,7 +544,7 @@ Note that these control the **server's own** logs (on the server's stderr); the 
 Two extension commands carry out-of-band instructions that are neither node nor bus state. Both are **typed and discoverable** — the deliberate replacement for scsynth's untyped `/cmd`/`/u_cmd` argument blobs (a command *name* plus validated typed args, errors naming the offending field, like `compile`).
 
 - `/cmd <name> args...` — a **server-wide** command. `name` selects a handler; the built-in `ping` replies `/done /cmd ping` (it proves the surface). An unknown name replies `/fail /cmd "unknown server command …"`. New server commands register here.
-- `/u_cmd <nodeID> <ugenIndex> <name> args...` — a command addressed to **one UGen instance** inside a synth. It validates the node is a UGen synth and `ugenIndex` is in range (a Faust synth is one opaque block, not a UGen graph, so it is rejected), packs the numeric args inline (up to 8, so nothing heap-allocated crosses to the audio thread), and routes them to that UGen on the audio thread; the command name is hashed to a stable selector both sides agree on. This is the mechanism future UGens (FFT/streaming) use to receive parameters; today every UGen's default handler ignores it, so a `/u_cmd` to a valid target is accepted silently.
+- `/u_cmd <nodeID> <ugenIndex> <name> args...` — a command addressed to **one UGen instance** inside a synth. It validates the node is a UGen synth and `ugenIndex` is in range (a Faust synth is one opaque block, not a UGen graph, so it is rejected), packs the numeric args inline (up to 8, so nothing heap-allocated crosses to the audio thread), and routes them to that UGen on the audio thread; the command name is hashed to a stable selector both sides agree on. The first real consumer is the FFT chain: `/u_cmd <nodeID> <ugenIndex> window <wintype>` swaps an `FFT`/`IFFT`'s analysis/synthesis window live (see the FFT-chain note above). A UGen that does not recognize the command name ignores it, so a `/u_cmd` to a valid target is otherwise accepted silently.
 
 ## Persisting defs across restarts
 

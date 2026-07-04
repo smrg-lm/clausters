@@ -1082,6 +1082,56 @@ python3 examples/json_client.py serverinfo
 oscsend localhost 57110 /d_recv ...   # y /s_new de más de 15 -> /fail al llenarse
 ```
 
+### Probar la cadena en frecuencia: FFT / PV_* / IFFT (S8)
+
+El procesamiento espectral encierra una cadena de UGens `PV_*` (phase vocoder)
+entre un **`FFT`** (ventanea una entrada de audio y la transforma a un frame
+complejo, uno por **hop**) y un **`IFFT`** (transformada inversa + overlap-add de
+vuelta a audio). Es **frame-rate (`fr`)**: `FFT`/`PV_*` son control rate y sólo
+trabajan en los bloques con frame nuevo; `IFFT` es audio rate.
+
+- **`FFT(in, active)`** — campos estáticos `fft_size` (potencia de 2:
+  256/512/1024/2048/4096, por defecto 1024), `hop` (fracción, 0.5) y `wintype`
+  (0 Hann por defecto). El tamaño se da **sólo en el `FFT`**; el compilador lo
+  propaga (y el tipo de ventana) al resto de la cadena.
+- **`PV_MagAbove/PV_MagBelow(chain, threshold)`** — dejan pasar sólo los bins
+  con magnitud por encima / por debajo del umbral.
+- **`PV_BrickWall(chain, wipe)`** — pared de ladrillo: `wipe > 0` recorta los
+  bins altos (pasa-bajos), `wipe < 0` los bajos (pasa-altos), `0` pasa todo.
+- **`IFFT(chain)`** — resíntesis por overlap-add normalizado por la energía de
+  ventana, así un `FFT`→`IFFT` pelado reconstruye a ganancia unidad (con la
+  latencia de una ventana).
+
+**Desviación de scsynth (decidida con el usuario):** el frame **no** vive en un
+buffer del pool (que es inmutable), sino en scratch **privado del synth**,
+alocado al instanciar y liberado con él — el modelo `LocalBuf` de SuperCollider.
+**No hace falta `/b_alloc`** y el pool de muestras sigue intacto. La FFT/IFFT
+usan `microfft` (ya en `clausters-core`, `no_std`, cero-alocación, con inversa
+`ifft_*`); las **ventanas** viven en `clausters_core::window` para compartirlas
+con el cliente y mantener paridad binaria.
+
+Verificación por tests:
+
+```sh
+cargo test -p clausters-core fft            # round-trip rfft_into/irfft_into + layout
+cargo test -p clausters-core window         # Hann/Welch/... y sine^2 == hann
+cargo test --no-default-features --test spectral
+# FFT->IFFT reconstruye un tono (RMS ~0.707), PV_BrickWall/PV_MagAbove atenúan
+# una banda, el compilador rechaza tamaño no soportado / cadena mal formada,
+# y /u_cmd cambia la ventana.
+cargo test --no-default-features --test rt_safety spectral_chain
+# la transformada por hop no aloca en el hilo de audio (todo el scratch al build)
+```
+
+A mano, con el servidor corriendo (ruido pasado por un pasa-bajos espectral y
+luego cambio de ventana en vivo con `/u_cmd`):
+
+```sh
+(./target/debug/clausters & PID=$!; sleep 1.5; \
+ python3 examples/json_client.py fft; kill $PID 2>/dev/null)
+# -> /done [/d_recv]; suena ruido low-pass; /u_cmd 3020 2 window 4 (Blackman)
+```
+
 ### Probar los UGens de efecto colateral: SendTrig / SendReply / Poll (S9)
 
 Algunos UGens existen por su **efecto colateral** — un reply OSC o un post en
@@ -1480,6 +1530,7 @@ y restore + nota tocable).
 | Wavetables `/b_gen` (sine1/2/3, cheby, copy) + `Osc`/`OscN`/`VOsc`/`Shaper` (S5) | `tests/wavetable.rs`, `tests/osc.rs` (`b_gen`), `tests/rt_safety.rs` (`table_oscillators`) | `python3 examples/json_client.py bgen` |
 | Set OSC completo: `/n_setn`/`/n_fill`/`/n_mapn`, `/s_get`/`/s_getn`, `/g_head`/`/g_tail`/`/n_order`, `/c_setn`/`/c_getn`/`/c_fill`, `/b_close`, `/d_load`, `/clearSched`, `/error`, `/cmd`/`/u_cmd` (S6) | `tests/osc.rs` (S6), `tests/rt_safety.rs` (`command_set_completion`) | `python3 examples/json_client.py commands` |
 | Config de arranque: canales E/S (`--outputs`/`--inputs`, entrada viva por `In`) + pools (`--max-nodes`/`--max-buffers`/`--max-graph-children`/`--max-ugen-inputs`), `/server_info` extendido (S7) | `tests/audio_io.rs`, `tests/capacity.rs`, `tests/osc.rs` (`server_info_reports_configured_limits`, `d_recv_rejects_over_max_ugen_inputs`), `tests/rt_safety.rs` (`hardware_input_path_does_not_allocate`) | `python3 examples/json_client.py serverinfo` |
+| Cadena en frecuencia `FFT`/`PV_*`/`IFFT` (frame-rate `fr`, scratch privado del synth, ventanas+FFT/IFFT en `clausters-core`) (S8) | `tests/spectral.rs` (round-trip, `pv_brickwall_attenuates_a_high_tone`, `pv_magabove_gates...`, `compiler_validates_the_chain`, `u_cmd_swaps...`), `tests/rt_safety.rs` (`spectral_chain_does_not_allocate...`), `cargo test -p clausters-core fft window` | `python3 examples/json_client.py fft` |
 | UGens de efecto colateral sin `Out`: `SendTrig`/`SendReply`/`Poll` + relajación del builder Python (S9/C19) | `tests/osc.rs` (`send_trig_replies`, `send_reply_replies`, `poll_with_trigid`), `tests/rt_safety.rs` (`reply_ugens_do_not_allocate...`), `test_synthdef.py` (`side_effect`) | `python3 examples/json_client.py replies` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |

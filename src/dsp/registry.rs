@@ -26,6 +26,7 @@ use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sinosc::SinOsc;
+use crate::dsp::spectral::{Fft, Ifft, MagMode, PvBrickWall, PvMag};
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{Rate, UGen};
 
@@ -54,6 +55,18 @@ pub struct UGenConfig {
     /// name (the OSC address it replies with, default `/reply`) and `Poll`'s
     /// label (default `poll`). Ignored by every other kind.
     pub label: Option<String>,
+    /// Spectral chain (S8): FFT window size, a power of two (`FFT`/`IFFT`/
+    /// `PV_*`). Sizes the pre-allocated transform scratch, so it is static
+    /// config, not a signal input. The compiler propagates the `FFT`'s size to
+    /// the rest of its chain. Ignored by every other kind.
+    pub fft_size: Option<usize>,
+    /// Spectral chain (S8): hop as a fraction of the window (`FFT`), default
+    /// `0.5`. Ignored by every other kind.
+    pub hop: Option<f32>,
+    /// Spectral chain (S8): window type (`FFT`/`IFFT`), a
+    /// [`Window`](clausters_core::window::Window) `wintype` integer, default `0`
+    /// (Hann). Also settable live via `/u_cmd`. Ignored by every other kind.
+    pub wintype: Option<i32>,
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -78,6 +91,29 @@ pub enum ExecMode {
     LocalOut,
     /// Pulls its demand source each block (`Demand`); see the `dr` contract.
     DemandDriver,
+    /// Runs through [`UGen::process_spectral`] with its synth-private
+    /// [`SpectralChain`](crate::dsp::spectral::SpectralChain) (`FFT`/`PV_*`/
+    /// `IFFT`, S8). The `spectral` role field says how it uses the chain.
+    Spectral,
+}
+
+/// A spectral-chain UGen's place in the `FFT`→`PV_*`→`IFFT` pipeline (S8), used
+/// by the compiler to allocate and thread the synth-private
+/// [`SpectralChain`](crate::dsp::spectral::SpectralChain). `None` on every
+/// non-spectral kind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpectralRole {
+    /// Not a spectral UGen.
+    None,
+    /// Opens a chain: analyses audio into a fresh chain (`FFT`). Gets its own
+    /// new chain slot.
+    Source,
+    /// Transforms a chain in place (`PV_*`). Its input 0 is the upstream chain
+    /// wire; it inherits that chain's slot.
+    Filter,
+    /// Closes a chain: resynthesises audio from it (`IFFT`). Its input 0 is the
+    /// upstream chain wire; it inherits that chain's slot.
+    Sink,
 }
 
 /// The operator family of a generic op UGen (`BinaryOpUGen`/`UnaryOpUGen`):
@@ -123,6 +159,9 @@ pub struct UGenDescriptor {
     /// config (`BinaryOpUGen`/`UnaryOpUGen`). `None` for every fixed-behavior
     /// kind.
     pub op_family: Option<OpFamily>,
+    /// Spectral-chain role (S8): whether this kind opens, transforms or closes
+    /// an `FFT` chain. [`SpectralRole::None`] for every non-spectral kind.
+    pub spectral: SpectralRole,
     /// Builds an instance. Runs on the network thread (allocates); `config`
     /// carries static per-UGen parameters, ignored by most kinds.
     pub build: fn(&UGenConfig) -> Box<dyn UGen>,
@@ -139,6 +178,7 @@ impl UGenDescriptor {
 // audio-or-control rate; the exceptions widen (`ir`/`dr` scalars and the
 // demand source) or narrow to audio-only (whole-block I/O).
 const R_KR_AR: &[Rate] = &[Rate::Kr, Rate::Ar];
+const R_KR: &[Rate] = &[Rate::Kr];
 const R_AR: &[Rate] = &[Rate::Ar];
 const R_IR_KR: &[Rate] = &[Rate::Ir, Rate::Kr];
 const R_IR_KR_AR: &[Rate] = &[Rate::Ir, Rate::Kr, Rate::Ar];
@@ -156,6 +196,7 @@ const fn desc_full(
     bus: BusRole,
     needs_path: bool,
     op_family: Option<OpFamily>,
+    spectral: SpectralRole,
     build: fn(&UGenConfig) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
     UGenDescriptor {
@@ -167,6 +208,7 @@ const fn desc_full(
         bus,
         needs_path,
         op_family,
+        spectral,
         build,
     }
 }
@@ -193,6 +235,33 @@ const fn desc(
         bus,
         needs_path,
         None,
+        SpectralRole::None,
+        build,
+    )
+}
+
+/// Descriptor for a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`, S8): it runs
+/// through [`UGen::process_spectral`] on the synth-private chain. `FFT` and the
+/// `PV_*` filters carry the chain at control rate (one marker per block); `IFFT`
+/// produces audio.
+const fn desc_spectral(
+    name: &'static str,
+    arity: Arity,
+    default_rate: Rate,
+    rates: &'static [Rate],
+    role: SpectralRole,
+    build: fn(&UGenConfig) -> Box<dyn UGen>,
+) -> UGenDescriptor {
+    desc_full(
+        name,
+        arity,
+        default_rate,
+        rates,
+        ExecMode::Spectral,
+        BusRole::None,
+        false,
+        None,
+        role,
         build,
     )
 }
@@ -214,6 +283,7 @@ const fn desc_op(
         BusRole::None,
         false,
         Some(family),
+        SpectralRole::None,
         build,
     )
 }
@@ -626,6 +696,40 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |c| Box::new(Poll::new(c)),
+    ),
+    // --- frequency-domain (`fr`) chain (S8): FFT opens a synth-private
+    //     spectral chain, PV_* transform it in place, IFFT resynthesises audio.
+    //     FFT/PV carry the chain at control rate (a per-block ready marker);
+    //     IFFT produces audio. See `dsp::spectral`. ---
+    desc_spectral("FFT", Fixed(2), Kr, R_KR, SpectralRole::Source, |c| {
+        Box::new(Fft::new(c))
+    }),
+    desc_spectral("IFFT", Fixed(1), Ar, R_AR, SpectralRole::Sink, |c| {
+        Box::new(Ifft::new(c))
+    }),
+    desc_spectral(
+        "PV_MagAbove",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |_| Box::new(PvMag::new(MagMode::Above)),
+    ),
+    desc_spectral(
+        "PV_MagBelow",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |_| Box::new(PvMag::new(MagMode::Below)),
+    ),
+    desc_spectral(
+        "PV_BrickWall",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |_| Box::new(PvBrickWall),
     ),
 ];
 

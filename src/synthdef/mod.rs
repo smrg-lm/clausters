@@ -31,9 +31,11 @@ use serde::{Deserialize, Serialize};
 use clausters_core::builtins;
 
 use crate::dsp::registry::{
-    Arity, DEMAND_SOURCE_SLOT, ExecMode, OpFamily, UGenConfig, UGenDescriptor, lookup,
+    Arity, DEMAND_SOURCE_SLOT, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
 };
+use crate::dsp::spectral::resolve_fft_size;
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
+use clausters_core::fft;
 
 // ---- wire format (serde) ----
 
@@ -120,6 +122,19 @@ pub struct UGenSpec {
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// Spectral chain (S8): `FFT` window size, a supported power of two. Given
+    /// only on the `FFT`; the compiler propagates it to the rest of the chain.
+    /// Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fft_size: Option<usize>,
+    /// Spectral chain (S8): `FFT` hop as a fraction of the window (default
+    /// `0.5`). Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hop: Option<f32>,
+    /// Spectral chain (S8): `FFT`/`IFFT` window type (default `0`, Hann).
+    /// Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wintype: Option<i32>,
 }
 
 /// An input is a constant, a named control, or the output of an earlier UGen.
@@ -151,6 +166,11 @@ pub struct UGenDef {
     /// Static per-UGen parameters (e.g. `DiskIn`/`DiskOut` paths). Default for
     /// every other kind.
     pub config: UGenConfig,
+    /// Spectral-chain slot (S8): which synth-private
+    /// [`SpectralChain`](crate::dsp::spectral::SpectralChain) this UGen shares.
+    /// Assigned by the compiler — a fresh slot for each `FFT`, inherited by the
+    /// `PV_*`/`IFFT` downstream. `None` for every non-spectral UGen.
+    pub chain_slot: Option<usize>,
 }
 
 impl std::fmt::Debug for UGenDef {
@@ -178,6 +198,10 @@ pub struct SynthDef {
     /// Number of synth-private feedback channels (`LocalIn`/`LocalOut`); the
     /// instance allocates this many persistent `Block`s. 0 for most defs.
     pub num_locals: usize,
+    /// One entry per spectral chain (S8), its FFT window size; the instance
+    /// allocates a [`SpectralChain`](crate::dsp::spectral::SpectralChain) of
+    /// each size. Empty for defs with no `FFT`.
+    pub spectral_sizes: Vec<usize>,
 }
 
 impl SynthDef {
@@ -205,6 +229,9 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
     let mut num_locals = 0usize;
     let mut localin_channels = std::collections::HashSet::new();
+    // Spectral chains (S8): each `FFT` opens one; its window size is recorded
+    // here and its slot index is `spectral_sizes.len()` at that point.
+    let mut spectral_sizes: Vec<usize> = Vec::new();
 
     // Control types + lag times (S2). `lagged` collects (control index, up
     // time, optional down time) for the compile-time Lag insertion below.
@@ -311,12 +338,15 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 )
             })?);
         }
-        let config = UGenConfig {
+        let mut config = UGenConfig {
             path: u.path.clone(),
             looping: u.looping,
             format: u.format.clone(),
             op: op_index,
             label: u.label.clone(),
+            fft_size: u.fft_size,
+            hop: u.hop,
+            wintype: u.wintype,
         };
 
         let mut inputs = Vec::with_capacity(u.inputs.len());
@@ -346,6 +376,52 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                     InputRef::Wire(w as usize)
                 }
             });
+        }
+
+        // Spectral chain (S8). A `Source` (`FFT`) opens a new chain: validate
+        // its window size and record its slot. A `Filter`/`Sink` (`PV_*`/
+        // `IFFT`) must take a spectral wire as input 0 and inherits that chain's
+        // slot, window size and (if unset) window type — so the client only
+        // specifies the size once, on the `FFT`.
+        let mut chain_slot: Option<usize> = None;
+        match desc.spectral {
+            SpectralRole::None => {}
+            SpectralRole::Source => {
+                if let Some(sz) = u.fft_size
+                    && !fft::supports(sz)
+                {
+                    return Err(format!(
+                        "ugens[{i}] ({}): unsupported fft_size {sz}; use one of {:?}",
+                        u.kind,
+                        fft::SUPPORTED_SIZES
+                    ));
+                }
+                let winsize = resolve_fft_size(u.fft_size);
+                config.fft_size = Some(winsize);
+                chain_slot = Some(spectral_sizes.len());
+                spectral_sizes.push(winsize);
+            }
+            SpectralRole::Filter | SpectralRole::Sink => {
+                let InputRef::Wire(w) = inputs[0] else {
+                    return Err(format!(
+                        "ugens[{i}] ({}): input 0 must be the spectral chain from an earlier \
+                         FFT/PV_* UGen",
+                        u.kind
+                    ));
+                };
+                let up = &ugens[w];
+                let slot = up.chain_slot.ok_or_else(|| {
+                    format!(
+                        "ugens[{i}] ({}): input 0 (ugen {w}, {}) is not a spectral chain",
+                        u.kind, up.desc.name
+                    )
+                })?;
+                chain_slot = Some(slot);
+                config.fft_size = Some(spectral_sizes[slot]);
+                if config.wintype.is_none() {
+                    config.wintype = up.config.wintype;
+                }
+            }
         }
 
         // Output rate (S1): the explicit `rate` field validated against the
@@ -410,6 +486,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             inputs,
             rate,
             config,
+            chain_slot,
         });
     }
 
@@ -443,6 +520,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 inputs: lag_inputs,
                 rate: Rate::Ar,
                 config: UGenConfig::default(),
+                chain_slot: None,
             });
         }
         // Original UGens shift down by `n_lag`; their wire refs shift too, and
@@ -451,6 +529,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             desc: u.desc,
             rate: u.rate,
             config: u.config,
+            chain_slot: u.chain_slot,
             inputs: u
                 .inputs
                 .into_iter()
@@ -476,6 +555,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         constants,
         ugens,
         num_locals,
+        spectral_sizes,
     })
 }
 

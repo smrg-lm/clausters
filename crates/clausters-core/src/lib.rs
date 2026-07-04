@@ -29,9 +29,11 @@
 //! - [`config`] — the shared TOML configuration model (user + project layers,
 //!   the same schema the server and every client read), with the native path
 //!   resolution gated off `wasm32`.
-//! - [`fft`] — a forward real FFT (over `microfft`, zero-allocation), shared by
-//!   the GUI spectrogram and the server's coming `FFT`/`IFFT` UGens so the
-//!   transform lives once.
+//! - [`fft`] — forward **and** inverse real FFT (over `microfft`,
+//!   zero-allocation), shared by the GUI spectrogram and the server's
+//!   `FFT`/`IFFT` UGens so the transform lives once.
+//! - [`window`] — the smoothing windows (Hann, Welch, …) the FFT chain applies,
+//!   shared with the clients for bit-identical analysis.
 //! - [`peaks`] — the min/max peak pyramid behind any client's navigable
 //!   waveform view, with its memory-mappable cache. General client
 //!   functionality (not real-time), shared so every client builds the identical
@@ -47,3 +49,4 @@ pub mod osc;
 pub mod peaks;
 pub mod rng;
 pub mod tempoclock;
+pub mod window;

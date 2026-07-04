@@ -4261,6 +4261,69 @@ can't run in the sandbox — no audio device, and the fixed UDP port collides wi
 a running instance — so it is exercised at the engine seam instead; the
 `serverinfo` demo is the live smoke.
 
+## S8 — FFT/IFFT and the spectral (`fr`) chain (completed 2026-07-03)
+
+**What's there:** scsynth-style frequency-domain processing — an `FFT` windows an
+audio input and transforms it to a spectral frame once per **hop**, a chain of
+`PV_*` UGens mutates that frame, and an `IFFT` inverse-transforms and overlap-adds
+it back to audio. The chain is **frame-rate (`fr`)**: `FFT`/`PV_*` are control
+rate and only work on the blocks a fresh frame is ready; `IFFT` is audio rate.
+
+- **Shared transform + windows in `clausters-core`.** The user flagged that
+  `microfft` (already a core dep, `no_std`, zero-allocation) surprisingly *does*
+  do inverse FFT — its `inverse::ifft_*` (`microfft` 0.6, normalized by `1/N`);
+  the old "forward-only" note in `fft.rs` was stale. So no new dependency: `fft.rs`
+  gains `rfft_into` (forward, packing the scsynth frame layout `[dc, nyquist, re₁,
+  im₁, …]`) and `irfft_into` (rebuild the Hermitian spectrum from the half-frame,
+  run `ifft_*`, take the real part) — both zero-allocation (stack scratch). A new
+  `window` module holds the smoothing windows (Hann/Sine/Welch/Hamming/Blackman/
+  rectangular, periodic) **shared with the clients** for bit-identical analysis, as
+  the user asked. Core tests: forward↔inverse round trip, the DC/Nyquist packing,
+  window shapes (`sine² == hann`).
+- **Where the frame lives — a documented deviation from scsynth.** scsynth mutates
+  a client-allocated buffer in place on the audio thread, which would break
+  Clausters' immutable-sample-buffer invariant. Decided with the user: the frame
+  lives in **synth-private scratch** (`dsp::spectral::SpectralChain`: the packed
+  frame + a `ready` flag + the hop `advance` + winsize), allocated when the synth
+  is instantiated and freed with it — exactly the `LocalIn`/`LocalOut` `locals`
+  pattern, the moral equivalent of SuperCollider's `LocalBuf`. **No `/b_alloc` is
+  required** and the sample pool stays fully immutable.
+- **The UGens (`src/dsp/spectral.rs`).** `Fft` keeps a sliding input ring + an
+  analysis window and emits one packed frame per hop (quantized up to the
+  processing slice, as scsynth transforms at block granularity), carrying the hop
+  `advance` on the chain. `Ifft` keeps an overlap-add tail (with a parallel
+  window-energy accumulator) and an output FIFO; it inverse-transforms each fresh
+  frame, overlap-adds it **window-normalized** (÷ accumulated window energy, so a
+  bare `FFT`→`IFFT` reconstructs at unity gain with one window of latency), and
+  drains the FIFO per slice — keeping analysis/resynthesis in lockstep via the
+  `advance` regardless of the hop/block relationship. `PvMag` (`PV_MagAbove`/
+  `PV_MagBelow`) thresholds bin magnitudes; `PvBrickWall` zeroes a band. All reuse
+  pre-allocated scratch — nothing allocates on the audio thread.
+- **Wiring.** New `ExecMode::Spectral` + a `SpectralRole` (`Source`/`Filter`/
+  `Sink`) descriptor field; `UGen::process_spectral(ctx, inputs, output, chain)`
+  (default no-op). The compiler assigns a fresh chain **slot** to each `FFT`
+  (recorded in `SynthDef::spectral_sizes`) and makes each `PV_*`/`IFFT` inherit its
+  upstream's slot, window size and window type by following input 0 — so the size
+  is given only on the `FFT`. `UGenConfig`/`UGenSpec` gain `fft_size`/`hop`/
+  `wintype`. `UGenSynth` allocates one `SpectralChain` per slot and special-cases
+  `ExecMode::Spectral` (borrowing `chains[slot]` and `ugens[i]` — distinct fields —
+  mutably at once). Bad sizes and non-chain inputs fail `compile` with a pointed
+  error.
+- **`/u_cmd` — first real consumer of the S6 surface.** `FFT`/`IFFT` `command()`
+  handle the `window` selector, swapping the analysis/synthesis window live off any
+  hop (`/u_cmd <node> <ugenIndex> window <wintype>`), validating that S6's typed
+  per-UGen command mechanism works end to end.
+- **Registry rows:** `FFT`, `IFFT`, `PV_MagAbove`, `PV_MagBelow`, `PV_BrickWall`.
+- **Tests:** `tests/spectral.rs` (FFT→IFFT reconstructs a tone within tolerance;
+  `PV_BrickWall`/`PV_MagAbove` attenuate a band; compiler validation; a `/u_cmd`
+  window swap), `tests/rt_safety.rs` (`spectral_chain_does_not_allocate...`, a full
+  `SinOsc→FFT→PV_BrickWall→PV_MagAbove→IFFT→Out` scene crossing hop boundaries),
+  the core `fft`/`window` unit tests. Docs: `schemas.md` (catalog rows + the FFT
+  chain note + the synth-private-scratch deviation + the `/u_cmd window` surface),
+  `architecture.md` (the `fr` chain section + the "how to add a UGen" spectral
+  note), a `GUIA.md` S8 section + row, the `fft` demo in `examples/json_client.py`
+  (E2E-verified: `/done`, spectral low-passed noise, live window swap).
+
 ## S9 — Side-effect UGens (SendReply/SendTrig/Poll), no `Out` required (completed 2026-07-03)
 
 **What's there:** a family of UGens whose purpose is a **side effect** — an OSC

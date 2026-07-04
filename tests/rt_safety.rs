@@ -349,6 +349,53 @@ fn table_oscillators_do_not_allocate_on_the_audio_thread() {
     });
 }
 
+/// Same guardian for the frequency-domain chain (S8): the `FFT` input buffer,
+/// the `IFFT` overlap-add tail and the synth-private `SpectralChain` frame are
+/// all allocated at build time (network side); the per-hop forward and inverse
+/// transforms run in pre-allocated scratch, so the whole chain — including the
+/// blocks that cross a hop boundary and run a transform — never allocates.
+#[test]
+fn spectral_chain_does_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // SinOsc -> FFT -> PV_BrickWall -> PV_MagAbove -> IFFT -> Out. A 512-point
+    // window with a 128-sample hop, so a transform fires every other block.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "fftchain",
+            "ugens": [
+                {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
+                 "fft_size": 512, "hop": 0.25, "wintype": 0},
+                {"kind": "PV_BrickWall", "inputs": [{"ugen": 1}, {"const": 0.3}]},
+                {"kind": "PV_MagAbove", "inputs": [{"ugen": 2}, {"const": 0.0}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 3}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 4}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()))),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..100 {
+            engine.process_block(&mut out);
+        }
+    });
+}
+
 /// Same guardian for the feedback path (`LocalIn`/`LocalOut`): the per-synth
 /// `locals` buffer is allocated at build time (network side); reading and
 /// writing it each block is plain slice copies, no allocation.

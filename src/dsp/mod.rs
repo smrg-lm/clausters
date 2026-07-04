@@ -24,6 +24,7 @@ pub mod registry;
 pub mod reply;
 pub mod scalar;
 pub mod sinosc;
+pub mod spectral;
 pub mod unop;
 pub mod wavetable;
 
@@ -511,6 +512,22 @@ pub trait UGen: Send {
     /// thread — the payload is inline, so this must stay allocation-free. The
     /// default ignores every command (an unknown selector is a no-op).
     fn command(&mut self, _cmd: &UGenCmd) {}
+
+    /// Runs a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`, S8) with access to its
+    /// synth-private [`SpectralChain`](spectral::SpectralChain) — state the plain
+    /// `process` path cannot reach, since the chain is shared across UGens. The
+    /// synth calls this (instead of `process`) for [`ExecMode::Spectral`]
+    /// UGens, resolving the compile-assigned chain slot. Runs on the audio
+    /// thread: the transform reuses pre-allocated scratch and never allocates.
+    /// Non-spectral UGens never see this.
+    fn process_spectral(
+        &mut self,
+        _ctx: &mut ProcessCtx,
+        _inputs: &[&[f32]],
+        _output: &mut [f32],
+        _chain: &mut spectral::SpectralChain,
+    ) {
+    }
 
     /// Whether this is a side-effect UGen (`SendReply`/`SendTrig`/`Poll`, S9)
     /// that emits reply messages instead of (or besides) audio. The synth uses

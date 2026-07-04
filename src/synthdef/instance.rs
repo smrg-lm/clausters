@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::dsp::registry::{DEMAND_SOURCE_SLOT, ExecMode};
+use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
     Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, ReplyMsg, UGen, at,
 };
@@ -23,6 +24,11 @@ pub struct UGenSynth {
     /// these **persist across blocks** — that persistence is the one-block
     /// feedback delay. Empty for defs without feedback.
     locals: Vec<Block>,
+    /// Synth-private spectral frames (S8), one per `FFT` chain, shared by that
+    /// chain's `FFT`/`PV_*`/`IFFT` UGens through their compile-assigned slot.
+    /// Persistent across blocks and allocated once here (network thread), never
+    /// on the audio thread. Empty for defs with no `FFT`.
+    chains: Vec<SpectralChain>,
     /// False until the first `process` runs. The `ir` init pass (S1) runs each
     /// `ir` UGen exactly once, on that first block; its wire then holds the
     /// value (wires persist across blocks) and the UGen is skipped thereafter.
@@ -44,6 +50,11 @@ impl UGenSynth {
             .collect();
         let wires = vec![Block::SILENCE; ugens.len()];
         let locals = vec![Block::SILENCE; def.num_locals];
+        let chains = def
+            .spectral_sizes
+            .iter()
+            .map(|&sz| SpectralChain::new(sz))
+            .collect();
         let has_reply_ugens = ugens.iter().any(|u| u.is_reply());
         Self {
             def,
@@ -52,6 +63,7 @@ impl UGenSynth {
             ugens,
             wires,
             locals,
+            chains,
             initialized: false,
             has_reply_ugens,
         }
@@ -174,6 +186,21 @@ impl SynthNode for UGenSynth {
                         }
                     };
                     driver.drive(trig, reset, output, &mut step);
+                }
+                // Spectral chain (S8): the FFT/PV_*/IFFT UGen runs with its
+                // synth-private `SpectralChain`, resolved by the compile-
+                // assigned slot. `chains` is a distinct field from `ugens`, so
+                // both can be borrowed mutably at once.
+                ExecMode::Spectral => {
+                    let slot = self.def.ugens[i]
+                        .chain_slot
+                        .expect("compile assigns a chain slot to every spectral UGen");
+                    self.ugens[i].process_spectral(
+                        ctx,
+                        &inputs[..refs.len()],
+                        output,
+                        &mut self.chains[slot],
+                    );
                 }
                 ExecMode::Normal => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
             }

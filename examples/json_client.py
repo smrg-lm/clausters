@@ -613,6 +613,36 @@ def demo_demand(client: Client):
     client.send("/n_free", 3013)
 
 
+def demo_fft(client: Client):
+    """S8 frequency-domain chain: FFT -> PV_* -> IFFT. A noisy source is
+    windowed and transformed by `FFT`, a `PV_BrickWall` low-passes it in the
+    spectral domain (zeroing the top bins), and `IFFT` resynthesises audio by
+    overlap-add. No buffer is allocated — the spectral frame is synth-private
+    scratch (SuperCollider's `LocalBuf` model). Only the `FFT` names the window
+    size; the compiler propagates it down the chain. Then `/u_cmd` swaps the
+    analysis window live."""
+    d = SynthDefBuilder("fftbrick")
+    src = d.add("Mul", d.add("WhiteNoise"), 0.4)
+    # fft_size/hop/wintype are static fields, given only on the FFT.
+    chain = d.add("FFT", src, 1.0, fft_size=1024, hop=0.5, wintype=0)
+    chain = d.add("PV_BrickWall", chain, 0.7)  # low pass: keep the low 30% bins
+    audio = d.add("IFFT", chain)
+    d.add("Out", 0, audio)
+    d.add("Out", 1, audio)
+
+    print("fft demo: /d_recv fftbrick (WhiteNoise -> FFT -> PV_BrickWall -> IFFT)")
+    client.send("/d_recv", d.blob())
+    client.reply()
+    print("  /s_new fftbrick 3020 — spectrally low-passed noise")
+    client.send("/s_new", "fftbrick", 3020, 1, 0)
+    time.sleep(1.5)
+    # /u_cmd <node> <ugenIndex> window <wintype>: ugen index 2 is the FFT.
+    print("  /u_cmd 3020 2 window 4 — switch the FFT to a Blackman window")
+    client.send("/u_cmd", 3020, 2, "window", 4.0)
+    time.sleep(1.5)
+    client.send("/n_free", 3020)
+
+
 def score_bundle(seconds: float, *packets: bytes) -> bytes:
     """An OSC bundle for an NRT score: the timetag counts seconds from the
     start of the render, not wall-clock time."""
@@ -786,6 +816,8 @@ def main():
             demo_feedback(client)
         elif demo == "demand":
             demo_demand(client)
+        elif demo == "fft":
+            demo_fft(client)
         elif demo == "signal":
             demo_signal(client)
         elif demo == "commands":
@@ -801,7 +833,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, commands, replies, serverinfo, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, fft, signal, commands, replies, serverinfo, score, quit)"
             )
 
 
