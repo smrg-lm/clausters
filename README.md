@@ -1,26 +1,87 @@
 # Clausters
 
-A **real-time audio synthesis server** in the style of SuperCollider's `scsynth`, written in Rust — designed and directed, a.k.a. prompted, by Lucas Samaruga and implemented by Claude as a proof of concept. One process opens the audio device, keeps a tree of synths and groups, and receives OSC commands to make sound — with a hard real-time audio thread (no allocation, locks or I/O) and sample-accurate scheduling.
+Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a
+real-time audio synthesis server controlled over OSC, with the same node-tree
+model and command set. Its main addition over scsynth is the **FaustDef** — a
+synth definition written in [Faust](https://faust.grame.fr/) and JIT-compiled
+by the server with LLVM — as an alternative to SuperCollider's UGen graphs,
+which Clausters also supports through its own JSON SynthDef format.
 
-It is conceptually compatible with scsynth (same node-tree model and `/s_new`, `/n_set`, `/c_set`, `/b_*` commands) but uses its own def formats instead of the binary `.scsyndef`.
+The project is a workspace with several coordinated parts:
+
+- **`clausters-server`** — the Rust server (this crate), also usable as a
+  library and embeddable in-process through a C ABI.
+- **`crates/`** — the shared native core (`clausters-core`/`clausters-ffi`:
+  numeric builtins, seeded noise and clock math compiled once for server and
+  clients) and `clausters-midi` (Standard MIDI File / MIDI 2.0 clip writing and
+  live virtual-port output).
+- **[`clients/python`](clients/python/README.md)** — the reference client, a
+  selective port of SuperCollider's class library covering both def formats:
+  patterns and events, routines and clocks, responders, live and offline
+  rendering, pip wheels.
+- **`clients/gui`** — a GUI host driven by the same OSC protocol (`GuiDef`
+  windows, meters and scopes over shared memory, node-tree views, canvas and
+  shaders), native and in the browser (WebGPU with a WebGL2 fallback).
 
 ## Features
 
-- **Real-time safe** audio thread; lock-free command/garbage FIFOs.
-- **Two def formats** loaded hot over OSC: a flat **SynthDef JSON** UGen graph (`/d_recv`) and **Faust** defs JIT-compiled with LLVM (`/d_faust`, optional `faust` feature).
-- **Sample-accurate scheduling**: NTP-timetagged bundles split the block at the exact frame, plus a direct **sample clock** (`/clock`, `/sched`).
-- **Offline (NRT) rendering** to WAV, bit-identical to a live take.
-- **Auto-sorted groups** (`/g_sortMode`) and **parallel groups** (`/g_parallel` + `--workers`) from bus-connection analysis.
-- **Control/bus mapping** (`/n_map`, `/n_mapa`) for live-driven parameters.
-- **Standard MIDI control**: `--midi` opens a virtual ALSA input port; bind a channel to an instrument def (`/midi_bind`, `/midi_map`) so note on/off, velocity, aftertouch, pitch-bend and CC drive nodes and their `f32` controls — the same system MIDI any controller or DAW speaks. The Python client also **exports** an event pattern to a Standard MIDI File (`.mid`) or a 16-bit-velocity **MIDI 2.0 clip**, and plays it **live** out a virtual OS MIDI port — all via the `clausters-midi` crate.
-- **Local transports**: shared memory (`--shm`) and an in-process **C ABI**.
+**Engine**
 
-> **Status — proof of concept.** All code was generated with Claude. The automated test suite passes and covers a fair amount, but only a small portion has been manually reviewed or exercised in real use, and the implementation has **not** been independently audited. Treat it as unaudited: review and verify it before relying on it for anything that matters.
+- **Hard real-time audio thread** — no allocation, locks or I/O in the audio
+  callback; commands arrive pre-built over lock-free FIFOs and freed memory
+  leaves through a garbage FIFO. Guarded by `assert_no_alloc` tests.
+- **Sample-accurate scheduling** — NTP-timetagged bundles split the audio block
+  at the event's exact frame, plus a direct **sample clock** (`/clock`,
+  `/sched`) as a drift-free client timebase.
+- **Offline (NRT) rendering** to WAV, bit-identical to a live take, no audio
+  device needed.
+- **Auto-sorted groups** (`/g_sortMode`) — execution order inferred from the
+  buses each def reads and writes — and **parallel groups** (`/g_parallel` +
+  `--workers`), bit-identical to the sequential result.
+- Flush-to-zero denormal handling on every processing thread.
+
+**Synthesis**
+
+- **Two def formats, loaded hot over OSC**: **FaustDefs** (Faust source or a
+  JSON box tree, JIT-compiled with the LLVM backend; `/d_faust`, optional
+  `faust` feature) and a flat **SynthDef JSON** UGen graph (`/d_recv`).
+- A growing UGen library with **first-class calculation rates** (`ar`/`kr`/
+  `ir`), typed controls (triggers, lag/varlag, scalars), operator UGens,
+  **envelopes with the full scsynth done-action set**, **wavetable oscillators**
+  with server-side table generation (`/b_gen`), and a **spectral chain**
+  (FFT/IFFT and `PV_*` phase-vocoder filters).
+- **Buffers**: multi-format sound-file reading, buffer-info UGens, and
+  streaming disk I/O (`DiskIn`/`DiskOut`).
+- **Reply UGens** (`SendTrig`/`SendReply`/`Poll`) for data flowing back to
+  clients, RT-safely.
+
+**Control**
+
+- The **complete scsynth OSC command set** (node tree, buses, buffers,
+  notifications), conceptually compatible with existing scsynth clients except
+  for the def formats.
+- **Control/bus mapping** (`/n_map`, `/n_mapa`) so any control or Faust
+  parameter tracks a bus, live, every block.
+- **Standard MIDI**: `--midi` opens a virtual input port; bind channels to defs
+  (`/midi_bind`, `/midi_map`) so notes, velocity, aftertouch, pitch-bend and CC
+  drive nodes — including a **standalone mode** where bindings persist and
+  reload at boot, no client process required.
+- **Configuration**: boot-time sizing of audio I/O and every pre-allocated pool
+  (buses, nodes, buffers) via flags or a shared **TOML config file** (user and
+  per-project layers), and **def persistence** across runs (`--data-dir`).
+
+**Transports**
+
+- OSC over **UDP** (scsynth-compatible), **TCP** (`--tcp`) and **WebSocket**
+  (`--ws`, reachable from a browser page).
+- Local transports: **shared memory** (`--shm`, with the sample clock and
+  control buses readable in mapped memory) and an in-process **C ABI** for
+  embedding the server in another program.
 
 ## Quickstart
 
 ```sh
-# Build and run the server (OSC on UDP 57110, silent until you create a synth)
+# Build and run the server (silent until you create a synth)
 cargo run --release
 
 # In another terminal: play the built-in sine, retune it, free it
@@ -38,62 +99,40 @@ python3 examples/json_client.py score    # writes /tmp/clausters_score.osc
 cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 ```
 
-## Feature flags
-
-| feature | default | adds |
-|---|---|---|
-| `realtime` | yes | the cpal audio backend (the live server) |
-| `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
-| `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
-| `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing; avoids the ALSA-seq timestamp panic) — needs `libjack-jackd2-dev`, run under `pw-jack` |
-| `faust` | no | libfaust embedding (Box API + LLVM JIT) — needs libfaust built with the LLVM backend |
-| `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
-
-The target systems always ship PipeWire, so `pipewire` is on by default and the
-default binary hard-links `libpipewire`. For a build that runs without PipeWire,
-drop it: `cargo build --no-default-features --features realtime,midi` (plain
-ALSA). The engine core still builds and tests with no feature at all.
-
-### Build dependencies (Ubuntu 26.04)
+Or drive everything from Python (with the server from above still running):
 
 ```sh
-# default build (PipeWire audio + ALSA-seq MIDI)
-sudo apt install build-essential libasound2-dev libpipewire-0.3-dev clang
-# optional features:
-sudo apt install libjack-jackd2-dev          # --features midi-jack
-# plain-ALSA build (no PipeWire libs): cargo build --no-default-features --features realtime,midi
+pip install ./clients/python
+python clients/python/examples/live_udp.py
 ```
 
-Audio uses the native PipeWire host directly. For PipeWire-native MIDI routing,
-the `midi-jack` build links against jackd2's `libjack`; run the server under
-`pw-jack` so `libjack` resolves to PipeWire, which registers a JACK MIDI input
-port (`clausters:input_0`) you can wire in qpwgraph:
+## Building, testing and documentation
+
+**[`BUILD.md`](BUILD.md)** collects the full development setup: system build
+dependencies, the feature-flag matrix (PipeWire/ALSA/JACK audio, MIDI, Faust,
+embedding), how to run the test suites, and how to build both documentation
+books.
+
+The short version (Ubuntu):
 
 ```sh
-cargo build --features midi-jack
-pw-jack ./target/debug/clausters --midi
+sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev clang
+cargo build --release
+cargo test
 ```
-
-(Or activate PipeWire's JACK system-wide via its `ld.so.conf.d` drop-in — see
-the `pipewire-jack` package docs — and drop the `pw-jack` prefix.) The default
-`--midi` build keeps the ALSA-seq port, routable with `aconnect`.
 
 ## Documentation
 
-Two mdBooks, one per platform (both Markdown, ReadTheDocs-deployable). To build
-the **server / workspace book** — full guide, OSC reference and architecture,
-the mdBook in [`docs/`](docs/):
+Two mdBooks, one per platform (both Markdown, ReadTheDocs-deployable):
 
-```sh
-cargo install mdbook        # once (or use a distro / prebuilt mdbook)
-mdbook build                # render to book/ (git-ignored)
-mdbook serve --open         # live-reload preview at http://localhost:3000
-```
-
-Start reading at [`docs/introduction.md`](docs/introduction.md).
-
-- **Crate API reference** — `cargo doc --open` (the crate is usable as a library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
-- **Python client book** — the client has its own mdBook (guide + an API reference generated from docstrings); build steps in [`clients/python/README.md`](clients/python/README.md#documentation).
+- **Server / workspace book** — full guide, OSC reference and architecture:
+  the mdBook in [`docs/`](docs/), starting at
+  [`docs/introduction.md`](docs/introduction.md). Build with `mdbook build`.
+- **Python client book** — the client's guide plus an API reference generated
+  from docstrings: see
+  [`clients/python/README.md`](clients/python/README.md#documentation).
+- **Crate API reference** — `cargo doc --open` (the crate is usable as a
+  library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
 - **Contributing / dev setup** — [`docs/contributing.md`](docs/contributing.md).
 
 ## License

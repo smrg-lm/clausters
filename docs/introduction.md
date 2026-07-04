@@ -1,8 +1,8 @@
 # Clausters
 
-Clausters is a **real-time audio synthesis server** in the style of SuperCollider's `scsynth`, written in Rust and controlled over **OSC** (UDP, default port `127.0.0.1:57110`). A single process opens the audio device, keeps a tree of nodes (synths and groups), and receives OSC commands to create and destroy synths, set parameters, manage buses and buffers — all with sample-accurate scheduling.
+Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a real-time audio synthesis server controlled over **OSC** (UDP, default port `127.0.0.1:57110`). A single process opens the audio device, keeps a tree of nodes (synths and groups), and receives OSC commands to create and destroy synths, set parameters, manage buses and buffers — all with sample-accurate scheduling.
 
-It is **conceptually compatible** with scsynth (same node-tree model, the same `/s_new`, `/n_set`, `/c_set`, `/b_*` commands) but uses its own def formats instead of the binary `.scsyndef`.
+It is **conceptually compatible** with scsynth (same node-tree model, the same `/s_new`, `/n_set`, `/c_set`, `/b_*` commands) but uses its own def formats instead of the binary `.scsyndef`. Its main addition over scsynth is the **FaustDef** — a synth definition written in [Faust](https://faust.grame.fr/) and JIT-compiled by the server — as an alternative to SuperCollider's UGen graphs, which Clausters also supports through its own JSON SynthDef format.
 
 ## Highlights
 
@@ -13,7 +13,8 @@ It is **conceptually compatible** with scsynth (same node-tree model, the same `
 - **Auto-sorted groups** (`/g_sortMode`): execution order inferred from the buses each def reads and writes — no manual `/n_before` bookkeeping.
 - **Parallel groups** (`/g_parallel` + `--workers N`): independent children run on several cores, **bit-identical** to the sequential result.
 - **Control/bus mapping** (`/n_map`, `/n_mapa`): any control or Faust parameter can track a control or audio bus, live, every block.
-- **Local transports**: shared memory (`--shm`) and an in-process **C ABI** for embedding, with the sample clock and control buses readable in mapped memory.
+- **Several transports**: OSC over UDP, **TCP** (`--tcp`) and **WebSocket** (`--ws`), plus local shared memory (`--shm`) and an in-process **C ABI** for embedding, with the sample clock and control buses readable in mapped memory.
+- **Configuration & persistence**: a shared **TOML config file** (user and per-project layers) behind every boot flag, and defs persisted and reloaded across runs (`--data-dir`).
 
 ## How to read this book
 
@@ -24,8 +25,6 @@ It is **conceptually compatible** with scsynth (same node-tree model, the same `
 
 The API reference for the library crate is the **rustdoc**: `cargo doc --open`.
 
-## Status & license
+## License
 
-The implementation plan (`PLAN.md`, in Spanish) is complete through its core and Faust fork. Licensed **GPL-3.0-or-later** (the embedded libfaust is GPLv2+).
-
-Authored by Lucas Samaruga, generated with Claude. It is a proof of concept — treat the implementation as unaudited and verify it before relying on it.
+**GPL-3.0-or-later** (the embedded libfaust is GPLv2+).

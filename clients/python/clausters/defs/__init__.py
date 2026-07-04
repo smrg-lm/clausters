@@ -1,6 +1,7 @@
-"""Definitions and server resources (port of ``sc3/synth``, Faust-first).
+"""Definitions and server resources (port of ``sc3/synth``).
 
-The Faust-first definition layer and the server resources:
+The definition layer — both def formats, FaustDefs and UGen-graph SynthDefs —
+and the server resources:
 
 - `signals` — lowercase callables mapping Faust's Signal
   API; compose them (operators or functions) into the JSON signal tree.

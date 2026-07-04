@@ -32,8 +32,9 @@ server **by construction** for the operations the server computes natively.
 
 ## The Python client
 
-`clients/python/` is the reference client, a Faust-first port of
-SuperCollider's class library (sc3). It is **pure Python at runtime**: it
+`clients/python/` is the reference client, a selective port of
+SuperCollider's class library (sc3) covering both def formats (FaustDefs and
+UGen-graph SynthDefs). It is **pure Python at runtime**: it
 reaches the core through `ctypes` over `libclausters_ffi`, and speaks ordinary
 OSC bytes to the server (UDP, TCP, or shm/embed via the transport module). It
 mirrors the native contract in three layers — `base` (server-agnostic timing
@@ -93,7 +94,7 @@ same C ABI and the same OSC.
 | Python client (`base`/`seq`/`defs`, incl. UGen `SynthDef`) | done |
 | Cross-language docs + sequencing example | done |
 | Python wheels packaging | done |
-| MIDI interfaces in the Python client | planned |
-| Client-side OSC/MIDI responders | planned |
+| MIDI interfaces in the Python client (`MidiServer`, SMF / MIDI 2.0 clip export, live port) | done |
+| Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
 | JavaScript client + npm | planned |
 | `third_party` Faust build + Faust-enabled wheels | planned |

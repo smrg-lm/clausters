@@ -17,7 +17,7 @@ The core **must always build and test without any feature and without libfaust i
 
 ```sh
 # default build (PipeWire audio + ALSA-seq MIDI)
-sudo apt install build-essential libasound2-dev libpipewire-0.3-dev clang
+sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev clang
 # only for the matching optional feature:
 sudo apt install libjack-jackd2-dev          # --features midi-jack
 # plain-ALSA build (no PipeWire libs):
