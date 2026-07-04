@@ -65,7 +65,7 @@ All incoming OSC bytes decode through `osc::decode_packet`, the single entry poi
 
 ## Project skills
 
-Domain knowledge lives in `.claude/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), and `faust-embedding` (the libfaust C API and lifecycles). Process skills: `clausters-python` (idiomatic client use) and `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs).
+Domain knowledge lives in `.claude/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), `faust-embedding` (the libfaust C API and lifecycles), and `faust-language` (writing Faust and transposing it to the Signal/Box APIs — sample-level feedback, physical modeling). Process skills: `clausters-python` (idiomatic client use), `clausters-gui` (the GUI host and GuiDefs) and `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs).
 
 ## Editing this book
 
