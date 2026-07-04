@@ -3,6 +3,8 @@
 //! a GraphDef expands into existing primitives (group + member synths +
 //! `/n_map`), so we assert on the mirrored node tree and the resolved surface.
 
+#![cfg(feature = "synth")]
+
 use clausters::dsp::NUM_AUDIO_BUSES;
 use clausters::osc::graphdef::GRAPH_AUDIO_BUS_RESERVED;
 use clausters::osc::translate::CmdTranslator;

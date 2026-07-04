@@ -1,6 +1,8 @@
 //! M14: the IPC segment — ring transport, data plane, versioning, and the
 //! embedded C ABI render (with `--features embed`).
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;

@@ -5,6 +5,8 @@
 //! only that synth (unchanged). Translator-level: feed OSC, inspect the
 //! mirrored node state and the emitted commands.
 
+#![cfg(feature = "synth")]
+
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::engine::Cmd;

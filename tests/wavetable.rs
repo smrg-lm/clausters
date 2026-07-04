@@ -1,6 +1,8 @@
 //! S5 tests: the wavetable format, the `/b_gen` generators (`sine1`/`cheby`),
 //! and the table oscillators (`Osc`, `Shaper`) reading them through the engine.
 
+#![cfg(feature = "synth")]
+
 use std::f32::consts::TAU;
 use std::sync::Arc;
 

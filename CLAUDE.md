@@ -88,7 +88,8 @@ Before generating any commit that touches Rust, run `cargo fmt` (or at least
 `cargo fmt --check`) and include the formatting fixes — the tree must be
 `cargo fmt --check`-clean. Do not hand-format Rust against rustfmt; rustfmt is
 the source of truth. (Likewise keep the build green: the core must compile and
-test without the `faust`/`embed` features.)
+test with any combination of the def-family features `synth`/`faust` — both,
+either alone, or neither — and without the `embed` feature.)
 
 ## E2E testing rule
 
@@ -108,6 +109,14 @@ All incoming OSC bytes — UDP datagrams and IPC ring contents alike — decode
 through `osc::decode_packet`, the single entry point (a thin wrapper over
 rosc's `decoder::decode_udp`). Keep that one door so decoding and any future
 hardening stay in one place.
+
+## The def-family features: `synth` (default) and `faust` (optional)
+
+The two def families are independent Cargo features: `synth` (SynthDef/UGen
+graphs, `/d_recv`, on by default) and `faust` (FaustDefs, `/d_faust`). They
+combine freely; a custom build can ship either alone (see `BUILD.md` for the
+matrix). The node tree only sees `dyn SynthNode`, which keeps the families
+symmetrical — feature-gate new work accordingly.
 
 ## Optional `faust` feature
 

@@ -5,6 +5,8 @@
 //! Regenerate the references with `cargo run --example render_golden` after
 //! an intended change, and **listen to them** before committing.
 
+#![cfg(feature = "synth")]
+
 #[path = "common/scenes.rs"]
 mod scenes;
 

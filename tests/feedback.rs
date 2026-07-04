@@ -2,6 +2,8 @@
 //! one control block (64 samples) of delay. DC signals make the delay visible
 //! to the sample; the engine renders offline, no audio device.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};

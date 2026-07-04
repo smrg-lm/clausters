@@ -3,6 +3,8 @@
 //! core matches the server by construction. These tests drive the real
 //! `UGen::process` path and compare it to direct core calls.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::binop::{BinOp, BinaryOp};

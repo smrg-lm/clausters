@@ -3,6 +3,8 @@
 //! subtrees. If someone sneaks a `Vec::push` or a `format!` into the audio
 //! path, this fails.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use assert_no_alloc::{AllocDisabler, assert_no_alloc};

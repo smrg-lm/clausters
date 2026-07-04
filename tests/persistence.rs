@@ -4,6 +4,8 @@
 //! covers the bitcode cache and the end-to-end reload across two server
 //! instances on one data directory.
 
+#![cfg(feature = "synth")]
+
 use std::path::PathBuf;
 
 use clausters::server::defstore::{DefStore, resolve_data_dir, sanitize_name};

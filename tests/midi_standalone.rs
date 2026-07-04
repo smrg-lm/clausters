@@ -6,6 +6,8 @@
 //! `/g_queryTree` (a restored GraphDef binding and a boot graph appear as
 //! groups in the node tree).
 
+#![cfg(feature = "synth")]
+
 use std::net::{SocketAddr, UdpSocket};
 use std::path::Path;
 use std::time::Duration;

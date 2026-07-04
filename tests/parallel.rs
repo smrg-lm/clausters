@@ -3,6 +3,8 @@
 //! execution — stages only batch children with pairwise disjoint bus
 //! usage, so worker interleaving can never change a sample.
 
+#![cfg(feature = "synth")]
+
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::engine::{BLOCK_SIZE, Engine, EngineHandle, engine_pair_with_workers};

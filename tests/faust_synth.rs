@@ -319,6 +319,7 @@ fn input_buses_feed_faust_synths() {
     );
 }
 
+#[cfg(feature = "synth")]
 #[test]
 fn ugen_and_faust_synths_mix_on_the_same_bus() {
     use clausters::synthdef::instance::UGenSynth;

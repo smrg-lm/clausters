@@ -2,6 +2,8 @@
 //! round-trips, no audio device needed. The engine is ticked manually from
 //! the test (manual clock), never in real time.
 
+#![cfg(feature = "synth")]
+
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::thread::JoinHandle;

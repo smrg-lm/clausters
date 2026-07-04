@@ -44,7 +44,10 @@ The project is a workspace with several coordinated parts:
 
 - **Two def formats, loaded hot over OSC**: **FaustDefs** (Faust source or a
   JSON box tree, JIT-compiled with the LLVM backend; `/d_faust`, optional
-  `faust` feature) and a flat **SynthDef JSON** UGen graph (`/d_recv`).
+  `faust` feature) and a flat **SynthDef JSON** UGen graph (`/d_recv`, default
+  `synth` feature). The two families are independent Cargo features: enable
+  both, or build a single-family server for a custom deployment (see
+  [`BUILD.md`](BUILD.md)).
 - A growing UGen library with **first-class calculation rates** (`ar`/`kr`/
   `ir`), typed controls (triggers, lag/varlag, scalars), operator UGens,
   **envelopes with the full scsynth done-action set**, **wavetable oscillators**
@@ -109,9 +112,9 @@ python clients/python/examples/live_udp.py
 ## Building, testing and documentation
 
 **[`BUILD.md`](BUILD.md)** collects the full development setup: system build
-dependencies, the feature-flag matrix (PipeWire/ALSA/JACK audio, MIDI, Faust,
-embedding), how to run the test suites, and how to build both documentation
-books.
+dependencies, the feature-flag matrix (the `synth`/`faust` def families,
+PipeWire/ALSA/JACK audio, MIDI, embedding), how to run the test suites, and
+how to build both documentation books.
 
 The short version (Ubuntu):
 

@@ -2,6 +2,8 @@
 //! Engine-level, no audio device: commands go in through the FIFO, audio comes
 //! out of `process_block`, and a zero-crossing estimate does the listening.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};

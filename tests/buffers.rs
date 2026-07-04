@@ -2,6 +2,8 @@
 //! zero / free, in submission order) and the `PlayBuf`/`BufRd` UGens, plus
 //! the `/b_*` OSC round trip with a manually ticked engine.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 use std::time::Duration;
 

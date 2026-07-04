@@ -32,8 +32,10 @@ use std::collections::HashMap;
 
 use crate::dsp::NUM_AUDIO_BUSES;
 use crate::node::{AddAction, Place, ROOT_NODE_ID};
+#[cfg(feature = "synth")]
 use crate::synthdef::{InputRef, SynthDef};
 
+#[cfg(feature = "synth")]
 use crate::dsp::registry::BusRole;
 #[cfg(feature = "faust")]
 use crate::faust::synth::FaustDef;
@@ -45,6 +47,7 @@ pub use crate::dsp::BusUsage;
 /// Analyzes a UGen def against a node's current control values. Returns the
 /// usage plus the control indices that act as bus indexes (a `/n_set` on one
 /// of those must re-run the analysis).
+#[cfg(feature = "synth")]
 pub fn ugen_usage(def: &SynthDef, controls: &[f32]) -> (BusUsage, Vec<u32>) {
     let mut usage = BusUsage::default();
     let mut bus_controls = Vec::new();

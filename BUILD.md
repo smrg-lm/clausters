@@ -36,20 +36,35 @@ Feature matrix (see `Cargo.toml`):
 
 | feature | default | adds |
 |---|---|---|
+| `synth` | yes | the **SynthDef family**: the UGen library, the def compiler (`/d_recv`) and `UGenSynth` |
 | `realtime` | yes | the cpal audio backend (the live server) |
 | `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
 | `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing) — needs `libjack-jackd2-dev`, run under `pw-jack` |
-| `faust` | no | libfaust embedding (Box API + LLVM JIT) — needs libfaust built with the LLVM backend |
+| `faust` | no | the **FaustDef family**: libfaust embedding (Box API + LLVM JIT, `/d_faust`) — needs libfaust built with the LLVM backend |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
+
+`synth` and `faust` are the two **def families**. They are independent and
+combinable — enable both for a server that mixes UGen and Faust synths on the
+same node tree, or ship a single-family binary for a custom build. With
+neither, the engine core (groups, buses, buffers, transports) still builds and
+runs, but there are no defs to instantiate: every `/s_new` fails, `/d_recv`
+and `/d_faust` reply `/fail` naming the missing feature, and persisted defs of
+the absent family are skipped with one warning at boot.
 
 Common variants:
 
 ```sh
 # plain ALSA, no PipeWire libs linked
-cargo build --no-default-features --features realtime,midi
+cargo build --no-default-features --features synth,realtime,midi
 
-# engine core only (no audio device, still runs NRT renders and all core tests)
+# both def families: UGen graphs (/d_recv) + Faust JIT (/d_faust)
+FAUST_PREFIX=~/.local cargo build --features faust
+
+# Faust-only custom build (no UGen library, smaller binary)
+FAUST_PREFIX=~/.local cargo build --no-default-features --features faust,realtime,midi,pipewire
+
+# engine core only (no audio device, no def family; NRT and core tests still run)
 cargo build --no-default-features
 
 # the embeddable cdylib used by the Python client
@@ -121,7 +136,10 @@ cargo fmt --check                # formatting (rustfmt is the source of truth)
 
 The core **must always build and test without any feature and without libfaust
 installed** (`cargo test --no-default-features` is part of keeping the build
-green).
+green). Most integration suites exercise the engine through SynthDefs, so they
+are gated on the `synth` feature: the featureless run is thin by design, and
+`cargo test --no-default-features --features synth` runs the same suite as the
+default build.
 
 With the Faust feature, **run single-threaded** — libfaust/LLVM cannot compile
 concurrently in one process, so the default parallel harness SIGSEGVs (a known

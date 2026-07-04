@@ -2,6 +2,8 @@
 //! reconstructs a tone, and a `PV_*` filter attenuates a band — driven through
 //! the real engine (`process_block`), plus a `/u_cmd` window swap.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::{UGenCmd, ugen_cmd_selector};

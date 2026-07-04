@@ -2,6 +2,8 @@
 //! at the release node, and `doneAction` freeing. The engine renders offline;
 //! the envelope's output goes to bus 0 so `render` can read it back.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 

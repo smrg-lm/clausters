@@ -6,8 +6,10 @@ Clausters accepts instrument definitions in two wire formats, both loaded hot ov
 
 | format | OSC command | availability |
 |---|---|---|
-| **SynthDef JSON** — a flat list of UGens | `/d_recv <blob>` | always |
+| **SynthDef JSON** — a flat list of UGens | `/d_recv <blob>` | `synth` feature (default) |
 | **Faust def** — Faust source *or* a JSON box tree | `/d_faust <name> <string>` | `faust` feature |
+
+The two families are independent build features and combine freely; a server built without one replies `/fail` (naming the missing feature) to that family's def command. See the feature matrix in [Using clausters as a library](using-as-a-library.md) and `BUILD.md`.
 
 Both reply asynchronously: `/done` with the command (and the def name for `/d_faust`), or `/fail` with a human-readable error. Once loaded, defs of either kind are instantiated, controlled and freed the same way:
 

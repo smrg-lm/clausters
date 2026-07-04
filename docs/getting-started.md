@@ -19,7 +19,7 @@ This chapter takes you from a checkout to a sound: build the server, run it, pla
   sudo apt install libjack-jackd2-dev          # --features midi-jack
   ```
 
-  For a build with no PipeWire dependency, use plain ALSA: `cargo build --no-default-features --features realtime,midi`. The engine core builds and runs with no feature at all.
+  For a build with no PipeWire dependency, use plain ALSA: `cargo build --no-default-features --features synth,realtime,midi`. The engine core builds and runs with no feature at all (though without a def family — `synth` and/or `faust` — there is nothing to instantiate).
 
 ## Build
 

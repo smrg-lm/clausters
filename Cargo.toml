@@ -17,7 +17,14 @@ license = "GPL-3.0-or-later"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["realtime", "midi", "pipewire"]
+default = ["synth", "realtime", "midi", "pipewire"]
+# The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
+# compiler (`/d_recv`) and `UGenSynth`. Default. Independent from — and
+# combinable with — `faust`: a custom build can ship either def family alone
+# (e.g. `--no-default-features --features faust,realtime,midi` is a
+# Faust-only server) or both. With neither, only the engine core remains
+# (groups, buses, buffers, transports) and every `/s_new` fails.
+synth = []
 # cpal backend. Can be disabled for tests/CI without an audio device.
 realtime = ["dep:cpal"]
 # M17 live MIDI input via midir (ALSA seq on Linux — the same system MIDI any
@@ -46,6 +53,13 @@ embed = []
 # then hard-links libpipewire (DT_NEEDED). Drop it with `--no-default-features`
 # (plus `realtime,midi`) for a plain-ALSA build that runs without PipeWire.
 pipewire = ["realtime", "cpal/pipewire"]
+
+# The DSP benchmark drives UGen graphs directly (and Faust ones with the
+# `faust` feature on top); it has no target in a build without the SynthDef
+# family. Other examples are feature-neutral and stay auto-discovered.
+[[example]]
+name = "bench"
+required-features = ["synth"]
 
 [dependencies]
 # Shared native core: the single source of truth for the numeric builtins,

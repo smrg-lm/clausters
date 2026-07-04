@@ -22,14 +22,18 @@ use crate::dsp::{
 use crate::faust::synth::{FaustDef, FaustSynth};
 use crate::midi::{ChannelVoiceMessage, MidiBinding, MidiBindings, convert};
 use crate::node::{AddAction, Group, Place, SynthNode};
-use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror, ugen_usage};
+#[cfg(feature = "synth")]
+use crate::osc::graph::ugen_usage;
+use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror};
 use crate::osc::graphdef::{
     BusRate, ControlValue, GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED, GraphDefSpec,
     GraphInstance, GraphVoice, RangeAllocator, ResolvedSurface,
 };
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
+#[cfg(feature = "synth")]
 use crate::synthdef::instance::UGenSynth;
+#[cfg(feature = "synth")]
 use crate::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
 
 #[cfg(feature = "faust")]
@@ -42,23 +46,38 @@ const AUTO_NODE_ID_BASE: i32 = 2_000_000;
 /// resolve control names off the audio thread.
 #[derive(Clone)]
 pub enum NodeDef {
+    #[cfg(feature = "synth")]
     UGen(Arc<SynthDef>),
     #[cfg(feature = "faust")]
     Faust(Arc<FaustDef>),
 }
 
+// With neither def family compiled in, `NodeDef` is an empty enum: no node is
+// ever built and each match reduces to the diverging `match *self {}` arm.
 impl NodeDef {
+    #[cfg_attr(
+        not(any(feature = "synth", feature = "faust")),
+        allow(unused_variables)
+    )]
     pub fn control_index(&self, name: &str) -> Option<u32> {
         match self {
+            #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_index(name),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => def.control_index(name),
+            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            _ => match *self {},
         }
     }
 
     /// Control name by index, for `/g_queryTree.reply`.
+    #[cfg_attr(
+        not(any(feature = "synth", feature = "faust")),
+        allow(unused_variables)
+    )]
     pub fn control_name(&self, index: usize) -> Option<&str> {
         match self {
+            #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_names.get(index).map(String::as_str),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => match index.checked_sub(def.params.len()) {
@@ -67,6 +86,8 @@ impl NodeDef {
                 Some(1) => Some("in"),
                 Some(_) => None,
             },
+            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            _ => match *self {},
         }
     }
 
@@ -74,15 +95,19 @@ impl NodeDef {
     /// vector (a Faust synth is one opaque block, not a UGen graph).
     fn ugen_count(&self) -> Option<usize> {
         match self {
+            #[cfg(feature = "synth")]
             NodeDef::UGen(def) => Some(def.ugens.len()),
             #[cfg(feature = "faust")]
             NodeDef::Faust(_) => None,
+            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            _ => match *self {},
         }
     }
 
     /// Default control values of a fresh instance.
     fn control_defaults(&self) -> Vec<f32> {
         match self {
+            #[cfg(feature = "synth")]
             NodeDef::UGen(def) => def.control_defaults.clone(),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => {
@@ -91,15 +116,24 @@ impl NodeDef {
                 v.extend([0.0, 0.0]);
                 v
             }
+            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            _ => match *self {},
         }
     }
 
     /// Bus usage of an instance with these control values (M12).
+    #[cfg_attr(
+        not(any(feature = "synth", feature = "faust")),
+        allow(unused_variables)
+    )]
     fn usage(&self, controls: &[f32]) -> (BusUsage, Vec<u32>) {
         match self {
+            #[cfg(feature = "synth")]
             NodeDef::UGen(def) => ugen_usage(def, controls),
             #[cfg(feature = "faust")]
             NodeDef::Faust(def) => faust_usage(def, controls),
+            #[cfg(not(any(feature = "synth", feature = "faust")))]
+            _ => match *self {},
         }
     }
 }
@@ -109,6 +143,7 @@ pub struct CmdTranslator {
     #[cfg_attr(not(feature = "faust"), allow(dead_code))]
     sample_rate: f32,
     /// Loaded SynthDefs; starts with the built-in "default".
+    #[cfg(feature = "synth")]
     pub synth_defs: HashMap<String, Arc<SynthDef>>,
     /// Mirror of which def each live node was built from. Maintained from
     /// `/s_new` and from collected garbage (see [`CmdTranslator::forget_node`]).
@@ -169,11 +204,16 @@ impl CmdTranslator {
         // the reservation if the configured count is smaller than the default.
         let audio_reserved = GRAPH_AUDIO_BUS_RESERVED.min(audio_buses);
         let control_reserved = GRAPH_CONTROL_BUS_RESERVED.min(control_buses);
-        let mut synth_defs = HashMap::new();
-        let default = compile(default_spec()).expect("built-in default def must compile");
-        synth_defs.insert(default.name.clone(), Arc::new(default));
+        #[cfg(feature = "synth")]
+        let synth_defs = {
+            let mut synth_defs = HashMap::new();
+            let default = compile(default_spec()).expect("built-in default def must compile");
+            synth_defs.insert(default.name.clone(), Arc::new(default));
+            synth_defs
+        };
         Self {
             sample_rate,
+            #[cfg(feature = "synth")]
             synth_defs,
             node_defs: HashMap::new(),
             next_auto_id: AUTO_NODE_ID_BASE,
@@ -202,7 +242,11 @@ impl CmdTranslator {
     /// Total defs of both families, for `/status.reply`.
     pub fn def_count(&self) -> usize {
         #[allow(unused_mut)]
-        let mut n = self.synth_defs.len();
+        let mut n = 0;
+        #[cfg(feature = "synth")]
+        {
+            n += self.synth_defs.len();
+        }
         #[cfg(feature = "faust")]
         {
             n += self.faust_defs.len();
@@ -214,6 +258,7 @@ impl CmdTranslator {
     /// (`createCDSPInstance` + `init`) allocates — fine, this never runs on
     /// the audio thread; the boxed instance reaches it fully built.
     pub fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
+        #[cfg(feature = "synth")]
         if let Some(def) = self.synth_defs.get(name) {
             let synth = Box::new(UGenSynth::new(Arc::clone(def)));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
@@ -709,6 +754,7 @@ impl CmdTranslator {
 
     /// `/d_recv`: compile a SynthDef JSON blob into the def table. Returns the
     /// def name, so the caller can persist the spec under it.
+    #[cfg(feature = "synth")]
     pub fn d_recv(&mut self, args: &[OscType]) -> Result<String, String> {
         let bytes: &[u8] = match args.first() {
             Some(OscType::Blob(b)) => b,
@@ -737,6 +783,12 @@ impl CmdTranslator {
         Ok(name)
     }
 
+    /// `/d_recv` on a server built without the SynthDef family.
+    #[cfg(not(feature = "synth"))]
+    pub fn d_recv(&mut self, _args: &[OscType]) -> Result<String, String> {
+        Err("server built without synthdef support".into())
+    }
+
     /// `/d_free name...`. Live synths keep their `Arc<SynthDef>`: scsynth
     /// semantics. Same for Faust factories (instances refcount them).
     pub fn d_free(&mut self, args: &[OscType]) -> Result<(), String> {
@@ -744,6 +796,7 @@ impl CmdTranslator {
             let OscType::String(name) = arg else {
                 return Err("expected synthdef names".into());
             };
+            #[cfg(feature = "synth")]
             self.synth_defs.remove(name);
             #[cfg(feature = "faust")]
             self.faust_defs.remove(name);

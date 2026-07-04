@@ -3,6 +3,8 @@
 //! `docs/architecture.md`). These tests overflow each one on purpose and
 //! assert the engine neither panics, nor blocks, nor stops processing.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::Limits;

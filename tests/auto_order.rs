@@ -2,6 +2,8 @@
 //! `/g_queryTree`, `/g_dumpGraph`. Real UDP round-trips against a manually
 //! ticked engine (no audio device), like `tests/osc.rs`.
 
+#![cfg(feature = "synth")]
+
 use std::net::UdpSocket;
 use std::thread::JoinHandle;
 use std::time::Duration;

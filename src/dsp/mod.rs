@@ -6,27 +6,52 @@
 //! carries the global buses; only I/O UGens touch them. Everything here runs
 //! on the audio thread: no allocation.
 
-pub mod binop;
-pub mod buf;
+// Engine-core submodules, built with every feature set: the buffer pool
+// (`/b_*` serves any def family), denormal control, and the `/b_gen`
+// wavetable/generator commands (pure buffer math).
 pub mod buffer;
-pub mod demand;
 pub mod denormals;
-pub mod disk;
-pub mod envgen;
-pub mod fused;
-pub mod impulse;
-pub mod io;
-pub mod lag;
-pub mod local;
-pub mod noise;
-pub mod osc;
-pub mod registry;
-pub mod reply;
-pub mod scalar;
-pub mod sinosc;
-pub mod spectral;
-pub mod unop;
 pub mod wavetable;
+
+// The UGen library — the SynthDef family (`synth` feature). A Faust-only or
+// core-only build carries none of it; Faust synths implement `node::SynthNode`
+// directly and only touch the core types above.
+#[cfg(feature = "synth")]
+pub mod binop;
+#[cfg(feature = "synth")]
+pub mod buf;
+#[cfg(feature = "synth")]
+pub mod demand;
+#[cfg(feature = "synth")]
+pub mod disk;
+#[cfg(feature = "synth")]
+pub mod envgen;
+#[cfg(feature = "synth")]
+pub mod fused;
+#[cfg(feature = "synth")]
+pub mod impulse;
+#[cfg(feature = "synth")]
+pub mod io;
+#[cfg(feature = "synth")]
+pub mod lag;
+#[cfg(feature = "synth")]
+pub mod local;
+#[cfg(feature = "synth")]
+pub mod noise;
+#[cfg(feature = "synth")]
+pub mod osc;
+#[cfg(feature = "synth")]
+pub mod registry;
+#[cfg(feature = "synth")]
+pub mod reply;
+#[cfg(feature = "synth")]
+pub mod scalar;
+#[cfg(feature = "synth")]
+pub mod sinosc;
+#[cfg(feature = "synth")]
+pub mod spectral;
+#[cfg(feature = "synth")]
+pub mod unop;
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
@@ -520,6 +545,7 @@ pub trait UGen: Send {
     /// UGens, resolving the compile-assigned chain slot. Runs on the audio
     /// thread: the transform reuses pre-allocated scratch and never allocates.
     /// Non-spectral UGens never see this.
+    #[cfg(feature = "synth")]
     fn process_spectral(
         &mut self,
         _ctx: &mut ProcessCtx,

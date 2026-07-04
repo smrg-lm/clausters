@@ -11,7 +11,7 @@ cargo clippy --all-targets  # lints (kept clean)
 cargo doc --no-deps         # the API reference
 ```
 
-The core **must always build and test without any feature and without libfaust installed**.
+The core **must always build and test without any feature and without libfaust installed**, and with any combination of the def-family features `synth`/`faust` (both, either alone, or neither — most integration suites are gated on `synth`, so the featureless run is thin by design).
 
 ## System build dependencies (Ubuntu 26.04)
 
@@ -21,7 +21,7 @@ sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev c
 # only for the matching optional feature:
 sudo apt install libjack-jackd2-dev          # --features midi-jack
 # plain-ALSA build (no PipeWire libs):
-#   cargo build --no-default-features --features realtime,midi
+#   cargo build --no-default-features --features synth,realtime,midi
 ```
 
 `pipewire` is a default feature (the target systems always ship PipeWire), so

@@ -89,6 +89,11 @@ impl DefStore {
         &self.faustdefs_dir
     }
 
+    /// The SynthDef spec directory (`defs/synthdefs`).
+    pub fn synthdefs_dir(&self) -> &Path {
+        &self.synthdefs_dir
+    }
+
     fn synthdef_path(&self, name: &str) -> PathBuf {
         self.synthdefs_dir
             .join(format!("{}.json", sanitize_name(name)))

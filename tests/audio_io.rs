@@ -3,6 +3,8 @@
 //! frames into the input buses (`channels..channels + input_channels`), and an
 //! `In` UGen reading that bus proves the round-trip end to end.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::node::{AddAction, ROOT_NODE_ID, SynthNode};

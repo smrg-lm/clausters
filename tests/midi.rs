@@ -3,6 +3,8 @@
 //! equivalent OSC one — `translate_midi` synthesizes the same `/s_new`/
 //! `/n_set`/`/n_free` the OSC path would, so the mirrored node state matches.
 
+#![cfg(feature = "synth")]
+
 use clausters::midi::{ChannelVoiceMessage::*, MIDI_NODE_ID_BASE, convert};
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};

@@ -29,7 +29,7 @@ cargo build --features embed,realtime
 
 ### Runtime requirement: PipeWire (Linux)
 
-The bundled artifacts that touch an audio device — the in-process embedded server and the standalone `clausters` binary — are built with the project's default features, which include the PipeWire audio backend. They therefore **hard-link `libpipewire`** and expect PipeWire present at runtime (the standard on current Linux systems); on a host without it the library and the binary will not load. The offline renderer and the numeric core need no audio device, so `Session.nrt()` and `clausters._native` work anywhere. For an audio build that does not depend on PipeWire, build the server from source with plain ALSA — see the server guide's [getting started](https://clausters.readthedocs.io/en/latest/getting-started.html) (`cargo build --no-default-features --features realtime`).
+The bundled artifacts that touch an audio device — the in-process embedded server and the standalone `clausters` binary — are built with the project's default features, which include the PipeWire audio backend. They therefore **hard-link `libpipewire`** and expect PipeWire present at runtime (the standard on current Linux systems); on a host without it the library and the binary will not load. The offline renderer and the numeric core need no audio device, so `Session.nrt()` and `clausters._native` work anywhere. For an audio build that does not depend on PipeWire, build the server from source with plain ALSA — see the server guide's [getting started](https://clausters.readthedocs.io/en/latest/getting-started.html) (`cargo build --no-default-features --features synth,realtime`).
 
 ### Environment knobs (all optional)
 

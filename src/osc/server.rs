@@ -186,10 +186,22 @@ impl OscServer {
     /// possible, so the socket starts serving immediately and the library
     /// loads incrementally.
     pub fn attach_store(&mut self, store: DefStore) {
+        #[cfg(feature = "synth")]
         for spec in store.load_synthdef_specs() {
             if let Err(e) = self.translator.d_recv(&[OscType::Blob(spec)]) {
                 warn!("persisted SynthDef failed to load: {e}");
             }
+        }
+        // Same courtesy as the Faust case below: a build without the `synth`
+        // family cannot reload persisted SynthDefs, so say it once.
+        #[cfg(not(feature = "synth"))]
+        if std::fs::read_dir(store.synthdefs_dir())
+            .map(|mut entries| entries.any(|e| e.is_ok()))
+            .unwrap_or(false)
+        {
+            warn!(
+                "persisted SynthDefs found but this build lacks the `synth` feature; skipping them"
+            );
         }
         #[cfg(feature = "faust")]
         for record in crate::faust::cache::load_records(store.faustdefs_dir()) {

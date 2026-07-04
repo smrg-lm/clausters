@@ -4,6 +4,8 @@
 //! the whole opcode table lives in `tests/core_parity.rs`; here we drive the
 //! full compile+render path and the wire-format validation.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};

@@ -2,6 +2,8 @@
 //! through the same FIFO the network thread uses, audio comes out of
 //! `process_block`, and signal asserts do the listening.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::node::{AddAction, Group, Place, ROOT_NODE_ID, SynthNode};

@@ -1,6 +1,8 @@
 //! SynthDef format and interpreter tests: JSON parsing, compile-time
 //! validation, and the audio produced by interpreted instances.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};

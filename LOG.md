@@ -4388,3 +4388,45 @@ Impulse fires all three every block, the FIFO fills and drops — no allocation)
 `cargo fmt` clean; no new clippy warnings. Live E2E: `json_client.py replies`
 against a running server prints `/tr [3200, 7, 0.5]` and `/custom [3200, 42, 1.5,
 2.5]`.
+
+## Build features — independent def families: `synth` (SynthDef) / `faust` (FaustDef) (completed 2026-07-04)
+
+**Goal:** let custom builds ship either def family alone or both. Previously
+the SynthDef/UGen family was unconditional and only Faust was a feature; now
+`synth` (default) and `faust` are symmetrical, freely combinable Cargo
+features, and the engine core still builds with neither.
+
+**What moved behind `synth`:** the `synthdef` module (`compile`, `UGenSynth`,
+the built-in `default` def), the whole UGen library in `dsp` (every UGen
+submodule plus the registry; the shared core — `Block`/`Buses`/`ProcessCtx`/
+`DoneAction`/`ReplyMsg`/`UGenCmd`, `dsp::buffer`, `dsp::denormals`, and
+`dsp::wavetable` for `/b_gen` — stays unconditional), `ugen_usage` in
+`osc::graph`, and the translator/server paths: the `synth_defs` table, the
+`NodeDef::UGen` variant, `/d_recv` (a `not(synth)` stub replies `/fail
+"server built without synthdef support"`, which also covers `/d_load`,
+`/d_loadDir`, NRT scores and the persisted-def reload — the latter warns once
+at boot, mirroring the missing-`faust` courtesy). `NodeDef` reduces to an
+empty enum with neither family; each match keeps a diverging
+`_ => match *self {}` arm for that case. The node tree was already generic
+over `dyn SynthNode`, so the engine is untouched.
+
+**Tests/examples:** the UGen-driven integration suites are gated
+`#![cfg(feature = "synth")]` (the featureless run keeps the lib unit tests,
+denormals, and the faust suites stay on `faust`; `faust_parity` needs
+`all(faust, synth)`; the mixed test in `faust_synth` gates individually).
+`examples/bench.rs` gets `required-features = ["synth"]`.
+
+**Docs:** feature matrix + variants in `BUILD.md` (single-family build lines),
+`README.md`, `docs/using-as-a-library.md`, `docs/schemas.md` (availability
+column + `/fail` behavior), `docs/introduction.md`, `docs/getting-started.md`,
+`docs/contributing.md`, `docs/architecture.md` invariant 7 (build with any
+def-family combination), and the def-family section in `CLAUDE.md`.
+
+**Verified:** `cargo check --all-targets` clean on all five combos (none,
+`synth`-only, `faust`-only, default, default+`faust`+`embed`; faust combos
+type-check only on this machine — libfaust not installed, so no link/run).
+`cargo test` 286 passed; `--no-default-features --features synth` identical;
+`--no-default-features` 21 passed. `cargo fmt --check` clean; clippy adds no
+new warnings. Live E2E: default binary plays `vibrato`; a core-only binary
+(`--features realtime`) boots, answers `/status`, `/fail`s `/d_recv` with the
+feature message and warns once about skipped persisted SynthDefs.

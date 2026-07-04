@@ -7,7 +7,7 @@ It is **conceptually compatible** with scsynth (same node-tree model, the same `
 ## Highlights
 
 - **Hard real-time audio thread**: no allocation, locks or I/O in the audio callback. Commands arrive pre-built over lock-free FIFOs; freed memory leaves through a garbage FIFO and is dropped off the audio thread. Guarded by `assert_no_alloc` tests.
-- **Two def formats, both loaded hot over OSC**: a flat **SynthDef JSON** list of UGens (`/d_recv`), and **Faust** defs — Faust source or a JSON box tree — JIT-compiled with the LLVM backend (`/d_faust`, `faust` feature).
+- **Two def formats, both loaded hot over OSC**: a flat **SynthDef JSON** list of UGens (`/d_recv`, default `synth` feature), and **Faust** defs — Faust source or a JSON box tree — JIT-compiled with the LLVM backend (`/d_faust`, `faust` feature). The two families are independent build features: enable both or ship a single-family server.
 - **Sample-accurate scheduling**: NTP-timetagged bundles split the audio block at the event's exact frame, plus a direct **sample clock** (`/clock`, `/sched`) as a drift-free client timebase.
 - **Offline (NRT) rendering**: the same engine renders scores to WAV without an audio device, bit-identically to a live take.
 - **Auto-sorted groups** (`/g_sortMode`): execution order inferred from the buses each def reads and writes — no manual `/n_before` bookkeeping.

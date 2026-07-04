@@ -3,6 +3,8 @@
 //! the OSC test covers NTP timetag → sample conversion against a live
 //! server with a manually ticked engine.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 use std::time::Duration;
 

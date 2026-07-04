@@ -1512,6 +1512,35 @@ instancia grafos standalone al arranque. Cubierto por `tests/midi_standalone.rs`
 boot reviven) y `tests/persistence.rs`/`tests/midi.rs` (round-trip de `midi.json`
 y restore + nota tocable).
 
+## 3bis. Familias de defs como features: `synth` y `faust`
+
+Las dos familias de instrumentos son features de Cargo independientes y
+combinables: `synth` (SynthDefs/UGens, `/d_recv`, **por defecto**) y `faust`
+(FaustDefs, `/d_faust`, opcional). Un build custom puede llevar una sola
+familia; sin ninguna, queda el núcleo (grupos, buses, buffers, transportes)
+sin nada que instanciar. La matriz completa está en `BUILD.md`.
+
+```sh
+# ambas familias
+FAUST_PREFIX=~/.local cargo build --features faust
+
+# solo Faust (sin biblioteca de UGens)
+FAUST_PREFIX=~/.local cargo build --no-default-features --features faust,realtime,midi,pipewire
+
+# solo SynthDefs con ALSA pelado
+cargo build --no-default-features --features synth,realtime,midi
+```
+
+Prueba manual (núcleo sin familias, 1 paso): compilar con
+`cargo build --no-default-features --features realtime`, arrancar y mandar
+`osc_ping status vibrato quit` — `/status` responde con 0 defs, `/d_recv`
+devuelve `/fail "server built without synthdef support"`, y si hay SynthDefs
+persistidas avisa **una vez** al arrancar que las saltea (espejo del aviso
+que ya existía para Faust). Los suites de integración que dependen de UGens
+están gateados con `#![cfg(feature = "synth")]`: `cargo test
+--no-default-features` queda chico a propósito (21 tests) y `cargo test
+--no-default-features --features synth` corre lo mismo que el default.
+
 ## 4. Checklist de funcionalidades
 
 | Funcionalidad | Automático | A mano |

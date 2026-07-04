@@ -2,6 +2,8 @@
 //! lagged controls smooth a step, scalar (`ir`) controls freeze under `/n_set`,
 //! plus the compiler validation for control types and lag.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};

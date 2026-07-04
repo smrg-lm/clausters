@@ -2,6 +2,8 @@
 //! per block), `ir` (once at init, then frozen), `dr` (pulled on demand) — plus
 //! the compiler's rate-coercion validation.
 
+#![cfg(feature = "synth")]
+
 use std::sync::Arc;
 
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};

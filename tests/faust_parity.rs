@@ -11,7 +11,7 @@
 //!   well below the error a one-sample phase offset would cause, which keeps
 //!   the test discriminating (and a shifted-signal assert proves it).
 
-#![cfg(feature = "faust")]
+#![cfg(all(feature = "faust", feature = "synth"))]
 
 use std::sync::Arc;
 use std::time::Duration;
