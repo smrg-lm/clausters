@@ -1082,6 +1082,52 @@ python3 examples/json_client.py serverinfo
 oscsend localhost 57110 /d_recv ...   # y /s_new de más de 15 -> /fail al llenarse
 ```
 
+### Probar los UGens de efecto colateral: SendTrig / SendReply / Poll (S9)
+
+Algunos UGens existen por su **efecto colateral** — un reply OSC o un post en
+consola — no por audio en un bus, y un def puede contener **sólo** estos, sin
+ningún `Out` (el servidor exige ≥1 UGen, nunca un `Out`). Los tres disparan en
+un **trigger** (una señal que cruza de `≤ 0` a `> 0`):
+
+- **`SendTrig(in, id, value)`** → envía `/tr nodeID id value` a los clientes
+  `/notify`.
+- **`SendReply(trig, replyID, value0, value1, …)`** → envía un mensaje OSC en
+  una dirección propia (campo estático `label`, por defecto `/reply`) con
+  `nodeID replyID value…` (lista de arbitraria aridad).
+- **`Poll(trig, in, trigid)`** → postea `label: value` (el valor de `in`) en la
+  consola del servidor y, si `trigid ≥ 0`, además envía `/tr`. Pasa `in` a su
+  salida, así puede ir en medio de la cadena.
+
+El reply sale del hilo de audio por una FIFO lock-free (la misma disciplina que
+los eventos `/n_go`/`/n_end`): disparar no aloca ni bloquea; una ráfaga por
+encima del buffer por bloque (8) se descarta (best-effort). Del lado cliente,
+Python los construye con `send_trig`/`send_reply`/`poll` y se pasan como raíces
+del `SynthDef` (C19 relajó el builder: ya no exige un `Out`).
+
+Verificación por tests (puerto efímero + reloj manual del engine):
+
+```sh
+cargo test --no-default-features --test osc send_trig_replies
+cargo test --no-default-features --test osc send_reply_replies
+cargo test --no-default-features --test osc poll_with_trigid
+# /tr con id/valor esperados; /custom con la lista de valores; Poll con trigid
+# manda /tr. Los tres defs no tienen Out (prueba la relajación del servidor).
+cargo test --no-default-features --test rt_safety reply_ugens
+# el buffering de triggers y el drenaje a la FIFO no alocan en el hilo de audio
+uv run --project clients/python pytest clients/python/tests/test_synthdef.py \
+  -k side_effect
+# el builder Python serializa SendTrig/SendReply/Poll y acepta defs sin Out
+```
+
+A mano, con el servidor corriendo (el demo registra `/notify`, manda un def sin
+`Out` y dispara un control trigger; imprime el `/tr` y el `/custom`):
+
+```sh
+(./target/debug/clausters & PID=$!; sleep 1.5; \
+ python3 examples/json_client.py replies; kill $PID 2>/dev/null)
+# -> /tr [3200, 7, 0.5] y /custom [3200, 42, 1.5, 2.5]
+```
+
 ### Qué probar a mano (núcleo)
 
 Con el servidor corriendo y `oscsend` (los replies no se ven con oscsend;
@@ -1434,6 +1480,7 @@ y restore + nota tocable).
 | Wavetables `/b_gen` (sine1/2/3, cheby, copy) + `Osc`/`OscN`/`VOsc`/`Shaper` (S5) | `tests/wavetable.rs`, `tests/osc.rs` (`b_gen`), `tests/rt_safety.rs` (`table_oscillators`) | `python3 examples/json_client.py bgen` |
 | Set OSC completo: `/n_setn`/`/n_fill`/`/n_mapn`, `/s_get`/`/s_getn`, `/g_head`/`/g_tail`/`/n_order`, `/c_setn`/`/c_getn`/`/c_fill`, `/b_close`, `/d_load`, `/clearSched`, `/error`, `/cmd`/`/u_cmd` (S6) | `tests/osc.rs` (S6), `tests/rt_safety.rs` (`command_set_completion`) | `python3 examples/json_client.py commands` |
 | Config de arranque: canales E/S (`--outputs`/`--inputs`, entrada viva por `In`) + pools (`--max-nodes`/`--max-buffers`/`--max-graph-children`/`--max-ugen-inputs`), `/server_info` extendido (S7) | `tests/audio_io.rs`, `tests/capacity.rs`, `tests/osc.rs` (`server_info_reports_configured_limits`, `d_recv_rejects_over_max_ugen_inputs`), `tests/rt_safety.rs` (`hardware_input_path_does_not_allocate`) | `python3 examples/json_client.py serverinfo` |
+| UGens de efecto colateral sin `Out`: `SendTrig`/`SendReply`/`Poll` + relajación del builder Python (S9/C19) | `tests/osc.rs` (`send_trig_replies`, `send_reply_replies`, `poll_with_trigid`), `tests/rt_safety.rs` (`reply_ugens_do_not_allocate...`), `test_synthdef.py` (`side_effect`) | `python3 examples/json_client.py replies` |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |

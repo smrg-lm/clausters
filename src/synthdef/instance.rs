@@ -3,7 +3,9 @@
 use std::sync::Arc;
 
 use crate::dsp::registry::{DEMAND_SOURCE_SLOT, ExecMode};
-use crate::dsp::{Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, UGen, at};
+use crate::dsp::{
+    Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, ReplyMsg, UGen, at,
+};
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{ControlType, InputRef, SynthDef};
 
@@ -25,6 +27,10 @@ pub struct UGenSynth {
     /// `ir` UGen exactly once, on that first block; its wire then holds the
     /// value (wires persist across blocks) and the UGen is skipped thereafter.
     initialized: bool,
+    /// True when any UGen is a side-effect reply UGen (`SendReply`/`SendTrig`/
+    /// `Poll`, S9); precomputed so `has_replies` is O(1) and the tree only
+    /// enqueues these synths for the reply drain.
+    has_reply_ugens: bool,
 }
 
 impl UGenSynth {
@@ -38,6 +44,7 @@ impl UGenSynth {
             .collect();
         let wires = vec![Block::SILENCE; ugens.len()];
         let locals = vec![Block::SILENCE; def.num_locals];
+        let has_reply_ugens = ugens.iter().any(|u| u.is_reply());
         Self {
             def,
             controls,
@@ -46,6 +53,7 @@ impl UGenSynth {
             wires,
             locals,
             initialized: false,
+            has_reply_ugens,
         }
     }
 }
@@ -215,6 +223,16 @@ impl SynthNode for UGenSynth {
     fn ugen_command(&mut self, index: u32, cmd: &crate::dsp::UGenCmd) {
         if let Some(ugen) = self.ugens.get_mut(index as usize) {
             ugen.command(cmd);
+        }
+    }
+
+    fn has_replies(&self) -> bool {
+        self.has_reply_ugens
+    }
+
+    fn drain_replies(&mut self, node_id: i32, sink: &mut dyn FnMut(ReplyMsg)) {
+        for ugen in &mut self.ugens {
+            ugen.drain_replies(node_id, sink);
         }
     }
 

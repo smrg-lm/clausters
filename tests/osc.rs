@@ -692,6 +692,162 @@ fn notify_bad_argument_fails() {
     server.quit();
 }
 
+// --- S9: side-effect UGens (SendTrig/SendReply/Poll), no Out required ---
+
+/// A def whose only UGen is `SendTrig` (no `Out`) compiles, runs, and replies
+/// `/tr nodeID id value` to a `/notify` client when its trigger control fires.
+#[test]
+fn send_trig_replies_tr_and_needs_no_out() {
+    let mut server = TestServer::spawn();
+    server.send("/notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], OscType::Int(1));
+
+    // Output-less def: a trigger control feeds SendTrig(in, id=7, value=0.5).
+    let json = r#"{
+        "name": "trigtest",
+        "controls": [{"name": "t", "rate": "tr", "default": 0.0}],
+        "ugens": [
+            {"kind": "SendTrig", "inputs": [{"control": 0}, {"const": 7.0}, {"const": 0.5}]}
+        ]
+    }"#;
+    server.send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/d_recv".into())
+    );
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("trigtest".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    // Fire the trigger control: it holds 1 for one block (rising edge).
+    server.send(
+        "/n_set",
+        vec![
+            OscType::Int(1000),
+            OscType::String("t".into()),
+            OscType::Float(1.0),
+        ],
+    );
+    let tr = server.tick_until("/tr");
+    assert_eq!(tr.args[0], OscType::Int(1000)); // node id
+    assert_eq!(tr.args[1], OscType::Int(7)); // trigger id
+    assert_eq!(tr.args[2], OscType::Float(0.5)); // value
+
+    server.send("/n_free", vec![OscType::Int(1000)]);
+    server.wait_for_synth_count(0);
+    server.quit();
+}
+
+/// `SendReply` replies at a custom OSC address with `nodeID replyID value…`.
+#[test]
+fn send_reply_replies_at_custom_address() {
+    let mut server = TestServer::spawn();
+    server.send("/notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], OscType::Int(1));
+
+    let json = r#"{
+        "name": "replytest",
+        "controls": [{"name": "t", "rate": "tr", "default": 0.0}],
+        "ugens": [
+            {"kind": "SendReply", "label": "/custom",
+             "inputs": [{"control": 0}, {"const": 42.0}, {"const": 1.5}, {"const": 2.5}]}
+        ]
+    }"#;
+    server.send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/d_recv".into())
+    );
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("replytest".into()),
+            OscType::Int(1001),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    server.send(
+        "/n_set",
+        vec![
+            OscType::Int(1001),
+            OscType::String("t".into()),
+            OscType::Float(1.0),
+        ],
+    );
+    let reply = server.tick_until("/custom");
+    assert_eq!(reply.args[0], OscType::Int(1001)); // node id
+    assert_eq!(reply.args[1], OscType::Int(42)); // reply id
+    assert_eq!(reply.args[2], OscType::Float(1.5));
+    assert_eq!(reply.args[3], OscType::Float(2.5));
+
+    server.send("/n_free", vec![OscType::Int(1001)]);
+    server.wait_for_synth_count(0);
+    server.quit();
+}
+
+/// `Poll` with a non-negative trigid also emits `/tr nodeID trigid value`.
+#[test]
+fn poll_with_trigid_replies_tr() {
+    let mut server = TestServer::spawn();
+    server.send("/notify", vec![OscType::Int(1)]);
+    assert_eq!(server.recv_until("/done").args[1], OscType::Int(1));
+
+    // Poll(trig=t, in=0.25, trigid=3), labelled; passes `in` through (no Out).
+    let json = r#"{
+        "name": "polltest",
+        "controls": [{"name": "t", "rate": "tr", "default": 0.0}],
+        "ugens": [
+            {"kind": "Poll", "label": "watch",
+             "inputs": [{"control": 0}, {"const": 0.25}, {"const": 3.0}]}
+        ]
+    }"#;
+    server.send("/d_recv", vec![OscType::Blob(json.as_bytes().to_vec())]);
+    assert_eq!(
+        server.recv_until("/done").args[0],
+        OscType::String("/d_recv".into())
+    );
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("polltest".into()),
+            OscType::Int(1002),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+
+    server.send(
+        "/n_set",
+        vec![
+            OscType::Int(1002),
+            OscType::String("t".into()),
+            OscType::Float(1.0),
+        ],
+    );
+    let tr = server.tick_until("/tr");
+    assert_eq!(tr.args[0], OscType::Int(1002));
+    assert_eq!(tr.args[1], OscType::Int(3)); // trigid
+    assert_eq!(tr.args[2], OscType::Float(0.25)); // polled value
+
+    server.send("/n_free", vec![OscType::Int(1002)]);
+    server.wait_for_synth_count(0);
+    server.quit();
+}
+
 #[test]
 fn unknown_command_fails() {
     let server = TestServer::spawn();

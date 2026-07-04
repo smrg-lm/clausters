@@ -196,6 +196,40 @@ def test_non_node_input_rejected():
         SynthDef("x", out(0.0, Ugen("Out", ["nope"]))).spec()
 
 
+def test_side_effect_ugens_need_no_out():
+    # S9 / C19: a def may consist only of side-effect UGens, with no Out.
+    from clausters.defs import poll, send_reply, send_trig
+
+    t = control("t", rate="tr")
+    spec = SynthDef(
+        "sfx",
+        send_trig(t, 7, 0.5),
+        send_reply(t, 1.5, 2.5, cmd="/custom", reply_id=42),
+    ).spec()
+    by_kind = {u["kind"]: u for u in spec["ugens"]}
+    assert set(by_kind) == {"SendTrig", "SendReply"}
+    # SendTrig: [in, id, value].
+    assert by_kind["SendTrig"]["inputs"] == [
+        {"control": 0},
+        {"const": 7.0},
+        {"const": 0.5},
+    ]
+    # SendReply: [trig, replyID, values...], custom address in `label`.
+    assert by_kind["SendReply"]["label"] == "/custom"
+    assert by_kind["SendReply"]["inputs"] == [
+        {"control": 0},
+        {"const": 42.0},
+        {"const": 1.5},
+        {"const": 2.5},
+    ]
+    # Poll passes its signal through, so it can sit under an Out.
+    p = poll(t, sin_osc(440.0), label="watch", trig_id=3)
+    poll_spec = SynthDef("pl", out(0.0, p)).spec()
+    poll_u = next(u for u in poll_spec["ugens"] if u["kind"] == "Poll")
+    assert poll_u["label"] == "watch"
+    assert poll_u["inputs"][2] == {"const": 3.0}
+
+
 # ---- envelopes (Env / env_gen) ----
 
 

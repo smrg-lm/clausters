@@ -23,6 +23,7 @@ use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
+use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sinosc::SinOsc;
 use crate::dsp::unop::UnaryOp;
@@ -49,6 +50,10 @@ pub struct UGenConfig {
     /// `clausters_core::builtins` opcode discriminant, validated at compile
     /// time and read by their `build`.
     pub op: Option<u32>,
+    /// Static string tag for the side-effect UGens (S9): `SendReply`'s command
+    /// name (the OSC address it replies with, default `/reply`) and `Poll`'s
+    /// label (default `poll`). Ignored by every other kind.
+    pub label: Option<String>,
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -216,7 +221,7 @@ const fn desc_op(
 use Arity::{Fixed, Variadic};
 use BusRole::{Read, ReadWrite, Write};
 use ExecMode::{DemandDriver, LocalIn as ExecLocalIn, LocalOut as ExecLocalOut, Normal};
-use Rate::{Ar, Dr, Ir};
+use Rate::{Ar, Dr, Ir, Kr};
 
 /// The UGen catalog. **To add a UGen, add one row here** (plus its `dsp`
 /// module) — the compiler and bus analysis pick it up with no other change.
@@ -588,6 +593,39 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_| Box::new(Dseq::new()),
+    ),
+    // --- side-effect UGens (S9): reply/observe, no `Out` required. Control or
+    //     audio rate; their output is silence (SendTrig/SendReply) or the
+    //     polled signal passed through (Poll). ---
+    desc(
+        "SendTrig",
+        Fixed(3),
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(SendTrig::new()),
+    ),
+    desc(
+        "SendReply",
+        Variadic,
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c| Box::new(SendReply::new(c)),
+    ),
+    desc(
+        "Poll",
+        Fixed(3),
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c| Box::new(Poll::new(c)),
     ),
 ];
 

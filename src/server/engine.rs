@@ -21,7 +21,9 @@ use rtrb::{Consumer, Producer, PushError, RingBuffer};
 pub use crate::dsp::BLOCK_SIZE;
 use crate::dsp::BusUsage;
 use crate::dsp::buffer::{Buffer, BufferPool, empty_pool_with};
-use crate::dsp::{Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx};
+use crate::dsp::{
+    Buses, ControlBuses, Limits, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES, ProcessCtx, ReplyMsg,
+};
 use crate::node::{AddAction, FreedNode, Group, NodeKind, NodeTree, Place, SynthNode};
 use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
@@ -31,6 +33,10 @@ const GARBAGE_FIFO_CAPACITY: usize = 1024;
 /// Local holding list for when the garbage FIFO is full.
 const PENDING_GARBAGE_CAPACITY: usize = 64;
 const EVENT_FIFO_CAPACITY: usize = 2048;
+/// Side-effect reply messages (`SendReply`/`SendTrig`/`Poll`, S9) buffered from
+/// the audio thread to the network thread; over capacity they drop, best-effort
+/// like the node events.
+const REPLY_FIFO_CAPACITY: usize = 2048;
 /// Pre-allocated capacity of the scheduled-bundle queue; bundles beyond it
 /// are rejected (shipped back through the garbage FIFO).
 const SCHED_CAPACITY: usize = 1024;
@@ -281,6 +287,7 @@ pub struct Engine {
     garbage_tx: Producer<Garbage>,
     pending_garbage: Vec<Garbage>,
     events_tx: Producer<NodeEvent>,
+    reply_tx: Producer<ReplyMsg>,
     counters: Arc<Counters>,
 }
 
@@ -300,6 +307,7 @@ pub struct EngineHandle {
     cmd_tx: Producer<Cmd>,
     garbage_rx: Consumer<Garbage>,
     events_rx: Consumer<NodeEvent>,
+    reply_rx: Consumer<ReplyMsg>,
     control_buses: ControlBuses,
     sample_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
@@ -354,6 +362,7 @@ pub fn engine_pair_full(
     let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
     let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY);
     let (events_tx, events_rx) = RingBuffer::new(EVENT_FIFO_CAPACITY);
+    let (reply_tx, reply_rx) = RingBuffer::new(REPLY_FIFO_CAPACITY);
     let counters = Arc::new(Counters {
         synths: AtomicU32::new(0),
         ugens: AtomicU32::new(0),
@@ -387,6 +396,7 @@ pub fn engine_pair_full(
         garbage_tx,
         pending_garbage: Vec::with_capacity(PENDING_GARBAGE_CAPACITY),
         events_tx,
+        reply_tx,
         counters: Arc::clone(&counters),
     };
     let handle = EngineHandle {
@@ -398,6 +408,7 @@ pub fn engine_pair_full(
         cmd_tx,
         garbage_rx,
         events_rx,
+        reply_rx,
         control_buses,
         sample_clock,
         counters,
@@ -528,6 +539,16 @@ impl Engine {
             self.tree
                 .apply_done_action(id, action, &mut |f| sink.consume(f));
         }
+
+        // Drain the side-effect replies buffered this block (`SendReply`/
+        // `SendTrig`/`Poll`, S9) into the reply FIFO for the network thread to
+        // turn into OSC. Disjoint field borrows: the tree walk reads the synths,
+        // the producer takes the messages.
+        let tree = &mut self.tree;
+        let reply_tx = &mut self.reply_tx;
+        tree.drain_replies(&mut |msg| {
+            let _ = reply_tx.push(msg);
+        });
     }
 
     /// Runs the node tree over `offset..offset+frames` of the current block.
@@ -736,6 +757,12 @@ impl EngineHandle {
     /// Pops one node lifecycle event, if any.
     pub fn pop_event(&mut self) -> Option<NodeEvent> {
         self.events_rx.pop().ok()
+    }
+
+    /// Pops one side-effect reply message (`SendReply`/`SendTrig`/`Poll`, S9),
+    /// if any. The network thread turns each into an OSC reply / console line.
+    pub fn pop_reply(&mut self) -> Option<ReplyMsg> {
+        self.reply_rx.pop().ok()
     }
 
     /// Drops everything the audio thread discarded. Returns how many items

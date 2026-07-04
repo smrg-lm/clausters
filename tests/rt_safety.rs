@@ -1014,3 +1014,50 @@ fn hardware_input_path_does_not_allocate() {
         }
     });
 }
+
+/// S9: the side-effect UGens buffer triggers and the engine drains them into
+/// the reply FIFO every block — all on the audio thread, with no allocation.
+/// An `Impulse` fires the three reply UGens repeatedly; the FIFO is never
+/// popped here (no network thread), so it fills and drops, which must also not
+/// allocate.
+#[test]
+fn reply_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // One Impulse drives SendTrig, SendReply and Poll (an output-less def:
+    // no Out at all).
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "sidefx",
+            "ugens": [
+                {"kind": "Impulse",   "inputs": [{"const": 3000.0}]},
+                {"kind": "SendTrig",  "inputs": [{"ugen": 0}, {"const": 7.0}, {"const": 0.5}]},
+                {"kind": "SendReply", "label": "/custom",
+                 "inputs": [{"ugen": 0}, {"const": 42.0}, {"const": 1.5}, {"const": 2.5}]},
+                {"kind": "Poll", "label": "watch",
+                 "inputs": [{"ugen": 0}, {"const": 0.25}, {"const": 3.0}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+}

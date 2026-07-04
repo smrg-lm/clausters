@@ -21,6 +21,7 @@ pub mod local;
 pub mod noise;
 pub mod osc;
 pub mod registry;
+pub mod reply;
 pub mod scalar;
 pub mod sinosc;
 pub mod unop;
@@ -510,6 +511,109 @@ pub trait UGen: Send {
     /// thread — the payload is inline, so this must stay allocation-free. The
     /// default ignores every command (an unknown selector is a no-op).
     fn command(&mut self, _cmd: &UGenCmd) {}
+
+    /// Whether this is a side-effect UGen (`SendReply`/`SendTrig`/`Poll`, S9)
+    /// that emits reply messages instead of (or besides) audio. The synth uses
+    /// it to enqueue itself for the reply drain after each block. Default: not
+    /// a reply UGen.
+    fn is_reply(&self) -> bool {
+        false
+    }
+
+    /// Drains the side-effect messages this UGen buffered during the block into
+    /// `sink`, each stamped with `node_id`. Called after the block on the audio
+    /// thread — allocation-free (the buffer is a fixed inline array). Default:
+    /// nothing to drain.
+    fn drain_replies(&mut self, _node_id: i32, _sink: &mut dyn FnMut(ReplyMsg)) {}
+}
+
+/// Max side-effect messages a reply UGen (`SendReply`/`SendTrig`/`Poll`)
+/// buffers within one block before the synth drains it. Extra triggers in the
+/// same block are dropped — best-effort, like the node-event FIFO. Inline and
+/// `Copy`, so buffering a trigger on the audio thread never allocates.
+pub const REPLY_BUFFER_LEN: usize = 8;
+
+/// Max float values one [`ReplyMsg`] carries (a `SendReply` value list).
+pub const REPLY_MAX_VALUES: usize = 16;
+
+/// Max bytes of a reply's name (a `SendReply` command name or a `Poll` label),
+/// stored inline so the message stays `Copy` and heap-free.
+pub const REPLY_NAME_MAX: usize = 31;
+
+/// Which side-effect UGen produced a [`ReplyMsg`] — decides how the network
+/// thread turns it into an OSC reply or console line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplyKind {
+    /// `SendTrig` — a `/tr nodeID trigID value` message.
+    Trig,
+    /// `SendReply` — a `cmdName nodeID replyID value…` message.
+    Reply,
+    /// `Poll` — a console line `label: value`, plus a `/tr` when its trigid ≥ 0.
+    Poll,
+}
+
+/// A side-effect message a UGen emits on a trigger (`SendReply`/`SendTrig`/
+/// `Poll`, S9): the payload that leaves the audio thread through the reply FIFO
+/// and becomes an OSC reply (or a console post) on the network thread. Fully
+/// inline and `Copy` — buffering and draining one allocates nothing.
+#[derive(Clone, Copy, Debug)]
+pub struct ReplyMsg {
+    /// Emitting node; stamped by the synth when it drains the UGen.
+    pub node_id: i32,
+    /// Trigger/reply id (`SendTrig` id, `SendReply` replyID, `Poll` trigid).
+    pub id: i32,
+    pub kind: ReplyKind,
+    /// Command name (`SendReply`) or label (`Poll`); empty for `SendTrig`.
+    name: [u8; REPLY_NAME_MAX],
+    name_len: u8,
+    values: [f32; REPLY_MAX_VALUES],
+    num_values: u8,
+}
+
+impl ReplyMsg {
+    /// A message with no node id yet (the synth stamps it on drain), the given
+    /// kind, id and inline name (truncated past [`REPLY_NAME_MAX`]). Append
+    /// values with [`push_value`](Self::push_value).
+    pub fn new(kind: ReplyKind, id: i32, name: &str) -> ReplyMsg {
+        let mut bytes = [0u8; REPLY_NAME_MAX];
+        let n = name.len().min(REPLY_NAME_MAX);
+        bytes[..n].copy_from_slice(&name.as_bytes()[..n]);
+        ReplyMsg {
+            node_id: 0,
+            id,
+            kind,
+            name: bytes,
+            name_len: n as u8,
+            values: [0.0; REPLY_MAX_VALUES],
+            num_values: 0,
+        }
+    }
+
+    /// Appends one value; dropped once [`REPLY_MAX_VALUES`] is reached.
+    #[inline]
+    pub fn push_value(&mut self, v: f32) {
+        let n = self.num_values as usize;
+        if n < REPLY_MAX_VALUES {
+            self.values[n] = v;
+            self.num_values = (n + 1) as u8;
+        }
+    }
+
+    /// The reply's name (command name / label); empty for `SendTrig`.
+    pub fn name(&self) -> &str {
+        std::str::from_utf8(&self.name[..self.name_len as usize]).unwrap_or("")
+    }
+
+    /// The value list carried by this reply.
+    pub fn values(&self) -> &[f32] {
+        &self.values[..self.num_values as usize]
+    }
+}
+
+impl Default for ReplyMsg {
+    fn default() -> Self {
+        ReplyMsg::new(ReplyKind::Trig, 0, "")
+    }
 }
 
 /// Max inline float args a [`UGenCmd`] carries. Sized for realistic UGen

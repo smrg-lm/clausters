@@ -39,6 +39,9 @@ then run one or more demos (default: status):
          (`/n_setn`), value queries (`/s_getn`), tree reordering (`/g_head`),
          control-bus ranges (`/c_setn`/`/c_getn`), a server command (`/cmd`)
          and `/clearSched` — no Faust needed.
+`replies` the S9 side-effect UGens: an **output-less** def (no `Out` at all)
+         whose `SendTrig`/`SendReply` fire on a trigger control; a `/notify`
+         client receives the `/tr` and custom-address replies.
 """
 
 import json
@@ -683,6 +686,36 @@ def demo_commands(client: Client):
     print("  /clearSched ->", client.reply(quiet=True))
 
 
+def demo_replies(client: Client):
+    """S9 side-effect UGens: an output-less def (no Out) that replies over OSC.
+    SendTrig and SendReply fire on a trigger control; a /notify client receives
+    the /tr and custom-address messages the audio thread emits."""
+    client.send("/notify", 1)
+    client.reply(quiet=True)  # /done registering
+
+    d = SynthDefBuilder("replies")
+    # A trigger control: a /n_set holds it for one block, so it fires once.
+    d.controls.append({"name": "t", "default": 0.0, "rate": "tr"})
+    trig = {"control": 0}
+    # No Out anywhere: the def exists purely for its side effects.
+    d.add("SendTrig", trig, 7.0, 0.5)  # -> /tr node 7 0.5
+    d.add("SendReply", trig, 42.0, 1.5, 2.5, label="/custom")  # -> /custom ...
+
+    print("replies demo: /d_recv replies (no Out — side-effect only)")
+    client.send("/d_recv", d.blob())
+    client.reply(quiet=True)  # /done
+    client.send("/s_new", "replies", 3200, 1, 0)
+    print("  <- (n_go)", client.reply(quiet=True))
+    time.sleep(0.2)
+
+    print("  /n_set 3200 t 1  -> fires SendTrig then SendReply")
+    client.send("/n_set", 3200, "t", 1.0)
+    print("  <-", client.reply(quiet=True))  # /tr 3200 7 0.5
+    print("  <-", client.reply(quiet=True))  # /custom 3200 42 1.5 2.5
+
+    client.send("/n_free", 3200)
+
+
 def demo_serverinfo(client: Client):
     """S7 boot-time configuration: discover the server's pool sizes and I/O
     channels with /server_info, then, if the server was started with --inputs,
@@ -757,6 +790,8 @@ def main():
             demo_signal(client)
         elif demo == "commands":
             demo_commands(client)
+        elif demo == "replies":
+            demo_replies(client)
         elif demo == "serverinfo":
             demo_serverinfo(client)
         elif demo == "score":
@@ -766,7 +801,7 @@ def main():
             client.reply()
         else:
             sys.exit(
-                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, commands, serverinfo, score, quit)"
+                f"unknown demo: {demo} (use status, ugen, faust, soundfile, wavetable, bgen, buffer, disk, bundle, feedback, demand, signal, commands, replies, serverinfo, score, quit)"
             )
 
 

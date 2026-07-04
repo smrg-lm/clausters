@@ -11,7 +11,7 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicI32, AtomicU8, AtomicUsize, Ordering};
 
-use crate::dsp::{BusUsage, DoneAction, ProcessCtx};
+use crate::dsp::{BusUsage, DoneAction, ProcessCtx, ReplyMsg};
 use crate::server::workers::WorkerPool;
 
 /// What the tree processes. Implemented by `synthdef::instance::UGenSynth`
@@ -40,6 +40,18 @@ pub trait SynthNode: Send {
     /// are ignored. The default has no addressable UGens (e.g. a Faust synth is
     /// one opaque block). Runs on the audio thread — allocation-free.
     fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
+
+    /// Whether this synth contains any side-effect UGen (`SendReply`/`SendTrig`/
+    /// `Poll`, S9). The tree enqueues such synths for the after-block reply
+    /// drain. Default: no reply UGens.
+    fn has_replies(&self) -> bool {
+        false
+    }
+
+    /// Drains the reply messages this synth's UGens buffered during the block
+    /// into `sink`, each stamped with `node_id`. Runs on the audio thread after
+    /// the block — allocation-free. Default: nothing to drain.
+    fn drain_replies(&mut self, _node_id: i32, _sink: &mut dyn FnMut(ReplyMsg)) {}
 }
 
 /// One control's bus mapping (`/n_map`/`/n_mapa`), stored per synth parallel
@@ -210,6 +222,13 @@ pub struct NodeTree {
     done_nodes: Vec<AtomicI32>,
     done_actions: Vec<AtomicU8>,
     done_count: AtomicUsize,
+    /// Lock-free queue of slot indices whose synth buffered reply messages this
+    /// block (`SendReply`/`SendTrig`/`Poll`, S9). Written during the walk (like
+    /// `done_nodes`, so the parallel workers can push while holding their slot)
+    /// and drained after it by [`Self::drain_replies`]. Slot indices, not node
+    /// IDs, so the drain reaches the synth without a linear lookup.
+    reply_slots: Vec<AtomicUsize>,
+    reply_count: AtomicUsize,
 }
 
 impl NodeTree {
@@ -245,6 +264,8 @@ impl NodeTree {
             done_nodes: (0..max_nodes).map(|_| AtomicI32::new(0)).collect(),
             done_actions: (0..max_nodes).map(|_| AtomicU8::new(0)).collect(),
             done_count: AtomicUsize::new(0),
+            reply_slots: (0..max_nodes).map(|_| AtomicUsize::new(0)).collect(),
+            reply_count: AtomicUsize::new(0),
         }
     }
 
@@ -297,6 +318,40 @@ impl NodeTree {
         if c < self.done_nodes.len() {
             self.done_nodes[c].store(id, Ordering::Relaxed);
             self.done_actions[c].store(action as u8, Ordering::Relaxed);
+        }
+    }
+
+    /// Records `slot` as having a reply-producing synth this block, for the
+    /// reply drain after the walk. Same interior-mutable pattern as
+    /// [`Self::enqueue_done`], so a worker can push while holding the slot. A
+    /// slot may be enqueued more than once (a scheduled bundle splits the block
+    /// into slices, each re-walking the tree); the drain clears the UGen buffer
+    /// on the first visit, so later ones simply find nothing.
+    #[inline]
+    fn enqueue_reply(&self, slot: usize) {
+        let c = self.reply_count.fetch_add(1, Ordering::Relaxed);
+        if c < self.reply_slots.len() {
+            self.reply_slots[c].store(slot, Ordering::Relaxed);
+        }
+    }
+
+    /// Drains the reply messages buffered by every enqueued synth this block
+    /// into `sink`, each stamped with its node ID, and resets the queue. Called
+    /// once after the block's walk (after the worker pool's join publishes every
+    /// store), on the audio thread. Allocation-free.
+    pub fn drain_replies(&mut self, sink: &mut dyn FnMut(ReplyMsg)) {
+        let n = self
+            .reply_count
+            .swap(0, Ordering::Relaxed)
+            .min(self.reply_slots.len());
+        for k in 0..n {
+            let idx = self.reply_slots[k].load(Ordering::Relaxed);
+            if let Some(slot) = self.slot_mut(idx) {
+                let id = slot.id;
+                if let NodeKind::Synth { node, .. } = &mut slot.kind {
+                    node.drain_replies(id, sink);
+                }
+            }
         }
     }
 
@@ -880,6 +935,9 @@ impl NodeTree {
                     DoneAction::PauseSelf => slot.paused = true,
                     action => self.enqueue_done(slot.id, action),
                 }
+                if node.has_replies() {
+                    self.enqueue_reply(idx);
+                }
             }
             NodeKind::Group(group) if group.parallel => unsafe {
                 self.process_parallel(&group.children, ctx, pool);
@@ -913,6 +971,9 @@ impl NodeTree {
                     DoneAction::None => {}
                     DoneAction::PauseSelf => slot.paused = true,
                     action => self.enqueue_done(slot.id, action),
+                }
+                if node.has_replies() {
+                    self.enqueue_reply(idx);
                 }
             }
             NodeKind::Group(group) => {

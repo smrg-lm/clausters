@@ -4260,3 +4260,66 @@ clean; no new clippy warnings. The full-binary path (a second cpal input stream)
 can't run in the sandbox — no audio device, and the fixed UDP port collides with
 a running instance — so it is exercised at the engine seam instead; the
 `serverinfo` demo is the live smoke.
+
+## S9 — Side-effect UGens (SendReply/SendTrig/Poll), no `Out` required (completed 2026-07-03)
+
+**What's there:** a family of UGens whose purpose is a **side effect** — an OSC
+reply or a console post — rather than audio on a bus, plus the client relaxation
+(C19) that lets a def consist only of them, with no `Out` at all. The server
+already permitted output-less defs (`compile` requires ≥1 UGen, never an `Out`);
+S9 adds the UGens that make that useful and the RT-safe path their replies take
+out of the audio thread.
+
+- **The reply message type (`src/dsp/mod.rs`).** `ReplyMsg` is a fully inline,
+  `Copy` POD — a fixed 31-byte name buffer (`SendReply` command name / `Poll`
+  label) plus a 16-slot value array and a `ReplyKind` (`Trig`/`Reply`/`Poll`) —
+  so buffering and shipping one never allocates. `REPLY_BUFFER_LEN` (8) caps the
+  per-block per-UGen buffer. The `UGen` trait gains `is_reply()` (default false)
+  and `drain_replies(node_id, sink)` (default no-op); `SynthNode` gains
+  `has_replies()`/`drain_replies()`.
+- **The UGens (`src/dsp/reply.rs`).** `SendTrig(in, id, value)`,
+  `SendReply(trig, replyID, values…)` and `Poll(trig, in, trigid)`. Each detects
+  a trigger (a crossing from `≤ 0` to `> 0`) frame-by-frame and buffers a
+  `ReplyMsg` per crossing in a fixed inline `ReplyBuffer`; `Poll` also passes its
+  `in` signal through so it can sit mid-chain. The command name / label lives in
+  the UGen as a `String` built on the network thread and only *read* while
+  processing. Registered as three `UGENS` rows (kr default, kr/ar allowed,
+  `BusRole::None`); the name/label rides a new `label` field on `UGenSpec`/
+  `UGenConfig`, wired through `compile` like `op`/`path`.
+- **The RT-safe reply path (`src/node/mod.rs`, `src/server/engine.rs`).** Same
+  discipline as the done-action queue: during the walk the tree marks any synth
+  that ran a reply UGen into a **lock-free slot queue** (`reply_slots`/
+  `reply_count`, `fetch_add` reservation so the M13 workers can push while
+  holding their slot); `Engine::process_block` drains it **once after the whole
+  block** (`NodeTree::drain_replies` stamps each message with the node id and
+  pushes it into a new SPSC **reply FIFO**, capacity 2048, best-effort drop when
+  full). `UGenSynth` precomputes `has_reply_ugens` so a synth without reply UGens
+  is never marked or drained. A synth re-marked by a mid-block schedule split is
+  harmless (the first drain empties its buffer).
+- **OSC emission (`src/osc/server.rs`).** `collect_garbage` drains the reply FIFO
+  after the node events: `Trig` → `/tr nodeID id value` to every `/notify`
+  client, `Reply` → the custom address with `nodeID replyID value…`, `Poll` → a
+  `tracing` console line (network thread, never the audio thread) plus a `/tr`
+  when its trigid is non-negative.
+- **Client (C19, `clients/python`).** `SynthDef` no longer requires an output
+  UGen — it takes graph **roots**, which may be side-effect UGens; the error and
+  docstring say so. New `send_trig`/`send_reply`/`poll` builders (with a `label`
+  field on `Ugen`, serialized like `op`), exported from `clausters.defs`.
+
+**Docs:** `docs/schemas.md` — three catalog rows and a "Side-effect UGens" note
+(trigger semantics, the FIFO discipline, `/notify` delivery). `docs/architecture.md`
+— a "Side-effect replies" subsection under the memory-lifecycle section, a
+reply-FIFO row in the capacity table, and an `is_reply`/`drain_replies` note in
+"How to add a UGen". `GUIA.md` — an S9 manual-test section and a checklist row.
+`examples/json_client.py` — a `replies` demo (an output-less def, `/notify`, a
+fired trigger control, prints the `/tr` and custom replies).
+
+**Verified:** full `cargo test` green. `tests/osc.rs` +3 (`send_trig_replies...`
+asserts `/tr` id+value on an `Out`-less def; `send_reply_replies_at_custom_address`
+round-trips the value list at the custom address; `poll_with_trigid_replies_tr`).
+`tests/rt_safety.rs` +1 (`reply_ugens_do_not_allocate_on_the_audio_thread`: an
+Impulse fires all three every block, the FIFO fills and drops — no allocation).
+`clients/python/tests/test_synthdef.py` +1 (`test_side_effect_ugens_need_no_out`).
+`cargo fmt` clean; no new clippy warnings. Live E2E: `json_client.py replies`
+against a running server prints `/tr [3200, 7, 0.5]` and `/custom [3200, 42, 1.5,
+2.5]`.

@@ -107,13 +107,16 @@ class Ugen(_Node):
     ``"ar"``/``"dr"``); ``None`` lets the server pick the kind's default (``ar``
     for signal UGens). Set it fluently with `at_rate`. ``op`` is the operator
     **name** carried by the generic ``BinaryOpUGen``/``UnaryOpUGen`` (S3), e.g.
-    ``"mul"`` / ``"midicps"``; ``None`` for every other kind."""
+    ``"mul"`` / ``"midicps"``; ``None`` for every other kind. ``label`` is the
+    string tag the side-effect UGens carry — ``send_reply``'s command name and
+    ``poll``'s label; ``None`` for every other kind."""
 
-    def __init__(self, kind: str, inputs, rate=None, op=None):
+    def __init__(self, kind: str, inputs, rate=None, op=None, label=None):
         self.kind = kind
         self.inputs = list(inputs)
         self.rate = None if rate is None else str(rate)
         self.op = None if op is None else str(op)
+        self.label = None if label is None else str(label)
 
     def at_rate(self, rate: str) -> "Ugen":
         """Set this UGen's output rate (``"ir"``/``"kr"``/``"ar"``/``"dr"``) and
@@ -214,6 +217,35 @@ def out(bus, signal) -> Ugen:
 def replace_out(bus, signal) -> Ugen:
     """Overwrites the audio ``bus`` with ``signal`` instead of summing."""
     return Ugen("ReplaceOut", [bus, signal])
+
+
+# ---- side-effect UGens: reply / observe, no `out` required ----
+# These emit OSC replies or console posts on a trigger instead of audio. A
+# SynthDef may contain only these and no `out(...)` at all. Pass them as roots
+# of the `SynthDef` (they have no consumer to reach them otherwise). A trigger
+# fires on a crossing from ``<= 0`` up to ``> 0``.
+
+
+def send_trig(trig, id=0, value=0.0) -> Ugen:
+    """On each trigger of ``trig``, sends ``/tr nodeID id value`` to ``/notify``
+    clients. Output is silence; pass it as a `SynthDef` root."""
+    return Ugen("SendTrig", [trig, id, value])
+
+
+def send_reply(trig, *values, cmd="/reply", reply_id=-1) -> Ugen:
+    """On each trigger of ``trig``, sends the OSC message ``cmd nodeID reply_id
+    value…`` to ``/notify`` clients (``cmd`` defaults to ``/reply``). ``values``
+    is the arbitrary-arity payload. Output is silence; pass it as a `SynthDef`
+    root."""
+    return Ugen("SendReply", [trig, reply_id, *values], label=cmd)
+
+
+def poll(trig, signal, label="poll", trig_id=-1) -> Ugen:
+    """On each trigger of ``trig``, posts ``label: value`` (the ``signal``
+    value) to the server console and, when ``trig_id >= 0``, also sends ``/tr
+    nodeID trig_id value``. ``signal`` passes through the output, so ``poll``
+    can sit mid-chain."""
+    return Ugen("Poll", [trig, signal, trig_id], label=label)
 
 
 def play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0) -> Ugen:

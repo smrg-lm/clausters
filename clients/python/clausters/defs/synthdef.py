@@ -31,20 +31,25 @@ from .ugens import Control, Ugen
 
 
 class SynthDef:
-    """A named UGen graph. Pass the output UGens (``out(...)`` /
-    ``replace_out(...)``, and any ``local_out(...)`` to keep feedback writes in
-    the graph); a def with no output UGen is silent on the server."""
+    """A named UGen graph. Pass the graph's **root** UGens — normally the
+    outputs (``out(...)`` / ``replace_out(...)``, and any ``local_out(...)`` to
+    keep feedback writes in the graph), but a root can equally be a side-effect
+    UGen with no audio output (``send_trig(...)`` / ``send_reply(...)`` /
+    ``poll(...)``): a def may consist only of those and no ``out`` at all. Every
+    root must be a UGen; a def needs at least one (the server rejects an empty
+    graph). A def with no output UGen is simply silent on the server."""
 
-    def __init__(self, name: str, *outputs: Ugen):
-        if not outputs:
+    def __init__(self, name: str, *roots: Ugen):
+        if not roots:
             raise ValueError(
-                "a SynthDef needs at least one output UGen (e.g. out(bus, signal))"
+                "a SynthDef needs at least one root UGen (an output like "
+                "out(bus, signal), or a side-effect UGen like send_trig(...))"
             )
-        for o in outputs:
+        for o in roots:
             if not isinstance(o, Ugen):
-                raise TypeError(f"SynthDef outputs must be UGens, got {o!r}")
+                raise TypeError(f"SynthDef roots must be UGens, got {o!r}")
         self.name = str(name)
-        self.outputs = list(outputs)
+        self.outputs = list(roots)
 
     def spec(self) -> dict:
         """The ``SynthDefSpec`` dict the server's ``/d_recv`` compiles."""
@@ -101,6 +106,8 @@ class SynthDef:
                 d["rate"] = u.rate
             if getattr(u, "op", None) is not None:
                 d["op"] = u.op
+            if getattr(u, "label", None) is not None:
+                d["label"] = u.label
             return d
 
         return {

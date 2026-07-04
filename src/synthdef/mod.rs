@@ -115,6 +115,11 @@ pub struct UGenSpec {
     /// resolves it against the shared `clausters_core::builtins` operator table.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub op: Option<String>,
+    /// Side-effect UGens (S9): `SendReply`'s command name (the OSC address it
+    /// replies with, default `/reply`) or `Poll`'s label (default `poll`).
+    /// Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
 }
 
 /// An input is a constant, a named control, or the output of an earlier UGen.
@@ -311,6 +316,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             looping: u.looping,
             format: u.format.clone(),
             op: op_index,
+            label: u.label.clone(),
         };
 
         let mut inputs = Vec::with_capacity(u.inputs.len());

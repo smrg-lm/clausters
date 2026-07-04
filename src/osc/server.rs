@@ -30,6 +30,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 use tracing::{error, info, warn};
 
+use crate::dsp::ReplyKind;
 #[cfg(feature = "faust")]
 use crate::faust::compiler::{CacheJob, CompilePayload, CompileRequest, CompilerThread};
 use crate::osc::ClientId;
@@ -669,6 +670,46 @@ impl OscServer {
             for client in &self.clients {
                 self.reply(*client, addr, args.clone());
             }
+        }
+        // Side-effect replies (S9): `SendTrig`/`SendReply` reply to `/notify`
+        // clients; `Poll` posts to the server console and, when its trigid is
+        // set, also sends `/tr`.
+        while let Some(msg) = self.handle.pop_reply() {
+            match msg.kind {
+                ReplyKind::Trig => {
+                    let value = msg.values().first().copied().unwrap_or(0.0);
+                    self.notify_trigger(msg.node_id, msg.id, value);
+                }
+                ReplyKind::Reply => {
+                    // Custom address `cmdName nodeID replyID value…`.
+                    let mut args = vec![OscType::Int(msg.node_id), OscType::Int(msg.id)];
+                    args.extend(msg.values().iter().map(|v| OscType::Float(*v)));
+                    let addr = msg.name().to_string();
+                    for client in &self.clients {
+                        self.reply(*client, &addr, args.clone());
+                    }
+                }
+                ReplyKind::Poll => {
+                    let value = msg.values().first().copied().unwrap_or(0.0);
+                    info!(target: crate::logging::OSC_TARGET, "{}: {value}", msg.name());
+                    if msg.id >= 0 {
+                        self.notify_trigger(msg.node_id, msg.id, value);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sends `/tr nodeID triggerID value` to every `/notify` client (the shape
+    /// `SendTrig` and a `Poll` with a trigid produce).
+    fn notify_trigger(&self, node_id: i32, trig_id: i32, value: f32) {
+        let args = vec![
+            OscType::Int(node_id),
+            OscType::Int(trig_id),
+            OscType::Float(value),
+        ];
+        for client in &self.clients {
+            self.reply(*client, "/tr", args.clone());
         }
     }
 
