@@ -108,6 +108,9 @@ class SynthDef:
                 d["op"] = u.op
             if getattr(u, "label", None) is not None:
                 d["label"] = u.label
+            static = getattr(u, "static", None)
+            if static:
+                d.update(static)
             return d
 
         return {

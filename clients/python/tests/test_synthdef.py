@@ -230,6 +230,36 @@ def test_side_effect_ugens_need_no_out():
     assert poll_u["inputs"][2] == {"const": 3.0}
 
 
+def test_fft_chain_serializes_with_static_fields():
+    # S8: FFT opens a chain (carrying fft_size/hop/wintype as static fields),
+    # PV_* filters transform it, IFFT closes it back to audio.
+    from clausters.defs import fft, ifft, pv_brick_wall, pv_mag_above, white_noise
+
+    chain = fft(white_noise(), fft_size=512, hop=0.25, wintype=1)
+    chain = pv_brick_wall(chain, 0.7)
+    chain = pv_mag_above(chain, 0.01)
+    spec = SynthDef("fftdef", out(0.0, ifft(chain))).spec()
+    by_kind = {u["kind"]: u for u in spec["ugens"]}
+    assert set(by_kind) >= {"FFT", "PV_BrickWall", "PV_MagAbove", "IFFT", "Out"}
+
+    f = by_kind["FFT"]
+    # Static fields merge into the spec; only the FFT carries them.
+    assert f["fft_size"] == 512 and f["hop"] == 0.25 and f["wintype"] == 1
+    assert f["inputs"][0] == {"ugen": 0}  # the WhiteNoise source
+    assert f["inputs"][1] == {"const": 1.0}  # active default
+    assert "fft_size" not in by_kind["IFFT"]
+    # The chain is threaded UGen-to-UGen in order.
+    assert by_kind["PV_BrickWall"]["inputs"][0]["ugen"] < by_kind["PV_MagAbove"]["inputs"][0]["ugen"]
+
+
+def test_fft_defaults():
+    from clausters.defs import fft, ifft, white_noise
+
+    spec = SynthDef("d", out(0.0, ifft(fft(white_noise())))).spec()
+    f = next(u for u in spec["ugens"] if u["kind"] == "FFT")
+    assert f["fft_size"] == 1024 and f["hop"] == 0.5 and f["wintype"] == 0
+
+
 # ---- envelopes (Env / env_gen) ----
 
 

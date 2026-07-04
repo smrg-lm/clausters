@@ -526,6 +526,17 @@ class Server:
         self.send_msg("/n_mapa" if audio else "/n_map",
                       node.id if hasattr(node, "id") else node, name, index)
 
+    def u_cmd(self, node, ugen_index: int, name: str, *args):
+        """Sends a typed command to **one UGen instance** inside a synth
+        (``/u_cmd nodeID ugenIndex name args…``). The server hashes ``name`` to a
+        stable selector and routes the numeric ``args`` to that UGen on the audio
+        thread. The FFT chain uses it to swap a window live, e.g.
+        ``server.u_cmd(synth, fft_index, "window", 4)`` for a Blackman window
+        (a `clausters._native.Window` value); an unrecognized ``name`` is a
+        no-op on the server."""
+        self.send_msg("/u_cmd", node.id if hasattr(node, "id") else node,
+                      int(ugen_index), str(name), *(float(a) for a in args))
+
     def free(self, *nodes):
         for n in nodes:
             nid = n.id if hasattr(n, "id") else n

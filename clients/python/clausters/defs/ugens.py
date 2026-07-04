@@ -109,14 +109,17 @@ class Ugen(_Node):
     **name** carried by the generic ``BinaryOpUGen``/``UnaryOpUGen`` (S3), e.g.
     ``"mul"`` / ``"midicps"``; ``None`` for every other kind. ``label`` is the
     string tag the side-effect UGens carry — ``send_reply``'s command name and
-    ``poll``'s label; ``None`` for every other kind."""
+    ``poll``'s label; ``None`` for every other kind. ``static`` is a dict of any
+    other non-signal fields (the spectral UGens' ``fft_size``/``hop``/
+    ``wintype``); it merges verbatim into the serialized UGen spec."""
 
-    def __init__(self, kind: str, inputs, rate=None, op=None, label=None):
+    def __init__(self, kind: str, inputs, rate=None, op=None, label=None, static=None):
         self.kind = kind
         self.inputs = list(inputs)
         self.rate = None if rate is None else str(rate)
         self.op = None if op is None else str(op)
         self.label = None if label is None else str(label)
+        self.static = dict(static) if static else None
 
     def at_rate(self, rate: str) -> "Ugen":
         """Set this UGen's output rate (``"ir"``/``"kr"``/``"ar"``/``"dr"``) and
@@ -246,6 +249,54 @@ def poll(trig, signal, label="poll", trig_id=-1) -> Ugen:
     nodeID trig_id value``. ``signal`` passes through the output, so ``poll``
     can sit mid-chain."""
     return Ugen("Poll", [trig, signal, trig_id], label=label)
+
+
+# ---- frequency-domain chain: FFT / PV_* / IFFT (S8) ----
+# `fft` opens a spectral chain, the `pv_*` filters transform the frame in place,
+# and `ifft` resynthesises audio. Wire them in order (fft -> pv_* -> ... -> ifft).
+# The frame is synth-private scratch (no buffer to allocate); only `fft` names
+# the window size, and the server propagates it down the chain.
+
+
+def fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0) -> Ugen:
+    """Opens a spectral chain: windows ``source`` (an audio signal) and
+    transforms it to a spectral frame once per **hop**. ``active > 0`` runs the
+    transform, ``<= 0`` holds. ``fft_size`` is the window size (a power of two:
+    256/512/1024/2048/4096), ``hop`` the fraction of the window between frames,
+    ``wintype`` the window (a `clausters._native.Window`: 0 Hann, 1 sine, …).
+    These size the transform, so they are static fields given **only here** — the
+    server propagates them to the rest of the chain. The window is also settable
+    live with `Server.u_cmd`. Feed the result to a ``pv_*`` filter or `ifft`."""
+    return Ugen(
+        "FFT", [source, active],
+        static={"fft_size": int(fft_size), "hop": float(hop), "wintype": int(wintype)},
+    )
+
+
+def ifft(chain) -> Ugen:
+    """Closes a spectral chain: inverse-transforms each fresh frame and
+    overlap-adds it back to audio (window-normalized, so a bare `fft`->`ifft`
+    reconstructs at unity gain, delayed by one window). ``chain`` is the output
+    of an `fft` or a ``pv_*`` filter."""
+    return Ugen("IFFT", [chain])
+
+
+def pv_mag_above(chain, threshold) -> Ugen:
+    """Passes only the bins whose magnitude is **above** ``threshold``, zeroing
+    the rest. ``chain`` comes from `fft` or another ``pv_*``."""
+    return Ugen("PV_MagAbove", [chain, threshold])
+
+
+def pv_mag_below(chain, threshold) -> Ugen:
+    """Passes only the bins whose magnitude is **below** ``threshold``."""
+    return Ugen("PV_MagBelow", [chain, threshold])
+
+
+def pv_brick_wall(chain, wipe) -> Ugen:
+    """Brick-wall band limit: ``wipe > 0`` zeroes the top fraction of bins (a low
+    pass), ``wipe < 0`` the bottom (a high pass), ``0`` passes everything
+    (``wipe`` in -1..1)."""
+    return Ugen("PV_BrickWall", [chain, wipe])
 
 
 def play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0) -> Ugen:

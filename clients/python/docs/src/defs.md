@@ -183,8 +183,17 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `demand(trig, reset, source)` | pulls the next value from a demand `source` on each rising edge of `trig`, holding it between triggers |
 | Fused | `mul_add(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
+| Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/tr nodeID id value`; output is silence |
+| | `send_reply(trig, *values, cmd="/reply", reply_id=-1)` | sends a custom OSC message with an arbitrary value list |
+| | `poll(trig, signal, label="poll", trig_id=-1)` | posts `signal` to the server console (and a `/tr` when `trig_id >= 0`); passes `signal` through |
+| Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
+| | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
+| | `pv_brick_wall(chain, wipe)` | zero a band (`wipe > 0` low pass, `< 0` high pass) |
+| | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
+
+The **side-effect** UGens exist for a reply or a console post rather than audio, so a def may consist of them alone with **no `out`** — pass them as `SynthDef` roots (see [Building one](#building-one)). The **spectral** UGens form a frequency-domain chain — see [The frequency-domain chain](#the-frequency-domain-chain) below.
 
 ### Maths on a UGen graph
 
@@ -212,6 +221,29 @@ sig = sin_osc(440.0) * 0.2 + fb * 0.5
 echo = local_out(0.0, sig)                    # writes channel 0, passes sig through
 sdef = SynthDef("fb", out(0.0, sig), echo)    # echo as an output keeps the write
 ```
+
+### The frequency-domain chain
+
+Spectral processing wires an `fft` to an `ifft` with any number of `pv_*` filters between them: `fft` windows an audio signal and transforms it to a spectral frame once per hop, the `pv_*` filters mutate the frame, and `ifft` resynthesises audio by overlap-add. Wire them in order — the output of one is the input of the next:
+
+```python
+from clausters.defs import SynthDef, white_noise, fft, pv_brick_wall, ifft, out
+
+chain = fft(white_noise() * 0.25, fft_size=1024, hop=0.5, wintype=0)
+chain = pv_brick_wall(chain, 0.75)      # keep the bottom 25% of bins (a low pass)
+sdef = SynthDef("spec_lp", out(0.0, ifft(chain)))
+```
+
+The FFT frame is **synth-private scratch on the server** (SuperCollider's `LocalBuf` model) — no buffer is allocated and none is required. Only `fft` names the window size, hop and window type (they size the transform); the server propagates them to the rest of the chain. A bare `fft` → `ifft` reconstructs the signal at unity gain, delayed by one window.
+
+The window type is also settable **live** with `Server.u_cmd`, which addresses one UGen instance inside a running synth:
+
+```python
+from clausters._native import Window
+server.u_cmd(synth, fft_index, "window", Window.BLACKMAN)  # swap the FFT window
+```
+
+where `fft_index` is the FFT's position in the serialized graph. The smoothing windows themselves are shared with the server through the native core — `clausters._native.window(Window.HANN, n)` returns the **same** coefficients the server's FFT applies, so a client that pre-windows audio matches the server bit for bit.
 
 ### Spec, dump and controls
 

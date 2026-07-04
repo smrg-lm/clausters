@@ -196,14 +196,17 @@ impl UGen for Fft {
 /// analysis window for correct overlap-add.
 pub struct Ifft {
     winsize: usize,
+    hop_size: usize,
     window_kind: Window,
     window: Vec<f32>,
-    /// Overlap-add tail: `olabuf[k]` accumulates the reconstruction, `olawin[k]`
-    /// the sum of squared windows over the frames that touched sample `k` — the
-    /// exact overlap-add normalization denominator (COLA), so any window/hop
-    /// reconstructs to unity.
+    /// Overlap-add tail: `olabuf[k]` accumulates the windowed reconstruction.
     olabuf: Vec<f32>,
-    olawin: Vec<f32>,
+    /// The steady-state overlap-add normalization (COLA), one value per hop
+    /// phase: `norm[r] = Σ_i window[r + i·hop]²` over the frames that overlap
+    /// output phase `r`. Precomputed at build (constant per render), so dividing
+    /// by it never over-amplifies the under-overlapped edges of the startup or a
+    /// spectrally modified frame — unlike a running per-sample window sum.
+    norm: Vec<f32>,
     /// Time-domain scratch for the inverse transform.
     time: Vec<f32>,
     /// Finalized samples awaiting output, a ring drained `frames` per slice.
@@ -211,28 +214,48 @@ pub struct Ifft {
     fifo_head: usize,
     fifo_tail: usize,
     fifo_len: usize,
+    /// Absolute output position of `olabuf[0]`, modulo the hop — the phase into
+    /// [`norm`](Self::norm), tracked so the COLA denominator stays aligned even
+    /// if a frame's `advance` is not a multiple of the hop.
+    phase: usize,
 }
 
 impl Ifft {
     pub fn new(config: &UGenConfig) -> Self {
         let winsize = resolve_fft_size(config.fft_size);
+        let hop_size = resolve_hop(winsize, config.hop);
         let window_kind = Window::from_wintype(config.wintype.unwrap_or(0));
         let mut window = vec![0.0; winsize];
         window_kind.fill(&mut window);
+        // Steady-state window-power sum per hop phase (the exact COLA
+        // denominator once the overlap is full). Guarded against a zero phase so
+        // the division is always safe.
+        let mut norm = vec![0.0f32; hop_size];
+        for (r, slot) in norm.iter_mut().enumerate() {
+            let mut s = 0.0;
+            let mut k = r;
+            while k < winsize {
+                s += window[k] * window[k];
+                k += hop_size;
+            }
+            *slot = if s > 1e-9 { s } else { 1.0 };
+        }
         // The FIFO holds at most a couple of hops' worth of finalized samples
         // between the frame that produces them and the slices that drain them.
         let fifo = vec![0.0; 4 * winsize];
         Self {
             winsize,
+            hop_size,
             window_kind,
             window,
             olabuf: vec![0.0; winsize],
-            olawin: vec![0.0; winsize],
+            norm,
             time: vec![0.0; winsize],
             fifo,
             fifo_head: 0,
             fifo_tail: 0,
             fifo_len: 0,
+            phase: 0,
         }
     }
 
@@ -274,28 +297,25 @@ impl UGen for Ifft {
             fft::irfft_into(&chain.frame, &mut self.time);
             // Overlap-add the windowed reconstruction into the tail.
             for k in 0..self.winsize {
-                let w = self.window[k];
-                self.olabuf[k] += self.time[k] * w;
-                self.olawin[k] += w * w;
+                self.olabuf[k] += self.time[k] * self.window[k];
             }
             // The first `advance` samples are final (no later frame overlaps
-            // them): normalize by the accumulated window energy and emit them.
+            // them): normalize by the steady-state COLA denominator for the
+            // sample's hop phase and emit them. Dividing by the *full* overlap
+            // sum (not a running partial one) means an incompletely overlapped
+            // startup or a spectrally modified frame fades cleanly instead of
+            // blowing up where the window is small. `advance` is a multiple of
+            // the hop, so phase 0 stays aligned to `norm[0]`.
             for k in 0..advance {
-                let denom = self.olawin[k];
-                let s = if denom > 1e-9 {
-                    self.olabuf[k] / denom
-                } else {
-                    0.0
-                };
-                self.fifo_push(s);
+                let r = (self.phase + k) % self.hop_size;
+                self.fifo_push(self.olabuf[k] / self.norm[r]);
             }
+            self.phase = (self.phase + advance) % self.hop_size;
             // Shift the tail left by `advance`, zeroing the vacated end.
             let keep = self.winsize.saturating_sub(advance);
             self.olabuf.copy_within(advance.., 0);
-            self.olawin.copy_within(advance.., 0);
             for k in keep..self.winsize {
                 self.olabuf[k] = 0.0;
-                self.olawin[k] = 0.0;
             }
         }
         for o in output.iter_mut() {

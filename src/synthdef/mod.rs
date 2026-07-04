@@ -421,6 +421,9 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 if config.wintype.is_none() {
                     config.wintype = up.config.wintype;
                 }
+                if config.hop.is_none() {
+                    config.hop = up.config.hop;
+                }
             }
         }
 

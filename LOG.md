@@ -4293,10 +4293,12 @@ rate and only work on the blocks a fresh frame is ready; `IFFT` is audio rate.
   processing slice, as scsynth transforms at block granularity), carrying the hop
   `advance` on the chain. `Ifft` keeps an overlap-add tail (with a parallel
   window-energy accumulator) and an output FIFO; it inverse-transforms each fresh
-  frame, overlap-adds it **window-normalized** (÷ accumulated window energy, so a
-  bare `FFT`→`IFFT` reconstructs at unity gain with one window of latency), and
-  drains the FIFO per slice — keeping analysis/resynthesis in lockstep via the
-  `advance` regardless of the hop/block relationship. `PvMag` (`PV_MagAbove`/
+  frame, overlap-adds it **window-normalized** (÷ a precomputed steady-state COLA
+  denominator `Σ window[phase+i·hop]²` per hop phase, so a bare `FFT`→`IFFT`
+  reconstructs at unity gain with one window of latency and a modified frame does
+  not over-amplify the low-window edges), and drains the FIFO per slice — keeping
+  analysis/resynthesis in lockstep via the `advance` regardless of the hop/block
+  relationship. `PvMag` (`PV_MagAbove`/
   `PV_MagBelow`) thresholds bin magnitudes; `PvBrickWall` zeroes a band. All reuse
   pre-allocated scratch — nothing allocates on the audio thread.
 - **Wiring.** New `ExecMode::Spectral` + a `SpectralRole` (`Source`/`Filter`/

@@ -22,7 +22,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 3
+CORE_ABI_VERSION = 4
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -110,6 +110,18 @@ class UnaryOp(IntEnum):
     SOFTCLIP = 36
 
 
+class Window(IntEnum):
+    """Smoothing-window types; values match ``clausters_core::window::Window``
+    and the ``wintype`` an ``FFT``/``IFFT`` UGen carries."""
+
+    RECTANGULAR = -1
+    HANN = 0
+    SINE = 1
+    WELCH = 2
+    HAMMING = 3
+    BLACKMAN = 4
+
+
 # ---- library loading (lazy, versioned) ----
 
 _LIB = None
@@ -147,6 +159,9 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_uint32, f32p, ctypes.c_size_t, f32p, ctypes.c_size_t, f32p, ctypes.c_size_t,
     ]
     lib.clausters_core_whitenoise.argtypes = [ctypes.c_uint64, f32p, ctypes.c_size_t]
+    # Smoothing windows (ABI v4): the same shapes the server's FFT chain applies.
+    lib.clausters_core_window.restype = None
+    lib.clausters_core_window.argtypes = [ctypes.c_int32, f32p, ctypes.c_size_t]
     lib.clausters_core_beats_to_secs.restype = ctypes.c_double
     lib.clausters_core_beats_to_secs.argtypes = [ctypes.c_double] * 4
     lib.clausters_core_secs_to_beats.restype = ctypes.c_double
@@ -244,6 +259,15 @@ def white_noise(seed: int, n: int) -> array:
     `WhiteNoise` UGen seeded the same way."""
     out = array("f", bytes(4 * n))
     lib().clausters_core_whitenoise(ctypes.c_uint64(seed), _ptr(out), n)
+    return out
+
+
+def window(wintype: int, n: int) -> array:
+    """`n` samples of smoothing window `wintype` (a `Window` value), **identical**
+    to the window the server's `FFT`/`IFFT` applies — so a client that pre-windows
+    audio agrees with the server bit for bit. Periodic (DFT-even)."""
+    out = array("f", bytes(4 * n))
+    lib().clausters_core_window(int(wintype), _ptr(out), n)
     return out
 
 

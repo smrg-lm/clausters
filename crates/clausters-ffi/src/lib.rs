@@ -17,13 +17,15 @@ use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::peaks::{self, Pyramid};
 use clausters_core::rng::WhiteNoise;
 use clausters_core::tempoclock;
+use clausters_core::window::Window;
 
 mod ws;
 
 /// The C ABI version of this surface. Bump on any incompatible change. v2 added
 /// the `clausters_ws_*` WebSocket client transport; v3 the `clausters_core_peaks_*`
-/// peak-pyramid cache builder.
-pub const CORE_ABI_VERSION: u32 = 3;
+/// peak-pyramid cache builder; v4 the `clausters_core_window` smoothing windows
+/// (shared with the server's FFT chain for bit-identical analysis).
+pub const CORE_ABI_VERSION: u32 = 4;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -102,6 +104,24 @@ pub unsafe extern "C" fn clausters_core_whitenoise(seed: u64, out: *mut f32, n: 
     // SAFETY: caller guarantees `out` is writable for `n`.
     let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
     WhiteNoise::from_seed(seed).fill(o);
+}
+
+/// Fills `out` (`n` samples) with the smoothing window of type `wintype` — the
+/// **same** `clausters_core::window::Window` the server's `FFT`/`IFFT` UGens
+/// apply, so a client that pre-windows audio matches the server bit for bit.
+/// `wintype`: -1 rectangular, 0 Hann, 1 sine, 2 Welch, 3 Hamming, 4 Blackman
+/// (any other value falls back to Hann, as the server does).
+///
+/// # Safety
+/// `out` must be writable for `n` `f32`s.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_window(wintype: i32, out: *mut f32, n: usize) {
+    if out.is_null() {
+        return;
+    }
+    // SAFETY: caller guarantees `out` is writable for `n`.
+    let o = unsafe { std::slice::from_raw_parts_mut(out, n) };
+    Window::from_wintype(wintype).fill(o);
 }
 
 /// The exact byte length of the peak-pyramid cache for `n` samples at

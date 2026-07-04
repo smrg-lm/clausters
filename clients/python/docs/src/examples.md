@@ -31,6 +31,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/graph_maths.py out.wav
   ```
 
+- **`spectral.py`** — also self-contained (renders a WAV, no server): a frequency-domain `fft` → `pv_brick_wall` → `ifft` chain (S8) that low-passes white noise **in the spectral domain**, rendered next to the raw noise so the effect is audible. No buffer is allocated; the frame is synth-private scratch on the server. See [The frequency-domain chain](defs.md#the-frequency-domain-chain).
+
+  ```sh
+  python clients/python/examples/spectral.py out.wav
+  ```
+
 - **`live_udp.py`** — the same pattern, live over UDP to a **separate, running** server. The wheel ships that server as the `clausters` command (or use `cargo run --release`).
 
   ```sh

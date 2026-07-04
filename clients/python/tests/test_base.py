@@ -69,6 +69,27 @@ def test_extended_ops_s3():
     assert B.sumsqr([1.0, 2.0], [2.0, 1.0]) == [pytest.approx(5.0), pytest.approx(5.0)]
 
 
+def test_smoothing_windows_s8():
+    # S8: the FFT-chain windows are the shared core, exposed for binary parity
+    # (same shape the server's FFT/IFFT applies).
+    _ffi_or_skip()
+    import math
+    from clausters import _native
+
+    n = 64
+    hann = _native.window(_native.Window.HANN, n)
+    assert len(hann) == n
+    # Periodic Hann: starts at 0, symmetric, in [0, 1].
+    assert hann[0] == pytest.approx(0.0, abs=1e-6)
+    for i in range(1, n // 2):
+        assert hann[i] == pytest.approx(hann[n - i], abs=1e-6)
+    for k in range(n):
+        assert hann[k] == pytest.approx(0.5 - 0.5 * math.cos(2 * math.pi * k / n), abs=1e-6)
+    # Rectangular is all ones; an unknown type falls back to Hann (like the server).
+    assert list(_native.window(_native.Window.RECTANGULAR, 8)) == [1.0] * 8
+    assert list(_native.window(999, n)) == list(hann)
+
+
 # ---- absobject: operator overloading dispatches by selector ----
 
 class _Recorder(AbstractObject):

@@ -252,9 +252,9 @@ unsupported size, or a `PV_*`/`IFFT` whose first input is not a spectral chain,
 fails the def with `/fail`.
 
 Analysis and resynthesis use the same window (Hann by default), and the
-overlap-add is **window-normalized** (divided by the accumulated window energy),
-so a plain `FFT`→`IFFT` reconstructs the signal at unity gain, delayed by the
-transform latency (one window). The window type is settable live per instance
+overlap-add is **window-normalized** (divided by the steady-state window-overlap
+denominator, COLA), so a plain `FFT`→`IFFT` reconstructs the signal at unity
+gain, delayed by the transform latency (one window). The window type is settable live per instance
 with `/u_cmd <nodeID> <ugenIndex> window <wintype>` (`-1` rectangular, `0` Hann,
 `1` sine, `2` Welch, `3` Hamming, `4` Blackman) — the first consumer of the typed
 per-UGen command surface.

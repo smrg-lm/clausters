@@ -369,6 +369,42 @@ vivo se usaría `srv.pause`/`srv.resume` directo):
 # -> beat RMS: 0.141 (on) 0.000 (paused) 0.141 (resumed)
 ```
 
+### UGens de efecto colateral y cadena espectral (S9 + S8)
+
+**S9 — efecto colateral sin `out`.** `send_trig(trig, id, value)`,
+`send_reply(trig, *values, cmd="/reply", reply_id=-1)` y
+`poll(trig, signal, label="poll", trig_id=-1)` disparan un reply OSC o un post en
+consola en lugar de audio. Un `SynthDef` puede consistir **sólo** en ellos, sin
+`out` — se pasan como **raíces** del def (el builder relajó la exigencia de un
+`out`, C19). Cubierto por `tests/test_synthdef.py::test_side_effect_ugens_need_no_out`.
+
+**S8 — cadena en frecuencia `fft` → `pv_*` → `ifft`.** `fft(source, active=1.0,
+fft_size=1024, hop=0.5, wintype=0)` abre una cadena espectral, los filtros
+`pv_mag_above`/`pv_mag_below`/`pv_brick_wall` transforman el frame, e `ifft`
+resintetiza audio. Se cablean en orden. El frame es **scratch privado del synth**
+en el servidor (modelo `LocalBuf`): no se aloca ningún buffer. Sólo `fft` nombra
+el tamaño; el servidor lo propaga por la cadena. El tipo de ventana se cambia en
+vivo con `Server.u_cmd(synth, fft_index, "window", Window.BLACKMAN)`.
+
+Las **ventanas** se comparten con el servidor por el núcleo nativo
+(`clausters._native.window(Window.HANN, n)` — misma forma que aplica el `FFT`,
+paridad binaria; ABI del core subió a v4). Cubierto por
+`tests/test_synthdef.py` (`test_fft_chain_serializes_with_static_fields`,
+`test_fft_defaults`) y `tests/test_base.py::test_smoothing_windows_s8`.
+
+```sh
+cargo build --release -p clausters-ffi   # el core v4 (window) que carga _native
+.venv/bin/python -m pytest tests/test_synthdef.py tests/test_base.py -q
+```
+
+El ejemplo `spectral.py` rinde un WAV **offline**: ruido blanco pasa-bajo en el
+dominio espectral (canal derecho) junto al ruido crudo (izquierdo):
+
+```sh
+.venv/bin/python examples/spectral.py /tmp/spectral.wav
+# -> rendered 96000 frames (2.00 s) | peak ~0.27
+```
+
 ### Programa de grafo con `GraphDef` (M18, `/d_graph`)
 
 La tercera clase de def: donde `SynthDef`/`FaustDef` describen **un** nodo,
