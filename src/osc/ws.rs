@@ -64,6 +64,10 @@ pub struct WsHub {
     /// connection thread writes it as a binary frame; dead connections are
     /// pruned on `Disconnected`.
     conns: HashMap<u64, Sender<Vec<u8>>>,
+    /// Connection ids whose `Disconnected` went by since the last
+    /// [`take_disconnects`](Self::take_disconnects), so the command loop can
+    /// drop per-client state (bus streams, `/notify` registrations).
+    disconnects: Vec<u64>,
     local_addr: SocketAddr,
 }
 
@@ -85,6 +89,7 @@ impl WsHub {
         Ok(Self {
             events: rx,
             conns: HashMap::new(),
+            disconnects: Vec::new(),
             local_addr,
         })
     }
@@ -106,11 +111,19 @@ impl WsHub {
                 }
                 WsEvent::Disconnected(id) => {
                     self.conns.remove(&id);
+                    self.disconnects.push(id);
                 }
                 WsEvent::Frame(id, bytes) => return Some((id, bytes)),
             }
         }
         None
+    }
+
+    /// Connection ids that disconnected since the last call. The command loop
+    /// drains this after [`next_frame`](Self::next_frame) returns `None` to
+    /// forget any per-client state it holds for them.
+    pub fn take_disconnects(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.disconnects)
     }
 
     /// Queues a reply to connection `id` (silently dropped if the connection is

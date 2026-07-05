@@ -190,6 +190,21 @@ def test_server_map_and_set_layout():
     assert iface.sent[-1] == ("/n_mapa", [1000, "in", bus.index])
 
 
+def test_server_stream_buses_subscribes_and_cancels():
+    # /c_stream: periodic /c_set snapshots of control buses (the network
+    # counterpart of the shared-memory segment, e.g. browser meters).
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/done", "/c_stream")
+    addr, args = srv.stream_buses(33, 10, srv.control_bus())
+    assert addr == "/done" and args[0] == "/c_stream"
+    assert iface.sent[-1] == ("/c_stream", [33, 10, 0])
+    # period <= 0 (or no buses) cancels the subscription.
+    iface.queue_reply("/done", "/c_stream")
+    srv.stream_buses(0)
+    assert iface.sent[-1] == ("/c_stream", [0])
+
+
 def test_server_run_pause_resume_emit_n_run():
     # S4: /n_run pauses (flag 0) / resumes (flag 1) a node.
     iface = _FakeInterface()

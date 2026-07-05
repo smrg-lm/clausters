@@ -25,7 +25,7 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType, encoder};
 use tracing::{error, info, warn};
@@ -49,6 +49,15 @@ const RECV_BUF_SIZE: usize = 65536;
 
 /// How long `recv_from` blocks before we take a garbage-collection pass.
 const GC_INTERVAL: Duration = Duration::from_millis(100);
+
+/// Fastest `/c_stream` period a client can ask for (faster requests are
+/// clamped, not failed): ~3x the interactive 30 Hz a GUI meter needs, and a
+/// bound on how much reply traffic one client can subscribe to.
+const MIN_STREAM_PERIOD: Duration = Duration::from_millis(10);
+
+/// Most bus indices one `/c_stream` subscription may list: 128 (index, value)
+/// pairs fit comfortably in a single frame on every transport.
+const MAX_STREAM_BUSES: usize = 128;
 
 /// Information reported in `/status.reply` that does not come from the
 /// engine counters.
@@ -76,6 +85,10 @@ pub struct OscServer {
     nrt: NrtThread,
     /// Clients registered via `/notify 1`; the client ID is index + 1.
     clients: Vec<ClientId>,
+    /// Active `/c_stream` subscriptions, at most one per client: the network
+    /// counterpart of the shared-memory control-bus segment, for clients (a
+    /// browser) that cannot map it. Pumped by the run loop.
+    streams: Vec<BusStream>,
     recv_buf: Vec<u8>,
     /// M14: the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
@@ -131,6 +144,15 @@ struct Transport {
     position: f64,
 }
 
+/// One client's `/c_stream` subscription: which control buses it watches and
+/// when its next `/c_set` snapshot is due.
+struct BusStream {
+    client: ClientId,
+    period: Duration,
+    buses: Vec<i32>,
+    next_due: Instant,
+}
+
 /// A `/sync` waiting for the async pipelines to drain up to its targets.
 struct PendingSync {
     client: ClientId,
@@ -161,6 +183,7 @@ impl OscServer {
             translator,
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
+            streams: Vec::new(),
             ipc: None,
             tcp: None,
             ws: None,
@@ -372,6 +395,8 @@ impl OscServer {
                 return Ok(());
             }
             self.drain_midi();
+            self.prune_disconnected();
+            self.pump_streams();
             let (len, from) = match self.socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
                 Err(e)
@@ -821,6 +846,7 @@ impl OscServer {
             "/c_setn" => self.handle_c_setn(&msg, from),
             "/c_getn" => self.handle_c_getn(&msg, from),
             "/c_fill" => self.handle_c_fill(&msg, from),
+            "/c_stream" => self.handle_c_stream(&msg, from),
             "/s_get" => self.handle_s_get(&msg, from, false),
             "/s_getn" => self.handle_s_get(&msg, from, true),
             "/s_noid" => self.handle_s_noid(&msg, from),
@@ -1285,6 +1311,128 @@ impl OscServer {
             ),
             Err(e) => self.fail(from, "/g_dumpGraph", e),
         }
+    }
+
+    /// `/c_stream periodMs busIndex...`: subscribes this client to a periodic
+    /// `/c_set` snapshot of the listed control buses — the network counterpart
+    /// of reading the shared-memory segment, for clients that cannot map it (a
+    /// browser GUI host's meters/scopes over WebSocket). One subscription per
+    /// client, replaced on every call; `periodMs <= 0` or an empty list
+    /// cancels. Acks `/done "/c_stream"`, then sends the first snapshot
+    /// immediately and the rest from the run loop. Not schedulable in timed
+    /// bundles. Subscriptions die with their TCP/WS connection; UDP and ring
+    /// clients cancel explicitly (same posture as `/notify`).
+    fn handle_c_stream(&mut self, msg: &OscMessage, from: ClientId) {
+        let Some(OscType::Int(period_ms)) = msg.args.first() else {
+            return self.fail(from, "/c_stream", "expected int periodMs");
+        };
+        let mut buses = Vec::with_capacity(msg.args.len().saturating_sub(1));
+        for arg in &msg.args[1..] {
+            let OscType::Int(index) = arg else {
+                return self.fail(from, "/c_stream", "expected int bus indices");
+            };
+            if *index < 0 {
+                return self.fail(from, "/c_stream", "bus index must be non-negative");
+            }
+            buses.push(*index);
+        }
+        if buses.len() > MAX_STREAM_BUSES {
+            return self.fail(
+                from,
+                "/c_stream",
+                format!("at most {MAX_STREAM_BUSES} bus indices per subscription"),
+            );
+        }
+        self.streams.retain(|s| s.client != from);
+        self.reply(from, "/done", vec![OscType::String("/c_stream".into())]);
+        if *period_ms > 0 && !buses.is_empty() {
+            let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
+            self.streams.push(BusStream {
+                client: from,
+                period,
+                buses,
+                next_due: Instant::now() + period,
+            });
+            // The immediate snapshot: the client paints without waiting a period.
+            let args = self.stream_args(self.streams.len() - 1);
+            self.reply(from, "/c_set", args);
+        }
+        self.retune_timeout();
+    }
+
+    /// Sends every due stream its `/c_set` snapshot. Called once per run-loop
+    /// iteration; the socket timeout is tuned so an idle loop still ticks at
+    /// the fastest subscribed period (see [`Self::retune_timeout`]). Reading a
+    /// control bus is one relaxed atomic load — no engine round-trip.
+    fn pump_streams(&mut self) {
+        if self.streams.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        for i in 0..self.streams.len() {
+            if now < self.streams[i].next_due {
+                continue;
+            }
+            let client = self.streams[i].client;
+            let args = self.stream_args(i);
+            self.reply(client, "/c_set", args);
+            // Rebase on `now` (no catch-up bursts after a stall).
+            let period = self.streams[i].period;
+            self.streams[i].next_due = now + period;
+        }
+    }
+
+    /// The `(busIndex, value)` pairs of stream `i`'s snapshot.
+    fn stream_args(&self, i: usize) -> Vec<OscType> {
+        let buses = &self.streams[i].buses;
+        let mut args = Vec::with_capacity(buses.len() * 2);
+        for &bus in buses {
+            args.push(OscType::Int(bus));
+            args.push(OscType::Float(
+                self.handle.control_buses().get(bus as usize),
+            ));
+        }
+        args
+    }
+
+    /// Retunes the socket read timeout — the run loop's idle tick — to the
+    /// fastest subscribed stream period, so streams keep their cadence without
+    /// traffic. The 2 ms IPC poll (`attach_ipc`) is faster than any allowed
+    /// period and wins unconditionally; without streams the tick falls back to
+    /// the GC interval.
+    fn retune_timeout(&self) {
+        if self.ipc.is_some() {
+            return;
+        }
+        let timeout = self
+            .streams
+            .iter()
+            .map(|s| s.period)
+            .min()
+            .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));
+        if let Err(e) = self.socket.set_read_timeout(Some(timeout)) {
+            warn!("failed to retune the socket timeout: {e}");
+        }
+    }
+
+    /// Forgets per-client state (bus streams, `/notify` registrations) for
+    /// TCP/WS connections that closed since the last pass. UDP and ring
+    /// clients have no disconnect signal; their state goes on explicit
+    /// cancel/`/notify 0` or `/quit`, as in scsynth.
+    fn prune_disconnected(&mut self) {
+        let mut gone: Vec<ClientId> = Vec::new();
+        if let Some(hub) = &mut self.tcp {
+            gone.extend(hub.take_disconnects().into_iter().map(ClientId::Tcp));
+        }
+        if let Some(hub) = &mut self.ws {
+            gone.extend(hub.take_disconnects().into_iter().map(ClientId::Ws));
+        }
+        if gone.is_empty() {
+            return;
+        }
+        self.streams.retain(|s| !gone.contains(&s.client));
+        self.clients.retain(|c| !gone.contains(c));
+        self.retune_timeout();
     }
 
     /// Control buses are shared atomics: set directly, no engine round-trip.

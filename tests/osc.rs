@@ -408,6 +408,112 @@ fn c_set_and_c_get_roundtrip() {
 }
 
 #[test]
+fn c_stream_acks_snapshots_and_tracks_updates() {
+    let server = TestServer::spawn();
+
+    server.send("/c_set", vec![OscType::Int(3), OscType::Float(0.5)]);
+    server.send(
+        "/c_stream",
+        vec![OscType::Int(20), OscType::Int(3), OscType::Int(7)],
+    );
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/c_stream".into()));
+
+    // The immediate snapshot carries (busIndex, value) pairs for both buses.
+    let snap = server.recv_until("/c_set");
+    assert_eq!(
+        snap.args,
+        vec![
+            OscType::Int(3),
+            OscType::Float(0.5),
+            OscType::Int(7),
+            OscType::Float(0.0),
+        ]
+    );
+
+    // The stream keeps coming without any further request, and tracks writes.
+    server.send("/c_set", vec![OscType::Int(7), OscType::Float(0.75)]);
+    let mut saw_update = false;
+    for _ in 0..20 {
+        let frame = server.recv_until("/c_set");
+        assert_eq!(frame.args.len(), 4, "one (index, value) pair per bus");
+        if frame.args[3] == OscType::Float(0.75) {
+            saw_update = true;
+            break;
+        }
+    }
+    assert!(saw_update, "the periodic snapshots never showed the write");
+
+    server.quit();
+}
+
+#[test]
+fn c_stream_resubscribe_replaces_and_zero_cancels() {
+    let server = TestServer::spawn();
+
+    server.send("/c_stream", vec![OscType::Int(20), OscType::Int(1)]);
+    server.recv_until("/done");
+    server.recv_until("/c_set");
+
+    // A second subscription replaces the first: frames now carry bus 2 only.
+    server.send("/c_stream", vec![OscType::Int(20), OscType::Int(2)]);
+    server.recv_until("/done");
+    for _ in 0..20 {
+        let frame = server.recv_until("/c_set");
+        if frame.args[0] == OscType::Int(2) {
+            assert_eq!(frame.args.len(), 2, "the old subscription must be gone");
+            break;
+        }
+    }
+
+    // Period 0 cancels: after the ack and a drain, the stream is silent.
+    server.send("/c_stream", vec![OscType::Int(0)]);
+    server.recv_until("/done");
+    server
+        .client
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    let mut buf = [0u8; 65536];
+    loop {
+        // Drain frames already in flight; three periods of silence ends it.
+        if server.client.recv_from(&mut buf).is_err() {
+            break;
+        }
+    }
+    assert!(
+        server.client.recv_from(&mut buf).is_err(),
+        "cancelled stream kept sending"
+    );
+
+    server
+        .client
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    server.quit();
+}
+
+#[test]
+fn c_stream_rejects_bad_arguments() {
+    let server = TestServer::spawn();
+
+    server.send("/c_stream", vec![]);
+    let reply = server.recv_until("/fail");
+    assert_eq!(reply.args[0], OscType::String("/c_stream".into()));
+
+    server.send("/c_stream", vec![OscType::Int(20), OscType::Int(-1)]);
+    let reply = server.recv_until("/fail");
+    assert_eq!(reply.args[0], OscType::String("/c_stream".into()));
+
+    let mut args = vec![OscType::Int(20)];
+    args.extend((0..129).map(OscType::Int));
+    server.send("/c_stream", args);
+    let reply = server.recv_until("/fail");
+    assert_eq!(reply.args[0], OscType::String("/c_stream".into()));
+
+    server.quit();
+}
+
+#[test]
 fn b_getn_and_b_get_read_buffer_samples() {
     let server = TestServer::spawn();
 

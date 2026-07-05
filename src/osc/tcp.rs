@@ -47,6 +47,10 @@ pub struct TcpHub {
     /// goes through `&TcpStream`, which implements [`Write`], so a reply needs
     /// only a shared borrow; dead connections are pruned on `Disconnected`.
     conns: HashMap<u64, TcpStream>,
+    /// Connection ids whose `Disconnected` went by since the last
+    /// [`take_disconnects`](Self::take_disconnects), so the command loop can
+    /// drop per-client state (bus streams, `/notify` registrations).
+    disconnects: Vec<u64>,
     local_addr: SocketAddr,
 }
 
@@ -67,6 +71,7 @@ impl TcpHub {
         Ok(Self {
             events: rx,
             conns: HashMap::new(),
+            disconnects: Vec::new(),
             local_addr,
         })
     }
@@ -88,11 +93,19 @@ impl TcpHub {
                 }
                 TcpEvent::Disconnected(id) => {
                     self.conns.remove(&id);
+                    self.disconnects.push(id);
                 }
                 TcpEvent::Frame(id, bytes) => return Some((id, bytes)),
             }
         }
         None
+    }
+
+    /// Connection ids that disconnected since the last call. The command loop
+    /// drains this after [`next_frame`](Self::next_frame) returns `None` to
+    /// forget any per-client state it holds for them.
+    pub fn take_disconnects(&mut self) -> Vec<u64> {
+        std::mem::take(&mut self.disconnects)
     }
 
     /// Writes a length-prefixed reply to connection `id` (silently dropped if

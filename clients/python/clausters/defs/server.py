@@ -577,6 +577,19 @@ class Server:
         _, args = self.request("/c_get", index, timeout=timeout, expect=("/c_set",))
         return args[1] if len(args) >= 2 else args[-1]
 
+    def stream_buses(self, period_ms: int, *buses, timeout: float = 5.0):
+        """Subscribes this client to a periodic ``/c_set`` snapshot of the
+        given control buses (``/c_stream``): the server sends one snapshot
+        immediately and then one every ``period_ms`` (floor 10 ms, at most 128
+        buses) with no further requests -- the network counterpart of reading
+        the shared-memory segment, e.g. for meters over WebSocket. One
+        subscription per client, replaced on each call; ``period_ms <= 0`` (or
+        no buses) cancels it. Receive the snapshots with an `OscFunc` on
+        ``/c_set``. Blocks on the ``/done`` ack."""
+        indices = [b.index if isinstance(b, Bus) else int(b) for b in buses]
+        return self.request("/c_stream", int(period_ms), *indices,
+                            timeout=timeout, expect=("/done", "/fail"))
+
     # ---- buffers ----
 
     def alloc_buffer(self, frames: int, channels: int = 1, timeout: float = 5.0) -> Buffer:

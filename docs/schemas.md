@@ -72,9 +72,11 @@ Execution order within a group is the child order, and these commands rewrite it
 
 All of these are disabled inside an **auto-sorted group** (`/g_sortMode … 1`): there the execution order is recomputed from the bus-connection DAG, so a manual move replies `/fail` — use auto-sort, or a manually-ordered group, but not both. (This is why `/n_order` earns its place only in manual groups: it is a batch `/n_before`/`/n_after`/`/g_head`/`/g_tail`.)
 
-### Control buses (`/c_set`, `/c_setn`, `/c_fill`, `/c_get`, `/c_getn`)
+### Control buses (`/c_set`, `/c_setn`, `/c_fill`, `/c_get`, `/c_getn`, `/c_stream`)
 
 Control buses are shared `f32` slots any client or synth reads and writes — the glue between `/c_set` and `/n_map`. `/c_set bus value...` writes single buses (pairs); `/c_setn bus numBuses value...` writes a **consecutive range** from a value list (repeatable groups); `/c_fill bus numBuses value` fills a range with one value (repeatable triples). `/c_get bus...` reads single buses, replying `/c_set (bus value)...`; `/c_getn bus numBuses...` reads ranges, replying `/c_setn (bus numBuses value...)...`. Unset buses read `0.0`. The immediate forms write the shared atomics on the network thread; inside a **timed bundle** the writes travel to the audio thread so they land on the exact scheduled sample.
+
+Beyond scsynth, **`/c_stream periodMs bus...`** subscribes the sending client to a **periodic snapshot** of the listed buses: the server acks `/done /c_stream`, sends one `/c_set (bus value)...` immediately, and keeps sending one every `periodMs` (clamped to a 10 ms floor; at most 128 buses per subscription) without further requests. It is the network counterpart of reading the control buses from the shared-memory segment, for clients that cannot map it — a browser GUI's meters and scopes over WebSocket. One subscription per client, **replaced** by each new `/c_stream`; `periodMs <= 0` (or an empty bus list) cancels. A subscription dies with its TCP/WebSocket connection; over UDP or the shared-memory ring it lasts until an explicit cancel or `/quit` (the `/notify` posture). Not schedulable in a timed bundle.
 
 ## Timed bundles
 
