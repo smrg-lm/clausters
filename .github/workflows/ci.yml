@@ -142,8 +142,10 @@ jobs:
     timeout-minutes: 60
     env:
       # The commit BUILD-FAUST.md verified (master-dev, "Set version to
-      # 2.86.0"). Bump deliberately, together with a local re-verification.
-      FAUST_SHA: 56c9e678d
+      # 2.86.0"; short form 56c9e678d). Full 40-char SHA: fetching an
+      # arbitrary commit by SHA only resolves unabbreviated. Bump
+      # deliberately, together with a local re-verification.
+      FAUST_SHA: 56c9e678ddff8688bf113db145033ac8a10c4795
       FAUST_PREFIX: /home/runner/.local
     steps:
       - uses: actions/checkout@v4
