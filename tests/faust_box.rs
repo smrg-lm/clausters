@@ -1,0 +1,239 @@
+//! Box API tests at the FFI level (`ffi::Cbox*`), the box counterpart of
+//! `faust_signal.rs`. Gated behind the `faust` feature:
+//! `cargo test --features faust --test faust_box`.
+//!
+//! The split across the box suites: `faust_smoke.rs` is the F0 latency probe
+//! (one sine through the Box API), `faust_json.rs` covers the JSON → Box
+//! interpreter, and this file covers Box API *semantics* built directly with
+//! FFI calls — `rec` feedback, `CDSPToBoxes` fragment arity — plus the
+//! upstream copy-paste bugs and their workaround:
+//!
+//! - **Canary**: libfaust's `boxCos()`/`boxFmod()` both return the `abs`
+//!   primitive (copy-paste bug in `box_signal_api.cpp`, present from 2.81.10
+//!   through at least 2.86.0), so `CboxCosAux` silently computes `abs` and
+//!   `CboxFmodAux` is deliberately not even bound in `ffi.rs`. The canary
+//!   asserts the bug is still there: when a libfaust upgrade makes it fail,
+//!   the fragment workaround in `faust::boxes` can be retired.
+//! - **Regression**: the workaround (`cos`/`fmod` built from a one-line
+//!   `CDSPToBoxes` fragment) must produce the genuine primitives through the
+//!   JSON schema. `faust_json.rs` guards `cos`; `fmod` is guarded here.
+
+#![cfg(feature = "faust")]
+
+use std::ffi::{CStr, CString, c_char, c_int};
+
+use clausters::faust::compiler::{self, CompilePayload};
+use clausters::faust::ffi::*;
+use serde_json::json;
+
+const SR: f32 = 48_000.0;
+const BLOCK: usize = 64;
+
+/// Holds the process-wide FFI lock with the libfaust context open, dropping
+/// the context before the lock — the same bracket `faust::compiler` uses.
+/// Boxes are arena pointers that die with the context; only the factory
+/// survives it.
+struct LibCtx {
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+impl LibCtx {
+    fn acquire() -> Self {
+        let lock = compiler::ffi_lock();
+        unsafe { createLibContext() };
+        Self { _lock: lock }
+    }
+}
+
+impl Drop for LibCtx {
+    fn drop(&mut self) {
+        unsafe { destroyLibContext() };
+    }
+}
+
+/// JIT-compiles the box returned by `build` (which runs inside the
+/// context bracket) into a factory. No compiler args: these graphs use no
+/// stdlib imports and constant folding does not depend on `-ftz`.
+fn factory_from_boxes(name: &str, build: impl FnOnce() -> FaustBox) -> *mut llvm_dsp_factory {
+    let name_c = CString::new(name).unwrap();
+    let target = CString::new("").unwrap();
+    let mut error_msg = [0 as c_char; ERROR_MSG_SIZE];
+    let ctx = LibCtx::acquire();
+    let process = build();
+    let factory = unsafe {
+        createCDSPFactoryFromBoxes(
+            name_c.as_ptr(),
+            process,
+            0,
+            std::ptr::null(),
+            target.as_ptr(),
+            error_msg.as_mut_ptr(),
+            -1,
+        )
+    };
+    drop(ctx);
+    assert!(
+        !factory.is_null(),
+        "factory creation failed: {}",
+        unsafe { CStr::from_ptr(error_msg.as_ptr()) }.to_string_lossy()
+    );
+    factory
+}
+
+/// Renders `input` through a 1-in/1-out instance of `factory`, block by
+/// block, audio-thread style. With `input` empty renders a 0-in def instead
+/// for `samples` samples.
+fn render(factory: *mut llvm_dsp_factory, input: &[f32], samples: usize) -> Vec<f32> {
+    let dsp = unsafe { createCDSPInstance(factory) };
+    assert!(!dsp.is_null(), "instance creation failed");
+    unsafe { initCDSPInstance(dsp, SR as i32) };
+    let expected_ins = if input.is_empty() { 0 } else { 1 };
+    assert_eq!(unsafe { getNumInputsCDSPInstance(dsp) }, expected_ins);
+    assert_eq!(unsafe { getNumOutputsCDSPInstance(dsp) }, 1);
+
+    let total = if input.is_empty() {
+        samples
+    } else {
+        input.len()
+    };
+    let mut inb = [0.0f32; BLOCK];
+    let mut outb = [0.0f32; BLOCK];
+    let mut out = Vec::with_capacity(total);
+    let mut i = 0;
+    while i < total {
+        let n = BLOCK.min(total - i);
+        let mut ins: [*mut f32; 1] = [inb.as_mut_ptr()];
+        let inputs = if input.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            inb[..n].copy_from_slice(&input[i..i + n]);
+            inb[n..].fill(0.0);
+            ins.as_mut_ptr()
+        };
+        let mut outs: [*mut f32; 1] = [outb.as_mut_ptr()];
+        unsafe { computeCDSPInstance(dsp, BLOCK as i32, inputs, outs.as_mut_ptr()) };
+        out.extend_from_slice(&outb[..n]);
+        i += n;
+    }
+    unsafe { deleteCDSPInstance(dsp) };
+    out
+}
+
+/// `rec` feedback at the FFI level: `*(1-a) : (+ ~ *(a))` is the one-pole
+/// `y[n] = (1-a)·x[n] + a·y[n-1]` — `~` carries one implicit sample of
+/// delay, exactly like the Signal API's `recursion`/`self` pair (the same
+/// filter and assertions as `faust_signal.rs`, so the two feedback forms are
+/// pinned to identical semantics).
+#[test]
+fn box_rec_feedback_makes_a_one_pole_filter() {
+    let a = 0.5f64;
+    let factory = factory_from_boxes("bpole", || unsafe {
+        let adder = CboxAddAux(CboxWire(), CboxWire());
+        let fb = CboxMulAux(CboxWire(), CboxReal(a));
+        let pre = CboxMulAux(CboxWire(), CboxReal(1.0 - a));
+        CboxSeq(pre, CboxRec(adder, fb))
+    });
+
+    let mut impulse = vec![0.0f32; 512];
+    impulse[0] = 1.0;
+    let y = render(factory, &impulse, 0);
+    unsafe { deleteCDSPFactory(factory) };
+
+    assert!((y[0] - (1.0 - a as f32)).abs() < 1e-5, "y[0] = {}", y[0]);
+    for n in 0..8 {
+        let ratio = y[n + 1] / y[n];
+        assert!(
+            (ratio - a as f32).abs() < 1e-4,
+            "y[{}]/y[{n}] = {ratio}",
+            n + 1
+        );
+    }
+}
+
+/// Canary for the upstream copy-paste bug: `CboxCosAux(0.5)` must still
+/// compute `abs(0.5) = 0.5` — NOT the cosine. If this test ever fails with a
+/// cosine coming out, the linked libfaust has fixed `boxCos()`/`boxFmod()`
+/// (both return the abs primitive in `box_signal_api.cpp`) and the fragment
+/// workaround in `faust::boxes` (plus this canary and the unbound
+/// `CboxFmodAux` note in `ffi.rs`) can be retired.
+#[test]
+fn upstream_boxcos_still_computes_abs() {
+    let factory = factory_from_boxes("bcanary", || unsafe { CboxCosAux(CboxReal(0.5)) });
+    let out = render(factory, &[], 16);
+    unsafe { deleteCDSPFactory(factory) };
+    let v = out[0];
+    assert!(
+        (v - 0.5).abs() < 1e-6,
+        "CboxCosAux(0.5) = {v}: upstream fixed boxCos() — \
+         retire the fragment workaround in faust::boxes"
+    );
+}
+
+/// Regression for the `fmod` workaround (the twin of `faust_json.rs`'s `cos`
+/// one): through the JSON schema, `fmod(5.25, 2.0)` must be the genuine
+/// primitive, 1.25 — not `abs` (5.25) nor a compile error, the two faces of
+/// the upstream bug.
+#[test]
+fn box_fmod_computes_fmod_not_abs() {
+    let graph = json!({"op": "fmod", "in": [5.25, 2.0]});
+    let def = compiler::compile("bfmod", &CompilePayload::Json(graph.to_string()))
+        .expect("fmod must compile through the fragment workaround");
+    let out = render(def.factory().as_ptr(), &[], 16);
+    let v = out[0];
+    assert!((v - 1.25).abs() < 1e-6, "fmod(5.25, 2.0) = {v}");
+}
+
+/// `CDSPToBoxes` reports the fragment's I/O arity through its out-params
+/// (which `faust::boxes` ignores), and the resulting box composes with
+/// primitives: `(3, 4) : +` must render 7.
+#[test]
+fn cdsp_to_boxes_reports_arity_and_composes() {
+    let name = CString::new("frag").unwrap();
+    let src = CString::new("process = +;").unwrap();
+    let target = CString::new("").unwrap();
+    let mut error_msg = [0 as c_char; ERROR_MSG_SIZE];
+    let (mut ins, mut outs) = (-1 as c_int, -1 as c_int);
+
+    let ctx = LibCtx::acquire();
+    let fragment = unsafe {
+        CDSPToBoxes(
+            name.as_ptr(),
+            src.as_ptr(),
+            0,
+            std::ptr::null(),
+            &mut ins,
+            &mut outs,
+            error_msg.as_mut_ptr(),
+        )
+    };
+    assert!(
+        !fragment.is_null(),
+        "fragment failed: {}",
+        unsafe { CStr::from_ptr(error_msg.as_ptr()) }.to_string_lossy()
+    );
+    assert_eq!((ins, outs), (2, 1), "`+` is a 2-in/1-out box");
+
+    let name_c = CString::new("bfrag").unwrap();
+    let process = unsafe { CboxSeq(CboxPar(CboxReal(3.0), CboxReal(4.0)), fragment) };
+    let factory = unsafe {
+        createCDSPFactoryFromBoxes(
+            name_c.as_ptr(),
+            process,
+            0,
+            std::ptr::null(),
+            target.as_ptr(),
+            error_msg.as_mut_ptr(),
+            -1,
+        )
+    };
+    drop(ctx);
+    assert!(
+        !factory.is_null(),
+        "factory creation failed: {}",
+        unsafe { CStr::from_ptr(error_msg.as_ptr()) }.to_string_lossy()
+    );
+
+    let out = render(factory, &[], 16);
+    unsafe { deleteCDSPFactory(factory) };
+    assert!(out.iter().all(|&v| v == 7.0), "3 + 4 = {}", out[0]);
+}

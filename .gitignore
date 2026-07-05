@@ -1,6 +1,6 @@
 /target
 /book
-/third_party
+/third_party/faust
 .claude/settings.local.json
 # Persistent per-session memory (local only, never versioned).
 .claude/projects/

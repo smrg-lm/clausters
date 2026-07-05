@@ -338,6 +338,31 @@ fn kitchen_sink_graph_exercises_every_op() {
     }
 }
 
+/// The Signal API twins of the broken box wrappers: upstream's `boxCos()`/
+/// `boxFmod()` return the `abs` primitive (the copy-paste bug guarded in
+/// `faust_box.rs`), while `sigCos()`/`sigFmod()` are correct — this is why
+/// `faust::boxes` needs a fragment workaround and `faust::signals` does not.
+/// Pin the actual values here: the kitchen sink scales everything by 0, so
+/// without this a future libfaust could break the signal path silently too.
+#[test]
+fn signal_cos_and_fmod_are_not_hit_by_the_box_bug() {
+    let cos = compile_signal("scos", &json!({"signals": [un("cos", json!(0.5))]}))
+        .expect("cos must compile");
+    let v = render_mono(&cos, 0.01)[0];
+    assert!(
+        (v - 0.5f32.cos()).abs() < 1e-6,
+        "sigCos(0.5) = {v}, expected ≈ 0.8776 (abs(0.5) = 0.5 would be the box bug)"
+    );
+
+    let fmod = compile_signal(
+        "sfmod",
+        &json!({"signals": [bin("fmod", json!(5.25), json!(2.0))]}),
+    )
+    .expect("fmod must compile");
+    let v = render_mono(&fmod, 0.01)[0];
+    assert!((v - 1.25).abs() < 1e-6, "sigFmod(5.25, 2.0) = {v}");
+}
+
 #[test]
 fn fconst_reads_the_engine_sample_rate() {
     // `ma.SR` is `floatcast(fconstant(int fSamplingFreq, <math.h>))`: a def
