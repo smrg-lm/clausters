@@ -176,8 +176,12 @@ jobs:
           git fetch --depth 1 origin "$FAUST_SHA"
           git checkout FETCH_HEAD
           git submodule update --init --recursive --depth 1
+          # INCLUDE_STATIC=off on top of the BUILD-FAUST.md recipe: clausters
+          # links only the dynamic libfaust.so, and the static
+          # libfaustwithllvm.a embeds LLVM's static component libs, which on
+          # the runner's llvm-dev (Ubuntu LLVM 18) needs libPolly and fails.
           CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
-            CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config"
+            CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config"
           make install PREFIX="$HOME/.local"
           "$HOME/.local/bin/faust" --version
       - uses: Swatinem/rust-cache@v2
