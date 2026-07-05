@@ -10,6 +10,7 @@
 
 #![cfg(feature = "faust")]
 
+use std::ffi::{CString, c_char};
 use std::time::Duration;
 
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
@@ -361,6 +362,54 @@ fn signal_cos_and_fmod_are_not_hit_by_the_box_bug() {
     .expect("fmod must compile");
     let v = render_mono(&fmod, 0.01)[0];
     assert!((v - 1.25).abs() < 1e-6, "sigFmod(5.25, 2.0) = {v}");
+}
+
+/// Canary for the second bug of faust#1264: the signal type checker has no
+/// case for the logical-right-shift opcode (`kLRsh`), so a factory built
+/// from `CsigLRightShift` must fail with `ASSERT : unrecognized opcode : 7`
+/// (2.81.x aborted the whole host process; 2.86.0 returns a null factory
+/// with the assert in the error string). The symbol is deliberately not
+/// bound in `ffi.rs` — it is declared locally here — and the schema's `rsh`
+/// is the arithmetic shift. When this canary fails, the linked libfaust
+/// carries the fix (PR faust#1272): bind the symbol and expose `lrsh`.
+#[test]
+fn upstream_lrsh_still_fails_the_type_checker() {
+    unsafe extern "C" {
+        fn CsigLRightShift(x: ffi::FaustSignal, y: ffi::FaustSignal) -> ffi::FaustSignal;
+    }
+    let name = CString::new("lrsh").unwrap();
+    let target = CString::new("").unwrap();
+    let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
+
+    let guard = clausters::faust::compiler::ffi_lock();
+    let factory = unsafe {
+        ffi::createLibContext();
+        let a = ffi::CsigIntCast(ffi::CsigReal(3.0));
+        let b = ffi::CsigIntCast(ffi::CsigReal(1.0));
+        let mut outs = [
+            ffi::CsigFloatCast(CsigLRightShift(a, b)),
+            std::ptr::null_mut(),
+        ];
+        let f = ffi::createCDSPFactoryFromSignals(
+            name.as_ptr(),
+            outs.as_mut_ptr(),
+            0,
+            std::ptr::null(),
+            target.as_ptr(),
+            error_msg.as_mut_ptr(),
+            -1,
+        );
+        ffi::destroyLibContext();
+        f
+    };
+    drop(guard);
+    if !factory.is_null() {
+        unsafe { ffi::deleteCDSPFactory(factory) };
+        panic!(
+            "CsigLRightShift now compiles: upstream fixed kLRsh (faust#1264) — \
+             bind it in ffi.rs and expose `lrsh` in the signal schema"
+        );
+    }
 }
 
 #[test]

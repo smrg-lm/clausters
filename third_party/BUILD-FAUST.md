@@ -1,7 +1,9 @@
 # Building Faust from `third_party/faust`
 
 How to build and install the Faust toolchain vendored in `third_party/faust`
-(a full clone with `--recurse-submodules`, currently **2.86.0**), entirely in
+(a full clone with `--recurse-submodules`, currently the `master-dev` tip
+**versioned 2.86.0** — the unreleased dev version right after the 2.85.9
+release: GRAME bumps the version string first thing after tagging), entirely in
 user space (no sudo). Clausters needs **libfaust with the LLVM backend**;
 Ubuntu's `libfaust2t64` ships without it and without headers, so building from
 source is mandatory (see the F0 section of `LOG.md` for the original findings
@@ -114,13 +116,18 @@ only required to build the two artifacts above.
 
 ## The `fix-boxcos-boxfmod` branch
 
-The clone carries a local branch fixing upstream's `boxCos()`/`boxFmod()`
-copy-paste bug (both return the `abs` primitive — [faust#1264], the reason
-for the fragment workaround in `src/faust/boxes.rs`), submitted upstream as
-[faust#1272](https://github.com/grame-cncm/faust/pull/1272). Note: if you build and install libfaust **from that branch**,
-the canary `upstream_boxcos_still_computes_abs` in `tests/faust_box.rs`
-fails *by design* — that is the signal to retire the workaround. The
-verified install below is from the pristine 2.86.0 tag.
+The clone carries a local branch fixing the two C-API bugs of [faust#1264]
+(submitted upstream as
+[faust#1272](https://github.com/grame-cncm/faust/pull/1272)):
+`boxCos()`/`boxFmod()` returning the `abs` primitive — the reason for the
+fragment workaround in `src/faust/boxes.rs` — and the missing `kLRsh` case
+in the signal type checker — the reason `CsigLRightShift` is not bound in
+`src/faust/ffi.rs`. Note: if you build and install libfaust **from that
+branch**, the canaries `upstream_boxcos_still_computes_abs`
+(`tests/faust_box.rs`) and `upstream_lrsh_still_fails_the_type_checker`
+(`tests/faust_signal.rs`) fail *by design* — that is the signal to retire
+the workaround and bind `lrsh`. The verified install below is from the
+unpatched `master-dev` base (`56c9e678d`, "Set version to 2.86.0").
 
 [faust#1264]: https://github.com/grame-cncm/faust/issues/1264
 

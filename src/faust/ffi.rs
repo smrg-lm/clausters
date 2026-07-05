@@ -292,6 +292,13 @@ unsafe extern "C" {
     pub fn CsigDiv(x: FaustSignal, y: FaustSignal) -> FaustSignal;
     pub fn CsigRem(x: FaustSignal, y: FaustSignal) -> FaustSignal;
     pub fn CsigLeftShift(x: FaustSignal, y: FaustSignal) -> FaustSignal;
+    // `CsigLRightShift` is deliberately not bound: the signal type checker
+    // has no case for the `kLRsh` opcode (faust#1264, fixed in PR
+    // faust#1272), so factory creation fails with an `ASSERT : unrecognized
+    // opcode : 7` — and in 2.81.x aborted the host process. The schema's
+    // `rsh` is the arithmetic shift below; the canary in
+    // `tests/faust_signal.rs` flags when the bug is gone and `lrsh` can be
+    // exposed.
     pub fn CsigARightShift(x: FaustSignal, y: FaustSignal) -> FaustSignal;
     pub fn CsigGT(x: FaustSignal, y: FaustSignal) -> FaustSignal;
     pub fn CsigLT(x: FaustSignal, y: FaustSignal) -> FaustSignal;
