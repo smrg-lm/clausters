@@ -4430,3 +4430,63 @@ type-check only on this machine — libfaust not installed, so no link/run).
 new warnings. Live E2E: default binary plays `vibrato`; a core-only binary
 (`--features realtime`) boots, answers `/status`, `/fail`s `/d_recv` with the
 feature message and warns once about skipped persisted SynthDefs.
+
+## M23 — Continuous integration + publishing (CI, Read the Docs, PyPI) (completed 2026-07-05)
+
+**Goal:** automate the checks the project already required by hand and set up
+the publishing pipeline for what is finished. Repo side complete; three
+account-side activation steps remain manual (listed at the end).
+
+**CI** (`.github/workflows/ci.yml`, six jobs, each mirroring a local command):
+`lint` — `cargo fmt --check` + `cargo clippy --workspace --all-targets -- -D
+warnings` for the root workspace and for `clients/gui` (its own workspace);
+`test` — `cargo test --workspace` over the def-family matrix (default /
+`--no-default-features` / `synth`-only / default+`embed`); `gui` — the gui
+tests plus the G11 wasm build gate (`check-wasm.sh`); `python` —
+`build_native.py --debug` staging + pytest; `docs` — both mdBooks with
+mdBook 0.4.40 (the Read the Docs version) plus the pydoc-markdown API page;
+`faust` — libfaust built from source pinned to the `BUILD-FAUST.md`-verified
+commit `56c9e678d` (shallow SHA fetch + submodules, the dynamic-libLLVM
+recipe), the `~/.local` install cached by SHA, then `cargo test --features
+faust -- --test-threads=1`.
+
+To make the clippy gate strict, the handful of pre-existing warnings was
+fixed: `translate.rs` (`iter().copied()` instead of a snapshot `to_vec` —
+`collect_subtree_synths` takes `&self`, so the borrow comment was stale; a
+`GraphBusAlloc` type alias for the bus-allocation tuple), `server.rs`
+(`tempo.is_nan() || tempo <= 0.0` replacing `!(tempo > 0.0)`, same semantics
+spelled positively) and `tests/graphdef.rs` (`!contains_key` for
+`get().is_none()`). Behavior unchanged; the affected suites re-run green.
+
+**Release** (`.github/workflows/release.yml`): a `v*` tag builds the
+self-contained wheel (release profile; Linux x86_64) and a
+`clausters-server-<version>-linux-x86_64.tar.gz`, publishes the wheel to PyPI
+via Trusted Publishing (OIDC, GitHub environment `pypi`, no stored token) and
+attaches both to a GitHub release. Deliberately no sdist: the package
+compiles cdylibs from the Rust workspace, which an sdist of `clients/python`
+would not contain. macOS/Windows wheels are a later matrix extension.
+
+**Docs:** `docs/contributing.md` — new "Continuous integration" and
+"Releases and publishing" sections (job↔command map; the
+two-Read-the-Docs-projects setup, each project pointing at its own
+`.readthedocs.yaml` via *Path to configuration file*). `GUIA.md` — section
+3ter (the local command block, the tag flow, the three activation steps) and
+a checklist row.
+
+**Verified locally** (the CI commands themselves): `cargo fmt --check` clean
+(root + gui); clippy zero warnings workspace-wide and in gui;
+`tests/graphdef.rs` + `tests/osc.rs` re-run green after the lint fixes (49
+passed); both books build with the exact CI/RTD mdBook 0.4.40 (server book +
+pydoc-markdown regeneration + client book); `build_native.py --debug` stages
+the three artifacts; client pytest 128 passed / 4 skipped. Workflow YAML
+parses. Not verifiable from here: the GitHub runners themselves (first push
+shows; the `faust` job is the one most likely to need a first-run tweak —
+Ubuntu 24.04 ships LLVM 18 via `llvm-dev`, vs 20/21 verified locally).
+
+**Manual activation steps (account side, pending):** (1) create the two Read
+the Docs projects (root `.readthedocs.yaml` → slug `clausters`;
+`clients/python/.readthedocs.yaml` → slug `clausters-python`); (2) PyPI
+trusted publisher for `clausters` (owner `smrg-lm`, repo `clausters`,
+workflow `release.yml`, environment `pypi`; a *pending publisher* works
+before the first upload); (3) the `pypi` environment in the GitHub repo
+settings.

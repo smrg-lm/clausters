@@ -42,6 +42,15 @@ use crate::osc::graph::faust_usage;
 /// Auto-assigned node IDs (`/s_new` with ID -1) start above this.
 const AUTO_NODE_ID_BASE: i32 = 2_000_000;
 
+/// Result of a GraphDef bus allocation: the symbolic-name → first-index map,
+/// plus the `(first, width)` runs taken from the audio and control pools (in
+/// that order), kept so teardown can hand them back.
+type GraphBusAlloc = (
+    HashMap<String, usize>,
+    Vec<(usize, usize)>,
+    Vec<(usize, usize)>,
+);
+
 /// What a live node was built from, mirrored per node ID so `/n_set` can
 /// resolve control names off the audio thread.
 #[derive(Clone)]
@@ -357,8 +366,7 @@ impl CmdTranslator {
         let Some(children) = self.mirror.children(group) else {
             return;
         };
-        // Snapshot so the immutable borrow is released before recursing.
-        for child in children.to_vec() {
+        for child in children.iter().copied() {
             match self.mirror.get(child).map(|n| &n.body) {
                 Some(MirrorBody::Synth { .. }) => out.push(child),
                 Some(MirrorBody::Group { .. }) => self.collect_subtree_synths(child, out),
@@ -831,18 +839,9 @@ impl CmdTranslator {
 
     /// Allocates a GraphDef's private buses (resolved name → first index).
     /// On a shortfall it hands back everything it took, so the caller's later
-    /// steps stay side-effect-free until this succeeds.
-    fn alloc_graph_buses(
-        &mut self,
-        def: &GraphDefSpec,
-    ) -> Result<
-        (
-            HashMap<String, usize>,
-            Vec<(usize, usize)>,
-            Vec<(usize, usize)>,
-        ),
-        String,
-    > {
+    /// steps stay side-effect-free until this succeeds. Returns the name→index
+    /// map plus the `(first, width)` audio and control allocations.
+    fn alloc_graph_buses(&mut self, def: &GraphDefSpec) -> Result<GraphBusAlloc, String> {
         let mut bus_index = HashMap::new();
         let mut audio: Vec<(usize, usize)> = Vec::new();
         let mut control: Vec<(usize, usize)> = Vec::new();

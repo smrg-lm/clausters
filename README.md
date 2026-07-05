@@ -1,5 +1,7 @@
 # Clausters
 
+[![CI](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml/badge.svg)](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml)
+
 Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a
 real-time audio synthesis server controlled over OSC, with the same node-tree
 model and command set. Its main addition over scsynth is the **FaustDef** — a

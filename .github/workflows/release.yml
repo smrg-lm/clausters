@@ -1,0 +1,87 @@
+# Release: on a version tag (v*), build the self-contained Python wheel
+# (client + embedded server + standalone server binary, see clients/python/
+# setup.py) and the standalone server binary, publish the wheel to PyPI and
+# attach both to a GitHub release.
+#
+# PyPI auth is Trusted Publishing (OIDC): the PyPI project `clausters` must
+# list this repository/workflow as a trusted publisher and the repo must have
+# a `pypi` environment (see docs/contributing.md, "Releases"). No API token
+# is stored.
+#
+# Linux x86_64 only for now; adding macOS/Windows wheels is a matter of
+# extending the build matrix once those targets are verified by hand.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: wheel + server binary (linux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev clang
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the wheel (release profile; wheel-only, see note)
+        # No sdist: the package builds cdylibs from the Rust workspace, which
+        # an sdist of clients/python would not contain.
+        working-directory: clients/python
+        run: |
+          pip install build
+          python -m build --wheel
+      - name: Package the standalone server binary
+        run: |
+          cargo build --release
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -C target/release -czf "clausters-server-${VERSION}-linux-x86_64.tar.gz" clausters
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel
+          path: clients/python/dist/*.whl
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-binary
+          path: clausters-server-*.tar.gz
+
+  publish-pypi:
+    name: publish to PyPI (trusted publishing)
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheel
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub release assets
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true

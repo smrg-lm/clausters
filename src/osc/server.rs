@@ -1026,7 +1026,7 @@ impl OscServer {
                 );
             }
         };
-        if origin < 0 || !(tempo > 0.0) {
+        if origin < 0 || tempo.is_nan() || tempo <= 0.0 {
             return self.fail(
                 from,
                 "/transport",

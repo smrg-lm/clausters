@@ -58,6 +58,48 @@ Some CI/sandbox environments isolate the network **between** shell invocations: 
 
 All incoming OSC bytes decode through `osc::decode_packet`, the single entry point (every transport funnels through it). It is a thin wrapper over `rosc::decoder::decode_udp` — keep that one door so decoding and any future hardening stay in one place.
 
+## Continuous integration
+
+GitHub Actions runs the same checks this page asks for by hand
+(`.github/workflows/ci.yml`); every job maps to a local command, so a red job
+is reproducible with the same line:
+
+- **lint** — `cargo fmt --check` and `cargo clippy --workspace --all-targets
+  -- -D warnings`, for the root workspace and for `clients/gui` (its own
+  workspace). The tree is clippy-clean; keep it that way.
+- **test** — `cargo test --workspace` across the def-family feature matrix:
+  default, `--no-default-features`, `--no-default-features --features synth`,
+  and default plus `embed`.
+- **gui** — `cargo test` in `clients/gui` plus the wasm build gate
+  (`clients/gui/check-wasm.sh`).
+- **python** — `python clients/python/build_native.py --debug`, then `pytest`
+  in `clients/python`.
+- **docs** — both mdBooks with the same mdBook version Read the Docs uses,
+  and the pydoc-markdown API page for the client book.
+- **faust** — `cargo test --features faust -- --test-threads=1`, with
+  libfaust built from source at the commit pinned in the workflow
+  (the recipe in `third_party/BUILD-FAUST.md`) and cached; a cache hit makes
+  the job cheap. Upgrading libfaust = bumping `FAUST_SHA` there after
+  verifying locally.
+
+## Releases and publishing
+
+- **Tagged releases** (`.github/workflows/release.yml`): pushing a `v*` tag
+  builds the self-contained Python wheel (client + embedded server +
+  standalone binary; Linux x86_64 for now) and a server-binary tarball,
+  publishes the wheel to PyPI and attaches both to a GitHub release. PyPI
+  auth is [Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
+  (OIDC — no stored token): the PyPI project must list this repository with
+  workflow `release.yml` and environment `pypi` as a trusted publisher, and
+  the repository needs a `pypi` environment. There is deliberately **no
+  sdist**: the package compiles cdylibs from the Rust workspace, which an
+  sdist of `clients/python` would not contain.
+- **Read the Docs** hosts the two books as two projects pointing at the same
+  repository, each selecting its config under *Settings → Advanced → Path to
+  configuration file*: the server/workspace book uses the repo-root
+  `.readthedocs.yaml`, the Python client book uses
+  `clients/python/.readthedocs.yaml`.
+
 ## Conventions
 
 - **Language**: everything under `src/`, `tests/` and `examples/` (code, comments, strings, test names) is in **English**, as are the dev-history files `PLAN.md`, `clients/PLAN.md` and `LOG.md`. `GUIA.md` (root + `clients/python/GUIA.md`) stays in **Spanish** (maintainer-facing QA checklists); this book and the rustdoc are the English documentation.

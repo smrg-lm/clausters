@@ -220,7 +220,7 @@ fn free_reclaims_private_buses() {
     let first_mix = control(&t, members(&t, 500)[0], 0);
 
     run(&mut t, "/n_free", vec![OscType::Int(500)]);
-    assert!(t.graph_instances.get(&500).is_none());
+    assert!(!t.graph_instances.contains_key(&500));
 
     // A fresh instance reuses the reclaimed bus.
     run(
@@ -259,7 +259,7 @@ fn unknown_member_def_fails_atomically() {
     );
     assert!(res.is_err());
     // No partial instance, no group, no leaked commands.
-    assert!(t.graph_instances.get(&600).is_none());
+    assert!(!t.graph_instances.contains_key(&600));
     assert!(t.mirror.get(600).is_none());
     assert!(cmds.is_empty());
 }
@@ -490,7 +490,7 @@ fn freeing_a_voice_and_the_instance_cleans_up() {
 
     // Free the instance: it takes the remaining voice with it.
     run(&mut t, "/n_free", vec![OscType::Int(700)]);
-    assert!(t.graph_instances.get(&700).is_none());
+    assert!(!t.graph_instances.contains_key(&700));
     assert!(!t.graph_voices.contains_key(&711));
 }
 

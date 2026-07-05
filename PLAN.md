@@ -627,6 +627,35 @@ streaming) are taken as loose items when needed.
 - ✅ **M21 — Master clock anchor over OSC (shared, drift-free time reference)** *(**DONE 2026-06-22** — `/clock.reply` gained the server's OSC/NTP time captured with the counter (`now_ntp()` in `src/osc/server.rs`, an `OscType::Time` third arg); the `(osc_time, sample)` anchor; both hand-rolled Python decoders (`base/_osclib.py`, `examples/json_client.py`) learned the `t` timetag (decoded NTP→Unix seconds); `tests/osc.rs::clock_reports_the_engine_sample_counter` asserts the third field is the server's time ~now; docs `sample-clock.md`/`schemas.md` + a `GUIA.md` step. Live E2E verified (3-field reply, OSC time within a fraction of a second of the client clock). Backward-compatible: two-field readers ignore the trailing timetag. The client side `lock_to` is **C14**)*: let a Clausters server act as the **master clock** for several OSC clients so their timing is mutually coherent and drift-free. The server publishes its OSC time anchored to its sample counter: extend `/clock.reply` to carry, captured in the same read as the counter, the server's OSC/NTP time — `/clock.reply (sample:int64, rate:double, osc_time:timetag)`, the anchor `(T0=osc_time, S0=sample, rate)` (appended, backward-compatible with clients that read just `sample, rate`). A client converts an event's logical OSC time to a master sample with `S0 + (T − T0)·rate` and schedules it via `/sched`, so every client shares **one** drift-free sample axis — the SuperCollider/MIDI guarantee (jitter-free *relative* timing) made robust against the wall-vs-audio drift the per-bundle NTP path can reintroduce; routine starts stay arbitrary. Local embed/shm clients read the counter directly and skip the anchor. Rate: publish the **actual** rate; clients may re-anchor periodically (the existing `UdpSampleClock` least-squares model) to track ppm drift on long sessions — exact for short LAN runs, honest for long ones. No audio-thread change: `/clock` is network-thread and the anchor is one atomic read of (counter, system OSC time). Pairs with client **C14**; the phase-alignment layer is **M22**. Closing: `schemas.md` (extended `/clock.reply`), `sample-clock.md` (master-clock model + anchor), `GUIA.md`, cross-link to the Python book.
 - ✅ **M22 — Shared transport: a queryable master beat grid (phase alignment)** *(**DONE 2026-06-22** — `/transport` in `src/osc/server.rs`: no args queries (`/transport.reply originSample tempo defined`), `(int64 originSample, double tempo)` sets it (validated: origin ≥ 0, tempo > 0; last writer wins), an in-memory `Option<Transport>` on `OscServer` the server stores/serves but never schedules from. `tests/osc.rs::transport_query_and_set` (query-unset → set → query-set → bad-args /fail leaving the grid intact); docs `schemas.md` + `sample-clock.md` (the beat-grid section) + a `GUIA.md` step. The client side (`quant` + `join_transport`) is **C15**; a running/stopped state and push-on-change were noted future extensions — **both landed 2026-06-23**: `/transport.reply` is pushed to `/notify` clients on change (C13), and a DAW-style rolling state (`playing` + `position`, set via `/transport_play`/`/transport_stop`/`/transport_locate`, reply extended `(…, playing:int32, position:double)`) lets a conductor drive every client's playhead in lockstep — the server broadcasts transport *control*, still never scheduling audio. See `clients/PLAN.md` C16 and LOG.md)*: a small server-hosted **transport** so independent clients align on the *same* beats, not just share a drift-free axis (M21). M21 gives a common sample axis, but each routine still starts at an arbitrary point on it; phase alignment needs a shared **beat grid** (an origin sample = beat 0, plus a tempo) any client can join. Add a queryable/settable transport — `/transport.reply (origin_sample:int64, tempo:double, …)` plus a setter to define/reset it (who may set it is a policy decision: first client, or an explicit owner). A client reads the transport and quantizes its routine start to the next beat boundary on that shared grid, so several clients hit beat 1 together; because the grid lives on the master sample axis, the alignment is **sample-exact** when `lock_to` a master and beat-accurate (drift-bounded) in plain OSC mode. Deliberately a **separate, optional layer** over M21 — a client can use the shared reference without joining a transport. Pairs with client **C15** (`quant` + `clock.join_transport(server)`). Open when tackled: whether the transport also carries play/stop + a running/free distinction or stays a pure origin+tempo grid. Closing: `schemas.md` (`/transport`), a `sample-clock.md`/feature page (beat-grid model + how quant aligns clients), `GUIA.md`, example.
 
+- ✅ **M23 — Continuous integration + publishing (CI, Read the Docs, PyPI)**
+  *(**DONE 2026-07-05** — repo side complete; the three account-side
+  activation steps below are manual and pending)*: automate the checks the
+  project already requires by hand and publish what is finished. **CI**
+  (`.github/workflows/ci.yml`): fmt + clippy `-D warnings` (root workspace
+  and `clients/gui`; the handful of pre-existing clippy warnings were fixed
+  so the gate is strict), `cargo test --workspace` over the def-family
+  feature matrix (default / no features / `synth`-only / default+`embed`),
+  the gui tests + the G11 wasm build gate, the Python client (debug native
+  staging + pytest), both mdBooks built with the same mdBook version Read
+  the Docs uses (plus the pydoc-markdown API page), and a `faust` job that
+  builds libfaust from source pinned to the `BUILD-FAUST.md`-verified commit
+  (`56c9e678d`, shallow fetch + submodules), caches the `~/.local` install,
+  and runs the faust suite single-threaded. **Release**
+  (`.github/workflows/release.yml`): a `v*` tag builds the self-contained
+  wheel (Linux x86_64; deliberately no sdist — the wheel compiles cdylibs
+  from the Rust workspace) and a server-binary tarball, publishes to PyPI by
+  Trusted Publishing (OIDC, environment `pypi`, no stored token) and attaches
+  both to a GitHub release. **Docs**: `docs/contributing.md` gained
+  "Continuous integration" and "Releases and publishing" sections (including
+  the two-Read-the-Docs-projects setup, each pointing at its own
+  `.readthedocs.yaml`). **Manual activation steps (account side, pending)**:
+  (1) create the two Read the Docs projects (server book → root
+  `.readthedocs.yaml`; Python book → `clients/python/.readthedocs.yaml`);
+  (2) on PyPI, register `clausters` with this repo/`release.yml`/`pypi` as a
+  trusted publisher (a *pending publisher* works before the first upload);
+  (3) create the `pypi` environment in the GitHub repo settings. macOS/
+  Windows wheels are a later matrix extension, once verified by hand.
+
 ### Reviewed ideas: what was dropped and why
 
 - **Denormals** (from the memory/efficiency idea): already implemented post-M7

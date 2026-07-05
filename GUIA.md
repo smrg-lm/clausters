@@ -1541,6 +1541,41 @@ están gateados con `#![cfg(feature = "synth")]`: `cargo test
 --no-default-features` queda chico a propósito (21 tests) y `cargo test
 --no-default-features --features synth` corre lo mismo que el default.
 
+## 3ter. CI y publicación (M23)
+
+La CI (`.github/workflows/ci.yml`) replica los chequeos manuales; cada job es
+un comando local:
+
+```sh
+# lo que corre la CI, reproducible a mano:
+cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace                                      # + la matriz de features
+(cd clients/gui && cargo fmt --check && cargo clippy --all-targets -- -D warnings \
+  && cargo test && ./check-wasm.sh)
+python3 clients/python/build_native.py --debug
+(cd clients/python && python3 -m pytest -q)                 # 128 passed, 4 skipped
+mdbook build . && (cd clients/python && pydoc-markdown && mdbook build docs)
+```
+
+Release: `git tag v0.1.0 && git push --tags` construye la wheel + el tarball
+del binario, publica en PyPI y crea el release de GitHub.
+
+**Pasos manuales de activación (una sola vez, lado cuentas):**
+
+1. **Read the Docs** (dos proyectos sobre el mismo repo): importar el repo
+   dos veces; en *Settings → Advanced → Path to configuration file* apuntar
+   uno a `.readthedocs.yaml` (libro del servidor, slug `clausters`) y el otro
+   a `clients/python/.readthedocs.yaml` (libro del cliente, slug
+   `clausters-python`).
+2. **PyPI**: en el proyecto `clausters` (o como *pending publisher* antes de
+   la primera subida), configurar Trusted Publishing: owner `smrg-lm`, repo
+   `clausters`, workflow `release.yml`, environment `pypi`.
+3. **GitHub**: crear el environment `pypi` en Settings → Environments.
+
+Verificación a mano tras el primer push: los 6 jobs de CI en verde (el job
+`faust` tarda ~20 min la primera vez y queda cacheado); tras el primer tag,
+la wheel en PyPI y el release con los dos artefactos.
+
 ## 4. Checklist de funcionalidades
 
 | Funcionalidad | Automático | A mano |
@@ -1561,6 +1596,7 @@ están gateados con `#![cfg(feature = "synth")]`: `cargo test
 | Config de arranque: canales E/S (`--outputs`/`--inputs`, entrada viva por `In`) + pools (`--max-nodes`/`--max-buffers`/`--max-graph-children`/`--max-ugen-inputs`), `/server_info` extendido (S7) | `tests/audio_io.rs`, `tests/capacity.rs`, `tests/osc.rs` (`server_info_reports_configured_limits`, `d_recv_rejects_over_max_ugen_inputs`), `tests/rt_safety.rs` (`hardware_input_path_does_not_allocate`) | `python3 examples/json_client.py serverinfo` |
 | Cadena en frecuencia `FFT`/`PV_*`/`IFFT` (frame-rate `fr`, scratch privado del synth, ventanas+FFT/IFFT en `clausters-core`) (S8) | `tests/spectral.rs` (round-trip, `pv_brickwall_attenuates_a_high_tone`, `pv_magabove_gates...`, `compiler_validates_the_chain`, `u_cmd_swaps...`), `tests/rt_safety.rs` (`spectral_chain_does_not_allocate...`), `cargo test -p clausters-core fft window` | `python3 examples/json_client.py fft` |
 | UGens de efecto colateral sin `Out`: `SendTrig`/`SendReply`/`Poll` + relajación del builder Python (S9/C19) | `tests/osc.rs` (`send_trig_replies`, `send_reply_replies`, `poll_with_trigid`), `tests/rt_safety.rs` (`reply_ugens_do_not_allocate...`), `test_synthdef.py` (`side_effect`) | `python3 examples/json_client.py replies` |
+| CI + release (fmt/clippy/tests/matriz de features, gui+wasm, pytest, mdBooks, faust cacheado; wheel→PyPI por tag) (M23) | `.github/workflows/ci.yml` en verde | sección 3ter (activación RTD/PyPI) |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |
