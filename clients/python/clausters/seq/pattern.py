@@ -12,22 +12,11 @@ are natural; a sub-pattern used as a value is embedded (iterated) in place.
 """
 
 import math
-import os
 
-from .. import _native
+from ..base import rand
 from .event import Event
 
 INF = math.inf
-
-
-def _rng_stream(seed):
-    """The seeded value stream behind the random patterns: the **core**
-    generator (`clausters._native.RngStream`), never the host language's own
-    RNG, so the same seed replays the same sequence in every client language.
-    ``None`` draws a fresh seed from OS entropy."""
-    if seed is None:
-        seed = int.from_bytes(os.urandom(8), "little")
-    return _native.RngStream(seed)
 
 
 def _embed(value):
@@ -104,35 +93,37 @@ class Pser(Pattern):
 
 
 class Prand(Pattern):
-    """Random items, ``length`` values. A ``seed`` replays the same choices —
-    in any client language (the stream comes from the shared core)."""
+    """Random items, ``length`` values, drawn from the **random context** (the
+    running routine's generator, or the root outside one — see
+    `clausters.base.rand`): ``main.seed(n)`` reproduces the choices along with
+    everything else in the script. There is no per-pattern seed — independent
+    seeds would break whole-script consistency."""
 
-    def __init__(self, items, length=INF, seed=None):
+    def __init__(self, items, length=INF):
         self.items = list(items)
         self.length = length
-        self.seed = seed
 
     def __iter__(self):
-        rng = _rng_stream(self.seed)
         i = 0
         while self.length is INF or i < self.length:
-            yield from _embed(rng.choice(self.items))
+            yield from _embed(rand.choice(self.items))
             i += 1
 
 
 class Pwhite(Pattern):
-    """Uniform random numbers in ``[lo, hi)``, ``length`` values. A ``seed``
-    replays the same sequence — in any client language (the stream comes from
-    the shared core)."""
+    """Uniform random numbers in ``[lo, hi)``, ``length`` values, drawn from
+    the **random context** (the running routine's generator, or the root
+    outside one — see `clausters.base.rand`): ``main.seed(n)`` reproduces the
+    sequence along with everything else in the script. There is no per-pattern
+    seed — independent seeds would break whole-script consistency."""
 
-    def __init__(self, lo=0.0, hi=1.0, length=INF, seed=None):
-        self.lo, self.hi, self.length, self.seed = lo, hi, length, seed
+    def __init__(self, lo=0.0, hi=1.0, length=INF):
+        self.lo, self.hi, self.length = lo, hi, length
 
     def __iter__(self):
-        rng = _rng_stream(self.seed)
         i = 0
         while self.length is INF or i < self.length:
-            yield rng.uniform(self.lo, self.hi)
+            yield rand.uniform(self.lo, self.hi)
             i += 1
 
 

@@ -11,6 +11,8 @@ The base layer:
 - `clock` — `TempoClock` (native-backed, RT + NRT
   drives).
 - `main` — the global context (`main`).
+- `rand` — the random context: one seedable source (``main.seed`` +
+  per-routine derived generators) behind every random value in the library.
 - `netaddr` — `NetAddr`.
 - `_oscinterface` / `_midiinterface`
   — the RT/NRT destination interfaces.
@@ -21,6 +23,7 @@ from .absobject import AbstractObject
 from .clock import TempoClock
 from .main import Main, main
 from .netaddr import NetAddr
+from .rand import choice, current_rng, next_below, next_f64, spawn_rng, uniform
 from .stream import FunctionStream, Routine, Stream, StopStream, YieldAndReset
 from .timebase import MonotonicTimebase, SampleClockTimebase, Timebase
 from ._midiinterface import (

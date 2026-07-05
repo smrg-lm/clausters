@@ -28,7 +28,7 @@ def phrase() -> Pbind:
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2, seed=1),
+        amp=Pwhite(0.1, 0.2),
     )
 
 

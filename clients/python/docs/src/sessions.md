@@ -17,18 +17,25 @@ You almost always build a session with one of the three factories rather than th
 `Session.nrt()` is an **offline** (non-real-time) session. Its server accumulates a timetagged *score* instead of sending anything, and `render()` turns that score into samples through the renderer bundled with the package. No server process and no audio device are involved.
 
 ```python
-from clausters import Session
+from clausters import Session, main
 from clausters.seq import Pbind, Pseq, Pwhite
 
+main.seed(1)   # one root seed reproduces every random draw in the script
 session = Session.nrt(tempo=2.0)
 session.play(Pbind(
     degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
     dur=0.25,
-    amp=Pwhite(0.1, 0.2, seed=1),
+    amp=Pwhite(0.1, 0.2),
 ))
 samples, frames = session.render(sample_rate=48000.0, channels=2)
 print(f"{frames} frames; peak {max(abs(s) for s in samples):.3f}")
 ```
+
+Randomness (`Pwhite`, `Prand`, `clausters.uniform`/`choice`/…) always draws
+from **one seedable context** — the running routine's generator, derived from
+the context that created it — never from per-pattern seeds, so `main.seed(n)`
+makes a whole piece reproducible end to end (see
+[Routines and clocks](routines-and-clocks.md)).
 
 `Session.live()` is a **real-time** session that talks to a running server over UDP (start one with `cargo run --release`, or the installed `clausters` binary). The same pattern, played the same way, now sounds on a device.
 
@@ -41,7 +48,7 @@ with Session.live(tempo=2.0, latency=0.1) as session:
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2, seed=1),
+        amp=Pwhite(0.1, 0.2),
     ))
     session.run(3.5)   # advance the clock in real time, then stop
 ```
@@ -62,7 +69,7 @@ with Session.embed(tempo=2.0, latency=0.1) as session:
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2, seed=1),
+        amp=Pwhite(0.1, 0.2),
     ))
     session.run(3.5)
 ```
@@ -119,7 +126,7 @@ def phrase():
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2, seed=1),
+        amp=Pwhite(0.1, 0.2),
     )
 
 # Offline: capture it to samples.

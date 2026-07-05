@@ -49,7 +49,7 @@ def melody() -> Pbind:
     return Pbind(
         degree=Pseq([0, 1, 2, 3, 4, 3, 2, 1], repeats=1),   # finite -> the Pbind ends
         dur=0.25,
-        amp=Pwhite(0.08, 0.18, seed=1),
+        amp=Pwhite(0.08, 0.18),
     )
 
 

@@ -20,6 +20,7 @@ import struct
 import sys
 import wave
 
+import clausters
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
 
@@ -32,7 +33,7 @@ def phrase() -> Pbind:
     return Pbind(
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
         dur=0.25,
-        amp=Pwhite(0.1, 0.2, seed=1),
+        amp=Pwhite(0.1, 0.2),
     )
 
 
@@ -41,6 +42,8 @@ def main():
 
     # An NRT session: same Pbind API as live, but the clock drives a score the
     # bundled embed renderer turns into samples. No global state, no server.
+    # One root seed reproduces every random draw (Pwhite here) end to end.
+    clausters.main.seed(1)
     session = Session.nrt(tempo=2.0)
     session.play(phrase())
     samples, frames = session.render(sample_rate=SR, channels=2)

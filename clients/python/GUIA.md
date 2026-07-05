@@ -1574,3 +1574,34 @@ Notas:
   --lib` resuelve al crate raiz (el servidor) y falla con `getrandom`, que
   parece una rotura del gate pero no lo es; el script ahora hace `cd` a su
   propio directorio.
+
+## 28. Contexto aleatorio unico (seguimiento de C21)
+
+Correccion de diseño sobre C21 a pedido del usuario: los patrones aleatorios
+**no llevan seed propio** (se elimino el parametro `seed` de `Pwhite`/`Prand`).
+Todo lo aleatorio sale de **un solo contexto sembrable**, el modelo de sclang:
+`main.seed(n)` siembra la raiz; cada `Routine` deriva su generador propio del
+contexto que la crea (`RngStream.spawn`, seed hijo = proxima palabra del
+padre); cada draw usa el generador de la rutina en curso (`main.current_tt`,
+thread-local) con fallback a la raiz. Con una sola semilla el script entero es
+reproducible de punta a punta, y rutinas concurrentes (varios clocks, RT junto
+a NRT) son reproducibles por rutina sin importar el interleaving. Se exponen
+ademas `clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` /
+`choice(items)` sobre el mismo contexto. ABI del core v5 -> v6 (se agrego
+`clausters_rng_next_u64` para la derivacion).
+
+Verificacion manual:
+
+```sh
+cargo test -p clausters-core -p clausters-ffi        # 46 + 8 verdes
+cd clients/python && .venv/bin/python -m pytest tests/ -q   # 132 passed, 4 skipped
+# (test_seq: replay bajo main.seed, funciones expuestas, reproducibilidad
+#  por rutina con orden de scheduling invertido)
+```
+
+Notas:
+
+- Cambio incompatible a proposito: `Pwhite(..., seed=n)` ahora es TypeError;
+  ejemplos y docs migrados a `main.seed(n)` antes de tocar.
+- Para aislar material, tocarlo en su propia rutina: obtiene su stream
+  derivado por construccion (ese es el override local correcto).

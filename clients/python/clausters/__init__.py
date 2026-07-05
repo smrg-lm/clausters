@@ -42,6 +42,8 @@ from .errors import (
     SegmentError,
     ServerError,
 )
+from .base.main import main
+from .base.rand import choice, next_below, next_f64, uniform
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .session import Session
 from .ipc import (
@@ -58,6 +60,12 @@ __all__ = [
     "Clausters",
     "ShmClient",
     "Session",
+    "main",
+    # the random context (one seedable source: main.seed(n) + these draws)
+    "next_f64",
+    "uniform",
+    "next_below",
+    "choice",
     "OscFunc",
     "MidiFunc",
     "oscfunc",

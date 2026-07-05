@@ -50,6 +50,37 @@ A few things worth knowing:
 
 **A routine must never block the clock thread.** It runs *on* that thread, so a `time.sleep`, a blocking `server.sync()`, or any `wait=True` def send freezes every other routine and the whole timeline. Cede time with `yield` instead. To load a def from within a routine, send it asynchronously — `server.add_synthdef(sdef, wait=False)` — and `yield` enough time before the first note that uses it.
 
+## The random context: one seed for a whole script
+
+Everything random — `Pwhite`, `Prand`, and the module functions
+`clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` / `choice(items)`
+— draws from **one seedable context**, the sclang model:
+
+- `main.seed(n)` seeds the root generator. Called before you build and play,
+  it makes every random value in the script reproducible, end to end.
+- Every routine gets its **own** generator when it is created, seeded from the
+  context creating it. Same root seed + same creation order = the same music;
+  and because each routine draws from its own stream, concurrent routines
+  (several clocks, live RT next to an NRT render) stay reproducible per
+  routine no matter how their wakes interleave.
+- A draw always uses the generator of the routine running right now, falling
+  back to the root outside any routine.
+
+There are **no per-pattern seeds** — independent seeds would break
+whole-script consistency. To isolate some material, play it inside its own
+routine: it gets its own derived stream by construction. The generator itself
+lives in the shared native core, so the same seed replays the same values in
+every Clausters client language.
+
+```python
+from clausters import main, uniform
+from clausters.seq import Pbind, Pwhite
+
+main.seed(2026)                  # the whole script is now reproducible
+detune = uniform(-3.0, 3.0)      # a one-off draw from the same context
+pattern = Pbind(degree=Pwhite(0, 7), dur=0.25)   # draws when played
+```
+
 ## Offline, with the same code
 
 Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, drive the clock with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).

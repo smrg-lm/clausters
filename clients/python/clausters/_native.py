@@ -17,12 +17,13 @@ package) never fails just because the cdylib has not been built yet.
 
 import ctypes
 import os
+import threading as _threading
 from array import array
 from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 5
+CORE_ABI_VERSION = 6
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -194,6 +195,8 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_rng_next_f64.argtypes = [u64p]
     lib.clausters_rng_next_below.restype = ctypes.c_uint64
     lib.clausters_rng_next_below.argtypes = [u64p, ctypes.c_uint64]
+    lib.clausters_rng_next_u64.restype = ctypes.c_uint64
+    lib.clausters_rng_next_u64.argtypes = [u64p]
     f64p = ctypes.POINTER(ctypes.c_double)
     lib.clausters_sched_new.restype = ctypes.c_void_p
     lib.clausters_sched_free.restype = None
@@ -388,14 +391,21 @@ class RngStream:
     """A resumable seeded value stream over the core generator: uniform
     ``f64`` in [0, 1) and bounded integers. The state is one ``u64`` word (flat
     data), so the same seed replays the same values in every client language —
-    what a seeded ``Pwhite``/``Prand`` runs on."""
+    what the random patterns and the context RNG run on.
+
+    Draws are serialized by a lock (ctypes releases the GIL during the call, so
+    a stream shared across threads — e.g. the ``main.rng`` fallback — must not
+    interleave state updates). `spawn` derives a child stream deterministically,
+    the sclang-style inheritance a routine's generator is built from."""
 
     def __init__(self, seed: int):
         self._state = ctypes.c_uint64(lib().clausters_rng_seed(ctypes.c_uint64(seed).value))
+        self._lock = _threading.Lock()
 
     def next_f64(self) -> float:
         """Uniform in [0, 1) with 53-bit resolution."""
-        return lib().clausters_rng_next_f64(ctypes.byref(self._state))
+        with self._lock:
+            return lib().clausters_rng_next_f64(ctypes.byref(self._state))
 
     def uniform(self, lo: float, hi: float) -> float:
         """Uniform in [lo, hi) (degenerate to ``lo`` when ``hi <= lo``)."""
@@ -403,11 +413,23 @@ class RngStream:
 
     def next_below(self, n: int) -> int:
         """Uniform integer in [0, n) (0 when ``n`` is 0)."""
-        return lib().clausters_rng_next_below(ctypes.byref(self._state), n)
+        with self._lock:
+            return lib().clausters_rng_next_below(ctypes.byref(self._state), n)
+
+    def next_u64(self) -> int:
+        """The full-width random word (advances the stream one step)."""
+        with self._lock:
+            return lib().clausters_rng_next_u64(ctypes.byref(self._state))
 
     def choice(self, items):
         """A uniformly chosen element of ``items``."""
         return items[self.next_below(len(items))]
+
+    def spawn(self) -> "RngStream":
+        """A child stream seeded from this one's next word — deterministic
+        derivation, so seeding a root context reproduces every stream created
+        under it, in creation order."""
+        return RngStream(self.next_u64())
 
 
 # ---- beat-ordered scheduler queue ----

@@ -4690,3 +4690,35 @@ reimplementing behaviour. Core ABI **v4 → v5**.
   `clients/gui/` — from the repo root `cargo build --lib` resolves to the root
   server crate and fails on `getrandom` for wasm32, which briefly looked like a
   pre-existing breakage; the script now `cd`s to its own directory.
+
+## C21 follow-up — one random context for a whole script (completed 2026-07-05)
+
+Design correction on C21's randomness, at the user's direction: per-pattern
+seeds are wrong for music scripts — everything random must share **one
+seedable context** or a piece is not reproducible end to end. This adopts the
+sclang model:
+
+- **No per-pattern seeds.** `Pwhite`/`Prand` lost their `seed` parameter
+  (deliberately breaking: a per-pattern seed now raises `TypeError`); their
+  draws go to the random context at draw time.
+- **The context** (`clausters/base/rand.py`): `main.seed(n)` seeds the root
+  generator; every `Stream`/`Routine` derives its **own** generator at
+  creation from the context creating it (`RngStream.spawn` — the child's seed
+  is the parent's next word, `clausters_rng_next_u64`, core ABI **v5 → v6**);
+  a draw always uses the running routine's generator (thread-local
+  `main.current_tt`), falling back to the root outside any routine. One root
+  seed reproduces a whole script in creation order, and concurrent routines
+  (several clocks, RT beside NRT) are reproducible **per routine** regardless
+  of wake interleaving — the thread-local discipline the client already had,
+  extended to randomness.
+- **Exposed draws**: `clausters.next_f64()` / `uniform(lo, hi)` /
+  `next_below(n)` / `choice(items)` (and `main`) re-exported at the top level,
+  all answering to the same context. `RngStream` draws are lock-serialized
+  (ctypes releases the GIL) so the shared root fallback is safe across
+  threads.
+- **Tests** (`test_seq.py`): replay of mixed `Pwhite`+`Prand` under
+  `main.seed`; the exposed functions replay under the root seed; and the
+  per-routine property — two routines' values are unchanged when their
+  scheduling order and interleave are flipped. Suite: 132 passed. Docs:
+  `routines-and-clocks.md` gained "The random context" (sessions/guide link to
+  it); examples migrated from `seed=` to `main.seed(n)`; GUIA section 28.

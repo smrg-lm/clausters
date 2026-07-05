@@ -32,7 +32,7 @@ def phrase() -> Pbind:
         instrument="default",  # only the name matters for MIDI (no synth is made)
         degree=Pseq([0, 1, 2, 3, 4, 3, 2, 1, 0], repeats=2),
         dur=Pseq([0.5, 0.5, 0.25, 0.25, 1.0], repeats=4),
-        amp=Pwhite(0.4, 0.9, seed=1),
+        amp=Pwhite(0.4, 0.9),
         legato=0.9,
     )
 

@@ -17,9 +17,14 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 
 - `Event` — a note plays a synth and frees it after its sustain.
 - The value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`. The random
-  patterns (`Pwhite`, `Prand`) draw from the **shared native core's** seeded
-  generator, not Python's own RNG: the same `seed` replays the same sequence in
-  every Clausters client language.
+  patterns (`Pwhite`, `Prand`) draw from the **random context** — the running
+  routine's generator, derived at creation from the context that created it,
+  with `main.seed(n)` seeding the root (sclang's model: no per-pattern seeds).
+  One root seed reproduces a whole script, and the generator lives in the
+  shared native core, so the same seed replays the same music in every
+  Clausters client language. The context is also exposed directly as
+  `clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` /
+  `choice(items)`.
 - `EventStreamPlayer` — `Pbind(...).play(clock, server)` runs live or builds an NRT score depending on which interface the `Server` holds, with yield-exact timing (monotonic pacing, wall-clock timetags).
 
 ## `clausters.defs` — the server side

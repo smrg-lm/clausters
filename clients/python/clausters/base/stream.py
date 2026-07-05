@@ -25,7 +25,16 @@ class YieldAndReset(Exception):
 
 
 class Stream:
-    """A lazy sequence: implements the iterator protocol over `next`."""
+    """A lazy sequence: implements the iterator protocol over `next`.
+
+    Concrete streams carry their own random generator (`rng`), derived from the
+    creating context at construction (see `clausters.base.rand`): random values
+    drawn while a stream runs come from *its* stream, so one root seed
+    (``main.seed``) reproduces a whole script and concurrent routines stay
+    reproducible per routine."""
+
+    #: the stream's random generator; ``None`` falls back to the root context.
+    rng = None
 
     def __iter__(self):
         return self
@@ -52,10 +61,13 @@ class FunctionStream(Stream):
     """Wraps a plain callable: each `next` calls it with ``inval``."""
 
     def __init__(self, func, reset_func=None):
+        from . import rand
+
         self.func = func
         self.reset_func = reset_func
         self.clock = None
         self._logical_beat = 0.0
+        self.rng = rand.spawn_rng()   # own stream, seeded by the creating context
 
     def next(self, inval=None):
         try:
@@ -90,6 +102,8 @@ class Routine(Stream):
     """
 
     def __init__(self, func):
+        from . import rand
+
         self.func = func
         self._gen = None
         self._started = False
@@ -100,6 +114,10 @@ class Routine(Stream):
         #: the exact logical beat at which the clock last resumed this routine
         #: (yield-accumulated, not wall-clock); the Server emits timetags from it.
         self._logical_beat = 0.0
+        #: the routine's own random generator, seeded from the creating context
+        #: (sclang-style inheritance): everything random drawn while this
+        #: routine runs comes from here, so a root ``main.seed`` reproduces it.
+        self.rng = rand.spawn_rng()
 
     @classmethod
     def run(cls, func):

@@ -29,8 +29,9 @@ mod ws;
 /// audit pass — the `clausters_sched_*` beat queue, the `clausters_clocksync_*`
 /// sample-clock model, the `clausters_rng_*` value stream, NTP timetag packing,
 /// `quant_delay` and `degree_to_midinote` — so no value/time logic remains
-/// per-language.
-pub const CORE_ABI_VERSION: u32 = 5;
+/// per-language; v6 `clausters_rng_next_u64` (child-stream seed derivation for
+/// the per-routine random context).
+pub const CORE_ABI_VERSION: u32 = 6;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -307,6 +308,25 @@ pub unsafe extern "C" fn clausters_rng_next_below(state: *mut u64, n: u64) -> u6
     // SAFETY: caller guarantees `state` points to a u64.
     let mut rng = Rng::from_state(unsafe { *state });
     let v = rng.next_below(n);
+    unsafe { *state = rng.state() };
+    v
+}
+
+/// Advances `*state` one step and returns the full-width random word (0 when
+/// `state` is null). Used to derive a child stream's seed from a parent's —
+/// the sclang-style inheritance where a routine's generator is seeded from the
+/// context that creates it, so one root seed reproduces a whole script.
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_next_u64(state: *mut u64) -> u64 {
+    if state.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees `state` points to a u64.
+    let mut rng = Rng::from_state(unsafe { *state });
+    let v = rng.next_u64();
     unsafe { *state = rng.state() };
     v
 }
@@ -645,6 +665,11 @@ mod tests {
                 expect.next_f64()
             );
         }
+        // ...including the raw word used to derive child-stream seeds.
+        assert_eq!(
+            unsafe { clausters_rng_next_u64(&mut state) },
+            expect.next_u64()
+        );
 
         // Timetag packing matches the core's rounding rule.
         assert_eq!(

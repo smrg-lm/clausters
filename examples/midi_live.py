@@ -50,7 +50,7 @@ def main() -> None:
         instrument="default",
         degree=Pseq([0, 2, 4, 2, 0, 4, 7, 4], repeats=8),
         dur=0.5,
-        amp=Pwhite(0.5, 0.9, seed=2),
+        amp=Pwhite(0.5, 0.9),
         legato=0.9,
     ).play(clock, midi)
     try:

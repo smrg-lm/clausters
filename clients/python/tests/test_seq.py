@@ -31,8 +31,76 @@ def test_value_patterns():
     assert list(Pn(Pseq([0, 1]), 2)) == [0, 1, 0, 1]
     # nesting: a sub-pattern is embedded in place
     assert list(Pseq([0, Pseq([1, 2]), 3])) == [0, 1, 2, 3]
-    xs = list(Pwhite(0.0, 1.0, 100, seed=1))
+    xs = list(Pwhite(0.0, 1.0, 100))
     assert len(xs) == 100 and all(0.0 <= x <= 1.0 for x in xs)
+
+
+# ---- the random context (one seedable source for a whole script) ----
+
+def test_random_patterns_replay_under_the_root_seed():
+    _embed_or_skip()
+    from clausters.base.main import main
+    from clausters.seq import Prand
+
+    # No per-pattern seeds: seeding the root context reproduces every draw,
+    # in order, across pattern kinds.
+    main.seed(11)
+    a = list(Pwhite(0.0, 1.0, 8)) + list(Prand([1, 2, 3], 8))
+    main.seed(11)
+    b = list(Pwhite(0.0, 1.0, 8)) + list(Prand([1, 2, 3], 8))
+    assert a == b
+    main.seed(12)
+    assert list(Pwhite(0.0, 1.0, 8)) != a[:8]
+
+
+def test_rand_functions_draw_from_the_same_context():
+    _embed_or_skip()
+    from clausters import choice, next_below, next_f64, uniform
+    from clausters.base.main import main
+
+    main.seed(3)
+    a = [next_f64(), uniform(2.0, 4.0), next_below(10), choice("abcd")]
+    main.seed(3)
+    assert a == [next_f64(), uniform(2.0, 4.0), next_below(10), choice("abcd")]
+    assert 2.0 <= a[1] < 4.0 and 0 <= a[2] < 10 and a[3] in "abcd"
+
+
+def test_routines_get_their_own_streams_reproducible_per_routine():
+    _embed_or_skip()
+    from clausters.base import Routine
+    from clausters.base.main import main
+    from clausters.base.rand import uniform
+
+    def collect(out, n):
+        def gen():
+            for _ in range(n):
+                out.append(uniform(0.0, 1.0))
+                yield 0.25
+        return gen
+
+    def run_pair(swap):
+        """Two routines on one clock; ``swap`` flips their scheduling order
+        (and interleave), which must not change either routine's values."""
+        main.seed(42)
+        a_out, b_out = [], []
+        ra = Routine(collect(a_out, 4))    # creation order fixes each stream:
+        rb = Routine(collect(b_out, 4))    # ra then rb, derived from the root
+        clock = TempoClock(tempo=4.0)
+        if swap:
+            clock.sched_abs(0.125, rb)     # rb wakes first and interleaves
+            clock.sched_abs(0.25, ra)
+        else:
+            clock.sched_abs(0.0, ra)
+            clock.sched_abs(1.0, rb)
+        clock.render()
+        return a_out, b_out
+
+    a1, b1 = run_pair(swap=False)
+    a2, b2 = run_pair(swap=True)
+    # Per-routine reproducibility: the wake interleaving changed, the values
+    # of each routine did not (each has its own derived stream).
+    assert a1 == a2 and b1 == b2
+    assert a1 != b1                        # ...and the two streams differ
 
 
 # ---- events ----
