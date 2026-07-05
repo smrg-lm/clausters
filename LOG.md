@@ -4490,3 +4490,19 @@ trusted publisher for `clausters` (owner `smrg-lm`, repo `clausters`,
 workflow `release.yml`, environment `pypi`; a *pending publisher* works
 before the first upload); (3) the `pypi` environment in the GitHub repo
 settings.
+
+**First-run outcome (2026-07-05, activation done):** CI green on all nine
+jobs after two predicted first-run fixes in the `faust` job — the pinned
+fetch needs the **full 40-char SHA** (fetching an arbitrary commit by
+abbreviated SHA fails with `couldn't find remote ref`), and
+`-DINCLUDE_STATIC=off` (CMAKEOPT overrides the FORCEd cache) skips the
+static `libfaustwithllvm.a`, which embeds LLVM's static component libs and
+needs libPolly, absent from Ubuntu 24.04's `llvm-dev`; the dynamic
+`libfaust.so` clausters links builds fine on the runner's LLVM 18.1.3 and
+the faust suites pass, `~/.local` install cached. The `v0.1.0` release run
+then exposed one wheel fix: PyPI rejects the bare `linux_x86_64` platform
+tag, so `setup.py` maps it to `manylinux_<glibc>` from the build machine's
+own `CS_GNU_LIBC_VERSION` (PEP 600's honest bound: the cdylibs run on the
+glibc they were built against; musl/non-Linux tags pass through). Trusted
+publishing itself validated on the first attempt (OIDC token exchanged, the
+failure was the tag, not auth).

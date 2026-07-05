@@ -48,6 +48,29 @@ class _BuildPy(build_py):
         super().run()
 
 
+def _manylinux(plat):
+    """Map a bare ``linux_<arch>`` platform tag to ``manylinux_<glibc>``.
+
+    PyPI rejects wheels tagged plain ``linux_*``; the accepted Linux tags are
+    the ``manylinux_X_Y`` family, whose X.Y is the *oldest glibc the binaries
+    run on*. The cdylibs are built on this very machine, so the honest bound
+    is the build machine's own glibc version (PEP 600 says nothing about the
+    non-glibc shared libs they link — libasound/libpipewire are the user's
+    system libraries, resolved at runtime like any audio app's). Non-glibc
+    (musl) or non-Linux platforms keep their tag unchanged.
+    """
+    if not plat.startswith("linux_"):
+        return plat
+    try:
+        libc = os.confstr("CS_GNU_LIBC_VERSION")  # e.g. "glibc 2.39"
+    except (AttributeError, OSError, ValueError):
+        libc = None
+    if not libc or not libc.startswith("glibc "):
+        return plat
+    major, _, minor = libc.split()[1].partition(".")
+    return f"manylinux_{major}_{minor}_{plat[len('linux_'):]}"
+
+
 cmdclass = {"build_py": _BuildPy}
 
 if _bdist_wheel is not None:
@@ -62,7 +85,7 @@ if _bdist_wheel is not None:
             # The code is pure Python + ctypes (no CPython ABI linkage), so the
             # wheel is platform-specific but Python-version agnostic: py3-none-<plat>.
             _py, _abi, plat = super().get_tag()
-            return "py3", "none", plat
+            return "py3", "none", _manylinux(plat)
 
     cmdclass["bdist_wheel"] = _PlatformWheel
 
