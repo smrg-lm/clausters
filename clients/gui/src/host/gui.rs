@@ -40,9 +40,11 @@ use crate::waveform::WaveformData;
 
 use super::bulk::MmapLoader;
 use super::canvas::CanvasView;
+use super::fetch::{BufferFetches, FetchStep, WaveWant};
 use super::frame::{self, WaveformSlot};
 use super::interact::{self, slider_t, value_of};
 use super::layout::Rect;
+use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
 use super::nodetree::NodeTree;
 use super::paint::Painter;
 use super::widget::{Widget, WidgetKind};
@@ -51,11 +53,6 @@ use super::{BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEf
 /// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
 /// enough for smooth meters/scopes without spinning the CPU.
 const FRAME: Duration = Duration::from_millis(33);
-/// Most recent control-bus samples a `scope` keeps and plots.
-const SCOPE_HISTORY: usize = 512;
-/// Samples per `/b_getn` request when pulling a server buffer (each reply must
-/// fit a datagram; the bulk-transfer optimization is a later milestone).
-const BUFFER_CHUNK: usize = 8192;
 /// How often a window with a `nodetree` re-queries the server's tree. Node
 /// creation/removal is caught immediately through `/n_go`/`/n_end`; this low-rate
 /// poll picks up `/n_set` control changes (which raise no notification).
@@ -219,22 +216,6 @@ struct WindowState {
     scopes: HashMap<i32, VecDeque<f32>>,
 }
 
-/// A waveform widget waiting on a server buffer fetch.
-struct WaveWant {
-    def_id: i32,
-    widget_id: i32,
-    base_bucket: usize,
-}
-
-/// An in-progress fetch of a server buffer over the client leg: the flat
-/// interleaved samples filled in as `/b_setn` chunks arrive.
-struct BufferFetch {
-    channels: usize,
-    total: usize,
-    samples: Vec<f32>,
-    received: usize,
-}
-
 struct App {
     host: Host,
     socket: Arc<UdpSocket>,
@@ -247,10 +228,9 @@ struct App {
     resumed: bool,
     /// Next scheduled repaint for animated (meter/scope) windows.
     next_frame: Instant,
-    /// Waveform widgets awaiting each server buffer number.
-    wants: HashMap<i32, Vec<WaveWant>>,
-    /// In-progress server-buffer fetches, by buffer number.
-    fetches: HashMap<i32, BufferFetch>,
+    /// The server-buffer fetch machine (`/b_query` → chunked `/b_getn`),
+    /// shared with the browser front.
+    fetches: BufferFetches,
     /// The node tree last read from the server, by group id, feeding `nodetree`
     /// widgets (filled by `/g_queryTree.reply`).
     node_trees: HashMap<i32, NodeTree>,
@@ -276,8 +256,7 @@ impl App {
             pending: Vec::new(),
             resumed: false,
             next_frame: Instant::now(),
-            wants: HashMap::new(),
-            fetches: HashMap::new(),
+            fetches: BufferFetches::default(),
             node_trees: HashMap::new(),
             notified: false,
             next_query: Instant::now(),
@@ -314,11 +293,7 @@ impl App {
         }
         for (def_id, id, value) in samples {
             if let Some(ws) = self.windows.get_mut(&def_id) {
-                let history = ws.scopes.entry(id).or_default();
-                history.push_back(value);
-                while history.len() > SCOPE_HISTORY {
-                    history.pop_front();
-                }
+                push_sample(ws.scopes.entry(id).or_default(), value);
             }
         }
     }
@@ -490,50 +465,37 @@ impl App {
     /// `/b_info` reply). `refs` is `(widget_id, bufnum, base_bucket)`.
     fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32, usize)>) {
         for (widget_id, bufnum, base_bucket) in refs {
-            let first = !self.wants.contains_key(&bufnum);
-            self.wants.entry(bufnum).or_default().push(WaveWant {
-                def_id,
-                widget_id,
-                base_bucket,
-            });
-            if first && !self.fetches.contains_key(&bufnum) {
-                self.query_buffer(bufnum);
+            if let Some(query) = self.fetches.want(def_id, widget_id, bufnum, base_bucket) {
+                self.send_to_server(query);
             }
         }
     }
 
-    /// Asks the audio server for buffer `bufnum`'s shape (`/b_query` -> `/b_info`).
-    fn query_buffer(&self, bufnum: i32) {
+    /// Sends one fetch-machine message over the client leg (`/b_query`,
+    /// `/b_getn`), warning instead of failing when no server is attached.
+    fn send_to_server(&self, msg: OscMessage) {
         let Some(server) = self.host.server() else {
             return warn!(
-                "waveform references buffer {bufnum} but no audio server is attached (--server)"
+                "waveform references a server buffer but no audio server is attached (--server)"
             );
         };
-        if let Err(e) = server.send(OscMessage {
-            addr: "/b_query".into(),
-            args: vec![OscType::Int(bufnum)],
-        }) {
-            warn!("failed to query buffer {bufnum}: {e}");
+        let addr = msg.addr.clone();
+        if let Err(e) = server.send(msg) {
+            warn!("failed to send {addr} to the audio server: {e}");
         }
     }
 
-    /// Requests the next sample range of `bufnum` starting at `start`.
-    fn request_chunk(&self, bufnum: i32, start: usize, total: usize) {
-        let count = BUFFER_CHUNK.min(total.saturating_sub(start));
-        if count == 0 {
-            return;
-        }
-        if let Some(server) = self.host.server()
-            && let Err(e) = server.send(OscMessage {
-                addr: "/b_getn".into(),
-                args: vec![
-                    OscType::Int(bufnum),
-                    OscType::Int(start as i32),
-                    OscType::Int(count as i32),
-                ],
-            })
-        {
-            warn!("failed to read buffer {bufnum} at {start}: {e}");
+    /// Carries out one fetch-machine step: send the next request, or place a
+    /// finished buffer into every window that was waiting on it.
+    fn apply_fetch_step(&mut self, step: FetchStep) {
+        match step {
+            FetchStep::Request(msg) => self.send_to_server(msg),
+            FetchStep::Done {
+                bufnum,
+                mono,
+                wants,
+            } => self.finalize_buffer(bufnum, mono, wants),
+            FetchStep::None => {}
         }
     }
 
@@ -582,15 +544,19 @@ impl App {
                         _,
                     ] = group
                     {
-                        self.on_buffer_info(
+                        let step = self.fetches.on_info(
                             *bufnum,
                             (*frames).max(0) as usize,
                             (*channels).max(0) as usize,
                         );
+                        self.apply_fetch_step(step);
                     }
                 }
             }
-            "/b_setn" => self.on_buffer_data(&msg.args),
+            "/b_setn" => {
+                let step = self.fetches.on_data(&msg.args);
+                self.apply_fetch_step(step);
+            }
             "/g_queryTree.reply" => self.on_query_tree_reply(&msg.args),
             // A node was created or freed (on any client): refresh the tree
             // promptly instead of waiting for the next poll.
@@ -679,74 +645,9 @@ impl App {
         }
     }
 
-    /// `/b_info`: start fetching a buffer we are waiting on (or finalize empty
-    /// when it is unallocated).
-    fn on_buffer_info(&mut self, bufnum: i32, frames: usize, channels: usize) {
-        if !self.wants.contains_key(&bufnum) || self.fetches.contains_key(&bufnum) {
-            return;
-        }
-        let channels = channels.max(1);
-        let total = frames * channels;
-        if total == 0 {
-            return self.finalize_buffer(bufnum, Vec::new(), channels);
-        }
-        self.fetches.insert(
-            bufnum,
-            BufferFetch {
-                channels,
-                total,
-                samples: vec![0.0; total],
-                received: 0,
-            },
-        );
-        self.request_chunk(bufnum, 0, total);
-    }
-
-    /// `/b_setn bufnum start count value...`: store a chunk, then request the
-    /// next one or finalize when the whole buffer has arrived.
-    fn on_buffer_data(&mut self, args: &[OscType]) {
-        let [
-            OscType::Int(bufnum),
-            OscType::Int(start),
-            OscType::Int(count),
-            rest @ ..,
-        ] = args
-        else {
-            return;
-        };
-        let (bufnum, start) = (*bufnum, (*start).max(0) as usize);
-        let count = (*count).max(0) as usize;
-        let (done, total) = {
-            let Some(fetch) = self.fetches.get_mut(&bufnum) else {
-                return;
-            };
-            let end = start.saturating_add(count).min(fetch.total);
-            let n = end.saturating_sub(start);
-            for (i, arg) in rest.iter().take(n).enumerate() {
-                if let OscType::Float(v) = arg {
-                    fetch.samples[start + i] = *v;
-                }
-            }
-            fetch.received += n;
-            (fetch.received >= fetch.total, fetch.total)
-        };
-        if done {
-            let fetch = self.fetches.remove(&bufnum).unwrap();
-            self.finalize_buffer(bufnum, fetch.samples, fetch.channels);
-        } else {
-            self.request_chunk(bufnum, start + count, total);
-        }
-    }
-
-    /// A buffer finished downloading: de-interleave channel 0 and build a
-    /// waveform view in each window that was waiting on it.
-    fn finalize_buffer(&mut self, bufnum: i32, interleaved: Vec<f32>, channels: usize) {
-        let mono: Arc<[f32]> = if channels <= 1 {
-            interleaved.into()
-        } else {
-            interleaved.iter().step_by(channels).copied().collect()
-        };
-        let wants = self.wants.remove(&bufnum).unwrap_or_default();
+    /// A buffer finished downloading (channel 0 already de-interleaved by the
+    /// fetch machine): build a waveform view in each window that waited on it.
+    fn finalize_buffer(&mut self, bufnum: i32, mono: Arc<[f32]>, wants: Vec<WaveWant>) {
         info!(
             "buffer {bufnum}: {} frames loaded into {} waveform(s)",
             mono.len(),
@@ -768,10 +669,7 @@ impl App {
         }
         // Drop any pending buffer wants this window had, so a finished fetch does
         // not try to fill a window that is gone (or being rebuilt).
-        for wants in self.wants.values_mut() {
-            wants.retain(|w| w.def_id != id);
-        }
-        self.wants.retain(|_, wants| !wants.is_empty());
+        self.fetches.drop_def(id);
     }
 
     /// User-initiated close: tell the script, then drop the window. A standalone
@@ -1130,29 +1028,6 @@ fn collect_waveforms(
     for child in &widget.children {
         collect_waveforms(child, gpu, out, buffer_refs);
     }
-}
-
-/// Whether a widget tree contains a live (shared-memory-backed) meter or scope.
-fn tree_has_live_widget(widget: &Widget) -> bool {
-    widget.kind.live_bus().is_some() || widget.children.iter().any(tree_has_live_widget)
-}
-
-/// Appends `(widget_id, bus)` for every `scope` in the tree, so the frame tick
-/// can sample each one's bus into its rolling history.
-fn collect_scopes(widget: &Widget, out: &mut Vec<(i32, i32)>) {
-    if let WidgetKind::Scope { bus, .. } = &widget.kind
-        && let Some(id) = widget.id
-    {
-        out.push((id, *bus));
-    }
-    for child in &widget.children {
-        collect_scopes(child, out);
-    }
-}
-
-/// Whether a widget tree contains a `canvas` (so the window animates each frame).
-fn tree_has_canvas(widget: &Widget) -> bool {
-    matches!(widget.kind, WidgetKind::Canvas { .. }) || widget.children.iter().any(tree_has_canvas)
 }
 
 /// Builds a [`CanvasView`] (compiling the user shader) for every `canvas` in the

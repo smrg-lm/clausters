@@ -35,11 +35,13 @@
 pub mod bind;
 pub mod canvas;
 pub mod controls;
+pub mod fetch;
 pub mod font;
 pub mod frame;
 pub mod guidef;
 pub mod interact;
 pub mod layout;
+pub mod live;
 pub mod meters;
 pub mod nodetree;
 pub mod paint;

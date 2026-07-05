@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters-gui parity pass</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0d0d12;
+        color: #dddddd;
+        font-family: system-ui, sans-serif;
+      }
+      canvas {
+        display: block;
+      }
+      #note {
+        padding: 8px 12px;
+        font-size: 13px;
+        white-space: pre-line;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="note">parity pass starting…</div>
+
+    <!--
+      The scripted parity pass: connects to the audio server
+      (?server=ws://host:port, default ws://127.0.0.1:57120) and opens the
+      panel, meters and bulk demos in sequence — the same GuiDef JSONs the
+      Python examples build. The evidence is the host's own console log:
+
+        /gui_def 1: window opened from the page      (each demo)
+        audio-server WebSocket open                  (the WS leg)
+        /c_stream subscription: [10]                 (meters over the wire)
+        waveform: fetched peak cache sine.peaks …    (bulk: cache fetch)
+        waveform: fetched N samples from sine.f32 …  (bulk: raw fetch + wasm pyramid)
+        buffer 0: N frames loaded into 1 waveform(s) (bulk: /b_getn over WS)
+
+      Serve sine.f32/sine.peaks next to this page and allocate server buffer 0
+      first (the GUIA steps do both). Headless:
+        google-chrome --headless=new --enable-unsafe-swiftshader \
+          --enable-logging=stderr 'http://localhost:8000/parity.html'
+    -->
+    <script type="module">
+      import init, { start } from "./clausters_gui.js";
+
+      const N = 4096;
+      const data = Array.from({ length: N }, (_, i) => {
+        const t = i / N;
+        return Math.sin(t * Math.PI * 12) * (1 - t) * 0.85;
+      });
+
+      const defs = {
+        panel: {
+          type: "window", title: "panel", w: 480, h: 420, layout: "col",
+          children: [
+            { id: 2, type: "slider", label: "cutoff", min: 20.0, max: 20000.0, value: 800.0 },
+            { id: 3, type: "knob", label: "res", min: 0.0, max: 1.0, value: 0.3 },
+            { id: 7, type: "waveform", data: data, base_bucket: 64 },
+          ],
+        },
+        meters: {
+          type: "window", title: "meters", w: 640, h: 440, layout: "col",
+          children: [
+            { id: 10, type: "knob", label: "bus 10", min: -1.0, max: 1.0, value: 0.0, bind: ["/c_set", 10] },
+            { id: 11, type: "meter", bus: 10, min: -1.0, max: 1.0, label: "bus" },
+            { id: 12, type: "scope", bus: 10, min: -1.0, max: 1.0, label: "bus" },
+          ],
+        },
+        bulk: {
+          type: "window", title: "bulk", w: 640, h: 520, layout: "col",
+          children: [
+            { id: 2, type: "waveform", cache: "sine.peaks" },
+            { id: 4, type: "waveform", path: "sine.f32", base_bucket: 512 },
+            { id: 6, type: "waveform", buffer: 0 },
+          ],
+        },
+      };
+
+      const note = document.getElementById("note");
+      init().then(() => {
+        const gui = start();
+        const server =
+          new URLSearchParams(location.search).get("server") ??
+          "ws://127.0.0.1:57120";
+        gui.connect_server(server);
+        setInterval(() => gui.poll(), 100); // keep the outbox drained
+
+        const steps = ["panel", "meters", "bulk"];
+        steps.forEach((name, i) => {
+          setTimeout(() => {
+            console.log("parity: opening the " + name + " demo");
+            note.textContent = "parity pass: " + name + " | server: " + server;
+            gui.def(1, JSON.stringify(defs[name]));
+          }, 500 + i * 2500);
+        });
+        setTimeout(() => {
+          console.log("parity: pass complete (check the log lines above)");
+          note.textContent = "parity pass complete — see the console";
+        }, 500 + steps.length * 2500);
+      });
+    </script>
+  </body>
+</html>

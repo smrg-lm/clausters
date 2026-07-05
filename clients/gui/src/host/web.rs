@@ -36,14 +36,17 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
+use crate::peaks::Pyramid;
 use crate::waveform::WaveformData;
 
+use super::fetch::{BufferFetches, FetchStep};
 use super::frame::{self, WaveformSlot};
 use super::interact;
 use super::layout::Rect;
+use super::live::{self, StreamedBuses};
 use super::paint::Painter;
 use super::widget::{Widget, WidgetKind};
-use super::{ClientId, GUI_EVENT, Host, HostEffect, ServerLink, controls};
+use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink, controls};
 
 /// The default canvas size; a fed GuiDef lays out into it (the layout uses the
 /// framebuffer size, not the def's declared `w`/`h`).
@@ -67,9 +70,12 @@ fn set_status(msg: &str) {
 }
 
 /// The host's audio-server leg over a browser `WebSocket` to a `--ws` server.
-/// Send-only at this milestone (bound-widget values); replies are a later
-/// milestone. Frames sent before the socket opens are buffered and flushed on
-/// open, so a `connect` immediately followed by interaction does not drop values.
+/// Bidirectional: outbound frames carry bound-widget values and the host's own
+/// requests (`/c_stream`, `/b_query`, `/b_getn`); inbound frames (the server's
+/// replies and streamed `/c_set` snapshots) are forwarded into the event loop
+/// as [`WebEvent::ServerInbound`] and decode through the one `decode_packet`
+/// door. Frames sent before the socket opens are buffered and flushed on open,
+/// so a `connect` immediately followed by interaction does not drop values.
 pub struct WsServerLink {
     socket: web_sys::WebSocket,
     open: Rc<Cell<bool>>,
@@ -96,6 +102,22 @@ impl WsServerLink {
         });
         socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
         on_open.forget();
+        // Inbound: each binary frame is one OSC packet from the audio server
+        // (a streamed `/c_set`, a `/b_info`/`/b_setn` reply, a `/fail`),
+        // forwarded to the app through the event-loop proxy.
+        let on_message = Closure::<dyn FnMut(web_sys::MessageEvent)>::new(
+            move |event: web_sys::MessageEvent| {
+                let Ok(buffer) = event.data().dyn_into::<js_sys::ArrayBuffer>() else {
+                    return; // non-binary frames carry nothing of ours
+                };
+                let bytes = js_sys::Uint8Array::new(&buffer).to_vec();
+                if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
+                    let _ = proxy.send_event(WebEvent::ServerInbound(bytes));
+                }
+            },
+        );
+        socket.set_onmessage(Some(on_message.as_ref().unchecked_ref()));
+        on_message.forget();
         Ok(Self {
             socket,
             open,
@@ -129,6 +151,38 @@ enum WebEvent {
     Inbound(Vec<u8>),
     /// Attach the audio-server leg to this `--ws` URL (for bound widgets).
     ConnectServer(String),
+    /// One inbound OSC packet from the audio server over the WS leg (a streamed
+    /// `/c_set`, a `/b_info`/`/b_setn` reply, a `/fail`).
+    ServerInbound(Vec<u8>),
+    /// The animation tick (a `setInterval` at ~30 fps while the window has live
+    /// widgets): advance the scope histories and repaint.
+    Tick,
+    /// A `fetch` of a waveform/plot URL completed and decoded (the browser's
+    /// bulk path: `path`/`cache` resolve against the page origin).
+    BulkReady { widget_id: i32, data: BulkData },
+}
+
+/// A fetched-and-decoded bulk resource, ready to place. The decode (pyramid
+/// mapping, raw-`f32` de-interleave, in-wasm pyramid build) happens in the
+/// async fetch task; placing a waveform needs the GPU, a plot only the tree.
+enum BulkData {
+    Waveform(WaveformData),
+    Plot(Arc<[f32]>),
+}
+
+/// One waveform/plot URL to fetch and how to decode its bytes.
+enum BulkRequest {
+    /// A prebuilt peak-pyramid cache, mapped straight to a [`Pyramid`].
+    Cache(String),
+    /// Raw little-endian `f32`: de-interleave channel 0, build the pyramid in
+    /// wasm (the analysis lives in `clausters-core`, FFI-free).
+    Raw {
+        url: String,
+        channels: usize,
+        base_bucket: usize,
+    },
+    /// Raw little-endian `f32` for a `plot` (channel 0, no pyramid).
+    Plot { url: String, channels: usize },
 }
 
 /// An in-progress pointer drag in the browser window.
@@ -161,6 +215,27 @@ struct WebApp {
     pending_size: Option<(u32, u32)>,
     cursor: (f64, f64),
     drag: Option<Drag>,
+    /// Live control-bus values streamed from the audio server (`/c_stream` →
+    /// `/c_set`), the browser's [`BusSource`] for meters/scopes/canvases.
+    buses: Arc<StreamedBuses>,
+    /// Recent control-bus samples per `scope` widget id (oldest .. newest),
+    /// advanced on [`WebEvent::Tick`] exactly as the native tick does.
+    scopes: HashMap<i32, VecDeque<f32>>,
+    /// The bus set currently subscribed with `/c_stream` (sorted), so a tree
+    /// change only resubscribes when the set actually changed.
+    streamed: Vec<i32>,
+    /// The animation tick: the `setInterval` id and its closure, kept alive
+    /// while the current def has live widgets (meter/scope/canvas).
+    tick: Option<(i32, Closure<dyn FnMut()>)>,
+    /// Whether the first streamed `/c_set` snapshot was logged (one line as
+    /// evidence the bus stream is flowing; logging every frame would spam).
+    stream_seen: bool,
+    /// The server-buffer fetch machine (`/b_query` → chunked `/b_getn`),
+    /// shared with the native front; requests ride the WS leg.
+    fetches: BufferFetches,
+    /// Fetched waveforms that arrived before the GPU was ready, placed on
+    /// `GpuReady` (plots need no GPU and are placed immediately).
+    pending_bulk: Vec<(i32, WaveformData)>,
 }
 
 impl WebApp {
@@ -174,6 +249,13 @@ impl WebApp {
             pending_size: None,
             cursor: (0.0, 0.0),
             drag: None,
+            buses: Arc::new(StreamedBuses::default()),
+            scopes: HashMap::new(),
+            streamed: Vec::new(),
+            tick: None,
+            stream_seen: false,
+            fetches: BufferFetches::default(),
+            pending_bulk: Vec::new(),
         }
     }
 
@@ -191,27 +273,291 @@ impl WebApp {
                 HostEffect::OpenWindow(id) => {
                     log(&format!("/gui_def {id}: window opened from the page"));
                     self.current_def = Some(id);
+                    self.scopes.clear();
+                    self.pending_bulk.clear();
+                    self.fetches.drop_def(id); // rebuild semantics on a re-/gui_def
                     if self.render.is_some() {
                         self.build_resources();
                         self.request_redraw();
                     }
+                    self.start_bulk(id);
+                    self.on_tree_changed();
                 }
                 HostEffect::CloseWindow(id) => {
                     if self.current_def == Some(id) {
                         self.current_def = None;
+                        self.scopes.clear();
+                        self.pending_bulk.clear();
+                        self.fetches.drop_def(id);
                         if let Some(r) = self.render.as_mut() {
                             r.waveforms.clear();
                         }
                         self.request_redraw();
+                        self.on_tree_changed();
                     }
                 }
                 HostEffect::Redraw(id) => {
                     if self.current_def == Some(id) {
+                        // A `/gui_set` may have retargeted a meter/scope `bus`:
+                        // re-derive the subscription (a no-op when unchanged).
+                        self.on_tree_changed();
                         self.request_redraw();
                     }
                 }
             }
         }
+    }
+
+    /// Re-derives everything that follows from the current tree's live widgets:
+    /// the `/c_stream` subscription on the WS leg and the animation tick.
+    /// Called on open/close/redraw and after the server leg attaches; cheap (a
+    /// tree walk) and idempotent, so calling it eagerly is fine.
+    fn on_tree_changed(&mut self) {
+        self.sync_bus_stream();
+        self.ensure_tick();
+    }
+
+    /// Subscribes the audio server to exactly the control buses the current
+    /// tree reads live (`/c_stream`, replacing this client's previous
+    /// subscription), or cancels when none are left. Skipped without a server
+    /// leg; `ConnectServer` re-runs it once the leg exists.
+    fn sync_bus_stream(&mut self) {
+        let mut wanted = Vec::new();
+        if let Some(def) = self.current_def
+            && let Some(tree) = self.host.window_def(def)
+        {
+            live::collect_live_buses(tree, &mut wanted);
+        }
+        if wanted == self.streamed {
+            return;
+        }
+        let Some(server) = self.host.server() else {
+            return;
+        };
+        let mut args = Vec::with_capacity(wanted.len() + 1);
+        if wanted.is_empty() {
+            args.push(OscType::Int(0)); // periodMs 0: cancel
+        } else {
+            args.push(OscType::Int(live::STREAM_PERIOD_MS));
+            args.extend(wanted.iter().map(|&bus| OscType::Int(bus)));
+        }
+        match server.send(OscMessage {
+            addr: "/c_stream".into(),
+            args,
+        }) {
+            Ok(()) => {
+                log(&format!("/c_stream subscription: {wanted:?}"));
+                self.streamed = wanted;
+            }
+            Err(e) => log(&format!("failed to (re)subscribe /c_stream: {e}")),
+        }
+    }
+
+    /// Starts or stops the ~30 fps animation tick to match the current tree:
+    /// running while it has live widgets (meter/scope/canvas), stopped
+    /// otherwise. The tick advances the scope histories and repaints — the
+    /// browser twin of the native `about_to_wait` frame timer, driven by
+    /// `setInterval` because `std::time::Instant` does not exist on wasm.
+    fn ensure_tick(&mut self) {
+        let animated = self
+            .current_def
+            .and_then(|def| self.host.window_def(def))
+            .is_some_and(|tree| live::tree_has_canvas(tree) || live::tree_has_live_widget(tree));
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        match (animated, self.tick.is_some()) {
+            (true, false) => {
+                let closure = Closure::<dyn FnMut()>::new(move || {
+                    if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
+                        let _ = proxy.send_event(WebEvent::Tick);
+                    }
+                });
+                match window.set_interval_with_callback_and_timeout_and_arguments_0(
+                    closure.as_ref().unchecked_ref(),
+                    live::STREAM_PERIOD_MS,
+                ) {
+                    Ok(id) => self.tick = Some((id, closure)),
+                    Err(e) => log(&format!("cannot start the animation tick: {e:?}")),
+                }
+            }
+            (false, true) => {
+                if let Some((id, _closure)) = self.tick.take() {
+                    window.clear_interval_with_handle(id);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// One animation tick: push a fresh streamed-bus sample into every scope's
+    /// rolling history (time-based, exactly like the native tick), then repaint.
+    fn on_tick(&mut self) {
+        if let Some(def) = self.current_def
+            && let Some(tree) = self.host.window_def(def)
+        {
+            let buses = &self.buses;
+            live::advance_scope_histories(
+                tree,
+                |bus| {
+                    if bus < 0 {
+                        0.0
+                    } else {
+                        buses.control(bus as usize)
+                    }
+                },
+                &mut self.scopes,
+            );
+        }
+        self.request_redraw();
+    }
+
+    /// Routes one decoded OSC packet from the audio server (the WS leg): the
+    /// streamed `/c_set` snapshots into [`StreamedBuses`], the buffer replies
+    /// into the shared fetch machine. The browser twin of the native
+    /// `handle_server_packet`.
+    fn on_server_inbound(&mut self, bytes: &[u8]) {
+        let packet = match decode_packet(bytes) {
+            Ok(p) => p,
+            Err(e) => return log(&format!("malformed OSC packet from the server: {e}")),
+        };
+        let OscPacket::Message(msg) = packet else {
+            return; // bundles are not used on the reply path
+        };
+        match msg.addr.as_str() {
+            "/c_set" => {
+                if !self.stream_seen {
+                    self.stream_seen = true;
+                    log(&format!("bus stream flowing: {:?}", msg.args));
+                }
+                for pair in msg.args.chunks(2) {
+                    if let [OscType::Int(index), OscType::Float(value)] = pair
+                        && *index >= 0
+                    {
+                        self.buses.set(*index as usize, *value);
+                    }
+                }
+            }
+            "/b_info" => {
+                // (bufnum, frames, channels, sampleRate) per buffer.
+                for group in msg.args.chunks(4) {
+                    if let [
+                        OscType::Int(bufnum),
+                        OscType::Int(frames),
+                        OscType::Int(channels),
+                        _,
+                    ] = group
+                    {
+                        let step = self.fetches.on_info(
+                            *bufnum,
+                            (*frames).max(0) as usize,
+                            (*channels).max(0) as usize,
+                        );
+                        self.apply_fetch_step(step);
+                    }
+                }
+            }
+            "/b_setn" => {
+                let step = self.fetches.on_data(&msg.args);
+                self.apply_fetch_step(step);
+            }
+            "/fail" => log(&format!("audio server replied /fail: {:?}", msg.args)),
+            // `/done` acks (e.g. for `/c_stream`) need no action.
+            "/done" => {}
+            _ => {}
+        }
+    }
+
+    /// Carries out one fetch-machine step: send the next request over the WS
+    /// leg, or turn a finished buffer into waveform data for its widgets.
+    fn apply_fetch_step(&mut self, step: FetchStep) {
+        match step {
+            FetchStep::Request(msg) => self.send_to_server(msg),
+            FetchStep::Done {
+                bufnum,
+                mono,
+                wants,
+            } => {
+                log(&format!(
+                    "buffer {bufnum}: {} frames loaded into {} waveform(s)",
+                    mono.len(),
+                    wants.len()
+                ));
+                for want in wants {
+                    if self.current_def != Some(want.def_id) {
+                        continue;
+                    }
+                    let data = WaveformData::new(Arc::clone(&mono), want.base_bucket);
+                    self.place_waveform(want.widget_id, data);
+                }
+                self.request_redraw();
+            }
+            FetchStep::None => {}
+        }
+    }
+
+    /// Sends one fetch-machine message over the WS leg (`/b_query`, `/b_getn`),
+    /// logging instead of failing when no server is attached.
+    fn send_to_server(&self, msg: OscMessage) {
+        let Some(server) = self.host.server() else {
+            return log("waveform references a server buffer but no --ws server is connected");
+        };
+        let addr = msg.addr.clone();
+        if let Err(e) = server.send(msg) {
+            log(&format!("failed to send {addr} to the audio server: {e}"));
+        }
+    }
+
+    /// Starts the bulk loads of a freshly opened def: server-buffer fetches
+    /// over the WS leg, and `fetch`es of every waveform/plot `path`/`cache`
+    /// (URLs against the page origin in the browser).
+    fn start_bulk(&mut self, def: i32) {
+        let Some(tree) = self.host.window_def(def) else {
+            return;
+        };
+        let mut buffer_refs = Vec::new();
+        let mut requests = Vec::new();
+        collect_bulk(tree, &mut buffer_refs, &mut requests);
+        for (widget_id, bufnum, base_bucket) in buffer_refs {
+            if let Some(query) = self.fetches.want(def, widget_id, bufnum, base_bucket) {
+                self.send_to_server(query);
+            }
+        }
+        for (widget_id, request) in requests {
+            wasm_bindgen_futures::spawn_local(fetch_bulk(widget_id, request));
+        }
+    }
+
+    /// Places a decoded waveform: a GPU slot right away when the device is up,
+    /// else stashed and replayed on `GpuReady`.
+    fn place_waveform(&mut self, widget_id: i32, data: WaveformData) {
+        if let Some(render) = self.render.as_mut() {
+            let slot = frame::waveform_slot(data, &render.gpu);
+            render.waveforms.insert(widget_id, slot);
+        } else {
+            self.pending_bulk.push((widget_id, data));
+        }
+    }
+
+    /// A fetched bulk resource arrived: place a waveform (GPU slot) or write a
+    /// plot's samples into the host tree, then repaint.
+    fn on_bulk_ready(&mut self, widget_id: i32, data: BulkData) {
+        match data {
+            BulkData::Waveform(data) => self.place_waveform(widget_id, data),
+            BulkData::Plot(samples) => {
+                if let Some(def) = self.current_def
+                    && let Some(root) = self.host.window_def_mut(def)
+                    && let Some(widget) = root.find_mut(widget_id)
+                    && let WidgetKind::Plot {
+                        samples: plot_samples,
+                        ..
+                    } = &mut widget.kind
+                {
+                    *plot_samples = samples;
+                }
+            }
+        }
+        self.request_redraw();
     }
 
     /// Encodes `msg` and pushes it to the outbox for the page to drain; also logs
@@ -241,22 +587,26 @@ impl WebApp {
         }
     }
 
-    /// Renders the current def through the shared frame path (empty live inputs:
-    /// no bus, no node tree, no held button beyond the one tracked locally).
+    /// Renders the current def through the shared frame path. The live inputs
+    /// come from the streamed buses (meters/canvases read them in `render`, the
+    /// scopes their tick-fed histories); the node tree stays empty until a
+    /// browser node-tree path exists.
     fn draw(&mut self) {
         let Some(def) = self.current_def else { return };
         let active_button = match &self.drag {
             Some(Drag::Button { id }) => Some(*id),
             _ => None,
         };
+        let server_attached = self.host.server().is_some();
         let Some(tree) = self.host.window_def(def) else {
             return;
         };
         let inputs = frame::FrameInputs {
+            bus: Some(self.buses.as_ref() as &dyn BusSource),
             active_button,
+            server_attached,
             ..Default::default()
         };
-        let scopes = HashMap::new();
         let Some(render) = self.render.as_mut() else {
             return;
         };
@@ -266,7 +616,7 @@ impl WebApp {
             &mut render.painter,
             &mut render.waveforms,
             &mut canvases,
-            &scopes,
+            &self.scopes,
             tree,
             &inputs,
         );
@@ -464,6 +814,11 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 if self.current_def.is_some() {
                     self.build_resources();
                 }
+                // Bulk data that finished downloading while the device was
+                // still coming up gets its GPU slots now.
+                for (widget_id, data) in std::mem::take(&mut self.pending_bulk) {
+                    self.place_waveform(widget_id, data);
+                }
                 self.request_redraw();
             }
             WebEvent::Inbound(bytes) => self.on_inbound(&bytes),
@@ -471,9 +826,17 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 Ok(link) => {
                     self.host.set_server_link(ServerLink::Ws(link));
                     log(&format!("audio-server leg connecting to {url}"));
+                    // A fresh connection holds no subscription: forget the old
+                    // one and subscribe the current tree's buses (frames queue
+                    // until the socket opens, so sending now is safe).
+                    self.streamed.clear();
+                    self.on_tree_changed();
                 }
                 Err(e) => log(&format!("cannot open audio-server WebSocket {url}: {e}")),
             },
+            WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
+            WebEvent::Tick => self.on_tick(),
+            WebEvent::BulkReady { widget_id, data } => self.on_bulk_ready(widget_id, data),
         }
     }
 
@@ -515,8 +878,9 @@ thread_local! {
     static WEB_PROXY: RefCell<Option<EventLoopProxy<WebEvent>>> = const { RefCell::new(None) };
 }
 
-/// Builds the GPU slot for every inline-data `waveform` in the tree (the browser
-/// bulk source until the network path lands).
+/// Builds the GPU slot for every inline-data `waveform` in the tree (the
+/// zero-latency bulk source; `path`/`cache`/`buffer` references load async
+/// through [`fetch_bulk`] and the fetch machine).
 fn build_inline_waveforms(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, WaveformSlot>) {
     if let WidgetKind::Waveform {
         samples,
@@ -532,6 +896,148 @@ fn build_inline_waveforms(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, Wav
     for child in &widget.children {
         build_inline_waveforms(child, gpu, out);
     }
+}
+
+/// Walks the tree collecting the async bulk sources: waveforms referencing a
+/// server `buffer` (fetched over the WS leg) and waveform/plot `path`/`cache`
+/// references (URLs fetched against the page origin). The browser mirror of
+/// the native `collect_waveforms`/`load_plot_paths` resolution, minus the
+/// inline case handled by [`build_inline_waveforms`].
+fn collect_bulk(
+    widget: &Widget,
+    buffer_refs: &mut Vec<(i32, i32, usize)>,
+    requests: &mut Vec<(i32, BulkRequest)>,
+) {
+    if let Some(id) = widget.id {
+        match &widget.kind {
+            WidgetKind::Waveform {
+                samples,
+                base_bucket,
+                buffer,
+                path,
+                cache,
+                channels,
+            } => {
+                if let Some(cache) = cache {
+                    requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
+                } else if let Some(path) = path {
+                    requests.push((
+                        id,
+                        BulkRequest::Raw {
+                            url: path.to_string_lossy().into_owned(),
+                            channels: *channels,
+                            base_bucket: *base_bucket,
+                        },
+                    ));
+                } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
+                    buffer_refs.push((id, *bufnum, *base_bucket));
+                }
+            }
+            WidgetKind::Plot {
+                samples,
+                path,
+                channels,
+                ..
+            } => {
+                if samples.is_empty()
+                    && let Some(path) = path
+                {
+                    requests.push((
+                        id,
+                        BulkRequest::Plot {
+                            url: path.to_string_lossy().into_owned(),
+                            channels: *channels,
+                        },
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    for child in &widget.children {
+        collect_bulk(child, buffer_refs, requests);
+    }
+}
+
+/// Fetches one bulk URL and decodes it off the event loop, then hands the
+/// result back through the proxy as [`WebEvent::BulkReady`].
+async fn fetch_bulk(widget_id: i32, request: BulkRequest) {
+    let url = match &request {
+        BulkRequest::Cache(url) => url,
+        BulkRequest::Raw { url, .. } | BulkRequest::Plot { url, .. } => url,
+    }
+    .clone();
+    let bytes = match fetch_bytes(&url).await {
+        Ok(bytes) => bytes,
+        Err(e) => return log(&format!("bulk fetch {url}: {e}")),
+    };
+    let data = match request {
+        BulkRequest::Cache(_) => {
+            let Some(pyramid) = Pyramid::from_bytes(&bytes) else {
+                return log(&format!("bulk fetch {url}: malformed peak pyramid"));
+            };
+            log(&format!(
+                "waveform: fetched peak cache {url} ({} samples, no raw data)",
+                pyramid.total_samples()
+            ));
+            BulkData::Waveform(WaveformData::with_pyramid(
+                Arc::from([] as [f32; 0]),
+                pyramid,
+            ))
+        }
+        BulkRequest::Raw {
+            channels,
+            base_bucket,
+            ..
+        } => {
+            let samples = decode_channel0(&bytes, channels);
+            log(&format!(
+                "waveform: fetched {} samples from {url} (pyramid built in wasm)",
+                samples.len()
+            ));
+            BulkData::Waveform(WaveformData::new(samples, base_bucket))
+        }
+        BulkRequest::Plot { channels, .. } => {
+            let samples = decode_channel0(&bytes, channels);
+            log(&format!(
+                "plot: fetched {} samples from {url}",
+                samples.len()
+            ));
+            BulkData::Plot(samples)
+        }
+    };
+    if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
+        let _ = proxy.send_event(WebEvent::BulkReady { widget_id, data });
+    }
+}
+
+/// One `fetch` of `url` to raw bytes (an `ArrayBuffer`), erroring on a non-2xx
+/// status so a missing resource is visible instead of decoding garbage.
+async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
+    use wasm_bindgen_futures::JsFuture;
+    let window = web_sys::window().ok_or("no window")?;
+    let response = JsFuture::from(window.fetch_with_str(url))
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    let response: web_sys::Response = response.dyn_into().map_err(|_| "not a Response")?;
+    if !response.ok() {
+        return Err(format!("HTTP {}", response.status()));
+    }
+    let buffer = JsFuture::from(response.array_buffer().map_err(|e| format!("{e:?}"))?)
+        .await
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(js_sys::Uint8Array::new(&buffer).to_vec())
+}
+
+/// Decodes raw little-endian `f32` bytes and de-interleaves channel 0 — the
+/// same layout the native `MappedFile::channel0_f32` reads from a mapped file.
+fn decode_channel0(bytes: &[u8], channels: usize) -> Arc<[f32]> {
+    let channels = channels.max(1);
+    bytes
+        .chunks_exact(4)
+        .step_by(channels)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect()
 }
 
 /// The binding surface JS holds: feed OSC packets / GuiDefs in, drain events out,

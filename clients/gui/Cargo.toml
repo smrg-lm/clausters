@@ -86,4 +86,7 @@ web-sys = { version = "0.3", features = [
     "Window",
     "Document",
     "Element",
+    # The server->host leg (streamed buses, buffer replies) and the bulk fetch.
+    "MessageEvent",
+    "Response",
 ] }
