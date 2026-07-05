@@ -22,7 +22,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 4
+CORE_ABI_VERSION = 5
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -174,6 +174,58 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_unix_to_sample.argtypes = [
         ctypes.c_double, ctypes.c_double, ctypes.c_int64, ctypes.c_double,
     ]
+    # Seam-audit surface (ABI v5): quantization, NTP timetag packing, pitch
+    # math, the seeded value stream, the beat queue and the clock-sync model —
+    # the value/time logic every client shares instead of reimplementing.
+    lib.clausters_core_quant_delay.restype = ctypes.c_double
+    lib.clausters_core_quant_delay.argtypes = [ctypes.c_double, ctypes.c_double]
+    lib.clausters_core_ntp_timetag.restype = ctypes.c_uint64
+    lib.clausters_core_ntp_timetag.argtypes = [ctypes.c_double]
+    lib.clausters_core_unix_to_ntp.restype = ctypes.c_uint64
+    lib.clausters_core_unix_to_ntp.argtypes = [ctypes.c_double]
+    lib.clausters_core_degree_to_midinote.restype = ctypes.c_double
+    lib.clausters_core_degree_to_midinote.argtypes = [
+        ctypes.c_double, ctypes.c_double, ctypes.c_double, f32p, ctypes.c_size_t,
+    ]
+    u64p = ctypes.POINTER(ctypes.c_uint64)
+    lib.clausters_rng_seed.restype = ctypes.c_uint64
+    lib.clausters_rng_seed.argtypes = [ctypes.c_uint64]
+    lib.clausters_rng_next_f64.restype = ctypes.c_double
+    lib.clausters_rng_next_f64.argtypes = [u64p]
+    lib.clausters_rng_next_below.restype = ctypes.c_uint64
+    lib.clausters_rng_next_below.argtypes = [u64p, ctypes.c_uint64]
+    f64p = ctypes.POINTER(ctypes.c_double)
+    lib.clausters_sched_new.restype = ctypes.c_void_p
+    lib.clausters_sched_free.restype = None
+    lib.clausters_sched_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_sched_push.restype = None
+    lib.clausters_sched_push.argtypes = [ctypes.c_void_p, ctypes.c_double, ctypes.c_uint64]
+    lib.clausters_sched_peek_time.restype = ctypes.c_int32
+    lib.clausters_sched_peek_time.argtypes = [ctypes.c_void_p, f64p]
+    lib.clausters_sched_pop_due.restype = ctypes.c_int32
+    lib.clausters_sched_pop_due.argtypes = [ctypes.c_void_p, ctypes.c_double, f64p, u64p]
+    lib.clausters_sched_remove.restype = ctypes.c_size_t
+    lib.clausters_sched_remove.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.clausters_sched_len.restype = ctypes.c_size_t
+    lib.clausters_sched_len.argtypes = [ctypes.c_void_p]
+    lib.clausters_sched_clear.restype = None
+    lib.clausters_sched_clear.argtypes = [ctypes.c_void_p]
+    lib.clausters_clocksync_new.restype = ctypes.c_void_p
+    lib.clausters_clocksync_new.argtypes = [ctypes.c_double, ctypes.c_size_t]
+    lib.clausters_clocksync_free.restype = None
+    lib.clausters_clocksync_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_clocksync_add_anchor.restype = None
+    lib.clausters_clocksync_add_anchor.argtypes = [
+        ctypes.c_void_p, ctypes.c_double, ctypes.c_int64, ctypes.c_double,
+    ]
+    lib.clausters_clocksync_sample_at.restype = ctypes.c_int64
+    lib.clausters_clocksync_sample_at.argtypes = [ctypes.c_void_p, ctypes.c_double]
+    lib.clausters_clocksync_local_time_of.restype = ctypes.c_double
+    lib.clausters_clocksync_local_time_of.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    for name in ("drift_ppm", "span", "rate", "slope", "intercept"):
+        fn = getattr(lib, f"clausters_clocksync_{name}")
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_void_p]
     # Peak-pyramid cache builder (ABI v3): the shared analysis the GUI host maps
     # to render a waveform without re-sending samples (the bulk path).
     u8p = ctypes.POINTER(ctypes.c_ubyte)
@@ -289,6 +341,188 @@ def samples_to_secs(samples: int, sample_rate: float) -> float:
 
 def unix_to_sample(unix_secs: float, anchor_unix: float, anchor_sample: int, sample_rate: float) -> int:
     return lib().clausters_core_unix_to_sample(unix_secs, anchor_unix, anchor_sample, sample_rate)
+
+
+def quant_delay(pos: float, quant: float) -> float:
+    """Beats to wait so a routine starts on the next ``quant`` boundary of a
+    grid currently at ``pos`` beats (``quant <= 0`` -> now) — the shared
+    quantization rule every client applies."""
+    return lib().clausters_core_quant_delay(float(pos), float(quant))
+
+
+def ntp_timetag(ntp_secs: float) -> int:
+    """Raw NTP-scale seconds (any epoch) packed into the 64 timetag bits
+    (``seconds << 32 | fractional``, fraction **rounded**) — the one packing
+    rule shared with the core, so identical instants give identical bytes."""
+    return lib().clausters_core_ntp_timetag(float(ntp_secs))
+
+
+def unix_to_ntp(unix_secs: float) -> int:
+    """A Unix timestamp packed into the 64 NTP timetag bits (adds the
+    1900->1970 offset, then packs like `ntp_timetag`)."""
+    return lib().clausters_core_unix_to_ntp(float(unix_secs))
+
+
+def degree_to_midinote(degree: float, octave: float, root: float, scale) -> float:
+    """Scale-degree -> MIDI note number in the ``octave``/``root`` pitch space,
+    wrapping degrees past the scale length with octave carry (floored division,
+    sclang semantics) — computed in the shared core so every client's `Event`
+    resolves pitch identically."""
+    a, _ = _as_array(scale)
+    return lib().clausters_core_degree_to_midinote(
+        float(degree), float(octave), float(root), _ptr(a), len(a)
+    )
+
+
+# ---- seeded value stream (the sequencing layer's RNG) ----
+
+
+def rng_seed(seed: int) -> int:
+    """The initial state word for ``seed`` (splitmix64-mixed, never zero) —
+    the same seeding as the server's ``WhiteNoise``. Hold the returned state
+    and pass it to `rng_next_f64` / `rng_next_below`."""
+    return lib().clausters_rng_seed(ctypes.c_uint64(seed).value)
+
+
+class RngStream:
+    """A resumable seeded value stream over the core generator: uniform
+    ``f64`` in [0, 1) and bounded integers. The state is one ``u64`` word (flat
+    data), so the same seed replays the same values in every client language —
+    what a seeded ``Pwhite``/``Prand`` runs on."""
+
+    def __init__(self, seed: int):
+        self._state = ctypes.c_uint64(lib().clausters_rng_seed(ctypes.c_uint64(seed).value))
+
+    def next_f64(self) -> float:
+        """Uniform in [0, 1) with 53-bit resolution."""
+        return lib().clausters_rng_next_f64(ctypes.byref(self._state))
+
+    def uniform(self, lo: float, hi: float) -> float:
+        """Uniform in [lo, hi) (degenerate to ``lo`` when ``hi <= lo``)."""
+        return lo + self.next_f64() * max(hi - lo, 0.0)
+
+    def next_below(self, n: int) -> int:
+        """Uniform integer in [0, n) (0 when ``n`` is 0)."""
+        return lib().clausters_rng_next_below(ctypes.byref(self._state), n)
+
+    def choice(self, items):
+        """A uniformly chosen element of ``items``."""
+        return items[self.next_below(len(items))]
+
+
+# ---- beat-ordered scheduler queue ----
+
+
+class Scheduler:
+    """The core's beat-ordered event queue (min time first, insertion order for
+    ties) behind a `TempoClock`. Only flat data crosses: beats and ``u64`` ids —
+    the clock maps ids back to its routines. Free with `close` (``__del__`` is
+    the backstop)."""
+
+    def __init__(self):
+        self._lib = lib()
+        self._handle = self._lib.clausters_sched_new()
+
+    def push(self, time: float, id_: int):
+        self._lib.clausters_sched_push(self._handle, float(time), id_)
+
+    def peek_time(self):
+        """The earliest queued beat, or ``None`` when empty."""
+        t = ctypes.c_double()
+        if self._lib.clausters_sched_peek_time(self._handle, ctypes.byref(t)) != 0:
+            return None
+        return t.value
+
+    def pop_due(self, now: float):
+        """The earliest ``(time, id)`` with ``time <= now``, or ``None``."""
+        t, i = ctypes.c_double(), ctypes.c_uint64()
+        rc = self._lib.clausters_sched_pop_due(
+            self._handle, float(now), ctypes.byref(t), ctypes.byref(i)
+        )
+        if rc != 0:
+            return None
+        return t.value, i.value
+
+    def remove(self, id_: int) -> int:
+        """Removes every queued entry with ``id_``; returns how many."""
+        return self._lib.clausters_sched_remove(self._handle, id_)
+
+    def __len__(self):
+        return self._lib.clausters_sched_len(self._handle)
+
+    def clear(self):
+        self._lib.clausters_sched_clear(self._handle)
+
+    def close(self):
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._lib.clausters_sched_free(handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+# ---- sample-clock tracking model ----
+
+
+class ClockSyncModel:
+    """The core's least-squares sample-clock model (``sample = a + b*t`` over a
+    sliding anchor window). The transport that produces anchors stays in the
+    host language; the fit lives in the core so every client predicts the same
+    sample from the same anchors. Free with `close`."""
+
+    def __init__(self, nominal_rate: float = 48_000.0, window: int = 64):
+        self._lib = lib()
+        self._handle = self._lib.clausters_clocksync_new(float(nominal_rate), int(window))
+
+    def add_anchor(self, t_local: float, sample: int, rate: float = 0.0):
+        """Adds an anchor pair and refits; a positive ``rate`` updates the
+        nominal rate (0 keeps it)."""
+        self._lib.clausters_clocksync_add_anchor(
+            self._handle, float(t_local), int(sample), float(rate)
+        )
+
+    def sample_at(self, t_local: float) -> int:
+        return self._lib.clausters_clocksync_sample_at(self._handle, float(t_local))
+
+    def local_time_of(self, sample: int) -> float:
+        return self._lib.clausters_clocksync_local_time_of(self._handle, int(sample))
+
+    def drift_ppm(self) -> float:
+        return self._lib.clausters_clocksync_drift_ppm(self._handle)
+
+    def span(self) -> float:
+        return self._lib.clausters_clocksync_span(self._handle)
+
+    @property
+    def rate(self) -> float:
+        return self._lib.clausters_clocksync_rate(self._handle)
+
+    @property
+    def a(self) -> float:
+        """Fitted intercept (samples at local time 0)."""
+        return self._lib.clausters_clocksync_intercept(self._handle)
+
+    @property
+    def b(self) -> float:
+        """Fitted slope (samples per local second)."""
+        return self._lib.clausters_clocksync_slope(self._handle)
+
+    def close(self):
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._lib.clausters_clocksync_free(handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
 
 def peaks_cache(samples, base_bucket: int = 256) -> bytes:

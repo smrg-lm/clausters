@@ -41,44 +41,42 @@ duration — relative sample spacing is preserved.
 import threading
 import time
 
+from .. import _native
 from ..base import _osclib
 from ..base._oscinterface import OscUdpInterface
 from ..base.timebase import SampleClockTimebase
 
 
 class SampleClockModel:
-    """``sample(t) = a + b·t``, least-squares over a sliding anchor window."""
+    """``sample(t) = a + b·t``, least-squares over a sliding anchor window.
+
+    The fit itself lives in the native core (`clausters._native.ClockSyncModel`
+    over ``clausters_core::clocksync``), so every client predicts the same
+    sample from the same anchors; this class only adds the local-time
+    convenience (`now` reads the monotonic clock)."""
 
     def __init__(self, nominal_rate: float = 48_000.0, window: int = 64):
-        self.rate = float(nominal_rate)
-        self.window = window
-        self.anchors: list[tuple[float, int]] = []  # (t_local, sample)
-        self.a = 0.0
-        self.b = self.rate
+        self._model = _native.ClockSyncModel(nominal_rate, window)
 
     def add_anchor(self, t_local: float, sample: int, rate: float | None = None):
-        if rate is not None:
-            self.rate = float(rate)
-        self.anchors.append((t_local, int(sample)))
-        self.anchors = self.anchors[-self.window:]
-        self._fit()
+        self._model.add_anchor(t_local, sample, rate if rate is not None else 0.0)
 
-    def _fit(self):
-        n = len(self.anchors)
-        t_ref, s_ref = self.anchors[-1]
-        if n < 2:
-            self.a, self.b = s_ref - self.rate * t_ref, self.rate
-            return
-        ts = [t for t, _ in self.anchors]
-        ss = [s for _, s in self.anchors]
-        t_mean, s_mean = sum(ts) / n, sum(ss) / n
-        var = sum((t - t_mean) ** 2 for t in ts)
-        cov = sum((t - t_mean) * (s - s_mean) for t, s in self.anchors)
-        self.b = cov / var if var > 0 else self.rate
-        self.a = s_mean - self.b * t_mean
+    @property
+    def rate(self) -> float:
+        return self._model.rate
+
+    @property
+    def a(self) -> float:
+        """Fitted intercept (samples at local time 0)."""
+        return self._model.a
+
+    @property
+    def b(self) -> float:
+        """Fitted slope (samples per local second)."""
+        return self._model.b
 
     def sample_at(self, t_local: float) -> int:
-        return round(self.a + self.b * t_local)
+        return self._model.sample_at(t_local)
 
     def now(self) -> int:
         """Predicted current value of the server's sample counter."""
@@ -86,13 +84,16 @@ class SampleClockModel:
 
     def local_time_of(self, sample: int) -> float:
         """Inverse: the monotonic time the counter reaches ``sample``."""
-        return (sample - self.a) / self.b
+        return self._model.local_time_of(sample)
 
     def drift_ppm(self) -> float:
-        return (self.b / self.rate - 1.0) * 1e6
+        return self._model.drift_ppm()
 
     def span(self) -> float:
-        return self.anchors[-1][0] - self.anchors[0][0] if len(self.anchors) >= 2 else 0.0
+        return self._model.span()
+
+    def close(self):
+        self._model.close()
 
 
 class UdpSampleClock:
@@ -170,3 +171,4 @@ class UdpSampleClock:
     def close(self):
         self.untrack()
         self._iface.close()
+        self.model.close()

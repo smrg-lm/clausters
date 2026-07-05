@@ -19,15 +19,28 @@ pub const IMMEDIATE: OscTime = OscTime {
     fractional: 1,
 };
 
-/// A Unix timestamp (seconds since 1970, fractional allowed) → NTP [`OscTime`].
-pub fn unix_to_ntp(unix_secs: f64) -> OscTime {
-    let ntp = unix_secs + NTP_UNIX_OFFSET;
-    let seconds = ntp.floor();
-    let fractional = ((ntp - seconds) * 4_294_967_296.0).round(); // × 2^32
+/// Packs a raw NTP-scale seconds value (whatever its epoch — Unix + offset for
+/// a wire timetag, seconds-from-start for an NRT score) into an [`OscTime`].
+/// The fractional part **rounds** to the nearest 1/2^32 — the one packing rule
+/// every client shares, so identical instants produce identical timetag bits.
+pub fn pack_timetag(ntp_secs: f64) -> OscTime {
+    let seconds = ntp_secs.floor();
+    let fractional = ((ntp_secs - seconds) * 4_294_967_296.0).round(); // × 2^32
     OscTime {
         seconds: seconds as u32,
         fractional: fractional.min(4_294_967_295.0) as u32,
     }
+}
+
+/// The 64 raw big-endian timetag bits of an [`OscTime`] (`seconds << 32 |
+/// fractional`) — the flat form that crosses the C ABI.
+pub fn timetag_bits(t: OscTime) -> u64 {
+    ((t.seconds as u64) << 32) | t.fractional as u64
+}
+
+/// A Unix timestamp (seconds since 1970, fractional allowed) → NTP [`OscTime`].
+pub fn unix_to_ntp(unix_secs: f64) -> OscTime {
+    pack_timetag(unix_secs + NTP_UNIX_OFFSET)
 }
 
 /// NTP [`OscTime`] → Unix timestamp (seconds since 1970).
@@ -90,6 +103,17 @@ mod tests {
         let unix = 1_700_000_000.5;
         let back = ntp_to_unix(unix_to_ntp(unix));
         assert!((unix - back).abs() < 1e-3, "{unix} vs {back}");
+    }
+
+    #[test]
+    fn timetag_packing_rounds_the_fraction() {
+        // 0.75 s is exactly representable: fractional = 3 * 2^30.
+        let t = pack_timetag(10.75);
+        assert_eq!((t.seconds, t.fractional), (10, 3 << 30));
+        assert_eq!(timetag_bits(t), (10u64 << 32) | (3 << 30));
+        // The fraction rounds (a truncating packer would be one ulp short).
+        let almost = pack_timetag(1.0 - 1.0 / 4_294_967_296.0 / 4.0);
+        assert_eq!(almost.fractional, u32::MAX);
     }
 
     #[test]

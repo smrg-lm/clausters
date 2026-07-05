@@ -14,9 +14,10 @@
 //! `clausters_core::osc` (Rust-tested).
 
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
+use clausters_core::clocksync::SampleClockModel;
 use clausters_core::peaks::{self, Pyramid};
-use clausters_core::rng::WhiteNoise;
-use clausters_core::tempoclock;
+use clausters_core::rng::{Rng, WhiteNoise};
+use clausters_core::tempoclock::{self, Scheduler};
 use clausters_core::window::Window;
 
 mod ws;
@@ -24,8 +25,12 @@ mod ws;
 /// The C ABI version of this surface. Bump on any incompatible change. v2 added
 /// the `clausters_ws_*` WebSocket client transport; v3 the `clausters_core_peaks_*`
 /// peak-pyramid cache builder; v4 the `clausters_core_window` smoothing windows
-/// (shared with the server's FFT chain for bit-identical analysis).
-pub const CORE_ABI_VERSION: u32 = 4;
+/// (shared with the server's FFT chain for bit-identical analysis); v5 the seam
+/// audit pass — the `clausters_sched_*` beat queue, the `clausters_clocksync_*`
+/// sample-clock model, the `clausters_rng_*` value stream, NTP timetag packing,
+/// `quant_delay` and `degree_to_midinote` — so no value/time logic remains
+/// per-language.
+pub const CORE_ABI_VERSION: u32 = 5;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -214,6 +219,322 @@ pub extern "C" fn clausters_core_unix_to_sample(
     clausters_core::osc::unix_to_sample(unix_secs, anchor_unix, anchor_sample, sample_rate)
 }
 
+/// Beats to wait so a routine starts on the next `quant` boundary of a grid
+/// currently at `pos` beats (`quant <= 0` → 0, i.e. now).
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_quant_delay(pos: f64, quant: f64) -> f64 {
+    tempoclock::quant_delay(pos, quant)
+}
+
+/// Packs raw NTP-scale seconds (any epoch: Unix + offset for wire timetags,
+/// seconds-from-start for an NRT score) into the 64 timetag bits
+/// (`seconds << 32 | fractional`), rounding the fraction — the one packing rule
+/// every client shares.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_ntp_timetag(ntp_secs: f64) -> u64 {
+    clausters_core::osc::timetag_bits(clausters_core::osc::pack_timetag(ntp_secs))
+}
+
+/// A Unix timestamp → the 64 NTP timetag bits (adds the 1900→1970 offset,
+/// then packs like [`clausters_core_ntp_timetag`]).
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_unix_to_ntp(unix_secs: f64) -> u64 {
+    clausters_core::osc::timetag_bits(clausters_core::osc::unix_to_ntp(unix_secs))
+}
+
+/// Scale-degree → MIDI note number in the pitch space `octave`/`root`, with
+/// floored octave wrapping (sclang semantics). `scale` is `n` semitone offsets;
+/// `n == 0` (or a null `scale`) yields middle C.
+///
+/// # Safety
+/// `scale` must be readable for `n` `f32`s (or null with `n == 0`).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_degree_to_midinote(
+    degree: f64,
+    octave: f64,
+    root: f64,
+    scale: *const f32,
+    n: usize,
+) -> f64 {
+    if scale.is_null() || n == 0 {
+        return builtins::degree_to_midinote(degree, octave, root, &[]);
+    }
+    // SAFETY: caller guarantees `scale` is readable for `n`.
+    let s = unsafe { std::slice::from_raw_parts(scale, n) };
+    builtins::degree_to_midinote(degree, octave, root, s)
+}
+
+// ---- seeded value stream (patterns) ----
+//
+// Stateless across the boundary: the caller holds the one u64 state word and
+// passes it by pointer, so the stream is resumable from any language with no
+// handle to free.
+
+/// The initial state word for `seed` (splitmix64-mixed, never zero) — the same
+/// seeding as the server's `WhiteNoise`.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_rng_seed(seed: u64) -> u64 {
+    Rng::from_seed(seed).state()
+}
+
+/// Advances `*state` one step and returns a uniform `f64` in `[0, 1)` with
+/// 53-bit resolution. A null `state` returns 0.
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_next_f64(state: *mut u64) -> f64 {
+    if state.is_null() {
+        return 0.0;
+    }
+    // SAFETY: caller guarantees `state` points to a u64.
+    let mut rng = Rng::from_state(unsafe { *state });
+    let v = rng.next_f64();
+    unsafe { *state = rng.state() };
+    v
+}
+
+/// Advances `*state` and returns a uniform integer in `[0, n)` (0 when `n` is
+/// 0 or `state` is null).
+///
+/// # Safety
+/// `state` must be a valid pointer to a `u64` (or null).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_rng_next_below(state: *mut u64, n: u64) -> u64 {
+    if state.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees `state` points to a u64.
+    let mut rng = Rng::from_state(unsafe { *state });
+    let v = rng.next_below(n);
+    unsafe { *state = rng.state() };
+    v
+}
+
+// ---- beat-ordered scheduler queue ----
+//
+// An opaque handle (like `clausters_ws_*`): the host language maps the flat
+// `u64` ids back to its routines; only times and ids cross.
+
+/// A new, empty scheduler queue. Free with [`clausters_sched_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_sched_new() -> *mut Scheduler {
+    Box::into_raw(Box::new(Scheduler::new()))
+}
+
+/// Frees a queue created by [`clausters_sched_new`] (null is a no-op).
+///
+/// # Safety
+/// `h` must be a pointer from `clausters_sched_new`, not yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_free(h: *mut Scheduler) {
+    if !h.is_null() {
+        // SAFETY: caller guarantees `h` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(h) });
+    }
+}
+
+/// Queues `id` at beat `time`. Stable for equal times (insertion order).
+///
+/// # Safety
+/// `h` must be a live scheduler handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_push(h: *mut Scheduler, time: f64, id: u64) {
+    if let Some(s) = unsafe { h.as_mut() } {
+        s.push(time, id);
+    }
+}
+
+/// Writes the earliest queued beat into `*out_time`; returns 0, or -1 when the
+/// queue is empty (out untouched).
+///
+/// # Safety
+/// `h` must be a live scheduler handle and `out_time` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_peek_time(h: *mut Scheduler, out_time: *mut f64) -> i32 {
+    let Some(s) = (unsafe { h.as_ref() }) else {
+        return -1;
+    };
+    match s.peek_time() {
+        Some(t) if !out_time.is_null() => {
+            // SAFETY: caller guarantees `out_time` is writable.
+            unsafe { *out_time = t };
+            0
+        }
+        _ => -1,
+    }
+}
+
+/// Pops the earliest event with time `<= now` into `*out_time`/`*out_id`;
+/// returns 0, or -1 when nothing is due.
+///
+/// # Safety
+/// `h` must be a live scheduler handle; `out_time`/`out_id` writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_pop_due(
+    h: *mut Scheduler,
+    now: f64,
+    out_time: *mut f64,
+    out_id: *mut u64,
+) -> i32 {
+    let Some(s) = (unsafe { h.as_mut() }) else {
+        return -1;
+    };
+    match s.pop_due(now) {
+        Some((t, id)) if !out_time.is_null() && !out_id.is_null() => {
+            // SAFETY: caller guarantees the out pointers are writable.
+            unsafe {
+                *out_time = t;
+                *out_id = id;
+            }
+            0
+        }
+        _ => -1,
+    }
+}
+
+/// Removes every queued entry with `id`; returns how many were dropped.
+///
+/// # Safety
+/// `h` must be a live scheduler handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_remove(h: *mut Scheduler, id: u64) -> usize {
+    match unsafe { h.as_mut() } {
+        Some(s) => s.remove(id),
+        None => 0,
+    }
+}
+
+/// Number of queued entries (0 for a null handle).
+///
+/// # Safety
+/// `h` must be a live scheduler handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_len(h: *mut Scheduler) -> usize {
+    unsafe { h.as_ref() }.map_or(0, Scheduler::len)
+}
+
+/// Drops every queued entry.
+///
+/// # Safety
+/// `h` must be a live scheduler handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_sched_clear(h: *mut Scheduler) {
+    if let Some(s) = unsafe { h.as_mut() } {
+        s.clear();
+    }
+}
+
+// ---- sample-clock tracking model ----
+
+/// A new least-squares model at `nominal_rate` keeping `window` anchors.
+/// Free with [`clausters_clocksync_free`].
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_clocksync_new(
+    nominal_rate: f64,
+    window: usize,
+) -> *mut SampleClockModel {
+    Box::into_raw(Box::new(SampleClockModel::new(nominal_rate, window)))
+}
+
+/// Frees a model created by [`clausters_clocksync_new`] (null is a no-op).
+///
+/// # Safety
+/// `h` must be a pointer from `clausters_clocksync_new`, not yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_free(h: *mut SampleClockModel) {
+    if !h.is_null() {
+        // SAFETY: caller guarantees `h` came from Box::into_raw above.
+        drop(unsafe { Box::from_raw(h) });
+    }
+}
+
+/// Adds an anchor `(t_local, sample)` and refits; a positive finite `rate`
+/// updates the nominal rate (pass `<= 0` to keep it).
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_add_anchor(
+    h: *mut SampleClockModel,
+    t_local: f64,
+    sample: i64,
+    rate: f64,
+) {
+    if let Some(m) = unsafe { h.as_mut() } {
+        m.add_anchor(t_local, sample, rate);
+    }
+}
+
+/// The predicted counter at local time `t_local` (0 for a null handle).
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_sample_at(
+    h: *mut SampleClockModel,
+    t_local: f64,
+) -> i64 {
+    unsafe { h.as_ref() }.map_or(0, |m| m.sample_at(t_local))
+}
+
+/// Inverse: the local time the counter reaches `sample`.
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_local_time_of(
+    h: *mut SampleClockModel,
+    sample: i64,
+) -> f64 {
+    unsafe { h.as_ref() }.map_or(0.0, |m| m.local_time_of(sample))
+}
+
+/// Fitted-slope deviation from the nominal rate, in ppm.
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_drift_ppm(h: *mut SampleClockModel) -> f64 {
+    unsafe { h.as_ref() }.map_or(0.0, SampleClockModel::drift_ppm)
+}
+
+/// Local-time span covered by the anchor window (0 below two anchors).
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_span(h: *mut SampleClockModel) -> f64 {
+    unsafe { h.as_ref() }.map_or(0.0, SampleClockModel::span)
+}
+
+/// The nominal (or last reported) sample rate.
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_rate(h: *mut SampleClockModel) -> f64 {
+    unsafe { h.as_ref() }.map_or(0.0, SampleClockModel::rate)
+}
+
+/// Fitted slope `b` (samples per local second).
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_slope(h: *mut SampleClockModel) -> f64 {
+    unsafe { h.as_ref() }.map_or(0.0, SampleClockModel::slope)
+}
+
+/// Fitted intercept `a` (samples at local time 0).
+///
+/// # Safety
+/// `h` must be a live model handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_clocksync_intercept(h: *mut SampleClockModel) -> f64 {
+    unsafe { h.as_ref() }.map_or(0.0, SampleClockModel::intercept)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +597,69 @@ mod tests {
         // 120 bpm = 2 bps, beat 0 at second 0.
         assert_eq!(clausters_core_beats_to_secs(2.0, 0.0, 0.0, 2.0), 1.0);
         assert_eq!(clausters_core_secs_to_samples(1.0, 48_000.0), 48_000);
+    }
+
+    #[test]
+    fn scheduler_round_trip_over_the_abi() {
+        let h = clausters_sched_new();
+        unsafe {
+            clausters_sched_push(h, 2.0, 20);
+            clausters_sched_push(h, 1.0, 10);
+            clausters_sched_push(h, 1.0, 11);
+            clausters_sched_push(h, 3.0, 10);
+            assert_eq!(clausters_sched_len(h), 4);
+            let mut t = 0.0;
+            assert_eq!(clausters_sched_peek_time(h, &mut t), 0);
+            assert_eq!(t, 1.0);
+            assert_eq!(clausters_sched_remove(h, 10), 2);
+            let mut id = 0u64;
+            assert_eq!(clausters_sched_pop_due(h, 1.0, &mut t, &mut id), 0);
+            assert_eq!((t, id), (1.0, 11));
+            assert_eq!(clausters_sched_pop_due(h, 1.0, &mut t, &mut id), -1);
+            clausters_sched_clear(h);
+            assert_eq!(clausters_sched_len(h), 0);
+            clausters_sched_free(h);
+        }
+    }
+
+    #[test]
+    fn clocksync_and_rng_and_timetags_over_the_abi() {
+        let h = clausters_clocksync_new(48_000.0, 64);
+        unsafe {
+            for i in 0..6 {
+                let t = i as f64 * 0.05;
+                clausters_clocksync_add_anchor(h, t, (1000.0 + 48_000.0 * t) as i64, 48_000.0);
+            }
+            assert!((clausters_clocksync_sample_at(h, 1.0) - 49_000).abs() <= 1);
+            assert!(clausters_clocksync_drift_ppm(h).abs() < 1.0);
+            assert_eq!(clausters_clocksync_rate(h), 48_000.0);
+            clausters_clocksync_free(h);
+        }
+
+        // The flat-state RNG resumes the same stream as the library type.
+        let mut state = clausters_rng_seed(1);
+        let mut expect = Rng::from_seed(1);
+        for _ in 0..100 {
+            assert_eq!(
+                unsafe { clausters_rng_next_f64(&mut state) },
+                expect.next_f64()
+            );
+        }
+
+        // Timetag packing matches the core's rounding rule.
+        assert_eq!(
+            clausters_core_ntp_timetag(10.75),
+            (10u64 << 32) | ((3u64) << 30)
+        );
+        let bits = clausters_core_unix_to_ntp(0.0);
+        assert_eq!(bits >> 32, 2_208_988_800);
+
+        assert_eq!(clausters_core_quant_delay(3.5, 4.0), 0.5);
+        let major = [0.0f32, 2.0, 4.0, 5.0, 7.0, 9.0, 11.0];
+        assert_eq!(
+            unsafe { clausters_core_degree_to_midinote(-1.0, 5.0, 0.0, major.as_ptr(), 7) },
+            59.0
+        );
     }
 
     #[test]

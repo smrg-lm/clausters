@@ -4634,3 +4634,59 @@ separate `clients/web` track (its W4 now notes `/c_stream` is already served).
   above); gui 88 tests, `cargo fmt --check`/`clippy -D warnings` clean native
   and wasm32; root crate suite green across the feature matrix. The browser
   track G11–G17 is complete.
+
+## C21 — Seam audit: value/time logic pushed down to the core (completed 2026-07-05)
+
+The audit pass `clients/PLAN.md`'s build strategy calls for before starting the
+W (TypeScript) track: sweep the Python reference client for any value- or
+time-level computation still implemented in Python and move it into
+`clausters-core`/`clausters-ffi`, so a port rebinds the core instead of
+reimplementing behaviour. Core ABI **v4 → v5**.
+
+- **Beat queue.** `TempoClock` now drives the core's `Scheduler`
+  (`clausters_sched_new/push/peek_time/pop_due/remove/len/clear`) instead of a
+  Python `heapq` that duplicated it; `Scheduler::remove(id)` was added for
+  `unsched`. Only beats and flat `u64` ids cross; the clock keeps an
+  id → routine map (holding the strong reference while queued) and all of the
+  control flow (the yield driver, condition-variable pacing) stays in Python.
+- **Sample-clock tracker.** The least-squares model (`sample = a + b·t` over a
+  sliding anchor window) moved to `clausters_core::clocksync`
+  (`clausters_clocksync_*`); the Python `SampleClockModel` is a thin wrapper
+  and `UdpSampleClock` keeps only the transport (socket, round-trip midpoint,
+  background re-anchoring).
+- **Pattern randomness.** `Pwhite`/`Prand` (and the `main.rng` context stream)
+  now draw from the core's seeded value generator (`rng::Rng`: splitmix64
+  seeding + xorshift64, 53-bit uniforms; `clausters_rng_seed/next_f64/
+  next_below` with a single `u64` state word crossing the ABI), never Python's
+  Mersenne Twister — a seeded pattern replays the same values in every client
+  language. Fixed en route: resuming from a persisted state must not force the
+  low bit (only zero is illegal for xorshift; an even word is a normal
+  mid-stream state).
+- **Timetag packing.** `_osclib` packs NTP timetags through
+  `clausters_core_ntp_timetag`/`_unix_to_ntp` (core `osc::pack_timetag`). This
+  fixed a real bit divergence: Python truncated the fractional part where the
+  core rounds it.
+- **Emit-path rounding and grids.** `/sched` sample targets
+  (`Server.send_bundle`) and `SampleClockTimebase.sample_at` go through the
+  core's `secs_to_samples` (ties to even); `quant` snapping is
+  `clausters_core_quant_delay`; `join_transport`'s wall anchor uses
+  `samples_to_secs`; `Event`'s degree → midinote resolution is
+  `clausters_core_degree_to_midinote` (floored octave wrapping, sclang
+  semantics, replicating Python's floor-division behaviour for negative
+  degrees).
+- **Documented exception.** The OSC byte codec stays per-language: structured
+  message arguments cannot cross the flat C ABI ("only flat data crosses"), so
+  encode/decode of wire bytes remains in each client while every time value
+  inside them comes from the core. Recorded in `docs/clients.md`, which also
+  gained the full list of what the core owns after this pass.
+- **Verified:** unit tests for every new core/FFI surface (scheduler removal,
+  clocksync fit/drift, RNG determinism and state resume, timetag rounding,
+  quant, degree wrapping); full workspace suite green and `cargo fmt --check`
+  clean; Python suite 129 passed (the suite's behaviour-level assertions —
+  yield-exact timing, golden scores, quant snapping — held unchanged); live
+  E2E in one Bash invocation (UDP `Pbind` with degrees + `lock_to` driving the
+  `/sched` path through the native tracker); `clients/gui/check-wasm.sh` green
+  (the new core modules compile for wasm32). Caveat: the gate must run from
+  `clients/gui/` — from the repo root `cargo build --lib` resolves to the root
+  server crate and fails on `getrandom` for wasm32, which briefly looked like a
+  pre-existing breakage; the script now `cd`s to its own directory.

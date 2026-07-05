@@ -9,8 +9,11 @@
 # `#[cfg(not(target_arch = "wasm32"))]` and are not compiled here.
 #
 # One-time setup: `rustup target add wasm32-unknown-unknown`.
-# Run from `clients/gui/`: `./check-wasm.sh`.
+# Runnable from anywhere: it cds to its own directory, so `cargo build --lib`
+# always resolves to the gui crate (from the repo root it would resolve to the
+# root server crate and fail spuriously on wasm-incompatible deps).
 set -euo pipefail
+cd "$(dirname "$0")"
 
 if ! rustup target list --installed | grep -q '^wasm32-unknown-unknown$'; then
     echo "the wasm32 target is missing; run: rustup target add wasm32-unknown-unknown" >&2

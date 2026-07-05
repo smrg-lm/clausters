@@ -12,6 +12,7 @@ than closing a gate — unless ``has_gate`` is set, in which case it sends
 ``doneAction`` that frees the synth once the release finishes).
 """
 
+from .. import _native
 from ..base.builtins import cpsmidi, midicps
 
 #: Keys that drive timing/structure and are never sent as synth controls.
@@ -78,10 +79,11 @@ class Event(dict):
             degree = self.get("degree")
             if degree is None:
                 return 60.0
-            scale = self["scale"]
-            n = len(scale)
-            d = int(degree)
-            return 12.0 * self["octave"] + self["root"] + scale[d % n] + 12 * (d // n)
+            # Pitch-space resolution is the core's shared rule (floored octave
+            # wrapping), so every client's Event resolves degrees identically.
+            return _native.degree_to_midinote(
+                float(degree), float(self["octave"]), float(self["root"]), self["scale"]
+            )
         return float(midinote)
 
     def freq(self) -> float:

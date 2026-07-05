@@ -507,9 +507,34 @@ pub fn unary_slice(op: UnaryOp, a: &[f32], out: &mut [f32]) {
     }
 }
 
+/// Scale-degree → MIDI note number: `degree` indexes `scale` (semitone offsets
+/// within one octave) in the pitch space `octave`/`root`, wrapping with octave
+/// carry — degree −1 on a 7-note scale is the 7th one octave down (floored
+/// division, sclang semantics). An empty `scale` yields middle C (60). The
+/// event-value math every client's `Event` shares.
+pub fn degree_to_midinote(degree: f64, octave: f64, root: f64, scale: &[f32]) -> f64 {
+    let n = scale.len() as i64;
+    if n == 0 {
+        return 60.0;
+    }
+    let d = degree as i64;
+    let step = scale[d.rem_euclid(n) as usize] as f64;
+    12.0 * octave + root + step + 12.0 * d.div_euclid(n) as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn degree_wraps_with_octave_carry() {
+        let major = [0.0f32, 2.0, 4.0, 5.0, 7.0, 9.0, 11.0];
+        assert_eq!(degree_to_midinote(0.0, 5.0, 0.0, &major), 60.0);
+        assert_eq!(degree_to_midinote(7.0, 5.0, 0.0, &major), 72.0); // next octave
+        assert_eq!(degree_to_midinote(-1.0, 5.0, 0.0, &major), 59.0); // 7th, down
+        assert_eq!(degree_to_midinote(1.0, 5.0, 2.0, &major), 64.0); // root shift
+        assert_eq!(degree_to_midinote(3.0, 5.0, 0.0, &[]), 60.0);
+    }
 
     #[test]
     fn arithmetic_matches_the_server_binop() {

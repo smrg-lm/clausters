@@ -1533,3 +1533,44 @@ Notas:
 - El mismo arbol y el mismo comportamiento por construccion: parse, layout, render (`frame::render`), interaccion (`interact`) y la maquina de fetch (`host::fetch`) son codigo compartido; las diferencias son solo la cascara de E/S (shm vs `/c_stream`, mmap vs `fetch`, `/b_export` vs `/b_getn`).
 - El camino embed/standalone es explicitamente nativo-only y queda fuera; el cliente TypeScript de producto es el track aparte `clients/web` (W0-W5), que consume el mismo `/c_stream` (nota en su PLAN, W4).
 - Chrome headless corre todo el camino con SwiftShader (WebGL2); para *ver* los pixeles hay que abrirlo en un browser real -- el render es fiel al pixel por construccion (una sola funcion de render para los dos frentes).
+
+## 27. Auditoria del seam Python -> core (C21, pre-pista W)
+
+El pase de auditoria que pide la build strategy de `clients/PLAN.md` antes de
+encarar el cliente TypeScript: toda logica de **valor/tiempo** que quedaba en
+Python bajo al core nativo (ABI del core v4 -> v5). Que bajo: la cola del
+`TempoClock` (el `Scheduler` del core, ids planos <-> rutinas), el modelo de
+minimos cuadrados del sample clock (`clausters_clocksync_*`), el RNG de los
+patrones con seed (`Pwhite`/`Prand` sobre `clausters_rng_*` -- misma secuencia
+en cualquier lenguaje cliente, nunca mas el Mersenne Twister de Python), el
+empaquetado de timetags NTP (arreglo real: Python truncaba la fraccion, el
+core redondea), el redondeo segundos->sample del camino `/sched`, el snap de
+`quant` y degree->midinote. Excepcion documentada (en `docs/clients.md`): el
+codec de bytes OSC queda por lenguaje (argumentos estructurados no cruzan la
+C ABI plana).
+
+Verificacion manual:
+
+```sh
+cargo test -p clausters-core -p clausters-ffi     # 46 + 8 verdes (nuevas superficies incluidas)
+cd clients/python && .venv/bin/python -m pytest tests/ -q   # 129 passed, 4 skipped
+# E2E vivo (misma invocacion): servidor + Pbind con degree + lock_to (/sched)
+(./target/debug/clausters & PID=$!; sleep 1.5; \
+ clients/python/.venv/bin/python clients/python/examples/live_udp.py; kill $PID)
+```
+
+Notas:
+
+- Los tests del cliente son de comportamiento (timing yield-exacto, golden
+  byte-identico, snapping de quant): pasan sin cambios, o sea el descenso no
+  altero la semantica observable. Lo unico que cambia con seed fijo son los
+  *valores* de `Pwhite`/`Prand` (otro generador, a proposito).
+- En un checkout fuente, si `clausters/_libs/` tiene una cdylib staged vieja
+  (build previo de la wheel), tiene precedencia sobre `target/`: refrescarla
+  (`cp target/debug/libclausters_ffi.so clients/python/clausters/_libs/`) o
+  borrarla si el ABI no coincide.
+- `clients/gui/check-wasm.sh` pasa (los modulos nuevos del core compilan para
+  wasm32). Ojo: correrlo desde `clients/gui/` -- desde la raiz `cargo build
+  --lib` resuelve al crate raiz (el servidor) y falla con `getrandom`, que
+  parece una rotura del gate pero no lo es; el script ahora hace `cd` a su
+  propio directorio.

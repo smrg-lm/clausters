@@ -11,7 +11,7 @@ The optional ``default_clock`` is convenience-only sugar (``None`` by default,
 never required). Anything that can be passed explicitly, is.
 """
 
-import random
+import os
 import threading
 
 
@@ -20,7 +20,7 @@ class Main:
         #: opt-in convenience default; never required (avoid global state).
         self.default_clock = None
         self._local = threading.local()
-        self._rng = random.Random()
+        self._rng = None      # lazy: creating it loads the native core
         self._seed = None
 
     @property
@@ -37,12 +37,21 @@ class Main:
     def seed(self, value=None):
         """Seeds the context RNG (None reseeds from entropy). Returns the seed
         actually used so a session can be reproduced."""
+        from .. import _native
+
+        if value is None:
+            value = int.from_bytes(os.urandom(8), "little")
         self._seed = value
-        self._rng.seed(value)
+        self._rng = _native.RngStream(value)
         return value
 
     @property
-    def rng(self) -> random.Random:
+    def rng(self):
+        """The context value stream (`clausters._native.RngStream`, the shared
+        core generator — reproducible across client languages). Created lazily,
+        seeded from entropy unless `seed` was called."""
+        if self._rng is None:
+            self.seed(self._seed)
         return self._rng
 
     def elapsed_beats(self) -> float:

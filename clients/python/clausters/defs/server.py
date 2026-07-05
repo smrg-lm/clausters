@@ -292,9 +292,10 @@ class Server:
         timebase = getattr(clock, "timebase", None)
         if isinstance(timebase, SampleClockTimebase):
             # Anchored to the server's sample clock: schedule by absolute sample,
-            # drift-free and sample-accurate, via /sched.
+            # drift-free and sample-accurate, via /sched. The seconds->sample
+            # rounding is the core's (shared with the server).
             origin = clock.pacing_origin or 0.0      # seconds in the sample timebase
-            sample = round((origin + secs + self.latency) * timebase.sample_rate)
+            sample = timebase.sample_at(origin + secs + self.latency)
             self._send_sched(sample, messages)
         else:
             # Wall clock: an NTP-timetagged bundle.

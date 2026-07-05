@@ -81,6 +81,17 @@ pub fn samples_to_secs(samples: i64, sample_rate: f64) -> f64 {
     samples as f64 / sample_rate
 }
 
+/// Beats to wait so a routine starts on the next `quant` boundary of a grid
+/// currently at `pos` beats (`quant <= 0` → now). A position already on the
+/// boundary waits 0 — the shared quantization rule every client applies.
+#[inline]
+pub fn quant_delay(pos: f64, quant: f64) -> f64 {
+    if quant <= 0.0 {
+        return 0.0;
+    }
+    ((pos / quant).ceil() * quant - pos).max(0.0)
+}
+
 /// One queued event: a beat time and a flat `u64` payload id (the client maps
 /// the id back to its routine — only flat data crosses the boundary).
 #[derive(Clone, Copy, Debug)]
@@ -147,6 +158,15 @@ impl Scheduler {
         }
     }
 
+    /// Removes every queued entry with `id` (a routine may be queued more than
+    /// once); returns how many were dropped. The stable order of the remaining
+    /// entries is preserved (their `seq` values do not change).
+    pub fn remove(&mut self, id: u64) -> usize {
+        let before = self.heap.len();
+        self.heap.retain(|e| e.id != id);
+        before - self.heap.len()
+    }
+
     pub fn len(&self) -> usize {
         self.heap.len()
     }
@@ -185,6 +205,26 @@ mod tests {
     fn sample_conversion() {
         assert_eq!(secs_to_samples(1.0, 48_000.0), 48_000);
         assert!((samples_to_secs(24_000, 48_000.0) - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn quant_delay_snaps_to_the_next_boundary() {
+        assert_eq!(quant_delay(4.0, 4.0), 0.0); // on the boundary -> now
+        assert!((quant_delay(3.5, 4.0) - 0.5).abs() < 1e-12);
+        assert!((quant_delay(5.0, 2.0) - 1.0).abs() < 1e-12);
+        assert_eq!(quant_delay(3.5, 0.0), 0.0); // no quant -> now
+    }
+
+    #[test]
+    fn scheduler_remove_drops_all_entries_of_an_id() {
+        let mut s = Scheduler::new();
+        s.push(1.0, 7);
+        s.push(2.0, 8);
+        s.push(3.0, 7);
+        assert_eq!(s.remove(7), 2);
+        assert_eq!(s.remove(7), 0);
+        assert_eq!(s.pop_due(10.0), Some((2.0, 8)));
+        assert!(s.is_empty());
     }
 
     #[test]

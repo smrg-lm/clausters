@@ -21,8 +21,11 @@
 //!   computes natively, not against Faust's own LLVM codegen.
 //! - [`rng`] — the seeded white-noise generator, identical to the server's
 //!   `dsp::noise`, so a client can reproduce a noise stream sample for sample.
-//! - [`tempoclock`] — beat/second/sample arithmetic and a beat-ordered event
-//!   queue: the timing math a `TempoClock` is built on.
+//! - [`tempoclock`] — beat/second/sample arithmetic, quantization and a
+//!   beat-ordered event queue: the timing math a `TempoClock` is built on.
+//! - [`clocksync`] — the least-squares sample-clock tracking model
+//!   (`sample = a + b·t` over a sliding anchor window) behind locking a client
+//!   clock to a server over a network transport.
 //! - [`osc`] — the OSC seam shared by the server and every client: the single
 //!   `decode_packet` door, bundle/timetag assembly and timetag↔sample
 //!   conversion (depends on `rosc`; not allocation-free).
@@ -43,6 +46,7 @@
 
 pub mod builtins;
 pub mod bytes;
+pub mod clocksync;
 pub mod config;
 pub mod fft;
 pub mod osc;

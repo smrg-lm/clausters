@@ -24,9 +24,6 @@ routine being resumed (the clock sets ``routine.clock`` and
 the seam — and it lives on the Server, not here.
 """
 
-import heapq
-import itertools
-import math
 import threading
 import time
 
@@ -79,8 +76,11 @@ class TempoClock:
         self.timebase = timebase if timebase is not None else MonotonicTimebase()
         self._now = self.timebase
 
-        self._queue = []              # heap of (beat, seq, item)
-        self._seq = itertools.count()
+        #: the beat-ordered queue lives in the native core (`clausters-core`'s
+        #: `Scheduler`); only beats and flat ids cross, and `_items` maps each
+        #: id back to its routine (holding the strong reference while queued).
+        self._queue = _native.Scheduler()
+        self._items = {}              # id -> [item, pending_count]
         self._cond = threading.Condition()
         self._mode = "stopped"        # 'rt' | 'nrt' | 'stopped'
         self._logical_beat = 0.0      # current beat while driving (yield-exact)
@@ -207,10 +207,11 @@ class TempoClock:
             self._transport = ("sample", float(origin_sample), tempo)
         else:
             # Map the sample-defined origin to OSC time via the /clock anchor,
-            # so a wall-clock client quantizes on the same grid.
+            # so a wall-clock client quantizes on the same grid (the offset is
+            # the core's samples->seconds conversion, shared with the server).
             _, args = server.request("/clock", expect=("/clock.reply",))
-            sample0, rate, osc0 = float(args[0]), float(args[1]), float(args[2])
-            origin_osc = osc0 + (origin_sample - sample0) / rate
+            sample0, rate, osc0 = int(args[0]), float(args[1]), float(args[2])
+            origin_osc = osc0 + _native.samples_to_secs(int(origin_sample) - sample0, rate)
             self._transport = ("wall", origin_osc, tempo)
         return self
 
@@ -233,17 +234,31 @@ class TempoClock:
 
     def _quant_delay(self, quant) -> float:
         """Beats to wait so a routine starts on the next ``quant`` boundary of
-        the grid (``None``/``0`` -> now)."""
+        the grid (``None``/``0`` -> now; the snapping rule is the core's
+        ``quant_delay``, shared by every client)."""
         if not quant:
             return 0.0
-        pos = self._grid_beat()
-        target = math.ceil(pos / quant) * quant
-        return max(0.0, target - pos)
+        return _native.quant_delay(self._grid_beat(), quant)
 
     # ---- scheduling ----
 
     def _push(self, beat: float, item):
-        heapq.heappush(self._queue, (beat, next(self._seq), item))
+        key = id(item)
+        entry = self._items.get(key)
+        if entry is None:
+            self._items[key] = [item, 1]
+        else:
+            entry[1] += 1
+        self._queue.push(beat, key)
+
+    def _take(self, key):
+        """The item for a popped ``key``, dropping the strong reference once no
+        queued entry needs it."""
+        entry = self._items[key]
+        entry[1] -= 1
+        if entry[1] == 0:
+            del self._items[key]
+        return entry[0]
 
     def sched(self, delay_beats: float, item):
         """Schedule ``item`` to run ``delay_beats`` from the current beat.
@@ -284,6 +299,7 @@ class TempoClock:
         """Drop every item currently in the schedule queue."""
         with self._cond:
             self._queue.clear()
+            self._items.clear()
 
     def unsched(self, item):
         """Remove a specific scheduled ``item`` from the queue (by identity),
@@ -291,8 +307,13 @@ class TempoClock:
         `clausters.seq.timeline.Playhead` stopping or seeking — without clearing
         everything else `clear` would drop."""
         with self._cond:
-            self._queue = [entry for entry in self._queue if entry[2] is not item]
-            heapq.heapify(self._queue)
+            key = id(item)
+            if key in self._items:
+                removed = self._queue.remove(key)
+                entry = self._items[key]
+                entry[1] -= removed
+                if entry[1] <= 0:
+                    del self._items[key]
             self._cond.notify()
 
     # ---- driving ----
@@ -332,13 +353,13 @@ class TempoClock:
         self._mode = "nrt"
         self._logical_beat = 0.0
         try:
-            while self._queue:
-                beat, _, item = self._queue[0]
-                if until_beat is not None and beat > until_beat:
+            while True:
+                beat = self._queue.peek_time()
+                if beat is None or (until_beat is not None and beat > until_beat):
                     break
-                heapq.heappop(self._queue)
+                _, key = self._queue.pop_due(beat)
                 self._logical_beat = beat
-                self._wake(item, beat)
+                self._wake(self._take(key), beat)
         finally:
             self._mode = "stopped"
         return self
@@ -378,14 +399,15 @@ class TempoClock:
             with self._cond:
                 if not self._running:
                     break
-                if not self._queue:
+                beat = self._queue.peek_time()
+                if beat is None:
                     self._cond.wait(timeout=0.05)
                     continue
-                beat, _, item = self._queue[0]
                 wait = self.beats2secs(beat) - (self._now() - self._mono_start)
                 if wait > 0.0:
                     self._cond.wait(timeout=wait)
                     continue
-                heapq.heappop(self._queue)
+                _, key = self._queue.pop_due(beat)
+                item = self._take(key)
             # Outside the lock: emitting/sending must not block the queue.
             self._wake(item, beat)

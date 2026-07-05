@@ -20,6 +20,8 @@ A timebase is callable (``tb()`` == ``tb.now()``) so it also works as the plain
 
 import time
 
+from .. import _native
+
 
 class Timebase:
     kind = "abstract"
@@ -55,5 +57,6 @@ class SampleClockTimebase(Timebase):
         return int(self.sample())
 
     def sample_at(self, seconds: float) -> int:
-        """The absolute sample for a time in *this timebase's* seconds."""
-        return round(seconds * self.sample_rate)
+        """The absolute sample for a time in *this timebase's* seconds
+        (the core's seconds->samples conversion, ties to even)."""
+        return _native.secs_to_samples(seconds, self.sample_rate)

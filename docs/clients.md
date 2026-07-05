@@ -16,7 +16,7 @@ arrays, NUL-terminated error strings. Never a library type (a numpy array can
 
 | cdylib | crate | what it is | key entry points |
 |---|---|---|---|
-| `libclausters_ffi` | `clausters-ffi` over `clausters-core` | the **shared numeric/timing core** | `clausters_core_abi_version`, `clausters_core_unary`/`_binary` (builtins), `clausters_core_whitenoise`, `clausters_core_beats_to_secs`/`_secs_to_samples`/… |
+| `libclausters_ffi` | `clausters-ffi` over `clausters-core` | the **shared numeric/timing core** | `clausters_core_abi_version`, `clausters_core_unary`/`_binary` (builtins), `clausters_core_whitenoise`, `clausters_core_beats_to_secs`/`_secs_to_samples`/…, `clausters_sched_*` (beat queue), `clausters_clocksync_*` (sample-clock model), `clausters_rng_*` (seeded value stream), NTP timetag packing, `quant_delay`, `degree_to_midinote` |
 | `libclausters` | `clausters` (feature `embed`) | the **server as a library** | `clausters_abi_version`, `clausters_render` (offline), `clausters_open`/`_send`/`_poll`/`_clock`/`_ctl_*` (in-process live server) |
 | `libclausters_midi` | `clausters-midi` over `midly`/`midi2`/`midir` | **MIDI I/O** | `clausters_midi_write_smf` (`.mid`), `clausters_midi_write_clip` (MIDI 2.0 clip), `clausters_midi_free`; with `--features live`: `clausters_midi_output_open`/`_send`/`_close` (virtual port) |
 
@@ -29,6 +29,22 @@ Why a shared core at all: the builtins, the seeded white noise and the
 beat/second/sample math are compiled **once** in `clausters-core` and used by
 both the server's UGens and every client, so client-side results match the
 server **by construction** for the operations the server computes natively.
+
+The rule extends to everything a client computes about **values or time**, so a
+port rebinds the core instead of reimplementing behaviour. Concretely, the core
+owns: the clock's beat-ordered **scheduler queue** (min time, stable insertion
+order for ties), the **sample-clock tracking model** (the least-squares
+`sample = a + b·t` fit behind locking a clock to a server over the network),
+the **seeded value stream** the random patterns draw from (one `u64` state
+word, so a seeded sequence replays identically in every client language — a
+host language's own RNG never leaks into sequenced values), **NTP timetag
+packing** (one rounding rule, identical bits for identical instants),
+**quantization** (`quant` boundary snapping) and the **pitch-space math**
+(scale degree → MIDI note). What each language keeps is its control flow (the
+coroutine driver that resumes routines) — and, as the one documented
+exception, the **OSC byte codec**: structured message arguments cannot cross a
+flat C ABI, so encode/decode of the wire bytes stays per-language while every
+time value inside them comes from the core.
 
 ## The Python client
 
