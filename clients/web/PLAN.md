@@ -96,7 +96,7 @@ The timing layer, transport-agnostic, sc3-modelled.
 Receiving, dispatch, and the browser data paths.
 
 - `responders.ts`: OscFunc/MidiFunc-style dispatch over the WS reply stream (and Web MIDI for `MidiFunc`), mirroring `responders.py`/`base/_midiinterface`.
-- The browser data paths the GUI client needs: control buses read over WS (the message-based counterpart of shared memory, G14) feeding meters/scopes; bulk buffers via `fetch`/`/b_getn` (G15), with the peak pyramid built in wasm from fetched samples.
+- The browser data paths the GUI client needs: control buses read over WS (the message-based counterpart of shared memory, G14) feeding meters/scopes; bulk buffers via `fetch`/`/b_getn` (G15), with the peak pyramid built in wasm from fetched samples. **The server side already exists** (landed with G14): `/c_stream periodMs bus...` subscribes the client to periodic `/c_set` snapshots (one subscription per client, replaced per call, `periodMs <= 0` cancels, 10 ms floor, ≤128 buses; see `docs/schemas.md`). The TS client only consumes it — subscribe, decode the `/c_set` stream in a responder, feed the GUI host — exactly as the browser GUI host does in `clients/gui/src/host/web.rs`.
 
 **Acceptance:** a TS app registers OscFunc/MidiFunc handlers that fire on server/MIDI events, and drives a browser GUI whose meters/waveforms read buses/buffers over WS.
 

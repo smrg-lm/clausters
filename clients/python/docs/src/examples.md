@@ -77,3 +77,5 @@ pip install ./clients/python          # builds + bundles the native libs
 The first three share their pattern code and differ only in the `Server` interface — embedded, offline or live — the seam from [The client, layer by layer](guide.md) in practice.
 
 The broader catalog of examples (the low-level transports and the raw OSC helpers) lives in the repository-root `examples/`; those use a `sys.path` shim so they run straight from a source checkout without an install.
+
+The GUI examples (`gui_*.py`) drive the **clausters GUI host** — a separate process (or a browser tab) this client talks to over the same widget protocol. The host itself, including the **browser quick-start** (the wasm bundle, `--ws`, and the streamed-meters and fetched-bulk data paths), is documented in the [Clausters server book](https://clausters.readthedocs.io/)'s clients chapter.

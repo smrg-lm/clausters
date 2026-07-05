@@ -1419,3 +1419,117 @@ Notas:
 - El harness `web/index.html` es **descartable**, no un cliente: solo prueba el host emitiendo el mismo GuiDef JSON que los builders de Python. El cliente TypeScript de verdad es el track aparte `clients/web` (no planificado aun), no parte de G11-G16.
 - Headless de Chrome confirma por consola que el camino corre entero (start -> ventana -> `/gui_def ... window opened` -> WebGPU ready) pero no captura los pixeles del canvas WebGPU; para ver e interactuar hay que abrirlo en un browser real.
 - **Necesita WebGPU habilitado.** Si `requestAdapter` no encuentra adapter (Chrome en Linux suele necesitar `chrome://flags/#enable-unsafe-webgpu` + Vulkan, o un browser con WebGPU), el host **no panica**: loguea el mensaje y lo escribe en el `#note` de la pagina (`no suitable GPU adapter ...; the browser may not have WebGPU enabled ...`), el canvas queda en blanco pero la pagina sigue viva. `Gpu::new` devuelve `Result`; el nativo tambien maneja el error (warn y no abre la ventana).
+
+## 24. GUI host: meters/scopes en el browser (buses de control por WebSocket) (G14)
+
+G14 le da datos vivos al browser: un `meter`/`scope` (y los `buses` de un `canvas`) que en nativo leen la memoria compartida, en el browser se alimentan de un **stream de buses por WebSocket**. La contraparte del servidor es el comando nuevo **`/c_stream periodMs bus...`** (documentado en `docs/schemas.md`): una suscripcion por cliente que el servidor responde con snapshots `/c_set (bus valor)...` periodicos (piso 10 ms, max 128 buses) -- disenado una sola vez para dos consumidores: este host y el futuro cliente TS (W4).
+
+En el host, la logica compartida se movio a `host::live` (historia de scopes, coleccion de buses vivos, `StreamedBuses` -- el `BusSource` del browser); el frente web abrio la pata de **entrada** del WebSocket (`onmessage` -> `decode_packet`, antes era send-only), deriva la suscripcion del arbol (se re-suscribe solo cuando el conjunto de buses cambia) y corre un tick de animacion de 33 ms por `setInterval` (en wasm no hay `Instant`). El dibujo de meters/scopes y el muestreo por tick se reusan sin cambios.
+
+Verificacion manual (bundle + servidor `--ws`; el demo es autocontenido -- la perilla `bus 10` esta bindeada a `/c_set 10`, asi que el lazo es perilla -> servidor -> stream -> meter):
+
+```sh
+# 1) bundle y servidor (dos terminales, o el paso 3 headless):
+cd clients/gui && ./web/build.sh
+(cd web && python3 -m http.server)      # http://localhost:8000/
+cargo run -- --ws                       # desde la raiz (WebSocket en 57120)
+
+# 2) en el browser: abrir http://localhost:8000/, "connect" y despues "meters".
+#    Girar la perilla `bus 10`: el meter y el scope siguen el valor, fluido (~30 fps).
+#    Tambien se puede animar el bus desde afuera:
+PYTHONPATH=clients/python python3 -c "
+from clausters.defs import Server; import math, time
+s = Server()
+for i in range(300): s.set_bus(10, math.sin(i/10)); time.sleep(0.03)
+s.close()"
+
+# 3) (headless, evidencia por consola) el pase scripteado de paridad:
+#    ver la seccion 26 -- parity.html loguea '/c_stream subscription: [10]' y
+#    'bus stream flowing: [Int(10), Float(...)]'.
+```
+
+Esperado:
+
+- La consola del browser loguea `/c_stream subscription: [10]` al abrir el demo y `bus stream flowing: [...]` con el primer snapshot; el meter sube/baja y el scope scrollea con el bus, igual que la seccion 15 (G5) por memoria compartida.
+- Cerrar la ventana (o abrir un demo sin widgets vivos) cancela la suscripcion (`/c_stream 0`): el servidor deja de mandar snapshots a ese cliente.
+- El wrapper Python del comando es `Server.stream_buses(period_ms, *buses)` (test unitario en `tests/test_defs.py`); el E2E del comando en el servidor esta en `tests/osc.rs` (`c_stream_*`, 3 tests).
+
+Notas:
+
+- La suscripcion es **por cliente** y muere con la conexion WS/TCP (el servidor poda streams y `/notify` al desconectar); por UDP/ring dura hasta la cancelacion explicita o `/quit` (misma postura que `/notify` en scsynth).
+- El nativo no cambia: con `--shm` sigue leyendo la memoria compartida con cero mensajes; el stream es el fallback de red para quien no puede mapear el segmento.
+
+## 25. GUI host: bulk data en el browser (fetch + /b_getn por WebSocket) (G15)
+
+G15 cierra el camino de datos masivos: en el browser un `waveform`/`plot` con `path`/`cache` se resuelve como **URL contra el origen de la pagina** (`fetch` -> `ArrayBuffer`), y una referencia `buffer` a un buffer del servidor se baja por **`/b_query` + `/b_getn` en chunks** sobre la misma conexion WebSocket. La piramide de picos de un fetch crudo se construye **en wasm** (el analisis vive en `clausters-core`, sin FFI); un `cache` fetcheado se mapea directo a la piramide sin cargar samples.
+
+La maquina de estados del fetch de buffers (que ya existia en el frente nativo) se extrajo a `host::fetch` (`BufferFetches`): pura, compartida por los dos frentes y testeada sin GPU ni socket (secuencia de chunks, de-interleave multicanal, buffer vacio, ventana cerrada a mitad de bajada).
+
+Verificacion manual:
+
+```sh
+# 1) generar los archivos bulk que sirve la pagina (junto a index.html):
+PYTHONPATH=clients/python python3 -c "
+import math
+from clausters.gui.guidef import samples_to_file, peaks_cache_file
+n = 48000
+s = [0.8*math.sin(2*math.pi*220*i/48000)*(1-i/n) for i in range(n)]
+samples_to_file(s, 'clients/gui/web/sine.f32')
+peaks_cache_file(s, 'clients/gui/web/sine.peaks', base_bucket=256)"
+
+# 2) servidor --ws con el buffer 0 lleno (un seno via /b_gen):
+cargo run -- --ws &
+PYTHONPATH=clients/python python3 -c "
+from clausters.defs import Server
+s = Server(); b = s.alloc_buffer(48000, 1)
+s.send_msg('/b_gen', b.bufnum, 'sine1', 5, 1.0); s.sync(); s.close()"
+
+# 3) bundle + pagina: abrir http://localhost:8000/, "connect" y "bulk".
+cd clients/gui && ./web/build.sh && (cd web && python3 -m http.server)
+```
+
+Esperado:
+
+- Los tres waveforms renderizan: el cache de picos (sin datos crudos), el f32 crudo (piramide construida en wasm) y el buffer del servidor (bajado en chunks de 8192 por WS). La consola loguea `waveform: fetched peak cache sine.peaks (48000 samples, no raw data)`, `waveform: fetched 48000 samples from sine.f32 (pyramid built in wasm)` y `buffer 0: 48000 frames loaded into 1 waveform(s)`.
+- La navegacion (zoom/pan) tiene la misma calidad que en nativo: nunca se resuelve mas fino que la pantalla (misma `Pyramid`, mismos regimenes).
+
+Notas:
+
+- Semantica de `path`/`cache`: en nativo son rutas de archivo mmapeadas; en el browser son URLs relativas al origen de la pagina. El builder de Python pasa el string tal cual.
+- `web/sine.f32`/`web/sine.peaks` son generados y estan git-ignored (como el `.js`/`.wasm` del bundle).
+- No hay `/b_export` en el browser (no puede mapear archivos): el camino del buffer es siempre `/b_getn` -- exactamente el "async fallback" que la decision de bulk de G7 reservo para este cliente.
+
+## 26. GUI host: empaquetado wasm y pase de paridad nativo/browser (G16)
+
+G16 empaqueta el host wasm y prueba que el reuso se sostuvo. El empaquetado queda en `web/build.sh` (cargo wasm + `wasm-bindgen` CLI, sin toolchain nuevo); `web/index.html` es el harness documentado (conectar + demos panel/meters/bulk, los mismos GuiDefs que emiten los builders de Python) y `web/parity.html` es el **pase de paridad scripteado**: se conecta solo y abre los tres demos en secuencia, con la evidencia en la consola. El quick-start publico esta en `docs/clients.md` ("The GUI host in the browser"), cross-linkeado con el libro Python (`examples.md`).
+
+```sh
+# 1) preparar todo (bundle + archivos bulk + servidor con buffer 0): pasos 1-3 de las
+#    secciones 24 y 25 (servidor --ws corriendo, http.server sirviendo web/).
+
+# 2) paridad NATIVA (referencia): los tres ejemplos contra el mismo servidor
+#    (host nativo con --server y --shm, ver secciones 15 y 17):
+cd clients/gui && cargo run --bin clausters-gui -- --server 127.0.0.1:57110 --shm /dev/shm/clausters_g5 &
+PYTHONPATH=clients/python python3 clients/python/examples/gui_panel.py
+PYTHONPATH=clients/python python3 clients/python/examples/gui_meters.py
+PYTHONPATH=clients/python python3 clients/python/examples/gui_bulk.py
+
+# 3) paridad BROWSER: abrir http://localhost:8000/parity.html?server=ws://127.0.0.1:57120
+#    (o headless, evidencia completa por consola):
+google-chrome --headless=new --disable-gpu --enable-unsafe-swiftshader --no-sandbox \
+  --enable-logging=stderr 'http://127.0.0.1:8000/parity.html?server=ws://127.0.0.1:57120' \
+  2>&1 | grep -E 'window opened|WebSocket open|c_stream|stream flowing|fetched|buffer 0|pass complete'
+```
+
+Esperado (el paso 3 headless imprime exactamente esta evidencia, una linea por camino):
+
+- `/gui_def 1: window opened from the page` (x3: panel, meters, bulk) -- el mismo GuiDef JSON abre el mismo arbol en los dos frentes (mismo `GuiNode::parse`/`Widget::from_node`).
+- `audio-server WebSocket open` + `/c_stream subscription: [10]` + `bus stream flowing: [Int(10), Float(...)]` -- meters por el cable (G14).
+- `waveform: fetched peak cache ...` + `waveform: fetched 48000 samples ...` + `buffer 0: 48000 frames loaded into 1 waveform(s)` -- los tres caminos bulk (G15).
+- `parity: pass complete`.
+
+Notas:
+
+- El mismo arbol y el mismo comportamiento por construccion: parse, layout, render (`frame::render`), interaccion (`interact`) y la maquina de fetch (`host::fetch`) son codigo compartido; las diferencias son solo la cascara de E/S (shm vs `/c_stream`, mmap vs `fetch`, `/b_export` vs `/b_getn`).
+- El camino embed/standalone es explicitamente nativo-only y queda fuera; el cliente TypeScript de producto es el track aparte `clients/web` (W0-W5), que consume el mismo `/c_stream` (nota en su PLAN, W4).
+- Chrome headless corre todo el camino con SwiftShader (WebGL2); para *ver* los pixeles hay que abrirlo en un browser real -- el render es fiel al pixel por construccion (una sola funcion de render para los dos frentes).

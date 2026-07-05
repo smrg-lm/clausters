@@ -4506,3 +4506,131 @@ own `CS_GNU_LIBC_VERSION` (PEP 600's honest bound: the cdylibs run on the
 glibc they were built against; musl/non-Linux tags pass through). Trusted
 publishing itself validated on the first attempt (OIDC token exchanged, the
 failure was the tag, not auth).
+
+## G14 — Browser meters/scopes: control buses over the wire (2026-07-05)
+
+The browser host's meters, scopes and `canvas` bus parameters now read **live
+control buses streamed over WebSocket** — the message-based fill of the
+`BusSource` seam for the one client that cannot map the shared segment. The
+server side is a new command designed once for two consumers (this host and the
+future TS client, W4).
+
+- **Server: `/c_stream periodMs bus...` (src/osc/server.rs).** One subscription
+  per `ClientId` (transport-agnostic: UDP/TCP/WS/ring), replaced on every call;
+  acks `/done`, sends one `/c_set (bus value)...` snapshot immediately and then
+  one per period. Period clamped to a 10 ms floor, ≤128 buses (`/fail` beyond),
+  `periodMs <= 0` or an empty list cancels; not schedulable in timed bundles.
+  Reading a bus is one relaxed atomic load on the network thread — zero RT
+  involvement. Cadence rides the run loop: `pump_streams()` each iteration, and
+  `retune_timeout()` shortens the socket timeout (the loop's idle tick) to the
+  fastest subscribed period (the 2 ms IPC poll wins unconditionally).
+- **Disconnect pruning (src/osc/ws.rs, tcp.rs, server.rs).** The hubs now
+  surface closed connections (`take_disconnects`); the loop drops their bus
+  streams **and their `/notify` registrations** — fixing a pre-existing leak
+  where dead WS/TCP clients kept receiving notifications forever. UDP/ring
+  subscriptions last until explicit cancel or `/quit` (the `/notify` posture,
+  documented). Reply shape reuses `/c_set` (the query→setter convention), so
+  every existing client decodes the stream for free. Documented in
+  `docs/schemas.md` (control-bus section, "Beyond scsynth").
+- **Shared live-bus logic: `host::live` (clients/gui).** `SCOPE_HISTORY`, the
+  scope collectors, `advance_scope_histories`, `collect_live_buses`
+  (meter/scope buses + a canvas's non-negative `buses`, deduped/sorted) and
+  `StreamedBuses` (a `Mutex<HashMap>` `BusSource` — uncontended on the
+  single-threaded wasm runtime) moved out of the native front; native
+  `advance_scopes` now delegates, behavior identical.
+- **Web front (host::web).** `WsServerLink` gained the inbound leg (an
+  `onmessage` closure → `WebEvent::ServerInbound` → the one `decode_packet`
+  door) — it was send-only since G13. The host derives the subscription from
+  the tree (`sync_bus_stream`, re-sent only when the bus set changes; re-run on
+  open/close/`/gui_set` and after `connect_server`) and runs a 33 ms
+  `setInterval` animation tick (`std::time::Instant` does not exist on
+  wasm32) that advances the scope histories exactly like the native tick.
+  `FrameInputs.bus` now carries the streamed source; the meter/scope/canvas
+  drawing is reused unchanged.
+- **Python:** `Server.stream_buses(period_ms, *buses)` wraps the command
+  (unit test in `tests/test_defs.py`).
+- **Verified:** 3 new integration tests in `tests/osc.rs` (ack + immediate
+  snapshot + periodic frames tracking a write; resubscribe-replaces and
+  cancel-stops; argument validation), root suite green across the feature
+  matrix; E2E over WebSocket through the Python client (server + client in one
+  invocation, streamed `/c_set` frames observed, cancel silences). gui: 88
+  tests (81 + live/fetch units), `clippy -D warnings` clean native and wasm32.
+  Headless-Chrome parity run shows `/c_stream subscription: [10]` and
+  `bus stream flowing: [Int(10), Float(0.5)]` — the value a Python client wrote
+  arriving in the browser (see G16).
+
+## G15 — Browser bulk data: fetch/blob and the /b_getn fallback (2026-07-05)
+
+The browser host's bulk paths: a waveform/plot `path`/`cache` resolves as a
+**URL fetched against the page origin**, and a server `buffer` reference is
+pulled over **`/b_query` + chunked `/b_getn` on the WebSocket leg** — the
+"async fallback" the G7 bulk decision reserved for exactly this client. The
+`Pyramid`/`WaveformData` consumers and the analysis are reused as-is; the peak
+pyramid for raw fetches is built **in wasm** (`clausters_core::peaks`,
+FFI-free).
+
+- **Shared fetch machine: `host::fetch` (`BufferFetches`).** The native
+  buffer-fetch state machine (G5: `/b_query` → `/b_info` → sequential 8192-
+  sample `/b_getn` chunks reassembled by explicit `start` → channel-0
+  de-interleave) extracted verbatim from the windowed front into a pure,
+  platform-agnostic module returning `FetchStep::{Request, Done, None}`; both
+  fronts drive it (native `App` and `WebApp`), and it is unit-tested without a
+  GPU or socket (chunk walk, multichannel de-interleave, empty buffer,
+  mid-download window close, unsolicited replies).
+- **Web fetch path (host::web).** `collect_bulk` mirrors the native
+  `collect_waveforms`/`load_plot_paths` resolution: inline data builds slots
+  immediately; `cache` fetches a prebuilt peak pyramid (`Pyramid::from_bytes`,
+  raw samples never loaded); `path` fetches raw little-endian `f32` and
+  de-interleaves channel 0 (`decode_channel0`, the browser twin of
+  `MappedFile::channel0_f32`); `buffer` goes through the shared machine over
+  WS. Fetches run on `wasm_bindgen_futures::spawn_local` → `WebEvent::BulkReady`;
+  waveforms that finish before the GPU is up are stashed and replayed on
+  `GpuReady`; plot samples land in the host tree (no GPU needed). The sync
+  `BulkLoader` trait stays native-only by design (fetch cannot block).
+- **`Cargo.toml`:** web-sys gains `MessageEvent` (the G14 inbound leg) and
+  `Response` (fetch); nothing new natively.
+- **Verified:** gui 88 tests green (4 are the fetch-machine units), clippy
+  `-D warnings` native + wasm32, `check-wasm.sh` green. Headless-Chrome parity
+  run (G16) shows all three bulk paths against a real `--ws` server:
+  `fetched peak cache sine.peaks (48000 samples, no raw data)`,
+  `fetched 48000 samples from sine.f32 (pyramid built in wasm)`, and
+  `buffer 0: 48000 frames loaded into 1 waveform(s)` (six `/b_getn` chunks over
+  WebSocket).
+
+## G16 — Packaging and native/browser parity (2026-07-05)
+
+The wasm GUI host is shippable and the reuse claim is proven end-to-end. This
+packages the **host**, not a client: the product TypeScript client remains the
+separate `clients/web` track (its W4 now notes `/c_stream` is already served).
+
+- **Packaging: `web/build.sh` + wasm-bindgen CLI stays the shipping path** (no
+  wasm-pack/trunk — they add nothing over a `start()` + `GuiBridge` surface and
+  the CLI version is pinned by Cargo.lock). `web/index.html` is now the
+  documented harness: a server-URL field + connect, and **panel / meters /
+  bulk** demo buttons feeding the same GuiDef JSONs the Python examples build
+  (the meters demo is a self-contained loop: a knob bound to `/c_set 10` drives
+  the meter/scope through the server's stream — no script needed).
+- **Scripted parity pass: `web/parity.html`.** Auto-connects and opens the
+  three demos in sequence; the evidence is the host's own console log, so the
+  pass runs headless (`google-chrome --headless=new --enable-unsafe-swiftshader
+  --enable-logging=stderr`, WebGL2 over SwiftShader). Full pass verified
+  against a live `--ws` server with buffer 0 filled by `/b_gen` and the bulk
+  files served next to the page: three `window opened from the page`,
+  `audio-server WebSocket open`, the G14 stream lines, the three G15 bulk
+  lines, `parity: pass complete`. Native reference: the same GuiDefs through
+  `gui_panel.py`/`gui_meters.py`/`gui_bulk.py` (GUIA §26); tree and behaviour
+  match by construction — parse, layout, `frame::render`, `interact` and
+  `host::fetch` are shared code, and the platform shells are the only
+  difference (shm vs `/c_stream`, mmap vs fetch, `/b_export` vs `/b_getn`).
+- **Docs:** browser quick-start in `docs/clients.md` ("The GUI host in the
+  browser": build, serve, the `GuiBridge` surface, the `--ws` requirement, the
+  two network data paths, WebGPU/WebGL2, the native-only embed boundary),
+  cross-linked from the Python book (`examples.md`) — the two books now link
+  the browser quick-start both ways. GUIA gained §24–§26 (manual steps + the
+  headless evidence lines). `web/sine.f32`/`web/sine.peaks` (generated demo
+  data) git-ignored like the bundle.
+- **Verified:** the produced bundle loads in a browser and opens the panel,
+  meters and waveform demos against a `--ws` audio server (headless pass
+  above); gui 88 tests, `cargo fmt --check`/`clippy -D warnings` clean native
+  and wasm32; root crate suite green across the feature matrix. The browser
+  track G11–G17 is complete.

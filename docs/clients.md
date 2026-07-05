@@ -50,6 +50,24 @@ non-Rust language — already drives the whole system (core math, offline render
 live server) purely through the C ABI and OSC. Nothing in the boundary is
 Python-specific.
 
+## The GUI host in the browser
+
+The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to a **separate audio server over WebSocket** — start the server with `--ws` (default port 57120). There is no in-process engine in the browser; the embed/standalone path is native-only.
+
+The browser fills the host's data paths over the network instead of shared memory and mapped files:
+
+- **Meters/scopes/canvas buses**: the host subscribes the buses its widgets read with `/c_stream` and the server streams `/c_set` snapshots back at ~30 fps over the same WebSocket — the network counterpart of the shared-memory segment (see the control-bus commands in [Def schemas](schemas.md)).
+- **Bulk waveform/plot data**: a `path`/`cache` reference is fetched as a URL against the page origin (raw `f32` samples, or a prebuilt peak-pyramid cache; the pyramid for raw fetches is built in wasm — the analysis lives in `clausters-core`), and a server `buffer` reference is pulled over `/b_query` + chunked `/b_getn` on the WebSocket leg.
+
+**Quick start** (from `clients/gui/`; one-time setup: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version <the wasm-bindgen version in Cargo.lock>`):
+
+```sh
+./web/build.sh                       # cargo wasm build + wasm-bindgen into web/
+(cd web && python3 -m http.server)   # then open http://localhost:8000/
+```
+
+The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and `connect_server(url)` attaches the audio-server leg to a `--ws` server (a `bind`-ed widget then forwards straight to it, with no script round-trip). `web/index.html` is a documented throwaway harness with a panel, a meters and a bulk demo — it proves the host; the product browser client is the separate TypeScript track below.
+
 ## A JavaScript client (planned)
 
 A JS client mirrors the Python one with **no new native work**: it sits on the
@@ -96,5 +114,6 @@ same C ABI and the same OSC.
 | Python wheels packaging | done |
 | MIDI interfaces in the Python client (`MidiServer`, SMF / MIDI 2.0 clip export, live port) | done |
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
+| Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
 | JavaScript client + npm | planned |
 | `third_party` Faust build + Faust-enabled wheels | planned |

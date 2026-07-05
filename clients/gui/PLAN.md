@@ -371,9 +371,11 @@ The browser host stops being static. Reuses the entire protocol dispatch and the
 
 **Note - the full client is its own track, not part of this milestone.** The throwaway harness here is *only* to test the host. A real browser/JS driver belongs to a **TypeScript client** that does not exist yet and is **not planned**: it should live in `clients/web` as its own package (a `clausters` package with the same client model as `clients/python` - GuiDef builders, a `GuiHost`-equivalent, the audio-server client - plus its own docs, examples and tests), and get its **own plan in `clients/web/PLAN.md`** (a parallel client track, the way the Python client has `clients/PLAN.md`). The wasm GUI host (G11-G16) and that TypeScript client are separate deliverables: the host is driven *through* the binding surface / WS, and the client is one more consumer of the same `/gui_*` protocol. Leave this as a forward dependency; do not fold the client into the GUI track.
 
-### G14 - Browser meters/scopes: control buses over the wire
+### G14 - Browser meters/scopes: control buses over the wire - DONE (2026-07-05)
 
 A browser cannot map the shared segment, so the zero-message meter path needs a message-based `BusSource` - a new trait impl, with the meter/scope drawing and the (already time-based) scope sampling reused unchanged.
+
+**Landed:** the server grew **`/c_stream periodMs bus...`** (src/osc/server.rs; spec in `docs/schemas.md`) - one subscription per `ClientId` (transport-agnostic, so the future TS client consumes the same command, W4), replaced per call, `/done` ack + an immediate `/c_set (bus value)...` snapshot and one per period (10 ms floor, <=128 buses, `periodMs <= 0` cancels; not schedulable in bundles); cadence rides the run loop's socket timeout (`pump_streams`/`retune_timeout`, the 2 ms IPC poll wins), and the WS/TCP hubs now surface disconnects so dead clients' streams **and `/notify` registrations** are pruned (a pre-existing leak fixed). Host side: the shared logic moved to `host::live` (`StreamedBuses` - the browser's `BusSource`, a `Mutex<HashMap>` fed from streamed `/c_set`; `collect_live_buses` = meter/scope buses + canvas `buses`; the scope-history advance the native tick now delegates to); `WsServerLink` gained the **inbound** leg (`onmessage` -> `WebEvent::ServerInbound` -> the one `decode_packet` door); the web app derives the subscription from the tree (re-sent only when the bus set changes, re-run on open/close/`/gui_set`/connect) and runs a 33 ms `setInterval` tick (no `Instant` on wasm32). Python: `Server.stream_buses`. Verified: 3 server integration tests + a Python-over-WS E2E; gui 88 tests, clippy clean native + wasm32; the headless parity pass (G16) shows the subscription and a client-written value flowing into the browser. See `LOG.md`.
 
 **Scope:**
 
@@ -382,9 +384,11 @@ A browser cannot map the shared segment, so the zero-message meter path needs a 
 
 **Acceptance:** a `meter` and a `scope` in the browser track a live control bus over WS, smoothly, against a `--ws` server - the same widgets that read shared memory natively.
 
-### G15 - Browser bulk data: fetch/blob and the `/b_getn` fallback
+### G15 - Browser bulk data: fetch/blob and the `/b_getn` fallback - DONE (2026-07-05)
 
 The mmap bulk path has no browser equivalent; the network primitives the bulk-data decision (G7) deliberately kept become the browser's path. New code is the `BulkLoader` web impl; the `Pyramid`/`WaveformData` consumers and the analysis are reused as-is.
+
+**Landed:** the native buffer-fetch state machine (G5) extracted verbatim into the shared, pure `host::fetch` (`BufferFetches`, `FetchStep::{Request, Done, None}`; `/b_query` -> `/b_info` -> sequential 8192-sample `/b_getn` chunks reassembled by explicit `start` -> channel-0 de-interleave), driven by both fronts and unit-tested without GPU or socket. On the web, `path`/`cache` resolve as **URLs against the page origin** (`window.fetch` -> `ArrayBuffer`, via `spawn_local` -> `WebEvent::BulkReady`): a `cache` maps straight to `Pyramid::from_bytes` (raw samples never loaded), a `path` decodes raw LE `f32` + channel-0 de-interleave with the pyramid **built in wasm** (`clausters_core::peaks`), plots land in the host tree; waveforms finishing before the GPU is up are stashed and replayed on `GpuReady`. A server `buffer` reference rides the shared machine over the WS leg. One deliberate deviation from the sketch: the web does **not** implement the sync `BulkLoader` trait (fetch cannot block) - it fills the same seam through the event loop; the trait stays the native (mmap) fill. web-sys gains `MessageEvent`/`Response` only. Verified: gui 88 tests (incl. the fetch units), clippy native + wasm32; the headless parity pass renders all three bulk forms against a live `--ws` server. See `LOG.md`.
 
 **Scope:**
 
@@ -393,9 +397,11 @@ The mmap bulk path has no browser equivalent; the network primitives the bulk-da
 
 **Acceptance:** the bulk example's three waveforms (peak cache, raw file, server-exported buffer) render in the browser, fetched/streamed rather than mmap'd, at the same navigation quality (never resolving finer than the screen).
 
-### G16 - Packaging and native/browser parity
+### G16 - Packaging and native/browser parity - DONE (2026-07-05)
 
 Make the wasm GUI host shippable and prove the reuse held. This packages the **host**, not a client: the full TypeScript client is the separate `clients/web` track (see the G13 note), so this milestone uses the throwaway harness, or that client once it lands, to exercise the bundle.
+
+**Landed:** packaging stays `web/build.sh` + the pinned wasm-bindgen CLI (**decision:** no wasm-pack/trunk - they add nothing over a `start()` + `GuiBridge` surface). `web/index.html` is the documented harness (server-URL field + panel/meters/bulk demos, the same GuiDef JSONs the Python examples emit; the meters demo is self-contained - a knob bound to `/c_set 10` drives the meter/scope through the server stream). `web/parity.html` is the scripted parity pass: auto-connects, opens the three demos, and the host's console log is the evidence - it runs **headless** (Chrome `--headless=new` + SwiftShader WebGL2 + `--enable-logging=stderr`) and the full pass was verified against a live `--ws` server (three windows opened; WS leg open; `/c_stream` subscription + streamed value arriving; peak cache fetched, raw f32 fetched with the wasm-built pyramid, buffer 0 pulled over chunked `/b_getn`). Browser quick-start documented in `docs/clients.md` ("The GUI host in the browser"), cross-linked both ways with the Python book; GUIA gained the three manual sections; `clients/web/PLAN.md` W4 notes the server side already exists. The embed/standalone path stays native-only; the G11-G17 browser track is complete. See `LOG.md`.
 
 **Scope:**
 
