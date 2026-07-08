@@ -11,8 +11,8 @@ A stable Rust toolchain (`rustup` or a distro package) plus, on Ubuntu
 (24.04/26.04 — package names are similar on other distros):
 
 ```sh
-# default build (PipeWire audio + ALSA-seq MIDI) — also enough for `cargo test`
-sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev clang
+# default build (PipeWire audio + ALSA-seq MIDI + RT scheduling) — also enough for `cargo test`
+sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev clang libdbus-1-dev
 
 # only for the matching optional feature:
 sudo apt install libjack-jackd2-dev          # --features midi-jack
@@ -40,6 +40,7 @@ Feature matrix (see `Cargo.toml`):
 | `realtime` | yes | the cpal audio backend (the live server) |
 | `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
+| `rtprio` | yes | real-time scheduling for the audio callback thread (SCHED_FIFO/RR via RTKit over DBus — the unprivileged desktop path) — needs `libdbus-1-dev`; the server logs the policy the thread actually got shortly after boot |
 | `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing) — needs `libjack-jackd2-dev`, run under `pw-jack` |
 | `faust` | no | the **FaustDef family**: libfaust embedding (Box API + LLVM JIT, `/d_faust`) — needs libfaust built with the LLVM backend |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |

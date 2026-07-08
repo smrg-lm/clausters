@@ -17,7 +17,7 @@ license = "GPL-3.0-or-later"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["synth", "realtime", "midi", "pipewire"]
+default = ["synth", "realtime", "midi", "pipewire", "rtprio"]
 # The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
 # compiler (`/d_recv`) and `UGenSynth`. Default. Independent from — and
 # combinable with — `faust`: a custom build can ship either def family alone
@@ -53,6 +53,14 @@ embed = []
 # then hard-links libpipewire (DT_NEEDED). Drop it with `--no-default-features`
 # (plus `realtime,midi`) for a plain-ALSA build that runs without PipeWire.
 pipewire = ["realtime", "cpal/pipewire"]
+# Real-time scheduling for the audio callback thread: cpal promotes it to
+# SCHED_FIFO through RTKit over DBus (`audio_thread_priority`), the same
+# unprivileged path PulseAudio/PipeWire clients use — without it the DSP
+# thread runs as SCHED_OTHER and xruns appear well below full CPU. Default.
+# Building it needs `libdbus-1-dev`; drop the feature (with
+# `--no-default-features` plus the others) for a build without the DBus dep.
+# The server logs the policy the thread actually got shortly after boot.
+rtprio = ["realtime", "cpal/realtime-dbus"]
 
 # The DSP benchmark drives UGen graphs directly (and Faust ones with the
 # `faust` feature on top); it has no target in a build without the SynthDef

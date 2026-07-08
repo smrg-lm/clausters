@@ -203,6 +203,35 @@ pub struct Counters {
     pub synths: AtomicU32,
     pub ugens: AtomicU32,
     pub groups: AtomicU32,
+    /// Average DSP load as a fraction of the block budget
+    /// (`BLOCK_SIZE / sample_rate` wall time), an EMA with a ~1 s time
+    /// constant. `f32` bits in an `AtomicU32`; only meaningful in real time
+    /// (NRT renders run unpaced, so the fraction is just render speed).
+    pub avg_cpu: AtomicU32,
+    /// Highest per-block load since the last [`Counters::take_peak_cpu`]
+    /// (`f32` bits; non-negative floats order like their bit patterns, so
+    /// `fetch_max` on the bits is a float max).
+    pub peak_cpu: AtomicU32,
+    /// Blocks whose processing exceeded their real-time budget (cumulative
+    /// since boot) — the engine-side xrun proxy: the callback cannot have met
+    /// its deadline for that block unless the host buffered extra latency.
+    pub late_blocks: AtomicU32,
+}
+
+impl Counters {
+    pub fn avg_cpu(&self) -> f32 {
+        f32::from_bits(self.avg_cpu.load(Ordering::Relaxed))
+    }
+
+    /// Returns the peak per-block load since the previous call and resets it,
+    /// so every `/status` poll reports the peak of its own window.
+    pub fn take_peak_cpu(&self) -> f32 {
+        f32::from_bits(self.peak_cpu.swap(0, Ordering::Relaxed))
+    }
+
+    pub fn late_blocks(&self) -> u32 {
+        self.late_blocks.load(Ordering::Relaxed)
+    }
 }
 
 /// Routes freed nodes to the garbage and event FIFOs. Borrows the individual
@@ -289,6 +318,9 @@ pub struct Engine {
     events_tx: Producer<NodeEvent>,
     reply_tx: Producer<ReplyMsg>,
     counters: Arc<Counters>,
+    /// EMA state of the CPU meter (fraction of the block budget, ~1 s time
+    /// constant); published to `counters.avg_cpu` every block.
+    avg_cpu: f32,
 }
 
 /// Network-thread half: sends commands, collects garbage and events, reads
@@ -368,6 +400,9 @@ pub fn engine_pair_full(
         ugens: AtomicU32::new(0),
         // The root group exists before the first tick publishes counts.
         groups: AtomicU32::new(1),
+        avg_cpu: AtomicU32::new(0),
+        peak_cpu: AtomicU32::new(0),
+        late_blocks: AtomicU32::new(0),
     });
     // With an IPC segment the control buses live inside it, so their count is
     // whatever the segment was created with (read back from its header).
@@ -398,6 +433,7 @@ pub fn engine_pair_full(
         events_tx,
         reply_tx,
         counters: Arc::clone(&counters),
+        avg_cpu: 0.0,
     };
     let handle = EngineHandle {
         sample_rate,
@@ -474,6 +510,10 @@ impl Engine {
     /// the processing into slices around each event (late ones at offset 0).
     pub fn process_block(&mut self, out: &mut [f32]) {
         debug_assert_eq!(out.len(), BLOCK_SIZE * self.channels);
+        // CPU meter start. `Instant::now` is RT-safe on the platforms we
+        // target: `clock_gettime(CLOCK_MONOTONIC)` through the vDSO — no
+        // allocation, no lock, no kernel trap.
+        let meter_start = std::time::Instant::now();
         self.drain_commands();
         self.flush_pending_garbage();
 
@@ -549,6 +589,25 @@ impl Engine {
         tree.drain_replies(&mut |msg| {
             let _ = reply_tx.push(msg);
         });
+
+        // CPU meter end: this block's wall time as a fraction of its real-time
+        // budget (`BLOCK_SIZE / sample_rate`). Only meaningful when the caller
+        // is paced by an audio device; NRT renders just measure render speed.
+        let budget = BLOCK_SIZE as f64 / self.sample_rate as f64;
+        let busy = (meter_start.elapsed().as_secs_f64() / budget) as f32;
+        // EMA with a ~1 s time constant: alpha = block duration / 1 s.
+        self.avg_cpu += (busy - self.avg_cpu) * budget as f32;
+        self.counters
+            .avg_cpu
+            .store(self.avg_cpu.to_bits(), Ordering::Relaxed);
+        // Non-negative floats order like their bit patterns: a bitwise
+        // `fetch_max` is a float max.
+        self.counters
+            .peak_cpu
+            .fetch_max(busy.to_bits(), Ordering::Relaxed);
+        if busy > 1.0 {
+            self.counters.late_blocks.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Runs the node tree over `offset..offset+frames` of the current block.

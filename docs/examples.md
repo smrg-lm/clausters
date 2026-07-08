@@ -8,6 +8,7 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 |---|---|---|
 | `osc_ping` | Minimal OSC client for manual testing: subcommands `status`, `beep`, `vibrato`, `map` (the `/n_map`/`/n_mapa` demo), `quit`. | `cargo run --example osc_ping -- beep` |
 | `bench` | Graph-throughput benchmark (offline): how many copies of a graph fit in real time at 48 kHz, plus the parallel-group speedup. With `--features faust`, an apples-to-apples UGen-vs-Faust section runs the *same* DSP (the parity-test sine) through both engines to isolate per-synth audio-loop overhead. | `cargo run --release --example bench` |
+| `stress` | Single-core stress test against a **running** server (the real-time complement to `bench`, which is offline): ramps nodes of an `n`-sinusoid def while watching the server's own CPU meter and late-block counter in `/status.reply`, and reports the last stable count before the peak load crosses `--limit` or a block runs late. Two axes: `--sines` (DSP weight per node) and the ramp step (per-node engine overhead). | `cargo run --release --example stress -- --sines 10` |
 | `render_golden` | Regenerates the golden reference WAVs in `tests/golden/` from the shared scenes — run it and **listen** before committing. | `cargo run --example render_golden` |
 
 ## Python clients (`examples/`)

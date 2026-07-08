@@ -136,12 +136,21 @@ fn status_reply_format() {
     let reply = server.recv();
 
     assert_eq!(reply.addr, "/status.reply");
-    assert_eq!(reply.args.len(), 9);
+    // The 9 scsynth-shaped fields plus the appended late-block counter.
+    assert_eq!(reply.args.len(), 10);
     assert_eq!(reply.args[0], OscType::Int(1));
     assert_eq!(reply.args[2], OscType::Int(0)); // no synths yet
     assert_eq!(reply.args[3], OscType::Int(1)); // root group
     assert_eq!(reply.args[4], OscType::Int(1)); // the built-in "default" def
+    // avg/peak CPU are real measurements (percent, non-negative and finite).
+    for cpu in [&reply.args[5], &reply.args[6]] {
+        match cpu {
+            OscType::Float(v) => assert!(*v >= 0.0 && v.is_finite(), "cpu = {v}"),
+            other => panic!("cpu fields must be floats, got {other:?}"),
+        }
+    }
     assert_eq!(reply.args[7], OscType::Double(48_000.0));
+    assert!(matches!(reply.args[9], OscType::Int(n) if n >= 0)); // late blocks
 
     server.quit();
 }

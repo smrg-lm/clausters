@@ -655,6 +655,47 @@ streaming) are taken as loose items when needed.
   trusted publisher (a *pending publisher* works before the first upload);
   (3) create the `pypi` environment in the GitHub repo settings. macOS/
   Windows wheels are a later matrix extension, once verified by hand.
+- ✅ **M24 — Real-time health: RT scheduling, CPU metering, affinity, stress
+  harness** *(**DONE 2026-07-08**)*: make the callback's health observable
+  and controllable, answering "how many voices fit before the audio breaks"
+  reliably. Motivated by the field observation that ~1000 one-sine nodes ran
+  but 2000 never did: the offline capacity (`examples/bench`, ~1400-1800
+  sines/core) was not the limiter — **scheduling jitter was**, because the
+  audio callback ran as SCHED_OTHER: cpal 0.18 ships the promotion
+  (`audio_thread_priority` via RTKit/DBus, both the PipeWire and ALSA hosts)
+  but behind its non-default `realtime`/`realtime-dbus` features. Landed:
+  (1) the **`rtprio` default feature** enabling `cpal/realtime-dbus`
+  (build-dep `libdbus-1-dev`), plus a **ground-truth diagnostic** — the
+  callback publishes its actual kernel policy/priority (`backend::RtDiag`,
+  one-shot at callback #64) and the binary logs it (`SCHED_RR priority 10`,
+  or a warning naming the fix); (2) the **CPU meter** in
+  `Engine::process_block` (vDSO `Instant::now`, RT-safe): avg (EMA ~1 s) /
+  peak (bitwise `fetch_max`, reset-per-read) / cumulative **late blocks**
+  (block wall time > budget, the engine-side xrun proxy), published through
+  `Counters` and wired into `/status.reply` (the previously hardcoded-0.0
+  avg/peak fields + one appended int; `tests/engine.rs::cpu_meter_*`);
+  (3) **`--pin cpu[,cpu...]`** (Linux, experimental): the callback thread
+  pins itself on its first callback, workers pinned by a `/proc/self/task`
+  scan at boot; (4) **`examples/stress.rs`**, the single-core capacity
+  harness over the real backend: `/d_recv` an n-sine def, ramp m nodes
+  (throttled — a burst of inserts inside one block is measurably late:
+  ~5-10 µs per apply plus first-touch page faults of the new synth's wire
+  buffers), poll `/status`, stop on peak > `--limit` or a late block in the
+  clean window; cross-check real xruns with `pw-top`. Docs:
+  `architecture.md` ("Real-time health"), `schemas.md` (`/status`),
+  `BUILD.md`, `examples.md`, `GUIA.md` (M24 section). **Follow-ups noted,
+  not taken**: O(1) node lookup (`NodeTree::find` and the free-slot search
+  are linear scans — fine at 10³ nodes, a real cost at 10⁴; an id→slot
+  table sized `max_nodes` would fix insert/free/`/n_set` alike); RT
+  priority for the DSP workers (SCHED_OTHER workers under an RT conductor
+  invert priorities on loaded machines); prewarming/`mlock`ing synth wire
+  buffers so their first-touch faults leave the audio thread; an **overload
+  governor** — sustained >100% load stops the callback from sleeping and
+  RTKit's RLIMIT_RTTIME watchdog kills the server with SIGXCPU (observed
+  live driving a `--limit 1000` ramp at `PIPEWIRE_QUANTUM=64/48000`), so a
+  server that detects N consecutive late blocks could shed load (skip a
+  block, pause tail nodes) and survive where it now dies; documented in
+  `GUIA.md` §5 and `architecture.md` meanwhile.
 
 ### Reviewed ideas: what was dropped and why
 

@@ -922,16 +922,22 @@ impl OscServer {
     fn send_status(&mut self, to: ClientId) {
         let counters = self.handle.counters();
         let num_defs = self.translator.def_count();
+        // avg/peak CPU are the engine's per-block load as a *percentage* of
+        // the block budget (scsynth's convention). Peak is per poll window:
+        // reading it resets it. The trailing int (late blocks since boot, our
+        // engine-side xrun proxy) is appended after the scsynth-shaped fields,
+        // so positional readers keep working.
         let args = vec![
             OscType::Int(1),
             OscType::Int(counters.ugens.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.synths.load(Ordering::Relaxed) as i32),
             OscType::Int(counters.groups.load(Ordering::Relaxed) as i32),
             OscType::Int(num_defs as i32),
-            OscType::Float(0.0), // avg CPU
-            OscType::Float(0.0), // peak CPU
+            OscType::Float(counters.avg_cpu() * 100.0),
+            OscType::Float(counters.take_peak_cpu() * 100.0),
             OscType::Double(self.info.nominal_sample_rate),
             OscType::Double(self.info.actual_sample_rate),
+            OscType::Int(counters.late_blocks() as i32),
         ];
         self.reply(to, "/status.reply", args);
     }

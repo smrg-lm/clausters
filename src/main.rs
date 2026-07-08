@@ -24,6 +24,9 @@ usage:
                            browser (RT only; default port 57120; ws://host:port/)
       --midi [name]        open a virtual MIDI input port (RT only; default
                            name \"clausters\"; connect with aconnect/qpwgraph)
+      --pin <cpu[,cpu..]>  CPU affinity (Linux, experimental): first CPU for
+                           the audio callback thread, the rest round-robin
+                           over the DSP workers
   clausters --nrt <score.osc> <out.wav> [opts] offline render of a binary score
       --rate <hz>          sample rate (default 48000)
       --channels <n>       output channels (default 2)
@@ -165,6 +168,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // the device default; `inputs = 0` opens no input device.
     let mut outputs: Option<usize> = cfg.outputs;
     let mut inputs: usize = cfg.inputs.unwrap_or(0);
+    // `--pin`: CPU affinity list — first CPU for the audio callback thread,
+    // the rest round-robin over the DSP workers. Experimental, Linux only.
+    let mut pin: Vec<usize> = Vec::new();
     // Boot-time pool sizes, config over the compiled defaults (clamped later in
     // the engine). Each is a slab built once at startup.
     let mut limits = Limits::default();
@@ -294,6 +300,15 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .parse()
                     .map_err(|e| format!("--max-ugen-inputs: {e}"))?;
             }
+            "--pin" => {
+                let value = it.next().ok_or(format!("--pin needs a value\n{USAGE}"))?;
+                let cpus: Result<Vec<usize>, _> =
+                    value.split(',').map(|c| c.trim().parse()).collect();
+                pin = cpus.map_err(|e| format!("--pin: {e}"))?;
+                if pin.is_empty() {
+                    return Err(format!("--pin needs at least one CPU\n{USAGE}").into());
+                }
+            }
             other => return Err(format!("unknown argument: {other}\n{USAGE}").into()),
         }
     }
@@ -314,7 +329,14 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         limits,
         outputs,
         inputs,
+        pin.first().copied(),
     )?;
+    // The workers exist now (spawned by the engine); pin them to the CPUs
+    // after the audio thread's. The audio thread pins itself (backend.rs).
+    if pin.len() > 1 {
+        pin_workers(&pin[1..]);
+    }
+    spawn_rt_diag_report(std::sync::Arc::clone(&backend.rt_diag));
     // Nominal = what we asked for; actual = what the device gave us. They differ
     // only when the host could not honor the requested rate (see backend.rs).
     let nominal = sample_rate.map_or(backend.sample_rate as f64, f64::from);
@@ -387,4 +409,91 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(not(feature = "realtime"))]
 fn realtime_main(_args: &[String]) -> Result<(), String> {
     Err("built without the `realtime` feature: no audio backend (try --nrt)".into())
+}
+
+/// Pins the `clausters-dsp-N` worker threads round-robin onto `cpus`
+/// (`--pin`, all CPUs after the first). Runs on the main thread right after
+/// boot: it scans `/proc/self/task` for the workers by thread name. Failures
+/// are logged and ignored — pinning is a tuning aid, never a boot blocker.
+#[cfg(all(feature = "realtime", target_os = "linux"))]
+fn pin_workers(cpus: &[usize]) {
+    let entries = match std::fs::read_dir("/proc/self/task") {
+        Ok(entries) => entries,
+        Err(e) => return tracing::warn!("--pin: cannot scan threads: {e}"),
+    };
+    let mut tids: Vec<i32> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let tid: i32 = entry.file_name().to_str()?.parse().ok()?;
+            let comm = std::fs::read_to_string(entry.path().join("comm")).ok()?;
+            comm.starts_with("clausters-dsp-").then_some(tid)
+        })
+        .collect();
+    tids.sort_unstable();
+    if tids.is_empty() {
+        tracing::warn!("--pin: no DSP workers to pin (running with --workers 0?)");
+        return;
+    }
+    for (i, tid) in tids.iter().enumerate() {
+        let cpu = cpus[i % cpus.len()];
+        // SAFETY: plain affinity syscall on one of our own thread ids.
+        let rc = unsafe {
+            let mut set: libc::cpu_set_t = std::mem::zeroed();
+            libc::CPU_SET(cpu, &mut set);
+            libc::sched_setaffinity(*tid, std::mem::size_of::<libc::cpu_set_t>(), &set)
+        };
+        if rc == 0 {
+            tracing::info!("pinned DSP worker (tid {tid}) to CPU {cpu}");
+        } else {
+            tracing::warn!("--pin: could not pin tid {tid} to CPU {cpu}");
+        }
+    }
+}
+
+#[cfg(all(feature = "realtime", not(target_os = "linux")))]
+fn pin_workers(_cpus: &[usize]) {
+    tracing::warn!("--pin is only supported on Linux");
+}
+
+/// Logs, a moment after boot, the scheduling the audio callback thread
+/// **actually** got (the callback publishes it after cpal's real-time
+/// promotion attempt) — the way to verify the server's real-time permissions:
+/// SCHED_FIFO/SCHED_RR is healthy, SCHED_OTHER means the promotion failed and
+/// xruns will appear well below full CPU load.
+#[cfg(feature = "realtime")]
+fn spawn_rt_diag_report(diag: std::sync::Arc<clausters::server::backend::RtDiag>) {
+    use std::sync::atomic::Ordering;
+    std::thread::spawn(move || {
+        // The callback publishes at its 64th call: ~90 ms at 48 kHz with a
+        // 64-frame quantum, a few seconds with large buffers. Poll briefly.
+        for _ in 0..40 {
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            // RTKit promotes with SCHED_RESET_ON_FORK OR'd into the policy
+            // and sched_getscheduler reports it; mask the flag to read it.
+            const SCHED_RESET_ON_FORK: i32 = 0x4000_0000;
+            match diag.policy.load(Ordering::Relaxed) {
+                -1 => continue,
+                0 => {
+                    tracing::warn!(
+                        "audio thread runs WITHOUT real-time scheduling (SCHED_OTHER): \
+                         expect xruns under load. Is rtkit running? (built with `rtprio`: \
+                         the promotion goes through RTKit over DBus)"
+                    );
+                }
+                policy => {
+                    let name = match policy & !SCHED_RESET_ON_FORK {
+                        1 => "SCHED_FIFO",
+                        2 => "SCHED_RR",
+                        _ => "SCHED_?",
+                    };
+                    tracing::info!(
+                        "audio thread is real-time: {name} priority {}",
+                        diag.priority.load(Ordering::Relaxed)
+                    );
+                }
+            }
+            return;
+        }
+        tracing::warn!("audio thread scheduling unknown: no audio callback ran in 10 s");
+    });
 }

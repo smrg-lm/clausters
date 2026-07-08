@@ -427,3 +427,30 @@ fn control_buses_feed_the_audio_thread() {
     let freq = estimated_freq(&render_left(&mut engine, 750));
     assert!((freq - 660.0).abs() < 7.0, "estimated freq = {freq}");
 }
+
+#[test]
+fn cpu_meter_publishes_load_and_peak_resets_per_read() {
+    let (mut engine, mut handle) = make_engine();
+    handle.send(add_synth(1000, 220.0, 0.1)).ok().unwrap();
+    render_left(&mut engine, 200);
+
+    let counters = handle.counters();
+    // Offline the fraction is just render speed, but it must be a positive,
+    // finite load — the meter ran and published.
+    let avg = counters.avg_cpu();
+    assert!(avg > 0.0 && avg.is_finite(), "avg_cpu = {avg}");
+    let peak = counters.take_peak_cpu();
+    assert!(peak > 0.0 && peak.is_finite(), "peak_cpu = {peak}");
+    assert!(
+        peak >= avg * 0.5,
+        "peak {peak} should not sit far below avg {avg}"
+    );
+
+    // Reading the peak resets its window: with no block processed in
+    // between, a second read reports zero.
+    assert_eq!(counters.take_peak_cpu(), 0.0);
+
+    // The next block starts a fresh window.
+    render_left(&mut engine, 1);
+    assert!(counters.take_peak_cpu() > 0.0);
+}

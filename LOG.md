@@ -4722,3 +4722,61 @@ sclang model:
   scheduling order and interleave are flipped. Suite: 132 passed. Docs:
   `routines-and-clocks.md` gained "The random context" (sessions/guide link to
   it); examples migrated from `seed=` to `main.seed(n)`; GUIA section 28.
+
+## M24 — Real-time health: RT scheduling, CPU metering, affinity, stress harness (completed 2026-07-08)
+
+**Goal:** make the audio callback's health observable and controllable —
+answer "how many voices fit on one core before the audio breaks" reliably,
+verify the server's real-time permissions, and make CPU pinning testable.
+Motivated by the field observation that ~1000 one-sine nodes ran but 2000
+never did, while `examples/bench` (offline) reported ~1400-1800 sines/core:
+the limiter was not throughput but **scheduling jitter** — the callback ran
+as SCHED_OTHER, because cpal 0.18 ships the RT promotion only behind its
+non-default `realtime`/`realtime-dbus` features.
+
+- **`rtprio` feature (default)**: enables `cpal/realtime-dbus`, so cpal
+  promotes the callback thread to real time through `audio_thread_priority`
+  — RTKit over DBus, the unprivileged desktop path; works on both the
+  PipeWire and ALSA hosts. New build-dep `libdbus-1-dev` (documented in
+  `BUILD.md`); droppable like `pipewire` for minimal builds.
+- **Ground-truth diagnostic** (`backend::RtDiag` + `RtSetup`): the callback
+  thread publishes its **actual** kernel policy/priority (one-shot syscalls
+  at callback #64, after cpal's promotion attempt; cold path) and the binary
+  logs it shortly after boot — `audio thread is real-time: SCHED_RR priority
+  10`, or a warning naming the likely fix. RTKit ORs `SCHED_RESET_ON_FORK`
+  into the policy; the reader masks it.
+- **CPU meter** (`Engine::process_block`): every block timed with
+  `Instant::now` (vDSO `clock_gettime` — no alloc/lock/trap, RT-safe;
+  `tests/rt_safety.rs` still green). Published via `Counters` atomics:
+  `avg_cpu` (EMA, ~1 s time constant), `peak_cpu` (bitwise `fetch_max` — non-
+  negative floats order like their bits — reset on read, so each `/status`
+  poll sees its own window), `late_blocks` (cumulative blocks over budget —
+  the engine-side xrun proxy, conservative when the device quantum spans
+  several blocks). `/status.reply` now reports real avg/peak CPU percentages
+  (previously hardcoded 0.0) plus the late count appended as a trailing int
+  (positional readers keep working). Test:
+  `tests/engine.rs::cpu_meter_publishes_load_and_peak_resets_per_read`.
+- **`--pin cpu[,cpu...]`** (Linux, experimental): first CPU pins the audio
+  callback thread — it pins itself on its first callback, since the thread
+  is spawned deep inside cpal/PipeWire; the rest are assigned round-robin to
+  the `clausters-dsp-N` workers via a `/proc/self/task` comm scan at boot.
+  Verified live: `pw_out` lands on the requested CPU, workers on theirs.
+- **`examples/stress.rs`**: the real-time complement to `bench` — an OSC
+  client that `/d_recv`s an n-sine def (`--sines`), ramps m nodes in
+  throttled steps against the **running** server, polls `/status` (double
+  poll: the first closes the window holding the insertion transient), and
+  stops on peak > `--limit` or a late block in the clean window, reporting
+  the last stable count. Cross-check real xruns with `pw-top` (ERR).
+- **Measured while building it** (release, desktop, 48 kHz): a plain block
+  with 1000 default synths ≈ 920 µs of the 1333 µs budget; applying 25
+  `AddSynth`s inside one block adds ~150-250 µs (~5-10 µs per apply — the
+  linear `NodeTree::find`/free-slot scans — plus first-touch page faults of
+  the new synths' wire buffers, allocated on the network thread but first
+  written on the audio thread); the peak load sits naturally at 2-3× the
+  average at low load. **Follow-ups noted in PLAN.md M24, not taken**: O(1)
+  node lookup (id→slot table), RT priority for DSP workers (priority
+  inversion under an RT conductor), prewarm/mlock of wire buffers.
+- **Docs**: `architecture.md` ("Real-time health" section + threads bullet +
+  invariant 1 amended with the deliberate one-shot exception),
+  `schemas.md` (`/status` reference), `BUILD.md` (dep + feature row),
+  `examples.md` (stress row), `GUIA.md` (M24 manual section + checklist).
