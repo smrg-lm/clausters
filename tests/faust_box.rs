@@ -240,6 +240,38 @@ fn cdsp_to_boxes_reports_arity_and_composes() {
     assert!(out.iter().all(|&v| v == 7.0), "3 + 4 = {}", out[0]);
 }
 
+/// Parity: a graph mixing `faust` fragments with schema ops (the exact JSON
+/// shape the Python box builder emits: `__call__` = seq(par(args), fragment),
+/// arithmetic as binary ops) must render identically to the same DSP written
+/// as one pure Faust source program — they are the same signal normal form.
+#[test]
+fn mixed_fragments_and_ops_match_pure_source() {
+    let source = "import(\"stdfaust.lib\"); \
+                  process = os.osc(hslider(\"freq\", 330.0, 20.0, 2000.0, 0.1)) \
+                            * 0.2 : fi.lowpass(3, 1200.0);";
+    let src_def = compiler::compile("par_src", &CompilePayload::Source(source.into()))
+        .expect("source must compile");
+
+    let slider = json!({"op": "hslider", "label": "freq", "init": 330.0,
+                        "min": 20.0, "max": 2000.0, "step": 0.1});
+    let osc = json!({"op": "seq", "in": [
+        slider,
+        {"op": "faust", "src": "import(\"stdfaust.lib\"); process = os.osc;"}]});
+    let graph = json!({"op": "seq", "in": [
+        {"op": "par", "in": [
+            1200.0,
+            {"op": "mul", "in": [osc, 0.2]}]},
+        {"op": "faust", "src": "import(\"stdfaust.lib\"); process = fi.lowpass(3);"}]});
+    let box_def = compiler::compile("par_box", &CompilePayload::Json(graph.to_string()))
+        .expect("mixed graph must compile");
+
+    let a = render(src_def.factory().as_ptr(), &[], 1024);
+    let b = render(box_def.factory().as_ptr(), &[], 1024);
+    let rms = (a.iter().map(|x| x * x).sum::<f32>() / a.len() as f32).sqrt();
+    assert!(rms > 0.05, "the chain must actually sound, rms = {rms}");
+    assert_eq!(a, b, "mixed box graph and pure source must be sample-identical");
+}
+
 // ---- CSE: duplicated subtrees share their computation ----
 //
 // A box client that exposes fragments as reusable values (`x = fragment;

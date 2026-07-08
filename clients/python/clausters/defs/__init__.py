@@ -5,6 +5,9 @@ and the server resources:
 
 - `signals` — lowercase callables mapping Faust's Signal
   API; compose them (operators or functions) into the JSON signal tree.
+- `boxes` — the same pattern over Faust's Box API: point-free composition
+  plus the `boxes.faust` escape hatch that turns any Faust expression
+  (the stdlib included) into a composable `Box`.
 - `faustdef` — `FaustDef`: build the ``/d_faust``
   payload (signal tree, source, or box tree) and list its controls.
 - `node` / `bus` /
@@ -18,8 +21,10 @@ and the server resources:
   `signals` / `FaustDef` pair.
 """
 
+from . import boxes
 from . import signals
 from . import ugens
+from .boxes import Box
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
@@ -67,8 +72,10 @@ from .ugens import (
 )
 
 __all__ = [
+    "boxes",
     "signals",
     "ugens",
+    "Box",
     "Signal",
     "FaustDef",
     "SynthDef",

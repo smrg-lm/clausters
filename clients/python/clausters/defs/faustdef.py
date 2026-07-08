@@ -11,6 +11,7 @@ bus controls the server adds.
 
 import json
 
+from .boxes import Box, check_wires
 from .signals import Signal
 
 
@@ -36,7 +37,14 @@ class FaustDef:
         return cls(name, src, "source")
 
     @classmethod
-    def from_box(cls, name: str, box: dict) -> "FaustDef":
+    def from_box(cls, name: str, box) -> "FaustDef":
+        """From a `clausters.defs.boxes.Box` (or a raw box-tree dict, kept
+        for machine-generated graphs). A `Box` is checked for the one silent
+        mistake the box algebra allows: reusing the same ``wire()``/``cut()``
+        object in two positions (each wire is a distinct input)."""
+        if isinstance(box, Box):
+            check_wires(box.node)
+            box = box.to_json()
         return cls(name, box, "box")
 
     # --- serialization ---
