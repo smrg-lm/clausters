@@ -18,6 +18,11 @@
 //! cargo run --release --example stress -- --limit 80 --settle 3
 //! ```
 //!
+//! The default server build runs the callback under real-time scheduling
+//! (the `rtprio` feature), which is what makes the numbers measure DSP
+//! throughput; against a server built without it, the ceiling is scheduling
+//! jitter instead — roughly half the capacity (see BUILD.md).
+//!
 //! The two axes of the test:
 //! - `--sines n`: sinusoids summed **inside one def** (per-node DSP weight);
 //! - the ramp: nodes added `--step` at a time (per-node engine overhead).
@@ -28,9 +33,12 @@
 //! Cross-check xruns externally with `pw-top` (the ERR column) while it runs.
 //!
 //! Keep `--limit` under 100: past sustained-100% the callback stops sleeping
-//! between cycles and RTKit's RLIMIT_RTTIME watchdog **kills the server**
-//! (SIGXCPU) — sooner with small quanta (`PIPEWIRE_QUANTUM=64/48000`), where
-//! there is less slack per cycle. The default 90 leaves that regime alone.
+//! between cycles and RTKit's RLIMIT_RTTIME watchdog raises SIGXCPU — the
+//! server's guard then demotes the audio thread back to SCHED_OTHER (the
+//! server survives, but the measurement is over: the ramp is no longer
+//! testing a real-time thread). Sooner with small quanta
+//! (`PIPEWIRE_QUANTUM=64/48000`), where there is less slack per cycle. The
+//! default 90 leaves that regime alone.
 
 use std::net::UdpSocket;
 use std::time::Duration;

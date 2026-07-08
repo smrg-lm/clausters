@@ -8,4 +8,6 @@ pub mod engine;
 pub mod ipc;
 pub mod nrt;
 pub mod render;
+#[cfg(feature = "rtprio")]
+pub mod rt;
 pub mod workers;

@@ -1180,12 +1180,20 @@ A mano, con el servidor corriendo (el demo registra `/notify`, manda un def sin
 
 ### Probar la salud de tiempo real: scheduling, medidor de CPU, stress (M24)
 
-Tres piezas responden "cuántas voces entran antes de que se rompa el audio":
-la promoción del hilo de audio a scheduling de tiempo real (feature `rtprio`,
-default, vía RTKit/DBus — necesita `libdbus-1-dev` para compilar), el medidor
-de CPU del engine publicado en `/status.reply` (avg/peak como % del presupuesto
-del bloque + contador acumulado de bloques tardíos), y el stress test
-`examples/stress.rs` que rampa nodos contra el servidor real.
+Dos piezas siempre presentes responden "cuánto CPU consume el audio": el
+medidor de CPU del engine publicado en `/status.reply` (avg/peak como % del
+presupuesto del bloque + contador acumulado de bloques tardíos — RT-safe y
+multiplataforma, siempre compilado) y el stress test `examples/stress.rs`
+(cliente OSC puro, sin dependencias de Linux) que rampa nodos contra el
+servidor real. La tercera pieza es la feature `rtprio` (**default**, como en
+todo cliente de audio de producción en Linux; necesita `libdbus-1-dev`):
+promueve el hilo de audio a scheduling de tiempo real vía RTKit/DBus,
+habilita `--pin` y arma el guard de SIGXCPU. Sin ella el techo es el jitter
+de scheduling (~la mitad de la capacidad: medido en esta máquina, 300 nodos
+estables como SCHED_OTHER contra 500+ con SCHED_RR, con el avg engañosamente
+bajo — glitchea con avg ~40% porque el peak vive en 2-3× el avg). Todo el
+código específico de Linux vive en `src/server/rt.rs`, con stubs no-op fuera
+de Linux, y la feature se puede quitar para builds mínimos sin DBus.
 
 ```sh
 cargo test --test engine cpu_meter
@@ -1197,6 +1205,7 @@ cargo run --release 2>&1 | grep "audio thread"
 # -> WARN ... WITHOUT real-time scheduling (SCHED_OTHER)    = promoción fallida
 # Verificación independiente: ps -eLo comm,cls,rtprio | grep pw_out
 # (cls RR/FF con rtprio > 0; el hilo se llama pw_out con el host PipeWire)
+# Un build sin la feature no promueve nada: SCHED_OTHER y ningún log.
 
 # 2) Capacidad de un núcleo (servidor aparte, con la tabla de nodos ampliada):
 cargo run --release -- --max-nodes 8192
@@ -1205,13 +1214,25 @@ cargo run --release --example stress -- --sines 10        # defs más pesadas
 # Imprime nodos / senos / avg% / peak% / late por paso y corta cuando el peak
 # supera --limit (90%) o un bloque se pasa del presupuesto en la ventana
 # estable; la última fila estable es la capacidad. Chequeo cruzado de xruns
-# reales: pw-top (columna ERR) mientras corre.
+# reales: pw-top (columna ERR) mientras corre. (El stress corre contra
+# cualquier build, pero sin rtprio mide el jitter de scheduling, no el DSP.)
 
-# 3) Pinning (experimental): fijar el hilo de audio al CPU 3 y los workers
-# a 4 y 5, y comparar la misma rampa con y sin --pin:
+# 3) Pinning (experimental): hilo de audio al CPU 3 y workers a 4 y 5,
+# y comparar la misma rampa con y sin --pin:
 cargo run --release -- --workers 2 --pin 3,4,5
 # -> INFO pinned DSP worker (tid ...) to CPU 4 / 5
 # taskset del hilo de audio verificable con: cat /proc/<pid>/task/*/status
+# En un build sin rtprio, --pin falla con un error que nombra la feature.
+
+# 4) Guard de SIGXCPU: sobrecargar a propósito y verificar que el servidor
+# NO muere — se degrada a SCHED_OTHER y sigue respondiendo:
+PIPEWIRE_QUANTUM=64/48000 cargo run --release -- --max-nodes 8192
+cargo run --release --example stress -- --limit 1000
+# -> stderr: "clausters: RT CPU budget exceeded (SIGXCPU): audio thread
+#    demoted to SCHED_OTHER, expect glitches until restart"
+cargo run --example osc_ping -- status     # sigue vivo y respondiendo
+# (Verificación kernel-side sin sobrecargar: kill -XCPU <pid> y comparar
+#  ps -Lo comm,cls,rtprio -p <pid> antes/después: pw_out pasa de RR a OTHER.)
 ```
 
 Interpretación: el **peak** vive naturalmente en 2-3× el avg con carga baja
@@ -1220,8 +1241,11 @@ avg al saturar — la capacidad se planifica contra el peak. Un bloque tardío
 aislado durante una ráfaga de `/s_new` es costo de inserción (más los page
 faults del primer process de cada synth nuevo), no sobrecarga sostenida; el
 stress test los reporta aparte. Sin `rtprio` (o con RTKit caído) el audio se
-rompe por jitter de scheduling mucho antes del 100% de CPU — ese era el techo
-de ~la mitad de la capacidad teórica.
+rompe por jitter de scheduling mucho antes del 100% de CPU — el techo de ~la
+mitad de la capacidad teórica. La regla en todos los builds es la misma:
+**la sobrecarga rompe el sonido, nunca el proceso** — con `rtprio` (default)
+porque el guard degrada el hilo en vez de dejar que el kernel mate el
+servidor, y sin la feature porque no hay watchdog RT.
 
 ### Qué probar a mano (núcleo)
 
@@ -1642,7 +1666,7 @@ la wheel en PyPI y el release con los dos artefactos.
 | Cadena en frecuencia `FFT`/`PV_*`/`IFFT` (frame-rate `fr`, scratch privado del synth, ventanas+FFT/IFFT en `clausters-core`) (S8) | `tests/spectral.rs` (round-trip, `pv_brickwall_attenuates_a_high_tone`, `pv_magabove_gates...`, `compiler_validates_the_chain`, `u_cmd_swaps...`), `tests/rt_safety.rs` (`spectral_chain_does_not_allocate...`), `cargo test -p clausters-core fft window` | `python3 examples/json_client.py fft` |
 | UGens de efecto colateral sin `Out`: `SendTrig`/`SendReply`/`Poll` + relajación del builder Python (S9/C19) | `tests/osc.rs` (`send_trig_replies`, `send_reply_replies`, `poll_with_trigid`), `tests/rt_safety.rs` (`reply_ugens_do_not_allocate...`), `test_synthdef.py` (`side_effect`) | `python3 examples/json_client.py replies` |
 | CI + release (fmt/clippy/tests/matriz de features, gui+wasm, pytest, mdBooks, faust cacheado; wheel→PyPI por tag) (M23) | `.github/workflows/ci.yml` en verde | sección 3ter (activación RTD/PyPI) |
-| Salud RT: scheduling `rtprio` + diagnóstico, medidor de CPU en `/status.reply` (avg/peak/late), `--pin`, stress test de capacidad (M24) | `tests/engine.rs` (`cpu_meter`), `tests/rt_safety.rs` | sección M24: `stress`, `pw-top`, `ps -eLo comm,cls,rtprio` |
+| Salud RT: medidor de CPU en `/status.reply` (avg/peak/late, siempre) + feature `rtprio` default (scheduling RT, diagnóstico, `--pin`, guard SIGXCPU), stress test de capacidad (M24) | `tests/engine.rs` (`cpu_meter`), `tests/rt_safety.rs` | sección M24: `stress`, `pw-top`, `ps -eLo comm,cls,rtprio`, guard SIGXCPU |
 | JIT Faust (factory, paridad de señal) | `tests/faust_smoke.rs` | — |
 | Hilo compilador, `/d_faust` asíncrono | `tests/faust_compiler.rs` | `/d_faust` + `/dumpOSC` |
 | Schema JSON→Box, errores con ruta | `tests/faust_json.rs` | def `jsine` de arriba |
@@ -1715,16 +1739,31 @@ abre la ventana, cargando todo desde disco. El cliente Python escribe ese bundle
 - **No suena**: cpal abre el dispositivo default de ALSA; en escritorios
   con PipeWire/PulseAudio funciona vía el plugin ALSA. Verificar que algo
   más suene (`aplay -l`) y que el servidor imprima la línea de arranque.
-- **El servidor muere con "Rebasado el límite de tiempo de CPU" (SIGXCPU)**:
-  es el watchdog de RTKit, no un bug: al promover el thread de audio a
-  tiempo real (feature `rtprio`) le impone `RLIMIT_RTTIME` (~200 ms de CPU
-  *continua* sin bloquearse). Si la carga sostenida supera el 100% del
-  período (p. ej. una rampa de `stress` con `--limit` alto, agravado con
-  quantum chico — `PIPEWIRE_QUANTUM=64/48000` —, donde el thread ya no llega
-  a dormir entre ciclos), el kernel mata el proceso para proteger el
-  sistema. Mantener el corte del stress por debajo del 100% (el default
-  `--limit 90` existe por esto) o subir el quantum. Con carga < 100% el
-  thread duerme cada ciclo y el contador se resetea: no hay riesgo.
+- **stderr dice "RT CPU budget exceeded (SIGXCPU)" y el audio empeora**: es
+  el watchdog de RTKit, no un bug: al promover el thread de audio a tiempo
+  real (feature `rtprio`, default) le impone `RLIMIT_RTTIME` (~200 ms de CPU
+  *continua* sin bloquearse), y con carga sostenida > 100% del período
+  (p. ej. una rampa de `stress` con `--limit` alto, agravado con quantum
+  chico — `PIPEWIRE_QUANTUM=64/48000` —, donde el thread ya no llega a
+  dormir entre ciclos) el kernel manda SIGXCPU. El guard del servidor
+  captura la señal y degrada el thread a SCHED_OTHER: **el servidor sigue
+  vivo**, solo se pierde el scheduling RT hasta reiniciar. Mantener el corte
+  del stress por debajo del 100% (el default `--limit 90` existe por esto) o
+  subir el quantum. Un build sin `rtprio` no corre este riesgo (no hay
+  promoción ni watchdog), a costa de la mitad de la capacidad. Si un
+  servidor *muere* con "Rebasado el límite de tiempo de CPU (`core'
+  generado)" es un binario viejo (M24, antes de que existiera el guard):
+  recompilar.
+- **Glitchea con el CPU aparentemente bajo (avg < 50%)**: primero mirar el
+  **peak** y `late_blocks` en `/status.reply` — la capacidad la fija el peor
+  bloque, no el promedio (peak ≈ 2-3× avg). Si el peak revienta con avg
+  moderado, verificar que el hilo de audio esté realmente en tiempo real
+  (`ps -eLo comm,cls,rtprio | grep pw_out` → RR/FF): un binario compilado
+  sin `rtprio`, RTKit caído, o un thread ya degradado por el guard corren
+  como SCHED_OTHER y el jitter de scheduling rompe el audio a ~la mitad de
+  la capacidad. Una ráfaga grande de `/s_new` (cientos de nodos de una vez)
+  también produce bloques tardíos puntuales — costo de inserción, no
+  sobrecarga.
 - **`cargo build --features faust` no enlaza**: libfaust no está donde se
   espera. Verificar `ls ~/.local/lib/libfaust.so` o exportar
   `FAUST_PREFIX`. Tras cambiarlo, `cargo clean -p clausters` para que

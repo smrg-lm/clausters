@@ -40,7 +40,7 @@ Feature matrix (see `Cargo.toml`):
 | `realtime` | yes | the cpal audio backend (the live server) |
 | `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
-| `rtprio` | yes | real-time scheduling for the audio callback thread (SCHED_FIFO/RR via RTKit over DBus — the unprivileged desktop path) — needs `libdbus-1-dev`; the server logs the policy the thread actually got shortly after boot |
+| `rtprio` | yes | real-time scheduling for the audio callback thread (SCHED_FIFO/RR via RTKit over DBus — the standard path for Linux audio clients; needs `libdbus-1-dev`), plus the `--pin` CPU-affinity flag and a SIGXCPU guard: if RTKit's `RLIMIT_RTTIME` watchdog fires under sustained overload, the audio thread is demoted back to SCHED_OTHER (the audio degrades, the server survives). Without the feature the callback runs as SCHED_OTHER and scheduling jitter breaks the audio at roughly half capacity — drop it only for minimal builds (no DBus dep; Linux-specific code isolated in `server::rt`) |
 | `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing) — needs `libjack-jackd2-dev`, run under `pw-jack` |
 | `faust` | no | the **FaustDef family**: libfaust embedding (Box API + LLVM JIT, `/d_faust`) — needs libfaust built with the LLVM backend |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |

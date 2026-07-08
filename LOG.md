@@ -4780,3 +4780,98 @@ non-default `realtime`/`realtime-dbus` features.
   invariant 1 amended with the deliberate one-shot exception),
   `schemas.md` (`/status` reference), `BUILD.md` (dep + feature row),
   `examples.md` (stress row), `GUIA.md` (M24 manual section + checklist).
+
+## M24b — `rtprio` made opt-in; SIGXCPU guard; Linux tuning isolated in `server::rt` (completed 2026-07-08)
+
+**Why:** M24's default `rtprio` feature surfaced its failure mode immediately
+in normal use: driving the server past sustained 100% load tripped RTKit's
+`RLIMIT_RTTIME` watchdog and the kernel killed the process with SIGXCPU
+("Rebasado el límite de tiempo de CPU (`core' generado`)") — a **silent
+death** that left clients hanging. The pre-M24 behavior was preferable:
+overload must break the audio, never the process. The RT promotion is a
+measurement/tuning aid, not something the release build should pay for with a
+process-killing watchdog and a DBus build dependency.
+
+- **`rtprio` demoted from default to opt-in**: `default` no longer includes
+  it, so the release build has no `libdbus-1-dev` dep, no RT promotion and no
+  watchdog — the callback runs as SCHED_OTHER (the pre-M24 status quo: xruns
+  appear earlier under load, the process never dies). `BUILD.md` moved the
+  dep to the optional list and rewrote the feature row.
+- **All Linux-specific code consolidated in `server::rt`** (new module,
+  compiled only with the feature): the callback-thread setup (`RtSetup`:
+  tid publication, optional self-pin, one-shot scheduling diagnostic),
+  `pin_workers`, `spawn_diag_report` and the SIGXCPU guard, with non-Linux
+  no-op stubs. `backend.rs` reverted to its portable pre-M24 shape (one
+  `#[cfg(feature = "rtprio")]` field on `BlockAdapter` + one cfg'd statement
+  in the callback); `backend::start` lost the `pin_audio` parameter
+  (`embed.rs` reverted); the `--pin` CPU reaches the callback thread through
+  `rt::request_audio_pin` instead. `--pin` in a build without the feature
+  fails with an error naming it.
+- **SIGXCPU guard** (`rt::install_sigxcpu_guard`, armed by the binary at boot
+  before the stream exists — a signal disposition is process-global, so the
+  binary owns it, not the library): the handler demotes the audio thread
+  (published tid + calling thread) back to SCHED_OTHER with
+  async-signal-safe syscalls and `write(2)`s one line to stderr. The audio
+  degrades, the server survives; once demoted the RT clock stops accruing so
+  the signal stops firing. Two traps found while verifying it live (server
+  up, `kill -XCPU`, `ps -Lo comm,cls,rtprio` before/after, `/status` after):
+  (1) the RTKit-promoted thread carries **`SCHED_RESET_ON_FORK`**, and the
+  kernel EPERMs an unprivileged `sched_setscheduler` that would *clear* the
+  flag — the demotion silently did nothing until the handler OR'd the flag
+  back into the new policy; (2) the signal interrupts the network thread's
+  `recv_from` with **EINTR** (`SA_RESTART` does not restart a recv under
+  `SO_RCVTIMEO`), which the OSC loop treated as fatal — it now `continue`s
+  on `ErrorKind::Interrupted` like a timeout tick (`osc/server.rs`), a
+  robustness fix that holds for any signal. The overload rule is now
+  uniform: **overload breaks the sound, never the process**, in every
+  build.
+- **Unconditional pieces kept**: the CPU meter and the extended
+  `/status.reply` (portable, RT-safe — `Instant::now` via vDSO) and
+  `examples/stress.rs` (a pure-std OSC client, no Linux deps; its header now
+  points capacity measurement at an `rtprio`-built server).
+- **Docs**: `Cargo.toml` feature comment, `BUILD.md`, `architecture.md`
+  ("Real-time health" restructured around always-on meter vs opt-in tuning;
+  invariant 1 exception scoped to `rtprio` builds), `examples.md`,
+  `stress.rs` header, `GUIA.md` (M24 section reworked, new SIGXCPU-guard
+  manual test, troubleshooting entry rewritten), `PLAN.md` M24 follow-up
+  note. Tests unchanged and green (`cpu_meter_*`, `status_reply_format`,
+  `rt_safety`); feature matrix checked with and without `rtprio`.
+
+## M24c — `rtprio` restored as a default feature (completed 2026-07-08)
+
+**Why:** field use of the M24b default (no RT scheduling) immediately hit the
+SCHED_OTHER ceiling it had accepted: 500 one-sine nodes glitched at ~46%
+*average* CPU — the average misleads, the callback must fit its **worst**
+block and unscheduled peaks run at 2–3× the average, blowing the budget long
+before 100%. Measured on the same machine and ramp (release, 48 kHz,
+`examples/stress.rs`, 1-sine nodes): **~300 stable nodes as SCHED_OTHER
+(peak 124% at 36% avg) vs ~500+ as SCHED_RR (peak 92% at 34% avg)** — the
+"roughly half the capacity" cost predicted by M24. M24b's real objection was
+the silent SIGXCPU death, and its guard removed it; what remained was only
+the performance cost. Decision (with the user): a release must ship the best
+performance, and an RT-scheduled callback is the standard operating mode of
+every production audio client on Linux (scsynth, JACK and PipeWire clients
+alike) — so the default came back.
+
+- `rtprio` re-added to `default` (one line in `Cargo.toml`); `libdbus-1-dev`
+  back in `BUILD.md`'s default dependency line.
+- **Everything that made M24b safe and clean stays** and is what makes the
+  default acceptable now: the SIGXCPU guard (sustained overload demotes the
+  audio thread to SCHED_OTHER — the audio degrades, the server survives; the
+  overload rule "overload breaks the sound, never the process" holds in
+  every build), the `SCHED_RESET_ON_FORK`-aware demotion, the EINTR-tolerant
+  network loop, and the isolation of all platform-specific code in the
+  feature-gated `server::rt` module with non-Linux no-op stubs —
+  multiplatform builds are unaffected, and the feature stays droppable for
+  minimal no-DBus builds (at the SCHED_OTHER capacity cost).
+- **Docs re-framed from "testing aid" to "standard for Linux audio"**:
+  `Cargo.toml` feature comment, `BUILD.md` (deps + feature row back to
+  default), `architecture.md` ("Real-time health": why the default, with
+  the peak-vs-average argument), `examples.md` + `stress.rs` header (the
+  default server measures DSP throughput; a build without the feature
+  measures jitter), `GUIA.md` (M24 section back to default commands, new
+  troubleshooting entry "glitches at low average CPU": check the peak,
+  `late_blocks` and the thread's actual scheduling class), `PLAN.md` M24
+  follow-up note. Verified: default release boots `SCHED_RR priority 10`,
+  survives SIGXCPU (demotion visible in `ps -Lo cls`), full suite + feature
+  matrix green.

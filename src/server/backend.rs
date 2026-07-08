@@ -4,9 +4,6 @@
 //! multiple of [`BLOCK_SIZE`]; `BlockAdapter` slices them up by requesting
 //! blocks from the engine and keeping the leftover across callbacks.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicI32, Ordering};
-
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, Sample, SizedSample};
 use rtrb::Producer;
@@ -25,110 +22,19 @@ pub struct AudioBackend {
     pub channels: usize,
     /// Live hardware input channels actually opened (0 if none / unavailable).
     pub input_channels: usize,
-    /// Scheduling diagnostics of the output callback thread, published by the
-    /// callback itself once it is running (see [`RtDiag`]).
-    pub rt_diag: Arc<RtDiag>,
     // The streams stop when dropped: the backend must be kept alive.
     _stream: cpal::Stream,
     _input_stream: Option<cpal::Stream>,
-}
-
-/// What scheduling the audio callback thread **actually** got, as reported by
-/// the kernel — the ground truth to verify that the `rtprio` promotion (or an
-/// external mechanism) took. Published from the callback thread itself a few
-/// callbacks in (after cpal's promotion attempt), read from the boot code to
-/// log it. `policy == -1` until published.
-pub struct RtDiag {
-    /// `libc` scheduling policy: `SCHED_OTHER` = 0, `SCHED_FIFO` = 1,
-    /// `SCHED_RR` = 2 (`-1` = not yet published / unsupported platform).
-    pub policy: AtomicI32,
-    /// `sched_priority`; meaningful for `SCHED_FIFO`/`SCHED_RR` only.
-    pub priority: AtomicI32,
-}
-
-impl RtDiag {
-    fn new() -> Arc<Self> {
-        Arc::new(Self {
-            policy: AtomicI32::new(-1),
-            priority: AtomicI32::new(0),
-        })
-    }
-}
-
-/// Callback number at which the diagnostic is read: late enough that cpal's
-/// real-time promotion (first cycle on the PipeWire host, thread start on
-/// ALSA) has already happened.
-const DIAG_AT_CALLBACK: u32 = 64;
-
-/// One-shot per-stream setup running *on* the callback thread: optional CPU
-/// pinning on the first callback, scheduling diagnostic at
-/// [`DIAG_AT_CALLBACK`]. Both are cold paths (a syscall each, once); after
-/// that `on_callback` is a single compare per callback.
-struct RtSetup {
-    pin: Option<usize>,
-    diag: Arc<RtDiag>,
-    calls: u32,
-}
-
-impl RtSetup {
-    fn new(pin: Option<usize>, diag: Arc<RtDiag>) -> Self {
-        Self {
-            pin,
-            diag,
-            calls: 0,
-        }
-    }
-
-    #[inline]
-    fn on_callback(&mut self) {
-        if self.calls > DIAG_AT_CALLBACK {
-            return;
-        }
-        if self.calls == 0 {
-            self.pin_current_thread();
-        }
-        if self.calls == DIAG_AT_CALLBACK {
-            self.publish_diag();
-        }
-        self.calls += 1;
-    }
-
-    #[cfg(target_os = "linux")]
-    fn pin_current_thread(&self) {
-        let Some(cpu) = self.pin else { return };
-        // SAFETY: plain affinity syscall on the calling thread (tid 0).
-        unsafe {
-            let mut set: libc::cpu_set_t = std::mem::zeroed();
-            libc::CPU_SET(cpu, &mut set);
-            libc::sched_setaffinity(0, std::mem::size_of::<libc::cpu_set_t>(), &set);
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    fn publish_diag(&self) {
-        // SAFETY: read-only scheduling queries on the calling thread (tid 0).
-        unsafe {
-            let policy = libc::sched_getscheduler(0);
-            let mut param: libc::sched_param = std::mem::zeroed();
-            libc::sched_getparam(0, &mut param);
-            self.diag
-                .priority
-                .store(param.sched_priority, Ordering::Relaxed);
-            self.diag.policy.store(policy, Ordering::Relaxed);
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn pin_current_thread(&self) {}
-
-    #[cfg(not(target_os = "linux"))]
-    fn publish_diag(&self) {}
 }
 
 struct BlockAdapter {
     engine: Engine,
     buf: Vec<f32>,
     pos: usize,
+    /// One-shot pin + scheduling diagnostic of the callback thread, run from
+    /// the callback itself (`rtprio` builds only; see `server::rt`).
+    #[cfg(feature = "rtprio")]
+    rt_setup: crate::server::rt::RtSetup,
 }
 
 impl BlockAdapter {
@@ -138,6 +44,8 @@ impl BlockAdapter {
             engine,
             buf: vec![0.0; len],
             pos: len, // forces a process_block on the first sample
+            #[cfg(feature = "rtprio")]
+            rt_setup: crate::server::rt::RtSetup::new(),
         }
     }
 
@@ -166,9 +74,6 @@ impl BlockAdapter {
 /// count keeps its own; an unavailable input device leaves the server
 /// output-only). Returns the handle the network thread uses to talk to the
 /// engine.
-///
-/// `pin_audio` optionally pins the output callback thread to one CPU
-/// (`--pin`, Linux only); the thread pins itself on its first callback.
 #[allow(clippy::too_many_arguments)]
 pub fn start(
     workers: usize,
@@ -179,9 +84,7 @@ pub fn start(
     limits: Limits,
     outputs: Option<usize>,
     inputs: usize,
-    pin_audio: Option<usize>,
 ) -> Result<(AudioBackend, EngineHandle), Box<dyn std::error::Error>> {
-    let rt_diag = RtDiag::new();
     let host = cpal::default_host();
     let device = host
         .default_output_device()
@@ -239,11 +142,10 @@ pub fn start(
             let input_producer = (inputs > 0)
                 .then(|| engine.input_ring(inputs, inputs * BLOCK_SIZE * INPUT_RING_BLOCKS));
             let adapter = BlockAdapter::new(engine);
-            let setup = RtSetup::new(pin_audio, Arc::clone(&rt_diag));
             let built = match format {
-                cpal::SampleFormat::F32 => build_stream::<f32>(&device, cfg, adapter, setup),
-                cpal::SampleFormat::I16 => build_stream::<i16>(&device, cfg, adapter, setup),
-                cpal::SampleFormat::U16 => build_stream::<u16>(&device, cfg, adapter, setup),
+                cpal::SampleFormat::F32 => build_stream::<f32>(&device, cfg, adapter),
+                cpal::SampleFormat::I16 => build_stream::<i16>(&device, cfg, adapter),
+                cpal::SampleFormat::U16 => build_stream::<u16>(&device, cfg, adapter),
                 fmt => return Err(format!("unsupported sample format: {fmt}").into()),
             };
             match built {
@@ -270,7 +172,6 @@ pub fn start(
                             sample_rate: rate as f32,
                             channels: channels as usize,
                             input_channels: handle.input_channels,
-                            rt_diag: Arc::clone(&rt_diag),
                             _stream: stream,
                             _input_stream: input_stream,
                         },
@@ -344,7 +245,6 @@ fn build_stream<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
     mut adapter: BlockAdapter,
-    mut setup: RtSetup,
 ) -> Result<cpal::Stream, cpal::Error>
 where
     T: SizedSample + FromSample<f32>,
@@ -353,7 +253,8 @@ where
         config,
         move |data: &mut [T], _| {
             // One-shot pinning/diagnostic of this thread (cold after boot).
-            setup.on_callback();
+            #[cfg(feature = "rtprio")]
+            adapter.rt_setup.on_callback();
             // Subnormals in decaying DSP state are 10-100x slower: keep the
             // callback thread in flush-to-zero mode (see dsp::denormals).
             crate::dsp::denormals::flush_to_zero();

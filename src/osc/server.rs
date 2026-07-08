@@ -414,6 +414,10 @@ impl OscServer {
                 // A previous send to a now-closed client port can surface as
                 // ECONNREFUSED on the next recv (Linux); not fatal.
                 Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => continue,
+                // A signal delivered to this thread interrupts the recv with
+                // EINTR (SA_RESTART does not restart a recv under a socket
+                // timeout); a signal is not an error, keep serving.
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) => return Err(e),
             };
             if len == 0 {

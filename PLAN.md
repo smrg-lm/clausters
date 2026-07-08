@@ -695,7 +695,31 @@ streaming) are taken as loose items when needed.
   live driving a `--limit 1000` ramp at `PIPEWIRE_QUANTUM=64/48000`), so a
   server that detects N consecutive late blocks could shed load (skip a
   block, pause tail nodes) and survive where it now dies; documented in
-  `GUIA.md` §5 and `architecture.md` meanwhile.
+  `GUIA.md` §5 and `architecture.md` meanwhile. **Follow-up (same day,
+  M24b)**: the RLIMIT_RTTIME kill surfaced immediately in normal use — an
+  overloaded default-build server died silently (SIGXCPU + core) and left
+  clients hanging, which is unacceptable: overload must break the audio,
+  never the process. Redesigned: `rtprio` **demoted from default to
+  opt-in** (a Linux testing/tuning aid; the release build carries no DBus
+  dep and no RT watchdog), all Linux-specific code (`--pin`, scheduling
+  diagnostic, promotion) consolidated in the feature-gated `server::rt`
+  module so `backend.rs`/`main.rs`/`embed.rs` stay portable, and a
+  **SIGXCPU guard** added under the feature that demotes the audio thread
+  to SCHED_OTHER instead of dying — so even the testing build survives
+  overload. The CPU meter and `/status.reply` fields stay unconditional
+  (portable, RT-safe), as does `examples/stress.rs` (a pure OSC client).
+  See LOG.md M24b. **Follow-up 2 (same day, M24c)**: field use immediately
+  hit the SCHED_OTHER ceiling (glitches at ~46% average load with 500
+  one-sine nodes; measured on the dev machine: ~300 stable nodes as
+  SCHED_OTHER vs ~500+ as SCHED_RR on the same ramp), and with the silent
+  death gone the original objection to the default no longer applied —
+  `rtprio` **restored as a default feature**: every release ships the
+  standard Linux-audio operating mode (RT-scheduled callback) and the best
+  performance. The M24b structure is unchanged and is what makes the
+  default safe and clean: the guard (overload degrades, never kills), the
+  isolation of all platform-specific code in `server::rt` with non-Linux
+  stubs, and the feature staying droppable for minimal no-DBus builds.
+  See LOG.md M24c.
 
 ### Reviewed ideas: what was dropped and why
 
