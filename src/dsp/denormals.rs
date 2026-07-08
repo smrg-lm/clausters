@@ -47,3 +47,54 @@ pub fn flush_to_zero() {
         core::arch::asm!("msr fpcr, {0}", in(reg) fpcr | (1 << 24), options(nomem, nostack));
     }
 }
+
+/// Runs `f` with the thread's FPU in **normal** (IEEE, no flush-to-zero)
+/// mode, restoring the previous mode afterwards — even on unwind.
+///
+/// The one legitimate caller is the Faust *compiler* path: libfaust's
+/// front-end does real double math (the interval algebra behind its typing;
+/// LLVM's constant folding), and running it with FTZ/DAZ armed both changes
+/// results and trips its internal assertions (`intervalPow.cpp: x.lo() > 0`
+/// aborts the process when a subnormal-positive bound is flushed to zero).
+/// The live server compiles on the network/compiler thread, where FTZ is
+/// never armed; the NRT renderer compiles scored defs *on the render
+/// thread*, which is. This guard makes the two environments identical,
+/// which is also what keeps an NRT render sample-identical to a live take.
+/// Generated *DSP* code is unaffected: it flushes on its own (`-ftz 2`).
+pub fn normal_precision<R>(f: impl FnOnce() -> R) -> R {
+    struct Restore(#[allow(dead_code)] u64);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            #[cfg(target_arch = "x86_64")]
+            unsafe {
+                let csr = self.0 as u32;
+                core::arch::asm!("ldmxcsr [{0}]", in(reg) &csr, options(nostack));
+            }
+            #[cfg(target_arch = "aarch64")]
+            unsafe {
+                core::arch::asm!("msr fpcr, {0}", in(reg) self.0, options(nomem, nostack));
+            }
+        }
+    }
+    let _restore;
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let mut csr: u32 = 0;
+        core::arch::asm!("stmxcsr [{0}]", in(reg) &mut csr, options(nostack));
+        _restore = Restore(csr as u64);
+        let normal = csr & !0x8040;
+        core::arch::asm!("ldmxcsr [{0}]", in(reg) &normal, options(nostack));
+    }
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let fpcr: u64;
+        core::arch::asm!("mrs {0}, fpcr", out(reg) fpcr, options(nomem, nostack));
+        _restore = Restore(fpcr);
+        core::arch::asm!("msr fpcr, {0}", in(reg) fpcr & !(1 << 24), options(nomem, nostack));
+    }
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        _restore = Restore(0);
+    }
+    f()
+}

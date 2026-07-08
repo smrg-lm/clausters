@@ -147,4 +147,6 @@ Denormals: every processing thread runs in flush-to-zero mode —
 in `render()` (both, so NRT stays sample-identical to RT) — and Faust
 factories are compiled with `-ftz 2`. Keep all three call sites if you touch
 them; `tests/denormals.rs` and the Faust tail test in `tests/golden.rs` guard
-this.
+this. The one exception: the Faust *compiler* path runs inside
+`dsp::denormals::normal_precision` (libfaust's interval typing aborts under
+FTZ/DAZ; the guard restores the armed mode on exit) — keep that bracket too.

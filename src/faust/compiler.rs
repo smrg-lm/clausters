@@ -254,13 +254,21 @@ impl Drop for LibContext {
 /// throwaway instance is probed for the def's parameters and I/O arity
 /// (F3), so `/s_new`/`/n_set` can resolve control names without touching
 /// libfaust again.
+///
+/// Runs with the FPU in normal precision: the NRT renderer calls this from
+/// its flush-to-zero render thread, and libfaust's front-end must not do
+/// its double math (interval typing, constant folding) in FTZ/DAZ mode —
+/// its interval assertions abort the process on a flushed bound (see
+/// [`crate::dsp::denormals::normal_precision`]).
 pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String> {
-    let factory = match payload {
-        CompilePayload::Source(source) => compile_source(name, source),
-        CompilePayload::Json(json) => compile_json(name, json),
-        CompilePayload::Signal(json) => compile_signal(name, json),
-    }?;
-    FaustDef::probe(factory)
+    crate::dsp::denormals::normal_precision(|| {
+        let factory = match payload {
+            CompilePayload::Source(source) => compile_source(name, source),
+            CompilePayload::Json(json) => compile_json(name, json),
+            CompilePayload::Signal(json) => compile_signal(name, json),
+        }?;
+        FaustDef::probe(factory)
+    })
 }
 
 /// Runs one request: on a startup reload, tries the bitcode cache first
@@ -269,10 +277,13 @@ pub fn compile(name: &str, payload: &CompilePayload) -> Result<FaustDef, String>
 /// the cache. The cache is non-authoritative: a miss is silent and always
 /// recoverable.
 fn run_request(req: &CompileRequest) -> Result<FaustDef, String> {
+    // The cache path skips the Faust front-end but still runs LLVM's JIT,
+    // whose own folding gets the same normal-precision bracket as compile().
     if let Some(job) = &req.cache
         && let Some(record) = &job.restore
-        && let Ok(factory) = cache::try_restore(record, &job.dir)
-        && let Ok(def) = FaustDef::probe(factory)
+        && let Ok(def) = crate::dsp::denormals::normal_precision(|| {
+            cache::try_restore(record, &job.dir).and_then(FaustDef::probe)
+        })
     {
         return Ok(def);
     }
