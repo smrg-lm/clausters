@@ -59,6 +59,7 @@
 //! mismatches, dangling inputs) are Faust's own and surface later, verbatim,
 //! when the factory is created.
 
+use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_int};
 
 use serde_json::{Map, Value};
@@ -78,8 +79,20 @@ use crate::faust::json_util::{err, foreign_args, inputs, label_field, num_field}
 /// pointer only valid inside that bracket.
 pub unsafe fn build_process(root: &Value, cstrings: &mut Vec<CString>) -> Result<FaustBox, String> {
     let mut path = String::from("$");
-    unsafe { build(root, &mut path, cstrings) }
+    let mut memo = FragMemo::new();
+    unsafe { build(root, &mut path, cstrings, &mut memo) }
 }
+
+/// Per-compilation memo of `CDSPToBoxes` fragments, keyed by source text.
+///
+/// Sharing is the point, not just speed: every `CDSPToBoxes` evaluation
+/// mints fresh recursion symbols, so two fragments compiled from the same
+/// source are *not* structurally identical and defeat Faust's hash-consing
+/// — a duplicated stateful fragment (the JSON a client emits when one box
+/// value is reused) would duplicate its state and its computation. Reusing
+/// the box pointer makes the duplicates literally the same subterm, which
+/// hash-consing then shares (`tests/faust_box.rs`, the CSE suite).
+type FragMemo = HashMap<String, FaustBox>;
 
 type UnaryFn = unsafe extern "C" fn(FaustBox) -> FaustBox;
 type BinaryFn = unsafe extern "C" fn(FaustBox, FaustBox) -> FaustBox;
@@ -149,6 +162,7 @@ unsafe fn build(
     node: &Value,
     path: &mut String,
     cstrings: &mut Vec<CString>,
+    memo: &mut FragMemo,
 ) -> Result<FaustBox, String> {
     match node {
         Value::Number(n) => Ok(unsafe { number_box(n) }),
@@ -167,7 +181,7 @@ unsafe fn build(
             let Some(op) = op_field.as_str() else {
                 return Err(err(path, "\"op\" must be a string"));
             };
-            unsafe { build_op(op, obj, path, cstrings) }
+            unsafe { build_op(op, obj, path, cstrings, memo) }
         }
         _ => Err(err(
             path,
@@ -190,10 +204,11 @@ unsafe fn build_op(
     obj: &Map<String, Value>,
     path: &mut String,
     cstrings: &mut Vec<CString>,
+    memo: &mut FragMemo,
 ) -> Result<FaustBox, String> {
     if let Some(f) = fold_op(op) {
         let items = inputs(obj, op, path, 2, usize::MAX)?;
-        let boxes = unsafe { build_children(items, path, cstrings) }?;
+        let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
         return Ok(boxes
             .into_iter()
             .reduce(|a, b| unsafe { f(a, b) })
@@ -201,12 +216,12 @@ unsafe fn build_op(
     }
     if let Some(f) = binary_op(op) {
         let items = inputs(obj, op, path, 2, 2)?;
-        let boxes = unsafe { build_children(items, path, cstrings) }?;
+        let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
         return Ok(unsafe { f(boxes[0], boxes[1]) });
     }
     if let Some(f) = unary_op(op) {
         let items = inputs(obj, op, path, 1, 1)?;
-        let boxes = unsafe { build_children(items, path, cstrings) }?;
+        let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
         return Ok(unsafe { f(boxes[0]) });
     }
     match op {
@@ -228,7 +243,7 @@ unsafe fn build_op(
         "cut" => Ok(unsafe { ffi::CboxCut() }),
         "rec" => {
             let items = inputs(obj, op, path, 2, 2)?;
-            let boxes = unsafe { build_children(items, path, cstrings) }?;
+            let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
             Ok(unsafe { ffi::CboxRec(boxes[0], boxes[1]) })
         }
         // libfaust bug (2.81.10, still in 2.85.5): in `box_signal_api.cpp`,
@@ -239,24 +254,24 @@ unsafe fn build_op(
         // API (`sigCos`) is unaffected.
         "fmod" => {
             let items = inputs(obj, op, path, 2, 2)?;
-            let boxes = unsafe { build_children(items, path, cstrings) }?;
-            let prim = unsafe { dsp_to_boxes("process = fmod;", path) }?;
+            let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
+            let prim = unsafe { dsp_to_boxes("process = fmod;", path, memo) }?;
             Ok(unsafe { ffi::CboxSeq(ffi::CboxPar(boxes[0], boxes[1]), prim) })
         }
         "cos" => {
             let items = inputs(obj, op, path, 1, 1)?;
-            let boxes = unsafe { build_children(items, path, cstrings) }?;
-            let prim = unsafe { dsp_to_boxes("process = cos;", path) }?;
+            let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
+            let prim = unsafe { dsp_to_boxes("process = cos;", path, memo) }?;
             Ok(unsafe { ffi::CboxSeq(boxes[0], prim) })
         }
         "select2" => {
             let items = inputs(obj, op, path, 3, 3)?;
-            let b = unsafe { build_children(items, path, cstrings) }?;
+            let b = unsafe { build_children(items, path, cstrings, memo) }?;
             Ok(unsafe { ffi::CboxSelect2Aux(b[0], b[1], b[2]) })
         }
         "select3" => {
             let items = inputs(obj, op, path, 4, 4)?;
-            let b = unsafe { build_children(items, path, cstrings) }?;
+            let b = unsafe { build_children(items, path, cstrings, memo) }?;
             Ok(unsafe { ffi::CboxSelect3Aux(b[0], b[1], b[2], b[3]) })
         }
         "hslider" | "vslider" | "nentry" => {
@@ -293,7 +308,7 @@ unsafe fn build_op(
         "hgroup" | "vgroup" => {
             let label = label_field(obj, path, cstrings)?;
             let items = inputs(obj, op, path, 1, 1)?;
-            let boxes = unsafe { build_children(items, path, cstrings) }?;
+            let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
             let f = if op == "hgroup" {
                 ffi::CboxHGroup
             } else {
@@ -328,9 +343,13 @@ unsafe fn build_op(
         // (size, init, write index, write signal, read index) — rwtable. A
         // `waveform` box outputs the (size, init) pair itself, so each op
         // also accepts the form with one box less up front.
-        "rdtable" => unsafe { table_op(obj, op, path, cstrings, 2, 3, ffi::CboxReadOnlyTable) },
-        "rwtable" => unsafe { table_op(obj, op, path, cstrings, 4, 5, ffi::CboxWriteReadTable) },
-        "faust" => unsafe { faust_fragment(obj, path, cstrings) },
+        "rdtable" => unsafe {
+            table_op(obj, op, path, cstrings, memo, 2, 3, ffi::CboxReadOnlyTable)
+        },
+        "rwtable" => unsafe {
+            table_op(obj, op, path, cstrings, memo, 4, 5, ffi::CboxWriteReadTable)
+        },
+        "faust" => unsafe { faust_fragment(obj, path, memo) },
         other => Err(err(path, format_args!("unknown op {other:?}"))),
     }
 }
@@ -343,12 +362,13 @@ unsafe fn table_op(
     op: &str,
     path: &mut String,
     cstrings: &mut Vec<CString>,
+    memo: &mut FragMemo,
     min: usize,
     max: usize,
     primitive: unsafe extern "C" fn() -> FaustBox,
 ) -> Result<FaustBox, String> {
     let items = inputs(obj, op, path, min, max)?;
-    let boxes = unsafe { build_children(items, path, cstrings) }?;
+    let boxes = unsafe { build_children(items, path, cstrings, memo) }?;
     let pars = boxes
         .into_iter()
         .reduce(|a, b| unsafe { ffi::CboxPar(a, b) })
@@ -362,17 +382,21 @@ unsafe fn table_op(
 unsafe fn faust_fragment(
     obj: &Map<String, Value>,
     path: &str,
-    _cstrings: &mut [CString],
+    memo: &mut FragMemo,
 ) -> Result<FaustBox, String> {
     let Some(src) = obj.get("src").and_then(Value::as_str) else {
         return Err(err(path, "`faust` needs a \"src\" string of Faust source"));
     };
-    unsafe { dsp_to_boxes(src, path) }
+    unsafe { dsp_to_boxes(src, path, memo) }
 }
 
-/// Faust source → box, inside the current lib context. The source is fully
-/// consumed by the call, so its C string can die with this frame.
-unsafe fn dsp_to_boxes(src: &str, path: &str) -> Result<FaustBox, String> {
+/// Faust source → box, inside the current lib context, memoized by source
+/// text (see [`FragMemo`] for why the *pointer* must be reused). The source
+/// is fully consumed by the call, so its C string can die with this frame.
+unsafe fn dsp_to_boxes(src: &str, path: &str, memo: &mut FragMemo) -> Result<FaustBox, String> {
+    if let Some(&fragment) = memo.get(src) {
+        return Ok(fragment);
+    }
     let src_c = CString::new(src).map_err(|_| err(path, "NUL byte in Faust source"))?;
     let name_c = CString::new("fragment").unwrap();
     let args = FaustArgs::defaults();
@@ -393,6 +417,7 @@ unsafe fn dsp_to_boxes(src: &str, path: &str) -> Result<FaustBox, String> {
         let msg = unsafe { CStr::from_ptr(error_msg.as_ptr()) };
         Err(err(path, msg.to_string_lossy().trim()))
     } else {
+        memo.insert(src.to_string(), fragment);
         Ok(fragment)
     }
 }
@@ -401,12 +426,13 @@ unsafe fn build_children(
     items: &[Value],
     path: &mut String,
     cstrings: &mut Vec<CString>,
+    memo: &mut FragMemo,
 ) -> Result<Vec<FaustBox>, String> {
     let mut boxes = Vec::with_capacity(items.len());
     for (i, item) in items.iter().enumerate() {
         let parent_len = path.len();
         path.push_str(&format!(".in[{i}]"));
-        let result = unsafe { build(item, path, cstrings) };
+        let result = unsafe { build(item, path, cstrings, memo) };
         path.truncate(parent_len);
         boxes.push(result?);
     }

@@ -5,8 +5,10 @@
 //! The split across the box suites: `faust_smoke.rs` is the F0 latency probe
 //! (one sine through the Box API), `faust_json.rs` covers the JSON → Box
 //! interpreter, and this file covers Box API *semantics* built directly with
-//! FFI calls — `rec` feedback, `CDSPToBoxes` fragment arity — plus the
-//! upstream copy-paste bugs and their workaround:
+//! FFI calls — `rec` feedback, `CDSPToBoxes` fragment arity, the CSE
+//! guarantee that duplicated subtrees share their computation (the design
+//! bet behind the Python client's box sugar) — plus the upstream copy-paste
+//! bugs and their workaround:
 //!
 //! - **Canary**: libfaust's `boxCos()`/`boxFmod()` both return the `abs`
 //!   primitive (copy-paste bug in `box_signal_api.cpp`, present from 2.81.10
@@ -236,4 +238,96 @@ fn cdsp_to_boxes_reports_arity_and_composes() {
     let out = render(factory, &[], 16);
     unsafe { deleteCDSPFactory(factory) };
     assert!(out.iter().all(|&v| v == 7.0), "3 + 4 = {}", out[0]);
+}
+
+// ---- CSE: duplicated subtrees share their computation ----
+//
+// A box client that exposes fragments as reusable values (`x = fragment;
+// use x twice`) emits the *same JSON subtree in two positions* — there is no
+// reference node in the schema. That is only acceptable because Faust is
+// referentially transparent and hash-conses the signal stage: identical
+// subtrees become one computation (and identical widgets become one zone).
+// These tests pin that guarantee; if they ever fail, value-style reuse on
+// the client must be redesigned (explicit `split` routing instead).
+
+/// A stateful library fragment with a named control — exactly the shape the
+/// client's `faust` escape hatch emits.
+fn osc_fragment() -> serde_json::Value {
+    json!({
+        "op": "faust",
+        "src": "import(\"stdfaust.lib\"); \
+                process = os.osc(hslider(\"freq\", 330.0, 20.0, 2000.0, 0.1));"
+    })
+}
+
+/// Writes the factory's LLVM bitcode to a throwaway file and returns its
+/// size — a structural proxy for "how much code was generated" that cannot
+/// be fooled by determinism (duplicated oscillators *sound* identical to a
+/// shared one; they do not *measure* identical).
+fn bitcode_size(factory: *mut llvm_dsp_factory, tag: &str) -> u64 {
+    let path = std::env::temp_dir().join(format!("clausters-cse-{}-{tag}.bc", std::process::id()));
+    let path_c = CString::new(path.to_str().unwrap()).unwrap();
+    let ok = unsafe { writeCDSPFactoryToBitcodeFile(factory, path_c.as_ptr()) };
+    assert!(ok, "writeCDSPFactoryToBitcodeFile failed for {tag}");
+    let size = std::fs::metadata(&path).unwrap().len();
+    let _ = std::fs::remove_file(&path);
+    size
+}
+
+/// Reusing a fragment by value (duplicated subtree, what `x + x` emits) and
+/// routing it explicitly (`x <: +`) must be the same program: identical
+/// samples, and the duplicated `hslider` collapses into a single control.
+#[test]
+fn duplicated_subtree_equals_explicit_split() {
+    let frag = osc_fragment();
+    let dup = json!({"op": "add", "in": [frag.clone(), frag.clone()]});
+    let split = json!({"op": "split", "in": [frag, {"op": "add", "in": ["_", "_"]}]});
+
+    let dup_def = compiler::compile("cse_dup", &CompilePayload::Json(dup.to_string()))
+        .expect("duplicated subtree must compile");
+    let split_def = compiler::compile("cse_split", &CompilePayload::Json(split.to_string()))
+        .expect("split routing must compile");
+
+    // Same label + same parameters -> same signal node -> one widget/zone.
+    let names: Vec<&str> = dup_def.params.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(dup_def.params.len(), 1, "params: {names:?}");
+    assert_eq!(split_def.params.len(), 1);
+
+    let a = render(dup_def.factory().as_ptr(), &[], 512);
+    let b = render(split_def.factory().as_ptr(), &[], 512);
+    let rms = (a.iter().map(|x| x * x).sum::<f32>() / a.len() as f32).sqrt();
+    assert!(rms > 0.1, "the oscillator must actually sound, rms = {rms}");
+    assert_eq!(a, b, "duplicated and split forms must be sample-identical");
+}
+
+/// Nested value-style reuse must not blow up the generated code: 10 levels
+/// of `x + x` with duplicated subtrees is 2^10 oscillator copies *textually*
+/// but must compile to one oscillator plus a few adds. The bitcode size is
+/// the observable: without CSE it would be orders of magnitude larger.
+#[test]
+fn nested_duplication_does_not_explode_generated_code() {
+    let single_def = compiler::compile(
+        "cse_single",
+        &CompilePayload::Json(osc_fragment().to_string()),
+    )
+    .expect("single fragment must compile");
+
+    let mut node = osc_fragment();
+    for _ in 0..10 {
+        node = json!({"op": "add", "in": [node.clone(), node]});
+    }
+    let deep_def = compiler::compile("cse_deep", &CompilePayload::Json(node.to_string()))
+        .expect("deep duplication must compile");
+    assert_eq!(deep_def.params.len(), 1);
+
+    let out = render(deep_def.factory().as_ptr(), &[], 128);
+    assert!(out.iter().all(|v| v.is_finite()));
+
+    let single = bitcode_size(single_def.factory().as_ptr(), "single");
+    let deep = bitcode_size(deep_def.factory().as_ptr(), "deep");
+    assert!(
+        deep < single * 4,
+        "generated code grew from {single} to {deep} bytes: \
+         duplicated subtrees are not being shared"
+    );
 }
