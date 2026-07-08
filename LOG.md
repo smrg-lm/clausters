@@ -4875,3 +4875,70 @@ alike) — so the default came back.
   follow-up note. Verified: default release boots `SCHED_RR priority 10`,
   survives SIGXCPU (demotion visible in `ps -Lo cls`), full suite + feature
   matrix green.
+
+## C22 — Python box API: Faust's box algebra, libraries included (completed 2026-07-08)
+
+`clausters.defs.boxes` is the box counterpart of `signals` and a complete
+def-building API in its own right: Faust's point-free algebra — `seq`/`par`/
+`split`/`merge`/`rec`, `wire`/`cut`, the controls, groups, foreign values and
+tables, plus the operators on `Box` — as lowercase callables that emit the
+server's box-tree JSON (`src/faust/boxes.rs` schema, mirrored one to one).
+Where `signals` describes one output at a time referentially (`input(n)`),
+boxes describe multi-channel processors that plug into each other. Arities
+propagate on the client (`num_inputs`/`num_outputs`, `None` = unknown), which
+powers channel selection (`st[k]`/`.outs()`); a real mismatch is Faust's to
+report, verbatim, through `/fail`.
+
+On top of the algebra, `faust(src, *eval_args, defs="", ins=None, outs=None)`
+compiles any Faust expression into a `Box` indistinguishable from a
+primitive, so the libraries (`fi.lowpass`, `os.osc`, `re.`, `pm.`, ...) join
+the algebra without transcription. The design keeps Faust's **two application
+stages separate in the syntax** — arguments to `faust()` are
+evaluation-stage, spliced into the generated source (`faust("fi.lowpass",
+3)` compiles `fi.lowpass(3)`; ints/floats as literals, lists as Faust lists,
+strings verbatim, `defs=` for helper definitions); arguments to *calling* a
+`Box` are composition-stage (`seq(par(args), box)`). No heuristic ever splits
+one argument list: only the Faust evaluator knows a function's signature, and
+an unapplied pattern-matched function is not a box at all.
+
+The wire rule is enforced, not just documented: each `wire()`/`cut()` builds
+a fresh dict, and `FaustDef.from_box` (which now accepts a `Box`; raw dicts
+unchanged) rejects by object identity a wire reused in two positions — each
+wire is a distinct input, the one silent mistake the algebra allows (the def
+would read more bus channels than intended). Every wireless value reuses
+freely: duplicated JSON subtrees are shared server-side.
+
+Two server fixes fell out of the milestone's exit tests:
+
+- **Fragment memoization (CSE)** — the blocking exit condition caught it:
+  Faust hash-conses everything built from schema primitives (a duplicated
+  primitive `rec` loop at depth 2^10 adds 12 bytes of bitcode), but every
+  `CDSPToBoxes` evaluation mints fresh recursion symbols, so duplicated
+  stateful fragments did **not** share (2^10 copies grew the generated code
+  27x). Fix: memoize `dsp_to_boxes` by source text within one compilation
+  (`FragMemo`) — same `src`, same box pointer, same subterm, full sharing;
+  dup and split now compile to identical code and the redundant front-end
+  runs are gone (the CSE suite went from 18 s to 0.24 s). It also covers the
+  `cos`/`fmod` workaround fragments.
+- **`normal_precision` around the Faust compiler** — the NRT renderer
+  compiles scored defs on its flush-to-zero render thread, and libfaust's
+  front-end (interval typing, LLVM folding) aborted the whole process
+  (`intervalPow.cpp: x.lo() > 0`) on defs the live server compiled fine
+  (`fi.lowpass` through box composition was a minimal trigger). The RAII
+  bracket in `dsp::denormals` clears FTZ/DAZ around `compile()` and the
+  bitcode-restore path and re-arms on exit — documented as the one exception
+  to the FTZ invariant in `architecture.md`/`CLAUDE.md`.
+
+Verified: the Rust CSE suite and the mixed-graph parity test (fragments +
+ops render bit-identical to the same DSP as pure source) in
+`tests/faust_box.rs`; the FTZ regression in `tests/denormals.rs`; 14 Python
+unit tests (`tests/test_boxes.py`: schema JSON, splicing, arity, lint,
+`__call__`/`outs`); the offline example `examples/boxes_library.py` (osc →
+lowpass → stereo freeverb from library fragments, channel selection with
+`.outs()`); and a live E2E in one Bash invocation (`from_box` → `/d_faust` →
+`/s_new` → `/n_set` on fragment sliders). Docs: the box-API section in the
+client book's defs chapter — positioned as the counterpart of `signals`,
+with the libraries as the addition, not the module's purpose — plus the
+choosing-a-form guidance (fixed chains read better as source; regular banks
+as Faust iterations parametrized by splicing; boxes for composed processors,
+data-driven structure and mixing library DSP with Python-built pieces).

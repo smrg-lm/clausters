@@ -33,6 +33,7 @@ loaders:
       - clausters.seq.timeline
       - clausters.defs
       - clausters.defs.signals
+      - clausters.defs.boxes
       - clausters.defs.ugens
       - clausters.defs.faustdef
       - clausters.defs.synthdef

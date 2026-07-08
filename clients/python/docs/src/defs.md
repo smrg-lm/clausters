@@ -32,7 +32,7 @@ Three constructors, one per payload the server's `/d_faust` accepts:
 | --- | --- | --- |
 | `FaustDef.from_signals(name, *outputs)` | a **signal tree** built with `clausters.defs.signals` | graphs assembled in Python from the primitives below |
 | `FaustDef.from_source(name, src)` | a Faust **source** string | hand-written Faust (`process = ...;`) |
-| `FaustDef.from_box(name, box)` | a raw **box tree** dict | a pre-built Box-API tree |
+| `FaustDef.from_box(name, box)` | a **box tree** — a `Box` built with `clausters.defs.boxes`, or a raw dict | point-free graphs of composed processors, with the Faust **libraries** available as boxes (see [the box API](#the-box-api-reusing-the-faust-libraries)); the dict form for machine-generated trees |
 
 Each argument to `from_signals` is one **output** (a `Signal` or a number): one argument is mono, two is stereo, and so on.
 
@@ -118,6 +118,63 @@ Use `sr()` — never a baked-in `SR` constant — wherever the maths depends on 
 | `waveform(values)` | a constant table from a list of floats |
 | `rdtable(size, init, ridx)` | a read-only table |
 | `rwtable(size, init, widx, wsig, ridx)` | a read/write table |
+
+### The box API: reusing the Faust libraries
+
+`clausters.defs.boxes` (imported as `box` by convention) is the same lowercase-callable pattern over Faust's **Box API**: the point-free algebra where whole **processors** compose by their input/output arities (`seq` / `par` / `split` / `merge` / `rec`). It is the counterpart of `signals` and a complete def-building API in its own right — where `signals` describes one output at a time referentially (`input(n)`), boxes describe multi-channel blocks that plug into each other, the natural shape for routing, chains, and anything conceived as units with inputs and outputs.
+
+On top of the algebra, one addition opens the Faust libraries to it:
+
+```python
+from clausters.defs import boxes as box, FaustDef
+
+lp = box.faust("fi.lowpass", 3)          # any Faust expression, stdlib included
+```
+
+`box.faust` compiles a Faust expression into a `Box` that is indistinguishable from a primitive — so the Faust libraries (`os.`, `fi.`, `re.`, `pm.`, ...) join the same algebra **without transcribing them**, composed with sliders and arithmetic built in Python.
+
+**Choosing a form.** A fixed chain of `box.faust(...)` calls top to bottom often reads better as plain Faust (`from_source`, which an f-string already parametrizes). Regular banks — "N copies with index-dependent parameters" — are also best written in Faust itself, which iterates at compile time (`par(i, N, ...)`, widget labels with `%i`, `ba.take(i+1, list)`), parametrized from Python by splicing `N` and the lists (below). Boxes shine when:
+
+- the graph is **conceived as composed processors** — point-free routing built in Python;
+- its **structure is decided by Python data** (a different shape per element, conditionals over analysis results or configuration);
+- **library DSP mixes with Python-built pieces** (the `box.faust` fragments);
+- the tree is **machine-generated** (the raw-dict form of `from_box`).
+
+Two chains, side by side — a fixed chain (left) belongs in source; a data-driven bank (right) belongs in boxes:
+
+```python
+# fixed chain: write Faust            # irregular bank: build with boxes
+FaustDef.from_source("soft", """      def voice(f, kind):
+import("stdfaust.lib");                   src = ("os.osc" if kind == "sine"
+freq = hslider("freq",220,20,2000,.1);           else "os.sawtooth")
+process = os.osc(freq) * 0.2              return box.faust(src)(f) * 0.2
+  : fi.lowpass(3, 800)                mix = sum(voice(f, k) for f, k in spec)
+  <: re.stereo_freeverb(.8,.7,.5,23); fdef = FaustDef.from_box("bank", mix)
+""")
+```
+
+**Two stages of application, kept apart in the syntax.** Faust applies in two different stages, and the module never mixes them in one argument list:
+
+- Arguments to `box.faust(src, *eval_args)` are **evaluation-stage**: spliced into the source text as Faust application. `box.faust("fi.lowpass", 3)` compiles `fi.lowpass(3)`. Structural parameters — a filter order, a table size, a list of coefficients — must live here; they cannot travel as signals. Formatting: `int`/`float` as literals, a list/tuple as a Faust list `(a, b, c)`, a string verbatim (to pass an expression or a library function as an argument). `defs=` prepends helper definitions to the generated program.
+- Arguments to **calling a `Box`** are **composition-stage**: boxes wired to the box's signal inputs, sugar for `seq(par(args), box)`. The call must cover *all* the inputs — use `box.wire()` for the ones left open:
+
+```python
+cutoff = box.hslider("cutoff", 800.0, 20.0, 8000.0, 0.1)
+y = box.faust("fi.lowpass", 3)(cutoff, box.wire())    # fi.lowpass(3, cutoff, _)
+```
+
+Which inputs survive the partial application (here: `fi.lowpass(3)` expects `(fc, x)`) is the library function's business — read its documentation; a mismatch is reported by the Faust compiler itself, verbatim, in the `/fail` reply.
+
+**The wire rule** — the big difference from `signals`: there is no `input(n)` here; **each `box.wire()` is a distinct input**. Two wires in two positions are two bus channels. Reusing the *same* wire object twice is almost always a mistake, and `from_box` rejects it with an error; route explicitly with `box.split`, or write that stretch inside the fragment (`"_ <: ..."`). Every *other* box value reuses freely — a repeated subexpression (an oscillator used by two branches) is **computed once**; the server shares identical subtrees.
+
+**Channel selection.** The JSON carries no arities; the client computes them from the composition rules, except for fragments — only the Faust compiler knows those, so declare `outs=` (and `ins=` if useful) when you need to split channels:
+
+```python
+st = box.faust("re.stereo_freeverb", 0.8, 0.7, 0.5, 23, outs=2)(dry, dry)
+left, right = st.outs()                               # or st[0], st[1]
+```
+
+The composition surface mirrors the server's box schema one to one: `seq` / `par` / `split` / `merge` (n-ary, folded left), `rec(a, b)` (point-free `~`; for the `rec(lambda s: ...)` style use `signals` or a fragment), `wire` / `cut`, `delay` / `delay1`, `select2` / `select3`, the same controls, groups (`hgroup` / `vgroup`), foreign values (`fconst` / `fvar` / `sr()`) and tables (`waveform` / `rdtable` / `rwtable`) as the signal API, and the same operators on `Box` (with `%` mapping to Faust's `fmod`; the box schema has no shifts). See the [API reference](api.md) for signatures.
 
 ### Controls and reserved ports
 
@@ -272,7 +329,7 @@ print(json.dumps(json.loads(fdef.dump_def()), indent=2)) # FaustDef signal/box t
 | | FaustDef | SynthDef |
 | --- | --- | --- |
 | Sent with | `/d_faust` | `/d_recv` |
-| Built from | `clausters.defs.signals` | `clausters.defs.ugens` |
+| Built from | `clausters.defs.signals` / `clausters.defs.boxes` / Faust source | `clausters.defs.ugens` |
 | Maths | full (trig, `exp`/`log`, comparisons, tables) | `+ - * /` for now (the rest not yet implemented) |
 | Feedback | `rec` / `self_` (one sample) | `local_in` / `local_out` |
 | Best for | oscillators, filters, any DSP | routing, mixing, buffer playback, bus I/O |

@@ -370,6 +370,8 @@ The JSON mirrors Faust's Box API one-to-one: every node denotes a box expression
 | `rwtable` | `in`: size, init, widx, wsig, ridx — or 4 boxes starting with a `waveform` | `rwtable` |
 | `faust` | `src` | escape hatch: a complete Faust program compiled to a composable box, with stdlib access |
 
+Two consumers build this format today: the Python client's `clausters.defs.boxes` module (the box algebra as composable Python values; see the [client book's defs chapter](https://clausters-python.readthedocs.io/en/latest/defs.html)) and machine-generated graphs (the GUI host). `faust` fragments are **memoized by `src` within one compilation**: the same source text yields the same box, so a client that reuses one fragment value many times (duplicating the subtree in the JSON) gets one computation and one compile — every `CDSPToBoxes` evaluation would otherwise mint fresh recursion symbols and defeat the sharing (the CSE suite in `tests/faust_box.rs` pins this).
+
 Example — `sin(2π·phasor(freq)) * 0.2` with `freq` as a named control (`wrap(x) = x - floor(x)`, `phasor = (+(freq/SR) : wrap) ~ _`):
 
 ```json

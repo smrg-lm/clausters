@@ -1605,3 +1605,67 @@ Notas:
   ejemplos y docs migrados a `main.seed(n)` antes de tocar.
 - Para aislar material, tocarlo en su propia rutina: obtiene su stream
   derivado por construccion (ese es el override local correcto).
+
+## 29. API Python de boxes: las librerías de Faust como boxes (C22)
+
+`clausters.defs.boxes` — la contrapartida box de `signals`, una API completa
+por derecho propio: el álgebra point-free de Faust (`seq`/`par`/`split`/
+`merge`/`rec`, `wire`/`cut`) como callables en minúscula que emiten el JSON
+del esquema del server, con operadores sobre `Box` y aridades calculadas en
+el cliente (`num_inputs`/`num_outputs`). La adición que abre las librerías:
+`box.faust(src, *eval_args, defs=, ins=, outs=)` compila cualquier expresión
+Faust en un `Box` componible — `fi.lowpass`, `os.osc`, `re.`, `pm.` se usan
+sin transcribirlas. Las dos etapas de aplicación quedan separadas en la
+sintaxis: los argumentos de `faust()` se splicean en el texto (etapa de
+evaluación: orden del filtro, listas de coeficientes); los del `__call__`
+se cablean como boxes (etapa de composición, `seq(par(args), box)`).
+Selección de canal con `st[k]` / `.outs()` (fragmentos declaran `outs=`).
+Regla del wire: cada `wire()` es una entrada distinta; reusar el mismo
+objeto en dos posiciones lo rechaza `from_box` con error claro (lint por
+identidad). El reuso por valor de cualquier otra expresión comparte el
+cómputo — garantizado server-side por la memoización de fragmentos
+`CDSPToBoxes` por `src` (suite CSE en `tests/faust_box.rs`).
+
+De yapa, dos fixes del server que salieron de los tests de este hito: la
+memoización de fragmentos (sin ella, cada llamada a `CDSPToBoxes` genera
+símbolos de recursión frescos y los duplicados no comparten — 2^10 copias
+inflaban el bitcode 27x) y `normal_precision` (el renderer NRT compilaba
+libfaust con FTZ/DAZ armado y el álgebra de intervalos abortaba el proceso
+con `fi.lowpass` vía composición; el server vivo no lo veía porque compila
+en otro thread).
+
+Verificación manual:
+
+```sh
+# Rust: suite CSE + paridad mixta + regresión FTZ (single-threaded, regla libfaust)
+cargo test --features faust --test faust_box --test denormals -- --test-threads=1   # 7 + 4 verdes
+# Python: unit del módulo (JSON del esquema, splicing, aridad, lint, __call__/outs)
+cd clients/python && ../../.venv/bin/python -m pytest tests/test_boxes.py -q        # 14 verdes
+../../.venv/bin/python -m pytest tests/ -q                                          # 147 passed, 3 skipped
+# Ejemplo offline (cdylib con embed,realtime,faust): osc -> lowpass -> freeverb estéreo
+../../.venv/bin/python examples/boxes_library.py /tmp/boxes.wav   # 3.00 s, peak ~0.69
+# E2E vivo (misma invocación): def de boxes -> /d_faust -> /s_new -> /n_set
+(cd ../.. && ./target/debug/clausters & PID=$!; sleep 1.5; \
+ cd ../.. && PYTHONPATH=clients/python .venv/bin/python -c "
+from clausters.defs import FaustDef, Server; from clausters.defs import boxes as box
+f = box.hslider('freq', 110.0, 20.0, 2000.0, 0.1)
+saw = box.faust('os.sawtooth', ins=1, outs=1)(f) * 0.2
+fx = box.faust('fi.lowpass', 3, ins=2, outs=1)(box.hslider('cutoff', 500.0, 50.0, 8000.0, 1.0), saw)
+srv = Server(); srv.add_faustdef(FaustDef.from_box('box_e2e', fx))
+n = srv.synth('box_e2e', {'cutoff': 300.0}); srv.set(n, {'cutoff': 2000.0}); srv.sync(); srv.free(n)
+print('E2E OK')"; kill $PID)
+```
+
+Notas:
+
+- El ejemplo NRT necesita la cdylib con features (`cargo build --release
+  --features embed,realtime,faust`) y, en checkout fuente, refrescar
+  `clausters/_libs/` (ver nota del §27) — **también `libclausters.so`**, no
+  solo la ffi: una copia staged sin `faust` da "server built without faust
+  support" en el render.
+- Si un render NRT aborta el proceso Python con un assert de
+  `intervalPow.cpp`, es la regresión de FTZ (fixeada): compilar libfaust en
+  un thread con flush-to-zero armado. `tests/denormals.rs` la cubre.
+- El pitch del módulo, acordado: boxes no es "la forma de usar librerías"
+  ni una capa sobre signals — es la otra mitad del par (procesadores
+  componibles vs. una salida por vez); las librerías son la adición.

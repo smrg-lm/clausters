@@ -269,7 +269,10 @@ fn mixed_fragments_and_ops_match_pure_source() {
     let b = render(box_def.factory().as_ptr(), &[], 1024);
     let rms = (a.iter().map(|x| x * x).sum::<f32>() / a.len() as f32).sqrt();
     assert!(rms > 0.05, "the chain must actually sound, rms = {rms}");
-    assert_eq!(a, b, "mixed box graph and pure source must be sample-identical");
+    assert_eq!(
+        a, b,
+        "mixed box graph and pure source must be sample-identical"
+    );
 }
 
 // ---- CSE: duplicated subtrees share their computation ----

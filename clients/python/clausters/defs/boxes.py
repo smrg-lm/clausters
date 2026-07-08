@@ -1,22 +1,30 @@
 """Faust Box API as composable, lowercase callables.
 
-The box counterpart of `clausters.defs.signals`: each function returns a
-`Box` and composing boxes builds the JSON **box tree** the server's
-``/d_faust`` consumes (see the server's ``faust::boxes`` for the schema).
-Boxes are Faust's point-free algebra — ``seq``/``par``/``split``/``merge``/
-``rec`` compose whole processors by their input/output arities, there is no
-``input(n)``.
+The box counterpart of `clausters.defs.signals`, and a complete def-building
+API in its own right: each function returns a `Box` and composing boxes
+builds the JSON **box tree** the server's ``/d_faust`` consumes (see the
+server's ``faust::boxes`` for the schema). Boxes are Faust's point-free
+algebra — ``seq``/``par``/``split``/``merge``/``rec`` compose whole
+**processors** by their input/output arities. Where ``signals`` describes
+one output at a time referentially (``input(n)``), boxes describe
+multi-channel blocks that plug into each other — the natural shape for
+routing, chains, and anything conceived as units with inputs and outputs.
 
-What this module is for: **gluing Faust library functions into a graph that
-Python is building** — `faust` compiles any Faust expression (``os.osc``,
-``fi.lowpass``, ...) into a box that composes like a primitive, so library
-DSP is reused without transcribing it. For a fixed processing chain written
-top to bottom, prefer ``FaustDef.from_source`` (plain Faust reads better);
-for graphs assembled programmatically *without* library calls, prefer
-`clausters.defs.signals`. Regular banks ("N copies with index-dependent
-parameters") are best written in Faust itself — ``par(i, N, ...)``, widget
-labels with ``%i``, ``ba.take`` — and parametrized from Python by splicing
-``N`` and lists through `faust`'s eval arguments.
+On top of the algebra, `faust` compiles any Faust **expression** into a
+`Box` that composes like a primitive. That addition puts the whole Faust
+library ecosystem (``os.osc``, ``fi.lowpass``, ``re.``, ``pm.``, ...) inside
+the same algebra without transcribing anything: library functions become
+boxes among boxes.
+
+Choosing a form: a fixed processing chain written top to bottom often reads
+best as plain Faust (``FaustDef.from_source``); graphs assembled one output
+at a time from arithmetic and feedback suit `clausters.defs.signals`.
+Regular banks ("N copies with index-dependent parameters") are best written
+in Faust itself — ``par(i, N, ...)``, widget labels with ``%i``, ``ba.take``
+— and parametrized from Python by splicing ``N`` and lists through `faust`'s
+eval arguments. Boxes shine when the graph is conceived as composed
+processors, when its structure is decided by Python data, and whenever
+library DSP has to mix with Python-built pieces.
 
 Two stages of application, kept separate on purpose:
 
