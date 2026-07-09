@@ -88,6 +88,22 @@ impl MappedFile {
             })
             .collect()
     }
+
+    /// The mapped bytes as little-endian `f32`s, de-interleaved into **all**
+    /// `channels` channels (a trailing partial frame is ignored) — the
+    /// multichannel read the editor-grade views build their lanes from.
+    pub fn channels_f32(&self, channels: usize) -> Vec<Vec<f32>> {
+        let channels = channels.max(1);
+        let frames = (self.len / 4) / channels;
+        let b = self.bytes();
+        let at = |f: usize, ch: usize| {
+            let i = (f * channels + ch) * 4;
+            f32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]])
+        };
+        (0..channels)
+            .map(|ch| (0..frames).map(|f| at(f, ch)).collect())
+            .collect()
+    }
 }
 
 #[cfg(test)]

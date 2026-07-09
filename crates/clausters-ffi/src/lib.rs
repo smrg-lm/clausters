@@ -16,7 +16,7 @@
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::clocksync::SampleClockModel;
 use clausters_core::measure;
-use clausters_core::peaks::{self, Pyramid};
+use clausters_core::peaks::{self, MultiPyramid, Pyramid};
 use clausters_core::rng::{Rng, WhiteNoise};
 use clausters_core::tempoclock::{self, Scheduler};
 use clausters_core::window::Window;
@@ -33,8 +33,10 @@ mod ws;
 /// per-language; v6 `clausters_rng_next_u64` (child-stream seed derivation for
 /// the per-routine random context); v7 the `clausters_core_correlation` /
 /// `clausters_core_lissajous` stereo-field measurements (shared with the GUI
-/// phasescope so a headless client reads the identical numbers).
-pub const CORE_ABI_VERSION: u32 = 7;
+/// phasescope so a headless client reads the identical numbers); v8 the
+/// `clausters_core_peaks_multi_*` multichannel peak-pyramid cache (one cache
+/// resource per buffer, all channels — the editor-grade waveform's format).
+pub const CORE_ABI_VERSION: u32 = 8;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -176,6 +178,55 @@ pub unsafe extern "C" fn clausters_core_peaks_build(
     cache.len()
 }
 
+/// The exact byte length of the **multichannel** peak-pyramid cache for
+/// `frames` samples per channel across `channels` channels at `base_bucket` —
+/// sizes the buffer for [`clausters_core_peaks_multi_build`] without building.
+/// Returns 0 if `base_bucket == 0`.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_peaks_multi_cache_size(
+    frames: usize,
+    channels: usize,
+    base_bucket: usize,
+) -> usize {
+    if base_bucket == 0 {
+        return 0;
+    }
+    peaks::multi_cache_size(frames, channels, base_bucket)
+}
+
+/// Builds the multichannel peak-pyramid cache from `samples` (`n` `f32`s
+/// holding `channels` interleaved channels; a trailing partial frame is
+/// ignored) at `base_bucket`, writing the version-2 cache bytes — the single
+/// mappable resource an editor-grade waveform names as its `cache` — into
+/// `out` (capacity `out_cap`). Returns the bytes written, or 0 on a null
+/// pointer, `base_bucket == 0` / `channels == 0`, or a too-small `out_cap`.
+///
+/// # Safety
+/// `samples` must be readable for `n` `f32`s and `out` writable for `out_cap`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_peaks_multi_build(
+    samples: *const f32,
+    n: usize,
+    channels: usize,
+    base_bucket: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    if samples.is_null() || out.is_null() || base_bucket == 0 || channels == 0 {
+        return 0;
+    }
+    // SAFETY: caller guarantees `samples` is readable for `n` `f32`s.
+    let s = unsafe { std::slice::from_raw_parts(samples, n) };
+    let cache = MultiPyramid::build_interleaved(s, channels, base_bucket).to_bytes();
+    if cache.len() > out_cap {
+        return 0;
+    }
+    // SAFETY: out is writable for out_cap >= cache.len().
+    let o = unsafe { std::slice::from_raw_parts_mut(out, cache.len()) };
+    o.copy_from_slice(&cache);
+    cache.len()
+}
+
 /// The stereo **correlation** (Pearson's r) of channels `left` and `right`
 /// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase —
 /// the same measurement the GUI phasescope shows. Writes the coefficient into
@@ -230,7 +281,11 @@ pub unsafe extern "C" fn clausters_core_lissajous(
     let l = unsafe { std::slice::from_raw_parts(left, n) };
     let r = unsafe { std::slice::from_raw_parts(right, n) };
     let o = unsafe { std::slice::from_raw_parts_mut(out as *mut [f32; 2], n) };
-    if measure::lissajous_into(l, r, o) { 0 } else { -1 }
+    if measure::lissajous_into(l, r, o) {
+        0
+    } else {
+        -1
+    }
 }
 
 /// Seconds at `beats` for the affine clock `(tempo, base_beats, base_seconds)`.
@@ -790,6 +845,54 @@ mod tests {
     }
 
     #[test]
+    fn peaks_multi_build_writes_a_parseable_multichannel_cache() {
+        // Interleaved stereo; the FFI cache must be byte-identical to the
+        // in-process multichannel build (one algorithm, in the core).
+        let inter: Vec<f32> = (0..2000).map(|i| (i as f32 * 0.01).sin()).collect();
+        let (frames, channels, base) = (1000, 2, 64);
+        let size = clausters_core_peaks_multi_cache_size(frames, channels, base);
+        assert!(size > 0);
+        let mut out = vec![0u8; size];
+        let written = unsafe {
+            clausters_core_peaks_multi_build(
+                inter.as_ptr(),
+                inter.len(),
+                channels,
+                base,
+                out.as_mut_ptr(),
+                out.len(),
+            )
+        };
+        assert_eq!(written, size, "writes exactly the predicted size");
+        let parsed = MultiPyramid::from_bytes(&out).expect("parse");
+        assert_eq!(parsed.num_channels(), channels);
+        assert_eq!(parsed.frames(), frames);
+        assert_eq!(
+            MultiPyramid::build_interleaved(&inter, channels, base).to_bytes(),
+            out
+        );
+        // Refusals: zero channels/bucket and a too-small buffer.
+        assert_eq!(
+            clausters_core_peaks_multi_cache_size(frames, channels, 0),
+            0
+        );
+        let mut tiny = vec![0u8; size - 1];
+        assert_eq!(
+            unsafe {
+                clausters_core_peaks_multi_build(
+                    inter.as_ptr(),
+                    inter.len(),
+                    channels,
+                    base,
+                    tiny.as_mut_ptr(),
+                    tiny.len(),
+                )
+            },
+            0
+        );
+    }
+
+    #[test]
     fn correlation_matches_the_core_and_flags_the_undefined_case() {
         let l: Vec<f32> = (0..128).map(|i| (i as f32 * 0.2).sin()).collect();
         let neg: Vec<f32> = l.iter().map(|s| -s).collect();
@@ -825,8 +928,6 @@ mod tests {
         );
         // Mono pair (1,1): side 0, mid √2. Anti pair (0.7,-0.7): side √2·0.7, mid 0.
         assert!(out[0].abs() < 1e-6 && (out[1] - std::f32::consts::SQRT_2).abs() < 1e-6);
-        assert!(
-            (out[2] - std::f32::consts::SQRT_2 * 0.7).abs() < 1e-6 && out[3].abs() < 1e-6
-        );
+        assert!((out[2] - std::f32::consts::SQRT_2 * 0.7).abs() < 1e-6 && out[3].abs() < 1e-6);
     }
 }

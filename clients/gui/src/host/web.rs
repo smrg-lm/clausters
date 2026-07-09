@@ -36,11 +36,12 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
 use crate::gpu::Gpu;
-use crate::peaks::Pyramid;
+use crate::peaks::MultiPyramid;
+use crate::spectrogram::Stft;
 use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
-use super::frame::{self, WaveformSlot};
+use super::frame::{self, SpectrogramSlot, WaveformSlot};
 use super::interact;
 use super::layout::Rect;
 use super::live::{self, StreamedBuses, StreamedTaps};
@@ -164,23 +165,37 @@ enum WebEvent {
 }
 
 /// A fetched-and-decoded bulk resource, ready to place. The decode (pyramid
-/// mapping, raw-`f32` de-interleave, in-wasm pyramid build) happens in the
-/// async fetch task; placing a waveform needs the GPU, a plot only the tree.
+/// mapping, raw-`f32` de-interleave, in-wasm pyramid/STFT build) happens in
+/// the async fetch task; placing a waveform/spectrogram needs the GPU, a plot
+/// only the tree.
 enum BulkData {
     Waveform(WaveformData),
+    Spectrogram(Vec<Stft>),
     Plot(Arc<[f32]>),
 }
 
-/// One waveform/plot URL to fetch and how to decode its bytes.
+/// One waveform/spectrogram/plot URL to fetch and how to decode its bytes.
 enum BulkRequest {
-    /// A prebuilt peak-pyramid cache, mapped straight to a [`Pyramid`].
+    /// A prebuilt peak-pyramid cache (mono v1 or multichannel v2), mapped
+    /// straight to a [`MultiPyramid`].
     Cache(String),
-    /// Raw little-endian `f32`: de-interleave channel 0, build the pyramid in
-    /// wasm (the analysis lives in `clausters-core`, FFI-free).
+    /// Raw little-endian `f32`: de-interleave every channel, build the
+    /// pyramids in wasm (the analysis lives in `clausters-core`, FFI-free).
     Raw {
         url: String,
         channels: usize,
         base_bucket: usize,
+    },
+    /// A prebuilt (single-channel) STFT cache for a `spectrogram`.
+    StftCache(String),
+    /// Raw little-endian `f32` for a `spectrogram`: de-interleave every
+    /// channel and analyze each in wasm.
+    StftRaw {
+        url: String,
+        channels: usize,
+        window_size: usize,
+        hop: usize,
+        sample_rate: f64,
     },
     /// Raw little-endian `f32` for a `plot` (channel 0, no pyramid).
     Plot { url: String, channels: usize },
@@ -197,7 +212,10 @@ enum Drag {
 struct WindowRender {
     gpu: Gpu,
     painter: Painter,
+    /// The editor-chrome overlay pass (selection, playhead, rulers, readout).
+    overlay: Painter,
     waveforms: HashMap<i32, WaveformSlot>,
+    spectrograms: HashMap<i32, SpectrogramSlot>,
 }
 
 /// The browser host application: the live [`Host`], the window/GPU resources, the
@@ -242,6 +260,10 @@ struct WebApp {
     /// The server's sample rate (from `/clock.reply`, requested when the leg
     /// connects); `0.0` until known — window sizing then assumes 48 kHz.
     server_rate: f64,
+    /// The engine's sample clock from the newest `/clock.reply` — the browser
+    /// playhead source (polled once per tick while a playhead is shown; the
+    /// native front reads the shm header instead).
+    server_clock: f64,
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
     tick: Option<(i32, Closure<dyn FnMut()>)>,
@@ -251,9 +273,9 @@ struct WebApp {
     /// The server-buffer fetch machine (`/b_query` → chunked `/b_getn`),
     /// shared with the native front; requests ride the WS leg.
     fetches: BufferFetches,
-    /// Fetched waveforms that arrived before the GPU was ready, placed on
-    /// `GpuReady` (plots need no GPU and are placed immediately).
-    pending_bulk: Vec<(i32, WaveformData)>,
+    /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
+    /// placed on `GpuReady` (plots need no GPU and are placed immediately).
+    pending_bulk: Vec<(i32, BulkData)>,
 }
 
 impl WebApp {
@@ -275,6 +297,7 @@ impl WebApp {
             spectra: HashMap::new(),
             tap_streamed: (Vec::new(), 0),
             server_rate: 0.0,
+            server_clock: 0.0,
             tick: None,
             stream_seen: false,
             fetches: BufferFetches::default(),
@@ -318,6 +341,7 @@ impl WebApp {
                         self.fetches.drop_def(id);
                         if let Some(r) = self.render.as_mut() {
                             r.waveforms.clear();
+                            r.spectrograms.clear();
                         }
                         self.request_redraw();
                         self.on_tree_changed();
@@ -495,6 +519,16 @@ impl WebApp {
                 &mut self.tap_windows,
             );
             live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut self.spectra);
+            // A visible playhead needs the engine clock: poll it once per tick
+            // (the browser's stand-in for the shm header's sample clock).
+            if live::tree_has_playhead(tree)
+                && let Some(server) = self.host.server()
+            {
+                let _ = server.send(OscMessage {
+                    addr: "/clock".into(),
+                    args: vec![],
+                });
+            }
         }
         self.request_redraw();
     }
@@ -532,13 +566,19 @@ impl WebApp {
                         OscType::Int(bufnum),
                         OscType::Int(frames),
                         OscType::Int(channels),
-                        _,
+                        rate,
                     ] = group
                     {
+                        let rate = match rate {
+                            OscType::Float(x) => *x as f64,
+                            OscType::Double(x) => *x,
+                            _ => 0.0,
+                        };
                         let step = self.fetches.on_info(
                             *bufnum,
                             (*frames).max(0) as usize,
                             (*channels).max(0) as usize,
+                            rate,
                         );
                         self.apply_fetch_step(step);
                     }
@@ -562,7 +602,11 @@ impl WebApp {
                 }
             }
             "/clock.reply" => {
-                // (samples, rate, ...): keep the rate for window sizing.
+                // (samples, rate, ...): keep the rate for window sizing and
+                // the sample counter for the timeline playhead.
+                if let Some(OscType::Long(samples)) = msg.args.first() {
+                    self.server_clock = *samples as f64;
+                }
                 if let Some(OscType::Double(rate)) = msg.args.get(1) {
                     self.server_rate = *rate;
                     // Window sizes may change with the real rate known.
@@ -577,26 +621,75 @@ impl WebApp {
     }
 
     /// Carries out one fetch-machine step: send the next request over the WS
-    /// leg, or turn a finished buffer into waveform data for its widgets.
+    /// leg, or turn a finished buffer into view data for its widgets —
+    /// looking each widget up in the tree, like the native front, to decide
+    /// between a multichannel waveform and per-channel STFT lanes.
     fn apply_fetch_step(&mut self, step: FetchStep) {
         match step {
             FetchStep::Request(msg) => self.send_to_server(msg),
             FetchStep::Done {
                 bufnum,
-                mono,
+                samples,
+                channels,
+                sample_rate,
                 wants,
             } => {
+                let channels = channels.max(1);
                 log(&format!(
-                    "buffer {bufnum}: {} frames loaded into {} waveform(s)",
-                    mono.len(),
+                    "buffer {bufnum}: {} frames x {channels} channel(s) loaded into {} view(s)",
+                    samples.len() / channels,
                     wants.len()
                 ));
                 for want in wants {
                     if self.current_def != Some(want.def_id) {
                         continue;
                     }
-                    let data = WaveformData::new(Arc::clone(&mono), want.base_bucket);
-                    self.place_waveform(want.widget_id, data);
+                    let Some(kind) = self
+                        .host
+                        .window_def(want.def_id)
+                        .and_then(|t| t.find(want.widget_id))
+                        .map(|w| w.kind.clone())
+                    else {
+                        continue;
+                    };
+                    match kind {
+                        WidgetKind::Waveform { base_bucket, .. } => {
+                            let data =
+                                WaveformData::from_interleaved(&samples, channels, base_bucket);
+                            self.place_bulk(want.widget_id, BulkData::Waveform(data));
+                        }
+                        WidgetKind::Spectrogram {
+                            window_size,
+                            hop,
+                            sample_rate: rate_prop,
+                            ..
+                        } => {
+                            let rate = if rate_prop > 0.0 {
+                                rate_prop
+                            } else {
+                                sample_rate
+                            };
+                            let stfts = frame::stft_lanes(
+                                frame::deinterleave(&samples, channels),
+                                window_size,
+                                hop,
+                                rate,
+                            );
+                            self.place_bulk(want.widget_id, BulkData::Spectrogram(stfts));
+                        }
+                        _ => continue,
+                    }
+                    // Let the ruler label real time when the widget knew no rate.
+                    if sample_rate > 0.0
+                        && let Some(w) = self
+                            .host
+                            .window_def_mut(want.def_id)
+                            .and_then(|t| t.find_mut(want.widget_id))
+                        && let Some(editor) = w.kind.editor_mut()
+                        && editor.sample_rate <= 0.0
+                    {
+                        editor.sample_rate = sample_rate;
+                    }
                 }
                 self.request_redraw();
             }
@@ -626,8 +719,8 @@ impl WebApp {
         let mut buffer_refs = Vec::new();
         let mut requests = Vec::new();
         collect_bulk(tree, &mut buffer_refs, &mut requests);
-        for (widget_id, bufnum, base_bucket) in buffer_refs {
-            if let Some(query) = self.fetches.want(def, widget_id, bufnum, base_bucket) {
+        for (widget_id, bufnum) in buffer_refs {
+            if let Some(query) = self.fetches.want(def, widget_id, bufnum) {
                 self.send_to_server(query);
             }
         }
@@ -636,22 +729,35 @@ impl WebApp {
         }
     }
 
-    /// Places a decoded waveform: a GPU slot right away when the device is up,
-    /// else stashed and replayed on `GpuReady`.
-    fn place_waveform(&mut self, widget_id: i32, data: WaveformData) {
-        if let Some(render) = self.render.as_mut() {
-            let slot = frame::waveform_slot(data, &render.gpu);
-            render.waveforms.insert(widget_id, slot);
-        } else {
+    /// Places a decoded GPU-bound resource (waveform or spectrogram): a slot
+    /// right away when the device is up, else stashed and replayed on
+    /// `GpuReady`.
+    fn place_bulk(&mut self, widget_id: i32, data: BulkData) {
+        let Some(render) = self.render.as_mut() else {
             self.pending_bulk.push((widget_id, data));
+            return;
+        };
+        match data {
+            BulkData::Waveform(data) => {
+                let slot = frame::waveform_slot(data, &render.gpu);
+                render.waveforms.insert(widget_id, slot);
+            }
+            BulkData::Spectrogram(stfts) => {
+                if let Some(slot) = frame::spectrogram_slot(stfts, &render.gpu) {
+                    render.spectrograms.insert(widget_id, slot);
+                }
+            }
+            BulkData::Plot(_) => unreachable!("plots are placed in the tree, not the GPU"),
         }
     }
 
-    /// A fetched bulk resource arrived: place a waveform (GPU slot) or write a
-    /// plot's samples into the host tree, then repaint.
+    /// A fetched bulk resource arrived: place a waveform/spectrogram (GPU
+    /// slot) or write a plot's samples into the host tree, then repaint.
     fn on_bulk_ready(&mut self, widget_id: i32, data: BulkData) {
         match data {
-            BulkData::Waveform(data) => self.place_waveform(widget_id, data),
+            BulkData::Waveform(_) | BulkData::Spectrogram(_) => {
+                self.place_bulk(widget_id, data);
+            }
             BulkData::Plot(samples) => {
                 if let Some(def) = self.current_def
                     && let Some(root) = self.host.window_def_mut(def)
@@ -678,8 +784,9 @@ impl WebApp {
         }
     }
 
-    /// (Re)builds the GPU resources for the current def: the inline-data waveform
-    /// views (the only bulk source in the browser until the network path lands).
+    /// (Re)builds the GPU resources for the current def: the inline-data
+    /// waveform/spectrogram views (`path`/`cache`/`buffer` references load
+    /// async through [`fetch_bulk`] and the fetch machine).
     fn build_resources(&mut self) {
         let Some(def) = self.current_def else { return };
         let Some(render) = self.render.as_ref() else {
@@ -689,9 +796,11 @@ impl WebApp {
             return;
         };
         let mut waveforms = HashMap::new();
-        build_inline_waveforms(tree, &render.gpu, &mut waveforms);
+        let mut spectrograms = HashMap::new();
+        build_inline_timelines(tree, &render.gpu, &mut waveforms, &mut spectrograms);
         if let Some(render) = self.render.as_mut() {
             render.waveforms = waveforms;
+            render.spectrograms = spectrograms;
         }
     }
 
@@ -714,6 +823,8 @@ impl WebApp {
             active_button,
             server_attached,
             sample_rate: self.server_rate,
+            sample_clock: self.server_clock,
+            cursor: Some(self.cursor),
             ..Default::default()
         };
         let Some(render) = self.render.as_mut() else {
@@ -723,7 +834,9 @@ impl WebApp {
         frame::render(
             &mut render.gpu,
             &mut render.painter,
+            &mut render.overlay,
             &mut render.waveforms,
+            &mut render.spectrograms,
             &mut canvases,
             &self.scopes,
             &self.tap_windows,
@@ -913,6 +1026,7 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 };
                 gpu.resize(w, h);
                 let painter = Painter::new(&gpu.device, gpu.config.format);
+                let overlay = Painter::new(&gpu.device, gpu.config.format);
                 log(&format!(
                     "GPU device ready; surface {}x{}",
                     gpu.config.width, gpu.config.height
@@ -920,7 +1034,9 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 self.render = Some(WindowRender {
                     gpu,
                     painter,
+                    overlay,
                     waveforms: HashMap::new(),
+                    spectrograms: HashMap::new(),
                 });
                 if self.current_def.is_some() {
                     self.build_resources();
@@ -928,7 +1044,7 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 // Bulk data that finished downloading while the device was
                 // still coming up gets its GPU slots now.
                 for (widget_id, data) in std::mem::take(&mut self.pending_bulk) {
-                    self.place_waveform(widget_id, data);
+                    self.place_bulk(widget_id, data);
                 }
                 self.request_redraw();
             }
@@ -998,23 +1114,49 @@ thread_local! {
     static WEB_PROXY: RefCell<Option<EventLoopProxy<WebEvent>>> = const { RefCell::new(None) };
 }
 
-/// Builds the GPU slot for every inline-data `waveform` in the tree (the
-/// zero-latency bulk source; `path`/`cache`/`buffer` references load async
-/// through [`fetch_bulk`] and the fetch machine).
-fn build_inline_waveforms(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, WaveformSlot>) {
-    if let WidgetKind::Waveform {
-        samples,
-        base_bucket,
-        ..
-    } = &widget.kind
-        && let Some(id) = widget.id
-        && !samples.is_empty()
-    {
-        let data = WaveformData::new(Arc::clone(samples), *base_bucket);
-        out.insert(id, frame::waveform_slot(data, gpu));
+/// Builds the GPU slot for every inline-data `waveform`/`spectrogram` in the
+/// tree (the zero-latency bulk source; `path`/`cache`/`buffer` references load
+/// async through [`fetch_bulk`] and the fetch machine).
+fn build_inline_timelines(
+    widget: &Widget,
+    gpu: &Gpu,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+) {
+    if let Some(id) = widget.id {
+        match &widget.kind {
+            WidgetKind::Waveform {
+                samples,
+                base_bucket,
+                channels,
+                ..
+            } if !samples.is_empty() => {
+                let data = WaveformData::from_interleaved(samples, *channels, *base_bucket);
+                waveforms.insert(id, frame::waveform_slot(data, gpu));
+            }
+            WidgetKind::Spectrogram {
+                samples,
+                channels,
+                window_size,
+                hop,
+                sample_rate,
+                ..
+            } if !samples.is_empty() => {
+                let stfts = frame::stft_lanes(
+                    frame::deinterleave(samples, *channels),
+                    *window_size,
+                    *hop,
+                    *sample_rate,
+                );
+                if let Some(slot) = frame::spectrogram_slot(stfts, gpu) {
+                    spectrograms.insert(id, slot);
+                }
+            }
+            _ => {}
+        }
     }
     for child in &widget.children {
-        build_inline_waveforms(child, gpu, out);
+        build_inline_timelines(child, gpu, waveforms, spectrograms);
     }
 }
 
@@ -1025,7 +1167,7 @@ fn build_inline_waveforms(widget: &Widget, gpu: &Gpu, out: &mut HashMap<i32, Wav
 /// inline case handled by [`build_inline_waveforms`].
 fn collect_bulk(
     widget: &Widget,
-    buffer_refs: &mut Vec<(i32, i32, usize)>,
+    buffer_refs: &mut Vec<(i32, i32)>,
     requests: &mut Vec<(i32, BulkRequest)>,
 ) {
     if let Some(id) = widget.id {
@@ -1037,6 +1179,7 @@ fn collect_bulk(
                 path,
                 cache,
                 channels,
+                ..
             } => {
                 if let Some(cache) = cache {
                     requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
@@ -1050,7 +1193,38 @@ fn collect_bulk(
                         },
                     ));
                 } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-                    buffer_refs.push((id, *bufnum, *base_bucket));
+                    buffer_refs.push((id, *bufnum));
+                }
+            }
+            WidgetKind::Spectrogram {
+                samples,
+                channels,
+                buffer,
+                path,
+                cache,
+                window_size,
+                hop,
+                sample_rate,
+                ..
+            } => {
+                if let Some(cache) = cache {
+                    requests.push((
+                        id,
+                        BulkRequest::StftCache(cache.to_string_lossy().into_owned()),
+                    ));
+                } else if let Some(path) = path {
+                    requests.push((
+                        id,
+                        BulkRequest::StftRaw {
+                            url: path.to_string_lossy().into_owned(),
+                            channels: *channels,
+                            window_size: *window_size,
+                            hop: *hop,
+                            sample_rate: *sample_rate,
+                        },
+                    ));
+                } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
+                    buffer_refs.push((id, *bufnum));
                 }
             }
             WidgetKind::Plot {
@@ -1083,8 +1257,10 @@ fn collect_bulk(
 /// result back through the proxy as [`WebEvent::BulkReady`].
 async fn fetch_bulk(widget_id: i32, request: BulkRequest) {
     let url = match &request {
-        BulkRequest::Cache(url) => url,
-        BulkRequest::Raw { url, .. } | BulkRequest::Plot { url, .. } => url,
+        BulkRequest::Cache(url) | BulkRequest::StftCache(url) => url,
+        BulkRequest::Raw { url, .. }
+        | BulkRequest::StftRaw { url, .. }
+        | BulkRequest::Plot { url, .. } => url,
     }
     .clone();
     let bytes = match fetch_bytes(&url).await {
@@ -1093,29 +1269,58 @@ async fn fetch_bulk(widget_id: i32, request: BulkRequest) {
     };
     let data = match request {
         BulkRequest::Cache(_) => {
-            let Some(pyramid) = Pyramid::from_bytes(&bytes) else {
+            let Some(multi) = MultiPyramid::from_bytes(&bytes) else {
                 return log(&format!("bulk fetch {url}: malformed peak pyramid"));
             };
             log(&format!(
-                "waveform: fetched peak cache {url} ({} samples, no raw data)",
-                pyramid.total_samples()
+                "waveform: fetched peak cache {url} ({} samples x {} channel(s), no raw data)",
+                multi.frames(),
+                multi.num_channels()
             ));
-            BulkData::Waveform(WaveformData::with_pyramid(
-                Arc::from([] as [f32; 0]),
-                pyramid,
-            ))
+            BulkData::Waveform(WaveformData::with_multi_pyramid(multi))
         }
         BulkRequest::Raw {
             channels,
             base_bucket,
             ..
         } => {
-            let samples = decode_channel0(&bytes, channels);
+            let flat = decode_f32(&bytes);
             log(&format!(
-                "waveform: fetched {} samples from {url} (pyramid built in wasm)",
-                samples.len()
+                "waveform: fetched {} samples x {channels} channel(s) from {url} (pyramids built in wasm)",
+                flat.len() / channels.max(1)
             ));
-            BulkData::Waveform(WaveformData::new(samples, base_bucket))
+            BulkData::Waveform(WaveformData::from_interleaved(&flat, channels, base_bucket))
+        }
+        BulkRequest::StftCache(_) => {
+            let Some(stft) = Stft::from_bytes(&bytes) else {
+                return log(&format!("bulk fetch {url}: malformed STFT cache"));
+            };
+            log(&format!(
+                "spectrogram: fetched STFT cache {url} ({} frames x {} bins)",
+                stft.n_frames(),
+                stft.n_bins()
+            ));
+            BulkData::Spectrogram(vec![stft])
+        }
+        BulkRequest::StftRaw {
+            channels,
+            window_size,
+            hop,
+            sample_rate,
+            ..
+        } => {
+            let flat = decode_f32(&bytes);
+            let stfts = frame::stft_lanes(
+                frame::deinterleave(&flat, channels),
+                window_size,
+                hop,
+                sample_rate,
+            );
+            log(&format!(
+                "spectrogram: fetched {} samples x {channels} channel(s) from {url} (STFT in wasm)",
+                flat.len() / channels.max(1)
+            ));
+            BulkData::Spectrogram(stfts)
         }
         BulkRequest::Plot { channels, .. } => {
             let samples = decode_channel0(&bytes, channels);
@@ -1156,6 +1361,15 @@ fn decode_channel0(bytes: &[u8], channels: usize) -> Arc<[f32]> {
     bytes
         .chunks_exact(4)
         .step_by(channels)
+        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .collect()
+}
+
+/// Decodes raw little-endian `f32` bytes flat (interleaved as sent) — the
+/// multichannel views de-interleave downstream.
+fn decode_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .chunks_exact(4)
         .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
         .collect()
 }

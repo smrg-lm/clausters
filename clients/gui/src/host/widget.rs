@@ -48,6 +48,82 @@ impl Layout {
     }
 }
 
+/// How an editor-grade view labels its time ruler.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ruler {
+    /// Adaptive clock time (`h:mm:ss.mmm`), falling back to sample counts
+    /// when no sample rate is known. The default.
+    Time,
+    /// Plain sample counts.
+    Samples,
+    /// No ruler strip at all.
+    Off,
+}
+
+impl Ruler {
+    fn parse(props: &serde_json::Map<String, Value>) -> Ruler {
+        match props.get("ruler").and_then(Value::as_str) {
+            Some("samples") => Ruler::Samples,
+            Some("off") | Some("none") => Ruler::Off,
+            _ => Ruler::Time,
+        }
+    }
+
+    fn set(&mut self, v: &Value) -> bool {
+        match v.as_str() {
+            Some("samples") => *self = Ruler::Samples,
+            Some("off") | Some("none") => *self = Ruler::Off,
+            Some("time") => *self = Ruler::Time,
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// The editor chrome both heavy views share: the time-ruler mode, the sample
+/// rate placing its labels (0 = unknown), a `[sel_start, sel_len)` selection
+/// in sample units (`sel_len <= 0` = none; drawn as an overlay, dragged with
+/// the pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
+/// playhead origin `playhead_at` — the engine sample-clock value that maps to
+/// buffer sample 0 (negative = no playhead; the line then tracks
+/// `sample_clock - playhead_at` with zero messages natively).
+#[derive(Debug, Clone)]
+pub struct EditorProps {
+    pub ruler: Ruler,
+    pub sample_rate: f64,
+    pub sel_start: f64,
+    pub sel_len: f64,
+    pub playhead_at: f64,
+}
+
+impl EditorProps {
+    fn parse(props: &serde_json::Map<String, Value>) -> EditorProps {
+        EditorProps {
+            ruler: Ruler::parse(props),
+            sample_rate: number_f64(props, "sample_rate", 0.0),
+            sel_start: number_f64(props, "sel_start", 0.0),
+            sel_len: number_f64(props, "sel_len", 0.0),
+            playhead_at: number_f64(props, "playhead_at", -1.0),
+        }
+    }
+
+    /// The selection as `(start, len)` in samples, if one is active.
+    pub fn selection(&self) -> Option<(f64, f64)> {
+        (self.sel_len > 0.0).then_some((self.sel_start, self.sel_len))
+    }
+
+    fn apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "ruler" => self.ruler.set(v),
+            "sample_rate" => set_f64(&mut self.sample_rate, v),
+            "sel_start" => set_f64(&mut self.sel_start, v),
+            "sel_len" => set_f64(&mut self.sel_len, v),
+            "playhead_at" => set_f64(&mut self.playhead_at, v),
+            _ => false,
+        }
+    }
+}
+
 /// The typed kind of a widget, with the fields the renderer needs.
 #[derive(Debug, Clone)]
 pub enum WidgetKind {
@@ -68,10 +144,12 @@ pub enum WidgetKind {
     /// bulk path, raw samples never loaded), `path` (a file of raw little-endian
     /// `f32` the host maps — the bulk path for a multi-megabyte buffer, no OSC),
     /// `buffer` (an audio-server buffer number the windowed front fetches over
-    /// the client leg), or inline `data`/`blob`. `channels` de-interleaves
-    /// channel 0 of a multi-channel `path` (default 1). For `cache`/`path`/
+    /// the client leg), or inline `data`/`blob`. `channels` is the interleaved
+    /// channel count of a multi-channel `path`/`data`/`blob` (default 1) —
+    /// **every** channel is kept and drawn, as stacked lanes sharing the time
+    /// axis by default or as `overlay` per-color traces. For `cache`/`path`/
     /// `buffer`, `samples` starts empty and is filled when the resource is
-    /// mapped/fetched.
+    /// mapped/fetched. `editor` carries the ruler/selection/playhead chrome.
     Waveform {
         samples: Arc<[f32]>,
         base_bucket: usize,
@@ -79,6 +157,34 @@ pub enum WidgetKind {
         path: Option<PathBuf>,
         cache: Option<PathBuf>,
         channels: usize,
+        overlay: bool,
+        editor: EditorProps,
+    },
+    /// The heavy STFT time-frequency view, host-wired like the waveform: its
+    /// samples come from a mapped `path` (raw interleaved `f32`), a prebuilt
+    /// single-channel `cache` (an `Stft` cache file), a server `buffer`, or
+    /// inline `data`/`blob`; `channels` de-interleaves them and each channel
+    /// gets its own analysis, drawn as stacked lanes. `window_size` (a
+    /// supported power of two) and `hop` shape the analysis (recompute-time
+    /// props, fixed at def time); the dB window, frequency scale and colormap
+    /// are live shader uniforms (`/gui_set`). `sample_rate` places the
+    /// frequency axis for `path`/inline sources (a fetched `buffer` brings its
+    /// own). `editor` adds the time ruler, selection and playhead; a Hz ruler
+    /// is drawn along the left edge.
+    Spectrogram {
+        samples: Arc<[f32]>,
+        channels: usize,
+        buffer: Option<i32>,
+        path: Option<PathBuf>,
+        cache: Option<PathBuf>,
+        window_size: usize,
+        hop: usize,
+        sample_rate: f64,
+        db_floor: f32,
+        db_ceil: f32,
+        log_freq: bool,
+        colormap: i32,
+        editor: EditorProps,
     },
     /// A level meter reading control bus `bus` from the shared-memory segment
     /// each frame (zero messages), shown as a bar over `[min, max]`.
@@ -310,7 +416,55 @@ impl Widget {
                     .and_then(Value::as_u64)
                     .map(|n| (n as usize).max(1))
                     .unwrap_or(1),
+                overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
+                editor: EditorProps::parse(&node.props),
             },
+            "spectrogram" => {
+                let window_size = node
+                    .props
+                    .get("window_size")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as usize)
+                    .filter(|n| clausters_core::fft::supports(*n))
+                    .unwrap_or(1024);
+                WidgetKind::Spectrogram {
+                    samples: inline_samples("spectrogram", id, &node.props, blobs)?,
+                    channels: node
+                        .props
+                        .get("channels")
+                        .and_then(Value::as_u64)
+                        .map(|n| (n as usize).max(1))
+                        .unwrap_or(1),
+                    buffer: node
+                        .props
+                        .get("buffer")
+                        .and_then(Value::as_i64)
+                        .map(|n| n as i32),
+                    path: node
+                        .props
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .map(PathBuf::from),
+                    cache: node
+                        .props
+                        .get("cache")
+                        .and_then(Value::as_str)
+                        .map(PathBuf::from),
+                    window_size,
+                    hop: node
+                        .props
+                        .get("hop")
+                        .and_then(Value::as_u64)
+                        .map(|n| (n as usize).max(1))
+                        .unwrap_or(window_size / 2),
+                    sample_rate: number_f64(&node.props, "sample_rate", 0.0),
+                    db_floor: number(&node.props, "db_floor", -90.0),
+                    db_ceil: number(&node.props, "db_ceil", 0.0),
+                    log_freq: node.props.get("log_freq").and_then(truthy).unwrap_or(true),
+                    colormap: int_prop(&node.props, "colormap", 0),
+                    editor: EditorProps::parse(&node.props),
+                }
+            }
             "meter" => WidgetKind::Meter {
                 bus: int_prop(&node.props, "bus", 0),
                 min: number(&node.props, "min", 0.0),
@@ -447,6 +601,23 @@ impl Widget {
         matches!(self.kind, WidgetKind::Waveform { .. })
     }
 
+    /// Whether this is one of the navigable timeline views (waveform or
+    /// spectrogram) — the widgets that zoom, pan, select and show a playhead.
+    pub fn is_timeline(&self) -> bool {
+        matches!(
+            self.kind,
+            WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. }
+        )
+    }
+
+    /// The widget with id `id` anywhere in this tree.
+    pub fn find(&self, id: i32) -> Option<&Widget> {
+        if self.id == Some(id) {
+            return Some(self);
+        }
+        self.children.iter().find_map(|c| c.find(id))
+    }
+
     /// The widget with id `id` anywhere in this tree, mutably (for `/gui_set`
     /// and interaction).
     pub fn find_mut(&mut self, id: i32) -> Option<&mut Widget> {
@@ -513,6 +684,34 @@ impl WidgetKind {
         }
     }
 
+    /// The editor chrome of a timeline view (waveform/spectrogram), if this is
+    /// one — the shared read path for the frame renderer and the fronts.
+    pub fn editor(&self) -> Option<&EditorProps> {
+        match self {
+            WidgetKind::Waveform { editor, .. } | WidgetKind::Spectrogram { editor, .. } => {
+                Some(editor)
+            }
+            _ => None,
+        }
+    }
+
+    /// Mutable access to a timeline view's editor chrome (the selection drag
+    /// writes through here).
+    pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
+        match self {
+            WidgetKind::Waveform { editor, .. } | WidgetKind::Spectrogram { editor, .. } => {
+                Some(editor)
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether this widget shows a live playhead (so its window must animate:
+    /// the line tracks the engine sample clock every frame).
+    pub fn has_playhead(&self) -> bool {
+        self.editor().is_some_and(|e| e.playhead_at >= 0.0)
+    }
+
     /// The server group a `nodetree` widget mirrors, if this is one. The windowed
     /// front uses it to know which groups to query and which windows to refresh.
     pub fn node_tree_group(&self) -> Option<i32> {
@@ -526,6 +725,26 @@ impl WidgetKind {
     /// changed anything the renderer cares about.
     pub fn apply(&mut self, key: &str, v: &Value) -> bool {
         match self {
+            WidgetKind::Waveform {
+                overlay, editor, ..
+            } => match key {
+                "overlay" => truthy(v).map(|b| *overlay = b).is_some(),
+                _ => editor.apply(key, v),
+            },
+            WidgetKind::Spectrogram {
+                db_floor,
+                db_ceil,
+                log_freq,
+                colormap,
+                editor,
+                ..
+            } => match key {
+                "db_floor" => set_f(db_floor, v),
+                "db_ceil" => set_f(db_ceil, v),
+                "log_freq" => truthy(v).map(|b| *log_freq = b).is_some(),
+                "colormap" => v.as_i64().map(|n| *colormap = n as i32).is_some(),
+                _ => editor.apply(key, v),
+            },
             WidgetKind::Meter {
                 bus,
                 min,
@@ -703,6 +922,24 @@ fn fft_size(props: &serde_json::Map<String, Value>) -> usize {
         .map(|n| n as usize)
         .filter(|n| clausters_core::fft::supports(*n))
         .unwrap_or(2048)
+}
+
+/// An `f64` property, defaulted when absent or non-numeric — for sample
+/// positions and clock values, where `f32` would lose sample accuracy on
+/// buffers past a few minutes.
+fn number_f64(props: &serde_json::Map<String, Value>, key: &str, default: f64) -> f64 {
+    props.get(key).and_then(Value::as_f64).unwrap_or(default)
+}
+
+/// Sets an `f64` slot from a numeric JSON value, reporting whether it applied.
+fn set_f64(slot: &mut f64, v: &Value) -> bool {
+    match v.as_f64() {
+        Some(x) => {
+            *slot = x;
+            true
+        }
+        None => false,
+    }
 }
 
 /// A float property, defaulted when absent or non-numeric.
@@ -1177,6 +1414,115 @@ mod tests {
         assert!(w.find_mut(1).unwrap().kind.apply("hold", &Value::from(1)));
         match &w.find_mut(2).unwrap().kind {
             WidgetKind::Spectrum { fft_size, .. } => assert_eq!(*fft_size, 2048),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn waveform_editor_props_parse_and_apply() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","data":[0.0,1.0],"channels":2,"overlay":1,
+                 "ruler":"samples","sample_rate":48000.0,"sel_start":100.0,"sel_len":50.0,
+                 "playhead_at":1000.0}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Waveform {
+                channels,
+                overlay,
+                editor,
+                ..
+            } => {
+                assert_eq!(*channels, 2);
+                assert!(*overlay);
+                assert_eq!(editor.ruler, Ruler::Samples);
+                assert_eq!(editor.sample_rate, 48_000.0);
+                assert_eq!(editor.selection(), Some((100.0, 50.0)));
+                assert_eq!(editor.playhead_at, 1000.0);
+            }
+            other => panic!("expected waveform, got {other:?}"),
+        }
+        assert!(w.children[0].kind.has_playhead());
+        assert!(w.children[0].is_timeline());
+        // Live `/gui_set`: retune the selection, clear the playhead, switch
+        // the ruler off.
+        let wf = w.find_mut(1).unwrap();
+        assert!(wf.kind.apply("sel_start", &Value::from(0.0)));
+        assert!(wf.kind.apply("sel_len", &Value::from(0.0)));
+        assert!(wf.kind.apply("playhead_at", &Value::from(-1.0)));
+        assert!(wf.kind.apply("ruler", &Value::from("off")));
+        assert!(!wf.kind.apply("ruler", &Value::from("nonesuch")));
+        let editor = wf.kind.editor().unwrap();
+        assert_eq!(editor.selection(), None, "zero length clears it");
+        assert!(!wf.kind.has_playhead());
+        assert_eq!(editor.ruler, Ruler::Off);
+    }
+
+    #[test]
+    fn spectrogram_parses_with_defaults_and_applies() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"spectrogram","path":"/tmp/a.f32","channels":2,
+                 "sample_rate":44100.0},
+                {"id":2,"type":"spectrogram","buffer":3,"window_size":333}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Spectrogram {
+                path,
+                channels,
+                window_size,
+                hop,
+                sample_rate,
+                db_floor,
+                db_ceil,
+                log_freq,
+                colormap,
+                ..
+            } => {
+                assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/a.f32")));
+                assert_eq!((*channels, *window_size, *hop), (2, 1024, 512));
+                assert_eq!(*sample_rate, 44_100.0);
+                assert_eq!((*db_floor, *db_ceil), (-90.0, 0.0));
+                assert!(*log_freq);
+                assert_eq!(*colormap, 0);
+            }
+            other => panic!("expected spectrogram, got {other:?}"),
+        }
+        // An unsupported window size degrades to the default.
+        match &w.children[1].kind {
+            WidgetKind::Spectrogram {
+                buffer,
+                window_size,
+                ..
+            } => {
+                assert_eq!(*buffer, Some(3));
+                assert_eq!(*window_size, 1024, "333 is not a supported FFT size");
+            }
+            other => panic!("expected spectrogram, got {other:?}"),
+        }
+        // Live `/gui_set`: the display uniforms retune with zero recompute.
+        let sg = w.find_mut(1).unwrap();
+        assert!(sg.kind.apply("db_floor", &Value::from(-60.0)));
+        assert!(sg.kind.apply("log_freq", &Value::from(0)));
+        assert!(sg.kind.apply("colormap", &Value::from(1)));
+        assert!(sg.kind.apply("sel_start", &Value::from(10.0)));
+        match &sg.kind {
+            WidgetKind::Spectrogram {
+                db_floor,
+                log_freq,
+                colormap,
+                editor,
+                ..
+            } => {
+                assert_eq!(*db_floor, -60.0);
+                assert!(!*log_freq);
+                assert_eq!(*colormap, 1);
+                assert_eq!(editor.sel_start, 10.0);
+            }
             _ => unreachable!(),
         }
     }

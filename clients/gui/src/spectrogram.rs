@@ -23,6 +23,23 @@ const VERSION: u32 = 2;
 /// range, so it can change live without recomputing the STFT.
 const REF_FLOOR: f32 = -120.0;
 
+/// The widest magnitude texture the renderer uploads — the WebGL2/WebGPU
+/// baseline `max_texture_dimension_2d`. [`hop_capped`] raises the hop so a
+/// long buffer's frame count stays within it.
+pub const MAX_FRAMES: usize = 8192;
+
+/// The hop to analyze `total_samples` with: the requested `hop`, raised just
+/// enough that the STFT yields at most [`MAX_FRAMES`] frames (one texture row
+/// per frame). A long file thus trades time resolution for fitting the GPU
+/// texture, instead of failing device validation.
+pub fn hop_capped(total_samples: usize, window_size: usize, hop: usize) -> usize {
+    let needed = total_samples
+        .saturating_sub(window_size)
+        .div_ceil(MAX_FRAMES.saturating_sub(1).max(1))
+        .max(1);
+    hop.max(needed)
+}
+
 /// Frequency axis mapping for the spectrogram's vertical axis.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FreqScale {
@@ -404,6 +421,29 @@ impl SpectrogramView {
         }
     }
 
+    /// The analysis this view draws (e.g. for a frequency ruler's Nyquist).
+    pub fn stft(&self) -> &Stft {
+        &self.stft
+    }
+
+    /// Sets the display state from widget props: the dB window (contrast), the
+    /// frequency-axis scale and the colormap (0 = viridis, 1 = magma, 2 =
+    /// grayscale). Cheap — everything lands in the shader uniforms, so a live
+    /// `/gui_set` retunes the view with zero recompute.
+    pub fn set_display(&mut self, db_floor: f32, db_ceil: f32, scale: FreqScale, colormap: u32) {
+        self.db_floor = db_floor;
+        self.db_ceil = db_ceil;
+        self.scale = scale;
+        self.colormap = colormap % 3;
+    }
+
+    /// The normalized bottom of the log frequency axis (~20 Hz / Nyquist) — the
+    /// same `f_lo` the shader's display→bin mapping uses, exposed so a ruler
+    /// places its ticks with the identical geometry.
+    pub fn log_floor(&self) -> f32 {
+        (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5)
+    }
+
     /// Build the GPU uniforms from the current time `view` and display state.
     ///
     /// The frequency window is expressed in *display* coordinates `[0, 1]`
@@ -532,6 +572,17 @@ mod tests {
             (peak as i32 - expected as i32).abs() <= 1,
             "peak bin {peak}, expected ~{expected}"
         );
+    }
+
+    #[test]
+    fn hop_capped_bounds_the_frame_count() {
+        // Short buffers keep the requested hop; long ones raise it just enough.
+        assert_eq!(hop_capped(10_000, 1024, 512), 512);
+        let long = 10_000_000;
+        let hop = hop_capped(long, 1024, 512);
+        assert!(hop > 512);
+        let n_frames = 1 + (long - 1024) / hop;
+        assert!(n_frames <= MAX_FRAMES, "{n_frames} frames");
     }
 
     #[test]

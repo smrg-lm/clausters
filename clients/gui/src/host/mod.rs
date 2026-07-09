@@ -49,6 +49,7 @@ pub mod paint;
 pub mod phasescope;
 pub mod plot;
 pub mod registry;
+pub mod ruler;
 pub mod spectrum;
 pub mod widget;
 
@@ -266,6 +267,16 @@ pub trait BulkLoader {
     /// Resolves a plot's local `path` of raw `f32` to mono samples (channel 0 of
     /// `channels`). `None` on an unsupported platform or an I/O error.
     fn plot_samples(&self, path: &Path, channels: usize) -> Option<std::sync::Arc<[f32]>>;
+
+    /// Reads a local `path` of raw little-endian `f32` into its de-interleaved
+    /// channels (all of them) — the spectrogram's lane source; each channel is
+    /// analyzed separately. `None` on an unsupported platform or an I/O error.
+    fn raw_channels(&self, path: &Path, channels: usize) -> Option<Vec<Vec<f32>>>;
+
+    /// The raw bytes of a local resource (a prebuilt STFT cache the
+    /// spectrogram parses with `Stft::from_bytes`). `None` on an unsupported
+    /// platform or an I/O error.
+    fn file_bytes(&self, path: &Path) -> Option<Vec<u8>>;
 }
 
 /// A source of live control-bus values for the meter/scope views. Implemented by
@@ -287,6 +298,13 @@ pub trait BusSource: Send + Sync {
     /// The server's sample rate when this source knows it (`0.0` otherwise);
     /// sizes the oscilloscope windows (`window_ms` → samples).
     fn sample_rate(&self) -> f64 {
+        0.0
+    }
+
+    /// The engine's sample clock (samples processed since boot) when this
+    /// source carries it (`0.0` otherwise). Drives the timeline playhead with
+    /// zero messages natively; the browser polls `/clock` instead.
+    fn sample_clock(&self) -> f64 {
         0.0
     }
 }

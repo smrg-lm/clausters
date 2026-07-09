@@ -92,14 +92,25 @@ pub(crate) fn collect_live_taps(widget: &Widget, out: &mut Vec<i32>) {
     out.sort_unstable();
 }
 
-/// Whether a widget tree contains a live widget: a bus-backed meter/scope, or
-/// any audio-tap consumer (scope/spectrum/phasescope), so the window animates.
+/// Whether a widget tree contains a live widget: a bus-backed meter/scope,
+/// any audio-tap consumer (scope/spectrum/phasescope), or a timeline view
+/// with an active playhead (its line tracks the engine clock every frame) —
+/// so the window animates.
 pub(crate) fn tree_has_live_widget(widget: &Widget) -> bool {
     let mut taps = Vec::new();
     widget.kind.taps_read(&mut taps);
     widget.kind.live_bus().is_some()
         || !taps.is_empty()
+        || widget.kind.has_playhead()
         || widget.children.iter().any(tree_has_live_widget)
+}
+
+/// Whether a widget tree contains a timeline view with an active playhead.
+/// The browser front polls the server clock (`/clock`) each tick only then;
+/// the native front reads the shm header, which needs no message at all.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
+pub(crate) fn tree_has_playhead(widget: &Widget) -> bool {
+    widget.kind.has_playhead() || widget.children.iter().any(tree_has_playhead)
 }
 
 /// Refreshes the aligned display window of every audio-rate scope in `tree`,

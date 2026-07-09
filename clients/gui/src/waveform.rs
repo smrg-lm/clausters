@@ -11,7 +11,15 @@
 //!   min/max column per pixel, computed directly from the raw samples - exact,
 //!   and bounded because we only enter here below `base_bucket` samples/px.
 //! - **Pyramid columns** (`samples_per_px >= base_bucket`): one min/max column
-//!   per pixel, read from the peak pyramid level matching the zoom.
+//!   per pixel, read from the peak pyramid — **cross-faded** between the two
+//!   levels adjacent to the zoom, so switching levels never pops (see
+//!   [`WaveformData::column`]).
+//!
+//! The data is **multichannel**: one raw buffer and one pyramid per channel
+//! (all sharing the time axis), so an editor-grade view draws stacked lanes or
+//! overlaid per-channel traces from one `WaveformData`. Geometry is built per
+//! channel into one vertex buffer with per-vertex color; the caller draws each
+//! channel into its own lane viewport (stacked) or all into one (overlaid).
 //!
 //! `WaveformRenderer` takes a `wgpu::Device`/`Queue` and a target format and
 //! owns nothing windowing-specific, so the identical code drives a native
@@ -19,9 +27,7 @@
 
 use std::sync::Arc;
 
-use wgpu::util::DeviceExt;
-
-use crate::peaks::{self, Pyramid};
+use crate::peaks::{self, MultiPyramid, Pyramid};
 use crate::view::TimelineView;
 use crate::viewport::View;
 
@@ -29,18 +35,51 @@ use crate::viewport::View;
 /// than min/max columns.
 const LINE_THRESHOLD: f64 = 2.0;
 
-/// A waveform's data: the raw samples (shared, for the zoomed-in regimes) plus
-/// its peak pyramid (for the zoomed-out regime). The pyramid is the cache that
-/// can be persisted via `peaks::Pyramid::write_cache`.
-pub struct WaveformData {
+/// Per-channel trace colors (RGBA), cycled when a buffer has more channels.
+pub(crate) const CHANNEL_COLORS: [[f32; 4]; 4] = [
+    [0.30, 0.78, 0.55, 1.0], // green (the classic mono trace)
+    [0.95, 0.72, 0.25, 1.0], // amber
+    [0.45, 0.65, 0.95, 1.0], // blue
+    [0.90, 0.45, 0.60, 1.0], // rose
+];
+
+/// One channel's data: its raw samples (possibly empty, for a cache-only view)
+/// plus its peak pyramid.
+struct Channel {
     samples: Arc<[f32]>,
     pyramid: Pyramid,
 }
 
+/// A waveform's data: per channel, the raw samples (shared, for the zoomed-in
+/// regimes) plus a peak pyramid (for the zoomed-out regime). The pyramids are
+/// the cache that can be persisted via `peaks::MultiPyramid::write_cache`.
+pub struct WaveformData {
+    channels: Vec<Channel>,
+}
+
 impl WaveformData {
+    /// A mono waveform from `samples`, building its pyramid at `base_bucket`.
     pub fn new(samples: Arc<[f32]>, base_bucket: usize) -> Self {
         let pyramid = Pyramid::build(&samples, base_bucket);
-        Self { samples, pyramid }
+        Self {
+            channels: vec![Channel { samples, pyramid }],
+        }
+    }
+
+    /// A multichannel waveform from `samples` holding `channels` interleaved
+    /// channels (a trailing partial frame is ignored), one pyramid per channel.
+    pub fn from_interleaved(samples: &[f32], channels: usize, base_bucket: usize) -> Self {
+        let channels = channels.max(1);
+        let frames = samples.len() / channels;
+        let built = (0..channels)
+            .map(|ch| {
+                let one: Vec<f32> = (0..frames).map(|f| samples[f * channels + ch]).collect();
+                let samples: Arc<[f32]> = one.into();
+                let pyramid = Pyramid::build(&samples, base_bucket);
+                Channel { samples, pyramid }
+            })
+            .collect();
+        Self { channels: built }
     }
 
     /// Build from samples and an already-computed pyramid (e.g. read back from a
@@ -50,18 +89,53 @@ impl WaveformData {
     /// from the pyramid, and the zoomed-in raw-sample regimes simply have nothing
     /// finer to show.
     pub fn with_pyramid(samples: Arc<[f32]>, pyramid: Pyramid) -> Self {
-        Self { samples, pyramid }
+        Self {
+            channels: vec![Channel { samples, pyramid }],
+        }
     }
 
-    /// The buffer length the view spans. Taken from the pyramid (which is built
-    /// over the whole buffer), so a cache-only view with no raw `samples` still
-    /// reports the right length.
+    /// A multichannel view from already-split raw channels paired with their
+    /// pyramids (e.g. a mapped file whose sibling cache was still valid, so
+    /// the pyramids were read back instead of rebuilt). Pairs must agree in
+    /// length and bucket; the bulk loader validates before calling.
+    pub fn from_parts(parts: Vec<(Arc<[f32]>, Pyramid)>) -> Self {
+        assert!(!parts.is_empty());
+        let channels = parts
+            .into_iter()
+            .map(|(samples, pyramid)| Channel { samples, pyramid })
+            .collect();
+        Self { channels }
+    }
+
+    /// A cache-only multichannel view from a mapped [`MultiPyramid`] (no raw
+    /// samples; every regime renders from the per-channel pyramids).
+    pub fn with_multi_pyramid(multi: MultiPyramid) -> Self {
+        let channels = multi
+            .into_channels()
+            .into_iter()
+            .map(|pyramid| Channel {
+                samples: Arc::from([] as [f32; 0]),
+                pyramid,
+            })
+            .collect();
+        Self { channels }
+    }
+
+    /// The buffer length the view spans, in per-channel samples. Taken from the
+    /// pyramid (which is built over the whole buffer), so a cache-only view with
+    /// no raw `samples` still reports the right length.
     pub fn total_samples(&self) -> usize {
-        self.pyramid.total_samples()
+        self.channels[0].pyramid.total_samples()
     }
 
+    /// How many channels this waveform holds.
+    pub fn num_channels(&self) -> usize {
+        self.channels.len()
+    }
+
+    /// Channel 0's pyramid (the persistable cache of a mono view).
     pub fn pyramid(&self) -> &Pyramid {
-        &self.pyramid
+        &self.channels[0].pyramid
     }
 
     /// Whether raw samples are present. A cache-only view (`with_pyramid` with an
@@ -69,26 +143,60 @@ impl WaveformData {
     /// zoomed-in ones — must render from it; reading the empty raw buffer would
     /// instead collapse the wave to a flat line (it "disappears" on zoom-in).
     pub fn has_raw(&self) -> bool {
-        !self.samples.is_empty()
+        !self.channels[0].samples.is_empty()
     }
 
-    /// Min/max for a pixel column spanning `[s0, s1)`, choosing the cheapest
-    /// accurate source for the given `samples_per_px`: raw samples when finer
-    /// than the pyramid's base bucket, the pyramid otherwise.
-    pub fn column(&self, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
-        if samples_per_px < self.pyramid.base_bucket() as f64 && self.has_raw() {
-            let a = (s0.floor().max(0.0) as usize).min(self.samples.len());
-            let b = (s1.ceil() as usize).clamp(a, self.samples.len());
-            peaks::min_max(&self.samples[a..b]).unwrap_or((0.0, 0.0))
+    /// Min/max of channel `ch` for a pixel column spanning `[s0, s1)`, choosing
+    /// the cheapest accurate source for the given `samples_per_px`: raw samples
+    /// when finer than the pyramid's base bucket, the pyramid otherwise —
+    /// **cross-faded** between the two adjacent levels so zooming never pops
+    /// when the level selection switches.
+    pub fn column(&self, ch: usize, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
+        let Some(channel) = self.channels.get(ch) else {
+            return (0.0, 0.0);
+        };
+        let pyramid = &channel.pyramid;
+        if samples_per_px < pyramid.base_bucket() as f64 && self.has_raw() {
+            let a = (s0.floor().max(0.0) as usize).min(channel.samples.len());
+            let b = (s1.ceil() as usize).clamp(a, channel.samples.len());
+            peaks::min_max(&channel.samples[a..b]).unwrap_or((0.0, 0.0))
         } else {
             // At or above the base bucket, or whenever there is no raw buffer to
             // resolve finer (a cache-only view): read the pyramid. `level_for`
             // clamps to level 0, so zooming past the cache shows its finest
             // overview rather than collapsing to a flat line.
-            let level = self.pyramid.level_for(samples_per_px);
-            self.pyramid.column(level, s0, s1).unwrap_or((0.0, 0.0))
+            level_crossfade(pyramid, samples_per_px, s0, s1)
         }
     }
+
+    /// Single-sample access for the line regime, clamped to bounds.
+    fn samples_at(&self, ch: usize, i: usize) -> f32 {
+        self.channels
+            .get(ch)
+            .and_then(|c| c.samples.get(i))
+            .copied()
+            .unwrap_or(0.0)
+    }
+}
+
+/// A pyramid column blended between the level matching `samples_per_px` and
+/// the next coarser one, weighted by the fractional position of the zoom
+/// between their bucket sizes (log2). At exactly a level's bucket the blend is
+/// pure fine; approaching the next level's bucket it converges to pure coarse
+/// — which is where `level_for` switches — so the min/max envelope is
+/// continuous across the switch instead of popping.
+fn level_crossfade(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> (f32, f32) {
+    let level = pyramid.level_for(samples_per_px);
+    let (lo, hi) = pyramid.column(level, s0, s1).unwrap_or((0.0, 0.0));
+    let Some(bucket) = pyramid.level_bucket(level) else {
+        return (lo, hi);
+    };
+    if samples_per_px <= bucket as f64 || level + 1 >= pyramid.num_levels() {
+        return (lo, hi);
+    }
+    let t = (samples_per_px / bucket as f64).log2().clamp(0.0, 1.0) as f32;
+    let (clo, chi) = pyramid.column(level + 1, s0, s1).unwrap_or((lo, hi));
+    (lo + (clo - lo) * t, hi + (chi - hi) * t)
 }
 
 /// Map `amp` in [-1, 1] to clip-space y, leaving a small vertical margin.
@@ -102,18 +210,24 @@ enum Mode {
     Line,
 }
 
+/// `[x, y, r, g, b, a]` per vertex — position in clip space plus the channel's
+/// trace color (the same shape the flat-geometry painter uses).
+const FLOATS_PER_VERTEX: usize = 6;
+
 /// Backend-independent waveform renderer. Holds a triangle pipeline (min/max
-/// columns) and a line pipeline (raw sample polyline) sharing one shader, bind
-/// group and vertex buffer; `upload_geometry` selects the regime per frame.
+/// columns) and a line pipeline (raw sample polyline) sharing one shader and
+/// vertex buffer; `upload_geometry` selects the regime per frame and builds one
+/// vertex range per channel (each drawn into its own lane viewport when
+/// stacked, or all into one when overlaid).
 pub struct WaveformRenderer {
     column_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
-    bind_group: wgpu::BindGroup,
     vertex_buffer: wgpu::Buffer,
     capacity_vertices: u64,
-    num_vertices: u32,
+    /// One `(first_vertex, count)` per channel.
+    ranges: Vec<(u32, u32)>,
     mode: Mode,
-    scratch: Vec<[f32; 2]>,
+    scratch: Vec<f32>,
 }
 
 impl WaveformRenderer {
@@ -123,47 +237,27 @@ impl WaveformRenderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("waveform.wgsl").into()),
         });
 
-        let color: [f32; 4] = [0.30, 0.78, 0.55, 1.0];
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("waveform uniforms"),
-            contents: bytemuck::cast_slice(&color),
-            usage: wgpu::BufferUsages::UNIFORM,
-        });
-        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("waveform bind group layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("waveform bind group"),
-            layout: &bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("waveform pipeline layout"),
-            bind_group_layouts: &[Some(&bind_group_layout)],
+            bind_group_layouts: &[],
             immediate_size: 0,
         });
 
         let vertex_layout = wgpu::VertexBufferLayout {
-            array_stride: (std::mem::size_of::<f32>() * 2) as wgpu::BufferAddress,
+            array_stride: (std::mem::size_of::<f32>() * FLOATS_PER_VERTEX) as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x2,
-                offset: 0,
-                shader_location: 0,
-            }],
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: (2 * std::mem::size_of::<f32>()) as wgpu::BufferAddress,
+                    shader_location: 1,
+                },
+            ],
         };
 
         let make_pipeline = |topology: wgpu::PrimitiveTopology, label: &str| {
@@ -203,7 +297,7 @@ impl WaveformRenderer {
         let capacity_vertices = 8192 * 6;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("waveform vertices"),
-            size: capacity_vertices * 2 * std::mem::size_of::<f32>() as u64,
+            size: capacity_vertices * (FLOATS_PER_VERTEX * std::mem::size_of::<f32>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -211,18 +305,23 @@ impl WaveformRenderer {
         Self {
             column_pipeline,
             line_pipeline,
-            bind_group,
             vertex_buffer,
             capacity_vertices,
-            num_vertices: 0,
+            ranges: Vec::new(),
             mode: Mode::Columns,
             scratch: Vec::new(),
         }
     }
 
+    fn push_vertex(&mut self, x: f32, y: f32, color: [f32; 4]) {
+        self.scratch
+            .extend_from_slice(&[x, y, color[0], color[1], color[2], color[3]]);
+    }
+
     /// Rebuild and upload the geometry for `view` at `render_width_px` device
-    /// pixels. O(render_width_px) in the column regimes, O(visible samples) in
-    /// the line regime - both bounded by the screen, never by the buffer.
+    /// pixels. O(render_width_px) per channel in the column regimes, O(visible
+    /// samples) in the line regime - both bounded by the screen, never by the
+    /// buffer.
     pub fn upload_geometry(
         &mut self,
         device: &wgpu::Device,
@@ -235,69 +334,97 @@ impl WaveformRenderer {
         let spp = view.samples_per_px(w);
         let total = data.total_samples();
         self.scratch.clear();
+        self.ranges.clear();
 
-        if spp <= LINE_THRESHOLD && data.has_raw() {
-            self.mode = Mode::Line;
-            let a = (view.start.floor().max(0.0) as usize).min(total);
-            let b = ((view.start + view.len).ceil() as usize).min(total);
-            for i in a..b {
-                let frac = (i as f64 - view.start) / view.len;
-                let x = (-1.0 + 2.0 * frac) as f32;
-                self.scratch.push([x, amp_to_clip(data.samples_at(i))]);
-            }
+        self.mode = if spp <= LINE_THRESHOLD && data.has_raw() {
+            Mode::Line
         } else {
-            self.mode = Mode::Columns;
-            for x in 0..w {
-                let s0 = view.start + view.len * (x as f64 / w as f64);
-                let s1 = view.start + view.len * ((x + 1) as f64 / w as f64);
-                let (lo, hi) = data.column(spp, s0, s1);
-                let xl = -1.0 + 2.0 * (x as f32 / w as f32);
-                let xr = -1.0 + 2.0 * ((x + 1) as f32 / w as f32);
-                let yb = amp_to_clip(lo.min(0.0));
-                let yt = amp_to_clip(hi.max(0.0));
-                self.scratch.push([xl, yb]);
-                self.scratch.push([xr, yb]);
-                self.scratch.push([xr, yt]);
-                self.scratch.push([xl, yb]);
-                self.scratch.push([xr, yt]);
-                self.scratch.push([xl, yt]);
+            Mode::Columns
+        };
+        for ch in 0..data.num_channels() {
+            let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+            let first = (self.scratch.len() / FLOATS_PER_VERTEX) as u32;
+            match self.mode {
+                Mode::Line => {
+                    let a = (view.start.floor().max(0.0) as usize).min(total);
+                    let b = ((view.start + view.len).ceil() as usize).min(total);
+                    for i in a..b {
+                        let frac = (i as f64 - view.start) / view.len;
+                        let x = (-1.0 + 2.0 * frac) as f32;
+                        self.push_vertex(x, amp_to_clip(data.samples_at(ch, i)), color);
+                    }
+                }
+                Mode::Columns => {
+                    for x in 0..w {
+                        let s0 = view.start + view.len * (x as f64 / w as f64);
+                        let s1 = view.start + view.len * ((x + 1) as f64 / w as f64);
+                        let (lo, hi) = data.column(ch, spp, s0, s1);
+                        let xl = -1.0 + 2.0 * (x as f32 / w as f32);
+                        let xr = -1.0 + 2.0 * ((x + 1) as f32 / w as f32);
+                        let yb = amp_to_clip(lo.min(0.0));
+                        let yt = amp_to_clip(hi.max(0.0));
+                        self.push_vertex(xl, yb, color);
+                        self.push_vertex(xr, yb, color);
+                        self.push_vertex(xr, yt, color);
+                        self.push_vertex(xl, yb, color);
+                        self.push_vertex(xr, yt, color);
+                        self.push_vertex(xl, yt, color);
+                    }
+                }
             }
+            let count = (self.scratch.len() / FLOATS_PER_VERTEX) as u32 - first;
+            self.ranges.push((first, count));
         }
 
-        let needed = self.scratch.len() as u64;
+        let needed = (self.scratch.len() / FLOATS_PER_VERTEX) as u64;
         if needed > self.capacity_vertices {
             self.capacity_vertices = needed.next_power_of_two();
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some("waveform vertices"),
-                size: self.capacity_vertices * 2 * std::mem::size_of::<f32>() as u64,
+                size: self.capacity_vertices
+                    * (FLOATS_PER_VERTEX * std::mem::size_of::<f32>()) as u64,
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
         }
         queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&self.scratch));
-        self.num_vertices = self.scratch.len() as u32;
     }
 
-    /// Record the draw into an existing render pass.
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
-        if self.num_vertices == 0 {
-            return;
-        }
+    fn bind(&self, pass: &mut wgpu::RenderPass<'_>) {
         let pipeline = match self.mode {
             Mode::Columns => &self.column_pipeline,
             Mode::Line => &self.line_pipeline,
         };
         pass.set_pipeline(pipeline);
-        pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        pass.draw(0..self.num_vertices, 0..1);
     }
-}
 
-impl WaveformData {
-    /// Single-sample access for the line regime, clamped to bounds.
-    fn samples_at(&self, i: usize) -> f32 {
-        self.samples.get(i).copied().unwrap_or(0.0)
+    /// Record every channel's draw into an existing render pass (the overlaid
+    /// form — all traces share the caller's viewport). One draw per channel so
+    /// the line strips do not connect across channels.
+    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
+        if self.ranges.iter().all(|(_, count)| *count == 0) {
+            return;
+        }
+        self.bind(pass);
+        for (first, count) in &self.ranges {
+            if *count > 0 {
+                pass.draw(*first..*first + *count, 0..1);
+            }
+        }
+    }
+
+    /// Record one channel's draw (the stacked form — the caller sets that
+    /// channel's lane viewport first).
+    pub fn draw_channel(&self, pass: &mut wgpu::RenderPass<'_>, ch: usize) {
+        let Some(&(first, count)) = self.ranges.get(ch) else {
+            return;
+        };
+        if count == 0 {
+            return;
+        }
+        self.bind(pass);
+        pass.draw(first..first + count, 0..1);
     }
 }
 
@@ -311,6 +438,16 @@ impl WaveformView {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, data: WaveformData) -> Self {
         let renderer = WaveformRenderer::new(device, format);
         Self { data, renderer }
+    }
+
+    /// How many channels the underlying data holds (the lane count).
+    pub fn num_channels(&self) -> usize {
+        self.data.num_channels()
+    }
+
+    /// Record one channel's draw (see [`WaveformRenderer::draw_channel`]).
+    pub fn draw_channel(&self, pass: &mut wgpu::RenderPass<'_>, ch: usize) {
+        self.renderer.draw_channel(pass, ch);
     }
 }
 
@@ -355,7 +492,7 @@ mod tests {
         // Zoomed in past the base bucket (spp < 256): the raw regime would read
         // the empty buffer and collapse to (0, 0) — the disappearing wave. The
         // fallback reads the pyramid's finest level, so the envelope survives.
-        let (lo, hi) = data.column(8.0, 0.0, 8.0);
+        let (lo, hi) = data.column(0, 8.0, 0.0, 8.0);
         assert!(
             lo <= -0.4 && hi >= 0.4,
             "cache-only zoom-in should show the pyramid envelope, got ({lo}, {hi})"
@@ -366,10 +503,74 @@ mod tests {
     fn raw_view_still_uses_raw_samples_when_zoomed_in() {
         let data = WaveformData::new(Arc::from(envelope_signal(4096)), 256);
         assert!(data.has_raw());
-        let (lo, hi) = data.column(8.0, 0.0, 8.0);
+        let (lo, hi) = data.column(0, 8.0, 0.0, 8.0);
         assert!(
             lo <= -0.4 && hi >= 0.4,
             "raw zoom-in lost the signal: ({lo}, {hi})"
+        );
+    }
+
+    #[test]
+    fn interleaved_channels_split_and_share_the_time_axis() {
+        // Stereo: channel 0 the envelope, channel 1 silence.
+        let inter: Vec<f32> = envelope_signal(2048)
+            .into_iter()
+            .flat_map(|s| [s, 0.0])
+            .collect();
+        let data = WaveformData::from_interleaved(&inter, 2, 64);
+        assert_eq!(data.num_channels(), 2);
+        assert_eq!(data.total_samples(), 2048, "frames, not flat samples");
+        let (lo0, hi0) = data.column(0, 128.0, 0.0, 128.0);
+        assert!(lo0 <= -0.4 && hi0 >= 0.4, "channel 0 keeps the envelope");
+        let (lo1, hi1) = data.column(1, 128.0, 0.0, 128.0);
+        assert_eq!((lo1, hi1), (0.0, 0.0), "channel 1 is silent");
+        // An out-of-range channel reads zero instead of panicking.
+        assert_eq!(data.column(5, 128.0, 0.0, 128.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn cache_only_multichannel_view_reads_every_lane() {
+        let inter: Vec<f32> = envelope_signal(2048)
+            .into_iter()
+            .flat_map(|s| [s, s * 0.5])
+            .collect();
+        let multi = MultiPyramid::build_interleaved(&inter, 2, 64);
+        let data = WaveformData::with_multi_pyramid(multi);
+        assert_eq!(data.num_channels(), 2);
+        assert!(!data.has_raw());
+        let (_, hi0) = data.column(0, 8.0, 0.0, 64.0);
+        let (_, hi1) = data.column(1, 8.0, 0.0, 64.0);
+        assert!(hi0 >= 0.4 && (0.2..0.4).contains(&hi1));
+    }
+
+    #[test]
+    fn lod_crossfade_is_continuous_across_a_level_switch() {
+        // A signal whose envelope shrinks with time makes adjacent pyramid
+        // levels disagree, so a hard level switch would jump. Sample the column
+        // just below and just above the switch point (spp = 2 * base_bucket):
+        // the cross-faded values must be close.
+        let n = 65536;
+        let samples: Vec<f32> = (0..n)
+            .map(|i| {
+                let env = 1.0 - i as f32 / n as f32;
+                if i % 2 == 0 { env } else { -env }
+            })
+            .collect();
+        let data = WaveformData::new(Arc::from(samples), 64);
+        let (s0, s1) = (40_000.0, 40_256.0);
+        let switch = 128.0; // 2 * base_bucket: level_for flips from 0 to 1 here
+        let (lo_a, hi_a) = data.column(0, switch - 1e-3, s0, s1);
+        let (lo_b, hi_b) = data.column(0, switch + 1e-3, s0, s1);
+        assert!(
+            (lo_a - lo_b).abs() < 1e-3 && (hi_a - hi_b).abs() < 1e-3,
+            "envelope must be continuous at the level switch: ({lo_a},{hi_a}) vs ({lo_b},{hi_b})"
+        );
+        // And in between the blend moves monotonically toward the coarse level.
+        let (_, hi_mid) = data.column(0, 64.0 * 1.5, s0, s1);
+        let (_, hi_fine) = data.column(0, 64.0 + 1e-3, s0, s1);
+        assert!(
+            hi_mid >= hi_fine - 1e-6,
+            "blend widens toward the coarse level"
         );
     }
 }

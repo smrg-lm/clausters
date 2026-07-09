@@ -1818,3 +1818,62 @@ with Session.live() as s:
     # correlacion(canalL, canalR) -> +1 mono, 0 decorrelado, -1 antifase
     print(correlation(list(l), list(l)))  # +1 con el mismo canal
 ```
+
+## 31. Waveform y espectrograma de nivel editor (G20)
+
+G20 profundiza las dos vistas pesadas hasta calidad de editor de audio y cablea
+por fin el widget `spectrogram` al host (existia solo como binario demo):
+**multicanal** (todos los canales de un `path`/`buffer`/`cache`, lanes apiladas
+o trazas superpuestas con `overlay=True`), **zoom sin saltos** (crossfade entre
+niveles de la piramide de picos), **reglas** (eje de tiempo 1-2-5 en
+`h:mm:ss.mmm` o samples; eje de Hz en el espectrograma, log o lineal, calcado
+del mapeo del shader), **seleccion** arrastrable (`/gui_event id "selection"
+start len`, tambien seteable por `/gui_set`), **playhead** que sigue el reloj
+de samples del engine (cero mensajes por frame via el segmento; `/clock` por
+tick en el browser) y **readout** de cursor. La cache de picos multicanal es
+**un solo archivo** (CLPK v2, un canal tras otro; las v1 mono siguen andando),
+construible desde Python con `peaks_cache_file(samples, path, channels=N)`
+(FFI, CORE_ABI v8).
+
+### Tests automaticos
+
+```sh
+cargo test -p clausters-core peaks       # MultiPyramid: build/round-trip/v1/size
+cargo test -p clausters-ffi              # peaks_multi_build byte-identico
+cd clients/gui && cargo test --quiet     # 119 verdes: crossfade, reglas, lanes,
+                                         # parse/apply de ambos widgets, fetch multicanal
+```
+
+### Manual con ventana: el editor (`gui_editor.py`)
+
+```sh
+# servidor con segmento (una terminal, desde la raiz):
+cargo run -- --shm /dev/shm/clausters_editor
+
+# host en ventana, con leg al servidor y el mismo segmento (otra terminal):
+cd clients/gui && cargo run --bin clausters-gui -- \
+  --server 127.0.0.1:57110 --shm /dev/shm/clausters_editor -v
+
+# el script (otra terminal):
+PYTHONPATH=clients/python python clients/python/examples/gui_editor.py
+```
+
+Esperado:
+
+- La ventana muestra un **waveform de dos lanes** (frase estereo renderizada
+  offline, mapeada de un archivo f32 intercalado — cero OSC para las muestras)
+  sobre un **espectrograma de dos lanes** del mismo archivo, cada uno con su
+  regla de tiempo abajo y el espectrograma con la regla de Hz (log) a la
+  izquierda.
+- **Rueda** = zoom hacia el cursor (sin "pop" al cruzar niveles de detalle),
+  **Shift+arrastrar** = pan, **arrastrar** = seleccion (la banda translucida
+  sigue el cursor y el script imprime los eventos `selection` en samples y
+  segundos), **r** = reset de vista.
+- La **linea naranja (playhead)** recorre ambas vistas sincronizada con lo que
+  suena (un PlayBuf en loop; cada pasada se re-ancla con `/clock`). Sin
+  `--shm` en host/servidor el playhead simplemente no se dibuja.
+- El **readout** en la esquina inferior derecha sigue al cursor: tiempo +
+  amplitud en el waveform, tiempo + Hz en el espectrograma.
+- `gui.set(id, db_floor=..., log_freq=0, colormap=1)` recontrasta/reescala el
+  espectrograma en vivo sin recomputar nada (uniforms del shader);
+  `window_size`/`hop` son de definicion (recomputar = redefinir el def).

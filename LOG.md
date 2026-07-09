@@ -5085,3 +5085,95 @@ ran the phasescope + spectrum tick against a live stereo synth with no panic.
 Closes the catalog's four *future* scope entries together with G18. Docs: the
 audio-tap-views note in `docs/clients.md`, the Python builder/analysis
 docstrings (the generated `api.md`), GUIA manual steps, and the two GUI skills.
+
+## G20 — Editor-grade waveform + spectrogram (2026-07-09)
+
+The two heavy views raised to audio-editor depth — multichannel lanes, pop-free
+zoom, rulers, a draggable selection, a playhead and a cursor readout — and the
+`spectrogram` finally wired into the host as a widget (it had only existed as
+the standalone demo binary). All view-side: the data paths and the analysis
+model are unchanged; widgets extend, the protocol does not.
+
+- **Multichannel, one cache resource (decision recorded).** The multichannel
+  peak cache is **one file for all channels**, not per-channel siblings — a
+  single resource to name in a `cache` prop, atomic, channels can never drift:
+  `clausters_core::peaks::MultiPyramid` (format CLPK v2 = a channel count +
+  one level sequence per channel; v1 mono caches still parse, and mono
+  `Pyramid::to_bytes` still writes v1). The de-interleave lands core-side in
+  `MultiPyramid::build_interleaved`, per the placement rule, and the FFI grows
+  `clausters_core_peaks_multi_cache_size`/`_build` (CORE_ABI v7 → v8) so
+  `clausters.gui.peaks_cache_file(..., channels=N)` builds the byte-identical
+  cache the host maps. `WaveformData` holds raw samples + a pyramid per
+  channel; the mapped `path` de-interleaves every channel
+  (`MappedFile::channels_f32`) and writes/reuses a *multichannel* sibling
+  cache; the buffer fetch machine keeps the interleaved download whole
+  (channels + `/b_info` sample rate attached) and the fronts decide waveform
+  vs. spectrogram by looking the waiting widget up at completion. Lanes are
+  **stacked** by default (one viewport per channel, divider lines) or
+  **overlaid** (`overlay: 1`) with per-channel trace colors — the waveform
+  shader moved from a uniform color to per-vertex color (painter-shaped), one
+  vertex range per channel so line strips never connect across channels.
+- **LOD crossfade.** `WaveformData::column` blends the two pyramid levels
+  adjacent to the zoom, weighted by the fractional position of
+  `samples_per_px` between their buckets (`log2(spp/bucket)` in 0..1): pure
+  fine at a level's own bucket, converging to pure coarse exactly where
+  `level_for` switches, so the min/max envelope is continuous across level
+  switches instead of popping. A per-frame data choice inside the existing
+  geometry build; unit-tested for continuity at the switch point.
+- **The `spectrogram` widget.** `WidgetKind::Spectrogram` with the waveform's
+  source surface (`path`/prebuilt single-channel STFT `cache`/server
+  `buffer`/inline `data`/`blob`), `channels` lanes analyzed separately
+  (`frame::stft_lanes`), `window_size`/`hop` fixed at def time and the display
+  (`db_floor`/`db_ceil`/`log_freq`/`colormap`) as live `/gui_set` shader
+  uniforms through the new `SpectrogramView::set_display`. A long buffer no
+  longer risks GPU validation: `spectrogram::hop_capped` raises the hop so the
+  magnitude texture stays within 8192 frames (`MAX_FRAMES`), trading time
+  resolution for robustness.
+- **Rulers (display-only, `host/ruler.rs`).** An adaptive 1-2-5 time axis in a
+  strip under both views — `ruler: "time"` (default; `h:mm:ss.mmm`-style
+  labels when a rate is known, from the `sample_rate` prop, the `/b_info`
+  reply or the segment), `"samples"`, `"off"` — with unlabeled minor
+  subdivisions; the spectrogram adds a Hz ruler along the left edge whose
+  decade ticks (1/2/5 labeled) are placed by inverting the shader's exact
+  display→bin mapping (`bin_norm = f_lo^(1−d)`), log and linear. Pure tick
+  math, unit-tested against the shader geometry.
+- **Selection + playhead + readout.** Both kinds share an `EditorProps`
+  (ruler mode, `sample_rate`, `sel_start`/`sel_len`, `playhead_at` — `f64`
+  fields, sample-accurate past `f32` range): the selection draws as a
+  translucent band, drags with the pointer (**plain drag selects** — the
+  editor convention — and **Shift+drag pans**; decision recorded), emits
+  `/gui_event id "selection" start len` live during the drag (the `"view"`
+  event's model) and is settable via `/gui_set`; the playhead draws at
+  `sample_clock − playhead_at` (the script anchors it with `/clock` when it
+  starts a synth) — natively read from the shm header through the new
+  `BusSource::sample_clock` (zero messages), in the browser from `/clock`
+  polled once per animation tick; a playhead makes the window animate
+  (`tree_has_live_widget`). The cursor readout (time + amplitude, or time +
+  frequency by inverting the display mapping) sits in the body's corner. All
+  the chrome rides a second **overlay `Painter` pass** drawn after the GPU
+  views in the one shared `frame::render`, so the browser front renders it
+  identically by construction (browser parity is display + `/gui_set`; the
+  drag interactions stay native-only for now — recorded, not a protocol gap).
+- **Python leg.** `clausters.gui.waveform` grows the editor props
+  (`channels` now keeps every channel, `overlay`, `ruler`, `sample_rate`,
+  `sel_start`/`sel_len`, `playhead_at`); a new `clausters.gui.spectrogram`
+  builder; `peaks_cache_file(..., channels=N)`;
+  `examples/gui_editor.py` — a stereo NRT render shown as a two-lane waveform
+  over a two-lane spectrogram from one mapped file, a script-set selection
+  replaced live by dragging (events printed), and a looping `PlayBuf` whose
+  passes re-anchor the playhead from `/clock`.
+
+Verified: gui 119 unit tests (from 101 — crossfade continuity, ruler 1-2-5 /
+`h:mm:ss.mmm` / Hz-vs-shader geometry, multichannel lanes and cache-only
+views, widget parse/apply for both kinds, multichannel fetch, `hop_capped`);
+core `MultiPyramid` build/round-trip/v1-compat/size tests and the ffi
+multichannel build test; `clippy -D warnings` + `cargo fmt --check` clean in
+both workspaces, native and `wasm32`; the Python binding smoke-tested against
+the rebuilt cdylib (ABI v8, v1/v2 caches produced as expected); a headless E2E
+in one Bash invocation (waveform + spectrogram + multichannel cache parsed
+over the wire, sel/playhead/display `/gui_set`s applied, `/gui_info`
+round-trip); and a windowed runtime pass against the real server — a stereo
+file mapped into two waveform lanes, a stereo server buffer fetched into
+spectrogram lanes, selection/playhead/display driven live, no panic. Docs: the
+bulk-data note in `docs/clients.md`, the Python builder docstrings (the
+generated `api.md`), GUIA manual steps, and the two GUI skills.

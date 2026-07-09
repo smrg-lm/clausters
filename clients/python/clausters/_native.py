@@ -23,7 +23,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 7
+CORE_ABI_VERSION = 8
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -236,6 +236,16 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_peaks_cache_size.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_core_peaks_build.restype = ctypes.c_size_t
     lib.clausters_core_peaks_build.argtypes = [f32p, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t]
+    # Multichannel peak-pyramid cache (ABI v8): one cache resource holding every
+    # channel of an interleaved buffer, the editor-grade waveform's format.
+    lib.clausters_core_peaks_multi_cache_size.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_multi_cache_size.argtypes = [
+        ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t,
+    ]
+    lib.clausters_core_peaks_multi_build.restype = ctypes.c_size_t
+    lib.clausters_core_peaks_multi_build.argtypes = [
+        f32p, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t,
+    ]
     # Stereo-field measurements (ABI v7): the correlation and Lissajous/goniometer
     # geometry the GUI phasescope reads, shared so a headless capture matches it.
     lib.clausters_core_correlation.restype = ctypes.c_int32
@@ -553,14 +563,30 @@ class ClockSyncModel:
             pass
 
 
-def peaks_cache(samples, base_bucket: int = 256) -> bytes:
-    """The min/max peak-pyramid cache for mono `samples`, built by the shared
+def peaks_cache(samples, base_bucket: int = 256, channels: int = 1) -> bytes:
+    """The min/max peak-pyramid cache for `samples`, built by the shared
     native core so it is **byte-identical** to one the GUI host (or the server)
     builds. These bytes are the GUI's mmap-able waveform overview: write them to
     a file a ``waveform(cache=...)`` maps, so a multi-megabyte buffer never rides
-    OSC. `base_bucket` is the level-0 bucket size (default 256)."""
+    OSC. `base_bucket` is the level-0 bucket size (default 256).
+
+    With ``channels > 1`` the samples are interleaved frames and the result is
+    the **multichannel** cache — one resource holding a pyramid per channel, the
+    format the editor-grade waveform draws as stacked lanes."""
     a, _ = _as_array(samples)
     n = len(a)
+    if channels > 1:
+        frames = n // channels
+        size = lib().clausters_core_peaks_multi_cache_size(frames, channels, base_bucket)
+        if size == 0:
+            raise ValueError(
+                "clausters_core_peaks_multi_cache_size returned 0 (base_bucket must be > 0)")
+        out = (ctypes.c_ubyte * size)()
+        written = lib().clausters_core_peaks_multi_build(
+            _ptr(a), n, channels, base_bucket, out, size)
+        if written != size:
+            raise ValueError(f"clausters_core_peaks_multi_build wrote {written} of {size} bytes")
+        return bytes(out)
     size = lib().clausters_core_peaks_cache_size(n, base_bucket)
     if size == 0:
         raise ValueError("clausters_core_peaks_cache_size returned 0 (base_bucket must be > 0)")

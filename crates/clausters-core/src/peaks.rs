@@ -29,7 +29,11 @@ use std::path::Path;
 use crate::bytes;
 
 const MAGIC: &[u8; 4] = b"CLPK";
+/// Version 1 is the mono layout ([`Pyramid::to_bytes`]); version 2 prefixes a
+/// channel count and carries one level sequence per channel
+/// ([`MultiPyramid::to_bytes`]). Readers accept both (v1 parses as one channel).
 const VERSION: u32 = 1;
+const VERSION_MULTI: u32 = 2;
 
 /// Min/max over a slice, or `None` if empty.
 pub fn min_max(samples: &[f32]) -> Option<(f32, f32)> {
@@ -116,6 +120,13 @@ impl Pyramid {
 
     pub fn num_levels(&self) -> usize {
         self.levels.len()
+    }
+
+    /// The bucket size (source samples per entry) of `level`, if it exists.
+    /// A renderer cross-fading between adjacent levels uses it to weight the
+    /// blend by where `samples_per_px` sits between the two buckets.
+    pub fn level_bucket(&self, level: usize) -> Option<usize> {
+        self.levels.get(level).map(|l| l.bucket)
     }
 
     /// Pick the finest level whose bucket does not exceed `samples_per_px`, so
@@ -233,6 +244,153 @@ pub fn cache_size(total_samples: usize, base_bucket: usize) -> usize {
     size
 }
 
+/// A peak pyramid per channel of a multichannel buffer, sharing one
+/// `base_bucket` and one per-channel length. This is **one cache resource**
+/// (a single file/byte buffer, `to_bytes` version 2) rather than per-channel
+/// sibling files, so a multichannel waveform view names exactly one `cache`
+/// prop and the channels can never drift apart. `from_bytes` also accepts the
+/// version-1 mono layout (as one channel), so existing caches keep working.
+pub struct MultiPyramid {
+    channels: Vec<Pyramid>,
+}
+
+impl MultiPyramid {
+    /// Builds one pyramid per channel from `samples` holding `channels`
+    /// interleaved channels (`channels >= 1`; a trailing partial frame is
+    /// ignored). The de-interleave lives here — core-side — so every client
+    /// builds the identical multichannel cache from the same flat buffer.
+    pub fn build_interleaved(samples: &[f32], channels: usize, base_bucket: usize) -> Self {
+        let channels = channels.max(1);
+        let frames = samples.len() / channels;
+        let pyramids = (0..channels)
+            .map(|ch| {
+                let one: Vec<f32> = (0..frames).map(|f| samples[f * channels + ch]).collect();
+                Pyramid::build(&one, base_bucket)
+            })
+            .collect();
+        Self { channels: pyramids }
+    }
+
+    /// Wraps already-built per-channel pyramids (they must share `base_bucket`
+    /// and length; `build_interleaved` guarantees it).
+    pub fn from_channels(channels: Vec<Pyramid>) -> Self {
+        assert!(!channels.is_empty());
+        Self { channels }
+    }
+
+    pub fn num_channels(&self) -> usize {
+        self.channels.len()
+    }
+
+    /// Channel `ch`'s pyramid.
+    pub fn channel(&self, ch: usize) -> Option<&Pyramid> {
+        self.channels.get(ch)
+    }
+
+    /// Consumes the cache into its per-channel pyramids.
+    pub fn into_channels(self) -> Vec<Pyramid> {
+        self.channels
+    }
+
+    /// Samples per channel (the length a view of this cache spans).
+    pub fn frames(&self) -> usize {
+        self.channels[0].total_samples()
+    }
+
+    pub fn base_bucket(&self) -> usize {
+        self.channels[0].base_bucket()
+    }
+
+    /// Serialize to the version-2 flat byte layout (see [`crate::bytes`]).
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let first = &self.channels[0];
+        let mut out = Vec::new();
+        out.extend_from_slice(MAGIC);
+        bytes::push_u32(&mut out, VERSION_MULTI);
+        bytes::push_u64(&mut out, first.base_bucket);
+        bytes::push_u64(&mut out, first.total_samples);
+        bytes::push_u64(&mut out, self.channels.len());
+        bytes::push_u64(&mut out, first.levels.len());
+        for ch in &self.channels {
+            for lvl in &ch.levels {
+                bytes::push_u64(&mut out, lvl.bucket);
+                bytes::push_u64(&mut out, lvl.min.len());
+                bytes::push_f32s(&mut out, &lvl.min);
+                bytes::push_f32s(&mut out, &lvl.max);
+            }
+        }
+        out
+    }
+
+    /// Parse a version-2 buffer, or a version-1 (mono) one as a single channel.
+    /// `None` if malformed.
+    pub fn from_bytes(data: &[u8]) -> Option<Self> {
+        let mut r = bytes::Reader::new(data);
+        r.tag(MAGIC)?;
+        let version = r.u32()?;
+        if version == VERSION {
+            return Pyramid::from_bytes(data).map(|p| Self { channels: vec![p] });
+        }
+        if version != VERSION_MULTI {
+            return None;
+        }
+        let base_bucket = r.usize()?;
+        let total_samples = r.usize()?;
+        let n_channels = r.usize()?.max(1);
+        let n_levels = r.usize()?;
+        let mut channels = Vec::with_capacity(n_channels);
+        for _ in 0..n_channels {
+            let mut levels = Vec::with_capacity(n_levels);
+            for _ in 0..n_levels {
+                let bucket = r.usize()?;
+                let len = r.usize()?;
+                let min = r.f32_vec(len)?;
+                let max = r.f32_vec(len)?;
+                levels.push(Level { bucket, min, max });
+            }
+            channels.push(Pyramid {
+                base_bucket,
+                total_samples,
+                levels,
+            });
+        }
+        Some(Self { channels })
+    }
+
+    /// Write the cache to `path` (one file for all channels).
+    pub fn write_cache(&self, path: impl AsRef<Path>) -> io::Result<()> {
+        fs::write(path, self.to_bytes())
+    }
+
+    /// Read a cache from `path`. `Ok(None)` if malformed, so the caller can
+    /// recompute.
+    pub fn read_cache(path: impl AsRef<Path>) -> io::Result<Option<Self>> {
+        Ok(Self::from_bytes(&fs::read(path)?))
+    }
+}
+
+/// The exact [`MultiPyramid::to_bytes`] length for `frames` samples per channel
+/// across `channels` channels at `base_bucket`, computed without building —
+/// the multichannel sibling of [`cache_size`], pinned to `to_bytes` by the
+/// `multi_cache_size_matches_to_bytes_len` test.
+pub fn multi_cache_size(frames: usize, channels: usize, base_bucket: usize) -> usize {
+    assert!(base_bucket >= 1);
+    let channels = channels.max(1);
+    // Header: MAGIC(4) + VERSION(4) + base_bucket(8) + frames(8) + channels(8)
+    // + n_levels(8).
+    let mut size = 4 + 4 + 8 + 8 + 8 + 8;
+    let mut level_len = frames.div_ceil(base_bucket);
+    loop {
+        // Per level per channel: bucket(8) + len(8) + min(4*len) + max(4*len).
+        size += channels * (8 + 8 + 8 * level_len);
+        if level_len <= 1 {
+            break;
+        }
+        level_len = level_len.div_ceil(2);
+    }
+    size
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +466,67 @@ mod tests {
     fn from_bytes_rejects_garbage() {
         assert!(Pyramid::from_bytes(b"not a pyramid").is_none());
         assert!(Pyramid::from_bytes(&[]).is_none());
+    }
+
+    #[test]
+    fn multi_build_matches_per_channel_builds() {
+        // Interleaved stereo whose channels are a ramp and its negation: each
+        // channel's pyramid must equal the one built from the channel alone.
+        let frames = 3000;
+        let (l, r): (Vec<f32>, Vec<f32>) =
+            (ramp(frames), ramp(frames).iter().map(|x| -x).collect());
+        let inter: Vec<f32> = l.iter().zip(&r).flat_map(|(&a, &b)| [a, b]).collect();
+        let multi = MultiPyramid::build_interleaved(&inter, 2, 64);
+        assert_eq!(multi.num_channels(), 2);
+        assert_eq!(multi.frames(), frames);
+        for (ch, mono) in [(0, &l), (1, &r)] {
+            let alone = Pyramid::build(mono, 64);
+            let got = multi.channel(ch).unwrap();
+            for level in 0..alone.num_levels() {
+                assert_eq!(
+                    got.column(level, 0.0, frames as f64),
+                    alone.column(level, 0.0, frames as f64),
+                    "channel {ch} level {level}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn multi_cache_round_trip_and_v1_compatibility() {
+        let inter: Vec<f32> = ramp(4000);
+        let multi = MultiPyramid::build_interleaved(&inter, 2, 32);
+        let back = MultiPyramid::from_bytes(&multi.to_bytes()).expect("parse v2");
+        assert_eq!(back.num_channels(), 2);
+        assert_eq!(back.frames(), multi.frames());
+        assert_eq!(back.base_bucket(), 32);
+        let top = back.channel(1).unwrap().num_levels() - 1;
+        assert_eq!(
+            back.channel(1).unwrap().column(top, 0.0, 2000.0),
+            multi.channel(1).unwrap().column(top, 0.0, 2000.0)
+        );
+        // A v1 (mono) cache parses as one channel.
+        let mono = Pyramid::build(&ramp(1000), 16);
+        let as_multi = MultiPyramid::from_bytes(&mono.to_bytes()).expect("parse v1");
+        assert_eq!(as_multi.num_channels(), 1);
+        assert_eq!(as_multi.frames(), 1000);
+        // And garbage is still rejected.
+        assert!(MultiPyramid::from_bytes(b"junk").is_none());
+    }
+
+    #[test]
+    fn multi_cache_size_matches_to_bytes_len() {
+        for &(frames, channels, base) in &[(0, 1, 256), (1000, 2, 64), (5000, 4, 256), (77, 3, 8)] {
+            let inter = ramp(frames * channels);
+            let built = MultiPyramid::build_interleaved(&inter, channels, base)
+                .to_bytes()
+                .len();
+            assert_eq!(
+                multi_cache_size(frames, channels, base),
+                built,
+                "frames={frames} channels={channels} base={base}"
+            );
+        }
     }
 
     #[test]

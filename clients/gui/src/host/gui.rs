@@ -34,6 +34,7 @@ use winit::keyboard::{Key, NamedKey};
 use winit::window::{CursorGrabMode, Window, WindowId};
 
 use crate::gpu::Gpu;
+use crate::spectrogram::Stft;
 use crate::view::TimelineView;
 use crate::viewport::View;
 use crate::waveform::WaveformData;
@@ -41,7 +42,7 @@ use crate::waveform::WaveformData;
 use super::bulk::MmapLoader;
 use super::canvas::CanvasView;
 use super::fetch::{BufferFetches, FetchStep, WaveWant};
-use super::frame::{self, WaveformSlot};
+use super::frame::{self, SpectrogramSlot, WaveformSlot};
 use super::interact::{self, slider_t, value_of};
 use super::layout::Rect;
 use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
@@ -191,12 +192,21 @@ enum Drag {
     },
     /// A momentary button held down (emits 0 on release).
     Button { id: i32 },
-    /// Panning a waveform's time view from a snapshot.
-    Waveform {
+    /// Panning a timeline view's (waveform/spectrogram) window from a snapshot
+    /// (Shift+drag).
+    Pan {
         id: i32,
         origin_x: f64,
         start: f64,
         body_w: f64,
+    },
+    /// Dragging a selection on a timeline view: `anchor` is the sample under
+    /// the press; the selection spans from it to the cursor's sample.
+    Select {
+        id: i32,
+        body_x: f64,
+        body_w: f64,
+        anchor: f64,
     },
 }
 
@@ -207,11 +217,19 @@ enum Drag {
 struct WindowState {
     gpu: Gpu,
     waveforms: HashMap<i32, WaveformSlot>,
+    /// Per-`spectrogram` GPU resources (one STFT view per channel lane).
+    spectrograms: HashMap<i32, SpectrogramSlot>,
     /// Per-`canvas` GPU resources (the compiled user shader + uniforms).
     canvases: HashMap<i32, CanvasView>,
     painter: Painter,
+    /// The second mesh pass: editor chrome drawn over the heavy views
+    /// (selection, playhead, rulers' overlay parts, cursor readout).
+    overlay: Painter,
     origin: SocketAddr,
     cursor: (f64, f64),
+    /// Whether Shift is held (Shift+drag pans a timeline view; plain drag
+    /// selects).
+    shift: bool,
     drag: Option<Drag>,
     /// Recent control-bus samples per `scope` widget id (oldest .. newest).
     scopes: HashMap<i32, VecDeque<f32>>,
@@ -458,13 +476,21 @@ impl App {
         };
 
         let mut waveforms = HashMap::new();
+        let mut spectrograms = HashMap::new();
         let mut buffer_refs = Vec::new();
         let mut canvases = HashMap::new();
         if let Some(tree) = self.host.window_def(id) {
-            collect_waveforms(tree, &gpu, &mut waveforms, &mut buffer_refs);
+            collect_timelines(
+                tree,
+                &gpu,
+                &mut waveforms,
+                &mut spectrograms,
+                &mut buffer_refs,
+            );
             collect_canvases(tree, &gpu, &mut canvases);
         }
         let painter = Painter::new(&gpu.device, gpu.config.format);
+        let overlay = Painter::new(&gpu.device, gpu.config.format);
 
         self.by_winit.insert(winit_id, id);
         self.windows.insert(
@@ -472,10 +498,13 @@ impl App {
             WindowState {
                 gpu,
                 waveforms,
+                spectrograms,
                 canvases,
                 painter,
+                overlay,
                 origin,
                 cursor: (0.0, 0.0),
+                shift: false,
                 drag: None,
                 scopes: HashMap::new(),
                 tap_windows: HashMap::new(),
@@ -503,12 +532,13 @@ impl App {
         }
     }
 
-    /// Registers waveform widgets that reference a server buffer and queries the
-    /// audio server for each distinct buffer's shape (the fetch proceeds on the
-    /// `/b_info` reply). `refs` is `(widget_id, bufnum, base_bucket)`.
-    fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32, usize)>) {
-        for (widget_id, bufnum, base_bucket) in refs {
-            if let Some(query) = self.fetches.want(def_id, widget_id, bufnum, base_bucket) {
+    /// Registers timeline widgets (waveform/spectrogram) that reference a
+    /// server buffer and queries the audio server for each distinct buffer's
+    /// shape (the fetch proceeds on the `/b_info` reply). `refs` is
+    /// `(widget_id, bufnum)`.
+    fn start_buffer_fetches(&mut self, def_id: i32, refs: Vec<(i32, i32)>) {
+        for (widget_id, bufnum) in refs {
+            if let Some(query) = self.fetches.want(def_id, widget_id, bufnum) {
                 self.send_to_server(query);
             }
         }
@@ -535,9 +565,11 @@ impl App {
             FetchStep::Request(msg) => self.send_to_server(msg),
             FetchStep::Done {
                 bufnum,
-                mono,
+                samples,
+                channels,
+                sample_rate,
                 wants,
-            } => self.finalize_buffer(bufnum, mono, wants),
+            } => self.finalize_buffer(bufnum, samples, channels, sample_rate, wants),
             FetchStep::None => {}
         }
     }
@@ -584,13 +616,14 @@ impl App {
                         OscType::Int(bufnum),
                         OscType::Int(frames),
                         OscType::Int(channels),
-                        _,
+                        rate,
                     ] = group
                     {
                         let step = self.fetches.on_info(
                             *bufnum,
                             (*frames).max(0) as usize,
                             (*channels).max(0) as usize,
+                            float_arg(rate),
                         );
                         self.apply_fetch_step(step);
                     }
@@ -688,20 +721,77 @@ impl App {
         }
     }
 
-    /// A buffer finished downloading (channel 0 already de-interleaved by the
-    /// fetch machine): build a waveform view in each window that waited on it.
-    fn finalize_buffer(&mut self, bufnum: i32, mono: Arc<[f32]>, wants: Vec<WaveWant>) {
+    /// A buffer finished downloading (interleaved, every channel kept): look
+    /// up each waiting widget and build its view — a multichannel waveform, or
+    /// one STFT lane per channel for a spectrogram. The buffer's `/b_info`
+    /// sample rate also fills a widget's unknown `sample_rate`, so its ruler
+    /// and readout label real time.
+    fn finalize_buffer(
+        &mut self,
+        bufnum: i32,
+        samples: Arc<[f32]>,
+        channels: usize,
+        sample_rate: f64,
+        wants: Vec<WaveWant>,
+    ) {
+        let channels = channels.max(1);
         info!(
-            "buffer {bufnum}: {} frames loaded into {} waveform(s)",
-            mono.len(),
+            "buffer {bufnum}: {} frames x {channels} channel(s) loaded into {} view(s)",
+            samples.len() / channels,
             wants.len()
         );
         for want in wants {
-            if let Some(ws) = self.windows.get_mut(&want.def_id) {
-                let data = WaveformData::new(Arc::clone(&mono), want.base_bucket);
-                let slot = frame::waveform_slot(data, &ws.gpu);
-                ws.waveforms.insert(want.widget_id, slot);
-                ws.gpu.window.request_redraw();
+            let Some(kind) = self
+                .host
+                .window_def(want.def_id)
+                .and_then(|t| t.find(want.widget_id))
+                .map(|w| w.kind.clone())
+            else {
+                continue;
+            };
+            let Some(ws) = self.windows.get_mut(&want.def_id) else {
+                continue;
+            };
+            match kind {
+                WidgetKind::Waveform { base_bucket, .. } => {
+                    let data = WaveformData::from_interleaved(&samples, channels, base_bucket);
+                    let slot = frame::waveform_slot(data, &ws.gpu);
+                    ws.waveforms.insert(want.widget_id, slot);
+                }
+                WidgetKind::Spectrogram {
+                    window_size,
+                    hop,
+                    sample_rate: rate_prop,
+                    ..
+                } => {
+                    let rate = if rate_prop > 0.0 {
+                        rate_prop
+                    } else {
+                        sample_rate
+                    };
+                    let stfts = frame::stft_lanes(
+                        frame::deinterleave(&samples, channels),
+                        window_size,
+                        hop,
+                        rate,
+                    );
+                    if let Some(slot) = frame::spectrogram_slot(stfts, &ws.gpu) {
+                        ws.spectrograms.insert(want.widget_id, slot);
+                    }
+                }
+                _ => continue,
+            }
+            ws.gpu.window.request_redraw();
+            // Let the ruler label real time when the widget knew no rate.
+            if sample_rate > 0.0
+                && let Some(w) = self
+                    .host
+                    .window_def_mut(want.def_id)
+                    .and_then(|t| t.find_mut(want.widget_id))
+                && let Some(editor) = w.kind.editor_mut()
+                && editor.sample_rate <= 0.0
+            {
+                editor.sample_rate = sample_rate;
             }
         }
     }
@@ -823,21 +913,84 @@ impl App {
                 self.emit_value(def_id, id);
                 self.redraw(def_id);
             }
-            WidgetKind::Waveform { .. } => {
-                if let Some(slot) = self.windows.get(&def_id).and_then(|w| w.waveforms.get(&id)) {
-                    self.set_drag(
-                        def_id,
-                        Drag::Waveform {
-                            id,
-                            origin_x: cx,
-                            start: slot.nav.start,
-                            body_w: rect.w.max(1.0) as f64,
-                        },
-                    );
+            WidgetKind::Waveform { ref editor, .. }
+            | WidgetKind::Spectrogram { ref editor, .. } => {
+                let body = frame::timeline_body(rect, editor.ruler);
+                let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
+                if let Some((start, len, _)) = self.timeline_nav(def_id, id) {
+                    if shift {
+                        // Shift+drag pans the view (the pre-editor gesture).
+                        self.set_drag(
+                            def_id,
+                            Drag::Pan {
+                                id,
+                                origin_x: cx,
+                                start,
+                                body_w: body.w.max(1.0) as f64,
+                            },
+                        );
+                    } else {
+                        // Plain drag selects (the editor convention). The press
+                        // collapses the selection to the sample under it.
+                        let anchor = start + len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
+                        self.set_selection(def_id, id, anchor, anchor);
+                        self.set_drag(
+                            def_id,
+                            Drag::Select {
+                                id,
+                                body_x: body.x as f64,
+                                body_w: body.w.max(1.0) as f64,
+                                anchor,
+                            },
+                        );
+                        self.redraw(def_id);
+                    }
                 }
             }
             _ => {}
         }
+    }
+
+    /// The navigation window of timeline view `id` in window `def_id`:
+    /// `(start, len, total_samples)`, whichever slot map holds it.
+    fn timeline_nav(&self, def_id: i32, id: i32) -> Option<(f64, f64, usize)> {
+        let ws = self.windows.get(&def_id)?;
+        if let Some(s) = ws.waveforms.get(&id) {
+            return Some((s.nav.start, s.nav.len, s.view.total_samples()));
+        }
+        ws.spectrograms
+            .get(&id)
+            .map(|s| (s.nav.start, s.nav.len, s.total_samples()))
+    }
+
+    /// Writes the selection spanning samples `a..b` (any order, clamped to the
+    /// buffer) into timeline view `id`'s editor props and emits the
+    /// `"selection" start len` event to the script.
+    fn set_selection(&mut self, def_id: i32, id: i32, a: f64, b: f64) {
+        let Some((_, _, total)) = self.timeline_nav(def_id, id) else {
+            return;
+        };
+        let clamp = |s: f64| s.clamp(0.0, total as f64);
+        let (a, b) = (clamp(a), clamp(b));
+        let (start, len) = (a.min(b), (a - b).abs());
+        if let Some(editor) = self
+            .host
+            .window_def_mut(def_id)
+            .and_then(|t| t.find_mut(id))
+            .and_then(|w| w.kind.editor_mut())
+        {
+            editor.sel_start = start;
+            editor.sel_len = len;
+        }
+        self.emit(
+            def_id,
+            id,
+            vec![
+                OscType::String("selection".into()),
+                OscType::Float(start as f32),
+                OscType::Float(len as f32),
+            ],
+        );
     }
 
     fn set_drag(&mut self, def_id: i32, drag: Drag) {
@@ -909,12 +1062,18 @@ impl App {
                     }
                 }
                 Drag::Button { .. } => DragMove::None,
-                Drag::Waveform {
+                Drag::Pan {
                     id,
                     origin_x,
                     start,
                     body_w,
-                } => DragMove::Waveform(*id, *origin_x, *start, *body_w),
+                } => DragMove::Pan(*id, *origin_x, *start, *body_w),
+                Drag::Select {
+                    id,
+                    body_x,
+                    body_w,
+                    anchor,
+                } => DragMove::Select(*id, *body_x, *body_w, *anchor),
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -938,35 +1097,48 @@ impl App {
                 self.emit_value(def_id, id);
                 self.redraw(def_id);
             }
-            Some(DragMove::Waveform(id, origin_x, start, body_w)) => {
-                self.pan_waveform(def_id, id, start, (cx - origin_x) / body_w);
+            Some(DragMove::Pan(id, origin_x, start, body_w)) => {
+                self.pan_timeline(def_id, id, start, (cx - origin_x) / body_w);
+            }
+            Some(DragMove::Select(id, body_x, body_w, anchor)) => {
+                let (start, len) = match self.timeline_nav(def_id, id) {
+                    Some((start, len, _)) => (start, len),
+                    None => return,
+                };
+                let cur = start + len * ((cx - body_x) / body_w);
+                self.set_selection(def_id, id, anchor, cur);
+                self.redraw(def_id);
             }
             Some(DragMove::None) | None => {}
         }
     }
 
-    fn pan_waveform(&mut self, def_id: i32, id: i32, start: f64, dx_fraction: f64) {
-        if let Some(ws) = self.windows.get_mut(&def_id)
-            && let Some(slot) = ws.waveforms.get_mut(&id)
-        {
-            let total = slot.view.total_samples();
-            slot.nav
-                .set_start(start - dx_fraction * slot.nav.len, total);
+    fn pan_timeline(&mut self, def_id: i32, id: i32, start: f64, dx_fraction: f64) {
+        if let Some(ws) = self.windows.get_mut(&def_id) {
+            if let Some(slot) = ws.waveforms.get_mut(&id) {
+                let total = slot.view.total_samples();
+                slot.nav
+                    .set_start(start - dx_fraction * slot.nav.len, total);
+            } else if let Some(slot) = ws.spectrograms.get_mut(&id) {
+                let total = slot.total_samples();
+                slot.nav
+                    .set_start(start - dx_fraction * slot.nav.len, total);
+            }
         }
         self.emit_view(def_id, id);
         self.redraw(def_id);
     }
 
-    /// Emits a waveform's visible range as a `/gui_event id "view" start len`.
+    /// Emits a timeline view's visible range as a `/gui_event id "view" start len`.
     fn emit_view(&self, def_id: i32, id: i32) {
-        if let Some(slot) = self.windows.get(&def_id).and_then(|w| w.waveforms.get(&id)) {
+        if let Some((start, len, _)) = self.timeline_nav(def_id, id) {
             self.emit(
                 def_id,
                 id,
                 vec![
                     OscType::String("view".into()),
-                    OscType::Float(slot.nav.start as f32),
-                    OscType::Float(slot.nav.len as f32),
+                    OscType::Float(start as f32),
+                    OscType::Float(len as f32),
                 ],
             );
         }
@@ -1000,12 +1172,15 @@ impl App {
         let Some(tree) = self.host.window_def(def_id) else {
             return;
         };
+        let cursor = self.windows.get(&def_id).map(|w| w.cursor);
         let inputs = frame::FrameInputs {
             bus: self.shm.as_deref(),
             node_trees: &self.node_trees,
             active_button,
             server_attached,
             sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
+            sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
+            cursor,
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
@@ -1013,7 +1188,9 @@ impl App {
         frame::render(
             &mut ws.gpu,
             &mut ws.painter,
+            &mut ws.overlay,
             &mut ws.waveforms,
+            &mut ws.spectrograms,
             &mut ws.canvases,
             &ws.scopes,
             &ws.tap_windows,
@@ -1028,51 +1205,122 @@ impl App {
 enum DragMove {
     Slider(i32, Rect, bool),
     Vertical(i32, f64, f32),
-    Waveform(i32, f64, f64, f64),
+    Pan(i32, f64, f64, f64),
+    Select(i32, f64, f64, f64),
     None,
 }
 
-/// Walks the tree building waveform views. A `cache`/`path` waveform is loaded
-/// **now** from a mapped local resource (the G7 bulk path, no OSC); a
-/// server-`buffer` reference with no data is deferred as a
-/// `(widget_id, bufnum, base_bucket)` entry in `buffer_refs` for the client leg
-/// to fetch; inline/blob (and empty) samples build a slot directly.
-fn collect_waveforms(
+/// Walks the tree building the timeline views (waveform and spectrogram). A
+/// `cache`/`path` resource is loaded **now** from a mapped local file (the
+/// bulk path, no OSC); a server-`buffer` reference with no data is deferred as
+/// a `(widget_id, bufnum)` entry in `buffer_refs` for the client leg to fetch;
+/// inline/blob (and empty) samples build a slot directly.
+fn collect_timelines(
     widget: &Widget,
     gpu: &Gpu,
-    out: &mut HashMap<i32, WaveformSlot>,
-    buffer_refs: &mut Vec<(i32, i32, usize)>,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    buffer_refs: &mut Vec<(i32, i32)>,
 ) {
-    if let WidgetKind::Waveform {
-        samples,
-        base_bucket,
-        buffer,
-        path,
-        cache,
-        channels,
-    } = &widget.kind
-        && let Some(id) = widget.id
-    {
-        if cache.is_some() || path.is_some() {
-            // Bulk path: map a local resource (raw samples or a prebuilt cache)
-            // through the BulkLoader seam, then build the GPU slot from the data.
-            if let Some(data) =
-                MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
-            {
-                out.insert(id, frame::waveform_slot(data, gpu));
+    match (&widget.kind, widget.id) {
+        (
+            WidgetKind::Waveform {
+                samples,
+                base_bucket,
+                buffer,
+                path,
+                cache,
+                channels,
+                ..
+            },
+            Some(id),
+        ) => {
+            if cache.is_some() || path.is_some() {
+                // Bulk path: map a local resource (raw samples or a prebuilt
+                // cache) through the BulkLoader seam, then build the GPU slot.
+                if let Some(data) =
+                    MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
+                {
+                    waveforms.insert(id, frame::waveform_slot(data, gpu));
+                }
+            } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
+                // A server buffer with no inline data: fetch it over the leg.
+                buffer_refs.push((id, *bufnum));
+            } else {
+                waveforms.insert(
+                    id,
+                    frame::waveform_slot(
+                        WaveformData::from_interleaved(samples, *channels, *base_bucket),
+                        gpu,
+                    ),
+                );
             }
-        } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
-            // A server buffer with no inline data: fetch it over the client leg.
-            buffer_refs.push((id, *bufnum, *base_bucket));
-        } else {
-            out.insert(
-                id,
-                frame::waveform_slot(WaveformData::new(Arc::clone(samples), *base_bucket), gpu),
-            );
         }
+        (
+            WidgetKind::Spectrogram {
+                samples,
+                channels,
+                buffer,
+                path,
+                cache,
+                window_size,
+                hop,
+                sample_rate,
+                ..
+            },
+            Some(id),
+        ) => {
+            if let Some(cache) = cache {
+                // A prebuilt (single-channel) STFT cache, parsed directly.
+                if let Some(stft) = MmapLoader
+                    .file_bytes(cache)
+                    .and_then(|bytes| Stft::from_bytes(&bytes))
+                {
+                    if let Some(slot) = frame::spectrogram_slot(vec![stft], gpu) {
+                        spectrograms.insert(id, slot);
+                    }
+                } else {
+                    warn!(
+                        "spectrogram {id}: cannot parse STFT cache {}",
+                        cache.display()
+                    );
+                }
+            } else if let Some(path) = path {
+                if let Some(split) = MmapLoader.raw_channels(path, *channels) {
+                    let stfts = frame::stft_lanes(split, *window_size, *hop, *sample_rate);
+                    if let Some(slot) = frame::spectrogram_slot(stfts, gpu) {
+                        spectrograms.insert(id, slot);
+                    }
+                }
+            } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
+                buffer_refs.push((id, *bufnum));
+            } else if !samples.is_empty() {
+                let stfts = frame::stft_lanes(
+                    frame::deinterleave(samples, *channels),
+                    *window_size,
+                    *hop,
+                    *sample_rate,
+                );
+                if let Some(slot) = frame::spectrogram_slot(stfts, gpu) {
+                    spectrograms.insert(id, slot);
+                }
+            }
+        }
+        _ => {}
     }
     for child in &widget.children {
-        collect_waveforms(child, gpu, out, buffer_refs);
+        collect_timelines(child, gpu, waveforms, spectrograms, buffer_refs);
+    }
+}
+
+/// A numeric OSC argument as `f64` (0.0 when it is neither float nor int).
+fn float_arg(arg: &OscType) -> f64 {
+    match arg {
+        OscType::Float(x) => *x as f64,
+        OscType::Double(x) => *x,
+        OscType::Int(n) => *n as f64,
+        OscType::Long(n) => *n as f64,
+        _ => 0.0,
     }
 }
 
@@ -1269,6 +1517,18 @@ impl ApplicationHandler<UserEvent> for App {
                     ws.gpu.window.request_redraw();
                 }
             }
+            WindowEvent::ModifiersChanged(mods) => {
+                if let Some(ws) = self.windows.get_mut(&def_id) {
+                    ws.shift = mods.state().shift_key();
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if let Some(ws) = self.windows.get_mut(&def_id) {
+                    // Off-window: the cursor readout hides (nothing contains it).
+                    ws.cursor = (-1.0, -1.0);
+                    ws.gpu.window.request_redraw();
+                }
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.cursor = (position.x, position.y);
@@ -1296,15 +1556,18 @@ impl ApplicationHandler<UserEvent> for App {
                     .get(&def_id)
                     .map(|w| w.cursor)
                     .unwrap_or((0.0, 0.0));
-                if let Some((id, rect, WidgetKind::Waveform { .. })) = self.hit(def_id, cx, cy) {
-                    self.zoom_waveform(def_id, id, rect, cx, 0.85f64.powf(steps));
+                if let Some((id, rect, kind)) = self.hit(def_id, cx, cy)
+                    && let Some(editor) = kind.editor()
+                {
+                    let body = frame::timeline_body(rect, editor.ruler);
+                    self.zoom_timeline(def_id, id, body, cx, 0.85f64.powf(steps));
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
-                        self.reset_waveforms(def_id)
+                        self.reset_timelines(def_id)
                     }
                     _ => {}
                 }
@@ -1316,27 +1579,31 @@ impl ApplicationHandler<UserEvent> for App {
 }
 
 impl App {
-    fn zoom_waveform(&mut self, def_id: i32, id: i32, rect: Rect, cx: f64, factor: f64) {
-        if let Some(ws) = self.windows.get_mut(&def_id)
-            && let Some(slot) = ws.waveforms.get_mut(&id)
-        {
-            let total = slot.view.total_samples();
-            let anchor = ((cx - rect.x as f64) / rect.w.max(1.0) as f64).clamp(0.0, 1.0);
-            slot.nav.zoom(factor, anchor, total);
+    fn zoom_timeline(&mut self, def_id: i32, id: i32, body: Rect, cx: f64, factor: f64) {
+        let anchor = ((cx - body.x as f64) / body.w.max(1.0) as f64).clamp(0.0, 1.0);
+        if let Some(ws) = self.windows.get_mut(&def_id) {
+            if let Some(slot) = ws.waveforms.get_mut(&id) {
+                let total = slot.view.total_samples();
+                slot.nav.zoom(factor, anchor, total);
+            } else if let Some(slot) = ws.spectrograms.get_mut(&id) {
+                let total = slot.total_samples();
+                slot.nav.zoom(factor, anchor, total);
+            }
         }
         self.emit_view(def_id, id);
         self.redraw(def_id);
     }
 
-    fn reset_waveforms(&mut self, def_id: i32) {
-        let ids: Vec<i32> = self
-            .windows
-            .get(&def_id)
-            .map(|w| w.waveforms.keys().copied().collect())
-            .unwrap_or_default();
+    fn reset_timelines(&mut self, def_id: i32) {
+        let mut ids: Vec<i32> = Vec::new();
         if let Some(ws) = self.windows.get_mut(&def_id) {
-            for slot in ws.waveforms.values_mut() {
+            for (id, slot) in &mut ws.waveforms {
                 slot.nav = View::full(slot.view.total_samples());
+                ids.push(*id);
+            }
+            for (id, slot) in &mut ws.spectrograms {
+                slot.nav = View::full(slot.total_samples());
+                ids.push(*id);
             }
             ws.gpu.window.request_redraw();
         }

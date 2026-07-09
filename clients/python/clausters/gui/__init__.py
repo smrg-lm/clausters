@@ -8,7 +8,9 @@ widget tree as JSON (the GUI analogue of a ``SynthDef``), and
 `clausters.gui.host.GuiHost` sends it and reads widgets back.
 
 The windowed host opens an OS window per ``window``-rooted GuiDef and renders
-containers, the standard controls, the heavy ``waveform`` view, the
+containers, the standard controls, the heavy editor-grade ``waveform`` and
+``spectrogram`` views (multichannel lanes, time and Hz rulers, a draggable
+selection, a playhead tracking the engine clock), the
 shared-memory-backed ``meter``/``scope``, the audio-tap ``scope``
 (oscilloscope), ``phasescope`` (goniometer) and ``spectrum`` (spectroscope), a
 live ``nodetree`` of the server's node graph and a static ``plot`` of a signal;
@@ -27,7 +29,8 @@ headless protocol, ``gui_window``/``gui_panel`` for windows and controls,
 ``gui_meters`` for the audio-server client paths, ``gui_bind`` for the bound
 low-latency control path, ``gui_nodetree`` for the live node tree, ``gui_plot``
 for an NRT render plotted, ``gui_canvas`` for a shader, ``gui_scope`` for the
-oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum).
+oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
+``gui_editor`` for the editor-grade waveform + spectrogram).
 """
 
 from .guidef import (
@@ -50,6 +53,7 @@ from .guidef import (
     samples_to_file,
     scope,
     slider,
+    spectrogram,
     spectrum,
     text,
     toggle,
@@ -73,6 +77,7 @@ __all__ = [
     "text",
     "menu",
     "waveform",
+    "spectrogram",
     "meter",
     "scope",
     "phasescope",

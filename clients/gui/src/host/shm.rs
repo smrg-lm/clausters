@@ -241,6 +241,10 @@ impl super::BusSource for SharedSegment {
     fn sample_rate(&self) -> f64 {
         SharedSegment::sample_rate(self)
     }
+
+    fn sample_clock(&self) -> f64 {
+        SharedSegment::sample_clock(self) as f64
+    }
 }
 
 /// A constant header `u32` field (written once at creation, before any client

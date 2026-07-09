@@ -7,15 +7,18 @@
 //! not by a parallel renderer. The native windowed front ([`super::gui`]) calls
 //! it with live inputs (the shared-memory bus source, scope histories, the node
 //! tree, the held-button highlight); the browser entry point ([`super::web`])
-//! calls it with empty inputs (G12 has no transport yet, so meters read zero and
-//! there is no node tree). It builds the flat-geometry [`Mesh`] from the placed
-//! widgets ([`super::layout`] + [`super::paint`]/[`super::font`]), uploads the
-//! heavy `waveform`/`canvas` views, and draws the whole frame in one pass.
+//! calls it with the streamed equivalents. It builds the flat-geometry [`Mesh`]
+//! from the placed widgets ([`super::layout`] + [`super::paint`]/
+//! [`super::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,
+//! and draws the whole frame in one pass — the editor chrome (rulers,
+//! selection, playhead, cursor readout) as a second, *overlay* mesh drawn
+//! after the heavy views so it reads on top of them.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use crate::gpu::Gpu;
+use crate::spectrogram::{FreqScale, SpectrogramView, Stft, hop_capped};
 use crate::view::TimelineView;
 use crate::viewport::View;
 use crate::waveform::{WaveformData, WaveformView};
@@ -24,8 +27,9 @@ use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
+use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
-use super::widget::{Widget, WidgetKind};
+use super::widget::{EditorProps, Ruler, Widget, WidgetKind};
 use super::{BusSource, controls, meters, phasescope, plot, spectrum};
 
 /// The window's clear color (the dark chrome backdrop).
@@ -39,6 +43,20 @@ const PANEL_COLOR: Color = [0.10, 0.11, 0.14, 0.55];
 const LABEL_COLOR: Color = [0.85, 0.87, 0.90, 1.0];
 const LABEL_SCALE: f32 = 2.0;
 
+// Editor chrome of the timeline views (waveform/spectrogram).
+/// Height of the time-ruler strip under a timeline view, device pixels.
+pub(crate) const RULER_H: f32 = 18.0;
+const VIEW_FIELD: Color = [0.08, 0.09, 0.11, 1.0];
+const VIEW_FRAME: Color = [0.25, 0.45, 0.38, 1.0];
+const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
+const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
+const LANE_DIVIDER: Color = [0.30, 0.33, 0.38, 0.8];
+const SELECTION_FILL: Color = [0.55, 0.75, 0.95, 0.18];
+const SELECTION_EDGE: Color = [0.55, 0.75, 0.95, 0.75];
+const PLAYHEAD: Color = [0.95, 0.55, 0.30, 0.9];
+const READOUT: Color = [0.85, 0.87, 0.90, 0.9];
+const RULER_SCALE: f32 = 1.5;
+
 /// A waveform widget's GPU view plus its own navigation window.
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
@@ -50,6 +68,83 @@ pub(crate) fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
     let nav = View::full(data.total_samples());
     let view = WaveformView::new(&gpu.device, gpu.config.format, data);
     WaveformSlot { view, nav }
+}
+
+/// A spectrogram widget's GPU views — one [`SpectrogramView`] (own STFT and
+/// texture) per channel lane, sharing one navigation window.
+pub(crate) struct SpectrogramSlot {
+    pub(crate) views: Vec<SpectrogramView>,
+    pub(crate) nav: View,
+}
+
+impl SpectrogramSlot {
+    /// The per-channel sample count the shared nav spans. (Navigation is a
+    /// native interaction today, so the browser build does not call it.)
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    pub(crate) fn total_samples(&self) -> usize {
+        self.views.first().map_or(1, |v| v.total_samples())
+    }
+}
+
+/// A `SpectrogramSlot` from per-channel analyses (empty `stfts` yields none).
+pub(crate) fn spectrogram_slot(stfts: Vec<Stft>, gpu: &Gpu) -> Option<SpectrogramSlot> {
+    if stfts.is_empty() {
+        return None;
+    }
+    let total = stfts[0].total_samples();
+    let views = stfts
+        .into_iter()
+        .map(|stft| {
+            SpectrogramView::new(&gpu.device, &gpu.queue, gpu.config.format, Arc::new(stft))
+        })
+        .collect();
+    Some(SpectrogramSlot {
+        views,
+        nav: View::full(total),
+    })
+}
+
+/// One STFT per channel for a spectrogram lane set: de-interleaved `channels`,
+/// analyzed at `window_size`/`hop` (the hop raised by [`hop_capped`] so a long
+/// buffer fits the magnitude texture) and `sample_rate` (48 kHz when unknown,
+/// so the frequency axis is still drawable). Shared by both fronts and every
+/// data source (mapped path, fetched buffer, inline samples).
+pub(crate) fn stft_lanes(
+    channels: Vec<Vec<f32>>,
+    window_size: usize,
+    hop: usize,
+    sample_rate: f64,
+) -> Vec<Stft> {
+    let sr = if sample_rate > 0.0 {
+        sample_rate as f32
+    } else {
+        48_000.0
+    };
+    channels
+        .into_iter()
+        .map(|ch| {
+            let hop = hop_capped(ch.len(), window_size, hop);
+            Stft::compute(&ch, window_size, hop, sr)
+        })
+        .collect()
+}
+
+/// De-interleaves `channels` channels out of a flat buffer (a trailing partial
+/// frame is ignored) — the front half of [`stft_lanes`] for inline sources.
+pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
+    let channels = channels.max(1);
+    let frames = samples.len() / channels;
+    (0..channels)
+        .map(|ch| (0..frames).map(|f| samples[f * channels + ch]).collect())
+        .collect()
+}
+
+/// The body a timeline view draws into: its rect minus the time-ruler strip.
+pub(crate) fn timeline_body(rect: Rect, ruler: Ruler) -> Rect {
+    if ruler == Ruler::Off {
+        return rect;
+    }
+    Rect::new(rect.x, rect.y, rect.w, (rect.h - RULER_H).max(0.0))
 }
 
 /// A placed `plot` widget and the data its (static) draw needs, copied out of
@@ -74,6 +169,27 @@ struct SpectrumItem {
     label: Option<String>,
 }
 
+/// Which timeline view a placed editor-grade widget is, with its display props.
+enum TimelineKind {
+    Waveform {
+        overlay: bool,
+    },
+    Spectrogram {
+        db_floor: f32,
+        db_ceil: f32,
+        log_freq: bool,
+        colormap: i32,
+    },
+}
+
+/// A placed timeline view (waveform/spectrogram), copied out of the host tree.
+struct TimelineItem {
+    id: i32,
+    rect: Rect,
+    kind: TimelineKind,
+    editor: EditorProps,
+}
+
 /// A placed `canvas` widget, copied out of the host tree: its viewport body, the
 /// shader source (for an in-place recompile when it changed) and the param
 /// vector, with the bus-mapped slots already resolved from shared memory.
@@ -85,8 +201,8 @@ struct CanvasFrame {
 }
 
 /// The live inputs the frame needs beyond the tree and the GPU resources. The
-/// native front fills them from its state; the browser front (G12) passes the
-/// defaults (no bus, no node tree, no held button).
+/// native front fills them from its state; the browser front passes the
+/// streamed equivalents.
 pub(crate) struct FrameInputs<'a> {
     /// The control-bus source for `meter`/`canvas` reads (`None` reads zero).
     pub(crate) bus: Option<&'a dyn BusSource>,
@@ -96,14 +212,22 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) active_button: Option<i32>,
     /// Whether an audio server is attached (the `nodetree` placeholder text).
     pub(crate) server_attached: bool,
-    /// The server's sample rate, placing the `spectrum` frequency axis (0.0 →
-    /// the 48 kHz fallback, e.g. the browser before it learns the rate).
+    /// The server's sample rate, placing the `spectrum` frequency axis and the
+    /// timeline rulers when a widget names no rate of its own (0.0 → unknown).
     pub(crate) sample_rate: f64,
+    /// The engine's sample clock (samples since boot; the shm header natively,
+    /// the polled `/clock` in the browser). Drives the playhead: a timeline
+    /// view with `playhead_at >= 0` draws its line at
+    /// `sample_clock - playhead_at`.
+    pub(crate) sample_clock: f64,
+    /// The pointer position in device pixels, for the cursor readout of the
+    /// timeline views (`None` = no pointer over the window).
+    pub(crate) cursor: Option<(f64, f64)>,
 }
 
 impl Default for FrameInputs<'_> {
     fn default() -> Self {
-        // A 'static empty map for the no-transport (browser, G12) case.
+        // A 'static empty map for the no-transport case.
         static EMPTY: std::sync::OnceLock<HashMap<i32, NodeTree>> = std::sync::OnceLock::new();
         Self {
             bus: None,
@@ -111,6 +235,8 @@ impl Default for FrameInputs<'_> {
             active_button: None,
             server_attached: false,
             sample_rate: 0.0,
+            sample_clock: 0.0,
+            cursor: None,
         }
     }
 }
@@ -124,15 +250,144 @@ fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
     source.map_or(0.0, |s| s.control(bus as usize))
 }
 
-/// Renders `tree` into `gpu`'s surface, using the window's `painter`, `waveforms`
-/// and `canvases` resources and (read-only) `scopes` histories, plus `inputs` for
-/// the live values. One immutable mesh-building pass over the placed widgets,
-/// then the GPU uploads and the single render pass.
+/// Maps sample position `s` into `body`'s x range through `nav`.
+fn sample_to_x(s: f64, nav: &View, body: Rect) -> f32 {
+    (body.x as f64 + (s - nav.start) / nav.len * body.w as f64) as f32
+}
+
+/// The lane sub-rectangle `ch` of `lanes` inside `body` (stacked top to
+/// bottom, no gap — the divider line is overlay chrome).
+pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
+    let lanes = lanes.max(1) as f32;
+    let h = body.h / lanes;
+    Rect::new(body.x, body.y + ch as f32 * h, body.w, h)
+}
+
+/// Draws the time-ruler strip under `body` for the visible `nav` window.
+fn draw_time_ruler(mesh: &mut Mesh, rect: Rect, body: Rect, nav: &View, rate: f64, mode: Ruler) {
+    if mode == Ruler::Off {
+        return;
+    }
+    let strip = Rect::new(rect.x, body.y + body.h, rect.w, (rect.h - body.h).max(0.0));
+    if strip.h <= 2.0 || strip.w <= 0.0 {
+        return;
+    }
+    let unit = match mode {
+        Ruler::Samples => TimeUnit::Samples,
+        _ => TimeUnit::Seconds,
+    };
+    let ticks = ruler::time_ticks(nav.start, nav.len, strip.w as f64, rate, unit);
+    for tick in &ticks {
+        let x = strip.x + strip.w * tick.frac as f32;
+        let h = if tick.label.is_some() { 6.0 } else { 3.0 };
+        mesh.rect(Rect::new(x, strip.y, 1.0, h), RULER_LINE);
+        if let Some(label) = &tick.label {
+            let w = super::font::width(label, RULER_SCALE);
+            let lx = (x - w * 0.5).clamp(strip.x, strip.x + strip.w - w);
+            super::font::text(mesh, label, lx, strip.y + 7.0, RULER_SCALE, RULER_TEXT);
+        }
+    }
+}
+
+/// Draws the frequency-ruler ticks and labels along the left edge of a
+/// spectrogram `body` (overlay chrome, on top of the texture), matching the
+/// shader's display→bin mapping.
+fn draw_hz_ruler(mesh: &mut Mesh, body: Rect, nyquist: f64, log: bool, f_lo: f64) {
+    if body.h <= 4.0 {
+        return;
+    }
+    for tick in ruler::hz_ticks(nyquist, log, f_lo, body.h as f64) {
+        // frac 0 = bottom of the axis.
+        let y = body.y + body.h * (1.0 - tick.frac as f32);
+        let w = if tick.label.is_some() { 8.0 } else { 4.0 };
+        mesh.rect(Rect::new(body.x, y, w, 1.0), RULER_LINE);
+        if let Some(label) = &tick.label {
+            let ty = (y - 3.0).clamp(body.y, body.y + body.h - super::font::height(RULER_SCALE));
+            super::font::text(mesh, label, body.x + 10.0, ty, RULER_SCALE, RULER_TEXT);
+        }
+    }
+}
+
+/// Draws the selection overlay and playhead of one timeline view, plus its
+/// cursor readout when the pointer is inside the body.
+#[allow(clippy::too_many_arguments)] // one chrome pass, all inputs by value
+fn draw_editor_overlay(
+    mesh: &mut Mesh,
+    item: &TimelineItem,
+    body: Rect,
+    nav: &View,
+    rate: f64,
+    inputs: &FrameInputs,
+    nyquist_log: Option<(f64, bool, f64)>,
+) {
+    mesh.border(body, 1.0, VIEW_FRAME);
+    // Selection: a translucent band with hard edges, clipped to the body.
+    if let Some((start, len)) = item.editor.selection() {
+        let x0 = sample_to_x(start, nav, body).clamp(body.x, body.x + body.w);
+        let x1 = sample_to_x(start + len, nav, body).clamp(body.x, body.x + body.w);
+        if x1 > x0 {
+            mesh.rect(Rect::new(x0, body.y, x1 - x0, body.h), SELECTION_FILL);
+            mesh.rect(Rect::new(x0, body.y, 1.0, body.h), SELECTION_EDGE);
+            mesh.rect(Rect::new(x1 - 1.0, body.y, 1.0, body.h), SELECTION_EDGE);
+        }
+    }
+    // Playhead: the engine clock relative to the widget's origin.
+    if item.editor.playhead_at >= 0.0 && inputs.sample_clock > 0.0 {
+        let pos = inputs.sample_clock - item.editor.playhead_at;
+        if pos >= nav.start && pos <= nav.start + nav.len {
+            let x = sample_to_x(pos, nav, body);
+            mesh.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
+        }
+    }
+    // Cursor readout: time (per the ruler mode) plus value/frequency, in the
+    // body's bottom-right corner — pure math over the view mapping.
+    if let Some((cx, cy)) = inputs.cursor
+        && body.contains(cx, cy)
+    {
+        let s = nav.start + nav.len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
+        let time = match item.editor.ruler {
+            Ruler::Samples => ruler::readout_samples(s),
+            _ => ruler::readout_time(s, rate),
+        };
+        let text = match nyquist_log {
+            // Spectrogram: invert the shader's display→bin mapping at the
+            // cursor's height for the frequency under it.
+            Some((nyquist, log, f_lo)) => {
+                let lanes_h = body.h as f64;
+                let d = (1.0 - (cy - body.y as f64) / lanes_h).clamp(0.0, 1.0);
+                let f = if log {
+                    nyquist * f_lo.powf(1.0 - d)
+                } else {
+                    nyquist * d
+                };
+                format!("{time}  {} HZ", f.round() as i64)
+            }
+            // Waveform: the amplitude at the cursor's height within its lane.
+            None => {
+                let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
+                let amp = (1.0 - 2.0 * rel) / 0.92;
+                format!("{time}  {amp:+.2}")
+            }
+        };
+        let w = super::font::width(&text, RULER_SCALE);
+        let x = (body.x + body.w - w - 4.0).max(body.x);
+        let y = body.y + body.h - super::font::height(RULER_SCALE) - 3.0;
+        super::font::text(mesh, &text, x, y.max(body.y), RULER_SCALE, READOUT);
+    }
+}
+
+/// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
+/// (chrome under and over the heavy views), the `waveforms`/`spectrograms`/
+/// `canvases` GPU resources and (read-only) `scopes` histories, plus `inputs`
+/// for the live values. One immutable mesh-building pass over the placed
+/// widgets, then the GPU uploads and the single render pass.
 #[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
 pub(crate) fn render(
     gpu: &mut Gpu,
     painter: &mut Painter,
+    overlay: &mut Painter,
     waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     canvases: &mut HashMap<i32, CanvasView>,
     scopes: &HashMap<i32, VecDeque<f32>>,
     tap_windows: &HashMap<i32, Vec<f32>>,
@@ -144,7 +399,8 @@ pub(crate) fn render(
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     let placed = layout::layout(area, tree);
     let mut mesh = Mesh::new();
-    let mut waveform_rects: Vec<(i32, Rect)> = Vec::new();
+    let mut over = Mesh::new();
+    let mut timeline_items: Vec<TimelineItem> = Vec::new();
     // Meter/scope rects, copied out so their shared-memory values and the scope
     // history can be read after the host-tree borrow is released.
     let mut meter_rects: Vec<(Rect, i32, f32, f32, Option<String>)> = Vec::new();
@@ -170,9 +426,38 @@ pub(crate) fn render(
             WidgetKind::Label { text } => {
                 font_left(&mut mesh, text, p.rect);
             }
-            WidgetKind::Waveform { .. } => {
+            WidgetKind::Waveform {
+                overlay, editor, ..
+            } => {
                 if let Some(id) = p.widget.id {
-                    waveform_rects.push((id, p.rect));
+                    timeline_items.push(TimelineItem {
+                        id,
+                        rect: p.rect,
+                        kind: TimelineKind::Waveform { overlay: *overlay },
+                        editor: editor.clone(),
+                    });
+                }
+            }
+            WidgetKind::Spectrogram {
+                db_floor,
+                db_ceil,
+                log_freq,
+                colormap,
+                editor,
+                ..
+            } => {
+                if let Some(id) = p.widget.id {
+                    timeline_items.push(TimelineItem {
+                        id,
+                        rect: p.rect,
+                        kind: TimelineKind::Spectrogram {
+                            db_floor: *db_floor,
+                            db_ceil: *db_ceil,
+                            log_freq: *log_freq,
+                            colormap: *colormap,
+                        },
+                        editor: editor.clone(),
+                    });
                 }
             }
             WidgetKind::Meter {
@@ -325,6 +610,84 @@ pub(crate) fn render(
         }
     }
 
+    // Timeline views (waveform/spectrogram): the field and time ruler go into
+    // the base mesh (under the GPU view); the border, lane dividers, Hz ruler,
+    // selection, playhead and cursor readout into the overlay mesh (over it).
+    for item in &timeline_items {
+        let body = timeline_body(item.rect, item.editor.ruler);
+        mesh.rect(body, VIEW_FIELD);
+        match &item.kind {
+            TimelineKind::Waveform { overlay: overlaid } => {
+                let Some(slot) = waveforms.get(&item.id) else {
+                    over.border(body, 1.0, VIEW_FRAME);
+                    continue;
+                };
+                let rate = if item.editor.sample_rate > 0.0 {
+                    item.editor.sample_rate
+                } else {
+                    inputs.sample_rate
+                };
+                draw_time_ruler(
+                    &mut mesh,
+                    item.rect,
+                    body,
+                    &slot.nav,
+                    rate,
+                    item.editor.ruler,
+                );
+                let lanes = slot.view.num_channels();
+                if !*overlaid {
+                    for ch in 1..lanes {
+                        let lane = lane_rect(body, lanes, ch);
+                        over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
+                    }
+                }
+                draw_editor_overlay(&mut over, item, body, &slot.nav, rate, inputs, None);
+            }
+            TimelineKind::Spectrogram { log_freq, .. } => {
+                let Some(slot) = spectrograms.get(&item.id) else {
+                    over.border(body, 1.0, VIEW_FRAME);
+                    continue;
+                };
+                let (nyquist, f_lo) = slot
+                    .views
+                    .first()
+                    .map(|v| (v.stft().nyquist() as f64, v.log_floor() as f64))
+                    .unwrap_or((24_000.0, 20.0 / 24_000.0));
+                let rate = if item.editor.sample_rate > 0.0 {
+                    item.editor.sample_rate
+                } else {
+                    nyquist * 2.0
+                };
+                draw_time_ruler(
+                    &mut mesh,
+                    item.rect,
+                    body,
+                    &slot.nav,
+                    rate,
+                    item.editor.ruler,
+                );
+                let lanes = slot.views.len();
+                for ch in 0..lanes {
+                    let lane = lane_rect(body, lanes, ch);
+                    if ch > 0 {
+                        over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
+                    }
+                    draw_hz_ruler(&mut over, lane, nyquist, *log_freq, f_lo);
+                }
+                draw_editor_overlay(
+                    &mut over,
+                    item,
+                    body,
+                    &slot.nav,
+                    rate,
+                    inputs,
+                    Some((nyquist, *log_freq, f_lo)),
+                );
+            }
+        }
+    }
+
     // Static plots draw from their (already mapped) samples; node trees draw from
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
@@ -350,10 +713,34 @@ pub(crate) fn render(
     }
 
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
-    for (id, rect) in &waveform_rects {
-        if let Some(slot) = waveforms.get_mut(id) {
-            slot.view
-                .upload(&gpu.device, &gpu.queue, &slot.nav, rect.w.max(1.0) as u32);
+    overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
+    for item in &timeline_items {
+        let body = timeline_body(item.rect, item.editor.ruler);
+        match &item.kind {
+            TimelineKind::Waveform { .. } => {
+                if let Some(slot) = waveforms.get_mut(&item.id) {
+                    slot.view
+                        .upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
+                }
+            }
+            TimelineKind::Spectrogram {
+                db_floor,
+                db_ceil,
+                log_freq,
+                colormap,
+            } => {
+                if let Some(slot) = spectrograms.get_mut(&item.id) {
+                    let scale = if *log_freq {
+                        FreqScale::Log
+                    } else {
+                        FreqScale::Linear
+                    };
+                    for view in &mut slot.views {
+                        view.set_display(*db_floor, *db_ceil, scale, (*colormap).max(0) as u32);
+                        view.upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
+                    }
+                }
+            }
         }
     }
     // Recompile any canvas whose shader changed, then push its per-frame uniforms
@@ -400,14 +787,48 @@ pub(crate) fn render(
             multiview_mask: None,
         });
         painter.draw(&mut pass);
-        for (id, rect) in &waveform_rects {
-            if rect.w >= 1.0
-                && rect.h >= 1.0
-                && let Some(slot) = waveforms.get(id)
-            {
-                let (x, y, w, h) = clamp_viewport(*rect, fb_w, fb_h);
-                pass.set_viewport(x, y, w, h, 0.0, 1.0);
-                slot.view.draw(&mut pass);
+        for item in &timeline_items {
+            let body = timeline_body(item.rect, item.editor.ruler);
+            if body.w < 1.0 || body.h < 1.0 {
+                continue;
+            }
+            match &item.kind {
+                TimelineKind::Waveform { overlay: overlaid } => {
+                    let Some(slot) = waveforms.get(&item.id) else {
+                        continue;
+                    };
+                    let lanes = slot.view.num_channels();
+                    if *overlaid || lanes == 1 {
+                        let (x, y, w, h) = clamp_viewport(body, fb_w, fb_h);
+                        if w >= 1.0 && h >= 1.0 {
+                            pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                            slot.view.draw(&mut pass);
+                        }
+                    } else {
+                        for ch in 0..lanes {
+                            let lane = lane_rect(body, lanes, ch);
+                            let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                            if w >= 1.0 && h >= 1.0 {
+                                pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                                slot.view.draw_channel(&mut pass, ch);
+                            }
+                        }
+                    }
+                }
+                TimelineKind::Spectrogram { .. } => {
+                    let Some(slot) = spectrograms.get(&item.id) else {
+                        continue;
+                    };
+                    let lanes = slot.views.len();
+                    for (ch, view) in slot.views.iter().enumerate() {
+                        let lane = lane_rect(body, lanes, ch);
+                        let (x, y, w, h) = clamp_viewport(lane, fb_w, fb_h);
+                        if w >= 1.0 && h >= 1.0 {
+                            pass.set_viewport(x, y, w, h, 0.0, 1.0);
+                            view.draw(&mut pass);
+                        }
+                    }
+                }
             }
         }
         for frame in &canvas_frames {
@@ -420,6 +841,10 @@ pub(crate) fn render(
                 view.draw(&mut pass);
             }
         }
+        // The editor chrome reads over the heavy views: reset the viewport to
+        // the full framebuffer first (the overlay mesh is in window space).
+        pass.set_viewport(0.0, 0.0, fb_w as f32, fb_h as f32, 0.0, 1.0);
+        overlay.draw(&mut pass);
     }
     gpu.queue.submit(std::iter::once(encoder.finish()));
     frame.present();
@@ -446,4 +871,50 @@ fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
     let w = r.w.min(fb_w as f32 - x).max(0.0);
     let h = r.h.min(fb_h as f32 - y).max(0.0);
     (x, y, w, h)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeline_body_reserves_the_ruler_strip() {
+        let rect = Rect::new(10.0, 10.0, 400.0, 200.0);
+        let body = timeline_body(rect, Ruler::Time);
+        assert_eq!(body.h, 200.0 - RULER_H);
+        assert_eq!(timeline_body(rect, Ruler::Off), rect);
+    }
+
+    #[test]
+    fn lanes_split_the_body_evenly_and_share_x() {
+        let body = Rect::new(0.0, 0.0, 400.0, 300.0);
+        let a = lane_rect(body, 3, 0);
+        let b = lane_rect(body, 3, 1);
+        let c = lane_rect(body, 3, 2);
+        assert_eq!(a.h, 100.0);
+        assert_eq!((a.x, a.w), (b.x, b.w));
+        assert_eq!(b.y, 100.0);
+        assert_eq!(c.y + c.h, 300.0);
+    }
+
+    #[test]
+    fn deinterleave_splits_frames_and_drops_the_partial_tail() {
+        let flat = [1.0, -1.0, 2.0, -2.0, 3.0];
+        let chans = deinterleave(&flat, 2);
+        assert_eq!(chans, vec![vec![1.0, 2.0], vec![-1.0, -2.0]]);
+        assert_eq!(deinterleave(&flat, 1).len(), 1);
+        assert_eq!(deinterleave(&flat, 1)[0].len(), 5);
+    }
+
+    #[test]
+    fn stft_lanes_cap_the_hop_for_long_buffers() {
+        // A buffer long enough that hop 8 would exceed MAX_FRAMES: the hop is
+        // raised so every lane fits the texture.
+        let n = 200_000;
+        let chan: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        let lanes = stft_lanes(vec![chan], 256, 8, 48_000.0);
+        assert_eq!(lanes.len(), 1);
+        assert!(lanes[0].n_frames() <= crate::spectrogram::MAX_FRAMES);
+        assert_eq!(lanes[0].total_samples(), n);
+    }
 }
