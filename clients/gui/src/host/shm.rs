@@ -30,7 +30,7 @@ const MAGIC: u32 = 0x5541_4C43;
 /// The segment ABI version this reader understands (mirrors
 /// `server::ipc::ABI_VERSION`). Bumped in lockstep with the server; a mismatch
 /// is rejected on [`SharedSegment::open`].
-const SUPPORTED_ABI_VERSION: u32 = 2;
+const SUPPORTED_ABI_VERSION: u32 = 3;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;
@@ -38,19 +38,29 @@ const OFF_SAMPLE_RATE: usize = 8;
 const OFF_SAMPLE_CLOCK: usize = 16;
 const OFF_RING_CAPACITY: usize = 24;
 const OFF_CONTROL_BUSES: usize = 28;
+const OFF_TAPS: usize = 32;
+const OFF_TAP_FRAMES: usize = 36;
 /// Size of the fixed Header struct.
 const HEADER_SIZE: usize = 64;
 /// Fixed prefix of each command ring before its `data` array (head/tail/pad).
 const RING_PREFIX: usize = 64;
+/// Tap-slot alignment (v3): each slot is a 64-byte cursor line followed by the
+/// sample ring; the whole region starts on the next 64-byte boundary after the
+/// control buses.
+const TAP_ALIGN: usize = 64;
 
 /// A read-only mapping of the audio server's shared-memory segment. Reading a
-/// control bus is a single atomic load; the mapping is dropped (unmapped) when
-/// this is.
+/// control bus is a single atomic load; reading an audio-tap window is a
+/// lock-free copy with a cursor double-check. The mapping is dropped
+/// (unmapped) when this is.
 pub struct SharedSegment {
     ptr: *mut u8,
     len: usize,
     control_count: usize,
     controls_offset: usize,
+    taps: usize,
+    tap_frames: usize,
+    taps_offset: usize,
 }
 
 // SAFETY: the segment is only ever read here, through atomic loads of fields the
@@ -110,9 +120,14 @@ impl SharedSegment {
         }
         let ring_capacity = header_u32(ptr, OFF_RING_CAPACITY) as usize;
         let control_count = header_u32(ptr, OFF_CONTROL_BUSES) as usize;
-        // The control region follows the header and the two command rings.
+        let taps = header_u32(ptr, OFF_TAPS) as usize;
+        let tap_frames = header_u32(ptr, OFF_TAP_FRAMES) as usize;
+        // The control region follows the header and the two command rings; the
+        // tap region follows the controls, 64-byte aligned.
         let controls_offset = HEADER_SIZE + 2 * (RING_PREFIX + ring_capacity);
-        let expected = controls_offset + control_count * size_of::<u32>();
+        let controls_end = controls_offset + control_count * size_of::<u32>();
+        let taps_offset = controls_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
+        let expected = taps_offset + taps * (TAP_ALIGN + tap_frames * size_of::<f32>());
         if len != expected {
             return fail(ptr, "segment size does not match its header".into());
         }
@@ -121,6 +136,9 @@ impl SharedSegment {
             len,
             control_count,
             controls_offset,
+            taps,
+            tap_frames,
+            taps_offset,
         })
     }
 
@@ -151,11 +169,77 @@ impl SharedSegment {
     pub fn sample_rate(&self) -> f64 {
         f64::from_bits(header_u64(self.ptr, OFF_SAMPLE_RATE))
     }
+
+    /// Number of audio-tap rings in the segment (v3).
+    pub fn taps(&self) -> usize {
+        self.taps
+    }
+
+    /// Per-tap ring capacity in samples (a power of two).
+    pub fn tap_frames(&self) -> usize {
+        self.tap_frames
+    }
+
+    /// Tap `i`'s cursor: total samples the engine ever wrote to it.
+    fn tap_cursor(&self, i: usize) -> &AtomicU64 {
+        let off = self.taps_offset + i * (TAP_ALIGN + self.tap_frames * size_of::<f32>());
+        // SAFETY: in-range (i < taps was checked by the caller), 64-aligned.
+        unsafe { &*(self.ptr.add(off) as *const AtomicU64) }
+    }
+
+    fn tap_data_ptr(&self, i: usize) -> *const f32 {
+        let off =
+            self.taps_offset + i * (TAP_ALIGN + self.tap_frames * size_of::<f32>()) + TAP_ALIGN;
+        // SAFETY: the ring starts one alignment line into the slot.
+        unsafe { self.ptr.add(off) as *const f32 }
+    }
+
+    /// Copies the **newest** `out.len()` samples of tap `i` into `out`,
+    /// returning the stream position at the window's end — `None` when the tap
+    /// index is out of range, the window is empty or larger than half the
+    /// ring, or the tap has not yet written a full window. Mirrors the
+    /// server's reader: the half-ring cap plus a cursor double-check make a
+    /// torn window a checked retry instead of silent garbage.
+    pub fn tap_read_latest(&self, i: usize, out: &mut [f32]) -> Option<u64> {
+        let frames = self.tap_frames;
+        let want = out.len();
+        if i >= self.taps || want == 0 || frames == 0 || want > frames / 2 {
+            return None;
+        }
+        loop {
+            let end = self.tap_cursor(i).load(Ordering::Acquire);
+            if (end as usize) < want {
+                return None;
+            }
+            let start = end - want as u64;
+            let s = (start as usize) % frames;
+            let first = want.min(frames - s);
+            let data = self.tap_data_ptr(i);
+            // SAFETY: both copies stay inside the ring; concurrent writer
+            // overlap is detected by the cursor re-check below.
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.add(s), out.as_mut_ptr(), first);
+                std::ptr::copy_nonoverlapping(data, out.as_mut_ptr().add(first), want - first);
+            }
+            let end_after = self.tap_cursor(i).load(Ordering::Acquire);
+            if end_after - start <= frames as u64 {
+                return Some(end);
+            }
+        }
+    }
 }
 
 impl super::BusSource for SharedSegment {
     fn control(&self, index: usize) -> f32 {
         SharedSegment::control(self, index)
+    }
+
+    fn read_tap(&self, tap: i32, out: &mut [f32]) -> bool {
+        tap >= 0 && self.tap_read_latest(tap as usize, out).is_some()
+    }
+
+    fn sample_rate(&self) -> f64 {
+        SharedSegment::sample_rate(self)
     }
 }
 
@@ -178,13 +262,24 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    /// Writes a segment file matching the documented `#[repr(C)]` layout, with a
-    /// small ring capacity (the reader derives the control offset from the header
-    /// field, so the real 64 KiB rings need not be present). Returns the path.
-    fn fake_segment(name: &str, abi: u32, magic: u32, controls: &[f32]) -> std::path::PathBuf {
+    /// Writes a segment file matching the documented `#[repr(C)]` layout (v3:
+    /// controls plus a tap region), with a small ring capacity (the reader
+    /// derives every offset from the header fields, so the real 64 KiB rings
+    /// need not be present). `taps` are per-tap `(cursor, ring samples)`
+    /// pairs. Returns the path.
+    fn fake_segment(
+        name: &str,
+        abi: u32,
+        magic: u32,
+        controls: &[f32],
+        tap_frames: usize,
+        taps: &[(u64, Vec<f32>)],
+    ) -> std::path::PathBuf {
         let ring_capacity: u32 = 16;
         let controls_offset = HEADER_SIZE + 2 * (RING_PREFIX + ring_capacity as usize);
-        let len = controls_offset + controls.len() * 4;
+        let controls_end = controls_offset + controls.len() * 4;
+        let taps_offset = controls_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
+        let len = taps_offset + taps.len() * (TAP_ALIGN + tap_frames * 4);
         let mut bytes = vec![0u8; len];
         bytes[0..4].copy_from_slice(&magic.to_le_bytes());
         bytes[OFF_ABI..OFF_ABI + 4].copy_from_slice(&abi.to_le_bytes());
@@ -195,9 +290,20 @@ mod tests {
             .copy_from_slice(&ring_capacity.to_le_bytes());
         bytes[OFF_CONTROL_BUSES..OFF_CONTROL_BUSES + 4]
             .copy_from_slice(&(controls.len() as u32).to_le_bytes());
+        bytes[OFF_TAPS..OFF_TAPS + 4].copy_from_slice(&(taps.len() as u32).to_le_bytes());
+        bytes[OFF_TAP_FRAMES..OFF_TAP_FRAMES + 4]
+            .copy_from_slice(&(tap_frames as u32).to_le_bytes());
         for (i, v) in controls.iter().enumerate() {
             let at = controls_offset + i * 4;
             bytes[at..at + 4].copy_from_slice(&v.to_bits().to_le_bytes());
+        }
+        for (i, (cursor, ring)) in taps.iter().enumerate() {
+            let slot = taps_offset + i * (TAP_ALIGN + tap_frames * 4);
+            bytes[slot..slot + 8].copy_from_slice(&cursor.to_le_bytes());
+            for (k, v) in ring.iter().enumerate() {
+                let at = slot + TAP_ALIGN + k * 4;
+                bytes[at..at + 4].copy_from_slice(&v.to_bits().to_le_bytes());
+            }
         }
         let path = std::env::temp_dir().join(format!(
             "clausters_gui_shm_{name}_{}.seg",
@@ -210,7 +316,14 @@ mod tests {
 
     #[test]
     fn reads_control_buses_and_header() {
-        let path = fake_segment("ok", SUPPORTED_ABI_VERSION, MAGIC, &[0.0, 0.5, -0.25, 1.0]);
+        let path = fake_segment(
+            "ok",
+            SUPPORTED_ABI_VERSION,
+            MAGIC,
+            &[0.0, 0.5, -0.25, 1.0],
+            256,
+            &[],
+        );
         let seg = SharedSegment::open(&path).unwrap();
         assert_eq!(seg.control_buses(), 4);
         assert_eq!(seg.control(0), 0.0);
@@ -220,16 +333,61 @@ mod tests {
         assert_eq!(seg.control(99), 0.0, "out-of-range bus reads as 0");
         assert_eq!(seg.sample_rate(), 48_000.0);
         assert_eq!(seg.sample_clock(), 12_345);
+        assert_eq!(seg.taps(), 0, "no tap region in this fake");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn reads_tap_windows() {
+        // Tap 0: 320 samples ever written into a 256 ring — the ring holds
+        // samples 64..320, stored at (index % 256): 256..320 sit at 0..64.
+        let frames = 256usize;
+        let mut ring = vec![0.0f32; frames];
+        for s in 64..320usize {
+            ring[s % frames] = s as f32;
+        }
+        let path = fake_segment(
+            "taps",
+            SUPPORTED_ABI_VERSION,
+            MAGIC,
+            &[0.0],
+            frames,
+            &[(320, ring), (0, vec![0.0; frames])],
+        );
+        let seg = SharedSegment::open(&path).unwrap();
+        assert_eq!(seg.taps(), 2);
+        assert_eq!(seg.tap_frames(), frames);
+
+        // The newest 128 samples are 192..320, straddling the wrap point.
+        let mut out = vec![0.0f32; 128];
+        let end = seg.tap_read_latest(0, &mut out).expect("window ready");
+        assert_eq!(end, 320);
+        for (i, s) in out.iter().enumerate() {
+            assert_eq!(*s, (192 + i) as f32, "sample {i}");
+        }
+
+        // Refusals: over half the ring, bad index, tap that never wrote.
+        let mut too_big = vec![0.0f32; 129];
+        assert_eq!(seg.tap_read_latest(0, &mut too_big), None);
+        assert_eq!(seg.tap_read_latest(2, &mut out), None);
+        assert_eq!(seg.tap_read_latest(1, &mut out), None);
         let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn rejects_bad_magic_and_abi() {
-        let bad_magic = fake_segment("magic", SUPPORTED_ABI_VERSION, 0xDEAD_BEEF, &[0.0]);
+        let bad_magic = fake_segment(
+            "magic",
+            SUPPORTED_ABI_VERSION,
+            0xDEAD_BEEF,
+            &[0.0],
+            256,
+            &[],
+        );
         assert!(SharedSegment::open(&bad_magic).is_err());
         let _ = std::fs::remove_file(&bad_magic);
 
-        let bad_abi = fake_segment("abi", SUPPORTED_ABI_VERSION + 1, MAGIC, &[0.0]);
+        let bad_abi = fake_segment("abi", SUPPORTED_ABI_VERSION + 1, MAGIC, &[0.0], 256, &[]);
         assert!(SharedSegment::open(&bad_abi).is_err());
         let _ = std::fs::remove_file(&bad_abi);
     }

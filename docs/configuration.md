@@ -46,6 +46,8 @@ workers = 0              # DSP worker threads; 0 lets the server choose
 sample_rate = 48000      # imposed output rate in Hz; 0 follows the device
 audio_buses = 128        # audio bus count
 control_buses = 1024     # control bus count
+taps = 8                 # audio-tap rings for oscilloscopes; 0 disables
+tap_frames = 16384       # per-tap ring capacity in samples (a power of two)
 persist = true           # persist/reload defs; false is like --no-persist
 # data_dir = "/path"     # def store location (else the XDG data dir)
 # shm = "/clausters"     # shared-memory segment path for local clients
@@ -79,7 +81,8 @@ port or name.
 
 - **Server** — the `[server]` section supplies the defaults for every flag of
   `clausters` (`--workers`, `--sample-rate`, `--audio-buses`, `--control-buses`,
-  `--tcp`, `--ws`, `--midi`, `--shm`, `--data-dir`, `--no-persist`). A flag on
+  `--taps`, `--tap-frames`, `--tcp`, `--ws`, `--midi`, `--shm`, `--data-dir`,
+  `--no-persist`). A flag on
   the command line overrides the file.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
   (`--port`, `--server`, `--shm`, `--data-dir`, `--headless`); the `[standalone]`

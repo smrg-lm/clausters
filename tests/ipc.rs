@@ -108,7 +108,48 @@ fn file_segments_validate_magic_and_version() {
     let _ = std::fs::remove_file(&path);
     // Pins the layout for out-of-process clients (clients/python parses
     // these offsets): changing it requires bumping ABI_VERSION.
-    assert_eq!(SEGMENT_SIZE, 135_360);
+    // v3 = v2's 135,360 (header + rings + 1024 control buses) aligned to 64,
+    // plus 8 default taps × (64-byte cursor line + 16384 × f32 ring).
+    assert_eq!(SEGMENT_SIZE, 660_160);
+}
+
+/// The audio-tap rings (ABI v3): block writes, the newest-window read, the
+/// wrap, and every refusal (`None`) case of `tap_read_latest`.
+#[test]
+fn tap_rings_write_read_and_wrap() {
+    // A tiny ring (256 samples = 4 blocks) so the wrap is exercised fast.
+    let segment = Segment::in_memory_full(8, 2, 256);
+    assert_eq!(segment.taps(), 2);
+    assert_eq!(segment.tap_frames(), 256);
+
+    // Before any write: no full window exists.
+    let mut out = vec![0.0f32; BLOCK_SIZE];
+    assert_eq!(segment.tap_read_latest(0, &mut out), None);
+
+    // Write 5 ramp blocks (320 samples > the 256 ring: it wraps).
+    let mut block = [0.0f32; BLOCK_SIZE];
+    for b in 0..5u32 {
+        for (i, s) in block.iter_mut().enumerate() {
+            *s = (b as usize * BLOCK_SIZE + i) as f32;
+        }
+        segment.tap_write(0, &block);
+    }
+
+    // The newest 128 samples are 192..320, straddling the wrap point.
+    let mut out = vec![0.0f32; 128];
+    let end = segment.tap_read_latest(0, &mut out).expect("window ready");
+    assert_eq!(end, 320);
+    for (i, s) in out.iter().enumerate() {
+        assert_eq!(*s, (192 + i) as f32, "sample {i}");
+    }
+
+    // Refusals: window over half the ring, empty window, bad tap index, and
+    // a tap that never wrote.
+    let mut too_big = vec![0.0f32; 129];
+    assert_eq!(segment.tap_read_latest(0, &mut too_big), None);
+    assert_eq!(segment.tap_read_latest(0, &mut []), None);
+    assert_eq!(segment.tap_read_latest(2, &mut out), None);
+    assert_eq!(segment.tap_read_latest(1, &mut out), None);
 }
 
 /// The full server speaking through the ring only: no UDP client at all.

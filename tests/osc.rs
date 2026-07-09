@@ -13,6 +13,7 @@ use clausters::dsp::Limits;
 use clausters::osc::server::{OscServer, ServerInfo};
 use clausters::rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
 use clausters::server::engine::{BLOCK_SIZE, Engine, engine_pair, engine_pair_full};
+use clausters::server::ipc::Segment;
 
 struct TestServer {
     addr: SocketAddr,
@@ -518,6 +519,99 @@ fn c_stream_rejects_bad_arguments() {
     server.send("/c_stream", args);
     let reply = server.recv_until("/fail");
     assert_eq!(reply.args[0], OscType::String("/c_stream".into()));
+
+    server.quit();
+}
+
+/// `/tap` routes a live bus into a segment tap ring and `/tap_stream` streams
+/// windows of it: ack, immediate snapshot (index + stream position + raw LE
+/// `f32` blob), audible content, cancel, and the /fail cases.
+#[test]
+fn tap_and_tap_stream_snapshot_audio() {
+    let segment = Segment::in_memory_full(1024, 2, 4096);
+    let mut server = TestServer::spawn_with(engine_pair_full(
+        48_000.0,
+        2,
+        0,
+        Some(segment),
+        128,
+        1024,
+        Limits::default(),
+    ));
+
+    // Route audio bus 0 into tap 0 (no ack; failures reply /fail), then give
+    // it something to record: the built-in default synth on bus 0.
+    server.send("/tap", vec![OscType::Int(0), OscType::Int(0)]);
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..16 {
+        server.engine.process_block(&mut out);
+    }
+
+    // Subscribe: /done, then the immediate /tap_data snapshot.
+    server.send(
+        "/tap_stream",
+        vec![OscType::Int(50), OscType::Int(512), OscType::Int(0)],
+    );
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/tap_stream".into()));
+    let data = server.recv_until("/tap_data");
+    assert_eq!(data.args[0], OscType::Int(0));
+    let OscType::Long(end) = data.args[1] else {
+        panic!(
+            "expected the stream position as a Long, got {:?}",
+            data.args
+        );
+    };
+    assert!(end >= 512, "at least one window written (end = {end})");
+    let OscType::Blob(bytes) = &data.args[2] else {
+        panic!("expected the window blob, got {:?}", data.args);
+    };
+    assert_eq!(bytes.len(), 512 * 4, "512 raw little-endian f32 samples");
+    let peak = bytes
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes(c.try_into().unwrap()).abs())
+        .fold(0.0f32, f32::max);
+    assert!(peak > 0.01, "tapped audio must not be silent (peak {peak})");
+
+    // Period 0 cancels (acked); out-of-range indices fail.
+    server.send("/tap_stream", vec![OscType::Int(0), OscType::Int(512)]);
+    let done = server.recv_until("/done");
+    assert_eq!(done.args[0], OscType::String("/tap_stream".into()));
+    server.send("/tap", vec![OscType::Int(99), OscType::Int(0)]);
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/tap".into()));
+    server.send("/tap", vec![OscType::Int(0), OscType::Int(999)]);
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/tap".into()));
+
+    server.quit();
+}
+
+/// A server without a tap region (no segment) refuses tap commands loudly.
+#[test]
+fn tap_without_segment_fails() {
+    let server = TestServer::spawn();
+
+    server.send("/tap", vec![OscType::Int(0), OscType::Int(0)]);
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/tap".into()));
+
+    server.send(
+        "/tap_stream",
+        vec![OscType::Int(50), OscType::Int(512), OscType::Int(0)],
+    );
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/tap_stream".into()));
 
     server.quit();
 }
@@ -1895,7 +1989,7 @@ fn server_info_reports_configured_limits() {
         })
         .collect();
     // [audio_buses, control_buses, out_ch, block, sr, sr, in_ch, max_nodes,
-    //  max_buffers, max_graph_children, max_ugen_inputs]
+    //  max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames]
     assert_eq!(ints[0], 128, "audio buses");
     assert_eq!(ints[2], 2, "output channels");
     assert_eq!(ints[6], 0, "no live input attached in this harness");
@@ -1903,6 +1997,9 @@ fn server_info_reports_configured_limits() {
     assert_eq!(ints[8], 64, "max_buffers");
     assert_eq!(ints[9], 32, "max_graph_children");
     assert_eq!(ints[10], 24, "max_ugen_inputs");
+    // No segment in this harness: the tap region reports empty.
+    assert_eq!(ints[11], 0, "taps");
+    assert_eq!(ints[12], 0, "tap_frames");
     server.quit();
 }
 

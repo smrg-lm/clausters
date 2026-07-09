@@ -112,6 +112,14 @@ pub enum Cmd {
         index: usize,
         value: f32,
     },
+    /// `/tap`: routes audio bus `bus` into audio-tap ring `tap` of the IPC
+    /// segment (the engine appends that bus's block to the ring at the end of
+    /// every block); `bus = -1` stops the tap. RT-safe: it only flips an entry
+    /// in the engine's pre-allocated tap table.
+    SetTap {
+        tap: usize,
+        bus: i32,
+    },
     /// `/n_set` on a control used as a bus index: ships the re-analyzed
     /// masks so the parallel scheduler stays in sync (M13).
     SetUsage {
@@ -312,6 +320,9 @@ pub struct Engine {
     /// M14: block-accurate mirror of the sample clock into the IPC segment
     /// (one extra Release store per block); the Arc pins the mapping.
     ipc: Option<Arc<Segment>>,
+    /// Which audio bus each segment tap ring records (`-1` = off), indexed by
+    /// tap. Pre-allocated to the segment's tap count; `/tap` flips entries.
+    tap_buses: Vec<i32>,
     cmd_rx: Consumer<Cmd>,
     garbage_tx: Producer<Garbage>,
     pending_garbage: Vec<Garbage>,
@@ -343,6 +354,9 @@ pub struct EngineHandle {
     control_buses: ControlBuses,
     sample_clock: Arc<AtomicU64>,
     counters: Arc<Counters>,
+    /// The IPC segment when one exists — the network thread reads the audio
+    /// taps from here (`/tap_stream`) without an engine round-trip.
+    segment: Option<Arc<Segment>>,
 }
 
 pub fn engine_pair(sample_rate: f32, channels: usize) -> (Engine, EngineHandle) {
@@ -414,6 +428,8 @@ pub fn engine_pair_full(
         None => ControlBuses::new(control_buses),
     };
     let sample_clock = Arc::new(AtomicU64::new(0));
+    let tap_buses = vec![-1i32; ipc.as_ref().map_or(0, |s| s.taps())];
+    let segment = ipc.clone();
     let engine = Engine {
         sample_rate,
         channels,
@@ -427,6 +443,7 @@ pub fn engine_pair_full(
         sched: Vec::with_capacity(SCHED_CAPACITY),
         sample_clock: Arc::clone(&sample_clock),
         ipc,
+        tap_buses,
         cmd_rx,
         garbage_tx,
         pending_garbage: Vec::with_capacity(PENDING_GARBAGE_CAPACITY),
@@ -448,6 +465,7 @@ pub fn engine_pair_full(
         control_buses,
         sample_clock,
         counters,
+        segment,
     };
     (engine, handle)
 }
@@ -550,6 +568,14 @@ impl Engine {
         self.now = block_end;
         self.sample_clock.store(block_end, Ordering::Relaxed);
         if let Some(segment) = &self.ipc {
+            // Audio taps first, then the clock: a reader that sees clock N
+            // sees every tap sample of block N. One memcpy + one Release
+            // store per active tap — no allocation, no lock (RT-safe).
+            for (i, &bus) in self.tap_buses.iter().enumerate() {
+                if bus >= 0 && (bus as usize) < self.buses.audio_count() {
+                    segment.tap_write(i, self.buses.audio(bus as usize));
+                }
+            }
             segment.clock().store(block_end, Ordering::Release);
         }
         self.counters
@@ -758,6 +784,12 @@ impl Engine {
                 Cmd::SetControlBus { index, value } => {
                     self.buses.control.set(index, value);
                 }
+                Cmd::SetTap { tap, bus } => {
+                    // Out-of-range indices were rejected on the network side.
+                    if let Some(slot) = self.tap_buses.get_mut(tap) {
+                        *slot = bus;
+                    }
+                }
                 Cmd::Schedule { time, cmds } => {
                     if self.sched.len() == self.sched.capacity() {
                         // Queue full: reject the whole bundle; the network
@@ -844,6 +876,13 @@ impl EngineHandle {
     /// here on the network thread, no command round-trip.
     pub fn control_buses(&self) -> &ControlBuses {
         &self.control_buses
+    }
+
+    /// The IPC segment when one exists. The audio taps are read from here
+    /// (`/tap_stream` snapshots), like the control buses: shared memory, no
+    /// engine round-trip.
+    pub fn segment(&self) -> Option<&Arc<Segment>> {
+        self.segment.as_ref()
     }
 
     /// The engine's stream clock: samples processed so far, published once

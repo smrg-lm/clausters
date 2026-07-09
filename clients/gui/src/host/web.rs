@@ -43,8 +43,9 @@ use super::fetch::{BufferFetches, FetchStep};
 use super::frame::{self, WaveformSlot};
 use super::interact;
 use super::layout::Rect;
-use super::live::{self, StreamedBuses};
+use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
+use super::spectrum::SpectrumState;
 use super::widget::{Widget, WidgetKind};
 use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink, controls};
 
@@ -224,6 +225,23 @@ struct WebApp {
     /// The bus set currently subscribed with `/c_stream` (sorted), so a tree
     /// change only resubscribes when the set actually changed.
     streamed: Vec<i32>,
+    /// The newest `/tap_data` window per tap — the browser's source for
+    /// audio-rate scopes, read on the tick exactly as the native front reads
+    /// the segment's tap rings.
+    taps: Arc<StreamedTaps>,
+    /// Triggered display window per audio-rate scope widget id, refreshed on
+    /// the tick (`live::update_tap_windows`). Also holds each phasescope's
+    /// interleaved L/R window (ids do not collide).
+    tap_windows: HashMap<i32, Vec<f32>>,
+    /// Persistent FFT analysis state per `spectrum` widget id, advanced on the
+    /// tick (`live::update_spectra`), exactly as the native front does.
+    spectra: HashMap<i32, SpectrumState>,
+    /// The `(taps, window frames)` currently subscribed with `/tap_stream`,
+    /// so a tree change only resubscribes when they actually changed.
+    tap_streamed: (Vec<i32>, usize),
+    /// The server's sample rate (from `/clock.reply`, requested when the leg
+    /// connects); `0.0` until known — window sizing then assumes 48 kHz.
+    server_rate: f64,
     /// The animation tick: the `setInterval` id and its closure, kept alive
     /// while the current def has live widgets (meter/scope/canvas).
     tick: Option<(i32, Closure<dyn FnMut()>)>,
@@ -252,6 +270,11 @@ impl WebApp {
             buses: Arc::new(StreamedBuses::default()),
             scopes: HashMap::new(),
             streamed: Vec::new(),
+            taps: Arc::new(StreamedTaps::default()),
+            tap_windows: HashMap::new(),
+            spectra: HashMap::new(),
+            tap_streamed: (Vec::new(), 0),
+            server_rate: 0.0,
             tick: None,
             stream_seen: false,
             fetches: BufferFetches::default(),
@@ -274,6 +297,8 @@ impl WebApp {
                     log(&format!("/gui_def {id}: window opened from the page"));
                     self.current_def = Some(id);
                     self.scopes.clear();
+                    self.tap_windows.clear();
+                    self.spectra.clear();
                     self.pending_bulk.clear();
                     self.fetches.drop_def(id); // rebuild semantics on a re-/gui_def
                     if self.render.is_some() {
@@ -287,6 +312,8 @@ impl WebApp {
                     if self.current_def == Some(id) {
                         self.current_def = None;
                         self.scopes.clear();
+                        self.tap_windows.clear();
+                        self.spectra.clear();
                         self.pending_bulk.clear();
                         self.fetches.drop_def(id);
                         if let Some(r) = self.render.as_mut() {
@@ -309,11 +336,13 @@ impl WebApp {
     }
 
     /// Re-derives everything that follows from the current tree's live widgets:
-    /// the `/c_stream` subscription on the WS leg and the animation tick.
-    /// Called on open/close/redraw and after the server leg attaches; cheap (a
-    /// tree walk) and idempotent, so calling it eagerly is fine.
+    /// the `/c_stream` and `/tap_stream` subscriptions on the WS leg and the
+    /// animation tick. Called on open/close/redraw and after the server leg
+    /// attaches; cheap (a tree walk) and idempotent, so calling it eagerly is
+    /// fine.
     fn on_tree_changed(&mut self) {
         self.sync_bus_stream();
+        self.sync_tap_stream();
         self.ensure_tick();
     }
 
@@ -350,6 +379,48 @@ impl WebApp {
                 self.streamed = wanted;
             }
             Err(e) => log(&format!("failed to (re)subscribe /c_stream: {e}")),
+        }
+    }
+
+    /// Subscribes the audio server to exactly the audio taps the current
+    /// tree's oscilloscopes read (`/tap_stream`, replacing this client's
+    /// previous subscription), sized to the largest raw window any of them
+    /// needs; cancels when none are left. Skipped without a server leg.
+    fn sync_tap_stream(&mut self) {
+        let mut wanted = Vec::new();
+        let mut frames = 0usize;
+        if let Some(def) = self.current_def
+            && let Some(tree) = self.host.window_def(def)
+        {
+            live::collect_live_taps(tree, &mut wanted);
+            // Size the stream window to the largest any tap consumer needs — the
+            // oscilloscopes, the phasescopes and the spectra alike.
+            frames = live::tap_stream_frames(tree, self.server_rate);
+        }
+        if (wanted.clone(), frames) == self.tap_streamed {
+            return;
+        }
+        let Some(server) = self.host.server() else {
+            return;
+        };
+        let mut args = Vec::with_capacity(wanted.len() + 2);
+        if wanted.is_empty() {
+            args.push(OscType::Int(0)); // periodMs 0: cancel
+            args.push(OscType::Int(0));
+        } else {
+            args.push(OscType::Int(live::STREAM_PERIOD_MS));
+            args.push(OscType::Int(frames as i32));
+            args.extend(wanted.iter().map(|&tap| OscType::Int(tap)));
+        }
+        match server.send(OscMessage {
+            addr: "/tap_stream".into(),
+            args,
+        }) {
+            Ok(()) => {
+                log(&format!("/tap_stream subscription: {wanted:?} x{frames}"));
+                self.tap_streamed = (wanted, frames);
+            }
+            Err(e) => log(&format!("failed to (re)subscribe /tap_stream: {e}")),
         }
     }
 
@@ -391,7 +462,9 @@ impl WebApp {
     }
 
     /// One animation tick: push a fresh streamed-bus sample into every scope's
-    /// rolling history (time-based, exactly like the native tick), then repaint.
+    /// rolling history and refresh the audio-rate scopes' triggered windows
+    /// from the `/tap_data` store (time-based, exactly like the native tick),
+    /// then repaint.
     fn on_tick(&mut self) {
         if let Some(def) = self.current_def
             && let Some(tree) = self.host.window_def(def)
@@ -408,6 +481,20 @@ impl WebApp {
                 },
                 &mut self.scopes,
             );
+            let taps = &self.taps;
+            live::update_tap_windows(
+                tree,
+                self.server_rate,
+                |tap, out| taps.read_raw(tap, out),
+                &mut self.tap_windows,
+            );
+            live::update_phase_windows(
+                tree,
+                self.server_rate,
+                |tap, out| taps.read_raw(tap, out),
+                &mut self.tap_windows,
+            );
+            live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut self.spectra);
         }
         self.request_redraw();
     }
@@ -460,6 +547,27 @@ impl WebApp {
             "/b_setn" => {
                 let step = self.fetches.on_data(&msg.args);
                 self.apply_fetch_step(step);
+            }
+            "/tap_data" => {
+                // (tap, stream position, raw LE f32 blob): the newest window
+                // of one tap; store it for the tick to align and draw.
+                if let (Some(OscType::Int(tap)), Some(OscType::Blob(bytes))) =
+                    (msg.args.first(), msg.args.get(2))
+                {
+                    let samples: Vec<f32> = bytes
+                        .chunks_exact(4)
+                        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                        .collect();
+                    self.taps.set(*tap, samples);
+                }
+            }
+            "/clock.reply" => {
+                // (samples, rate, ...): keep the rate for window sizing.
+                if let Some(OscType::Double(rate)) = msg.args.get(1) {
+                    self.server_rate = *rate;
+                    // Window sizes may change with the real rate known.
+                    self.sync_tap_stream();
+                }
             }
             "/fail" => log(&format!("audio server replied /fail: {:?}", msg.args)),
             // `/done` acks (e.g. for `/c_stream`) need no action.
@@ -605,6 +713,7 @@ impl WebApp {
             bus: Some(self.buses.as_ref() as &dyn BusSource),
             active_button,
             server_attached,
+            sample_rate: self.server_rate,
             ..Default::default()
         };
         let Some(render) = self.render.as_mut() else {
@@ -617,6 +726,8 @@ impl WebApp {
             &mut render.waveforms,
             &mut canvases,
             &self.scopes,
+            &self.tap_windows,
+            &self.spectra,
             tree,
             &inputs,
         );
@@ -827,9 +938,18 @@ impl ApplicationHandler<WebEvent> for WebApp {
                     self.host.set_server_link(ServerLink::Ws(link));
                     log(&format!("audio-server leg connecting to {url}"));
                     // A fresh connection holds no subscription: forget the old
-                    // one and subscribe the current tree's buses (frames queue
-                    // until the socket opens, so sending now is safe).
+                    // ones and subscribe the current tree's buses and taps
+                    // (frames queue until the socket opens, so sending now is
+                    // safe). `/clock` fetches the rate the oscilloscope
+                    // windows are sized with.
                     self.streamed.clear();
+                    self.tap_streamed = (Vec::new(), 0);
+                    if let Some(server) = self.host.server() {
+                        let _ = server.send(OscMessage {
+                            addr: "/clock".into(),
+                            args: vec![],
+                        });
+                    }
                     self.on_tree_changed();
                 }
                 Err(e) => log(&format!("cannot open audio-server WebSocket {url}: {e}")),

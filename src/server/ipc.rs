@@ -18,9 +18,13 @@
 //!   boundary);
 //! - the **data plane**: the engine's sample clock, mirrored block-accurately
 //!   by the audio thread (one extra atomic store per block — M8 anchors with
-//!   zero UDP jitter), and the 1024 control buses as raw atomics (the engine
+//!   zero UDP jitter), the 1024 control buses as raw atomics (the engine
 //!   reads *these very words* through `InCtl`: a client write is live on the
-//!   next block, no command involved);
+//!   next block, no command involved), and the **audio taps** (ABI v3): a
+//!   fixed set of single-channel sample rings the audio thread appends a
+//!   block to whenever `/tap` routes an audio bus into one, read lock-free by
+//!   a peer each display frame — the audio-rate sibling of the control buses
+//!   (SuperCollider's `ScopeOut2` scope buffers play this role);
 //! - the **command plane**: two SPSC byte rings (client→server and
 //!   server→client) carrying ordinary length-prefixed OSC packets. The
 //!   network thread drains the inbound ring in its loop and routes replies
@@ -42,14 +46,23 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
-use crate::dsp::{ControlBuses, NUM_CONTROL_BUSES};
+use crate::dsp::{BLOCK_SIZE, ControlBuses, NUM_CONTROL_BUSES};
 
 /// "CLAU" little-endian.
 pub const MAGIC: u32 = 0x5541_4C43;
 /// Bump on **any** layout change: attaching rejects mismatches.
-pub const ABI_VERSION: u32 = 2;
+pub const ABI_VERSION: u32 = 3;
 /// Byte capacity of each ring (power of two).
 pub const RING_CAPACITY: usize = 64 * 1024;
+/// Default audio-tap count (`--taps`).
+pub const DEFAULT_TAPS: usize = 8;
+/// Default per-tap ring capacity in samples (`--tap-frames`): a power of two,
+/// ~341 ms at 48 kHz — comfortably more than twice any oscilloscope window.
+pub const DEFAULT_TAP_FRAMES: usize = 16384;
+/// Each tap slot starts 64-byte aligned: the cursor gets its own cache line
+/// (the audio thread stores it every block; readers poll it), and the sample
+/// ring follows without straddling the cursor's line.
+const TAP_ALIGN: usize = 64;
 
 #[repr(C)]
 struct Header {
@@ -61,7 +74,11 @@ struct Header {
     sample_clock: AtomicU64,
     ring_capacity: u32,
     control_buses: u32,
-    _reserved: [u32; 8],
+    /// Audio-tap count and per-tap ring capacity in samples (ABI v3); the tap
+    /// region trails the control buses (see [`Segment::tap_region_offset`]).
+    taps: u32,
+    tap_frames: u32,
+    _reserved: [u32; 6],
 }
 
 #[repr(C)]
@@ -88,13 +105,29 @@ struct Layout {
     s2c: Ring,
 }
 
-/// Total byte size of a segment carrying `control_buses` control slots.
-const fn segment_size(control_buses: usize) -> usize {
-    size_of::<Layout>() + control_buses * size_of::<AtomicU32>()
+/// Byte offset of the tap region: the control slots' end, rounded up to
+/// [`TAP_ALIGN`] so the first tap cursor is cache-line aligned.
+const fn tap_region_offset(control_buses: usize) -> usize {
+    let controls_end = size_of::<Layout>() + control_buses * size_of::<AtomicU32>();
+    controls_end.div_ceil(TAP_ALIGN) * TAP_ALIGN
 }
 
-/// Default segment size (the `--control-buses` default count).
-pub const SEGMENT_SIZE: usize = segment_size(NUM_CONTROL_BUSES);
+/// Byte size of one tap slot: a cache line for the cursor, then the sample
+/// ring. `tap_frames` is a power of two ≥ [`BLOCK_SIZE`], so the ring's byte
+/// size is a multiple of [`TAP_ALIGN`] and every slot stays aligned.
+const fn tap_slot_size(tap_frames: usize) -> usize {
+    TAP_ALIGN + tap_frames * size_of::<f32>()
+}
+
+/// Total byte size of a segment carrying `control_buses` control slots and
+/// `taps` audio-tap rings of `tap_frames` samples each.
+const fn segment_size(control_buses: usize, taps: usize, tap_frames: usize) -> usize {
+    tap_region_offset(control_buses) + taps * tap_slot_size(tap_frames)
+}
+
+/// Default segment size (the `--control-buses`/`--taps`/`--tap-frames`
+/// default counts).
+pub const SEGMENT_SIZE: usize = segment_size(NUM_CONTROL_BUSES, DEFAULT_TAPS, DEFAULT_TAP_FRAMES);
 
 enum Backing {
     // `u128` words keep the heap allocation 16-aligned — `Layout` holds
@@ -132,26 +165,33 @@ unsafe impl Sync for Segment {}
 
 impl Segment {
     /// A heap-backed segment for the in-process (embed) transport, with the
-    /// default control-bus count.
+    /// default control-bus and tap counts.
     pub fn in_memory() -> Arc<Self> {
         Self::in_memory_with(NUM_CONTROL_BUSES)
     }
 
-    /// A heap-backed segment carrying `control_buses` control slots.
+    /// A heap-backed segment carrying `control_buses` control slots and the
+    /// default tap region.
     pub fn in_memory_with(control_buses: usize) -> Arc<Self> {
-        let size = segment_size(control_buses);
+        Self::in_memory_full(control_buses, DEFAULT_TAPS, DEFAULT_TAP_FRAMES)
+    }
+
+    /// A heap-backed segment with every region sized explicitly.
+    pub fn in_memory_full(control_buses: usize, taps: usize, tap_frames: usize) -> Arc<Self> {
+        check_tap_params(taps, tap_frames);
+        let size = segment_size(control_buses, taps, tap_frames);
         let mut words = vec![0u128; size.div_ceil(16)].into_boxed_slice();
         let layout = words.as_mut_ptr() as *mut Layout;
         let seg = Self {
             layout,
             _backing: Backing::Heap(words),
         };
-        seg.init_header(control_buses);
+        seg.init_header(control_buses, taps, tap_frames);
         Arc::new(seg)
     }
 
     /// Creates (or truncates) the segment file and maps it shared, with the
-    /// default control-bus count. Put it on a memory filesystem —
+    /// default control-bus and tap counts. Put it on a memory filesystem —
     /// `/dev/shm/...` on Linux — to avoid disk writes.
     #[cfg(unix)]
     pub fn create(path: &Path) -> io::Result<Arc<Self>> {
@@ -162,7 +202,20 @@ impl Segment {
     /// `control_buses` (`--control-buses`).
     #[cfg(unix)]
     pub fn create_with(path: &Path, control_buses: usize) -> io::Result<Arc<Self>> {
-        let size = segment_size(control_buses);
+        Self::create_full(path, control_buses, DEFAULT_TAPS, DEFAULT_TAP_FRAMES)
+    }
+
+    /// Like [`create`](Self::create), with every region sized explicitly
+    /// (`--control-buses`, `--taps`, `--tap-frames`).
+    #[cfg(unix)]
+    pub fn create_full(
+        path: &Path,
+        control_buses: usize,
+        taps: usize,
+        tap_frames: usize,
+    ) -> io::Result<Arc<Self>> {
+        check_tap_params(taps, tap_frames);
+        let size = segment_size(control_buses, taps, tap_frames);
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -171,7 +224,7 @@ impl Segment {
             .open(path)?;
         file.set_len(size as u64)?;
         let seg = Self::map_file(&file, size)?;
-        seg.init_header(control_buses);
+        seg.init_header(control_buses, taps, tap_frames);
         Ok(Arc::new(seg))
     }
 
@@ -194,8 +247,14 @@ impl Segment {
                 header.abi_version
             )));
         }
-        // The mapped length must match the control-bus count the header claims.
-        if len != segment_size(header.control_buses as usize) {
+        // The mapped length must match the region sizes the header claims.
+        if len
+            != segment_size(
+                header.control_buses as usize,
+                header.taps as usize,
+                header.tap_frames as usize,
+            )
+        {
             return Err(io::Error::other("segment size mismatch"));
         }
         Ok(Arc::new(seg))
@@ -229,10 +288,12 @@ impl Segment {
 
     /// Runs at creation time, before any other process can have attached
     /// (the file was just created/truncated), so plain writes are sound.
-    fn init_header(&self, control_buses: usize) {
+    fn init_header(&self, control_buses: usize, taps: usize, tap_frames: usize) {
         let header = unsafe { &mut (*self.layout).header };
         header.ring_capacity = RING_CAPACITY as u32;
         header.control_buses = control_buses as u32;
+        header.taps = taps as u32;
+        header.tap_frames = tap_frames as u32;
         header.abi_version = ABI_VERSION;
         // Written last: a client that sees the magic sees a full header.
         header.magic = MAGIC;
@@ -279,6 +340,107 @@ impl Segment {
         // SAFETY: the region is part of the segment, kept alive by the Arc.
         unsafe { ControlBuses::from_raw(ptr, count, Arc::clone(self) as _) }
     }
+
+    /// Number of audio-tap rings in the segment.
+    pub fn taps(&self) -> usize {
+        self.layout().header.taps as usize
+    }
+
+    /// Per-tap ring capacity in samples (a power of two).
+    pub fn tap_frames(&self) -> usize {
+        self.layout().header.tap_frames as usize
+    }
+
+    /// Base of tap `i`'s slot: a [`TAP_ALIGN`] header line holding the cursor,
+    /// then `tap_frames` ring samples.
+    fn tap_slot_ptr(&self, i: usize) -> *const u8 {
+        debug_assert!(i < self.taps());
+        let offset = tap_region_offset(self.layout().header.control_buses as usize)
+            + i * tap_slot_size(self.tap_frames());
+        // SAFETY: the constructors sized the backing for the tap region.
+        unsafe { (self.layout as *const u8).add(offset) }
+    }
+
+    /// Tap `i`'s cursor: total samples ever written (monotonic). The ring
+    /// holds samples `[cursor - tap_frames, cursor)`.
+    fn tap_cursor(&self, i: usize) -> &AtomicU64 {
+        // SAFETY: the slot starts 64-byte aligned and its first word is the
+        // cursor; the mapping outlives `self`.
+        unsafe { &*(self.tap_slot_ptr(i) as *const AtomicU64) }
+    }
+
+    fn tap_data_ptr(&self, i: usize) -> *const f32 {
+        // SAFETY: the ring starts one alignment line into the slot.
+        unsafe { self.tap_slot_ptr(i).add(TAP_ALIGN) as *const f32 }
+    }
+
+    /// Appends one block of samples to tap `i`'s ring. **Audio-thread safe**:
+    /// one `memcpy` plus one Release store, no allocation, no lock. Single
+    /// writer only (the engine). The block never wraps: the ring capacity is
+    /// a power of two ≥ the block size and the cursor only advances by whole
+    /// blocks, so every write lands block-aligned inside the ring.
+    pub fn tap_write(&self, i: usize, samples: &[f32]) {
+        let frames = self.tap_frames();
+        debug_assert!(samples.len() == BLOCK_SIZE && frames.is_multiple_of(BLOCK_SIZE));
+        let cursor = self.tap_cursor(i).load(Ordering::Relaxed);
+        let start = (cursor as usize) % frames;
+        // SAFETY: `start + BLOCK_SIZE <= frames` (both are multiples of the
+        // block size), single writer, region sized by the constructors.
+        unsafe {
+            std::ptr::copy_nonoverlapping(
+                samples.as_ptr(),
+                self.tap_data_ptr(i).add(start) as *mut f32,
+                samples.len(),
+            );
+        }
+        self.tap_cursor(i)
+            .store(cursor + samples.len() as u64, Ordering::Release);
+    }
+
+    /// Copies the **newest** `out.len()` samples of tap `i` into `out`,
+    /// returning the stream position (total samples written) at the window's
+    /// end — `None` when the tap index is out of range, the window is empty
+    /// or larger than half the ring, or the tap has not yet written a full
+    /// window. The half-ring cap makes a torn read need the writer to lap
+    /// half the ring during one `memcpy`; the cursor double-check turns that
+    /// "impossible in practice" into checked — on the rare tear it retries
+    /// with the fresh cursor.
+    pub fn tap_read_latest(&self, i: usize, out: &mut [f32]) -> Option<u64> {
+        let frames = self.tap_frames();
+        let want = out.len();
+        if i >= self.taps() || want == 0 || want > frames / 2 {
+            return None;
+        }
+        loop {
+            let end = self.tap_cursor(i).load(Ordering::Acquire);
+            if (end as usize) < want {
+                return None;
+            }
+            let start = end - want as u64;
+            let s = (start as usize) % frames;
+            let first = want.min(frames - s);
+            let data = self.tap_data_ptr(i);
+            // SAFETY: both copies stay inside the ring; concurrent writer
+            // overlap is detected by the cursor re-check below.
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.add(s), out.as_mut_ptr(), first);
+                std::ptr::copy_nonoverlapping(data, out.as_mut_ptr().add(first), want - first);
+            }
+            let end_after = self.tap_cursor(i).load(Ordering::Acquire);
+            if end_after - start <= frames as u64 {
+                return Some(end);
+            }
+        }
+    }
+}
+
+/// Tap parameters every constructor enforces: no taps, or a power-of-two ring
+/// of at least one block (so `tap_write` never wraps mid-block).
+fn check_tap_params(taps: usize, tap_frames: usize) {
+    assert!(
+        taps == 0 || (tap_frames.is_power_of_two() && tap_frames >= BLOCK_SIZE),
+        "tap_frames must be a power of two >= {BLOCK_SIZE} (got {tap_frames})"
+    );
 }
 
 /// Which end of the ring pair this peer is.

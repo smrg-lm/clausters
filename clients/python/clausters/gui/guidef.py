@@ -33,6 +33,8 @@ __all__ = [
     "waveform",
     "meter",
     "scope",
+    "phasescope",
+    "spectrum",
     "nodetree",
     "plot",
     "canvas",
@@ -40,6 +42,8 @@ __all__ = [
     "samples_to_blob",
     "samples_to_file",
     "peaks_cache_file",
+    "correlation",
+    "lissajous",
 ]
 
 
@@ -168,13 +172,72 @@ def meter(id: int, bus: int, *, min: float | None = None, max: float | None = No
     return node("meter", id=id, bus=bus, **extra, **props)
 
 
-def scope(id: int, bus: int, *, min: float | None = None, max: float | None = None,
-          label: str | None = None, **props) -> dict:
-    """A time-domain ``scope`` plotting the recent history of control ``bus`` (read
-    from shared memory each frame; needs ``--shm`` like `meter`). ``min``/``max``
-    set the vertical range (default the bipolar ``-1``/``1``)."""
-    extra = _drop_none(min=min, max=max, label=label)
+def scope(id: int, bus: int = 0, *, tap: int | None = None,
+          window_ms: float | None = None, trigger: float | None = None,
+          hold: bool | None = None, min: float | None = None,
+          max: float | None = None, label: str | None = None, **props) -> dict:
+    """A time-domain ``scope``, in one of two rates. By default (control rate)
+    it plots the recent history of control ``bus``, read from shared memory
+    each frame (needs ``--shm`` like `meter`). Passing ``tap`` makes it an
+    audio-rate **oscilloscope** over that audio-tap ring of the server (route
+    a bus into it first with ``Server.tap``): a ``window_ms`` display window
+    (default 20 ms), re-read every frame and aligned on a rising crossing of
+    ``trigger`` (default ``0.0``, with hysteresis; free-running when the
+    signal never crosses), so a periodic signal draws a stable trace.
+    ``hold`` freezes the trace. Natively the host reads the tap out of the
+    ``--shm`` segment with zero messages; in the browser it subscribes
+    ``/tap_stream`` over the server leg. ``min``/``max`` set the vertical
+    range (default the bipolar ``-1``/``1``)."""
+    extra = _drop_none(tap=tap, window_ms=window_ms, trigger=trigger,
+                       min=min, max=max, label=label)
+    if hold is not None:
+        extra["hold"] = 1 if hold else 0
     return node("scope", id=id, bus=bus, **extra, **props)
+
+
+def phasescope(id: int, tap: int, tap2: int | None = None, *,
+               window_ms: float | None = None, hold: bool | None = None,
+               label: str | None = None, **props) -> dict:
+    """A ``phasescope`` (goniometer): the two audio taps ``tap`` (left) and
+    ``tap2`` (right, default ``tap + 1``) drawn as the 45°-rotated Lissajous
+    figure — vertical is the mid ``(L + R)/√2``, horizontal the side
+    ``(L - R)/√2``, the audio-engineering convention where mono reads as a
+    vertical line, anti-phase as horizontal and a wide field fills the lozenge.
+    An age-faded persistence trail spans the last ``window_ms`` of pairs (default
+    30 ms) and a **correlation** read-out (Pearson's r over the window) sits
+    under the field. Route each channel's bus into its tap first with
+    ``Server.tap``; ``hold`` freezes the trace. Reads the segment natively
+    (zero messages) and ``/tap_stream`` in the browser, like the oscilloscope."""
+    extra = _drop_none(window_ms=window_ms, label=label)
+    if tap2 is not None:
+        extra["tap2"] = tap2
+    if hold is not None:
+        extra["hold"] = 1 if hold else 0
+    return node("phasescope", id=id, tap=tap, **extra, **props)
+
+
+def spectrum(id: int, tap: int, *, fft_size: int | None = None,
+             db_floor: float | None = None, db_ceil: float | None = None,
+             log_freq: bool | None = None, averaging: float | None = None,
+             peak_hold: bool | None = None, label: str | None = None,
+             **props) -> dict:
+    """A live ``spectrum`` (spectroscope): one forward FFT per frame over the
+    newest window of audio tap ``tap``, drawn as a magnitude curve. ``fft_size``
+    is a power of two (256..4096, default 2048); the vertical axis is dB over
+    ``[db_floor, db_ceil]`` (default ``-100``/``0``); ``log_freq`` (default true)
+    selects a log frequency axis. Raw per-frame FFTs flicker, so ``averaging``
+    (0..1, default 0.5) exponentially smooths each bin and ``peak_hold`` (default
+    false) overlays a slowly decaying peak trace. Route a bus into the tap first
+    with ``Server.tap``; the analysis uses the shared-core FFT and Hann window,
+    so it agrees with the spectrogram. Native reads the segment; the browser
+    subscribes ``/tap_stream``."""
+    extra = _drop_none(fft_size=fft_size, db_floor=db_floor, db_ceil=db_ceil,
+                       averaging=averaging, label=label)
+    if log_freq is not None:
+        extra["log_freq"] = 1 if log_freq else 0
+    if peak_hold is not None:
+        extra["peak_hold"] = 1 if peak_hold else 0
+    return node("spectrum", id=id, tap=tap, **extra, **props)
 
 
 def nodetree(id: int, *, group: int = 0, controls: bool | None = None,
@@ -280,6 +343,30 @@ def peaks_cache_file(samples, path: str, base_bucket: int = 256) -> str:
     with open(path, "wb") as f:
         f.write(peaks_cache(samples, base_bucket))
     return path
+
+
+def correlation(left, right) -> float | None:
+    """The stereo **correlation** (Pearson's r) of two equal-length channels,
+    in ``[-1, 1]`` — ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
+    — via the shared native core, so a headless capture reads the identical
+    number the GUI phasescope draws. ``None`` when it is undefined (empty input
+    or a constant channel: silence/DC). Pair it with ``Server.stream_taps`` to
+    measure a live stereo signal without the GUI."""
+    from .._native import correlation as _correlation  # lazy: needs the cdylib
+
+    return _correlation(left, right)
+
+
+def lissajous(left, right) -> list:
+    """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
+    right)``: each maps to ``(x, y)`` with ``x`` the side ``(L - R)/√2`` and
+    ``y`` the mid ``(L + R)/√2`` — the rotated stereo plane a goniometer draws.
+    The geometry lives once in the shared native core (the phasescope draws the
+    same points); useful for plotting or driving a stereo image in
+    electroacoustic work. Returns a list of ``(x, y)`` tuples."""
+    from .._native import lissajous as _lissajous  # lazy: needs the cdylib
+
+    return _lissajous(left, right)
 
 
 def _drop_none(**kwargs) -> dict:

@@ -23,7 +23,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 6
+CORE_ABI_VERSION = 7
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -236,6 +236,12 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_peaks_cache_size.argtypes = [ctypes.c_size_t, ctypes.c_size_t]
     lib.clausters_core_peaks_build.restype = ctypes.c_size_t
     lib.clausters_core_peaks_build.argtypes = [f32p, ctypes.c_size_t, ctypes.c_size_t, u8p, ctypes.c_size_t]
+    # Stereo-field measurements (ABI v7): the correlation and Lissajous/goniometer
+    # geometry the GUI phasescope reads, shared so a headless capture matches it.
+    lib.clausters_core_correlation.restype = ctypes.c_int32
+    lib.clausters_core_correlation.argtypes = [f32p, f32p, ctypes.c_size_t, f32p]
+    lib.clausters_core_lissajous.restype = ctypes.c_int32
+    lib.clausters_core_lissajous.argtypes = [f32p, f32p, ctypes.c_size_t, f32p]
     # WebSocket client transport (ABI v2). A connection is an opaque handle;
     # bytes (with embedded NULs) cross via c_char_p + an explicit length, so OSC
     # packets are passed whole, not NUL-truncated.
@@ -563,6 +569,42 @@ def peaks_cache(samples, base_bucket: int = 256) -> bytes:
     if written != size:
         raise ValueError(f"clausters_core_peaks_build wrote {written} of {size} bytes")
     return bytes(out)
+
+
+def correlation(left, right) -> float | None:
+    """The stereo **correlation** (Pearson's r) of two equal-length channels,
+    in ``[-1, 1]``: ``+1`` mono/in-phase, ``0`` decorrelated, ``-1`` anti-phase
+    (the mix cancels in mono) — the same measurement the GUI phasescope shows,
+    computed by the shared native core so a headless analysis reads the identical
+    number. Returns ``None`` when it is undefined: the inputs are empty or a
+    channel is constant (silence or pure DC)."""
+    a, _ = _as_array(left)
+    b, _ = _as_array(right)
+    if len(a) != len(b):
+        raise ValueError(f"channels differ in length: {len(a)} vs {len(b)}")
+    out = array("f", (0.0,))
+    rc = lib().clausters_core_correlation(_ptr(a), _ptr(b), len(a), _ptr(out))
+    return None if rc != 0 else out[0]
+
+
+def lissajous(left, right) -> list[tuple[float, float]]:
+    """The **Lissajous / goniometer** coordinates of stereo pairs ``(left,
+    right)``: each pair maps to ``(x, y)`` where ``x`` is the side component
+    ``(L - R)/√2`` and ``y`` the mid ``(L + R)/√2`` — the 45°-rotated stereo
+    plane a goniometer draws (mono reads vertical, anti-phase horizontal). The
+    geometry lives once in the shared core; useful for plotting or driving a
+    stereo image in electroacoustic work, not only for the GUI phasescope.
+    Returns a list of ``(x, y)`` tuples, one per input pair."""
+    a, _ = _as_array(left)
+    b, _ = _as_array(right)
+    if len(a) != len(b):
+        raise ValueError(f"channels differ in length: {len(a)} vs {len(b)}")
+    n = len(a)
+    out = array("f", bytes(4 * 2 * n))
+    rc = lib().clausters_core_lissajous(_ptr(a), _ptr(b), n, _ptr(out))
+    if rc != 0:
+        raise ValueError(f"clausters_core_lissajous failed ({rc})")
+    return [(out[2 * i], out[2 * i + 1]) for i in range(n)]
 
 
 # ---- WebSocket client transport ----

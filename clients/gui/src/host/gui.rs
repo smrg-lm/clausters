@@ -47,6 +47,7 @@ use super::layout::Rect;
 use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
 use super::nodetree::NodeTree;
 use super::paint::Painter;
+use super::spectrum::SpectrumState;
 use super::widget::{Widget, WidgetKind};
 use super::{BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls};
 
@@ -214,6 +215,13 @@ struct WindowState {
     drag: Option<Drag>,
     /// Recent control-bus samples per `scope` widget id (oldest .. newest).
     scopes: HashMap<i32, VecDeque<f32>>,
+    /// Triggered display window per audio-rate `scope` widget id, refreshed on
+    /// the frame tick from the shared segment's tap rings. Also holds each
+    /// `phasescope`'s interleaved L/R window (ids do not collide).
+    tap_windows: HashMap<i32, Vec<f32>>,
+    /// Persistent FFT analysis state per `spectrum` widget id (the smoothed and
+    /// peak-hold curves), advanced on the frame tick.
+    spectra: HashMap<i32, SpectrumState>,
 }
 
 struct App {
@@ -294,6 +302,39 @@ impl App {
         for (def_id, id, value) in samples {
             if let Some(ws) = self.windows.get_mut(&def_id) {
                 push_sample(ws.scopes.entry(id).or_default(), value);
+            }
+        }
+    }
+
+    /// Refreshes every audio-tap consumer from the shared segment's tap rings,
+    /// once per animation frame tick (the same cadence as
+    /// [`Self::advance_scopes`]): the audio-rate scopes' triggered windows, the
+    /// phasescopes' interleaved L/R windows, and the spectra's FFT analysis.
+    /// Without a segment the views stay empty and draw their framed field.
+    fn advance_tap_windows(&mut self) {
+        let Some(shm) = self.shm.clone() else {
+            return;
+        };
+        let sample_rate = shm.sample_rate();
+        for (def_id, ws) in &mut self.windows {
+            if let Some(tree) = self.host.window_def(*def_id) {
+                super::live::update_tap_windows(
+                    tree,
+                    sample_rate,
+                    |tap, out| shm.read_tap(tap, out),
+                    &mut ws.tap_windows,
+                );
+                super::live::update_phase_windows(
+                    tree,
+                    sample_rate,
+                    |tap, out| shm.read_tap(tap, out),
+                    &mut ws.tap_windows,
+                );
+                super::live::update_spectra(
+                    tree,
+                    |tap, out| shm.read_tap(tap, out),
+                    &mut ws.spectra,
+                );
             }
         }
     }
@@ -437,6 +478,8 @@ impl App {
                 cursor: (0.0, 0.0),
                 drag: None,
                 scopes: HashMap::new(),
+                tap_windows: HashMap::new(),
+                spectra: HashMap::new(),
             },
         );
         info!("gui_def {id}: opened window \"{title}\"");
@@ -962,6 +1005,7 @@ impl App {
             node_trees: &self.node_trees,
             active_button,
             server_attached,
+            sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
@@ -972,6 +1016,8 @@ impl App {
             &mut ws.waveforms,
             &mut ws.canvases,
             &ws.scopes,
+            &ws.tap_windows,
+            &ws.spectra,
             tree,
             &inputs,
         );
@@ -1177,8 +1223,10 @@ impl ApplicationHandler<UserEvent> for App {
                 // Advance each scope's rolling history exactly once per frame tick
                 // (time-based), then repaint. Sampling here rather than in `render`
                 // keeps the scroll speed constant: extra repaints from a drag or a
-                // resize no longer push extra samples and speed the scope up.
+                // resize no longer push extra samples and speed the scope up. The
+                // audio-rate scopes refresh their triggered tap windows likewise.
                 self.advance_scopes();
+                self.advance_tap_windows();
                 for id in &animated {
                     if let Some(ws) = self.windows.get(id) {
                         ws.gpu.window.request_redraw();

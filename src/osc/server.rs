@@ -59,6 +59,16 @@ const MIN_STREAM_PERIOD: Duration = Duration::from_millis(10);
 /// pairs fit comfortably in a single frame on every transport.
 const MAX_STREAM_BUSES: usize = 128;
 
+/// Most tap indices one `/tap_stream` subscription may list — one `/tap_data`
+/// blob goes out per tap per period, so this bounds the reply traffic.
+const MAX_STREAM_TAPS: usize = 8;
+
+/// Largest `/tap_stream` window in samples: a 32 KB blob (8192 × `f32`), safe
+/// for every transport (a WS/TCP frame carries it whole; UDP callers should
+/// stay well under the datagram cap anyway). Also clamped to half the tap
+/// ring, the `tap_read_latest` tear-free bound.
+const MAX_TAP_WINDOW: usize = 8192;
+
 /// Information reported in `/status.reply` that does not come from the
 /// engine counters.
 pub struct ServerInfo {
@@ -89,6 +99,12 @@ pub struct OscServer {
     /// counterpart of the shared-memory control-bus segment, for clients (a
     /// browser) that cannot map it. Pumped by the run loop.
     streams: Vec<BusStream>,
+    /// Active `/tap_stream` subscriptions, at most one per client: the same
+    /// network counterpart for the audio-tap rings. Pumped by the run loop.
+    tap_streams: Vec<TapStream>,
+    /// Scratch window for tap snapshots, sized to the largest subscribed
+    /// window; reused across pumps.
+    tap_buf: Vec<f32>,
     recv_buf: Vec<u8>,
     /// M14: the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
@@ -153,6 +169,17 @@ struct BusStream {
     next_due: Instant,
 }
 
+/// One client's `/tap_stream` subscription: which audio taps it watches, the
+/// window size of each `/tap_data` snapshot, and when the next one is due.
+struct TapStream {
+    client: ClientId,
+    period: Duration,
+    /// Snapshot window in samples (≤ [`MAX_TAP_WINDOW`], ≤ half the tap ring).
+    frames: usize,
+    taps: Vec<i32>,
+    next_due: Instant,
+}
+
 /// A `/sync` waiting for the async pipelines to drain up to its targets.
 struct PendingSync {
     client: ClientId,
@@ -184,6 +211,8 @@ impl OscServer {
             nrt: NrtThread::spawn(),
             clients: Vec::new(),
             streams: Vec::new(),
+            tap_streams: Vec::new(),
+            tap_buf: Vec::new(),
             ipc: None,
             tcp: None,
             ws: None,
@@ -397,6 +426,7 @@ impl OscServer {
             self.drain_midi();
             self.prune_disconnected();
             self.pump_streams();
+            self.pump_tap_streams();
             let (len, from) = match self.socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
                 Err(e)
@@ -851,6 +881,8 @@ impl OscServer {
             "/c_getn" => self.handle_c_getn(&msg, from),
             "/c_fill" => self.handle_c_fill(&msg, from),
             "/c_stream" => self.handle_c_stream(&msg, from),
+            "/tap" => self.handle_tap(&msg, from),
+            "/tap_stream" => self.handle_tap_stream(&msg, from),
             "/s_get" => self.handle_s_get(&msg, from, false),
             "/s_getn" => self.handle_s_get(&msg, from, true),
             "/s_noid" => self.handle_s_noid(&msg, from),
@@ -950,11 +982,16 @@ impl OscServer {
     /// bus/allocator state from the server instead of hardcoding it:
     /// `/server_info.reply [audio_buses, control_buses, output_channels,
     /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
-    /// max_buffers, max_graph_children, max_ugen_inputs]`. The first six fields
-    /// are stable; the boot-time capacities (S7) are appended so older clients
-    /// that read only the six keep working.
+    /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames]`.
+    /// The first six fields are stable; the boot-time capacities (S7) and the
+    /// tap region shape are appended so older clients that read only the six
+    /// keep working.
     fn send_server_info(&mut self, to: ClientId) {
         let limits = self.handle.limits;
+        let (taps, tap_frames) = self
+            .handle
+            .segment()
+            .map_or((0, 0), |s| (s.taps(), s.tap_frames()));
         let args = vec![
             OscType::Int(self.handle.audio_buses as i32),
             OscType::Int(self.handle.control_buses().len() as i32),
@@ -967,6 +1004,8 @@ impl OscServer {
             OscType::Int(limits.max_buffers as i32),
             OscType::Int(limits.max_group_children as i32),
             OscType::Int(limits.max_ugen_inputs as i32),
+            OscType::Int(taps as i32),
+            OscType::Int(tap_frames as i32),
         ];
         self.reply(to, "/server_info.reply", args);
     }
@@ -1405,6 +1444,161 @@ impl OscServer {
         args
     }
 
+    /// `/tap tapIndex bus`: routes audio bus `bus` into the segment's audio-tap
+    /// ring `tapIndex` — from the next block on, the engine appends that bus's
+    /// samples to the ring every block, where a shared-memory peer (a GUI
+    /// oscilloscope) reads them with zero messages. `bus = -1` stops the tap.
+    /// No ack (the same posture as `/n_map`: it only flips routing state);
+    /// sequence with `/sync` when needed. Fails without a tap region (server
+    /// started with `--taps 0`).
+    fn handle_tap(&mut self, msg: &OscMessage, from: ClientId) {
+        let (Some(OscType::Int(tap)), Some(OscType::Int(bus))) =
+            (msg.args.first(), msg.args.get(1))
+        else {
+            return self.fail(from, "/tap", "expected int tapIndex, int bus");
+        };
+        let Some(segment) = self.handle.segment() else {
+            return self.fail(from, "/tap", "no tap region (server started with --taps 0)");
+        };
+        let taps = segment.taps();
+        if *tap < 0 || *tap as usize >= taps {
+            return self.fail(from, "/tap", format!("tap index out of range 0..{taps}"));
+        }
+        let audio_buses = self.handle.audio_buses;
+        if *bus != -1 && (*bus < 0 || *bus as usize >= audio_buses) {
+            return self.fail(
+                from,
+                "/tap",
+                format!("bus must be -1 or in range 0..{audio_buses}"),
+            );
+        }
+        let cmd = Cmd::SetTap {
+            tap: *tap as usize,
+            bus: *bus,
+        };
+        if self.handle.send(cmd).is_err() {
+            self.fail(from, "/tap", "command FIFO full");
+        }
+    }
+
+    /// `/tap_stream periodMs frames tapIndex...`: subscribes this client to a
+    /// periodic `/tap_data` snapshot — the newest `frames` samples of each
+    /// listed tap — the network counterpart of reading the tap rings out of
+    /// shared memory, for clients (a browser oscilloscope) that cannot map the
+    /// segment. One subscription per client, replaced on every call;
+    /// `periodMs <= 0` or an empty tap list cancels. Acks `/done
+    /// "/tap_stream"`, then sends the first snapshot immediately and the rest
+    /// from the run loop. Not schedulable in timed bundles. Subscriptions die
+    /// with their TCP/WS connection, like `/c_stream`.
+    fn handle_tap_stream(&mut self, msg: &OscMessage, from: ClientId) {
+        let (Some(OscType::Int(period_ms)), Some(OscType::Int(frames))) =
+            (msg.args.first(), msg.args.get(1))
+        else {
+            return self.fail(from, "/tap_stream", "expected int periodMs, int frames");
+        };
+        let Some(segment) = self.handle.segment() else {
+            return self.fail(
+                from,
+                "/tap_stream",
+                "no tap region (server started with --taps 0)",
+            );
+        };
+        let tap_count = segment.taps();
+        let mut taps = Vec::with_capacity(msg.args.len().saturating_sub(2));
+        for arg in &msg.args[2..] {
+            let OscType::Int(index) = arg else {
+                return self.fail(from, "/tap_stream", "expected int tap indices");
+            };
+            if *index < 0 || *index as usize >= tap_count {
+                return self.fail(
+                    from,
+                    "/tap_stream",
+                    format!("tap index out of range 0..{tap_count}"),
+                );
+            }
+            taps.push(*index);
+        }
+        if taps.len() > MAX_STREAM_TAPS {
+            return self.fail(
+                from,
+                "/tap_stream",
+                format!("at most {MAX_STREAM_TAPS} tap indices per subscription"),
+            );
+        }
+        // Clamp, don't fail, the window: to the blob cap and to half the tap
+        // ring (the tear-free bound of `tap_read_latest`).
+        let frames = (*frames).max(1) as usize;
+        let frames = frames.min(MAX_TAP_WINDOW).min(segment.tap_frames() / 2);
+        self.tap_streams.retain(|s| s.client != from);
+        self.reply(from, "/done", vec![OscType::String("/tap_stream".into())]);
+        if *period_ms > 0 && !taps.is_empty() {
+            let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
+            self.tap_streams.push(TapStream {
+                client: from,
+                period,
+                frames,
+                taps,
+                next_due: Instant::now() + period,
+            });
+            // The immediate snapshot: the client paints without waiting a
+            // period (taps that have not yet filled a window send nothing).
+            self.send_tap_snapshots(self.tap_streams.len() - 1);
+        }
+        self.retune_timeout();
+    }
+
+    /// Sends every due tap stream its `/tap_data` snapshots. Called once per
+    /// run-loop iteration, like [`Self::pump_streams`]. Reading a tap ring is
+    /// a lock-free shared-memory copy — no engine round-trip.
+    fn pump_tap_streams(&mut self) {
+        if self.tap_streams.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        for i in 0..self.tap_streams.len() {
+            if now < self.tap_streams[i].next_due {
+                continue;
+            }
+            self.send_tap_snapshots(i);
+            // Rebase on `now` (no catch-up bursts after a stall).
+            let period = self.tap_streams[i].period;
+            self.tap_streams[i].next_due = now + period;
+        }
+    }
+
+    /// One `/tap_data tap endPosition blob` per tap of stream `i` that has a
+    /// full window: `endPosition` is the tap's stream position (total samples
+    /// written) at the window's end — consecutive snapshots overlap or gap by
+    /// exactly the position delta — and the blob is the window's raw
+    /// little-endian `f32` samples.
+    fn send_tap_snapshots(&mut self, i: usize) {
+        let Some(segment) = self.handle.segment().cloned() else {
+            return;
+        };
+        let client = self.tap_streams[i].client;
+        let frames = self.tap_streams[i].frames;
+        self.tap_buf.resize(frames, 0.0);
+        for k in 0..self.tap_streams[i].taps.len() {
+            let tap = self.tap_streams[i].taps[k];
+            let Some(end) = segment.tap_read_latest(tap as usize, &mut self.tap_buf) else {
+                continue;
+            };
+            let mut bytes = Vec::with_capacity(frames * 4);
+            for s in &self.tap_buf {
+                bytes.extend_from_slice(&s.to_le_bytes());
+            }
+            self.reply(
+                client,
+                "/tap_data",
+                vec![
+                    OscType::Int(tap),
+                    OscType::Long(end as i64),
+                    OscType::Blob(bytes),
+                ],
+            );
+        }
+    }
+
     /// Retunes the socket read timeout — the run loop's idle tick — to the
     /// fastest subscribed stream period, so streams keep their cadence without
     /// traffic. The 2 ms IPC poll (`attach_ipc`) is faster than any allowed
@@ -1418,6 +1612,7 @@ impl OscServer {
             .streams
             .iter()
             .map(|s| s.period)
+            .chain(self.tap_streams.iter().map(|s| s.period))
             .min()
             .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));
         if let Err(e) = self.socket.set_read_timeout(Some(timeout)) {
@@ -1441,6 +1636,7 @@ impl OscServer {
             return;
         }
         self.streams.retain(|s| !gone.contains(&s.client));
+        self.tap_streams.retain(|s| !gone.contains(&s.client));
         self.clients.retain(|c| !gone.contains(c));
         self.retune_timeout();
     }

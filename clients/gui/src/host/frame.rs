@@ -24,8 +24,9 @@ use super::canvas::{self, CanvasView};
 use super::layout::{self, Rect};
 use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
+use super::spectrum::SpectrumState;
 use super::widget::{Widget, WidgetKind};
-use super::{BusSource, controls, meters, plot};
+use super::{BusSource, controls, meters, phasescope, plot, spectrum};
 
 /// The window's clear color (the dark chrome backdrop).
 pub(crate) const CLEAR: wgpu::Color = wgpu::Color {
@@ -61,6 +62,18 @@ struct PlotItem {
     label: Option<String>,
 }
 
+/// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
+/// analysis state), rect and display parameters (the dB window and axis flags).
+struct SpectrumItem {
+    id: i32,
+    rect: Rect,
+    db_floor: f32,
+    db_ceil: f32,
+    log_freq: bool,
+    peak_hold: bool,
+    label: Option<String>,
+}
+
 /// A placed `canvas` widget, copied out of the host tree: its viewport body, the
 /// shader source (for an in-place recompile when it changed) and the param
 /// vector, with the bus-mapped slots already resolved from shared memory.
@@ -83,6 +96,9 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) active_button: Option<i32>,
     /// Whether an audio server is attached (the `nodetree` placeholder text).
     pub(crate) server_attached: bool,
+    /// The server's sample rate, placing the `spectrum` frequency axis (0.0 →
+    /// the 48 kHz fallback, e.g. the browser before it learns the rate).
+    pub(crate) sample_rate: f64,
 }
 
 impl Default for FrameInputs<'_> {
@@ -94,6 +110,7 @@ impl Default for FrameInputs<'_> {
             node_trees: EMPTY.get_or_init(HashMap::new),
             active_button: None,
             server_attached: false,
+            sample_rate: 0.0,
         }
     }
 }
@@ -111,12 +128,15 @@ fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
 /// and `canvases` resources and (read-only) `scopes` histories, plus `inputs` for
 /// the live values. One immutable mesh-building pass over the placed widgets,
 /// then the GPU uploads and the single render pass.
+#[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
 pub(crate) fn render(
     gpu: &mut Gpu,
     painter: &mut Painter,
     waveforms: &mut HashMap<i32, WaveformSlot>,
     canvases: &mut HashMap<i32, CanvasView>,
     scopes: &HashMap<i32, VecDeque<f32>>,
+    tap_windows: &HashMap<i32, Vec<f32>>,
+    spectra: &HashMap<i32, SpectrumState>,
     tree: &Widget,
     inputs: &FrameInputs,
 ) {
@@ -129,8 +149,14 @@ pub(crate) fn render(
     // history can be read after the host-tree borrow is released.
     let mut meter_rects: Vec<(Rect, i32, f32, f32, Option<String>)> = Vec::new();
     // Scope rects carry no bus: the value is sampled on the frame tick
-    // (`advance_scopes`); the render only draws the stored history.
+    // (`advance_scopes`); the render only draws the stored history. Audio-rate
+    // scopes draw their stored tap window instead (`wave_rects`).
     let mut scope_rects: Vec<(i32, Rect, f32, f32, Option<String>)> = Vec::new();
+    let mut wave_rects: Vec<(i32, Rect, f32, f32, Option<String>)> = Vec::new();
+    // Phasescope rects (drawn from the interleaved L/R window in `tap_windows`)
+    // and spectrum rects (drawn from the persistent `spectra` analysis states).
+    let mut phase_rects: Vec<(i32, Rect, Option<String>)> = Vec::new();
+    let mut spectrum_rects: Vec<SpectrumItem> = Vec::new();
     // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
     // likewise copied out so the host-tree borrow can be released before the
     // node-tree models and the GPU resources are read.
@@ -156,10 +182,44 @@ pub(crate) fn render(
                 label,
             } => meter_rects.push((p.rect, *bus, *min, *max, label.clone())),
             WidgetKind::Scope {
-                min, max, label, ..
+                tap,
+                min,
+                max,
+                label,
+                ..
             } => {
                 if let Some(id) = p.widget.id {
-                    scope_rects.push((id, p.rect, *min, *max, label.clone()));
+                    let item = (id, p.rect, *min, *max, label.clone());
+                    if *tap >= 0 {
+                        wave_rects.push(item);
+                    } else {
+                        scope_rects.push(item);
+                    }
+                }
+            }
+            WidgetKind::Phasescope { label, .. } => {
+                if let Some(id) = p.widget.id {
+                    phase_rects.push((id, p.rect, label.clone()));
+                }
+            }
+            WidgetKind::Spectrum {
+                db_floor,
+                db_ceil,
+                log_freq,
+                peak_hold,
+                label,
+                ..
+            } => {
+                if let Some(id) = p.widget.id {
+                    spectrum_rects.push(SpectrumItem {
+                        id,
+                        rect: p.rect,
+                        db_floor: *db_floor,
+                        db_ceil: *db_ceil,
+                        log_freq: *log_freq,
+                        peak_hold: *peak_hold,
+                        label: label.clone(),
+                    });
                 }
             }
             WidgetKind::Plot {
@@ -235,6 +295,34 @@ pub(crate) fn render(
             .map(|h| h.iter().copied().collect())
             .unwrap_or_default();
         meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
+    }
+    // Audio-rate scopes likewise draw the triggered window stored on the tick
+    // (`live::update_tap_windows`); an empty one draws just the framed field.
+    for (id, rect, min, max, label) in &wave_rects {
+        let samples = tap_windows.get(id).map(Vec::as_slice).unwrap_or(&[]);
+        meters::draw_wave(&mut mesh, *rect, samples, *min, *max, label.as_deref());
+    }
+    // Phasescopes draw the interleaved L/R window the tick stored (the same
+    // `tap_windows` map, keyed by their own ids); spectra draw the per-bin
+    // curves the tick folded into their persistent analysis state.
+    for (id, rect, label) in &phase_rects {
+        let inter = tap_windows.get(id).map(Vec::as_slice).unwrap_or(&[]);
+        phasescope::draw_phasescope(&mut mesh, *rect, inter, label.as_deref());
+    }
+    for item in &spectrum_rects {
+        if let Some(state) = spectra.get(&item.id) {
+            spectrum::draw_spectrum(
+                &mut mesh,
+                item.rect,
+                state,
+                inputs.sample_rate,
+                item.db_floor,
+                item.db_ceil,
+                item.log_freq,
+                item.peak_hold,
+                item.label.as_deref(),
+            );
+        }
     }
 
     // Static plots draw from their (already mapped) samples; node trees draw from

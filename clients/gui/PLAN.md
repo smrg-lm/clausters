@@ -128,10 +128,10 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `menu` | control | Dropdown / option list. |
 | `waveform` | heavy GPU view | Editor-grade min/max peak waveform of a buffer or blob (existing renderer). |
 | `spectrogram` | heavy GPU view | STFT time-frequency view (existing renderer). |
-| `scope` | heavy GPU view | Time-domain scope. The control-bus history form exists; the audio-rate triggered oscilloscope is **future** (G18). |
-| `phasescope` | heavy GPU view | Phase/goniometer (Lissajous) view - **future** (G19). |
+| `scope` | heavy GPU view | Time-domain scope, both rates: the control-bus history form, and the audio-rate triggered oscilloscope over a server audio tap (a `tap`/`rate: "audio"` prop). |
+| `phasescope` | view | Phase/goniometer (Lissajous) view of a stereo tap pair, with a correlation readout (G19). |
 | `meter` | heavy GPU view | Level meter reading a control bus directly from shared memory. |
-| `spectrum` | heavy GPU view | Live FFT magnitude curve (spectroscope) - **future** (G19). |
+| `spectrum` | view | Live FFT magnitude curve (spectroscope) over an audio tap (G19). |
 | `plot` | view | Simple static plot of an NRT-generated signal/file. |
 | `nodetree` | view | Live text/graphic view of the audio server's node tree and parameters, updated in real time. |
 | `canvas` | view | A surface that runs a supplied WGSL shader, driven by OSC params or server audio - custom visuals. |
@@ -439,9 +439,11 @@ With the host complete on both platforms, the next arc deepens the **graphical e
 
 **Recurring analysis (every milestone in this arc, the G7b rule):** each new compute function gets an explicit placement decision, recorded with the milestone - **general** (useful to another client from Python, or to a future server feature) goes to `clausters-core`, with a `clausters-ffi` export when a non-Rust client consumes it; **display-only** (hit-testing, tick spacing, trigger alignment of a drawn window) stays in the gui crate. Peaks, the forward FFT and the windows already took the core path; the known candidates below are the envelope shape math (G21), the multichannel peak cache (G20) and the correlation metric (G19).
 
-### G18 - Server audio tap + a real oscilloscope
+### G18 - Server audio tap + a real oscilloscope - DONE (2026-07-09)
 
 The scopes share one missing prerequisite: the host reads **control** buses per frame (shm natively, `/c_stream` in the browser) but has no way to see **audio-rate** samples - the shm segment carries only control buses. This milestone adds the server-side audio tap and raises the scope to a triggered, audio-rate oscilloscope.
+
+**Landed:** the tap rings live **in the versioned `--shm` segment** (ABI v2 → v3: a trailing region of `--taps` × `--tap-frames` cache-line-aligned cursor+ring slots; attach checks the version, so drift fails loudly) - not in the buffer pool, whose buffers are freeable and RT-touched by UGens; a server without `--shm` but with taps gets an in-memory segment so `/tap_stream` still works. The creation surface is **a command, not a UGen**: `/tap tapIndex bus` flips an entry in the engine's pre-allocated tap table (`bus = -1` stops; the `/n_map` no-ack posture), so tapping needs no def rebuild and any bus is tappable live. The browser sibling is **a new command pair**, `/tap_stream periodMs frames tapIndex...` → `/tap_data tap endPosition blob` (not a `/c_stream` extension - the payload is a windowed blob with a stream position, not bus scalars), decimated to one newest-window snapshot per period. The scope stayed **one widget**: audio-rate is the `tap` prop (or `rate: "audio"`) on the existing `scope` kind, control-rate the default, so `/gui_set` retunes `window_ms`/`trigger`/`hold` live. **Placement analysis:** the trigger search (hysteresis + latest-rising-crossing) is display-only and sits in the gui crate (`host/oscil.rs`, pure and unit-tested); the ring layout/reader stays host-side for now - Python headless capture goes over `/tap_stream` (`Server.stream_taps`, no mmap needed), so the core+FFI move is deferred until a client actually needs to map-read taps. Python leg: `Server.tap`/`Server.stream_taps`, `ServerOptions`/`ServerInfo` carry `taps`/`tap_frames`, the `scope(tap=...)` builder, `examples/gui_scope.py`. See `LOG.md`.
 
 **Scope:**
 
@@ -453,9 +455,11 @@ The scopes share one missing prerequisite: the host reads **control** buses per 
 
 **Acceptance:** an oscilloscope widget shows a **stable, triggered** trace of a live synth's audio output - natively with zero per-frame OSC, in the browser over the streamed path; the RT thread stays alloc/lock-free under the tap (an `rt_safety`-style guard covers the write).
 
-### G19 - Phasescope + live spectrum
+### G19 - Phasescope + live spectrum - DONE (2026-07-09)
 
 The two remaining *future* scopes, both consumers of the G18 tap - no new server work.
+
+**Landed:** two new tap-consuming views, added by extension (a `WidgetKind` + a pure renderer, no protocol change) and driven from the Python client over the unchanged `/gui_*` protocol. **`phasescope`** reads a stereo pair of taps (`tap` left, `tap2` right defaulting to `tap + 1`) and draws the 45°-rotated Lissajous figure (vertical mid `(L+R)/√2`, horizontal side `(L−R)/√2`) with an age-faded persistence trail over the last `window_ms` of pairs and a Pearson-r correlation bar beneath (`host/phasescope.rs`, pure). **`spectrum`** runs one forward FFT per frame over the newest `fft_size` tap window (a supported power of two 256..4096, default 2048), magnitudes to dB with the spectrogram's coherent-gain normalization over an adjustable `[db_floor, db_ceil]` window, a log or linear frequency axis, per-bin exponential `averaging` and an optional decaying `peak_hold` (`host/spectrum.rs`, pure state + draw, one point per pixel column). Both are fed by the shared tick (`live::update_phase_windows` stores the interleaved L/R window in the same `tap_windows` map; `live::update_spectra` folds each tap window into a persistent `SpectrumState`), so the native (shm rings) and browser (`/tap_stream` → `/tap_data`) fronts share one implementation; `live::tap_stream_frames` sizes the browser subscription for all three tap consumers, and `WidgetKind::taps_read` covers the phasescope's two taps uniformly. **Placement analysis (the G7b rule):** the FFT and Hann window already live in `clausters-core` (reused, so the spectrum agrees with the spectrogram bin for bin); the two *new* general audio functions — the **correlation** (Pearson's r) and the **Lissajous / goniometer** geometry — moved to a new `clausters_core::measure` **with an FFI export** (`clausters_core_correlation` / `clausters_core_lissajous`, ABI v6 → v7), so a headless Python capture reads the identical numbers the phasescope draws; the Lissajous transform is general electroacoustic-composition geometry, not a pixel concern, so it lives there once (surfaced as `clausters.gui.correlation` / `clausters.gui.lissajous`). Only the display (trail, field, curve, tick spacing) stayed gui-side. Python: `clausters.gui.phasescope` / `spectrum` builders, the `correlation` / `lissajous` helpers, and `examples/gui_analyzer.py` (a stereo source whose image sweeps mono→wide→anti-phase beside a live spectrum). Verified: gui 101 tests (from 93), core `measure` + ffi tests, `clippy -D warnings` clean native + `wasm32`, `cargo fmt --check` clean both workspaces; runtime-verified against the real server + a GPU window (the windowed host opened the window, mapped the segment and ran the phasescope+spectrum tick against a live stereo synth with no panic) and headless over the wire (both widgets parsed with the int/float distinction kept, two buses tapped). Closes the catalog's four *future* scope entries together with G18. See `LOG.md`.
 
 **Scope:**
 

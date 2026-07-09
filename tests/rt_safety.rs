@@ -1110,3 +1110,38 @@ fn reply_ugens_do_not_allocate_on_the_audio_thread() {
         }
     });
 }
+
+/// Audio taps (the `/tap` oscilloscope path): recording live buses into the
+/// segment's tap rings every block must not allocate either — the write is
+/// one memcpy plus one atomic store per tap.
+#[test]
+fn tap_writes_do_not_allocate_on_the_audio_thread() {
+    use clausters::dsp::Limits;
+    use clausters::server::engine::engine_pair_full;
+    use clausters::server::ipc::Segment;
+
+    let segment = Segment::in_memory_full(1024, 2, 4096);
+    let (mut engine, mut handle) =
+        engine_pair_full(48_000.0, 2, 0, Some(segment), 128, 1024, Limits::default());
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let def = Arc::new(compile(default_spec()).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+    handle.send(Cmd::SetTap { tap: 0, bus: 0 }).ok().unwrap();
+    handle.send(Cmd::SetTap { tap: 1, bus: 1 }).ok().unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+}

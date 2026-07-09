@@ -9,6 +9,11 @@ usage:
                            back to the device rate if unsupported)
       --audio-buses <n>    audio buses (default 128, the hard maximum)
       --control-buses <n>  control buses (default 1024)
+      --taps <n>           audio-tap rings for oscilloscopes (default 8;
+                           0 disables): /tap routes an audio bus into one,
+                           read from the shared segment or via /tap_stream
+      --tap-frames <n>     per-tap ring capacity in samples (default 16384;
+                           rounded up to a power of two)
       --outputs <n>        hardware output channels (default: the device's);
                            audio buses 0..outputs are the hardware outs
       --inputs <n>         hardware input channels (default 0 = no input); opens
@@ -165,6 +170,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut audio_buses = cfg.audio_buses.unwrap_or(DEFAULT_AUDIO_BUSES);
     let mut control_buses = cfg.control_buses.unwrap_or(DEFAULT_CONTROL_BUSES);
+    let mut taps = cfg.taps.unwrap_or(clausters::server::ipc::DEFAULT_TAPS);
+    let mut tap_frames = cfg
+        .tap_frames
+        .unwrap_or(clausters::server::ipc::DEFAULT_TAP_FRAMES);
     // Hardware I/O channel counts (scsynth `-o`/`-i`). `outputs = None` follows
     // the device default; `inputs = 0` opens no input device.
     let mut outputs: Option<usize> = cfg.outputs;
@@ -263,6 +272,16 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or(format!("--control-buses needs a value\n{USAGE}"))?;
                 control_buses = value.parse().map_err(|e| format!("--control-buses: {e}"))?;
             }
+            "--taps" => {
+                let value = it.next().ok_or(format!("--taps needs a value\n{USAGE}"))?;
+                taps = value.parse().map_err(|e| format!("--taps: {e}"))?;
+            }
+            "--tap-frames" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--tap-frames needs a value\n{USAGE}"))?;
+                tap_frames = value.parse().map_err(|e| format!("--tap-frames: {e}"))?;
+            }
             "--outputs" => {
                 let value = it
                     .next()
@@ -321,11 +340,21 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // The ring must be a power of two of at least one block; round up quietly.
+    let tap_frames = tap_frames.max(clausters::server::engine::BLOCK_SIZE);
+    let tap_frames = tap_frames.next_power_of_two();
+    // Taps live in the segment. With `--shm` the mapped file carries them; a
+    // server without `--shm` but with taps gets an in-memory segment so
+    // `/tap_stream` still works (nothing else changes: the control buses just
+    // live inside it, exactly as in the embed case).
     let segment = match &shm_path {
-        Some(path) => Some(Segment::create_with(
+        Some(path) => Some(Segment::create_full(
             std::path::Path::new(path),
             control_buses,
+            taps,
+            tap_frames,
         )?),
+        None if taps > 0 => Some(Segment::in_memory_full(control_buses, taps, tap_frames)),
         None => None,
     };
     // `rtprio` builds promote the audio callback to real-time scheduling,
@@ -387,11 +416,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             ),
         }
     }
-    if let Some(segment) = segment {
+    // The command-plane ring peer only exists for a *mapped* segment (a local
+    // client can reach it); the in-memory tap fallback has no ring client, so
+    // attaching would only tighten the run-loop poll for nothing.
+    if let (Some(segment), Some(path)) = (segment, shm_path.as_deref()) {
         osc.attach_ipc(IpcPeer::new(segment, Role::Server))?;
         tracing::info!(
-            "shared segment at {} (ABI v{})",
-            shm_path.as_deref().unwrap_or(""),
+            "shared segment at {path} (ABI v{})",
             clausters::server::ipc::ABI_VERSION
         );
     }
@@ -413,7 +444,10 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             tracing::info!("MIDI input on virtual ALSA port \"{name}\" (connect with aconnect)");
         }
         #[cfg(not(feature = "midi"))]
-        return Err("built without the `midi` feature: rebuild with --features midi".into());
+        return Err(format!(
+            "--midi \"{name}\": built without the `midi` feature: rebuild with --features midi"
+        )
+        .into());
     }
     println!(
         "clausters — silent until /s_new | {} Hz, {} out / {} in ch | {} DSP worker(s) | OSC on {} | /quit or Ctrl-C to stop",

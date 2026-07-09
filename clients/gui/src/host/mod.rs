@@ -44,9 +44,12 @@ pub mod layout;
 pub mod live;
 pub mod meters;
 pub mod nodetree;
+pub mod oscil;
 pub mod paint;
+pub mod phasescope;
 pub mod plot;
 pub mod registry;
+pub mod spectrum;
 pub mod widget;
 
 // The native I/O shell, excluded from `wasm32`: the UDP client leg
@@ -272,6 +275,20 @@ pub trait BulkLoader {
 pub trait BusSource: Send + Sync {
     /// The current value of control bus `index` (`0.0` if out of range).
     fn control(&self, index: usize) -> f32;
+
+    /// Fills `out` with the newest raw samples of audio tap `tap` (newest
+    /// last), returning `false` when this source carries no tap data — the
+    /// default. The shared-memory segment overrides it with the lock-free
+    /// ring read; the browser reads its `/tap_data` store instead.
+    fn read_tap(&self, _tap: i32, _out: &mut [f32]) -> bool {
+        false
+    }
+
+    /// The server's sample rate when this source knows it (`0.0` otherwise);
+    /// sizes the oscilloscope windows (`window_ms` → samples).
+    fn sample_rate(&self) -> f64 {
+        0.0
+    }
 }
 
 // The `/gui_*` vocabulary (canonical tables in clients/gui/PLAN.md).

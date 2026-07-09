@@ -80,6 +80,54 @@ pub fn draw_scope(
     }
 }
 
+/// Draws an audio-rate oscilloscope trace: `samples` is one already-aligned
+/// display window (see [`super::oscil`]), drawn over `[min, max]` — a polyline
+/// while the data fits the width, a per-column min/max envelope when it does
+/// not (never resolving finer than the screen). An empty window draws just the
+/// framed field.
+pub fn draw_wave(
+    mesh: &mut Mesh,
+    rect: Rect,
+    samples: &[f32],
+    min: f32,
+    max: f32,
+    label: Option<&str>,
+) {
+    label_strip(mesh, label, rect);
+    let body = body_rect(rect, label.is_some());
+    if body.w <= 0.0 || body.h <= 0.0 {
+        return;
+    }
+    mesh.rect(body, FIELD);
+    mesh.border(body, 1.0, FRAME);
+    let columns = body.w.max(1.0) as usize;
+    if samples.len() > columns * 2 {
+        // Dense: one min/max column per pixel of width.
+        let y_at = |v: f32| body.y + body.h * (1.0 - fraction(v, min, max));
+        for c in 0..columns {
+            let s0 = c * samples.len() / columns;
+            let s1 = ((c + 1) * samples.len() / columns).max(s0 + 1);
+            let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
+            for &s in &samples[s0..s1] {
+                lo = lo.min(s);
+                hi = hi.max(s);
+            }
+            let (y0, y1) = (y_at(hi), y_at(lo));
+            let x = body.x + c as f32;
+            mesh.rect(Rect::new(x, y0, 1.0, (y1 - y0).max(1.0)), TRACE);
+        }
+    } else if samples.len() >= 2 {
+        let dx = body.w / (samples.len() - 1) as f32;
+        let y_at = |v: &f32| body.y + body.h * (1.0 - fraction(*v, min, max));
+        let mut prev = [body.x, y_at(&samples[0])];
+        for (i, v) in samples.iter().enumerate().skip(1) {
+            let p = [body.x + i as f32 * dx, y_at(v)];
+            mesh.line(prev, p, 1.5, TRACE);
+            prev = p;
+        }
+    }
+}
+
 /// Draws the label strip above a view body, if it has a label.
 fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect) {
     if let Some(text) = label {

@@ -73,6 +73,7 @@ The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a brow
 The browser fills the host's data paths over the network instead of shared memory and mapped files:
 
 - **Meters/scopes/canvas buses**: the host subscribes the buses its widgets read with `/c_stream` and the server streams `/c_set` snapshots back at ~30 fps over the same WebSocket — the network counterpart of the shared-memory segment (see the control-bus commands in [Def schemas](schemas.md)).
+- **Audio-tap views**: the host subscribes the audio taps its audio-rate scopes, phasescopes (a stereo pair) and live spectra read with `/tap_stream` and the server streams `/tap_data` windows back — the network counterpart of the segment's tap rings (see the audio-tap commands in [Def schemas](schemas.md)). The phasescope's correlation and goniometer geometry and the spectrum's FFT all come from `clausters-core`, so the browser computes them in wasm identically to the desktop.
 - **Bulk waveform/plot data**: a `path`/`cache` reference is fetched as a URL against the page origin (raw `f32` samples, or a prebuilt peak-pyramid cache; the pyramid for raw fetches is built in wasm — the analysis lives in `clausters-core`), and a server `buffer` reference is pulled over `/b_query` + chunked `/b_getn` on the WebSocket leg.
 
 **Quick start** (from `clients/gui/`; one-time setup: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version <the wasm-bindgen version in Cargo.lock>`):

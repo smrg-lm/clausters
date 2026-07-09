@@ -1,6 +1,6 @@
 ---
 name: gui-widgets
-description: Domain knowledge for designing and implementing each Clausters GUI graphical element — the widget extension recipe and data-source table, oscilloscope triggering and the audio-tap gap, goniometer/phasescope geometry, live FFT spectrum, editor-grade waveform/spectrogram (multichannel, LOD crossfade, rulers, selection/playhead), BPF envelope editing, and the edit-back-to-data pattern. Consult when designing or implementing any new GUI widget or deepening an existing view.
+description: Domain knowledge for designing and implementing each Clausters GUI graphical element — the widget extension recipe and data-source table, oscilloscope triggering and the server audio taps, goniometer/phasescope geometry, live FFT spectrum, editor-grade waveform/spectrogram (multichannel, LOD crossfade, rulers, selection/playhead), BPF envelope editing, and the edit-back-to-data pattern. Consult when designing or implementing any new GUI widget or deepening an existing view.
 ---
 
 # GUI widgets: per-element domain knowledge
@@ -28,9 +28,9 @@ Adding a widget is **never a protocol change** — the generic GuiDef node (`{id
 | Mapped file `path` / peaks `cache` | zero-copy bulk path, no OSC | mmap (`src/host/bulk.rs`) | fetched as a URL (`ArrayBuffer`) |
 | Server buffer `buffer` | `/b_query` → chunked `/b_getn` (`src/host/fetch.rs`, shared state machine) | yes | yes (WS leg) |
 | Control bus, per frame | shm segment (`src/host/shm.rs`: `control(i)`, `sample_clock()`, `sample_rate()`) | yes | `/c_stream` → `StreamedBuses` (`src/host/live.rs`) |
-| **Audio-rate tap** | **does not exist yet** — the shm segment carries only control buses | — | — |
+| Audio tap `tap`, per frame | segment tap rings (ABI v3): `/tap tapIndex bus` routes a bus in; `SharedSegment::tap_read_latest` reads the newest window lock-free | yes | `/tap_stream` → `/tap_data` windows → `StreamedTaps` (`src/host/live.rs`) |
 
-The audio tap is the prerequisite the scopes below share: a server-side tap (SuperCollider's `ScopeOut2` shape — a UGen writing the recent samples of its input into a shared ring the host reads each frame). The segment ABI is versioned (`src/server/ipc.rs`: `MAGIC`, `ABI_VERSION`), so extending it is a loud, checked bump; the browser needs a streamed sibling (the `/c_stream` pattern at audio-frame granularity). Design and staging: see PLAN.md.
+The audio tap is the prerequisite the scopes share, and it exists: a trailing region of the versioned shm segment (ABI v3; `--taps` single-channel rings of `--tap-frames` samples, each a cache-line-aligned cursor + ring). `/tap tapIndex bus` routes any audio bus into a ring — a command flipping engine routing state, not a UGen (where SuperCollider reaches for `ScopeOut2`); the audio thread appends a block per tap per block, RT-safe. The browser sibling is `/tap_stream periodMs frames tapIndex...` → `/tap_data tap endPosition blob` (newest-window snapshots with a stream position; the `/c_stream` posture). Python: `Server.tap` / `Server.stream_taps` (headless capture, no mmap needed).
 
 One principle bounds all host-side analysis: **the host computes only what plotting needs** (peaks, a display FFT). Audio *processing* happens once, in the server — which already owns a spectral chain (`FFT`/`PV_*`/`IFFT`, `src/dsp/spectral.rs`); a client wanting processed audio runs it there (live or NRT) and hands the host the result resource.
 
@@ -41,15 +41,15 @@ The established rule (peaks, the forward FFT and the windows already took this p
 - **General** — useful to another client (Python plotting/authoring the same data) or to a future server feature (a UGen, an analysis command) → `clausters-core`; add the FFI export if Python (or a later JS client) consumes it.
 - **Display-only** — meaningful only against a screen (hit-testing, tick spacing, trigger alignment of a drawn window) → the gui crate.
 
-Standing candidates from the widgets below: the **envelope shape math** (today only in the server's `src/dsp/envgen.rs::shape_value` — the BPF editor must draw the same curves and the server crate cannot be linked from the gui, so it moves to the core with the server delegating, the same move the FFT made); **multichannel peaks** (the Python client must build the identical multichannel cache through the existing peaks FFI); the **correlation metric** (a general audio measurement, not a pixel concern). Counter-examples that stay gui-side: trigger search, breakpoint hit-testing, ruler tick math.
+Standing candidates from the widgets below: the **envelope shape math** (today only in the server's `src/dsp/envgen.rs::shape_value` — the BPF editor must draw the same curves and the server crate cannot be linked from the gui, so it moves to the core with the server delegating, the same move the FFT made); **multichannel peaks** (the Python client must build the identical multichannel cache through the existing peaks FFI); the **correlation metric** (a general audio measurement, not a pixel concern). Counter-examples that stay gui-side: trigger search (`src/host/oscil.rs`), breakpoint hit-testing, ruler tick math. Deferred with its decision recorded: the tap-ring layout/reader stays host-side because Python captures taps over `/tap_stream` — promote it to the core + FFI only when a client needs to map-read taps.
 
-## Oscilloscope (audio-rate scope)
+## Oscilloscope (audio-rate scope) — implemented
 
-A rolling window of recent audio samples, redrawn each frame. Distinct from the existing `scope` widget, which plots a **control-bus** history polyline (`src/host/meters.rs::draw_scope`, history advanced by the front at tick rate) — the oscilloscope reads the audio tap.
+The audio-rate form of the one `scope` widget: `tap` (or `rate: "audio"`) selects it; without a tap the widget stays the **control-bus** history polyline (`src/host/meters.rs::draw_scope`). The signal logic is `src/host/oscil.rs`, pure and shared by both fronts; `live::update_tap_windows` refreshes each scope's aligned window per tick (native: the segment's rings; browser: the `/tap_data` store), and `meters::draw_wave` draws it.
 
-- **Data**: a ring of the last N samples per tapped channel; the display window is time-based (e.g. 1–100 ms → `window_ms * sr` samples), resampled to the pixel width (never resolve finer than the screen — per-column min/max when samples-per-px > 2, polyline otherwise; the waveform's regime logic in miniature).
-- **Triggering** makes the display stable instead of a rolling blur: search the newest data for a **rising crossing of a trigger level** (default 0.0) and align the drawn window to it. Add **hysteresis** (arm below `level - h`, fire at `level`) so noise near the level doesn't retrigger mid-window; bound the search (one display window); **free-run fallback** when no crossing is found (silence, DC) — draw the newest window. Trigger level and edge are widget props; a "hold" prop freezes the trace.
-- **Multi-channel**: overlay traces with per-channel color, or one lane per channel sharing the time axis.
+- **Data**: the newest raw window of the tap, sized `window_ms * sr` (clamped 16..4096, 48 kHz fallback before the rate is known) with a 2× slack for the trigger search; drawn per-column min/max when denser than the pixels, polyline otherwise (never resolve finer than the screen).
+- **Triggering** (`oscil::align`) makes the display stable instead of a rolling blur: the **latest** rising crossing of `trigger` that still leaves a full window, re-armed below the level minus a 2%-of-peak-to-peak **hysteresis** so noise riding the level doesn't fire mid-window; **free-run fallback** (the newest window) when no crossing exists — silence, DC. `window_ms`/`trigger`/`hold` are live props (`/gui_set`); `hold` freezes the trace.
+- **Multi-channel** (future): overlay traces with per-channel color, or one lane per channel sharing the time axis — today one tap is one single-channel trace; a stereo pair is two taps.
 
 ## Phasescope / goniometer
 

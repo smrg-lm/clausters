@@ -51,7 +51,7 @@ Two measured facts to keep in mind when reading the meter (numbers from a deskto
 | `src/server/backend.rs` | cpal glue: `BlockAdapter` slices arbitrary callback sizes into 64-frame engine blocks (feature `realtime`) |
 | `src/server/nrt.rs` | NRT thread, `NrtJob`/`run_job` (also called synchronously by the renderer), audio reading (`read_audio`: WAV via hound, other formats via symphonia) and WAV write helpers |
 | `src/server/workers.rs` | worker pool: stage publish/steal/wait protocol for parallel groups |
-| `src/server/ipc.rs` | the versioned shared segment — data plane (clock, control buses) + OSC byte rings (`--shm` and embed transports) |
+| `src/server/ipc.rs` | the versioned shared segment — data plane (clock, control buses, audio-tap rings) + OSC byte rings (`--shm` and embed transports) |
 | `src/embed.rs` | the embed C ABI (feature `embed`, exported by the cdylib) |
 | `src/logging.rs` | `tracing` setup: `init` (binary-only subscriber, stderr), runtime-reloadable filter behind `/verbosity` and `/dumpOSC` |
 | `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
@@ -84,6 +84,7 @@ The rule behind everything: **memory is allocated on the network (or NRT / compi
 Two shared structures cross threads without the FIFOs:
 
 - **Control buses**: 1024 atomics (`dsp::ControlBuses`). Immediate `/c_set` and `/c_get` are served directly on the network thread; the audio thread reads them through `InCtl`. A *scheduled* `/c_set` must land on its exact sample, so it travels as `Cmd::SetControlBus` instead. With an IPC segment the backing array lives in shared memory: other processes write the same atomics.
+- **Audio taps**: single-channel sample rings in the IPC segment (`--taps` × `--tap-frames`; segment ABI v3). `/tap` sends `Cmd::SetTap`, which flips an entry in the engine's pre-allocated tap table; at the end of every block the audio thread appends each routed bus's block to its ring — one `memcpy` plus one Release store per tap, then the clock store, so a reader that sees clock N sees block N. Readers (the GUI host's oscilloscope over shared memory, `/tap_stream` on the network thread) copy the newest window lock-free with a cursor double-check; `tests/rt_safety.rs` guards the write.
 - **Buffers**: `Arc<Buffer>`, **immutable once installed**. The NRT thread builds them, `Cmd::SetBuffer` swaps them into the engine pool, the replaced `Arc` returns as `Garbage::FreedBuffer`. "Mutating" commands (`/b_zero`, `/b_read` into an existing buffer, `/b_gen` filling a wavetable) build a replacement instead of touching shared memory. The network thread keeps a mirror for `/b_query`/`/b_write` and for validation.
 
 ### Done actions (self-freeing nodes)

@@ -15,6 +15,7 @@
 
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::clocksync::SampleClockModel;
+use clausters_core::measure;
 use clausters_core::peaks::{self, Pyramid};
 use clausters_core::rng::{Rng, WhiteNoise};
 use clausters_core::tempoclock::{self, Scheduler};
@@ -30,8 +31,10 @@ mod ws;
 /// sample-clock model, the `clausters_rng_*` value stream, NTP timetag packing,
 /// `quant_delay` and `degree_to_midinote` — so no value/time logic remains
 /// per-language; v6 `clausters_rng_next_u64` (child-stream seed derivation for
-/// the per-routine random context).
-pub const CORE_ABI_VERSION: u32 = 6;
+/// the per-routine random context); v7 the `clausters_core_correlation` /
+/// `clausters_core_lissajous` stereo-field measurements (shared with the GUI
+/// phasescope so a headless client reads the identical numbers).
+pub const CORE_ABI_VERSION: u32 = 7;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -171,6 +174,63 @@ pub unsafe extern "C" fn clausters_core_peaks_build(
     let o = unsafe { std::slice::from_raw_parts_mut(out, cache.len()) };
     o.copy_from_slice(&cache);
     cache.len()
+}
+
+/// The stereo **correlation** (Pearson's r) of channels `left` and `right`
+/// (each `n` `f32`s): `+1` mono/in-phase, `0` decorrelated, `-1` anti-phase —
+/// the same measurement the GUI phasescope shows. Writes the coefficient into
+/// `*out` and returns 0; returns -1 (leaving `*out` untouched) when it is
+/// undefined (`n == 0` or a constant channel — silence/DC) or on a null pointer.
+///
+/// # Safety
+/// `left`/`right` must be readable for `n` `f32`s and `out` writable for one.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_correlation(
+    left: *const f32,
+    right: *const f32,
+    n: usize,
+    out: *mut f32,
+) -> i32 {
+    if left.is_null() || right.is_null() || out.is_null() {
+        return -1;
+    }
+    // SAFETY: caller guarantees both channels are readable for `n` `f32`s.
+    let l = unsafe { std::slice::from_raw_parts(left, n) };
+    let r = unsafe { std::slice::from_raw_parts(right, n) };
+    match measure::correlation(l, r) {
+        Some(v) => {
+            // SAFETY: `out` is writable for one `f32`.
+            unsafe { *out = v };
+            0
+        }
+        None => -1,
+    }
+}
+
+/// Maps `n` stereo pairs (`left`, `right`) to their **Lissajous / goniometer**
+/// coordinates, writing `2 * n` interleaved `f32`s `[x0, y0, x1, y1, …]` into
+/// `out`, where `x` is the side component `(L − R)/√2` and `y` the mid
+/// `(L + R)/√2` — the 45°-rotated stereo plane a goniometer draws. Returns 0, or
+/// -1 (leaving `out` untouched) on a null pointer.
+///
+/// # Safety
+/// `left`/`right` must be readable for `n` `f32`s and `out` writable for `2 * n`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_lissajous(
+    left: *const f32,
+    right: *const f32,
+    n: usize,
+    out: *mut f32,
+) -> i32 {
+    if left.is_null() || right.is_null() || out.is_null() {
+        return -1;
+    }
+    // SAFETY: caller guarantees the ranges; `[f32; 2]` is two consecutive
+    // `f32`s, so the `out` buffer of `2 * n` floats aliases `n` pairs.
+    let l = unsafe { std::slice::from_raw_parts(left, n) };
+    let r = unsafe { std::slice::from_raw_parts(right, n) };
+    let o = unsafe { std::slice::from_raw_parts_mut(out as *mut [f32; 2], n) };
+    if measure::lissajous_into(l, r, o) { 0 } else { -1 }
 }
 
 /// Seconds at `beats` for the affine clock `(tempo, base_beats, base_seconds)`.
@@ -726,6 +786,47 @@ mod tests {
                 )
             },
             0
+        );
+    }
+
+    #[test]
+    fn correlation_matches_the_core_and_flags_the_undefined_case() {
+        let l: Vec<f32> = (0..128).map(|i| (i as f32 * 0.2).sin()).collect();
+        let neg: Vec<f32> = l.iter().map(|s| -s).collect();
+        let mut r = 0.0f32;
+        assert_eq!(
+            unsafe { clausters_core_correlation(l.as_ptr(), l.as_ptr(), l.len(), &mut r) },
+            0
+        );
+        assert!((r - 1.0).abs() < 1e-5, "mono reads +1");
+        assert_eq!(
+            unsafe { clausters_core_correlation(l.as_ptr(), neg.as_ptr(), l.len(), &mut r) },
+            0
+        );
+        assert!((r + 1.0).abs() < 1e-5, "anti-phase reads -1");
+        // A constant channel is undefined: -1, and `r` is left as it was.
+        let flat = vec![0.5f32; 128];
+        let before = r;
+        assert_eq!(
+            unsafe { clausters_core_correlation(flat.as_ptr(), l.as_ptr(), l.len(), &mut r) },
+            -1
+        );
+        assert_eq!(r, before, "out untouched on the undefined case");
+    }
+
+    #[test]
+    fn lissajous_writes_interleaved_side_mid_pairs() {
+        let l = [1.0f32, 0.7, 0.0];
+        let r = [1.0f32, -0.7, 0.0];
+        let mut out = vec![0.0f32; l.len() * 2];
+        assert_eq!(
+            unsafe { clausters_core_lissajous(l.as_ptr(), r.as_ptr(), l.len(), out.as_mut_ptr()) },
+            0
+        );
+        // Mono pair (1,1): side 0, mid √2. Anti pair (0.7,-0.7): side √2·0.7, mid 0.
+        assert!(out[0].abs() < 1e-6 && (out[1] - std::f32::consts::SQRT_2).abs() < 1e-6);
+        assert!(
+            (out[2] - std::f32::consts::SQRT_2 * 0.7).abs() < 1e-6 && out[3].abs() < 1e-6
         );
     }
 }

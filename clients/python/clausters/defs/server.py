@@ -137,6 +137,12 @@ DEFAULT_MAX_NODES = 1024
 DEFAULT_MAX_BUFFERS = 1024
 DEFAULT_MAX_GRAPH_CHILDREN = 256
 DEFAULT_MAX_UGEN_INPUTS = 32
+# The audio-tap region (`--taps`/`--tap-frames`): pre-allocated sample rings
+# an audio bus can be routed into with `Server.tap`, read by a GUI host out of
+# shared memory or streamed with `Server.stream_taps`. 0 taps disables the
+# region; the ring capacity is rounded up to a power of two by the server.
+DEFAULT_TAPS = 8
+DEFAULT_TAP_FRAMES = 16384
 
 
 @dataclass
@@ -182,6 +188,14 @@ class ServerOptions:
     max_ugen_inputs: int = field(
         default_factory=lambda: server_config().get("max_ugen_inputs", DEFAULT_MAX_UGEN_INPUTS)
     )
+    #: Audio-tap rings for oscilloscopes (0 disables the tap region).
+    taps: int = field(
+        default_factory=lambda: server_config().get("taps", DEFAULT_TAPS)
+    )
+    #: Per-tap ring capacity in samples (rounded up to a power of two).
+    tap_frames: int = field(
+        default_factory=lambda: server_config().get("tap_frames", DEFAULT_TAP_FRAMES)
+    )
 
     def args(self) -> list[str]:
         """The ``clausters`` CLI flags that launch a server matching these
@@ -198,6 +212,8 @@ class ServerOptions:
             "--max-buffers", str(self.max_buffers),
             "--max-graph-children", str(self.max_graph_children),
             "--max-ugen-inputs", str(self.max_ugen_inputs),
+            "--taps", str(self.taps),
+            "--tap-frames", str(self.tap_frames),
         ]
         if self.outputs is not None:
             flags += ["--outputs", str(self.outputs)]
@@ -227,6 +243,10 @@ class ServerInfo:
     max_buffers: int = DEFAULT_MAX_BUFFERS
     max_graph_children: int = DEFAULT_MAX_GRAPH_CHILDREN
     max_ugen_inputs: int = DEFAULT_MAX_UGEN_INPUTS
+    #: Audio-tap region shape; ``0``/``0`` when the server has no segment
+    #: (or predates taps).
+    taps: int = 0
+    tap_frames: int = 0
 
 
 class Server:
@@ -366,6 +386,8 @@ class Server:
             max_buffers=at(8, int, DEFAULT_MAX_BUFFERS),
             max_graph_children=at(9, int, DEFAULT_MAX_GRAPH_CHILDREN),
             max_ugen_inputs=at(10, int, DEFAULT_MAX_UGEN_INPUTS),
+            taps=at(11, int, 0),
+            tap_frames=at(12, int, 0),
         )
 
     # ---- node tree introspection (RT only) ----
@@ -589,6 +611,37 @@ class Server:
         ``/c_set``. Blocks on the ``/done`` ack."""
         indices = [b.index if isinstance(b, Bus) else int(b) for b in buses]
         return self.request("/c_stream", int(period_ms), *indices,
+                            timeout=timeout, expect=("/done", "/fail"))
+
+    # ---- audio taps ----
+
+    def tap(self, tap: int, bus):
+        """Routes audio ``bus`` into the server's audio-tap ring ``tap``
+        (``/tap``): from the next block on, the engine appends that bus's
+        samples to the ring, where a GUI oscilloscope reads them out of shared
+        memory with zero messages (or this client streams them with
+        `stream_taps`). ``bus = -1`` stops the tap. No ack, like ``/n_map``
+        (failures reply ``/fail``); sequence with `sync` when needed. The
+        server must have a tap region (``--taps > 0``, the default) -- check
+        `query_info`."""
+        index = bus.index if isinstance(bus, Bus) else int(bus)
+        self.send_msg("/tap", int(tap), index)
+
+    def stream_taps(self, period_ms: int, frames: int, *taps, timeout: float = 5.0):
+        """Subscribes this client to a periodic ``/tap_data`` snapshot of the
+        given audio taps (``/tap_stream``): every ``period_ms`` (floor 10 ms)
+        the server sends, per tap, the **newest** ``frames`` samples of its
+        ring as ``/tap_data tap endPosition blob`` -- the tap index, the tap's
+        stream position (total samples written) at the window's end, and the
+        window as raw little-endian ``float32``. The network counterpart of
+        reading the tap rings out of shared memory, e.g. for a browser
+        oscilloscope or headless capture. ``frames`` is clamped to 8192 and to
+        half the ring; at most 8 taps per subscription; one subscription per
+        client, replaced on each call; ``period_ms <= 0`` (or no taps)
+        cancels. Receive the snapshots with an `OscFunc` on ``/tap_data``.
+        Blocks on the ``/done`` ack."""
+        return self.request("/tap_stream", int(period_ms), int(frames),
+                            *[int(t) for t in taps],
                             timeout=timeout, expect=("/done", "/fail"))
 
     # ---- buffers ----

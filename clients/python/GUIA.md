@@ -1669,3 +1669,152 @@ Notas:
 - El pitch del módulo, acordado: boxes no es "la forma de usar librerías"
   ni una capa sobre signals — es la otra mitad del par (procesadores
   componibles vs. una salida por vez); las librerías son la adición.
+
+## 30. Osciloscopio audio-rate sobre taps del servidor (G18)
+
+G18 agrega los **taps de audio**: anillos de muestras pre-asignados dentro del
+segmento de memoria compartida (ABI v2 → v3; `--taps` × `--tap-frames`, default
+8 × 16384). `/tap tap bus` (o `Server.tap(tap, bus)`) rutea un bus de audio al
+anillo; desde ahi el widget `scope` en su forma audio-rate (prop `tap`) dibuja
+un **osciloscopio con trigger**: cada frame lee la ventana mas nueva del anillo
+directo de memoria compartida (cero OSC por frame) y la alinea al ultimo cruce
+ascendente del nivel de trigger, con histeresis; sin cruce corre libre.
+
+### Tests unitarios y E2E automaticos
+
+```sh
+cargo test --quiet                       # ipc: anillos (write/wrap/read/refusals) + tamano v3 pineado
+                                         # osc: /tap + /tap_stream contra audio vivo; /fail sin segmento
+                                         # rt_safety: el write del tap no aloca en el thread de audio
+cd clients/gui && cargo test --quiet     # lector v3 del host + trigger/ventana (oscil.rs); 93 verdes
+cd clients/python && python -m pytest -q # ServerOptions/ServerInfo con taps; 147 verdes
+```
+
+### E2E headless: capturar un tap por `/tap_stream` desde Python
+
+Sin GUI ni display — el camino del browser y de la captura headless (una sola
+invocacion, regla del sandbox):
+
+```sh
+(./target/debug/clausters -q & PID=$!; sleep 1.5; \
+ PYTHONPATH=clients/python python - << 'PY'
+import struct, threading
+from clausters import Session
+from clausters.base import OscReceiver
+from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.responders import OscFunc
+
+got = threading.Event()
+def on_data(msg, t, src):
+    n = len(msg[3]) // 4
+    peak = max(abs(s) for s in struct.unpack(f"<{n}f", msg[3]))
+    print(f"/tap_data tap={msg[1]} end={msg[2]} window={n} peak={peak:.3f}")
+    got.set()
+
+with Session.live() as session:
+    server = session.server
+    print(server.query_info())           # taps=8 tap_frames=16384
+    server.add_synthdef(SynthDef("tone", out(0.0, sin_osc(220.0) * 0.5)))
+    synth = server.synth("tone"); server.tap(0, 0); server.sync()
+    recv = OscReceiver().start()         # suscribir desde el socket receptor
+    OscFunc(on_data, "/tap_data", recv=recv)
+    recv.send(server.target.addr(), "/tap_stream", 20, 1024, 0)
+    assert got.wait(3.0)
+    server.tap(0, -1); server.free(synth)
+PY
+kill $PID 2>/dev/null)
+```
+
+Esperado: `query_info` reporta `taps=8 tap_frames=16384` y llegan `/tap_data`
+con `peak≈0.5` (el seno vivo, no silencio).
+
+### Manual con ventana: el osciloscopio con trigger (`gui_scope.py`)
+
+```sh
+# servidor con segmento (una terminal, desde la raiz):
+cargo run -- --shm /dev/shm/clausters_tap
+
+# host en ventana sobre el mismo segmento (otra terminal):
+cd clients/gui && cargo run --bin clausters-gui -- --shm /dev/shm/clausters_tap -v
+
+# el script: un seno en el bus 0, ruteado al tap 0, dos scopes (otra terminal):
+PYTHONPATH=clients/python python clients/python/examples/gui_scope.py
+```
+
+Esperado:
+
+- Dos trazas del mismo tap: la de arriba (**triggered**, nivel 0.0) queda
+  clavada en su lugar mientras el pitch barre 220–440 Hz — cada redibujado se
+  alinea a un cruce ascendente por cero; la de abajo (**free-running**, nivel
+  9.0 que la senal nunca cruza) deriva por la ventana. Esa es exactamente la
+  diferencia que el trigger existe para resolver.
+- Cero trafico OSC por frame: el host lee el anillo del segmento; en el log del
+  host solo hay `/gui_def`/`/gui_free`.
+- `scope(bus=...)` sin `tap` sigue siendo el historial de bus de control (§15);
+  es el mismo widget con dos rates.
+
+Notas:
+
+- El servidor sin `--shm` pero con taps arma un segmento en memoria: `/tap` y
+  `/tap_stream` funcionan igual (asi corre el E2E headless de arriba); solo el
+  host mapeado necesita el archivo.
+- `--taps 0` quita la region: `/tap` y `/tap_stream` responden `/fail` y
+  `query_info` reporta `taps=0`.
+- En el browser el mismo widget se suscribe solo con `/tap_stream` (el wasm no
+  puede mapear el segmento) y recibe `/tap_data`; la logica de trigger es la
+  misma (`host/oscil.rs`, compartida).
+
+### Manual con ventana: phasescope + spectrum (`gui_analyzer.py`)
+
+Los otros dos consumidores del tap: el goniometro (phasescope, un par estereo de
+taps) y el espectro en vivo (spectrum, una FFT por frame de un tap).
+
+```sh
+# servidor con segmento (una terminal, desde la raiz):
+cargo run -- --shm /dev/shm/clausters_tap
+
+# host en ventana sobre el mismo segmento (otra terminal):
+cd clients/gui && cargo run --bin clausters-gui -- --shm /dev/shm/clausters_tap -v
+
+# el script: fuente estereo cuyo image barre mono->wide->antifase (otra terminal):
+PYTHONPATH=clients/python python clients/python/examples/gui_analyzer.py
+```
+
+Esperado:
+
+- **Phasescope** (taps 0/1): el goniometro colapsa a una **linea vertical** en
+  mono (r = +1), se abre a un **lozenge** cuando el canal derecho se decorrelaciona
+  (r ~ 0) y cae a una **linea horizontal** en antifase (r = -1); la barra de
+  correlacion abajo sigue el swing +1 -> 0 -> -1, y el script narra `mono` /
+  `wide` / `anti-phase` en la consola al cruzar cada landmark.
+- **Spectrum** (tap 0, eje log): el seno del canal izquierdo se ve como un pico
+  unico y estable, que se desplaza por el eje logaritmico cuando el pitch deriva;
+  el peak-hold deja una traza que decae despacio y el promediado evita el
+  parpadeo cuadro a cuadro.
+- Cero trafico OSC por frame: como el osciloscopio, el host lee los anillos del
+  segmento; el log del host solo muestra `/gui_def`.
+
+Notas:
+
+- La correlacion (Pearson r) y la geometria Lissajous del goniometro viven en
+  `clausters-core::measure` (con export FFI): estan tambien como funciones
+  `clausters.gui.correlation` / `clausters.gui.lissajous` para analisis headless
+  del estereo, y el browser las computa en wasm igual que el host nativo. La FFT
+  del spectrum es la misma `clausters_core::fft` que usa el espectrograma, asi
+  que las dos vistas coinciden bin a bin.
+- `spectrum(fft_size=...)` acepta potencias de dos 256..4096 (default 2048); un
+  valor no soportado cae a 2048 en vez de fallar. `phasescope(tap, tap2=...)`
+  toma el par estereo, con `tap2` por defecto `tap + 1`.
+- Rapido, sin ventana ni display, la correlacion contra taps capturados por
+  `/tap_stream`:
+
+```python
+from clausters import Session
+from clausters.gui import correlation
+with Session.live() as s:
+    srv = s.server
+    srv.tap(0, 0); srv.tap(1, 1)
+    l = srv.stream_taps(20, 1024, 0, count=1, timeout=1.0)  # ver §gui_scope
+    # correlacion(canalL, canalR) -> +1 mono, 0 decorrelado, -1 antifase
+    print(correlation(list(l), list(l)))  # +1 con el mismo canal
+```

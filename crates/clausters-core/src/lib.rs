@@ -49,6 +49,7 @@ pub mod bytes;
 pub mod clocksync;
 pub mod config;
 pub mod fft;
+pub mod measure;
 pub mod osc;
 pub mod peaks;
 pub mod rng;

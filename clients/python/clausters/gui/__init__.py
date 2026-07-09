@@ -9,26 +9,34 @@ widget tree as JSON (the GUI analogue of a ``SynthDef``), and
 
 The windowed host opens an OS window per ``window``-rooted GuiDef and renders
 containers, the standard controls, the heavy ``waveform`` view, the
-shared-memory-backed ``meter``/``scope``, a live ``nodetree`` of the server's
-node graph and a static ``plot`` of a signal; live updates flow through
-``/gui_set`` and interactions come back as ``/gui_event``/``/gui_closed``. A
-``waveform`` can also name a server buffer, and a ``meter``/``scope`` reads a
-control bus from the audio server's shared-memory segment. A widget can also be
-*bound* (`clausters.gui.host.GuiHost.bind`) so its value flows straight to the
-audio server, bypassing this script. A ``canvas`` runs a script-supplied WGSL
-shader driven by OSC params and control buses. See the ``examples/gui_*.py``
-family (``gui_skeleton`` for the headless protocol, ``gui_window``/``gui_panel``
-for windows and controls, ``gui_meters`` for the audio-server client paths,
-``gui_bind`` for the bound low-latency control path, ``gui_nodetree`` for the
-live node tree, ``gui_plot`` for an NRT render plotted, ``gui_canvas`` for a
-shader).
+shared-memory-backed ``meter``/``scope``, the audio-tap ``scope``
+(oscilloscope), ``phasescope`` (goniometer) and ``spectrum`` (spectroscope), a
+live ``nodetree`` of the server's node graph and a static ``plot`` of a signal;
+live updates flow through ``/gui_set`` and interactions come back as
+``/gui_event``/``/gui_closed``. A ``waveform`` can also name a server buffer, a
+``meter``/``scope`` reads a control bus from the audio server's shared-memory
+segment, and the audio-rate views read its audio taps (route a bus into a tap
+with ``Server.tap``). A widget can also be *bound*
+(`clausters.gui.host.GuiHost.bind`) so its value flows straight to the audio
+server, bypassing this script. A ``canvas`` runs a script-supplied WGSL shader
+driven by OSC params and control buses. The stereo-field measurements the
+phasescope draws — `correlation` and `lissajous` — are also exposed as plain
+functions (shared with the native host through ``clausters-core``) for headless
+analysis. See the ``examples/gui_*.py`` family (``gui_skeleton`` for the
+headless protocol, ``gui_window``/``gui_panel`` for windows and controls,
+``gui_meters`` for the audio-server client paths, ``gui_bind`` for the bound
+low-latency control path, ``gui_nodetree`` for the live node tree, ``gui_plot``
+for an NRT render plotted, ``gui_canvas`` for a shader, ``gui_scope`` for the
+oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum).
 """
 
 from .guidef import (
     button,
     canvas,
+    correlation,
     knob,
     label,
+    lissajous,
     menu,
     meter,
     node,
@@ -36,11 +44,13 @@ from .guidef import (
     number,
     panel,
     peaks_cache_file,
+    phasescope,
     plot,
     samples_to_blob,
     samples_to_file,
     scope,
     slider,
+    spectrum,
     text,
     toggle,
     waveform,
@@ -65,10 +75,14 @@ __all__ = [
     "waveform",
     "meter",
     "scope",
+    "phasescope",
+    "spectrum",
     "nodetree",
     "plot",
     "canvas",
     "samples_to_blob",
     "samples_to_file",
     "peaks_cache_file",
+    "correlation",
+    "lissajous",
 ]

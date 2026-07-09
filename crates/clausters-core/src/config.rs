@@ -51,6 +51,10 @@ pub struct ServerConfig {
     pub audio_buses: Option<usize>,
     /// Control bus count (`--control-buses`).
     pub control_buses: Option<usize>,
+    /// Audio-tap ring count (`--taps`); 0 disables the tap region.
+    pub taps: Option<usize>,
+    /// Per-tap ring capacity in samples (`--tap-frames`), a power of two.
+    pub tap_frames: Option<usize>,
     /// Hardware output channels (`--outputs`); unset follows the device default.
     pub outputs: Option<usize>,
     /// Hardware input channels (`--inputs`); unset/0 opens no input device.
@@ -190,6 +194,8 @@ impl ServerConfig {
             sample_rate: pick(self.sample_rate, h.sample_rate),
             audio_buses: pick(self.audio_buses, h.audio_buses),
             control_buses: pick(self.control_buses, h.control_buses),
+            taps: pick(self.taps, h.taps),
+            tap_frames: pick(self.tap_frames, h.tap_frames),
             outputs: pick(self.outputs, h.outputs),
             inputs: pick(self.inputs, h.inputs),
             max_nodes: pick(self.max_nodes, h.max_nodes),
