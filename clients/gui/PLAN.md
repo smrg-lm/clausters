@@ -128,16 +128,16 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `menu` | control | Dropdown / option list. |
 | `waveform` | heavy GPU view | Editor-grade min/max peak waveform of a buffer or blob (existing renderer). |
 | `spectrogram` | heavy GPU view | STFT time-frequency view (existing renderer). |
-| `scope` | heavy GPU view | Oscilloscope (time-domain) - **future**. |
-| `phasescope` | heavy GPU view | Phase/goniometer (Lissajous) view - **future**. |
+| `scope` | heavy GPU view | Time-domain scope. The control-bus history form exists; the audio-rate triggered oscilloscope is **future** (G18). |
+| `phasescope` | heavy GPU view | Phase/goniometer (Lissajous) view - **future** (G19). |
 | `meter` | heavy GPU view | Level meter reading a control bus directly from shared memory. |
-| `spectrum` | heavy GPU view | Live FFT magnitude curve (spectroscope) - **future**. |
+| `spectrum` | heavy GPU view | Live FFT magnitude curve (spectroscope) - **future** (G19). |
 | `plot` | view | Simple static plot of an NRT-generated signal/file. |
 | `nodetree` | view | Live text/graphic view of the audio server's node tree and parameters, updated in real time. |
 | `canvas` | view | A surface that runs a supplied WGSL shader, driven by OSC params or server audio - custom visuals. |
 | `score` | view | Music notation (Verovio SVG) - **future**, off the GPU path. |
 | `timeline` | view | DAW-style tracks + MIDI/OSC sequencing - **future**. |
-| `bpf` | view | Drawable break-point-function envelope with curves - **future**. |
+| `bpf` | view | Drawable break-point-function envelope with curves - **future** (G21). |
 
 Heavy views never reimplement DSP the server already owns: when a widget needs analysis/processing not already provided by `clausters-server` (peaks, STFT, FFT, resampling), `clausters-gui` reaches for `clausters-ffi`/`libclausters` rather than duplicating signal code. The `clients/gui` crate's own `peaks`/`spectrogram` modules are the prototype of that shared machinery and are a candidate to migrate behind the FFI.
 
@@ -433,6 +433,65 @@ Not part of G11-G16 and not yet scheduled; recorded here because the G11 seam wa
 
 This intersects the server track, not only the GUI track, so it becomes a numbered milestone on whichever track owns the engine port once its design converges. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
 
+## Widget deepening (G18-G21): scopes, editor-grade views, edit-back
+
+With the host complete on both platforms, the next arc deepens the **graphical elements themselves** - the four catalog entries still marked *future* (`scope` as a real oscilloscope, `phasescope`, `spectrum`, `bpf`) plus the editor-grade refinement of the two heavy views and the edit-back-to-data pattern. The ordering criterion: every one of these is **driven from the Python client as it stands** (new `clausters.gui` builders over the unchanged `/gui_*` protocol - widgets are added by extension, never by protocol change), so each milestone lists its Python leg explicitly. The per-widget domain knowledge (trigger algorithms, goniometer geometry, LOD crossfade, envelope-shape math) lives in the `gui-widgets` skill; this plan stages the work. Packaging (Tauri) and the in-browser audio engine stay deliberately last - see "Future directions".
+
+**Recurring analysis (every milestone in this arc, the G7b rule):** each new compute function gets an explicit placement decision, recorded with the milestone - **general** (useful to another client from Python, or to a future server feature) goes to `clausters-core`, with a `clausters-ffi` export when a non-Rust client consumes it; **display-only** (hit-testing, tick spacing, trigger alignment of a drawn window) stays in the gui crate. Peaks, the forward FFT and the windows already took the core path; the known candidates below are the envelope shape math (G21), the multichannel peak cache (G20) and the correlation metric (G19).
+
+### G18 - Server audio tap + a real oscilloscope
+
+The scopes share one missing prerequisite: the host reads **control** buses per frame (shm natively, `/c_stream` in the browser) but has no way to see **audio-rate** samples - the shm segment carries only control buses. This milestone adds the server-side audio tap and raises the scope to a triggered, audio-rate oscilloscope.
+
+**Scope:**
+
+- **The server-side tap**, in the `ScopeOut2` shape (SuperCollider's answer to the same problem): a pre-allocated ring the audio thread writes a signal's recent samples into, read by the host each frame. The write must be RT-safe (no alloc/lock on the audio thread - allocation happens at tap creation on the command path) and the tap addressable from a widget prop the way buses are. **Decision (record it):** where the ring lives - extend the versioned `--shm` segment with a tap region (an `ABI_VERSION` bump, checked on attach so drift fails loudly) vs. a buffer-backed ring reusing the buffer pool; and the tap's creation surface (a UGen writing its input, an `/x_*` command, or both).
+- **The browser sibling**: the streamed counterpart of the shared ring - the `/c_stream` pattern at display granularity. **Decision (record it):** the decimation/rate (full audio rate over WS is not the goal; one display window per period is), and whether it is a new command or a `/c_stream` extension.
+- **The oscilloscope widget**: a time-based display window (`window_ms`), a **level trigger with hysteresis** (rising-edge search over the newest data, free-run fallback when no crossing exists, a `hold` prop), per-column min/max or polyline drawing through the existing painter - never resolving finer than the screen. **Decision (record it):** whether the existing control-rate `scope` becomes the `rate: "control"` case of one widget or stays a separate kind.
+- **Placement analysis (record it):** the trigger search is display-only (it aligns a drawn window) and stays gui-side; the **tap-ring reader** is the piece to analyze - if the Python client should also read taps (headless capture/analysis of a live signal without the GUI), the ring's layout and reader belong in `clausters-core` with an FFI export, the same role `peaks` plays for the cache.
+- Python: the builder(s) in `clausters.gui`, an example (`examples/`), E2E per the sandbox rule.
+
+**Acceptance:** an oscilloscope widget shows a **stable, triggered** trace of a live synth's audio output - natively with zero per-frame OSC, in the browser over the streamed path; the RT thread stays alloc/lock-free under the tap (an `rt_safety`-style guard covers the write).
+
+### G19 - Phasescope + live spectrum
+
+The two remaining *future* scopes, both consumers of the G18 tap - no new server work.
+
+**Scope:**
+
+- **`phasescope`**: a two-channel tap drawn as the 45°-rotated Lissajous (vertical = mid `(L+R)/√2`, horizontal = side `(L−R)/√2` - the audio-engineering convention: mono reads vertical, anti-phase horizontal), an age-faded persistence trail over the last K pairs, and a correlation readout (Pearson r over the window) as companion chrome. **Placement analysis (record it):** the correlation metric is a general audio measurement (a future server analysis UGen and the Python client both plausibly want it) - the `clausters-core` candidate; the Lissajous drawing is display-only and stays gui-side.
+- **`spectrum`**: one forward FFT per frame over the newest tap window - `clausters-core` `fft`/`window` (Hann, power-of-two sizes), magnitudes to dB with the spectrogram's normalization and an adjustable dB window, log/linear frequency axis reusing the spectrogram's display→bin mapping; per-bin exponential averaging and a decaying peak-hold trace as props (raw per-frame FFTs flicker); one curve point per pixel column.
+- Python: builders + examples; browser parity through the streamed tap.
+
+**Acceptance:** the phasescope visibly distinguishes mono, wide-stereo and anti-phase material; the spectrum shows a sine as a single stable peak at the right frequency on the log axis and tracks a sweep; both run natively and in the browser. Closes the catalog's four *future* scope entries together with G18.
+
+### G20 - Editor-grade waveform + spectrogram
+
+The "Future directions" editor-grade entry, folded in: the full visual-parameter surface of an audio editor, all view-side - data paths and analysis are untouched.
+
+**Scope:**
+
+- **Multichannel**: all channels of a `path`/`buffer`/`cache` source, not channel 0 - stacked lanes sharing one time axis (default) or overlaid traces; one pyramid per channel. **Decision (record it):** the multi-channel cache shape - per-channel sibling cache files vs. one multi-channel cache format - and, whichever wins, it extends `clausters_core::peaks` **and its FFI export**, so the Python client keeps building the identical cache the host maps (the placement rule; de-interleaving beyond channel 0 lands core-side with it).
+- **LOD crossfade**: blend the two adjacent pyramid levels weighted by the fractional part of the level selection so zooming never pops - a per-frame data choice in the existing geometry upload, not a new pipeline.
+- **Rulers**: an adaptive 1-2-5 time axis (samples / ms / `hh:mm:ss.mmm` modes) under both views; the spectrogram adds a Hz ruler (log decades with subdivisions, matching the shader's mapping). Painter chrome + bitmap text, no new GPU work.
+- **Selection + playhead + readout**: a draggable `[start, len]` selection overlay emitted as `/gui_event <id> "selection" start len` and settable via `/gui_set` (the existing `"view"` event is the model); a playhead line driven natively from the shm `sample_clock()`/`sample_rate()` (zero messages) and in the browser from a streamed clock; a cursor readout (time/value, time/frequency).
+- Python: the extended `waveform`/`spectrogram` builder props, an editor-style example.
+
+**Acceptance:** a stereo file renders as two lanes with time (and Hz) rulers; zoom is pop-free across pyramid levels; a dragged selection round-trips as events; the playhead tracks a playing synth natively and in the browser.
+
+### G21 - BPF envelope editor + the edit-back-to-data pattern
+
+The first widget that *writes data back*, and the pattern it establishes - folding in the "Edit-back-to-data" and "Automation / BPF view" future directions.
+
+**Scope:**
+
+- **The `bpf` widget**: breakpoints `(time, value)` plus a per-segment **shape/curve using the server's own envelope shape numbers** (the `EnvGen` segment math), so what the editor draws is exactly what the server plays. Rendering evaluates the shape once per pixel column (painter geometry); interaction hit-tests points before segments - drag to move (times clamped monotonic), drag a segment for curvature, modifier-click to add/remove; `min`/`max` plus an optional exponential display scale for frequency-like values.
+- **Placement move (record it):** the shape math lives only in the server crate today (`src/dsp/envgen.rs::shape_value`), and the gui cannot link the server - so the **envelope shape evaluation relocates to `clausters-core`** with the server's `EnvGen` delegating to it (the same move the forward FFT made), and gains an FFI export if the Python client wants to evaluate/plot envelopes client-side (decide against the concrete consumer). Breakpoint hit-testing and drag logic are display-only and stay gui-side.
+- **The edit-back pattern (decision - record it):** edited data flows back **to the script** as `/gui_event <id> <tag> <flat values...>` (or one compact blob for bulk data, the `samples_to_blob` layout), keeping the flat-primitives and int/float rules - new event *payloads*, not new addresses; and **to the server** through the binding path (a bound editor forwards its edit, e.g. an envelope's flat list or a `/b_setn` buffer write - the widget-value analogue of `/gui_bind`). The host's mapped resources stay **read-only**: edits never scribble on a shared file.
+- Python: the `bpf` builder plus a helper mapping the widget's breakpoint list to the client's envelope representation; an example that draws an envelope and hears it applied.
+
+**Acceptance:** an envelope drawn in the widget round-trips to the script as flat data; the same breakpoints/shapes bound to the server audibly drive an `EnvGen`; the shape math lives **once** in `clausters-core` with the server delegating to it; the edit-back pattern is recorded well enough that the later drawn-buffer and automation cases are applications of it, not new designs.
+
 ## Done outside the numbered tracks
 
 - **Shared config + config-driven standalone.** Server, GUI host and Python
@@ -448,15 +507,12 @@ This intersects the server track, not only the GUI track, so it becomes a number
 
 ## Future directions (to fold into milestones as they firm up)
 
-Captured here so the depth the editor-grade vision needs is not lost; each becomes a `Gx` when its design converges.
+Captured here so the depth the editor-grade vision needs is not lost; each becomes a `Gx` when its design converges. (The former entries for scopes, the editor-grade views, edit-back-to-data and the BPF view converged into G18-G21 above.) **Ordering (decided):** the widget-deepening arc comes first because everything in it is immediately usable from the installed Python client over the existing protocol; the timeline and notation views follow as their designs firm up; **packaging and the in-browser audio engine are deliberately last** - they change how the system ships, not what it can show, and both keep constraining design in the meantime (the web frontend must stay Tauri-wrappable; the `Transport`/`ServerLink` seam must keep the wasm-engine variant open).
 
-- **Editor-grade waveform/spectrogram.** Refine both views with the full visual-parameter surface of an audio editor (multi-channel stacked/overlaid waveforms, interpolating between pyramid levels, frequency-axis Hz rulers, selection/playhead overlays, time-axis chrome), even when first used only to plot signals.
-- **Scopes.** A time-domain oscilloscope, a phase/goniometer (Lissajous) scope, and a live FFT spectroscope - each a `TimelineView`-style module sharing the navigation machinery, fed from shared memory.
-- **Edit-back-to-data.** Today the heavy views *receive* data to visualize; the design must keep room for them to *modify* it - drawing into a buffer, editing a list/envelope - and write it back to a client or the server.
-- **DAW / timeline view.** Tracks with audio and MIDI/OSC sequencing; since the audio lives in the server, the view reads it from there. The reference point is an OSC-controllable DAW transport and control elements.
-- **Automation / BPF view.** Drawable break-point-function envelopes whose drawn values become a specification consumed elsewhere - the cleanest case of edit-back-to-data.
+- **DAW / timeline view.** Tracks with audio and MIDI/OSC sequencing; since the audio lives in the server, the view reads it from there. The reference point is an OSC-controllable DAW transport and control elements. Builds directly on G20's selection/playhead and G21's edit-back pattern.
 - **Notation (`score`).** Verovio (C++ -> wasm/JS) rendering MEI/MusicXML to interactive, editable SVG in the web surface, off the GPU path entirely.
 - **Packaging.** An optional Tauri desktop wrapper reusing the web frontend; the GUI chapter in the docs; worked examples and `GUIA.md` steps.
+- **In-browser audio engine.** The Web Audio / AudioWorklet track recorded in its own section above - it intersects the server track and is numbered on whichever track owns the engine port once its design converges.
 
 ## Definition of done (per milestone)
 
