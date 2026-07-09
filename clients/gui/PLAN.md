@@ -154,7 +154,7 @@ The `clients/gui` crate (an independent workspace, so it can never break the cor
 
 And on the core/server side, the transport the web direction needs is already done (G1, below).
 
-## G1 - WsHub transport - DONE (in main)
+## ✅ G1 - WsHub transport - DONE (in main)
 
 A WebSocket transport carrying the existing OSC encoding, with a minimal client that drives the running audio server over it. Landed on `main`, not yet on this branch.
 
@@ -167,7 +167,7 @@ A WebSocket transport carrying the existing OSC encoding, with a minimal client 
 
 **Remaining for this branch:** merge `main` into `gui` so `WsHub` and the ffi client are present here; nothing else in G1 to build.
 
-## G2 - GUI host skeleton (`clausters-gui` binary) - DONE (2026-06-25)
+## ✅ G2 - GUI host skeleton (`clausters-gui` binary) - DONE (2026-06-25)
 
 A separate crate/binary that speaks OSC over the reused transport layer with a widget command interpreter instead of the audio engine - the dual-role process from the naming section, starting headless.
 
@@ -187,7 +187,7 @@ A separate crate/binary that speaks OSC over the reused transport layer with a w
 - A script (Python) connects to `clausters-gui`, sends a `/gui_def`, and the host logs the parsed tree and replies to `/gui_query`; run as a single Bash invocation per the E2E rule.
 - `cargo fmt --check` clean, clippy clean; the core still builds/tests with no optional features.
 
-## G3 - `/gui_def` + JSON widget tree + a real window - DONE (2026-06-25)
+## ✅ G3 - `/gui_def` + JSON widget tree + a real window - DONE (2026-06-25)
 
 The GuiDef schema and the first pixels.
 
@@ -203,7 +203,7 @@ The GuiDef schema and the first pixels.
 
 - The test client creates an actual window showing the waveform from one declarative `/gui_def` message.
 
-## G4 - Standard control widgets + `/gui_set` + events - DONE (2026-06-25)
+## ✅ G4 - Standard control widgets + `/gui_set` + events - DONE (2026-06-25)
 
 The essentials of any GUI, plus the live update and event paths.
 
@@ -219,7 +219,7 @@ The essentials of any GUI, plus the live update and event paths.
 
 - A scripted instrument panel (knobs/sliders/buttons) round-trips: `/gui_set` updates a live widget, user interaction emits `/gui_event`, closing the window emits `/gui_closed`.
 
-## G5 - GUI as a client of the audio server + shared-memory meters/scopes - DONE (2026-06-26)
+## ✅ G5 - GUI as a client of the audio server + shared-memory meters/scopes - DONE (2026-06-26)
 
 The host attaches to the audio server and the zero-message metering path lands.
 
@@ -237,7 +237,7 @@ The host attaches to the audio server and the zero-message metering path lands.
 
 - A meter widget tracks a live control bus with no per-frame OSC traffic; a waveform widget renders a server buffer by number.
 
-## G6 - Bindings (`/gui_bind`): bypass the script - DONE (2026-06-26)
+## ✅ G6 - Bindings (`/gui_bind`): bypass the script - DONE (2026-06-26)
 
 The low-latency interactive control path.
 
@@ -251,7 +251,7 @@ The low-latency interactive control path.
 
 - A bound knob drives a running synth's control with no round-trip through the script; unbinding restores the event path.
 
-## G7 - Bulk data path + shared DSP - DONE (2026-06-26)
+## ✅ G7 - Bulk data path + shared DSP - DONE (2026-06-26)
 
 Two principles the rest of the system already implies, made concrete - and both are implemented here, so the milestone splits into two subsections. First, heavy data moves between Clausters processes through **local shared resources** rather than the wire. Second, an algorithm used by more than one process lives **once**, in the shared core, never reimplemented per client. The "DSP" here is the GUI's *analysis-for-plotting* - the peak pyramid (waveform level-of-detail) and the FFT/STFT (spectrogram) - which today lives only in this crate (the server owns no peak/FFT analysis: `clausters-core` is builtins/osc/rng/tempoclock, and `spectrogram.rs` carries a handrolled radix-2 FFT).
 
@@ -279,7 +279,7 @@ Concretely:
 
 - A multi-megabyte buffer - client-origin (a mapped file/cache) and server-origin (an exported RT buffer) - renders without re-sending it per frame and without riding OSC; the analysis path is documented, the FFT and peaks live once in the shared core, and peaks is callable from the Python client through the FFI.
 
-## G8 - Node-tree view + NRT plots - DONE (2026-06-26)
+## ✅ G8 - Node-tree view + NRT plots - DONE (2026-06-26)
 
 Two read-only views that exercise the "gui is a client of the server" leg.
 
@@ -294,7 +294,7 @@ Two read-only views that exercise the "gui is a client of the server" leg.
 
 - The node-tree widget reflects group/synth creation and `/n_set` changes live; a `plot` renders an NRT render's output.
 
-## G9 - Canvas + shaders - DONE (2026-06-26)
+## ✅ G9 - Canvas + shaders - DONE (2026-06-26)
 
 Custom visuals from the script.
 
@@ -308,7 +308,7 @@ Custom visuals from the script.
 
 - A scripted shader animates from OSC parameters and from a control bus read out of shared memory.
 
-## G10 - Standalone GuiDef + GraphDef bundles - DONE (2026-06-27)
+## ✅ G10 - Standalone GuiDef + GraphDef bundles - DONE (2026-06-27)
 
 The saved-application mode: a GUI with no language client.
 
@@ -327,7 +327,7 @@ The saved-application mode: a GUI with no language client.
 
 The earlier single milestone framed the web host as "swap the winit surface for a `<canvas>` surface; the renderers run unchanged" - true, but it describes the small part. The host is ~7150 lines, nearly all native-only behind `#[cfg(not(target_arch = "wasm32"))] pub mod host`, against ~1095 lines of genuinely portable renderers/analysis (`viewport`/`peaks`/`view`/`waveform`/`spectrogram`); inside the host sit 16 `UdpSocket`, 15 `SharedSegment` (shm), 12 `MappedFile` (mmap), 6 `EmbedServer` and 3 `pollster::block_on` couplings. Crucially, much of the host is **pure logic** (the typed widget tree, layout, GuiDef parse, the mesh `Painter`/`font`, the registry, the node-tree/scope models, bindings) that only sits behind the `wasm32` exclusion because it was never separated from the I/O glue. So the browser target is not a rewrite: it is **factor the host along the platform seam, then write one new I/O implementation per native coupling, reusing everything else**. The overriding constraint for every milestone below is **maximum reuse** - the protocol, the decode door, the analysis, the renderers and the whole pure host core are shared verbatim; only the platform shell (transport, bus source, bulk loader, GPU/surface bring-up) gets a second, web impl.
 
-### G11 - Host platform seam (agnostic core + Platform traits, wasm build kept green) - DONE (2026-06-28)
+### ✅ G11 - Host platform seam (agnostic core + Platform traits, wasm build kept green) - DONE (2026-06-28)
 
 No browser code yet: this milestone only carves the seam, so the later web milestones are trait-fills rather than rewrites, and it turns browser-readiness from a one-shot milestone into an invariant a build gate enforces.
 
@@ -343,7 +343,7 @@ No browser code yet: this milestone only carves the seam, so the later web miles
 
 **Decision (record it):** for the browser GUI track (G11-G16) the browser host always talks to a *separate* audio server over WebSocket, and there is no in-process engine in the browser (the `standalone` `EmbedServer` stays native-only behind its feature); the browser's data paths are then the "async fallback" the bulk-data decision (G7) already reserved for exactly the client that can map neither shared memory nor files. **This is a scope boundary, not a fundamental constraint.** "No in-process engine in the browser" holds only because porting the engine to the browser (a Web Audio / AudioWorklet backend) is a larger, separate piece of work, deferred to its own future track (see "In-browser audio engine" below). If that lands, the browser gains a second link kind - the wasm analogue of the native `Embed` - and the host<->engine OSC rides an in-process channel instead of WebSocket, exactly as `ServerLink::Embed` does natively today; the `Transport`/`ServerLink` seam this milestone builds is shaped to take that variant without a protocol change. WebSocket stays the carrier for the *remote* leg (a browser cannot reach an external process any other way), so it never goes away - it stops being the only option.
 
-### G12 - Web surface: `<canvas>` WebGPU + async GPU + render loop - DONE (2026-06-28)
+### ✅ G12 - Web surface: `<canvas>` WebGPU + async GPU + render loop - DONE (2026-06-28)
 
 The first browser pixels, with no transport yet, so the surface/GPU/loop port is isolated from the protocol. Reuses the layout, `Painter`, `font` and `WaveformView` paths verbatim; the only new code is the wasm entry point and async bring-up.
 
@@ -356,7 +356,7 @@ The first browser pixels, with no transport yet, so the surface/GPU/loop port is
 
 **Acceptance:** a compiled-in GuiDef renders in a browser tab over WebGPU - controls, chrome, bitmap text and an inline waveform - pixel-faithful to the native host; no `block_on`, socket or mmap on the wasm path.
 
-### G13 - Web transport: drive the browser host live over WebSocket - DONE (2026-06-28)
+### ✅ G13 - Web transport: drive the browser host live over WebSocket - DONE (2026-06-28)
 
 The browser host stops being static. Reuses the entire protocol dispatch and the G1 WS wire format; the only new code is a `Transport` impl over the browser `WebSocket` plus the small wasm-bindgen surface that lets in-page code feed the host a GuiDef and pump its events.
 
@@ -371,7 +371,7 @@ The browser host stops being static. Reuses the entire protocol dispatch and the
 
 **Note - the full client is its own track, not part of this milestone.** The throwaway harness here is *only* to test the host. A real browser/JS driver belongs to a **TypeScript client** that does not exist yet and is **not planned**: it should live in `clients/web` as its own package (a `clausters` package with the same client model as `clients/python` - GuiDef builders, a `GuiHost`-equivalent, the audio-server client - plus its own docs, examples and tests), and get its **own plan in `clients/web/PLAN.md`** (a parallel client track, the way the Python client has `clients/PLAN.md`). The wasm GUI host (G11-G16) and that TypeScript client are separate deliverables: the host is driven *through* the binding surface / WS, and the client is one more consumer of the same `/gui_*` protocol. Leave this as a forward dependency; do not fold the client into the GUI track.
 
-### G14 - Browser meters/scopes: control buses over the wire - DONE (2026-07-05)
+### ✅ G14 - Browser meters/scopes: control buses over the wire - DONE (2026-07-05)
 
 A browser cannot map the shared segment, so the zero-message meter path needs a message-based `BusSource` - a new trait impl, with the meter/scope drawing and the (already time-based) scope sampling reused unchanged.
 
@@ -384,7 +384,7 @@ A browser cannot map the shared segment, so the zero-message meter path needs a 
 
 **Acceptance:** a `meter` and a `scope` in the browser track a live control bus over WS, smoothly, against a `--ws` server - the same widgets that read shared memory natively.
 
-### G15 - Browser bulk data: fetch/blob and the `/b_getn` fallback - DONE (2026-07-05)
+### ✅ G15 - Browser bulk data: fetch/blob and the `/b_getn` fallback - DONE (2026-07-05)
 
 The mmap bulk path has no browser equivalent; the network primitives the bulk-data decision (G7) deliberately kept become the browser's path. New code is the `BulkLoader` web impl; the `Pyramid`/`WaveformData` consumers and the analysis are reused as-is.
 
@@ -397,7 +397,7 @@ The mmap bulk path has no browser equivalent; the network primitives the bulk-da
 
 **Acceptance:** the bulk example's three waveforms (peak cache, raw file, server-exported buffer) render in the browser, fetched/streamed rather than mmap'd, at the same navigation quality (never resolving finer than the screen).
 
-### G16 - Packaging and native/browser parity - DONE (2026-07-05)
+### ✅ G16 - Packaging and native/browser parity - DONE (2026-07-05)
 
 Make the wasm GUI host shippable and prove the reuse held. This packages the **host**, not a client: the full TypeScript client is the separate `clients/web` track (see the G13 note), so this milestone uses the throwaway harness, or that client once it lands, to exercise the bundle.
 
@@ -410,7 +410,7 @@ Make the wasm GUI host shippable and prove the reuse held. This packages the **h
 
 **Acceptance:** a produced bundle loads in a browser and opens the panel, meters and waveform examples against a `--ws` audio server; the same GuiDef yields the same tree and behaviour native and in-browser (the embed/standalone path is explicitly native-only and out of scope here; the product TypeScript client is the separate `clients/web` track, out of scope here too).
 
-### G17 - WebGL2 fallback: browser reach where WebGPU is disabled - DONE (2026-06-28)
+### ✅ G17 - WebGL2 fallback: browser reach where WebGPU is disabled - DONE (2026-06-28)
 
 Landed out of sequence (a reach fix on the G12 web surface, ahead of G14-G16). The point of the web target is **accessibility/reach**, but WebGPU is unreliable on Linux browsers (the drivers fail and the browser disables it) and on much of Android; depending on WebGPU alone leaves those users with a blank canvas and an error. WebGL2, by contrast, is supported in ~99% of browsers. So the browser host now renders over **WebGPU where it truly works and WebGL2 otherwise**.
 
@@ -422,24 +422,13 @@ Landed out of sequence (a reach fix on the G12 web surface, ahead of G14-G16). T
 
 **Acceptance:** with the built `web/` opened in a Linux browser whose WebGPU is disabled, the host resolves a WebGL2 adapter and renders the panel, bitmap text and inline waveform (and the `canvas` shader) faithfully; in a WebGPU-capable browser it still resolves WebGPU; native is byte-identical (gui 81 tests, `clippy -D warnings` clean native + `wasm32`).
 
-### In-browser audio engine (Web Audio / AudioWorklet) - future track
-
-Not part of G11-G16 and not yet scheduled; recorded here because the G11 seam was deliberately shaped to accept it, and the G11 decision ("no in-process engine in the browser") is a scope boundary that this track relaxes. Through G16 the browser GUI host drives a *separate* audio server over WebSocket. The parallel, larger piece of work is to compile `clausters-server` itself to `wasm32` with a **Web Audio backend**, so the engine runs **in the browser** - the wasm analogue of the native `standalone`/`embed` mode.
-
-- **A new audio backend behind the existing engine seam, not a DSP rewrite.** The engine core (`Engine::process_block`) is already decoupled from the device: it feeds the real-time cpal callback and the offline `render()`/NRT path from the same block function (FTZ armed in both, NRT sample-identical to RT). A browser backend is a *third* driver - an **AudioWorklet** output whose process callback pulls blocks from the engine. cpal does not target Web Audio, so this is a genuine backend addition, which is exactly why it is its own track rather than a step inside G11-G16.
-- **An in-process browser link, the wasm `Embed`.** With the engine in the page, the GUI host reaches it through a new `ServerLink` variant (the wasm counterpart of `Embed`): OSC over an in-process channel, **not** WebSocket. This is the same second link kind the native host already has (`Udp` vs `Embed`); the `Transport` trait and the cfg-gated `ServerLink` from G11 take the variant without a protocol change. WebSocket stays the carrier for a *remote* server, so it never disappears - it stops being the browser's only option.
-- **The shared-memory paths return inside the browser.** An AudioWorklet runs on its own thread and shares state with the main thread through `SharedArrayBuffer` (which needs cross-origin isolation, COOP/COEP). That is the browser's shared-memory primitive: it can carry the zero-message `BusSource` (control buses read each frame) and the bulk audio path **inside** the page - the same roles `host::shm`/`mapfile` play natively - instead of the WS/`fetch` fallback G14/G15 build for the remote case. So a browser host paired with an in-page engine looks more like the native host than like the remote-server browser.
-- **RT-safety carries to the worklet.** The audio thread's no-alloc/no-lock discipline applies to the AudioWorklet thread, and the lock-free command/garbage FIFOs map onto `SharedArrayBuffer` ring buffers. A standalone-style bundle (a GuiDef + GraphDefs) could then boot entirely in a browser tab with no server process at all - the browser twin of `--standalone`.
-
-This intersects the server track, not only the GUI track, so it becomes a numbered milestone on whichever track owns the engine port once its design converges. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
-
 ## Widget deepening (G18-G21): scopes, editor-grade views, edit-back
 
 With the host complete on both platforms, the next arc deepens the **graphical elements themselves** - the four catalog entries still marked *future* (`scope` as a real oscilloscope, `phasescope`, `spectrum`, `bpf`) plus the editor-grade refinement of the two heavy views and the edit-back-to-data pattern. The ordering criterion: every one of these is **driven from the Python client as it stands** (new `clausters.gui` builders over the unchanged `/gui_*` protocol - widgets are added by extension, never by protocol change), so each milestone lists its Python leg explicitly. The per-widget domain knowledge (trigger algorithms, goniometer geometry, LOD crossfade, envelope-shape math) lives in the `gui-widgets` skill; this plan stages the work. Packaging (Tauri) and the in-browser audio engine stay deliberately last - see "Future directions".
 
 **Recurring analysis (every milestone in this arc, the G7b rule):** each new compute function gets an explicit placement decision, recorded with the milestone - **general** (useful to another client from Python, or to a future server feature) goes to `clausters-core`, with a `clausters-ffi` export when a non-Rust client consumes it; **display-only** (hit-testing, tick spacing, trigger alignment of a drawn window) stays in the gui crate. Peaks, the forward FFT and the windows already took the core path; the known candidates below are the envelope shape math (G21), the multichannel peak cache (G20) and the correlation metric (G19).
 
-### G18 - Server audio tap + a real oscilloscope - DONE (2026-07-09)
+### ✅ G18 - Server audio tap + a real oscilloscope - DONE (2026-07-09)
 
 The scopes share one missing prerequisite: the host reads **control** buses per frame (shm natively, `/c_stream` in the browser) but has no way to see **audio-rate** samples - the shm segment carries only control buses. This milestone adds the server-side audio tap and raises the scope to a triggered, audio-rate oscilloscope.
 
@@ -455,7 +444,7 @@ The scopes share one missing prerequisite: the host reads **control** buses per 
 
 **Acceptance:** an oscilloscope widget shows a **stable, triggered** trace of a live synth's audio output - natively with zero per-frame OSC, in the browser over the streamed path; the RT thread stays alloc/lock-free under the tap (an `rt_safety`-style guard covers the write).
 
-### G19 - Phasescope + live spectrum - DONE (2026-07-09)
+### ✅ G19 - Phasescope + live spectrum - DONE (2026-07-09)
 
 The two remaining *future* scopes, both consumers of the G18 tap - no new server work.
 
@@ -517,6 +506,17 @@ Captured here so the depth the editor-grade vision needs is not lost; each becom
 - **Notation (`score`).** Verovio (C++ -> wasm/JS) rendering MEI/MusicXML to interactive, editable SVG in the web surface, off the GPU path entirely.
 - **Packaging.** An optional Tauri desktop wrapper reusing the web frontend; the GUI chapter in the docs; worked examples and `GUIA.md` steps.
 - **In-browser audio engine.** The Web Audio / AudioWorklet track recorded in its own section above - it intersects the server track and is numbered on whichever track owns the engine port once its design converges.
+
+## In-browser audio engine (Web Audio / AudioWorklet) - future track
+
+Not part of G11-G16 and not yet scheduled; recorded here because the G11 seam was deliberately shaped to accept it, and the G11 decision ("no in-process engine in the browser") is a scope boundary that this track relaxes. Through G16 the browser GUI host drives a *separate* audio server over WebSocket. The parallel, larger piece of work is to compile `clausters-server` itself to `wasm32` with a **Web Audio backend**, so the engine runs **in the browser** - the wasm analogue of the native `standalone`/`embed` mode.
+
+- **A new audio backend behind the existing engine seam, not a DSP rewrite.** The engine core (`Engine::process_block`) is already decoupled from the device: it feeds the real-time cpal callback and the offline `render()`/NRT path from the same block function (FTZ armed in both, NRT sample-identical to RT). A browser backend is a *third* driver - an **AudioWorklet** output whose process callback pulls blocks from the engine. cpal does not target Web Audio, so this is a genuine backend addition, which is exactly why it is its own track rather than a step inside G11-G16.
+- **An in-process browser link, the wasm `Embed`.** With the engine in the page, the GUI host reaches it through a new `ServerLink` variant (the wasm counterpart of `Embed`): OSC over an in-process channel, **not** WebSocket. This is the same second link kind the native host already has (`Udp` vs `Embed`); the `Transport` trait and the cfg-gated `ServerLink` from G11 take the variant without a protocol change. WebSocket stays the carrier for a *remote* server, so it never disappears - it stops being the browser's only option.
+- **The shared-memory paths return inside the browser.** An AudioWorklet runs on its own thread and shares state with the main thread through `SharedArrayBuffer` (which needs cross-origin isolation, COOP/COEP). That is the browser's shared-memory primitive: it can carry the zero-message `BusSource` (control buses read each frame) and the bulk audio path **inside** the page - the same roles `host::shm`/`mapfile` play natively - instead of the WS/`fetch` fallback G14/G15 build for the remote case. So a browser host paired with an in-page engine looks more like the native host than like the remote-server browser.
+- **RT-safety carries to the worklet.** The audio thread's no-alloc/no-lock discipline applies to the AudioWorklet thread, and the lock-free command/garbage FIFOs map onto `SharedArrayBuffer` ring buffers. A standalone-style bundle (a GuiDef + GraphDefs) could then boot entirely in a browser tab with no server process at all - the browser twin of `--standalone`.
+
+This intersects the server track, not only the GUI track, so it becomes a numbered milestone on whichever track owns the engine port once its design converges. The product TypeScript client (`clients/web`, see the G13 note) is still a separate concern from both.
 
 ## Definition of done (per milestone)
 
