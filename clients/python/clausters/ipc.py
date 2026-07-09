@@ -42,7 +42,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 2
+ABI_VERSION = 3
 
 # embed cdylib file names across platforms (Linux / macOS / Windows).
 _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
@@ -51,7 +51,12 @@ _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
 # Fixed prefix: the header, then the c2s and s2c rings. The control-bus array
 # is a trailing, dynamically-sized region after the rings (its length lives in
 # the header), so `--control-buses` changes the segment size but not these
-# ring offsets. The whole file is mmap'd, so any control count is supported.
+# ring offsets. ABI v3 adds a trailing **audio-tap region** after the control
+# buses (`--taps` slots of a 64-byte cursor line + a `--tap-frames` sample
+# ring, the region 64-byte aligned); this client reads the counts from the
+# header but does not map-read the rings — headless tap capture goes over
+# `/tap_stream` (see `Server.stream_taps`), the recorded G18 decision. The
+# whole file is mmap'd, so any control/tap count is supported.
 
 _MAGIC = 0x5541_4C43  # "CLAU"
 _HEADER_SIZE = 64
@@ -60,15 +65,29 @@ _OFF_VERSION = 4
 _OFF_SAMPLE_RATE = 8  # f64 bits
 _OFF_CLOCK = 16  # u64
 _OFF_CONTROL_BUSES = 28  # u32: number of slots in the trailing control region
+_OFF_TAPS = 32  # u32: audio-tap ring count (ABI v3)
+_OFF_TAP_FRAMES = 36  # u32: per-tap ring capacity in samples (ABI v3)
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
 _OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
 _OFF_S2C = _OFF_C2S + _RING_HEADER + _RING_CAPACITY  # 65664
 _OFF_CONTROLS = _OFF_S2C + _RING_HEADER + _RING_CAPACITY  # 131264 (trailing)
 _DEFAULT_CONTROL_BUSES = 1024
-# Segment size for the default control-bus count (the actual size is the file's
-# length; the server sizes it from `--control-buses`).
-SEGMENT_SIZE = _OFF_CONTROLS + 4 * _DEFAULT_CONTROL_BUSES  # 135360
+_DEFAULT_TAPS = 8
+_DEFAULT_TAP_FRAMES = 16384
+_TAP_ALIGN = 64  # each tap slot: a 64-byte cursor line + the sample ring
+
+
+def _tap_region_offset(control_buses: int) -> int:
+    controls_end = _OFF_CONTROLS + 4 * control_buses
+    return (controls_end + _TAP_ALIGN - 1) // _TAP_ALIGN * _TAP_ALIGN
+
+
+# Segment size for the default control-bus and tap counts (the actual size is
+# the file's length; the server sizes it from `--control-buses`/`--taps`/
+# `--tap-frames`). Mirrors `src/server/ipc.rs::SEGMENT_SIZE` (660160).
+SEGMENT_SIZE = _tap_region_offset(_DEFAULT_CONTROL_BUSES) + _DEFAULT_TAPS * (
+    _TAP_ALIGN + 4 * _DEFAULT_TAP_FRAMES)
 
 
 class _Ring:
@@ -141,6 +160,11 @@ class ShmClient:
             raise SegmentError(f"segment ABI v{version}, this client speaks v{ABI_VERSION}")
         #: control-bus count the server created the segment with.
         self.control_buses = struct.unpack_from("<I", self.mm, _OFF_CONTROL_BUSES)[0]
+        #: audio-tap ring count and per-tap capacity in samples (ABI v3). The
+        #: rings themselves are read by the GUI host; capture them from Python
+        #: over ``/tap_stream`` (``Server.stream_taps``) instead.
+        self.taps = struct.unpack_from("<I", self.mm, _OFF_TAPS)[0]
+        self.tap_frames = struct.unpack_from("<I", self.mm, _OFF_TAP_FRAMES)[0]
         self._c2s = _Ring(self.mm, _OFF_C2S)  # we produce here
         self._s2c = _Ring(self.mm, _OFF_S2C)  # we consume here
 

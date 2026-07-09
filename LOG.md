@@ -5177,3 +5177,18 @@ file mapped into two waveform lanes, a stereo server buffer fetched into
 spectrogram lanes, selection/playhead/display driven live, no panic. Docs: the
 bulk-data note in `docs/clients.md`, the Python builder docstrings (the
 generated `api.md`), GUIA manual steps, and the two GUI skills.
+
+### Follow-up: the Python binding was left on segment ABI v2 (G18 leftover)
+
+Running the G20 example against freshly staged libraries surfaced
+`libclausters speaks ABI v3, this binding speaks v2`: G18 bumped the shared
+segment / embed ABI to v3 (the trailing audio-tap region) and updated the GUI
+host's reader and `docs/ipc.md`, but `clients/python/clausters/ipc.py` kept
+`ABI_VERSION = 2` — masked until now because the staged `_libs/libclausters.so`
+in the source checkout predated the bump. Fixed: the binding speaks v3, mirrors
+the tap header fields (`taps`/`tap_frames` exposed on `ShmClient`; the rings
+themselves stay host-read — headless capture remains `/tap_stream`, the
+recorded G18 decision) and recomputes `SEGMENT_SIZE` with the tap region
+(660160 for the defaults, matching `src/server/ipc.rs::SEGMENT_SIZE`). The
+Python suite's embed/shm tests un-skip and pass (146 passed, from 136), and the
+`gui_editor.py` scenario runs end to end against the rebuilt libraries.
