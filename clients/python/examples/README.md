@@ -75,6 +75,19 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/transport_conductor.py
   ```
 
+- **`gui_editor.py`** — the editor-grade waveform + spectrogram. It **launches
+  its own server and GUI** (`Session.live` + `session.gui()`, starting a server
+  if none is up and choosing the shared-memory segment for you) and is organized
+  as `# %%` cells. Evaluate the cells in VS Code / Jupyter to keep the window
+  open and drive `session`/`gui`/`win` between cells (`gui.set(...)`,
+  `play_pass()`, `gui.close(win)`); or run it as a plain script, which follows
+  the playhead for a while and then closes. The server and GUI binaries are both
+  bundled; needs a display and a GPU adapter.
+
+  ```sh
+  python clients/python/examples/gui_editor.py    # as a script; or open the cells in VS Code / Jupyter
+  ```
+
 The broader catalog of examples (including the low-level transports and the raw
 OSC helpers) lives in the repo-root [`examples/`](../../../examples/); those use
 a `sys.path` shim so they run straight from a source checkout without an install.

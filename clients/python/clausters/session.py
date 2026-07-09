@@ -58,6 +58,10 @@ class Session:
     def __init__(self, server: Server, clock: TempoClock | None = None):
         self.server = server
         self.clock = clock if clock is not None else TempoClock()
+        #: the GUI host opened lazily by `gui`, if any; it owns its own process
+        #: and is stopped with the session. The server owns any process it
+        #: booted (see `Server.boot` / `live`), stopped via ``server.close``.
+        self._gui = None
 
     # ---- factories (the "defaults", explicit) ----
 
@@ -79,30 +83,62 @@ class Session:
         return cls(Server(interface=OscNrtInterface()), TempoClock(tempo))
 
     @classmethod
-    def live(cls, host: "str | None" = None, port: "int | None" = None, tempo: float = 1.0,
-             latency: "float | None" = None, timebase=None) -> "Session":
-        """Build a real-time session talking to a running server over UDP.
+    def live(cls, host: "str | None" = None, port: "int | None" = None, *,
+             tempo: float = 1.0, latency: "float | None" = None, timebase=None,
+             boot: bool = True, options=None, shm="auto", verbose: int = 0,
+             data_dir=None, server_args=(), ready_timeout: float = 10.0) -> "Session":
+        """Build a real-time session over UDP, **starting a server if none is up**.
+
+        This is the everyday live-coding entry point. By default (``boot=True``)
+        it ensures a server the way `nrt` ensures a renderer: if one already
+        answers at the target address it attaches to it, and if none does it
+        **launches a separate ``clausters`` process** — choosing a shared-memory
+        segment for you — and connects to that. Either way you get a session you
+        drive the same. A server the session started is stopped when the session
+        is closed or the interpreter exits, so a REPL or script leaves nothing
+        running; a server it merely attached to is left alone.
+
+        Pass ``boot=False`` for the plain attach-only behavior (never start a
+        process): connect to a server you launched yourself, possibly remote.
 
         Args:
             host: the server's host; ``None`` takes the config file's
-                ``[client].host`` (default ``127.0.0.1``).
+                ``[client].host`` (default ``127.0.0.1``). Booting is local.
             port: the server's UDP port; ``None`` takes ``[client].port`` (the
                 Clausters default is 57110).
             tempo: the clock's tempo, in beats per second.
             latency: seconds added to each event's timetag so it reaches the
                 server slightly ahead of its play time and sounds on time
                 instead of late; a small value such as 0.1 is typical for a
-                live take. ``None`` takes the config file's ``[client].latency``
-                (default 0.0).
+                live take. ``None`` takes the config file's ``[client].latency``.
             timebase: the clock's pacing source. The default (monotonic) paces
                 in wall-clock seconds; a `SampleClockTimebase` anchors timing to
-                the server's sample clock for drift-free, sample-accurate
-                scheduling.
+                the server's sample clock for drift-free scheduling.
+            boot: start a server if none is already answering (default). ``False``
+                attaches only, never launching a process.
+            options: a `clausters.defs.ServerOptions` sizing a *launched* server
+                and this client's allocators alike; ``None`` uses the defaults.
+            shm: the shared-memory segment for a launched server — ``"auto"``
+                picks one, a path forces it, ``None`` launches without one. The
+                path is remembered so `gui` maps the same segment.
+            verbose: launched-server log verbosity (``1``/``2``/``3`` -> ``-v``/
+                ``-vv``/``-vvv``; negative -> ``-q``).
+            data_dir: a launched server's ``--data-dir``; ``None`` uses default.
+            server_args: extra CLI tokens for a launched server (e.g. ``["--tcp"]``).
+            ready_timeout: seconds to wait for a launched server to answer.
 
         Returns:
             A `Session` you drive with `run` (or `start` / `stop`).
         """
-        return cls(Server(host, port, latency=latency), TempoClock(tempo, timebase=timebase))
+        from .launch import server_is_up
+
+        server = Server(host, port, latency=latency, options=options)
+        if boot and not server_is_up(server.target.host, server.target.port):
+            server.close()  # drop the plain interface; boot opens its own
+            server = Server.boot(options=options, shm=shm, verbose=verbose,
+                                 data_dir=data_dir, server_args=server_args,
+                                 latency=latency, ready_timeout=ready_timeout)
+        return cls(server, TempoClock(tempo, timebase=timebase))
 
     @classmethod
     def embed(cls, tempo: float = 1.0, latency: "float | None" = None, workers: int = 0,
@@ -135,6 +171,46 @@ class Session:
         """
         iface = OscEmbedInterface(server, workers=workers)
         return cls(Server(interface=iface, latency=latency), TempoClock(tempo, timebase=timebase))
+
+    def gui(self, *, port: "int | None" = None, verbose: int = 0, data_dir=None,
+            extra_args=(), ready_timeout: float = 10.0):
+        """Launch (once) a ``clausters-gui`` visual server wired to this session's
+        server, and return a `clausters.gui.GuiHost` connected to it.
+
+        The GUI parallel of `live` booting a server: one call and the visual
+        server is up, its client leg pointed at this session's server and — when
+        that server was launched with a shared-memory segment — mapping the same
+        segment, so meters, scopes and playheads read the engine with no
+        per-frame messages. You never spell out an address or a segment path:
+        they come from the session. The host is owned by the session and stopped
+        on `close` (or interpreter exit).
+
+        Idempotent: repeated calls return the same `GuiHost` (the ``port`` and
+        other options of the first call stand).
+
+        Args:
+            port: the GUI host's own UDP port (script -> host); ``None`` uses the
+                host default (57210).
+            verbose: host log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/``-vvv``).
+            data_dir: the host's ``--data-dir`` for its GuiDef store.
+            extra_args: extra host CLI tokens.
+            ready_timeout: seconds to wait for the host to answer.
+
+        Returns:
+            A started `clausters.gui.GuiHost`. Use `clausters.gui.GuiHost.open`
+            to open a window, `set` to edit it and `clausters.gui.GuiHost.close`
+            to close it.
+        """
+        if self._gui is not None:
+            return self._gui
+        from .gui import GuiHost
+
+        server_addr = f"{self.server.target.host}:{self.server.target.port}"
+        self._gui = GuiHost.boot(
+            server=server_addr, shm=self.server.shm, port=port, verbose=verbose,
+            data_dir=data_dir, extra_args=extra_args, ready_timeout=ready_timeout,
+        )
+        return self._gui
 
     # ---- driving ----
 
@@ -219,10 +295,15 @@ class Session:
 
     def close(self):
         """Close the underlying `Server` and release the clock's master-clock
-        tracker (from `lock_to_server`), if any. Done automatically when the
-        session is used as a context manager."""
+        tracker (from `lock_to_server`), if any. Also stops the GUI host (`gui`)
+        and, if `live` launched a server, that process too — so nothing is left
+        running. Done automatically when the session is used as a context manager
+        and, for launched processes, on interpreter exit."""
+        if self._gui is not None:
+            self._gui.stop()   # stops its clausters-gui process too
+            self._gui = None
         self.clock.close()
-        self.server.close()
+        self.server.close()    # stops a launched server process too
 
     def __enter__(self):
         return self

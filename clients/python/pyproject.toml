@@ -38,9 +38,10 @@ dev = ["pytest>=7"]
 packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs", "clausters.gui"]
 
 # The cargo-built artifacts that build_native.py stages into the package: the
-# cdylibs in _libs/ (embedded server / numeric core) and the standalone server
-# binary in _bin/ (run via the `clausters` console-script). Bundled in the wheel
-# so an installed package is self-contained.
+# cdylibs in _libs/ (embedded server / numeric core) and the two binaries in
+# _bin/ — the standalone server (run via the `clausters` console-script) and the
+# `clausters-gui` visual server (launched by `Session.gui`). Bundled in the wheel
+# so an installed package is self-contained: server and GUI, no separate install.
 [tool.setuptools.package-data]
 clausters = ["_libs/*.so", "_libs/*.dylib", "_libs/*.dll", "_bin/*"]
 

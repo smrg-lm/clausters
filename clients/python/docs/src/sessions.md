@@ -10,9 +10,9 @@ This client deliberately has none of those globals. The clock does timing and no
 
 `Session` gives the convenience back **explicitly**. It is just an object that holds a `Server` and a `TempoClock` and offers `play` / `render` / `run`, plus two factories that pick sensible defaults. Because it is a plain object and not a global, you can have as many as you like.
 
-## Three kinds of session
+## Kinds of session
 
-You almost always build a session with one of the three factories rather than the constructor. They differ only in *where the bytes go* — offline into a score, over UDP to a separate server, or by function call to a server running inside this process — and otherwise behave identically.
+You almost always build a session with one of the factories rather than the constructor. They differ only in *where the bytes go* — offline into a score, over UDP to a separate server, or by function call to a server running inside this process — and otherwise behave identically.
 
 `Session.nrt()` is an **offline** (non-real-time) session. Its server accumulates a timetagged *score* instead of sending anything, and `render()` turns that score into samples through the renderer bundled with the package. No server process and no audio device are involved.
 
@@ -37,13 +37,13 @@ the context that created it — never from per-pattern seeds, so `main.seed(n)`
 makes a whole piece reproducible end to end (see
 [Routines and clocks](routines-and-clocks.md)).
 
-`Session.live()` is a **real-time** session that talks to a running server over UDP (start one with `cargo run --release`, or the installed `clausters` binary). The same pattern, played the same way, now sounds on a device.
+`Session.live()` is a **real-time** session that sounds on a device over UDP. By default it **ensures a server** the way `nrt()` ensures a renderer: if one already answers it attaches to it, and if none does it **launches a separate `clausters` process** — choosing a shared-memory segment for you — and connects to that. So the everyday live case is one line, whether or not a server is already up; a server the session started is stopped when the session is closed or the interpreter exits, and one it merely attached to is left alone.
 
 ```python
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
 
-with Session.live(tempo=2.0, latency=0.1) as session:
+with Session.live(tempo=2.0, latency=0.1) as session:   # attaches, or boots one
     session.play(Pbind(
         instrument="default",
         degree=Pseq([0, 2, 4, 7, 4, 2], repeats=2),
@@ -53,8 +53,9 @@ with Session.live(tempo=2.0, latency=0.1) as session:
     session.run(3.5)   # advance the clock in real time, then stop
 ```
 
-Two arguments are worth knowing on `live()`:
+Arguments worth knowing on `live()`:
 
+- `boot` — whether to start a server when none is up (default `True`). Pass `boot=False` for plain attach-only behavior: connect to a server you launched yourself (possibly remote), never starting a process. When booting, `options` (a `ServerOptions` that sizes the launched server *and* this client's allocators), `shm` (`"auto"`, a path, or `None`), and `verbose`/`data_dir`/`server_args` shape the launched process.
 - `latency` — seconds added to each event's timetag so it arrives a touch ahead of its play time and the server sounds it *on* time rather than late. `0.0` means "as soon as possible"; a small value such as `0.1` is typical for a live take.
 - `timebase` — the clock's pacing source. The default paces in wall-clock seconds (monotonic); passing a `SampleClockTimebase` anchors timing to the server's own sample clock, for drift-free, sample-accurate scheduling. See [The client, layer by layer](guide.md) for the timebase distinction.
 
@@ -76,13 +77,15 @@ with Session.embed(tempo=2.0, latency=0.1) as session:
 
 It takes the same `latency` and `timebase` as `live()`, plus `workers` (engine threads for parallel node processing) and an optional `server=` to reuse an existing `clausters.Clausters` handle instead of opening a fresh one. Because the server lives in this process, you can read its sample clock and control buses directly through `session.server.interface.server` (the `Clausters` handle), with no OSC round trip.
 
+There is deliberately **no separate "spawn" factory**: launching a server is not a different kind of session, just `live()`'s default behavior, so the option lives on `live` rather than multiplying constructors. See [Launching the server and the GUI](#launching-the-server-and-the-gui) below for the details and the object-level `Server.boot` / `GuiHost.boot`.
+
 Which factory to reach for:
 
 | Factory | Server | Use it when |
 | --- | --- | --- |
 | `Session.nrt()` | none (a score + renderer) | rendering offline — a plot, an analysis, a `.wav`; no device. |
-| `Session.embed()` | in-process (bundled library) | making sound from one script, no setup — the batteries-included path. |
-| `Session.live()` | a separate process over UDP | a server shared by several clients or machines, or one that outlives the script. Start it with the bundled `clausters` command (or `cargo run --release`). |
+| `Session.embed()` | in-process (bundled library) | making sound from one script, no setup — but the engine shares this process. |
+| `Session.live()` | a separate process (booted if needed) | the everyday real-time / live-coding case — a real, separate server a GUI or another client can also talk to. Boots one if none is up; `boot=False` attaches only. |
 
 ## Driving a session
 
@@ -159,6 +162,64 @@ live.close()
 ```
 
 The two never interfere: each has its own server, its own clock and its own interface. With globals this is impossible; here it is the default.
+
+## Launching the server and the GUI
+
+Live coding wants the whole system reachable from one interpreter: a separate audio server (so it survives a client restart, is shared, and keeps the audio thread out of Python) and, often, the visual server beside it — without opening three terminals or spelling out a shared-memory path. `Session.live` and `Session.gui` do exactly that, and everything they start is torn down when the session is closed **or the interpreter exits** — a normal exit, an unhandled exception, or an abandoned handle garbage-collected. Nothing is left running.
+
+`session.gui()` launches the `clausters-gui` visual server and returns a [`GuiHost`](api.md) connected to it — the GUI parallel of `live()` booting a server. You never spell out an address or a segment: the host is started with its client leg pointed at this session's server and mapping the same shared-memory segment the server was booted with, so meters, scopes and playheads read the engine with no per-frame messages. The host is owned by the session and stopped on `close`.
+
+```python
+from clausters import Session
+from clausters.gui import window, label
+
+session = Session.live()       # attaches, or boots a server (segment auto-chosen)
+gui = session.gui()            # clausters-gui, wired to that server + same segment
+
+win = gui.open(window(label(1, text="hello"), title="Panel", w=320, h=120))
+gui.set(1, text="edited live")  # edit the open window
+gui.close(win)                  # close it
+
+session.close()                 # stops whatever the session started; leaving the interpreter would too
+```
+
+`GuiHost` opens, edits and closes windows: `open` sends a `window`-rooted GuiDef and returns its id, `set` edits a live widget, and `close` closes it (`close_all` closes every window still open). Repeated `session.gui()` calls return the same host.
+
+The visual server binary ships **bundled in the same package** as the audio server (built from the independent `clients/gui` workspace, stripped), so there is nothing extra to install — the launcher finds it out of the box. In a source checkout a binary built under `clients/gui/target` is used, and `CLAUSTERS_GUI_BIN` overrides the lookup. See [Getting started](getting-started.md#the-visual-server-gui) for building a lighter, server-only install.
+
+### Without a Session: `Server.boot` and `GuiHost.boot`
+
+If you are not using a `Session`, the server and the GUI host each carry their own launch and teardown, so you don't juggle a separate process object. `Server.boot()` starts a server process and returns a connected `Server` that owns it (its `close()` stops the process); `GuiHost.boot()` does the same for the visual server, returning a started `GuiHost` (its `stop()` stops the process). Both also die with the interpreter.
+
+```python
+from clausters.defs import Server
+from clausters.gui import GuiHost, window, label
+
+server = Server.boot()                                    # a server process starts
+gui = GuiHost.boot(server=f"{server.target.host}:{server.target.port}", shm=server.shm)
+
+gui.open(window(label(1, text="hi"), title="Panel", w=320, h=120))
+# ...
+gui.stop()        # stops the clausters-gui process
+server.close()    # stops the server process
+```
+
+This is exactly what `Session.live`/`gui` use internally — the session just bundles them with a clock.
+
+### The raw processes
+
+One level lower, `clausters.launch` exposes the processes themselves — `ServerProcess` and `GuiProcess` — for when you want to own them directly (e.g. a custom `Server`/`GuiHost` wiring). Both are context managers, both register the same exit hooks, and `default_shm_path()` picks a segment (`None` on platforms where shared memory does not apply); `server_is_up()` is the probe `live` uses to decide boot-or-attach.
+
+```python
+from clausters import ServerProcess, GuiProcess
+from clausters.gui import GuiHost
+
+with ServerProcess() as server_proc:            # clausters --shm <auto>
+    with GuiProcess(server=f"{server_proc.host}:{server_proc.port}",
+                    shm=server_proc.shm) as gui_proc:
+        host = GuiHost(port=gui_proc.port).start()
+        ...   # both processes stop when the `with` blocks exit
+```
 
 ## When you don't need a Session
 

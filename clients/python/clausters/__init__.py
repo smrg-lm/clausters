@@ -25,6 +25,9 @@ The layers:
   replies and live MIDI.
 - `clausters.gui` — GuiDef building for the Clausters GUI host.
 - `clausters.session` — `Session`, ergonomic defaults without global state.
+- `clausters.launch` — launching and owning the server and GUI processes
+  (`Session.live` / `Session.gui`, and `Server.boot` / `GuiHost.boot`, drive
+  these under the hood).
 - `clausters.config` — the shared TOML configuration, read-only.
 """
 
@@ -46,6 +49,7 @@ from .base.main import main
 from .base.rand import choice, next_below, next_f64, uniform
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .session import Session
+from .launch import GuiProcess, ServerProcess, default_shm_path
 from .ipc import (
     ABI_VERSION,
     SEGMENT_SIZE,
@@ -60,6 +64,9 @@ __all__ = [
     "Clausters",
     "ShmClient",
     "Session",
+    "ServerProcess",
+    "GuiProcess",
+    "default_shm_path",
     "main",
     # the random context (one seedable source: main.seed(n) + these draws)
     "next_f64",

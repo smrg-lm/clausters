@@ -1,16 +1,18 @@
 """setuptools shim that bundles the cargo-built artifacts into the wheel.
 
 Configuration lives in ``pyproject.toml``; this file exists only to hook the
-native build. Before the package files are collected, it builds the cdylibs and
-the standalone server binary with cargo and stages them in ``clausters/_libs/``
-and ``clausters/_bin/`` (see ``build_native.py``), so the resulting wheel
-carries both the embedded core and the standalone server, self-contained.
+native build. Before the package files are collected, it builds the cdylibs, the
+standalone server binary and the ``clausters-gui`` visual-server binary with
+cargo and stages them in ``clausters/_libs/`` and ``clausters/_bin/`` (see
+``build_native.py``), so the resulting wheel carries the embedded core, the
+standalone server *and* the GUI, self-contained.
 
-Both travel as package data: the cdylibs back the in-process embedded server,
-and the standalone binary in ``clausters/_bin/`` is exposed by the ``clausters``
-console-script (see ``clausters._cli``), which locates and execs it. (Shipping a
-native binary through the wheel's ``scripts=`` slot fails: setuptools'
-``build_scripts`` parses every script as Python source and chokes on the ELF.)
+They travel as package data: the cdylibs back the in-process embedded server,
+the standalone binary in ``clausters/_bin/`` is exposed by the ``clausters``
+console-script (see ``clausters._cli``), and the ``clausters-gui`` binary beside
+it is what the launcher (`clausters.launch`) runs. (Shipping a native binary
+through the wheel's ``scripts=`` slot fails: setuptools' ``build_scripts`` parses
+every script as Python source and chokes on the ELF.)
 
 Because the wheel ships a compiled ``.so``/``.dylib``/``.dll`` (and a native
 binary) it is *not* platform-independent: :class:`_PlatformWheel` marks it so the

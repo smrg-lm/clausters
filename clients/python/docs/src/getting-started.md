@@ -27,6 +27,12 @@ cargo build -p clausters-ffi
 cargo build --features embed,realtime
 ```
 
+### The visual server (GUI)
+
+The GUI host — the visual server that opens windows and renders widgets — is **bundled in the same wheel** as the audio server, built from the independent `clients/gui` cargo workspace and stripped. Nothing extra to install: with the package in place, [`Session.live` / `Session.gui`](sessions.md#launching-the-server-and-the-gui) launch the audio and visual servers for you, and `clausters-gui` is also on your `PATH`.
+
+Building it adds a wgpu compile (a minute or two the first time). For a lighter, server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when installing; a source-checkout binary built under `clients/gui/target` (`cargo build --release --bin clausters-gui`, from `clients/gui`) is still used at runtime if present, and `CLAUSTERS_GUI_BIN` overrides the lookup.
+
 ### Runtime requirement: PipeWire (Linux)
 
 The bundled artifacts that touch an audio device — the in-process embedded server and the standalone `clausters` binary — are built with the project's default features, which include the PipeWire audio backend. They therefore **hard-link `libpipewire`** and expect PipeWire present at runtime (the standard on current Linux systems); on a host without it the library and the binary will not load. The offline renderer and the numeric core need no audio device, so `Session.nrt()` and `clausters._native` work anywhere. For an audio build that does not depend on PipeWire, build the server from source with plain ALSA — see the server guide's [getting started](https://clausters.readthedocs.io/en/latest/getting-started.html) (`cargo build --no-default-features --features synth,realtime`).
@@ -37,6 +43,8 @@ The bundled artifacts that touch an audio device — the in-process embedded ser
 - `CLAUSTERS_CARGO_FEATURES` — features for the embed library (default `embed,realtime`).
 - `CLAUSTERS_SKIP_NATIVE_BUILD` — package the libs already staged in `clausters/_libs/` without rebuilding.
 - `CLAUSTERS_FFI_LIB` / `CLAUSTERS_LIB` — at runtime, point a loader directly at a cdylib (overrides the bundled copy and the workspace `target/`).
+- `CLAUSTERS_SKIP_GUI_BUILD` — at build time, skip building/bundling the `clausters-gui` binary (a lighter, server-only wheel).
+- `CLAUSTERS_GUI_BIN` — at runtime, point the launcher directly at a `clausters-gui` host binary (overrides the bundled copy and the workspace `target/`).
 
 ## Play a sound
 

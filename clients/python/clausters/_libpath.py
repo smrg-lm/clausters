@@ -44,3 +44,18 @@ def workspace_candidates(names) -> list[str]:
     for profile in ("release", "debug"):
         out += [os.path.join(root, "target", profile, n) for n in names]
     return out
+
+
+def gui_workspace_candidates(names) -> list[str]:
+    """Absolute paths for ``names`` under ``clients/gui/target/{release,debug}/``.
+
+    The ``clausters-gui`` crate is an **independent** cargo workspace with its
+    own ``target/`` (not the repo-root one), so its binary is located here in a
+    source checkout. ``clients/python/clausters/`` -> the repo root is three
+    levels up, then ``clients/gui/target/``."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(_PKG_DIR)))
+    gui_target = os.path.join(root, "clients", "gui", "target")
+    out = []
+    for profile in ("release", "debug"):
+        out += [os.path.join(gui_target, profile, n) for n in names]
+    return out

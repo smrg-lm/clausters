@@ -43,6 +43,74 @@ Para correr los snippets, parate en `clients/python` o exportá el path:
 cd clients/python            # o: export PYTHONPATH=$PWD/clients/python
 ```
 
+## Instalar y probar todo en un venv limpio (cliente + GUI)
+
+El camino de arriba (compilar los cdylibs y usar `PYTHONPATH`) es el de
+desarrollo rápido. Para probar la librería **como la recibe un usuario** —
+instalada en un entorno limpio, con el servidor y la GUI arrancados desde
+Python— usá un venv. **Todo desde la raíz del repo** (así el hook de build
+encuentra el workspace de cargo):
+
+```sh
+# 1) venv limpio
+python -m venv .venv
+. .venv/bin/activate            # Windows: .venv\Scripts\activate
+
+# 2) el cliente, editable (compila los cdylibs, el binario del servidor y el de
+#    clausters-gui con cargo, y los empaqueta en el mismo paquete autocontenido):
+pip install -e ./clients/python
+
+# 3) para la suite de tests:
+pip install pytest
+```
+
+Para evaluar los ejemplos por celdas (interactivo), abrí el `.py` en VS Code
+(extensiones Python + Jupyter) o en un notebook de Jupyter y ejecutá las celdas
+`# %%`; no hace falta nada más en el venv.
+
+El paso 2 compila también el binario de la GUI (wgpu, un par de minutos la
+primera vez). Para un install más liviano **solo servidor**, exportá
+`CLAUSTERS_SKIP_GUI_BUILD=1` antes de instalar: la GUI igual se encuentra si
+compilaste `clausters-gui` en el checkout (`cd clients/gui && cargo build
+--release --bin clausters-gui`).
+
+Comprobaciones, en orden:
+
+```sh
+# a) la suite del cliente (146 verdes aprox.):
+pytest -q clients/python
+
+# b) el `clausters` (servidor) y el `clausters-gui` quedaron en el PATH del venv:
+clausters --help | head -1
+clausters-gui --help | head -1
+
+# c) sonido sin arrancar nada (servidor embebido en el proceso):
+python clients/python/examples/embedded.py
+
+# d) el cliente arranca/cierra servidor + GUI solo (corre como script):
+python clients/python/examples/gui_editor.py
+```
+
+En (d) `Session.live` se conecta a un servidor si ya hay uno corriendo, o lo
+**arranca** si no (eligiendo el segmento de memoria compartida), y
+`session.gui()` lanza `clausters-gui` cableado a él. Como script, sigue el
+playhead un rato y cierra todo. Para trabajar **interactivamente** —celda por
+celda, inspeccionando entre celdas y manejando la ventana con `gui.set(...)`,
+`play_pass()`, `gui.close(win)`— abrí el archivo en VS Code/Jupyter y evaluá las
+celdas `# %%`. En ambos casos, al terminar (o con `session.close()`/`teardown()`)
+**el servidor y la GUI se cierran solos** (los que arrancó la sesión; a uno que ya
+estaba corriendo no lo toca). Verificalo en otra terminal:
+
+```sh
+pgrep -laf 'clausters($| )|clausters-gui'   # vacío tras salir del intérprete
+```
+
+> Requisito de runtime en Linux: los binarios que tocan el dispositivo de audio
+> (el servidor y el embebido) enlazan PipeWire; en un host sin PipeWire el
+> render offline y el núcleo numérico igual andan (`Session.nrt()`,
+> `clausters._native`), pero `live`/`embed` no. La GUI necesita display y un
+> adaptador GPU. Ver `getting-started` del mdBook para el detalle.
+
 ## 2. Núcleo nativo accesible (C0 + C1)
 
 El binding ctypes sobre el núcleo. Comprueba equivalencia f32 con el servidor.
@@ -1846,17 +1914,30 @@ cd clients/gui && cargo test --quiet     # 119 verdes: crossfade, reglas, lanes,
 
 ### Manual con ventana: el editor (`gui_editor.py`)
 
+Desde la actualizacion de la dinamica en vivo, el ejemplo **arranca solo** el
+servidor y la GUI: ya no hacen falta tres terminales ni un `--shm` explicito.
+`Session.live` arranca un servidor si no hay ninguno corriendo (eligiendo el
+segmento de memoria compartida), y `session.gui()` lanza `clausters-gui` cableado
+a ese servidor y mapeando el mismo segmento; todo lo que arranca la sesion se
+cierra al cerrarla o al salir del interprete. El ejemplo esta en celdas `# %%`
+(la convencion de VS Code/Jupyter). **Desde la raiz del proyecto**, en un venv:
+
 ```sh
-# servidor con segmento (una terminal, desde la raiz):
-cargo run -- --shm /dev/shm/clausters_editor
+python -m venv .venv
+.venv/bin/pip install -e ./clients/python     # incluye el binario de la GUI
 
-# host en ventana, con leg al servidor y el mismo segmento (otra terminal):
-cd clients/gui && cargo run --bin clausters-gui -- \
-  --server 127.0.0.1:57110 --shm /dev/shm/clausters_editor -v
-
-# el script (otra terminal):
-PYTHONPATH=clients/python python clients/python/examples/gui_editor.py
+# como script (corre la demo y cierra):
+.venv/bin/python clients/python/examples/gui_editor.py
 ```
+
+Para trabajar **interactivamente**, abri el archivo en VS Code (extensiones
+Python + Jupyter) o en un notebook de Jupyter y evalua las celdas `# %%` de a
+una: la ventana queda abierta y manejas `session`/`gui`/`win` entre celdas
+(`gui.set(...)` la edita, `gui.close(win)` la cierra, `play_pass()` re-dispara el
+playhead). Como script (`python gui_editor.py`) sigue el playhead un rato y
+cierra todo. El paquete `clausters` empaqueta el server y la GUI; con
+`CLAUSTERS_SKIP_GUI_BUILD=1` se instala sin la GUI (el binario del checkout bajo
+`clients/gui/target` igual se usa si existe).
 
 Esperado:
 
@@ -1877,3 +1958,6 @@ Esperado:
 - `gui.set(id, db_floor=..., log_freq=0, colormap=1)` recontrasta/reescala el
   espectrograma en vivo sin recomputar nada (uniforms del shader);
   `window_size`/`hop` son de definicion (recomputar = redefinir el def).
+- **Abrir/cerrar ventanas**: `gui.open(scene)` abre la ventana y devuelve su id;
+  `gui.close(win)` la cierra; `session.close()` (o salir del intérprete) detiene la
+  GUI y el servidor. No hay que abrir ni matar procesos a mano.

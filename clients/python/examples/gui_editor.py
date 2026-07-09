@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The editor-grade waveform and spectrogram: lanes, rulers, selection, playhead.
+"""The editor-grade waveform and spectrogram, driven interactively via cells.
 
 The two heavy views at audio-editor depth. A stereo phrase is rendered
 **offline** (no audio device needed for the render), written as one interleaved
@@ -7,48 +7,46 @@ The two heavy views at audio-editor depth. A stereo phrase is rendered
 the samples never ride OSC):
 
 - a ``waveform`` with ``channels=2`` draws **both** channels as stacked lanes
-  sharing the time axis (one peak pyramid per channel; pass ``overlay=True``
-  for per-color overlaid traces instead), with an adaptive **time ruler**
-  underneath (1-2-5 steps, clock-time labels because ``sample_rate`` is given);
+  sharing the time axis, with an adaptive **time ruler** underneath;
 - a ``spectrogram`` with ``channels=2`` analyzes each channel separately (one
-  STFT lane per channel) and adds a **Hz ruler** along the left edge that
-  matches its log frequency axis.
+  STFT lane per channel) and adds a **Hz ruler** matching its log frequency axis.
 
 Both views navigate identically: **wheel** zooms toward the cursor (the peak
-pyramid cross-fades between detail levels, so zooming never pops),
-**Shift+drag** pans, **plain drag selects** — the host draws the translucent
-selection band and emits ``/gui_event <id> "selection" <start> <len>`` (in
-samples) as you drag, which this script prints; ``r`` resets the view. The
-selection can also be set from here (``gui.set(id, sel_start=..., sel_len=...)``),
-as can the display (``db_floor``/``db_ceil``/``log_freq``/``colormap``).
+pyramid cross-fades, so zooming never pops), **Shift+drag** pans, **plain drag
+selects** — the host emits ``/gui_event <id> "selection" <start> <len>`` (in
+samples) as you drag; ``r`` resets. The **playhead** tracks what you hear: the
+same render is looped by a ``PlayBuf`` synth and anchored each pass with the
+server's sample clock, and the host reads the engine clock from shared memory
+with zero per-frame messages.
 
-The **playhead** closes the loop with the live server: the same render is
-loaded into a server buffer and looped by a ``PlayBuf`` synth; the script
-anchors each pass with the server's sample clock (``/clock``) and sets
-``playhead_at`` on both views, so the orange line tracks what you hear — the
-GUI host reads the engine clock from the shared segment with **zero per-frame
-messages** (pass ``--shm`` to both server and host; without it the playhead
-simply stays hidden).
+Unlike the old three-terminal recipe, this script **launches its own server and
+GUI**: `Session.live` starts an audio server if none is already running (picking
+a shared-memory segment automatically) and `Session.gui` starts ``clausters-gui``
+wired to it — no ``--shm`` path to spell out, and everything the session starts
+is torn down when it is closed or the interpreter exits.
 
-Start the audio server (from the repo root)::
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
+Install once, from the repo root::
 
-    cargo run -- --shm /dev/shm/clausters_editor
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
-Start the windowed GUI host on the same segment (from ``clients/gui``)::
+Then run it either way:
 
-    cargo run --bin clausters-gui -- --server 127.0.0.1:57110 --shm /dev/shm/clausters_editor -v
+- **Interactively** — open the file in VS Code (Python + Jupyter extensions) or a
+  Jupyter notebook and run each ``# %%`` cell (Shift+Enter), inspecting between
+  cells and driving the open window from the live ``session``/``gui``/``win``
+  handles: ``gui.set(...)``, ``play_pass()``, ``gui.close(win)``. The kernel
+  stays alive with the window open.
+- **As a script** — ``python clients/python/examples/gui_editor.py`` runs the
+  whole file: it follows the playhead for a while, then tears everything down.
 
-Then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
-
-    python clients/python/examples/gui_editor.py
-
-A window opens with the two editor views over the same stereo phrase; drag to
-select (watch the events land here), zoom around, and follow the playhead while
-the phrase loops. Close the window to stop. Needs a display and a GPU adapter.
+(The install builds the ``clausters-gui`` binary too; ``CLAUSTERS_SKIP_GUI_BUILD=1``
+gives a server-only install, using a ``clients/gui/target`` binary if present.)
+Needs a display and a GPU adapter.
 """
 
-import math
+# %%
 import os
 import struct
 import sys
@@ -58,124 +56,190 @@ import wave
 
 from clausters import Session
 from clausters.defs import SynthDef, out, play_buf
-from clausters.gui import GuiHost, peaks_cache_file, samples_to_file, spectrogram, waveform, window
+from clausters.gui import peaks_cache_file, samples_to_file, spectrogram, waveform, window
 from clausters.seq import Pbind, Pseq, Pwhite
 
 SR = 48_000.0
 
+# %% [markdown]
+# ## Render the stereo phrase offline
+# Two bars of an arpeggio with amplitude jitter — enough spectral motion for the
+# spectrogram to be worth looking at. Rendered through an NRT session (no audio
+# device), then written as one interleaved f32 file the views map directly.
 
+# %%
 def phrase() -> Pbind:
-    """Two bars of an arpeggio with amplitude jitter — enough spectral motion
-    for the spectrogram to be worth looking at."""
     return Pbind(degree=Pseq([0, 4, 7, 11, 7, 4], repeats=4), dur=0.25,
                  amp=Pwhite(0.1, 0.25))
 
 
 def render_stereo() -> list:
     """Renders the phrase offline; returns the interleaved stereo f32 frames."""
-    session = Session.nrt(tempo=2.0)
-    session.play(phrase())
-    samples, frames = session.render(sample_rate=SR, channels=2)
+    nrt = Session.nrt(tempo=2.0)
+    nrt.play(phrase())
+    samples, frames = nrt.render(sample_rate=SR, channels=2)
     print(f"rendered {frames} frames ({frames / SR:.2f} s) offline")
     return list(samples)
 
 
-def write_wav(inter: list, path: str):
-    """The same interleaved render as a 16-bit stereo WAV, for /b_allocRead."""
+inter = render_stereo()
+frames = len(inter) // 2
+seconds = frames / SR
+
+_tmp = tempfile.mkdtemp(prefix="clausters_editor_")
+raw_path = os.path.join(_tmp, "phrase.f32")
+wav_path = os.path.join(_tmp, "phrase.wav")
+samples_to_file(inter, raw_path)
+# Not strictly needed (the host builds a sibling cache when it maps the raw
+# file), but shows the multichannel cache built client-side through the shared
+# core — byte-identical to the host's own.
+_cache = peaks_cache_file(inter, os.path.join(_tmp, "phrase.peaks"), channels=2)
+print(f"wrote {os.path.getsize(raw_path)} B raw, "
+      f"{os.path.getsize(_cache)} B multichannel peak cache")
+
+# %% [markdown]
+# ## Launch the server and the GUI
+# `Session.live` connects to a running audio server or starts one if none is up
+# (choosing a shared-memory segment for us); `session.gui()` starts
+# ``clausters-gui`` with its client leg pointed at that server and mapping the
+# same segment. Whatever the session started is owned by it — closing it (or
+# leaving the interpreter) stops those.
+
+# %%
+session = Session.live()
+server = session.server
+gui = session.gui()
+print(f"audio server on segment {server.shm}")
+
+
+def write_wav(frames_interleaved: list, path: str):
+    """The interleaved render as a 16-bit stereo WAV, for /b_allocRead."""
     with wave.open(path, "w") as w:
         w.setnchannels(2)
         w.setsampwidth(2)
         w.setframerate(int(SR))
         w.writeframes(b"".join(
-            struct.pack("<h", int(32767 * max(-1.0, min(1.0, s)))) for s in inter))
+            struct.pack("<h", int(32767 * max(-1.0, min(1.0, s)))) for s in frames_interleaved))
 
 
-def scene(raw_path: str) -> dict:
-    """The editor pair over one mapped stereo file. The `waveform` maps the raw
-    samples (and caches its peak pyramids beside them); the `spectrogram`
-    analyzes the same file into one STFT lane per channel."""
+# The playhead's sound source: the render in a server buffer, looped by a synth.
+write_wav(inter, wav_path)
+bufnum = server.buffers.alloc()
+server.send_msg("/b_allocRead", bufnum, wav_path)
+server.add_synthdef(SynthDef(
+    "sampler",
+    out(0.0, play_buf(float(bufnum), 0.0)),
+    out(1.0, play_buf(float(bufnum), 1.0)),
+))
+server.sync()
+
+# %% [markdown]
+# ## Open the editor window
+# `gui.open` sends a ``window``-rooted GuiDef and returns its id (edit it with
+# ``gui.set``, close it with ``gui.close``). We pre-select the second half from
+# here; dragging on either view replaces it and reports back as ``selection``
+# events (drained below).
+
+# %%
+def scene(path: str) -> dict:
     return window(
-        waveform(10, path=raw_path, channels=2, sample_rate=SR),
-        spectrogram(11, path=raw_path, channels=2, sample_rate=SR,
+        waveform(10, path=path, channels=2, sample_rate=SR),
+        spectrogram(11, path=path, channels=2, sample_rate=SR,
                     window_size=1024, db_floor=-90.0),
         title="Editor: waveform + spectrogram", w=960, h=640, layout="col",
     )
 
 
-def main():
-    tmp = tempfile.mkdtemp(prefix="clausters_editor_")
-    raw_path = os.path.join(tmp, "phrase.f32")
-    wav_path = os.path.join(tmp, "phrase.wav")
-    try:
-        inter = render_stereo()
-        frames = len(inter) // 2
-        seconds = frames / SR
-        samples_to_file(inter, raw_path)
-        # Not strictly needed (the host builds a sibling cache when it maps the
-        # raw file), but shows the multichannel cache built client-side through
-        # the shared core — byte-identical to the host's own.
-        cache = peaks_cache_file(inter, os.path.join(tmp, "phrase.peaks"), channels=2)
-        print(f"wrote {os.path.getsize(raw_path)} B raw, "
-              f"{os.path.getsize(cache)} B multichannel peak cache")
+win = gui.open(scene(raw_path))
+gui.set(10, sel_start=float(frames // 2), sel_len=float(frames // 4))
+print(f"opened window {win} — drag to select, Shift+drag to pan, wheel to zoom, r to reset")
 
-        with Session.live() as session:  # UDP to 127.0.0.1:57110
-            server = session.server
-            # The playhead's sound source: the render in a server buffer.
-            write_wav(inter, wav_path)
-            bufnum = server.buffers.alloc()
-            server.send_msg("/b_allocRead", bufnum, wav_path)
-            server.add_synthdef(SynthDef(
-                "sampler",
-                out(0.0, play_buf(float(bufnum), 0.0)),
-                out(1.0, play_buf(float(bufnum), 1.0)),
-            ))
-            server.sync()
+# %% [markdown]
+# ## Follow the playhead and read events
+# Re-run `play_pass()` to (re)start a loop pass and re-anchor the orange playhead;
+# `drain_events()` prints any selection changes and notices a window close. When
+# evaluating cells, call these whenever you like.
 
-            with GuiHost() as gui:  # 127.0.0.1:57210 by default
-                gui.define(1, scene(raw_path))
-                # Pre-select the second half from the script; dragging on either
-                # view replaces it and reports back as "selection" events.
-                gui.set(10, sel_start=float(frames // 2), sel_len=float(frames // 4))
-                print("drag to select, Shift+drag to pan, wheel to zoom, r to reset")
-
-                synth = None
-                next_pass = 0.0
-                start = time.monotonic()
-                while time.monotonic() - start < 40.0:
-                    now = time.monotonic()
-                    if now >= next_pass:
-                        # (Re)start a pass and anchor the playhead: the /clock
-                        # sample at which buffer position 0 starts sounding.
-                        if synth is not None:
-                            server.free(synth)
-                        _, args = server.request("/clock", expect=("/clock.reply",))
-                        clock_samples = float(args[0])
-                        synth = server.synth("sampler")
-                        gui.set(10, playhead_at=clock_samples)
-                        gui.set(11, playhead_at=clock_samples)
-                        next_pass = now + seconds + 0.5
-                    msg = gui.poll(timeout=0.05)
-                    if msg is None:
-                        continue
-                    addr, args = msg[0], msg[1:]
-                    if addr == "/gui_closed":
-                        print("window closed")
-                        break
-                    if addr == "/gui_event" and len(args) >= 4 and args[1] == "selection":
-                        wid, _, sel_start, sel_len = args[:4]
-                        print(f"widget {wid}: selection {sel_start:.0f} +{sel_len:.0f} samples "
-                              f"({sel_start / SR:.3f}s +{sel_len / SR:.3f}s)")
-                if synth is not None:
-                    server.free(synth)
-            server.free_buffer(bufnum)
-    finally:
-        for name in os.listdir(tmp):
-            os.remove(os.path.join(tmp, name))
-        os.rmdir(tmp)
+# %%
+_synth = None
+_closed = False
 
 
+def play_pass():
+    """(Re)start a buffer pass and anchor the playhead at the /clock sample where
+    buffer position 0 starts sounding."""
+    global _synth
+    if _synth is not None:
+        server.free(_synth)
+    _, args = server.request("/clock", expect=("/clock.reply",))
+    clock_samples = float(args[0])
+    _synth = server.synth("sampler")
+    gui.set(10, playhead_at=clock_samples)
+    gui.set(11, playhead_at=clock_samples)
+
+
+def drain_events():
+    """Print pending selection events; set ``_closed`` if the window was closed."""
+    global _closed
+    while (msg := gui.poll(0.0)) is not None:
+        addr, args = msg[0], msg[1:]
+        if addr == "/gui_closed":
+            _closed = True
+            print("window closed")
+        elif addr == "/gui_event" and len(args) >= 4 and args[1] == "selection":
+            wid, _, sel_start, sel_len = args[:4]
+            print(f"widget {wid}: selection {sel_start:.0f} +{sel_len:.0f} samples "
+                  f"({sel_start / SR:.3f}s +{sel_len / SR:.3f}s)")
+
+
+play_pass()
+drain_events()
+
+# %% [markdown]
+# ## Edit the open window live
+# The selection and the spectrogram's contrast/scale are all settable from here,
+# without recomputing anything (shader uniforms).
+
+# %%
+gui.set(11, db_floor=-70.0, colormap=1)   # recolor the spectrogram live
+gui.set(10, sel_start=0.0, sel_len=float(frames))  # select the whole phrase
+
+# %% [markdown]
+# ## Close
+# `gui.close(win)` closes the window; `session.close()` stops the GUI and server
+# processes. (Leaving the interpreter would tear them down too, via the launcher's
+# exit hooks — nothing is left running.)
+
+# %%
+def teardown():
+    gui.close(win)
+    server.free_buffer(bufnum)
+    session.close()
+    for name in os.listdir(_tmp):
+        os.remove(os.path.join(_tmp, name))
+    os.rmdir(_tmp)
+
+
+# %% [markdown]
+# ## Plain-script run
+# Run cell by cell in Jupyter / VS Code to keep the window open and drive the
+# handles between cells (``play_pass()``, ``gui.set(...)``, ``gui.close(win)``).
+# Run as a plain script instead — ``python gui_editor.py`` — and this block
+# follows the playhead for a while, honoring a window close, then tears
+# everything down.
+
+# %%
 if __name__ == "__main__":
     try:
-        main()
+        deadline = time.monotonic() + 40.0
+        next_pass = 0.0
+        while time.monotonic() < deadline and not _closed:
+            now = time.monotonic()
+            if now >= next_pass:
+                play_pass()
+                next_pass = now + seconds + 0.5
+            drain_events()
+            time.sleep(0.05)
+        teardown()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))

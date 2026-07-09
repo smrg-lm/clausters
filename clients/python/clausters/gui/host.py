@@ -15,6 +15,8 @@ flow through the responder model (`clausters.responders.OscFunc`) and are wired
 up as the interactive widgets land.
 """
 
+import itertools
+
 from ..base import _osclib
 from ..base._oscinterface import OscUdpInterface
 from .guidef import to_json
@@ -32,13 +34,94 @@ class GuiHost:
     def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT):
         self.target = (host, port)
         self._osc = OscUdpInterface()
+        #: window ids opened through `open` and not yet `close`d (auto-assigned
+        #: ids start here, so they never clash with explicit small ids you pass).
+        self._open: set[int] = set()
+        self._ids = itertools.count(1000)
+        #: the ``clausters-gui`` process this host started and owns (`boot`), if
+        #: any; stopped by `stop`. ``None`` when connected to a host it did not
+        #: start.
+        self._process = None
+
+    @classmethod
+    def boot(cls, server: "str | None" = None, *, shm: "str | None" = None,
+             port: "int | None" = None, verbose: int = 0, data_dir=None,
+             extra_args=(), ready_timeout: float = 10.0) -> "GuiHost":
+        """Start a ``clausters-gui`` visual-server process and return a `GuiHost`
+        connected to and owning it.
+
+        The launcher's ergonomic non-`Session` entry point for the GUI: it spawns
+        the host binary (its client leg pointed at ``server`` and, when given,
+        mapping the audio server's ``shm`` segment), waits until it answers, and
+        hands back a started `GuiHost` whose `stop` also stops the process (as
+        does interpreter exit). Pass a `clausters.defs.Server`'s address and its
+        ``shm``, or let `clausters.Session.gui` wire those for you.
+
+        Args:
+            server: the audio server address as ``"host:port"``, or ``None`` for
+                a host with no client leg.
+            shm: the audio server's shared-memory segment path to map (Unix
+                only), or ``None`` to skip it.
+            port: the GUI host's own UDP port; ``None`` uses the default (57210).
+            verbose: host log verbosity, like `clausters.defs.Server.boot`.
+            data_dir: the host's ``--data-dir`` for its GuiDef store.
+            extra_args: extra host CLI tokens.
+            ready_timeout: seconds to wait for the host to answer.
+
+        Returns:
+            A started, process-owning `GuiHost`.
+        """
+        from ..launch import GUI_DEFAULT_PORT, GuiProcess
+
+        port = GUI_DEFAULT_PORT if port is None else port
+        proc = GuiProcess(server=server, shm=shm, port=port, verbose=verbose,
+                          data_dir=data_dir, extra_args=extra_args,
+                          ready_timeout=ready_timeout).start()
+        host = cls("127.0.0.1", port).start()
+        host._process = proc
+        return host
 
     def start(self) -> "GuiHost":
         self._osc.start()
         return self
 
     def stop(self):
+        """Close the connection and, if this host `boot`-ed a ``clausters-gui``
+        process, stop it too."""
         self._osc.close()
+        if self._process is not None:
+            self._process.close()
+            self._process = None
+
+    # ---- windows: open / close (the tree is a `window`-rooted GuiDef) ----
+
+    def open(self, tree: dict, *blobs: bytes, id: "int | None" = None) -> int:
+        """Open a window from a ``window``-rooted GuiDef and return its id.
+
+        A thin, id-managing wrapper over `define`: with ``id=None`` an id is
+        assigned for you (and remembered so `close` / `close_all` can free it);
+        pass an explicit ``id`` to name the root yourself (e.g. to `set` its
+        children by their own ids later). Editing the open window is `set`;
+        closing it is `close`. Any trailing ``blobs`` ride along exactly as in
+        `define`."""
+        if id is None:
+            id = next(self._ids)
+        self.define(id, tree, *blobs)
+        self._open.add(id)
+        return id
+
+    def close(self, id: int):
+        """Close a window opened with `open` (or any widget subtree): ``/gui_free``
+        destroys the subtree and, for a ``window`` root, its OS window. The
+        counterpart to `open`; `set` edits a window in between."""
+        self.free(id)
+        self._open.discard(id)
+
+    def close_all(self):
+        """Close every window still open through `open`. Handy at the end of a
+        live session before dropping the host."""
+        for id in list(self._open):
+            self.close(id)
 
     def __enter__(self) -> "GuiHost":
         return self.start()

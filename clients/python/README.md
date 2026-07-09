@@ -60,6 +60,12 @@ side through `ctypes`, so client-side math matches the server by construction.
   binary, so `pip install` also puts a `clausters` command on `PATH` that
   behaves exactly like the cargo-built binary (`clausters --tcp`,
   `clausters --nrt score.osc out.wav`, …).
+- `clausters.launch` — launching and owning the server and GUI as child
+  processes. `Session.live()` connects to a running server or starts one if none
+  is up (choosing a shared-memory segment); `Session.gui()` starts the visual
+  server (`clausters-gui`) wired to it; both stop when the session closes or the
+  interpreter exits. Without a `Session`, `Server.boot()` / `GuiHost.boot()` do
+  the same at the object level. Both binaries are bundled in the wheel.
 
 Still to come: a JavaScript client on the same C ABI and OSC contract (see
 [`../PLAN.md`](../PLAN.md)).
@@ -97,6 +103,63 @@ python -m build --wheel clients/python           # -> clients/python/dist/*.whl
 pip install clients/python/dist/clausters-*.whl  # self-contained, no cargo
 ```
 
+The wheel also bundles the **visual server** (the `clausters-gui` host binary),
+built from the independent `clients/gui` workspace and stripped, so the one
+package is self-contained — server *and* GUI. `Session.live` / `Session.gui`
+launch them for you (see the guide); nothing else to install. For a lighter,
+server-only wheel, set `CLAUSTERS_SKIP_GUI_BUILD` when building (a source-checkout
+`clients/gui/target` binary is still used at runtime if present).
+
+### Everything at once, in a clean venv
+
+To exercise the whole thing the way a user gets it — installed, with the server
+and GUI launched from Python — set up a fresh venv. **Run every command from the
+repo root** so the build hook can find the cargo workspace:
+
+```sh
+# 1) a clean venv
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
+
+# 2) the client, editable (builds the cdylibs and the server + clausters-gui
+#    binaries with cargo, then packages them into the one self-contained package):
+pip install -e ./clients/python
+
+# 3) for the test suite:
+pip install pytest
+```
+
+(To evaluate the examples cell by cell, open the `.py` in VS Code with the Python
++ Jupyter extensions, or a Jupyter notebook, and run its `# %%` cells — nothing
+else needed in the venv.)
+
+Then verify, in order:
+
+```sh
+pytest -q clients/python                          # a) the client suite (~146 green)
+clausters --help | head -1                        # b) server binary on PATH
+clausters-gui --help | head -1                    #    visual server on PATH
+python clients/python/examples/embedded.py        # c) sound with nothing to start
+python clients/python/examples/gui_editor.py      # d) client launches server + GUI
+```
+
+In (d) `Session.live` starts a server if none is running (choosing a
+shared-memory segment) and `session.gui()` starts `clausters-gui` wired to it. As
+a script it follows the playhead for a while, then tears everything down. To work
+**interactively** — cell by cell, keeping the window open and driving
+`session`/`gui`/`win` between cells (`gui.set(...)`, `play_pass()`,
+`gui.close(win)`) — open the file's `# %%` cells in VS Code / Jupyter. Either
+way, everything the session started **stops** when it finishes or is closed, so
+nothing is left running (check with `pgrep -laf 'clausters($| )|clausters-gui'`).
+
+Step 2 builds the GUI binary (wgpu, a minute or two the first time); set
+`CLAUSTERS_SKIP_GUI_BUILD=1` to skip it for a faster, server-only install (a
+`clients/gui/target` binary built with `cargo build --release --bin
+clausters-gui` is still used at runtime if present).
+
+The audio paths (`Session.live`/`embed`, the standalone server) need PipeWire
+on Linux; the offline renderer and numeric core (`Session.nrt()`,
+`clausters._native`) run anywhere. The GUI needs a display and a GPU adapter.
+
 Knobs (env vars), all optional:
 
 - `CLAUSTERS_WORKSPACE` — path to the cargo workspace, if it can't be found by
@@ -105,10 +168,17 @@ Knobs (env vars), all optional:
   `embed,realtime`).
 - `CLAUSTERS_SKIP_NATIVE_BUILD` — package the libs already staged in
   `clausters/_libs/` without rebuilding.
+- `CLAUSTERS_SKIP_GUI_BUILD` — don't build/bundle the heavy `clausters-gui`
+  binary (a lighter, server-only wheel).
+- `CLAUSTERS_GUI_FEATURES` — extra cargo features for the GUI binary (e.g.
+  `standalone`); default none.
 - `CLAUSTERS_FFI_LIB` / `CLAUSTERS_LIB` — at runtime, point a loader directly at
   a cdylib (overrides the bundled copy and the workspace `target/`).
 - `CLAUSTERS_BIN` — at runtime, point the `clausters` console script at a
   specific server binary.
+- `CLAUSTERS_GUI_BIN` — at runtime, point the launcher (`Session.gui` /
+  `GuiProcess`) at a specific `clausters-gui` host binary (overrides the bundled
+  copy and the workspace `target/`).
 
 In a plain source checkout (no install), the loaders fall back to the workspace
 `target/{release,debug}/`, so the historic build-and-run workflow still works:

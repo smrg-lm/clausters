@@ -10,9 +10,13 @@ core through artifacts built by cargo, not pip:
 - the ``clausters`` binary (default features) -> the **standalone server**
   shipped as the wheel's ``clausters`` command (a separate, networked or
   shared-memory server process; the embedded one above runs in-process).
+- the ``clausters-gui`` binary (from the **independent** ``clients/gui`` cargo
+  workspace) -> the **visual server** the launcher runs (`clausters.launch` /
+  `clausters.Session.gui`). Bundled here too, stripped, so the one package is
+  self-contained — server *and* GUI, no separate install.
 
 This module builds them and copies the cdylibs into ``clausters/_libs/`` and the
-binary into ``clausters/_bin/`` so they ship with the wheel (and are picked up
+binaries into ``clausters/_bin/`` so they ship with the wheel (and are picked up
 by an editable install). It is imported by ``setup.py`` and is also runnable on
 its own to stage the artifacts ahead of a plain ``pip install``::
 
@@ -26,6 +30,12 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_SKIP_NATIVE_BUILD`` if set, never run cargo; package whatever is
                                  already staged in ``clausters/_libs/`` and
                                  ``clausters/_bin/``.
+- ``CLAUSTERS_SKIP_GUI_BUILD``   if set, do not build/stage the heavy
+                                 ``clausters-gui`` binary (a light, server-only
+                                 wheel); a source checkout's ``clients/gui/target``
+                                 binary is still used at runtime if present.
+- ``CLAUSTERS_GUI_FEATURES``     extra cargo features for the GUI binary (e.g.
+                                 ``standalone``); default none.
 - ``CLAUSTERS_CARGO_FEATURES``   features for the embed library
                                  (default ``embed,realtime``).
 - ``CLAUSTERS_CARGO_PROFILE``    ``release`` (default) or ``debug``.
@@ -52,6 +62,11 @@ _CRATES = {
 def bin_name() -> str:
     """Platform file name of the standalone server binary."""
     return "clausters.exe" if platform.system() == "Windows" else "clausters"
+
+
+def gui_bin_name() -> str:
+    """Platform file name of the ``clausters-gui`` visual-server binary."""
+    return "clausters-gui.exe" if platform.system() == "Windows" else "clausters-gui"
 
 
 def _dylib_names(stem: str) -> list[str]:
@@ -107,6 +122,12 @@ def staged_bin() -> str | None:
     return path if os.path.exists(path) else None
 
 
+def staged_gui_bin() -> str | None:
+    """The GUI binary staged in ``clausters/_bin/``, or ``None``."""
+    path = os.path.join(BIN_DIR, gui_bin_name())
+    return path if os.path.exists(path) else None
+
+
 def _cargo_build(workspace: str, crate: str, features: str | None, profile: str):
     cmd = ["cargo", "build", "-p", crate]
     if profile == "release":
@@ -151,6 +172,52 @@ def stage_binary(workspace: str, profile: str) -> str | None:
     return bin_name()
 
 
+def _gui_workspace(workspace: str) -> str:
+    """The independent ``clausters-gui`` crate directory under the repo root."""
+    return os.path.join(workspace, "clients", "gui")
+
+
+def _cargo_build_gui(workspace: str, profile: str):
+    """Build the ``clausters-gui`` binary in its own workspace (``clients/gui``)."""
+    cmd = ["cargo", "build", "--bin", "clausters-gui"]
+    if profile == "release":
+        cmd.append("--release")
+    features = os.environ.get("CLAUSTERS_GUI_FEATURES")
+    if features:
+        cmd += ["--features", features]
+    print("clausters: " + " ".join(cmd) + " (in clients/gui)")
+    subprocess.run(cmd, cwd=_gui_workspace(workspace), check=True)
+
+
+def stage_gui_binary(workspace: str, profile: str) -> str | None:
+    """Copy the freshly built ``clausters-gui`` binary into ``clausters/_bin/``
+    and strip it. Returns its name or ``None``.
+
+    The binary is heavy chiefly because of debug symbols; a release build is a
+    fraction of a debug one, and stripping the staged copy trims it further
+    (system libraries are dynamic, not embedded), so the wheel stays small
+    without touching the developer's cargo profiles."""
+    src = os.path.join(_gui_workspace(workspace), "target", profile, gui_bin_name())
+    if not os.path.exists(src):
+        return None
+    os.makedirs(BIN_DIR, exist_ok=True)
+    dst = os.path.join(BIN_DIR, gui_bin_name())
+    shutil.copy2(src, dst)
+    _strip(dst)
+    return gui_bin_name()
+
+
+def _strip(path: str):
+    """Best-effort strip of debug symbols from a staged binary (POSIX). A missing
+    ``strip`` tool or a Windows build leaves it as-is."""
+    if os.name == "nt" or shutil.which("strip") is None:
+        return
+    try:
+        subprocess.run(["strip", path], check=True)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+
+
 def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> list[str]:
     """Build the cdylibs (unless skipped) and stage them; return staged names.
 
@@ -165,6 +232,8 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
         already = [os.path.basename(p) for p in staged_libs()]
         if staged_bin():
             already.append(bin_name())
+        if staged_gui_bin():
+            already.append(gui_bin_name())
         reason = ("CLAUSTERS_SKIP_NATIVE_BUILD set" if skip
                   else "cargo workspace not found (set CLAUSTERS_WORKSPACE)")
         if already and (allow_skip or skip):
@@ -189,8 +258,17 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
     binname = stage_binary(workspace, profile)
     if binname:
         copied.append(binname)
+    # The visual server (clausters-gui), from its own workspace, bundled so the
+    # one package is self-contained. Skippable for a light, server-only wheel.
+    if not os.environ.get("CLAUSTERS_SKIP_GUI_BUILD"):
+        _cargo_build_gui(workspace, profile)
+        guiname = stage_gui_binary(workspace, profile)
+        if guiname:
+            copied.append(guiname)
+    elif staged_gui_bin():
+        copied.append(gui_bin_name())
     print("clausters: staged " + ", ".join(copied)
-          + f" into {LIBS_DIR}" + (f" and {BIN_DIR}" if binname else ""))
+          + f" into {LIBS_DIR} and {BIN_DIR}")
     return copied
 
 

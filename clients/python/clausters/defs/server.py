@@ -276,6 +276,53 @@ class Server:
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator()
         self._sync_counter = 0      # ids for /sync -> /synced round-trips
+        #: the server *process* this handle started and owns (`boot`), if any;
+        #: stopped by `close`. ``None`` when attached to a server it did not
+        #: start.
+        self._process = None
+
+    @classmethod
+    def boot(cls, options: "ServerOptions | None" = None, *, shm="auto",
+             verbose: int = 0, data_dir=None, server_args=(),
+             latency: "float | None" = None, ready_timeout: float = 10.0) -> "Server":
+        """Start a **separate** ``clausters`` server process and return a `Server`
+        connected to and owning it.
+
+        The launcher's ergonomic non-`Session` entry point: it spawns the
+        standalone server (choosing a shared-memory segment), waits until it
+        answers, and hands back a `Server` whose `close` also stops the process
+        (and interpreter exit stops it too). Pair it with
+        `clausters.gui.GuiHost.boot` for the GUI, or use `clausters.Session.live`
+        for the bundled, clock-included path.
+
+        Args:
+            options: a `ServerOptions` sizing the launched server and this
+                handle's allocators alike; ``None`` uses the server's defaults.
+            shm: the shared-memory segment — ``"auto"`` picks one, a path forces
+                it, ``None`` launches without one. Remembered for a GUI to map.
+            verbose: server log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/
+                ``-vvv``; negative -> ``-q``).
+            data_dir: the server's ``--data-dir``; ``None`` uses its default.
+            server_args: extra server CLI tokens (e.g. ``["--tcp"]``).
+            latency: seconds added to RT timetags (see the constructor).
+            ready_timeout: seconds to wait for the server to answer.
+
+        Returns:
+            A booted `Server`; ``server.shm`` is the segment path (or ``None``).
+        """
+        from ..launch import ServerProcess
+
+        proc = ServerProcess(options, shm=shm, verbose=verbose, data_dir=data_dir,
+                             extra_args=server_args, ready_timeout=ready_timeout).start()
+        server = cls(proc.host, proc.port, latency=latency, options=options)
+        server._process = proc
+        return server
+
+    @property
+    def shm(self) -> "str | None":
+        """The shared-memory segment path of the server this handle `boot`-ed, or
+        ``None`` (attached, or booted without a segment). A GUI maps this."""
+        return getattr(self._process, "shm", None)
 
     # ---- raw OSC: immediate and timed ----
 
@@ -779,4 +826,9 @@ class Server:
         return self
 
     def close(self):
+        """Close the communication interface and, if this handle `boot`-ed a
+        server process, stop it too."""
         self.interface.close()
+        if self._process is not None:
+            self._process.close()
+            self._process = None

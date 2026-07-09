@@ -23,6 +23,8 @@ from . import _libpath
 
 #: server-binary file names across platforms (POSIX / Windows).
 _BIN_NAMES = ("clausters", "clausters.exe")
+#: GUI-host binary file names across platforms.
+_GUI_BIN_NAMES = ("clausters-gui", "clausters-gui.exe")
 
 
 def server_path() -> str:
@@ -38,6 +40,31 @@ def server_path() -> str:
         "clausters: standalone server binary not found. A wheel bundles it; in "
         "a source checkout build it with `cargo build --release --bin clausters` "
         "or point CLAUSTERS_BIN at it."
+    )
+
+
+def gui_path() -> str:
+    """Absolute path to the ``clausters-gui`` visual-server binary, or raise
+    `SystemExit` with a build hint if it cannot be found.
+
+    The binary is bundled in the wheel alongside the server, so an installed
+    package launches the GUI out of the box. Precedence mirrors `server_path`:
+
+    1. the ``CLAUSTERS_GUI_BIN`` override,
+    2. the binary bundled in the wheel (``clausters/_bin/``),
+    3. a source checkout's ``clients/gui/target/{release,debug}/`` (the GUI crate
+       is an independent workspace, so its ``target`` is separate).
+    """
+    candidates = [os.environ.get("CLAUSTERS_GUI_BIN")]
+    candidates += _libpath.bundled_bin_candidates(_GUI_BIN_NAMES)
+    candidates += _libpath.gui_workspace_candidates(_GUI_BIN_NAMES)
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+    raise SystemExit(
+        "clausters-gui: visual-server binary not found. A wheel bundles it; in "
+        "a source checkout build it with `cargo build --release --bin "
+        "clausters-gui` from clients/gui, or point CLAUSTERS_GUI_BIN at it."
     )
 
 
