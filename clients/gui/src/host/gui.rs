@@ -915,7 +915,7 @@ impl App {
             }
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
-                let body = frame::timeline_body(rect, editor.ruler);
+                let body = frame::timeline_body(rect, editor);
                 let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
                 if let Some((start, len, _)) = self.timeline_nav(def_id, id) {
                     if shift {
@@ -1559,7 +1559,7 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some((id, rect, kind)) = self.hit(def_id, cx, cy)
                     && let Some(editor) = kind.editor()
                 {
-                    let body = frame::timeline_body(rect, editor.ruler);
+                    let body = frame::timeline_body(rect, editor);
                     self.zoom_timeline(def_id, id, body, cx, 0.85f64.powf(steps));
                 }
             }

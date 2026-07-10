@@ -160,6 +160,16 @@ def test_clock_beat_second_math():
     assert clk.secs2beats(1.0) == pytest.approx(2.0)
 
 
+def test_clock_bar_beat_reads_the_grid():
+    _ffi_or_skip()
+    clk = TempoClock(tempo=2.0)
+    # An explicit position: beat 9.5 on a 4-beat bar (0-based reads).
+    assert clk.bar(4.0, beats=9.5) == pytest.approx(2.0)
+    assert clk.beat_in_bar(4.0, beats=9.5) == pytest.approx(1.5)
+    # Without a position it reads the clock's current beat (0 while stopped).
+    assert clk.bar(4.0) == pytest.approx(0.0)
+
+
 def test_tcp_interface_constructs_and_frames():
     # C8: no longer a stub. It constructs without connecting and frames an OSC
     # packet with a 4-byte big-endian length prefix (full framing/reassembly

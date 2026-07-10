@@ -18,6 +18,7 @@ use clausters_core::clocksync::SampleClockModel;
 use clausters_core::measure;
 use clausters_core::peaks::{self, MultiPyramid, Pyramid};
 use clausters_core::rng::{Rng, WhiteNoise};
+use clausters_core::scale;
 use clausters_core::tempoclock::{self, Scheduler};
 use clausters_core::window::Window;
 
@@ -35,8 +36,12 @@ mod ws;
 /// `clausters_core_lissajous` stereo-field measurements (shared with the GUI
 /// phasescope so a headless client reads the identical numbers); v8 the
 /// `clausters_core_peaks_multi_*` multichannel peak-pyramid cache (one cache
-/// resource per buffer, all channels — the editor-grade waveform's format).
-pub const CORE_ABI_VERSION: u32 = 8;
+/// resource per buffer, all channels — the editor-grade waveform's format);
+/// v9 the ruler/axis scalars — `clausters_core_hz_to_mel`/`_mel_to_hz`/
+/// `_hz_to_bark`/`_bark_to_hz` (perceptual frequency scales, shared with the
+/// GUI spectrogram axis) and `clausters_core_bar`/`_beat_in_bar` (the bar:beat
+/// read of a quant grid, the display complement of `quant_delay`).
+pub const CORE_ABI_VERSION: u32 = 9;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -340,6 +345,46 @@ pub extern "C" fn clausters_core_unix_to_sample(
 #[unsafe(no_mangle)]
 pub extern "C" fn clausters_core_quant_delay(pos: f64, quant: f64) -> f64 {
     tempoclock::quant_delay(pos, quant)
+}
+
+/// The bar index a beat position falls in on a grid of `quant` beats per bar
+/// (0-based; `quant <= 0` → 0, no bar grid) — the display complement of
+/// [`clausters_core_quant_delay`].
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_bar(beats: f64, quant: f64) -> f64 {
+    tempoclock::bar(beats, quant)
+}
+
+/// The beat within its bar for a beat position on a grid of `quant` beats per
+/// bar (0-based, in `[0, quant)`; `quant <= 0` returns the position itself).
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_beat_in_bar(beats: f64, quant: f64) -> f64 {
+    tempoclock::beat_in_bar(beats, quant)
+}
+
+/// Hertz → mel (O'Shaughnessy), the perceptual frequency scale shared with the
+/// GUI spectrogram axis.
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_hz_to_mel(hz: f64) -> f64 {
+    scale::hz_to_mel(hz)
+}
+
+/// Mel → hertz, the exact inverse of [`clausters_core_hz_to_mel`].
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_mel_to_hz(mel: f64) -> f64 {
+    scale::mel_to_hz(mel)
+}
+
+/// Hertz → bark (Traunmüller closed form; −0.53 at 0 Hz, the axis floor).
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_hz_to_bark(hz: f64) -> f64 {
+    scale::hz_to_bark(hz)
+}
+
+/// Bark → hertz, the analytic inverse of [`clausters_core_hz_to_bark`].
+#[unsafe(no_mangle)]
+pub extern "C" fn clausters_core_bark_to_hz(bark: f64) -> f64 {
+    scale::bark_to_hz(bark)
 }
 
 /// Packs raw NTP-scale seconds (any epoch: Unix + offset for wire timetags,
@@ -800,6 +845,21 @@ mod tests {
             unsafe { clausters_core_degree_to_midinote(-1.0, 5.0, 0.0, major.as_ptr(), 7) },
             59.0
         );
+    }
+
+    #[test]
+    fn ruler_axis_scalars_cross_the_boundary() {
+        // bar:beat reads of the quant grid (the quant_delay complement).
+        assert_eq!(clausters_core_bar(9.5, 4.0), 2.0);
+        assert!((clausters_core_beat_in_bar(9.5, 4.0) - 1.5).abs() < 1e-12);
+        assert_eq!(clausters_core_beat_in_bar(9.5, 0.0), 9.5);
+        // Perceptual frequency scales round-trip through the C surface.
+        for hz in [100.0, 1000.0, 12_000.0] {
+            assert!((clausters_core_mel_to_hz(clausters_core_hz_to_mel(hz)) - hz).abs() < 1e-6);
+            assert!((clausters_core_bark_to_hz(clausters_core_hz_to_bark(hz)) - hz).abs() < 1e-6);
+        }
+        assert!((clausters_core_hz_to_mel(1000.0) - 1000.0).abs() < 0.1);
+        assert!((clausters_core_hz_to_bark(1000.0) - 8.53).abs() < 0.05);
     }
 
     #[test]

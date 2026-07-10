@@ -23,7 +23,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 8
+CORE_ABI_VERSION = 9
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -180,6 +180,16 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # the value/time logic every client shares instead of reimplementing.
     lib.clausters_core_quant_delay.restype = ctypes.c_double
     lib.clausters_core_quant_delay.argtypes = [ctypes.c_double, ctypes.c_double]
+    # Ruler/axis scalars (ABI v9): the bar:beat read of the quant grid and the
+    # perceptual frequency scales shared with the GUI spectrogram axis.
+    for name in ("bar", "beat_in_bar"):
+        fn = getattr(lib, f"clausters_core_{name}")
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_double, ctypes.c_double]
+    for name in ("hz_to_mel", "mel_to_hz", "hz_to_bark", "bark_to_hz"):
+        fn = getattr(lib, f"clausters_core_{name}")
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_double]
     lib.clausters_core_ntp_timetag.restype = ctypes.c_uint64
     lib.clausters_core_ntp_timetag.argtypes = [ctypes.c_double]
     lib.clausters_core_unix_to_ntp.restype = ctypes.c_uint64
@@ -367,6 +377,41 @@ def quant_delay(pos: float, quant: float) -> float:
     grid currently at ``pos`` beats (``quant <= 0`` -> now) — the shared
     quantization rule every client applies."""
     return lib().clausters_core_quant_delay(float(pos), float(quant))
+
+
+def bar(beats: float, quant: float) -> float:
+    """The bar index ``beats`` falls in on a grid of ``quant`` beats per bar
+    (0-based; ``quant <= 0`` -> 0, no bar grid) — the display complement of
+    `quant_delay` for reading a position off the grid."""
+    return lib().clausters_core_bar(float(beats), float(quant))
+
+
+def beat_in_bar(beats: float, quant: float) -> float:
+    """The beat within its bar for ``beats`` on a grid of ``quant`` beats per
+    bar (0-based, in ``[0, quant)``; ``quant <= 0`` returns ``beats``)."""
+    return lib().clausters_core_beat_in_bar(float(beats), float(quant))
+
+
+def hz_to_mel(hz: float) -> float:
+    """Hertz -> mel (O'Shaughnessy), the perceptual frequency scale the GUI
+    spectrogram axis shares."""
+    return lib().clausters_core_hz_to_mel(float(hz))
+
+
+def mel_to_hz(mel: float) -> float:
+    """Mel -> hertz, the exact inverse of `hz_to_mel`."""
+    return lib().clausters_core_mel_to_hz(float(mel))
+
+
+def hz_to_bark(hz: float) -> float:
+    """Hertz -> bark (Traunmüller closed form; -0.53 at 0 Hz, the axis
+    floor a display normalizes against)."""
+    return lib().clausters_core_hz_to_bark(float(hz))
+
+
+def bark_to_hz(bark: float) -> float:
+    """Bark -> hertz, the analytic inverse of `hz_to_bark`."""
+    return lib().clausters_core_bark_to_hz(float(bark))
 
 
 def ntp_timetag(ntp_secs: float) -> int:

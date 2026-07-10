@@ -40,11 +40,38 @@ pub fn hop_capped(total_samples: usize, window_size: usize, hop: usize) -> usize
     hop.max(needed)
 }
 
-/// Frequency axis mapping for the spectrogram's vertical axis.
+/// Frequency axis mapping for the spectrogram's vertical axis. Beyond the
+/// classic linear/log pair, the two perceptual scales (mel and bark) map the
+/// display coordinate through the shared closed forms in
+/// `clausters_core::scale` — the shader carries the identical formulas.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FreqScale {
     Linear,
     Log,
+    Mel,
+    Bark,
+}
+
+impl FreqScale {
+    /// The scale's shader index (the `freq.z` uniform).
+    pub(crate) fn index(self) -> u32 {
+        match self {
+            FreqScale::Linear => 0,
+            FreqScale::Log => 1,
+            FreqScale::Mel => 2,
+            FreqScale::Bark => 3,
+        }
+    }
+
+    /// The next scale in the cycling order (the `L` key).
+    pub(crate) fn next(self) -> FreqScale {
+        match self {
+            FreqScale::Linear => FreqScale::Log,
+            FreqScale::Log => FreqScale::Mel,
+            FreqScale::Mel => FreqScale::Bark,
+            FreqScale::Bark => FreqScale::Linear,
+        }
+    }
 }
 
 /// A short-time Fourier transform: `n_frames` x `n_bins` normalized magnitudes
@@ -190,10 +217,12 @@ impl Stft {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Uniforms {
-    /// x = start_frac, y = len_frac of the visible time window.
+    /// x = start_frac, y = len_frac of the visible time window; z = the
+    /// Nyquist frequency in Hz (the mel/bark mappings need the absolute axis).
     time: [f32; 4],
     /// x = d0, y = d1 of the visible frequency window in display coordinates
-    /// [0, 1]; z = 1.0 for log scale else 0.0; w = normalized log-axis floor.
+    /// [0, 1]; z = the frequency-scale index (0 linear, 1 log, 2 mel,
+    /// 3 bark); w = normalized log-axis floor.
     freq: [f32; 4],
     /// x = lo_frac, y = hi_frac of the display dB window within the stored
     /// reference range (the colour scale); z = colormap index.
@@ -457,7 +486,6 @@ impl SpectrogramView {
         let nb = self.stft.n_bins().max(1) as f64;
         let d0 = (self.freq_view.start / nb) as f32;
         let d1 = ((self.freq_view.start + self.freq_view.len) / nb) as f32;
-        let is_log = self.scale == FreqScale::Log;
         // Bottom of the log axis (~20 Hz), normalized to Nyquist.
         let f_lo = (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5);
 
@@ -466,8 +494,8 @@ impl SpectrogramView {
         let hi = ((self.db_ceil - REF_FLOOR) / span).clamp(0.0, 1.0);
 
         Uniforms {
-            time: [start, len, 0.0, 0.0],
-            freq: [d0, d1, if is_log { 1.0 } else { 0.0 }, f_lo],
+            time: [start, len, self.stft.nyquist(), 0.0],
+            freq: [d0, d1, self.scale.index() as f32, f_lo],
             db: [lo, hi, self.colormap as f32, 0.0],
         }
     }
@@ -493,15 +521,12 @@ impl TimelineView for SpectrogramView {
         self.renderer.draw(pass);
     }
 
-    /// `L` toggles linear/log frequency; `[` / `]` lower/raise the dB floor
-    /// (contrast); `/` cycles the colormap.
+    /// `L` cycles the frequency scale (linear → log → mel → bark); `[` / `]`
+    /// lower/raise the dB floor (contrast); `/` cycles the colormap.
     fn on_char(&mut self, c: char) -> bool {
         match c {
             'l' | 'L' => {
-                self.scale = match self.scale {
-                    FreqScale::Linear => FreqScale::Log,
-                    FreqScale::Log => FreqScale::Linear,
-                };
+                self.scale = self.scale.next();
                 true
             }
             '[' => {

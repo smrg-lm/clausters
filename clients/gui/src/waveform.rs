@@ -199,9 +199,15 @@ fn level_crossfade(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> 
     (lo + (clo - lo) * t, hi + (chi - hi) * t)
 }
 
+/// The vertical margin the trace leaves inside its lane: full-scale amplitude
+/// maps to this fraction of the half-height. Shared with the amplitude ruler
+/// and the cursor readout so a tick labeled 1.0 sits exactly on the trace's
+/// full-scale line.
+pub(crate) const AMP_MARGIN: f32 = 0.92;
+
 /// Map `amp` in [-1, 1] to clip-space y, leaving a small vertical margin.
 fn amp_to_clip(amp: f32) -> f32 {
-    (amp * 0.92).clamp(-1.0, 1.0)
+    (amp * AMP_MARGIN).clamp(-1.0, 1.0)
 }
 
 #[derive(Clone, Copy, PartialEq)]

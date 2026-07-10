@@ -57,6 +57,27 @@ def test_tempoclock_conversions():
     assert n.secs_to_samples(1.0, 48_000.0) == 48_000
 
 
+def test_bar_beat_reads_the_quant_grid():
+    n = _native_or_skip()
+    # Beat 9.5 on a 4-beat bar: bar 2, beat 1.5 within it (0-based) — the
+    # display complement of quant_delay, shared with the GUI's beats ruler.
+    assert n.bar(9.5, 4.0) == pytest.approx(2.0)
+    assert n.beat_in_bar(9.5, 4.0) == pytest.approx(1.5)
+    # No grid: everything is bar 0, the position passes through.
+    assert n.bar(9.5, 0.0) == 0.0
+    assert n.beat_in_bar(9.5, 0.0) == pytest.approx(9.5)
+
+
+def test_perceptual_frequency_scales_round_trip():
+    n = _native_or_skip()
+    # 1 kHz sits at ~1000 mel and ~8.5 bark; the closed forms invert exactly.
+    assert n.hz_to_mel(1000.0) == pytest.approx(1000.0, abs=0.1)
+    assert n.hz_to_bark(1000.0) == pytest.approx(8.53, abs=0.05)
+    for hz in (100.0, 1000.0, 12_000.0):
+        assert n.mel_to_hz(n.hz_to_mel(hz)) == pytest.approx(hz)
+        assert n.bark_to_hz(n.hz_to_bark(hz)) == pytest.approx(hz)
+
+
 def test_osc_bundle_builds():
     msg = osc.message("/s_new", "default", 1000, 1, 0, "freq", 440.0)
     b = osc.score_bundle(0.0, msg)

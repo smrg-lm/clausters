@@ -5,10 +5,12 @@
 // approximation. The same WGSL runs unchanged under WebGPU.
 
 struct Uniforms {
-    // x = start_frac, y = len_frac of the visible time window.
+    // x = start_frac, y = len_frac of the visible time window; z = Nyquist Hz
+    // (the mel/bark mappings need the absolute frequency axis).
     time: vec4<f32>,
     // x = d0, y = d1 of the visible frequency window in display coords [0,1];
-    // z = log flag; w = normalized log-axis floor (e.g. 20 Hz / Nyquist).
+    // z = scale index (0 linear, 1 log, 2 mel, 3 bark); w = normalized
+    // log-axis floor (e.g. 20 Hz / Nyquist).
     freq: vec4<f32>,
     // x = lo_frac, y = hi_frac of the display dB window; z = colormap index.
     db: vec4<f32>,
@@ -72,21 +74,49 @@ fn colormap(t: f32, which: f32) -> vec3<f32> {
     return vec3<f32>(x, x, x);
 }
 
+// Hertz -> mel and its inverse (O'Shaughnessy), the same closed form as
+// `clausters_core::scale` so the ruler ticks land on the shader's rows.
+fn hz_to_mel(f: f32) -> f32 {
+    return 2595.0 * log(1.0 + f / 700.0) / 2.302585092994046;
+}
+fn mel_to_hz(m: f32) -> f32 {
+    return 700.0 * (pow(10.0, m / 2595.0) - 1.0);
+}
+
+// Hertz -> bark and its inverse (Traunmuller's closed form; -0.53 at 0 Hz is
+// the axis floor the display normalizes against), matching the core.
+fn hz_to_bark(f: f32) -> f32 {
+    return 26.81 * f / (1960.0 + f) - 0.53;
+}
+fn bark_to_hz(z: f32) -> f32 {
+    let zc = clamp(z, -0.53, 26.279999);
+    return 1960.0 * (zc + 0.53) / (26.28 - zc);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let t = clamp(u.time.x + in.uv.x * u.time.y, 0.0, 1.0);
 
     // screen_y: 0 at the bottom (low frequency) .. 1 at the top. The visible
     // frequency window is a sub-range of display space; map it to a normalized
-    // bin over the full axis (linear, or geometric for the log scale).
+    // bin over the full axis: linear, geometric (log), or through the
+    // perceptual mel/bark forms over the absolute axis 0..Nyquist.
     let screen_y = 1.0 - in.uv.y;
     let d = clamp(mix(u.freq.x, u.freq.y, screen_y), 0.0, 1.0);
+    let nyq = max(u.time.z, 1.0);
     var bin_norm: f32;
-    if u.freq.z > 0.5 {
+    if u.freq.z < 0.5 {
+        bin_norm = d;
+    } else if u.freq.z < 1.5 {
         // Log axis from the floor (freq.w) up to Nyquist (1.0): f_lo^(1 - d).
         bin_norm = pow(u.freq.w, 1.0 - d);
+    } else if u.freq.z < 2.5 {
+        // Mel axis: even display steps are even mel steps (mel(0) = 0).
+        bin_norm = mel_to_hz(d * hz_to_mel(nyq)) / nyq;
     } else {
-        bin_norm = d;
+        // Bark axis, normalized from the formula's own floor at 0 Hz.
+        let z0 = hz_to_bark(0.0);
+        bin_norm = bark_to_hz(mix(z0, hz_to_bark(nyq), d)) / nyq;
     }
     // Texture row 0 is bin 0 (low frequency), so the bottom shows the lowest.
     let mag = textureSampleLevel(tex, samp, vec2<f32>(t, clamp(bin_norm, 0.0, 1.0)), 0.0).r;

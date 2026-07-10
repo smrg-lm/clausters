@@ -1961,3 +1961,64 @@ Esperado:
 - **Abrir/cerrar ventanas**: `gui.open(scene)` abre la ventana y devuelve su id;
   `gui.close(win)` la cierra; `session.close()` (o salir del intérprete) detiene la
   GUI y el servidor. No hay que abrir ni matar procesos a mano.
+
+## 32. Reglas configurables: unidades por eje + franjas laterales (G20b)
+
+Cada eje de las vistas timeline es ahora una regla con unidades seleccionables,
+dibujada en **su propia franja** al costado de la vista (nada superpuesto a las
+trazas ni al readout), opcional por eje y retuneable en vivo por `/gui_set` —
+lo que permite cablear menús/botones de la misma GUI a las reglas via script.
+El **eje de tiempo** (`ruler`): `"time"`, `"samples"` o `"beats"` (tiempo
+musical `compás:beat` sobre la grilla del cliente: `tempo` en beats/segundo —
+pasá `clock.tempo` directo — `beat_at` el beat de la muestra 0, `quant` los
+beats por compás). El **eje de amplitud** del waveform (`ruler_y`, default
+`"norm"`): `"norm"` [-1, 1], `"db"` (dBFS espejado sobre la línea de silencio),
+`"bits"` (valores de muestra enteros según `bit_depth`, default 16) o
+`"percent"`. El **eje de frecuencia** del espectrograma sigue `freq_scale`:
+`"log"` (default), `"linear"`, `"mel"` o `"bark"` (`log_freq` queda como alias
+legado) — las dos escalas perceptuales re-mapean el shader y la regla con las
+mismas fórmulas cerradas del core (`clausters_core::scale`, FFI CORE_ABI v9;
+en Python `_native.hz_to_mel`/`mel_to_hz`/`hz_to_bark`/`bark_to_hz` y
+`Clock.bar`/`Clock.beat_in_bar` como lectura de la grilla, complemento de
+`quant_delay`).
+
+### Tests automaticos
+
+```sh
+cargo test -p clausters-core             # scale: mel/bark round-trip; tempoclock: bar/beat_in_bar
+cargo test -p clausters-ffi              # los 6 exports nuevos (ABI v9)
+cd clients/gui && cargo test --quiet     # 133 verdes: beats/bar:beat, amp_ticks por unidad,
+                                         # mel/bark vs shader, franjas, parse/apply y back-compat
+cd clients/python && ../../.venv/bin/pytest tests/ -q   # 148 verdes (wrappers + Clock)
+```
+
+### Manual con ventana: las reglas (`gui_rulers.py`)
+
+Igual que `gui_editor.py`, el ejemplo arranca solo el servidor y la GUI (venv
+con `pip install -e ./clients/python`; tras recompilar Rust en el checkout,
+refrescar las copias empaquetadas: `cp clients/gui/target/debug/clausters-gui
+clients/python/clausters/_bin/` y `cp target/release/libclausters_ffi.so
+clients/python/clausters/_libs/`).
+
+```sh
+.venv/bin/python clients/python/examples/gui_rulers.py
+```
+
+Esperado:
+
+- Waveform estéreo (dos lanes, regla de amplitud a la izquierda por lane,
+  regla de tiempo abajo) sobre un espectrograma estéreo (regla de Hz a la
+  izquierda), y una fila de controles: tres menús y un toggle.
+- Click en `time axis` cicla time → samples → beats en **ambas** vistas; en
+  beats las etiquetas son `compás:beat` (1-based) con mayores en los límites
+  de compás y subdivisiones binarias al hacer zoom.
+- Click en `amplitude axis` cicla norm → db → bits → percent: la regla del
+  waveform cambia de unidad (db: escalera 0/−6/−12/… espejada; bits: ±32768 en
+  16 bits) y el readout del cursor habla la misma unidad.
+- Click en `frequency scale` cicla log → linear → mel → bark: el espectrograma
+  **se re-mapea** (uniform del shader, cero recómputo) y la regla de Hz mueve
+  sus ticks con el mismo mapeo (1K siempre sobre la fila de 1 kHz).
+- El toggle `vertical rulers` saca/pone las franjas laterales: el cuerpo de la
+  vista se ensancha para ocupar el lugar (las reglas son opcionales por eje).
+- El script imprime cada cambio (`frequency scale -> mel`, ...) — la conexión
+  botón→regla es glue de script: `/gui_event` del menú → `gui.set(...)`.

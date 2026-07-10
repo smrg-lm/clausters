@@ -5192,3 +5192,77 @@ recorded G18 decision) and recomputes `SEGMENT_SIZE` with the tap region
 (660160 for the defaults, matching `src/server/ipc.rs::SEGMENT_SIZE`). The
 Python suite's embed/shm tests un-skip and pass (146 passed, from 136), and the
 `gui_editor.py` scenario runs end to end against the rebuilt libraries.
+
+## G20b — Configurable rulers: units per axis + side strips (2026-07-09)
+
+The G20 rulers deepened into a full unit surface: every axis of the two
+timeline views is a configurable ruler drawn in its own strip beside the view,
+each independently optional, every unit a live `/gui_set` prop — so GUI
+menus/toggles retune the display through plain script glue, with zero
+recompute (painter chrome + shader uniforms).
+
+- **Side strips, not overlays.** `frame::timeline_body` now subtracts a bottom
+  `RULER_H` strip when the x ruler is on *and* a left `RULER_W` strip when the
+  y ruler is on (`ruler_y != "off"`), so rulers never overlay the traces or
+  collide with the cursor readout; the spectrogram's Hz ruler moved from
+  inside the body to the left strip, drawn per lane. The interaction call
+  sites (`gui.rs` selection/pan press, wheel zoom) share the same body, so
+  hit-testing stays consistent.
+- **Time axis in beats.** `ruler: "beats"` joins `"time"`/`"samples"`/`"off"`:
+  musical time on the client's grid — `tempo` in beats/second (the Python
+  `Clock` convention, pass `clock.tempo` straight through), `beat_at` the beat
+  position of buffer sample 0, `quant` the beats per bar. Majors are labeled
+  `bar:beat` (1-based, DAW style) and snap to a musical ladder (binary beat
+  fractions → whole beats → bars → power-of-two bars; every rung divides the
+  next, so bar lines are always majors). Falls back to sample counts when the
+  rate or tempo is unknown.
+- **Amplitude axis on the waveform.** `ruler_y` (default `"norm"`): normalized
+  [-1, 1] (1-2-5 steps), `"percent"` (same geometry, 0–100% labels), `"bits"`
+  (integer sample values at the `bit_depth` prop's resolution, 1-2-5 steps
+  plus the full-scale endpoints the decimal step misses — a 16-bit axis
+  stepping 10000 still labels ±32768) and `"db"` (the fixed dBFS ladder 0…−60
+  mirrored about the −inf center line, each rung placed at `±10^(dB/20)`,
+  crowding rungs dropped). Positions respect the trace's `AMP_MARGIN`
+  (exported from `waveform.rs`), so a tick sits exactly on the amplitude it
+  names; the cursor readout speaks the same unit.
+- **Frequency axis in four scales.** The spectrogram's boolean `log_freq` grew
+  into `freq_scale`: `"linear"`, `"log"`, `"mel"`, `"bark"` (the legacy alias
+  still parses and applies). The perceptual scales are new shader display→bin
+  mappings — `freq.z` became a scale index, Nyquist rides a spare uniform slot
+  — and the ruler/readout invert the identical closed forms, so a tick labeled
+  1 kHz sits on the 1 kHz texture row in all four scales (unit-tested through
+  the shared `display_to_hz`/`hz_to_display` pair). Label thinning is greedy
+  on the perceptual axes, which compress both ends unevenly. `L` in the demo
+  cycles all four.
+- **Placement analysis (the G7b rule; user-directed).** Hertz↔mel
+  (O'Shaughnessy) and hertz↔bark (Traunmüller's closed form, chosen over
+  Zwicker's arctan fit for its exact analytic inverse) landed in the new
+  `clausters_core::scale`; the `bar`/`beat_in_bar` reads of the quant grid
+  landed beside `quant_delay` in `clausters_core::tempoclock` (the *read*
+  complement of scheduling quantization). All six exported over the FFI
+  (CORE_ABI v8 → v9) and wrapped in Python (`_native.hz_to_mel`/…/`bar`/
+  `beat_in_bar`, plus `Clock.bar`/`Clock.beat_in_bar`), so a headless client
+  reads the identical numbers the rulers draw. Tick spacing, the musical step
+  ladder, the dB ladder and the label thinning stay gui-side
+  (`host/ruler.rs`, pure).
+- **Python + example.** `waveform`/`spectrogram` builders grew `ruler_y`,
+  `bit_depth`, `tempo`, `beat_at`, `quant` and `freq_scale`;
+  `examples/gui_rulers.py` renders a stereo phrase offline at a known tempo
+  and wires three menus and a toggle in the same GuiDef to the rulers — the
+  script answers each `/gui_event` with the matching `gui.set`. Fixed while
+  closing: both editor examples unpacked `GuiHost.poll`'s `(addr, args)`
+  return as a flat tuple, silently dropping every event (`gui_editor.py`'s
+  selection prints included); and the developer convenience of refreshing the
+  editable install's `_libs`/`_bin` copies after a rebuild is worth
+  remembering — the stale bundled host was the first "menus do nothing"
+  culprit.
+
+Verified: gui 133 tests (from 119 — beat grid and `bar:beat` labels, per-unit
+amplitude ticks with dB positions checked against `10^(dB/20)`, mel/bark ticks
+round-tripped through the display mapping, strip geometry, parse/apply
+back-compat for `log_freq` and the old `ruler` values), core `scale` +
+`tempoclock` and ffi v9 tests, Python 149 tests, `clippy -D warnings` +
+`cargo fmt --check` clean native and `wasm32` (`check-wasm.sh`), headless E2E
+over the wire in one sandbox invocation (def with the new props parsed, unit
+`/gui_set`s applied, `/gui_info` round-trip) and an interactive windowed pass
+(menu clicks observed switching every axis live).

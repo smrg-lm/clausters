@@ -24,6 +24,8 @@ use std::sync::Arc;
 use clausters_core::osc::OscType;
 use serde_json::Value;
 
+use crate::spectrogram::FreqScale;
+
 use super::canvas;
 use super::guidef::GuiNode;
 
@@ -48,7 +50,7 @@ impl Layout {
     }
 }
 
-/// How an editor-grade view labels its time ruler.
+/// How an editor-grade view labels its time (x) ruler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ruler {
     /// Adaptive clock time (`h:mm:ss.mmm`), falling back to sample counts
@@ -56,6 +58,10 @@ pub enum Ruler {
     Time,
     /// Plain sample counts.
     Samples,
+    /// Musical time on the client's beat grid: `bar:beat` labels from the
+    /// `tempo`/`beat_at`/`quant` props (falls back to sample counts when no
+    /// rate or tempo is known).
+    Beats,
     /// No ruler strip at all.
     Off,
 }
@@ -64,6 +70,7 @@ impl Ruler {
     fn parse(props: &serde_json::Map<String, Value>) -> Ruler {
         match props.get("ruler").and_then(Value::as_str) {
             Some("samples") => Ruler::Samples,
+            Some("beats") => Ruler::Beats,
             Some("off") | Some("none") => Ruler::Off,
             _ => Ruler::Time,
         }
@@ -72,6 +79,7 @@ impl Ruler {
     fn set(&mut self, v: &Value) -> bool {
         match v.as_str() {
             Some("samples") => *self = Ruler::Samples,
+            Some("beats") => *self = Ruler::Beats,
             Some("off") | Some("none") => *self = Ruler::Off,
             Some("time") => *self = Ruler::Time,
             _ => return false,
@@ -80,27 +88,100 @@ impl Ruler {
     }
 }
 
-/// The editor chrome both heavy views share: the time-ruler mode, the sample
-/// rate placing its labels (0 = unknown), a `[sel_start, sel_len)` selection
-/// in sample units (`sel_len <= 0` = none; drawn as an overlay, dragged with
-/// the pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
+/// The vertical (y) ruler of an editor-grade view: the unit its side strip
+/// labels, or `Off` for no strip at all. The waveform reads the amplitude
+/// units (`Norm`/`Db`/`Bits`/`Percent`, default `Norm`); the spectrogram uses
+/// `Hz` (default) or `Off` — its tick *positions* follow the widget's
+/// `freq_scale`, the labels stay in hertz.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RulerY {
+    /// No vertical ruler strip.
+    Off,
+    /// Normalized amplitude in [-1, 1] (the waveform default).
+    Norm,
+    /// dBFS (0 at full scale, symmetric about the zero line).
+    Db,
+    /// Integer sample values at the `bit_depth` prop's resolution.
+    Bits,
+    /// Amplitude as a 0-100% proportion of full scale.
+    Percent,
+    /// Frequency in hertz (the spectrogram default).
+    Hz,
+}
+
+impl RulerY {
+    fn parse(props: &serde_json::Map<String, Value>, default: RulerY) -> RulerY {
+        match props.get("ruler_y").and_then(Value::as_str) {
+            Some(s) => Self::from_str(s).unwrap_or(default),
+            None => default,
+        }
+    }
+
+    fn from_str(s: &str) -> Option<RulerY> {
+        Some(match s {
+            "off" | "none" => RulerY::Off,
+            "norm" | "amp" => RulerY::Norm,
+            "db" | "dbfs" => RulerY::Db,
+            "bits" | "samples" => RulerY::Bits,
+            "percent" => RulerY::Percent,
+            "hz" => RulerY::Hz,
+            _ => return None,
+        })
+    }
+
+    fn set(&mut self, v: &Value) -> bool {
+        match v.as_str().and_then(Self::from_str) {
+            Some(u) => {
+                *self = u;
+                true
+            }
+            None => false,
+        }
+    }
+}
+
+/// The editor chrome both heavy views share: the time-ruler (x) mode and the
+/// vertical (y) ruler unit — each independently switchable off, each drawn in
+/// its own strip beside the body — the sample rate placing the time labels
+/// (0 = unknown), the beat grid of the `beats` ruler (`tempo` in beats per
+/// second — the client `Clock` convention — `beat_at` the beat position of
+/// buffer sample 0, `quant` the beats per bar), the `bit_depth` the `bits`
+/// amplitude unit quantizes to, a `[sel_start, sel_len)` selection in sample
+/// units (`sel_len <= 0` = none; drawn as an overlay, dragged with the
+/// pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
 /// playhead origin `playhead_at` — the engine sample-clock value that maps to
 /// buffer sample 0 (negative = no playhead; the line then tracks
 /// `sample_clock - playhead_at` with zero messages natively).
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,
+    pub ruler_y: RulerY,
     pub sample_rate: f64,
+    pub bit_depth: u32,
+    pub tempo: f64,
+    pub beat_at: f64,
+    pub quant: f64,
     pub sel_start: f64,
     pub sel_len: f64,
     pub playhead_at: f64,
 }
 
 impl EditorProps {
-    fn parse(props: &serde_json::Map<String, Value>) -> EditorProps {
+    /// Parses the shared chrome; `default_y` is the view's own default
+    /// vertical unit (`Norm` for the waveform, `Hz` for the spectrogram).
+    fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
         EditorProps {
             ruler: Ruler::parse(props),
+            ruler_y: RulerY::parse(props, default_y),
             sample_rate: number_f64(props, "sample_rate", 0.0),
+            bit_depth: props
+                .get("bit_depth")
+                .and_then(Value::as_u64)
+                .map(|n| (n as u32).clamp(2, 32))
+                .unwrap_or(16),
+            tempo: number_f64(props, "tempo", 1.0),
+            beat_at: number_f64(props, "beat_at", 0.0),
+            quant: number_f64(props, "quant", 4.0),
             sel_start: number_f64(props, "sel_start", 0.0),
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
@@ -115,7 +196,15 @@ impl EditorProps {
     fn apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "ruler" => self.ruler.set(v),
+            "ruler_y" => self.ruler_y.set(v),
             "sample_rate" => set_f64(&mut self.sample_rate, v),
+            "bit_depth" => v
+                .as_u64()
+                .map(|n| self.bit_depth = (n as u32).clamp(2, 32))
+                .is_some(),
+            "tempo" => set_f64(&mut self.tempo, v),
+            "beat_at" => set_f64(&mut self.beat_at, v),
+            "quant" => set_f64(&mut self.quant, v),
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),
@@ -166,11 +255,13 @@ pub enum WidgetKind {
     /// inline `data`/`blob`; `channels` de-interleaves them and each channel
     /// gets its own analysis, drawn as stacked lanes. `window_size` (a
     /// supported power of two) and `hop` shape the analysis (recompute-time
-    /// props, fixed at def time); the dB window, frequency scale and colormap
-    /// are live shader uniforms (`/gui_set`). `sample_rate` places the
-    /// frequency axis for `path`/inline sources (a fetched `buffer` brings its
-    /// own). `editor` adds the time ruler, selection and playhead; a Hz ruler
-    /// is drawn along the left edge.
+    /// props, fixed at def time); the dB window, frequency scale
+    /// (`freq_scale`: linear/log/mel/bark; `log_freq` is the legacy boolean
+    /// alias) and colormap are live shader uniforms (`/gui_set`).
+    /// `sample_rate` places the frequency axis for `path`/inline sources (a
+    /// fetched `buffer` brings its own). `editor` adds the time ruler,
+    /// selection and playhead; the Hz ruler rides the left strip when
+    /// `ruler_y` is not off, its ticks placed by the active `freq_scale`.
     Spectrogram {
         samples: Arc<[f32]>,
         channels: usize,
@@ -182,7 +273,7 @@ pub enum WidgetKind {
         sample_rate: f64,
         db_floor: f32,
         db_ceil: f32,
-        log_freq: bool,
+        freq_scale: FreqScale,
         colormap: i32,
         editor: EditorProps,
     },
@@ -417,7 +508,7 @@ impl Widget {
                     .map(|n| (n as usize).max(1))
                     .unwrap_or(1),
                 overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
-                editor: EditorProps::parse(&node.props),
+                editor: EditorProps::parse(&node.props, RulerY::Norm),
             },
             "spectrogram" => {
                 let window_size = node
@@ -460,9 +551,9 @@ impl Widget {
                     sample_rate: number_f64(&node.props, "sample_rate", 0.0),
                     db_floor: number(&node.props, "db_floor", -90.0),
                     db_ceil: number(&node.props, "db_ceil", 0.0),
-                    log_freq: node.props.get("log_freq").and_then(truthy).unwrap_or(true),
+                    freq_scale: parse_freq_scale(&node.props),
                     colormap: int_prop(&node.props, "colormap", 0),
-                    editor: EditorProps::parse(&node.props),
+                    editor: EditorProps::parse(&node.props, RulerY::Hz),
                 }
             }
             "meter" => WidgetKind::Meter {
@@ -734,14 +825,22 @@ impl WidgetKind {
             WidgetKind::Spectrogram {
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 colormap,
                 editor,
                 ..
             } => match key {
                 "db_floor" => set_f(db_floor, v),
                 "db_ceil" => set_f(db_ceil, v),
-                "log_freq" => truthy(v).map(|b| *log_freq = b).is_some(),
+                "freq_scale" => v
+                    .as_str()
+                    .and_then(freq_scale_from_str)
+                    .map(|s| *freq_scale = s)
+                    .is_some(),
+                // Legacy boolean alias: 1 -> log, 0 -> linear.
+                "log_freq" => truthy(v)
+                    .map(|b| *freq_scale = if b { FreqScale::Log } else { FreqScale::Linear })
+                    .is_some(),
                 "colormap" => v.as_i64().map(|n| *colormap = n as i32).is_some(),
                 _ => editor.apply(key, v),
             },
@@ -892,6 +991,34 @@ impl WidgetKind {
             _ => false,
         }
     }
+}
+
+/// The `freq_scale` property (`"linear"`/`"log"`/`"mel"`/`"bark"`), falling
+/// back to the legacy `log_freq` boolean (default: log).
+fn parse_freq_scale(props: &serde_json::Map<String, Value>) -> FreqScale {
+    if let Some(s) = props
+        .get("freq_scale")
+        .and_then(Value::as_str)
+        .and_then(freq_scale_from_str)
+    {
+        return s;
+    }
+    if props.get("log_freq").and_then(truthy) == Some(false) {
+        FreqScale::Linear
+    } else {
+        FreqScale::Log
+    }
+}
+
+/// A frequency-scale name as the widget schema spells it.
+fn freq_scale_from_str(s: &str) -> Option<FreqScale> {
+    Some(match s {
+        "linear" | "lin" => FreqScale::Linear,
+        "log" => FreqScale::Log,
+        "mel" => FreqScale::Mel,
+        "bark" => FreqScale::Bark,
+        _ => return None,
+    })
 }
 
 /// A non-negative integer dimension property, defaulted when absent.
@@ -1446,6 +1573,9 @@ mod tests {
         }
         assert!(w.children[0].kind.has_playhead());
         assert!(w.children[0].is_timeline());
+        // The vertical ruler defaults to the normalized amplitude axis.
+        assert_eq!(w.children[0].kind.editor().unwrap().ruler_y, RulerY::Norm);
+        assert_eq!(w.children[0].kind.editor().unwrap().bit_depth, 16);
         // Live `/gui_set`: retune the selection, clear the playhead, switch
         // the ruler off.
         let wf = w.find_mut(1).unwrap();
@@ -1458,6 +1588,38 @@ mod tests {
         assert_eq!(editor.selection(), None, "zero length clears it");
         assert!(!wf.kind.has_playhead());
         assert_eq!(editor.ruler, Ruler::Off);
+    }
+
+    #[test]
+    fn editor_ruler_units_parse_and_apply() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","data":[0.0],"ruler":"beats",
+                 "sample_rate":48000.0,"tempo":2.0,"beat_at":8.0,"quant":3.0,
+                 "ruler_y":"db","bit_depth":24}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        let editor = w.children[0].kind.editor().unwrap();
+        assert_eq!(editor.ruler, Ruler::Beats);
+        assert_eq!(
+            (editor.tempo, editor.beat_at, editor.quant),
+            (2.0, 8.0, 3.0)
+        );
+        assert_eq!(editor.ruler_y, RulerY::Db);
+        assert_eq!(editor.bit_depth, 24);
+        // Every unit is live via `/gui_set` (the button-wiring path).
+        let wf = w.find_mut(1).unwrap();
+        assert!(wf.kind.apply("ruler_y", &Value::from("bits")));
+        assert!(wf.kind.apply("bit_depth", &Value::from(8)));
+        assert!(wf.kind.apply("tempo", &Value::from(1.5)));
+        assert!(wf.kind.apply("quant", &Value::from(4.0)));
+        assert!(wf.kind.apply("beat_at", &Value::from(0.0)));
+        assert!(!wf.kind.apply("ruler_y", &Value::from("nonesuch")));
+        let editor = wf.kind.editor().unwrap();
+        assert_eq!(editor.ruler_y, RulerY::Bits);
+        assert_eq!(editor.bit_depth, 8);
+        assert_eq!((editor.tempo, editor.quant), (1.5, 4.0));
     }
 
     #[test]
@@ -1479,16 +1641,18 @@ mod tests {
                 sample_rate,
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 colormap,
+                editor,
                 ..
             } => {
                 assert_eq!(path.as_deref(), Some(std::path::Path::new("/tmp/a.f32")));
                 assert_eq!((*channels, *window_size, *hop), (2, 1024, 512));
                 assert_eq!(*sample_rate, 44_100.0);
                 assert_eq!((*db_floor, *db_ceil), (-90.0, 0.0));
-                assert!(*log_freq);
+                assert_eq!(*freq_scale, FreqScale::Log, "log is the default scale");
                 assert_eq!(*colormap, 0);
+                assert_eq!(editor.ruler_y, RulerY::Hz, "the Hz ruler defaults on");
             }
             other => panic!("expected spectrogram, got {other:?}"),
         }
@@ -1507,23 +1671,60 @@ mod tests {
         // Live `/gui_set`: the display uniforms retune with zero recompute.
         let sg = w.find_mut(1).unwrap();
         assert!(sg.kind.apply("db_floor", &Value::from(-60.0)));
-        assert!(sg.kind.apply("log_freq", &Value::from(0)));
+        assert!(sg.kind.apply("log_freq", &Value::from(0)), "legacy alias");
         assert!(sg.kind.apply("colormap", &Value::from(1)));
         assert!(sg.kind.apply("sel_start", &Value::from(10.0)));
         match &sg.kind {
             WidgetKind::Spectrogram {
                 db_floor,
-                log_freq,
+                freq_scale,
                 colormap,
                 editor,
                 ..
             } => {
                 assert_eq!(*db_floor, -60.0);
-                assert!(!*log_freq);
+                assert_eq!(*freq_scale, FreqScale::Linear, "log_freq 0 -> linear");
                 assert_eq!(*colormap, 1);
                 assert_eq!(editor.sel_start, 10.0);
             }
             _ => unreachable!(),
+        }
+        // The four-scale prop wins over the legacy alias and applies live.
+        assert!(sg.kind.apply("freq_scale", &Value::from("mel")));
+        assert!(!sg.kind.apply("freq_scale", &Value::from("nonesuch")));
+        assert!(sg.kind.apply("ruler_y", &Value::from("off")));
+        match &sg.kind {
+            WidgetKind::Spectrogram {
+                freq_scale, editor, ..
+            } => {
+                assert_eq!(*freq_scale, FreqScale::Mel);
+                assert_eq!(editor.ruler_y, RulerY::Off);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn spectrogram_freq_scale_prop_parses_all_four() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"spectrogram","data":[0.0],"freq_scale":"bark"},
+                {"id":2,"type":"spectrogram","data":[0.0],"freq_scale":"linear","log_freq":1}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Spectrogram { freq_scale, .. } => {
+                assert_eq!(*freq_scale, FreqScale::Bark)
+            }
+            other => panic!("expected spectrogram, got {other:?}"),
+        }
+        // freq_scale wins over the legacy log_freq when both are present.
+        match &w.children[1].kind {
+            WidgetKind::Spectrogram { freq_scale, .. } => {
+                assert_eq!(*freq_scale, FreqScale::Linear)
+            }
+            other => panic!("expected spectrogram, got {other:?}"),
         }
     }
 

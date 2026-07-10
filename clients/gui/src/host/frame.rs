@@ -29,7 +29,7 @@ use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
-use super::widget::{EditorProps, Ruler, Widget, WidgetKind};
+use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::{BusSource, controls, meters, phasescope, plot, spectrum};
 
 /// The window's clear color (the dark chrome backdrop).
@@ -46,6 +46,9 @@ const LABEL_SCALE: f32 = 2.0;
 // Editor chrome of the timeline views (waveform/spectrogram).
 /// Height of the time-ruler strip under a timeline view, device pixels.
 pub(crate) const RULER_H: f32 = 18.0;
+/// Width of the vertical-ruler strip beside a timeline view, device pixels
+/// (sized for the widest labels: `-32768`, `20K`, `-INF`).
+pub(crate) const RULER_W: f32 = 46.0;
 const VIEW_FIELD: Color = [0.08, 0.09, 0.11, 1.0];
 const VIEW_FRAME: Color = [0.25, 0.45, 0.38, 1.0];
 const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
@@ -139,12 +142,20 @@ pub(crate) fn deinterleave(samples: &[f32], channels: usize) -> Vec<Vec<f32>> {
         .collect()
 }
 
-/// The body a timeline view draws into: its rect minus the time-ruler strip.
-pub(crate) fn timeline_body(rect: Rect, ruler: Ruler) -> Rect {
-    if ruler == Ruler::Off {
-        return rect;
+/// The body a timeline view draws into: its rect minus the time-ruler strip
+/// under it (when the x ruler is on) and the vertical-ruler strip to its left
+/// (when the y ruler is on) — each ruler gets its own space instead of
+/// overlaying the view.
+pub(crate) fn timeline_body(rect: Rect, editor: &EditorProps) -> Rect {
+    let (mut x, mut w, mut h) = (rect.x, rect.w, rect.h);
+    if editor.ruler != Ruler::Off {
+        h = (h - RULER_H).max(0.0);
     }
-    Rect::new(rect.x, rect.y, rect.w, (rect.h - RULER_H).max(0.0))
+    if editor.ruler_y != RulerY::Off {
+        x += RULER_W.min(w);
+        w = (w - RULER_W).max(0.0);
+    }
+    Rect::new(x, rect.y, w, h)
 }
 
 /// A placed `plot` widget and the data its (static) draw needs, copied out of
@@ -177,7 +188,7 @@ enum TimelineKind {
     Spectrogram {
         db_floor: f32,
         db_ceil: f32,
-        log_freq: bool,
+        freq_scale: FreqScale,
         colormap: i32,
     },
 }
@@ -263,20 +274,38 @@ pub(crate) fn lane_rect(body: Rect, lanes: usize, ch: usize) -> Rect {
     Rect::new(body.x, body.y + ch as f32 * h, body.w, h)
 }
 
-/// Draws the time-ruler strip under `body` for the visible `nav` window.
-fn draw_time_ruler(mesh: &mut Mesh, rect: Rect, body: Rect, nav: &View, rate: f64, mode: Ruler) {
-    if mode == Ruler::Off {
+/// The time-ruler unit of `editor` (the beats grid rides its props).
+fn time_unit(editor: &EditorProps) -> TimeUnit {
+    match editor.ruler {
+        Ruler::Samples => TimeUnit::Samples,
+        Ruler::Beats => TimeUnit::Beats {
+            tempo: editor.tempo,
+            beat_at: editor.beat_at,
+            quant: editor.quant,
+        },
+        _ => TimeUnit::Seconds,
+    }
+}
+
+/// Draws the time-ruler strip under `body` for the visible `nav` window
+/// (aligned with the body, so its ticks sit under the samples they label even
+/// when a vertical ruler indents the body).
+fn draw_time_ruler(
+    mesh: &mut Mesh,
+    rect: Rect,
+    body: Rect,
+    nav: &View,
+    rate: f64,
+    editor: &EditorProps,
+) {
+    if editor.ruler == Ruler::Off {
         return;
     }
-    let strip = Rect::new(rect.x, body.y + body.h, rect.w, (rect.h - body.h).max(0.0));
+    let strip = Rect::new(body.x, body.y + body.h, body.w, (rect.h - body.h).max(0.0));
     if strip.h <= 2.0 || strip.w <= 0.0 {
         return;
     }
-    let unit = match mode {
-        Ruler::Samples => TimeUnit::Samples,
-        _ => TimeUnit::Seconds,
-    };
-    let ticks = ruler::time_ticks(nav.start, nav.len, strip.w as f64, rate, unit);
+    let ticks = ruler::time_ticks(nav.start, nav.len, strip.w as f64, rate, time_unit(editor));
     for tick in &ticks {
         let x = strip.x + strip.w * tick.frac as f32;
         let h = if tick.label.is_some() { 6.0 } else { 3.0 };
@@ -289,27 +318,31 @@ fn draw_time_ruler(mesh: &mut Mesh, rect: Rect, body: Rect, nav: &View, rate: f6
     }
 }
 
-/// Draws the frequency-ruler ticks and labels along the left edge of a
-/// spectrogram `body` (overlay chrome, on top of the texture), matching the
-/// shader's display→bin mapping.
-fn draw_hz_ruler(mesh: &mut Mesh, body: Rect, nyquist: f64, log: bool, f_lo: f64) {
-    if body.h <= 4.0 {
+/// Draws one lane's worth of vertical-ruler ticks into the strip left of the
+/// body: tick marks against the body's left edge, labels right-aligned beside
+/// them. Shared by the amplitude and frequency rulers — the caller supplies
+/// the lane-relative ticks (frac 0 = lane bottom).
+fn draw_y_ruler(mesh: &mut Mesh, body_x: f32, strip_x: f32, lane: Rect, ticks: &[ruler::Tick]) {
+    if lane.h <= 4.0 {
         return;
     }
-    for tick in ruler::hz_ticks(nyquist, log, f_lo, body.h as f64) {
-        // frac 0 = bottom of the axis.
-        let y = body.y + body.h * (1.0 - tick.frac as f32);
+    for tick in ticks {
+        let y = lane.y + lane.h * (1.0 - tick.frac as f32);
         let w = if tick.label.is_some() { 8.0 } else { 4.0 };
-        mesh.rect(Rect::new(body.x, y, w, 1.0), RULER_LINE);
+        mesh.rect(Rect::new(body_x - w, y, w, 1.0), RULER_LINE);
         if let Some(label) = &tick.label {
-            let ty = (y - 3.0).clamp(body.y, body.y + body.h - super::font::height(RULER_SCALE));
-            super::font::text(mesh, label, body.x + 10.0, ty, RULER_SCALE, RULER_TEXT);
+            let lw = super::font::width(label, RULER_SCALE);
+            let lx = (body_x - 10.0 - lw).max(strip_x);
+            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - super::font::height(RULER_SCALE));
+            super::font::text(mesh, label, lx, ty, RULER_SCALE, RULER_TEXT);
         }
     }
 }
 
 /// Draws the selection overlay and playhead of one timeline view, plus its
-/// cursor readout when the pointer is inside the body.
+/// cursor readout when the pointer is inside the body. `lanes` is the lane
+/// count of the stacked layout (1 when overlaid), so the vertical readout is
+/// computed within the lane under the cursor.
 #[allow(clippy::too_many_arguments)] // one chrome pass, all inputs by value
 fn draw_editor_overlay(
     mesh: &mut Mesh,
@@ -317,8 +350,9 @@ fn draw_editor_overlay(
     body: Rect,
     nav: &View,
     rate: f64,
+    lanes: usize,
     inputs: &FrameInputs,
-    nyquist_log: Option<(f64, bool, f64)>,
+    nyquist_scale: Option<(f64, FreqScale, f64)>,
 ) {
     mesh.border(body, 1.0, VIEW_FRAME);
     // Selection: a translucent band with hard edges, clipped to the body.
@@ -339,34 +373,37 @@ fn draw_editor_overlay(
             mesh.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
         }
     }
-    // Cursor readout: time (per the ruler mode) plus value/frequency, in the
-    // body's bottom-right corner — pure math over the view mapping.
+    // Cursor readout: time (per the ruler mode) plus value/frequency (per the
+    // vertical unit / frequency scale), in the body's bottom-right corner —
+    // pure math over the view mapping, within the lane under the cursor.
     if let Some((cx, cy)) = inputs.cursor
         && body.contains(cx, cy)
     {
         let s = nav.start + nav.len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
-        let time = match item.editor.ruler {
+        let editor = &item.editor;
+        let time = match editor.ruler {
             Ruler::Samples => ruler::readout_samples(s),
+            Ruler::Beats => {
+                ruler::readout_beats(s, rate, editor.tempo, editor.beat_at, editor.quant)
+            }
             _ => ruler::readout_time(s, rate),
         };
-        let text = match nyquist_log {
+        let lane = lane_rect(body, lanes.max(1), lane_at(body, lanes.max(1), cy));
+        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+        let text = match nyquist_scale {
             // Spectrogram: invert the shader's display→bin mapping at the
             // cursor's height for the frequency under it.
-            Some((nyquist, log, f_lo)) => {
-                let lanes_h = body.h as f64;
-                let d = (1.0 - (cy - body.y as f64) / lanes_h).clamp(0.0, 1.0);
-                let f = if log {
-                    nyquist * f_lo.powf(1.0 - d)
-                } else {
-                    nyquist * d
-                };
+            Some((nyquist, scale, f_lo)) => {
+                let f = ruler::display_to_hz(1.0 - rel, nyquist, scale, f_lo);
                 format!("{time}  {} HZ", f.round() as i64)
             }
-            // Waveform: the amplitude at the cursor's height within its lane.
+            // Waveform: the amplitude at the cursor's height within its lane,
+            // in the vertical ruler's unit.
             None => {
-                let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
-                let amp = (1.0 - 2.0 * rel) / 0.92;
-                format!("{time}  {amp:+.2}")
+                let amp = (1.0 - 2.0 * rel) / crate::waveform::AMP_MARGIN as f64;
+                let amp = amp.clamp(-1.0, 1.0);
+                let value = ruler::readout_amp(amp, editor.ruler_y, editor.bit_depth);
+                format!("{time}  {value}")
             }
         };
         let w = super::font::width(&text, RULER_SCALE);
@@ -374,6 +411,12 @@ fn draw_editor_overlay(
         let y = body.y + body.h - super::font::height(RULER_SCALE) - 3.0;
         super::font::text(mesh, &text, x, y.max(body.y), RULER_SCALE, READOUT);
     }
+}
+
+/// The stacked-lane index under window y `cy` (clamped into range).
+fn lane_at(body: Rect, lanes: usize, cy: f64) -> usize {
+    let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
+    ((rel * lanes as f64) as usize).min(lanes.saturating_sub(1))
 }
 
 /// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
@@ -441,7 +484,7 @@ pub(crate) fn render(
             WidgetKind::Spectrogram {
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 colormap,
                 editor,
                 ..
@@ -453,7 +496,7 @@ pub(crate) fn render(
                         kind: TimelineKind::Spectrogram {
                             db_floor: *db_floor,
                             db_ceil: *db_ceil,
-                            log_freq: *log_freq,
+                            freq_scale: *freq_scale,
                             colormap: *colormap,
                         },
                         editor: editor.clone(),
@@ -610,11 +653,12 @@ pub(crate) fn render(
         }
     }
 
-    // Timeline views (waveform/spectrogram): the field and time ruler go into
-    // the base mesh (under the GPU view); the border, lane dividers, Hz ruler,
-    // selection, playhead and cursor readout into the overlay mesh (over it).
+    // Timeline views (waveform/spectrogram): the field, time ruler and the
+    // vertical-ruler strip go into the base mesh (under the GPU view); the
+    // border, lane dividers, selection, playhead and cursor readout into the
+    // overlay mesh (over it).
     for item in &timeline_items {
-        let body = timeline_body(item.rect, item.editor.ruler);
+        let body = timeline_body(item.rect, &item.editor);
         mesh.rect(body, VIEW_FIELD);
         match &item.kind {
             TimelineKind::Waveform { overlay: overlaid } => {
@@ -627,24 +671,30 @@ pub(crate) fn render(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(
-                    &mut mesh,
-                    item.rect,
-                    body,
-                    &slot.nav,
-                    rate,
-                    item.editor.ruler,
-                );
+                draw_time_ruler(&mut mesh, item.rect, body, &slot.nav, rate, &item.editor);
                 let lanes = slot.view.num_channels();
-                if !*overlaid {
-                    for ch in 1..lanes {
-                        let lane = lane_rect(body, lanes, ch);
-                        over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
+                // Overlaid traces share one lane (and one amplitude axis).
+                let draw_lanes = if *overlaid { 1 } else { lanes };
+                if item.editor.ruler_y != RulerY::Off {
+                    for ch in 0..draw_lanes {
+                        let lane = lane_rect(body, draw_lanes, ch);
+                        let ticks = ruler::amp_ticks(
+                            item.editor.ruler_y,
+                            lane.h as f64,
+                            item.editor.bit_depth,
+                        );
+                        draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
                 }
-                draw_editor_overlay(&mut over, item, body, &slot.nav, rate, inputs, None);
+                for ch in 1..draw_lanes {
+                    let lane = lane_rect(body, draw_lanes, ch);
+                    over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
+                }
+                draw_editor_overlay(
+                    &mut over, item, body, &slot.nav, rate, draw_lanes, inputs, None,
+                );
             }
-            TimelineKind::Spectrogram { log_freq, .. } => {
+            TimelineKind::Spectrogram { freq_scale, .. } => {
                 let Some(slot) = spectrograms.get(&item.id) else {
                     over.border(body, 1.0, VIEW_FRAME);
                     continue;
@@ -659,21 +709,17 @@ pub(crate) fn render(
                 } else {
                     nyquist * 2.0
                 };
-                draw_time_ruler(
-                    &mut mesh,
-                    item.rect,
-                    body,
-                    &slot.nav,
-                    rate,
-                    item.editor.ruler,
-                );
+                draw_time_ruler(&mut mesh, item.rect, body, &slot.nav, rate, &item.editor);
                 let lanes = slot.views.len();
                 for ch in 0..lanes {
                     let lane = lane_rect(body, lanes, ch);
                     if ch > 0 {
                         over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
                     }
-                    draw_hz_ruler(&mut over, lane, nyquist, *log_freq, f_lo);
+                    if item.editor.ruler_y != RulerY::Off {
+                        let ticks = ruler::hz_ticks(nyquist, *freq_scale, f_lo, lane.h as f64);
+                        draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
+                    }
                 }
                 draw_editor_overlay(
                     &mut over,
@@ -681,8 +727,9 @@ pub(crate) fn render(
                     body,
                     &slot.nav,
                     rate,
+                    lanes,
                     inputs,
-                    Some((nyquist, *log_freq, f_lo)),
+                    Some((nyquist, *freq_scale, f_lo)),
                 );
             }
         }
@@ -715,7 +762,7 @@ pub(crate) fn render(
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
     for item in &timeline_items {
-        let body = timeline_body(item.rect, item.editor.ruler);
+        let body = timeline_body(item.rect, &item.editor);
         match &item.kind {
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
@@ -726,17 +773,17 @@ pub(crate) fn render(
             TimelineKind::Spectrogram {
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 colormap,
             } => {
                 if let Some(slot) = spectrograms.get_mut(&item.id) {
-                    let scale = if *log_freq {
-                        FreqScale::Log
-                    } else {
-                        FreqScale::Linear
-                    };
                     for view in &mut slot.views {
-                        view.set_display(*db_floor, *db_ceil, scale, (*colormap).max(0) as u32);
+                        view.set_display(
+                            *db_floor,
+                            *db_ceil,
+                            *freq_scale,
+                            (*colormap).max(0) as u32,
+                        );
                         view.upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
                     }
                 }
@@ -788,7 +835,7 @@ pub(crate) fn render(
         });
         painter.draw(&mut pass);
         for item in &timeline_items {
-            let body = timeline_body(item.rect, item.editor.ruler);
+            let body = timeline_body(item.rect, &item.editor);
             if body.w < 1.0 || body.h < 1.0 {
                 continue;
             }
@@ -877,12 +924,46 @@ fn clamp_viewport(r: Rect, fb_w: u32, fb_h: u32) -> (f32, f32, f32, f32) {
 mod tests {
     use super::*;
 
+    fn editor(ruler: Ruler, ruler_y: RulerY) -> EditorProps {
+        EditorProps {
+            ruler,
+            ruler_y,
+            sample_rate: 0.0,
+            bit_depth: 16,
+            tempo: 1.0,
+            beat_at: 0.0,
+            quant: 4.0,
+            sel_start: 0.0,
+            sel_len: 0.0,
+            playhead_at: -1.0,
+        }
+    }
+
     #[test]
-    fn timeline_body_reserves_the_ruler_strip() {
+    fn timeline_body_reserves_the_ruler_strips() {
         let rect = Rect::new(10.0, 10.0, 400.0, 200.0);
-        let body = timeline_body(rect, Ruler::Time);
+        // Both rulers on: the body loses the bottom strip and the left strip.
+        let body = timeline_body(rect, &editor(Ruler::Time, RulerY::Norm));
         assert_eq!(body.h, 200.0 - RULER_H);
-        assert_eq!(timeline_body(rect, Ruler::Off), rect);
+        assert_eq!(body.x, 10.0 + RULER_W);
+        assert_eq!(body.w, 400.0 - RULER_W);
+        // Each ruler is independently optional.
+        let x_only = timeline_body(rect, &editor(Ruler::Time, RulerY::Off));
+        assert_eq!((x_only.x, x_only.w), (10.0, 400.0));
+        assert_eq!(x_only.h, 200.0 - RULER_H);
+        let y_only = timeline_body(rect, &editor(Ruler::Off, RulerY::Hz));
+        assert_eq!(y_only.h, 200.0);
+        assert_eq!(y_only.x, 10.0 + RULER_W);
+        assert_eq!(timeline_body(rect, &editor(Ruler::Off, RulerY::Off)), rect);
+    }
+
+    #[test]
+    fn lane_at_picks_the_lane_under_the_cursor() {
+        let body = Rect::new(0.0, 0.0, 400.0, 300.0);
+        assert_eq!(lane_at(body, 3, 50.0), 0);
+        assert_eq!(lane_at(body, 3, 150.0), 1);
+        assert_eq!(lane_at(body, 3, 299.0), 2);
+        assert_eq!(lane_at(body, 3, 1000.0), 2, "clamped");
     }
 
     #[test]

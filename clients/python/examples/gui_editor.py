@@ -182,7 +182,7 @@ def drain_events():
     """Print pending selection events; set ``_closed`` if the window was closed."""
     global _closed
     while (msg := gui.poll(0.0)) is not None:
-        addr, args = msg[0], msg[1:]
+        addr, args = msg  # poll returns (addr, [args...])
         if addr == "/gui_closed":
             _closed = True
             print("window closed")

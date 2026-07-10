@@ -37,6 +37,8 @@
 //!   `FFT`/`IFFT` UGens so the transform lives once.
 //! - [`window`] — the smoothing windows (Hann, Welch, …) the FFT chain applies,
 //!   shared with the clients for bit-identical analysis.
+//! - [`scale`] — perceptual frequency-scale conversions (hertz ↔ mel/bark)
+//!   shared by every frequency-axis display and analysis.
 //! - [`peaks`] — the min/max peak pyramid behind any client's navigable
 //!   waveform view, with its memory-mappable cache. General client
 //!   functionality (not real-time), shared so every client builds the identical
@@ -53,5 +55,6 @@ pub mod measure;
 pub mod osc;
 pub mod peaks;
 pub mod rng;
+pub mod scale;
 pub mod tempoclock;
 pub mod window;

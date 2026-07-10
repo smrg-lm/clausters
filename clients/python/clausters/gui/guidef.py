@@ -137,9 +137,12 @@ def menu(id: int, options, *, index: int | None = None, label: str | None = None
 def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None = None,
              path: str | None = None, cache: str | None = None, channels: int | None = None,
              base_bucket: int | None = None, overlay: bool | None = None,
-             ruler: str | None = None, sample_rate: float | None = None,
-             sel_start: float | None = None, sel_len: float | None = None,
-             playhead_at: float | None = None, **props) -> dict:
+             ruler: str | None = None, ruler_y: str | None = None,
+             bit_depth: int | None = None, sample_rate: float | None = None,
+             tempo: float | None = None, beat_at: float | None = None,
+             quant: float | None = None, sel_start: float | None = None,
+             sel_len: float | None = None, playhead_at: float | None = None,
+             **props) -> dict:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
 
@@ -163,10 +166,20 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
     ``base_bucket`` sets the peak-pyramid bucket size (default 256); for ``path``
     it also keys the sibling cache the host writes beside the file.
 
-    The editor chrome: ``ruler`` labels the time axis — ``"time"`` (the
-    default; clock time, using ``sample_rate`` or the rate the source brings),
-    ``"samples"``, or ``"off"``. ``sel_start``/``sel_len`` set the selection in
-    samples (dragging on the view updates it and emits
+    The rulers (each in its own strip beside the view, each independently
+    switchable off, all live via ``GuiHost.set`` — so a menu or button in the
+    same GUI can retune them): ``ruler`` labels the time axis — ``"time"``
+    (the default; clock time, using ``sample_rate`` or the rate the source
+    brings), ``"samples"``, ``"beats"`` (musical time: ``tempo`` in beats per
+    second — pass ``clock.tempo`` — ``beat_at`` the beat position of sample 0,
+    ``quant`` the beats per bar, labels ``bar:beat``), or ``"off"``.
+    ``ruler_y`` labels the amplitude axis — ``"norm"`` (the default;
+    normalized [-1, 1]), ``"db"`` (dBFS), ``"bits"`` (integer sample values at
+    the ``bit_depth`` resolution, default 16), ``"percent"`` (0-100% of full
+    scale), or ``"off"``.
+
+    The rest of the editor chrome: ``sel_start``/``sel_len`` set the selection
+    in samples (dragging on the view updates it and emits
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock`` sample value that corresponds to buffer position 0 (negative or
@@ -174,8 +187,9 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
-                       ruler=ruler, sample_rate=sample_rate,
-                       sel_start=sel_start, sel_len=sel_len,
+                       ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
+                       sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
+                       quant=quant, sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at)
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
@@ -187,10 +201,12 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
                 channels: int | None = None, window_size: int | None = None,
                 hop: int | None = None, sample_rate: float | None = None,
                 db_floor: float | None = None, db_ceil: float | None = None,
-                log_freq: bool | None = None, colormap: int | None = None,
-                ruler: str | None = None, sel_start: float | None = None,
-                sel_len: float | None = None, playhead_at: float | None = None,
-                **props) -> dict:
+                freq_scale: str | None = None, log_freq: bool | None = None,
+                colormap: int | None = None, ruler: str | None = None,
+                ruler_y: str | None = None, tempo: float | None = None,
+                beat_at: float | None = None, quant: float | None = None,
+                sel_start: float | None = None, sel_len: float | None = None,
+                playhead_at: float | None = None, **props) -> dict:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
@@ -203,18 +219,25 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
     places the frequency axis for ``path``/inline sources (a fetched ``buffer``
     brings its own rate). The display is live (``GuiHost.set``): the dB window
     ``[db_floor, db_ceil]`` (default ``-90``/``0``) controls contrast,
-    ``log_freq`` (default true) the frequency scale, and ``colormap`` picks
-    0 viridis / 1 magma / 2 grayscale. A Hz ruler is drawn along the left edge,
-    matching the axis scale.
+    ``freq_scale`` picks the frequency axis — ``"log"`` (the default),
+    ``"linear"``, ``"mel"`` or ``"bark"`` (``log_freq`` is the legacy boolean
+    alias for the first two) — and ``colormap`` picks 0 viridis / 1 magma /
+    2 grayscale.
 
-    The editor chrome (``ruler``, ``sel_start``/``sel_len``, ``playhead_at``,
-    drag-to-select / Shift+drag pan / wheel zoom) works exactly as on the
-    `waveform`."""
+    The rulers ride their own strips beside the view: ``ruler_y`` (``"hz"``,
+    the default, or ``"off"``) draws the frequency ruler, its tick positions
+    following ``freq_scale``; ``ruler`` labels the time axis exactly as on the
+    `waveform` (``"time"``/``"samples"``/``"beats"`` with
+    ``tempo``/``beat_at``/``quant``, or ``"off"``). The rest of the editor
+    chrome (``sel_start``/``sel_len``, ``playhead_at``, drag-to-select /
+    Shift+drag pan / wheel zoom) also works exactly as on the `waveform`."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
                        sample_rate=sample_rate, db_floor=db_floor,
-                       db_ceil=db_ceil, colormap=colormap, ruler=ruler,
+                       db_ceil=db_ceil, freq_scale=freq_scale,
+                       colormap=colormap, ruler=ruler, ruler_y=ruler_y,
+                       tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at)
     if log_freq is not None:

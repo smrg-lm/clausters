@@ -133,6 +133,22 @@ class TempoClock:
         self._base_secs = self.beats2secs(at)
         self.tempo = tempo
 
+    def bar(self, quant: float, beats: float | None = None) -> float:
+        """The bar index the clock's current beat (or an explicit ``beats``
+        position) falls in on a grid of ``quant`` beats per bar (0-based;
+        ``quant <= 0`` -> 0). The read complement of the ``quant`` argument
+        `play` takes — computed in the native core, so a GUI ruler in beats
+        shows the same bar:beat this returns."""
+        pos = self.beats() if beats is None else beats
+        return _native.bar(pos, quant)
+
+    def beat_in_bar(self, quant: float, beats: float | None = None) -> float:
+        """The beat within its bar for the clock's current beat (or an
+        explicit ``beats`` position) on a grid of ``quant`` beats per bar
+        (0-based, in ``[0, quant)``; ``quant <= 0`` returns the position)."""
+        pos = self.beats() if beats is None else beats
+        return _native.beat_in_bar(pos, quant)
+
     # ---- master-clock lock (sample timebase) ----
 
     def lock_to(self, server, warmup: bool = True, timeout: float = 2.0):

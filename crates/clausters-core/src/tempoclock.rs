@@ -92,6 +92,30 @@ pub fn quant_delay(pos: f64, quant: f64) -> f64 {
     ((pos / quant).ceil() * quant - pos).max(0.0)
 }
 
+/// The bar index a beat position falls in, on a grid of `quant` beats per bar
+/// (0-based: beats `[0, quant)` are bar 0). `quant <= 0` means no bar grid —
+/// everything is bar 0. The complement of [`quant_delay`] for *reading* a
+/// position off the grid (a display, a transport readout) rather than
+/// scheduling onto it.
+#[inline]
+pub fn bar(beats: f64, quant: f64) -> f64 {
+    if quant <= 0.0 {
+        return 0.0;
+    }
+    (beats / quant).floor()
+}
+
+/// The beat within its bar for a beat position on a grid of `quant` beats per
+/// bar (0-based: `[0, quant)`). `quant <= 0` means no bar grid — the position
+/// itself is returned.
+#[inline]
+pub fn beat_in_bar(beats: f64, quant: f64) -> f64 {
+    if quant <= 0.0 {
+        return beats;
+    }
+    beats - bar(beats, quant) * quant
+}
+
 /// One queued event: a beat time and a flat `u64` payload id (the client maps
 /// the id back to its routine — only flat data crosses the boundary).
 #[derive(Clone, Copy, Debug)]
@@ -213,6 +237,22 @@ mod tests {
         assert!((quant_delay(3.5, 4.0) - 0.5).abs() < 1e-12);
         assert!((quant_delay(5.0, 2.0) - 1.0).abs() < 1e-12);
         assert_eq!(quant_delay(3.5, 0.0), 0.0); // no quant -> now
+    }
+
+    #[test]
+    fn bar_and_beat_in_bar_read_the_grid() {
+        // 4 beats per bar: beat 9.5 is bar 2, beat 1.5 within it (0-based).
+        assert_eq!(bar(9.5, 4.0), 2.0);
+        assert!((beat_in_bar(9.5, 4.0) - 1.5).abs() < 1e-12);
+        // On a boundary the beat-in-bar is exactly 0.
+        assert_eq!(bar(8.0, 4.0), 2.0);
+        assert_eq!(beat_in_bar(8.0, 4.0), 0.0);
+        // Negative positions (before the origin) keep the floor convention.
+        assert_eq!(bar(-0.5, 4.0), -1.0);
+        assert!((beat_in_bar(-0.5, 4.0) - 3.5).abs() < 1e-12);
+        // No quant -> no bar grid.
+        assert_eq!(bar(9.5, 0.0), 0.0);
+        assert_eq!(beat_in_bar(9.5, 0.0), 9.5);
     }
 
     #[test]
