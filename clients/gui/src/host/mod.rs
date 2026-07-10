@@ -51,6 +51,7 @@ pub mod plot;
 pub mod registry;
 pub mod ruler;
 pub mod spectrum;
+pub mod timeline;
 pub mod widget;
 
 // The native I/O shell, excluded from `wasm32`: the UDP client leg
@@ -364,6 +365,10 @@ pub struct Host {
     /// store). Enables auto-persist of named GuiDefs and `/gui_load`. Held behind
     /// [`DefStore`] so the dispatch never names the filesystem store.
     store: Option<Box<dyn DefStore>>,
+    /// The shared timeline navigation groups of the linked editor views: one
+    /// horizontal view + selection + playhead per group, referenced by member
+    /// widgets (see [`timeline`]).
+    timelines: timeline::TimelineGroups,
 }
 
 impl Default for Host {
@@ -381,6 +386,7 @@ impl Host {
             bindings: HashMap::new(),
             def_json: HashMap::new(),
             store: None,
+            timelines: timeline::TimelineGroups::default(),
         }
     }
 
@@ -522,6 +528,9 @@ impl Host {
             match Widget::from_node(id, &node, &blobs) {
                 Ok(tree) => {
                     self.window_defs.insert(id, tree);
+                    // The def's timeline views (re)join their navigation
+                    // groups; rebuild semantics for state confined to this def.
+                    self.sync_timeline_groups(Some(id));
                     effects.push(HostEffect::OpenWindow(id));
                 }
                 Err(e) => warn!("{from}: {GUI_DEF} {id}: cannot build window: {e}"),
@@ -589,18 +598,28 @@ impl Host {
             return warn!("{from}: {GUI_SET} {id}: no such widget");
         }
         info!("{from}: {GUI_SET} {id}: updated {keys:?}");
-        // Mirror the change into the typed window tree the front renders.
+        // Mirror the change into the typed window tree the front renders. A
+        // timeline view's shared keys (`view_*`, `sel_*`, `playhead_at`,
+        // `link`) route through its navigation group instead, so a set on any
+        // member applies group-wide (linked views).
+        let mut is_timeline = false;
         if let Some(root) = self.registry.root_of(id)
             && let Some(tree) = self.window_defs.get_mut(&root)
             && let Some(widget) = tree.find_mut(id)
         {
+            is_timeline = widget.is_timeline();
             let mut changed = false;
             for (k, v) in &props {
-                changed |= widget.kind.apply(k, v);
+                if !(is_timeline && timeline::is_timeline_key(k)) {
+                    changed |= widget.kind.apply(k, v);
+                }
             }
             if changed {
                 effects.push(HostEffect::Redraw(root));
             }
+        }
+        if is_timeline {
+            self.set_timeline_props(id, &props, effects);
         }
     }
 
@@ -615,8 +634,10 @@ impl Host {
         if self.window_defs.remove(&id).is_some() {
             effects.push(HostEffect::CloseWindow(id));
         }
-        // A freed widget can no longer forward (its subtree is gone).
+        // A freed widget can no longer forward (its subtree is gone), and its
+        // timeline group state goes with it.
         self.prune_bindings();
+        self.prune_timeline_groups();
         if removed > 0 {
             info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {

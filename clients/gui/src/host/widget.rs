@@ -158,6 +158,13 @@ impl RulerY {
 /// panned with the pointer on the y-ruler strip, settable via `/gui_set` and
 /// reported live as a `"view_y"` event (a non-positive `y_len` resets to the
 /// full axis).
+///
+/// `link` is the widget's **navigation group** (see `host::timeline`): every
+/// timeline view declaring the same link id shares one horizontal view,
+/// selection and playhead — a gesture or `/gui_set` on any member applies to
+/// all of them. Without a `link` the widget navigates alone. The selection
+/// and playhead fields here are the group's mirrored copy (the group is the
+/// single writer once the widget is live); only the y axis stays per-widget.
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,
@@ -172,6 +179,7 @@ pub struct EditorProps {
     pub playhead_at: f64,
     pub y_start: f64,
     pub y_len: f64,
+    pub link: Option<i32>,
 }
 
 impl EditorProps {
@@ -195,6 +203,11 @@ impl EditorProps {
             playhead_at: number_f64(props, "playhead_at", -1.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
+            link: props
+                .get("link")
+                .and_then(Value::as_i64)
+                .filter(|n| *n >= 0)
+                .map(|n| n as i32),
         }
     }
 

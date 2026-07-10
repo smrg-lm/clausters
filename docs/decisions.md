@@ -212,3 +212,39 @@ choices were on the table and both are worth recording:
 The y state is deliberately **per widget** while the horizontal view is slated
 to move into shared navigation groups (linked views): two lanes of one file
 scroll in lockstep in time, but each keeps its own vertical slice.
+
+## Linked views: explicit groups in the host core, shaped for the multitrack view
+
+The linked editor views (a waveform lane and a spectrogram lane navigating as
+one item) settled four decisions:
+
+- **Grouping is explicit — a `link` (int) prop — not implicit by shared
+  source.** An editor item legitimately wants *unlinked* views of one file
+  (compare two zoom levels), and a link legitimately spans sources (aligned
+  takes), so the source is the wrong grouping key on both sides. A negative
+  `link` unlinks live, and the widget carries its current view along
+  (unlink-to-diverge is the workflow); joining an existing group adopts it.
+- **Group events carry the interacted member's id, not a group id.** Every
+  `/gui_event` names a widget id; a group id is not a widget and would fork
+  the event shape. A gesture emits `"view"`/`"selection"` once — linked
+  members repaint but do not re-emit — and a script that cares which lane was
+  touched gets that for free.
+- **Shared chrome is plain composition, not an automatic strip.** A stack of
+  linked lanes that wants one time ruler sets `ruler:"off"` on all but one —
+  existing containers plus existing props, no new container kind, no protocol
+  change. An automatic shared strip would need cross-widget layout coupling
+  for something a prop already expresses.
+- **The group state lives in the host core and navigates in session-timeline
+  units.** The state (horizontal view + selection + playhead anchor, in
+  `host/timeline.rs`) is keyed by group, not by window: membership spans
+  windows and fronts, the group's length is the max over its members'
+  registered data extents (a shorter take just ends earlier), and both fronts
+  drive it through the same `Host` ops — the `/gui_set` interception lives in
+  the core dispatch, so the browser gets group semantics with no front code.
+  This shape is deliberately the seat of the future multitrack (DAW-style)
+  view: a clip item there is a member with a *placement* (a start offset) on
+  the same shared timeline — the one designed extension point; today every
+  member sits at offset 0. Selection/playhead are mirrored group→members'
+  `EditorProps` so everything that reads the widget tree (renderer, playhead
+  animation, readouts) keeps working; the group is the single writer, so the
+  mirrors cannot drift.

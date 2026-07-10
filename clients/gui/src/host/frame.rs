@@ -29,6 +29,7 @@ use super::nodetree::{self, NodeTree};
 use super::paint::{Color, Mesh, Painter};
 use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
+use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::{BusSource, controls, meters, phasescope, plot, spectrum};
 
@@ -60,30 +61,27 @@ const PLAYHEAD: Color = [0.95, 0.55, 0.30, 0.9];
 const READOUT: Color = [0.85, 0.87, 0.90, 0.9];
 use super::ruler::RULER_SCALE;
 
-/// A waveform widget's GPU view plus its own navigation window.
+/// A waveform widget's GPU view. Its navigation window lives in the widget's
+/// timeline group ([`super::timeline`]), not here — a slot is per window, a
+/// group may span windows.
 pub(crate) struct WaveformSlot {
     pub(crate) view: WaveformView,
-    pub(crate) nav: View,
 }
 
-/// A `WaveformSlot` (GPU view + a fresh full-range nav) for ready data.
+/// A `WaveformSlot` (the GPU view) for ready data.
 pub(crate) fn waveform_slot(data: WaveformData, gpu: &Gpu) -> WaveformSlot {
-    let nav = View::full(data.total_samples());
     let view = WaveformView::new(&gpu.device, gpu.config.format, data);
-    WaveformSlot { view, nav }
+    WaveformSlot { view }
 }
 
 /// A spectrogram widget's GPU views — one [`SpectrogramView`] (own STFT and
-/// texture) per channel lane, sharing one navigation window.
+/// texture) per channel lane. Navigation lives in the timeline group.
 pub(crate) struct SpectrogramSlot {
     pub(crate) views: Vec<SpectrogramView>,
-    pub(crate) nav: View,
 }
 
 impl SpectrogramSlot {
-    /// The per-channel sample count the shared nav spans. (Navigation is a
-    /// native interaction today, so the browser build does not call it.)
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    /// The per-channel sample count of this slot's data.
     pub(crate) fn total_samples(&self) -> usize {
         self.views.first().map_or(1, |v| v.total_samples())
     }
@@ -94,17 +92,13 @@ pub(crate) fn spectrogram_slot(stfts: Vec<Stft>, gpu: &Gpu) -> Option<Spectrogra
     if stfts.is_empty() {
         return None;
     }
-    let total = stfts[0].total_samples();
     let views = stfts
         .into_iter()
         .map(|stft| {
             SpectrogramView::new(&gpu.device, &gpu.queue, gpu.config.format, Arc::new(stft))
         })
         .collect();
-    Some(SpectrogramSlot {
-        views,
-        nav: View::full(total),
-    })
+    Some(SpectrogramSlot { views })
 }
 
 /// One STFT per channel for a spectrogram lane set: de-interleaved `channels`,
@@ -234,12 +228,16 @@ pub(crate) struct FrameInputs<'a> {
     /// The pointer position in device pixels, for the cursor readout of the
     /// timeline views (`None` = no pointer over the window).
     pub(crate) cursor: Option<(f64, f64)>,
+    /// The host's timeline navigation groups: each waveform/spectrogram draws
+    /// its group's shared window (linked views navigate as one).
+    pub(crate) timelines: &'a TimelineGroups,
 }
 
 impl Default for FrameInputs<'_> {
     fn default() -> Self {
-        // A 'static empty map for the no-transport case.
+        // 'static empties for the no-transport case.
         static EMPTY: std::sync::OnceLock<HashMap<i32, NodeTree>> = std::sync::OnceLock::new();
+        static NO_GROUPS: std::sync::OnceLock<TimelineGroups> = std::sync::OnceLock::new();
         Self {
             bus: None,
             node_trees: EMPTY.get_or_init(HashMap::new),
@@ -248,8 +246,19 @@ impl Default for FrameInputs<'_> {
             sample_rate: 0.0,
             sample_clock: 0.0,
             cursor: None,
+            timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
         }
     }
+}
+
+/// The navigation window a placed timeline view draws: its group's shared
+/// window, or the full extent of its own data when it is in no group yet (the
+/// defensive fallback; `total` is the slot's sample count).
+fn nav_for(inputs: &FrameInputs, item: &TimelineItem, total: usize) -> View {
+    inputs
+        .timelines
+        .nav(group_key(item.id, item.editor.link))
+        .unwrap_or_else(|| View::full(total))
 }
 
 /// The current value of control bus `bus` from `source` (`0.0` without a source
@@ -671,12 +680,13 @@ pub(crate) fn render(
                     over.border(body, 1.0, VIEW_FRAME);
                     continue;
                 };
+                let nav = nav_for(inputs, item, slot.view.total_samples());
                 let rate = if item.editor.sample_rate > 0.0 {
                     item.editor.sample_rate
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &slot.nav, rate, &item.editor);
+                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor);
                 let lanes = slot.view.num_channels();
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
@@ -698,15 +708,14 @@ pub(crate) fn render(
                     let lane = lane_rect(body, draw_lanes, ch);
                     over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
                 }
-                draw_editor_overlay(
-                    &mut over, item, body, &slot.nav, rate, draw_lanes, inputs, None,
-                );
+                draw_editor_overlay(&mut over, item, body, &nav, rate, draw_lanes, inputs, None);
             }
             TimelineKind::Spectrogram { freq_scale, .. } => {
                 let Some(slot) = spectrograms.get(&item.id) else {
                     over.border(body, 1.0, VIEW_FRAME);
                     continue;
                 };
+                let nav = nav_for(inputs, item, slot.total_samples());
                 let (nyquist, f_lo) = slot
                     .views
                     .first()
@@ -717,7 +726,7 @@ pub(crate) fn render(
                 } else {
                     nyquist * 2.0
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &slot.nav, rate, &item.editor);
+                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor);
                 let lanes = slot.views.len();
                 for ch in 0..lanes {
                     let lane = lane_rect(body, lanes, ch);
@@ -740,7 +749,7 @@ pub(crate) fn render(
                     &mut over,
                     item,
                     body,
-                    &slot.nav,
+                    &nav,
                     rate,
                     lanes,
                     inputs,
@@ -781,10 +790,11 @@ pub(crate) fn render(
         match &item.kind {
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
+                    let nav = nav_for(inputs, item, slot.view.total_samples());
                     slot.view
                         .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
                     slot.view
-                        .upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
+                        .upload(&gpu.device, &gpu.queue, &nav, body.w.max(1.0) as u32);
                 }
             }
             TimelineKind::Spectrogram {
@@ -794,6 +804,7 @@ pub(crate) fn render(
                 colormap,
             } => {
                 if let Some(slot) = spectrograms.get_mut(&item.id) {
+                    let nav = nav_for(inputs, item, slot.total_samples());
                     for view in &mut slot.views {
                         view.set_display(
                             *db_floor,
@@ -802,7 +813,7 @@ pub(crate) fn render(
                             (*colormap).max(0) as u32,
                         );
                         view.set_freq_window(item.editor.y_view().0, item.editor.y_view().1);
-                        view.upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
+                        view.upload(&gpu.device, &gpu.queue, &nav, body.w.max(1.0) as u32);
                     }
                 }
             }
@@ -956,6 +967,7 @@ mod tests {
             playhead_at: -1.0,
             y_start: 0.0,
             y_len: 1.0,
+            link: None,
         }
     }
 

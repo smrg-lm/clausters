@@ -60,6 +60,10 @@ ventana **dibuje y responda**:
   un parámetro (OSC) y leyendo un bus (shm).
 - **Waveform/espectrograma de nivel editor.** `examples/gui_editor.py` →
   multicanal, selección/playhead, crossfade de LOD al hacer zoom.
+- **Vistas enlazadas.** `examples/gui_linked.py` → waveform y espectrograma con
+  `link=1` navegan en bloque: zoom/pan/selección en cualquiera mueve ambos, el
+  script ve un solo stream de eventos, y cambiar `link` en vivo saca/reincorpora
+  una vista (al desvincular conserva su vista y diverge).
 - **Reglas configurables.** `examples/gui_rulers.py` → unidades por eje en franjas
   laterales (tiempo, dB, escalas de frecuencia). Zoom vertical: la rueda sobre la
   franja del eje y acerca (las etiquetas se refinan sin chocar), arrastrar la

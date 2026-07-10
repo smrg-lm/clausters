@@ -143,7 +143,7 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
              quant: float | None = None, sel_start: float | None = None,
              sel_len: float | None = None, playhead_at: float | None = None,
              y_start: float | None = None, y_len: float | None = None,
-             **props) -> dict:
+             link: int | None = None, **props) -> dict:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
 
@@ -189,14 +189,27 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
     units where ``0, 1`` (the default) is the full axis: the wheel over the
     y-ruler strip zooms it, dragging the strip pans it, and every change is
     reported as ``/gui_event id "view_y" y_start y_len`` (a non-positive
-    ``y_len`` resets to the full axis)."""
+    ``y_len`` resets to the full axis).
+
+    ``link`` puts the view in a shared **navigation group**: every timeline
+    view (waveform or spectrogram, in any window) declaring the same ``link``
+    id shares one horizontal view, selection and playhead — a zoom, pan or
+    drag-selection on any member moves all of them, and setting
+    ``view_start``/``view_len`` (samples; a non-positive ``view_len`` resets
+    to the whole timeline), ``sel_start``/``sel_len`` or ``playhead_at`` via
+    ``GuiHost.set`` on any member applies group-wide. Events still emit once,
+    with the interacted member's id. Membership is live: set ``link`` to
+    another group id to move the view, or to a negative value to unlink it
+    (it keeps the view it had). Only the vertical window ``y_start``/``y_len``
+    stays per-view."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
                        ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
-                       playhead_at=playhead_at, y_start=y_start, y_len=y_len)
+                       playhead_at=playhead_at, y_start=y_start, y_len=y_len,
+                       link=link)
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
     return node("waveform", id=id, **extra, **props)
@@ -213,7 +226,8 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
                 beat_at: float | None = None, quant: float | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
                 playhead_at: float | None = None, y_start: float | None = None,
-                y_len: float | None = None, **props) -> dict:
+                y_len: float | None = None, link: int | None = None,
+                **props) -> dict:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
@@ -241,7 +255,11 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
     including the vertical view window ``y_start``/``y_len``, which here
     slices the **frequency display axis** (normalized, ``0, 1`` = the full
     axis, whatever the ``freq_scale``): wheel over the Hz-ruler strip zooms,
-    dragging it pans, changes emit ``/gui_event id "view_y" y_start y_len``."""
+    dragging it pans, changes emit ``/gui_event id "view_y" y_start y_len``.
+
+    ``link`` joins a shared navigation group exactly as on the `waveform` —
+    the classic composition is a waveform lane and a spectrogram lane of the
+    same render under one ``link``, scrolling and selecting in lockstep."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
@@ -250,7 +268,8 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
                        colormap=colormap, ruler=ruler, ruler_y=ruler_y,
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
-                       playhead_at=playhead_at, y_start=y_start, y_len=y_len)
+                       playhead_at=playhead_at, y_start=y_start, y_len=y_len,
+                       link=link)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
     return node("spectrogram", id=id, **extra, **props)

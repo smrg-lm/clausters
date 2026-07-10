@@ -36,7 +36,6 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 use crate::gpu::Gpu;
 use crate::spectrogram::Stft;
 use crate::view::TimelineView;
-use crate::viewport::View;
 use crate::waveform::WaveformData;
 
 use super::bulk::MmapLoader;
@@ -499,6 +498,15 @@ impl App {
             );
             collect_canvases(tree, &gpu, &mut canvases);
         }
+        // Register each loaded view's data extent with its navigation group
+        // (the group timeline spans the longest member).
+        for (wid, slot) in &waveforms {
+            self.host
+                .set_timeline_total(*wid, slot.view.total_samples());
+        }
+        for (wid, slot) in &spectrograms {
+            self.host.set_timeline_total(*wid, slot.total_samples());
+        }
         let painter = Painter::new(&gpu.device, gpu.config.format);
         let overlay = Painter::new(&gpu.device, gpu.config.format);
 
@@ -792,6 +800,9 @@ impl App {
                 _ => continue,
             }
             ws.gpu.window.request_redraw();
+            // The fetched buffer's extent joins the widget's navigation group.
+            self.host
+                .set_timeline_total(want.widget_id, samples.len() / channels);
             // Let the ruler label real time when the widget knew no rate.
             if sample_rate > 0.0
                 && let Some(w) = self
@@ -943,7 +954,7 @@ impl App {
                     return;
                 }
                 let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
-                if let Some((start, len, _)) = self.timeline_nav(def_id, id) {
+                if let Some((start, len, _)) = self.timeline_nav(id) {
                     if shift {
                         // Shift+drag pans the view (the pre-editor gesture).
                         self.set_drag(
@@ -977,37 +988,30 @@ impl App {
         }
     }
 
-    /// The navigation window of timeline view `id` in window `def_id`:
-    /// `(start, len, total_samples)`, whichever slot map holds it.
-    fn timeline_nav(&self, def_id: i32, id: i32) -> Option<(f64, f64, usize)> {
-        let ws = self.windows.get(&def_id)?;
-        if let Some(s) = ws.waveforms.get(&id) {
-            return Some((s.nav.start, s.nav.len, s.view.total_samples()));
+    /// The navigation window of timeline view `id`'s group:
+    /// `(start, len, total)` in timeline samples.
+    fn timeline_nav(&self, id: i32) -> Option<(f64, f64, usize)> {
+        self.host
+            .timeline_nav(id)
+            .map(|(nav, total)| (nav.start, nav.len, total))
+    }
+
+    /// Repaints every window in `roots` (the windows a group mutation touched).
+    fn redraw_all(&self, roots: &[i32]) {
+        for root in roots {
+            self.redraw(*root);
         }
-        ws.spectrograms
-            .get(&id)
-            .map(|s| (s.nav.start, s.nav.len, s.total_samples()))
     }
 
     /// Writes the selection spanning samples `a..b` (any order, clamped to the
-    /// buffer) into timeline view `id`'s editor props and emits the
-    /// `"selection" start len` event to the script.
+    /// timeline) into view `id`'s navigation group — every member follows —
+    /// and emits **one** `"selection" start len` event, carrying the
+    /// interacted member's id.
     fn set_selection(&mut self, def_id: i32, id: i32, a: f64, b: f64) {
-        let Some((_, _, total)) = self.timeline_nav(def_id, id) else {
+        let Some((start, len, roots)) = self.host.select_timeline(id, a, b) else {
             return;
         };
-        let clamp = |s: f64| s.clamp(0.0, total as f64);
-        let (a, b) = (clamp(a), clamp(b));
-        let (start, len) = (a.min(b), (a - b).abs());
-        if let Some(editor) = self
-            .host
-            .window_def_mut(def_id)
-            .and_then(|t| t.find_mut(id))
-            .and_then(|w| w.kind.editor_mut())
-        {
-            editor.sel_start = start;
-            editor.sel_len = len;
-        }
+        self.redraw_all(&roots);
         self.emit(
             def_id,
             id,
@@ -1145,37 +1149,31 @@ impl App {
                 self.set_y_view(def_id, id, start, y_len);
             }
             Some(DragMove::Select(id, body_x, body_w, anchor)) => {
-                let (start, len) = match self.timeline_nav(def_id, id) {
+                let (start, len) = match self.timeline_nav(id) {
                     Some((start, len, _)) => (start, len),
                     None => return,
                 };
                 let cur = start + len * ((cx - body_x) / body_w);
                 self.set_selection(def_id, id, anchor, cur);
-                self.redraw(def_id);
             }
             Some(DragMove::None) | None => {}
         }
     }
 
     fn pan_timeline(&mut self, def_id: i32, id: i32, start: f64, dx_fraction: f64) {
-        if let Some(ws) = self.windows.get_mut(&def_id) {
-            if let Some(slot) = ws.waveforms.get_mut(&id) {
-                let total = slot.view.total_samples();
-                slot.nav
-                    .set_start(start - dx_fraction * slot.nav.len, total);
-            } else if let Some(slot) = ws.spectrograms.get_mut(&id) {
-                let total = slot.total_samples();
-                slot.nav
-                    .set_start(start - dx_fraction * slot.nav.len, total);
-            }
-        }
+        let Some((_, len, _)) = self.timeline_nav(id) else {
+            return;
+        };
+        let roots = self.host.pan_timeline(id, start - dx_fraction * len);
         self.emit_view(def_id, id);
-        self.redraw(def_id);
+        self.redraw_all(&roots);
     }
 
-    /// Emits a timeline view's visible range as a `/gui_event id "view" start len`.
+    /// Emits a timeline view's visible range as a `/gui_event id "view" start len`
+    /// — once per gesture step, carrying the interacted member's id (linked
+    /// members repaint but do not re-emit).
     fn emit_view(&self, def_id: i32, id: i32) {
-        if let Some((start, len, _)) = self.timeline_nav(def_id, id) {
+        if let Some((start, len, _)) = self.timeline_nav(id) {
             self.emit(
                 def_id,
                 id,
@@ -1285,6 +1283,7 @@ impl App {
             sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
             sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
             cursor,
+            timelines: self.host.timelines(),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
@@ -1697,36 +1696,25 @@ impl ApplicationHandler<UserEvent> for App {
 impl App {
     fn zoom_timeline(&mut self, def_id: i32, id: i32, body: Rect, cx: f64, factor: f64) {
         let anchor = ((cx - body.x as f64) / body.w.max(1.0) as f64).clamp(0.0, 1.0);
-        if let Some(ws) = self.windows.get_mut(&def_id) {
-            if let Some(slot) = ws.waveforms.get_mut(&id) {
-                let total = slot.view.total_samples();
-                slot.nav.zoom(factor, anchor, total);
-            } else if let Some(slot) = ws.spectrograms.get_mut(&id) {
-                let total = slot.total_samples();
-                slot.nav.zoom(factor, anchor, total);
-            }
-        }
+        let roots = self.host.zoom_timeline(id, factor, anchor);
         self.emit_view(def_id, id);
-        self.redraw(def_id);
+        self.redraw_all(&roots);
     }
 
     fn reset_timelines(&mut self, def_id: i32) {
         let mut ids: Vec<i32> = Vec::new();
-        if let Some(ws) = self.windows.get_mut(&def_id) {
-            for (id, slot) in &mut ws.waveforms {
-                slot.nav = View::full(slot.view.total_samples());
-                ids.push(*id);
-            }
-            for (id, slot) in &mut ws.spectrograms {
-                slot.nav = View::full(slot.total_samples());
-                ids.push(*id);
-            }
-            ws.gpu.window.request_redraw();
+        if let Some(ws) = self.windows.get(&def_id) {
+            ids.extend(ws.waveforms.keys().copied());
+            ids.extend(ws.spectrograms.keys().copied());
         }
         for id in ids {
+            // The whole group resets (linked members in other windows too).
+            let roots = self.host.reset_timeline(id);
+            self.redraw_all(&roots);
             self.emit_view(def_id, id);
             // The reset also restores the full vertical axis (and reports it).
             self.set_y_view(def_id, id, 0.0, 1.0);
         }
+        self.redraw(def_id);
     }
 }

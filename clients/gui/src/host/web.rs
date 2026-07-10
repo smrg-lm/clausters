@@ -38,6 +38,7 @@ use winit::window::{Window, WindowId};
 use crate::gpu::Gpu;
 use crate::peaks::MultiPyramid;
 use crate::spectrogram::Stft;
+use crate::view::TimelineView;
 use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
@@ -737,17 +738,24 @@ impl WebApp {
             self.pending_bulk.push((widget_id, data));
             return;
         };
+        let mut total = None;
         match data {
             BulkData::Waveform(data) => {
                 let slot = frame::waveform_slot(data, &render.gpu);
+                total = Some(slot.view.total_samples());
                 render.waveforms.insert(widget_id, slot);
             }
             BulkData::Spectrogram(stfts) => {
                 if let Some(slot) = frame::spectrogram_slot(stfts, &render.gpu) {
+                    total = Some(slot.total_samples());
                     render.spectrograms.insert(widget_id, slot);
                 }
             }
             BulkData::Plot(_) => unreachable!("plots are placed in the tree, not the GPU"),
+        }
+        // The loaded extent joins the widget's navigation group.
+        if let Some(total) = total {
+            self.host.set_timeline_total(widget_id, total);
         }
     }
 
@@ -798,9 +806,20 @@ impl WebApp {
         let mut waveforms = HashMap::new();
         let mut spectrograms = HashMap::new();
         build_inline_timelines(tree, &render.gpu, &mut waveforms, &mut spectrograms);
+        // Each inline view's extent joins its navigation group.
+        let mut totals: Vec<(i32, usize)> = Vec::new();
+        totals.extend(
+            waveforms
+                .iter()
+                .map(|(id, s)| (*id, s.view.total_samples())),
+        );
+        totals.extend(spectrograms.iter().map(|(id, s)| (*id, s.total_samples())));
         if let Some(render) = self.render.as_mut() {
             render.waveforms = waveforms;
             render.spectrograms = spectrograms;
+        }
+        for (id, total) in totals {
+            self.host.set_timeline_total(id, total);
         }
     }
 
@@ -825,6 +844,7 @@ impl WebApp {
             sample_rate: self.server_rate,
             sample_clock: self.server_clock,
             cursor: Some(self.cursor),
+            timelines: self.host.timelines(),
             ..Default::default()
         };
         let Some(render) = self.render.as_mut() else {
