@@ -17,6 +17,15 @@ readout), each optional per axis, and each retunable at runtime through
   ``"linear"``, ``"mel"`` or ``"bark"`` (the perceptual scales; the shader's
   display mapping and the ruler share the closed forms in the native core).
 
+Every axis also **navigates vertically**: the mouse wheel over a y-ruler strip
+zooms that axis around the cursor (amplitude on the waveform, frequency on the
+spectrogram), dragging the strip pans it, and ``R`` resets. The visible window
+is the ``y_start``/``y_len`` prop pair (normalized display units, ``0, 1`` =
+the full axis) — settable from the script, reported back as
+``/gui_event id "view_y" y_start y_len`` — and the tick layout is adaptive:
+it measures its actual labels, so zooming any axis keeps revealing finer,
+non-colliding rungs in whatever unit is active.
+
 A stereo phrase is rendered offline at a known tempo, mapped as one raw file,
 and shown in both views; three menus and a toggle drive the units. The script
 drains ``/gui_event`` and translates each menu pick into the matching
@@ -143,6 +152,9 @@ def drain_events() -> None:
             print("window closed")
         elif addr == "/gui_event" and len(args) >= 2 and isinstance(args[1], (int, float)):
             on_event(int(args[0]), args[1])
+        elif addr == "/gui_event" and len(args) >= 4 and args[1] == "view_y":
+            # Vertical zoom/pan on either view (wheel/drag on the y strip).
+            print(f"widget {args[0]} vertical window: start={args[2]:.3f} len={args[3]:.3f}")
 
 
 drain_events()
@@ -169,6 +181,19 @@ print(f"1 kHz is {_native.hz_to_mel(1000.0):.0f} mel, "
 # %%
 gui.set(SPECT, freq_scale="mel")
 gui.set(WAVE, ruler="beats", ruler_y="db")
+
+# %% [markdown]
+# ## Vertical navigation from the script
+# The same ``y_start``/``y_len`` window the wheel and the strip-drag drive is
+# a plain live prop: zoom the waveform into its top half (watch the dB rungs
+# refine) and the spectrogram into the low mids, then reset both.
+
+# %%
+gui.set(WAVE, y_start=0.5, y_len=0.5)     # amplitude axis: the upper half
+gui.set(SPECT, y_start=0.2, y_len=0.35)   # frequency axis: a low-mid band
+time.sleep(2.0)
+gui.set(WAVE, y_len=0.0)                  # <= 0 resets to the full axis
+gui.set(SPECT, y_len=0.0)
 
 # %% [markdown]
 # ## Plain-script run

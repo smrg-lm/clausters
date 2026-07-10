@@ -49,7 +49,7 @@ use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_wi
 use super::nodetree::NodeTree;
 use super::paint::Painter;
 use super::spectrum::SpectrumState;
-use super::widget::{Widget, WidgetKind};
+use super::widget::{RulerY, Widget, WidgetKind};
 use super::{BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls};
 
 /// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
@@ -207,6 +207,16 @@ enum Drag {
         body_x: f64,
         body_w: f64,
         anchor: f64,
+    },
+    /// Panning a timeline view's **vertical** display window from a drag on
+    /// its y-ruler strip: `y_start` is the window snapshot at the press,
+    /// `lane_h` the lane height in device pixels (absolute panning, so a
+    /// clamped edge never drifts).
+    PanY {
+        id: i32,
+        origin_y: f64,
+        y_start: f64,
+        lane_h: f64,
     },
 }
 
@@ -916,6 +926,22 @@ impl App {
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
                 let body = frame::timeline_body(rect, editor);
+                // A press on the y-ruler strip left of the body starts a
+                // vertical pan of the display window (the strip is the y
+                // axis' gesture surface; wheel over it zooms).
+                if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
+                    let lanes = self.timeline_lanes(def_id, id, &kind);
+                    self.set_drag(
+                        def_id,
+                        Drag::PanY {
+                            id,
+                            origin_y: cy,
+                            y_start: editor.y_start,
+                            lane_h: (body.h as f64 / lanes.max(1) as f64).max(1.0),
+                        },
+                    );
+                    return;
+                }
                 let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
                 if let Some((start, len, _)) = self.timeline_nav(def_id, id) {
                     if shift {
@@ -1074,6 +1100,12 @@ impl App {
                     body_w,
                     anchor,
                 } => DragMove::Select(*id, *body_x, *body_w, *anchor),
+                Drag::PanY {
+                    id,
+                    origin_y,
+                    y_start,
+                    lane_h,
+                } => DragMove::PanY(*id, *origin_y, *y_start, *lane_h),
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -1099,6 +1131,18 @@ impl App {
             }
             Some(DragMove::Pan(id, origin_x, start, body_w)) => {
                 self.pan_timeline(def_id, id, start, (cx - origin_x) / body_w);
+            }
+            Some(DragMove::PanY(id, origin_y, y_start, lane_h)) => {
+                // Dragging down moves the window down with the cursor;
+                // absolute from the snapshot, so a clamped edge never drifts.
+                let y_len = self
+                    .host
+                    .window_def(def_id)
+                    .and_then(|t| t.find(id))
+                    .and_then(|w| w.kind.editor())
+                    .map_or(1.0, |e| e.y_len);
+                let start = y_start + (cy - origin_y) / lane_h * y_len;
+                self.set_y_view(def_id, id, start, y_len);
             }
             Some(DragMove::Select(id, body_x, body_w, anchor)) => {
                 let (start, len) = match self.timeline_nav(def_id, id) {
@@ -1142,6 +1186,66 @@ impl App {
                 ],
             );
         }
+    }
+
+    /// The lane count timeline view `id` stacks on screen (overlaid waveform
+    /// traces share one lane) — the divisor for lane-relative y gestures.
+    fn timeline_lanes(&self, def_id: i32, id: i32, kind: &WidgetKind) -> usize {
+        let Some(ws) = self.windows.get(&def_id) else {
+            return 1;
+        };
+        match kind {
+            WidgetKind::Waveform { overlay: true, .. } => 1,
+            WidgetKind::Waveform { .. } => ws
+                .waveforms
+                .get(&id)
+                .map_or(1, |s| s.view.num_channels().max(1)),
+            WidgetKind::Spectrogram { .. } => {
+                ws.spectrograms.get(&id).map_or(1, |s| s.views.len().max(1))
+            }
+            _ => 1,
+        }
+    }
+
+    /// Writes timeline view `id`'s vertical display window (clamped) into its
+    /// editor props and emits the `"view_y" y_start y_len` event — the
+    /// vertical sibling of [`Self::emit_view`]'s range.
+    fn set_y_view(&mut self, def_id: i32, id: i32, start: f64, len: f64) {
+        let (start, len) = crate::viewport::clamp_span(start, len);
+        if let Some(editor) = self
+            .host
+            .window_def_mut(def_id)
+            .and_then(|t| t.find_mut(id))
+            .and_then(|w| w.kind.editor_mut())
+        {
+            (editor.y_start, editor.y_len) = (start, len);
+        }
+        self.emit(
+            def_id,
+            id,
+            vec![
+                OscType::String("view_y".into()),
+                OscType::Float(start as f32),
+                OscType::Float(len as f32),
+            ],
+        );
+        self.redraw(def_id);
+    }
+
+    /// Anchor-preserving vertical zoom of timeline view `id`: `anchor` in
+    /// display coordinates (0 = lane bottom, 1 = lane top).
+    fn zoom_timeline_y(&mut self, def_id: i32, id: i32, factor: f64, anchor: f64) {
+        let Some((y0, ylen)) = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| t.find(id))
+            .and_then(|w| w.kind.editor())
+            .map(|e| (e.y_start, e.y_len))
+        else {
+            return;
+        };
+        let (start, len) = crate::viewport::zoom_span(y0, ylen, factor, anchor);
+        self.set_y_view(def_id, id, start, len);
     }
 
     /// Release: a held button emits 0; a knob/number drag releases its pointer
@@ -1207,6 +1311,7 @@ enum DragMove {
     Vertical(i32, f64, f32),
     Pan(i32, f64, f64, f64),
     Select(i32, f64, f64, f64),
+    PanY(i32, f64, f64, f64),
     None,
 }
 
@@ -1560,7 +1665,18 @@ impl ApplicationHandler<UserEvent> for App {
                     && let Some(editor) = kind.editor()
                 {
                     let body = frame::timeline_body(rect, editor);
-                    self.zoom_timeline(def_id, id, body, cx, 0.85f64.powf(steps));
+                    let factor = 0.85f64.powf(steps);
+                    if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
+                        // Wheel over the y-ruler strip zooms the vertical
+                        // display window, anchored at the cursor's height
+                        // within the lane under it.
+                        let lanes = self.timeline_lanes(def_id, id, &kind);
+                        let lane = frame::lane_rect(body, lanes, frame::lane_at(body, lanes, cy));
+                        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+                        self.zoom_timeline_y(def_id, id, factor, 1.0 - rel);
+                    } else {
+                        self.zoom_timeline(def_id, id, body, cx, factor);
+                    }
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
@@ -1609,6 +1725,8 @@ impl App {
         }
         for id in ids {
             self.emit_view(def_id, id);
+            // The reset also restores the full vertical axis (and reports it).
+            self.set_y_view(def_id, id, 0.0, 1.0);
         }
     }
 }

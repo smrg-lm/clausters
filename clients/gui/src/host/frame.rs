@@ -58,7 +58,7 @@ const SELECTION_FILL: Color = [0.55, 0.75, 0.95, 0.18];
 const SELECTION_EDGE: Color = [0.55, 0.75, 0.95, 0.75];
 const PLAYHEAD: Color = [0.95, 0.55, 0.30, 0.9];
 const READOUT: Color = [0.85, 0.87, 0.90, 0.9];
-const RULER_SCALE: f32 = 1.5;
+use super::ruler::RULER_SCALE;
 
 /// A waveform widget's GPU view plus its own navigation window.
 pub(crate) struct WaveformSlot {
@@ -390,17 +390,21 @@ fn draw_editor_overlay(
         };
         let lane = lane_rect(body, lanes.max(1), lane_at(body, lanes.max(1), cy));
         let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+        // The cursor's height mapped through the visible vertical window into
+        // an absolute display coordinate (0 = axis bottom) — so the readout
+        // names exactly what is under the cursor at any vertical zoom/pan.
+        let display = editor.y_start + (1.0 - rel) * editor.y_len;
         let text = match nyquist_scale {
             // Spectrogram: invert the shader's display→bin mapping at the
             // cursor's height for the frequency under it.
             Some((nyquist, scale, f_lo)) => {
-                let f = ruler::display_to_hz(1.0 - rel, nyquist, scale, f_lo);
+                let f = ruler::display_to_hz(display, nyquist, scale, f_lo);
                 format!("{time}  {} HZ", f.round() as i64)
             }
             // Waveform: the amplitude at the cursor's height within its lane,
             // in the vertical ruler's unit.
             None => {
-                let amp = (1.0 - 2.0 * rel) / crate::waveform::AMP_MARGIN as f64;
+                let amp = (2.0 * display - 1.0) / crate::waveform::AMP_MARGIN as f64;
                 let amp = amp.clamp(-1.0, 1.0);
                 let value = ruler::readout_amp(amp, editor.ruler_y, editor.bit_depth);
                 format!("{time}  {value}")
@@ -414,7 +418,7 @@ fn draw_editor_overlay(
 }
 
 /// The stacked-lane index under window y `cy` (clamped into range).
-fn lane_at(body: Rect, lanes: usize, cy: f64) -> usize {
+pub(crate) fn lane_at(body: Rect, lanes: usize, cy: f64) -> usize {
     let rel = ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
     ((rel * lanes as f64) as usize).min(lanes.saturating_sub(1))
 }
@@ -682,6 +686,8 @@ pub(crate) fn render(
                             item.editor.ruler_y,
                             lane.h as f64,
                             item.editor.bit_depth,
+                            item.editor.y_start,
+                            item.editor.y_len,
                         );
                         draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
@@ -717,7 +723,14 @@ pub(crate) fn render(
                         over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), LANE_DIVIDER);
                     }
                     if item.editor.ruler_y != RulerY::Off {
-                        let ticks = ruler::hz_ticks(nyquist, *freq_scale, f_lo, lane.h as f64);
+                        let ticks = ruler::hz_ticks(
+                            nyquist,
+                            *freq_scale,
+                            f_lo,
+                            lane.h as f64,
+                            item.editor.y_start,
+                            item.editor.y_len,
+                        );
                         draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
                 }
@@ -767,6 +780,8 @@ pub(crate) fn render(
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
                     slot.view
+                        .set_amp_window(item.editor.y_start, item.editor.y_len);
+                    slot.view
                         .upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
                 }
             }
@@ -784,6 +799,7 @@ pub(crate) fn render(
                             *freq_scale,
                             (*colormap).max(0) as u32,
                         );
+                        view.set_freq_window(item.editor.y_start, item.editor.y_len);
                         view.upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
                     }
                 }
@@ -936,6 +952,8 @@ mod tests {
             sel_start: 0.0,
             sel_len: 0.0,
             playhead_at: -1.0,
+            y_start: 0.0,
+            y_len: 1.0,
         }
     }
 

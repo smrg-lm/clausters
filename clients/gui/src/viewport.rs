@@ -66,6 +66,28 @@ impl View {
     }
 }
 
+/// The narrowest a normalized display-axis window may get — the vertical-zoom
+/// floor of the editor views' y axes (amplitude, frequency), which navigate in
+/// display units `[0, 1]` rather than samples.
+pub const MIN_SPAN: f64 = 1e-3;
+
+/// Clamps a normalized display window to `[0, 1]`: the length into
+/// `[MIN_SPAN, 1]`, the start so the window stays inside the axis.
+pub fn clamp_span(start: f64, len: f64) -> (f64, f64) {
+    let len = len.clamp(MIN_SPAN, 1.0);
+    (start.clamp(0.0, 1.0 - len), len)
+}
+
+/// Anchor-preserving zoom of a normalized `[0, 1]` display window — the same
+/// math as [`View::zoom`], in display units: scale `len` by `factor` (<1
+/// zooms in) keeping the point under `anchor` (0 = bottom, 1 = top) fixed,
+/// then clamp to the axis.
+pub fn zoom_span(start: f64, len: f64, factor: f64, anchor: f64) -> (f64, f64) {
+    let pivot = start + len * anchor;
+    let new_len = (len * factor).clamp(MIN_SPAN, 1.0);
+    clamp_span(pivot - new_len * anchor, new_len)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,6 +121,26 @@ mod tests {
         v.zoom(4.0, 0.5, total);
         assert_eq!(v.len, 1000.0);
         assert_eq!(v.start, 0.0);
+    }
+
+    #[test]
+    fn zoom_span_keeps_the_anchor_point_fixed_and_clamps() {
+        let (start, len) = zoom_span(0.0, 1.0, 0.5, 0.75);
+        // The display point at 0.75 stays put across the zoom-in.
+        assert!((start + len * 0.75 - 0.75).abs() < 1e-12);
+        assert_eq!(len, 0.5);
+        // Zooming out past the axis clamps to the full window.
+        assert_eq!(zoom_span(start, len, 4.0, 0.5), (0.0, 1.0));
+        // The zoom-in floor.
+        let (_, tiny) = zoom_span(0.4, MIN_SPAN, 0.1, 0.5);
+        assert_eq!(tiny, MIN_SPAN);
+    }
+
+    #[test]
+    fn clamp_span_keeps_the_window_inside_the_axis() {
+        assert_eq!(clamp_span(0.9, 0.5), (0.5, 0.5));
+        assert_eq!(clamp_span(-0.2, 0.5), (0.0, 0.5));
+        assert_eq!(clamp_span(0.5, 2.0), (0.0, 1.0));
     }
 
     #[test]

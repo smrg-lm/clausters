@@ -151,7 +151,13 @@ impl RulerY {
 /// pointer, round-tripped as a `"selection"` event / `/gui_set`), and the
 /// playhead origin `playhead_at` — the engine sample-clock value that maps to
 /// buffer sample 0 (negative = no playhead; the line then tracks
-/// `sample_clock - playhead_at` with zero messages natively).
+/// `sample_clock - playhead_at` with zero messages natively) — and the
+/// **vertical view window** `y_start`/`y_len` in normalized display units
+/// (`0, 1` = the full axis, the default): the visible slice of the amplitude
+/// axis (waveform) or of the frequency display axis (spectrogram), zoomed and
+/// panned with the pointer on the y-ruler strip, settable via `/gui_set` and
+/// reported live as a `"view_y"` event (a non-positive `y_len` resets to the
+/// full axis).
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,
@@ -164,13 +170,15 @@ pub struct EditorProps {
     pub sel_start: f64,
     pub sel_len: f64,
     pub playhead_at: f64,
+    pub y_start: f64,
+    pub y_len: f64,
 }
 
 impl EditorProps {
     /// Parses the shared chrome; `default_y` is the view's own default
     /// vertical unit (`Norm` for the waveform, `Hz` for the spectrogram).
     fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
-        EditorProps {
+        let mut editor = EditorProps {
             ruler: Ruler::parse(props),
             ruler_y: RulerY::parse(props, default_y),
             sample_rate: number_f64(props, "sample_rate", 0.0),
@@ -185,6 +193,21 @@ impl EditorProps {
             sel_start: number_f64(props, "sel_start", 0.0),
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
+            y_start: number_f64(props, "y_start", 0.0),
+            y_len: number_f64(props, "y_len", 1.0),
+        };
+        editor.clamp_y();
+        editor
+    }
+
+    /// Keeps the vertical view window a valid slice of the display axis: a
+    /// non-positive length resets to the full axis, anything else clamps into
+    /// `[0, 1]` (with the shared zoom floor).
+    fn clamp_y(&mut self) {
+        if self.y_len <= 0.0 {
+            (self.y_start, self.y_len) = (0.0, 1.0);
+        } else {
+            (self.y_start, self.y_len) = crate::viewport::clamp_span(self.y_start, self.y_len);
         }
     }
 
@@ -208,6 +231,16 @@ impl EditorProps {
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),
+            "y_start" => {
+                let ok = set_f64(&mut self.y_start, v);
+                self.clamp_y();
+                ok
+            }
+            "y_len" => {
+                let ok = set_f64(&mut self.y_len, v);
+                self.clamp_y();
+                ok
+            }
             _ => false,
         }
     }
@@ -1620,6 +1653,33 @@ mod tests {
         assert_eq!(editor.ruler_y, RulerY::Bits);
         assert_eq!(editor.bit_depth, 8);
         assert_eq!((editor.tempo, editor.quant), (1.5, 4.0));
+    }
+
+    #[test]
+    fn editor_y_view_parses_clamps_and_applies() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","data":[0.0],"y_start":0.8,"y_len":0.5},
+                {"id":2,"type":"spectrogram","data":[0.0]}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        // The parsed window clamps inside the axis: 0.8 + 0.5 spills, so the
+        // start pulls back to 0.5.
+        let editor = w.children[0].kind.editor().unwrap();
+        assert_eq!((editor.y_start, editor.y_len), (0.5, 0.5));
+        // The default is the full axis.
+        let editor = w.children[1].kind.editor().unwrap();
+        assert_eq!((editor.y_start, editor.y_len), (0.0, 1.0));
+        // Live `/gui_set` zooms and pans; a non-positive length resets.
+        let wf = w.find_mut(1).unwrap();
+        assert!(wf.kind.apply("y_len", &Value::from(0.25)));
+        assert!(wf.kind.apply("y_start", &Value::from(0.7)));
+        let editor = wf.kind.editor().unwrap();
+        assert_eq!((editor.y_start, editor.y_len), (0.7, 0.25));
+        assert!(wf.kind.apply("y_len", &Value::from(0.0)));
+        let editor = wf.kind.editor().unwrap();
+        assert_eq!((editor.y_start, editor.y_len), (0.0, 1.0));
     }
 
     #[test]

@@ -205,9 +205,15 @@ fn level_crossfade(pyramid: &Pyramid, samples_per_px: f64, s0: f64, s1: f64) -> 
 /// full-scale line.
 pub(crate) const AMP_MARGIN: f32 = 0.92;
 
-/// Map `amp` in [-1, 1] to clip-space y, leaving a small vertical margin.
-fn amp_to_clip(amp: f32) -> f32 {
-    (amp * AMP_MARGIN).clamp(-1.0, 1.0)
+/// Maps an amplitude to clip-space y through the visible display window
+/// `[y0, y0 + y_len)` of the vertical axis (`0, 1` = the full lane, where the
+/// map reduces to `amp * AMP_MARGIN`). Display coordinate 0 is the lane
+/// bottom — the same convention the amplitude ruler uses — so a vertical zoom
+/// moves the geometry and the ticks identically. Values outside the window
+/// fall outside clip space and are clipped by the GPU.
+fn amp_to_clip(amp: f32, y0: f64, y_len: f64) -> f32 {
+    let d = (amp * AMP_MARGIN) as f64 * 0.5 + 0.5;
+    (((d - y0) / y_len) * 2.0 - 1.0) as f32
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -325,9 +331,10 @@ impl WaveformRenderer {
     }
 
     /// Rebuild and upload the geometry for `view` at `render_width_px` device
-    /// pixels. O(render_width_px) per channel in the column regimes, O(visible
-    /// samples) in the line regime - both bounded by the screen, never by the
-    /// buffer.
+    /// pixels, mapping amplitudes through the visible vertical display window
+    /// `y_window` (`(0.0, 1.0)` = the full axis). O(render_width_px) per
+    /// channel in the column regimes, O(visible samples) in the line regime -
+    /// both bounded by the screen, never by the buffer.
     pub fn upload_geometry(
         &mut self,
         device: &wgpu::Device,
@@ -335,10 +342,12 @@ impl WaveformRenderer {
         data: &WaveformData,
         view: &View,
         render_width_px: u32,
+        y_window: (f64, f64),
     ) {
         let w = render_width_px.max(1);
         let spp = view.samples_per_px(w);
         let total = data.total_samples();
+        let (y0, y_len) = (y_window.0, y_window.1.max(crate::viewport::MIN_SPAN));
         self.scratch.clear();
         self.ranges.clear();
 
@@ -357,7 +366,8 @@ impl WaveformRenderer {
                     for i in a..b {
                         let frac = (i as f64 - view.start) / view.len;
                         let x = (-1.0 + 2.0 * frac) as f32;
-                        self.push_vertex(x, amp_to_clip(data.samples_at(ch, i)), color);
+                        let y = amp_to_clip(data.samples_at(ch, i), y0, y_len);
+                        self.push_vertex(x, y, color);
                     }
                 }
                 Mode::Columns => {
@@ -367,8 +377,8 @@ impl WaveformRenderer {
                         let (lo, hi) = data.column(ch, spp, s0, s1);
                         let xl = -1.0 + 2.0 * (x as f32 / w as f32);
                         let xr = -1.0 + 2.0 * ((x + 1) as f32 / w as f32);
-                        let yb = amp_to_clip(lo.min(0.0));
-                        let yt = amp_to_clip(hi.max(0.0));
+                        let yb = amp_to_clip(lo.min(0.0), y0, y_len);
+                        let yt = amp_to_clip(hi.max(0.0), y0, y_len);
                         self.push_vertex(xl, yb, color);
                         self.push_vertex(xr, yb, color);
                         self.push_vertex(xr, yt, color);
@@ -434,21 +444,38 @@ impl WaveformRenderer {
     }
 }
 
-/// A `WaveformData` paired with its renderer, satisfying [`TimelineView`].
+/// A `WaveformData` paired with its renderer and its vertical (amplitude)
+/// display window, satisfying [`TimelineView`].
 pub struct WaveformView {
     data: WaveformData,
     renderer: WaveformRenderer,
+    /// Visible window of the vertical display axis, normalized (`0, 1` =
+    /// no zoom) — the amplitude analogue of the spectrogram's frequency view.
+    amp_window: (f64, f64),
+    /// `amp_window.0` snapshot for absolute drag panning.
+    drag_amp_start: f64,
 }
 
 impl WaveformView {
     pub fn new(device: &wgpu::Device, format: wgpu::TextureFormat, data: WaveformData) -> Self {
         let renderer = WaveformRenderer::new(device, format);
-        Self { data, renderer }
+        Self {
+            data,
+            renderer,
+            amp_window: (0.0, 1.0),
+            drag_amp_start: 0.0,
+        }
     }
 
     /// How many channels the underlying data holds (the lane count).
     pub fn num_channels(&self) -> usize {
         self.data.num_channels()
+    }
+
+    /// Sets the visible vertical display window (normalized; clamped) — the
+    /// live `y_start`/`y_len` props of the editor-grade widget.
+    pub fn set_amp_window(&mut self, start: f64, len: f64) {
+        self.amp_window = crate::viewport::clamp_span(start, len);
     }
 
     /// Record one channel's draw (see [`WaveformRenderer::draw_channel`]).
@@ -469,12 +496,36 @@ impl TimelineView for WaveformView {
         view: &View,
         render_width_px: u32,
     ) {
-        self.renderer
-            .upload_geometry(device, queue, &self.data, view, render_width_px);
+        self.renderer.upload_geometry(
+            device,
+            queue,
+            &self.data,
+            view,
+            render_width_px,
+            self.amp_window,
+        );
     }
 
     fn draw(&self, pass: &mut wgpu::RenderPass<'_>) {
         self.renderer.draw(pass);
+    }
+
+    fn on_vertical_zoom(&mut self, factor: f64, anchor: f64) -> bool {
+        let (start, len) = self.amp_window;
+        self.amp_window = crate::viewport::zoom_span(start, len, factor, anchor);
+        true
+    }
+
+    fn on_vertical_drag_begin(&mut self) {
+        self.drag_amp_start = self.amp_window.0;
+    }
+
+    fn on_vertical_drag(&mut self, total: f64) -> bool {
+        // Dragging down (total > 0) moves the window down with the cursor.
+        // Absolute from the snapshot.
+        let len = self.amp_window.1;
+        self.amp_window = crate::viewport::clamp_span(self.drag_amp_start + total * len, len);
+        true
     }
 }
 
@@ -547,6 +598,20 @@ mod tests {
         let (_, hi0) = data.column(0, 8.0, 0.0, 64.0);
         let (_, hi1) = data.column(1, 8.0, 0.0, 64.0);
         assert!(hi0 >= 0.4 && (0.2..0.4).contains(&hi1));
+    }
+
+    #[test]
+    fn amp_window_maps_geometry_through_the_visible_slice() {
+        // Full axis: the classic margin map.
+        assert!((amp_to_clip(1.0, 0.0, 1.0) - AMP_MARGIN).abs() < 1e-6);
+        assert_eq!(amp_to_clip(0.0, 0.0, 1.0), 0.0);
+        // Zoomed into the top half: the zero line sits at the bottom edge of
+        // clip space and full scale inside the window, above the middle.
+        assert!((amp_to_clip(0.0, 0.5, 0.5) - -1.0).abs() < 1e-6);
+        let full = amp_to_clip(1.0, 0.5, 0.5);
+        assert!((0.0..1.0).contains(&full), "{full}");
+        // A value below the window leaves clip space (the GPU clips it).
+        assert!(amp_to_clip(-1.0, 0.5, 0.5) < -1.0);
     }
 
     #[test]

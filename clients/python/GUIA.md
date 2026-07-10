@@ -61,7 +61,9 @@ ventana **dibuje y responda**:
 - **Waveform/espectrograma de nivel editor.** `examples/gui_editor.py` →
   multicanal, selección/playhead, crossfade de LOD al hacer zoom.
 - **Reglas configurables.** `examples/gui_rulers.py` → unidades por eje en franjas
-  laterales (tiempo, dB, escalas de frecuencia).
+  laterales (tiempo, dB, escalas de frecuencia). Zoom vertical: la rueda sobre la
+  franja del eje y acerca (las etiquetas se refinan sin chocar), arrastrar la
+  franja panea, `R` resetea; el script también lo mueve con `y_start`/`y_len`.
 - **Bulk data.** `examples/gui_bulk.py` → un buffer grande se transfiere por
   recurso compartido / fetch y se muestra.
 - **Bundle standalone.** `examples/gui_standalone.py` autorea un bundle (GuiDef +

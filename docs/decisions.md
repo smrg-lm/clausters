@@ -181,3 +181,34 @@ A two-step decision worth recording because it reversed:
   the callback must fit its **worst** block. An RT-scheduled callback is the
   standard operating mode of every production Linux audio client, so the default
   came back, kept safe by the guard.
+
+## Editor y-axis navigation: gestures on the ruler strip, props in display units
+
+The editor-grade views (waveform, spectrogram) zoom and pan vertically. Two
+choices were on the table and both are worth recording:
+
+- **Gesture surface: the y-ruler strip, not a modifier over the body.** The
+  wheel over the strip zooms the vertical axis (anchored at the cursor's
+  height within its lane) and dragging the strip pans it; the wheel over the
+  body stays horizontal zoom and plain/Shift drag keep selecting/panning time.
+  Spatial separation needs no modifier chord, leaves every existing body
+  gesture untouched, and matches the audio-editor convention (Audacity, most
+  DAWs pan/zoom an axis by grabbing its ruler). The strip only exists when the
+  ruler is on (`ruler_y != "off"`), which is also the only time the axis has
+  visual feedback to navigate against.
+- **Prop shape: `y_start`/`y_len` in normalized display units** (0 = axis
+  bottom, 1 = top; `0, 1` = no zoom; a non-positive `y_len` resets), on the
+  shared `EditorProps` — not amplitude/frequency values. Display coordinates
+  make the anchor math linear and unit-independent: the spectrogram's window
+  survives switching `freq_scale` between linear/log/mel/bark without moving
+  what is on screen (the nonlinearity lives entirely in the shader's
+  display→bin mapping, as with the shader uniforms), and the waveform's
+  amplitude window composes with `AMP_MARGIN` without leaking it into the
+  protocol. Living in the widget tree means `/gui_set` drives it and the
+  browser renders it through the same shared frame path with zero extra wiring
+  (display + `/gui_set` parity; drag/wheel gestures stay native for now).
+  Changes emit `/gui_event id "view_y" y_start y_len`, the `"view"` posture.
+
+The y state is deliberately **per widget** while the horizontal view is slated
+to move into shared navigation groups (linked views): two lanes of one file
+scroll in lockstep in time, but each keeps its own vertical slice.

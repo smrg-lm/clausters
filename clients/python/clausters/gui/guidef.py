@@ -142,6 +142,7 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
              tempo: float | None = None, beat_at: float | None = None,
              quant: float | None = None, sel_start: float | None = None,
              sel_len: float | None = None, playhead_at: float | None = None,
+             y_start: float | None = None, y_len: float | None = None,
              **props) -> dict:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
@@ -183,14 +184,19 @@ def waveform(id: int, *, data=None, blob: int | None = None, buffer: int | None 
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock`` sample value that corresponds to buffer position 0 (negative or
-    omitted = no playhead)."""
+    omitted = no playhead). ``y_start``/``y_len`` set the **vertical view
+    window** — the visible slice of the amplitude axis, in normalized display
+    units where ``0, 1`` (the default) is the full axis: the wheel over the
+    y-ruler strip zooms it, dragging the strip pans it, and every change is
+    reported as ``/gui_event id "view_y" y_start y_len`` (a non-positive
+    ``y_len`` resets to the full axis)."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
                        ruler=ruler, ruler_y=ruler_y, bit_depth=bit_depth,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
-                       playhead_at=playhead_at)
+                       playhead_at=playhead_at, y_start=y_start, y_len=y_len)
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
     return node("waveform", id=id, **extra, **props)
@@ -206,7 +212,8 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
                 ruler_y: str | None = None, tempo: float | None = None,
                 beat_at: float | None = None, quant: float | None = None,
                 sel_start: float | None = None, sel_len: float | None = None,
-                playhead_at: float | None = None, **props) -> dict:
+                playhead_at: float | None = None, y_start: float | None = None,
+                y_len: float | None = None, **props) -> dict:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
@@ -230,7 +237,11 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
     `waveform` (``"time"``/``"samples"``/``"beats"`` with
     ``tempo``/``beat_at``/``quant``, or ``"off"``). The rest of the editor
     chrome (``sel_start``/``sel_len``, ``playhead_at``, drag-to-select /
-    Shift+drag pan / wheel zoom) also works exactly as on the `waveform`."""
+    Shift+drag pan / wheel zoom) also works exactly as on the `waveform` —
+    including the vertical view window ``y_start``/``y_len``, which here
+    slices the **frequency display axis** (normalized, ``0, 1`` = the full
+    axis, whatever the ``freq_scale``): wheel over the Hz-ruler strip zooms,
+    dragging it pans, changes emit ``/gui_event id "view_y" y_start y_len``."""
     extra = _drop_none(data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, window_size=window_size, hop=hop,
@@ -239,7 +250,7 @@ def spectrogram(id: int, *, data=None, blob: int | None = None, buffer: int | No
                        colormap=colormap, ruler=ruler, ruler_y=ruler_y,
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
-                       playhead_at=playhead_at)
+                       playhead_at=playhead_at, y_start=y_start, y_len=y_len)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
     return node("spectrogram", id=id, **extra, **props)

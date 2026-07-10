@@ -473,6 +473,20 @@ impl SpectrogramView {
         (20.0 / self.stft.nyquist()).clamp(1e-5, 0.5)
     }
 
+    /// Sets the visible frequency window from normalized display coordinates
+    /// (`start, len` with `0, 1` = the full axis; clamped) — the live
+    /// `y_start`/`y_len` props of the editor-grade widget. The internal view
+    /// keeps the display-coordinate convention (scaled by `n_bins`), so the
+    /// shader's display→bin mapping is untouched.
+    pub fn set_freq_window(&mut self, start: f64, len: f64) {
+        let (start, len) = crate::viewport::clamp_span(start, len);
+        let nb = self.stft.n_bins().max(1) as f64;
+        self.freq_view = View {
+            start: start * nb,
+            len: len * nb,
+        };
+    }
+
     /// Build the GPU uniforms from the current time `view` and display state.
     ///
     /// The frequency window is expressed in *display* coordinates `[0, 1]`
