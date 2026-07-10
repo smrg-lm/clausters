@@ -315,9 +315,42 @@ pub fn points_json(points: &[BpfPoint]) -> Value {
     Value::Array(out)
 }
 
+/// The envelope's vertical discontinuities: for every breakpoint time where
+/// the curve jumps — a zero-width segment (coincident points), a hold
+/// segment's end, a step segment's start — the `(time, lo, hi)` value span
+/// the jump covers, the breakpoint values sharing that time included so a
+/// disc always sits on the drawn curve. Every shape is monotone within its
+/// segment, so jumps can only occur at breakpoint times.
+pub fn discontinuities(points: &[BpfPoint], duration: f64) -> Vec<(f64, f32, f32)> {
+    let dom = domain(points, duration);
+    let eps = (dom * 1e-9).max(f64::MIN_POSITIVE);
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < points.len() {
+        let t = points[i].time;
+        let mut lo = f32::INFINITY;
+        let mut hi = f32::NEG_INFINITY;
+        for v in [value_at(points, t - eps), value_at(points, t + eps)] {
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+        while i < points.len() && points[i].time == t {
+            lo = lo.min(points[i].value);
+            hi = hi.max(points[i].value);
+            i += 1;
+        }
+        if hi - lo > f32::EPSILON {
+            out.push((t, lo, hi));
+        }
+    }
+    out
+}
+
 /// Draws the envelope: a framed field, the curve evaluated **once per pixel
-/// column** through the shared shape math (never finer than the screen), and
-/// a disc per breakpoint.
+/// column** through the shared shape math (never finer than the screen), an
+/// exact vertical connector at every discontinuity (the per-column polyline
+/// alone would render a jump as a one-pixel slant — or hide it entirely when
+/// two points share a time), and a disc per breakpoint.
 #[allow(clippy::too_many_arguments)] // one display mapping, all scalars
 pub fn draw(
     mesh: &mut Mesh,
@@ -350,6 +383,14 @@ pub fn draw(
         let p = [body.x + c as f32, y_at(value_at(points, t))];
         mesh.line(prev, p, 1.5, CURVE_TRACE);
         prev = p;
+    }
+    for (t, v_lo, v_hi) in discontinuities(points, duration) {
+        let x = body.x + (t / dom) as f32 * body.w;
+        let (y0, y1) = (y_at(v_hi), y_at(v_lo));
+        mesh.rect(
+            Rect::new(x - 0.75, y0, 1.5, (y1 - y0).max(1.0)),
+            CURVE_TRACE,
+        );
     }
     for p in points {
         let x = body.x + (p.time / dom) as f32 * body.w;
@@ -487,6 +528,56 @@ mod tests {
         drag_curve(&mut p, 1, 0.3);
         let after = value_at(&p, 1.25);
         assert!(after > before, "dragging up lifts a falling segment too");
+    }
+
+    #[test]
+    fn discontinuities_cover_coincident_points_hold_and_step() {
+        use clausters_core::envshape::{SHAPE_HOLD, SHAPE_STEP};
+        // A smooth envelope has none.
+        assert!(discontinuities(&pts(), 0.0).is_empty());
+        // Two points on the same time: the jump spans their values.
+        let coincident = parse_points(
+            &serde_json::json!([
+                0.0, 0.0, 1, 0.0, 1.0, 0.2, 1, 0.0, 1.0, 0.9, 1, 0.0, 2.0, 1.0, 1, 0.0
+            ]),
+            0.0,
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(discontinuities(&coincident, 0.0), vec![(1.0, 0.2, 0.9)]);
+        // A hold segment jumps to its target at its end.
+        let hold = vec![
+            BpfPoint {
+                time: 0.0,
+                value: 0.0,
+                shape: SHAPE_HOLD,
+                curve: 0.0,
+            },
+            BpfPoint {
+                time: 1.0,
+                value: 1.0,
+                shape: SHAPE_LINEAR,
+                curve: 0.0,
+            },
+        ];
+        assert_eq!(discontinuities(&hold, 0.0), vec![(1.0, 0.0, 1.0)]);
+        // A step segment jumps to its target at its start — the connector
+        // also ties the point's own (off-curve) disc to the drawn line.
+        let step = vec![
+            BpfPoint {
+                time: 0.0,
+                value: 0.5,
+                shape: SHAPE_STEP,
+                curve: 0.0,
+            },
+            BpfPoint {
+                time: 1.0,
+                value: 1.0,
+                shape: SHAPE_LINEAR,
+                curve: 0.0,
+            },
+        ];
+        assert_eq!(discontinuities(&step, 0.0), vec![(0.0, 0.5, 1.0)]);
     }
 
     #[test]
