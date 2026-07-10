@@ -12,7 +12,11 @@ Editing gestures, all live:
 - **drag a segment** vertically to bend its curvature (it becomes the custom
   curve shape, like ``Env``'s numeric curvature);
 - **Ctrl+click** on empty curve area adds a point there; **Ctrl+click on a
-  point** removes it.
+  point** removes it;
+- the **curve menu** applies a standard transition shape (or a numeric
+  curvature) to every segment at once — the script rewrites the shapes through
+  the `Env` round trip and pushes the list back with ``gui.set``, so the same
+  points redraw under the chosen curve.
 
 Every edit flows back per the **edit-back pattern**: the host emits
 ``/gui_event <id> "points" <t v shape curve ...>`` — the breakpoint list as
@@ -49,7 +53,7 @@ import time
 
 from clausters import Session
 from clausters.defs import DoneAction, Env, SynthDef, env_gen, out, sin_osc
-from clausters.gui import bpf, button, env_to_points, label, points_to_env, window
+from clausters.gui import bpf, button, env_to_points, label, menu, points_to_env, window
 
 # %% [markdown]
 # ## Launch the server and the GUI
@@ -72,14 +76,19 @@ gui = session.gui()
 # %%
 START_ENV = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
 
+# The curve menu's options: `Env`-style curve specs — shape names plus two
+# custom curvatures (positive builds slowly then fast, negative the reverse).
+CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "step", -4.0, 4.0]
+
 
 def scene() -> dict:
     return window(
         label(1, "drag points/segments; Ctrl+click adds/removes; play sends it"),
         bpf(10, points=env_to_points(START_ENV), min=0.0, max=1.0,
             duration=2.0, label="amp env"),
+        menu(30, [str(c) for c in CURVES], label="curve (all segments)"),
         button(20, label="play"),
-        title="BPF envelope -> EnvGen", w=640, h=420, layout="col",
+        title="BPF envelope -> EnvGen", w=640, h=460, layout="col",
     )
 
 
@@ -106,10 +115,22 @@ def play():
     print(f"played {len(_points) // 4} breakpoints over {env.times} s segments")
 
 
-def drain_events() -> bool:
-    """Reads pending events; returns whether an edit or a play arrived."""
+def set_curve(spec):
+    """Applies one `Env`-style curve spec to every segment of the drawn
+    envelope — through the public round trip (`points_to_env` with the new
+    curve, back via `env_to_points`) — and pushes it to the window, which
+    redraws the same points with the new shapes."""
+    global _points
+    env = points_to_env(_points)
+    _points = env_to_points(Env(env.levels, env.times, spec))
+    gui.set(10, points=json.dumps(_points))
+    print(f"curve -> {spec}")
+
+
+def drain_events():
+    """Reads pending events: envelope edits update ``_points`` (silently), the
+    curve menu reshapes every segment, and the play button triggers the note."""
     global _points, _closed
-    acted = False
     while (msg := gui.poll(0.0)) is not None:
         addr, args = msg
         if addr == "/gui_closed":
@@ -117,10 +138,10 @@ def drain_events() -> bool:
         elif addr == "/gui_event" and len(args) >= 2 and args[1] == "points":
             # The edit-back payload: id, "points", then t v shape curve quads.
             _points = list(args[2:])
-            acted = True
+        elif addr == "/gui_event" and args[0] == 30:
+            set_curve(CURVES[int(args[1])])
         elif addr == "/gui_event" and args[0] == 20 and args[1] == 1:
             play()
-    return acted
 
 
 play()
@@ -137,20 +158,15 @@ _points = env_to_points(Env.perc(0.01, 1.2))
 # %% [markdown]
 # ## Plain-script run
 # Cell-run: keep drawing and call `play()` / `drain_events()` between cells.
-# Script-run: every edit plays the note it produced, for a while.
+# Script-run: draw for a while — editing is silent, the **play** button sends
+# the note — then everything is torn down.
 
 # %%
 if __name__ == "__main__":
     try:
         deadline = time.monotonic() + 45.0
-        last_edit = 0.0
         while time.monotonic() < deadline and not _closed:
-            if drain_events():
-                # Debounce: a drag emits per step; play at most every 0.6 s.
-                now = time.monotonic()
-                if now - last_edit > 0.6:
-                    play()
-                    last_edit = now
+            drain_events()
             time.sleep(0.05)
         gui.close(win)
         session.close()

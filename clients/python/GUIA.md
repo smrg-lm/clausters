@@ -79,9 +79,11 @@ ventana **dibuje y responda**:
   franja panea, `R` resetea; el script también lo mueve con `y_start`/`y_len`.
 - **Editor de envolventes (bpf).** `examples/gui_bpf.py` → dibujar la
   envolvente en la ventana (arrastrar un punto la mueve, arrastrar un segmento
-  lo curva, Ctrl+click agrega/quita puntos) y apretar *play*: la nota suena
-  exactamente con la forma dibujada (mismas curvas que `EnvGen`); cada edición
-  vuelve al script como evento `"points"`.
+  lo curva, Ctrl+click agrega/quita puntos; el menú aplica una curva estándar
+  a todos los segmentos y la ventana se redibuja) y apretar *play*: la nota
+  suena exactamente con la forma dibujada (mismas curvas que `EnvGen`); editar
+  no suena, solo actualiza — cada edición vuelve al script como evento
+  `"points"`.
 - **Bulk data.** `examples/gui_bulk.py` → un buffer grande se transfiere por
   recurso compartido / fetch y se muestra.
 - **Bundle standalone.** `examples/gui_standalone.py` autorea un bundle (GuiDef +
