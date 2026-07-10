@@ -8,7 +8,9 @@ The simplest setup, in a fresh virtualenv, run from the repository so the build 
 
 ```sh
 python -m venv .venv && . .venv/bin/activate
-pip install -e ./clients/python --group dev      # editable + the pytest dev group
+pip install -e ./clients/python --group ./clients/python/pyproject.toml:dev
+# (editable + the pytest dev group; pip's --group reads ./pyproject.toml unless
+# given a path, and this repo's lives in clients/python/)
 # or a plain install:
 pip install ./clients/python
 ```
