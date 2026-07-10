@@ -178,7 +178,7 @@ impl EditorProps {
     /// Parses the shared chrome; `default_y` is the view's own default
     /// vertical unit (`Norm` for the waveform, `Hz` for the spectrogram).
     fn parse(props: &serde_json::Map<String, Value>, default_y: RulerY) -> EditorProps {
-        let mut editor = EditorProps {
+        EditorProps {
             ruler: Ruler::parse(props),
             ruler_y: RulerY::parse(props, default_y),
             sample_rate: number_f64(props, "sample_rate", 0.0),
@@ -195,19 +195,21 @@ impl EditorProps {
             playhead_at: number_f64(props, "playhead_at", -1.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
-        };
-        editor.clamp_y();
-        editor
+        }
     }
 
-    /// Keeps the vertical view window a valid slice of the display axis: a
-    /// non-positive length resets to the full axis, anything else clamps into
-    /// `[0, 1]` (with the shared zoom floor).
-    fn clamp_y(&mut self) {
+    /// The vertical view window as a valid display-axis slice: a non-positive
+    /// length resets to the full axis, anything else clamps into `[0, 1]`
+    /// (with the shared zoom floor). The raw `y_start`/`y_len` props are kept
+    /// as set and validated only here, at read time — clamping inside
+    /// `apply` would make one `/gui_set` carrying both keys order-dependent
+    /// (`y_start` would clamp against the *old* `y_len` before the new one
+    /// lands).
+    pub fn y_view(&self) -> (f64, f64) {
         if self.y_len <= 0.0 {
-            (self.y_start, self.y_len) = (0.0, 1.0);
+            (0.0, 1.0)
         } else {
-            (self.y_start, self.y_len) = crate::viewport::clamp_span(self.y_start, self.y_len);
+            crate::viewport::clamp_span(self.y_start, self.y_len)
         }
     }
 
@@ -231,16 +233,8 @@ impl EditorProps {
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),
-            "y_start" => {
-                let ok = set_f64(&mut self.y_start, v);
-                self.clamp_y();
-                ok
-            }
-            "y_len" => {
-                let ok = set_f64(&mut self.y_len, v);
-                self.clamp_y();
-                ok
-            }
+            "y_start" => set_f64(&mut self.y_start, v),
+            "y_len" => set_f64(&mut self.y_len, v),
             _ => false,
         }
     }
@@ -1664,22 +1658,30 @@ mod tests {
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
-        // The parsed window clamps inside the axis: 0.8 + 0.5 spills, so the
-        // start pulls back to 0.5.
+        // The read-time window clamps inside the axis: 0.8 + 0.5 spills, so
+        // the start pulls back to 0.5.
         let editor = w.children[0].kind.editor().unwrap();
-        assert_eq!((editor.y_start, editor.y_len), (0.5, 0.5));
+        assert_eq!(editor.y_view(), (0.5, 0.5));
         // The default is the full axis.
         let editor = w.children[1].kind.editor().unwrap();
-        assert_eq!((editor.y_start, editor.y_len), (0.0, 1.0));
+        assert_eq!(editor.y_view(), (0.0, 1.0));
         // Live `/gui_set` zooms and pans; a non-positive length resets.
         let wf = w.find_mut(1).unwrap();
         assert!(wf.kind.apply("y_len", &Value::from(0.25)));
         assert!(wf.kind.apply("y_start", &Value::from(0.7)));
         let editor = wf.kind.editor().unwrap();
-        assert_eq!((editor.y_start, editor.y_len), (0.7, 0.25));
+        assert_eq!(editor.y_view(), (0.7, 0.25));
+        // One set carrying both keys must not depend on key order: applying
+        // y_start before y_len used to clamp it against the old full-axis
+        // length and silently zero it (the "zoom lands in the wrong half"
+        // regression).
+        assert!(wf.kind.apply("y_start", &Value::from(0.5)));
+        assert!(wf.kind.apply("y_len", &Value::from(0.5)));
+        let editor = wf.kind.editor().unwrap();
+        assert_eq!(editor.y_view(), (0.5, 0.5));
         assert!(wf.kind.apply("y_len", &Value::from(0.0)));
         let editor = wf.kind.editor().unwrap();
-        assert_eq!((editor.y_start, editor.y_len), (0.0, 1.0));
+        assert_eq!(editor.y_view(), (0.0, 1.0));
     }
 
     #[test]

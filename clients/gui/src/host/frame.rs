@@ -393,7 +393,8 @@ fn draw_editor_overlay(
         // The cursor's height mapped through the visible vertical window into
         // an absolute display coordinate (0 = axis bottom) — so the readout
         // names exactly what is under the cursor at any vertical zoom/pan.
-        let display = editor.y_start + (1.0 - rel) * editor.y_len;
+        let (y0, y_len) = editor.y_view();
+        let display = y0 + (1.0 - rel) * y_len;
         let text = match nyquist_scale {
             // Spectrogram: invert the shader's display→bin mapping at the
             // cursor's height for the frequency under it.
@@ -680,14 +681,15 @@ pub(crate) fn render(
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
                 if item.editor.ruler_y != RulerY::Off {
+                    let (y0, y_len) = item.editor.y_view();
                     for ch in 0..draw_lanes {
                         let lane = lane_rect(body, draw_lanes, ch);
                         let ticks = ruler::amp_ticks(
                             item.editor.ruler_y,
                             lane.h as f64,
                             item.editor.bit_depth,
-                            item.editor.y_start,
-                            item.editor.y_len,
+                            y0,
+                            y_len,
                         );
                         draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
@@ -728,8 +730,8 @@ pub(crate) fn render(
                             *freq_scale,
                             f_lo,
                             lane.h as f64,
-                            item.editor.y_start,
-                            item.editor.y_len,
+                            item.editor.y_view().0,
+                            item.editor.y_view().1,
                         );
                         draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
@@ -780,7 +782,7 @@ pub(crate) fn render(
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
                     slot.view
-                        .set_amp_window(item.editor.y_start, item.editor.y_len);
+                        .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
                     slot.view
                         .upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
                 }
@@ -799,7 +801,7 @@ pub(crate) fn render(
                             *freq_scale,
                             (*colormap).max(0) as u32,
                         );
-                        view.set_freq_window(item.editor.y_start, item.editor.y_len);
+                        view.set_freq_window(item.editor.y_view().0, item.editor.y_view().1);
                         view.upload(&gpu.device, &gpu.queue, &slot.nav, body.w.max(1.0) as u32);
                     }
                 }

@@ -936,7 +936,7 @@ impl App {
                         Drag::PanY {
                             id,
                             origin_y: cy,
-                            y_start: editor.y_start,
+                            y_start: editor.y_view().0,
                             lane_h: (body.h as f64 / lanes.max(1) as f64).max(1.0),
                         },
                     );
@@ -1140,7 +1140,7 @@ impl App {
                     .window_def(def_id)
                     .and_then(|t| t.find(id))
                     .and_then(|w| w.kind.editor())
-                    .map_or(1.0, |e| e.y_len);
+                    .map_or(1.0, |e| e.y_view().1);
                 let start = y_start + (cy - origin_y) / lane_h * y_len;
                 self.set_y_view(def_id, id, start, y_len);
             }
@@ -1240,7 +1240,7 @@ impl App {
             .window_def(def_id)
             .and_then(|t| t.find(id))
             .and_then(|w| w.kind.editor())
-            .map(|e| (e.y_start, e.y_len))
+            .map(|e| e.y_view())
         else {
             return;
         };

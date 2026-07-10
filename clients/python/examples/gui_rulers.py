@@ -177,21 +177,28 @@ print(f"1 kHz is {_native.hz_to_mel(1000.0):.0f} mel, "
 # %% [markdown]
 # ## Everything is also settable directly
 # The menus are a convenience; any client can retune an axis at any time.
+# (As a plain script this cell runs right after the window opens, so it
+# announces itself and restores the defaults — the menus still read index 0.)
 
 # %%
+print("demo: spectrogram -> mel, waveform -> beats + dBFS (3 s) ...")
 gui.set(SPECT, freq_scale="mel")
 gui.set(WAVE, ruler="beats", ruler_y="db")
+time.sleep(3.0)
+gui.set(SPECT, freq_scale="log")
+gui.set(WAVE, ruler="time", ruler_y="norm")
 
 # %% [markdown]
 # ## Vertical navigation from the script
 # The same ``y_start``/``y_len`` window the wheel and the strip-drag drive is
-# a plain live prop: zoom the waveform into its top half (watch the dB rungs
+# a plain live prop: zoom the waveform into its top half (watch the ticks
 # refine) and the spectrogram into the low mids, then reset both.
 
 # %%
+print("demo: vertical zoom on both views (3 s), then back to the full axes ...")
 gui.set(WAVE, y_start=0.5, y_len=0.5)     # amplitude axis: the upper half
 gui.set(SPECT, y_start=0.2, y_len=0.35)   # frequency axis: a low-mid band
-time.sleep(2.0)
+time.sleep(3.0)
 gui.set(WAVE, y_len=0.0)                  # <= 0 resets to the full axis
 gui.set(SPECT, y_len=0.0)
 
