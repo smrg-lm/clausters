@@ -454,13 +454,21 @@ def env_to_points(env, *, time_at: float = 0.0) -> list:
     return out
 
 
-def points_to_env(points, **env_kwargs):
+def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
     """A `bpf` breakpoint list — the flat ``t v shape curve ...`` quads a
     ``"points"`` event carries — as a `clausters.defs.Env`: absolute times
     become segment durations and each segment keeps its shape (the numeric
-    curvature for the custom shape, the shape name otherwise). Extra keywords
-    (``release_node``, ``loop_node``) pass through to `Env`, so a drawn
-    envelope goes straight into `clausters.defs.env_gen`."""
+    curvature for the custom shape, the shape name otherwise).
+
+    A first breakpoint later than ``time_at`` (the inverse of
+    `env_to_points`'s anchor, default ``0.0``) is the drawn **initial
+    delay**: the widget holds the first value before its first point (the
+    ``offset`` semantics of SuperCollider's ``IEnvGen``). ``EnvGen`` has no
+    offset input, so it is realized as a leading constant segment — the first
+    level duplicated for that duration — keeping what you drew and what plays
+    identical. Extra keywords (``release_node``, ``loop_node``) pass through
+    to `Env`, so a drawn envelope goes straight into
+    `clausters.defs.env_gen`."""
     from ..defs.ugens import _SHAPE_NUMBERS, Env  # lazy: keep guidef import-light
 
     quads = [points[i:i + 4] for i in range(0, len(points) - len(points) % 4, 4)]
@@ -475,6 +483,11 @@ def points_to_env(points, **env_kwargs):
     times = [float(b[0]) - float(a[0]) for a, b in zip(quads, quads[1:])]
     curve = [float(q[3]) if int(q[2]) == 5 else names.get(int(q[2]), "lin")
              for q in quads[:-1]]
+    delay = float(quads[0][0]) - float(time_at)
+    if delay > 1e-9:
+        levels.insert(0, levels[0])
+        times.insert(0, delay)
+        curve.insert(0, "hold")
     return Env(levels, times, curve, **env_kwargs)
 
 
