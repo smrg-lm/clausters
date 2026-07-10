@@ -33,6 +33,7 @@
 // every such coupling lives behind a trait whose impl is in the native shell
 // below.
 pub mod bind;
+pub mod bpf;
 pub mod canvas;
 pub mod controls;
 pub mod fetch;
@@ -715,11 +716,19 @@ impl Host {
     /// returns `true` (the value is swallowed, not sent to the script); the
     /// missing `--server` was already warned about at bind time.
     pub fn forward(&self, widget_id: i32, value: OscType) -> bool {
+        self.forward_args(widget_id, vec![value])
+    }
+
+    /// [`forward`](Self::forward) for a **flat list** of values — the edit-back
+    /// payload of an editor widget (a `bpf`'s breakpoint list today, a drawn
+    /// buffer region later): a bound editor sends `addr prefix… values…` to
+    /// the audio server, bypassing the script exactly as a bound knob does.
+    pub fn forward_args(&self, widget_id: i32, values: Vec<OscType>) -> bool {
         let Some(binding) = self.bindings.get(&widget_id) else {
             return false;
         };
         if let Some(server) = self.server.as_ref()
-            && let Err(e) = server.send(binding.message(value))
+            && let Err(e) = server.send(binding.message_args(values))
         {
             warn!("{GUI_BIND} {widget_id}: failed to forward to the audio server: {e}");
         }

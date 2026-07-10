@@ -49,7 +49,9 @@ use super::nodetree::NodeTree;
 use super::paint::Painter;
 use super::spectrum::SpectrumState;
 use super::widget::{RulerY, Widget, WidgetKind};
-use super::{BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, controls};
+use super::{
+    BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, bpf, controls,
+};
 
 /// Repaint period for windows with live (shared-memory-backed) widgets — ~30 fps,
 /// enough for smooth meters/scopes without spinning the CPU.
@@ -217,6 +219,17 @@ enum Drag {
         y_start: f64,
         lane_h: f64,
     },
+    /// Dragging a `bpf` breakpoint: the point follows the cursor within
+    /// `body`, times clamped monotonic between its neighbors.
+    BpfPoint { id: i32, index: usize, body: Rect },
+    /// Dragging a `bpf` segment vertically: its curvature follows the cursor
+    /// (`last_y` re-anchors each step, incremental like a knob drag).
+    BpfCurve {
+        id: i32,
+        segment: usize,
+        last_y: f64,
+        body_h: f64,
+    },
 }
 
 /// One open window: its GPU surface, the per-waveform slots, the painter, the
@@ -239,6 +252,8 @@ struct WindowState {
     /// Whether Shift is held (Shift+drag pans a timeline view; plain drag
     /// selects).
     shift: bool,
+    /// Whether Ctrl is held (Ctrl+click adds/removes a `bpf` breakpoint).
+    ctrl: bool,
     drag: Option<Drag>,
     /// Recent control-bus samples per `scope` widget id (oldest .. newest).
     scopes: HashMap<i32, VecDeque<f32>>,
@@ -448,6 +463,26 @@ impl App {
         self.emit(def_id, widget_id, vec![value]);
     }
 
+    /// Delivers a `bpf` widget's edited breakpoint list — the edit-back
+    /// pattern: a **bound** editor forwards the flat `t v shape curve …` list
+    /// straight to the audio server (without the `"points"` tag, which names
+    /// the event payload, not a server argument); an unbound one emits
+    /// `/gui_event id "points" <flat list…>` to the script.
+    fn emit_bpf(&self, def_id: i32, widget_id: i32) {
+        let Some(args) = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| interact::bpf_event_args(t, widget_id))
+        else {
+            return;
+        };
+        if self.host.is_bound(widget_id) {
+            self.host.forward_args(widget_id, args[1..].to_vec());
+            return;
+        }
+        self.emit(def_id, widget_id, args);
+    }
+
     fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: SocketAddr) {
         // Read the window metadata, releasing the host borrow before mutating
         // (drop_window) and before re-borrowing the tree for the waveforms.
@@ -523,6 +558,7 @@ impl App {
                 origin,
                 cursor: (0.0, 0.0),
                 shift: false,
+                ctrl: false,
                 drag: None,
                 scopes: HashMap::new(),
                 tap_windows: HashMap::new(),
@@ -934,6 +970,61 @@ impl App {
                 self.emit_value(def_id, id);
                 self.redraw(def_id);
             }
+            WidgetKind::Bpf {
+                ref points,
+                min,
+                max,
+                duration,
+                exp,
+                ref label,
+                ..
+            } => {
+                let body = bpf::body(rect, label.is_some());
+                let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
+                let hit_pt = bpf::hit_point(points, body, duration, min, max, exp, cx, cy);
+                if ctrl {
+                    // Ctrl+click on a point removes it; elsewhere it adds one
+                    // at the cursor (which then drags until release).
+                    // `None` = nothing changed, `Some(None)` = removed,
+                    // `Some(Some(i))` = added at index `i`.
+                    let edited: Option<Option<usize>> = match hit_pt {
+                        Some(i) => {
+                            interact::bpf_edit(&mut self.host, def_id, id, |p, _, _, _, _| {
+                                bpf::remove_point(p, i)
+                            })
+                            .and_then(|removed| removed.then_some(None))
+                        }
+                        None => interact::bpf_edit(
+                            &mut self.host,
+                            def_id,
+                            id,
+                            |p, duration, lo, hi, exp| {
+                                bpf::add_point(p, body, duration, lo, hi, exp, cx, cy)
+                            },
+                        )
+                        .map(Some),
+                    };
+                    if let Some(added) = edited {
+                        if let Some(index) = added {
+                            self.set_drag(def_id, Drag::BpfPoint { id, index, body });
+                        }
+                        self.emit_bpf(def_id, id);
+                        self.redraw(def_id);
+                    }
+                } else if let Some(index) = hit_pt {
+                    self.set_drag(def_id, Drag::BpfPoint { id, index, body });
+                } else if let Some(segment) = bpf::hit_segment(points, body, duration, cx) {
+                    self.set_drag(
+                        def_id,
+                        Drag::BpfCurve {
+                            id,
+                            segment,
+                            last_y: cy,
+                            body_h: body.h.max(1.0) as f64,
+                        },
+                    );
+                }
+            }
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
                 let body = frame::timeline_body(rect, editor);
@@ -1110,6 +1201,13 @@ impl App {
                     y_start,
                     lane_h,
                 } => DragMove::PanY(*id, *origin_y, *y_start, *lane_h),
+                Drag::BpfPoint { id, index, body } => DragMove::BpfPoint(*id, *index, *body),
+                Drag::BpfCurve {
+                    id,
+                    segment,
+                    last_y,
+                    body_h,
+                } => DragMove::BpfCurve(*id, *segment, *last_y, *body_h),
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -1147,6 +1245,28 @@ impl App {
                     .map_or(1.0, |e| e.y_view().1);
                 let start = y_start + (cy - origin_y) / lane_h * y_len;
                 self.set_y_view(def_id, id, start, y_len);
+            }
+            Some(DragMove::BpfPoint(id, index, body)) => {
+                interact::bpf_edit(&mut self.host, def_id, id, |p, duration, lo, hi, exp| {
+                    bpf::move_point(p, index, body, duration, lo, hi, exp, cx, cy);
+                });
+                self.emit_bpf(def_id, id);
+                self.redraw(def_id);
+            }
+            Some(DragMove::BpfCurve(id, segment, last_y, body_h)) => {
+                // Incremental like a knob: the upward step bends the curve so
+                // the segment's middle follows the cursor.
+                let dy_frac = (last_y - cy) / body_h;
+                interact::bpf_edit(&mut self.host, def_id, id, |p, _, _, _, _| {
+                    bpf::drag_curve(p, segment, dy_frac);
+                });
+                if let Some(Drag::BpfCurve { last_y, .. }) =
+                    self.windows.get_mut(&def_id).and_then(|w| w.drag.as_mut())
+                {
+                    *last_y = cy;
+                }
+                self.emit_bpf(def_id, id);
+                self.redraw(def_id);
             }
             Some(DragMove::Select(id, body_x, body_w, anchor)) => {
                 let (start, len) = match self.timeline_nav(id) {
@@ -1311,6 +1431,8 @@ enum DragMove {
     Pan(i32, f64, f64, f64),
     Select(i32, f64, f64, f64),
     PanY(i32, f64, f64, f64),
+    BpfPoint(i32, usize, Rect),
+    BpfCurve(i32, usize, f64, f64),
     None,
 }
 
@@ -1624,6 +1746,7 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::ModifiersChanged(mods) => {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.shift = mods.state().shift_key();
+                    ws.ctrl = mods.state().control_key();
                 }
             }
             WindowEvent::CursorLeft { .. } => {

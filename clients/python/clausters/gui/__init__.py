@@ -13,7 +13,10 @@ containers, the standard controls, the heavy editor-grade ``waveform`` and
 selection, a playhead tracking the engine clock), the
 shared-memory-backed ``meter``/``scope``, the audio-tap ``scope``
 (oscilloscope), ``phasescope`` (goniometer) and ``spectrum`` (spectroscope), a
-live ``nodetree`` of the server's node graph and a static ``plot`` of a signal;
+live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
+a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
+edits flow back as flat ``"points"`` events — see `env_to_points` /
+`points_to_env` for the `clausters.defs.Env` round trip);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
@@ -30,13 +33,16 @@ headless protocol, ``gui_window``/``gui_panel`` for windows and controls,
 low-latency control path, ``gui_nodetree`` for the live node tree, ``gui_plot``
 for an NRT render plotted, ``gui_canvas`` for a shader, ``gui_scope`` for the
 oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
-``gui_editor`` for the editor-grade waveform + spectrogram).
+``gui_editor`` for the editor-grade waveform + spectrogram,
+``gui_bpf`` for the drawable envelope editor).
 """
 
 from .guidef import (
+    bpf,
     button,
     canvas,
     correlation,
+    env_to_points,
     knob,
     label,
     lissajous,
@@ -49,6 +55,7 @@ from .guidef import (
     peaks_cache_file,
     phasescope,
     plot,
+    points_to_env,
     samples_to_blob,
     samples_to_file,
     scope,
@@ -83,6 +90,9 @@ __all__ = [
     "phasescope",
     "spectrum",
     "nodetree",
+    "bpf",
+    "env_to_points",
+    "points_to_env",
     "plot",
     "canvas",
     "samples_to_blob",

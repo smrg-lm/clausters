@@ -39,6 +39,9 @@
 //!   shared with the clients for bit-identical analysis.
 //! - [`scale`] — perceptual frequency-scale conversions (hertz ↔ mel/bark)
 //!   shared by every frequency-axis display and analysis.
+//! - [`envshape`] — the envelope segment shapes (the SuperCollider shape
+//!   curves), shared by the server's `EnvGen` and any client drawing or
+//!   editing envelopes, so what an editor draws is what the server plays.
 //! - [`peaks`] — the min/max peak pyramid behind any client's navigable
 //!   waveform view, with its memory-mappable cache. General client
 //!   functionality (not real-time), shared so every client builds the identical
@@ -50,6 +53,7 @@ pub mod builtins;
 pub mod bytes;
 pub mod clocksync;
 pub mod config;
+pub mod envshape;
 pub mod fft;
 pub mod measure;
 pub mod osc;

@@ -31,7 +31,7 @@ use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
-use super::{BusSource, controls, meters, phasescope, plot, spectrum};
+use super::{BusSource, bpf, controls, meters, phasescope, plot, spectrum};
 
 /// The window's clear color (the dark chrome backdrop).
 pub(crate) const CLEAR: wgpu::Color = wgpu::Color {
@@ -159,6 +159,18 @@ struct PlotItem {
     samples: Arc<[f32]>,
     min: f32,
     max: f32,
+    label: Option<String>,
+}
+
+/// A placed `bpf` widget and the data its draw needs, copied out of the host
+/// tree so the mesh is built after the tree borrow is released.
+struct BpfItem {
+    rect: Rect,
+    points: Vec<bpf::BpfPoint>,
+    min: f32,
+    max: f32,
+    duration: f64,
+    exp: bool,
     label: Option<String>,
 }
 
@@ -474,6 +486,7 @@ pub(crate) fn render(
     // likewise copied out so the host-tree borrow can be released before the
     // node-tree models and the GPU resources are read.
     let mut plot_rects: Vec<PlotItem> = Vec::new();
+    let mut bpf_rects: Vec<BpfItem> = Vec::new();
     let mut nodetree_rects: Vec<(Rect, i32, bool, Option<String>)> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     let active_button = inputs.active_button;
@@ -575,6 +588,22 @@ pub(crate) fn render(
                 samples: Arc::clone(samples),
                 min: *min,
                 max: *max,
+                label: label.clone(),
+            }),
+            WidgetKind::Bpf {
+                points,
+                min,
+                max,
+                duration,
+                exp,
+                label,
+            } => bpf_rects.push(BpfItem {
+                rect: p.rect,
+                points: points.clone(),
+                min: *min,
+                max: *max,
+                duration: *duration,
+                exp: *exp,
                 label: label.clone(),
             }),
             WidgetKind::NodeTree {
@@ -769,6 +798,20 @@ pub(crate) fn render(
             &item.samples,
             item.min,
             item.max,
+            item.label.as_deref(),
+        );
+    }
+    // Envelope editors are pure mesh work: the curve evaluated per pixel
+    // column through the shared shape math, discs for the breakpoints.
+    for item in &bpf_rects {
+        bpf::draw(
+            &mut mesh,
+            item.rect,
+            &item.points,
+            item.min,
+            item.max,
+            item.duration,
+            item.exp,
             item.label.as_deref(),
         );
     }

@@ -37,6 +37,9 @@ __all__ = [
     "phasescope",
     "spectrum",
     "nodetree",
+    "bpf",
+    "env_to_points",
+    "points_to_env",
     "plot",
     "canvas",
     "to_json",
@@ -365,6 +368,111 @@ def nodetree(id: int, *, group: int = 0, controls: bool | None = None,
     if controls is not None:
         extra["controls"] = 1 if controls else 0
     return node("nodetree", id=id, group=group, **extra, **props)
+
+
+def bpf(id: int, *, points=None, min: float | None = None, max: float | None = None,
+        duration: float | None = None, exp: bool | None = None,
+        label: str | None = None, **props) -> dict:
+    """A drawable ``bpf`` break-point function — the envelope editor.
+
+    Breakpoints ``(time, value)`` plus a per-segment shape using the server's
+    own envelope shape numbers, evaluated host-side through the same shared
+    math the server's ``EnvGen`` plays — what you draw is what you hear.
+    ``points`` accepts either the flat quad list ``[t, v, shape, curve, ...]``
+    (the wire form: shapes int, everything else float) or a list of tuples
+    ``(time, value)`` / ``(time, value, shape)`` where ``shape`` is an
+    `Env`-style curve spec — a name (``"lin"``, ``"exp"``, ``"sin"``,
+    ``"step"``, ``"hold"``, ...) or a numeric curvature. Omitting ``points``
+    draws a flat, immediately editable line. See `env_to_points` /
+    `points_to_env` for the round trip with `clausters.defs.Env`.
+
+    The model is general on purpose (the automation-lane shape): values live in
+    ``[min, max]`` — unipolar (the ``0``/``1`` default), bipolar, or any
+    parameter span; an on/off lane is the ``"step"`` shape over ``0``/``1``;
+    ``exp=True`` gives frequency-like ranges a geometric display scale
+    (requires ``0 < min < max``). Times span ``[0, duration]`` (omitting
+    ``duration`` fits the last point).
+
+    Editing (drag a point — times stay monotonic; drag a segment vertically to
+    bend its curvature; Ctrl+click adds a point, Ctrl+click on one removes it)
+    flows back per the **edit-back pattern**:
+    ``/gui_event <id> "points" <t v shape curve ...>`` to the script — or, when
+    the widget is bound (`GuiHost.bind` or an inline ``bind``), the flat list
+    is forwarded straight to the audio server after the binding's prefix.
+    Setting is live too: ``GuiHost.set(id, points=json.dumps(flat))`` replaces
+    the whole list (a ``/gui_set`` value is a scalar, so the array rides as its
+    JSON string)."""
+    extra = _drop_none(points=_flat_points(points) if points is not None else None,
+                       min=min, max=max, duration=duration, label=label)
+    if exp is not None:
+        extra["exp"] = 1 if exp else 0
+    return node("bpf", id=id, **extra, **props)
+
+
+def _flat_points(points) -> list:
+    """Normalizes a `bpf` ``points`` argument to the flat quad list: a flat
+    number list is kept (validated to whole quads, shapes coerced int), tuples
+    become ``t, v, shape, curve`` with the shape resolved like an `Env` curve
+    spec (default linear)."""
+    points = list(points)
+    if not points:
+        return []
+    if not isinstance(points[0], (tuple, list)):
+        if len(points) % 4 != 0:
+            raise ValueError("a flat points list must be [t, v, shape, curve, ...] quads")
+        return [int(x) if i % 4 == 2 else float(x) for i, x in enumerate(points)]
+    from ..defs.ugens import _resolve_curve  # lazy: keep guidef import-light
+
+    out: list = []
+    for p in points:
+        t, v = float(p[0]), float(p[1])
+        shape, curve = _resolve_curve(p[2]) if len(p) > 2 else (1, 0.0)
+        out += [t, v, int(shape), float(curve)]
+    return out
+
+
+def env_to_points(env, *, time_at: float = 0.0) -> list:
+    """A `clausters.defs.Env` (levels / segment times / curves) as the flat
+    `bpf` breakpoint list ``[t, v, shape, curve, ...]``, with absolute times
+    starting at ``time_at``. The last point carries a linear placeholder (no
+    segment leaves it). Feed the result to `bpf` or to a live ``points`` set."""
+    from ..defs.ugens import _resolve_curve  # lazy: keep guidef import-light
+
+    out: list = []
+    t = float(time_at)
+    for i, level in enumerate(env.levels):
+        if i < len(env.times):
+            shape, curve = _resolve_curve(env.curves[i])
+        else:
+            shape, curve = 1, 0.0
+        out += [t, float(level), int(shape), float(curve)]
+        if i < len(env.times):
+            t += float(env.times[i])
+    return out
+
+
+def points_to_env(points, **env_kwargs):
+    """A `bpf` breakpoint list — the flat ``t v shape curve ...`` quads a
+    ``"points"`` event carries — as a `clausters.defs.Env`: absolute times
+    become segment durations and each segment keeps its shape (the numeric
+    curvature for the custom shape, the shape name otherwise). Extra keywords
+    (``release_node``, ``loop_node``) pass through to `Env`, so a drawn
+    envelope goes straight into `clausters.defs.env_gen`."""
+    from ..defs.ugens import _SHAPE_NUMBERS, Env  # lazy: keep guidef import-light
+
+    quads = [points[i:i + 4] for i in range(0, len(points) - len(points) % 4, 4)]
+    if len(quads) < 2:
+        raise ValueError("an envelope needs at least two breakpoints")
+    # First name wins for aliased numbers ("step"/"lin"/"exp"... are listed
+    # before their long forms).
+    names: dict = {}
+    for name, num in _SHAPE_NUMBERS.items():
+        names.setdefault(num, name)
+    levels = [float(q[1]) for q in quads]
+    times = [float(b[0]) - float(a[0]) for a, b in zip(quads, quads[1:])]
+    curve = [float(q[3]) if int(q[2]) == 5 else names.get(int(q[2]), "lin")
+             for q in quads[:-1]]
+    return Env(levels, times, curve, **env_kwargs)
 
 
 def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None,

@@ -393,6 +393,23 @@ pub enum WidgetKind {
         buses: [i32; canvas::PARAM_COUNT],
         label: Option<String>,
     },
+    /// A drawable break-point function (envelope editor): breakpoints
+    /// `(time, value)` plus a per-segment shape/curve **using the server's own
+    /// envelope shape numbers** (evaluated through the shared core, so what it
+    /// draws is what an `EnvGen` plays). Values live in `[min, max]` — any
+    /// automation range: unipolar, bipolar, an on/off lane via the step shape —
+    /// with an optional exponential display scale (`exp`) for frequency-like
+    /// params; times span `[0, duration]` (0 = fit the last point). Edits flow
+    /// back as a `"points"` event (or the bound forward) carrying the flat
+    /// `t v shape curve …` list — see [`super::bpf`].
+    Bpf {
+        points: Vec<super::bpf::BpfPoint>,
+        min: f32,
+        max: f32,
+        duration: f64,
+        exp: bool,
+        label: Option<String>,
+    },
     /// A simple static plot of a signal over `[min, max]`: a polyline when the
     /// data fits the width, a min/max envelope when it does not. Its samples
     /// arrive inline (`data`/`blob`) or — the bulk path for an NRT render's
@@ -664,6 +681,24 @@ impl Widget {
                 buses: i32_array(&node.props, "buses", -1),
                 label: label(&node.props),
             },
+            "bpf" => {
+                let min = number(&node.props, "min", 0.0);
+                let max = number(&node.props, "max", 1.0);
+                let (lo, hi) = (min.min(max), min.max(max));
+                WidgetKind::Bpf {
+                    points: node
+                        .props
+                        .get("points")
+                        .and_then(|v| super::bpf::parse_points(v, lo, hi))
+                        .filter(|p| !p.is_empty())
+                        .unwrap_or_else(|| super::bpf::default_points(lo)),
+                    min: lo,
+                    max: hi,
+                    duration: number_f64(&node.props, "duration", 0.0),
+                    exp: node.props.get("exp").and_then(truthy).unwrap_or(false),
+                    label: label(&node.props),
+                }
+            }
             "plot" => WidgetKind::Plot {
                 samples: inline_samples("plot", id, &node.props, blobs)?,
                 path: node
@@ -964,6 +999,31 @@ impl WidgetKind {
             } => match key {
                 "group" => v.as_i64().map(|n| *group = n as i32).is_some(),
                 "controls" => truthy(v).map(|b| *controls = b).is_some(),
+                "label" => set_label(label, v),
+                _ => false,
+            },
+            WidgetKind::Bpf {
+                points,
+                min,
+                max,
+                duration,
+                exp,
+                label,
+            } => match key {
+                // The full breakpoint list replaces in one set — the flat
+                // `[t, v, shape, curve, …]` array, or that array as a JSON
+                // string (the `/gui_set` scalar carrier).
+                "points" => match super::bpf::parse_points(v, *min, *max) {
+                    Some(p) if !p.is_empty() => {
+                        *points = p;
+                        true
+                    }
+                    _ => false,
+                },
+                "min" => set_f(min, v),
+                "max" => set_f(max, v),
+                "duration" => set_f64(duration, v),
+                "exp" => truthy(v).map(|b| *exp = b).is_some(),
                 "label" => set_label(label, v),
                 _ => false,
             },
@@ -1800,6 +1860,74 @@ mod tests {
                 assert_eq!(*freq_scale, FreqScale::Linear)
             }
             other => panic!("expected spectrogram, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bpf_parses_with_defaults_and_applies() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"bpf","points":[0.0,0.0,1,0.0, 0.1,1.0,-4.0,0.0, 1.0,0.0,1,0.0],
+                 "label":"env"},
+                {"id":2,"type":"bpf","min":20.0,"max":20000.0,"exp":1,"duration":4.0}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Bpf {
+                points,
+                min,
+                max,
+                exp,
+                label,
+                ..
+            } => {
+                assert_eq!(points.len(), 3);
+                assert_eq!((*min, *max), (0.0, 1.0), "the range defaults unipolar");
+                assert!(!*exp);
+                assert_eq!(label.as_deref(), Some("env"));
+            }
+            other => panic!("expected bpf, got {other:?}"),
+        }
+        // No points: the predictable default flat line, still editable.
+        match &w.children[1].kind {
+            WidgetKind::Bpf {
+                points,
+                min,
+                max,
+                duration,
+                exp,
+                ..
+            } => {
+                assert_eq!(points.len(), 2);
+                assert_eq!((*min, *max), (20.0, 20_000.0));
+                assert_eq!(*duration, 4.0);
+                assert!(*exp);
+            }
+            other => panic!("expected bpf, got {other:?}"),
+        }
+        // A bpf is neither a timeline view nor a scalar-value control: its
+        // edit-back event carries the flat list instead.
+        assert!(!w.children[0].is_timeline());
+        assert_eq!(w.children[0].kind.event_value(), None);
+        // Live `/gui_set`: replace the whole breakpoint list (array or its
+        // JSON-string carrier), retune the range and the domain.
+        let b = w.find_mut(1).unwrap();
+        assert!(
+            b.kind
+                .apply("points", &Value::from("[0.0,0.5,1,0.0, 2.0,0.25,3,0.0]"))
+        );
+        assert!(b.kind.apply("duration", &Value::from(3.0)));
+        assert!(!b.kind.apply("points", &Value::from("nonesuch")));
+        match &b.kind {
+            WidgetKind::Bpf {
+                points, duration, ..
+            } => {
+                assert_eq!(points.len(), 2);
+                assert_eq!(points[1].shape, 3);
+                assert_eq!(*duration, 3.0);
+            }
+            _ => unreachable!(),
         }
     }
 

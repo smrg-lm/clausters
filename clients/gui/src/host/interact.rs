@@ -11,6 +11,8 @@
 
 use clausters_core::osc::OscType;
 
+#[cfg(not(target_arch = "wasm32"))]
+use super::bpf;
 use super::layout::{self, Rect};
 use super::widget::{Widget, WidgetKind};
 use super::{Host, controls};
@@ -105,6 +107,49 @@ pub(crate) fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
         w.children.iter().find_map(|c| walk(c, id))
     }
     walk(tree, id)
+}
+
+/// Runs `f` over a `bpf` widget's model in the host tree — the one door every
+/// envelope edit goes through, so the fronts never unpack the variant
+/// themselves. `f` gets the breakpoints and the display mapping (the time
+/// domain, the value range and the `exp` scale); its return value is passed
+/// through (`None` when the widget is not a `bpf`). Editing gestures are
+/// native-only today (the browser keeps display + `/gui_set` parity, the
+/// editor-view posture), so the helpers are compiled out of the wasm build.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn bpf_edit<R>(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f64, f32, f32, bool) -> R,
+) -> Option<R> {
+    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
+    match &mut w.kind {
+        WidgetKind::Bpf {
+            points,
+            min,
+            max,
+            duration,
+            exp,
+            ..
+        } => Some(f(points, *duration, *min, *max, *exp)),
+        _ => None,
+    }
+}
+
+/// A `bpf` widget's edit-back payload: the `"points"` tag plus the flat
+/// breakpoint list (`t v shape curve` per point) — what a `/gui_event` carries
+/// to the script, and what a bound editor forwards to the audio server.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
+    match &tree.find(id)?.kind {
+        WidgetKind::Bpf { points, .. } => {
+            let mut args = vec![OscType::String("points".into())];
+            args.extend(bpf::points_args(points));
+            Some(args)
+        }
+        _ => None,
+    }
 }
 
 /// The 0..1 fraction a slider press/drag at `(cx, cy)` maps to, by orientation:

@@ -76,8 +76,16 @@ impl Binding {
 
     /// The OSC message that forwards `value`: `addr prefix… value`.
     pub fn message(&self, value: OscType) -> OscMessage {
+        self.message_args(vec![value])
+    }
+
+    /// The OSC message that forwards a **flat list** of values (an editor's
+    /// edit-back payload, e.g. a breakpoint list or a `/b_setn` region):
+    /// `addr prefix… values…` — the widget-value forward generalized to more
+    /// than one argument.
+    pub fn message_args(&self, mut values: Vec<OscType>) -> OscMessage {
         let mut args = self.prefix.clone();
-        args.push(value);
+        args.append(&mut values);
         OscMessage {
             addr: self.addr.clone(),
             args,
@@ -171,6 +179,37 @@ mod tests {
         );
         // The address must look like an OSC path.
         assert!(Binding::from_json(&[Value::from("n_set")]).is_err());
+    }
+
+    #[test]
+    fn message_args_forwards_a_flat_list_after_the_prefix() {
+        // The edit-back forward: a bound envelope editor sends its whole flat
+        // breakpoint list after the fixed prefix, ints kept int.
+        let target = vec![
+            OscType::String("server".into()),
+            OscType::String("/n_setn".into()),
+            OscType::Int(1000),
+            OscType::String("env".into()),
+        ];
+        let b = Binding::parse(&target).unwrap();
+        let msg = b.message_args(vec![
+            OscType::Float(0.0),
+            OscType::Float(1.0),
+            OscType::Int(5),
+            OscType::Float(-4.0),
+        ]);
+        assert_eq!(msg.addr, "/n_setn");
+        assert_eq!(
+            msg.args,
+            vec![
+                OscType::Int(1000),
+                OscType::String("env".into()),
+                OscType::Float(0.0),
+                OscType::Float(1.0),
+                OscType::Int(5),
+                OscType::Float(-4.0),
+            ]
+        );
     }
 
     #[test]

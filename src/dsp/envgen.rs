@@ -10,82 +10,12 @@
 //! `doneAction` through [`UGen::done`], which the engine turns into freeing the
 //! node (see `node::NodeTree` and `server::engine`).
 
-use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
+// The segment interpolation itself (the SC shape curves) lives once in the
+// shared core, so a client drawing an envelope evaluates exactly what this
+// UGen plays.
+use clausters_core::envshape::shape_value;
 
-/// SuperCollider envelope shape number, `t` in `[0, 1)` the position within the
-/// segment, `a` the start level, `b` the target, `c` the curve value (only used
-/// by the custom-curvature shape). Returns the interpolated level.
-///
-/// The endpoints hold: every shape yields `a` at `t == 0` and tends to `b` as
-/// `t -> 1`; the exact target is committed by the caller when the segment
-/// completes, so `t` never actually reaches 1.
-#[inline]
-fn shape_value(shape: i32, c: f32, a: f32, b: f32, t: f32) -> f32 {
-    use std::f32::consts::{FRAC_PI_2, PI};
-    match shape {
-        // Step: jump to the target immediately and hold it for the duration.
-        0 => b,
-        // Hold: stay at the start level; the jump to the target happens when
-        // the segment completes.
-        8 => a,
-        // Exponential: needs same-sign, non-zero levels; a crossing through or
-        // to zero is undefined, so nudge zeros to a tiny same-signed value and
-        // fall back to linear across a sign change.
-        2 => {
-            let a = if a.abs() < 1e-5 {
-                1e-5_f32.copysign(a)
-            } else {
-                a
-            };
-            let b = if b.abs() < 1e-5 {
-                1e-5_f32.copysign(b)
-            } else {
-                b
-            };
-            if a.signum() == b.signum() {
-                a * (b / a).powf(t)
-            } else {
-                a + t * (b - a)
-            }
-        }
-        // Sine: equal-power ease in/out (half a cosine).
-        3 => a + (b - a) * (1.0 - (PI * t).cos()) * 0.5,
-        // Welch: a quarter sine, concave for a rise and convex for a fall.
-        4 => {
-            if b >= a {
-                a + (b - a) * (FRAC_PI_2 * t).sin()
-            } else {
-                b + (a - b) * (FRAC_PI_2 * (1.0 - t)).sin()
-            }
-        }
-        // Custom curvature: `c` bends the segment (0 == linear, positive builds
-        // slowly then fast, negative the reverse).
-        5 => {
-            if c.abs() < 0.001 {
-                a + t * (b - a)
-            } else {
-                a + (b - a) * (1.0 - (t * c).exp()) / (1.0 - c.exp())
-            }
-        }
-        // Squared / cubed: interpolate the square/cube root linearly, then raise
-        // back. Squared clamps to non-negative levels (its root is real only
-        // there); cubed uses the sign-preserving real cube root.
-        6 => {
-            let ra = a.max(0.0).sqrt();
-            let rb = b.max(0.0).sqrt();
-            let s = ra + t * (rb - ra);
-            s * s
-        }
-        7 => {
-            let ra = a.cbrt();
-            let rb = b.cbrt();
-            let s = ra + t * (rb - ra);
-            s * s * s
-        }
-        // Linear (1) and any unknown shape.
-        _ => a + t * (b - a),
-    }
-}
+use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
 /// Number of leading, non-segment inputs (see the layout comment in `process`).
 const HEADER_INPUTS: usize = 9;

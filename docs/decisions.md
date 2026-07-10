@@ -248,3 +248,44 @@ one item) settled four decisions:
   `EditorProps` so everything that reads the widget tree (renderer, playhead
   animation, readouts) keeps working; the group is the single writer, so the
   mirrors cannot drift.
+
+## Edit-back-to-data: flat event payloads, the binding path generalized to lists
+
+The `bpf` envelope editor is the first widget that *writes data back*, and the
+pattern it establishes is meant to be reused verbatim by the later drawn-buffer
+and automation-lane cases. Four decisions:
+
+- **Edited data flows to the script as new event *payloads*, never new
+  addresses.** An edit emits `/gui_event <id> <tag> <flat values...>` — for the
+  envelope, `"points"` followed by `t v shape curve` per breakpoint, ints kept
+  int and floats float. The `/gui_*` address family does not grow per widget;
+  bulk edits (a drawn buffer region) would ride one blob in the existing
+  `samples_to_blob` little-endian `f32` layout. The flat-primitives boundary
+  rule holds on the way back exactly as on the way in.
+- **The server-bound direction is the widget-value binding generalized to a
+  list.** A bound editor forwards its whole edited structure straight to the
+  audio server — `Binding::message_args`/`Host::forward_args` send
+  `addr prefix… values…`, the multi-argument form of the bound knob's
+  `addr prefix… value` — bypassing the script exactly as `/gui_bind` promises.
+  No new binding vocabulary: the same destination, prefix and prune rules.
+- **The host's mapped resources stay read-only.** Edits mutate the host's
+  typed tree and flow out over the two channels above; the mmap bulk path is
+  never written through. Anything that must land in a shared file or a server
+  buffer goes through the server (or the script), so ownership of bulk
+  resources stays single-writer.
+- **The envelope shape math lives once, in the core.** The editor draws
+  segments through `clausters_core::envshape::shape_value` — relocated from
+  the server, whose `EnvGen` now delegates to it (the same move the forward
+  FFT made) — so what the editor draws is what the server plays by
+  construction. Its FFI export is deferred until a client actually evaluates
+  envelopes client-side (the tap-reader precedent): the Python leg only maps
+  breakpoint lists to/from `Env`, which needs no curve evaluation. The
+  breakpoint model, hit-testing and drag clamps are display logic and stay
+  gui-side (`host/bpf.rs`).
+
+The widget model itself is deliberately the future automation-lane shape:
+values in any `[min, max]` (bipolar, unipolar, on/off lanes via the step
+shape), every standard `EnvGen` transition curve, an optional exponential
+display scale for frequency-like ranges, and times over an explicit
+`[0, duration]` domain — so a multitrack automation view later composes this
+model instead of designing a new one.
