@@ -78,11 +78,11 @@ START_ENV = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
 
 # The curve menu's options: `Env`-style curve specs — shape names plus two
 # custom curvatures (positive builds slowly then fast, negative the reverse).
-# The two constants differ per the SuperCollider semantics: "hold" keeps each
-# point's value until the next point (the intuitive on/off lane), while
-# "step" jumps to the *target* immediately — a step segment draws (and plays)
-# the NEXT point's value, so a point's level shows up one segment early.
-CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", "step", -4.0, 4.0]
+# "hold" is the constant lane: each point's value held until the next point.
+# (The wire format also has SC's "step" — jump to the *target* at segment
+# start, so a point's level shows one segment early; it expresses nothing
+# hold cannot, so the menu leaves it out. `Env.step` builds step sequences.)
+CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0]
 
 
 def scene() -> dict:
