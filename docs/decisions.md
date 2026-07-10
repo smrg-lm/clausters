@@ -284,8 +284,10 @@ and automation-lane cases. Four decisions:
   gui-side (`host/bpf.rs`).
 
 The widget model itself is deliberately the future automation-lane shape:
-values in any `[min, max]` (bipolar, unipolar, on/off lanes via the step
-shape), every standard `EnvGen` transition curve, an optional exponential
+values in any `[min, max]` (bipolar, unipolar, on/off lanes via the hold
+shape — SC's step jumps to the *target* level at segment start, so a step
+segment shows the next point's value), every standard `EnvGen` transition
+curve, an optional exponential
 display scale for frequency-like ranges, and times over an explicit
 `[0, duration]` domain — so a multitrack automation view later composes this
 model instead of designing a new one.

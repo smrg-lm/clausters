@@ -388,7 +388,10 @@ def bpf(id: int, *, points=None, min: float | None = None, max: float | None = N
 
     The model is general on purpose (the automation-lane shape): values live in
     ``[min, max]`` — unipolar (the ``0``/``1`` default), bipolar, or any
-    parameter span; an on/off lane is the ``"step"`` shape over ``0``/``1``;
+    parameter span; an on/off lane is the ``"hold"`` shape over ``0``/``1``
+    (each point's value held until the next point — ``"step"``, per the
+    SuperCollider semantics, instead jumps to the *target* level at segment
+    start, so a step segment shows the next point's value);
     ``exp=True`` gives frequency-like ranges a geometric display scale
     (requires ``0 < min < max``). Times span ``[0, duration]`` (omitting
     ``duration`` fits the last point).

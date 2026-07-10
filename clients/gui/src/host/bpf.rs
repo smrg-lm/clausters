@@ -9,9 +9,11 @@
 //! The model is deliberately more general than an amplitude envelope, so the
 //! same widget later serves automation lanes: values live in an arbitrary
 //! `[min, max]` range (unipolar, bipolar, or any parameter span), an on/off
-//! lane is just the step shape over `{0, 1}`, every standard transition curve
-//! is a shape/curve pair, and frequency-like parameters get an exponential
-//! display scale (`exp`, requiring a positive range). Times are in the
+//! lane is the **hold** shape over `{0, 1}` (each point's value held until the
+//! next; SC's *step* instead jumps to the target at segment start, so a step
+//! segment draws — and plays — the *next* point's value), every standard
+//! transition curve is a shape/curve pair, and frequency-like parameters get
+//! an exponential display scale (`exp`, requiring a positive range). Times are in the
 //! envelope's own units (seconds for an `EnvGen`) over a `[0, duration]`
 //! domain that defaults to the last breakpoint's time.
 //!

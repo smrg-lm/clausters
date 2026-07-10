@@ -397,7 +397,7 @@ pub enum WidgetKind {
     /// `(time, value)` plus a per-segment shape/curve **using the server's own
     /// envelope shape numbers** (evaluated through the shared core, so what it
     /// draws is what an `EnvGen` plays). Values live in `[min, max]` — any
-    /// automation range: unipolar, bipolar, an on/off lane via the step shape —
+    /// automation range: unipolar, bipolar, an on/off lane via the hold shape —
     /// with an optional exponential display scale (`exp`) for frequency-like
     /// params; times span `[0, duration]` (0 = fit the last point). Edits flow
     /// back as a `"points"` event (or the bound forward) carrying the flat
