@@ -530,6 +530,29 @@ class Env:
         """Attack to `sustain`, hold there until release, then fall to 0."""
         return cls([0.0, sustain, 0.0], [attack, release], curve, release_node=1)
 
+    @classmethod
+    def step(cls, levels, times, release_node=None, loop_node=None):
+        """A step sequence: **each value held for its duration** — `levels`
+        and `times` have the *same* length, unlike the raw constructor
+        (``Env.step([0, 1], [0.5, 0.5])`` holds 0 for 0.5, then 1 for 0.5).
+
+        This is the conceptual interface of a value-with-duration sequence;
+        like SuperCollider's ``Env.step``, it is realized over the raw
+        initial-level + (target, duration) form by prepending the first level
+        with the ``"step"`` shape (which jumps to each segment's target at its
+        start)."""
+        levels = list(levels)
+        times = list(times)
+        if len(levels) != len(times):
+            raise ValueError(
+                f"Env.step: levels ({len(levels)}) and times ({len(times)}) "
+                "must have the same length"
+            )
+        if not levels:
+            raise ValueError("Env.step needs at least one level")
+        return cls([levels[0]] + levels, times, "step",
+                   release_node=release_node, loop_node=loop_node)
+
     def to_inputs(self):
         """The envelope as the flat number list `env_gen` appends after its
         fixed inputs: ``initLevel, numSegments, releaseNode, loopNode`` then

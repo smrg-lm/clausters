@@ -324,6 +324,24 @@ def test_done_action_constants_match_the_server():
     )
 
 
+def test_env_step_holds_each_value_for_its_duration():
+    # The value-with-duration interface: equal-length levels/times, realized
+    # (as in sclang) by prepending the first level over the step shape, whose
+    # segments jump to their target at the start.
+    e = Env.step([0.0, 1.0], [0.5, 0.5])
+    assert e.levels == [0.0, 0.0, 1.0]
+    assert e.times == [0.5, 0.5]
+    assert e.to_inputs() == [
+        0.0, 2.0, -1.0, -1.0,
+        0.0, 0.5, 0.0, 0.0,  # jumps to 0 at t=0: 0 held for 0.5
+        1.0, 0.5, 0.0, 0.0,  # jumps to 1 at t=0.5: 1 held for 0.5
+    ]
+    with pytest.raises(ValueError):
+        Env.step([0.0, 1.0], [0.5])  # equal lengths, unlike the raw form
+    with pytest.raises(ValueError):
+        Env.step([], [])
+
+
 def test_env_rejects_mismatched_levels_and_times():
     with pytest.raises(ValueError):
         Env([0.0, 1.0], [0.1, 0.2])          # 2 levels need 1 time
