@@ -92,6 +92,11 @@ with this modularity in mind.
 
 ## Commit workflow
 
+**Work directly on `main`.** This is a single-maintainer repo; commit to
+`main` unless the user explicitly asks for a branch or a PR. Do **not** create
+a feature branch on your own — this overrides the default "if on the default
+branch, branch first" behavior.
+
 Before generating any commit that touches Rust, run `cargo fmt` (or at least
 `cargo fmt --check`) and include the formatting fixes — the tree must be
 `cargo fmt --check`-clean. Do not hand-format Rust against rustfmt; rustfmt is
