@@ -5,7 +5,7 @@ description: Domain knowledge for designing and implementing each Clausters GUI 
 
 # GUI widgets: per-element domain knowledge
 
-This skill is the widget-level companion of [[clausters-gui]] (the track map: protocol, architecture, rendering machinery) — what [[ugen-dsp]] is to the server's UGens. It covers what each graphical element *is*: its algorithm, visual parameters, data source and implementation pattern. `clients/gui/PLAN.md` wins on milestone scoping and staging; `DESIGN.md` on rationale.
+This skill is the widget-level companion of [[clausters-gui]] (the track map: protocol, architecture, rendering machinery) — what [[ugen-dsp]] is to the server's UGens. It covers what each graphical element *is*: its algorithm, visual parameters, data source and implementation pattern. `clients/gui/PLAN.md` wins on milestone scoping, staging and design rationale.
 
 ## The extension recipe (every new widget follows it)
 

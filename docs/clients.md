@@ -98,10 +98,6 @@ Two design choices carry the rest:
   treated as a cache that moves through local shared resources (mmap natively,
   fetch in the browser), never chunked over the wire.
 
-The full design rationale and the rendering strategy are in
-`clients/gui/DESIGN.md`; the `/gui_*` command/event tables and the widget
-catalog are in `clients/gui/PLAN.md`.
-
 ## The GUI host in the browser
 
 The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to a **separate audio server over WebSocket** — start the server with `--ws` (default port 57120). There is no in-process engine in the browser; the embed/standalone path is native-only.

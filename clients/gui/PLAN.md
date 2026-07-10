@@ -1,6 +1,6 @@
 # Clausters GUI track - implementation plan
 
-Milestones for the graphical-element system: a scriptable set of GUI widgets driven from a dynamic language (Python now, JavaScript later), covering an audio editor, navigable waveform/spectrogram views, custom instrument panels, a live node-tree view, shader canvases, and - later - editable sequencer and music notation. The design rationale lives in `DESIGN.md`; this file is the staged plan. Like the `PLAN.md` roadmaps, milestone labels (`Gx`) live only here, never in published docs or docstrings.
+Milestones for the graphical-element system: a scriptable set of GUI widgets driven from a dynamic language (Python now, JavaScript later), covering an audio editor, navigable waveform/spectrogram views, custom instrument panels, a live node-tree view, shader canvases, and - later - editable sequencer and music notation. This file is both the staged plan and the design rationale behind it; a settled, published summary of that rationale lives in the server book's `docs/clients.md` ("The GUI host: a scriptable peer"). Like the `PLAN.md` roadmaps, milestone labels (`Gx`) live only here, never in published docs or docstrings.
 
 ## What `clausters-gui` is (the naming)
 
@@ -44,6 +44,34 @@ The widget tree is a hierarchy with client-allocated integer ids and subtree fre
 ### Crate / packaging boundary
 
 `clausters-gui` is its **own crate**, kept out of the root `clausters` workspace so it can never break the core server build (the `clients/gui` crate already validates this). For end users it ships as a **separate package/binary** from the audio server and the Python client, because the GPU/windowing stack (`wgpu`, `winit`, font/shader assets, later Verovio) is large and should not bloat a headless server install or a `pip` wheel. The two move and version independently.
+
+### Why a web-capable rendering substrate
+
+The varied uses (editor, notation, instrument panels) pull toward a web-capable rendering substrate, for three concrete reasons, not fashion:
+
+1. **Scriptability from JS is free** if the host *is* a web surface; Python drives the same surface over the same protocol (WebSocket).
+2. **Music notation = Verovio.** Verovio is a C++ engraving library that renders MEI/MusicXML to **SVG**, and ships a **WebAssembly/JS** build. In a web surface it drops in directly; MuseScore (a whole Qt app) is not embeddable, so what we actually want - its notation capability - is Verovio rendering SVG. Editable notation then means making that SVG interactive, which the browser does natively.
+3. **One GPU stack, two targets.** `wgpu` *is* the WebGPU implementation. The heavy widgets (waveform, spectrogram) are custom GPU rendering either way; written against `wgpu`/WGSL they run natively today and under WebGPU in a browser unchanged. The prototype in this crate exists to prove that seam.
+
+That substrate gives **one frontend and one GPU stack across all the targets**, which is why the browser staging (G11-G17) is incremental rather than a fork: the native desktop host comes first (fastest to iterate), the browser/WebGPU target is reached by swapping the native surface for a `<canvas>` while the renderers run unchanged, and an optional Tauri wrapper repackages the same web frontend as a native app.
+
+What we explicitly reject: betting the whole thing on a single native Rust toolkit (egui/iced/Vizia/Makepad) as the scriptable layer. That would force us to invent a widget protocol *and* solve Verovio over FFI *and* give up the web - paying all three costs. Those toolkits are excellent for a monolithic Rust app, which is not what this is.
+
+### Generic on the wire, typed in the renderer
+
+The wire form is deliberately *generic* - any `{id, type, props, children}` - so the protocol never changes when a widget type is added. The renderer is the other half of that rule: it turns the generic tree into a *typed* model it knows how to lay out and draw, where adding a type is a new variant plus a handler, not a wire change. An unrecognized type is not an error - it is laid out (reserving its space) but not painted, so a host built today renders the parts of a newer GuiDef it understands and ignores the rest. That keeps the catalog extensible from both ends: the script may send types this host predates, and this host may render types a future script does not yet use.
+
+### The host's two fronts and the windowing thread
+
+The host has a headless protocol front (for tests, automation and no-display machines) and a windowed front; both run the same protocol logic, which is transport- and GPU-agnostic and *returns* its effects (replies, window open/close, repaint) rather than performing I/O, so it is unit-testable without a socket or a GPU. Windowing forces a threading shape: the GPU toolkit (winit) must own the main thread, so the OSC transport runs on a background thread and hands each datagram to the main thread through the event loop's proxy. All host state then lives on one thread, lock-free, mirroring the audio server's single-threaded command loop; replies go back out the shared socket. The per-window *render* is itself one shared, platform-agnostic function (`host::frame::render`): both fronts feed it a tree plus the window's GPU resources, so the browser front (a `<canvas>` WebGPU surface) is pixel-faithful by construction, not a parallel renderer - it differs from the desktop only in the surface, the loop driver and where the live inputs come from (the shared-memory bus natively; the server's `/c_stream` bus snapshots over WebSocket in the browser, filling the same `BusSource` seam). The *interaction* is shared the same way (`host::interact`: hit-test, value/toggle/menu mutation), so a turned knob decides bound-vs-event identically on both.
+
+The typed widget tree is the **single source of truth**, held by the host: the windowed front renders and hit-tests from it and writes interaction results straight back into it, so a script's `/gui_set` and a user's drag are the same edit to one tree and the next frame shows both. A control's value flows out as `/gui_event <id> <value>` to the script that built the window (whose address is captured at `/gui_def`), and a user-closed window as `/gui_closed <id>`; the heavy views send their navigation out the same way.
+
+That "transport- and GPU-agnostic logic" claim is made structural by a **platform seam** (G11): the host is split into a platform-agnostic core (the widget tree, layout, protocol dispatch, the light-widget drawing) that compiles for the browser (`wasm32`) unchanged, and a native I/O shell behind four small traits - `Transport` (send OSC to the audio server), `BusSource` (a control bus, read from shared memory natively), `BulkLoader` (resolve a waveform/plot's local file to samples or a peak pyramid), and `DefStore` (persist named GuiDefs). The browser fills the same seams over its only carrier (WebSocket) and over `fetch`, reusing every line of the agnostic core; `check-wasm.sh` compiles the core for `wasm32` so it can never silently re-couple to native I/O. The in-process embedded server is, *for now*, the one explicitly native-only path - a browser host drives a *separate* audio server over WebSocket. That scope boundary is not a law: the "in-browser audio engine" track below relaxes it through the very same `Transport`/`ServerLink` seam.
+
+### One drawing primitive for the light widgets
+
+The heavy views (`waveform`, the spectrogram/scopes) own custom GPU pipelines; everything else - panel chrome, the control widgets, and the text of labels and values - is built from a single primitive: a batch of flat-colored triangles (rect/quad/line/disc) drawn by one pipeline. A knob is a disc plus a swept pointer; text is a compact embedded bitmap font emitted as one small quad per lit pixel into that same batch - no glyph texture, no second pipeline. So adding a control is composition, not new GPU code, and the heavy-view machinery stays the only place with bespoke shaders. Proportional/large text (a real font rasterizer) is a deliberate later refinement; the fixed-cell font is enough for instrument-panel labels and read-outs.
 
 ## Guiding principle: serve the server and its clients, and reuse what exists
 
@@ -141,22 +169,80 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 
 Heavy views never reimplement DSP the server already owns: when a widget needs analysis/processing not already provided by `clausters-server` (peaks, STFT, FFT, resampling), `clausters-gui` reaches for `clausters-ffi`/`libclausters` rather than duplicating signal code. The `clients/gui` crate's own `peaks`/`spectrogram` modules are the prototype of that shared machinery and are a candidate to migrate behind the FFI.
 
+## Heavy widgets: the rendering strategy
+
+An editor-grade waveform or spectrogram cannot draw every sample, and does not need to: it only needs to resolve the signal to the *rendered resolution*. The work is therefore driven by `samples_per_px` (visible length / render width in device pixels), never by buffer length.
+
+### Reusable machinery (the modules)
+
+The navigation and analysis are factored out so the waveform and the spectrogram share them. Core, windowing-agnostic (web-portable) modules:
+
+- `viewport::View` - the visible window in sample units (`f64`), with `zoom`/`pan`/`clamp` and `samples_per_px`. Pure, unit-tested, renderer-agnostic. The spectrogram reuses it verbatim.
+- `peaks::Pyramid` - the resolution-matched **min/max peak analysis** (waveform): level 0 summarizes every `base_bucket` samples into a `(min, max)` pair, each higher level halves the resolution, and `level_for(samples_per_px)` selects the level whose bucket matches the zoom so each pixel column reads ~one bucket.
+- `spectrogram::Stft` - the **STFT analysis** (spectrogram): `n_frames` x `n_bins` magnitudes from a windowed FFT, the time-domain analogue of the peak pyramid.
+- `view::TimelineView` - the trait both views implement (`total_samples`, `upload`, `draw`), so one harness drives either.
+- `bytes` - shared little-endian (de)serialization for the caches.
+- `waveform`/`spectrogram` renderers - the GPU pieces built on the above.
+
+Native-only helpers (excluded from wasm): `native` (a winit + wgpu windowing harness generic over `TimelineView`) and `demo` (the synthetic test signal). A web build swaps `native` for a `<canvas>` surface and keeps everything else.
+
+### The analysis is a cache (memory or temp file)
+
+Computing the analysis for a long file is the one expensive pass, so both `Pyramid` and `Stft` are treated as caches, the way audio editors keep an overview/peak file beside the audio: each lives in memory and serializes to/from a flat byte buffer (`to_bytes`/`from_bytes`) or a temp/cache file (`write_cache`/`read_cache`) via the shared `bytes` module. The layout is a flat sequence of `f32` arrays so a production build can **memory-map** it instead of reading it into RAM. The peak pyramid is ~2x its level-0 size (a small constant fraction of the source); the STFT is `n_frames * n_bins` floats.
+
+### Bulk data moves through local shared resources, not the wire
+
+Two decisions follow once the data gets large. **First, where the analysis lives.** The peak pyramid and the forward FFT are not GUI-private: a pyramid is general client functionality (any client with a waveform view), and the FFT is shared with the server's `FFT`/`IFFT` UGens. So they live **once** in `clausters-core` (`peaks`, `fft` over `microfft`) and are reached from non-Rust clients through the FFI; this crate's `peaks` is a re-export and the spectrogram calls the core FFT. **Second, how the bytes move.** A multi-megabyte buffer cannot ride an OSC datagram (the ~64 KB cap), and chunking it over `/b_getn` re-traverses the network asynchronously for data already in local RAM. So large payloads move as **memory-mapped files**: a `waveform` names a `path` (raw `f32`) or a `cache` (a prebuilt pyramid) the host maps read-only and reads zero-copy, and a server buffer reaches the same path via `/b_export` (a raw dump to a local file) rather than `/b_getn`. The network reads stay the async fallback, and the browser - which can map neither shared memory nor files - is exactly that fallback's client: `path`/`cache` become URLs fetched against the page origin (the pyramid for raw fetches built in wasm from the same core), and a server buffer rides chunked `/b_getn` over WebSocket through the shared fetch machine (`host::fetch`); the synchronous `BulkLoader` trait stays the native (mmap) fill, since a fetch cannot block. This is the same move the control buses made in the audio path (read from the shared segment, zero messages), generalized to bulk audio.
+
+### Three render regimes (no wasted work, and never "by samples" naively)
+
+Per frame the waveform renderer picks one by `samples_per_px`, so it is always bounded by the screen:
+
+- **Line** (`samples_per_px <= 2`): few enough samples are visible that individual ones matter - draw a polyline through the raw samples in range (vertex count bounded by window width). This is the only regime that touches raw samples directly, and only when it is cheap to.
+- **Raw columns** (`2 < samples_per_px < base_bucket`): one min/max column per pixel computed directly from raw samples - exact, and bounded because we are below `base_bucket` samples/px.
+- **Pyramid columns** (`samples_per_px >= base_bucket`): one min/max column per pixel read from the peak level matching the zoom.
+
+### The spectrogram: same navigation, constant render cost
+
+The spectrogram is the time-frequency analogue and deliberately reuses the navigation machinery. The STFT magnitudes are uploaded once as a 2D texture (x = time/frame, y = frequency bin). Rendering is a single full-screen quad whose fragment shader samples that texture; `viewport::View` only reshapes the sampled time slice, so the GPU cost is **constant regardless of zoom** (it is bounded by screen pixels, and the one-time analysis is the cache). The GPU's linear filtering gives resolution-matched down-sampling on zoom-out. So the waveform bounds work by *picking a resolution-matched LOD per frame*, while the spectrogram bounds it *structurally* (one texture sample per pixel) - two expressions of the same "never resolve finer than the screen" rule. Display controls (linear/log/mel/bark frequency axis, dB window/contrast, colormap) live entirely in the fragment shader as cheap uniforms, so they change live without re-analyzing; the analysis parameters that *do* require recomputation - window size, hop, sample rate - are arguments to `Stft::compute`.
+
+Notation (`"score"` widget) is out of the GPU path entirely: Verovio-rendered SVG hosted by the web surface, made interactive there.
+
+### Open questions in the rendering strategy
+
+Design-level questions the heavy views still leave open, distinct from the staged milestones above (interpolating between adjacent pyramid levels for smoother zoom-out and the edit-back-to-data pattern have since landed - the LOD crossfade in G20 and the `bpf` editor in G21):
+
+- **Cache lifecycle**: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
+- **Spectrogram scaling**: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample.
+- **Migrating the rest of the `Stft` machinery behind `clausters-ffi`/`libclausters`** so the signal code lives once: done for `peaks` and the forward FFT (both now in `clausters-core`, the pyramid reachable over the FFI); the `Stft` windowing/normalization and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.
+
 ## Status: foundation in place
 
-The `clients/gui` crate (an independent workspace, so it can never break the core build) already validates the heavy-rendering path - the `Gx` work below builds the protocol/host around it:
+The `clients/gui` crate (an independent workspace, so it can never break the core build) already validates the heavy-rendering path - the `Gx` work below builds the protocol/host around it. The prototype layout:
 
-- `viewport::View` - reusable time/secondary-axis navigation (zoom/pan/clamp, `samples_per_px`), unit-tested.
-- `peaks::Pyramid` - resolution-matched min/max peak analysis with a memory/temp-file cache (mmap-ready), unit-tested.
-- `spectrogram::Stft` - STFT analysis + FFT with the same cache shape, unit-tested.
-- `waveform` / `spectrogram` renderers - the GPU pieces (three render regimes for the waveform; constant-cost texture sample for the spectrogram), with log/linear axis, dB window and colormaps.
-- `view::TimelineView` + `native` - the trait both views implement and a generic winit + wgpu harness driving either.
-- `bytes` - shared little-endian cache (de)serialization.
+```
+src/lib.rs           module index
+src/viewport.rs      View + zoom/pan (unit-tested)
+src/peaks.rs         Pyramid peak analysis + cache (unit-tested)
+src/spectrogram.rs   Stft analysis + FFT + cache + renderer (unit-tested)
+src/spectrogram.wgsl full-screen quad, texture sample, viridis colormap
+src/waveform.rs      WaveformData + WaveformRenderer (3 regimes)
+src/waveform.wgsl    passthrough shader (columns + line pipelines)
+src/view.rs          TimelineView trait (incl. optional char/vertical hooks)
+src/bytes.rs         shared little-endian cache (de)serialization
+src/native.rs        winit + wgpu harness driving any TimelineView
+src/demo.rs          synthetic test signal
+src/bin/waveform.rs      waveform binary
+src/bin/spectrogram.rs   spectrogram binary
+```
+
+`cargo test` exercises the reusable machinery without a GPU: navigation math, peak correctness vs brute force, FFT correctness (impulse -> flat spectrum, cosine -> peak at its bin), STFT frequency localization, and cache round-trips (memory and temp file). `cargo run --bin waveform` and `cargo run --bin spectrogram` open the two windows (need a display and a Vulkan/Metal/DX12/GL adapter). The split is the point: the renderers take a `wgpu::Device`/`Queue` and a target format and own nothing windowing-specific, so `native` is just a driver, swappable for a `<canvas>` WebGPU surface; adding a view is a new module implementing `TimelineView` plus a one-screen binary, no new windowing or input code. This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can be written once against `wgpu`/WGSL and run both natively and on the web, while the *composition* of widgets is a scripted protocol, not compiled Rust.
 
 And on the core/server side, the transport the web direction needs is already done (G1, below).
 
 ## Completed milestones (foundation + desktop host, G1-G10)
 
-Each landed with its detail in the git history; the design rationale that outlived them is in `DESIGN.md` and `docs/decisions.md`.
+Each landed with its detail in the git history; the design rationale that outlived them is in this file's design sections above and `docs/decisions.md`.
 
 - ✅ **G1 - WsHub transport**: a WebSocket transport carrying the existing OSC encoding (`src/osc/ws.rs`, `ClientId::Ws`, the `clausters_ws_*` FFI client), one OSC packet per binary frame through `osc::decode_packet`.
 - ✅ **G2 - GUI host skeleton** (`clausters-gui` binary): the dual-role process, headless first — links `clausters-core` (not the server crate) for the shared OSC seam and owns a thin UDP transport front; a generic GuiDef node, the widget registry (node-tree shape), the transport-agnostic command loop, and the Python driver `clausters.gui`.

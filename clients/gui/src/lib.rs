@@ -16,8 +16,6 @@
 //! - [`native`]: a winit + wgpu windowing harness that drives any `TimelineView`.
 //! - [`demo`]: a synthetic test signal for the prototype binaries.
 //!
-//! See `DESIGN.md` for the scriptable widget protocol these views plug into.
-//!
 //! The widget protocol itself — the GUI host that speaks `/gui_*` over OSC and
 //! drives these views — lives in [`host`]. It is split along the platform seam:
 //! a web-portable agnostic core (the widget tree, layout, protocol dispatch, the
