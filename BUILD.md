@@ -76,13 +76,41 @@ cargo build --release --features embed,realtime
 
 `--features faust` needs **libfaust built with the LLVM backend**. Distro
 packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers,
-so build it from source and install it under `~/.local` — the reproducible
-recipe is in `LOG.md` (the libfaust build section). `build.rs` locates it
+so build it from source and install it under `~/.local`. `build.rs` locates it
 through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`:
 
 ```sh
 FAUST_PREFIX=~/.local cargo build --features faust
 ```
+
+#### Building libfaust from source (reproducible, no sudo)
+
+Pin the same version the tree is tested against and build the dynamic library
+with the LLVM backend:
+
+```sh
+# system deps: cmake, an LLVM dev package, libzstd-dev, zlib1g-dev
+sudo apt install cmake llvm-20-dev libzstd-dev zlib1g-dev
+
+git clone --depth 1 -b 2.81.10 https://github.com/grame-cncm/faust
+cd faust
+make most                       # builds the compiler; note: NOT the .so yet
+
+# two cmake cache tweaks in the build dir, then rebuild + install to ~/.local:
+#   -DINCLUDE_DYNAMIC=ON        the `most` target skips the shared lib
+#   -DLINK_LLVM_STATIC=off      link the monolithic libLLVM.so (no libpolly-*-dev)
+#   -DLLVM_CONFIG=llvm-config-20
+cmake -DINCLUDE_DYNAMIC=ON -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-20 \
+      -S build -B build/faustdir
+cmake --build build/faustdir
+make -C build/faustdir install PREFIX=$HOME/.local
+```
+
+Notes: static LLVM linking (`LINK_LLVM_STATIC=on`) additionally needs
+`libpolly-20-dev` and is not used here. The dynamic `libfaust.so` is ~11 MB
+against the system `libLLVM.so`; a full build from source takes ~10 min on 8
+cores. See [the design record](docs/decisions.md#faust-embedding-decisions-and-upstream-bugs)
+for why the distro package cannot be used.
 
 ### PipeWire-native MIDI (`midi-jack`)
 

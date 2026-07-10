@@ -5,7 +5,7 @@ description: How to work on the Clausters GUI track (clients/gui) — the script
 
 # Clausters GUI track (clients/gui)
 
-A system of graphical elements **built and driven from a dynamic language at runtime** - the way sclang builds Qt widgets - not a GUI compiled into the audio server. The canonical design rationale is `clients/gui/DESIGN.md`; the staged milestones (`Gx`) are `clients/gui/PLAN.md`. This skill is the working map; those two files win on any detail, and `Gx` labels live only there and in `LOG.md` (never in published docs or this skill's prose). Per-widget domain knowledge (scopes, editor-grade views, BPF, edit-back-to-data, the widget extension recipe) is in [[gui-widgets]].
+A system of graphical elements **built and driven from a dynamic language at runtime** - the way sclang builds Qt widgets - not a GUI compiled into the audio server. The design rationale is `clients/gui/DESIGN.md` (a settled summary is published in `docs/clients.md`, "The GUI host: a scriptable peer"); the staged milestones (`Gx`) are `clients/gui/PLAN.md`. This skill is the working map; those files win on any detail, and `Gx` labels live only in that roadmap (never in published docs or this skill's prose). Per-widget domain knowledge (scopes, editor-grade views, BPF, edit-back-to-data, the widget extension recipe) is in [[gui-widgets]].
 
 The crate is an **independent workspace** - build and test from inside `clients/gui/` (`cargo test`, `cargo run --bin clausters-gui`), never from the repo root, so it can never entangle the core server build. It links `clausters-core` (a path dependency pulling only `rosc`, never the server crate) for the shared OSC seam; the optional `standalone` feature additionally links the `clausters` crate (`embed,realtime`) for the embedded server, off by default for size.
 
@@ -91,6 +91,6 @@ Every host feature is exercised (and lands implemented) through `clients/python/
 ## Conventions (carry over from the rest of the project)
 
 - Build/test the crate from `clients/gui/`; keep it `cargo fmt --check`-clean and clippy-clean, native **and** `wasm32` (`check-wasm.sh`). Code, comments, strings and tests are English.
-- `Gx` milestone labels stay in `clients/gui/PLAN.md` and `LOG.md` only.
+- `Gx` milestone labels stay in `clients/gui/PLAN.md` only.
 - Markdown in this repo is **single-line paragraphs/list items, no hard-wrap** (tables and code blocks exempt).
-- **Closing a GUI milestone** means more than code: update `LOG.md` and `PLAN.md`, refresh `DESIGN.md` if the rationale moved, developer/user docs where applicable (`docs/clients.md` carries the browser quick-start), `GUIA.md` manual-test steps, and a commented example - the full milestone checklist ([[documentation]] for placement).
+- **Closing a GUI milestone** means more than code: a clear commit message and the `clients/gui/PLAN.md` checkbox, refresh `DESIGN.md` if the rationale moved (promoting anything settled to `docs/clients.md`), developer/user docs where applicable (`docs/clients.md` carries the browser quick-start), a commented example, a `docs/decisions.md` note only for a non-obvious choice, and a `GUIA.md` smoke step only for new human-audible/visual behavior ([[documentation]] for placement).

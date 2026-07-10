@@ -2,7 +2,7 @@
 
 This is the **design rationale** for the Clausters GUI track; the staged milestones live in its companion `PLAN.md`. The crate is an **independent workspace** under `clients/gui`, deliberately not a member of the root `clausters` workspace, so it can never break the core server build. It holds these design notes, a working GPU waveform/spectrogram prototype (`src/`) that validates the heavy-rendering path, and the GUI host that the milestones build around it - the `/gui_*` widget-protocol interpreter, its transport fronts and its windowing (`src/host/`: a headless protocol front and a winit + wgpu windowed front that renders the heavy views from a GuiDef).
 
-Where `PLAN.md` is the canonical reference for the `/gui_*` command/event tables, the widget catalog and the `Gx` milestones, this note explains *why* the system has the shape it does: why the GUI is a separate host rather than code in the audio server, why a web-capable rendering substrate, and how the heavy widgets resolve a signal to the screen and no finer.
+Where `PLAN.md` is the canonical reference for the `/gui_*` command/event tables, the widget catalog and the `Gx` milestones, this note explains *why* the system has the shape it does: why the GUI is a separate host rather than code in the audio server, why a web-capable rendering substrate, and how the heavy widgets resolve a signal to the screen and no finer. A settled, published summary of that rationale lives in the server book's `docs/clients.md` ("The GUI host: a scriptable peer"); this file is the fuller working record and the place where open questions are tracked.
 
 ## The one decision that drives everything
 
@@ -166,11 +166,10 @@ This validates the load-bearing claim: the heavy, custom, GPU-bound widgets can 
 
 ## Open design questions
 
-The milestone staging is in `PLAN.md`; what follows are questions still open at the design level that those milestones will have to answer.
+The milestone staging is in `PLAN.md`; what follows are questions still open at the design level that those milestones will have to answer. (Multi-channel waveforms, selection/playhead overlays, time-axis rulers and per-axis frequency rulers in Hz — once listed here — are done; the editor-grade waveform/spectrogram and configurable rulers landed them.)
 
 - Cache lifecycle: a cache key (source path + mtime + analysis params) and memory-mapping the cache file instead of reading it into RAM.
-- Spectrogram: time-axis mipmaps or tiling for buffers wider than the max texture size; frequency-axis labels/ruler in Hz; a smoother (interpolating) log resample. (Log axis, frequency zoom via a second `View`, and a live dB window are done.)
-- Multi-channel waveforms (stacked or overlaid), plus interpolating between adjacent pyramid levels for smoother zoom-out.
-- Selection/playhead overlays and time-axis rulers as shared widget chrome.
+- Spectrogram: time-axis mipmaps or tiling for buffers wider than the max texture size; a smoother (interpolating) log resample. (Log axis, frequency zoom via a second `View`, a live dB window and Hz-labelled axes are done.)
+- Interpolating between adjacent pyramid levels for smoother waveform zoom-out.
 - Edit-back-to-data: the heavy views today *receive* data to visualize; the design must keep room for them to *modify* it (drawing into a buffer, editing an envelope) and write it back to a client or the server.
-- Migrating the `peaks`/`Stft` machinery behind `clausters-ffi`/`libclausters` so the signal code lives once: **done for `peaks` and the forward FFT** (both now in `clausters-core`, the pyramid reachable over the FFI — see "Bulk data moves through local shared resources" above); the rest of `Stft` (windowing/normalization) and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.
+- Migrating the rest of the `Stft` machinery behind `clausters-ffi`/`libclausters` so the signal code lives once: **done for `peaks` and the forward FFT** (both now in `clausters-core`, the pyramid reachable over the FFI — see "Bulk data moves through local shared resources" above); the `Stft` windowing/normalization and the inverse FFT (for resynthesis UGens) remain, the latter waiting on the server's `FFT`/`IFFT` UGens.

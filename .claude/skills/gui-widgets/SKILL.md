@@ -107,4 +107,4 @@ Staging for both, and for everything above, lives in `clients/gui/PLAN.md`.
 
 ## Conventions
 
-The track's rules apply unchanged (see [[clausters-gui]]): build/test from `clients/gui/`, fmt/clippy clean, English throughout, GPU-free logic unit-tested, the E2E single-invocation rule, and closing work means docs + `GUIA.md` + a commented example, not just code. Windowing/FFT correctness patterns are in [[ugen-dsp]] and [[audio-testing]]; the shm/RT boundaries in [[realtime-audio]]; the Python driving side in [[clausters-python]].
+The track's rules apply unchanged (see [[clausters-gui]]): build/test from `clients/gui/`, fmt/clippy clean, English throughout, GPU-free logic unit-tested, the E2E single-invocation rule, and closing work means a clear commit message + the `clients/gui/PLAN.md` checkbox + docs + a commented example (a `GUIA.md` smoke step only for new visible behavior), not just code. Windowing/FFT correctness patterns are in [[ugen-dsp]] and [[audio-testing]]; the shm/RT boundaries in [[realtime-audio]]; the Python driving side in [[clausters-python]].

@@ -66,6 +66,42 @@ non-Rust language — already drives the whole system (core math, offline render
 live server) purely through the C ABI and OSC. Nothing in the boundary is
 Python-specific.
 
+## The GUI host: a scriptable peer
+
+The GUI (`clients/gui`) is **another peer in the system, not code compiled into
+the audio server** — the same decoupling Clausters already uses for audio. Just
+as SuperCollider's `sclang` builds Qt widgets by sending messages to a separate
+widget engine, a **GUI host** process owns the windows, widgets and the GPU and
+speaks a widget protocol; scripts (Python now, JavaScript later) send it widget
+commands and receive interaction events, while the audio server is untouched.
+The host plays two roles in one process: a GUI server for the languages and a
+*client* of the audio server (it reads buffers, control buses and the node tree
+and can send control back). A bound widget can forward its value straight to the
+audio server, bypassing the script, for low-latency control.
+
+Two design choices carry the rest:
+
+- **Declarative, def-shaped protocol.** A whole widget tree is one document, not
+  a stream of per-widget messages — mirroring `SynthDef`/`GraphDef`. `/gui_def
+  <id> <json>` builds a tree in one message (JSON as payload, OSC as framing,
+  the single `osc::decode_packet` door), `/gui_set` updates a live widget,
+  `/gui_free` frees a subtree. The wire form is generic (`{id, type, props,
+  children}`) so the protocol never changes when a widget type is added; an
+  unknown type is laid out but not painted, so old and new hosts interoperate.
+- **A web-capable GPU substrate, one stack for both targets.** The heavy widgets
+  (waveform, spectrogram, scopes) are custom GPU rendering written against
+  `wgpu`/WGSL, which runs natively today and under WebGPU in a browser unchanged
+  — so the native desktop host comes first and the browser target is reached by
+  swapping the surface, not forking the renderers. The heavy views follow one
+  rule — **never resolve the signal finer than the screen**: work is bounded by
+  `samples_per_px`, and the expensive analysis (a peak pyramid, an STFT) is
+  treated as a cache that moves through local shared resources (mmap natively,
+  fetch in the browser), never chunked over the wire.
+
+The full design rationale and the rendering strategy are in
+`clients/gui/DESIGN.md`; the `/gui_*` command/event tables and the widget
+catalog are in `clients/gui/PLAN.md`.
+
 ## The GUI host in the browser
 
 The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to a **separate audio server over WebSocket** — start the server with `--ws` (default port 57120). There is no in-process engine in the browser; the embed/standalone path is native-only.

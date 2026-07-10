@@ -53,7 +53,7 @@ The wasm `clausters-core` build is **shared with the GUI host** (G11-G16 already
 
 ## Milestones
 
-Labels (`Wx`) live only here and in `LOG.md`, never in published docs or docstrings - the same rule as the other plans.
+Labels (`Wx`) live only here, never in published docs or docstrings - the same rule as the other plans.
 
 ### W0 - Package skeleton + OSC over WebSocket (the carrier)
 

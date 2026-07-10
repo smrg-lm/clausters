@@ -1,6 +1,6 @@
 ---
 name: documentation
-description: How to write and place any Clausters documentation — first the user-vs-development split, then Diataxis as an internal lens for the user docs (tutorial / explanation / reference; how-to only on explicit request) across the two mdBooks, the generated API references (rustdoc + pydoc-markdown), and the development docs (architecture as C4, contributing as governance, ADR-style records in LOG/PLAN). Consult before adding, moving or restructuring any doc page, docstring or example.
+description: How to write and place any Clausters documentation — first the user-vs-development split, then Diataxis as an internal lens for the user docs (tutorial / explanation / reference; how-to only on explicit request) across the two mdBooks, the generated API references (rustdoc + pydoc-markdown), and the development docs (architecture as C4, contributing as governance, ADR-style records in docs/decisions.md, roadmaps in the PLAN.md set). Consult before adding, moving or restructuring any doc page, docstring or example.
 ---
 
 # Documentation: user vs development, then Diataxis
@@ -38,8 +38,11 @@ writing. Then place the page.
   the package docstrings by pydoc-markdown (`clients/python/pydoc-markdown.yml`;
   both it and `book/` git-ignored). Never hand-edit `api.md`.
 - **Development** (section 3) — `docs/architecture.md`, `docs/contributing.md`,
-  `PLAN.md` / `clients/PLAN.md`, `LOG.md`. `GUIA.md` (root +
-  `clients/python/GUIA.md`) is a Spanish QA checklist, **not** part of the books.
+  `docs/decisions.md` (the ADR-style design record, in the server book), the
+  `PLAN.md` roadmaps (`PLAN.md` / `clients/PLAN.md` / `clients/gui/PLAN.md`), and
+  the frozen `docs/history/build-log.md`. `GUIA.md` (root +
+  `clients/python/GUIA.md`) is a Spanish smoke checklist, **not** part of the
+  books.
 
 Two rules hold across *all* of the above (repeat them to yourself):
 
@@ -47,7 +50,7 @@ Two rules hold across *all* of the above (repeat them to yourself):
    backticks and Google-style sections, never `:param:` field lists or `:role:`
    cross-refs.
 2. **No milestone labels** (`Mx`/`Cx`/`Fx`) in any published doc or docstring.
-   Those live only in `PLAN.md` / `LOG.md`.
+   Those live only in the `PLAN.md` roadmaps.
 
 The two books cross-link each other by their ReadTheDocs URLs.
 
@@ -225,12 +228,13 @@ there is no separate `adr/` or C4 tree, by design:
 - **Contributing / governance** — `docs/contributing.md` is the CONTRIBUTING
   entry point: build/test, system deps, feature flags, RT-safety, the E2E
   sandbox rule, conventions. Keep every setup step runnable.
-- **Decision records (ADR-style)** — Clausters records *what shipped and why*
-  per milestone in `LOG.md`, and the roadmap/rationale in `PLAN.md` /
-  `clients/PLAN.md`. When a choice has non-obvious context and consequences,
-  write it there in ADR spirit: **context -> decision -> consequence**. These
-  dev-history files (and the Spanish `GUIA.md` QA) are not published in the
-  books.
+- **Decision records (ADR-style)** — the curated design record is
+  `docs/decisions.md` (published in the server book). When a choice has
+  non-obvious context and consequences, add a short entry there in ADR spirit:
+  **context -> decision -> consequence**. The *what shipped* is the git history
+  (there is no per-milestone log); the roadmap/rationale is the `PLAN.md` set;
+  the frozen `docs/history/build-log.md` and the Spanish `GUIA.md` smoke
+  checklists are not maintained/published as reference.
 
 ## Closing a milestone (documentation side)
 
@@ -240,8 +244,9 @@ When a feature is user-facing, "done" includes, where applicable:
 - the right Diataxis page(s) in `docs/` — and the Python book if it touches the
   client;
 - a commented, explained entry in `examples/`;
-- manual-test steps and counts in `GUIA.md` (Spanish);
-- `LOG.md` / `PLAN.md` updated.
+- the `PLAN.md` roadmap checkbox updated;
+- a `docs/decisions.md` entry only for a non-obvious choice, and a `GUIA.md`
+  (Spanish) smoke step only for new human-audible/visual behavior.
 
 Then rebuild both books (`mdbook build .` and `clients/python/docs/build.sh`) so
 they still build clean.

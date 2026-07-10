@@ -166,7 +166,9 @@ convert. Driving:
 ## Closing a feature
 
 When a client feature lands, update (where applicable): docstrings (the docs
-source), `clients/python/GUIA.md` (manual steps), `docs/` for user-facing wire
-formats, `LOG.md`, and a commented `examples/*.py`. Keep code, `LOG.md` and
-`PLAN.md` English; `GUIA.md` and the conversation Spanish; commit messages
-English/ASCII.
+source), `docs/` for user-facing wire formats, the `clients/PLAN.md` roadmap
+checkbox, and a commented `examples/*.py`; a `docs/decisions.md` note only for a
+non-obvious choice, and a `clients/python/GUIA.md` smoke step only for new
+human-audible/visual behavior. The record of what shipped is the commit message,
+not a per-milestone log. Keep code, the `PLAN.md` roadmaps and `docs/decisions.md`
+English; `GUIA.md` and the conversation Spanish; commit messages English/ASCII.

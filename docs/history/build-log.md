@@ -1,6 +1,12 @@
-# Completion log
+# Completion log (frozen historical journal)
 
-A record of what Claude implemented in each milestone (see PLAN.md).
+> **Frozen archive — no longer maintained.** This is the per-milestone build
+> journal through 2026-07-09, kept for reference. Going forward, the record of
+> *what* shipped is the git history, and non-obvious decisions and upstream-bug
+> findings are curated in [`../decisions.md`](../decisions.md). Do not append to
+> this file.
+
+A record of what was implemented in each milestone (see the `PLAN.md` files).
 
 ## M0 — Skeleton (completed 2026-06-10)
 

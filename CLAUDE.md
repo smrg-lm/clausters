@@ -3,10 +3,13 @@
 A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
 
-- Implementation plan and milestones: `PLAN.md` (server) and `clients/PLAN.md`
-  (client track), both in English.
-- Completion log per milestone: `LOG.md` (English) — update it when a
-  milestone is finished.
+- Forward roadmaps and milestones: `PLAN.md` (server), `clients/PLAN.md` and
+  `clients/gui/PLAN.md` (client/GUI tracks), all in English — a roadmap plus a
+  checkbox status per milestone, not an expanded completion narrative.
+- The record of *what shipped* is the git history (clear commit messages); there
+  is no separate per-milestone log. Non-obvious decisions and upstream-bug
+  findings are curated in `docs/decisions.md` (ADR spirit); the frozen historical
+  journal is `docs/history/build-log.md`, no longer maintained.
 - English documentation is **two mdBooks, one per platform**, both Markdown and
   ReadTheDocs-deployable (each has a `.readthedocs.yaml` driving the build with
   `build.commands` — RTD has no native mdBook builder). Keep both current.
@@ -33,12 +36,16 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels
     (`Mx`/`Cx`/`Fx`) in any published doc or docstring** — those live only in
-    `PLAN.md`/`LOG.md`. `GUIA.md` is a personal file, not part of the docs.
-- **Closing a milestone always includes, whenever applicable**: the
-  developer documentation (`docs/architecture.md`, module docs), the user
-  documentation in `docs/` for new features, manual testing steps and
-  counts in `GUIA.md`, and a commented/explained example in `examples/`
-  when the feature is user-facing — not just code and LOG.md.
+    the `PLAN.md` roadmaps. `GUIA.md` is a personal Spanish smoke checklist, not
+    part of the docs.
+- **Closing a milestone always includes, whenever applicable**: code plus tests,
+  a clear commit message, the `PLAN.md` roadmap checkbox updated, the developer
+  documentation (`docs/architecture.md`, module docs) and the user documentation
+  in `docs/` where the feature touches them, and a commented/explained example in
+  `examples/` when the feature is user-facing. Add a `docs/decisions.md` entry
+  **only** for a choice with non-obvious context, and a `GUIA.md` smoke step
+  **only** for new human-audible/visual behavior — neither is a per-milestone
+  obligation.
 - Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
   ugen-dsp, audio-testing, faust-embedding, faust-language, clausters-python,
   clausters-gui, documentation).
@@ -61,9 +68,10 @@ with this modularity in mind.
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
   test names) is in English.
 - **Git commit messages are in English** (subject and body), ASCII-only.
-- `PLAN.md`, `clients/PLAN.md` and `LOG.md` (the dev-history files) are in
-  English. `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation
-  with the user are in Spanish.
+- The `PLAN.md` roadmaps (`PLAN.md`, `clients/PLAN.md`, `clients/gui/PLAN.md`),
+  `docs/decisions.md` and the frozen `docs/history/build-log.md` are in English.
+  `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation with the user
+  are in Spanish.
 - **Type and class names** are CamelCase, with an acronym inside a name
   taking only its first letter in uppercase — `OscFunc`, `MidiFunc`,
   `OscUdpInterface`, `OscTcpInterface`, `NodeIdAllocator` — never all-caps
@@ -122,8 +130,8 @@ symmetrical — feature-gate new work accordingly.
 
 `cargo test --features faust` needs libfaust built **with the LLVM backend**
 — Ubuntu's `libfaust2t64` ships without it and without headers, so it is
-built from source and installed under `~/.local` (see the F0 section of
-`LOG.md` for the reproducible recipe). `build.rs` locates it through
+built from source and installed under `~/.local` (see `BUILD.md`, "Building
+libfaust from source", for the reproducible recipe). `build.rs` locates it through
 `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`. The core must
 always build and test without the feature and without libfaust installed.
 

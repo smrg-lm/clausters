@@ -33,7 +33,7 @@ under `pw-jack` at runtime.
 
 ## The `faust` feature
 
-`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in `LOG.md` (the libfaust build section). `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
+`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in `BUILD.md` (the "Building libfaust from source" section). `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
 
 ```sh
 FAUST_PREFIX=~/.local cargo test --features faust
@@ -102,8 +102,8 @@ is reproducible with the same line:
 
 ## Conventions
 
-- **Language**: everything under `src/`, `tests/` and `examples/` (code, comments, strings, test names) is in **English**, as are the dev-history files `PLAN.md`, `clients/PLAN.md` and `LOG.md`. `GUIA.md` (root + `clients/python/GUIA.md`) stays in **Spanish** (maintainer-facing QA checklists); this book and the rustdoc are the English documentation.
-- **Closing a milestone** means, where applicable: developer docs (`docs/architecture.md`, module docs), user docs in `docs/` for new features, manual-test steps and counts in `GUIA.md`, and a commented `examples/` entry for user-facing features — not just code and `LOG.md`.
+- **Language**: everything under `src/`, `tests/` and `examples/` (code, comments, strings, test names) is in **English**, as are the roadmap files `PLAN.md` / `clients/PLAN.md` and the design record `docs/decisions.md`. `GUIA.md` (root + `clients/python/GUIA.md`) stays in **Spanish** (maintainer-facing manual smoke checklists); this book and the rustdoc are the English documentation.
+- **Closing a milestone** means, where applicable: code plus tests, a clear **commit message** (that is the record of *what* shipped — there is no separate per-milestone log), the `PLAN.md` roadmap checkbox updated, developer/user docs where the feature touches them (`docs/architecture.md`, `docs/schemas.md`, module docs), and a commented `examples/` entry for user-facing features. Add a short entry to `docs/decisions.md` **only** when a choice has non-obvious context, and a `GUIA.md` smoke step **only** when a new human-audible/visual behavior appears — neither is a per-milestone obligation.
 
 ## Project skills
 
