@@ -41,6 +41,15 @@ Ejemplos en `clients/python/examples/` (catálogo en el mdBook del cliente,
 
 ## Smoke visual (host GUI)
 
+> **Antes de probar cambios del host:** `session.gui()` y el comando
+> `clausters` prefieren el binario **empaquetado** en el install editable
+> (`clausters/_bin/`, `_libs/`) por sobre el `target/` recién compilado — un
+> rebuild no se ve hasta refrescar la copia. Recompilar en release y copiar
+> (`cd clients/gui && cargo build --release && cp target/release/clausters-gui
+> ../python/clausters/_bin/`), o apuntar `CLAUSTERS_GUI_BIN` (y
+> `CLAUSTERS_BIN`/`CLAUSTERS_LIB`/`CLAUSTERS_FFI_LIB` para servidor y
+> cdylibs) al build del workspace.
+
 Arrancar el host en modo ventana (`clausters-gui`, o el propio ejemplo lo
 lanza) y correr el script driver en otra terminal, mismo host. Ver que la
 ventana **dibuje y responda**:

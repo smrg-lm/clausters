@@ -104,6 +104,20 @@ the source of truth. (Likewise keep the build green: the core must compile and
 test with any combination of the def-family features `synth`/`faust` — both,
 either alone, or neither — and without the `embed` feature.)
 
+## Testing via the Python launcher: refresh the bundled binaries first
+
+`Session.gui()`, the `clausters` console script and the FFI loaders resolve
+their native artifacts with precedence **env override → bundled copy inside
+the package (`clients/python/clausters/_bin/`, `_libs/`) → workspace
+`target/`**. In this source checkout the package is installed editable, so
+the *bundled* copy wins and goes stale the moment a crate is rebuilt — a
+manual test can silently exercise pre-change binaries. Before any manual or
+visual test launched through Python, refresh the bundled copy (e.g.
+`cargo build --release` in `clients/gui/`, then copy
+`target/release/clausters-gui` over `clients/python/clausters/_bin/`), or
+point the override env vars (`CLAUSTERS_GUI_BIN`, `CLAUSTERS_BIN`,
+`CLAUSTERS_LIB`, `CLAUSTERS_FFI_LIB`) at the workspace build.
+
 ## E2E testing rule
 
 The Bash sandbox isolates the network between invocations: a server started in
