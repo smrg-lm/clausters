@@ -212,6 +212,30 @@ impl Host {
         }
     }
 
+    /// Registers every `track` lane's extent — the end of its last clip — with
+    /// its navigation group, so the shared axis spans the composition. A lane's
+    /// "data" is its clips, so this is the lane's answer to the data extent the
+    /// fronts register for a loaded waveform, and it must be re-run whenever a
+    /// clip moves or resizes (a `/gui_def`, a `/gui_set`, or a drag).
+    pub(super) fn sync_track_totals(&mut self) {
+        fn walk(widget: &Widget, out: &mut Vec<(i32, usize)>) {
+            if let (Some(id), super::widget::WidgetKind::Track { .. }) = (widget.id, &widget.kind) {
+                let span = super::track::clips_span(widget);
+                out.push((id, span.ceil().max(0.0) as usize));
+            }
+            for child in &widget.children {
+                walk(child, out);
+            }
+        }
+        let mut lanes = Vec::new();
+        for tree in self.window_defs.values() {
+            walk(tree, &mut lanes);
+        }
+        for (id, span) in lanes {
+            self.set_timeline_total(id, span);
+        }
+    }
+
     /// Anchor-preserving zoom of widget `id`'s group. Returns the roots to
     /// repaint (empty when the widget is in no group).
     pub fn zoom_timeline(&mut self, id: i32, factor: f64, anchor: f64) -> Vec<i32> {
@@ -428,6 +452,9 @@ impl Host {
     /// kept (the fronts re-register them as the new data loads, and the prune
     /// below drops the ones whose widgets are gone).
     pub(super) fn sync_timeline_groups(&mut self, redefined: Option<i32>) {
+        // A lane's extent is its clips (no data loads for it), so register it
+        // here, before the groups seed their windows from the totals.
+        self.sync_track_totals();
         let members = self.timeline_members();
         if let Some(def) = redefined {
             let spans_other: Vec<GroupKey> = members
@@ -790,5 +817,71 @@ mod tests {
         assert!(nav.len < 4.0, "the cross-window group survived the re-def");
         let (nav, total) = host.timeline_nav(12).unwrap();
         assert_eq!((nav.len, total), (4.0, 4), "the confined group reset");
+    }
+
+    /// Two lanes of one window (the window root is id 1, so the lanes take ids
+    /// clear of it); the drums' clips end at 300, the lead's at 500.
+    const LANES: &str = r#"{"type":"window","children":[
+        {"id":100,"type":"track","label":"drums","children":[
+            {"id":110,"type":"clip","offset":0.0,"dur":100.0},
+            {"id":111,"type":"clip","offset":200.0,"dur":100.0}
+        ]},
+        {"id":200,"type":"track","label":"lead","children":[
+            {"id":210,"type":"clip","offset":100.0,"dur":400.0}
+        ]}
+    ]}"#;
+
+    fn lanes_host() -> Host {
+        let mut host = Host::new();
+        host.handle_packet(def_msg(1, LANES), from());
+        host
+    }
+
+    #[test]
+    fn the_lanes_of_a_window_share_one_axis_spanning_the_composition() {
+        let host = lanes_host();
+        // Linked by default (keyed by the window root), so one group...
+        assert_eq!(host.timeline_key(100), host.timeline_key(200));
+        // ...whose length is the longest clip end over every lane, not one lane's.
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 500);
+        assert_eq!(
+            (nav.start, nav.len),
+            (0.0, 500.0),
+            "it starts showing it all"
+        );
+    }
+
+    #[test]
+    fn zooming_one_lane_moves_the_axis_of_all_of_them() {
+        let mut host = lanes_host();
+        host.zoom_timeline(200, 0.5, 0.0); // wheel over the lead lane, at its left
+        let (a, _) = host.timeline_nav(100).unwrap();
+        let (b, _) = host.timeline_nav(200).unwrap();
+        assert_eq!(
+            (a.start, a.len),
+            (b.start, b.len),
+            "aligned lanes stay aligned"
+        );
+        assert_eq!(a.len, 250.0, "zoomed in by half");
+
+        // Panning is shared too (the gesture lands on whichever lane is under
+        // the pointer, the group moves).
+        host.pan_timeline(100, 100.0);
+        let (a, _) = host.timeline_nav(100).unwrap();
+        let (b, _) = host.timeline_nav(200).unwrap();
+        assert_eq!((a.start, b.start), (100.0, 100.0));
+    }
+
+    #[test]
+    fn a_clip_moved_past_the_end_lengthens_the_shared_axis() {
+        let mut host = lanes_host();
+        host.handle_packet(set_msg(111, &[("offset", OscType::Float(900.0))]), from());
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 1000, "the lane's extent followed its clip");
+        assert_eq!(
+            nav.len, 1000.0,
+            "a fully-zoomed-out axis keeps showing it all"
+        );
     }
 }

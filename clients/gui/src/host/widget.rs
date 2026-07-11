@@ -589,7 +589,25 @@ impl Widget {
     /// `/gui_def` message) into a typed widget tree. `root_id` is the def id from
     /// the OSC argument, used for the root whose JSON carries no `id`.
     pub fn from_node(root_id: i32, node: &GuiNode, blobs: &[Vec<u8>]) -> Result<Widget, String> {
-        Self::build(Some(root_id), node, blobs)
+        let mut widget = Self::build(Some(root_id), node, blobs)?;
+        Self::link_lanes(&mut widget, root_id);
+        Ok(widget)
+    }
+
+    /// Links every un-linked `track` of a window into one navigation group keyed
+    /// by the window root. The multitrack's promise is **one shared time axis**
+    /// (aligned lanes), and a navigation group is exactly that — so the lanes of
+    /// a window navigate as one by default, zooming and panning together, and
+    /// only an explicit `link` splits them (or joins lanes across windows).
+    fn link_lanes(widget: &mut Widget, root_id: i32) {
+        if let WidgetKind::Track { editor, .. } = &mut widget.kind
+            && editor.link.is_none()
+        {
+            editor.link = Some(root_id);
+        }
+        for child in &mut widget.children {
+            Self::link_lanes(child, root_id);
+        }
     }
 
     fn build(id: Option<i32>, node: &GuiNode, blobs: &[Vec<u8>]) -> Result<Widget, String> {
@@ -897,7 +915,7 @@ impl Widget {
     pub fn is_timeline(&self) -> bool {
         matches!(
             self.kind,
-            WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. }
+            WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. } | WidgetKind::Track { .. }
         )
     }
 

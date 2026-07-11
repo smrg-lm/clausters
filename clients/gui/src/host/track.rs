@@ -70,10 +70,11 @@ pub struct ClipDraw {
     pub label: Option<String>,
 }
 
-/// The span of a window's shared time axis: the longest clip end (`offset +
-/// dur`) over every track in `tree`. Clips only exist under tracks, so a plain
-/// tree walk finds them all. `0.0` when the window has no clips.
-pub fn window_span(tree: &Widget) -> f64 {
+/// The span of a widget subtree in timeline units: the longest clip end
+/// (`offset + dur`) under it. A lane's extent (the "data" a lane registers with
+/// its navigation group) and, over a whole window, its full time axis. `0.0`
+/// when there are no clips.
+pub fn clips_span(tree: &Widget) -> f64 {
     fn walk(w: &Widget, acc: &mut f64) {
         if let WidgetKind::Clip { offset, dur, .. } = w.kind {
             *acc = acc.max(offset + dur);
@@ -87,11 +88,12 @@ pub fn window_span(tree: &Widget) -> f64 {
     span
 }
 
-/// The shared full-span navigation window of a window's tracks (aligned lanes).
-/// The render and the hit-test both read it, so a clip maps to the same pixels
-/// either way.
+/// The full-span navigation window of a window's tracks — the fallback for a
+/// lane that is in no navigation group yet (the same defensive role
+/// `frame::nav_for` plays for a timeline view). The live axis is the group's:
+/// the lanes of a window share one, so they zoom and pan as one.
 pub fn window_nav(tree: &Widget) -> View {
-    View::full(window_span(tree).ceil().max(1.0) as usize)
+    View::full(clips_span(tree).ceil().max(1.0) as usize)
 }
 
 /// The lane body of a track's `rect`: the part right of the header strip, and

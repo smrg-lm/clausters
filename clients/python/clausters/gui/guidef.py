@@ -469,6 +469,14 @@ def track(id: int, *clips, label: str | None = None, height: float | None = None
     timeline samples a clip's move/resize rounds to (omitted / ``0`` = snap to
     whole samples).
 
+    The lanes of a window **navigate as one**: they share a time axis you can
+    zoom (wheel) and pan (Shift+drag), spanning the composition (the longest clip
+    end over every lane, so dragging a clip past the end lengthens it). That is
+    the same navigation group the heavy views use, so ``link`` joins or splits it
+    — pass a shared id to align lanes across *windows*, or a distinct one to give
+    a lane an axis of its own. Scripted navigation is ``GuiHost.set(track_id,
+    view_start=…, view_len=…)``, and it applies group-wide.
+
     A lane carries the same time chrome as the heavy editor views:
 
     - ``ruler`` — a time ruler under the lane (``"time"``, ``"samples"``,

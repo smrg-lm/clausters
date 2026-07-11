@@ -48,7 +48,8 @@ use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_wi
 use super::nodetree::NodeTree;
 use super::paint::Painter;
 use super::spectrum::SpectrumState;
-use super::widget::{RulerY, Widget, WidgetKind};
+use super::track;
+use super::widget::{Ruler, RulerY, Widget, WidgetKind};
 use super::{
     BulkLoader, BusSource, ClientId, GUI_CLOSED, GUI_EVENT, Host, HostEffect, bpf, controls,
 };
@@ -1082,7 +1083,28 @@ impl App {
                     );
                 }
             }
-            WidgetKind::Track { snap, .. } => {
+            WidgetKind::Track {
+                snap, ref editor, ..
+            } => {
+                // Shift+drag pans the shared axis (the same gesture the heavy
+                // views use), so panning stays available where every plain drag
+                // grabs a clip.
+                let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
+                if shift {
+                    let body = track::lane_body(rect, editor.ruler != Ruler::Off);
+                    if let Some((start, _len, _total)) = self.timeline_nav(id) {
+                        self.set_drag(
+                            def_id,
+                            Drag::Pan {
+                                id,
+                                origin_x: cx,
+                                start,
+                                body_w: body.w.max(1.0) as f64,
+                            },
+                        );
+                    }
+                    return;
+                }
                 // A track is the hit target (its clips are placed by the
                 // renderer, not the layout engine); find the clip under the
                 // cursor and start a move (body) or resize (edge) drag.
@@ -1412,6 +1434,9 @@ impl App {
                     }
                 };
                 interact::clip_set(&mut self.host, def_id, id, Some(new_offset), Some(new_dur));
+                // The lane's extent moved with the clip: re-register it, so the
+                // shared axis grows when a clip is dragged past the end.
+                self.host.sync_track_totals();
                 self.emit_clip(def_id, id);
                 self.redraw(def_id);
             }
@@ -1977,7 +2002,14 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some((id, rect, kind)) = self.hit(def_id, cx, cy)
                     && let Some(editor) = kind.editor()
                 {
-                    let body = frame::timeline_body(rect, editor);
+                    // A lane's body is the strip right of its header (and above
+                    // its ruler); a heavy view's is its rect minus its rulers.
+                    let body = match kind {
+                        WidgetKind::Track { .. } => {
+                            track::lane_body(rect, editor.ruler != Ruler::Off)
+                        }
+                        _ => frame::timeline_body(rect, editor),
+                    };
                     let factor = 0.85f64.powf(steps);
                     if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
                         // Wheel over the y-ruler strip zooms the vertical

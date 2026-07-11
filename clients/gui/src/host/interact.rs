@@ -198,7 +198,7 @@ pub(crate) fn clip_hit(
     y: f64,
 ) -> Option<ClipHit> {
     let tree = host.window_def(def_id)?;
-    let nav = track::window_nav(tree);
+    let full = track::window_nav(tree);
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     for p in layout::layout(area, tree) {
         let WidgetKind::Track { editor, .. } = &p.widget.kind else {
@@ -207,6 +207,13 @@ pub(crate) fn clip_hit(
         if !p.rect.contains(x, y) {
             continue;
         }
+        // The lane's *group* window — the same one the renderer drew through, so
+        // a zoomed or panned axis hit-tests where it looks.
+        let nav = p
+            .widget
+            .id
+            .and_then(|id| host.timeline_nav(id))
+            .map_or(full, |(nav, _total)| nav);
         // The same body the renderer drew (its ruler strip reserved), so the
         // pixels a clip occupies are the pixels it is grabbed by.
         let body = track::lane_body(p.rect, editor.ruler != super::widget::Ruler::Off);

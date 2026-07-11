@@ -178,12 +178,14 @@ struct BpfItem {
 /// graphic-unit overlay is drawn after the tree borrow is released. The clips'
 /// shared time axis is computed once over all the window's tracks.
 struct TrackItem {
+    id: i32,
     rect: Rect,
     label: Option<String>,
     clips: Vec<track::ClipDraw>,
-    /// The lane's chrome: its time ruler (off by default) and playhead anchor.
-    /// A lane is no navigation-group member — it reads the window's shared clip
-    /// span — so these are the widget's own props.
+    /// The lane's chrome: its time ruler (off by default), its playhead anchor
+    /// and its `link` — the navigation group whose shared window it draws
+    /// through (the lanes of a window are linked by default, so they zoom and
+    /// pan as one).
     editor: EditorProps,
 }
 
@@ -667,6 +669,7 @@ pub(crate) fn render(
                     })
                     .collect();
                 track_items.push(TrackItem {
+                    id: p.widget.id.unwrap_or(-1),
                     rect: p.rect,
                     label: label.clone(),
                     clips,
@@ -897,8 +900,15 @@ pub(crate) fn render(
     // The hit-test (`interact::clip_hit`) reads the same `window_nav`, so a clip
     // maps to the same pixels for drawing and dragging.
     if !track_items.is_empty() {
-        let nav = track::window_nav(tree);
+        // The lanes navigate as a group (linked by default across a window), so
+        // the axis zooms and pans as one; the full span is the fallback for a
+        // lane not yet in a group.
+        let full = track::window_nav(tree);
         for item in &track_items {
+            let nav = inputs
+                .timelines
+                .nav(group_key(item.id, item.editor.link))
+                .unwrap_or(full);
             let ruler_on = item.editor.ruler != Ruler::Off;
             track::draw(
                 &mut mesh,

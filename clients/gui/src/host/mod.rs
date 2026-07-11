@@ -605,11 +605,13 @@ impl Host {
         // `link`) route through its navigation group instead, so a set on any
         // member applies group-wide (linked views).
         let mut is_timeline = false;
+        let mut is_clip = false;
         if let Some(root) = self.registry.root_of(id)
             && let Some(tree) = self.window_defs.get_mut(&root)
             && let Some(widget) = tree.find_mut(id)
         {
             is_timeline = widget.is_timeline();
+            is_clip = matches!(widget.kind, widget::WidgetKind::Clip { .. });
             let mut changed = false;
             for (k, v) in &props {
                 if !(is_timeline && timeline::is_timeline_key(k)) {
@@ -622,6 +624,11 @@ impl Host {
         }
         if is_timeline {
             self.set_timeline_props(id, &props, effects);
+        }
+        if is_clip {
+            // A moved or resized clip changes its lane's extent, and so the
+            // shared axis (a clip pushed past the end lengthens the timeline).
+            self.sync_track_totals();
         }
     }
 
