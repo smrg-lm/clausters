@@ -21,9 +21,12 @@ Scope of this phase (the compositional path):
 - An **abstract** material (no onset/duration, no content) contributes context,
   not an event.
 
-The logical path (`Group{logical}` → a `GraphDef`) is Fase 1C; a `Buffer` as a
-timed audio clip and instancing a bare def both need an instrument and land in a
-later phase — they raise a clear `NotImplementedError` here.
+A `Buffer` is *data*: it sounds through the **instrument** that plays it (a def
+whose ``buf`` control takes the buffer number), so a `Buffer` with an
+``instrument`` emits one event playing it — the audio clip — and one without
+contributes structure only. The logical path (`Group{logical}` → a `GraphDef`) is
+Fase 1C; instancing a bare def still needs an instrument of its own and raises a
+clear `NotImplementedError` here.
 """
 
 from .group import COMPOSITIONAL, LOGICAL, Group
@@ -106,9 +109,11 @@ def _emit(material, base: float, out: list):
     elif isinstance(material, (Sequence, Generator)):
         _emit_sequence(material.wraps, base, out)
     elif isinstance(material, Buffer):
-        raise NotImplementedError(
-            "a Buffer as a timed audio clip needs an instrument (later phase)"
-        )
+        # A buffer is data; the instrument is what makes it sound (a def whose
+        # `buf` control plays it). Without one it is structure only — it draws in
+        # the editor and contributes its extent, but emits no event.
+        if material.instrument is not None:
+            out.append((base, material.to_event()))
     elif isinstance(material, Material):
         if material.wraps is None:
             return  # an abstract context material yields no event

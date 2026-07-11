@@ -55,6 +55,12 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   clip lo **mueve** y arrastrar un borde lo **redimensiona**, y la consola imprime
   el evento `"clip" offset dur` (edit-back). Refrescar antes el binario bundleado
   (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
+- **Editor compositivo (el lazo completo).** `examples/gui_composer.py` compone
+  con el modelo (un take bounceado y cargado de disco, una melodía, un patrón),
+  lo abre como multipista y lo toca → se **oye** la composición y se **ve** el
+  playhead barriendo los clips; arrastrar un clip lo mueve, y con `follow=True`
+  la composición se re-agenda: suena donde lo soltaste. Refrescar antes el
+  binario bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Salud de tiempo real bajo carga.** `cargo run --release --example stress`
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;
   al sobrecargar a propósito el servidor **glitchea pero no muere** (el guard de

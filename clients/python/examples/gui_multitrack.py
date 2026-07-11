@@ -42,7 +42,7 @@ session = Session.live()
 server = session.server
 gui = session.gui()
 
-SR = float(server.sample_rate)
+SR = float(server.options.sample_rate)
 TEMPO = 2.0                    # beats per second (120 bpm)
 BEAT = int(SR / TEMPO)         # timeline samples per beat: the axis unit is the
                                # audio sample, so a take's frames place 1:1

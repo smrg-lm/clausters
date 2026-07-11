@@ -291,3 +291,50 @@ curve, an optional exponential
 display scale for frequency-like ranges, and times over an explicit
 `[0, duration]` domain — so a multitrack automation view later composes this
 model instead of designing a new one.
+
+## The multitrack editor: beats in the model, samples on the axis, and one converter
+
+The compositional model places materials in **beats**; the multitrack view places
+clips in **timeline samples**. Two units, and the temptation is to pick one. Both
+are load-bearing:
+
+- **The view must be in samples.** A clip's body *is* audio data, and the
+  placement work established that a member's data sample 0 sits at its `offset`.
+  A take placed at its own frame count then lands 1:1 on the axis, and its
+  waveform draws where it sounds. In beats, every body would need a scale factor
+  that only the client knows.
+- **The model must be in beats.** It is musical material, tempo-relative, and it
+  realizes onto a beat clock. Baking a sample rate into it would tie a
+  composition to one engine.
+
+**Decision:** keep both, and make the **editor driver the only converter** — one
+beat is `sample_rate / tempo` timeline units. It is also where a *musical* `quant`
+becomes the lane's pixel-drag grid, so the grid a clip is dropped on is the grid
+the model re-schedules on. The arithmetic itself is the core's
+(`beats_to_secs` → `secs_to_samples`), never a second implementation, so a port
+inherits it.
+
+**Consequence:** the model stays pure and transport-agnostic (it is the piece a
+future TypeScript client factors into `clausters-core`), the host stays unit-free
+(it only knows "timeline units"), and the whole conversion is a handful of lines
+in one client module. Its dependency arrow is one-way — the editor imports the
+model, never the reverse — the same call that moved the envelope point helpers out
+of the GUI submodule so `seq` would not depend on it.
+
+## A buffer sounds through an instrument, not by itself
+
+Realizing a `Buffer` material was deferred with a note that it "needs an
+instrument". The temptation on picking it back up was to give the model a built-in
+sampler def.
+
+**Decision:** a buffer is **data**, and it sounds through the def *named to play
+it* — `Buffer(buf, instrument="take")`, whose event carries the buffer number in a
+`buf` control. A buffer with no instrument is still perfectly good material: it
+draws in the editor and contributes its extent, but emits no event.
+
+**Consequence:** the model ships no DSP and no def of its own (it stays the
+client-side structure it claims to be), the instrument stays the user's — any def
+that reads a buffer works, at any quality — and the "data vs. process" split the
+model is built on holds at its most tempting exception. The one concession is
+practical: such an event sets `legato = 1` so a take sounds its whole length,
+where a note's default would cut it short.

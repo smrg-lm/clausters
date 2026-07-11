@@ -78,6 +78,20 @@ def test_a_buffer_clip_names_the_server_buffer_and_spans_its_frames():
     assert take["offset"] == 0.0
 
 
+def test_a_buffer_spans_its_frames_only_when_it_has_no_duration():
+    """A buffer read but never queried has no frame count client-side; its
+    material's `duration` is what places it, and must win over the frames."""
+    unqueried = Buffer(ServerBuffer(bufnum=3), duration=2.0)   # frames unknown (0)
+    (lane,) = lanes(editor(Group([(0.0, unqueried)], name="take")).render())
+    (c,) = clips(lane)
+    assert c["dur"] == pytest.approx(2 * BEAT)
+
+    # With no duration either, the take's own frames are its length.
+    sized = Buffer(ServerBuffer(bufnum=3, frames=int(1.5 * BEAT)))
+    (lane,) = lanes(editor(Group([(0.0, sized)], name="take")).render())
+    assert clips(lane)[0]["dur"] == pytest.approx(1.5 * BEAT)
+
+
 def test_an_events_material_draws_a_piano_roll_placed_by_its_offset():
     lead = lanes(editor().render())[1]
     (roll,) = clips(lead)

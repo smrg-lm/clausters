@@ -154,10 +154,49 @@ class Buffer(Material):
 
     Wraps a `clausters.defs.Buffer`. An automation sampled at a constant interval
     is a control buffer (the List/Buffer duality of the model).
+
+    A buffer is *data*, so realizing it as an **audio clip** needs an instrument:
+    the def that plays it, named by ``instrument`` (a synth whose ``buf`` control
+    takes the buffer number, as a sampler's does). Realization then emits one
+    event playing that def — `to_event`. Without an instrument the material is
+    still perfectly good structure (and the editor draws its take), it simply has
+    no sound of its own.
+
+    Args:
+        buffer: the `clausters.defs.Buffer` on the server.
+        instrument: the def that plays it (its ``buf`` control gets the buffer
+            number), or ``None`` for a buffer that is data only.
+        controls: extra event parameters passed to that def (``amp``, ``rate``…).
+        onset: start in beats relative to the context, or ``None``.
+        duration: length in beats — how long the clip sounds. Give it for a take
+            placed in time (an event's default length is used otherwise).
     """
 
-    def __init__(self, buffer, onset=None, duration=None):
+    def __init__(self, buffer, onset=None, duration=None, *, instrument=None,
+                 controls=None):
         super().__init__(wraps=buffer, onset=onset, duration=duration)
+        self.instrument = instrument
+        self.controls = dict(controls or {})
+
+    def to_event(self):
+        """The event that plays this buffer: the `instrument` def with the buffer
+        number in its ``buf`` control, sounding for the material's ``duration``.
+
+        ``legato`` is 1 so the take sounds its whole length (the note default of
+        0.8 would cut it short — a sampled take is not a note with a gap).
+        """
+        from ..seq.event import Event as SeqEvent
+
+        if self.instrument is None:
+            raise NotImplementedError(
+                "a Buffer needs an instrument to be realized as an audio clip "
+                "(Buffer(buf, instrument='take'): a def whose `buf` control plays it)"
+            )
+        params = dict(instrument=self.instrument, buf=self.wraps.bufnum, legato=1.0)
+        if self.duration is not None:
+            params["dur"] = float(self.duration)
+        params.update(self.controls)
+        return SeqEvent(params)
 
 
 class Track(Material):

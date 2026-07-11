@@ -236,9 +236,13 @@ def test_flatten_logical_group_is_deferred():
         flatten(Group(kind=LOGICAL))
 
 
-def test_flatten_buffer_clip_is_deferred():
-    with pytest.raises(NotImplementedError):
-        flatten(Group([(0.0, Buffer(object()))]))
+def test_a_buffer_without_an_instrument_has_no_sound_of_its_own():
+    # Data, not an audio clip: it contributes structure (and draws in the editor),
+    # but nothing plays it, so flattening emits no event — and asking for the
+    # event it would play says exactly what is missing.
+    assert flatten(Group([(0.0, Buffer(object()))])) == []
+    with pytest.raises(NotImplementedError, match="instrument"):
+        Buffer(object()).to_event()
 
 
 def test_realize_bare_abstract_is_an_error():
@@ -306,6 +310,28 @@ def test_realize_matches_handbuilt_timeline_nrt():
         Playhead(tl, clock, server).play()
 
     assert _starts(by_model) == _starts(by_hand) == [0.0, 2.0, 3.0]
+
+
+def test_a_buffer_sounds_through_the_instrument_that_plays_it():
+    """A buffer is data: it needs an instrument (a def whose `buf` control plays
+    it) to become an audio clip. With one, flattening emits the event that plays
+    it; without one it is structure only — it contributes no event."""
+    from clausters.defs.buffer import Buffer as ServerBuffer
+
+    buf = ServerBuffer(bufnum=5, frames=1000)
+    clip = Buffer(buf, duration=2.0, instrument="sampler", controls={"amp": 0.5})
+
+    ((beat, event),) = flatten(Group([(4.0, clip)]))
+    assert beat == 4.0
+    assert event["instrument"] == "sampler"
+    assert event["buf"] == 5
+    assert event["dur"] == 2.0
+    assert event["amp"] == 0.5
+    # A take sounds its whole length: the note default (legato 0.8) would cut it.
+    assert event.sustain() == 2.0
+
+    # Data with no instrument: no event, no error.
+    assert flatten(Group([(0.0, Buffer(buf, duration=2.0))])) == []
 
 
 # ---- realize: logical group -> GraphDef (Fase 1C, pure) ----

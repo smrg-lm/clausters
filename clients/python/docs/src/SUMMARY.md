@@ -13,6 +13,7 @@
 - [Timelines and the playhead](timelines.md)
 - [Timing models](timing-models.md)
 - [A DAW-style transport](transport.md)
+- [Composition: the model and the multitrack editor](composition.md)
 - [Receiving OSC and MIDI](responders.md)
 - [Examples](examples.md)
 

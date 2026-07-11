@@ -80,6 +80,9 @@ class Editor:
             snaps to whole samples.
         follow: re-realize on every edit (the live editor).
         title: the window title.
+        base_id: the first widget id the editor allocates. The default sits well
+            above the ids `clausters.gui.host.GuiHost` assigns to windows it opens
+            (from 1000), so the two never collide.
 
     Usage::
 
@@ -93,7 +96,7 @@ class Editor:
     def __init__(self, material, *, sample_rate: float, tempo: float = 1.0,
                  quant: float = 0.0, follow: bool = False,
                  title: str = "Composition",
-                 width: int = 1000, height: int = 520, base_id: int = 1000):
+                 width: int = 1000, height: int = 520, base_id: int = 10_000):
         self.material = material
         self.sample_rate = float(sample_rate)
         self.tempo = float(tempo)
@@ -190,6 +193,12 @@ class Editor:
         `clausters.gui.host.GuiHost`). Returns the window id."""
         self._host = host
         self._window = host.open(self.render(), id=id)
+        return self._window
+
+    @property
+    def window(self):
+        """The open window's id, or ``None`` once it is closed (a `/gui_closed`
+        seen by `apply`/`poll`) — what a script's loop checks to stop."""
         return self._window
 
     def update(self):
@@ -354,14 +363,20 @@ class Editor:
         drew, which is what the edit-back path resolves against."""
         wid = next(self._ids)
         offset = self.beats_to_units(base)
+        # The length shown, in beats: the placement's when it overrides, else the
+        # material's own.
         dur_beats = member.dur if (member is not None and member.dur is not None) else None
+        if dur_beats is None and isinstance(material, Material):
+            dur_beats = material.duration
         label = _name(material)
 
         if isinstance(material, Buffer):
             buf = material.wraps
             # The take rides the bulk path: the host fetches the server buffer and
-            # decimates it through its peak pyramid. Its length *is* its duration
-            # (1 timeline unit = 1 audio sample), unless the placement overrides.
+            # decimates it through its peak pyramid. With no duration given, the
+            # take's own length is it (1 timeline unit = 1 audio sample) — which
+            # needs the frame count, so a buffer read but never queried (its shape
+            # unknown client-side) must carry a `duration`.
             dur = (self.beats_to_units(dur_beats) if dur_beats is not None
                    else float(buf.frames))
             body = dict(buffer=buf.bufnum, channels=max(1, buf.channels))
