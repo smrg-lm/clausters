@@ -201,12 +201,17 @@ pub(crate) fn clip_hit(
     let nav = track::window_nav(tree);
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     for p in layout::layout(area, tree) {
-        if !matches!(p.widget.kind, WidgetKind::Track { .. }) || !p.rect.contains(x, y) {
+        let WidgetKind::Track { editor, .. } = &p.widget.kind else {
+            continue;
+        };
+        if !p.rect.contains(x, y) {
             continue;
         }
-        let body = track::lane_body(p.rect);
+        // The same body the renderer drew (its ruler strip reserved), so the
+        // pixels a clip occupies are the pixels it is grabbed by.
+        let body = track::lane_body(p.rect, editor.ruler != super::widget::Ruler::Off);
         if !body.contains(x, y) {
-            return None; // over the header strip, not a clip
+            return None; // over the header or the ruler strip, not a clip
         }
         // Topmost clip wins: later children draw over earlier ones.
         for c in p.widget.children.iter().rev() {
@@ -351,7 +356,7 @@ mod tests {
             .find(|p| matches!(p.widget.kind, WidgetKind::Track { .. }))
             .unwrap()
             .rect;
-        (track::lane_body(track_rect), nav)
+        (track::lane_body(track_rect, false), nav)
     }
 
     #[test]

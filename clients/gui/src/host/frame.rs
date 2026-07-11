@@ -181,6 +181,10 @@ struct TrackItem {
     rect: Rect,
     label: Option<String>,
     clips: Vec<track::ClipDraw>,
+    /// The lane's chrome: its time ruler (off by default) and playhead anchor.
+    /// A lane is no navigation-group member — it reads the window's shared clip
+    /// span — so these are the widget's own props.
+    editor: EditorProps,
 }
 
 /// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
@@ -629,7 +633,7 @@ pub(crate) fn render(
                 exp: *exp,
                 label: label.clone(),
             }),
-            WidgetKind::Track { label, .. } => {
+            WidgetKind::Track { label, editor, .. } => {
                 // A track carries its clips as children (not laid out by the
                 // layout engine — they are placed by offset/dur on the shared
                 // time axis in the overlay pass below).
@@ -642,15 +646,18 @@ pub(crate) fn render(
                             offset,
                             dur,
                             samples,
+                            body,
                             notes,
                             min,
                             max,
                             label,
+                            ..
                         } => Some(track::ClipDraw {
                             id: c.id.unwrap_or(-1),
                             offset: *offset,
                             dur: *dur,
                             samples: Arc::clone(samples),
+                            data: body.clone(),
                             notes: notes.clone(),
                             min: *min,
                             max: *max,
@@ -663,6 +670,7 @@ pub(crate) fn render(
                     rect: p.rect,
                     label: label.clone(),
                     clips,
+                    editor: editor.clone(),
                 });
             }
             WidgetKind::NodeTree {
@@ -891,13 +899,36 @@ pub(crate) fn render(
     if !track_items.is_empty() {
         let nav = track::window_nav(tree);
         for item in &track_items {
+            let ruler_on = item.editor.ruler != Ruler::Off;
             track::draw(
                 &mut mesh,
                 item.rect,
                 &nav,
                 item.label.as_deref(),
                 &item.clips,
+                ruler_on,
             );
+            let body = track::lane_body(item.rect, ruler_on);
+            // The lane's own time ruler, in the strip the lane body reserved —
+            // the same tick math the timeline views use, over the shared axis.
+            if ruler_on {
+                let rate = if item.editor.sample_rate > 0.0 {
+                    item.editor.sample_rate
+                } else {
+                    inputs.sample_rate
+                };
+                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor);
+            }
+            // The playhead, over the clips: the engine clock as a timeline
+            // position (`playhead_at` anchors timeline sample 0 to a clock
+            // value), so it sweeps the lane as the composition plays.
+            if item.editor.playhead_at >= 0.0
+                && inputs.sample_clock > 0.0
+                && let Some(x) =
+                    track::playhead_x(body, &nav, inputs.sample_clock - item.editor.playhead_at)
+            {
+                over.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
+            }
         }
     }
 

@@ -25,6 +25,7 @@ use clausters_core::osc::OscType;
 use serde_json::Value;
 
 use crate::spectrogram::FreqScale;
+use crate::waveform::WaveformData;
 
 use super::canvas;
 use super::guidef::GuiNode;
@@ -219,6 +220,19 @@ impl EditorProps {
                 .map(|n| n as i32),
             offset: number_f64(props, "offset", 0.0).max(0.0),
         }
+    }
+
+    /// The chrome of a `track` lane: the same props, but the time ruler is
+    /// **off** unless asked for (a lane reserves no ruler strip by default, so
+    /// an un-rulered multitrack keeps the layout it had) and it carries no
+    /// vertical ruler. The lane uses `ruler`/`playhead_at` (plus the `tempo`/
+    /// `beat_at`/`quant`/`sample_rate` the tick labels read); the rest is inert.
+    fn parse_lane(props: &serde_json::Map<String, Value>) -> EditorProps {
+        let mut editor = EditorProps::parse(props, RulerY::Off);
+        if !props.contains_key("ruler") {
+            editor.ruler = Ruler::Off;
+        }
+        editor
     }
 
     /// The vertical view window as a valid display-axis slice: a non-positive
@@ -464,24 +478,50 @@ pub enum WidgetKind {
     /// by [`super::track`]; the clips share one time axis (aligned tracks), the
     /// span being the longest clip end over the window's tracks. `snap` is the
     /// drag grid in timeline samples (0 = snap to whole samples) a clip's
-    /// move/resize rounds to.
+    /// move/resize rounds to. `editor` is the shared chrome, of which a lane
+    /// uses the time `ruler` (a strip under the lane, off by default) and the
+    /// `playhead_at` anchor (the engine sample-clock value at timeline sample 0,
+    /// so the playhead sweeps the clips as the composition plays) — the same
+    /// props, parsing and `/gui_set` keys the heavy timeline views use. A lane
+    /// joins no navigation group (its axis is the window's shared clip span), so
+    /// those keys apply to the widget itself.
     Track {
         label: Option<String>,
         height: f32,
         snap: f64,
+        editor: EditorProps,
     },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
-    /// with a `label`. Its body is one of two: an inline `data`/`blob` waveform
-    /// drawn decimated, or — when `notes` is non-empty — a **piano-roll** of
-    /// note events (`start`/`dur` relative to the clip, `pitch` over `[min,
-    /// max]`), the events-track scalar-vertical view. Interaction (drag to move
-    /// `offset`, drag an edge to resize `dur`) writes back through the edit-back
-    /// path. A leaf.
+    /// with a `label`. Its body is one of two: a **waveform**, or — when `notes`
+    /// is non-empty — a **piano-roll** of note events (`start`/`dur` relative to
+    /// the clip, `pitch` over `[min, max]`), the events-track scalar-vertical
+    /// view. Interaction (drag to move `offset`, drag an edge to resize `dur`)
+    /// writes back through the edit-back path. A leaf.
+    ///
+    /// The waveform body reaches the clip the same ways the heavy [`Waveform`]
+    /// view's samples do, in the same precedence order — a real take is
+    /// minutes long, so it must never ride the wire as JSON: `cache` (a prebuilt
+    /// peak-pyramid file, raw samples never loaded), `path` (a file of raw
+    /// little-endian `f32` the host maps — the bulk path, no OSC), `buffer` (a
+    /// server buffer, fetched over the client leg), or inline `data`/`blob` for a
+    /// short body. A loaded body lands in `body` as the shared [`WaveformData`],
+    /// whose peak pyramid (the core's, the one every client builds) decimates it
+    /// to the clip's pixel width — the same "never resolve finer than the screen"
+    /// rule the editor views follow, with no GPU slot: a lane body is flat
+    /// geometry, the static-view posture.
+    ///
+    /// [`Waveform`]: WidgetKind::Waveform
     Clip {
         offset: f64,
         dur: f64,
         samples: Arc<[f32]>,
+        body: Option<Arc<WaveformData>>,
+        buffer: Option<i32>,
+        path: Option<PathBuf>,
+        cache: Option<PathBuf>,
+        channels: usize,
+        base_bucket: usize,
         notes: Vec<super::track::Note>,
         min: f32,
         max: f32,
@@ -792,11 +832,41 @@ impl Widget {
                 label: label(&node.props),
                 height: number(&node.props, "height", 1.0).max(0.0),
                 snap: number_f64(&node.props, "snap", 0.0).max(0.0),
+                editor: EditorProps::parse_lane(&node.props),
             },
             "clip" => WidgetKind::Clip {
                 offset: number_f64(&node.props, "offset", 0.0).max(0.0),
                 dur: number_f64(&node.props, "dur", 0.0).max(0.0),
                 samples: inline_samples("clip", id, &node.props, blobs)?,
+                // Filled by the host when a `cache`/`path`/`buffer` body loads.
+                body: None,
+                buffer: node
+                    .props
+                    .get("buffer")
+                    .and_then(Value::as_i64)
+                    .map(|n| n as i32),
+                path: node
+                    .props
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from),
+                cache: node
+                    .props
+                    .get("cache")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from),
+                channels: node
+                    .props
+                    .get("channels")
+                    .and_then(Value::as_u64)
+                    .map(|n| (n as usize).max(1))
+                    .unwrap_or(1),
+                base_bucket: node
+                    .props
+                    .get("base_bucket")
+                    .and_then(Value::as_u64)
+                    .map(|n| (n as usize).max(1))
+                    .unwrap_or(DEFAULT_BASE_BUCKET),
                 notes: parse_notes(&node.props),
                 min: number(&node.props, "min", -1.0),
                 max: number(&node.props, "max", 1.0),
@@ -905,24 +975,27 @@ impl WidgetKind {
         }
     }
 
-    /// The editor chrome of a timeline view (waveform/spectrogram), if this is
-    /// one — the shared read path for the frame renderer and the fronts.
+    /// The editor chrome of a view that carries one — a timeline view
+    /// (waveform/spectrogram) or a `track` lane, which reuses the same props for
+    /// its ruler and playhead. The shared read path for the frame renderer and
+    /// the fronts. (Group membership is `is_timeline`, not this: a lane has the
+    /// chrome but navigates with the window's clip span.)
     pub fn editor(&self) -> Option<&EditorProps> {
         match self {
-            WidgetKind::Waveform { editor, .. } | WidgetKind::Spectrogram { editor, .. } => {
-                Some(editor)
-            }
+            WidgetKind::Waveform { editor, .. }
+            | WidgetKind::Spectrogram { editor, .. }
+            | WidgetKind::Track { editor, .. } => Some(editor),
             _ => None,
         }
     }
 
-    /// Mutable access to a timeline view's editor chrome (the selection drag
-    /// writes through here).
+    /// Mutable access to a view's editor chrome (the selection drag writes
+    /// through here).
     pub fn editor_mut(&mut self) -> Option<&mut EditorProps> {
         match self {
-            WidgetKind::Waveform { editor, .. } | WidgetKind::Spectrogram { editor, .. } => {
-                Some(editor)
-            }
+            WidgetKind::Waveform { editor, .. }
+            | WidgetKind::Spectrogram { editor, .. }
+            | WidgetKind::Track { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -1143,12 +1216,15 @@ impl WidgetKind {
                 label,
                 height,
                 snap,
-                ..
+                editor,
             } => match key {
                 "label" => set_label(label, v),
                 "height" => set_f(height, v),
                 "snap" => v.as_f64().map(|x| *snap = x.max(0.0)).is_some(),
-                _ => false,
+                // The lane's chrome (`ruler`, `playhead_at`, the tick-label
+                // props): a track is no timeline-group member, so these keys
+                // land on the widget itself rather than routing through a group.
+                _ => editor.apply(key, v),
             },
             WidgetKind::Clip {
                 offset,
@@ -1518,6 +1594,35 @@ mod tests {
             WidgetKind::Clip { offset, .. } => assert_eq!(*offset, 0.0),
             other => panic!("expected clip, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_lane_carries_the_ruler_and_playhead_chrome() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"track","ruler":"beats","tempo":2.0,"playhead_at":480.0},
+                {"id":2,"type":"track"}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        let lane = w.children[0].kind.editor().unwrap();
+        assert_eq!(lane.ruler, Ruler::Beats);
+        assert_eq!((lane.tempo, lane.playhead_at), (2.0, 480.0));
+        // A lane asks for no ruler by default (it reserves no strip), and shows
+        // no playhead until one is anchored.
+        let plain = w.children[1].kind.editor().unwrap();
+        assert_eq!(plain.ruler, Ruler::Off);
+        assert!(plain.playhead_at < 0.0);
+        assert!(!w.children[1].kind.has_playhead());
+        // The chrome is live: `/gui_set` lands on the lane itself (a track is no
+        // navigation-group member, so it does not route through the group model).
+        assert!(
+            w.children[1]
+                .kind
+                .apply("playhead_at", &serde_json::json!(96000.0))
+        );
+        assert!(w.children[1].kind.has_playhead());
+        assert_eq!(w.children[1].kind.editor().unwrap().playhead_at, 96000.0);
     }
 
     #[test]

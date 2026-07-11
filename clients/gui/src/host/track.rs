@@ -23,6 +23,7 @@ use super::meters::fraction;
 use super::paint::{Color, Mesh};
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
+use crate::waveform::WaveformData;
 
 const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
 const HEADER_FILL: Color = [0.14, 0.16, 0.20, 1.0];
@@ -52,14 +53,17 @@ pub struct Note {
 }
 
 /// One clip copied out of the host tree for drawing (and hit-testing). A clip
-/// with `notes` draws a piano-roll body (its `samples` ignored); one without
-/// draws the decimated waveform body.
+/// with `notes` draws a piano-roll body (its samples ignored); one without draws
+/// the decimated waveform body — from `data` (a loaded `cache`/`path`/`buffer`
+/// take, decimated through its peak pyramid) when the host has one, else from
+/// the inline `samples`.
 #[derive(Clone)]
 pub struct ClipDraw {
     pub id: i32,
     pub offset: f64,
     pub dur: f64,
     pub samples: Arc<[f32]>,
+    pub data: Option<Arc<WaveformData>>,
     pub notes: Vec<Note>,
     pub min: f32,
     pub max: f32,
@@ -90,10 +94,32 @@ pub fn window_nav(tree: &Widget) -> View {
     View::full(window_span(tree).ceil().max(1.0) as usize)
 }
 
-/// The lane body (the part right of the header strip) of a track's `rect`.
-pub fn lane_body(rect: Rect) -> Rect {
+/// The lane body of a track's `rect`: the part right of the header strip, and
+/// above the time-ruler strip when the lane draws one (`ruler`). The renderer
+/// and the hit-test both call this, so a clip occupies the same pixels either
+/// way — pass the same flag (a lane with `Ruler::Off` reserves no strip, which
+/// is the un-rulered default).
+pub fn lane_body(rect: Rect, ruler: bool) -> Rect {
     let hw = HEADER_W.min(rect.w);
-    Rect::new(rect.x + hw, rect.y, (rect.w - hw).max(0.0), rect.h)
+    let rh = if ruler { RULER_H.min(rect.h) } else { 0.0 };
+    Rect::new(
+        rect.x + hw,
+        rect.y,
+        (rect.w - hw).max(0.0),
+        (rect.h - rh).max(0.0),
+    )
+}
+
+/// The height of a lane's time-ruler strip, device pixels (the tick marks plus
+/// one row of labels — the same budget the timeline views' ruler strip gets).
+pub const RULER_H: f32 = 18.0;
+
+/// The x pixel of a timeline sample position inside the lane `body`, or `None`
+/// when it falls outside the visible window. The playhead reads it: the engine
+/// clock is a timeline position like any other, so it lands on the same axis the
+/// clips are placed on.
+pub fn playhead_x(body: Rect, nav: &View, pos: f64) -> Option<f32> {
+    (pos >= nav.start && pos <= nav.start + nav.len).then(|| to_x(pos, nav, body) as f32)
 }
 
 /// Maps sample position `s` to an x pixel inside `body` through `nav`.
@@ -117,15 +143,24 @@ pub fn clip_x_range(body: Rect, nav: &View, offset: f64, dur: f64) -> Option<(f3
 
 /// Draws one track lane into `rect`: the header (with `label`), the lane field,
 /// and every clip as a framed rectangle (its body decimated inside) through the
-/// shared timeline `nav`.
-pub fn draw(mesh: &mut Mesh, rect: Rect, nav: &View, label: Option<&str>, clips: &[ClipDraw]) {
+/// shared timeline `nav`. `ruler` reserves the bottom strip for the time ruler
+/// (drawn by the frame renderer, which owns the tick math); the playhead is an
+/// overlay, over the clips.
+pub fn draw(
+    mesh: &mut Mesh,
+    rect: Rect,
+    nav: &View,
+    label: Option<&str>,
+    clips: &[ClipDraw],
+    ruler: bool,
+) {
     // Header strip on the left, naming the track.
     let header = Rect::new(rect.x, rect.y, HEADER_W.min(rect.w), rect.h);
     mesh.rect(header, HEADER_FILL);
     if let Some(t) = label {
         font::text(mesh, t, header.x + PAD, rect.y + PAD, HEADER_SCALE, TEXT);
     }
-    let body = lane_body(rect);
+    let body = lane_body(rect, ruler);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
@@ -139,7 +174,13 @@ pub fn draw(mesh: &mut Mesh, rect: Rect, nav: &View, label: Option<&str>, clips:
         mesh.rect(cr, CLIP_FILL);
         mesh.border(cr, 1.0, CLIP_EDGE);
         if clip.notes.is_empty() {
-            draw_clip_body(mesh, cr, &clip.samples, clip.min, clip.max);
+            match &clip.data {
+                // A loaded take (mapped file, peak cache or fetched buffer):
+                // decimated through its pyramid, so a minutes-long clip costs
+                // the same as a short one.
+                Some(data) => draw_take_body(mesh, cr, data, clip.min, clip.max),
+                None => draw_clip_body(mesh, cr, &clip.samples, clip.min, clip.max),
+            }
         } else {
             // A piano-roll clip: notes placed on the same shared axis (so the
             // whole roll moves when the clip does), pitch mapped over [min, max].
@@ -180,6 +221,42 @@ fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &Cli
         let h = row_h.max(NOTE_MIN_H).min(cr.h);
         let y = (y - h * 0.5).clamp(cr.y, cr.y + cr.h - h);
         mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), NOTE_FILL);
+    }
+}
+
+/// Draws a **loaded take** as the clip's body: one min/max column per pixel,
+/// read from the take's peak pyramid (`clausters_core::peaks`, through
+/// [`WaveformData::column`] — the same LOD source, crossfade and all, the heavy
+/// waveform view draws from). The take is decimated to the clip's pixel width,
+/// so a minutes-long file costs a screen's worth of columns, never its samples:
+/// the one graphics rule (never resolve finer than the screen), and the reason a
+/// long clip needs no GPU slot of its own.
+fn draw_take_body(mesh: &mut Mesh, rect: Rect, data: &WaveformData, min: f32, max: f32) {
+    let total = data.total_samples();
+    if total == 0 || rect.w < 2.0 || rect.h <= 0.0 {
+        return;
+    }
+    let y_at = |v: f32| rect.y + rect.h * (1.0 - fraction(v, min, max));
+    if min < 0.0 && max > 0.0 {
+        let y = y_at(0.0);
+        mesh.line([rect.x, y], [rect.x + rect.w, y], 1.0, BASELINE);
+    }
+    // The whole take spans the clip rectangle (the clip's `dur` is its length on
+    // the timeline; its body is the take, summarized to fit).
+    let cols = rect.w.max(1.0) as usize;
+    let cw = rect.w / cols as f32;
+    let per_px = total as f64 / cols as f64;
+    for c in 0..cols {
+        let s0 = c as f64 * per_px;
+        let s1 = s0 + per_px;
+        let (lo, hi) = data.column(0, per_px, s0, s1);
+        let x = rect.x + (c as f32 + 0.5) * cw;
+        mesh.line(
+            [x, y_at(hi)],
+            [x, y_at(lo)],
+            BODY_W.min(cw.max(1.0)),
+            CLIP_BODY,
+        );
     }
 }
 
@@ -237,13 +314,37 @@ mod tests {
 
     #[test]
     fn lane_body_reserves_the_header_strip() {
-        let body = lane_body(lane());
+        let body = lane_body(lane(), false);
         assert_eq!((body.x, body.w), (HEADER_W, 500.0 - HEADER_W));
+        assert_eq!(
+            body.h,
+            lane().h,
+            "no ruler, no strip: the lane is full height"
+        );
+    }
+
+    #[test]
+    fn lane_body_reserves_the_ruler_strip_when_the_lane_has_one() {
+        let ruled = lane_body(lane(), true);
+        assert_eq!(ruled.h, lane().h - RULER_H);
+        // The header is unaffected: the strip comes off the bottom.
+        assert_eq!((ruled.x, ruled.w), (HEADER_W, 500.0 - HEADER_W));
+    }
+
+    #[test]
+    fn playhead_x_places_the_clock_on_the_shared_axis() {
+        let body = lane_body(lane(), false);
+        let nav = View::full(400);
+        // Halfway through the timeline: halfway across the lane body.
+        let x = playhead_x(body, &nav, 200.0).unwrap();
+        assert!((x - (body.x + body.w * 0.5)).abs() < 0.5);
+        // Past the end of the window: nothing to draw.
+        assert!(playhead_x(body, &nav, 500.0).is_none());
     }
 
     #[test]
     fn clip_x_range_places_the_clip_by_offset_and_duration() {
-        let body = lane_body(lane());
+        let body = lane_body(lane(), false);
         let nav = View::full(400); // 1 sample per pixel over the 404-wide body-ish
         // A clip at [100, 200): starts a quarter in, one-quarter wide.
         let (x0, x1) = clip_x_range(body, &nav, 100.0, 100.0).unwrap();
@@ -254,7 +355,7 @@ mod tests {
 
     #[test]
     fn clip_x_range_clips_to_the_body_and_drops_the_invisible() {
-        let body = lane_body(lane());
+        let body = lane_body(lane(), false);
         let nav = View {
             start: 150.0,
             len: 100.0,
@@ -277,6 +378,7 @@ mod tests {
                 offset: 0.0,
                 dur: 100.0,
                 samples: vec![0.0, 0.5, -0.5, 1.0].into(),
+                data: None,
                 notes: Vec::new(),
                 min: -1.0,
                 max: 1.0,
@@ -287,14 +389,76 @@ mod tests {
                 offset: 200.0,
                 dur: 100.0,
                 samples: Arc::from([] as [f32; 0]),
+                data: None,
                 notes: Vec::new(),
                 min: -1.0,
                 max: 1.0,
                 label: None,
             },
         ];
-        draw(&mut m, lane(), &View::full(400), Some("drums"), &clips);
+        draw(
+            &mut m,
+            lane(),
+            &View::full(400),
+            Some("drums"),
+            &clips,
+            false,
+        );
         assert!(!m.is_empty(), "the header, lane and clips draw");
+    }
+
+    #[test]
+    fn a_loaded_take_draws_decimated_through_its_pyramid() {
+        // A "long" take: many more samples than the clip has pixels. The body
+        // must cost pixels, not samples — it is read through the peak pyramid.
+        let samples: Vec<f32> = (0..100_000)
+            .map(|i| (i as f32 * 0.01).sin())
+            .collect::<Vec<_>>();
+        let data = Arc::new(WaveformData::new(samples.into(), 256));
+        let clip = ClipDraw {
+            id: 1,
+            offset: 0.0,
+            dur: 400.0,
+            samples: Arc::from([] as [f32; 0]),
+            data: Some(Arc::clone(&data)),
+            notes: Vec::new(),
+            min: -1.0,
+            max: 1.0,
+            label: Some("take".into()),
+        };
+        let mut m = Mesh::new();
+        draw(
+            &mut m,
+            lane(),
+            &View::full(400),
+            None,
+            std::slice::from_ref(&clip),
+            false,
+        );
+        assert!(!m.is_empty(), "the take draws a body");
+        // One min/max column per pixel of the clip rect, not one per sample: the
+        // 100k-sample take costs the same as the lane is wide.
+        let body = lane_body(lane(), false);
+        let (x0, x1) = clip_x_range(body, &View::full(400), 0.0, 400.0).unwrap();
+        let cols = (x1 - x0) as usize;
+        let mut bare = Mesh::new();
+        draw(
+            &mut bare,
+            lane(),
+            &View::full(400),
+            None,
+            &[ClipDraw {
+                data: None,
+                ..clip.clone()
+            }],
+            false,
+        );
+        let per_line = 6u32; // two triangles per column line
+        let added = m.vertex_count() - bare.vertex_count();
+        assert!(
+            added <= (cols as u32 + 2) * per_line,
+            "the body is decimated to the clip's pixel width ({added} vertices for {cols} columns)"
+        );
     }
 
     #[test]
@@ -304,6 +468,7 @@ mod tests {
             offset: 0.0,
             dur: 400.0,
             samples: Arc::from([] as [f32; 0]),
+            data: None,
             notes: vec![
                 Note {
                     start: 0.0,
@@ -328,6 +493,7 @@ mod tests {
             &View::full(400),
             None,
             std::slice::from_ref(&clip),
+            false,
         );
         // The same clip with no notes and no samples: only the clip frame.
         let mut without = Mesh::new();
@@ -341,6 +507,7 @@ mod tests {
             &View::full(400),
             None,
             std::slice::from_ref(&bare),
+            false,
         );
         assert!(
             with.vertex_count() > without.vertex_count(),

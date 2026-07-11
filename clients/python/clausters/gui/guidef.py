@@ -457,7 +457,10 @@ def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None
 
 
 def track(id: int, *clips, label: str | None = None, height: float | None = None,
-          snap: float | None = None, **props) -> dict:
+          snap: float | None = None, ruler: str | None = None,
+          sample_rate: float | None = None, tempo: float | None = None,
+          beat_at: float | None = None, quant: float | None = None,
+          playhead_at: float | None = None, **props) -> dict:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
     header; ``height`` is its lane weight when several tracks stack under one
@@ -466,32 +469,66 @@ def track(id: int, *clips, label: str | None = None, height: float | None = None
     timeline samples a clip's move/resize rounds to (omitted / ``0`` = snap to
     whole samples).
 
+    A lane carries the same time chrome as the heavy editor views:
+
+    - ``ruler`` — a time ruler under the lane (``"time"``, ``"samples"``,
+      ``"beats"``, or the default ``"off"``: a lane reserves no ruler strip
+      unless asked). ``sample_rate`` labels real time, and ``tempo``/``beat_at``/
+      ``quant`` label beats. One ruler under the bottom lane is the usual layout.
+    - ``playhead_at`` — the engine sample-clock value at timeline position 0, so
+      the playhead sweeps the clips as the composition plays (the same anchor the
+      `waveform` uses; read the clock with ``Server.request("/clock")``). Set it
+      live with ``GuiHost.set(track_id, playhead_at=clock)``; a negative value
+      (the default) draws no playhead.
+
     Pass the clips positionally::
 
         track(1, clip(10, offset=0, dur=4, data=take_a),
                  clip(11, offset=4, dur=2, data=take_b), label="drums")
     """
-    extra = _drop_none(label=label, height=height, snap=snap)
+    extra = _drop_none(label=label, height=height, snap=snap, ruler=ruler,
+                       sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
+                       quant=quant, playhead_at=playhead_at)
     return node("track", id=id, children=clips, **extra, **props)
 
 
 def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
+         buffer: int | None = None, path: str | None = None, cache: str | None = None,
+         channels: int | None = None, base_bucket: int | None = None,
          notes=None, min: float | None = None, max: float | None = None,
          label: str | None = None, **props) -> dict:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
     dur]`` in timeline sample units (the graphic unit — length = duration). Its
     body is one of two:
 
-    - a **waveform** — ``data``/``blob`` (a small float list, or the index of a
-      blob carried beside the JSON — see `samples_to_blob`) drawn decimated; or
+    - a **waveform** — the take, drawn decimated to the clip's pixel width; or
     - a **piano-roll** — ``notes``, an iterable of ``(start, dur, pitch)``
       events (times relative to the clip, in samples; pitch mapped over
       ``[min, max]``), drawn as note bars — the events-track view.
+
+    A real take is minutes long, so it never rides the wire as JSON. The
+    waveform body reaches the clip exactly the ways the heavy `waveform` view's
+    samples do, in the same precedence order:
+
+    - ``cache`` — a prebuilt peak-pyramid file the host maps (see
+      `peaks_cache_file`); the most compact bulk path, raw samples never loaded.
+    - ``path`` — a file of raw little-endian ``f32`` the host maps (see
+      `samples_to_file`); ``channels`` de-interleaves it, ``base_bucket`` sizes
+      the pyramid built (and cached) on load. No OSC.
+    - ``buffer`` — a server buffer, fetched over the host's client leg.
+    - ``data``/``blob`` — a short body inline (a float list, or the index of a
+      blob carried beside the JSON — see `samples_to_blob`); it must fit the
+      datagram, so keep it to a sketch.
+
+    Whichever the source, the body is summarized to fit the clip rectangle
+    through the take's peak pyramid — the same "never resolve finer than the
+    screen" rule the editor views follow.
 
     Other keywords:
 
     - ``offset`` — the clip's start on the shared timeline (samples; ``>= 0``).
     - ``dur`` — its duration (samples); a clip with no duration draws nothing.
+      For an audio take placed 1:1, that is the take's frame count.
     - ``min``/``max`` — the waveform value range, or the low/high pitch of a
       piano-roll (default the bipolar ``-1``/``1``).
 
@@ -503,7 +540,9 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
         flat_notes = [float(x) for n in notes for x in n]
     extra = _drop_none(offset=offset,
                        data=list(data) if data is not None else None,
-                       blob=blob, notes=flat_notes, min=min, max=max, label=label)
+                       blob=blob, buffer=buffer, path=path, cache=cache,
+                       channels=channels, base_bucket=base_bucket,
+                       notes=flat_notes, min=min, max=max, label=label)
     return node("clip", id=id, dur=dur, **extra, **props)
 
 

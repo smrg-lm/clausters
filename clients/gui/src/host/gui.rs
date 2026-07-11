@@ -603,10 +603,11 @@ impl App {
             },
         );
         info!("gui_def {id}: opened window \"{title}\"");
-        // Plots that name a local file map it now (the bulk path, no OSC); the
-        // samples land in the host tree the renderer reads each frame.
+        // Plots and clips that name a local file map it now (the bulk path, no
+        // OSC); the samples land in the host tree the renderer reads each frame.
         if let Some(root) = self.host.window_def_mut(id) {
             load_plot_paths(root);
+            load_clip_bodies(root);
         }
         if let Some(ws) = self.windows.get(&id) {
             ws.gpu.window.request_redraw();
@@ -848,6 +849,25 @@ impl App {
                     let data = WaveformData::from_interleaved(&samples, channels, base_bucket);
                     let slot = frame::waveform_slot(data, &ws.gpu);
                     ws.waveforms.insert(want.widget_id, slot);
+                }
+                WidgetKind::Clip { base_bucket, .. } => {
+                    // A clip's take lives in the tree, not on the GPU (its lane
+                    // body is flat geometry decimated from the pyramid).
+                    let data = Arc::new(WaveformData::from_interleaved(
+                        &samples,
+                        channels,
+                        base_bucket,
+                    ));
+                    ws.gpu.window.request_redraw();
+                    if let Some(w) = self
+                        .host
+                        .window_def_mut(want.def_id)
+                        .and_then(|t| t.find_mut(want.widget_id))
+                        && let WidgetKind::Clip { body, .. } = &mut w.kind
+                    {
+                        *body = Some(data);
+                    }
+                    continue; // no navigation group, no ruler rate: a lane owns those
                 }
                 WidgetKind::Spectrogram {
                     window_size,
@@ -1663,6 +1683,19 @@ fn collect_timelines(
                 }
             }
         }
+        (
+            WidgetKind::Clip {
+                samples, buffer, ..
+            },
+            Some(id),
+        ) => {
+            // A clip naming a server buffer with no inline body: fetch it over
+            // the leg, exactly like a waveform (the `cache`/`path` bulk bodies
+            // are mapped in `load_clip_bodies` when the window opens).
+            if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
+                buffer_refs.push((id, *bufnum));
+            }
+        }
         _ => {}
     }
     for child in &widget.children {
@@ -1731,6 +1764,33 @@ fn load_plot_paths(widget: &mut Widget) {
     }
     for child in &mut widget.children {
         load_plot_paths(child);
+    }
+}
+
+/// Maps the local resource (`cache` or `path`) of every clip that names one,
+/// through the same [`BulkLoader`](super::BulkLoader) seam the waveform view
+/// uses — so a minutes-long take reaches a lane as a peak pyramid, never as JSON
+/// over OSC. The loaded body lands in the host tree (like a plot's samples), no
+/// GPU slot: a lane draws flat geometry decimated from the pyramid.
+#[allow(clippy::type_complexity)]
+fn load_clip_bodies(widget: &mut Widget) {
+    if let WidgetKind::Clip {
+        body,
+        path,
+        cache,
+        channels,
+        base_bucket,
+        ..
+    } = &mut widget.kind
+        && body.is_none()
+        && (path.is_some() || cache.is_some())
+        && let Some(data) =
+            MmapLoader.waveform(cache.as_deref(), path.as_deref(), *channels, *base_bucket)
+    {
+        *body = Some(Arc::new(data));
+    }
+    for child in &mut widget.children {
+        load_clip_bodies(child);
     }
 }
 

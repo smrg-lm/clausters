@@ -9,12 +9,13 @@ offset lines up across tracks — the seat the linked-views work
 (``gui_linked.py``) designed: a member with a *placement* (offset) on the
 shared timeline.
 
-This example lays out three tracks — two audio takes with a decimated waveform
-body per clip, and one **piano-roll** lead whose clip carries ``(start, dur,
-pitch)`` note events drawn as bars (pitch on the vertical axis). It is plain
-GuiDef: new ``track``/``clip`` builders over the unchanged ``/gui_*`` protocol,
-no server involved (the bodies are inline here; a real composition would name
-mapped files or server buffers).
+This example lays out three tracks — two audio takes whose bodies are **mapped
+files** (the bulk path: a real take is minutes long, so it never rides the wire
+as JSON; the host maps it and decimates it to the clip's pixel width through the
+peak pyramid), and one **piano-roll** lead whose clip carries ``(start, dur,
+pitch)`` note events drawn as bars (pitch on the vertical axis). The bottom lane
+draws a **time ruler**, and every lane shows a **playhead** anchored to the
+engine's sample clock, so the composition can be watched playing over its clips.
 
 Dragging a clip (move) or its edge (resize) flows back as a ``"clip"`` event
 carrying the new ``offset``/``dur`` — the edit-back pattern — so a driver can
@@ -29,49 +30,71 @@ Needs a display and a GPU adapter; the install bundles the GUI binary (see
 # %%
 import math
 import sys
+import tempfile
 import time
+from pathlib import Path
 
 from clausters import Session
-from clausters.gui import clip, label, track, window
+from clausters.gui import clip, label, samples_to_file, track, window
 
-# The timeline unit here is "samples"; pick a beat length so the offsets read
-# as musical bars for the demo (the ruler unit is cosmetic in this static cut).
-BEAT = 12_000  # samples per beat
+# %%
+session = Session.live()
+server = session.server
+gui = session.gui()
+
+SR = float(server.sample_rate)
+TEMPO = 2.0                    # beats per second (120 bpm)
+BEAT = int(SR / TEMPO)         # timeline samples per beat: the axis unit is the
+                               # audio sample, so a take's frames place 1:1
 
 
-def blip(cycles: float, n: int = 256, decay: float = 4.0) -> list:
-    """A tiny decaying sine, just to give each clip a visible body.
+def take(path: Path, beats: float, freq: float, decay: float = 3.0) -> tuple[str, int]:
+    """Write a decaying tone of ``beats`` beats to ``path`` as raw ``f32`` and
+    return ``(path, frames)`` — the take a clip maps.
 
-    Kept short on purpose: an inline ``data`` body rides the ``/gui_def`` JSON in
-    one OSC datagram, so it must stay well under the ~64 KB UDP limit. The body
-    is decimated to the clip's pixel width anyway, so a few hundred samples is
-    plenty; a real, long clip would name a mapped file instead of inlining it."""
-    return [math.sin(2 * math.pi * cycles * i / n) * math.exp(-decay * i / n)
-            for i in range(n)]
+    This is the **bulk path**: the host memory-maps the file and builds (and
+    caches) its peak pyramid, so the lane draws one min/max column per pixel no
+    matter how long the take is. Nothing crosses OSC. A clip's ``dur`` is the
+    take's frame count, so it sits 1:1 on the shared sample axis."""
+    frames = int(beats * BEAT)
+    samples = [math.sin(2 * math.pi * freq * i / SR) * math.exp(-decay * i / frames)
+               for i in range(frames)]
+    samples_to_file(samples, str(path))
+    return str(path), frames
 
 
 # %% [markdown]
 # ## Compose the tracks
-# Three lanes under one window (a ``col`` layout stacks them). Each clip names
-# an ``offset`` (its start on the shared timeline) and a ``dur`` (its length);
-# the bodies are inline float lists. The tracks align because the window
-# computes one time axis spanning the longest clip end.
+# Three lanes under one window (a ``col`` layout stacks them). Each clip names an
+# ``offset`` (its start on the shared timeline) and a ``dur`` (its length). The
+# two audio lanes name a mapped file (``path``); the lead is a piano-roll. The
+# tracks align because the window computes one time axis spanning the longest
+# clip end — and the bottom lane rules that axis in beats.
 
 # %%
-session = Session.live()
-gui = session.gui()
+tmp = Path(tempfile.mkdtemp(prefix="clausters-multitrack-"))
+kick, kick_frames = take(tmp / "kick.f32", 2, 80.0, decay=6.0)
+fill, fill_frames = take(tmp / "fill.f32", 4, 160.0, decay=2.0)
+root, root_frames = take(tmp / "root.f32", 4, 55.0, decay=1.0)
+turn, turn_frames = take(tmp / "turn.f32", 4, 65.0, decay=1.0)
 
 DRUMS, BASS, LEAD = 1, 2, 3
+LANES = (DRUMS, BASS, LEAD)
+
+# The lane chrome: `snap` is the drag grid (a quarter beat), and the bottom lane
+# rules the shared axis in beats (`tempo` + `sample_rate` label the ticks).
+lane_chrome = dict(snap=BEAT / 4, sample_rate=SR, tempo=TEMPO)
+
 win = gui.open(window(
     track(DRUMS,
-          clip(10, offset=0 * BEAT, dur=2 * BEAT, data=blip(6), label="kick"),
-          clip(11, offset=2 * BEAT, dur=2 * BEAT, data=blip(6), label="kick"),
-          clip(12, offset=4 * BEAT, dur=4 * BEAT, data=blip(6), label="fill"),
-          label="drums"),
+          clip(10, offset=0 * BEAT, dur=kick_frames, path=kick, label="kick"),
+          clip(11, offset=2 * BEAT, dur=kick_frames, path=kick, label="kick"),
+          clip(12, offset=4 * BEAT, dur=fill_frames, path=fill, label="fill"),
+          label="drums", **lane_chrome),
     track(BASS,
-          clip(20, offset=0 * BEAT, dur=4 * BEAT, data=blip(2), label="root"),
-          clip(21, offset=4 * BEAT, dur=4 * BEAT, data=blip(3), label="turn"),
-          label="bass"),
+          clip(20, offset=0 * BEAT, dur=root_frames, path=root, label="root"),
+          clip(21, offset=4 * BEAT, dur=turn_frames, path=turn, label="turn"),
+          label="bass", **lane_chrome),
     track(LEAD,
           # A piano-roll clip: (start, dur, pitch) events relative to the clip,
           # pitch mapped over [min, max]. The whole roll moves with the clip.
@@ -80,11 +103,29 @@ win = gui.open(window(
                       (2 * BEAT, BEAT, 67), (3 * BEAT, 2 * BEAT, 72),
                       (5 * BEAT, BEAT, 67)],
                label="theme"),
-          label="lead"),
+          label="lead", ruler="beats", **lane_chrome),
     label(99, "Multitrack: clips placed on one shared time axis"),
     title="Multitrack timeline", w=1000, h=520, layout="col",
 ))
 print(f"opened window {win} — clips of the three tracks line up on one axis")
+
+# %% [markdown]
+# ## Roll the playhead
+# ``playhead_at`` anchors timeline position 0 to a value of the engine's sample
+# clock; the host draws the line at ``clock - playhead_at`` every frame, so it
+# sweeps the lanes on its own. Anchoring it at *now* starts it at the left edge —
+# call ``roll()`` again to re-anchor (a locate).
+
+# %%
+def roll():
+    """Anchor every lane's playhead at the current engine clock."""
+    _, args = server.request("/clock", expect=("/clock.reply",))
+    now = float(args[0])
+    for lane in LANES:
+        gui.set(lane, playhead_at=now)
+
+
+roll()
 
 # %% [markdown]
 # ## Move and resize clips from the script
@@ -106,7 +147,8 @@ def drain_events(closed=[False]):
             print("window closed")
         elif addr == "/gui_event" and len(args) >= 4 and args[1] == "clip":
             wid, _, offset, dur = args[:4]
-            print(f"clip {wid}: offset {offset:.0f} dur {dur:.0f} samples")
+            print(f"clip {wid}: offset {offset:.0f} dur {dur:.0f} samples "
+                  f"({offset / BEAT:.2f} .. {(offset + dur) / BEAT:.2f} beats)")
     return closed[0]
 
 

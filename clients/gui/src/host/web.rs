@@ -659,6 +659,15 @@ impl WebApp {
                                 WaveformData::from_interleaved(&samples, channels, base_bucket);
                             self.place_bulk(want.widget_id, BulkData::Waveform(data));
                         }
+                        WidgetKind::Clip { base_bucket, .. } => {
+                            // A clip's take lands in the tree (its lane body is
+                            // flat geometry decimated from the pyramid, no GPU
+                            // slot) — the same landing the mapped bulk path uses.
+                            let data =
+                                WaveformData::from_interleaved(&samples, channels, base_bucket);
+                            self.set_clip_body(want.def_id, want.widget_id, data);
+                            continue;
+                        }
                         WidgetKind::Spectrogram {
                             window_size,
                             hop,
@@ -759,9 +768,38 @@ impl WebApp {
         }
     }
 
+    /// Writes a fetched take into a `clip`'s body in the host tree — the clip
+    /// counterpart of a plot's samples (a lane needs no GPU slot: its body is
+    /// flat geometry, decimated from the take's peak pyramid).
+    fn set_clip_body(&mut self, def_id: i32, widget_id: i32, data: WaveformData) {
+        if let Some(root) = self.host.window_def_mut(def_id)
+            && let Some(widget) = root.find_mut(widget_id)
+            && let WidgetKind::Clip { body, .. } = &mut widget.kind
+        {
+            *body = Some(Arc::new(data));
+        }
+    }
+
     /// A fetched bulk resource arrived: place a waveform/spectrogram (GPU
-    /// slot) or write a plot's samples into the host tree, then repaint.
+    /// slot), write a clip's take or a plot's samples into the host tree, then
+    /// repaint.
     fn on_bulk_ready(&mut self, widget_id: i32, data: BulkData) {
+        // A waveform resource wanted by a `clip` lands in the tree, not the GPU.
+        if let BulkData::Waveform(_) = &data
+            && let Some(def) = self.current_def
+            && self
+                .host
+                .window_def(def)
+                .and_then(|t| t.find(widget_id))
+                .is_some_and(|w| matches!(w.kind, WidgetKind::Clip { .. }))
+        {
+            let BulkData::Waveform(data) = data else {
+                unreachable!()
+            };
+            self.set_clip_body(def, widget_id, data);
+            self.request_redraw();
+            return;
+        }
         match data {
             BulkData::Waveform(_) | BulkData::Spectrogram(_) => {
                 self.place_bulk(widget_id, data);
@@ -1263,6 +1301,32 @@ fn collect_bulk(
                             channels: *channels,
                         },
                     ));
+                }
+            }
+            // A clip's take resolves exactly like a waveform's samples (cache →
+            // path → buffer), only its landing differs: the tree, not the GPU.
+            WidgetKind::Clip {
+                samples,
+                buffer,
+                path,
+                cache,
+                channels,
+                base_bucket,
+                ..
+            } => {
+                if let Some(cache) = cache {
+                    requests.push((id, BulkRequest::Cache(cache.to_string_lossy().into_owned())));
+                } else if let Some(path) = path {
+                    requests.push((
+                        id,
+                        BulkRequest::Raw {
+                            url: path.to_string_lossy().into_owned(),
+                            channels: *channels,
+                            base_bucket: *base_bucket,
+                        },
+                    ));
+                } else if let (Some(bufnum), true) = (buffer, samples.is_empty()) {
+                    buffer_refs.push((id, *bufnum));
                 }
             }
             _ => {}

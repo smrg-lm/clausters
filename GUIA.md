@@ -48,9 +48,12 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   reanudación (la suite mide `beat RMS ~0.141` on / `0.000` en pausa).
 - **Editor multipista (GUI).** `examples/gui_multitrack.py` abre una ventana con
   tres pistas de clips alineados sobre un eje de tiempo compartido → se ven los
-  rectángulos de clip con su cuerpo dibujado; arrastrar un clip lo **mueve** y
-  arrastrar un borde lo **redimensiona**, y la consola imprime el evento
-  `"clip" offset dur` (edit-back). Refrescar antes el binario bundleado
+  rectángulos de clip con su cuerpo dibujado (los dos carriles de audio mapean
+  **archivos** de take: el cuerpo se decima a ancho de píxel por la pirámide de
+  picos, no viaja por OSC); la pista de abajo trae **regla de tiempo** en beats y
+  las tres muestran el **playhead** corriendo con el reloj del motor. Arrastrar un
+  clip lo **mueve** y arrastrar un borde lo **redimensiona**, y la consola imprime
+  el evento `"clip" offset dur` (edit-back). Refrescar antes el binario bundleado
   (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Salud de tiempo real bajo carga.** `cargo run --release --example stress`
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;

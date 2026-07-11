@@ -57,6 +57,19 @@ pub struct WaveformData {
     channels: Vec<Channel>,
 }
 
+/// A summary, not a dump: the data behind a view is megabytes of samples, and it
+/// lives inside the widget tree (a `clip` body), which is `Debug`-printed in
+/// logs and tests.
+impl std::fmt::Debug for WaveformData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WaveformData")
+            .field("channels", &self.num_channels())
+            .field("samples", &self.total_samples())
+            .field("raw", &self.has_raw())
+            .finish()
+    }
+}
+
 impl WaveformData {
     /// A mono waveform from `samples`, building its pyramid at `base_bucket`.
     pub fn new(samples: Arc<[f32]>, base_bucket: usize) -> Self {
