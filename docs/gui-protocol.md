@@ -68,6 +68,7 @@ The **edit-back payloads**:
 | `"points"` | `t v shape curve` per break-point | the `bpf` editor, and an automation `clip` — one payload, whichever view drew the curve |
 | `"clip"` | `offset dur` (timeline units) | a `clip` moved or resized |
 | `"wire"` | `member control bus` (an empty bus = unwired) | a `graph` patch rewired |
+| `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
 | `"selection"` | `start len` (samples) | a selection dragged on a timeline view |
 | `"view"` | `start len` (samples) | the shared navigation window zoomed or panned |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
@@ -99,10 +100,17 @@ script actually names these. The catalog itself:
 | `spectrogram` | The editor-grade spectrogram, the same chrome | the data, `window_size`, `hop`, `freq_scale`, `db_floor`/`db_ceil`, `colormap` |
 | `bpf` | A drawable break-point envelope, played by the server's own shape math | `points`, `min`, `max`, `duration`, `exp` |
 | `plot` | A static plot of a signal | `data`/`blob`/`path`, `min`, `max` |
-| `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis | `label`, `height`, `snap`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `link` |
+| `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis | `label`, `height`, `snap`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `playhead`, `link` |
 | `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its body is a take, a piano-roll or an automation curve | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points`, `min`, `max`, `label` |
 | `graph` | A **patcher** of a bus-wired node graph: member boxes, bus nodes, a wire per connection | `members`, `buses`, `wires`, `label` |
 | `canvas` | A script-supplied WGSL shader over the widget area | `shader`, `params`, `buses` |
+
+A timeline view (and a lane) shows the transport two ways, and they are different
+things: `playhead_at` **anchors the line to the engine clock** (it is the clock
+value at timeline position 0, so the line *sweeps* as the audio runs), while
+`playhead` is a **static cursor** — where a located, stopped transport sits. Both
+are group-wide, so every lane shows the one cursor; a negative value is none.
+Clicking a lane's ruler moves the cursor and sends `"locate"`.
 
 The lanes of a window share **one navigation group**: they zoom, pan and carry a
 playhead as one, and the axis spans the composition (the longest clip end). The

@@ -216,36 +216,25 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 
 # %%
 session.start()                       # the clock runs the routines
-at = 0.0                              # the song position the transport works from
-ending = None                         # the routine that ends the current voice
 
 
 def silence():
-    """Free every sounding node — the playhead only stops scheduling."""
+    """Free every sounding node — halting a playhead only stops *scheduling*, and
+    this script holds a voice of its own (the automation's)."""
     server.send_msg("/g_deepFree", 0)
 
 
 def play():
-    """Arm the automation's voice and realize the composition from `at`.
-
-    Every play is a fresh realization of the *model*, so it plays the clips where
-    they are now — moved, resized, curves redrawn. Realizing again also replaces
-    the realization in flight (the editor stops the old playhead), so pressing play
-    twice restarts the piece instead of playing it over itself.
-
-    The voice ends *with the piece*: a routine releases its gate at the last beat,
-    and the envelope frees the synth. A held synth with no end would keep sounding
-    after the playhead ran off the composition — a drone that outlives the music
-    is a bug, not a drone."""
-    global at
+    """Arm the automation's voice, then play the composition from the transport's
+    position — a fresh realization, so it plays the clips where they are now."""
     silence()
     voice = server.synth("drone", {"amp": 0.12})
     sweep.targets = [(voice, "freq")]
-    editor.realize(server, session.clock, at=at)
+    editor.play(server, session.clock)
 
     def tail():
-        yield max(editor.extent() - at, 0.0)  # ... at the end of the composition,
-        server.set(voice, {"gate": 0.0})      # release it (the envelope frees it)
+        yield max(editor.extent() - editor.position, 0.0)   # at the end of the piece,
+        server.set(voice, {"gate": 0.0})                    # release it (it frees itself)
 
     global ending
     if ending is not None:
@@ -255,47 +244,29 @@ def play():
 
 
 def pause():
-    """Halt where we are; `play` resumes from there."""
-    global at
-    ph = editor.playhead
-    if ph is not None and ph.playing:
-        at = ph.position()
-        ph.stop()
-    editor.unanchor()          # the line tracks the engine clock: hide it, or it
-    silence()                  # would keep sweeping over a silent composition
+    editor.pause()                         # the cursor stays where we stopped
+    silence()
 
 
 def stop():
-    """Halt and return to the top."""
-    global at
-    pause()
-    at = 0.0
+    editor.stop()                          # halt and back to the top
+    silence()
 
 
 def rewind():
-    """Back to the top — playing on, if it was."""
-    global at
-    playing = editor.playhead is not None and editor.playhead.playing
-    at = 0.0
-    if playing:
-        play()
+    editor.locate(0.0)                     # seeking while playing re-realizes there
 
 
 def ended() -> bool:
-    """Whether the playhead ran past the end of the composition. The line is drawn
-    from the *engine clock*, so nothing stops it on its own: the script owns the
-    end, and says so — otherwise the playhead walks off the axis while the
-    transport still believes it is playing.
-
-    The end comes from the **model** (`Editor.extent`), never from a constant: drag
-    a clip past the last one and the piece is longer, and the playback must run to
-    the new end."""
+    """Whether the playhead ran past the end of the *current* composition (its
+    length is read from the model, so dragging a clip out lengthens the piece)."""
     ph = editor.playhead
     return ph is not None and ph.playing and ph.position() >= editor.extent()
 
 
+ending = None                              # the routine that ends the current voice
 TRANSPORT = {PLAY: play, PAUSE: pause, STOP: stop, REWIND: rewind}
-print("press play — the playhead sweeps the clips while the composition sounds")
+print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
 # %% [markdown]
 # ## Edit it

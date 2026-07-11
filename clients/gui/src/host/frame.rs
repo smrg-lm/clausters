@@ -418,13 +418,21 @@ fn draw_editor_overlay(
             mesh.rect(Rect::new(x1 - 1.0, body.y, 1.0, body.h), SELECTION_EDGE);
         }
     }
-    // Playhead: the engine clock relative to the widget's origin.
-    if item.editor.playhead_at >= 0.0 && inputs.sample_clock > 0.0 {
-        let pos = inputs.sample_clock - item.editor.playhead_at;
-        if pos >= nav.start && pos <= nav.start + nav.len {
-            let x = sample_to_x(pos, nav, body);
-            mesh.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
-        }
+    // Playhead: the engine clock relative to the widget's origin while playing,
+    // else the static cursor of a located, stopped transport.
+    let head = if item.editor.playhead_at >= 0.0 && inputs.sample_clock > 0.0 {
+        Some(inputs.sample_clock - item.editor.playhead_at)
+    } else if item.editor.playhead >= 0.0 {
+        Some(item.editor.playhead)
+    } else {
+        None
+    };
+    if let Some(pos) = head
+        && pos >= nav.start
+        && pos <= nav.start + nav.len
+    {
+        let x = sample_to_x(pos, nav, body);
+        mesh.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
     }
     // Cursor readout: time (per the ruler mode) plus value/frequency (per the
     // vertical unit / frequency scale), in the body's bottom-right corner —
@@ -922,10 +930,17 @@ pub(crate) fn render(
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
             // value), so it sweeps the lane as the composition plays.
-            if item.editor.playhead_at >= 0.0
-                && inputs.sample_clock > 0.0
-                && let Some(x) =
-                    track::playhead_x(body, &nav, inputs.sample_clock - item.editor.playhead_at)
+            let pos = if item.editor.playhead_at >= 0.0 && inputs.sample_clock > 0.0 {
+                // Playing: the line is the engine clock, and it sweeps.
+                Some(inputs.sample_clock - item.editor.playhead_at)
+            } else if item.editor.playhead >= 0.0 {
+                // Located and stopped: the cursor stands where it was put.
+                Some(item.editor.playhead)
+            } else {
+                None
+            };
+            if let Some(pos) = pos
+                && let Some(x) = track::playhead_x(body, &nav, pos)
             {
                 over.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
             }
@@ -1116,6 +1131,7 @@ mod tests {
             sel_start: 0.0,
             sel_len: 0.0,
             playhead_at: -1.0,
+            playhead: -1.0,
             y_start: 0.0,
             y_len: 1.0,
             link: None,

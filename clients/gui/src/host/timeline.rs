@@ -70,6 +70,8 @@ pub struct GroupState {
     /// The engine sample-clock value mapping to timeline sample 0 (negative =
     /// no playhead) — the same convention as `EditorProps::playhead_at`.
     pub playhead_at: f64,
+    /// The static cursor of a located, stopped transport (`< 0` = none).
+    pub playhead: f64,
 }
 
 impl GroupState {
@@ -81,6 +83,7 @@ impl GroupState {
             sel_start: editor.sel_start,
             sel_len: editor.sel_len,
             playhead_at: editor.playhead_at,
+            playhead: editor.playhead,
         }
     }
 }
@@ -345,6 +348,20 @@ impl Host {
         self.timeline_roots(key)
     }
 
+    /// Sets the group's **static cursor** — where a located, stopped transport
+    /// sits. Mirrored into every member, so all the lanes show one cursor.
+    pub fn set_timeline_cursor(&mut self, id: i32, pos: f64) -> Vec<i32> {
+        let Some(key) = self.timeline_key(id) else {
+            return Vec::new();
+        };
+        let Some(state) = self.timelines.states.get_mut(&key) else {
+            return Vec::new();
+        };
+        state.playhead = pos;
+        self.mirror_timeline_group(key);
+        self.timeline_roots(key)
+    }
+
     /// Sets widget `id`'s **placement** (start offset in timeline samples) on
     /// its group. Unlike the group-wide keys this is written to the one
     /// widget's own editor props (each clip carries its own offset), but it
@@ -399,6 +416,7 @@ impl Host {
                 sel_start: 0.0,
                 sel_len: 0.0,
                 playhead_at: -1.0,
+                playhead: -1.0,
             })
         });
         // Re-clamp the (carried or adopted) window against the new membership
@@ -440,6 +458,7 @@ impl Host {
                 editor.sel_start = state.sel_start;
                 editor.sel_len = state.sel_len;
                 editor.playhead_at = state.playhead_at;
+                editor.playhead = state.playhead;
             }
         }
     }
@@ -536,6 +555,11 @@ impl Host {
                         roots.extend(self.set_timeline_playhead(id, at));
                     }
                 }
+                "playhead" => {
+                    if let Some(pos) = v.as_f64() {
+                        roots.extend(self.set_timeline_cursor(id, pos));
+                    }
+                }
                 "link" => {
                     if let Some(n) = v.as_i64() {
                         let link = (n >= 0).then_some(n as i32);
@@ -572,7 +596,14 @@ impl Host {
 pub(super) fn is_timeline_key(key: &str) -> bool {
     matches!(
         key,
-        "view_start" | "view_len" | "sel_start" | "sel_len" | "playhead_at" | "link" | "offset"
+        "view_start"
+            | "view_len"
+            | "sel_start"
+            | "sel_len"
+            | "playhead_at"
+            | "playhead"
+            | "link"
+            | "offset"
     )
 }
 
@@ -904,6 +935,24 @@ mod tests {
                 editor.playhead_at, 12288.0,
                 "lane {lane} draws no playhead without it"
             );
+        }
+    }
+
+    #[test]
+    fn a_located_cursor_is_group_wide_and_stands_still() {
+        let mut host = lanes_host();
+        // The transport is located at 300 (a click on the ruler, or a script).
+        host.handle_packet(set_msg(100, &[("playhead", OscType::Float(300.0))]), from());
+        for lane in [100, 200] {
+            let editor = host
+                .window_def(1)
+                .and_then(|t| t.find(lane))
+                .and_then(|w| w.kind.editor())
+                .unwrap();
+            assert_eq!(editor.playhead, 300.0, "every lane shows the one cursor");
+            // The clock anchor is untouched: the cursor is what a *stopped*
+            // transport shows, and the two are different things.
+            assert!(editor.playhead_at < 0.0);
         }
     }
 }

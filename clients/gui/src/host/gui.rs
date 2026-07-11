@@ -509,6 +509,25 @@ impl App {
     /// straight to the audio server (without the `"points"` tag, which names
     /// the event payload, not a server argument); an unbound one emits
     /// `/gui_event id "points" <flat list…>` to the script.
+    /// Locates the transport: the timeline position under the cursor becomes the
+    /// group's static cursor (drawn at once on every lane, so the click lands
+    /// where you see it) and leaves as `/gui_event <id> "locate" <position>` — the
+    /// script seeks its playhead there, which is what actually moves the music.
+    fn locate_timeline(&mut self, def_id: i32, id: i32, body: Rect, cx: f64) {
+        let Some((start, len, _total)) = self.timeline_nav(id) else {
+            return;
+        };
+        let pos = (start + len * ((cx - body.x as f64) / body.w.max(1.0) as f64)).max(0.0);
+        let roots = self.host.set_timeline_cursor(id, pos);
+        self.emit(
+            def_id,
+            id,
+            vec![OscType::String("locate".into()), OscType::Float(pos as f32)],
+        );
+        self.redraw_all(&roots);
+        self.redraw(def_id);
+    }
+
     /// Whether clip `id` carries a break-point curve (an automation clip).
     fn clip_has_curve(&self, def_id: i32, id: i32) -> bool {
         self.host
@@ -1150,10 +1169,23 @@ impl App {
                     }
                     return;
                 }
+                // A press on the lane's **time ruler**, or on empty lane space,
+                // *locates* the transport: the multitrack's cursor goes where you
+                // point, which is the one gesture a timeline view cannot do
+                // without. (Over a clip, the clip's own gestures win.)
+                let ruler_on = editor.ruler != Ruler::Off;
+                let body = track::lane_body(rect, ruler_on);
+                let on_ruler = ruler_on && cy > body.y as f64 + body.h as f64;
+                let (fb_w, fb_h) = self.fb(def_id);
+                let over_clip =
+                    interact::clip_hit(&self.host, def_id, fb_w, fb_h, cx, cy).is_some();
+                if on_ruler || (!over_clip && body.contains(cx, cy)) {
+                    self.locate_timeline(def_id, id, body, cx);
+                    return;
+                }
                 // A track is the hit target (its clips are placed by the
                 // renderer, not the layout engine); find the clip under the
                 // cursor and start a move (body) or resize (edge) drag.
-                let (fb_w, fb_h) = self.fb(def_id);
                 if let Some(h) = interact::clip_hit(&self.host, def_id, fb_w, fb_h, cx, cy) {
                     // An automation clip: a break-point wins over the clip body
                     // (as it wins over a segment in the `bpf` view), and Ctrl+click

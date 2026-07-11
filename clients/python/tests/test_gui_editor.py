@@ -258,6 +258,48 @@ def test_the_composition_grows_when_a_clip_is_dragged_past_the_end():
     assert ed.extent() > 12.0, "the piece now runs past the clip that was dragged out"
 
 
+# ---- the transport: a cursor, and seeking to it ----
+
+class _FakeHost:
+    """Records the `/gui_set`s the editor sends (the lanes' playhead chrome)."""
+
+    def __init__(self):
+        self.sets = []
+
+    def open(self, tree, id=None):
+        return 1
+
+    def set(self, id, **props):
+        self.sets.append((id, props))
+
+
+def test_a_locate_moves_the_transport_and_the_lanes_cursor():
+    ed = editor()
+    host = _FakeHost()
+    ed.open(host)
+
+    # A click on a lane's ruler: the host sends "locate" in timeline units.
+    ed.apply("/gui_event", [next(iter(ed._lanes)), "locate", 3 * BEAT])
+    assert ed.position == pytest.approx(3.0)
+    assert not ed.dirty, "seeking is a transport action, not an edit"
+
+    # Every lane draws the cursor there, and the clock anchor is off (stopped).
+    for _id, props in host.sets[-len(ed._lanes):]:
+        assert props["playhead"] == pytest.approx(3 * BEAT)
+        assert props["playhead_at"] == -1.0
+
+
+def test_stop_returns_to_the_top_and_pause_keeps_the_position():
+    ed = editor()
+    ed.open(_FakeHost())
+    ed.locate(5.0)
+    assert ed.position == pytest.approx(5.0)
+    ed.pause()                       # nothing playing: the position stands
+    assert ed.position == pytest.approx(5.0)
+    ed.stop()
+    assert ed.position == 0.0
+
+
 def test_unknown_messages_are_ignored():
     ed = editor()
     ed.render()

@@ -186,6 +186,11 @@ pub struct EditorProps {
     pub sel_start: f64,
     pub sel_len: f64,
     pub playhead_at: f64,
+    /// A **static** playhead: the timeline position of the transport's cursor
+    /// when nothing is playing (`< 0` = none). `playhead_at` anchors the line to
+    /// the engine clock and *sweeps*; this one stands still — a located, stopped
+    /// transport has a cursor, and it must not drift with the clock.
+    pub playhead: f64,
     pub y_start: f64,
     pub y_len: f64,
     pub link: Option<i32>,
@@ -211,6 +216,7 @@ impl EditorProps {
             sel_start: number_f64(props, "sel_start", 0.0),
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
+            playhead: number_f64(props, "playhead", -1.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
             link: props
@@ -270,6 +276,7 @@ impl EditorProps {
             "sel_start" => set_f64(&mut self.sel_start, v),
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),
+            "playhead" => set_f64(&mut self.playhead, v),
             "y_start" => set_f64(&mut self.y_start, v),
             "y_len" => set_f64(&mut self.y_len, v),
             _ => false,

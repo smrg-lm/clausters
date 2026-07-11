@@ -136,6 +136,9 @@ class Editor:
         self._destination = None
         self._clock = None
         self._playhead = None
+        #: The transport's position in beats (where the next `play` starts). A
+        #: `locate` moves it — the multitrack has a cursor, playing or not.
+        self._at = 0.0
         #: Whether the model changed since the last realization — an edit does not
         #: interrupt what is playing, so a transport (play, a resume after pause, a
         #: seek) reads this to know it must re-read the composition.
@@ -299,6 +302,11 @@ class Editor:
             return False
         if args[1] == "wire":
             return self._apply_wire(int(args[0]), args[2:])
+        if args[1] == "locate":
+            # A click on a lane's ruler (or its empty space): seek. A transport
+            # action, not an edit — the composition did not change.
+            self.locate(self.units_to_beats(float(args[2])))
+            return False
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -416,9 +424,11 @@ class Editor:
         if self._playhead is not None:
             self._playhead.stop()
         self._destination, self._clock = destination, clock
+        self._at = float(at)
         self._playhead = model_realize(self.material, destination, clock,
                                        at=at, quant=quant)
         self.dirty = False            # what plays now *is* the model
+        self._cursor(None)            # the clock's line takes over from the cursor
         self.anchor(destination, at=at)
         return self._playhead
 
@@ -436,6 +446,66 @@ class Editor:
         if at is None:
             at = self._playhead.position() if self._playhead is not None else 0.0
         return self.realize(self._destination, self._clock, at=at)
+
+    # ---- the transport: play, pause, stop, locate ----
+
+    @property
+    def position(self) -> float:
+        """The transport's position in beats: where the playhead is while it plays,
+        and where the next `play` starts when it does not."""
+        ph = self._playhead
+        return ph.position() if (ph is not None and ph.playing) else self._at
+
+    def play(self, destination=None, clock=None, *, at: float | None = None):
+        """Play (or resume) from the transport's position — a fresh realization, so
+        it plays the composition **as it now stands** (moved clips, new lengths,
+        redrawn curves). Reuses the destination and clock of the last `realize`
+        when they are not given."""
+        destination = self._destination if destination is None else destination
+        clock = self._clock if clock is None else clock
+        if destination is None:
+            raise RuntimeError("nothing to play onto: realize(destination, clock) first")
+        return self.realize(destination, clock,
+                            at=self._at if at is None else float(at))
+
+    def pause(self):
+        """Halt where we are: the playhead stops scheduling and the position stays,
+        so a `play` resumes from here. What is already sounding keeps sounding —
+        stopping a playhead is not a panic button (the script owns its voices)."""
+        ph = self._playhead
+        if ph is not None and ph.playing:
+            self._at = ph.position()
+            ph.stop()
+        self._cursor(self._at)
+        return self._at
+
+    def stop(self):
+        """Halt and return to the top."""
+        self.pause()
+        self.locate(0.0)
+        return self
+
+    def locate(self, beat: float):
+        """Seek: put the transport at ``beat``. Playing, it re-realizes from there
+        (so a seek also picks up any edit); stopped, it just moves the cursor the
+        lanes draw. This is what a click on a lane's ruler does."""
+        beat = max(float(beat), 0.0)
+        if self._playhead is not None and self._playhead.playing:
+            self.realize(self._destination, self._clock, at=beat)
+        else:
+            self._at = beat
+            self._cursor(beat)
+        return self
+
+    def _cursor(self, beat):
+        """Draw (or clear) the lanes' static cursor — the located position of a
+        transport that is not playing. ``None`` clears it, which is what the clock
+        anchor does when playback takes the line over."""
+        if self._host is None:
+            return
+        pos = -1.0 if beat is None else self.beats_to_units(beat)
+        for lane in self._lanes:
+            self._host.set(lane, playhead_at=-1.0, playhead=pos)
 
     def anchor(self, server, *, at: float = 0.0) -> bool:
         """Anchor every lane's playhead to the engine clock, so the line starts at
@@ -467,14 +537,10 @@ class Editor:
         return True
 
     def unanchor(self):
-        """Take the playhead line off the lanes. The host's playhead *tracks the
-        engine clock*, so a line left anchored keeps sweeping after the music
-        stopped — a transport that pauses must hide it, and `realize` re-anchors
-        it on the next play."""
-        if self._host is None:
-            return
-        for lane in self._lanes:
-            self._host.set(lane, playhead_at=-1.0)
+        """Take the sweeping playhead line off the lanes (the transport's cursor,
+        if any, stays). The host's anchored playhead *tracks the engine clock*, so
+        a line left anchored keeps sweeping after the music stopped."""
+        self._cursor(self._at)
 
     # ---- the tree walk ----
 
