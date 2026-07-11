@@ -150,9 +150,6 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 # drone.
 
 # %%
-SONG = 8.0        # the composition's length in beats (its longest lane)
-
-
 def drone(name: str = "drone") -> SynthDef:
     """A sine whose `freq` is a `kr` control (so the automation can `/n_map` it to
     a bus), sustaining while its `gate` is held and freeing itself on release."""
@@ -247,8 +244,8 @@ def play():
     editor.realize(server, session.clock, at=at)
 
     def tail():
-        yield max(SONG - at, 0.0)          # ... at the end of the composition,
-        server.set(voice, {"gate": 0.0})   # release it (the envelope frees it)
+        yield max(editor.extent() - at, 0.0)  # ... at the end of the composition,
+        server.set(voice, {"gate": 0.0})      # release it (the envelope frees it)
 
     global ending
     if ending is not None:
@@ -285,12 +282,16 @@ def rewind():
 
 
 def ended() -> bool:
-    """Whether the playhead ran past the end of the composition. The line is
-    drawn from the *engine clock*, so nothing stops it on its own: the script
-    owns the end, and says so — otherwise the playhead just walks off the axis
-    and the transport still believes it is playing."""
+    """Whether the playhead ran past the end of the composition. The line is drawn
+    from the *engine clock*, so nothing stops it on its own: the script owns the
+    end, and says so — otherwise the playhead walks off the axis while the
+    transport still believes it is playing.
+
+    The end comes from the **model** (`Editor.extent`), never from a constant: drag
+    a clip past the last one and the piece is longer, and the playback must run to
+    the new end."""
     ph = editor.playhead
-    return ph is not None and ph.playing and ph.position() >= SONG
+    return ph is not None and ph.playing and ph.position() >= editor.extent()
 
 
 TRANSPORT = {PLAY: play, PAUSE: pause, STOP: stop, REWIND: rewind}

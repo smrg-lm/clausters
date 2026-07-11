@@ -244,6 +244,20 @@ def test_an_edit_marks_the_model_changed_until_it_is_realized():
     assert ed._clips[roll["id"]].member.dur == pytest.approx(1.0)
 
 
+def test_the_composition_grows_when_a_clip_is_dragged_past_the_end():
+    """The piece's length is read from the model, never fixed: drag a clip beyond
+    the last one and the composition is longer — which is what a transport must ask
+    to play it to its (new) end."""
+    ed = editor(quant=1.0)
+    tree = ed.render()
+    before = ed.extent()                          # the take (4 beats) is the longest
+
+    lead = clips(lanes(tree)[1])[0]
+    ed.apply(*clip_event(lead["id"], 12 * BEAT, lead["dur"]))
+    assert before < 12.0
+    assert ed.extent() > 12.0, "the piece now runs past the clip that was dragged out"
+
+
 def test_unknown_messages_are_ignored():
     ed = editor()
     ed.render()

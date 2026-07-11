@@ -248,6 +248,13 @@ class Editor:
         self._window = host.open(self.render(), id=id)
         return self._window
 
+    def extent(self, material=None) -> float:
+        """The composition's length in beats, **read from the model** — the end of
+        its last placed material. It is not a constant: move a clip past the end
+        and the piece gets longer, which is exactly what a transport must ask
+        (a hard-coded length would cut the playback short at the old end)."""
+        return self._extent(self.material if material is None else material)
+
     @property
     def playhead(self):
         """The `clausters.seq.Playhead` playing the composition, or ``None`` before
