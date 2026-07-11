@@ -39,8 +39,13 @@ from clausters.gui import clip, label, track, window
 BEAT = 12_000  # samples per beat
 
 
-def blip(cycles: float, n: int = 2000, decay: float = 4.0) -> list:
-    """A tiny decaying sine, just to give each clip a visible body."""
+def blip(cycles: float, n: int = 256, decay: float = 4.0) -> list:
+    """A tiny decaying sine, just to give each clip a visible body.
+
+    Kept short on purpose: an inline ``data`` body rides the ``/gui_def`` JSON in
+    one OSC datagram, so it must stay well under the ~64 KB UDP limit. The body
+    is decimated to the clip's pixel width anyway, so a few hundred samples is
+    plenty; a real, long clip would name a mapped file instead of inlining it."""
     return [math.sin(2 * math.pi * cycles * i / n) * math.exp(-decay * i / n)
             for i in range(n)]
 
