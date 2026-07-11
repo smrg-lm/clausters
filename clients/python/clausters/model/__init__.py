@@ -32,6 +32,7 @@ from .group import (
     SUCCESSIVE,
     Group,
 )
+from .realize import flatten, realize, to_timeline
 
 __all__ = [
     "Material",
@@ -42,6 +43,9 @@ __all__ = [
     "Generator",
     "Group",
     "temporal_character",
+    "flatten",
+    "to_timeline",
+    "realize",
     # temporal character
     "SEGMENT",
     "PUNCTUAL",

@@ -97,6 +97,23 @@ class Material:
             )
         return play(destination)
 
+    def to_timeline(self, base: float = 0.0):
+        """Flatten this material to a flat `clausters.seq.Timeline` in absolute
+        beats (accumulating nested placement offsets). See
+        `clausters.model.realize`."""
+        from .realize import to_timeline
+
+        return to_timeline(self, base)
+
+    def realize(self, destination, clock, *, at: float = 0.0, quant=None):
+        """Realize this material onto ``destination`` over ``clock`` — the change
+        of state to sound. Flattens it and plays the timeline through a
+        `clausters.seq.Playhead`; returns that playhead. See
+        `clausters.model.realize.realize`."""
+        from .realize import realize
+
+        return realize(self, destination, clock, at=at, quant=quant)
+
 
 class Event(Material):
     """*event/clip*: parameters grouped into one action, internally simultaneous.

@@ -6,6 +6,8 @@ placements, the thin-wrapper delegation of `play`, and group editing by handle.
 Realization onto the server/NRT is a later phase.
 """
 
+import struct
+
 import pytest
 
 from clausters.model import (
@@ -25,6 +27,7 @@ from clausters.model import (
     Material,
     Sequence,
     Track,
+    flatten,
     temporal_character,
 )
 
@@ -189,3 +192,117 @@ def test_relation_placement_dur_drives_derivation():
     g.add(Material(duration=99.0), 0.0, dur=2.0)
     g.add(Material(duration=99.0), 2.0, dur=2.0)
     assert g.temporal_relation() == SUCCESSIVE
+
+
+# ---- realize: flatten to absolute beats (Fase 1B, pure) ----
+
+def test_flatten_accumulates_nested_offsets():
+    from clausters.seq.event import Event as SeqEvent
+
+    inner = Group([(0.0, Event({"dur": 1.0})), (2.0, Event({"dur": 1.0}))])
+    outer = Group([(10.0, inner), (5.0, Event({"dur": 1.0}))])
+    flat = flatten(outer)
+    assert [beat for beat, _ in flat] == [5.0, 10.0, 12.0]  # sorted; 5, 10+0, 10+2
+    # the items are the wrapped seq.Events (the play(destination) seam)
+    assert all(isinstance(item, SeqEvent) for _, item in flat)
+
+
+def test_flatten_track_shifts_its_timeline():
+    from clausters.seq import OscEvent, Timeline
+
+    a, b = OscEvent("/x", "a"), OscEvent("/x", "b")
+    track = Track(Timeline([(0.0, a), (1.0, b)]))
+    flat = flatten(Group([(4.0, track)]))
+    assert flat == [(4.0, a), (5.0, b)]
+
+
+def test_sequence_of_materials_is_laid_out_successively():
+    flat = flatten(Sequence([Event({"dur": 2.0}), Event({"dur": 3.0}), Event({"dur": 1.0})]))
+    assert [beat for beat, _ in flat] == [0.0, 2.0, 5.0]
+
+
+def test_abstract_material_yields_no_event():
+    flat = flatten(Group([(0.0, Material()), (1.0, Event({"dur": 1.0}))]))
+    assert [beat for beat, _ in flat] == [1.0]
+
+
+def test_to_timeline_is_sorted():
+    tl = Group([(2.0, Event({"dur": 1.0})), (0.0, Event({"dur": 1.0}))]).to_timeline()
+    assert [beat for beat, _ in tl] == [0.0, 2.0]
+
+
+def test_flatten_logical_group_is_deferred():
+    with pytest.raises(NotImplementedError):
+        flatten(Group(kind=LOGICAL))
+
+
+def test_flatten_buffer_clip_is_deferred():
+    with pytest.raises(NotImplementedError):
+        flatten(Group([(0.0, Buffer(object()))]))
+
+
+def test_realize_bare_abstract_is_an_error():
+    with pytest.raises(ValueError):
+        Material().realize(None, None)
+
+
+# ---- realize: NRT equivalence to a hand-built timeline (needs the FFI) ----
+
+def _embed_or_skip():
+    try:
+        from clausters import _native
+
+        _native.lib()
+    except OSError as e:
+        pytest.skip(f"clausters-ffi not built: {e}")
+
+
+def _inner_addr(raw: bytes) -> str:
+    # raw = "#bundle\0"(8) + timetag(8) + [i32 len][message]
+    from clausters.base import _osclib as osc
+
+    length = struct.unpack(">i", raw[16:20])[0]
+    addr, _ = osc.decode(raw[20:20 + length])
+    return addr
+
+
+def test_realize_matches_handbuilt_timeline_nrt():
+    """A compositional group realized through the model produces the same score
+    (the same /s_new start beats) as the equivalent flat timeline played by a
+    Playhead by hand — proving the flatten is correct and the change of state
+    deterministic. NRT only (OscNrtInterface), so no socket and no port clash."""
+    _embed_or_skip()
+    from clausters.base import OscNrtInterface, TempoClock
+    from clausters.defs import Server
+    from clausters.seq import Playhead, Timeline
+    from clausters.seq.event import Event as SeqEvent
+
+    def _starts(build):
+        server = Server(interface=OscNrtInterface())
+        clock = TempoClock(tempo=1.0)
+        build(server, clock)
+        clock.render()
+        return sorted(
+            when
+            for when, raw in server.interface.score.bundles
+            if _inner_addr(raw) == "/s_new"
+        )
+
+    def by_model(server, clock):
+        Group([
+            (0.0, Event(SeqEvent(instrument="default", freq=440.0, dur=1.0))),
+            (2.0, Group([
+                (0.0, Event(SeqEvent(instrument="default", freq=550.0, dur=1.0))),
+                (1.0, Event(SeqEvent(instrument="default", freq=660.0, dur=1.0))),
+            ])),
+        ]).realize(server, clock)
+
+    def by_hand(server, clock):
+        tl = Timeline([
+            (0.0, SeqEvent(instrument="default", freq=440.0, dur=1.0)),
+            (2.0, SeqEvent(instrument="default", freq=550.0, dur=1.0)),
+            (3.0, SeqEvent(instrument="default", freq=660.0, dur=1.0)),
+        ])
+        Playhead(tl, clock, server).play()
+
+    assert _starts(by_model) == _starts(by_hand) == [0.0, 2.0, 3.0]
