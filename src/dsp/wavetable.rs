@@ -21,6 +21,8 @@
 
 use std::f64::consts::TAU;
 
+use clausters_core::envshape::shape_value;
+
 use crate::dsp::buffer::Buffer;
 
 /// The `/b_gen` flag bits, packed into the command's `flags` int (scsynth's
@@ -78,6 +80,27 @@ pub enum GenCommand {
         src_start: usize,
         num: i64,
     },
+    /// `env level0 [level time shape curve]...`: discretize a break-point
+    /// envelope across the whole buffer, evaluating each segment through
+    /// `clausters_core::envshape` — the same curve math the `EnvGen` UGen plays
+    /// — so a client's drawn/edited automation curve becomes a control buffer
+    /// that reads back identically. Segment times are relative (only their
+    /// proportions matter); the mono curve is written to every channel. No flags.
+    Env {
+        initial: f32,
+        segments: Vec<EnvSegment>,
+    },
+}
+
+/// One segment of a [`GenCommand::Env`] break-point envelope: interpolate from
+/// the previous level to `level` over `time` (relative units), following the
+/// SuperCollider shape number `shape` (`curve` is read only by the
+/// custom-curvature shape). Mirrors the per-segment `EnvGen` input tuple.
+pub struct EnvSegment {
+    pub level: f32,
+    pub time: f32,
+    pub shape: i32,
+    pub curve: f32,
 }
 
 impl GenCommand {
@@ -99,6 +122,9 @@ impl GenCommand {
                 src_start,
                 num,
             } => copy_samples(current, src, *dst_start, *src_start, *num),
+            GenCommand::Env { initial, segments } => {
+                env_curve(*initial, segments, frames, channels)
+            }
             _ => {
                 let flags = self.flags();
                 // Period length: half the samples in wavetable mode (the format
@@ -129,7 +155,7 @@ impl GenCommand {
             | GenCommand::Sine2 { flags, .. }
             | GenCommand::Sine3 { flags, .. }
             | GenCommand::Cheby { flags, .. } => *flags,
-            GenCommand::Copy { .. } => GenFlags {
+            GenCommand::Copy { .. } | GenCommand::Env { .. } => GenFlags {
                 normalize: false,
                 wavetable: false,
                 clear: true,
@@ -181,7 +207,8 @@ impl GenCommand {
                     *s += cheby_sum(coeffs, x);
                 }
             }
-            GenCommand::Copy { .. } => {}
+            // Copy and Env short-circuit in `apply` and never reach here.
+            GenCommand::Copy { .. } | GenCommand::Env { .. } => {}
         }
     }
 }
@@ -248,6 +275,56 @@ fn copy_samples(
     data
 }
 
+/// The `env` command: discretize a break-point envelope across `frames`
+/// samples (replicated across `channels`), sampling each segment's shape through
+/// [`shape_value`]. `segments` times are relative — only their proportions
+/// matter, since the buffer holds the curve *shape* and playback rate maps it
+/// onto real time. Matches `EnvGen`: `frac` within a segment is
+/// `elapsed / duration` and the endpoints land on the segment levels.
+fn env_curve(initial: f32, segments: &[EnvSegment], frames: usize, channels: usize) -> Vec<f32> {
+    let total: f32 = segments.iter().map(|s| s.time.max(0.0)).sum();
+    let final_level = segments.last().map_or(initial, |s| s.level);
+    let curve_at = |tpos: f32| -> f32 {
+        if segments.is_empty() || total <= 0.0 {
+            return final_level;
+        }
+        let mut start = initial;
+        let mut acc = 0.0f32;
+        for seg in segments {
+            let dur = seg.time.max(0.0);
+            if dur > 0.0 && tpos < acc + dur {
+                let frac = (tpos - acc) / dur;
+                return shape_value(seg.shape, seg.curve, start, seg.level, frac);
+            }
+            acc += dur;
+            start = seg.level;
+        }
+        // At or past the end: hold the final level.
+        final_level
+    };
+
+    let mut mono = vec![0.0f32; frames];
+    if frames == 1 {
+        mono[0] = curve_at(0.0);
+    } else if frames > 1 {
+        let span = (frames - 1) as f32;
+        for (i, m) in mono.iter_mut().enumerate() {
+            *m = curve_at((i as f32 / span) * total);
+        }
+    }
+
+    if channels <= 1 {
+        return mono;
+    }
+    let mut data = vec![0.0f32; frames * channels];
+    for (f, &v) in mono.iter().enumerate() {
+        for ch in 0..channels {
+            data[f * channels + ch] = v;
+        }
+    }
+    data
+}
+
 /// Converts one period `signal` into scsynth's interleaved wavetable layout,
 /// `[2*a[i] - a[i+1], a[i+1] - a[i]]` per point (see the module docs). `wrap`
 /// picks the neighbour of the last point: `a[0]` for a periodic oscillator
@@ -278,4 +355,49 @@ pub fn wt_interp(table: &[f32], k: usize, frac: f32) -> f32 {
     let x0 = table[2 * k];
     let x1 = table[2 * k + 1];
     x0 + (1.0 + frac) * x1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clausters_core::envshape::SHAPE_LINEAR;
+
+    fn seg(level: f32, time: f32) -> EnvSegment {
+        EnvSegment {
+            level,
+            time,
+            shape: SHAPE_LINEAR,
+            curve: 0.0,
+        }
+    }
+
+    #[test]
+    fn env_curve_linear_triangle() {
+        // 0 -> 1 -> 0 over two equal linear segments, sampled at 5 points.
+        let curve = env_curve(0.0, &[seg(1.0, 1.0), seg(0.0, 1.0)], 5, 1);
+        let expected = [0.0, 0.5, 1.0, 0.5, 0.0];
+        for (got, want) in curve.iter().zip(expected) {
+            assert!((got - want).abs() < 1e-6, "got {got}, want {want}");
+        }
+    }
+
+    #[test]
+    fn env_curve_endpoints_and_channels() {
+        // First/last samples land exactly on the initial and final levels, and
+        // the mono curve is replicated across channels.
+        let curve = env_curve(0.2, &[seg(0.8, 1.0)], 4, 2);
+        assert_eq!(curve.len(), 4 * 2);
+        assert!((curve[0] - 0.2).abs() < 1e-6); // frame 0, channel 0
+        assert!((curve[1] - 0.2).abs() < 1e-6); // frame 0, channel 1 (replicated)
+        assert!((curve[curve.len() - 1] - 0.8).abs() < 1e-6); // last frame holds final
+    }
+
+    #[test]
+    fn env_curve_zero_duration_holds_final() {
+        // Degenerate (all-zero times) envelope holds the final level everywhere.
+        let curve = env_curve(0.0, &[seg(0.7, 0.0)], 3, 1);
+        for v in curve {
+            assert!((v - 0.7).abs() < 1e-6);
+        }
+    }
 }

@@ -17,6 +17,7 @@ the wire (ids stay integers, control values stay floats).
 import array
 import json
 import sys
+from ..defs.ugens import env_to_points, points_to_env  # re-exported; shared with seq.automation
 
 __all__ = [
     "node",
@@ -432,63 +433,6 @@ def _flat_points(points) -> list:
         shape, curve = _resolve_curve(p[2]) if len(p) > 2 else (1, 0.0)
         out += [t, v, int(shape), float(curve)]
     return out
-
-
-def env_to_points(env, *, time_at: float = 0.0) -> list:
-    """A `clausters.defs.Env` (levels / segment times / curves) as the flat
-    `bpf` breakpoint list ``[t, v, shape, curve, ...]``, with absolute times
-    starting at ``time_at``. The last point carries a linear placeholder (no
-    segment leaves it). Feed the result to `bpf` or to a live ``points`` set."""
-    from ..defs.ugens import _resolve_curve  # lazy: keep guidef import-light
-
-    out: list = []
-    t = float(time_at)
-    for i, level in enumerate(env.levels):
-        if i < len(env.times):
-            shape, curve = _resolve_curve(env.curves[i])
-        else:
-            shape, curve = 1, 0.0
-        out += [t, float(level), int(shape), float(curve)]
-        if i < len(env.times):
-            t += float(env.times[i])
-    return out
-
-
-def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
-    """A `bpf` breakpoint list — the flat ``t v shape curve ...`` quads a
-    ``"points"`` event carries — as a `clausters.defs.Env`: absolute times
-    become segment durations and each segment keeps its shape (the numeric
-    curvature for the custom shape, the shape name otherwise).
-
-    A first breakpoint later than ``time_at`` (the inverse of
-    `env_to_points`'s anchor, default ``0.0``) is the drawn **initial
-    delay**: the widget holds the first value before its first point (the
-    ``offset`` semantics of SuperCollider's ``IEnvGen``). ``EnvGen`` has no
-    offset input, so it is realized as a leading constant segment — the first
-    level duplicated for that duration — keeping what you drew and what plays
-    identical. Extra keywords (``release_node``, ``loop_node``) pass through
-    to `Env`, so a drawn envelope goes straight into
-    `clausters.defs.env_gen`."""
-    from ..defs.ugens import _SHAPE_NUMBERS, Env  # lazy: keep guidef import-light
-
-    quads = [points[i:i + 4] for i in range(0, len(points) - len(points) % 4, 4)]
-    if len(quads) < 2:
-        raise ValueError("an envelope needs at least two breakpoints")
-    # First name wins for aliased numbers ("step"/"lin"/"exp"... are listed
-    # before their long forms).
-    names: dict = {}
-    for name, num in _SHAPE_NUMBERS.items():
-        names.setdefault(num, name)
-    levels = [float(q[1]) for q in quads]
-    times = [float(b[0]) - float(a[0]) for a, b in zip(quads, quads[1:])]
-    curve = [float(q[3]) if int(q[2]) == 5 else names.get(int(q[2]), "lin")
-             for q in quads[:-1]]
-    delay = float(quads[0][0]) - float(time_at)
-    if delay > 1e-9:
-        levels.insert(0, levels[0])
-        times.insert(0, delay)
-        curve.insert(0, "hold")
-    return Env(levels, times, curve, **env_kwargs)
 
 
 def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None,

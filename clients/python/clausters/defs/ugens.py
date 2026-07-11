@@ -212,6 +212,13 @@ def in_ctl(bus=0.0) -> Ugen:
     return Ugen("InCtl", [bus])
 
 
+def out_ctl(bus, signal) -> Ugen:
+    """Writes ``signal``'s latest per-block value to a **control** ``bus`` — the
+    write side of `in_ctl`, so a node reading that bus (via ``/n_map`` or
+    `in_ctl`) tracks it. Passes ``signal`` through as its output."""
+    return Ugen("OutCtl", [bus, signal])
+
+
 def out(bus, signal) -> Ugen:
     """Sums ``signal`` into the audio ``bus`` (output happens only here)."""
     return Ugen("Out", [bus, signal])
@@ -366,6 +373,11 @@ def var_lag(signal, up=0.1, down=0.1) -> Ugen:
 def sample_rate() -> Ugen:
     """The engine sample rate in Hz, computed once at init (``ir``)."""
     return Ugen("SampleRate", [], rate="ir")
+
+
+def buf_frames(bufnum) -> Ugen:
+    """The number of frames in a buffer, block-constant (``kr``)."""
+    return Ugen("BufFrames", [bufnum], rate="kr")
 
 
 def rand(lo=0.0, hi=1.0) -> Ugen:
@@ -582,3 +594,54 @@ def env_gen(
     the envelope finishes (see `DoneAction`)."""
     fixed = [gate, level_scale, level_bias, time_scale, float(done_action)]
     return Ugen("EnvGen", fixed + env.to_inputs())
+
+
+# ---- break-point <-> Env mapping (shared by the bpf widget and automation) ----
+
+
+def env_to_points(env, *, time_at: float = 0.0) -> list:
+    """An `Env` (levels / segment times / curves) as the flat ``bpf`` breakpoint
+    list ``[t, v, shape, curve, ...]``, with absolute times starting at
+    ``time_at``. The last point carries a linear placeholder (no segment leaves
+    it). Feed the result to the ``bpf`` widget or to a live ``points`` set."""
+    out: list = []
+    t = float(time_at)
+    for i, level in enumerate(env.levels):
+        if i < len(env.times):
+            shape, curve = _resolve_curve(env.curves[i])
+        else:
+            shape, curve = 1, 0.0
+        out += [t, float(level), int(shape), float(curve)]
+        if i < len(env.times):
+            t += float(env.times[i])
+    return out
+
+
+def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
+    """A ``bpf`` breakpoint list — the flat ``t v shape curve ...`` quads a
+    ``"points"`` event carries — as an `Env`: absolute times become segment
+    durations and each segment keeps its shape (the numeric curvature for the
+    custom shape, the shape name otherwise).
+
+    A first breakpoint later than ``time_at`` (default ``0.0``) is a drawn
+    initial delay, realized as a leading ``hold`` segment (the first level held
+    for that duration) so what was drawn and what plays stay identical. Extra
+    keywords (``release_node``, ``loop_node``) pass through to `Env`."""
+    quads = [points[i:i + 4] for i in range(0, len(points) - len(points) % 4, 4)]
+    if len(quads) < 2:
+        raise ValueError("an envelope needs at least two breakpoints")
+    # First name wins for aliased numbers ("step"/"lin"/"exp"... are listed
+    # before their long forms).
+    names: dict = {}
+    for name, num in _SHAPE_NUMBERS.items():
+        names.setdefault(num, name)
+    levels = [float(q[1]) for q in quads]
+    times = [float(b[0]) - float(a[0]) for a, b in zip(quads, quads[1:])]
+    curve = [float(q[3]) if int(q[2]) == 5 else names.get(int(q[2]), "lin")
+             for q in quads[:-1]]
+    delay = float(quads[0][0]) - float(time_at)
+    if delay > 1e-9:
+        levels.insert(0, levels[0])
+        times.insert(0, delay)
+        curve.insert(0, "hold")
+    return Env(levels, times, curve, **env_kwargs)

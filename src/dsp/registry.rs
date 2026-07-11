@@ -18,7 +18,7 @@ use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
-use crate::dsp::io::{In, InCtl, Out, ReplaceOut};
+use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
 use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
@@ -422,6 +422,16 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_| Box::new(InCtl),
+    ),
+    desc(
+        "OutCtl",
+        Fixed(2),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_| Box::new(OutCtl),
     ),
     desc("Out", Fixed(2), Ar, R_AR, Normal, Write, false, |_| {
         Box::new(Out)

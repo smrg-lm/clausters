@@ -16,6 +16,7 @@ A ``Pbind(...).play(clock, server)`` runs live (RT) or builds an NRT score for
 ``server.render()`` purely by which interface the Server holds — the seam.
 """
 
+from .automation import Automation, add_automation_def
 from .event import Event, rest
 from .eventstream import EventStreamPlayer
 from .timeline import MidiEvent, OscEvent, Playhead, Timeline
@@ -37,6 +38,8 @@ from .pattern import (
 __all__ = [
     "Event",
     "rest",
+    "Automation",
+    "add_automation_def",
     "EventStreamPlayer",
     "Timeline",
     "Playhead",

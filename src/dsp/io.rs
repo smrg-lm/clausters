@@ -66,3 +66,22 @@ impl UGen for InCtl {
         output.fill(ctx.buses.control.get(idx));
     }
 }
+
+/// Input 0: control bus index, input 1: signal. Writes the signal's latest
+/// value to a **control** bus — the write-side counterpart of `InCtl`, so a node
+/// reading that bus (via `/n_map` or `InCtl`) tracks it. A control bus holds one
+/// value per block, so the block's last sample is committed. The signal is also
+/// passed through as the output, so it can still feed other UGens.
+pub struct OutCtl;
+
+impl UGen for OutCtl {
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        let idx = (at(inputs[0], 0).max(0.0) as usize).min(NUM_CONTROL_BUSES - 1);
+        let signal = inputs[1];
+        for (i, s) in output.iter_mut().enumerate() {
+            *s = at(signal, i);
+        }
+        let last = output.last().copied().unwrap_or_else(|| at(signal, 0));
+        ctx.buses.control.set(idx, last);
+    }
+}

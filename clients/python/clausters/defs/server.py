@@ -693,14 +693,35 @@ class Server:
 
     # ---- buffers ----
 
-    def alloc_buffer(self, frames: int, channels: int = 1, timeout: float = 5.0) -> Buffer:
+    def alloc_buffer(self, frames: int, channels: int = 1, *,
+                     wait: bool = True, timeout: float = 5.0) -> Buffer:
+        """Allocates a zeroed buffer. In NRT it scores ``/b_alloc`` at time 0
+        (so the renderer installs it before time advances); in RT ``wait=True``
+        (default) blocks on ``/done``, ``wait=False`` is fire-and-forget."""
         bufnum = self.buffers.alloc()
+        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
+            self.send_msg("/b_alloc", bufnum, frames, channels)
+            return Buffer(bufnum, frames, channels)
         addr, args = self.request("/b_alloc", bufnum, frames, channels,
                                   timeout=timeout, expect=("/done", "/fail"))
         if addr == "/fail":
             self.buffers.free(bufnum)
             raise CommandError(f"/b_alloc {bufnum} failed: {args}")
         return Buffer(bufnum, frames, channels)
+
+    def gen_buffer(self, buf, cmd: str, *args, wait: bool = True, timeout: float = 5.0):
+        """Fills a buffer through ``/b_gen`` (the wavetable/generator commands:
+        ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``).
+        Like `alloc_buffer`: NRT scores at time 0; RT ``wait=True`` blocks on
+        ``/done``, ``wait=False`` is fire-and-forget."""
+        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
+            self.send_msg("/b_gen", bufnum, cmd, *args)
+            return
+        addr, rargs = self.request("/b_gen", bufnum, cmd, *args,
+                                   timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/b_gen {bufnum} {cmd} failed: {rargs}")
 
     def free_buffer(self, buf):
         bufnum = buf.bufnum if isinstance(buf, Buffer) else buf

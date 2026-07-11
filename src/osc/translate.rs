@@ -2179,7 +2179,7 @@ pub fn parse_buffer_msg(
 /// from `mirror` — so a `/b_gen` right after a `/b_alloc` needs a `/sync`
 /// between them, exactly like `/b_read`.
 pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob), String> {
-    use crate::dsp::wavetable::{GenCommand, GenFlags};
+    use crate::dsp::wavetable::{EnvSegment, GenCommand, GenFlags};
 
     let (index, cmd) = match args {
         [OscType::Int(index), OscType::String(cmd), ..] => (*index, cmd.as_str()),
@@ -2239,6 +2239,29 @@ pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob
                     flags,
                     partials: values.chunks_exact(3).map(|c| (c[0], c[1], c[2])).collect(),
                 },
+            }
+        }
+        "env" => {
+            // env level0 [level time shape curve]...
+            let vals: Vec<f32> = rest.iter().filter_map(float_value).collect();
+            let Some((initial, seg_vals)) = vals.split_first() else {
+                return Err("env expects: level0, then (level, time, shape, curve) groups".into());
+            };
+            if seg_vals.is_empty() || seg_vals.len() % 4 != 0 {
+                return Err("env segments must be (level, time, shape, curve) groups".into());
+            }
+            let segments = seg_vals
+                .chunks_exact(4)
+                .map(|c| EnvSegment {
+                    level: c[0],
+                    time: c[1],
+                    shape: c[2].round() as i32,
+                    curve: c[3],
+                })
+                .collect();
+            GenCommand::Env {
+                initial: *initial,
+                segments,
             }
         }
         other => return Err(format!("unknown /b_gen command {other:?}")),

@@ -42,7 +42,7 @@ Engine facts that apply to every def: blocks of 64 samples; **by default** 128 a
 
 ### Mapping controls to buses (`/n_map`, `/n_mapa`)
 
-`/n_set` writes a control once. `/n_map id ctl bus` instead **binds** the control to a **control bus**: the node re-reads that bus at the start of every block, so the control tracks whatever any client (`/c_set`) or synth (`Out` to a control bus) writes there — no further `/n_set`. `/n_mapa` is the same against an **audio bus**. Both take any number of `ctl bus` pairs, by control name or index, and work for UGen controls and Faust parameters alike.
+`/n_set` writes a control once. `/n_map id ctl bus` instead **binds** the control to a **control bus**: the node re-reads that bus at the start of every block, so the control tracks whatever any client (`/c_set`) or synth (`OutCtl`) writes there — no further `/n_set`. `/n_mapa` is the same against an **audio bus**. Both take any number of `ctl bus` pairs, by control name or index, and work for UGen controls and Faust parameters alike.
 
 A `busIndex` of `-1` removes the mapping (the control keeps its last value); a later `/n_set` on the same control also clears it and fixes the value.
 
@@ -186,6 +186,7 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `Sum4` | a, b, c, d | `a + b + c + d` |
 | `In` | bus | copies an audio bus (read once per block) |
 | `InCtl` | bus | a control-bus value, constant over the block |
+| `OutCtl` | bus, signal | writes the signal's latest per-block value to a **control** bus (the write side of `InCtl`); passes the signal through as its output |
 | `Out` | bus, signal | **sums** the signal into an audio bus |
 | `ReplaceOut` | bus, signal | overwrites the bus instead of summing |
 | `PlayBuf` | bufnum, chan, rate, loop | buffer player with linear interpolation; `rate` is frames per output sample (1.0 = the server rate — multiply by `BufRateScale(bufnum)`, i.e. `file_sr / server_sr`, for the file's pitch); starts at frame 0, silent at the end unless looping |
@@ -322,6 +323,9 @@ The `flags` int packs three bits, `normalize`(1) + `wavetable`(2) + `clear`(4) �
 | `sine3` | flags, (freq amp phase)… | as `sine2` with a per-partial phase in radians |
 | `cheby` | flags, amp… | a waveshaping transfer function `Σ amp[k]·T_{k+1}(x)` of Chebyshev polynomials over `x∈[−1,1]` (`amp[0]` weights `T₁`, the linear/passthrough term); read by `Shaper` |
 | `copy` | dstStart srcBufnum srcStart numSamples | overlays `numSamples` of another buffer onto this one (`numSamples < 0` = to the end of the shorter side) |
+| `env` | level0, (level time shape curve)… | discretizes a break-point envelope across the whole buffer (see below); no flags |
+
+`env` fills the buffer with a **break-point curve** — the buffer-world form of an automation curve. The arguments are the same decomposition an `EnvGen` carries: an initial `level0`, then one `(level, time, shape, curve)` quad per segment, where `shape` is the envelope-shape number (0 step, 1 linear, 2 exponential, 3 sine, 4 welch, 5 custom-`curve`, 6 squared, 7 cubed, 8 hold) and `curve` is read only by the custom shape. Each output sample evaluates the segment it falls in through the **same shared math** (`clausters-core`'s `envshape`) the `EnvGen` UGen plays, so a curve drawn or edited on a client (the `bpf` editor) and this buffer read identically. Segment `time`s are **relative** — only their proportions matter, since the buffer holds the curve *shape*; playback rate maps it onto real time (e.g. a `PlayBuf` whose rate spans the buffer over the desired duration). The mono curve is written to every channel. A client reads it back onto a control bus to drive `/n_map`-ed controls.
 
 **The wavetable format.** An interpolating oscillator (`Osc`/`VOsc`) reads a period stored not as raw samples but as scsynth's interleaved offset/slope pairs: for each point `i` the buffer holds `[2·a[i] − a[i+1], a[i+1] − a[i]]`. With the fractional phase `frac∈[0,1)`, a sample is then one fused multiply-add — `x0 + (1+frac)·x1 = a[i] + frac·(a[i+1] − a[i])` — with no branch. `sine1/2/3` build periodic (wrapping) tables; `cheby` builds a non-wrapping one (it holds its endpoint, since a transfer curve is not periodic). A `wavetable`-format buffer is meant for `Osc`/`VOsc`/`Shaper`, not `PlayBuf`; a plain (non-`wavetable`) `/b_gen` buffer is a normal signal (read it with `OscN` or `BufRd`). This is the buffer-world counterpart of a Faust def's small embedded `waveform` table (see *Tables and waveforms* under Faust defs): the same idea — precompute a period or a transfer curve numerically — for the UGen graph instead of a JIT def.
 
