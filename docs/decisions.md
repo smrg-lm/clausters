@@ -363,3 +363,50 @@ well-defined: rewiring means pointing a control at another bus (or at none), one
 wire per control, which is exactly the mutation the model and the GraphDef both
 accept. A directed rendering could be layered on later — but only from
 information the server surfaces, not from a name.
+
+## The compositional model: five primitives, one recursive group
+
+A sequencing layer (a timeline of items, a playhead) is enough to *play* music
+and not enough to *compose* it. A composition is material inside material — a
+phrase inside a section, a take against a melody, a generator that has not been
+evaluated yet — and the client had no name for that. The question was what to add.
+
+**Context.** The tempting answer is a bag of editor types: an audio clip, a MIDI
+clip, an automation lane, a folder track, each with its own fields, its own view
+and its own realization path. That is how a DAW grows, and it is also why a DAW's
+granularity stops where its type list stops: you can edit a clip, but not "the
+inside of that clip at the level you happen to care about".
+
+**Decision.** A closed algebra instead of a type list. A **material** is anything
+bounded that produces a unit of meaning, and it carries only two temporal
+properties — an *onset* and a *duration*, either of which may be absent (which
+gives it a temporal *character*: a segment, a punctual event, a relative segment,
+or a pure abstract context). There are exactly **five** kinds, and each is a thin
+adornment over something the client already had, never a reimplementation of it:
+an **Event** (parameters in one action), a **List** (strict order, no concrete
+time), a **Buffer** (a list at constant time), a **Set** (mixed placement — a
+track), and a **Function** (a *process*: server DSP, or a generator of sequences).
+The one genuinely new structure is the **Group**: a recursive placement of
+materials by offset, in two kinds — *compositional* (a structural relation in
+time) and *logical* (a processing relation, wired by buses). A group's temporal
+relation (successive / simultaneous / mixed) is **derived** from where its members
+sit, never declared.
+
+Two consequences of the shape are load-bearing:
+
+- **Realization is a change of state, not a second engine.** Realizing flattens
+  the tree — accumulating nested offsets into absolute beats — into the flat
+  timeline the client already plays, bouncing any contained generator in the same
+  pass. RT and NRT differ only in the destination, so the offline render stays
+  sample-identical to what was heard.
+- **The base level is the view, not the data.** How coarse or fine a group is
+  shown (a summary rectangle, or its members resolved into lanes) is a property of
+  the *look*, so the same structure serves the whole scale from a section to a
+  note to a parameter — which is the granularity a type list cannot buy.
+
+**Consequence.** The model is pure and transport-agnostic: no DSP, no protocol, no
+GUI — the piece a future client factors into the shared core. It carries the
+temptations too: a `Buffer` is data and sounds only through the *instrument* named
+to play it, and a logical group emits the bus-wired configuration the server
+already expresses (a `GraphDef`) rather than a wiring language of its own. Both
+exceptions were resolved in the model's favour, and both are recorded above.

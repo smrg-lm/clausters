@@ -98,6 +98,9 @@ Two design choices carry the rest:
   treated as a cache that moves through local shared resources (mmap natively,
   fetch in the browser), never chunked over the wire.
 
+The wire reference — the commands, the GuiDef document, the events and the widget
+catalog — is [The GUI protocol](gui-protocol.md).
+
 The widget catalog runs from the ordinary controls (labels, knobs, sliders,
 numbers, buttons, toggles, text, menus) through the live meters and scopes
 (`meter`, `scope`, `phasescope`, `spectrum`, `nodetree`) to the editor-grade
