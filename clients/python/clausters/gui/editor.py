@@ -47,6 +47,24 @@ DEFAULT_PITCH = (48.0, 72.0)
 PITCH_PAD = 2.0
 
 
+class _Placed:
+    """What a clip widget was drawn from: the placement it shows (``owner`` group
+    and ``member`` handle, the model's stable identity), the ``base`` in beats its
+    group sits at (a clip's offset is absolute on the shared axis, a placement is
+    relative to its group — this bridges the two), and the ``offset``/``dur`` in
+    timeline units it was drawn with (so an edit-back can tell what actually
+    moved)."""
+
+    __slots__ = ("owner", "member", "base", "offset", "dur")
+
+    def __init__(self, owner, member, base, offset, dur):
+        self.owner = owner
+        self.member = member
+        self.base = float(base)
+        self.offset = float(offset)
+        self.dur = float(dur)
+
+
 class Editor:
     """A composition on screen: the model tree rendered as a multitrack view,
     editable back into the model.
@@ -60,6 +78,7 @@ class Editor:
             convention — 2.0 is 120 bpm).
         quant: the musical drag grid in beats (``0.25`` = a sixteenth); ``0``
             snaps to whole samples.
+        follow: re-realize on every edit (the live editor).
         title: the window title.
 
     Usage::
@@ -72,27 +91,36 @@ class Editor:
     """
 
     def __init__(self, material, *, sample_rate: float, tempo: float = 1.0,
-                 quant: float = 0.0, title: str = "Composition",
+                 quant: float = 0.0, follow: bool = False,
+                 title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 1000):
         self.material = material
         self.sample_rate = float(sample_rate)
         self.tempo = float(tempo)
         self.quant = float(quant)
+        #: Re-realize on every edit (the *live editor*: drag a clip and hear it
+        #: where you dropped it). Off by default — an edit then only changes the
+        #: model, and `rerealize` decides when it is heard.
+        self.follow = bool(follow)
         self.title = title
         self.size = (int(width), int(height))
         self._base_id = int(base_id)
         #: The materials shown as lanes of their own instead of a summary clip
         #: (the base level: a group resolved rather than collapsed).
         self._expanded: set[int] = set()
-        #: widget id -> (owner group, member handle) — the clip's placement in
-        #: the model, which an edit-back writes through. ``None`` owner means the
-        #: clip is the root material itself (nothing to move it within).
+        #: widget id -> `_Placed` — where the clip came from in the model and
+        #: what was drawn for it, which is what an edit-back writes through.
         self._clips: dict = {}
         #: widget id -> material, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
         self._host = None
         self._window = None
+        #: The realization in flight: where it went, on what clock, and the
+        #: playhead playing it — what `rerealize` re-schedules after an edit.
+        self._destination = None
+        self._clock = None
+        self._playhead = None
 
     # ---- the unit bridge: beats (the model) ↔ timeline samples (the view) ----
 
@@ -173,6 +201,123 @@ class Editor:
             raise RuntimeError("open(host) the editor first")
         self._host.define(self._window, self.render())
 
+    # ---- the edit-back: a dragged clip becomes a placement ----
+
+    def apply(self, addr: str, args) -> bool:
+        """Apply one message from the host to the **model**. Returns whether the
+        composition changed.
+
+        The clip edit-back (``/gui_event <id> "clip" <offset> <dur>``, the payload
+        a drag or a resize sends) is resolved through the widget registry to the
+        placement it came from and written with `Group.move`. The clip's offset is
+        **absolute** on the shared axis while a placement is relative to its
+        group, so the position converts back through the base the clip was drawn
+        at; and only what actually moved is written — a drag carries the clip's
+        unchanged ``dur`` along, and snapping *that* to the grid would silently
+        shorten the material. ``/gui_closed`` drops the window; anything else is
+        ignored, so a whole poll loop can be fed straight in.
+        """
+        if addr == "/gui_closed":
+            self._window = None
+            return False
+        if addr != "/gui_event" or len(args) < 4 or args[1] != "clip":
+            return False
+        placed = self._clips.get(int(args[0]))
+        if placed is None or placed.member is None:
+            return False  # unknown widget, or the root material (nothing places it)
+
+        offset, dur = float(args[2]), float(args[3])
+        moved = abs(offset - placed.offset) >= 0.5      # half a sample: a real edit
+        resized = abs(dur - placed.dur) >= 0.5
+        if not (moved or resized):
+            return False
+
+        member = placed.member
+        new_offset = member.offset
+        if moved:
+            # Absolute (the axis) -> relative (the placement), snapped to the grid.
+            new_offset = self._snap(self.units_to_beats(offset)) - placed.base
+        new_dur = self._snap(self.units_to_beats(dur)) if resized else None
+        placed.owner.move(member, new_offset, new_dur)
+        if self.follow:
+            self.rerealize()
+        return True
+
+    def poll(self, timeout: float = 0.0) -> bool:
+        """Drain the host's pending messages into the model (`apply` each).
+        Returns whether the composition changed. Call it from the script's loop —
+        **never** from the clock thread, which a routine must never block."""
+        if self._host is None:
+            raise RuntimeError("open(host) the editor first")
+        changed = False
+        while (msg := self._host.poll(timeout)) is not None:
+            changed |= self.apply(*msg)
+            timeout = 0.0  # only the first wait blocks
+        return changed
+
+    def _snap(self, beats: float) -> float:
+        """Snap a beat value to the musical `quant` grid (the same grid the lane
+        snapped the drag to, now in the model's units — so the round trip
+        render → drag → apply → render is exact, free of the wire's float noise)."""
+        if self.quant <= 0.0:
+            return beats
+        return round(beats / self.quant) * self.quant
+
+    # ---- realization: the edited model back to sound ----
+
+    def realize(self, destination, clock=None, *, at: float = 0.0, quant=None):
+        """Realize the composition onto ``destination`` — RT (a `Server` and a
+        running clock) or NRT (a score) — and anchor the lanes' playhead so the
+        line sweeps the clips as it plays. Returns the `clausters.seq.Playhead`.
+
+        This is the model's own `realize` (flatten to absolute beats, play through
+        a playhead): the editor adds no realization path, it only remembers the
+        destination so `rerealize` can re-schedule after an edit.
+        """
+        from ..model.realize import realize as model_realize
+
+        self._destination, self._clock = destination, clock
+        self._playhead = model_realize(self.material, destination, clock,
+                                       at=at, quant=quant)
+        self.anchor(destination, at=at)
+        return self._playhead
+
+    def rerealize(self, *, at: float | None = None):
+        """Re-schedule the (edited) composition from the playhead's current
+        position: stop, re-flatten, play again.
+
+        The honest semantics are **re-schedule from here**, not a sample-exact
+        splice — a synth already sounding keeps sounding, and what changes is what
+        has not been scheduled yet. In NRT there is no "already", so it is simply
+        a fresh score.
+        """
+        if self._destination is None:
+            raise RuntimeError("realize(destination, clock) the editor first")
+        if at is None:
+            at = self._playhead.position() if self._playhead is not None else 0.0
+        if self._playhead is not None:
+            self._playhead.stop()
+        return self.realize(self._destination, self._clock, at=at)
+
+    def anchor(self, server, *, at: float = 0.0):
+        """Anchor every lane's playhead to the engine clock, so the line starts at
+        beat ``at`` of the timeline and sweeps on with the audio.
+
+        ``playhead_at`` is the sample-clock value at timeline position 0, which is
+        *now* minus the beats already played. A destination with no clock reply
+        (an NRT score) simply gets no playhead.
+        """
+        if self._host is None or not hasattr(server, "request"):
+            return
+        try:
+            _addr, args = server.request("/clock", expect=("/clock.reply",))
+        except Exception:
+            return  # NRT, or a server that does not answer: no live playhead
+        now = float(args[0])
+        origin = now - self.beats_to_units(at)
+        for lane in self._lanes:
+            self._host.set(lane, playhead_at=origin)
+
     # ---- the tree walk ----
 
     def _lanes_for(self, material, base: float, owner, member) -> list:
@@ -203,11 +348,11 @@ class Editor:
         return lane
 
     def _clip_for(self, material, base: float, owner, member) -> dict:
-        """One `clip`: the material placed at ``base`` beats, with the body its
-        kind calls for (a take, a piano-roll, or the labeled rectangle that
-        summarizes a collapsed group)."""
+        """One `clip`: the material placed at ``base`` beats (absolute on the
+        shared axis), with the body its kind calls for — a take, a piano-roll, or
+        the labeled rectangle that summarizes a collapsed group. Registers what it
+        drew, which is what the edit-back path resolves against."""
         wid = next(self._ids)
-        self._clips[wid] = (owner, member)
         offset = self.beats_to_units(base)
         dur_beats = member.dur if (member is not None and member.dur is not None) else None
         label = _name(material)
@@ -219,21 +364,26 @@ class Editor:
             # (1 timeline unit = 1 audio sample), unless the placement overrides.
             dur = (self.beats_to_units(dur_beats) if dur_beats is not None
                    else float(buf.frames))
-            return clip(wid, offset=offset, dur=dur, buffer=buf.bufnum,
-                        channels=max(1, buf.channels), label=label)
+            body = dict(buffer=buf.bufnum, channels=max(1, buf.channels))
+        else:
+            dur = self.beats_to_units(
+                dur_beats if dur_beats is not None else self._extent(material))
+            notes = self._notes(material)
+            if notes:
+                pitches = [n[2] for n in notes]
+                body = dict(notes=notes,
+                            min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
+                            max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
+            else:
+                # No body: a collapsed group (or a material with nothing to draw)
+                # is the labeled rectangle — the summary of the level above it.
+                body = {}
 
-        notes = self._notes(material)
-        dur = self.beats_to_units(
-            dur_beats if dur_beats is not None else self._extent(material))
-        if notes:
-            pitches = [n[2] for n in notes]
-            lo = min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1])
-            hi = max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0])
-            return clip(wid, offset=offset, dur=dur, notes=notes, min=lo, max=hi,
-                        label=label)
-        # No body: a collapsed group (or a material with nothing to draw) is the
-        # labeled rectangle — the summary of the base level above it.
-        return clip(wid, offset=offset, dur=dur, label=label)
+        # The placement's own base: a clip's offset is absolute on the shared axis,
+        # a member's offset is relative to its group.
+        parent_base = base - (member.offset if member is not None else 0.0)
+        self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
+        return clip(wid, offset=offset, dur=dur, label=label, **body)
 
     def _notes(self, material) -> list:
         """The ``(start, dur, pitch)`` note events of a material, in timeline

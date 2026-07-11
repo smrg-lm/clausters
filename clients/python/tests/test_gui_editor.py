@@ -132,11 +132,140 @@ def test_every_clip_registers_the_placement_it_came_from():
     ids = [c["id"] for lane in lanes(tree) for c in clips(lane)]
     assert set(ids) == set(ed._clips)
     for wid in ids:
-        owner, member = ed._clips[wid]
+        placed = ed._clips[wid]
         # The handle is the model's own: moving it moves the material.
-        assert member in owner.handles
+        assert placed.member in placed.owner.handles
 
 
 def test_a_render_is_stable_across_calls():
     ed = editor()
     assert ed.render() == ed.render()
+
+
+# ---- the edit-back: a dragged clip becomes a placement in the model ----
+
+def clip_event(wid: int, offset: float, dur: float) -> tuple:
+    """The payload the host sends when a clip is dragged or resized."""
+    return ("/gui_event", [wid, "clip", offset, dur])
+
+
+def test_a_dragged_clip_moves_the_material_in_beats():
+    ed = editor(quant=0.25)
+    tree = ed.render()
+    roll = clips(lanes(tree)[1])[0]           # the lead's piano-roll, at beat 2
+    placed = ed._clips[roll["id"]]
+    owner, member = placed.owner, placed.member
+
+    # Dragged two beats later and resized to three (the host sends samples).
+    assert ed.apply(*clip_event(roll["id"], 4 * BEAT, 3 * BEAT))
+    assert member.offset == pytest.approx(4.0)
+    assert member.dur == pytest.approx(3.0)
+    assert (member.offset, member.dur) == (owner.members[0][0], owner.members[0][1])
+
+
+def test_an_edit_snaps_to_the_musical_grid():
+    ed = editor(quant=0.5)
+    roll = clips(lanes(ed.render())[1])[0]
+    member = ed._clips[roll["id"]].member
+    # A hair off a half-beat boundary (the wire carries 32-bit floats): the model
+    # gets the grid value, not the noise.
+    ed.apply(*clip_event(roll["id"], 3.51 * BEAT, 2.0 * BEAT))
+    assert member.offset == pytest.approx(3.5)
+
+
+def test_a_clip_in_a_placed_group_converts_back_through_its_base():
+    """A clip's offset is absolute on the shared axis; a placement is relative to
+    its group. Dragging a clip inside a group that starts at beat 4 must move it
+    by the delta, not stamp the absolute position onto the member."""
+    note = Event(SeqEvent(midinote=60, dur=1.0))
+    section = Group([(1.0, note)], name="section")        # the note at beat 1 of it
+    ed = editor(Group([(4.0, section)], name="song"))     # the section at beat 4
+    (c,) = clips(lanes(ed.render())[0])
+    assert c["offset"] == pytest.approx(5 * BEAT)         # absolute: 4 + 1
+
+    member = ed._clips[c["id"]].member
+    ed.apply(*clip_event(c["id"], 6 * BEAT, c["dur"]))    # dragged one beat right
+    assert member.offset == pytest.approx(2.0)            # relative to the section
+
+
+def test_moving_a_clip_leaves_its_length_alone():
+    """A drag carries the clip's unchanged `dur` along; writing it back (snapped)
+    would silently reshape the material. Only what moved is written."""
+    ed = editor(quant=1.0)
+    roll = clips(lanes(ed.render())[1])[0]
+    member = ed._clips[roll["id"]].member
+    assert member.dur is None                             # the model set no length
+
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, roll["dur"]))
+    assert member.offset == pytest.approx(5.0)
+    assert member.dur is None                             # untouched by the move
+
+
+def test_render_apply_render_is_a_fixed_point():
+    ed = editor(quant=0.25)
+    before = ed.render()
+    # Feed every clip its own placement back: nothing moved, so nothing changes.
+    for lane in lanes(before):
+        for c in clips(lane):
+            ed.apply(*clip_event(c["id"], c["offset"], c["dur"]))
+    assert ed.render() == before
+
+
+def test_unknown_messages_are_ignored():
+    ed = editor()
+    ed.render()
+    assert not ed.apply("/gui_event", [1, "points", 0.0, 1.0])   # a bpf edit
+    assert not ed.apply("/gui_event", [999_999, "clip", 0.0, 1.0])  # unknown id
+    assert not ed.apply("/clock.reply", [1234.0])
+
+
+# ---- realization: the edited composition plays what the screen shows ----
+
+def _embed_or_skip():
+    try:
+        from clausters import _native
+
+        _native.lib()
+    except OSError as e:
+        pytest.skip(f"clausters-ffi not built: {e}")
+
+
+def _inner_addr(raw: bytes) -> str:
+    import struct
+
+    from clausters.base import _osclib as osc
+
+    length = struct.unpack(">i", raw[16:20])[0]
+    addr, _ = osc.decode(raw[20:20 + length])
+    return addr
+
+
+def test_the_edited_composition_realizes_where_it_was_dropped():
+    """A clip dragged in the GUI lands, in the score, at the beat it was dropped
+    on — the whole loop (render → edit-back → model → realize) in one assertion.
+    NRT, so no socket and no port clash."""
+    _embed_or_skip()
+    from clausters.base import OscNrtInterface, TempoClock
+    from clausters.defs import Server
+    from clausters.seq.event import Event as SeqEvent
+
+    def starts(build):
+        server = Server(interface=OscNrtInterface())
+        clock = TempoClock(tempo=TEMPO)
+        build(server, clock)
+        clock.render()
+        return sorted(when for when, raw in server.interface.score.bundles
+                      if _inner_addr(raw) == "/s_new")
+
+    def edited(server, clock):
+        note = Event(SeqEvent(instrument="default", freq=440.0, dur=1.0))
+        song = Group([(0.0, Group([(0.0, note)], name="lead"))], name="song")
+        ed = Editor(song, sample_rate=SR, tempo=TEMPO, quant=1.0)
+        lane = lanes(ed.render())[0]
+        (c,) = clips(lane)
+        ed.apply(*clip_event(c["id"], 3 * BEAT, 1 * BEAT))  # dragged to beat 3
+        ed.realize(server, clock)
+
+    # The score is in seconds: beat 3 at 2 beats/sec sounds at 1.5 s — the unit
+    # bridge closing on the far side.
+    assert starts(edited) == [3.0 / TEMPO]
