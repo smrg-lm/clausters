@@ -32,7 +32,7 @@ from .group import (
     SUCCESSIVE,
     Group,
 )
-from .realize import flatten, realize, to_timeline
+from .realize import flatten, realize, realize_logical, to_timeline
 
 __all__ = [
     "Material",
@@ -46,6 +46,7 @@ __all__ = [
     "flatten",
     "to_timeline",
     "realize",
+    "realize_logical",
     # temporal character
     "SEGMENT",
     "PUNCTUAL",

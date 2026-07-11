@@ -306,3 +306,66 @@ def test_realize_matches_handbuilt_timeline_nrt():
         Playhead(tl, clock, server).play()
 
     assert _starts(by_model) == _starts(by_hand) == [0.0, 2.0, 3.0]
+
+
+# ---- realize: logical group -> GraphDef (Fase 1C, pure) ----
+
+def test_generator_def_name_from_string_or_object():
+    class _Def:
+        name = "foo"
+
+    assert Generator("bar").def_name == "bar"
+    assert Generator(_Def()).def_name == "foo"
+
+
+def test_logical_group_translates_to_the_same_graphdef():
+    """A logical group of two nodes (source -> sink through an internal bus)
+    produces the same GraphDef spec as building it directly — the 1:1 mapping."""
+    from clausters.defs import GraphDef
+
+    g = Group(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g.add(Generator("gsrc", controls={"out": "mix", "level": 1.0}))
+    g.add(Generator("gsink", controls={"in": "mix", "out": "OUT"}))
+    model_spec = g.to_graphdef().spec()
+
+    gd = GraphDef("chain")
+    mix = gd.bus("mix")
+    gd.add("gsrc", {"out": mix, "level": 1.0})
+    gd.add("gsink", {"in": mix, "out": "OUT"})
+
+    assert model_spec == gd.spec()
+
+
+def test_to_graphdef_requires_a_name():
+    with pytest.raises(ValueError):
+        Group(kind=LOGICAL).to_graphdef()
+
+
+def test_logical_member_must_be_a_generator():
+    g = Group(kind=LOGICAL, name="x")
+    g.add(Event({"dur": 1.0}))
+    with pytest.raises(TypeError):
+        g.to_graphdef()
+
+
+class _StubServer:
+    """Records the graphdef calls without any socket (no port clash)."""
+
+    def __init__(self):
+        self.sent = []
+
+    def add_graphdef(self, gdef):
+        self.sent.append(("d_graph", gdef.name))
+
+    def graph(self, defname, ports):
+        self.sent.append(("graph_new", defname, ports))
+        return "INSTANCE"
+
+
+def test_realize_routes_a_logical_group_to_graphdef():
+    g = Group(kind=LOGICAL, name="chain", buses=["mix"])
+    g.add(Generator("gsrc", controls={"out": "mix"}))
+    server = _StubServer()
+    instance = g.realize(server, ports={"gain": 0.5})
+    assert instance == "INSTANCE"
+    assert server.sent == [("d_graph", "chain"), ("graph_new", "chain", {"gain": 0.5})]

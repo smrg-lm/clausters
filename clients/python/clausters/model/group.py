@@ -66,20 +66,30 @@ class Group(Material):
     handle returned by `add` stays valid across other edits (like
     `clausters.seq.Timeline`).
 
+    A `LOGICAL` group additionally names the composition and may declare internal
+    buses; `to_graphdef` translates it into a `clausters.defs.GraphDef` (the
+    bus-wired configuration the server already expresses).
+
     Args:
         children: optional iterable seeding the group. Each item is a
             ``(offset, material)`` pair, a ``(offset, dur, material)`` triple, or
             a bare `Material` (placed at offset 0).
         kind: `COMPOSITIONAL` (default) or `LOGICAL`.
+        name: the composition's name — the GraphDef name for a logical group.
+        buses: internal buses for a logical group — each a ``name`` (audio,
+            1 channel) or a ``(name, rate)`` / ``(name, rate, channels)`` tuple.
         onset: the group's own onset in its parent context, or ``None``.
         duration: the group's own duration, or ``None``.
     """
 
-    def __init__(self, children=None, kind=COMPOSITIONAL, onset=None, duration=None):
+    def __init__(self, children=None, kind=COMPOSITIONAL, *, name=None,
+                 buses=None, onset=None, duration=None):
         super().__init__(wraps=None, onset=onset, duration=duration)
         if kind not in (COMPOSITIONAL, LOGICAL):
             raise ValueError(f"unknown group kind: {kind!r}")
         self.kind = kind
+        self.name = name
+        self._bus_specs = [_bus_spec(b) for b in (buses or [])]
         self._members = []
         if children is not None:
             for child in children:
@@ -171,6 +181,58 @@ class Group(Material):
                 return SUCCESSIVE
 
         return MIXED
+
+    # ---- the logical realization: a GraphDef (Fase 1C) ----
+
+    def to_graphdef(self, name=None):
+        """Translate this **logical** group into a `clausters.defs.GraphDef` — the
+        1:1 mapping of the model's logical grouping (nodes wired by sender/
+        receiver buses) onto the configuration the server already expresses.
+
+        Each member must be a `clausters.model.material.Generator` (its
+        ``def_name`` is the member def; its ``controls`` — numbers, an internal
+        bus name, or ``"OUT"`` — and ``maps`` wire it). The group's `buses` become
+        the private internal buses. Placement offsets are ignored (a logical group
+        is a signal graph, not a timeline). Returns the `GraphDef`; sending and
+        instancing it is `clausters.model.realize`.
+        """
+        from ..defs.graphdef import GraphDef
+        from .material import Generator
+
+        gname = name or self.name
+        if gname is None:
+            raise ValueError("a logical Group needs a name to become a GraphDef")
+        gdef = GraphDef(gname)
+        refs = {
+            spec["name"]: gdef.bus(
+                spec["name"], rate=spec["rate"], channels=spec["channels"]
+            )
+            for spec in self._bus_specs
+        }
+        for _offset, _dur, child in self.members:
+            if not isinstance(child, Generator):
+                raise TypeError(
+                    "a logical Group member must be a Generator, "
+                    f"got {type(child).__name__}"
+                )
+            controls = {
+                key: (refs.get(value, value) if isinstance(value, str) else value)
+                for key, value in (child.controls or {}).items()
+            }
+            gdef.add(child.def_name, controls, maps=child.maps)
+        return gdef
+
+
+def _bus_spec(bus) -> dict:
+    """Normalize a `Group` bus declaration (a name, or a ``(name, rate[,
+    channels])`` tuple) into the dict `to_graphdef` consumes."""
+    if isinstance(bus, str):
+        name, rate, channels = bus, "audio", 1
+    elif len(bus) == 2:
+        (name, rate), channels = bus, 1
+    else:
+        name, rate, channels = bus
+    return {"name": str(name), "rate": rate, "channels": int(channels)}
 
 
 def _all_close(values) -> bool:

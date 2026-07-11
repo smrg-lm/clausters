@@ -26,7 +26,7 @@ timed audio clip and instancing a bare def both need an instrument and land in a
 later phase — they raise a clear `NotImplementedError` here.
 """
 
-from .group import COMPOSITIONAL, Group
+from .group import COMPOSITIONAL, LOGICAL, Group
 from .material import Buffer, Event, Generator, Material, Sequence, Track
 
 
@@ -51,15 +51,23 @@ def to_timeline(material, base: float = 0.0):
     return timeline
 
 
-def realize(material, destination, clock, *, at: float = 0.0, quant=None):
-    """Realize ``material`` onto ``destination`` (a `Server` or a MIDI
-    destination) over ``clock``: flatten it to a timeline and play it through a
-    `Playhead`. Returns the `Playhead`.
+def realize(material, destination, clock=None, *, at: float = 0.0, quant=None,
+            ports=None):
+    """Realize ``material`` onto ``destination``.
 
-    Live: start/run the clock. Offline: `clock.render()` then
-    ``destination.render()`` (or use `Session.render`). Same bytes either way —
-    the seam is the destination and clock, not the model.
+    A **compositional** material (a `Group`, `Track`, `Event`, …) is flattened to
+    a timeline and played through a `Playhead` over ``clock`` — RT (start/run the
+    clock) or NRT (`clock.render()` then ``destination.render()``, or
+    `Session.render`), sample-identical; returns the `Playhead`.
+
+    A **logical** `Group` is translated to a `clausters.defs.GraphDef`, sent
+    (``/d_graph``) and instanced (``/graph_new``, with ``ports`` overriding the
+    surface defaults) on the `Server` ``destination``; returns the instance
+    group. The seam is the destination, not the model.
     """
+    if isinstance(material, Group) and material.kind == LOGICAL:
+        return realize_logical(material, destination, ports=ports)
+
     from ..seq.timeline import Playhead
 
     if not isinstance(material, Group) and material.wraps is None:
@@ -70,6 +78,14 @@ def realize(material, destination, clock, *, at: float = 0.0, quant=None):
     playhead = Playhead(timeline, clock, destination)
     playhead.play(at=at, quant=quant)
     return playhead
+
+
+def realize_logical(group, server, *, ports=None):
+    """Send a logical group's `GraphDef` (`Group.to_graphdef`) and instance it on
+    ``server``. Returns the instance group (`server.graph`'s handle)."""
+    gdef = group.to_graphdef()
+    server.add_graphdef(gdef)
+    return server.graph(gdef.name, ports)
 
 
 # ---- the flatten dispatch ----

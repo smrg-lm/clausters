@@ -105,14 +105,16 @@ class Material:
 
         return to_timeline(self, base)
 
-    def realize(self, destination, clock, *, at: float = 0.0, quant=None):
-        """Realize this material onto ``destination`` over ``clock`` — the change
-        of state to sound. Flattens it and plays the timeline through a
-        `clausters.seq.Playhead`; returns that playhead. See
-        `clausters.model.realize.realize`."""
+    def realize(self, destination, clock=None, *, at: float = 0.0, quant=None,
+                ports=None):
+        """Realize this material onto ``destination`` — the change of state to
+        sound. A compositional material flattens and plays through a
+        `clausters.seq.Playhead` over ``clock`` (returns the playhead); a logical
+        `Group` sends and instances a `GraphDef` on the server (returns the
+        instance). See `clausters.model.realize.realize`."""
         from .realize import realize
 
-        return realize(self, destination, clock, at=at, quant=quant)
+        return realize(self, destination, clock, at=at, quant=quant, ports=ports)
 
 
 class Event(Material):
@@ -176,11 +178,28 @@ class Track(Material):
 class Generator(Material):
     """*Function*: logical/generator material.
 
-    Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`) or a sequence
-    generator (a `Pbind`/`Routine`). Its *change of state* — evaluating the
-    generator into concrete material — is a Fase 1B concern (a def is instanced;
-    a pattern is bounced to a timeline).
+    Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name)
+    or a sequence generator (a `Pbind`/`Routine`). Its *change of state* —
+    evaluating the generator into concrete material — happens at realization: a
+    contained event pattern is bounced to a timeline (Fase 1B); a def member of a
+    logical `Group` becomes a wired GraphDef member (Fase 1C).
+
+    Args:
+        generator: the wrapped def (name or object) or sequence generator.
+        controls: control values for a logical-graph member — numbers, an
+            internal-bus name (a ``str`` matching a `Group` bus), or ``"OUT"``
+            (hardware). Used by `Group.to_graphdef`.
+        maps: control-bus bindings for a logical-graph member (``/n_map``),
+            ``{control: bus_name}``.
     """
 
-    def __init__(self, generator, onset=None, duration=None):
+    def __init__(self, generator, onset=None, duration=None, *, controls=None, maps=None):
         super().__init__(wraps=generator, onset=onset, duration=duration)
+        self.controls = controls
+        self.maps = maps
+
+    @property
+    def def_name(self) -> str:
+        """The member def name — the wrapped string itself, or the def object's
+        ``name``."""
+        return self.wraps if isinstance(self.wraps, str) else self.wraps.name
