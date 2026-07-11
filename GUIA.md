@@ -60,8 +60,10 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
 - **Editor compositivo (el lazo completo).** `examples/gui_composer.py` compone
   con el modelo (un take bounceado y cargado de disco, una melodía, un patrón),
   lo abre como multipista y lo toca → se **oye** la composición y se **ve** el
-  playhead barriendo los clips; arrastrar un clip lo mueve, y con `follow=True`
-  la composición se re-agenda: suena donde lo soltaste. El carril **sweep** es una
+  playhead barriendo los clips **mientras suena** (al terminar la pieza el
+  transporte para y vuelve al inicio); los botones **play/pause/stop/rewind**
+  manejan la reproducción, y arrastrar un clip mientras suena re-agenda la
+  composición: suena donde lo soltaste. El carril **sweep** es una
   automatización: su cuerpo es la **curva**, y se edita ahí mismo (arrastrar un
   punto, Ctrl+click agrega/quita) → se **oye** el filtro seguir la curva dibujada.
 - **Patcher del grupo lógico (GUI).** Un `Group{logical}` se dibuja como *patch*

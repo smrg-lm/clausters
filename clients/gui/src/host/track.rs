@@ -230,8 +230,8 @@ pub fn draw(
                 // A loaded take (mapped file, peak cache or fetched buffer):
                 // decimated through its pyramid, so a minutes-long clip costs
                 // the same as a short one.
-                Some(data) => draw_take_body(mesh, cr, data, clip.min, clip.max),
-                None => draw_clip_body(mesh, cr, &clip.samples, clip.min, clip.max),
+                Some(data) => draw_take_body(mesh, cr, body, nav, clip, data),
+                None => draw_clip_body(mesh, cr, body, nav, clip),
             }
         } else {
             // A piano-roll clip: notes placed on the same shared axis (so the
@@ -355,83 +355,118 @@ fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &Cli
     }
 }
 
-/// Draws a **loaded take** as the clip's body: one min/max column per pixel,
-/// read from the take's peak pyramid (`clausters_core::peaks`, through
-/// [`WaveformData::column`] — the same LOD source, crossfade and all, the heavy
-/// waveform view draws from). The take is decimated to the clip's pixel width,
-/// so a minutes-long file costs a screen's worth of columns, never its samples:
-/// the one graphics rule (never resolve finer than the screen), and the reason a
-/// long clip needs no GPU slot of its own.
-fn draw_take_body(mesh: &mut Mesh, rect: Rect, data: &WaveformData, min: f32, max: f32) {
-    let total = data.total_samples();
-    if total == 0 || rect.w < 2.0 || rect.h <= 0.0 {
-        return;
+/// The **source** sample position an x pixel of a clip's body falls on: the
+/// pixel maps back through the shared axis to a timeline position, and that
+/// through the clip's span to a fraction of its data. This is the whole reason a
+/// waveform body scrolls and stretches *with* the view instead of squashing into
+/// whatever slice of the clip is on screen: it is drawn from the source, per
+/// visible pixel, exactly as the piano-roll and the curve are.
+pub fn clip_source_at(body: Rect, nav: &View, clip: &ClipDraw, total: f64, x: f32) -> f64 {
+    if clip.dur <= 0.0 {
+        return 0.0;
     }
-    let y_at = |v: f32| rect.y + rect.h * (1.0 - fraction(v, min, max));
-    if min < 0.0 && max > 0.0 {
-        let y = y_at(0.0);
-        mesh.line([rect.x, y], [rect.x + rect.w, y], 1.0, BASELINE);
-    }
-    // The whole take spans the clip rectangle (the clip's `dur` is its length on
-    // the timeline; its body is the take, summarized to fit).
-    let cols = rect.w.max(1.0) as usize;
-    let cw = rect.w / cols as f32;
-    let per_px = total as f64 / cols as f64;
-    for c in 0..cols {
-        let s0 = c as f64 * per_px;
-        let s1 = s0 + per_px;
-        let (lo, hi) = data.column(0, per_px, s0, s1);
-        let x = rect.x + (c as f32 + 0.5) * cw;
-        mesh.line(
-            [x, y_at(hi)],
-            [x, y_at(lo)],
-            BODY_W.min(cw.max(1.0)),
-            CLIP_BODY,
-        );
-    }
+    let sample = nav.start + nav.len * ((x - body.x) as f64 / body.w.max(1.0) as f64);
+    ((sample - clip.offset) / clip.dur * total).clamp(0.0, total)
 }
 
-/// Draws a clip's inline body decimated inside its rectangle (min/max envelope
-/// per column, or a polyline when it fits), no chrome — the graphic-unit body.
-/// Honors the one graphics rule (never resolve finer than the screen).
-fn draw_clip_body(mesh: &mut Mesh, rect: Rect, samples: &[f32], min: f32, max: f32) {
-    if samples.len() < 2 || rect.w < 2.0 || rect.h <= 0.0 {
+/// Draws a waveform body inside the *visible* part of a clip (`cr`), reading the
+/// source through `column` (a min/max over a sample span) and `at` (one sample) —
+/// the two accessors a loaded take and an inline body both answer. One column per
+/// visible pixel, each mapped back to the source through the shared axis, so the
+/// body honours zoom and pan; when a column spans less than a couple of samples it
+/// draws the polyline instead (the zoomed-in regime). Never resolves finer than
+/// the screen — the one graphics rule.
+fn draw_wave_body(
+    mesh: &mut Mesh,
+    cr: Rect,
+    body: Rect,
+    nav: &View,
+    clip: &ClipDraw,
+    total: f64,
+    column: impl Fn(f64, f64, f64) -> (f32, f32),
+    at: impl Fn(f64) -> f32,
+) {
+    if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {
         return;
     }
-    let y_at = |v: f32| rect.y + rect.h * (1.0 - fraction(v, min, max));
-    if min < 0.0 && max > 0.0 {
+    let y_at = |v: f32| cr.y + cr.h * (1.0 - fraction(v, clip.min, clip.max));
+    if clip.min < 0.0 && clip.max > 0.0 {
         let y = y_at(0.0);
-        mesh.line([rect.x, y], [rect.x + rect.w, y], 1.0, BASELINE);
+        mesh.line([cr.x, y], [cr.x + cr.w, y], 1.0, BASELINE);
     }
-    let cols = rect.w.max(1.0) as usize;
-    let n = samples.len();
-    if n <= cols * 2 {
-        let dx = rect.w / (n - 1) as f32;
-        let mut prev = [rect.x, y_at(samples[0])];
-        for (i, v) in samples.iter().enumerate().skip(1) {
-            let p = [rect.x + i as f32 * dx, y_at(*v)];
+    let src = |x: f32| clip_source_at(body, nav, clip, total, x);
+    let cols = cr.w.max(1.0) as usize;
+    let per_px = (src(cr.x + 1.0) - src(cr.x)).max(0.0);
+    if per_px >= 2.0 {
+        // Zoomed out: a min/max column per pixel, read at the level the pyramid
+        // (or the slice) can answer cheaply.
+        for c in 0..cols {
+            let x = cr.x + c as f32;
+            let (s0, s1) = (src(x), src(x + 1.0));
+            let (lo, hi) = column(s0, s1, per_px);
+            mesh.line([x + 0.5, y_at(hi)], [x + 0.5, y_at(lo)], BODY_W, CLIP_BODY);
+        }
+    } else {
+        // Zoomed in: fewer than a couple of samples per pixel — draw the trace.
+        let mut prev = [cr.x, y_at(at(src(cr.x)))];
+        for c in 1..=cols {
+            let x = cr.x + c as f32;
+            let p = [x, y_at(at(src(x)))];
             mesh.line(prev, p, BODY_W, CLIP_BODY);
             prev = p;
         }
-    } else {
-        let cw = rect.w / cols as f32;
-        for c in 0..cols {
-            let s0 = c * n / cols;
-            let s1 = ((c + 1) * n / cols).max(s0 + 1).min(n);
+    }
+}
+
+/// A **loaded take** as the clip's body: read through the take's peak pyramid
+/// (`clausters_core::peaks`, via [`WaveformData::column`] — the same LOD source
+/// and crossfade the heavy waveform view draws from), so a minutes-long file
+/// costs a screen's worth of columns, never its samples.
+fn draw_take_body(
+    mesh: &mut Mesh,
+    cr: Rect,
+    body: Rect,
+    nav: &View,
+    clip: &ClipDraw,
+    data: &WaveformData,
+) {
+    let total = data.total_samples() as f64;
+    draw_wave_body(
+        mesh,
+        cr,
+        body,
+        nav,
+        clip,
+        total,
+        |s0, s1, per_px| data.column(0, per_px, s0, s1),
+        |s| data.column(0, 1.0, s, s + 1.0).0,
+    );
+}
+
+/// A clip's **inline** body (a short sketch sent with the def), read straight off
+/// the sample slice — the same drawing, a cheaper source.
+fn draw_clip_body(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw) {
+    let samples = &clip.samples;
+    let n = samples.len();
+    draw_wave_body(
+        mesh,
+        cr,
+        body,
+        nav,
+        clip,
+        n as f64,
+        |s0, s1, _per_px| {
+            let a = (s0.floor().max(0.0) as usize).min(n);
+            let b = (s1.ceil() as usize).clamp(a + 1, n);
             let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
-            for &v in &samples[s0..s1] {
+            for &v in &samples[a..b] {
                 lo = lo.min(v);
                 hi = hi.max(v);
             }
-            let x = rect.x + (c as f32 + 0.5) * cw;
-            mesh.line(
-                [x, y_at(hi)],
-                [x, y_at(lo)],
-                BODY_W.min(cw.max(1.0)),
-                CLIP_BODY,
-            );
-        }
-    }
+            (lo, hi)
+        },
+        |s| samples[(s.round().max(0.0) as usize).min(n.saturating_sub(1))],
+    );
 }
 
 #[cfg(test)]
@@ -676,6 +711,40 @@ mod tests {
         // The inverse mapping an edit uses: pixels -> clip-relative time, value.
         assert!((curve_time_at(body, &nav, clip.offset, px) - 100.0).abs() < 1.0);
         assert!((curve_value_at(cr, 0.0, 1.0, false, py) - 1.0).abs() < 0.05);
+    }
+
+    #[test]
+    fn a_body_reads_the_source_through_the_axis_under_zoom_and_pan() {
+        // The bug this pins: a partially visible clip must draw the *part of its
+        // take that is on screen*, not squash the whole take into the visible
+        // sliver — so a pixel maps back through the axis to the source.
+        let body = lane_body(lane(), false);
+        let clip = ClipDraw {
+            offset: 0.0,
+            dur: 400.0,
+            ..curve_clip(Vec::new()) // a plain clip: no curve, no notes
+        };
+        let total = 1000.0;
+
+        // Fully zoomed out: the clip's ends map to the take's ends.
+        let full = View::full(400);
+        let (x0, x1) = clip_x_range(body, &full, clip.offset, clip.dur).unwrap();
+        assert!(clip_source_at(body, &full, &clip, total, x0) < 1.0);
+        assert!(clip_source_at(body, &full, &clip, total, x1) > total - 1.0);
+
+        // Zoomed into the clip's second half: the lane's left edge is now the
+        // middle of the take, and the visible span is the half after it.
+        let zoomed = View {
+            start: 200.0,
+            len: 200.0,
+        };
+        let left = clip_source_at(body, &zoomed, &clip, total, body.x);
+        let right = clip_source_at(body, &zoomed, &clip, total, body.x + body.w);
+        assert!(
+            (left - 500.0).abs() < 5.0,
+            "the left edge is mid-take, not 0"
+        );
+        assert!((right - total).abs() < 5.0);
     }
 
     #[test]

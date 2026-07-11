@@ -41,8 +41,18 @@ import wave
 from pathlib import Path
 
 from clausters import Session
-from clausters.defs import SynthDef, control, out, play_buf
-from clausters.gui import Editor
+from clausters.base.stream import Routine
+from clausters.defs import (
+    DoneAction,
+    Env,
+    SynthDef,
+    control,
+    env_gen,
+    out,
+    play_buf,
+    sin_osc,
+)
+from clausters.gui import Editor, button, panel
 from clausters.model import Buffer, Group, Material, Sequence, Track
 from clausters.seq import Automation, Timeline
 from clausters.seq.event import Event as SeqEvent
@@ -133,14 +143,35 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 # is edited in place (drag a point, Ctrl+click to add or remove one). The edit
 # flows back onto the `Automation`, whose `Env` is what the next realization
 # plays, so the curve you draw is the curve you hear.
+#
+# Its target is a **voice with an end**: a drone whose envelope lasts the piece and
+# frees the synth. A held synth would outlive the composition and keep sounding
+# after the playhead ran off the end — a note that never ends is a bug, not a
+# drone.
 
 # %%
-voice = server.synth("default", {"freq": 55.0, "amp": 0.12})
+SONG = 8.0        # the composition's length in beats (its longest lane)
+
+
+def drone(name: str = "drone") -> SynthDef:
+    """A sine whose `freq` is a `kr` control (so the automation can `/n_map` it to
+    a bus), sustaining while its `gate` is held and freeing itself on release."""
+    freq = control("freq", 220.0, "kr")
+    amp = control("amp", 0.12, "kr")
+    gate = control("gate", 1.0, "kr")
+    shape = env_gen(Env.asr(attack=0.05, release=0.4), gate=gate,
+                    done_action=DoneAction.FREE_SELF)
+    sig = sin_osc(freq) * shape * amp
+    return SynthDef(name, out(0.0, sig), out(1.0, sig))
+
+
+server.add_synthdef(drone())
+
 sweep = Automation.from_points(
     [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
      (2.0, 900.0, 2, 0.0),      # ... up to 900 (exponential) ...
      (4.0, 300.0, 1, 0.0)],     # ... back down (linear); shapes are the server's
-    target=(voice, "freq"), name="sweep")
+    target=None, name="sweep")
 sweep.prepare(server)           # the control buffer + bus, off the clock thread
 
 # The composition: four lanes, each a group placing one material in time.
@@ -152,46 +183,149 @@ song = Group([
 ], name="song")
 
 # %% [markdown]
-# ## Open the editor
+# ## Open the editor, with a transport
 # The model tree becomes a multitrack window: a lane per member, its materials as
-# clips on one shared axis. ``follow=True`` re-realizes on every edit, so what you
-# drag is what you hear.
+# clips on one shared axis. ``extra`` places widgets of the script's own under the
+# lanes — here the transport. Their ids are the script's (the editor allocates
+# from 10000 up, so small ids never collide) and their events are the script's
+# too: `Editor.apply` ignores them.
 
 # %%
+PLAY, PAUSE, STOP, REWIND, BAR = 1, 2, 3, 4, 5
+transport = panel(BAR,
+                  button(PLAY, label="play"),
+                  button(PAUSE, label="pause"),
+                  button(STOP, label="stop"),
+                  button(REWIND, label="rewind"),
+                  layout="row", height=0.25)
+
 gui = session.gui()
-editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT, follow=True,
-                title="Composer")
+editor = Editor(song, sample_rate=SR, tempo=TEMPO, quant=QUANT,
+                extra=[transport], title="Composer")
 win = editor.open(gui)
 print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 
 # %% [markdown]
-# ## Play it
-# `realize` flattens the model to absolute beats and plays it through a playhead
-# (the model's own realization — the editor adds no path of its own), and anchors
-# the lanes' playhead so the line sweeps the clips as the audio runs.
+# ## The transport
+# `realize` flattens the model to absolute beats and plays it through a
+# `Playhead` — the model's own realization, no path of its own — and anchors the
+# lanes' playhead line so it sweeps the clips with the audio. The transport drives
+# that playhead: `play` from where we are, `pause` where we are, `stop` back to
+# the top, `rewind` to the top without stopping.
+#
+# Silencing is explicit: halting the playhead only stops *scheduling*, so whatever
+# is already sounding is freed with a deep free of the root group. Nothing is left
+# ringing.
 
 # %%
 session.start()                       # the clock runs the routines
-editor.realize(server, session.clock)
+at = 0.0                              # the song position the transport works from
+ending = None                         # the routine that ends the current voice
+
+
+def silence():
+    """Free every sounding node — the playhead only stops scheduling."""
+    server.send_msg("/g_deepFree", 0)
+
+
+def play():
+    """Arm the automation's voice and realize the composition from `at`.
+
+    Realizing again replaces the realization in flight (the editor stops the old
+    playhead), so pressing play twice restarts the piece — it never plays over
+    itself.
+
+    The voice ends *with the piece*: a routine releases its gate at the last beat,
+    and the envelope frees the synth. A held synth with no end would keep sounding
+    after the playhead ran off the composition — a drone that outlives the music
+    is a bug, not a drone."""
+    global at
+    silence()
+    voice = server.synth("drone", {"amp": 0.12})
+    sweep.targets = [(voice, "freq")]
+    editor.realize(server, session.clock, at=at)
+
+    def tail():
+        yield max(SONG - at, 0.0)          # ... at the end of the composition,
+        server.set(voice, {"gate": 0.0})   # release it (the envelope frees it)
+
+    global ending
+    if ending is not None:
+        session.clock.unsched(ending)      # the previous play's ending is void
+    ending = Routine(tail)
+    session.clock.play(ending)
+
+
+def pause():
+    """Halt where we are; `play` resumes from there."""
+    global at
+    ph = editor.playhead
+    if ph is not None and ph.playing():
+        at = ph.position()
+        ph.stop()
+    editor.unanchor()          # the line tracks the engine clock: hide it, or it
+    silence()                  # would keep sweeping over a silent composition
+
+
+def stop():
+    """Halt and return to the top."""
+    global at
+    pause()
+    at = 0.0
+
+
+def rewind():
+    """Back to the top — playing on, if it was."""
+    global at
+    playing = editor.playhead is not None and editor.playhead.playing()
+    at = 0.0
+    if playing:
+        play()
+
+
+def ended() -> bool:
+    """Whether the playhead ran past the end of the composition. The line is
+    drawn from the *engine clock*, so nothing stops it on its own: the script
+    owns the end, and says so — otherwise the playhead just walks off the axis
+    and the transport still believes it is playing."""
+    ph = editor.playhead
+    return ph is not None and ph.playing() and ph.position() >= SONG
+
+
+TRANSPORT = {PLAY: play, PAUSE: pause, STOP: stop, REWIND: rewind}
+print("press play — the playhead sweeps the clips while the composition sounds")
 
 # %% [markdown]
 # ## Edit it
-# `poll` drains the host's events into the model: a dragged clip becomes a
-# placement, in beats, snapped to the grid. With ``follow`` on, the composition is
-# re-scheduled from the playhead — *re-schedule from here*, not a sample-exact
-# splice, so a synth already sounding keeps sounding.
+# `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
+# a placement (in beats, snapped to the grid), a dragged break-point becomes the
+# automation's new curve. Anything it does not recognize is the script's — here,
+# the transport buttons. Editing while playing re-realizes from the playhead, so
+# you hear the change where you dropped it.
 
 # %%
 if __name__ == "__main__":
     try:
-        deadline = time.monotonic() + 120.0
-        while time.monotonic() < deadline:
-            if editor.poll(0.05):
-                for offset, _dur, member in song.members:
-                    print(f"  {member.name or 'lane'} at beat {offset:g}")
-            if editor.window is None:      # the window was closed
-                break
+        while editor.window is not None:
+            if ended():
+                stop()                 # the piece is over: silence, back to the top
+            msg = gui.poll(0.05)
+            if msg is None:
+                continue
+            addr, args = msg
+            # A button reports its press (1) *and* its release (0): act on the
+            # press, or every click would fire the transport twice.
+            pressed = (addr == "/gui_event" and len(args) >= 2 and args[1] == 1)
+            action = TRANSPORT.get(args[0]) if pressed else None
+            if action is not None:
+                action()
+            elif editor.apply(addr, args):
+                # The model changed: if it is playing, play the change.
+                if editor.playhead is not None and editor.playhead.playing():
+                    at = editor.playhead.position()
+                    play()
     finally:
+        silence()
         session.close()
         sys.exit(0)
 

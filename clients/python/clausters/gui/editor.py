@@ -81,6 +81,9 @@ class Editor:
         quant: the musical drag grid in beats (``0.25`` = a sixteenth); ``0``
             snaps to whole samples.
         follow: re-realize on every edit (the live editor).
+        extra: extra GuiDef nodes to place under the lanes (a transport panel,
+            say). Their events are not the editor's: `apply` ignores them, so a
+            script can handle them itself.
         title: the window title.
         base_id: the first widget id the editor allocates. The default sits well
             above the ids `clausters.gui.host.GuiHost` assigns to windows it opens
@@ -96,7 +99,7 @@ class Editor:
     """
 
     def __init__(self, material, *, sample_rate: float, tempo: float = 1.0,
-                 quant: float = 0.0, follow: bool = False,
+                 quant: float = 0.0, follow: bool = False, extra=(),
                  title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
         self.material = material
@@ -107,6 +110,10 @@ class Editor:
         #: where you dropped it). Off by default — an edit then only changes the
         #: model, and `rerealize` decides when it is heard.
         self.follow = bool(follow)
+        #: Widgets appended to the window after the lanes (a transport panel, a
+        #: readout). They are the script's — the editor never touches their ids,
+        #: so keep them clear of `base_id`.
+        self.extra = list(extra)
         self.title = title
         self.size = (int(width), int(height))
         self._base_id = int(base_id)
@@ -199,8 +206,8 @@ class Editor:
         # DAW convention); every lane carries the tempo/rate its ticks read.
         if lanes:
             lanes[-1]["ruler"] = "beats"
-        return window(*lanes, *patches, title=self.title, w=self.size[0],
-                      h=self.size[1], layout="col")
+        return window(*lanes, *patches, *self.extra, title=self.title,
+                      w=self.size[0], h=self.size[1], layout="col")
 
     def _patch_for(self, group) -> dict:
         """A **logical** group as a `graph` patch: its members are the boxes (a def
@@ -236,6 +243,12 @@ class Editor:
         self._host = host
         self._window = host.open(self.render(), id=id)
         return self._window
+
+    @property
+    def playhead(self):
+        """The `clausters.seq.Playhead` playing the composition, or ``None`` before
+        the first `realize` — what a transport (play/pause/stop/locate) drives."""
+        return self._playhead
 
     @property
     def window(self):
@@ -376,6 +389,11 @@ class Editor:
         """
         from ..model.realize import realize as model_realize
 
+        # Realizing again replaces the realization in flight: stop the playhead
+        # first, or the old one keeps feeding the same composition and the piece
+        # plays over itself.
+        if self._playhead is not None:
+            self._playhead.stop()
         self._destination, self._clock = destination, clock
         self._playhead = model_realize(self.material, destination, clock,
                                        at=at, quant=quant)
@@ -395,28 +413,46 @@ class Editor:
             raise RuntimeError("realize(destination, clock) the editor first")
         if at is None:
             at = self._playhead.position() if self._playhead is not None else 0.0
-        if self._playhead is not None:
-            self._playhead.stop()
         return self.realize(self._destination, self._clock, at=at)
 
-    def anchor(self, server, *, at: float = 0.0):
+    def anchor(self, server, *, at: float = 0.0) -> bool:
         """Anchor every lane's playhead to the engine clock, so the line starts at
-        beat ``at`` of the timeline and sweeps on with the audio.
+        beat ``at`` of the timeline and sweeps on with the audio. Returns whether
+        it could (a destination with no clock — an NRT score — has no playhead).
 
         ``playhead_at`` is the sample-clock value at timeline position 0, which is
-        *now* minus the beats already played. A destination with no clock reply
-        (an NRT score) simply gets no playhead.
+        *now* minus the beats already played. The anchor is a **query**: it asks
+        the server for its clock, and a server that does not answer leaves the
+        lanes without a line — so the failure is reported, not swallowed (a
+        playhead that silently never appears is the worst of both).
         """
+        from ..errors import ReplyTimeout
+
         if self._host is None or not hasattr(server, "request"):
-            return
+            return False
+        if getattr(server.interface, "time_mode", "unix") == "score":
+            return False  # NRT: there is no engine clock to anchor to
         try:
             _addr, args = server.request("/clock", expect=("/clock.reply",))
-        except Exception:
-            return  # NRT, or a server that does not answer: no live playhead
+        except ReplyTimeout:
+            return False  # a live server that did not answer: no line, and it shows
+        if not args:
+            return False
         now = float(args[0])
         origin = now - self.beats_to_units(at)
         for lane in self._lanes:
             self._host.set(lane, playhead_at=origin)
+        return True
+
+    def unanchor(self):
+        """Take the playhead line off the lanes. The host's playhead *tracks the
+        engine clock*, so a line left anchored keeps sweeping after the music
+        stopped — a transport that pauses must hide it, and `realize` re-anchors
+        it on the next play."""
+        if self._host is None:
+            return
+        for lane in self._lanes:
+            self._host.set(lane, playhead_at=-1.0)
 
     # ---- the tree walk ----
 

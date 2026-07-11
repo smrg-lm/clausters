@@ -884,4 +884,26 @@ mod tests {
             "a fully-zoomed-out axis keeps showing it all"
         );
     }
+
+    #[test]
+    fn a_playhead_set_on_a_lane_reaches_the_tree_the_renderer_reads() {
+        let mut host = lanes_host();
+        host.handle_packet(
+            set_msg(100, &[("playhead_at", OscType::Float(12288.0))]),
+            from(),
+        );
+        // The renderer reads the *typed tree*, not the registry: a lane is a
+        // group member, so the value must land there through the group mirror.
+        for lane in [100, 200] {
+            let editor = host
+                .window_def(1)
+                .and_then(|t| t.find(lane))
+                .and_then(|w| w.kind.editor())
+                .unwrap();
+            assert_eq!(
+                editor.playhead_at, 12288.0,
+                "lane {lane} draws no playhead without it"
+            );
+        }
+    }
 }
