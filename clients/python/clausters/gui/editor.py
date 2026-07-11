@@ -136,6 +136,10 @@ class Editor:
         self._destination = None
         self._clock = None
         self._playhead = None
+        #: Whether the model changed since the last realization — an edit does not
+        #: interrupt what is playing, so a transport (play, a resume after pause, a
+        #: seek) reads this to know it must re-read the composition.
+        self.dirty = False
 
     # ---- the unit bridge: beats (the model) ↔ timeline samples (the view) ----
 
@@ -311,8 +315,10 @@ class Editor:
             new_offset = self._snap(self.units_to_beats(offset)) - placed.base
         new_dur = self._snap(self.units_to_beats(dur)) if resized else None
         placed.owner.move(member, new_offset, new_dur)
-        if self.follow:
-            self.rerealize()
+        # The clip was drawn where it now is: keep the registry truthful, or the
+        # next edit would measure its move against a stale placement.
+        placed.offset, placed.dur = offset, dur
+        self._changed()
         return True
 
     def _apply_wire(self, wid: int, values) -> bool:
@@ -334,8 +340,7 @@ class Editor:
         else:
             controls.pop(control, None)
         generator.controls = controls
-        if self.follow:
-            self.rerealize()
+        self._changed()
         return True
 
     def _apply_points(self, placed, values) -> bool:
@@ -352,6 +357,15 @@ class Editor:
         for t, v, shape, curve in _quads(list(values)):
             flat += [self.units_to_beats(t), float(v), int(shape), float(curve)]
         auto.env = points_to_env(flat)
+        self._changed()
+        return True
+
+    def _changed(self) -> bool:
+        """The model was edited: mark it, and re-realize now when `follow` is on.
+        Otherwise the edit simply waits — a realization already in flight is not
+        interrupted, and the next one (a play, a resume, a seek) plays the model as
+        it now stands, because realizing always re-flattens it."""
+        self.dirty = True
         if self.follow:
             self.rerealize()
         return True
@@ -397,6 +411,7 @@ class Editor:
         self._destination, self._clock = destination, clock
         self._playhead = model_realize(self.material, destination, clock,
                                        at=at, quant=quant)
+        self.dirty = False            # what plays now *is* the model
         self.anchor(destination, at=at)
         return self._playhead
 

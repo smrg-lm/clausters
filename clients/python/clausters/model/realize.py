@@ -93,14 +93,40 @@ def realize_logical(group, server, *, ports=None):
 
 # ---- the flatten dispatch ----
 
-def _emit(material, base: float, out: list):
+def _emit(material, base: float, out: list, dur=None):
+    """Flatten ``material`` at ``base``, honouring the **placement length** its
+    group gave it: a placement ``dur`` *trims* what the material plays (the DAW
+    rule — a clip's length is what you hear of it), so events past the placement's
+    end are dropped and a single-event material sounds for exactly that long. A
+    placement with no length lets the material be its own."""
+    placed: list = []
+    _emit_material(material, base, placed)
+    if dur is not None:
+        end = base + float(dur)
+        placed = [(beat, _sized(item, min(dur, end - beat)))
+                  for beat, item in placed if beat < end - 1e-9]
+    out.extend(placed)
+
+
+def _sized(item, dur: float):
+    """An event resized to the placement's remaining length — a *copy*, since the
+    material's own event is shared and must not be rewritten by a placement.
+    Anything that is not an event (an automation, a raw OSC item) is untouched."""
+    from ..seq.event import Event as SeqEvent
+
+    if isinstance(item, SeqEvent) and item.get("dur") is not None:
+        return SeqEvent({**item, "dur": float(dur)})
+    return item
+
+
+def _emit_material(material, base: float, out: list):
     if isinstance(material, Group):
         if material.kind != COMPOSITIONAL:
             raise NotImplementedError(
                 "realizing a logical Group is Fase 1C (it emits a GraphDef)"
             )
-        for offset, _dur, child in material.members:
-            _emit(child, base + offset, out)
+        for member in material.handles:
+            _emit(member.material, base + member.offset, out, member.dur)
     elif isinstance(material, Track):
         for beat, item in material.wraps:
             out.append((base + beat, item))

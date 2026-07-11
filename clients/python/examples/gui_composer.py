@@ -231,9 +231,10 @@ def silence():
 def play():
     """Arm the automation's voice and realize the composition from `at`.
 
-    Realizing again replaces the realization in flight (the editor stops the old
-    playhead), so pressing play twice restarts the piece — it never plays over
-    itself.
+    Every play is a fresh realization of the *model*, so it plays the clips where
+    they are now — moved, resized, curves redrawn. Realizing again also replaces
+    the realization in flight (the editor stops the old playhead), so pressing play
+    twice restarts the piece instead of playing it over itself.
 
     The voice ends *with the piece*: a routine releases its gate at the last beat,
     and the envelope frees the synth. A held synth with no end would keep sounding
@@ -298,10 +299,14 @@ print("press play — the playhead sweeps the clips while the composition sounds
 # %% [markdown]
 # ## Edit it
 # `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
-# a placement (in beats, snapped to the grid), a dragged break-point becomes the
-# automation's new curve. Anything it does not recognize is the script's — here,
-# the transport buttons. Editing while playing re-realizes from the playhead, so
-# you hear the change where you dropped it.
+# a placement — its **offset** *and* its **length**, and the length trims what the
+# material plays — and a dragged break-point becomes the automation's new curve.
+# Anything it does not recognize is the script's: here, the transport buttons.
+#
+# An edit does not interrupt what is sounding. It marks the composition
+# (`Editor.dirty`), and the next transport action re-reads it: realizing always
+# re-flattens the model, so play, a resume after pause and a rewind all play the
+# composition *as it now stands*.
 
 # %%
 if __name__ == "__main__":
@@ -320,10 +325,13 @@ if __name__ == "__main__":
             if action is not None:
                 action()
             elif editor.apply(addr, args):
-                # The model changed: if it is playing, play the change.
-                if editor.playhead is not None and editor.playhead.playing:
-                    at = editor.playhead.position()
-                    play()
+                # An edit does not interrupt what is sounding: it changes the
+                # *model*, and the next play (or a resume, or a rewind) plays it —
+                # `realize` always re-flattens the composition, so it picks up the
+                # new placements and lengths.
+                print("  edited — press play to hear it"
+                      if not editor.playhead or not editor.playhead.playing
+                      else "  edited — press play to re-read the composition")
     finally:
         # No `sys.exit` here: it would replace an exception raised in the loop
         # and the window would just vanish with no word of why.

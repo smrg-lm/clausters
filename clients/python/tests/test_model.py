@@ -334,6 +334,36 @@ def test_a_buffer_sounds_through_the_instrument_that_plays_it():
     assert flatten(Group([(0.0, Buffer(buf, duration=2.0))])) == []
 
 
+def test_a_placement_length_trims_what_the_material_plays():
+    """A clip's length is what you hear of it: a placement `dur` drops the events
+    past its end and sizes a single-event material to it — the DAW rule, and what
+    resizing a clip in the editor must actually change."""
+    from clausters.defs.buffer import Buffer as ServerBuffer
+    from clausters.seq.event import Event as SeqEvent
+    from clausters.seq.timeline import Timeline
+
+    # A track of four one-beat notes, placed with a two-beat length: the last two
+    # fall outside it and are not played.
+    notes = Track(Timeline([(float(i), SeqEvent(midinote=60 + i, dur=1.0))
+                            for i in range(4)]))
+    group = Group()
+    member = group.add(notes, 0.0, dur=2.0)
+    assert [beat for beat, _ in flatten(group)] == [0.0, 1.0]
+
+    # Lengthened, the whole track sounds again.
+    group.move(member, 0.0, dur=4.0)
+    assert len(flatten(group)) == 4
+
+    # A take shortened by its placement sounds for exactly that long (its own
+    # event is untouched — a placement never rewrites the material).
+    take = Buffer(ServerBuffer(bufnum=1, frames=100), duration=4.0,
+                  instrument="sampler")
+    song = Group([(0.0, 1.5, take)])
+    ((_beat, event),) = flatten(song)
+    assert event["dur"] == 1.5
+    assert take.to_event()["dur"] == 4.0
+
+
 # ---- realize: logical group -> GraphDef (Fase 1C, pure) ----
 
 def test_generator_def_name_from_string_or_object():

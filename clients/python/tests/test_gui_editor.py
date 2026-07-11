@@ -225,6 +225,25 @@ def test_render_apply_render_is_a_fixed_point():
     assert ed.render() == before
 
 
+def test_an_edit_marks_the_model_changed_until_it_is_realized():
+    """An edit does not interrupt what is playing; it marks the composition, and
+    the next play (or a resume, or a seek) re-reads it — realizing always
+    re-flattens the model."""
+    ed = editor(quant=1.0)
+    roll = clips(lanes(ed.render())[1])[0]
+    assert not ed.dirty
+
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, roll["dur"]))
+    assert ed.dirty
+
+    # A resize is an edit too — and it is the one that used to be silent: the
+    # placement's length now trims what the material plays.
+    placed = ed._clips[roll["id"]]
+    assert (placed.offset, placed.dur) == (5 * BEAT, roll["dur"])   # registry kept true
+    ed.apply(*clip_event(roll["id"], 5 * BEAT, 1 * BEAT))
+    assert ed._clips[roll["id"]].member.dur == pytest.approx(1.0)
+
+
 def test_unknown_messages_are_ignored():
     ed = editor()
     ed.render()
