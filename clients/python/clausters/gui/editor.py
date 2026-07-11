@@ -34,7 +34,9 @@ import itertools
 from .. import _native
 from ..model.group import COMPOSITIONAL, Group
 from ..model.material import Buffer, Material
+from ..defs.ugens import points_to_env
 from ..model.realize import flatten
+from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from .guidef import clip, track, window
 
@@ -229,11 +231,17 @@ class Editor:
         if addr == "/gui_closed":
             self._window = None
             return False
-        if addr != "/gui_event" or len(args) < 4 or args[1] != "clip":
+        if addr != "/gui_event" or len(args) < 2:
             return False
         placed = self._clips.get(int(args[0]))
-        if placed is None or placed.member is None:
-            return False  # unknown widget, or the root material (nothing places it)
+        if placed is None:
+            return False
+        if args[1] == "points":
+            return self._apply_points(placed, args[2:])
+        if args[1] != "clip" or len(args) < 4:
+            return False
+        if placed.member is None:
+            return False  # the root material itself: nothing places it
 
         offset, dur = float(args[2]), float(args[3])
         moved = abs(offset - placed.offset) >= 0.5      # half a sample: a real edit
@@ -248,6 +256,24 @@ class Editor:
             new_offset = self._snap(self.units_to_beats(offset)) - placed.base
         new_dur = self._snap(self.units_to_beats(dur)) if resized else None
         placed.owner.move(member, new_offset, new_dur)
+        if self.follow:
+            self.rerealize()
+        return True
+
+    def _apply_points(self, placed, values) -> bool:
+        """A curve edited in place on an automation clip (the flat ``"points"``
+        payload the `bpf` view also sends): the break-points go back onto the
+        material's `clausters.seq.Automation`, with their times converted from
+        timeline units to beats. The `Env` is the automation's source of truth, so
+        this *is* the edit — the next realization plays the curve as drawn."""
+        auto = _automation(placed.member.material if placed.member is not None
+                           else self.material)
+        if auto is None or not values:
+            return False
+        flat = []
+        for t, v, shape, curve in _quads(list(values)):
+            flat += [self.units_to_beats(t), float(v), int(shape), float(curve)]
+        auto.env = points_to_env(flat)
         if self.follow:
             self.rerealize()
         return True
@@ -370,6 +396,22 @@ class Editor:
             dur_beats = material.duration
         label = _name(material)
 
+        auto = _automation(material)
+        if auto is not None:
+            # An automation clip: the curve *is* the body (the bpf editor's model,
+            # placed on the lane), editable in place. Its break-point times are
+            # beats in the model and timeline units on the axis — the same bridge
+            # every placement crosses.
+            dur = self.beats_to_units(
+                dur_beats if dur_beats is not None else auto.duration())
+            points = [(self.beats_to_units(t), v, shape, curve)
+                      for t, v, shape, curve in _quads(auto.to_points())]
+            lo, hi = _curve_range(points)
+            parent_base = base - (member.offset if member is not None else 0.0)
+            self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
+            return clip(wid, offset=offset, dur=dur, points=points, min=lo, max=hi,
+                        label=label)
+
         if isinstance(material, Buffer):
             buf = material.wraps
             # The take rides the bulk path: the host fetches the server buffer and
@@ -451,6 +493,30 @@ def _name(material) -> str:
     if isinstance(name, str) and name:
         return name
     return type(material).__name__.lower()
+
+
+def _automation(material):
+    """The `clausters.seq.Automation` a material carries, or ``None``. An
+    automation is a *curve* — the List/Buffer duality of the model — so it needs
+    no primitive of its own: any material wrapping one draws (and edits) as an
+    automation clip."""
+    return material.wraps if isinstance(getattr(material, "wraps", None), Automation) else None
+
+
+def _quads(flat) -> list:
+    """A flat ``[t, v, shape, curve, …]`` break-point list as ``(t, v, shape,
+    curve)`` tuples (a trailing partial quad is dropped)."""
+    flat = list(flat)
+    return [tuple(flat[i:i + 4]) for i in range(0, len(flat) - 3, 4)]
+
+
+def _curve_range(points) -> tuple:
+    """The value axis of a curve clip: the break-points' own range with a tenth of
+    headroom (a flat curve still gets a band to be dragged in)."""
+    values = [float(p[1]) for p in points] or [0.0]
+    lo, hi = min(values), max(values)
+    pad = (hi - lo) * 0.1 or (abs(hi) * 0.1 or 1.0)
+    return lo - pad, hi + pad
 
 
 def _pitch(item):

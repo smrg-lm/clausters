@@ -61,7 +61,9 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   con el modelo (un take bounceado y cargado de disco, una melodía, un patrón),
   lo abre como multipista y lo toca → se **oye** la composición y se **ve** el
   playhead barriendo los clips; arrastrar un clip lo mueve, y con `follow=True`
-  la composición se re-agenda: suena donde lo soltaste. Refrescar antes el
+  la composición se re-agenda: suena donde lo soltaste. El carril **sweep** es una
+  automatización: su cuerpo es la **curva**, y se edita ahí mismo (arrastrar un
+  punto, Ctrl+click agrega/quita) → se **oye** el filtro seguir la curva dibujada. Refrescar antes el
   binario bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Salud de tiempo real bajo carga.** `cargo run --release --example stress`
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;

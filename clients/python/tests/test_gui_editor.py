@@ -233,6 +233,59 @@ def test_unknown_messages_are_ignored():
     assert not ed.apply("/clock.reply", [1234.0])
 
 
+# ---- the automation clip: a curve as the body, edited in place ----
+
+def automation_song() -> tuple:
+    """A composition with one automation lane: a filter sweep over four beats."""
+    from clausters.model import Material
+    from clausters.seq import Automation
+
+    # The flat bpf quads: (time, value, shape, curve) with the server's own shape
+    # numbers (1 = linear, 2 = exponential) — the wire form the editor round-trips.
+    auto = Automation.from_points(
+        [(0, 200.0, 1, 0.0), (2, 4000.0, 2, 0.0), (4, 800.0, 1, 0.0)],
+        target=None, name="cutoff")
+    song = Group([(2.0, Group([(0.0, Material(auto))], name="filter"))], name="song")
+    return song, auto
+
+
+def test_an_automation_draws_as_a_curve_clip_on_the_timeline():
+    song, auto = automation_song()
+    ed = editor(song)
+    (lane,) = lanes(ed.render())
+    (curve,) = clips(lane)
+
+    assert curve["offset"] == pytest.approx(2 * BEAT)   # placed at beat 2
+    assert curve["dur"] == pytest.approx(4 * BEAT)      # the curve's own length
+    # The break-points ride as the bpf flat quads, their times in timeline units.
+    assert curve["points"][0:2] == pytest.approx([0.0, 200.0])
+    assert curve["points"][4:6] == pytest.approx([2 * BEAT, 4000.0])
+    assert curve["points"][8:10] == pytest.approx([4 * BEAT, 800.0])
+    # The value axis covers the curve with headroom, so a point can be dragged.
+    assert curve["min"] < 200.0 and curve["max"] > 4000.0
+    assert "notes" not in curve and "buffer" not in curve
+
+
+def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
+    song, auto = automation_song()
+    ed = editor(song)
+    (curve,) = clips(lanes(ed.render())[0])
+
+    # The host sends the same flat "points" payload the bpf view sends — here the
+    # peak dragged down to 3000 Hz and a beat later.
+    edited = [0.0, 200.0, 1, 0.0,
+              3 * BEAT, 3000.0, 2, 0.0,
+              4 * BEAT, 800.0, 1, 0.0]
+    assert ed.apply("/gui_event", [curve["id"], "points", *edited])
+
+    # The automation's Env — its source of truth, what the next realization plays.
+    assert auto.to_points()[4:6] == pytest.approx([3.0, 3000.0])  # in beats again
+    assert auto.duration() == pytest.approx(4.0)
+    # And the redraw shows what was dropped.
+    assert clips(lanes(ed.render())[0])[0]["points"][4:6] == pytest.approx(
+        [3 * BEAT, 3000.0])
+
+
 # ---- realization: the edited composition plays what the screen shows ----
 
 def _embed_or_skip():

@@ -13,10 +13,14 @@ What the mapping does, in one paragraph. The root group's members are the
 buffer and spans its frames (the host fetches it and decimates it — a real take
 never rides the wire as JSON). A material of *events* draws a **piano-roll**, and
 a contained generator is bounced in the same pass, so a `Pbind` lane shows the
-notes it is about to play — the model's *change of state*, on screen. A nested
+notes it is about to play — the model's *change of state*, on screen. An
+`Automation` draws its **curve** as the clip body, editable in place. A nested
 group draws as the labeled rectangle that summarizes it, until you ``expand`` it
 into lanes of its own: that collapse/expand is the model's **base level**, the
 zoom that summarizes or resolves.
+
+The axis is navigable: the wheel zooms and Shift+drag pans, and every lane moves
+with it (they share one axis).
 
 Drag a clip (move) or its edge (resize) and, with ``follow=True``, the
 composition is re-scheduled from the playhead — you hear it where you dropped it.
@@ -39,8 +43,8 @@ from pathlib import Path
 from clausters import Session
 from clausters.defs import SynthDef, control, out, play_buf
 from clausters.gui import Editor
-from clausters.model import Buffer, Group, Sequence, Track
-from clausters.seq import Timeline
+from clausters.model import Buffer, Group, Material, Sequence, Track
+from clausters.seq import Automation, Timeline
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.pattern import Pbind, Pseq
 
@@ -122,11 +126,29 @@ melody = Track(Timeline([                                 # a Set of events
 bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generator)
                       dur=1.0, amp=0.15))
 
-# The composition: three lanes, each a group placing one material in time.
+# %% [markdown]
+# ## An automation lane
+# A break-point curve placed in time, driving a control — the same `bpf` model the
+# envelope editor draws, now a **clip** on a lane: its body *is* the curve, and it
+# is edited in place (drag a point, Ctrl+click to add or remove one). The edit
+# flows back onto the `Automation`, whose `Env` is what the next realization
+# plays, so the curve you draw is the curve you hear.
+
+# %%
+voice = server.synth("default", {"freq": 55.0, "amp": 0.12})
+sweep = Automation.from_points(
+    [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
+     (2.0, 900.0, 2, 0.0),      # ... up to 900 (exponential) ...
+     (4.0, 300.0, 1, 0.0)],     # ... back down (linear); shapes are the server's
+    target=(voice, "freq"), name="sweep")
+sweep.prepare(server)           # the control buffer + bus, off the clock thread
+
+# The composition: four lanes, each a group placing one material in time.
 song = Group([
     (0.0, Group([(0.0, take), (4.0, take)], name="drums")),
     (0.0, Group([(0.0, bass)], name="bass")),
     (2.0, Group([(0.0, melody)], name="lead")),
+    (0.0, Group([(0.0, Material(sweep))], name="sweep")),
 ], name="song")
 
 # %% [markdown]

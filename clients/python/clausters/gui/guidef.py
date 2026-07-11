@@ -503,16 +503,24 @@ def track(id: int, *clips, label: str | None = None, height: float | None = None
 def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          buffer: int | None = None, path: str | None = None, cache: str | None = None,
          channels: int | None = None, base_bucket: int | None = None,
-         notes=None, min: float | None = None, max: float | None = None,
+         notes=None, points=None, exp: bool | None = None,
+         min: float | None = None, max: float | None = None,
          label: str | None = None, **props) -> dict:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
     dur]`` in timeline sample units (the graphic unit — length = duration). Its
-    body is one of two:
+    body is one of three:
 
-    - a **waveform** — the take, drawn decimated to the clip's pixel width; or
+    - a **waveform** — the take, drawn decimated to the clip's pixel width;
     - a **piano-roll** — ``notes``, an iterable of ``(start, dur, pitch)``
       events (times relative to the clip, in samples; pitch mapped over
-      ``[min, max]``), drawn as note bars — the events-track view.
+      ``[min, max]``), drawn as note bars — the events-track view; or
+    - an **automation curve** — ``points``, break-points over the clip's span
+      (the `bpf` editor's model and shape math, placed on a lane): times relative
+      to the clip in samples, values over ``[min, max]`` (``exp=True`` gives a
+      frequency-like range a geometric display scale). It is **editable in
+      place** — drag a point, Ctrl+click to add one or remove the one under the
+      cursor — and an edit flows back as the same flat ``"points"`` event the
+      `bpf` view sends, so an `clausters.seq.Automation` consumes it either way.
 
     A real take is minutes long, so it never rides the wire as JSON. The
     waveform body reaches the clip exactly the ways the heavy `waveform` view's
@@ -550,7 +558,11 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
                        data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
-                       notes=flat_notes, min=min, max=max, label=label)
+                       notes=flat_notes,
+                       points=_flat_points(points) if points is not None else None,
+                       min=min, max=max, label=label)
+    if exp is not None:
+        extra["exp"] = 1 if exp else 0
     return node("clip", id=id, dur=dur, **extra, **props)
 
 

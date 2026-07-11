@@ -141,19 +141,104 @@ pub(crate) fn bpf_edit<R>(
     }
 }
 
-/// A `bpf` widget's edit-back payload: the `"points"` tag plus the flat
+/// A break-point curve's edit-back payload: the `"points"` tag plus the flat
 /// breakpoint list (`t v shape curve` per point) — what a `/gui_event` carries
-/// to the script, and what a bound editor forwards to the audio server.
+/// to the script, and what a bound editor forwards to the audio server. Shared
+/// by the `bpf` view and the **automation clip**, whose curve is the same model
+/// placed on a lane: one payload, so a script (or an `Automation`) consumes an
+/// edit without caring which view drew it.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
-    match &tree.find(id)?.kind {
-        WidgetKind::Bpf { points, .. } => {
-            let mut args = vec![OscType::String("points".into())];
-            args.extend(bpf::points_args(points));
-            Some(args)
-        }
+    let points = match &tree.find(id)?.kind {
+        WidgetKind::Bpf { points, .. } => points,
+        WidgetKind::Clip { points, .. } if !points.is_empty() => points,
+        _ => return None,
+    };
+    let mut args = vec![OscType::String("points".into())];
+    args.extend(bpf::points_args(points));
+    Some(args)
+}
+
+/// Runs `f` over an automation clip's break-points in the host tree — the one
+/// door a curve edit on a lane goes through (the clip sibling of `bpf_edit`).
+#[cfg(not(target_arch = "wasm32"))]
+fn clip_curve<R>(
+    host: &mut Host,
+    def_id: i32,
+    clip_id: i32,
+    f: impl FnOnce(&mut Vec<bpf::BpfPoint>, f32, f32, bool) -> R,
+) -> Option<R> {
+    let w = host.window_def_mut(def_id)?.find_mut(clip_id)?;
+    match &mut w.kind {
+        WidgetKind::Clip {
+            points,
+            min,
+            max,
+            exp,
+            ..
+        } => Some(f(points, *min, *max, *exp)),
         _ => None,
     }
+}
+
+/// Moves break-point `index` of an automation clip to the cursor: the time maps
+/// back through the **shared axis** (a clip's curve lives on the timeline, not on
+/// a widget-local domain) and the value through the clip's range, then the point
+/// is placed with the `bpf` model's own monotonic clamp. Returns whether it moved.
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::too_many_arguments)] // one display mapping, all scalars
+pub(crate) fn clip_point_move(
+    host: &mut Host,
+    def_id: i32,
+    clip_id: i32,
+    index: usize,
+    rect: Rect,
+    body: Rect,
+    nav: &View,
+    offset: f64,
+    cx: f64,
+    cy: f64,
+) -> bool {
+    let Some(widget) = host.window_def(def_id).and_then(|t| t.find(clip_id)) else {
+        return false;
+    };
+    let WidgetKind::Clip { dur, .. } = widget.kind else {
+        return false;
+    };
+    let t = track::curve_time_at(body, nav, offset, cx).min(dur);
+    clip_curve(host, def_id, clip_id, |points, min, max, exp| {
+        let value = track::curve_value_at(rect, min, max, exp, cy);
+        bpf::place_point(points, index, t, value, dur.max(t));
+    })
+    .is_some()
+}
+
+/// Adds a break-point at the cursor on an automation clip (Ctrl+click), or
+/// removes the one under it — the `bpf` view's gesture, on a lane.
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::too_many_arguments)] // one display mapping, all scalars
+pub(crate) fn clip_point_edit(
+    host: &mut Host,
+    def_id: i32,
+    clip_id: i32,
+    hit: Option<usize>,
+    rect: Rect,
+    body: Rect,
+    nav: &View,
+    offset: f64,
+    cx: f64,
+    cy: f64,
+) -> bool {
+    let t = track::curve_time_at(body, nav, offset, cx);
+    clip_curve(host, def_id, clip_id, |points, min, max, exp| match hit {
+        Some(i) => bpf::remove_point(points, i),
+        None => {
+            let value = track::curve_value_at(rect, min, max, exp, cy);
+            bpf::insert_point(points, t, value);
+            true
+        }
+    })
+    .unwrap_or(false)
 }
 
 /// Which part of a clip a press landed on: its body (move) or one of its edges
@@ -176,8 +261,15 @@ pub(crate) struct ClipHit {
     pub offset: f64,
     pub dur: f64,
     pub body: Rect,
+    /// The clip's own rectangle (the body the curve of an automation clip is
+    /// drawn in, so its point edits map onto the pixels drawn).
+    pub rect: Rect,
     pub nav: View,
     pub part: ClipPart,
+    /// The break-point under the cursor on an automation clip: a point wins over
+    /// the clip's body (as it wins over a segment in the `bpf` view), so the
+    /// curve is edited in place while the clip still moves by its empty space.
+    pub point: Option<usize>,
 }
 
 /// The clip edge hit zone, device pixels.
@@ -228,13 +320,21 @@ pub(crate) fn clip_hit(
                 && (x as f32) <= x1
                 && let Some(id) = c.id
             {
+                let rect = track::clip_rect(body, x0, x1);
+                let point = track::clip_draw(c).and_then(|clip| {
+                    (!clip.points.is_empty())
+                        .then(|| track::curve_hit(&clip, rect, body, &nav, x, y))
+                        .flatten()
+                });
                 return Some(ClipHit {
                     id,
                     offset,
                     dur,
                     body,
+                    rect,
                     nav,
                     part: clip_part(x0, x1, x as f32),
+                    point,
                 });
             }
         }

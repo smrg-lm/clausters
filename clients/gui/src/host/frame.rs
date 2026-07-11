@@ -643,30 +643,7 @@ pub(crate) fn render(
                     .widget
                     .children
                     .iter()
-                    .filter_map(|c| match &c.kind {
-                        WidgetKind::Clip {
-                            offset,
-                            dur,
-                            samples,
-                            body,
-                            notes,
-                            min,
-                            max,
-                            label,
-                            ..
-                        } => Some(track::ClipDraw {
-                            id: c.id.unwrap_or(-1),
-                            offset: *offset,
-                            dur: *dur,
-                            samples: Arc::clone(samples),
-                            data: body.clone(),
-                            notes: notes.clone(),
-                            min: *min,
-                            max: *max,
-                            label: label.clone(),
-                        }),
-                        _ => None,
-                    })
+                    .filter_map(track::clip_draw)
                     .collect();
                 track_items.push(TrackItem {
                     id: p.widget.id.unwrap_or(-1),

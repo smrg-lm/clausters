@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use super::bpf::{self, BpfPoint};
 use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
@@ -65,6 +66,10 @@ pub struct ClipDraw {
     pub samples: Arc<[f32]>,
     pub data: Option<Arc<WaveformData>>,
     pub notes: Vec<Note>,
+    /// An automation clip's break-points (times relative to the clip): the curve
+    /// body, which wins over the notes and the waveform.
+    pub points: Vec<BpfPoint>,
+    pub exp: bool,
     pub min: f32,
     pub max: f32,
     pub label: Option<String>,
@@ -143,6 +148,47 @@ pub fn clip_x_range(body: Rect, nav: &View, offset: f64, dur: f64) -> Option<(f3
     (x1 > x0).then_some((x0 as f32, x1 as f32))
 }
 
+/// One clip's rectangle inside the lane `body`, given the x range its span
+/// occupies (`clip_x_range`) — the renderer and the hit-test both call it, so a
+/// clip's body is edited on the pixels it is drawn on.
+pub fn clip_rect(body: Rect, x0: f32, x1: f32) -> Rect {
+    Rect::new(x0, body.y + 1.0, x1 - x0, (body.h - 2.0).max(0.0))
+}
+
+/// A `clip` widget copied out of the tree for drawing or hit-testing (`None` for
+/// anything else) — the one place the typed tree becomes a [`ClipDraw`], so the
+/// renderer and the interaction can never disagree about what a clip holds.
+pub fn clip_draw(widget: &Widget) -> Option<ClipDraw> {
+    match &widget.kind {
+        WidgetKind::Clip {
+            offset,
+            dur,
+            samples,
+            body,
+            notes,
+            points,
+            exp,
+            min,
+            max,
+            label,
+            ..
+        } => Some(ClipDraw {
+            id: widget.id.unwrap_or(-1),
+            offset: *offset,
+            dur: *dur,
+            samples: Arc::clone(samples),
+            data: body.clone(),
+            notes: notes.clone(),
+            points: points.clone(),
+            exp: *exp,
+            min: *min,
+            max: *max,
+            label: label.clone(),
+        }),
+        _ => None,
+    }
+}
+
 /// Draws one track lane into `rect`: the header (with `label`), the lane field,
 /// and every clip as a framed rectangle (its body decimated inside) through the
 /// shared timeline `nav`. `ruler` reserves the bottom strip for the time ruler
@@ -172,10 +218,14 @@ pub fn draw(
         let Some((x0, x1)) = clip_x_range(body, nav, clip.offset, clip.dur) else {
             continue;
         };
-        let cr = Rect::new(x0, body.y + 1.0, x1 - x0, (body.h - 2.0).max(0.0));
+        let cr = clip_rect(body, x0, x1);
         mesh.rect(cr, CLIP_FILL);
         mesh.border(cr, 1.0, CLIP_EDGE);
-        if clip.notes.is_empty() {
+        if !clip.points.is_empty() {
+            // An automation clip: the curve body — the third body of the same
+            // graphic unit, drawn (and edited) through the `bpf` model.
+            draw_curve(mesh, cr, body, nav, clip);
+        } else if clip.notes.is_empty() {
             match &clip.data {
                 // A loaded take (mapped file, peak cache or fetched buffer):
                 // decimated through its pyramid, so a minutes-long clip costs
@@ -190,6 +240,85 @@ pub fn draw(
         }
         if let Some(t) = &clip.label {
             font::text(mesh, t, cr.x + PAD, cr.y + PAD, CLIP_SCALE, TEXT);
+        }
+    }
+}
+
+/// The automation curve's trace and its breakpoint discs.
+const CURVE_TRACE: Color = [0.40, 0.85, 0.62, 1.0];
+const CURVE_POINT: Color = [0.90, 0.93, 0.95, 1.0];
+/// Breakpoint disc radius, device pixels (also the hit-test radius floor) —
+/// the `bpf` view's, so a point is grabbed the same way wherever it is drawn.
+pub const POINT_RADIUS: f32 = 4.0;
+
+/// The clip-relative time (in timeline units) an x pixel falls on: the inverse
+/// of the shared axis mapping. The curve body's editing runs through this, so a
+/// point lands where the pointer is under any zoom.
+pub fn curve_time_at(body: Rect, nav: &View, clip_offset: f64, cx: f64) -> f64 {
+    let sample = nav.start + nav.len * ((cx - body.x as f64) / body.w.max(1.0) as f64);
+    (sample - clip_offset).max(0.0)
+}
+
+/// The value a y pixel falls on inside the clip rect `cr`, over `[min, max]`
+/// (honouring the exponential display scale) — the vertical inverse.
+pub fn curve_value_at(cr: Rect, min: f32, max: f32, exp: bool, cy: f64) -> f32 {
+    let frac = 1.0 - ((cy - cr.y as f64) / cr.h.max(1.0) as f64).clamp(0.0, 1.0);
+    bpf::fraction_to_value(frac as f32, min, max, exp)
+}
+
+/// The index of the breakpoint under `(cx, cy)` in an automation clip, within a
+/// pixel radius — the clip-placed twin of `bpf::hit_point` (a point is placed on
+/// the *shared* axis here, not on a widget-local one).
+pub fn curve_hit(
+    clip: &ClipDraw,
+    cr: Rect,
+    body: Rect,
+    nav: &View,
+    cx: f64,
+    cy: f64,
+) -> Option<usize> {
+    let radius = (POINT_RADIUS * 2.0).max(6.0) as f64;
+    let mut best: Option<(usize, f64)> = None;
+    for (i, p) in clip.points.iter().enumerate() {
+        let x = to_x(clip.offset + p.time, nav, body);
+        let y = curve_y(cr, p.value, clip.min, clip.max, clip.exp) as f64;
+        let d = ((cx - x).powi(2) + (cy - y).powi(2)).sqrt();
+        if d <= radius && best.is_none_or(|(_, bd)| d < bd) {
+            best = Some((i, d));
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
+/// A curve value's y pixel inside the clip rect.
+fn curve_y(cr: Rect, value: f32, min: f32, max: f32, exp: bool) -> f32 {
+    cr.y + cr.h * (1.0 - bpf::value_fraction(value, min, max, exp))
+}
+
+/// Draws an automation clip's break-point curve inside `cr`: one column per
+/// pixel of the *visible* clip rect, each evaluated through the same envelope
+/// shape math the server's `EnvGen` plays (`bpf::value_at`) — so what is drawn
+/// is what is heard — plus a disc per breakpoint. Times map through the shared
+/// `nav`, exactly as the piano-roll's notes do, so the whole curve moves with
+/// the clip and stays put under zoom.
+fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw) {
+    if cr.w < 1.0 || cr.h <= 0.0 {
+        return;
+    }
+    let columns = cr.w.max(1.0) as usize;
+    let y_at = |v: f32| curve_y(cr, v, clip.min, clip.max, clip.exp);
+    let time_at = |x: f32| curve_time_at(body, nav, clip.offset, x as f64);
+    let mut prev = [cr.x, y_at(bpf::value_at(&clip.points, time_at(cr.x)))];
+    for c in 1..=columns {
+        let x = cr.x + c as f32;
+        let p = [x, y_at(bpf::value_at(&clip.points, time_at(x)))];
+        mesh.line(prev, p, 1.5, CURVE_TRACE);
+        prev = p;
+    }
+    for p in &clip.points {
+        let x = to_x(clip.offset + p.time, nav, body) as f32;
+        if x >= cr.x && x <= cr.x + cr.w {
+            mesh.disc(x, y_at(p.value), POINT_RADIUS, CURVE_POINT);
         }
     }
 }
@@ -382,6 +511,8 @@ mod tests {
                 samples: vec![0.0, 0.5, -0.5, 1.0].into(),
                 data: None,
                 notes: Vec::new(),
+                points: Vec::new(),
+                exp: false,
                 min: -1.0,
                 max: 1.0,
                 label: Some("a".into()),
@@ -393,6 +524,8 @@ mod tests {
                 samples: Arc::from([] as [f32; 0]),
                 data: None,
                 notes: Vec::new(),
+                points: Vec::new(),
+                exp: false,
                 min: -1.0,
                 max: 1.0,
                 label: None,
@@ -424,6 +557,8 @@ mod tests {
             samples: Arc::from([] as [f32; 0]),
             data: Some(Arc::clone(&data)),
             notes: Vec::new(),
+            points: Vec::new(),
+            exp: false,
             min: -1.0,
             max: 1.0,
             label: Some("take".into()),
@@ -463,6 +598,86 @@ mod tests {
         );
     }
 
+    fn curve_clip(points: Vec<BpfPoint>) -> ClipDraw {
+        ClipDraw {
+            id: 1,
+            offset: 0.0,
+            dur: 400.0,
+            samples: Arc::from([] as [f32; 0]),
+            data: None,
+            notes: Vec::new(),
+            points,
+            exp: false,
+            min: 0.0,
+            max: 1.0,
+            label: Some("cutoff".into()),
+        }
+    }
+
+    fn pt(time: f64, value: f32) -> BpfPoint {
+        BpfPoint {
+            time,
+            value,
+            shape: 1,
+            curve: 0.0,
+        }
+    }
+
+    #[test]
+    fn an_automation_clip_draws_its_curve_instead_of_a_body() {
+        let clip = curve_clip(vec![pt(0.0, 0.0), pt(200.0, 1.0), pt(400.0, 0.0)]);
+        let mut with = Mesh::new();
+        draw(
+            &mut with,
+            lane(),
+            &View::full(400),
+            None,
+            std::slice::from_ref(&clip),
+            false,
+        );
+        let mut bare = Mesh::new();
+        draw(
+            &mut bare,
+            lane(),
+            &View::full(400),
+            None,
+            &[ClipDraw {
+                points: Vec::new(),
+                ..clip.clone()
+            }],
+            false,
+        );
+        assert!(
+            with.vertex_count() > bare.vertex_count(),
+            "the curve and its breakpoints add geometry over the bare clip"
+        );
+    }
+
+    #[test]
+    fn a_curve_point_is_hit_where_it_is_drawn_and_maps_back_through_the_axis() {
+        let body = lane_body(lane(), false);
+        let nav = View::full(400);
+        // The clip sits at 100 on the axis, so its point at t=100 is at 200.
+        let clip = ClipDraw {
+            offset: 100.0,
+            dur: 200.0,
+            ..curve_clip(vec![pt(0.0, 0.0), pt(100.0, 1.0), pt(200.0, 0.0)])
+        };
+        let (x0, x1) = clip_x_range(body, &nav, clip.offset, clip.dur).unwrap();
+        let cr = clip_rect(body, x0, x1);
+
+        // The peak point (t=100, value=1 -> the top of the clip).
+        let px = to_x(200.0, &nav, body);
+        let py = cr.y as f64;
+        assert_eq!(curve_hit(&clip, cr, body, &nav, px, py), Some(1));
+        // Away from any point: nothing (so the clip still moves by its body).
+        assert_eq!(curve_hit(&clip, cr, body, &nav, px + 40.0, py + 20.0), None);
+
+        // The inverse mapping an edit uses: pixels -> clip-relative time, value.
+        assert!((curve_time_at(body, &nav, clip.offset, px) - 100.0).abs() < 1.0);
+        assert!((curve_value_at(cr, 0.0, 1.0, false, py) - 1.0).abs() < 0.05);
+    }
+
     #[test]
     fn a_piano_roll_clip_draws_its_notes() {
         let clip = ClipDraw {
@@ -483,6 +698,8 @@ mod tests {
                     pitch: 67.0,
                 },
             ],
+            points: Vec::new(),
+            exp: false,
             min: 48.0, // pitch range low
             max: 72.0, // pitch range high
             label: Some("theme".into()),

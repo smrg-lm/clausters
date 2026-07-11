@@ -523,6 +523,15 @@ pub enum WidgetKind {
         channels: usize,
         base_bucket: usize,
         notes: Vec<super::track::Note>,
+        /// An **automation** clip: break-points over the clip's span (times in
+        /// timeline units relative to its `offset`, values over `[min, max]`),
+        /// drawn as the curve body and editable in place — the `bpf` editor's
+        /// model and shape math, placed on the multitrack. Takes precedence over
+        /// `notes` and the waveform body.
+        points: Vec<super::bpf::BpfPoint>,
+        /// An exponential display scale for the curve body's value axis (a
+        /// frequency-like range), as on the `bpf` view.
+        exp: bool,
         min: f32,
         max: f32,
         label: Option<String>,
@@ -886,6 +895,18 @@ impl Widget {
                     .map(|n| (n as usize).max(1))
                     .unwrap_or(DEFAULT_BASE_BUCKET),
                 notes: parse_notes(&node.props),
+                points: node
+                    .props
+                    .get("points")
+                    .and_then(|v| {
+                        super::bpf::parse_points(
+                            v,
+                            number(&node.props, "min", -1.0),
+                            number(&node.props, "max", 1.0),
+                        )
+                    })
+                    .unwrap_or_default(),
+                exp: node.props.get("exp").and_then(truthy).unwrap_or(false),
                 min: number(&node.props, "min", -1.0),
                 max: number(&node.props, "max", 1.0),
                 label: label(&node.props),
@@ -1248,6 +1269,8 @@ impl WidgetKind {
                 offset,
                 dur,
                 notes,
+                points,
+                exp,
                 min,
                 max,
                 label,
@@ -1260,6 +1283,14 @@ impl WidgetKind {
                         parse_notes(&std::iter::once(("notes".to_string(), v.clone())).collect());
                     true
                 }
+                "points" => match super::bpf::parse_points(v, *min, *max) {
+                    Some(parsed) => {
+                        *points = parsed;
+                        true
+                    }
+                    None => false,
+                },
+                "exp" => truthy(v).map(|b| *exp = b).is_some(),
                 "min" => set_f(min, v),
                 "max" => set_f(max, v),
                 "label" => set_label(label, v),

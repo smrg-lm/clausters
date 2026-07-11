@@ -36,6 +36,7 @@ use winit::window::{CursorGrabMode, Window, WindowId};
 use crate::gpu::Gpu;
 use crate::spectrogram::Stft;
 use crate::view::TimelineView;
+use crate::viewport::View;
 use crate::waveform::WaveformData;
 
 use super::bulk::MmapLoader;
@@ -248,6 +249,18 @@ enum Drag {
         orig_offset: f64,
         orig_dur: f64,
         grid: f64,
+    },
+    /// A break-point of an **automation clip** being dragged in place: the clip
+    /// and the point, plus the geometry mapping the cursor back onto the shared
+    /// axis and the clip's value range.
+    ClipPoint {
+        id: i32,
+        index: usize,
+        rect: Rect,
+        body: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        offset: f64,
     },
 }
 
@@ -487,7 +500,16 @@ impl App {
     /// straight to the audio server (without the `"points"` tag, which names
     /// the event payload, not a server argument); an unbound one emits
     /// `/gui_event id "points" <flat list…>` to the script.
-    fn emit_bpf(&self, def_id: i32, widget_id: i32) {
+    /// Whether clip `id` carries a break-point curve (an automation clip).
+    fn clip_has_curve(&self, def_id: i32, id: i32) -> bool {
+        self.host
+            .window_def(def_id)
+            .and_then(|t| t.find(id))
+            .and_then(track::clip_draw)
+            .is_some_and(|clip| !clip.points.is_empty())
+    }
+
+    fn emit_points(&self, def_id: i32, widget_id: i32) {
         let Some(args) = self
             .host
             .window_def(def_id)
@@ -1066,7 +1088,7 @@ impl App {
                         if let Some(index) = added {
                             self.set_drag(def_id, Drag::BpfPoint { id, index, body });
                         }
-                        self.emit_bpf(def_id, id);
+                        self.emit_points(def_id, id);
                         self.redraw(def_id);
                     }
                 } else if let Some(index) = hit_pt {
@@ -1110,6 +1132,44 @@ impl App {
                 // cursor and start a move (body) or resize (edge) drag.
                 let (fb_w, fb_h) = self.fb(def_id);
                 if let Some(h) = interact::clip_hit(&self.host, def_id, fb_w, fb_h, cx, cy) {
+                    // An automation clip: a break-point wins over the clip body
+                    // (as it wins over a segment in the `bpf` view), and Ctrl+click
+                    // adds one - or removes the one under the cursor. The same
+                    // gestures, now on a lane.
+                    let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
+                    if h.point.is_some() || (ctrl && self.clip_has_curve(def_id, h.id)) {
+                        if ctrl {
+                            if interact::clip_point_edit(
+                                &mut self.host,
+                                def_id,
+                                h.id,
+                                h.point,
+                                h.rect,
+                                h.body,
+                                &h.nav,
+                                h.offset,
+                                cx,
+                                cy,
+                            ) {
+                                self.emit_points(def_id, h.id);
+                                self.redraw(def_id);
+                            }
+                        } else if let Some(index) = h.point {
+                            self.set_drag(
+                                def_id,
+                                Drag::ClipPoint {
+                                    id: h.id,
+                                    index,
+                                    rect: h.rect,
+                                    body: h.body,
+                                    nav_start: h.nav.start,
+                                    nav_len: h.nav.len,
+                                    offset: h.offset,
+                                },
+                            );
+                        }
+                        return;
+                    }
                     let press_sample = h.nav.start
                         + h.nav.len * ((cx - h.body.x as f64) / h.body.w.max(1.0) as f64);
                     self.set_drag(
@@ -1335,6 +1395,23 @@ impl App {
                     orig_dur: *orig_dur,
                     grid: *grid,
                 },
+                Drag::ClipPoint {
+                    id,
+                    index,
+                    rect,
+                    body,
+                    nav_start,
+                    nav_len,
+                    offset,
+                } => DragMove::ClipPoint {
+                    id: *id,
+                    index: *index,
+                    rect: *rect,
+                    body: *body,
+                    nav_start: *nav_start,
+                    nav_len: *nav_len,
+                    offset: *offset,
+                },
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -1377,7 +1454,7 @@ impl App {
                 interact::bpf_edit(&mut self.host, def_id, id, |p, duration, lo, hi, exp| {
                     bpf::move_point(p, index, body, duration, lo, hi, exp, cx, cy);
                 });
-                self.emit_bpf(def_id, id);
+                self.emit_points(def_id, id);
                 self.redraw(def_id);
             }
             Some(DragMove::BpfCurve(id, segment, last_y, body_h)) => {
@@ -1392,7 +1469,7 @@ impl App {
                 {
                     *last_y = cy;
                 }
-                self.emit_bpf(def_id, id);
+                self.emit_points(def_id, id);
                 self.redraw(def_id);
             }
             Some(DragMove::Select(id, body_x, body_w, anchor)) => {
@@ -1439,6 +1516,38 @@ impl App {
                 self.host.sync_track_totals();
                 self.emit_clip(def_id, id);
                 self.redraw(def_id);
+            }
+            Some(DragMove::ClipPoint {
+                id,
+                index,
+                rect,
+                body,
+                nav_start,
+                nav_len,
+                offset,
+            }) => {
+                // The curve of an automation clip, edited in place: the cursor maps
+                // back through the shared axis (time) and the clip's value range,
+                // then the point moves with the `bpf` model's own semantics.
+                let nav = View {
+                    start: nav_start,
+                    len: nav_len,
+                };
+                if interact::clip_point_move(
+                    &mut self.host,
+                    def_id,
+                    id,
+                    index,
+                    rect,
+                    body,
+                    &nav,
+                    offset,
+                    cx,
+                    cy,
+                ) {
+                    self.emit_points(def_id, id);
+                    self.redraw(def_id);
+                }
             }
             Some(DragMove::None) | None => {}
         }
@@ -1608,6 +1717,15 @@ enum DragMove {
         orig_offset: f64,
         orig_dur: f64,
         grid: f64,
+    },
+    ClipPoint {
+        id: i32,
+        index: usize,
+        rect: Rect,
+        body: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        offset: f64,
     },
     None,
 }

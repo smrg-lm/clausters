@@ -216,15 +216,56 @@ pub fn move_point(
     }
     let dom = domain(points, duration);
     let t = (cx - body.x as f64) / body.w.max(1.0) as f64 * dom;
+    let frac = 1.0 - ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
+    place_point(
+        points,
+        i,
+        t,
+        fraction_to_value(frac as f32, lo, hi, exp),
+        dom,
+    );
+}
+
+/// Places breakpoint `i` at time `t` and `value` — the mapping-free core of a
+/// point drag: the time stays monotonic (clamped between its neighbours, and
+/// into `[0, dom]`), the value is taken as given (the caller mapped it out of
+/// its own display range). The pixel-mapped [`move_point`] and the clip-placed
+/// curve body (a clip's own axis is the shared timeline, not this body) both
+/// edit through here, so an envelope behaves the same wherever it is drawn.
+pub fn place_point(points: &mut [BpfPoint], i: usize, t: f64, value: f32, dom: f64) {
+    if i >= points.len() {
+        return;
+    }
     let t_lo = if i == 0 { 0.0 } else { points[i - 1].time };
     let t_hi = if i + 1 < points.len() {
         points[i + 1].time
     } else {
         dom
     };
-    let frac = 1.0 - ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
-    points[i].time = t.clamp(t_lo, t_hi);
-    points[i].value = fraction_to_value(frac as f32, lo, hi, exp);
+    points[i].time = t.clamp(t_lo.min(t_hi), t_hi);
+    points[i].value = value;
+}
+
+/// Inserts a breakpoint at `(t, value)`, inheriting the split segment's shape
+/// and curve (linear before the first point); returns its index. The
+/// mapping-free core of [`add_point`], shared with the clip curve body.
+pub fn insert_point(points: &mut Vec<BpfPoint>, t: f64, value: f32) -> usize {
+    let i = points.partition_point(|p| p.time <= t);
+    let (shape, curve) = if i > 0 {
+        (points[i - 1].shape, points[i - 1].curve)
+    } else {
+        (SHAPE_LINEAR, 0.0)
+    };
+    points.insert(
+        i,
+        BpfPoint {
+            time: t,
+            value,
+            shape,
+            curve,
+        },
+    );
+    i
 }
 
 /// Inserts a breakpoint at the cursor, inheriting the split segment's shape
@@ -243,23 +284,7 @@ pub fn add_point(
     let dom = domain(points, duration);
     let t = ((cx - body.x as f64) / body.w.max(1.0) as f64 * dom).clamp(0.0, dom);
     let frac = 1.0 - ((cy - body.y as f64) / body.h.max(1.0) as f64).clamp(0.0, 1.0);
-    let value = fraction_to_value(frac as f32, lo, hi, exp);
-    let i = points.partition_point(|p| p.time <= t);
-    let (shape, curve) = if i > 0 {
-        (points[i - 1].shape, points[i - 1].curve)
-    } else {
-        (SHAPE_LINEAR, 0.0)
-    };
-    points.insert(
-        i,
-        BpfPoint {
-            time: t,
-            value,
-            shape,
-            curve,
-        },
-    );
-    i
+    insert_point(points, t, fraction_to_value(frac as f32, lo, hi, exp))
 }
 
 /// Removes breakpoint `i`, keeping at least two points (an envelope with fewer
