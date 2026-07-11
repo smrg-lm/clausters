@@ -112,12 +112,14 @@ impl TimelineGroups {
     }
 }
 
-/// One timeline widget in some window: where it lives and which group it is in.
+/// One timeline widget in some window: where it lives, which group it is in,
+/// and its placement (start offset in timeline samples) on that group.
 #[derive(Clone, Copy)]
 struct Member {
     root: i32,
     id: i32,
     key: GroupKey,
+    offset: f64,
 }
 
 impl Host {
@@ -135,6 +137,7 @@ impl Host {
                     root,
                     id,
                     key: group_key(id, editor.link),
+                    offset: editor.offset,
                 });
             }
             for child in &widget.children {
@@ -156,13 +159,15 @@ impl Host {
             .map(|m| m.key)
     }
 
-    /// The timeline length of group `key`: the max of its members' registered
-    /// data extents (>= 1, so an empty group still navigates sanely).
+    /// The timeline length of group `key`: the max of its members' **placed**
+    /// data extents — each member's data occupies `[offset, offset + extent]`
+    /// on the shared timeline, so a clip placed late lengthens the group (>= 1,
+    /// so an empty group still navigates sanely).
     pub fn timeline_total(&self, key: GroupKey) -> usize {
         self.timeline_members()
             .iter()
             .filter(|m| m.key == key)
-            .map(|m| self.timelines.total_of(m.id))
+            .map(|m| m.offset.max(0.0).ceil() as usize + self.timelines.total_of(m.id))
             .max()
             .unwrap_or(0)
             .max(1)
@@ -313,6 +318,36 @@ impl Host {
         };
         state.playhead_at = at;
         self.mirror_timeline_group(key);
+        self.timeline_roots(key)
+    }
+
+    /// Sets widget `id`'s **placement** (start offset in timeline samples) on
+    /// its group. Unlike the group-wide keys this is written to the one
+    /// widget's own editor props (each clip carries its own offset), but it
+    /// changes the group's timeline length, so the group window is re-clamped
+    /// and every member repaints. Returns the roots to repaint.
+    pub fn set_timeline_offset(&mut self, id: i32, offset: f64) -> Vec<i32> {
+        let Some(key) = self.timeline_key(id) else {
+            return Vec::new();
+        };
+        let offset = offset.max(0.0);
+        let old_total = self.timeline_total(key);
+        for root in self.window_defs.values_mut() {
+            if let Some(editor) = root.find_mut(id).and_then(|w| w.kind.editor_mut()) {
+                editor.offset = offset;
+            }
+        }
+        // The placement changed the group length: a group showing its whole
+        // timeline keeps showing all of it (follows the growth/shrink); a
+        // zoomed one just re-clamps — the same rule as `set_timeline_total`.
+        let new_total = self.timeline_total(key);
+        if let Some(state) = self.timelines.states.get_mut(&key) {
+            if state.nav.len >= old_total as f64 {
+                state.nav = View::full(new_total);
+            } else {
+                state.nav.set_start(state.nav.start, new_total);
+            }
+        }
         self.timeline_roots(key)
     }
 
@@ -480,6 +515,11 @@ impl Host {
                         roots.extend(self.set_timeline_link(id, link));
                     }
                 }
+                "offset" => {
+                    if let Some(offset) = v.as_f64() {
+                        roots.extend(self.set_timeline_offset(id, offset));
+                    }
+                }
                 _ => {}
             }
         }
@@ -505,7 +545,7 @@ impl Host {
 pub(super) fn is_timeline_key(key: &str) -> bool {
     matches!(
         key,
-        "view_start" | "view_len" | "sel_start" | "sel_len" | "playhead_at" | "link"
+        "view_start" | "view_len" | "sel_start" | "sel_len" | "playhead_at" | "link" | "offset"
     )
 }
 
@@ -688,6 +728,28 @@ mod tests {
         host.handle_packet(set_msg(12, &[("link", OscType::Int(1))]), from());
         assert_eq!(host.timeline_key(12), Some(GroupKey::Link(1)));
         assert_eq!(editor_of(&host, 12).selection(), Some((0.0, 1.0)));
+    }
+
+    #[test]
+    fn placement_offset_lengthens_the_group_and_reclamps() {
+        let mut host = linked_host();
+        // Members 10/11 are 4 samples long, linked as group 1. Place member 11
+        // at timeline sample 6: the group timeline now spans 6 + 4 = 10.
+        host.handle_packet(set_msg(11, &[("offset", OscType::Float(6.0))]), from());
+        let (nav, total) = host.timeline_nav(10).expect("the linked member sees it");
+        assert_eq!(total, 10, "the placed member lengthened the group");
+        // A group showing its full timeline grows with the placement.
+        assert_eq!((nav.start, nav.len), (0.0, 10.0));
+        // The offset is per-member: member 10 is untouched, member 11 carries it.
+        assert_eq!(editor_of(&host, 10).offset, 0.0);
+        assert_eq!(editor_of(&host, 11).offset, 6.0);
+        // A zoomed window is re-clamped, not reset, when a placement shrinks the
+        // timeline back.
+        host.zoom_timeline(10, 0.5, 1.0); // len 5, pinned to the right edge
+        host.handle_packet(set_msg(11, &[("offset", OscType::Float(0.0))]), from());
+        let (nav, total) = host.timeline_nav(10).unwrap();
+        assert_eq!(total, 4, "back to the longest unplaced extent");
+        assert!(nav.start + nav.len <= 4.0, "the window stays inside");
     }
 
     #[test]

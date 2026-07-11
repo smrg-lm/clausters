@@ -165,6 +165,14 @@ impl RulerY {
 /// all of them. Without a `link` the widget navigates alone. The selection
 /// and playhead fields here are the group's mirrored copy (the group is the
 /// single writer once the widget is live); only the y axis stays per-widget.
+///
+/// `offset` is the widget's **placement** on its group's shared timeline (in
+/// timeline sample units): the view's own data sample 0 sits at timeline
+/// position `offset`, so a clip starting late draws shifted right and lengthens
+/// its group's timeline to `offset + data_len`. It is per-member (unlike the
+/// group-wide `link`/`sel_*`/`view_*`), but a change still re-clamps the group
+/// window and repaints every member, so it routes through the group model too.
+/// All members are at `offset = 0` until a multitrack layout places them.
 #[derive(Debug, Clone)]
 pub struct EditorProps {
     pub ruler: Ruler,
@@ -180,6 +188,7 @@ pub struct EditorProps {
     pub y_start: f64,
     pub y_len: f64,
     pub link: Option<i32>,
+    pub offset: f64,
 }
 
 impl EditorProps {
@@ -208,6 +217,7 @@ impl EditorProps {
                 .and_then(Value::as_i64)
                 .filter(|n| *n >= 0)
                 .map(|n| n as i32),
+            offset: number_f64(props, "offset", 0.0).max(0.0),
         }
     }
 
@@ -1355,6 +1365,24 @@ mod tests {
             }
             other => panic!("expected waveform, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn waveform_parses_its_placement_offset() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"waveform","data":[0.0,1.0],"offset":8.0},
+                {"id":2,"type":"waveform","data":[0.0,1.0],"offset":-3.0}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        assert_eq!(w.children[0].kind.editor().unwrap().offset, 8.0);
+        // A negative placement clamps to 0 (no clip starts before the timeline).
+        assert_eq!(w.children[1].kind.editor().unwrap().offset, 0.0);
+        // The default is un-placed.
+        let n = node(r#"{"type":"window","children":[{"id":3,"type":"waveform","data":[0.0]}]}"#);
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        assert_eq!(w.children[0].kind.editor().unwrap().offset, 0.0);
     }
 
     #[test]

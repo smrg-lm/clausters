@@ -273,6 +273,19 @@ fn nav_for(inputs: &FrameInputs, item: &TimelineItem, total: usize) -> View {
         .unwrap_or_else(|| View::full(total))
 }
 
+/// The **placed** navigation window a member's own data is drawn through: the
+/// group window shifted so the member's data sample 0 lands at timeline
+/// position `offset`. The GPU body upload uses this (its data is in local
+/// sample units); the time ruler and the selection/playhead overlay keep the
+/// timeline-unit window. At `offset = 0` (the un-placed default) it is the
+/// identity.
+fn placed_nav(nav: &View, offset: f64) -> View {
+    View {
+        start: nav.start - offset,
+        len: nav.len,
+    }
+}
+
 /// The current value of control bus `bus` from `source` (`0.0` without a source
 /// or for a negative/out-of-range bus) — the same rule the native front used.
 fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
@@ -834,6 +847,7 @@ pub(crate) fn render(
             TimelineKind::Waveform { .. } => {
                 if let Some(slot) = waveforms.get_mut(&item.id) {
                     let nav = nav_for(inputs, item, slot.view.total_samples());
+                    let nav = placed_nav(&nav, item.editor.offset);
                     slot.view
                         .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
                     slot.view
@@ -848,6 +862,7 @@ pub(crate) fn render(
             } => {
                 if let Some(slot) = spectrograms.get_mut(&item.id) {
                     let nav = nav_for(inputs, item, slot.total_samples());
+                    let nav = placed_nav(&nav, item.editor.offset);
                     for view in &mut slot.views {
                         view.set_display(
                             *db_floor,
@@ -1011,6 +1026,7 @@ mod tests {
             y_start: 0.0,
             y_len: 1.0,
             link: None,
+            offset: 0.0,
         }
     }
 
@@ -1030,6 +1046,24 @@ mod tests {
         assert_eq!(y_only.h, 200.0);
         assert_eq!(y_only.x, 10.0 + RULER_W);
         assert_eq!(timeline_body(rect, &editor(Ruler::Off, RulerY::Off)), rect);
+    }
+
+    #[test]
+    fn placed_nav_shifts_the_body_window_by_the_offset() {
+        let nav = View {
+            start: 100.0,
+            len: 400.0,
+        };
+        // The un-placed default is the identity.
+        assert_eq!(placed_nav(&nav, 0.0), nav);
+        // A member placed at timeline sample 100 draws its data sample 0 there:
+        // the local window starts one clip-length earlier.
+        let placed = placed_nav(&nav, 100.0);
+        assert_eq!((placed.start, placed.len), (0.0, 400.0));
+        // Placing further right pushes the local window negative (data before
+        // the visible origin) without changing the span.
+        let placed = placed_nav(&nav, 250.0);
+        assert_eq!((placed.start, placed.len), (-150.0, 400.0));
     }
 
     #[test]
