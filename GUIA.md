@@ -63,7 +63,11 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   playhead barriendo los clips; arrastrar un clip lo mueve, y con `follow=True`
   la composición se re-agenda: suena donde lo soltaste. El carril **sweep** es una
   automatización: su cuerpo es la **curva**, y se edita ahí mismo (arrastrar un
-  punto, Ctrl+click agrega/quita) → se **oye** el filtro seguir la curva dibujada. Refrescar antes el
+  punto, Ctrl+click agrega/quita) → se **oye** el filtro seguir la curva dibujada.
+- **Patcher del grupo lógico (GUI).** Un `Group{logical}` se dibuja como *patch*
+  (cajas de miembro, nodos de bus, un cable por `control ↔ bus`); arrastrar un
+  puerto sobre otro bus lo **recablea** (sobre vacío, lo descablea) y la próxima
+  realización manda el `GraphDef` cableado como se ve → **cambia lo que suena**. Refrescar antes el
   binario bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Salud de tiempo real bajo carga.** `cargo run --release --example stress`
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;

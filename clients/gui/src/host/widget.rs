@@ -536,6 +536,17 @@ pub enum WidgetKind {
         max: f32,
         label: Option<String>,
     },
+    /// A **patcher** view of a bus-wired node graph (a GraphDef): member boxes
+    /// with a port per wired control, bus nodes, and a wire per
+    /// `(member, control) ↔ bus` connection. Bipartite on purpose — a GraphDef
+    /// knows that a control *touches* a bus, and which end writes is the server's
+    /// analysis, not a guess from a control's name. Dragging a port onto a bus
+    /// rewires it (onto empty space, unwires); the edit leaves as a flat
+    /// `"wire"` event. The model's *logical grouping*, on screen. A leaf.
+    Graph {
+        graph: super::graph::GraphDraw,
+        label: Option<String>,
+    },
     /// A type this build does not render yet. Laid out so it reserves space, but
     /// not painted. Carries the type tag for logs.
     Unknown(String),
@@ -911,6 +922,10 @@ impl Widget {
                 max: number(&node.props, "max", 1.0),
                 label: label(&node.props),
             },
+            "graph" => WidgetKind::Graph {
+                graph: parse_graph(&node.props),
+                label: label(&node.props),
+            },
             other => WidgetKind::Unknown(other.to_string()),
         };
         // Only containers carry children into the typed tree; a leaf's children
@@ -1251,6 +1266,32 @@ impl WidgetKind {
                 "label" => set_label(label, v),
                 _ => false,
             },
+            WidgetKind::Graph { graph, label } => match key {
+                // The whole patch at once (its parts are arrays, and a `/gui_set`
+                // value is a scalar — so they ride as their JSON, like `points`).
+                "members" | "buses" | "wires" => {
+                    // A `/gui_set` value is a scalar, so an array rides as its
+                    // JSON string (the `points` carrier, again).
+                    let value = match v {
+                        Value::String(s) => match serde_json::from_str::<Value>(s) {
+                            Ok(parsed) => parsed,
+                            Err(_) => return false,
+                        },
+                        other => other.clone(),
+                    };
+                    let props = std::iter::once((key.to_string(), value)).collect();
+                    let parsed = parse_graph(&props);
+                    match key {
+                        "members" if !parsed.members.is_empty() => graph.members = parsed.members,
+                        "buses" if !parsed.buses.is_empty() => graph.buses = parsed.buses,
+                        "wires" => graph.wires = parsed.wires,
+                        _ => return false,
+                    }
+                    true
+                }
+                "label" => set_label(label, v),
+                _ => false,
+            },
             WidgetKind::Track {
                 label,
                 height,
@@ -1323,6 +1364,69 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<super::track::Note
             })
         })
         .collect()
+}
+
+/// Parses a `graph` widget's patch: `members` (each a `name` plus its wired
+/// control `ports`), `buses` (names, `OUT` among them) and `wires` (flat triples
+/// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
+/// still draws.
+fn parse_graph(props: &serde_json::Map<String, Value>) -> super::graph::GraphDraw {
+    use super::graph::{GraphDraw, Member, Wire};
+
+    let members = props
+        .get("members")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|m| {
+                    Some(Member {
+                        name: m.get("name")?.as_str()?.to_string(),
+                        ports: m
+                            .get("ports")
+                            .and_then(Value::as_array)
+                            .map(|ps| {
+                                ps.iter()
+                                    .filter_map(|p| p.as_str().map(str::to_string))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let buses: Vec<String> = props
+        .get("buses")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|b| b.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let wires = props
+        .get("wires")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .chunks_exact(3)
+                .filter_map(|w| {
+                    Some(Wire {
+                        member: w[0].as_u64()? as usize,
+                        control: w[1].as_str()?.to_string(),
+                        bus: w[2].as_str()?.to_string(),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    GraphDraw {
+        members,
+        buses,
+        wires,
+    }
 }
 
 /// The `freq_scale` property (`"linear"`/`"log"`/`"mel"`/`"bark"`), falling

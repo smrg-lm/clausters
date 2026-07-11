@@ -16,9 +16,11 @@ shared-memory-backed ``meter``/``scope``, the audio-tap ``scope``
 live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
 a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
 edits flow back as flat ``"points"`` events — see `env_to_points` /
-`points_to_env` for the `clausters.defs.Env` round trip), and a multitrack
+`points_to_env` for the `clausters.defs.Env` round trip), a multitrack
 ``track``/``clip`` timeline (clips placed by ``offset``/``dur`` on one shared
-time axis — the DAW-style track editor);
+time axis — the DAW-style track editor, whose clip bodies are a take, a
+piano-roll or an editable automation curve) and a ``graph`` **patcher** of a
+bus-wired node graph (drag a port onto a bus to rewire it);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.editor.Editor` drives that
 multitrack view from a `clausters.model` composition — rendering the model tree
@@ -50,6 +52,7 @@ from .guidef import (
     clip,
     correlation,
     env_to_points,
+    graph,
     knob,
     label,
     lissajous,
@@ -105,6 +108,7 @@ __all__ = [
     "plot",
     "track",
     "clip",
+    "graph",
     "canvas",
     "samples_to_blob",
     "samples_to_file",

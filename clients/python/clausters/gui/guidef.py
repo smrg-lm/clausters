@@ -566,6 +566,38 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
     return node("clip", id=id, dur=dur, **extra, **props)
 
 
+def graph(id: int, *, members=None, buses=None, wires=None,
+          label: str | None = None, **props) -> dict:
+    """A ``graph`` **patcher**: a bus-wired node graph (a `clausters.defs.GraphDef`)
+    drawn as member boxes, bus nodes, and a wire per connection — the *logical*
+    side of a composition, where materials relate by processing rather than by
+    time.
+
+    The view is deliberately **bipartite**, because that is what a GraphDef knows:
+    a member's control *touches* a bus. Which end writes and which reads is the
+    server's own analysis (it sorts the graph), so the patch shows the connection
+    and leaves the direction to the engine.
+
+    - ``members`` — the nodes, each ``(def_name, [control, …])``: the def and the
+      controls that are wired (each drawn as a port on its box).
+    - ``buses`` — the internal bus names, plus ``"OUT"`` (the hardware) when used.
+    - ``wires`` — the connections, each ``(member_index, control, bus)``.
+
+    Dragging a port onto a bus **rewires** that control; dropping it on empty
+    space unwires it. Either way the edit flows back as ``/gui_event <id> "wire"
+    <member> <control> <bus>`` (an empty bus = unwired), so a driver updates the
+    logical group and re-realizes it — the same edit-back pattern the clips use.
+    """
+    extra = _drop_none(
+        members=[{"name": str(name), "ports": [str(c) for c in ports]}
+                 for name, ports in members] if members is not None else None,
+        buses=[str(b) for b in buses] if buses is not None else None,
+        wires=[x for w in wires for x in (int(w[0]), str(w[1]), str(w[2]))]
+        if wires is not None else None,
+        label=label)
+    return node("graph", id=id, **extra, **props)
+
+
 def canvas(id: int, shader: str | None = None, *, params=None, buses=None,
            label: str | None = None, **props) -> dict:
     """A ``canvas`` running a script-supplied WGSL shader over the widget area --

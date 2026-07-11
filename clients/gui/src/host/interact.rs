@@ -159,6 +159,46 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     Some(args)
 }
 
+/// Completes a rewiring drag on a `graph` patch: the dragged port (`member` and
+/// its control) is pointed at the bus under the cursor — or at **none**, when the
+/// release lands on empty space, which unwires it. Writes the patch in the host
+/// tree and returns the edit as `(member, control, bus)` (an empty bus = unwired)
+/// — the payload of the flat `"wire"` event a script re-realizes from. `None`
+/// when there was nothing to rewire.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn wire_set(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    port: (usize, usize),
+    area: Rect,
+    cx: f64,
+    cy: f64,
+) -> Option<(usize, String, String)> {
+    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
+    let WidgetKind::Graph { graph, .. } = &mut w.kind else {
+        return None;
+    };
+    let (member, index) = port;
+    let control = graph.members.get(member)?.ports.get(index)?.clone();
+    let bus = super::graph::bus_hit(area, graph, cx, cy)
+        .and_then(|b| graph.buses.get(b).cloned())
+        .unwrap_or_default();
+
+    // One wire per (member, control): a control touches one bus, or none.
+    graph
+        .wires
+        .retain(|wire| !(wire.member == member && wire.control == control));
+    if !bus.is_empty() {
+        graph.wires.push(super::graph::Wire {
+            member,
+            control: control.clone(),
+            bus: bus.clone(),
+        });
+    }
+    Some((member, control, bus))
+}
+
 /// Runs `f` over an automation clip's break-points in the host tree — the one
 /// door a curve edit on a lane goes through (the clip sibling of `bpf_edit`).
 #[cfg(not(target_arch = "wasm32"))]
@@ -519,5 +559,78 @@ mod tests {
         assert_eq!(args[1], OscType::Float(150.0));
         assert_eq!(args[2], OscType::Float(250.0));
         assert_eq!(clip_event_args(tree, 11).unwrap()[1], OscType::Float(0.0));
+    }
+
+    /// A window (id 1) with a `graph` patch (id 7): a source and a sink wired
+    /// through the internal bus `mix`, the sink's output on `OUT`.
+    fn graph_host() -> Host {
+        let json = r#"{"type":"window","children":[
+            {"id":7,"type":"graph","label":"chain",
+             "members":[{"name":"gsrc","ports":["out"]},
+                        {"name":"gsink","ports":["in","out"]}],
+             "buses":["mix","OUT"],
+             "wires":[0,"out","mix", 1,"in","mix", 1,"out","OUT"]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(json.into())],
+            }),
+            from(),
+        );
+        host
+    }
+
+    fn patch(host: &Host) -> super::super::graph::GraphDraw {
+        match &host.window_def(1).unwrap().find(7).unwrap().kind {
+            WidgetKind::Graph { graph, .. } => graph.clone(),
+            other => panic!("expected a graph, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_wire_dropped_on_a_bus_rewires_the_control_and_reports_it() {
+        let mut host = graph_host();
+        let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let g = patch(&host);
+        // Drag the source's `out` (member 0, port 0) onto the `OUT` bus (index 1).
+        let bus = super::super::graph::bus_rect(area, &g, 1);
+        let edit = wire_set(
+            &mut host,
+            1,
+            7,
+            (0, 0),
+            area,
+            bus.x as f64 + 4.0,
+            bus.y as f64 + 4.0,
+        )
+        .unwrap();
+        assert_eq!(edit, (0, "out".to_string(), "OUT".to_string()));
+
+        let g = patch(&host);
+        let src: Vec<_> = g.wires.iter().filter(|w| w.member == 0).collect();
+        assert_eq!(src.len(), 1, "a control touches one bus at a time");
+        assert_eq!(src[0].bus, "OUT", "and it is the one it was dropped on");
+    }
+
+    #[test]
+    fn a_wire_dropped_on_empty_space_unwires_it() {
+        let mut host = graph_host();
+        let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+        // Released over the middle of the patch: no bus there.
+        let edit = wire_set(&mut host, 1, 7, (1, 0), area, 300.0, 380.0).unwrap();
+        assert_eq!(
+            edit,
+            (1, "in".to_string(), String::new()),
+            "an empty bus = unwired"
+        );
+        assert!(
+            !patch(&host)
+                .wires
+                .iter()
+                .any(|w| w.member == 1 && w.control == "in"),
+            "the wire is gone from the patch"
+        );
     }
 }

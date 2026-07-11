@@ -126,6 +126,23 @@ The `quant` you pass is a *musical* grid (`0.5` = half a beat). It becomes the
 lane's drag grid, so the grid a clip is dropped on is the grid the model
 re-schedules on — what you see is what plays.
 
+### Automation, and the logical side
+
+An `Automation` placed in the composition draws its **curve** as the clip's body —
+the same break-point model the envelope editor draws — and it is edited in place:
+drag a point, Ctrl+click to add one or remove the one under the cursor. The edit
+lands on the automation's `Env`, which is what the next realization plays, so the
+curve you draw is the curve you hear.
+
+A **logical** group is not a timeline at all: its members relate by processing, so
+it draws as a `graph` **patch** — a box per member, a node per bus, and a wire per
+connection. The patch is deliberately undirected: a GraphDef knows that a control
+*touches* a bus, and which end writes is the server's own analysis, so the view
+shows the connection and leaves the direction to the engine. Dragging a port onto
+a bus rewires that control (onto empty space, unwires it), and the edit rewrites
+the group — so the next realization sends a GraphDef wired the way the patch is
+drawn.
+
 `clients/python/examples/gui_composer.py` is the whole loop in one script: a take
 bounced offline and loaded from disk, a melody, a pattern, all three composed,
 edited on screen and heard.

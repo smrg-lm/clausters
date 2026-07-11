@@ -32,13 +32,13 @@ resolves it), so it needs no protocol of its own.
 import itertools
 
 from .. import _native
-from ..model.group import COMPOSITIONAL, Group
+from ..model.group import COMPOSITIONAL, LOGICAL, Group
 from ..model.material import Buffer, Material
 from ..defs.ugens import points_to_env
 from ..model.realize import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
-from .guidef import clip, track, window
+from .guidef import clip, graph, track, window
 
 __all__ = ["Editor"]
 
@@ -119,6 +119,9 @@ class Editor:
         #: widget id -> material, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
+        #: widget id -> the logical `Group` a `graph` patch draws, which a
+        #: rewiring edit writes through.
+        self._patches: dict = {}
         self._host = None
         self._window = None
         #: The realization in flight: where it went, on what clock, and the
@@ -169,17 +172,26 @@ class Editor:
     def render(self) -> dict:
         """The composition as a ``window``-rooted GuiDef: one `track` lane per
         member of the root group, each holding its members as clips on the shared
-        time axis. Pure — it builds the tree and the id registry, and sends
-        nothing."""
+        time axis — and a `graph` **patch** for every *logical* group, whose
+        members relate by processing rather than by time (so a lane would be the
+        wrong shape for it). Pure — it builds the tree and the id registry, and
+        sends nothing."""
         self._ids = itertools.count(self._base_id)
         self._clips = {}
         self._lanes = {}
+        self._patches = {}
 
         lanes: list = []
+        patches: list = []
         root = self.material
         if isinstance(root, Group) and root.kind == COMPOSITIONAL:
             for member in root.handles:
-                lanes += self._lanes_for(member.material, member.offset, root, member)
+                if isinstance(member.material, Group) and member.material.kind == LOGICAL:
+                    patches.append(self._patch_for(member.material))
+                else:
+                    lanes += self._lanes_for(member.material, member.offset, root, member)
+        elif isinstance(root, Group) and root.kind == LOGICAL:
+            patches.append(self._patch_for(root))
         else:
             lanes += self._lanes_for(root, float(root.onset or 0.0), None, None)
 
@@ -187,8 +199,36 @@ class Editor:
         # DAW convention); every lane carries the tempo/rate its ticks read.
         if lanes:
             lanes[-1]["ruler"] = "beats"
-        return window(*lanes, title=self.title, w=self.size[0], h=self.size[1],
-                      layout="col")
+        return window(*lanes, *patches, title=self.title, w=self.size[0],
+                      h=self.size[1], layout="col")
+
+    def _patch_for(self, group) -> dict:
+        """A **logical** group as a `graph` patch: its members are the boxes (a def
+        name plus the controls that name a bus — its ports), the group's buses the
+        bus nodes (``OUT``, the hardware, among them), and a wire per
+        ``(member, control) ↔ bus`` pair. The same 1:1 mapping onto a `GraphDef`
+        that realization uses, drawn instead of sent."""
+        wid = next(self._ids)
+        members, wires, buses = [], [], []
+        for i, (_offset, _dur, child) in enumerate(group.members):
+            controls = dict(getattr(child, "controls", None) or {})
+            maps = dict(getattr(child, "maps", None) or {})
+            ports = [c for c, v in controls.items() if isinstance(v, str)]
+            ports += [c for c in maps if c not in ports]
+            members.append((child.def_name, ports))
+            for control in ports:
+                bus = controls.get(control) or maps.get(control)
+                if isinstance(bus, str):
+                    wires.append((i, control, bus))
+                    if bus not in buses:
+                        buses.append(bus)
+        # The group's declared buses first (its own vocabulary), then anything a
+        # member names that the group did not declare (like the hardware `OUT`).
+        declared = [spec["name"] for spec in group._bus_specs]
+        buses = declared + [b for b in buses if b not in declared]
+        self._patches[wid] = group
+        return graph(wid, members=members, buses=buses, wires=wires,
+                     label=group.name or "patch")
 
     def open(self, host, id: int | None = None) -> int:
         """`render` the composition and open it on ``host`` (a
@@ -233,6 +273,8 @@ class Editor:
             return False
         if addr != "/gui_event" or len(args) < 2:
             return False
+        if args[1] == "wire":
+            return self._apply_wire(int(args[0]), args[2:])
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -256,6 +298,29 @@ class Editor:
             new_offset = self._snap(self.units_to_beats(offset)) - placed.base
         new_dur = self._snap(self.units_to_beats(dur)) if resized else None
         placed.owner.move(member, new_offset, new_dur)
+        if self.follow:
+            self.rerealize()
+        return True
+
+    def _apply_wire(self, wid: int, values) -> bool:
+        """A control rewired on a `graph` patch (``"wire" <member> <control>
+        <bus>``, an empty bus = unwired): the **logical group** is rewritten — the
+        member `Generator`'s control now names that bus — so the next realization
+        sends a `GraphDef` wired the way the patch is drawn."""
+        group = self._patches.get(wid)
+        if group is None or len(values) < 3:
+            return False
+        index, control, bus = int(values[0]), str(values[1]), str(values[2])
+        members = group.members
+        if not 0 <= index < len(members):
+            return False
+        generator = members[index][2]
+        controls = dict(generator.controls or {})
+        if bus:
+            controls[control] = bus
+        else:
+            controls.pop(control, None)
+        generator.controls = controls
         if self.follow:
             self.rerealize()
         return True

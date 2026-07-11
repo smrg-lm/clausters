@@ -43,6 +43,7 @@ use super::bulk::MmapLoader;
 use super::canvas::CanvasView;
 use super::fetch::{BufferFetches, FetchStep, WaveWant};
 use super::frame::{self, SpectrogramSlot, WaveformSlot};
+use super::graph;
 use super::interact::{self, slider_t, value_of};
 use super::layout::Rect;
 use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
@@ -249,6 +250,14 @@ enum Drag {
         orig_offset: f64,
         orig_dur: f64,
         grid: f64,
+    },
+    /// A wire being pulled from a `graph` patch's port: the widget, the port
+    /// (member, control) and the widget's area — released over a bus to rewire
+    /// it, over empty space to unwire.
+    Wire {
+        id: i32,
+        port: (usize, usize),
+        area: Rect,
     },
     /// A break-point of an **automation clip** being dragged in place: the clip
     /// and the point, plus the geometry mapping the cursor back onto the shared
@@ -1105,6 +1114,20 @@ impl App {
                     );
                 }
             }
+            WidgetKind::Graph { ref graph, .. } => {
+                // A patch's port is the grab point of a rewiring drag; the rest of
+                // the patch is display.
+                if let Some(port) = graph::port_hit(rect, graph, cx, cy) {
+                    self.set_drag(
+                        def_id,
+                        Drag::Wire {
+                            id,
+                            port,
+                            area: rect,
+                        },
+                    );
+                }
+            }
             WidgetKind::Track {
                 snap, ref editor, ..
             } => {
@@ -1395,6 +1418,7 @@ impl App {
                     orig_dur: *orig_dur,
                     grid: *grid,
                 },
+                Drag::Wire { .. } => DragMove::None,
                 Drag::ClipPoint {
                     id,
                     index,
@@ -1649,6 +1673,28 @@ impl App {
                 self.redraw(def_id);
             }
             Some(Drag::Vertical { .. }) => self.release_pointer(def_id),
+            Some(Drag::Wire { id, port, area }) => {
+                // Released over a bus: the control is rewired to it. Over empty
+                // space: unwired (the bus is reported empty). Either way the tree
+                // is written and the edit leaves as a flat `"wire"` event, so the
+                // script updates the logical group and re-realizes it.
+                let (cx, cy) = self.windows.get(&def_id).map_or((0.0, 0.0), |w| w.cursor);
+                if let Some((member, control, bus)) =
+                    interact::wire_set(&mut self.host, def_id, id, port, area, cx, cy)
+                {
+                    self.emit(
+                        def_id,
+                        id,
+                        vec![
+                            OscType::String("wire".into()),
+                            OscType::Int(member as i32),
+                            OscType::String(control),
+                            OscType::String(bus),
+                        ],
+                    );
+                    self.redraw(def_id);
+                }
+            }
             _ => {}
         }
     }
@@ -1677,6 +1723,13 @@ impl App {
             sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
             cursor,
             timelines: self.host.timelines(),
+            // A rewiring drag in flight draws its wire to the pointer.
+            wiring: match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
+                Some(Drag::Wire { id, port, .. }) => {
+                    cursor.map(|(cx, cy)| (*id, *port, (cx as f32, cy as f32)))
+                }
+                _ => None,
+            },
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;

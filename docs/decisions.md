@@ -338,3 +338,28 @@ that reads a buffer works, at any quality — and the "data vs. process" split t
 model is built on holds at its most tempting exception. The one concession is
 practical: such an event sets `legato = 1` so a take sounds its whole length,
 where a note's default would cut it short.
+
+## The patcher shows a connection, not a direction
+
+The logical side of a composition — members wired to each other through buses —
+is drawn by the `graph` widget. The obvious design is a directed patch: outputs on
+one side, inputs on the other, arrows between them. It cannot be built honestly.
+
+**Context:** a GraphDef says only that a member's *control* names a bus
+(`{"out": "mix"}`, `{"in": "mix"}`). Which end of that bus writes and which reads
+is not in the data — it is the **server's** analysis, which sorts the graph
+topologically before it runs. A view could guess the direction from a control's
+name ("out" writes, "in" reads), but that is a convention, not a contract: a def
+is free to name its controls anything, and the renderer would then draw arrows
+that are simply wrong.
+
+**Decision:** the patch is **bipartite** — member boxes on one side, bus nodes on
+the other, and a wire per `(member, control) ↔ bus` pair. It shows the
+*connection*, which is what the data knows, and leaves the *direction* to the
+engine, which is what decides it.
+
+**Consequence:** the view can never lie about signal flow, and the edit stays
+well-defined: rewiring means pointing a control at another bus (or at none), one
+wire per control, which is exactly the mutation the model and the GraphDef both
+accept. A directed rendering could be layered on later — but only from
+information the server surfaces, not from a name.

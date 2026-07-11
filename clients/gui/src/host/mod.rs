@@ -39,6 +39,7 @@ pub mod controls;
 pub mod fetch;
 pub mod font;
 pub mod frame;
+pub mod graph;
 pub mod guidef;
 pub mod interact;
 pub mod layout;

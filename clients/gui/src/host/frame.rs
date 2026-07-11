@@ -31,7 +31,7 @@ use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
-use super::{BusSource, bpf, controls, meters, phasescope, plot, spectrum, track};
+use super::{BusSource, bpf, controls, graph, meters, phasescope, plot, spectrum, track};
 
 /// The window's clear color (the dark chrome backdrop).
 pub(crate) const CLEAR: wgpu::Color = wgpu::Color {
@@ -258,6 +258,9 @@ pub(crate) struct FrameInputs<'a> {
     /// The host's timeline navigation groups: each waveform/spectrogram draws
     /// its group's shared window (linked views navigate as one).
     pub(crate) timelines: &'a TimelineGroups,
+    /// A rewiring drag in flight on a `graph` patch: the widget, the port being
+    /// dragged and the cursor — drawn as a wire following the pointer.
+    pub(crate) wiring: Option<(i32, (usize, usize), (f32, f32))>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -274,6 +277,7 @@ impl Default for FrameInputs<'_> {
             sample_clock: 0.0,
             cursor: None,
             timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
+            wiring: None,
         }
     }
 }
@@ -652,6 +656,15 @@ pub(crate) fn render(
                     clips,
                     editor: editor.clone(),
                 });
+            }
+            WidgetKind::Graph { graph, label } => {
+                // The patcher view of a logical group: drawn in the base mesh
+                // (flat geometry, like the other static views).
+                let live = inputs
+                    .wiring
+                    .filter(|(id, _, _)| Some(*id) == p.widget.id)
+                    .map(|(_, port, cursor)| (port, cursor));
+                graph::draw(&mut mesh, p.rect, graph, label.as_deref(), live);
             }
             WidgetKind::NodeTree {
                 group,

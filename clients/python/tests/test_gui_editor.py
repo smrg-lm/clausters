@@ -286,6 +286,63 @@ def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
         [3 * BEAT, 3000.0])
 
 
+# ---- the logical group: a patch, not a lane ----
+
+def patch_song() -> tuple:
+    """A composition with a logical group: source -> sink through a private bus."""
+    from clausters.model import Generator
+    from clausters.model.group import LOGICAL
+
+    src = Generator("gsrc", controls={"out": "mix", "level": 1.0})
+    sink = Generator("gsink", controls={"in": "mix", "out": "OUT"})
+    chain = Group([src, sink], kind=LOGICAL, name="chain", buses=["mix"])
+    return Group([(0.0, chain)], name="song"), chain, src
+
+
+def patches(tree: dict) -> list:
+    return [c for c in tree["children"] if c["type"] == "graph"]
+
+
+def test_a_logical_group_draws_as_a_patch_not_a_lane():
+    song, _chain, _src = patch_song()
+    tree = editor(song).render()
+    assert lanes(tree) == [], "processing is not a timeline: no lane for it"
+    (patch,) = patches(tree)
+
+    assert patch["label"] == "chain"
+    assert [m["name"] for m in patch["members"]] == ["gsrc", "gsink"]
+    # A port per control that names a bus (a plain number is a value, not a wire).
+    assert patch["members"][0]["ports"] == ["out"]
+    assert patch["buses"] == ["mix", "OUT"]      # the group's own, then the hardware
+    # The wires, flat: (member, control, bus).
+    assert patch["wires"] == [0, "out", "mix", 1, "in", "mix", 1, "out", "OUT"]
+
+
+def test_rewiring_a_port_rewrites_the_logical_group():
+    song, _chain, src = patch_song()
+    ed = editor(song)
+    (patch,) = patches(ed.render())
+
+    # Dropped on the hardware bus: the source now writes straight to OUT.
+    assert ed.apply("/gui_event", [patch["id"], "wire", 0, "out", "OUT"])
+    assert src.controls["out"] == "OUT"
+    assert src.controls["level"] == 1.0, "the untouched controls stay"
+
+    # The GraphDef the next realization sends follows the patch: the source's
+    # `out` now names the hardware, not the private bus.
+    _song, chain, _src = patch_song()
+    Editor(Group([(0.0, chain)], name="song"), sample_rate=SR, tempo=TEMPO)
+    ed2 = editor(Group([(0.0, chain)], name="song"))
+    (patch2,) = patches(ed2.render())
+    ed2.apply("/gui_event", [patch2["id"], "wire", 0, "out", "OUT"])
+    spec = chain.to_graphdef().spec()
+    assert spec["members"][0]["controls"]["out"] == "OUT"
+
+    # Dropped on empty space: unwired (the control names no bus at all).
+    assert ed.apply("/gui_event", [patch["id"], "wire", 0, "out", ""])
+    assert "out" not in src.controls
+
+
 # ---- realization: the edited composition plays what the screen shows ----
 
 def _embed_or_skip():
