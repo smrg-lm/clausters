@@ -20,7 +20,9 @@ edits flow back as flat ``"points"`` events — see `env_to_points` /
 ``track``/``clip`` timeline (clips placed by ``offset``/``dur`` on one shared
 time axis — the DAW-style track editor);
 live updates flow through ``/gui_set`` and interactions come back as
-``/gui_event``/``/gui_closed``. A ``waveform`` can also name a server buffer, a
+``/gui_event``/``/gui_closed``. `clausters.gui.editor.Editor` drives that
+multitrack view from a `clausters.model` composition — rendering the model tree
+to a GuiDef, applying the clip edit-backs onto it, and re-realizing it. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
 with ``Server.tap``). A widget can also be *bound*
@@ -40,6 +42,7 @@ oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_multitrack`` for the DAW-style track timeline).
 """
 
+from .editor import Editor
 from .guidef import (
     bpf,
     button,
@@ -77,6 +80,7 @@ from .host import DEFAULT_PORT, GuiHost
 __all__ = [
     "GuiHost",
     "DEFAULT_PORT",
+    "Editor",
     "node",
     "window",
     "panel",

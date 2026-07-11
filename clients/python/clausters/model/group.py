@@ -140,6 +140,14 @@ class Group(Material):
         """The members as ``(offset, dur, material)`` triples, insertion order."""
         return [(m.offset, m.dur, m.material) for m in self._members]
 
+    @property
+    def handles(self) -> list:
+        """The member **handles** (the objects `add` returns), insertion order —
+        the stable identities `remove` and `move` take. Reading a placement is
+        `members`; holding on to one across edits (as an editor keying its
+        widgets by member does) needs these."""
+        return list(self._members)
+
     def __len__(self):
         return len(self._members)
 
