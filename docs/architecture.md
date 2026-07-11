@@ -268,6 +268,77 @@ The lifecycle is factory (compiler thread, `ffi_lock`, `-single -ftz 2`, stdlib 
 
 **Why Faust UI labels are the control names** (a deliberate decision, not a leftover): a def's parameters are named by whoever writes the def — exactly like the `controls` array in the UGen JSON format. Inventing a second naming layer (renaming, indices-only, a Clausters-side mapping table) would add a translation step for zero expressiveness: the label *is* the parameter's name in both def families, and `/s_new`/`/n_set` address both identically. Group paths (`hgroup`/`vgroup`) are ignored on purpose — bare labels, first declaration wins on collision. The two reserved names `out`/`in` (first output/input bus) come *after* the def's own params, and a def that declares its own `out`/`in` control wins over the reserved meaning. UI elements are plain values written by `/n_set` (zone stores, RT-safe) and can also be **bound to a bus** with `/n_map`/`/n_mapa` — the same mechanism unifies UGen controls and Faust zones (see *Control/bus mapping* above). The two reserved `out`/`in` routing controls are not mappable.
 
+## The GUI host: structure, and how to add a widget
+
+The GUI (`clients/gui`) is a **separate process**, not code linked into the audio
+server — it is a peer that speaks the `/gui_*` protocol to the language clients
+and, with its own client leg, speaks the audio protocol to the server (see
+[Clients and language bindings](clients.md) for the why). Its internals follow one
+split, and every rule below falls out of it:
+
+| Path | Contents |
+|---|---|
+| `src/host/mod.rs` | The protocol core: the `Host`, the command dispatch (`/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`/`/gui_bind`), the `Registry`, `HostEffect` |
+| `src/host/widget.rs` | `WidgetKind` — the typed tree the renderer reads — plus its JSON parse and its `/gui_set` `apply` |
+| `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
+| `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only |
+| `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
+| `src/host/{track,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window |
+| `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
+| `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
+| `src/host/{bulk,fetch,shm,mapfile}.rs` | The data seams: a local resource is mapped (native) or fetched (browser), a server buffer is pulled over the client leg, control buses are read from the shared segment |
+
+Four rules hold the design together, and breaking any of them is what a review
+looks for:
+
+- **Generic on the wire, typed in the renderer.** A GuiDef is `{id, type, props,
+  children}` and nothing more. A new widget is a new `WidgetKind` variant plus a
+  handler — the `/gui_*` vocabulary never grows for it, and an unknown type is
+  laid out but not painted, so an old host and a new script still interoperate.
+- **Never resolve the signal finer than the screen.** Work is bounded by
+  `samples_per_px`; the expensive analysis (a peak pyramid, an STFT) is a *cache*
+  reached through a local shared resource, never chunked over the wire.
+- **Value math belongs to the core, display math to the host.** Anything a
+  headless client could also want — envelope shapes, peak pyramids, FFT windows,
+  scales, tempo/sample arithmetic — lives in `clausters-core` and is *shared*;
+  only geometry, hit-testing and chrome are gui-side. This is why the `bpf`
+  editor and the server's `EnvGen` cannot drift: they evaluate the same function.
+- **Edit-back is a payload, not an address.** A view that writes data back emits
+  `/gui_event <id> <tag> <flat values…>` — `"points"` for a curve, `"clip"` for a
+  placement, `"wire"` for a connection. The widget tree stays the source of truth
+  on the host side; the script's model stays it on the other.
+
+### Adding a widget
+
+Take a hypothetical `meterbar`. The steps are always the same:
+
+1. **The typed kind** — a `WidgetKind::MeterBar { … }` variant in
+   `host/widget.rs`, its arm in the JSON parse (`Widget::build`) and, for every
+   live-updatable prop, an arm in `WidgetKind::apply` (that is `/gui_set`).
+2. **The view** — a module `host/meterbar.rs`, pure over a `Mesh`: layout, draw,
+   and (if it is interactive) a hit-test. No GPU, no platform: that is what makes
+   it unit-testable, and the tests go beside it. A *heavy* view (one that needs a
+   texture or a vertex buffer) instead gets a GPU slot in `frame.rs` and follows
+   the LOD rule above.
+3. **The frame** — collect the placed widget in `frame::render` and draw it. Base
+   mesh for the view, overlay mesh for chrome that must read on top (selection,
+   playhead, wires in flight).
+4. **Interaction, if any** — the hit-test and the mutation go in
+   `host/interact.rs` (shared, so both fronts behave the same); the *gesture*
+   (which button, which drag state) belongs to the front. If the widget writes
+   data back, add its flat event payload here — never a new OSC address.
+5. **The Python builder** — a function in `clients/python/clausters/gui/guidef.py`
+   returning the node dict, with the docstring that *is* the widget's user
+   reference (the API page is generated from it).
+6. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
+   `clients/python/examples/gui_*.py` when the widget is user-facing.
+
+A **compositional-model primitive** (a new material kind) is the client's
+business, not the host's: it lands in `clients/python/clausters/model/`, and it
+reaches the screen through the editor driver (`clausters/gui/editor.py`), which is
+the only module that knows both the model and the widget tree. The Python book's
+composition chapter is its user documentation.
+
 ## Extending the server: the plugin question
 
 scsynth grew a binary plugin API (`UnitCmd`/interface tables) whose ABI broke with struct or feature changes, and keeping out-of-tree UGens alive became a maintenance tax. Rust removes the temptation: **there is no stable Rust ABI**, so dynamically loaded Rust plugins are off the table in v1, by decision and not omission:

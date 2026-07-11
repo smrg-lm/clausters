@@ -98,6 +98,46 @@ Two design choices carry the rest:
   treated as a cache that moves through local shared resources (mmap natively,
   fetch in the browser), never chunked over the wire.
 
+The widget catalog runs from the ordinary controls (labels, knobs, sliders,
+numbers, buttons, toggles, text, menus) through the live meters and scopes
+(`meter`, `scope`, `phasescope`, `spectrum`, `nodetree`) to the editor-grade
+views: the heavy `waveform` and `spectrogram` (multichannel lanes, adaptive
+rulers, a draggable selection, a playhead tracking the engine clock, linked
+navigation groups), the drawable `bpf` envelope editor, a static `plot`, a
+shader `canvas` — and the **composition** views below. Their reference is the
+Python builders' documentation, since that is how a script names them.
+
+### The composition views: a multitrack editor and a patcher
+
+The newest arc of the GUI is a **DAW-style multitrack editor**, and it exists to
+put a *client-side compositional model* on screen: a `track` is a lane, a `clip`
+is a placed rectangle spanning `[offset, offset + dur]` on a time axis the lanes
+of a window **share** (they zoom and pan as one navigation group, and the axis
+spans the composition). A clip's body is one of three, and the choice is the only
+thing that differs between them:
+
+- a **take** — a server buffer, a mapped file or a prebuilt peak cache, decimated
+  to the clip's pixel width through the shared peak pyramid, so a minutes-long
+  clip costs a screen's worth of columns and never rides the wire as JSON;
+- a **piano-roll** of note events (time and pitch);
+- an **automation curve** — the `bpf` model, placed on the lane and editable in
+  place, evaluated through the same envelope-shape math the server's `EnvGen`
+  plays.
+
+Everything is editable back: dragging a clip or its edge emits `"clip"`, dragging
+a break-point emits `"points"`, and the script's model — not the widget tree — is
+what those events change. A **logical** group (members wired to each other through
+buses, the shape a `GraphDef` expresses) is not a timeline at all, so it draws as
+a `graph` **patch** instead: member boxes, bus nodes, and a wire per connection,
+where dragging a port onto a bus rewires that control. The patch is deliberately
+undirected — a GraphDef knows that a control *touches* a bus, and which end writes
+is the server's own analysis (see [Design decisions](decisions.md)).
+
+The Python side of all this is `clausters.gui.Editor`: it renders a composition
+into that window, applies the edit-backs onto the model, and re-realizes it — so
+the graphic is not a picture of the music, it *is* the music. Its user
+documentation is the composition chapter of the Python client's book.
+
 ## The GUI host in the browser
 
 The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to a **separate audio server over WebSocket** — start the server with `--ws` (default port 57120). There is no in-process engine in the browser; the embed/standalone path is native-only.
@@ -164,5 +204,7 @@ same C ABI and the same OSC.
 | MIDI interfaces in the Python client (`MidiServer`, SMF / MIDI 2.0 clip export, live port) | done |
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
 | Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
+| Compositional model in the Python client (materials, recursive groups, realization) | done |
+| Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `graph`) and the driver that binds them to the model | done |
 | JavaScript client + npm | planned |
 | `third_party` Faust build + Faust-enabled wheels | planned |
