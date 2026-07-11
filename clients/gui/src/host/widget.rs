@@ -472,13 +472,17 @@ pub enum WidgetKind {
     },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
-    /// with an optional inline `data`/`blob` body drawn decimated inside it and
-    /// a `label`. Interaction (drag to move `offset`, drag an edge to resize
-    /// `dur`) writes back through the edit-back path. A leaf.
+    /// with a `label`. Its body is one of two: an inline `data`/`blob` waveform
+    /// drawn decimated, or — when `notes` is non-empty — a **piano-roll** of
+    /// note events (`start`/`dur` relative to the clip, `pitch` over `[min,
+    /// max]`), the events-track scalar-vertical view. Interaction (drag to move
+    /// `offset`, drag an edge to resize `dur`) writes back through the edit-back
+    /// path. A leaf.
     Clip {
         offset: f64,
         dur: f64,
         samples: Arc<[f32]>,
+        notes: Vec<super::track::Note>,
         min: f32,
         max: f32,
         label: Option<String>,
@@ -793,6 +797,7 @@ impl Widget {
                 offset: number_f64(&node.props, "offset", 0.0).max(0.0),
                 dur: number_f64(&node.props, "dur", 0.0).max(0.0),
                 samples: inline_samples("clip", id, &node.props, blobs)?,
+                notes: parse_notes(&node.props),
                 min: number(&node.props, "min", -1.0),
                 max: number(&node.props, "max", 1.0),
                 label: label(&node.props),
@@ -1148,6 +1153,7 @@ impl WidgetKind {
             WidgetKind::Clip {
                 offset,
                 dur,
+                notes,
                 min,
                 max,
                 label,
@@ -1155,6 +1161,11 @@ impl WidgetKind {
             } => match key {
                 "offset" => v.as_f64().map(|x| *offset = x.max(0.0)).is_some(),
                 "dur" => v.as_f64().map(|x| *dur = x.max(0.0)).is_some(),
+                "notes" => {
+                    *notes =
+                        parse_notes(&std::iter::once(("notes".to_string(), v.clone())).collect());
+                    true
+                }
                 "min" => set_f(min, v),
                 "max" => set_f(max, v),
                 "label" => set_label(label, v),
@@ -1167,6 +1178,26 @@ impl WidgetKind {
             _ => false,
         }
     }
+}
+
+/// Parses a piano-roll clip's `notes`: a flat `[start, dur, pitch, …]` array
+/// (three numbers per note, the flat convention the `bpf` points use), each a
+/// [`super::track::Note`]. A short/absent/malformed array yields no notes (the
+/// clip then draws a waveform body).
+fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<super::track::Note> {
+    let Some(Value::Array(items)) = props.get("notes") else {
+        return Vec::new();
+    };
+    items
+        .chunks_exact(3)
+        .filter_map(|c| {
+            Some(super::track::Note {
+                start: c[0].as_f64()?.max(0.0),
+                dur: c[1].as_f64()?.max(0.0),
+                pitch: c[2].as_f64()? as f32,
+            })
+        })
+        .collect()
 }
 
 /// The `freq_scale` property (`"linear"`/`"log"`/`"mel"`/`"bark"`), falling
@@ -1485,6 +1516,31 @@ mod tests {
         // A negative offset clamps to 0 (no clip starts before the timeline).
         match &track.children[1].kind {
             WidgetKind::Clip { offset, .. } => assert_eq!(*offset, 0.0),
+            other => panic!("expected clip, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_clip_parses_its_piano_roll_notes() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"track","children":[
+                    {"id":10,"type":"clip","offset":0.0,"dur":400.0,"min":48.0,"max":72.0,
+                     "notes":[0.0,100.0,60.0, 100.0,100.0,67.0, 999.0]}
+                ]}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].children[0].kind {
+            WidgetKind::Clip { notes, .. } => {
+                // Two complete triples; the trailing lone number is dropped.
+                assert_eq!(notes.len(), 2);
+                assert_eq!(
+                    (notes[0].start, notes[0].dur, notes[0].pitch),
+                    (0.0, 100.0, 60.0)
+                );
+                assert_eq!(notes[1].pitch, 67.0);
+            }
             other => panic!("expected clip, got {other:?}"),
         }
     }

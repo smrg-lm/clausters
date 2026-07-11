@@ -9,11 +9,12 @@ offset lines up across tracks — the seat the linked-views work
 (``gui_linked.py``) designed: a member with a *placement* (offset) on the
 shared timeline.
 
-This example lays out three tracks — two audio takes and one placed further in
-— each clip carrying a short inline body drawn decimated inside its rectangle.
-It is plain GuiDef: new ``track``/``clip`` builders over the unchanged
-``/gui_*`` protocol, no server involved (the bodies are inline here; a real
-composition would name mapped files or server buffers).
+This example lays out three tracks — two audio takes with a decimated waveform
+body per clip, and one **piano-roll** lead whose clip carries ``(start, dur,
+pitch)`` note events drawn as bars (pitch on the vertical axis). It is plain
+GuiDef: new ``track``/``clip`` builders over the unchanged ``/gui_*`` protocol,
+no server involved (the bodies are inline here; a real composition would name
+mapped files or server buffers).
 
 Dragging a clip (move) or its edge (resize) flows back as a ``"clip"`` event
 carrying the new ``offset``/``dur`` — the edit-back pattern — so a driver can
@@ -67,7 +68,12 @@ win = gui.open(window(
           clip(21, offset=4 * BEAT, dur=4 * BEAT, data=blip(3), label="turn"),
           label="bass"),
     track(LEAD,
-          clip(30, offset=2 * BEAT, dur=6 * BEAT, data=blip(11, decay=2.0),
+          # A piano-roll clip: (start, dur, pitch) events relative to the clip,
+          # pitch mapped over [min, max]. The whole roll moves with the clip.
+          clip(30, offset=2 * BEAT, dur=6 * BEAT, min=48, max=72,
+               notes=[(0 * BEAT, BEAT, 60), (1 * BEAT, BEAT, 64),
+                      (2 * BEAT, BEAT, 67), (3 * BEAT, 2 * BEAT, 72),
+                      (5 * BEAT, BEAT, 67)],
                label="theme"),
           label="lead"),
     label(99, "Multitrack: clips placed on one shared time axis"),

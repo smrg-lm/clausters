@@ -4,9 +4,11 @@
 //! rectangle on it spanning `[offset, offset + dur]` in timeline sample units —
 //! the model's **graphic unit** (length = duration). This module draws that
 //! unit: a left header naming the track, the lane field, and one framed
-//! rectangle per clip with its decimated body and label. Pure over a [`Mesh`]
-//! (the flat-geometry [`super::paint`] painter), so it is unit-testable without
-//! a window — the same posture as the static `plot`/`bpf` views.
+//! rectangle per clip with its label and a body — a decimated waveform, or a
+//! **piano-roll** of note events when the clip carries `notes` (the events
+//! track's scalar-vertical view). Pure over a [`Mesh`] (the flat-geometry
+//! [`super::paint`] painter), so it is unit-testable without a window — the
+//! same posture as the static `plot`/`bpf` views.
 //!
 //! The tracks of one window share **one time axis** (aligned lanes): the frame
 //! renderer computes the common span (the longest clip end) and maps every
@@ -29,6 +31,7 @@ const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
 const CLIP_FILL: Color = [0.16, 0.22, 0.32, 1.0];
 const CLIP_EDGE: Color = [0.45, 0.60, 0.85, 1.0];
 const CLIP_BODY: Color = [0.55, 0.75, 0.95, 1.0];
+const NOTE_FILL: Color = [0.60, 0.85, 0.65, 1.0];
 const BASELINE: Color = [0.28, 0.32, 0.38, 1.0];
 /// The left header strip width, device pixels — shared by every lane so the
 /// clip bodies of aligned tracks line up.
@@ -38,13 +41,26 @@ const HEADER_SCALE: f32 = 2.0;
 const CLIP_SCALE: f32 = 1.5;
 const BODY_W: f32 = 1.0;
 
-/// One clip copied out of the host tree for drawing (and hit-testing).
+/// One note of a piano-roll clip: its `start`/`dur` **relative to the clip's
+/// offset** (timeline samples), and its `pitch` (mapped over the clip's value
+/// range — `min`/`max` read as the low/high pitch).
+#[derive(Clone, Copy, Debug)]
+pub struct Note {
+    pub start: f64,
+    pub dur: f64,
+    pub pitch: f32,
+}
+
+/// One clip copied out of the host tree for drawing (and hit-testing). A clip
+/// with `notes` draws a piano-roll body (its `samples` ignored); one without
+/// draws the decimated waveform body.
 #[derive(Clone)]
 pub struct ClipDraw {
     pub id: i32,
     pub offset: f64,
     pub dur: f64,
     pub samples: Arc<[f32]>,
+    pub notes: Vec<Note>,
     pub min: f32,
     pub max: f32,
     pub label: Option<String>,
@@ -122,10 +138,48 @@ pub fn draw(mesh: &mut Mesh, rect: Rect, nav: &View, label: Option<&str>, clips:
         let cr = Rect::new(x0, body.y + 1.0, x1 - x0, (body.h - 2.0).max(0.0));
         mesh.rect(cr, CLIP_FILL);
         mesh.border(cr, 1.0, CLIP_EDGE);
-        draw_clip_body(mesh, cr, &clip.samples, clip.min, clip.max);
+        if clip.notes.is_empty() {
+            draw_clip_body(mesh, cr, &clip.samples, clip.min, clip.max);
+        } else {
+            // A piano-roll clip: notes placed on the same shared axis (so the
+            // whole roll moves when the clip does), pitch mapped over [min, max].
+            draw_piano_roll(mesh, cr, body, nav, clip);
+        }
         if let Some(t) = &clip.label {
             font::text(mesh, t, cr.x + PAD, cr.y + PAD, CLIP_SCALE, TEXT);
         }
+    }
+}
+
+/// The minimum drawn height of a note rectangle, device pixels.
+const NOTE_MIN_H: f32 = 2.0;
+
+/// Draws a clip's notes as a piano-roll inside `cr`: each note is a rectangle
+/// placed in time on the shared `nav` (through the lane `body`, so it lines up
+/// with waveform clips) and in pitch over the clip's `[min, max]` range. New
+/// geometry, deliberately the reused-body sibling of `draw_clip_body`. Pitch
+/// mapping is linear here; a note-name ruler would read `clausters_core::scale`.
+fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw) {
+    let (lo, hi) = (clip.min, clip.max);
+    let x_lo = cr.x;
+    let x_hi = cr.x + cr.w;
+    // Each pitch step gets a row; a note is a bar filling most of its row.
+    let rows = (hi - lo).max(1.0);
+    let row_h = (cr.h / rows).clamp(0.0, cr.h);
+    for n in &clip.notes {
+        let mut nx0 = to_x(clip.offset + n.start, nav, body) as f32;
+        let mut nx1 = to_x(clip.offset + n.start + n.dur.max(0.0), nav, body) as f32;
+        nx0 = nx0.clamp(x_lo, x_hi);
+        nx1 = nx1.clamp(x_lo, x_hi);
+        if nx1 <= nx0 {
+            continue;
+        }
+        // Pitch → y within the clip rect (high pitch at the top).
+        let frac = fraction(n.pitch, lo, hi);
+        let y = cr.y + cr.h * (1.0 - frac as f32);
+        let h = row_h.max(NOTE_MIN_H).min(cr.h);
+        let y = (y - h * 0.5).clamp(cr.y, cr.y + cr.h - h);
+        mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), NOTE_FILL);
     }
 }
 
@@ -223,6 +277,7 @@ mod tests {
                 offset: 0.0,
                 dur: 100.0,
                 samples: vec![0.0, 0.5, -0.5, 1.0].into(),
+                notes: Vec::new(),
                 min: -1.0,
                 max: 1.0,
                 label: Some("a".into()),
@@ -232,6 +287,7 @@ mod tests {
                 offset: 200.0,
                 dur: 100.0,
                 samples: Arc::from([] as [f32; 0]),
+                notes: Vec::new(),
                 min: -1.0,
                 max: 1.0,
                 label: None,
@@ -239,5 +295,56 @@ mod tests {
         ];
         draw(&mut m, lane(), &View::full(400), Some("drums"), &clips);
         assert!(!m.is_empty(), "the header, lane and clips draw");
+    }
+
+    #[test]
+    fn a_piano_roll_clip_draws_its_notes() {
+        let clip = ClipDraw {
+            id: 1,
+            offset: 0.0,
+            dur: 400.0,
+            samples: Arc::from([] as [f32; 0]),
+            notes: vec![
+                Note {
+                    start: 0.0,
+                    dur: 100.0,
+                    pitch: 60.0,
+                },
+                Note {
+                    start: 100.0,
+                    dur: 100.0,
+                    pitch: 67.0,
+                },
+            ],
+            min: 48.0, // pitch range low
+            max: 72.0, // pitch range high
+            label: Some("theme".into()),
+        };
+        // With notes, the clip draws a piano-roll (not a waveform body).
+        let mut with = Mesh::new();
+        draw(
+            &mut with,
+            lane(),
+            &View::full(400),
+            None,
+            std::slice::from_ref(&clip),
+        );
+        // The same clip with no notes and no samples: only the clip frame.
+        let mut without = Mesh::new();
+        let bare = ClipDraw {
+            notes: Vec::new(),
+            ..clip
+        };
+        draw(
+            &mut without,
+            lane(),
+            &View::full(400),
+            None,
+            std::slice::from_ref(&bare),
+        );
+        assert!(
+            with.vertex_count() > without.vertex_count(),
+            "the notes add geometry over the bare clip"
+        );
     }
 }

@@ -476,25 +476,34 @@ def track(id: int, *clips, label: str | None = None, height: float | None = None
 
 
 def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
-         min: float | None = None, max: float | None = None,
+         notes=None, min: float | None = None, max: float | None = None,
          label: str | None = None, **props) -> dict:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
-    dur]`` in timeline sample units (the graphic unit — length = duration), with
-    an optional inline body drawn decimated inside it.
+    dur]`` in timeline sample units (the graphic unit — length = duration). Its
+    body is one of two:
 
-    - ``offset`` — the clip's start on the shared timeline (samples; clamped to
-      ``>= 0``).
+    - a **waveform** — ``data``/``blob`` (a small float list, or the index of a
+      blob carried beside the JSON — see `samples_to_blob`) drawn decimated; or
+    - a **piano-roll** — ``notes``, an iterable of ``(start, dur, pitch)``
+      events (times relative to the clip, in samples; pitch mapped over
+      ``[min, max]``), drawn as note bars — the events-track view.
+
+    Other keywords:
+
+    - ``offset`` — the clip's start on the shared timeline (samples; ``>= 0``).
     - ``dur`` — its duration (samples); a clip with no duration draws nothing.
-    - ``data``/``blob`` — an optional inline waveform body (a small float list,
-      or the index of a blob carried beside the JSON — see `samples_to_blob`).
-    - ``min``/``max`` — the body's value range (default the bipolar ``-1``/``1``).
+    - ``min``/``max`` — the waveform value range, or the low/high pitch of a
+      piano-roll (default the bipolar ``-1``/``1``).
 
     Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
     event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
     can update the composition model and re-realize."""
+    flat_notes = None
+    if notes is not None:
+        flat_notes = [float(x) for n in notes for x in n]
     extra = _drop_none(offset=offset,
                        data=list(data) if data is not None else None,
-                       blob=blob, min=min, max=max, label=label)
+                       blob=blob, notes=flat_notes, min=min, max=max, label=label)
     return node("clip", id=id, dur=dur, **extra, **props)
 
 
