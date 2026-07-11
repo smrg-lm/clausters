@@ -41,19 +41,19 @@ import wave
 from pathlib import Path
 
 from clausters import Session
-from clausters.base.stream import Routine
 from clausters.defs import (
     DoneAction,
     Env,
     SynthDef,
     control,
     env_gen,
+    in_ctl,
     out,
     play_buf,
     sin_osc,
 )
 from clausters.gui import Editor, button, panel
-from clausters.model import Buffer, Group, Material, Sequence, Track
+from clausters.model import Buffer, Event, Group, Material, Sequence, Track
 from clausters.seq import Automation, Timeline
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.pattern import Pbind, Pseq
@@ -144,21 +144,29 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 # flows back onto the `Automation`, whose `Env` is what the next realization
 # plays, so the curve you draw is the curve you hear.
 #
-# Its target is a **voice with an end**: a drone whose envelope lasts the piece and
-# frees the synth. A held synth would outlive the composition and keep sounding
-# after the playhead ran off the end — a note that never ends is a bug, not a
-# drone.
+# The voice it drives is **in the composition**, not held by the script: an event
+# with a length, placed beside the curve. It reads the automation's control bus
+# straight (`in_ctl`), so nothing has to be `/n_map`-ed to a node that outlives its
+# clip — the voice starts when the playhead reaches the clip and ends with it. Seek
+# past the clip and there is simply no voice; a synth still humming over empty
+# timeline is not a drone, it is a leak.
 
 # %%
+SWEEP = 4.0        # the sweep's length in beats (the curve's, and its voice's)
+
+
 def drone(name: str = "drone") -> SynthDef:
-    """A sine whose `freq` is a `kr` control (so the automation can `/n_map` it to
-    a bus), sustaining while its `gate` is held and freeing itself on release."""
-    freq = control("freq", 220.0, "kr")
+    """A sine reading its frequency from a **control bus** — the one the automation
+    writes — held by a gate: it sustains while the note is on and frees itself on
+    release. Its length is the *event's*, so it lasts exactly as long as its clip
+    (the event sends `gate 0` after its sustain; an envelope timed by a control
+    could not, since `sustain` is the event's own key and never reaches the def)."""
+    bus = control("freq_bus", 0.0, "ir")
     amp = control("amp", 0.12, "kr")
     gate = control("gate", 1.0, "kr")
     shape = env_gen(Env.asr(attack=0.05, release=0.4), gate=gate,
                     done_action=DoneAction.FREE_SELF)
-    sig = sin_osc(freq) * shape * amp
+    sig = sin_osc(in_ctl(bus)) * shape * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -168,15 +176,22 @@ sweep = Automation.from_points(
     [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
      (2.0, 900.0, 2, 0.0),      # ... up to 900 (exponential) ...
      (4.0, 300.0, 1, 0.0)],     # ... back down (linear); shapes are the server's
-    target=None, name="sweep")
-sweep.prepare(server)           # the control buffer + bus, off the clock thread
+    target=None, name="sweep")   # no target node: it just writes its bus
+sweep.prepare(server)            # the control buffer + bus, off the clock thread
+
+# The curve and the voice it drives, placed together: the same offset, the same
+# length. Drag the clip and both move; the voice cannot outlive it.
+voice = Event(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
+                       dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
 
 # The composition: four lanes, each a group placing one material in time.
 song = Group([
     (0.0, Group([(0.0, take), (4.0, take)], name="drums")),
     (0.0, Group([(0.0, bass)], name="bass")),
     (2.0, Group([(0.0, melody)], name="lead")),
-    (0.0, Group([(0.0, Material(sweep))], name="sweep")),
+    # The voice first, the curve over it: the lane draws its clips in order, and
+    # the envelope is the thing worth seeing (the voice is a rectangle behind it).
+    (0.0, Group([(0.0, voice), (0.0, Material(sweep, duration=SWEEP))], name="sweep")),
 ], name="song")
 
 # %% [markdown]
@@ -204,57 +219,22 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 
 # %% [markdown]
 # ## The transport
-# `realize` flattens the model to absolute beats and plays it through a
-# `Playhead` — the model's own realization, no path of its own — and anchors the
-# lanes' playhead line so it sweeps the clips with the audio. The transport drives
-# that playhead: `play` from where we are, `pause` where we are, `stop` back to
-# the top, `rewind` to the top without stopping.
+# The editor owns it: `play` from where the cursor is (a fresh realization, so it
+# plays the composition as it now stands), `pause` where we are, `stop` back to the
+# top, and `locate` — which is also what a click on a lane's ruler does. Every play
+# re-reads the model, so an edit made meanwhile is simply played.
 #
-# Silencing is explicit: halting the playhead only stops *scheduling*, so whatever
-# is already sounding is freed with a deep free of the root group. Nothing is left
-# ringing.
+# Nothing here silences anything, and nothing needs to: every voice in the
+# composition is an event with a length, so it ends with its clip.
 
 # %%
 session.start()                       # the clock runs the routines
 
-
-def silence():
-    """Free every sounding node — halting a playhead only stops *scheduling*, and
-    this script holds a voice of its own (the automation's)."""
-    server.send_msg("/g_deepFree", 0)
-
-
-def play():
-    """Arm the automation's voice, then play the composition from the transport's
-    position — a fresh realization, so it plays the clips where they are now."""
-    silence()
-    voice = server.synth("drone", {"amp": 0.12})
-    sweep.targets = [(voice, "freq")]
-    editor.play(server, session.clock)
-
-    def tail():
-        yield max(editor.extent() - editor.position, 0.0)   # at the end of the piece,
-        server.set(voice, {"gate": 0.0})                    # release it (it frees itself)
-
-    global ending
-    if ending is not None:
-        session.clock.unsched(ending)      # the previous play's ending is void
-    ending = Routine(tail)
-    session.clock.play(ending)
-
-
-def pause():
-    editor.pause()                         # the cursor stays where we stopped
-    silence()
-
-
-def stop():
-    editor.stop()                          # halt and back to the top
-    silence()
-
-
-def rewind():
-    editor.locate(0.0)                     # seeking while playing re-realizes there
+TRANSPORT = {PLAY: editor.play, PAUSE: editor.pause, STOP: editor.stop,
+             REWIND: lambda: editor.locate(0.0)}
+editor.realize(server, session.clock, at=0.0)   # the destination and the clock
+editor.pause()                                  # ... but wait at the top
+print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
 
 def ended() -> bool:
@@ -263,10 +243,6 @@ def ended() -> bool:
     ph = editor.playhead
     return ph is not None and ph.playing and ph.position() >= editor.extent()
 
-
-ending = None                              # the routine that ends the current voice
-TRANSPORT = {PLAY: play, PAUSE: pause, STOP: stop, REWIND: rewind}
-print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
 # %% [markdown]
 # ## Edit it
@@ -285,7 +261,7 @@ if __name__ == "__main__":
     try:
         while editor.window is not None:
             if ended():
-                stop()                 # the piece is over: silence, back to the top
+                editor.stop()          # the piece is over: back to the top
             msg = gui.poll(0.05)
             if msg is None:
                 continue
@@ -306,8 +282,8 @@ if __name__ == "__main__":
                       else "  edited — press play to re-read the composition")
     finally:
         # No `sys.exit` here: it would replace an exception raised in the loop
-        # and the window would just vanish with no word of why.
-        silence()
+        # and the window would just vanish with no word of why. Nothing to
+        # silence, either: every voice in the composition ends with its clip.
         session.close()
 
 # %% [markdown]

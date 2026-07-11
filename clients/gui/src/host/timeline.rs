@@ -176,6 +176,47 @@ impl Host {
             .max(1)
     }
 
+    /// How far past its content a **multitrack** group may be navigated: a lane
+    /// must be zoomable *out* into empty time, or there is nowhere to drag a clip
+    /// to — the composition would only ever grow by dropping something beyond the
+    /// visible edge. The heavy views keep their content-bound axis (there is no
+    /// signal out there to look at), so the headroom applies only to a group that
+    /// holds a lane.
+    const NAV_HEADROOM: usize = 4;
+
+    /// The length the navigation window is clamped against — the group's content,
+    /// plus the multitrack's empty-time headroom.
+    fn timeline_span(&self, key: GroupKey) -> usize {
+        let total = self.timeline_total(key);
+        if self.group_has_lane(key) {
+            total.saturating_mul(Self::NAV_HEADROOM)
+        } else {
+            total
+        }
+    }
+
+    /// Whether group `key` holds a `track` lane (a multitrack axis).
+    fn group_has_lane(&self, key: GroupKey) -> bool {
+        self.window_defs.iter().any(|(_root, tree)| {
+            fn walk(w: &Widget, key: GroupKey, out: &mut bool) {
+                if let (Some(id), Some(editor), true) = (
+                    w.id,
+                    w.kind.editor(),
+                    matches!(w.kind, super::widget::WidgetKind::Track { .. }),
+                ) && group_key(id, editor.link) == key
+                {
+                    *out = true;
+                }
+                for c in &w.children {
+                    walk(c, key, out);
+                }
+            }
+            let mut found = false;
+            walk(tree, key, &mut found);
+            found
+        })
+    }
+
     /// The navigation window and timeline length of widget `id`'s group.
     pub fn timeline_nav(&self, id: i32) -> Option<(View, usize)> {
         let key = self.timeline_key(id)?;
@@ -206,11 +247,16 @@ impl Host {
         let old_total = self.timeline_total(key);
         self.timelines.totals.insert(id, total);
         let new_total = self.timeline_total(key);
+        let span = self.timeline_span(key);
         if let Some(state) = self.timelines.states.get_mut(&key) {
-            if state.nav.len >= old_total as f64 {
+            if (state.nav.len - old_total as f64).abs() < 1.0 {
+                // It was showing exactly the whole timeline: keep showing it all.
                 state.nav = View::full(new_total);
             } else {
-                state.nav.set_start(state.nav.start, new_total);
+                // Zoomed in *or* zoomed out into the empty headroom: keep the
+                // window, only re-clamp it (growing the content must not yank a
+                // deliberately zoomed-out view back onto the content).
+                state.nav.set_start(state.nav.start, span);
             }
         }
     }
@@ -245,7 +291,7 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let total = self.timeline_total(key);
+        let total = self.timeline_span(key);
         let Some(state) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
@@ -259,7 +305,7 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
-        let total = self.timeline_total(key);
+        let total = self.timeline_span(key);
         let Some(state) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
@@ -274,12 +320,14 @@ impl Host {
         let Some(key) = self.timeline_key(id) else {
             return Vec::new();
         };
+        let span = self.timeline_span(key);
         let total = self.timeline_total(key);
         let Some(state) = self.timelines.states.get_mut(&key) else {
             return Vec::new();
         };
         match len {
             Some(len) if len <= 0.0 => {
+                // A reset shows the *content*, not the headroom.
                 state.nav = View::full(total);
                 return self.timeline_roots(key);
             }
@@ -287,7 +335,7 @@ impl Host {
             None => {}
         }
         let start = start.unwrap_or(state.nav.start);
-        state.nav.set_start(start, total);
+        state.nav.set_start(start, span);
         self.timeline_roots(key)
     }
 
@@ -954,5 +1002,44 @@ mod tests {
             // transport shows, and the two are different things.
             assert!(editor.playhead_at < 0.0);
         }
+    }
+
+    #[test]
+    fn a_lane_zooms_out_past_its_content_into_empty_time() {
+        let mut host = lanes_host();
+        let (_nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(total, 500);
+
+        // Wheel out: the window may show empty time past the last clip, or there
+        // is nowhere to drag a clip *to*.
+        for _ in 0..6 {
+            host.zoom_timeline(100, 1.6, 0.0);
+        }
+        let (nav, _) = host.timeline_nav(100).unwrap();
+        assert!(nav.len > 500.0, "the axis shows past the composition");
+        assert!(nav.len <= 4.0 * 500.0, "but the headroom is bounded");
+
+        // Growing the content (a clip dragged out) must not yank the zoomed-out
+        // window back onto the content.
+        let zoomed = nav.len;
+        host.handle_packet(set_msg(111, &[("offset", OscType::Float(700.0))]), from());
+        assert_eq!(host.timeline_nav(100).unwrap().0.len, zoomed);
+
+        // A reset shows the content, not the headroom.
+        host.reset_timeline(100);
+        let (nav, total) = host.timeline_nav(100).unwrap();
+        assert_eq!((nav.start, nav.len), (0.0, total as f64));
+    }
+
+    /// A heavy view's axis stays bound to its data: there is no signal out past
+    /// the end of a file to look at.
+    #[test]
+    fn a_waveform_group_gets_no_headroom() {
+        let mut host = linked_host();
+        for _ in 0..6 {
+            host.zoom_timeline(10, 1.6, 0.0);
+        }
+        let (nav, total) = host.timeline_nav(10).unwrap();
+        assert_eq!(nav.len, total as f64);
     }
 }

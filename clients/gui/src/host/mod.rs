@@ -674,9 +674,11 @@ impl Host {
             }
             None => {
                 // An empty type string means "no such widget" — the query still
-                // gets an answer, the way the server replies even on a miss.
+                // gets an answer, the way the server replies even on a miss. A
+                // miss is *not* a warning: it is how a client pings a host that is
+                // still empty (the launcher's readiness check does exactly that).
                 out.push(OscType::String(String::new()));
-                warn!("{from}: {GUI_QUERY} {id}: no such widget");
+                debug!("{from}: {GUI_QUERY} {id}: no such widget");
             }
         }
         effects.push(HostEffect::Reply(OscMessage {
