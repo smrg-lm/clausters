@@ -457,19 +457,21 @@ def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None
 
 
 def track(id: int, *clips, label: str | None = None, height: float | None = None,
-          **props) -> dict:
+          snap: float | None = None, **props) -> dict:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
     header; ``height`` is its lane weight when several tracks stack under one
     window (a ``col`` layout). The window's tracks share one time axis, so a
-    clip at a given offset lines up across lanes.
+    clip at a given offset lines up across lanes. ``snap`` is the drag grid in
+    timeline samples a clip's move/resize rounds to (omitted / ``0`` = snap to
+    whole samples).
 
     Pass the clips positionally::
 
         track(1, clip(10, offset=0, dur=4, data=take_a),
                  clip(11, offset=4, dur=2, data=take_b), label="drums")
     """
-    extra = _drop_none(label=label, height=height)
+    extra = _drop_none(label=label, height=height, snap=snap)
     return node("track", id=id, children=clips, **extra, **props)
 
 

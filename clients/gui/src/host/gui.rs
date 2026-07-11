@@ -230,6 +230,24 @@ enum Drag {
         last_y: f64,
         body_h: f64,
     },
+    /// Dragging a multitrack `clip`: the body moves its `offset`, an edge
+    /// resizes its `dur`. The cursor maps to a timeline sample through the
+    /// lane's `body_x`/`body_w` and the shared `nav_start`/`nav_len`; the
+    /// placement follows from a press-time snapshot (`press_sample`,
+    /// `orig_offset`, `orig_dur`) so a clamped edge never drifts, snapped to
+    /// `grid`.
+    Clip {
+        id: i32,
+        part: interact::ClipPart,
+        body_x: f64,
+        body_w: f64,
+        nav_start: f64,
+        nav_len: f64,
+        press_sample: f64,
+        orig_offset: f64,
+        orig_dur: f64,
+        grid: f64,
+    },
 }
 
 /// One open window: its GPU surface, the per-waveform slots, the painter, the
@@ -473,6 +491,25 @@ impl App {
             .host
             .window_def(def_id)
             .and_then(|t| interact::bpf_event_args(t, widget_id))
+        else {
+            return;
+        };
+        if self.host.is_bound(widget_id) {
+            self.host.forward_args(widget_id, args[1..].to_vec());
+            return;
+        }
+        self.emit(def_id, widget_id, args);
+    }
+
+    /// Delivers a `clip`'s edited placement — the edit-back pattern, the sibling
+    /// of [`App::emit_bpf`]: a **bound** clip forwards the flat `offset dur`
+    /// straight to the audio server (without the `"clip"` tag); an unbound one
+    /// emits `/gui_event id "clip" offset dur` to the script that built it.
+    fn emit_clip(&self, def_id: i32, widget_id: i32) {
+        let Some(args) = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| interact::clip_event_args(t, widget_id))
         else {
             return;
         };
@@ -1025,6 +1062,31 @@ impl App {
                     );
                 }
             }
+            WidgetKind::Track { snap, .. } => {
+                // A track is the hit target (its clips are placed by the
+                // renderer, not the layout engine); find the clip under the
+                // cursor and start a move (body) or resize (edge) drag.
+                let (fb_w, fb_h) = self.fb(def_id);
+                if let Some(h) = interact::clip_hit(&self.host, def_id, fb_w, fb_h, cx, cy) {
+                    let press_sample = h.nav.start
+                        + h.nav.len * ((cx - h.body.x as f64) / h.body.w.max(1.0) as f64);
+                    self.set_drag(
+                        def_id,
+                        Drag::Clip {
+                            id: h.id,
+                            part: h.part,
+                            body_x: h.body.x as f64,
+                            body_w: h.body.w as f64,
+                            nav_start: h.nav.start,
+                            nav_len: h.nav.len,
+                            press_sample,
+                            orig_offset: h.offset,
+                            orig_dur: h.dur,
+                            grid: snap,
+                        },
+                    );
+                }
+            }
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
                 let body = frame::timeline_body(rect, editor);
@@ -1208,6 +1270,29 @@ impl App {
                     last_y,
                     body_h,
                 } => DragMove::BpfCurve(*id, *segment, *last_y, *body_h),
+                Drag::Clip {
+                    id,
+                    part,
+                    body_x,
+                    body_w,
+                    nav_start,
+                    nav_len,
+                    press_sample,
+                    orig_offset,
+                    orig_dur,
+                    grid,
+                } => DragMove::Clip {
+                    id: *id,
+                    part: *part,
+                    body_x: *body_x,
+                    body_w: *body_w,
+                    nav_start: *nav_start,
+                    nav_len: *nav_len,
+                    press_sample: *press_sample,
+                    orig_offset: *orig_offset,
+                    orig_dur: *orig_dur,
+                    grid: *grid,
+                },
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -1275,6 +1360,40 @@ impl App {
                 };
                 let cur = start + len * ((cx - body_x) / body_w);
                 self.set_selection(def_id, id, anchor, cur);
+            }
+            Some(DragMove::Clip {
+                id,
+                part,
+                body_x,
+                body_w,
+                nav_start,
+                nav_len,
+                press_sample,
+                orig_offset,
+                orig_dur,
+                grid,
+            }) => {
+                // Map the cursor to a timeline sample and shift by the press-time
+                // grab so a clamped edge never drifts; snap to the track grid.
+                let sample = nav_start + nav_len * ((cx - body_x) / body_w.max(1.0));
+                let delta = sample - press_sample;
+                let end = orig_offset + orig_dur;
+                let (new_offset, new_dur) = match part {
+                    interact::ClipPart::Body => {
+                        (interact::snap(orig_offset + delta, grid), orig_dur)
+                    }
+                    interact::ClipPart::End => {
+                        let new_end = interact::snap(end + delta, grid).max(orig_offset);
+                        (orig_offset, new_end - orig_offset)
+                    }
+                    interact::ClipPart::Start => {
+                        let new_off = interact::snap(orig_offset + delta, grid).clamp(0.0, end);
+                        (new_off, end - new_off)
+                    }
+                };
+                interact::clip_set(&mut self.host, def_id, id, Some(new_offset), Some(new_dur));
+                self.emit_clip(def_id, id);
+                self.redraw(def_id);
             }
             Some(DragMove::None) | None => {}
         }
@@ -1433,6 +1552,18 @@ enum DragMove {
     PanY(i32, f64, f64, f64),
     BpfPoint(i32, usize, Rect),
     BpfCurve(i32, usize, f64, f64),
+    Clip {
+        id: i32,
+        part: interact::ClipPart,
+        body_x: f64,
+        body_w: f64,
+        nav_start: f64,
+        nav_len: f64,
+        press_sample: f64,
+        orig_offset: f64,
+        orig_dur: f64,
+        grid: f64,
+    },
     None,
 }
 

@@ -884,13 +884,10 @@ pub(crate) fn render(
     }
     // Multitrack lanes: the window's tracks share one time axis (aligned
     // lanes), spanning the longest clip end; each lane's clips are placed on it.
+    // The hit-test (`interact::clip_hit`) reads the same `window_nav`, so a clip
+    // maps to the same pixels for drawing and dragging.
     if !track_items.is_empty() {
-        let span = track_items
-            .iter()
-            .flat_map(|t| t.clips.iter())
-            .map(|c| c.offset + c.dur)
-            .fold(0.0_f64, f64::max);
-        let nav = View::full(span.ceil().max(1.0) as usize);
+        let nav = track::window_nav(tree);
         for item in &track_items {
             track::draw(
                 &mut mesh,

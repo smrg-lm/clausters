@@ -19,6 +19,7 @@ use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
 use super::paint::{Color, Mesh};
+use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
 
 const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
@@ -47,6 +48,30 @@ pub struct ClipDraw {
     pub min: f32,
     pub max: f32,
     pub label: Option<String>,
+}
+
+/// The span of a window's shared time axis: the longest clip end (`offset +
+/// dur`) over every track in `tree`. Clips only exist under tracks, so a plain
+/// tree walk finds them all. `0.0` when the window has no clips.
+pub fn window_span(tree: &Widget) -> f64 {
+    fn walk(w: &Widget, acc: &mut f64) {
+        if let WidgetKind::Clip { offset, dur, .. } = w.kind {
+            *acc = acc.max(offset + dur);
+        }
+        for c in &w.children {
+            walk(c, acc);
+        }
+    }
+    let mut span = 0.0;
+    walk(tree, &mut span);
+    span
+}
+
+/// The shared full-span navigation window of a window's tracks (aligned lanes).
+/// The render and the hit-test both read it, so a clip maps to the same pixels
+/// either way.
+pub fn window_nav(tree: &Widget) -> View {
+    View::full(window_span(tree).ceil().max(1.0) as usize)
 }
 
 /// The lane body (the part right of the header strip) of a track's `rect`.

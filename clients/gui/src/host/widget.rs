@@ -462,8 +462,14 @@ pub enum WidgetKind {
     /// its lane weight when several tracks stack under one time axis. The
     /// **graphic unit** — the clip rectangles and the track header — is drawn
     /// by [`super::track`]; the clips share one time axis (aligned tracks), the
-    /// span being the longest clip end over the window's tracks.
-    Track { label: Option<String>, height: f32 },
+    /// span being the longest clip end over the window's tracks. `snap` is the
+    /// drag grid in timeline samples (0 = snap to whole samples) a clip's
+    /// move/resize rounds to.
+    Track {
+        label: Option<String>,
+        height: f32,
+        snap: f64,
+    },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
     /// with an optional inline `data`/`blob` body drawn decimated inside it and
@@ -781,6 +787,7 @@ impl Widget {
             "track" => WidgetKind::Track {
                 label: label(&node.props),
                 height: number(&node.props, "height", 1.0).max(0.0),
+                snap: number_f64(&node.props, "snap", 0.0).max(0.0),
             },
             "clip" => WidgetKind::Clip {
                 offset: number_f64(&node.props, "offset", 0.0).max(0.0),
@@ -1127,9 +1134,15 @@ impl WidgetKind {
                 "label" => set_label(label, v),
                 _ => false,
             },
-            WidgetKind::Track { label, height } => match key {
+            WidgetKind::Track {
+                label,
+                height,
+                snap,
+                ..
+            } => match key {
                 "label" => set_label(label, v),
                 "height" => set_f(height, v),
+                "snap" => v.as_f64().map(|x| *snap = x.max(0.0)).is_some(),
                 _ => false,
             },
             WidgetKind::Clip {

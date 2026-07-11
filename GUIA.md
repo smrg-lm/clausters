@@ -46,6 +46,12 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   oye el ruido filtrado (p. ej. low-pass); `/u_cmd` cambia la ventana en vivo.
 - **Envolventes (EnvGen).** Un synth con `gate`/pausa → se oye el corte y la
   reanudación (la suite mide `beat RMS ~0.141` on / `0.000` en pausa).
+- **Editor multipista (GUI).** `examples/gui_multitrack.py` abre una ventana con
+  tres pistas de clips alineados sobre un eje de tiempo compartido → se ven los
+  rectángulos de clip con su cuerpo dibujado; arrastrar un clip lo **mueve** y
+  arrastrar un borde lo **redimensiona**, y la consola imprime el evento
+  `"clip" offset dur` (edit-back). Refrescar antes el binario bundleado
+  (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Salud de tiempo real bajo carga.** `cargo run --release --example stress`
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;
   al sobrecargar a propósito el servidor **glitchea pero no muere** (el guard de
