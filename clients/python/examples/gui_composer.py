@@ -260,7 +260,7 @@ def pause():
     """Halt where we are; `play` resumes from there."""
     global at
     ph = editor.playhead
-    if ph is not None and ph.playing():
+    if ph is not None and ph.playing:
         at = ph.position()
         ph.stop()
     editor.unanchor()          # the line tracks the engine clock: hide it, or it
@@ -277,7 +277,7 @@ def stop():
 def rewind():
     """Back to the top — playing on, if it was."""
     global at
-    playing = editor.playhead is not None and editor.playhead.playing()
+    playing = editor.playhead is not None and editor.playhead.playing
     at = 0.0
     if playing:
         play()
@@ -289,7 +289,7 @@ def ended() -> bool:
     owns the end, and says so — otherwise the playhead just walks off the axis
     and the transport still believes it is playing."""
     ph = editor.playhead
-    return ph is not None and ph.playing() and ph.position() >= SONG
+    return ph is not None and ph.playing and ph.position() >= SONG
 
 
 TRANSPORT = {PLAY: play, PAUSE: pause, STOP: stop, REWIND: rewind}
@@ -321,13 +321,14 @@ if __name__ == "__main__":
                 action()
             elif editor.apply(addr, args):
                 # The model changed: if it is playing, play the change.
-                if editor.playhead is not None and editor.playhead.playing():
+                if editor.playhead is not None and editor.playhead.playing:
                     at = editor.playhead.position()
                     play()
     finally:
+        # No `sys.exit` here: it would replace an exception raised in the loop
+        # and the window would just vanish with no word of why.
         silence()
         session.close()
-        sys.exit(0)
 
 # %% [markdown]
 # ## Bounce it

@@ -456,7 +456,9 @@ fn draw_clip_body(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &Clip
         clip,
         n as f64,
         |s0, s1, _per_px| {
-            let a = (s0.floor().max(0.0) as usize).min(n);
+            // The last column can land exactly on the end: keep the span
+            // non-empty and inside the slice (a `clamp` with min > max panics).
+            let a = (s0.floor().max(0.0) as usize).min(n.saturating_sub(1));
             let b = (s1.ceil() as usize).clamp(a + 1, n);
             let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
             for &v in &samples[a..b] {
