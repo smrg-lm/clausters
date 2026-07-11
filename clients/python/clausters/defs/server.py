@@ -728,6 +728,105 @@ class Server:
         self.send_msg("/b_free", bufnum)
         self.buffers.free(bufnum)
 
+    def read_buffer(self, path, *, file_start: int = 0, num_frames: int = 0,
+                    wait: bool = True, timeout: float = 5.0) -> Buffer:
+        """Allocate a buffer and read a sound file into it (``/b_allocRead``): the
+        shape and sample rate come from the file (``num_frames`` 0 = the whole
+        file, from ``file_start``). Decoding is by content (WAV, FLAC, OGG, MP3,
+        …). In NRT it scores at time 0; in RT ``wait=True`` blocks on ``/done``.
+        The returned `Buffer`'s ``frames``/``channels`` are unknown client-side
+        until `query_buffer`."""
+        bufnum = self.buffers.alloc()
+        extra = [int(file_start), int(num_frames)] if (file_start or num_frames) else []
+        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
+            self.send_msg("/b_allocRead", bufnum, str(path), *extra)
+            return Buffer(bufnum)
+        addr, args = self.request("/b_allocRead", bufnum, str(path), *extra,
+                                  timeout=timeout, expect=("/done", "/fail"))
+        if addr == "/fail":
+            self.buffers.free(bufnum)
+            raise CommandError(f"/b_allocRead {bufnum} {path!r} failed: {args}")
+        return Buffer(bufnum)
+
+    def read_into(self, buf, path, *, file_start: int = 0, num_frames: int = -1,
+                  buf_start: int = 0, wait: bool = True, timeout: float = 5.0):
+        """Read a sound file into an existing buffer (``/b_read``), keeping its
+        shape. NRT scores at time 0; RT ``wait=True`` blocks on ``/done``."""
+        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        args = [bufnum, str(path), int(file_start), int(num_frames), int(buf_start)]
+        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
+            self.send_msg("/b_read", *args)
+            return
+        addr, rargs = self.request("/b_read", *args, timeout=timeout,
+                                   expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/b_read {bufnum} {path!r} failed: {rargs}")
+
+    def write_buffer(self, buf, path, *, sample_format: str = "int16",
+                     num_frames: int = -1, buf_start: int = 0,
+                     wait: bool = True, timeout: float = 5.0):
+        """Write a buffer to a WAV file (``/b_write``); ``sample_format`` is
+        ``"int16"``, ``"int24"`` or ``"float"``. NRT scores at time 0; RT
+        ``wait=True`` blocks on ``/done``."""
+        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        args = [bufnum, str(path), "wav", str(sample_format),
+                int(num_frames), int(buf_start)]
+        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
+            self.send_msg("/b_write", *args)
+            return
+        addr, rargs = self.request("/b_write", *args, timeout=timeout,
+                                   expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/b_write {bufnum} {path!r} failed: {rargs}")
+
+    def zero_buffer(self, buf, *, wait: bool = True, timeout: float = 5.0):
+        """Zero a buffer (``/b_zero``). NRT scores at time 0; RT ``wait=True``
+        blocks on ``/done``."""
+        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        if getattr(self.interface, "time_mode", "unix") == "score" or not wait:
+            self.send_msg("/b_zero", bufnum)
+            return
+        addr, rargs = self.request("/b_zero", bufnum, timeout=timeout,
+                                   expect=("/done", "/fail"))
+        if addr == "/fail":
+            raise CommandError(f"/b_zero {bufnum} failed: {rargs}")
+
+    def query_buffer(self, buf, timeout: float = 5.0) -> Buffer:
+        """Ask the running server for a buffer's shape (``/b_query`` → ``/b_info
+        bufnum frames channels sampleRate``) and fill it into the `Buffer`
+        handle. RT only (it needs a reply)."""
+        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        _, args = self.request("/b_query", bufnum, timeout=timeout, expect=("/b_info",))
+        # /b_info: bufnum, frames, channels, sampleRate
+        frames, channels, sample_rate = int(args[1]), int(args[2]), float(args[3])
+        if isinstance(buf, Buffer):
+            buf.frames, buf.channels, buf.sample_rate = frames, channels, sample_rate
+            return buf
+        return Buffer(bufnum, frames, channels, sample_rate)
+
+    def get_samples(self, buf, start: int = 0, count: int = -1, *,
+                    chunk: int = 1024, timeout: float = 5.0):
+        """Fetch interleaved samples from a buffer (``/b_getn`` → ``/b_setn``),
+        in chunks, as a stdlib ``array('f')``. ``count`` -1 = to the end (the
+        shape is queried first). RT only (it needs replies); for display the GUI
+        host fetches buffers itself."""
+        from array import array
+        bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        if count < 0:
+            shape = self.query_buffer(buf, timeout=timeout)
+            total = shape.frames * shape.channels
+            count = max(0, total - start)
+        out = array("f")
+        got = 0
+        while got < count:
+            n = min(chunk, count - got)
+            _, args = self.request("/b_getn", bufnum, start + got, n,
+                                   timeout=timeout, expect=("/b_setn",))
+            # /b_setn: bufnum, start, count, value...
+            out.extend(float(v) for v in args[3:3 + int(args[2])])
+            got += n
+        return out
+
     # ---- offline render (NRT interface only) ----
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2):
