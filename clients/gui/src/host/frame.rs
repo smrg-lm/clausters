@@ -31,7 +31,7 @@ use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
-use super::{BusSource, bpf, controls, meters, phasescope, plot, spectrum};
+use super::{BusSource, bpf, controls, meters, phasescope, plot, spectrum, track};
 
 /// The window's clear color (the dark chrome backdrop).
 pub(crate) const CLEAR: wgpu::Color = wgpu::Color {
@@ -172,6 +172,15 @@ struct BpfItem {
     duration: f64,
     exp: bool,
     label: Option<String>,
+}
+
+/// A placed `track` lane and its clips, copied out of the host tree so the
+/// graphic-unit overlay is drawn after the tree borrow is released. The clips'
+/// shared time axis is computed once over all the window's tracks.
+struct TrackItem {
+    rect: Rect,
+    label: Option<String>,
+    clips: Vec<track::ClipDraw>,
 }
 
 /// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
@@ -500,6 +509,7 @@ pub(crate) fn render(
     // node-tree models and the GPU resources are read.
     let mut plot_rects: Vec<PlotItem> = Vec::new();
     let mut bpf_rects: Vec<BpfItem> = Vec::new();
+    let mut track_items: Vec<TrackItem> = Vec::new();
     let mut nodetree_rects: Vec<(Rect, i32, bool, Option<String>)> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     let active_button = inputs.active_button;
@@ -619,6 +629,40 @@ pub(crate) fn render(
                 exp: *exp,
                 label: label.clone(),
             }),
+            WidgetKind::Track { label, .. } => {
+                // A track carries its clips as children (not laid out by the
+                // layout engine — they are placed by offset/dur on the shared
+                // time axis in the overlay pass below).
+                let clips = p
+                    .widget
+                    .children
+                    .iter()
+                    .filter_map(|c| match &c.kind {
+                        WidgetKind::Clip {
+                            offset,
+                            dur,
+                            samples,
+                            min,
+                            max,
+                            label,
+                        } => Some(track::ClipDraw {
+                            id: c.id.unwrap_or(-1),
+                            offset: *offset,
+                            dur: *dur,
+                            samples: Arc::clone(samples),
+                            min: *min,
+                            max: *max,
+                            label: label.clone(),
+                        }),
+                        _ => None,
+                    })
+                    .collect();
+                track_items.push(TrackItem {
+                    rect: p.rect,
+                    label: label.clone(),
+                    clips,
+                });
+            }
             WidgetKind::NodeTree {
                 group,
                 controls,
@@ -837,6 +881,25 @@ pub(crate) fn render(
             label.as_deref(),
             inputs.server_attached,
         );
+    }
+    // Multitrack lanes: the window's tracks share one time axis (aligned
+    // lanes), spanning the longest clip end; each lane's clips are placed on it.
+    if !track_items.is_empty() {
+        let span = track_items
+            .iter()
+            .flat_map(|t| t.clips.iter())
+            .map(|c| c.offset + c.dur)
+            .fold(0.0_f64, f64::max);
+        let nav = View::full(span.ceil().max(1.0) as usize);
+        for item in &track_items {
+            track::draw(
+                &mut mesh,
+                item.rect,
+                &nav,
+                item.label.as_deref(),
+                &item.clips,
+            );
+        }
     }
 
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);

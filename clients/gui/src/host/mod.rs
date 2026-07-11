@@ -53,6 +53,7 @@ pub mod registry;
 pub mod ruler;
 pub mod spectrum;
 pub mod timeline;
+pub mod track;
 pub mod widget;
 
 // The native I/O shell, excluded from `wasm32`: the UDP client leg

@@ -456,6 +456,27 @@ pub enum WidgetKind {
         options: Vec<String>,
         label: Option<String>,
     },
+    /// A multitrack lane: a horizontal strip of the shared timeline holding
+    /// `clip` children placed by their `offset`/`dur`. A container (its clips
+    /// are its children); `label` names the track in a left header, `height`
+    /// its lane weight when several tracks stack under one time axis. The
+    /// **graphic unit** — the clip rectangles and the track header — is drawn
+    /// by [`super::track`]; the clips share one time axis (aligned tracks), the
+    /// span being the longest clip end over the window's tracks.
+    Track { label: Option<String>, height: f32 },
+    /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
+    /// dur]` in timeline sample units (the graphic unit — length = duration),
+    /// with an optional inline `data`/`blob` body drawn decimated inside it and
+    /// a `label`. Interaction (drag to move `offset`, drag an edge to resize
+    /// `dur`) writes back through the edit-back path. A leaf.
+    Clip {
+        offset: f64,
+        dur: f64,
+        samples: Arc<[f32]>,
+        min: f32,
+        max: f32,
+        label: Option<String>,
+    },
     /// A type this build does not render yet. Laid out so it reserves space, but
     /// not painted. Carries the type tag for logs.
     Unknown(String),
@@ -757,12 +778,24 @@ impl Widget {
                     label: label(&node.props),
                 }
             }
+            "track" => WidgetKind::Track {
+                label: label(&node.props),
+                height: number(&node.props, "height", 1.0).max(0.0),
+            },
+            "clip" => WidgetKind::Clip {
+                offset: number_f64(&node.props, "offset", 0.0).max(0.0),
+                dur: number_f64(&node.props, "dur", 0.0).max(0.0),
+                samples: inline_samples("clip", id, &node.props, blobs)?,
+                min: number(&node.props, "min", -1.0),
+                max: number(&node.props, "max", 1.0),
+                label: label(&node.props),
+            },
             other => WidgetKind::Unknown(other.to_string()),
         };
         // Only containers carry children into the typed tree; a leaf's children
-        // (if any) are ignored.
+        // (if any) are ignored. A `track` carries its clips.
         let children = match kind {
-            WidgetKind::Window { .. } | WidgetKind::Panel { .. } => node
+            WidgetKind::Window { .. } | WidgetKind::Panel { .. } | WidgetKind::Track { .. } => node
                 .children
                 .iter()
                 .map(|c| Self::build(None, c, blobs))
@@ -1094,6 +1127,26 @@ impl WidgetKind {
                 "label" => set_label(label, v),
                 _ => false,
             },
+            WidgetKind::Track { label, height } => match key {
+                "label" => set_label(label, v),
+                "height" => set_f(height, v),
+                _ => false,
+            },
+            WidgetKind::Clip {
+                offset,
+                dur,
+                min,
+                max,
+                label,
+                ..
+            } => match key {
+                "offset" => v.as_f64().map(|x| *offset = x.max(0.0)).is_some(),
+                "dur" => v.as_f64().map(|x| *dur = x.max(0.0)).is_some(),
+                "min" => set_f(min, v),
+                "max" => set_f(max, v),
+                "label" => set_label(label, v),
+                _ => false,
+            },
             WidgetKind::Button { label } => key == "label" && set_label(label, v),
             WidgetKind::Label { text } => {
                 key == "text" && v.as_str().map(|s| *text = s.to_string()).is_some()
@@ -1383,6 +1436,44 @@ mod tests {
         let n = node(r#"{"type":"window","children":[{"id":3,"type":"waveform","data":[0.0]}]}"#);
         let w = Widget::from_node(9, &n, &[]).unwrap();
         assert_eq!(w.children[0].kind.editor().unwrap().offset, 0.0);
+    }
+
+    #[test]
+    fn track_carries_clips_with_their_placement() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"track","label":"drums","children":[
+                    {"id":10,"type":"clip","offset":0.0,"dur":100.0,"data":[0.0,1.0],"label":"a"},
+                    {"id":11,"type":"clip","offset":-5.0,"dur":50.0}
+                ]}
+            ]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        let track = &w.children[0];
+        match &track.kind {
+            WidgetKind::Track { label, .. } => assert_eq!(label.as_deref(), Some("drums")),
+            other => panic!("expected track, got {other:?}"),
+        }
+        assert_eq!(track.children.len(), 2, "a track carries its clips");
+        match &track.children[0].kind {
+            WidgetKind::Clip {
+                offset,
+                dur,
+                samples,
+                label,
+                ..
+            } => {
+                assert_eq!((*offset, *dur), (0.0, 100.0));
+                assert_eq!(&samples[..], &[0.0, 1.0]);
+                assert_eq!(label.as_deref(), Some("a"));
+            }
+            other => panic!("expected clip, got {other:?}"),
+        }
+        // A negative offset clamps to 0 (no clip starts before the timeline).
+        match &track.children[1].kind {
+            WidgetKind::Clip { offset, .. } => assert_eq!(*offset, 0.0),
+            other => panic!("expected clip, got {other:?}"),
+        }
     }
 
     #[test]

@@ -456,6 +456,46 @@ def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None
     return node("plot", id=id, **extra, **props)
 
 
+def track(id: int, *clips, label: str | None = None, height: float | None = None,
+          **props) -> dict:
+    """A multitrack ``track`` lane holding `clip` children placed on a shared
+    time axis — the DAW-style track editor's lane. ``label`` names it in a left
+    header; ``height`` is its lane weight when several tracks stack under one
+    window (a ``col`` layout). The window's tracks share one time axis, so a
+    clip at a given offset lines up across lanes.
+
+    Pass the clips positionally::
+
+        track(1, clip(10, offset=0, dur=4, data=take_a),
+                 clip(11, offset=4, dur=2, data=take_b), label="drums")
+    """
+    extra = _drop_none(label=label, height=height)
+    return node("track", id=id, children=clips, **extra, **props)
+
+
+def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
+         min: float | None = None, max: float | None = None,
+         label: str | None = None, **props) -> dict:
+    """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
+    dur]`` in timeline sample units (the graphic unit — length = duration), with
+    an optional inline body drawn decimated inside it.
+
+    - ``offset`` — the clip's start on the shared timeline (samples; clamped to
+      ``>= 0``).
+    - ``dur`` — its duration (samples); a clip with no duration draws nothing.
+    - ``data``/``blob`` — an optional inline waveform body (a small float list,
+      or the index of a blob carried beside the JSON — see `samples_to_blob`).
+    - ``min``/``max`` — the body's value range (default the bipolar ``-1``/``1``).
+
+    Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
+    event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
+    can update the composition model and re-realize."""
+    extra = _drop_none(offset=offset,
+                       data=list(data) if data is not None else None,
+                       blob=blob, min=min, max=max, label=label)
+    return node("clip", id=id, dur=dur, **extra, **props)
+
+
 def canvas(id: int, shader: str | None = None, *, params=None, buses=None,
            label: str | None = None, **props) -> dict:
     """A ``canvas`` running a script-supplied WGSL shader over the widget area --

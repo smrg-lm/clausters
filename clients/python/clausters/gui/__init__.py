@@ -16,7 +16,9 @@ shared-memory-backed ``meter``/``scope``, the audio-tap ``scope``
 live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
 a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
 edits flow back as flat ``"points"`` events — see `env_to_points` /
-`points_to_env` for the `clausters.defs.Env` round trip);
+`points_to_env` for the `clausters.defs.Env` round trip), and a multitrack
+``track``/``clip`` timeline (clips placed by ``offset``/``dur`` on one shared
+time axis — the DAW-style track editor);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
@@ -34,13 +36,15 @@ low-latency control path, ``gui_nodetree`` for the live node tree, ``gui_plot``
 for an NRT render plotted, ``gui_canvas`` for a shader, ``gui_scope`` for the
 oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_editor`` for the editor-grade waveform + spectrogram,
-``gui_bpf`` for the drawable envelope editor).
+``gui_bpf`` for the drawable envelope editor,
+``gui_multitrack`` for the DAW-style track timeline).
 """
 
 from .guidef import (
     bpf,
     button,
     canvas,
+    clip,
     correlation,
     env_to_points,
     knob,
@@ -64,6 +68,7 @@ from .guidef import (
     spectrum,
     text,
     toggle,
+    track,
     waveform,
     window,
 )
@@ -94,6 +99,8 @@ __all__ = [
     "env_to_points",
     "points_to_env",
     "plot",
+    "track",
+    "clip",
     "canvas",
     "samples_to_blob",
     "samples_to_file",
