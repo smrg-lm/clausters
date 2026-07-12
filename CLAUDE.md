@@ -97,9 +97,10 @@ with this modularity in mind.
   model" (it reads as the node tree or a def), and not "the material model":
   *material* is the model's **internal vocabulary**, and deliberately general — it
   spans both **generated material** (the rendered thing: an audio file, a bounced
-  timeline) and **generator material** (the algorithm that renders it: a def, a
-  pattern), with the *change of state* between them. It names the contents, not
-  the layer. The multitrack editor is the *view of the arrangement*. Its
+  timeline — random-access, so it can be read backwards, sliced, edited in place)
+  and **generator material** (the algorithm that renders it: a def, a pattern —
+  forward-only, it can just be evaluated), with the *change of state* between them.
+  It names the contents, not the layer. The multitrack editor is the *view of the arrangement*. Its
   documentation:
   - **User** — the composition chapter of the Python client's book
     (`clients/python/docs/src/composition.md`): materials, grouping, realization,

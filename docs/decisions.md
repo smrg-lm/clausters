@@ -381,7 +381,12 @@ inside of that clip at the level you happen to care about".
 bounded that produces a unit of meaning — in one of two modes, and this is the axis
 the layer turns on: **generated** (the rendered thing, editable data) or a
 **generator** (the algorithm that renders it). Evaluating the second into the first
-is the *change of state*. A material carries only two temporal
+is the *change of state* — and it is a compositional act, not an optimization: what
+separates the two modes is not data versus process but what can be *done* with
+them. Generated material is random-access (an audio file plays backwards, slices,
+edits in place); a generator is forward-only (it evaluates, in order, and that is
+all). Bouncing is what turns something you can only produce into something you can
+manipulate. A material carries only two temporal
 properties — an *onset* and a *duration*, either of which may be absent (which
 gives it a temporal *character*: a segment, a punctual event, a relative segment,
 or a pure abstract context). There are exactly **five** kinds, and each is a thin

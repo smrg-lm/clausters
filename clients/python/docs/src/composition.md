@@ -17,7 +17,15 @@ layer turns on. A material is either **generated** (the rendered thing: samples 
 a buffer, a bounced timeline of events — data you can edit directly) or a
 **generator** (the algorithm that renders it: a def, a pattern, a routine).
 Evaluating a generator produces generated material; that is the *change of state*,
-and it is what realization does. It carries two optional temporal properties — an `onset`
+and it is what realization does.
+
+The difference is not merely data versus process — it is what you can *do* with
+each. Generated material is **random-access**: an audio file can be read backwards,
+sliced, scrubbed, edited in place. A generator is **forward-only**: it can be
+evaluated, in order, and that is all. So the change of state is a compositional
+act, not an optimization — it is what turns something you can only *produce* into
+something you can *manipulate*, which is why a pattern is bounced to be drawn and
+edited on a lane. It carries two optional temporal properties — an `onset`
 (where it starts, in beats, relative to its context) and a `duration` — and
 delegates the actual playing to the object it wraps. The model is a thin
 adornment over what the client already has, not a second implementation of it.
