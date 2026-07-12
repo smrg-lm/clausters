@@ -592,6 +592,36 @@ pub fn toggle_selected(selected: &mut Vec<usize>, index: usize) {
     }
 }
 
+/// Copy a selection of notes, normalized so the block's earliest onset is 0 —
+/// the clipboard form [`paste_notes`] re-places (pitches stay absolute).
+pub fn copy_notes(notes: &[Note], indices: &[usize]) -> Vec<Note> {
+    let mut out: Vec<Note> = indices
+        .iter()
+        .filter_map(|&i| notes.get(i).copied())
+        .collect();
+    let t0 = out.iter().map(|n| n.start).fold(f64::INFINITY, f64::min);
+    if t0.is_finite() {
+        for n in &mut out {
+            n.start -= t0;
+        }
+    }
+    out
+}
+
+/// Paste a clipboard block with its first onset at `at`: the notes append
+/// (original pitches and spread kept), and the new indices come back — the
+/// pasted block becomes the selection, ready to drag into place.
+pub fn paste_notes(notes: &mut Vec<Note>, clip: &[Note], at: f64) -> Vec<usize> {
+    let at = at.max(0.0);
+    clip.iter()
+        .map(|n| {
+            let mut n = *n;
+            n.start += at;
+            insert_note(notes, n)
+        })
+        .collect()
+}
+
 /// Quantize note onsets to the `grid` (timeline samples): each start snaps to
 /// the nearest grid line, durations untouched. `indices` picks the notes (the
 /// selection); empty quantizes them all. A zero/negative grid is a no-op.
@@ -801,6 +831,27 @@ mod tests {
         let mut mesh = Mesh::new();
         draw_pitch_labels(&mut mesh, grid(), 12.0, 108.0);
         assert_eq!(mesh.vertex_count(), 0);
+    }
+
+    #[test]
+    fn copy_normalizes_the_block_and_paste_replaces_it_selected() {
+        let notes = three_notes();
+        // Copy the last two: the block's first onset normalizes to 0.
+        let clip = copy_notes(&notes, &[1, 2]);
+        assert_eq!(clip.len(), 2);
+        assert_eq!((clip[0].start, clip[0].pitch), (0.0, 64.0));
+        assert_eq!((clip[1].start, clip[1].pitch), (200.0, 72.0));
+        // Paste at 1000: appended with the spread kept, new indices returned.
+        let mut notes = three_notes();
+        let sel = paste_notes(&mut notes, &clip, 1000.0);
+        assert_eq!(sel, vec![3, 4]);
+        assert_eq!((notes[3].start, notes[4].start), (1000.0, 1200.0));
+        assert_eq!(notes[4].pitch, 72.0);
+        // A negative paste point clamps to the timeline start.
+        let sel = paste_notes(&mut notes, &clip, -50.0);
+        assert_eq!(notes[sel[0]].start, 0.0);
+        // Copying nothing yields an empty clipboard.
+        assert!(copy_notes(&notes, &[]).is_empty());
     }
 
     #[test]

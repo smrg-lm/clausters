@@ -25,7 +25,10 @@ parity):
   **Delete/Backspace** removes it; **drag the velocity lane over a selected
   note** nudges all the selected velocities relatively;
 - **q** quantizes the selected notes' onsets (or all of them) to the snap
-  grid. (Model-side, ``seq.Timeline.quantize(grid)`` does the same in beats.)
+  grid (model-side, ``seq.Timeline.quantize(grid)`` does the same in beats);
+- **Ctrl+C / Ctrl+X / Ctrl+V** copy / cut / paste the selection -- the paste
+  lands with its first note at the cursor's time (snapped), selected and
+  ready to drag; the clipboard travels between rolls and windows.
 
 Every edit flows back per the **edit-back pattern**: the host emits
 ``/gui_event <id> "notes" <start dur pitch velocity channel ...>`` (the note

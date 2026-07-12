@@ -90,8 +90,11 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   las seleccionadas; arrastrar el carril de velocity sobre una seleccionada
   mueve las velocities de todas **relativamente**; `q` **cuantiza** los starts
   de las seleccionadas (o todas) a la grilla `snap` → se ven saltar a la
-  grilla y se **oye** la melodía cuadrada al tocarla. Refrescar antes el binario
-  bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
+  grilla y se **oye** la melodía cuadrada al tocarla; Ctrl+C/X **copia/corta**
+  la selección y Ctrl+V la **pega** con la primera nota en el tiempo del
+  cursor (queda seleccionada, lista para arrastrar — y viaja entre rolls y
+  ventanas). Refrescar antes el binario bundleado
+  (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **MIDI en vivo pintando notas (GUI).** Con un roll `midi_in=True`, el host
   abre el puerto MIDI virtual **"clausters-gui"** → rutear un teclado (o
   `aconnect`/qpwgraph) y tocar: con el playhead corriendo las notas se

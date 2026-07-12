@@ -428,6 +428,9 @@ struct App {
     /// the shared playhead is stopped; the last note-off advances it a grid.
     #[cfg(feature = "midi")]
     step: HashMap<(i32, i32), f64>,
+    /// The piano-roll note clipboard (Ctrl+C/X/V), normalized to the block's
+    /// first onset — host-wide, so notes travel between rolls and windows.
+    clipboard: Vec<pianoroll::Note>,
 }
 
 impl App {
@@ -454,6 +457,7 @@ impl App {
             held: HashMap::new(),
             #[cfg(feature = "midi")]
             step: HashMap::new(),
+            clipboard: Vec::new(),
         }
     }
 
@@ -3038,10 +3042,20 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
                     Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
                         self.delete_selected_notes(def_id)
+                    }
+                    Key::Character(ref c) if ctrl && c.eq_ignore_ascii_case("c") => {
+                        self.copy_selected_notes(def_id, false)
+                    }
+                    Key::Character(ref c) if ctrl && c.eq_ignore_ascii_case("x") => {
+                        self.copy_selected_notes(def_id, true)
+                    }
+                    Key::Character(ref c) if ctrl && c.eq_ignore_ascii_case("v") => {
+                        self.paste_notes_at_cursor(def_id)
                     }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("q") => {
                         self.quantize_roll(def_id)
@@ -3224,6 +3238,69 @@ impl App {
             self.emit_notes(def_id, id);
             self.redraw(def_id);
         }
+    }
+
+    /// Ctrl+C / Ctrl+X over a piano-roll: copy the selected notes to the host
+    /// clipboard, normalized to the block's first onset (a cut also removes
+    /// them). The clipboard is host-wide, so a block travels between rolls and
+    /// windows. A no-op when the cursor is elsewhere or nothing is selected.
+    fn copy_selected_notes(&mut self, def_id: i32, cut: bool) {
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return;
+        };
+        let Some((id, _rect, WidgetKind::PianoRoll { .. })) = self.hit(def_id, cx, cy) else {
+            return;
+        };
+        let copied = interact::pianoroll_state_edit(&mut self.host, def_id, id, |notes, sel| {
+            let clip = pianoroll::copy_notes(notes, sel);
+            if cut && !clip.is_empty() {
+                pianoroll::remove_notes(notes, sel);
+                sel.clear();
+            }
+            clip
+        })
+        .unwrap_or_default();
+        if copied.is_empty() {
+            return;
+        }
+        self.clipboard = copied;
+        if cut {
+            self.host.sync_track_totals();
+            self.emit_notes(def_id, id);
+            self.redraw(def_id);
+        }
+    }
+
+    /// Ctrl+V over a piano-roll: paste the clipboard with its first onset at
+    /// the cursor's time (snapped to the note grid), original pitches and
+    /// spread kept. The pasted block becomes the new selection, ready to drag
+    /// into place.
+    fn paste_notes_at_cursor(&mut self, def_id: i32) {
+        if self.clipboard.is_empty() {
+            return;
+        }
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return;
+        };
+        let (fb_w, fb_h) = self.fb(def_id);
+        let Some(h) = interact::pianoroll_hit(&self.host, def_id, fb_w, fb_h, cx, cy) else {
+            return;
+        };
+        let Some((id, _rect, WidgetKind::PianoRoll { .. })) = self.hit(def_id, cx, cy) else {
+            return;
+        };
+        let nav = View {
+            start: h.nav.start,
+            len: h.nav.len,
+        };
+        let at = interact::snap(pianoroll::time_at(h.grid, &nav, 0.0, cx as f32), h.snap);
+        let clip = self.clipboard.clone();
+        interact::pianoroll_state_edit(&mut self.host, def_id, id, |notes, sel| {
+            *sel = pianoroll::paste_notes(notes, &clip, at);
+        });
+        self.host.sync_track_totals();
+        self.emit_notes(def_id, id);
+        self.redraw(def_id);
     }
 
     /// Delete/Backspace: remove every selected note of the piano-roll under the
