@@ -12,7 +12,12 @@ picture of the music: dragging a clip moves the *material*, and the score follow
 ## Materials
 
 A **material** is any bounded thing that produces a unit of meaning and can be
-decomposed or combined. It carries two optional temporal properties — an `onset`
+decomposed or combined — and it comes in two modes, which is the axis the whole
+layer turns on. A material is either **generated** (the rendered thing: samples in
+a buffer, a bounced timeline of events — data you can edit directly) or a
+**generator** (the algorithm that renders it: a def, a pattern, a routine).
+Evaluating a generator produces generated material; that is the *change of state*,
+and it is what realization does. It carries two optional temporal properties — an `onset`
 (where it starts, in beats, relative to its context) and a `duration` — and
 delegates the actual playing to the object it wraps. The model is a thin
 adornment over what the client already has, not a second implementation of it.

@@ -89,17 +89,24 @@ with this modularity in mind.
   - `clausters-cliente` / "clausters cliente" / "clausters client" — **an
     unspecified client** of the clausters server (a protocol consumer in
     general, not the Python one specifically).
-- **The compositional model / multitrack editor** — the client-side composition
-  layer (`clausters.model`) and its DAW-style view (`track`/`clip` widgets +
-  `clausters.gui.Editor`). Name them in full — *"the compositional model"*, *"the
-  multitrack editor"* / "el modelo compositivo", "el editor multipista" — never
-  the bare "the model", which reads as the node tree or a def. Its documentation:
+- **The arrangement model / multitrack editor** — the client-side layer that
+  places materials in time, groups them recursively and realizes them
+  (`clausters.model`), and its DAW-style view (`track`/`clip` widgets +
+  `clausters.gui.Editor`). Call them *"the arrangement model"* and *"the multitrack
+  editor"* / "el modelo de arreglo", "el editor multipista" — never the bare "the
+  model" (it reads as the node tree or a def), and not "the material model":
+  *material* is the model's **internal vocabulary**, and deliberately general — it
+  spans both **generated material** (the rendered thing: an audio file, a bounced
+  timeline) and **generator material** (the algorithm that renders it: a def, a
+  pattern), with the *change of state* between them. It names the contents, not
+  the layer. The multitrack editor is the *view of the arrangement*. Its
+  documentation:
   - **User** — the composition chapter of the Python client's book
     (`clients/python/docs/src/composition.md`): materials, grouping, realization,
     and how the editor maps and edits them.
   - **Wire** — `docs/gui-protocol.md` (the `/gui_*` reference: widgets, props,
     edit-back payloads).
-  - **Development** — `docs/architecture.md` ("The compositional layer: where it
+  - **Development** — `docs/architecture.md` ("The arrangement layer: where it
     lives", and the GUI host's structure + how to add a widget).
   - **Rationale** — `docs/decisions.md` (the framework itself; the beats↔samples
     unit bridge; a buffer sounds through an instrument; the patcher shows a

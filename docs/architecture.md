@@ -268,9 +268,9 @@ The lifecycle is factory (compiler thread, `ffi_lock`, `-single -ftz 2`, stdlib 
 
 **Why Faust UI labels are the control names** (a deliberate decision, not a leftover): a def's parameters are named by whoever writes the def — exactly like the `controls` array in the UGen JSON format. Inventing a second naming layer (renaming, indices-only, a Clausters-side mapping table) would add a translation step for zero expressiveness: the label *is* the parameter's name in both def families, and `/s_new`/`/n_set` address both identically. Group paths (`hgroup`/`vgroup`) are ignored on purpose — bare labels, first declaration wins on collision. The two reserved names `out`/`in` (first output/input bus) come *after* the def's own params, and a def that declares its own `out`/`in` control wins over the reserved meaning. UI elements are plain values written by `/n_set` (zone stores, RT-safe) and can also be **bound to a bus** with `/n_map`/`/n_mapa` — the same mechanism unifies UGen controls and Faust zones (see *Control/bus mapping* above). The two reserved `out`/`in` routing controls are not mappable.
 
-## The compositional layer: where it lives
+## The arrangement layer: where it lives
 
-The compositional model and its multitrack editor are **client-side** — the server
+The arrangement model and its multitrack editor are **client-side** — the server
 knows nothing of them, and nothing in this section runs on the audio thread. What
 makes the layer thin is that every one of its concepts is a name for something the
 system already had; this is the map, for when you have to change one and want to

@@ -113,7 +113,7 @@ Python builders' documentation, since that is how a script names them.
 ### The composition views: a multitrack editor and a patcher
 
 The newest arc of the GUI is a **DAW-style multitrack editor**, and it exists to
-put a *client-side compositional model* on screen: a `track` is a lane, a `clip`
+put a *client-side arrangement model* on screen: a `track` is a lane, a `clip`
 is a placed rectangle spanning `[offset, offset + dur]` on a time axis the lanes
 of a window **share** (they zoom and pan as one navigation group, and the axis
 spans the composition). A clip's body is one of three, and the choice is the only
@@ -207,7 +207,7 @@ same C ABI and the same OSC.
 | MIDI interfaces in the Python client (`MidiServer`, SMF / MIDI 2.0 clip export, live port) | done |
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
 | Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
-| Compositional model in the Python client (materials, recursive groups, realization) | done |
+| Arrangement model in the Python client (materials, recursive groups, realization) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `graph`) and the driver that binds them to the model | done |
 | JavaScript client + npm | planned |
 | `third_party` Faust build + Faust-enabled wheels | planned |

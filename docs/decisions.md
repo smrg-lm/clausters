@@ -294,7 +294,7 @@ model instead of designing a new one.
 
 ## The multitrack editor: beats in the model, samples on the axis, and one converter
 
-The compositional model places materials in **beats**; the multitrack view places
+The arrangement model places materials in **beats**; the multitrack view places
 clips in **timeline samples**. Two units, and the temptation is to pick one. Both
 are load-bearing:
 
@@ -364,7 +364,7 @@ wire per control, which is exactly the mutation the model and the GraphDef both
 accept. A directed rendering could be layered on later — but only from
 information the server surfaces, not from a name.
 
-## The compositional model: five primitives, one recursive group
+## The arrangement model: five primitives, one recursive group
 
 A sequencing layer (a timeline of items, a playhead) is enough to *play* music
 and not enough to *compose* it. A composition is material inside material — a
@@ -378,7 +378,10 @@ granularity stops where its type list stops: you can edit a clip, but not "the
 inside of that clip at the level you happen to care about".
 
 **Decision.** A closed algebra instead of a type list. A **material** is anything
-bounded that produces a unit of meaning, and it carries only two temporal
+bounded that produces a unit of meaning — in one of two modes, and this is the axis
+the layer turns on: **generated** (the rendered thing, editable data) or a
+**generator** (the algorithm that renders it). Evaluating the second into the first
+is the *change of state*. A material carries only two temporal
 properties — an *onset* and a *duration*, either of which may be absent (which
 gives it a temporal *character*: a segment, a punctual event, a relative segment,
 or a pure abstract context). There are exactly **five** kinds, and each is a thin
