@@ -539,6 +539,13 @@ pub enum WidgetKind {
         /// An exponential display scale for the curve body's value axis (a
         /// frequency-like range), as on the `bpf` view.
         exp: bool,
+        /// The curve body's own value range. A clip may **layer** its bodies (an
+        /// envelope drawn over the event it shapes), and they do not share an
+        /// axis — a piano-roll's `min`/`max` are pitches, a curve's are its
+        /// parameter's units — so the curve keeps its own. Defaults to
+        /// `min`/`max`.
+        points_min: f32,
+        points_max: f32,
         min: f32,
         max: f32,
         label: Option<String>,
@@ -917,14 +924,18 @@ impl Widget {
                     .props
                     .get("points")
                     .and_then(|v| {
+                        // Against the *curve's* range: a layered clip's `min`/`max`
+                        // belong to the body underneath (a piano-roll's pitches).
                         super::bpf::parse_points(
                             v,
-                            number(&node.props, "min", -1.0),
-                            number(&node.props, "max", 1.0),
+                            number(&node.props, "points_min", number(&node.props, "min", -1.0)),
+                            number(&node.props, "points_max", number(&node.props, "max", 1.0)),
                         )
                     })
                     .unwrap_or_default(),
                 exp: node.props.get("exp").and_then(truthy).unwrap_or(false),
+                points_min: number(&node.props, "points_min", number(&node.props, "min", -1.0)),
+                points_max: number(&node.props, "points_max", number(&node.props, "max", 1.0)),
                 min: number(&node.props, "min", -1.0),
                 max: number(&node.props, "max", 1.0),
                 label: label(&node.props),
@@ -1319,6 +1330,8 @@ impl WidgetKind {
                 notes,
                 points,
                 exp,
+                points_min,
+                points_max,
                 min,
                 max,
                 label,
@@ -1339,6 +1352,8 @@ impl WidgetKind {
                     None => false,
                 },
                 "exp" => truthy(v).map(|b| *exp = b).is_some(),
+                "points_min" => set_f(points_min, v),
+                "points_max" => set_f(points_max, v),
                 "min" => set_f(min, v),
                 "max" => set_f(max, v),
                 "label" => set_label(label, v),

@@ -101,7 +101,7 @@ script actually names these. The catalog itself:
 | `bpf` | A drawable break-point envelope, played by the server's own shape math | `points`, `min`, `max`, `duration`, `exp` |
 | `plot` | A static plot of a signal | `data`/`blob`/`path`, `min`, `max` |
 | `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis | `label`, `height`, `snap`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `playhead`, `link` |
-| `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its body is a take, a piano-roll or an automation curve | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points`, `min`, `max`, `label` |
+| `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |
 | `graph` | A **patcher** of a bus-wired node graph: member boxes, bus nodes, a wire per connection | `members`, `buses`, `wires`, `label` |
 | `canvas` | A script-supplied WGSL shader over the widget area | `shader`, `params`, `buses` |
 

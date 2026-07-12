@@ -32,7 +32,7 @@ resolves it), so it needs no protocol of its own.
 import itertools
 
 from .. import _native
-from ..model.group import COMPOSITIONAL, LOGICAL, Group
+from ..model.group import COMPOSITIONAL, LOGICAL, SIMULTANEOUS, Group
 from ..model.material import Buffer, Material
 from ..defs.ugens import points_to_env
 from ..model.realize import flatten
@@ -550,6 +550,15 @@ class Editor:
         *expanded* nested group); anything else becomes a lane with one clip.
         ``base`` is its start in beats, ``owner``/``member`` the placement an
         edit-back writes through."""
+        if (isinstance(material, Group) and material.kind == COMPOSITIONAL
+                and len(material) > 1
+                and material.temporal_relation() == SIMULTANEOUS
+                and not self.is_expanded(material)):
+            # Its members start and end together: they are *one* thing on the
+            # timeline, so they are one clip with layered bodies — not a lane of
+            # clips that must be dragged one by one.
+            return [self._lane([self._clip_for(material, base, owner, member)],
+                               _name(material))]
         if isinstance(material, Group) and material.kind == COMPOSITIONAL:
             clips, extra = [], []
             for child in material.handles:
@@ -572,9 +581,8 @@ class Editor:
         return lane
 
     def _clip_for(self, material, base: float, owner, member) -> dict:
-        """One `clip`: the material placed at ``base`` beats (absolute on the
-        shared axis), with the body its kind calls for — a take, a piano-roll, or
-        the labeled rectangle that summarizes a collapsed group. Registers what it
+        """One `clip`: the material placed at ``base`` beats (absolute on the shared
+        axis), with the body (or **bodies**) its kind calls for. Registers what it
         drew, which is what the edit-back path resolves against."""
         wid = next(self._ids)
         offset = self.beats_to_units(base)
@@ -583,53 +591,64 @@ class Editor:
         dur_beats = member.dur if (member is not None and member.dur is not None) else None
         if dur_beats is None and isinstance(material, Material):
             dur_beats = material.duration
-        label = _name(material)
+        if dur_beats is None:
+            dur_beats = self._extent(material)
 
-        auto = _automation(material)
-        if auto is not None:
-            # An automation clip: the curve *is* the body (the bpf editor's model,
-            # placed on the lane), editable in place. Its break-point times are
-            # beats in the model and timeline units on the axis — the same bridge
-            # every placement crosses.
-            dur = self.beats_to_units(
-                dur_beats if dur_beats is not None else auto.duration())
-            points = [(self.beats_to_units(t), v, shape, curve)
-                      for t, v, shape, curve in _quads(auto.to_points())]
-            lo, hi = _curve_range(points)
-            parent_base = base - (member.offset if member is not None else 0.0)
-            self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
-            return clip(wid, offset=offset, dur=dur, points=points, min=lo, max=hi,
-                        label=label)
-
-        if isinstance(material, Buffer):
-            buf = material.wraps
-            # The take rides the bulk path: the host fetches the server buffer and
-            # decimates it through its peak pyramid. With no duration given, the
-            # take's own length is it (1 timeline unit = 1 audio sample) — which
-            # needs the frame count, so a buffer read but never queried (its shape
-            # unknown client-side) must carry a `duration`.
-            dur = (self.beats_to_units(dur_beats) if dur_beats is not None
-                   else float(buf.frames))
-            body = dict(buffer=buf.bufnum, channels=max(1, buf.channels))
+        body = self._body_for(material)
+        # A take with no duration given is as long as it is (1 unit = 1 sample).
+        if "buffer" in body and dur_beats <= 0.0:
+            dur = float(material.wraps.frames)
         else:
-            dur = self.beats_to_units(
-                dur_beats if dur_beats is not None else self._extent(material))
-            notes = self._notes(material)
-            if notes:
-                pitches = [n[2] for n in notes]
-                body = dict(notes=notes,
-                            min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
-                            max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
-            else:
-                # No body: a collapsed group (or a material with nothing to draw)
-                # is the labeled rectangle — the summary of the level above it.
-                body = {}
+            dur = self.beats_to_units(dur_beats)
 
         # The placement's own base: a clip's offset is absolute on the shared axis,
         # a member's offset is relative to its group.
         parent_base = base - (member.offset if member is not None else 0.0)
         self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
-        return clip(wid, offset=offset, dur=dur, label=label, **body)
+        return clip(wid, offset=offset, dur=dur, label=_name(material), **body)
+
+    def _body_for(self, material) -> dict:
+        """The clip-body props a material draws with — and a **simultaneous** group
+        draws with *all of its members'*, layered in one clip.
+
+        That is the model's own answer to "attach an envelope to the event it
+        shapes": a group whose members start and end together *is* one thing on the
+        timeline (its temporal relation says so), so it is one clip — dragging it
+        moves the whole group, and the bodies overlay instead of hiding each other.
+        The curve keeps its own value axis (`points_min`/`points_max`), since an
+        envelope's units are not the pitches under it.
+        """
+        # A simultaneous group first: it is one thing on the timeline, and its
+        # members' bodies layer (each keeps its own value axis).
+        if (isinstance(material, Group) and len(material) > 1
+                and material.temporal_relation() == SIMULTANEOUS):
+            body: dict = {}
+            for m in material.handles:
+                body.update(self._body_for(m.material))
+            return body
+
+        auto = _automation(material)
+        if auto is not None:
+            points = [(self.beats_to_units(t), v, shape, curve)
+                      for t, v, shape, curve in _quads(auto.to_points())]
+            lo, hi = _curve_range(points)
+            return dict(points=points, points_min=lo, points_max=hi)
+
+        if isinstance(material, Buffer):
+            buf = material.wraps
+            # The take rides the bulk path: the host fetches the server buffer and
+            # decimates it through its peak pyramid.
+            return dict(buffer=buf.bufnum, channels=max(1, buf.channels))
+
+        notes = self._notes(material)
+        if notes:
+            pitches = [n[2] for n in notes]
+            return dict(notes=notes,
+                        min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
+                        max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
+        # No body: a collapsed group (or a material with nothing to draw) is the
+        # labeled rectangle — the summary of the level above it.
+        return {}
 
     def _notes(self, material) -> list:
         """The ``(start, dur, pitch)`` note events of a material, in timeline
@@ -656,10 +675,14 @@ class Editor:
 
     def _extent(self, material) -> float:
         """A material's length in beats: its own ``duration`` when it has one,
-        else what it spans — a group over its placed members, anything else over
-        its flattened events (a bounced pattern included)."""
+        else what it spans — a group over its placed members, an envelope over its
+        curve, anything else over its flattened events (a bounced pattern
+        included)."""
         if isinstance(material, Material) and material.duration is not None:
             return float(material.duration)
+        auto = _automation(material)
+        if auto is not None:
+            return auto.duration()
         if isinstance(material, Group):
             return max((m.offset + (m.dur if m.dur is not None
                                     else self._extent(m.material))
@@ -676,20 +699,35 @@ class Editor:
 
 
 def _name(material) -> str:
-    """A material's display name: its own ``name`` when it has one (a logical
-    group names its GraphDef), else its kind — enough to read a lane header."""
+    """A material's display name: its own ``name`` when it has one (a group names
+    itself, an automation names the control it drives), else what it *is* — an
+    automation is an "envelope", not the `Material` that happens to wrap it."""
     name = getattr(material, "name", None)
     if isinstance(name, str) and name:
         return name
+    auto = _automation(material)
+    if auto is not None:
+        return auto.name or "envelope"
     return type(material).__name__.lower()
 
 
 def _automation(material):
-    """The `clausters.seq.Automation` a material carries, or ``None``. An
-    automation is a *curve* — the List/Buffer duality of the model — so it needs
-    no primitive of its own: any material wrapping one draws (and edits) as an
-    automation clip."""
-    return material.wraps if isinstance(getattr(material, "wraps", None), Automation) else None
+    """The `clausters.seq.Automation` a material carries, or ``None``. An automation
+    is a *curve* — the List/Buffer duality of the model — so it needs no primitive
+    of its own: any material wrapping one draws (and edits) as an envelope.
+
+    A **simultaneous** group is searched too: an envelope attached to the event it
+    shapes is one clip, and a curve edited on it must find the automation inside.
+    """
+    if isinstance(getattr(material, "wraps", None), Automation):
+        return material.wraps
+    if (isinstance(material, Group) and len(material) > 1
+            and material.temporal_relation() == SIMULTANEOUS):
+        for _offset, _dur, child in material.members:
+            auto = _automation(child)
+            if auto is not None:
+                return auto
+    return None
 
 
 def _quads(flat) -> list:

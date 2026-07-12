@@ -212,11 +212,11 @@ fn clip_curve<R>(
     match &mut w.kind {
         WidgetKind::Clip {
             points,
-            min,
-            max,
+            points_min,
+            points_max,
             exp,
             ..
-        } => Some(f(points, *min, *max, *exp)),
+        } => Some(f(points, *points_min, *points_max, *exp)),
         _ => None,
     }
 }

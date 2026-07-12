@@ -179,19 +179,22 @@ sweep = Automation.from_points(
     target=None, name="sweep")   # no target node: it just writes its bus
 sweep.prepare(server)            # the control buffer + bus, off the clock thread
 
-# The curve and the voice it drives, placed together: the same offset, the same
-# length. Drag the clip and both move; the voice cannot outlive it.
+# The envelope **attached to the voice it shapes**: a group whose members start
+# and end together. The model already says what that is — its temporal relation is
+# *simultaneous* — and the editor draws it as **one clip with layered bodies** (the
+# curve over the note), which drags as one. The voice cannot outlive its envelope,
+# and the envelope cannot be left behind.
 voice = Event(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
                        dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
+sweep_clip = Group([(0.0, voice), (0.0, Material(sweep, duration=SWEEP))],
+                   name="sweep")
 
 # The composition: four lanes, each a group placing one material in time.
 song = Group([
     (0.0, Group([(0.0, take), (4.0, take)], name="drums")),
     (0.0, Group([(0.0, bass)], name="bass")),
     (2.0, Group([(0.0, melody)], name="lead")),
-    # The voice first, the curve over it: the lane draws its clips in order, and
-    # the envelope is the thing worth seeing (the voice is a rectangle behind it).
-    (0.0, Group([(0.0, voice), (0.0, Material(sweep, duration=SWEEP))], name="sweep")),
+    (0.0, Group([(0.0, sweep_clip)], name="sweep")),
 ], name="song")
 
 # %% [markdown]

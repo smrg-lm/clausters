@@ -70,6 +70,10 @@ pub struct ClipDraw {
     /// body, which wins over the notes and the waveform.
     pub points: Vec<BpfPoint>,
     pub exp: bool,
+    /// The curve body's own value range — a layered clip's bodies do not share an
+    /// axis (a roll's `min`/`max` are pitches, a curve's are its parameter's).
+    pub points_min: f32,
+    pub points_max: f32,
     pub min: f32,
     pub max: f32,
     pub label: Option<String>,
@@ -168,6 +172,8 @@ pub fn clip_draw(widget: &Widget) -> Option<ClipDraw> {
             notes,
             points,
             exp,
+            points_min,
+            points_max,
             min,
             max,
             label,
@@ -181,6 +187,8 @@ pub fn clip_draw(widget: &Widget) -> Option<ClipDraw> {
             notes: notes.clone(),
             points: points.clone(),
             exp: *exp,
+            points_min: *points_min,
+            points_max: *points_max,
             min: *min,
             max: *max,
             label: label.clone(),
@@ -221,22 +229,23 @@ pub fn draw(
         let cr = clip_rect(body, x0, x1);
         mesh.rect(cr, CLIP_FILL);
         mesh.border(cr, 1.0, CLIP_EDGE);
-        if !clip.points.is_empty() {
-            // An automation clip: the curve body — the third body of the same
-            // graphic unit, drawn (and edited) through the `bpf` model.
-            draw_curve(mesh, cr, body, nav, clip);
-        } else if clip.notes.is_empty() {
-            match &clip.data {
-                // A loaded take (mapped file, peak cache or fetched buffer):
-                // decimated through its pyramid, so a minutes-long clip costs
-                // the same as a short one.
-                Some(data) => draw_take_body(mesh, cr, body, nav, clip, data),
-                None => draw_clip_body(mesh, cr, body, nav, clip),
-            }
-        } else {
-            // A piano-roll clip: notes placed on the same shared axis (so the
-            // whole roll moves when the clip does), pitch mapped over [min, max].
+        // The bodies **layer**, back to front: the take, the events over it, the
+        // envelope over both — an automation drawn on top of the material it
+        // shapes is one clip, not two, and each body keeps its own value axis.
+        match &clip.data {
+            // A loaded take (mapped file, peak cache or fetched buffer): decimated
+            // through its pyramid, so a minutes-long clip costs the same as a
+            // short one.
+            Some(data) => draw_take_body(mesh, cr, body, nav, clip, data),
+            None => draw_clip_body(mesh, cr, body, nav, clip),
+        }
+        if !clip.notes.is_empty() {
+            // Notes placed on the same shared axis (so the whole roll moves when
+            // the clip does), pitch mapped over [min, max].
             draw_piano_roll(mesh, cr, body, nav, clip);
+        }
+        if !clip.points.is_empty() {
+            draw_curve(mesh, cr, body, nav, clip);
         }
         if let Some(t) = &clip.label {
             font::text(mesh, t, cr.x + PAD, cr.y + PAD, CLIP_SCALE, TEXT);
@@ -281,7 +290,7 @@ pub fn curve_hit(
     let mut best: Option<(usize, f64)> = None;
     for (i, p) in clip.points.iter().enumerate() {
         let x = to_x(clip.offset + p.time, nav, body);
-        let y = curve_y(cr, p.value, clip.min, clip.max, clip.exp) as f64;
+        let y = curve_y(cr, p.value, clip.points_min, clip.points_max, clip.exp) as f64;
         let d = ((cx - x).powi(2) + (cy - y).powi(2)).sqrt();
         if d <= radius && best.is_none_or(|(_, bd)| d < bd) {
             best = Some((i, d));
@@ -306,7 +315,7 @@ fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw
         return;
     }
     let columns = cr.w.max(1.0) as usize;
-    let y_at = |v: f32| curve_y(cr, v, clip.min, clip.max, clip.exp);
+    let y_at = |v: f32| curve_y(cr, v, clip.points_min, clip.points_max, clip.exp);
     let time_at = |x: f32| curve_time_at(body, nav, clip.offset, x as f64);
     let mut prev = [cr.x, y_at(bpf::value_at(&clip.points, time_at(cr.x)))];
     for c in 1..=columns {
@@ -550,6 +559,8 @@ mod tests {
                 notes: Vec::new(),
                 points: Vec::new(),
                 exp: false,
+                points_min: -1.0,
+                points_max: 1.0,
                 min: -1.0,
                 max: 1.0,
                 label: Some("a".into()),
@@ -563,6 +574,8 @@ mod tests {
                 notes: Vec::new(),
                 points: Vec::new(),
                 exp: false,
+                points_min: -1.0,
+                points_max: 1.0,
                 min: -1.0,
                 max: 1.0,
                 label: None,
@@ -596,6 +609,8 @@ mod tests {
             notes: Vec::new(),
             points: Vec::new(),
             exp: false,
+            points_min: -1.0,
+            points_max: 1.0,
             min: -1.0,
             max: 1.0,
             label: Some("take".into()),
@@ -645,6 +660,8 @@ mod tests {
             notes: Vec::new(),
             points,
             exp: false,
+            points_min: 0.0,
+            points_max: 1.0,
             min: 0.0,
             max: 1.0,
             label: Some("cutoff".into()),
@@ -750,6 +767,61 @@ mod tests {
     }
 
     #[test]
+    fn a_clip_layers_its_bodies_and_the_curve_keeps_its_own_axis() {
+        // An envelope drawn over the event it shapes is *one* clip: both bodies
+        // draw, and they do not share a value axis (notes are pitches, the curve
+        // is its parameter's units).
+        let notes = vec![Note {
+            start: 0.0,
+            dur: 200.0,
+            pitch: 60.0,
+        }];
+        let layered = ClipDraw {
+            notes: notes.clone(),
+            points: vec![pt(0.0, 200.0), pt(400.0, 900.0)],
+            points_min: 150.0,
+            points_max: 1000.0,
+            min: 48.0,
+            max: 72.0,
+            ..curve_clip(Vec::new())
+        };
+        let mut both = Mesh::new();
+        draw(
+            &mut both,
+            lane(),
+            &View::full(400),
+            None,
+            std::slice::from_ref(&layered),
+            false,
+        );
+        let mut roll_only = Mesh::new();
+        draw(
+            &mut roll_only,
+            lane(),
+            &View::full(400),
+            None,
+            &[ClipDraw {
+                points: Vec::new(),
+                ..layered.clone()
+            }],
+            false,
+        );
+        assert!(
+            both.vertex_count() > roll_only.vertex_count(),
+            "the curve draws over the notes, it does not replace them"
+        );
+
+        // The curve's points sit on the curve's range: its 200 Hz start is near the
+        // bottom of the clip, not off the pitch axis.
+        let body = lane_body(lane(), false);
+        let nav = View::full(400);
+        let (x0, x1) = clip_x_range(body, &nav, layered.offset, layered.dur).unwrap();
+        let cr = clip_rect(body, x0, x1);
+        let y = curve_y(cr, 200.0, layered.points_min, layered.points_max, false);
+        assert!(y > cr.y + cr.h * 0.8, "200 Hz over [150, 1000] reads low");
+    }
+
+    #[test]
     fn a_piano_roll_clip_draws_its_notes() {
         let clip = ClipDraw {
             id: 1,
@@ -771,6 +843,8 @@ mod tests {
             ],
             points: Vec::new(),
             exp: false,
+            points_min: -1.0,
+            points_max: 1.0,
             min: 48.0, // pitch range low
             max: 72.0, // pitch range high
             label: Some("theme".into()),

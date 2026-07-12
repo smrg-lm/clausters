@@ -336,9 +336,11 @@ def test_an_automation_draws_as_a_curve_clip_on_the_timeline():
     assert curve["points"][0:2] == pytest.approx([0.0, 200.0])
     assert curve["points"][4:6] == pytest.approx([2 * BEAT, 4000.0])
     assert curve["points"][8:10] == pytest.approx([4 * BEAT, 800.0])
-    # The value axis covers the curve with headroom, so a point can be dragged.
-    assert curve["min"] < 200.0 and curve["max"] > 4000.0
+    # The curve's *own* value axis covers it with headroom, so a point can be
+    # dragged (a layered clip's `min`/`max` belong to the body underneath).
+    assert curve["points_min"] < 200.0 and curve["points_max"] > 4000.0
     assert "notes" not in curve and "buffer" not in curve
+    assert curve["label"] == "cutoff", "an envelope is named for what it drives"
 
 
 def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
@@ -359,6 +361,38 @@ def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
     # And the redraw shows what was dropped.
     assert clips(lanes(ed.render())[0])[0]["points"][4:6] == pytest.approx(
         [3 * BEAT, 3000.0])
+
+
+def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
+    """A group whose members start and end together *is* one thing on the timeline
+    (its temporal relation says so), so it draws as one clip with **layered**
+    bodies — the envelope over the event it shapes — and dragging it moves the
+    whole group, not one of its parts."""
+    from clausters.model import Material
+    from clausters.seq import Automation
+
+    env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
+                                 target=None, name="sweep")
+    voice = Event(SeqEvent(midinote=60, dur=4.0))
+    attached = Group([(0.0, voice), (0.0, Material(env, duration=4.0))], name="sweep")
+    assert attached.temporal_relation() == "simultaneous"
+
+    ed = editor(Group([(2.0, attached)], name="song"))
+    (lane,) = lanes(ed.render())
+    (c,) = clips(lane)
+    # One clip, both bodies — and each on its own value axis.
+    assert c["notes"] and c["points"]
+    assert c["min"] < 60.0 < c["max"]                     # the notes' pitch axis
+    assert c["points_min"] < 200.0 and c["points_max"] > 900.0   # the curve's
+
+    # Dragging it moves the group: the event and its envelope stay together.
+    ed.apply(*clip_event(c["id"], 6 * BEAT, c["dur"]))
+    placed = ed._clips[c["id"]]
+    assert placed.member.material is attached
+    assert placed.member.offset == pytest.approx(6.0)
+    from clausters.model.realize import flatten
+
+    assert min(b for b, _ in flatten(ed.material)) == pytest.approx(6.0)
 
 
 # ---- the logical group: a patch, not a lane ----
