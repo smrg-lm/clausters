@@ -15,6 +15,8 @@ use clausters_core::osc::OscType;
 use super::bpf;
 use super::layout::{self, Rect};
 #[cfg(not(target_arch = "wasm32"))]
+use super::pianoroll;
+#[cfg(not(target_arch = "wasm32"))]
 use super::track;
 use super::widget::{Widget, WidgetKind};
 use super::{Host, controls};
@@ -436,6 +438,234 @@ pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     }
 }
 
+// --- Piano-roll interaction (native gestures) -----------------------------
+
+/// Which region of a `pianoroll` a press landed on.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PrRegion {
+    Grid,
+    Velocity,
+    Osc,
+}
+
+/// A piano-roll press: the widget id, the reconstructed grid rect and shared
+/// navigation window the drag maps through, the visible pitch window, the note
+/// snap grid, which region was hit, and the note/OSC-marker under the cursor (if
+/// any). The renderer's geometry is reconstructed here so a note is grabbed by
+/// the pixels it is drawn on, exactly as `clip_hit` does for a clip.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct PianoRollHit {
+    pub grid: Rect,
+    /// The rect of the region that was hit (the grid, the velocity lane or the
+    /// OSC lane) — the velocity drag maps the cursor's height through it.
+    pub region_rect: Rect,
+    pub nav: View,
+    pub lo: f32,
+    pub hi: f32,
+    pub snap: f64,
+    pub region: PrRegion,
+    pub note: Option<pianoroll::NoteHit>,
+    pub osc_index: Option<usize>,
+}
+
+/// The pitch window `[lo, hi]` a piano-roll draws through — its `[min, max]`
+/// axis sliced by the vertical display window (`y_start`/`y_len`), the same math
+/// the renderer's `pitch_window` uses so the hit-test matches the pixels.
+#[cfg(not(target_arch = "wasm32"))]
+fn pitch_window(editor: &super::widget::EditorProps, min: f32, max: f32) -> (f32, f32) {
+    let (y0, yl) = editor.y_view();
+    let span = (max - min) as f64;
+    (
+        (min as f64 + y0 * span) as f32,
+        (min as f64 + (y0 + yl) * span) as f32,
+    )
+}
+
+/// The content extent (samples) of a piano-roll's notes and OSC events — the
+/// fallback navigation window when the widget is in no group yet.
+#[cfg(not(target_arch = "wasm32"))]
+fn pianoroll_span(notes: &[pianoroll::Note], osc: &[pianoroll::OscMark]) -> f64 {
+    let mut span = 0.0f64;
+    for n in notes {
+        span = span.max(n.start + n.dur);
+    }
+    for m in osc {
+        span = span.max(m.time);
+    }
+    span
+}
+
+/// Hit-test a press against the `pianoroll` under `(x, y)`, reconstructing the
+/// same regions and navigation window the renderer drew. Native-only, the
+/// edit-back gesture posture.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn pianoroll_hit(
+    host: &Host,
+    def_id: i32,
+    fb_w: u32,
+    fb_h: u32,
+    x: f64,
+    y: f64,
+) -> Option<PianoRollHit> {
+    let tree = host.window_def(def_id)?;
+    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    for p in layout::layout(area, tree) {
+        let WidgetKind::PianoRoll {
+            notes,
+            osc,
+            min,
+            max,
+            snap,
+            velocity_lane,
+            osc_lane,
+            editor,
+            ..
+        } = &p.widget.kind
+        else {
+            continue;
+        };
+        if !p.rect.contains(x, y) {
+            continue;
+        }
+        let id = p.widget.id?;
+        let ruler_on = editor.ruler != super::widget::Ruler::Off;
+        let r = pianoroll::regions(p.rect, ruler_on, *osc_lane, *velocity_lane);
+        let nav = host
+            .timeline_nav(id)
+            .map(|(nav, _)| nav)
+            .unwrap_or_else(|| View::full(pianoroll_span(notes, osc).ceil().max(1.0) as usize));
+        let (lo, hi) = pitch_window(editor, *min, *max);
+        let (fx, fy) = (x as f32, y as f32);
+        let (region, note, osc_index) = if *osc_lane && r.osc.contains(x, y) {
+            (PrRegion::Osc, None, nearest_osc(r.osc, &nav, osc, fx))
+        } else if *velocity_lane && r.velocity.contains(x, y) {
+            // A velocity-lane press picks the note whose bar it is nearest; the
+            // hit rides in `note` as a body hit so the caller reads its index.
+            let picked =
+                nearest_note(r.velocity, &nav, notes, fx).map(|index| pianoroll::NoteHit {
+                    index,
+                    part: pianoroll::NotePart::Body,
+                });
+            (PrRegion::Velocity, picked, None)
+        } else {
+            let note = pianoroll::note_hit(r.grid, &nav, 0.0, notes, lo, hi, fx, fy);
+            (PrRegion::Grid, note, None)
+        };
+        let region_rect = match region {
+            PrRegion::Grid => r.grid,
+            PrRegion::Velocity => r.velocity,
+            PrRegion::Osc => r.osc,
+        };
+        return Some(PianoRollHit {
+            grid: r.grid,
+            region_rect,
+            nav,
+            lo,
+            hi,
+            snap: *snap,
+            region,
+            note,
+            osc_index,
+        });
+    }
+    None
+}
+
+/// The index of the note whose start is nearest the cursor x (within a small
+/// pixel tolerance) — the velocity lane's bar picker.
+#[cfg(not(target_arch = "wasm32"))]
+fn nearest_note(lane: Rect, nav: &View, notes: &[pianoroll::Note], x: f32) -> Option<usize> {
+    let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
+    notes
+        .iter()
+        .enumerate()
+        .map(|(i, n)| (i, (to_x(n.start) - x).abs()))
+        .filter(|(_, d)| *d <= 5.0)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(i, _)| i)
+}
+
+/// The index of the OSC marker whose time is nearest the cursor x.
+#[cfg(not(target_arch = "wasm32"))]
+fn nearest_osc(lane: Rect, nav: &View, marks: &[pianoroll::OscMark], x: f32) -> Option<usize> {
+    let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
+    marks
+        .iter()
+        .enumerate()
+        .map(|(i, m)| (i, (to_x(m.time) - x).abs()))
+        .filter(|(_, d)| *d <= 5.0)
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map(|(i, _)| i)
+}
+
+/// Mutate a piano-roll's note list in the host tree (the drag's write path, the
+/// sibling of [`bpf_edit`]). Returns `None` when the widget is gone or not a
+/// piano-roll.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn pianoroll_notes_edit<R>(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    f: impl FnOnce(&mut Vec<pianoroll::Note>) -> R,
+) -> Option<R> {
+    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+        WidgetKind::PianoRoll { notes, .. } => Some(f(notes)),
+        _ => None,
+    }
+}
+
+/// Mutate a piano-roll's OSC-event list in the host tree.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn pianoroll_osc_edit<R>(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    f: impl FnOnce(&mut Vec<pianoroll::OscMark>) -> R,
+) -> Option<R> {
+    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+        WidgetKind::PianoRoll { osc, .. } => Some(f(osc)),
+        _ => None,
+    }
+}
+
+/// A piano-roll's notes edit-back payload: the `"notes"` tag plus the flat
+/// quintuple list (`start dur pitch velocity channel` per note) — the wire form
+/// the `pianoroll` and `clip` share. A `/gui_event` carries it to the script; a
+/// bound editor forwards it (minus the tag) to the audio server.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn notes_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
+    let notes = match &tree.find(id)?.kind {
+        WidgetKind::PianoRoll { notes, .. } => notes,
+        WidgetKind::Clip { notes, .. } if !notes.is_empty() => notes,
+        _ => return None,
+    };
+    let mut args = vec![OscType::String("notes".into())];
+    for n in notes {
+        args.push(OscType::Float(n.start as f32));
+        args.push(OscType::Float(n.dur as f32));
+        args.push(OscType::Float(n.pitch));
+        args.push(OscType::Int(n.velocity));
+        args.push(OscType::Int(n.channel));
+    }
+    Some(args)
+}
+
+/// A piano-roll's OSC-events edit-back payload: the `"osc"` tag plus the flat
+/// `time label` pairs (an empty string when a marker has no label).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn osc_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
+    let WidgetKind::PianoRoll { osc, .. } = &tree.find(id)?.kind else {
+        return None;
+    };
+    let mut args = vec![OscType::String("osc".into())];
+    for m in osc {
+        args.push(OscType::Float(m.time as f32));
+        args.push(OscType::String(m.label.clone().unwrap_or_default()));
+    }
+    Some(args)
+}
+
 /// Snaps a timeline sample value to a drag grid: to the nearest multiple of
 /// `grid` when it is positive, else to a whole sample.
 #[cfg(not(target_arch = "wasm32"))]
@@ -559,6 +789,83 @@ mod tests {
         assert_eq!(args[1], OscType::Float(150.0));
         assert_eq!(args[2], OscType::Float(250.0));
         assert_eq!(clip_event_args(tree, 11).unwrap()[1], OscType::Float(0.0));
+    }
+
+    /// A window (id 1) with one `pianoroll` (id 5): a single note spanning the
+    /// whole roll at MIDI 60 over the pitch window [48, 72], velocity lane on.
+    fn pianoroll_host() -> Host {
+        let json = r#"{"type":"window","children":[
+            {"id":5,"type":"pianoroll","min":48.0,"max":72.0,"snap":100.0,
+             "notes":[0.0,1000.0,60.0,100,0]}
+        ]}"#;
+        let mut host = Host::new();
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_DEF.into(),
+                args: vec![OscType::Int(1), OscType::String(json.into())],
+            }),
+            from(),
+        );
+        host
+    }
+
+    #[test]
+    fn pianoroll_hit_finds_a_note_and_the_edit_reports_it() {
+        let host = pianoroll_host();
+        let (fb_w, fb_h) = (800u32, 400u32);
+        // Reconstruct the grid the renderer draws (the default time ruler on, no
+        // osc lane, velocity on) so the test aims at real pixels, then hit MIDI
+        // 60's row center.
+        let tree = host.window_def(1).unwrap();
+        let rect = layout::layout(Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32), tree)
+            .into_iter()
+            .find(|p| matches!(p.widget.kind, WidgetKind::PianoRoll { .. }))
+            .unwrap()
+            .rect;
+        let r = pianoroll::regions(rect, true, false, true);
+        let cy = pianoroll::pitch_to_y(60.0, 48.0, 72.0, r.grid) as f64;
+        let cx = (r.grid.x + r.grid.w * 0.5) as f64;
+
+        let h = pianoroll_hit(&host, 1, fb_w, fb_h, cx, cy).unwrap();
+        assert_eq!(h.region, PrRegion::Grid);
+        assert_eq!(h.note.unwrap().index, 0);
+        // A press in the velocity lane picks the note under it (its bar sits at
+        // the note's start, x ~ grid.x).
+        let vy = (r.velocity.y + r.velocity.h * 0.5) as f64;
+        let hv = pianoroll_hit(&host, 1, fb_w, fb_h, (r.grid.x + 1.0) as f64, vy).unwrap();
+        assert_eq!(hv.region, PrRegion::Velocity);
+        assert_eq!(hv.note.unwrap().index, 0);
+    }
+
+    #[test]
+    fn pianoroll_edit_back_reports_the_notes_as_quintuples() {
+        let mut host = pianoroll_host();
+        pianoroll_notes_edit(&mut host, 1, 5, |notes| {
+            pianoroll::set_velocity(notes, 0, 42)
+        });
+        let tree = host.window_def(1).unwrap();
+        let args = notes_event_args(tree, 5).unwrap();
+        assert_eq!(args[0], OscType::String("notes".into()));
+        assert_eq!(args.len(), 6); // the tag + one quintuple
+        assert_eq!(args[3], OscType::Float(60.0)); // pitch
+        assert_eq!(args[4], OscType::Int(42)); // the velocity we set
+        assert_eq!(args[5], OscType::Int(0)); // channel
+    }
+
+    #[test]
+    fn pianoroll_osc_edit_adds_and_reports_a_marker() {
+        let mut host = pianoroll_host();
+        pianoroll_osc_edit(&mut host, 1, 5, |osc| {
+            osc.push(pianoroll::OscMark {
+                time: 500.0,
+                label: Some("/cue".into()),
+            });
+        });
+        let tree = host.window_def(1).unwrap();
+        let args = osc_event_args(tree, 5).unwrap();
+        assert_eq!(args[0], OscType::String("osc".into()));
+        assert_eq!(args[1], OscType::Float(500.0));
+        assert_eq!(args[2], OscType::String("/cue".into()));
     }
 
     /// A window (id 1) with a `graph` patch (id 7): a source and a sink wired

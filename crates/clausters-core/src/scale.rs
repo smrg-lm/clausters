@@ -13,6 +13,12 @@
 //!   kept (no low/high-end corrections, no clamp to 0): it is exactly
 //!   invertible on the whole axis, and `hz_to_bark(0) = −0.53` is simply the
 //!   axis floor a display normalizes against.
+//!
+//! It also carries the **MIDI note ↔ name** mapping (scientific pitch
+//! notation, `C4` = middle C = note 60), the pitch-axis analogue of the
+//! frequency scales: the piano-roll's pitch ruler and keyboard labels read it,
+//! and a client authoring notes can reuse the same names. Kept here so the
+//! musical spelling lives once alongside the perceptual scales.
 
 /// Hertz → mel (O'Shaughnessy). Negative input is treated as 0.
 #[inline]
@@ -44,9 +50,58 @@ pub fn bark_to_hz(bark: f64) -> f64 {
     1960.0 * (z + 0.53) / (26.28 - z)
 }
 
+/// The twelve pitch-class names, sharp spelling, index 0 = C.
+pub const PITCH_CLASSES: [&str; 12] = [
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
+
+/// The pitch class (`0..12`, `0` = C) of a MIDI note number, wrapping every
+/// octave. Uses Euclidean remainder so negative note numbers still map into
+/// `0..12`.
+#[inline]
+pub fn pitch_class(midi: i32) -> usize {
+    midi.rem_euclid(12) as usize
+}
+
+/// `true` if the MIDI note is a black key (a sharp/flat) — the accidental
+/// pitch classes C#, D#, F#, G#, A#. The piano-roll keyboard and its row
+/// shading read this.
+#[inline]
+pub fn is_black_key(midi: i32) -> bool {
+    matches!(pitch_class(midi), 1 | 3 | 6 | 8 | 10)
+}
+
+/// A MIDI note number's name in scientific pitch notation (`60` → `"C4"`,
+/// `69` → `"A4"`, `61` → `"C#4"`). The octave is `midi/12 − 1`, so middle C
+/// (60) is `C4` and A440 (69) is `A4`; sharps are used for the black keys.
+pub fn note_name(midi: i32) -> String {
+    let octave = midi.div_euclid(12) - 1;
+    format!("{}{}", PITCH_CLASSES[pitch_class(midi)], octave)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn note_names_follow_scientific_pitch() {
+        assert_eq!(note_name(60), "C4"); // middle C
+        assert_eq!(note_name(69), "A4"); // A440
+        assert_eq!(note_name(61), "C#4");
+        assert_eq!(note_name(21), "A0"); // lowest piano key
+        assert_eq!(note_name(108), "C8"); // highest piano key
+        assert_eq!(note_name(0), "C-1"); // MIDI floor
+    }
+
+    #[test]
+    fn pitch_class_and_black_keys() {
+        assert_eq!(pitch_class(60), 0);
+        assert_eq!(pitch_class(69), 9);
+        assert!(!is_black_key(60)); // C
+        assert!(is_black_key(61)); // C#
+        assert!(is_black_key(66)); // F#
+        assert!(!is_black_key(65)); // F
+    }
 
     #[test]
     fn mel_landmarks() {

@@ -49,6 +49,7 @@ use super::layout::Rect;
 use super::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
 use super::nodetree::NodeTree;
 use super::paint::Painter;
+use super::pianoroll;
 use super::spectrum::SpectrumState;
 use super::track;
 use super::widget::{Ruler, RulerY, Widget, WidgetKind};
@@ -270,6 +271,38 @@ enum Drag {
         nav_start: f64,
         nav_len: f64,
         offset: f64,
+    },
+    /// Dragging a piano-roll note: the body moves it in time and pitch, an edge
+    /// resizes its duration. The cursor maps to a region-relative time through
+    /// the grid and the shared `nav`, and to a pitch through the visible window
+    /// `[lo, hi]`; a press-time snapshot (`press_time`, `orig_*`) keeps a clamped
+    /// edge from drifting, snapped to `grid`.
+    Note {
+        id: i32,
+        index: usize,
+        part: pianoroll::NotePart,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        lo: f32,
+        hi: f32,
+        press_time: f64,
+        orig_start: f64,
+        orig_dur: f64,
+        snap: f64,
+    },
+    /// Dragging a note's velocity bar in the velocity lane: the velocity follows
+    /// the cursor's height within `lane`.
+    Velocity { id: i32, index: usize, lane: Rect },
+    /// Dragging an OSC-event marker along the time axis (its `time` follows the
+    /// cursor through the grid's shared `nav`, snapped to `grid`).
+    OscMark {
+        id: i32,
+        index: usize,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        snap: f64,
     },
 }
 
@@ -561,6 +594,225 @@ impl App {
             .host
             .window_def(def_id)
             .and_then(|t| interact::clip_event_args(t, widget_id))
+        else {
+            return;
+        };
+        if self.host.is_bound(widget_id) {
+            self.host.forward_args(widget_id, args[1..].to_vec());
+            return;
+        }
+        self.emit(def_id, widget_id, args);
+    }
+
+    /// A piano-roll note's current `(start, dur)` in the host tree.
+    fn note_at(&self, def_id: i32, id: i32, index: usize) -> Option<(f64, f64)> {
+        match &self.host.window_def(def_id)?.find(id)?.kind {
+            WidgetKind::PianoRoll { notes, .. } => notes.get(index).map(|n| (n.start, n.dur)),
+            _ => None,
+        }
+    }
+
+    /// Handles a plain (non-Shift) press on a `pianoroll`: start a note
+    /// move/resize, a velocity drag or an OSC-marker drag; Ctrl+click adds or
+    /// removes a note/marker; a press on empty grid selects. The edit-back
+    /// gestures, native-only (the browser keeps display + `/gui_set` parity).
+    fn pianoroll_press(
+        &mut self,
+        def_id: i32,
+        id: i32,
+        h: &interact::PianoRollHit,
+        ctrl: bool,
+        cx: f64,
+        cy: f64,
+    ) {
+        let nav = View {
+            start: h.nav.start,
+            len: h.nav.len,
+        };
+        match h.region {
+            interact::PrRegion::Grid => {
+                if ctrl {
+                    match h.note {
+                        // Ctrl+click on a note removes it.
+                        Some(nh) => {
+                            interact::pianoroll_notes_edit(&mut self.host, def_id, id, |notes| {
+                                pianoroll::remove_note(notes, nh.index);
+                            });
+                        }
+                        // Ctrl+click on empty grid adds a note there, then drags
+                        // its end to set the length until release.
+                        None => {
+                            let time = interact::snap(
+                                pianoroll::time_at(h.grid, &nav, 0.0, cx as f32),
+                                h.snap,
+                            )
+                            .max(0.0);
+                            let pitch = pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid)
+                                .round()
+                                .clamp(h.lo, h.hi);
+                            let dur = if h.snap > 0.0 {
+                                h.snap
+                            } else {
+                                (h.nav.len * 0.05).max(1.0)
+                            };
+                            let index = interact::pianoroll_notes_edit(
+                                &mut self.host,
+                                def_id,
+                                id,
+                                |notes| {
+                                    pianoroll::insert_note(
+                                        notes,
+                                        pianoroll::Note::new(time, dur, pitch),
+                                    )
+                                },
+                            );
+                            if let Some(index) = index {
+                                self.set_drag(
+                                    def_id,
+                                    Drag::Note {
+                                        id,
+                                        index,
+                                        part: pianoroll::NotePart::End,
+                                        grid: h.grid,
+                                        nav_start: h.nav.start,
+                                        nav_len: h.nav.len,
+                                        lo: h.lo,
+                                        hi: h.hi,
+                                        press_time: time,
+                                        orig_start: time,
+                                        orig_dur: dur,
+                                        snap: h.snap,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    self.host.sync_track_totals();
+                    self.emit_notes(def_id, id);
+                    self.redraw(def_id);
+                    return;
+                }
+                match h.note {
+                    // Move (body) or resize (edge) the note under the cursor.
+                    Some(nh) => {
+                        let (orig_start, orig_dur) =
+                            self.note_at(def_id, id, nh.index).unwrap_or((0.0, 0.0));
+                        let press_time = pianoroll::time_at(h.grid, &nav, 0.0, cx as f32);
+                        self.set_drag(
+                            def_id,
+                            Drag::Note {
+                                id,
+                                index: nh.index,
+                                part: nh.part,
+                                grid: h.grid,
+                                nav_start: h.nav.start,
+                                nav_len: h.nav.len,
+                                lo: h.lo,
+                                hi: h.hi,
+                                press_time,
+                                orig_start,
+                                orig_dur,
+                                snap: h.snap,
+                            },
+                        );
+                    }
+                    // Empty grid: plain drag selects (the heavy-view convention).
+                    None => {
+                        if let Some((start, len, _)) = self.timeline_nav(id) {
+                            let anchor =
+                                start + len * ((cx - h.grid.x as f64) / h.grid.w.max(1.0) as f64);
+                            self.set_selection(def_id, id, anchor, anchor);
+                            self.set_drag(
+                                def_id,
+                                Drag::Select {
+                                    id,
+                                    body_x: h.grid.x as f64,
+                                    body_w: h.grid.w.max(1.0) as f64,
+                                    anchor,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+            interact::PrRegion::Velocity => {
+                if let Some(nh) = h.note {
+                    self.set_drag(
+                        def_id,
+                        Drag::Velocity {
+                            id,
+                            index: nh.index,
+                            lane: h.region_rect,
+                        },
+                    );
+                }
+            }
+            interact::PrRegion::Osc => {
+                if ctrl {
+                    match h.osc_index {
+                        Some(index) => {
+                            interact::pianoroll_osc_edit(&mut self.host, def_id, id, |osc| {
+                                if index < osc.len() {
+                                    osc.remove(index);
+                                }
+                            });
+                        }
+                        None => {
+                            let time = interact::snap(
+                                pianoroll::time_at(h.grid, &nav, 0.0, cx as f32),
+                                h.snap,
+                            )
+                            .max(0.0);
+                            interact::pianoroll_osc_edit(&mut self.host, def_id, id, |osc| {
+                                osc.push(pianoroll::OscMark { time, label: None });
+                            });
+                        }
+                    }
+                    self.host.sync_track_totals();
+                    self.emit_osc(def_id, id);
+                    self.redraw(def_id);
+                } else if let Some(index) = h.osc_index {
+                    self.set_drag(
+                        def_id,
+                        Drag::OscMark {
+                            id,
+                            index,
+                            grid: h.grid,
+                            nav_start: h.nav.start,
+                            nav_len: h.nav.len,
+                            snap: h.snap,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    /// Delivers a piano-roll's edited notes — the edit-back pattern, the sibling
+    /// of [`App::emit_clip`]: a **bound** roll forwards the flat note list
+    /// straight to the audio server (without the `"notes"` tag); an unbound one
+    /// emits `/gui_event id "notes" start dur pitch vel channel …` to the script.
+    fn emit_notes(&self, def_id: i32, widget_id: i32) {
+        let Some(args) = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| interact::notes_event_args(t, widget_id))
+        else {
+            return;
+        };
+        if self.host.is_bound(widget_id) {
+            self.host.forward_args(widget_id, args[1..].to_vec());
+            return;
+        }
+        self.emit(def_id, widget_id, args);
+    }
+
+    /// Delivers a piano-roll's edited OSC events — `/gui_event id "osc" time label …`.
+    fn emit_osc(&self, def_id: i32, widget_id: i32) {
+        let Some(args) = self
+            .host
+            .window_def(def_id)
+            .and_then(|t| interact::osc_event_args(t, widget_id))
         else {
             return;
         };
@@ -1244,6 +1496,53 @@ impl App {
                     );
                 }
             }
+            WidgetKind::PianoRoll { .. } => {
+                let (fb_w, fb_h) = self.fb(def_id);
+                let Some(h) = interact::pianoroll_hit(&self.host, def_id, fb_w, fb_h, cx, cy)
+                else {
+                    return;
+                };
+                let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
+                let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
+                // A press on the keyboard gutter (left of the grid) pans the pitch
+                // window — the keyboard is the piano-roll's vertical axis surface,
+                // the counterpart of the heavy views' y-ruler strip.
+                if cx < h.grid.x as f64 {
+                    let y_start = self
+                        .host
+                        .window_def(def_id)
+                        .and_then(|t| t.find(id))
+                        .and_then(|w| w.kind.editor())
+                        .map_or(0.0, |e| e.y_view().0);
+                    self.set_drag(
+                        def_id,
+                        Drag::PanY {
+                            id,
+                            origin_y: cy,
+                            y_start,
+                            lane_h: h.grid.h.max(1.0) as f64,
+                        },
+                    );
+                    return;
+                }
+                // Shift+drag pans the shared axis (the heavy-view gesture), so
+                // panning stays available where a plain drag edits notes/selects.
+                if shift {
+                    if let Some((start, _len, _total)) = self.timeline_nav(id) {
+                        self.set_drag(
+                            def_id,
+                            Drag::Pan {
+                                id,
+                                origin_x: cx,
+                                start,
+                                body_w: h.grid.w.max(1.0) as f64,
+                            },
+                        );
+                    }
+                    return;
+                }
+                self.pianoroll_press(def_id, id, &h, ctrl, cx, cy);
+            }
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
                 let body = frame::timeline_body(rect, editor);
@@ -1468,6 +1767,49 @@ impl App {
                     nav_len: *nav_len,
                     offset: *offset,
                 },
+                Drag::Note {
+                    id,
+                    index,
+                    part,
+                    grid,
+                    nav_start,
+                    nav_len,
+                    lo,
+                    hi,
+                    press_time,
+                    orig_start,
+                    orig_dur,
+                    snap,
+                } => DragMove::Note {
+                    id: *id,
+                    index: *index,
+                    part: *part,
+                    grid: *grid,
+                    nav_start: *nav_start,
+                    nav_len: *nav_len,
+                    lo: *lo,
+                    hi: *hi,
+                    press_time: *press_time,
+                    orig_start: *orig_start,
+                    orig_dur: *orig_dur,
+                    snap: *snap,
+                },
+                Drag::Velocity { id, index, lane } => DragMove::Velocity(*id, *index, *lane),
+                Drag::OscMark {
+                    id,
+                    index,
+                    grid,
+                    nav_start,
+                    nav_len,
+                    snap,
+                } => DragMove::OscMark {
+                    id: *id,
+                    index: *index,
+                    grid: *grid,
+                    nav_start: *nav_start,
+                    nav_len: *nav_len,
+                    snap: *snap,
+                },
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -1604,6 +1946,77 @@ impl App {
                     self.emit_points(def_id, id);
                     self.redraw(def_id);
                 }
+            }
+            Some(DragMove::Note {
+                id,
+                index,
+                part,
+                grid,
+                nav_start,
+                nav_len,
+                lo,
+                hi,
+                press_time,
+                orig_start,
+                orig_dur,
+                snap,
+            }) => {
+                // Map the cursor to a region-relative time and (for a body move)
+                // a pitch; a press-time snapshot keeps a clamped edge from
+                // drifting, snapped to the note grid.
+                let time = nav_start + nav_len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
+                interact::pianoroll_notes_edit(&mut self.host, def_id, id, |notes| match part {
+                    pianoroll::NotePart::Body => {
+                        let delta = time - press_time;
+                        let new_start = interact::snap(orig_start + delta, snap);
+                        let pitch = pianoroll::y_to_pitch(cy as f32, lo, hi, grid);
+                        pianoroll::move_note(notes, index, new_start, pitch, lo, hi);
+                        // The duration is preserved by move_note; re-assert it in
+                        // case a prior edit changed it under a running drag.
+                        if let Some(n) = notes.get_mut(index) {
+                            n.dur = orig_dur;
+                        }
+                    }
+                    other => {
+                        pianoroll::resize_note(
+                            notes,
+                            index,
+                            other,
+                            interact::snap(time, snap),
+                            1.0,
+                        );
+                    }
+                });
+                self.host.sync_track_totals();
+                self.emit_notes(def_id, id);
+                self.redraw(def_id);
+            }
+            Some(DragMove::Velocity(id, index, lane)) => {
+                let frac = ((lane.y + lane.h - cy as f32) / lane.h.max(1.0)).clamp(0.0, 1.0);
+                let vel = (frac * 127.0).round() as i32;
+                interact::pianoroll_notes_edit(&mut self.host, def_id, id, |notes| {
+                    pianoroll::set_velocity(notes, index, vel);
+                });
+                self.emit_notes(def_id, id);
+                self.redraw(def_id);
+            }
+            Some(DragMove::OscMark {
+                id,
+                index,
+                grid,
+                nav_start,
+                nav_len,
+                snap,
+            }) => {
+                let time = nav_start + nav_len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
+                interact::pianoroll_osc_edit(&mut self.host, def_id, id, |osc| {
+                    if let Some(m) = osc.get_mut(index) {
+                        m.time = interact::snap(time, snap).max(0.0);
+                    }
+                });
+                self.host.sync_track_totals();
+                self.emit_osc(def_id, id);
+                self.redraw(def_id);
             }
             Some(DragMove::None) | None => {}
         }
@@ -1811,6 +2224,29 @@ enum DragMove {
         nav_start: f64,
         nav_len: f64,
         offset: f64,
+    },
+    Note {
+        id: i32,
+        index: usize,
+        part: pianoroll::NotePart,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        lo: f32,
+        hi: f32,
+        press_time: f64,
+        orig_start: f64,
+        orig_dur: f64,
+        snap: f64,
+    },
+    Velocity(i32, usize, Rect),
+    OscMark {
+        id: i32,
+        index: usize,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        snap: f64,
     },
     None,
 }
@@ -2205,6 +2641,31 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some((id, rect, kind)) = self.hit(def_id, cx, cy)
                     && let Some(editor) = kind.editor()
                 {
+                    let factor = 0.85f64.powf(steps);
+                    // The piano-roll's vertical axis is the keyboard gutter, not a
+                    // y-ruler strip: wheel over it zooms the pitch window, wheel
+                    // over the grid zooms the shared time axis.
+                    if let WidgetKind::PianoRoll {
+                        osc_lane,
+                        velocity_lane,
+                        ..
+                    } = &kind
+                    {
+                        let r = pianoroll::regions(
+                            rect,
+                            editor.ruler != Ruler::Off,
+                            *osc_lane,
+                            *velocity_lane,
+                        );
+                        if cx < r.grid.x as f64 {
+                            let rel =
+                                ((cy - r.grid.y as f64) / r.grid.h.max(1.0) as f64).clamp(0.0, 1.0);
+                            self.zoom_timeline_y(def_id, id, factor, 1.0 - rel);
+                        } else {
+                            self.zoom_timeline(def_id, id, r.grid, cx, factor);
+                        }
+                        return;
+                    }
                     // A lane's body is the strip right of its header (and above
                     // its ruler); a heavy view's is its rect minus its rulers.
                     let body = match kind {
@@ -2213,7 +2674,6 @@ impl ApplicationHandler<UserEvent> for App {
                         }
                         _ => frame::timeline_body(rect, editor),
                     };
-                    let factor = 0.85f64.powf(steps);
                     if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
                         // Wheel over the y-ruler strip zooms the vertical
                         // display window, anchored at the cursor's height

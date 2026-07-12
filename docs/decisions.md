@@ -418,3 +418,40 @@ temptations too: a `Buffer` is data and sounds only through the *instrument* nam
 to play it, and a logical group emits the bus-wired configuration the server
 already expresses (a `GraphDef`) rather than a wiring language of its own. Both
 exceptions were resolved in the model's favour, and both are recorded above.
+
+## The piano-roll: OSC events get their own lane, and the notes live once
+
+The editor-grade `pianoroll` draws the two message families a sequence carries —
+MIDI notes and OSC events — and it had to place them without lying about what
+each is.
+
+**Context.** A note has a pitch, so it maps naturally onto the grid's vertical
+axis (pitch × time). An OSC event does not: a `/trig` or a `/cue` is a moment, not
+a pitch. Forcing it into the grid means inventing a vertical position for
+something that has none — the same kind of lie the patcher refused when it
+declined to guess signal direction from a control's name.
+
+**Decision.** MIDI notes draw in the pitch × time grid; OSC events draw as flags
+in a **separate lane** below it, on the shared time axis but with no pitch
+pretence. Velocity gets its own lane too (the DAW convention), so the grid stays
+one clean plane of notes.
+
+**Reuse.** The note primitives — the model, the pitch/time mapping, the drawing,
+the hit-test, the drag clamps — live **once** in `host::pianoroll`, shared by the
+dedicated `pianoroll` widget and the multitrack `clip`'s roll body (which now
+delegates its drawing there). This is the `bpf::place_point` move again (G22h): a
+mapping-free core both the widget-local and the clip-placed editors call, so the
+two can never disagree on where a note is drawn or grabbed. The `Note` carries
+`velocity`/`channel` (a real MIDI note), and the wire form is the flat quintuple
+`start dur pitch velocity channel` — a length that is a multiple of five is read
+as quintuples, anything else as a legacy `start dur pitch` triple list, so old
+data still parses.
+
+**Placement (the G7b rule).** The one piece of *general* musical knowledge — the
+MIDI-note ↔ name / black-key spelling on the keyboard — went to
+`clausters_core::scale` (`note_name`/`pitch_class`/`is_black_key`), beside the
+perceptual frequency scales; its FFI export is **deferred** until a client
+evaluates it client-side (the `envshape`/tap-reader precedent). Everything else is
+display-only and stays gui-side. The edit-back stays flat payloads, not new
+addresses: `"notes"` (`start dur pitch velocity channel …`) and `"osc"`
+(`time label …`) — the fourth use of the one edit-back pattern.

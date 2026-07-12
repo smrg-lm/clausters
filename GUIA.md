@@ -66,6 +66,21 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   composición: suena donde lo soltaste. El carril **sweep** es una
   automatización: su cuerpo es la **curva**, y se edita ahí mismo (arrastrar un
   punto, Ctrl+click agrega/quita) → se **oye** el filtro seguir la curva dibujada.
+- **Piano-roll editor (GUI).** `examples/gui_pianoroll.py` abre una ventana con
+  la vista `pianoroll` dedicada → se ve el **teclado** a la izquierda (blancas/
+  negras, la nota en cada C), la **grilla de notas** MIDI (coloreadas por
+  velocity), el **carril de velocity** abajo y el **carril de eventos OSC** con
+  sus banderas, más la **regla de tiempo** en beats. Arrastrar una nota la
+  **mueve** en tiempo/pitch, arrastrar un borde la **redimensiona**, Ctrl+click
+  **agrega/quita** una nota, arrastrar el carril de velocity fija la **velocity**,
+  y Ctrl+click/arrastrar el carril OSC agrega/quita/mueve un evento — la consola
+  imprime el edit-back (`"notes" …` / `"osc" …`). La rueda sobre la grilla hace
+  **zoom** del eje de tiempo (Shift+arrastrar panea); la rueda sobre el **teclado**
+  hace zoom del rango de **pitch** y arrastrarlo lo panea, y `r` resetea ambos
+  ejes. Al mover el cursor sobre la grilla se lee el **nombre de nota + tiempo** en
+  la esquina. El botón **play** toca las notas dibujadas (un `Pbind`) → se **oye**
+  la melodía que dibujaste. Refrescar antes el binario bundleado
+  (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Patcher del grupo lógico (GUI).** Un `Group{logical}` se dibuja como *patch*
   (cajas de miembro, nodos de bus, un cable por `control ↔ bus`); arrastrar un
   puerto sobre otro bus lo **recablea** (sobre vacío, lo descablea) y la próxima

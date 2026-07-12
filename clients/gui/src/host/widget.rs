@@ -498,6 +498,27 @@ pub enum WidgetKind {
         snap: f64,
         editor: EditorProps,
     },
+    /// The dedicated editor-grade piano-roll view: a keyboard gutter, a note
+    /// grid, and optional velocity / OSC-event strips — the editor sibling of
+    /// the compact `clip` roll, sharing its drawing/hit-test primitives
+    /// ([`super::pianoroll`]). MIDI `notes` (`start`/`dur` in timeline samples,
+    /// `pitch` a MIDI note over `[min, max]`, plus velocity/channel) draw in the
+    /// grid; `osc` events draw as flags in their lane. A timeline widget
+    /// (`is_timeline`): it joins a navigation group and carries the ruler /
+    /// selection / playhead chrome in `editor`, so it zooms/pans/plays in lockstep
+    /// with sibling views. Editing (drag a note, resize an edge, Ctrl+click
+    /// add/remove) flows back per the edit-back pattern.
+    PianoRoll {
+        notes: Vec<super::track::Note>,
+        osc: Vec<super::pianoroll::OscMark>,
+        min: f32,
+        max: f32,
+        snap: f64,
+        velocity_lane: bool,
+        osc_lane: bool,
+        label: Option<String>,
+        editor: EditorProps,
+    },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
     /// with a `label`. Its body is one of two: a **waveform**, or — when `notes`
@@ -886,6 +907,27 @@ impl Widget {
                 snap: number_f64(&node.props, "snap", 0.0).max(0.0),
                 editor: EditorProps::parse_lane(&node.props),
             },
+            "pianoroll" => {
+                let osc = parse_osc(&node.props);
+                WidgetKind::PianoRoll {
+                    notes: parse_notes(&node.props),
+                    // The velocity lane is on by default; the OSC lane shows when
+                    // there are events or it is explicitly asked for (so an empty
+                    // lane can still be opened to author events).
+                    velocity_lane: node.props.get("velocity").and_then(truthy).unwrap_or(true),
+                    osc_lane: node
+                        .props
+                        .get("osc_lane")
+                        .and_then(truthy)
+                        .unwrap_or(!osc.is_empty()),
+                    osc,
+                    min: number(&node.props, "min", 21.0),
+                    max: number(&node.props, "max", 108.0),
+                    snap: number_f64(&node.props, "snap", 0.0).max(0.0),
+                    label: label(&node.props),
+                    editor: EditorProps::parse(&node.props, RulerY::Off),
+                }
+            }
             "clip" => WidgetKind::Clip {
                 offset: number_f64(&node.props, "offset", 0.0).max(0.0),
                 dur: number_f64(&node.props, "dur", 0.0).max(0.0),
@@ -969,7 +1011,10 @@ impl Widget {
     pub fn is_timeline(&self) -> bool {
         matches!(
             self.kind,
-            WidgetKind::Waveform { .. } | WidgetKind::Spectrogram { .. } | WidgetKind::Track { .. }
+            WidgetKind::Waveform { .. }
+                | WidgetKind::Spectrogram { .. }
+                | WidgetKind::Track { .. }
+                | WidgetKind::PianoRoll { .. }
         )
     }
 
@@ -1056,7 +1101,8 @@ impl WidgetKind {
         match self {
             WidgetKind::Waveform { editor, .. }
             | WidgetKind::Spectrogram { editor, .. }
-            | WidgetKind::Track { editor, .. } => Some(editor),
+            | WidgetKind::Track { editor, .. }
+            | WidgetKind::PianoRoll { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -1067,7 +1113,8 @@ impl WidgetKind {
         match self {
             WidgetKind::Waveform { editor, .. }
             | WidgetKind::Spectrogram { editor, .. }
-            | WidgetKind::Track { editor, .. } => Some(editor),
+            | WidgetKind::Track { editor, .. }
+            | WidgetKind::PianoRoll { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -1359,6 +1406,38 @@ impl WidgetKind {
                 "label" => set_label(label, v),
                 _ => false,
             },
+            WidgetKind::PianoRoll {
+                notes,
+                osc,
+                min,
+                max,
+                snap,
+                velocity_lane,
+                osc_lane,
+                label,
+                editor,
+            } => match key {
+                // Arrays ride a `/gui_set` as their JSON (a scalar wire value),
+                // exactly like the clip's `notes`/`points` and the graph's parts.
+                "notes" => {
+                    *notes = parse_notes(&as_array_props("notes", v));
+                    true
+                }
+                "osc" => {
+                    *osc = parse_osc(&as_array_props("osc", v));
+                    true
+                }
+                "min" => set_f(min, v),
+                "max" => set_f(max, v),
+                "snap" => v.as_f64().map(|x| *snap = x.max(0.0)).is_some(),
+                "velocity" => truthy(v).map(|b| *velocity_lane = b).is_some(),
+                "osc_lane" => truthy(v).map(|b| *osc_lane = b).is_some(),
+                "label" => set_label(label, v),
+                // The editor chrome (ruler, selection, playhead, the pitch
+                // window `y_start`/`y_len`, `link`, view keys) — routed to the
+                // group model by the host `on_set` for the timeline keys.
+                _ => editor.apply(key, v),
+            },
             WidgetKind::Button { label } => key == "label" && set_label(label, v),
             WidgetKind::Label { text } => {
                 key == "text" && v.as_str().map(|s| *text = s.to_string()).is_some()
@@ -1366,6 +1445,18 @@ impl WidgetKind {
             _ => false,
         }
     }
+}
+
+/// Coerce a `/gui_set` value that carries an array (either already a JSON array,
+/// or an array encoded as a JSON string — the scalar-wire carrier `points`/
+/// `notes`/`members` use) into a one-entry props map under `key`, for the
+/// `parse_*` helpers to read.
+fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Value> {
+    let value = match v {
+        Value::String(s) => serde_json::from_str::<Value>(s).unwrap_or(Value::Null),
+        other => other.clone(),
+    };
+    std::iter::once((key.to_string(), value)).collect()
 }
 
 /// Parses a piano-roll clip's `notes`: a flat `[start, dur, pitch, …]` array
@@ -1376,14 +1467,42 @@ fn parse_notes(props: &serde_json::Map<String, Value>) -> Vec<super::track::Note
     let Some(Value::Array(items)) = props.get("notes") else {
         return Vec::new();
     };
+    // The canonical wire form is quintuples `start dur pitch velocity channel`
+    // (what the Python builder always emits): a length that is a multiple of 5
+    // is read as quintuples. Anything else is a plain `start dur pitch` triple
+    // list (legacy / hand-authored), which still parses, defaulting velocity to
+    // 100 on channel 0. A trailing partial group is dropped.
+    let stride = if items.len() % 5 == 0 { 5 } else { 3 };
     items
-        .chunks_exact(3)
+        .chunks_exact(stride)
         .filter_map(|c| {
-            Some(super::track::Note {
-                start: c[0].as_f64()?.max(0.0),
-                dur: c[1].as_f64()?.max(0.0),
-                pitch: c[2].as_f64()? as f32,
-            })
+            let mut n = super::track::Note::new(
+                c[0].as_f64()?.max(0.0),
+                c[1].as_f64()?.max(0.0),
+                c[2].as_f64()? as f32,
+            );
+            if stride == 5 {
+                n.velocity = c[3].as_i64().unwrap_or(100) as i32;
+                n.channel = c[4].as_i64().unwrap_or(0) as i32;
+            }
+            Some(n)
+        })
+        .collect()
+}
+
+/// Parse a `pianoroll`'s `osc` prop — a flat `[time, label, time, label, …]`
+/// list of OSC event markers (the label a short address/tag, an empty string
+/// meaning none). A trailing partial pair is dropped.
+fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<super::pianoroll::OscMark> {
+    let Some(Value::Array(items)) = props.get("osc") else {
+        return Vec::new();
+    };
+    items
+        .chunks_exact(2)
+        .filter_map(|c| {
+            let time = c[0].as_f64()?.max(0.0);
+            let label = c[1].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+            Some(super::pianoroll::OscMark { time, label })
         })
         .collect()
 }
@@ -1822,6 +1941,44 @@ mod tests {
                 assert_eq!(notes[1].pitch, 67.0);
             }
             other => panic!("expected clip, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_pianoroll_parses_its_notes_osc_and_pitch_window() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":5,"type":"pianoroll","min":36.0,"max":84.0,"snap":100.0,
+                 "notes":[0.0,200.0,60.0,90,0, 200.0,200.0,64.0,110,1],
+                 "osc":[400.0,"/trig", 800.0,""]}
+            ]}"#,
+        );
+        let w = Widget::from_node(1, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::PianoRoll {
+                notes,
+                osc,
+                min,
+                max,
+                snap,
+                velocity_lane,
+                osc_lane,
+                ..
+            } => {
+                assert_eq!(notes.len(), 2);
+                assert_eq!(
+                    (notes[0].pitch, notes[0].velocity, notes[0].channel),
+                    (60.0, 90, 0)
+                );
+                assert_eq!((notes[1].velocity, notes[1].channel), (110, 1));
+                assert_eq!(osc.len(), 2);
+                assert_eq!(osc[0].label.as_deref(), Some("/trig"));
+                assert_eq!(osc[1].label, None); // the empty string is no label
+                assert_eq!((*min, *max, *snap), (36.0, 84.0, 100.0));
+                assert!(*velocity_lane, "the velocity lane is on by default");
+                assert!(*osc_lane, "the OSC lane opens because there are events");
+            }
+            other => panic!("expected pianoroll, got {other:?}"),
         }
     }
 

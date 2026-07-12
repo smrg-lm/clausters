@@ -268,9 +268,24 @@ impl Host {
     /// clip moves or resizes (a `/gui_def`, a `/gui_set`, or a drag).
     pub(super) fn sync_track_totals(&mut self) {
         fn walk(widget: &Widget, out: &mut Vec<(i32, usize)>) {
-            if let (Some(id), super::widget::WidgetKind::Track { .. }) = (widget.id, &widget.kind) {
-                let span = super::track::clips_span(widget);
-                out.push((id, span.ceil().max(0.0) as usize));
+            match (&widget.id, &widget.kind) {
+                (Some(id), super::widget::WidgetKind::Track { .. }) => {
+                    let span = super::track::clips_span(widget);
+                    out.push((*id, span.ceil().max(0.0) as usize));
+                }
+                // A piano-roll's extent is its content: the end of its last note
+                // and its last OSC event, so its shared axis spans the material.
+                (Some(id), super::widget::WidgetKind::PianoRoll { notes, osc, .. }) => {
+                    let mut span = 0.0f64;
+                    for n in notes {
+                        span = span.max(n.start + n.dur);
+                    }
+                    for m in osc {
+                        span = span.max(m.time);
+                    }
+                    out.push((*id, span.ceil().max(0.0) as usize));
+                }
+                _ => {}
             }
             for child in &widget.children {
                 walk(child, out);

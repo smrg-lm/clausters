@@ -33,6 +33,7 @@ __all__ = [
     "menu",
     "waveform",
     "spectrogram",
+    "pianoroll",
     "meter",
     "scope",
     "phasescope",
@@ -435,6 +436,39 @@ def _flat_points(points) -> list:
     return out
 
 
+def _flat_notes(notes) -> list:
+    """Normalizes a ``notes`` argument to the flat **quintuple** wire form
+    ``start dur pitch velocity channel`` (the canonical form the host reads for
+    both the ``pianoroll`` and the ``clip`` roll). Each note is a
+    ``(start, dur, pitch[, velocity[, channel]])`` tuple; a missing velocity
+    defaults to 100, a missing channel to 0. ``velocity``/``channel`` stay ints
+    so the JSON keeps them integral (the host distinguishes them from the float
+    time/pitch)."""
+    out: list = []
+    for n in notes:
+        n = list(n)
+        start, dur, pitch = float(n[0]), float(n[1]), float(n[2])
+        velocity = int(n[3]) if len(n) > 3 else 100
+        channel = int(n[4]) if len(n) > 4 else 0
+        out += [start, dur, pitch, velocity, channel]
+    return out
+
+
+def _flat_osc(osc) -> list:
+    """Normalizes an ``osc`` argument to the flat ``time, label`` pairs the host
+    reads. Each event is a ``(time, label)`` tuple or a bare ``time`` (no
+    label); the label is coerced to a string (``""`` = none)."""
+    out: list = []
+    for e in osc:
+        if isinstance(e, (tuple, list)):
+            time = float(e[0])
+            label = str(e[1]) if len(e) > 1 and e[1] is not None else ""
+        else:
+            time, label = float(e), ""
+        out += [time, label]
+    return out
+
+
 def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None,
          channels: int | None = None, min: float | None = None, max: float | None = None,
          label: str | None = None, **props) -> dict:
@@ -511,9 +545,11 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
     body is one of three:
 
     - a **waveform** — the take, drawn decimated to the clip's pixel width;
-    - a **piano-roll** — ``notes``, an iterable of ``(start, dur, pitch)``
-      events (times relative to the clip, in samples; pitch mapped over
-      ``[min, max]``), drawn as note bars — the events-track view; or
+    - a **piano-roll** — ``notes``, an iterable of ``(start, dur, pitch)`` (or
+      ``(start, dur, pitch, velocity, channel)``) events (times relative to the
+      clip, in samples; pitch mapped over ``[min, max]``), drawn as note bars —
+      the events-track view. The dedicated editor-grade `pianoroll` widget draws
+      the same notes with a keyboard and editing; or
     - an **automation curve** — ``points``, break-points over the clip's span
       (the `bpf` editor's model and shape math, placed on a lane): times relative
       to the clip in samples, values over ``[min, max]`` (``exp=True`` gives a
@@ -551,19 +587,76 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
     Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
     event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
     can update the composition model and re-realize."""
-    flat_notes = None
-    if notes is not None:
-        flat_notes = [float(x) for n in notes for x in n]
     extra = _drop_none(offset=offset,
                        data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
                        channels=channels, base_bucket=base_bucket,
-                       notes=flat_notes,
+                       notes=_flat_notes(notes) if notes is not None else None,
                        points=_flat_points(points) if points is not None else None,
                        min=min, max=max, label=label)
     if exp is not None:
         extra["exp"] = 1 if exp else 0
     return node("clip", id=id, dur=dur, **extra, **props)
+
+
+def pianoroll(id: int, *, notes=None, osc=None, min: float | None = None,
+              max: float | None = None, snap: float | None = None,
+              velocity: bool | None = None, osc_lane: bool | None = None,
+              link: int | None = None, ruler: str | None = None,
+              sample_rate: float | None = None, tempo: float | None = None,
+              beat_at: float | None = None, quant: float | None = None,
+              sel_start: float | None = None, sel_len: float | None = None,
+              playhead_at: float | None = None, playhead: float | None = None,
+              y_start: float | None = None, y_len: float | None = None,
+              label: str | None = None, **props) -> dict:
+    """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
+    note grid, an optional velocity lane and an OSC-event lane — the timeline
+    sibling of the compact `clip` piano-roll body, drawing the **same notes** with
+    the same geometry (they share the host's ``pianoroll`` primitives), plus
+    editing, rulers and navigation.
+
+    Content:
+
+    - ``notes`` — an iterable of ``(start, dur, pitch)`` or ``(start, dur, pitch,
+      velocity, channel)`` MIDI notes: times in timeline samples, ``pitch`` a MIDI
+      note number drawn over the ``[min, max]`` window (default the 88-key range
+      21–108), ``velocity`` ``0..127`` (default 100), ``channel`` ``0..15``. The
+      notes are the MIDI messages the roll represents.
+    - ``osc`` — an iterable of ``(time, label)`` (or bare ``time``) OSC events,
+      drawn as flags in a lane below the grid — the OSC messages the roll carries
+      alongside the notes.
+
+    Editing (native gestures; the browser keeps display + ``/gui_set`` parity):
+    drag a note to move it in time/pitch, drag an edge to resize it, Ctrl+click to
+    add a note or remove the one under the cursor; drag in the velocity lane to
+    set a note's velocity; Ctrl+click the OSC lane to add/remove an event, drag
+    one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
+    samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
+    velocity channel …``) or ``"osc"`` event (``time label …``) — the edit-back
+    pattern — so a driver updates the model and re-realizes.
+
+    Navigation and chrome mirror the heavy editor views: it is a timeline widget,
+    so ``link`` joins/splits its navigation group (zoom with the wheel over the
+    grid, pan with Shift+drag, all group-wide); ``ruler`` places a time ruler
+    (``"time"``/``"samples"``/``"beats"``, default ``"time"``) with
+    ``sample_rate``/``tempo``/``beat_at``/``quant`` labelling it; ``sel_start``/
+    ``sel_len`` mark a time selection; ``playhead_at`` sweeps a playhead from the
+    engine clock (``playhead`` sets a static cursor); ``y_start``/``y_len`` are the
+    vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
+    zoom/pan. ``velocity=False`` hides the velocity lane; ``osc_lane=True`` opens
+    the OSC lane even with no events (to author them)."""
+    extra = _drop_none(
+        notes=_flat_notes(notes) if notes is not None else None,
+        osc=_flat_osc(osc) if osc is not None else None,
+        min=min, max=max, snap=snap, link=link, ruler=ruler,
+        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
+        sel_start=sel_start, sel_len=sel_len, playhead_at=playhead_at,
+        playhead=playhead, y_start=y_start, y_len=y_len, label=label)
+    if velocity is not None:
+        extra["velocity"] = 1 if velocity else 0
+    if osc_lane is not None:
+        extra["osc_lane"] = 1 if osc_lane else 0
+    return node("pianoroll", id=id, **extra, **props)
 
 
 def graph(id: int, *, members=None, buses=None, wires=None,

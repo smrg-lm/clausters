@@ -31,7 +31,9 @@ use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
-use super::{BusSource, bpf, controls, graph, meters, phasescope, plot, spectrum, track};
+use super::{
+    BusSource, bpf, controls, graph, meters, phasescope, pianoroll, plot, spectrum, track,
+};
 
 /// The window's clear color (the dark chrome backdrop).
 pub(crate) const CLEAR: wgpu::Color = wgpu::Color {
@@ -186,6 +188,23 @@ struct TrackItem {
     /// and its `link` — the navigation group whose shared window it draws
     /// through (the lanes of a window are linked by default, so they zoom and
     /// pan as one).
+    editor: EditorProps,
+}
+
+/// A placed `pianoroll` widget, copied out of the host tree: the note/OSC
+/// content and the pitch window, plus the editor chrome (ruler/selection/
+/// playhead/link — its navigation group). Drawn as flat geometry, the
+/// static-view posture, sharing the `pianoroll` primitives with the clip body.
+struct PianoRollItem {
+    id: i32,
+    rect: Rect,
+    notes: Vec<pianoroll::Note>,
+    osc: Vec<pianoroll::OscMark>,
+    min: f32,
+    max: f32,
+    velocity_lane: bool,
+    osc_lane: bool,
+    label: Option<String>,
     editor: EditorProps,
 }
 
@@ -371,6 +390,116 @@ fn draw_time_ruler(
     }
 }
 
+/// The visible MIDI pitch window `[lo, hi]` of a piano-roll: the widget's
+/// `[min, max]` axis sliced by the vertical display window (`y_start`/`y_len`,
+/// `0` = the low pitch at the bottom), so pitch zoom/pan holds the same way the
+/// heavy views' amplitude/frequency windows do.
+fn pitch_window(item: &PianoRollItem) -> (f32, f32) {
+    let (y0, yl) = item.editor.y_view();
+    let span = (item.max - item.min) as f64;
+    let lo = item.min as f64 + y0 * span;
+    let hi = item.min as f64 + (y0 + yl) * span;
+    (lo as f32, hi as f32)
+}
+
+/// Draws a `pianoroll`: keyboard gutter, note grid, the velocity/OSC lanes and
+/// the time ruler into `mesh`; the selection band and the playhead into `over`.
+/// Everything rides the shared `nav` window, so it zooms/pans/plays in lockstep
+/// with linked sibling views.
+fn draw_pianoroll_item(
+    mesh: &mut Mesh,
+    over: &mut Mesh,
+    item: &PianoRollItem,
+    nav: &View,
+    rate: f64,
+    sample_clock: f64,
+    cursor: Option<(f64, f64)>,
+) {
+    let ruler_on = item.editor.ruler != Ruler::Off;
+    let r = pianoroll::regions(item.rect, ruler_on, item.osc_lane, item.velocity_lane);
+    let (lo, hi) = pitch_window(item);
+    pianoroll::draw_grid_background(mesh, r.grid, lo, hi);
+    pianoroll::draw_notes(mesh, r.grid, nav, 0.0, &item.notes, lo, hi, true);
+    pianoroll::draw_keyboard(mesh, r.keyboard, lo, hi);
+    if item.osc_lane {
+        pianoroll::draw_osc_lane(mesh, r.osc, nav, 0.0, &item.osc);
+    }
+    if item.velocity_lane {
+        pianoroll::draw_velocity_lane(mesh, r.velocity, nav, 0.0, &item.notes);
+    }
+    if let Some(t) = &item.label {
+        super::font::text(
+            mesh,
+            t,
+            r.grid.x + 4.0,
+            r.grid.y + 2.0,
+            RULER_SCALE,
+            RULER_TEXT,
+        );
+    }
+    if ruler_on {
+        // The ruler strip sits under the grid, aligned to the grid's x-range —
+        // build the "body" `draw_time_ruler` derives the strip from.
+        let ruler_body = Rect::new(r.grid.x, item.rect.y, r.grid.w, r.ruler.y - item.rect.y);
+        draw_time_ruler(mesh, item.rect, ruler_body, nav, rate, &item.editor);
+    }
+    // Selection band over the grid.
+    if let Some((start, len)) = item.editor.selection() {
+        let x0 = sample_to_x(start, nav, r.grid).clamp(r.grid.x, r.grid.x + r.grid.w);
+        let x1 = sample_to_x(start + len, nav, r.grid).clamp(r.grid.x, r.grid.x + r.grid.w);
+        if x1 > x0 {
+            over.rect(Rect::new(x0, r.grid.y, x1 - x0, r.grid.h), SELECTION_FILL);
+            over.rect(Rect::new(x0, r.grid.y, 1.0, r.grid.h), SELECTION_EDGE);
+            over.rect(Rect::new(x1 - 1.0, r.grid.y, 1.0, r.grid.h), SELECTION_EDGE);
+        }
+    }
+    // Playhead: swept by the engine clock while playing, else the static cursor.
+    let head = if item.editor.playhead_at >= 0.0 && sample_clock > 0.0 {
+        Some(sample_clock - item.editor.playhead_at)
+    } else if item.editor.playhead >= 0.0 {
+        Some(item.editor.playhead)
+    } else {
+        None
+    };
+    if let Some(pos) = head
+        && pos >= nav.start
+        && pos <= nav.start + nav.len
+    {
+        let x = sample_to_x(pos, nav, r.grid);
+        over.rect(Rect::new(x, r.grid.y, 1.5, r.grid.h), PLAYHEAD);
+    }
+    // Cursor readout: the note name (the pitch under the cursor, via the core's
+    // MIDI-note spelling) and the time (per the ruler mode), in the grid's
+    // bottom-right corner — pure math over the view mapping.
+    if let Some((cx, cy)) = cursor
+        && r.grid.contains(cx, cy)
+    {
+        let pitch = pianoroll::y_to_pitch(cy as f32, lo, hi, r.grid).round() as i32;
+        let s = nav.start + nav.len * ((cx - r.grid.x as f64) / r.grid.w.max(1.0) as f64);
+        let time = match item.editor.ruler {
+            Ruler::Samples => ruler::readout_samples(s),
+            Ruler::Beats => ruler::readout_beats(
+                s,
+                rate,
+                item.editor.tempo,
+                item.editor.beat_at,
+                item.editor.quant,
+            ),
+            _ => ruler::readout_time(s, rate),
+        };
+        let text = format!("{}  {time}", clausters_core::scale::note_name(pitch));
+        let w = super::font::width(&text, RULER_SCALE);
+        super::font::text(
+            over,
+            &text,
+            r.grid.x + r.grid.w - w - 4.0,
+            r.grid.y + r.grid.h - super::font::height(RULER_SCALE) - 2.0,
+            RULER_SCALE,
+            RULER_TEXT,
+        );
+    }
+}
+
 /// Draws one lane's worth of vertical-ruler ticks into the strip left of the
 /// body: tick marks against the body's left edge, labels right-aligned beside
 /// them. Shared by the amplitude and frequency rulers — the caller supplies
@@ -528,6 +657,7 @@ pub(crate) fn render(
     let mut plot_rects: Vec<PlotItem> = Vec::new();
     let mut bpf_rects: Vec<BpfItem> = Vec::new();
     let mut track_items: Vec<TrackItem> = Vec::new();
+    let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
     let mut nodetree_rects: Vec<(Rect, i32, bool, Option<String>)> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     let active_button = inputs.active_button;
@@ -664,6 +794,32 @@ pub(crate) fn render(
                     clips,
                     editor: editor.clone(),
                 });
+            }
+            WidgetKind::PianoRoll {
+                notes,
+                osc,
+                min,
+                max,
+                velocity_lane,
+                osc_lane,
+                label,
+                editor,
+                ..
+            } => {
+                if let Some(id) = p.widget.id {
+                    pianoroll_items.push(PianoRollItem {
+                        id,
+                        rect: p.rect,
+                        notes: notes.clone(),
+                        osc: osc.clone(),
+                        min: *min,
+                        max: *max,
+                        velocity_lane: *velocity_lane,
+                        osc_lane: *osc_lane,
+                        label: label.clone(),
+                        editor: editor.clone(),
+                    });
+                }
             }
             WidgetKind::Graph { graph, label } => {
                 // The patcher view of a logical group: drawn in the base mesh
@@ -945,6 +1101,39 @@ pub(crate) fn render(
                 over.rect(Rect::new(x, body.y, 1.5, body.h), PLAYHEAD);
             }
         }
+    }
+    // Piano-roll views: flat geometry (keyboard/grid/lanes/ruler) into the base
+    // mesh, selection/playhead into the overlay. Each draws through its
+    // navigation group's shared window (a linked pianoroll zooms/pans with its
+    // siblings), falling back to its own content extent when in no group.
+    for item in &pianoroll_items {
+        let nav = inputs
+            .timelines
+            .nav(group_key(item.id, item.editor.link))
+            .unwrap_or_else(|| {
+                let mut span = 0.0f64;
+                for n in &item.notes {
+                    span = span.max(n.start + n.dur);
+                }
+                for m in &item.osc {
+                    span = span.max(m.time);
+                }
+                View::full(span.ceil().max(1.0) as usize)
+            });
+        let rate = if item.editor.sample_rate > 0.0 {
+            item.editor.sample_rate
+        } else {
+            inputs.sample_rate
+        };
+        draw_pianoroll_item(
+            &mut mesh,
+            &mut over,
+            item,
+            &nav,
+            rate,
+            inputs.sample_clock,
+            inputs.cursor,
+        );
     }
 
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);

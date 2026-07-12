@@ -97,11 +97,12 @@ def test_an_events_material_draws_a_piano_roll_placed_by_its_offset():
     (roll,) = clips(lead)
     # Placed at beat 2 of the song, in timeline samples.
     assert roll["offset"] == pytest.approx(2 * BEAT)
-    # Three notes as flat (start, dur, pitch) triples, in timeline units.
+    # Three notes as flat (start, dur, pitch, velocity, channel) quintuples, in
+    # timeline units. The default event amp (0.1) maps to velocity 13.
     assert roll["notes"] == pytest.approx([
-        0.0, 0.8 * BEAT, 60.0,          # dur 1 beat, legato 0.8 -> sustain 0.8
-        1 * BEAT, 0.8 * BEAT, 64.0,
-        2 * BEAT, 1.6 * BEAT, 67.0,
+        0.0, 0.8 * BEAT, 60.0, 13, 0,   # dur 1 beat, legato 0.8 -> sustain 0.8
+        1 * BEAT, 0.8 * BEAT, 64.0, 13, 0,
+        2 * BEAT, 1.6 * BEAT, 67.0, 13, 0,
     ])
     # The pitch axis covers the notes with headroom.
     assert roll["min"] <= 58.0 and roll["max"] >= 69.0
@@ -114,7 +115,8 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
     seq = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
     (lane,) = lanes(editor(Group([(0.0, seq)], name="gen")).render())
     (roll,) = clips(lane)
-    assert [roll["notes"][i] for i in (2, 5)] == [60.0, 62.0]
+    # Pitch is the 3rd of each (start, dur, pitch, velocity, channel) quintuple.
+    assert [roll["notes"][i] for i in (2, 7)] == [60.0, 62.0]
 
 
 # ---- the base level: a nested group collapses to a summary, or expands ----

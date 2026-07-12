@@ -66,6 +66,8 @@ The **edit-back payloads**:
 | Tag | Arguments | Sent by |
 |---|---|---|
 | `"points"` | `t v shape curve` per break-point | the `bpf` editor, and an automation `clip` — one payload, whichever view drew the curve |
+| `"notes"` | `start dur pitch velocity channel` per note | the `pianoroll` view (and a `clip`'s roll) — MIDI notes edited |
+| `"osc"` | `time label` per event | the `pianoroll` view — OSC event markers edited |
 | `"clip"` | `offset dur` (timeline units) | a `clip` moved or resized |
 | `"wire"` | `member control bus` (an empty bus = unwired) | a `graph` patch rewired |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
@@ -99,6 +101,7 @@ script actually names these. The catalog itself:
 | `waveform` | The editor-grade waveform: multichannel lanes, rulers, selection, playhead, linked navigation | the data (`data`/`blob`/`buffer`/`path`/`cache`), `channels`, `ruler`, `ruler_y`, `sel_*`, `playhead_at`, `link`, `offset` |
 | `spectrogram` | The editor-grade spectrogram, the same chrome | the data, `window_size`, `hop`, `freq_scale`, `db_floor`/`db_ceil`, `colormap` |
 | `bpf` | A drawable break-point envelope, played by the server's own shape math | `points`, `min`, `max`, `duration`, `exp` |
+| `pianoroll` | The editor-grade piano-roll: a keyboard, a MIDI-note grid, a velocity lane and an OSC-event lane; the same chrome and navigation as the heavy views | `notes` (`start dur pitch velocity channel` quintuples), `osc` (`time label` pairs), `min`/`max` (pitch window), `snap`, `velocity`, `osc_lane`, `ruler`, `sel_*`, `playhead_at`, `y_start`/`y_len`, `link` |
 | `plot` | A static plot of a signal | `data`/`blob`/`path`, `min`, `max` |
 | `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis | `label`, `height`, `snap`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `playhead`, `link` |
 | `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |

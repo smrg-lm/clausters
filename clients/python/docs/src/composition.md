@@ -103,8 +103,13 @@ onto the model. The mapping is one rule, not a heuristic per case:
 - a `Buffer` clip names its server buffer and spans its frames — the host fetches
   the take and decimates it to the clip's pixel width, so a long take costs
   nothing on the wire;
-- a material of *events* draws a **piano-roll** — and since a contained pattern is
-  bounced to draw it, a generator lane shows the notes it is about to play;
+- a material of *events* draws a **piano-roll** — each note placed in pitch and
+  time, shaded by its velocity (an explicit `velocity`, else the event's `amp`) —
+  and since a contained pattern is bounced to draw it, a generator lane shows the
+  notes it is about to play. (The same notes drive the standalone, editor-grade
+  `clausters.gui.pianoroll` widget — a keyboard, an editable note grid, a velocity
+  lane and an OSC-event lane — when you want to author them directly rather than
+  through the multitrack.)
 - a nested group draws as the labeled rectangle that **summarizes** it, until you
   `expand` it into lanes of its own. That collapse/expand is the model's *base
   level*: the same structure, seen coarser or finer.

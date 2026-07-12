@@ -49,6 +49,7 @@ pub mod nodetree;
 pub mod oscil;
 pub mod paint;
 pub mod phasescope;
+pub mod pianoroll;
 pub mod plot;
 pub mod registry;
 pub mod ruler;

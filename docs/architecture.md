@@ -316,7 +316,7 @@ split, and every rule below falls out of it:
 | `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
 | `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
-| `src/host/{track,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window |
+| `src/host/{track,pianoroll,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (model, mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
 | `src/host/{bulk,fetch,shm,mapfile}.rs` | The data seams: a local resource is mapped (native) or fetched (browser), a server buffer is pulled over the client leg, control buses are read from the shared segment |

@@ -22,6 +22,7 @@ use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
 use super::paint::{Color, Mesh};
+use super::pianoroll;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
 use crate::waveform::WaveformData;
@@ -33,7 +34,6 @@ const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
 const CLIP_FILL: Color = [0.16, 0.22, 0.32, 1.0];
 const CLIP_EDGE: Color = [0.45, 0.60, 0.85, 1.0];
 const CLIP_BODY: Color = [0.55, 0.75, 0.95, 1.0];
-const NOTE_FILL: Color = [0.60, 0.85, 0.65, 1.0];
 const BASELINE: Color = [0.28, 0.32, 0.38, 1.0];
 /// The left header strip width, device pixels — shared by every lane so the
 /// clip bodies of aligned tracks line up.
@@ -43,15 +43,11 @@ const HEADER_SCALE: f32 = 2.0;
 const CLIP_SCALE: f32 = 1.5;
 const BODY_W: f32 = 1.0;
 
-/// One note of a piano-roll clip: its `start`/`dur` **relative to the clip's
-/// offset** (timeline samples), and its `pitch` (mapped over the clip's value
-/// range — `min`/`max` read as the low/high pitch).
-#[derive(Clone, Copy, Debug)]
-pub struct Note {
-    pub start: f64,
-    pub dur: f64,
-    pub pitch: f32,
-}
+/// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
+/// owns the note model and the drawing/hit-test primitives — a clip's roll and
+/// the dedicated `pianoroll` view share the one type so they never disagree on
+/// geometry (the G22h reuse discipline).
+pub use super::pianoroll::Note;
 
 /// One clip copied out of the host tree for drawing (and hit-testing). A clip
 /// with `notes` draws a piano-roll body (its samples ignored); one without draws
@@ -332,36 +328,23 @@ fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw
     }
 }
 
-/// The minimum drawn height of a note rectangle, device pixels.
-const NOTE_MIN_H: f32 = 2.0;
-
-/// Draws a clip's notes as a piano-roll inside `cr`: each note is a rectangle
-/// placed in time on the shared `nav` (through the lane `body`, so it lines up
-/// with waveform clips) and in pitch over the clip's `[min, max]` range. New
-/// geometry, deliberately the reused-body sibling of `draw_clip_body`. Pitch
-/// mapping is linear here; a note-name ruler would read `clausters_core::scale`.
-fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw) {
-    let (lo, hi) = (clip.min, clip.max);
-    let x_lo = cr.x;
-    let x_hi = cr.x + cr.w;
-    // Each pitch step gets a row; a note is a bar filling most of its row.
-    let rows = (hi - lo).max(1.0);
-    let row_h = (cr.h / rows).clamp(0.0, cr.h);
-    for n in &clip.notes {
-        let mut nx0 = to_x(clip.offset + n.start, nav, body) as f32;
-        let mut nx1 = to_x(clip.offset + n.start + n.dur.max(0.0), nav, body) as f32;
-        nx0 = nx0.clamp(x_lo, x_hi);
-        nx1 = nx1.clamp(x_lo, x_hi);
-        if nx1 <= nx0 {
-            continue;
-        }
-        // Pitch → y within the clip rect (high pitch at the top).
-        let frac = fraction(n.pitch, lo, hi);
-        let y = cr.y + cr.h * (1.0 - frac as f32);
-        let h = row_h.max(NOTE_MIN_H).min(cr.h);
-        let y = (y - h * 0.5).clamp(cr.y, cr.y + cr.h - h);
-        mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), NOTE_FILL);
-    }
+/// Draws a clip's notes as a compact piano-roll inside `cr`: the clip body is
+/// the grid, its `[min, max]` the pitch window, and the notes ride the shared
+/// `nav` time axis (so the whole roll moves when the clip does). The geometry is
+/// the shared [`super::pianoroll::draw_notes`] primitive — the same one the
+/// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
+/// disagree. The clip body uses only that one layer (no keyboard/lanes).
+fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, _body: Rect, nav: &View, clip: &ClipDraw) {
+    pianoroll::draw_notes(
+        mesh,
+        cr,
+        nav,
+        clip.offset,
+        &clip.notes,
+        clip.min,
+        clip.max,
+        false,
+    );
 }
 
 /// The **source** sample position an x pixel of a clip's body falls on: the
@@ -771,11 +754,7 @@ mod tests {
         // An envelope drawn over the event it shapes is *one* clip: both bodies
         // draw, and they do not share a value axis (notes are pitches, the curve
         // is its parameter's units).
-        let notes = vec![Note {
-            start: 0.0,
-            dur: 200.0,
-            pitch: 60.0,
-        }];
+        let notes = vec![Note::new(0.0, 200.0, 60.0)];
         let layered = ClipDraw {
             notes: notes.clone(),
             points: vec![pt(0.0, 200.0), pt(400.0, 900.0)],
@@ -829,18 +808,7 @@ mod tests {
             dur: 400.0,
             samples: Arc::from([] as [f32; 0]),
             data: None,
-            notes: vec![
-                Note {
-                    start: 0.0,
-                    dur: 100.0,
-                    pitch: 60.0,
-                },
-                Note {
-                    start: 100.0,
-                    dur: 100.0,
-                    pitch: 67.0,
-                },
-            ],
+            notes: vec![Note::new(0.0, 100.0, 60.0), Note::new(100.0, 100.0, 67.0)],
             points: Vec::new(),
             exp: false,
             points_min: -1.0,

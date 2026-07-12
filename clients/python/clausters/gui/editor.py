@@ -670,7 +670,8 @@ class Editor:
             if pitch is None:
                 continue
             notes.append((self.beats_to_units(beat),
-                          self.beats_to_units(_event_dur(item)), pitch))
+                          self.beats_to_units(_event_dur(item)),
+                          pitch, _velocity(item), 0))
         return notes
 
     def _extent(self, material) -> float:
@@ -757,6 +758,20 @@ def _pitch(item):
         return float(item.midinote())
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _velocity(item) -> int:
+    """The MIDI velocity (``0..127``) of a flattened note event: an explicit
+    ``velocity`` key if given, else the event's linear ``amp`` mapped to the
+    velocity range, else the default 100 — so the piano-roll's velocity lane
+    reflects the model's dynamics."""
+    vel = item.get("velocity")
+    if vel is not None:
+        return max(0, min(127, int(vel)))
+    amp = item.get("amp")
+    if amp is not None:
+        return max(1, min(127, round(float(amp) * 127)))
+    return 100
 
 
 def _event_dur(item) -> float:
