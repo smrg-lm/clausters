@@ -602,6 +602,7 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
 def pianoroll(id: int, *, notes=None, osc=None, min: float | None = None,
               max: float | None = None, snap: float | None = None,
               velocity: bool | None = None, osc_lane: bool | None = None,
+              midi_in: bool | None = None,
               link: int | None = None, ruler: str | None = None,
               sample_rate: float | None = None, tempo: float | None = None,
               beat_at: float | None = None, quant: float | None = None,
@@ -644,7 +645,13 @@ def pianoroll(id: int, *, notes=None, osc=None, min: float | None = None,
     engine clock (``playhead`` sets a static cursor); ``y_start``/``y_len`` are the
     vertical pitch window (normalized ``0..1`` over ``[min, max]``) for pitch
     zoom/pan. ``velocity=False`` hides the velocity lane; ``osc_lane=True`` opens
-    the OSC lane even with no events (to author them)."""
+    the OSC lane even with no events (to author them). ``midi_in=True`` arms
+    **live MIDI painting** in the native host: it opens a virtual MIDI input
+    port ("clausters-gui") and paints incoming notes into this roll — at the
+    running playhead, or step-entering on the ``snap`` grid when the transport
+    is stopped — flowing back as the usual ``"notes"`` events (the standalone
+    host's live input; a script can equally paint via a `clausters.responders.
+    MidiFunc` and ``/gui_set``)."""
     extra = _drop_none(
         notes=_flat_notes(notes) if notes is not None else None,
         osc=_flat_osc(osc) if osc is not None else None,
@@ -656,6 +663,8 @@ def pianoroll(id: int, *, notes=None, osc=None, min: float | None = None,
         extra["velocity"] = 1 if velocity else 0
     if osc_lane is not None:
         extra["osc_lane"] = 1 if osc_lane else 0
+    if midi_in is not None:
+        extra["midi_in"] = 1 if midi_in else 0
     return node("pianoroll", id=id, **extra, **props)
 
 

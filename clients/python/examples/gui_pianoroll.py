@@ -201,6 +201,50 @@ gui.set(10, notes=json.dumps(_flat))
 _notes = _scale
 
 # %% [markdown]
+# ## Paint notes from a MIDI keyboard (optional cell)
+# The client-side live input: a `MidiFunc` pair catches note-on/off from the
+# client's virtual MIDI port (route a keyboard into **"clausters-in"**) and
+# paints each note into the roll via ``/gui_set``, timed by the session clock
+# from the first key down. The host has the same feature natively: open the
+# roll with ``midi_in=True`` (a `pianoroll` prop) and route a device into the
+# host's **"clausters-gui"** port -- notes paint at the running playhead, or
+# step-enter on the snap grid when the transport is stopped. That native path
+# is the standalone story: no language client required.
+
+# %%
+def record_midi():
+    """Arm the client-side MIDI painting (run this cell interactively)."""
+    from clausters.responders import MidiFunc
+
+    held, t0 = {}, None
+
+    def paint():
+        flat = [x for n in _notes for x in (n[0], n[1], float(n[2]), n[3], 0)]
+        gui.set(10, notes=json.dumps(flat))
+
+    def on(msg, _src):
+        nonlocal t0
+        if t0 is None:
+            t0 = session.clock.beats
+        at = beats(session.clock.beats - t0)
+        held[(msg["channel"], msg["note"])] = len(_notes)
+        _notes.append((at, beats(0.25), msg["note"], msg["velocity"]))
+        paint()
+
+    def off(msg, _src):
+        i = held.pop((msg["channel"], msg["note"]), None)
+        if i is not None and i < len(_notes):
+            start, _, pitch, vel = _notes[i]
+            end = beats(session.clock.beats - t0)
+            _notes[i] = (start, max(end - start, beats(0.05)), pitch, vel)
+            paint()
+
+    return MidiFunc(on, "note_on"), MidiFunc(off, "note_off")
+
+
+# funcs = record_midi()   # arm it, play, then: [f.free() for f in funcs]
+
+# %% [markdown]
 # ## Plain-script run
 # Cell-run: keep drawing and call `play()` / `drain_events()` between cells.
 # Script-run: draw for a while -- edits print as they arrive, the **play**

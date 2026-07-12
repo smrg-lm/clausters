@@ -92,6 +92,16 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   de las seleccionadas (o todas) a la grilla `snap` → se ven saltar a la
   grilla y se **oye** la melodía cuadrada al tocarla. Refrescar antes el binario
   bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
+- **MIDI en vivo pintando notas (GUI).** Con un roll `midi_in=True`, el host
+  abre el puerto MIDI virtual **"clausters-gui"** → rutear un teclado (o
+  `aconnect`/qpwgraph) y tocar: con el playhead corriendo las notas se
+  **pintan donde suena** (soltar la tecla fija la duración real); con el
+  transporte parado es **entrada por pasos** sobre la grilla `snap` (un acorde
+  comparte el paso). Del lado cliente, la celda `record_midi()` de
+  `examples/gui_pianoroll.py` hace lo mismo vía `MidiFunc` + `/gui_set` (puerto
+  **"clausters-in"**). Cada nota pintada emite el edit-back `"notes"` normal.
+  Refrescar antes el binario bundleado (`clients/python/clausters/_bin/`) —
+  ver `CLAUDE.md`.
 - **Vista dedicada del Editor (pianoroll ↔ modelo).** En `gui_composer.py`, la
   celda "The melody, as a dedicated piano-roll" abre la melodía (un `Track`) en
   su propia ventana pianoroll junto al multipista → **arrastrar una nota** y

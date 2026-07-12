@@ -521,6 +521,10 @@ pub enum WidgetKind {
         snap: f64,
         velocity_lane: bool,
         osc_lane: bool,
+        /// Live MIDI input: when on, the native host opens its virtual MIDI
+        /// input port and **paints** incoming notes into this roll — at the
+        /// running playhead, or step-entry on the snap grid when stopped.
+        midi_in: bool,
         label: Option<String>,
         editor: EditorProps,
     },
@@ -930,6 +934,7 @@ impl Widget {
                     min: number(&node.props, "min", 21.0),
                     max: number(&node.props, "max", 108.0),
                     snap: number_f64(&node.props, "snap", 0.0).max(0.0),
+                    midi_in: node.props.get("midi_in").and_then(truthy).unwrap_or(false),
                     label: label(&node.props),
                     editor: EditorProps::parse(&node.props, RulerY::Off),
                 }
@@ -1421,6 +1426,7 @@ impl WidgetKind {
                 snap,
                 velocity_lane,
                 osc_lane,
+                midi_in,
                 label,
                 editor,
             } => match key {
@@ -1441,6 +1447,7 @@ impl WidgetKind {
                 "snap" => v.as_f64().map(|x| *snap = x.max(0.0)).is_some(),
                 "velocity" => truthy(v).map(|b| *velocity_lane = b).is_some(),
                 "osc_lane" => truthy(v).map(|b| *osc_lane = b).is_some(),
+                "midi_in" => truthy(v).map(|b| *midi_in = b).is_some(),
                 "label" => set_label(label, v),
                 // The editor chrome (ruler, selection, playhead, the pitch
                 // window `y_start`/`y_len`, `link`, view keys) — routed to the
@@ -1989,6 +1996,23 @@ mod tests {
             }
             other => panic!("expected pianoroll, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_pianoroll_midi_in_parses_and_defaults_off() {
+        let on =
+            node(r#"{"type":"window","children":[{"id":5,"type":"pianoroll","midi_in":true}]}"#);
+        let w = Widget::from_node(1, &on, &[]).unwrap();
+        assert!(matches!(
+            &w.children[0].kind,
+            WidgetKind::PianoRoll { midi_in: true, .. }
+        ));
+        let off = node(r#"{"type":"window","children":[{"id":5,"type":"pianoroll"}]}"#);
+        let w = Widget::from_node(1, &off, &[]).unwrap();
+        assert!(matches!(
+            &w.children[0].kind,
+            WidgetKind::PianoRoll { midi_in: false, .. }
+        ));
     }
 
     #[test]

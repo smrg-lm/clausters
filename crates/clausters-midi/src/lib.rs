@@ -52,6 +52,33 @@ fn data_len(status: u8) -> Option<usize> {
     }
 }
 
+/// A parsed channel-voice **note** event — the subset a live note consumer
+/// (the GUI host's note painting) reads off the wire with [`parse_note`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteEvent {
+    On { channel: u8, pitch: u8, velocity: u8 },
+    Off { channel: u8, pitch: u8 },
+}
+
+/// The note event carried by a raw MIDI message, if any: a note-on (a
+/// zero-velocity note-on reads as a note-off, the wire convention) or a
+/// note-off. Anything else — other channel-voice types, system messages,
+/// truncated data — is `None`.
+pub fn parse_note(bytes: &[u8]) -> Option<NoteEvent> {
+    match bytes {
+        [s, p, v] if s & 0xF0 == 0x90 && *v > 0 => Some(NoteEvent::On {
+            channel: s & 0x0F,
+            pitch: *p,
+            velocity: *v,
+        }),
+        [s, p, _] if s & 0xF0 == 0x90 || s & 0xF0 == 0x80 => Some(NoteEvent::Off {
+            channel: s & 0x0F,
+            pitch: *p,
+        }),
+        _ => None,
+    }
+}
+
 /// Builds a type-0 Standard MIDI File from `events` at `ppq` ticks per quarter
 /// note. Events are sorted by tick (a stable sort keeps same-tick order, e.g. a
 /// note-off before a re-triggered note-on); malformed status bytes are skipped.
@@ -284,8 +311,10 @@ pub unsafe extern "C" fn clausters_midi_free(ptr: *mut u8, len: usize) {
 // The client sub-part 2 surface: a virtual MIDI output port other apps/devices
 // subscribe to. An opaque handle (the same pattern as the embed ABI's
 // `clausters_open`) crosses the boundary; raw channel-voice bytes go out.
+// Public: an in-process Rust consumer (the GUI host) uses `live::Input`
+// directly through its safe methods, beside the C ABI.
 #[cfg(all(feature = "live", unix))]
-mod live {
+pub mod live {
     use midir::os::unix::VirtualOutput;
     use midir::{MidiOutput, MidiOutputConnection};
 
@@ -373,6 +402,37 @@ mod live {
         _conn: MidiInputConnection<()>,
     }
 
+    impl Input {
+        /// Opens a virtual MIDI input port named `name` — the safe Rust face
+        /// of [`clausters_midi_input_open`], for in-process consumers (the GUI
+        /// host's live note painting). Dropping the handle closes the port.
+        pub fn open(name: &str) -> Option<Input> {
+            let input = MidiInput::new("clausters").ok()?;
+            let (tx, events) = channel();
+            let conn = input
+                .create_virtual(
+                    name,
+                    move |_timestamp, msg, _| {
+                        // Forward every raw message verbatim; the consumer
+                        // decodes/filters.
+                        let _ = tx.send(msg.to_vec());
+                    },
+                    (),
+                )
+                .ok()?;
+            Some(Input {
+                events,
+                _conn: conn,
+            })
+        }
+
+        /// The next pending raw message, if any (non-blocking; drain in a loop
+        /// until `None`).
+        pub fn poll(&self) -> Option<Vec<u8>> {
+            self.events.try_recv().ok()
+        }
+    }
+
     /// Opens a virtual MIDI input port named `name` (UTF-8, `name_len` bytes)
     /// that other apps/devices route into. Returns an opaque handle or null on
     /// failure. Drain it with [`clausters_midi_input_poll`]; close with
@@ -393,23 +453,9 @@ mod live {
         let Ok(name) = std::str::from_utf8(bytes) else {
             return std::ptr::null_mut();
         };
-        let Ok(input) = MidiInput::new("clausters") else {
-            return std::ptr::null_mut();
-        };
-        let (tx, events) = channel();
-        match input.create_virtual(
-            name,
-            move |_timestamp, msg, _| {
-                // Forward every raw message verbatim; the host decodes/filters.
-                let _ = tx.send(msg.to_vec());
-            },
-            (),
-        ) {
-            Ok(conn) => Box::into_raw(Box::new(Input {
-                events,
-                _conn: conn,
-            })),
-            Err(_) => std::ptr::null_mut(),
+        match Input::open(name) {
+            Some(input) => Box::into_raw(Box::new(input)),
+            None => std::ptr::null_mut(),
         }
     }
 
@@ -477,6 +523,37 @@ mod tests {
             tick,
             bytes: [0x80 | channel, key, 0],
         }
+    }
+
+    #[test]
+    fn parse_note_reads_ons_offs_and_ignores_the_rest() {
+        assert_eq!(
+            parse_note(&[0x91, 60, 100]),
+            Some(NoteEvent::On {
+                channel: 1,
+                pitch: 60,
+                velocity: 100
+            })
+        );
+        assert_eq!(
+            parse_note(&[0x80, 60, 64]),
+            Some(NoteEvent::Off {
+                channel: 0,
+                pitch: 60
+            })
+        );
+        // A zero-velocity note-on is a note-off (the wire convention).
+        assert_eq!(
+            parse_note(&[0x95, 72, 0]),
+            Some(NoteEvent::Off {
+                channel: 5,
+                pitch: 72
+            })
+        );
+        // Other channel-voice types, system messages, truncated data: none.
+        assert_eq!(parse_note(&[0xB0, 1, 64]), None); // control change
+        assert_eq!(parse_note(&[0xF8]), None); // clock
+        assert_eq!(parse_note(&[0x90, 60]), None); // truncated
     }
 
     /// Write a couple of notes, read the file back, and check the timing and

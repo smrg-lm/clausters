@@ -22,6 +22,12 @@ crate-type = ["cdylib", "rlib"]
 # headless GUI host `clausters-gui`).
 
 [features]
+default = ["midi"]
+# Live MIDI input painting piano-roll notes (a `midi_in` roll opens a virtual
+# input port other apps/devices route into). On by default — the host must
+# paint notes when it runs standalone, with no language client to do it — and
+# native-only (the dependency below is target-gated off wasm).
+midi = ["dep:clausters-midi"]
 # Standalone mode: boot a saved GuiDef bundle against an in-process embedded
 # server. Off by default because it links the `clausters` server crate (engine +
 # audio backend), which is heavy — keeping it opt-in is the size/packaging reason
@@ -62,6 +68,12 @@ winit = "0.30.13"
 # IPC uses, and the server's segment is itself Unix-only.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Live MIDI input (the `midi` feature): the shared MIDI crate's virtual input
+# port (midir/ALSA seq), consumed in-process through its safe Rust face.
+# Target-gated off wasm — the browser host keeps display parity only.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], optional = true }
 
 # The browser host (`host::web`, G12/G13): wasm-bindgen for the JS entry point
 # and the binding surface, wasm-bindgen-futures to await the async WebGPU
