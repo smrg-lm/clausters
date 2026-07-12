@@ -119,6 +119,61 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 62.0]
 
 
+def _track_material():
+    """A `Track` of two notes and one OSC event on an editable timeline."""
+    from clausters.model import Track
+    from clausters.seq.event import Event as SeqEvent
+    from clausters.seq.timeline import OscEvent, Timeline
+
+    tl = Timeline()
+    tl.add(0.0, SeqEvent(dict(midinote=60, dur=1.0, amp=0.5)))
+    tl.add(1.0, SeqEvent(dict(midinote=64, dur=0.5, amp=0.8)))
+    tl.add(0.5, OscEvent("/cue"))
+    return Track(tl), tl
+
+
+def test_a_material_renders_as_a_dedicated_piano_roll():
+    track, _tl = _track_material()
+    ed = Editor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
+    ed._mode, ed._roll_material = "pianoroll", track
+    (roll,) = ed.render()["children"][:1]
+    assert roll["type"] == "pianoroll"
+    # Notes as quintuples (pitch is the 3rd), the OSC event on its own lane.
+    assert [roll["notes"][i] for i in (2, 7)] == [60.0, 64.0]
+    assert roll["osc"] == [pytest.approx(0.5 * BEAT), "/cue"]
+    assert roll["ruler"] == "beats"
+
+
+def test_a_note_edit_rewrites_the_editable_timeline():
+    track, tl = _track_material()
+    ed = Editor(track, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._roll_material = "pianoroll", track
+    ed.render()  # builds the roll registry
+    wid = next(iter(ed._rolls))
+    # Move pitch 60 -> 62 and add a note; times/durs in timeline units.
+    edited = [0.0, BEAT, 62, 100, 0, 1.0 * BEAT, 0.5 * BEAT, 67, 90, 0]
+    assert ed.apply("/gui_event", [wid, "notes", *edited]) is True
+    items = tl.range(0.0, float("inf"))
+    pitches = [it.get("midinote") for _b, it in items if hasattr(it, "get")]
+    assert pitches == [62, 67]                       # the notes were rewritten
+    # The OSC event on the same timeline is preserved.
+    from clausters.seq.timeline import OscEvent
+    assert any(isinstance(it, OscEvent) for _b, it in items)
+
+
+def test_a_generator_material_is_read_only_in_the_piano_roll():
+    from clausters.seq.pattern import Pbind, Pseq
+
+    gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
+    ed = Editor(gen, sample_rate=SR, tempo=TEMPO)
+    ed._mode, ed._roll_material = "pianoroll", gen
+    ed.render()
+    wid = next(iter(ed._rolls))
+    # A generator is forward-only: the edit is ignored (no editable timeline).
+    assert ed.apply("/gui_event", [wid, "notes", 0.0, BEAT, 65, 100, 0]) is False
+    assert ed.dirty is False
+
+
 # ---- the base level: a nested group collapses to a summary, or expands ----
 
 def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
@@ -300,6 +355,19 @@ def test_stop_returns_to_the_top_and_pause_keeps_the_position():
     assert ed.position == pytest.approx(5.0)
     ed.stop()
     assert ed.position == 0.0
+
+
+def test_a_second_editors_events_fall_through_untouched():
+    """Two editors polled off one host (a dedicated piano-roll beside the
+    multitrack): another window's close and another editor's lane are not ours."""
+    ed = editor()
+    ed.open(_FakeHost())
+    assert ed.apply("/gui_closed", [ed.window + 1]) is False
+    assert ed.window is not None, "another window's close is not ours"
+    ed.apply("/gui_event", [99_999, "locate", 3 * BEAT])
+    assert ed.position == 0.0, "another editor's lane is not ours to seek from"
+    ed.apply("/gui_closed", [ed.window])
+    assert ed.window is None
 
 
 def test_unknown_messages_are_ignored():

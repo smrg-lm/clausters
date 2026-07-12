@@ -455,3 +455,16 @@ evaluates it client-side (the `envshape`/tap-reader precedent). Everything else 
 display-only and stays gui-side. The edit-back stays flat payloads, not new
 addresses: `"notes"` (`start dur pitch velocity channel …`) and `"osc"`
 (`time label …`) — the fourth use of the one edit-back pattern.
+
+**Edit-back to the model (the Editor's dedicated view).** When the `Editor`
+opens a material as a dedicated piano-roll, a per-note edit writes back only to
+**random-access material**: a `Track`'s editable `Timeline` is rebuilt from the
+`"notes"` payload (times converted to beats, the OSC/MIDI events sharing the
+timeline preserved). A generator (`Pbind`/`Routine`) is forward-only — there is
+no second note to rewrite until it evaluates again — so its bounced notes are
+shown **read-only**, and bouncing it to a `Track` is what makes them editable.
+This is not a new rule: it is the generated/generator distinction of the
+arrangement model (above) doing its job at the granularity of a single note.
+OSC events stay display-only in this view too: the `(time, label)` flag is a
+lossy projection of the message, so writing it back would silently drop the
+arguments.

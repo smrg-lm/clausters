@@ -38,7 +38,8 @@ from ..defs.ugens import points_to_env
 from ..model.realize import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
-from .guidef import clip, graph, track, window
+from ..seq.timeline import MidiEvent, OscEvent, Timeline
+from .guidef import clip, graph, pianoroll, track, window
 
 __all__ = ["Editor"]
 
@@ -129,6 +130,13 @@ class Editor:
         #: widget id -> the logical `Group` a `graph` patch draws, which a
         #: rewiring edit writes through.
         self._patches: dict = {}
+        #: The view: the multitrack (`open`) or a dedicated piano-roll of one
+        #: events material (`open_pianoroll`). `render` dispatches on it.
+        self._mode = "multitrack"
+        #: The material the dedicated piano-roll draws (its notes editable when it
+        #: is a `Track`), and widget id -> that material for the edit-back route.
+        self._roll_material = None
+        self._rolls: dict = {}
         self._host = None
         self._window = None
         #: The realization in flight: where it went, on what clock, and the
@@ -190,10 +198,13 @@ class Editor:
         members relate by processing rather than by time (so a lane would be the
         wrong shape for it). Pure — it builds the tree and the id registry, and
         sends nothing."""
+        if self._mode == "pianoroll":
+            return self._render_pianoroll()
         self._ids = itertools.count(self._base_id)
         self._clips = {}
         self._lanes = {}
         self._patches = {}
+        self._rolls = {}
 
         lanes: list = []
         patches: list = []
@@ -248,6 +259,57 @@ class Editor:
         """`render` the composition and open it on ``host`` (a
         `clausters.gui.host.GuiHost`). Returns the window id."""
         self._host = host
+        self._mode = "multitrack"
+        self._window = host.open(self.render(), id=id)
+        return self._window
+
+    def _render_pianoroll(self) -> dict:
+        """The dedicated piano-roll view: one `pianoroll` widget drawing a single
+        events material's MIDI notes (grid) and OSC events (lane), instead of a
+        multitrack of clips. The notes ride the shared beats grid; the pitch
+        window frames them (falling back to `DEFAULT_PITCH`). Pure — it builds the
+        tree and the edit-back registry."""
+        self._ids = itertools.count(self._base_id)
+        self._clips = {}
+        self._lanes = {}
+        self._patches = {}
+        self._rolls = {}
+        material = self._roll_material
+        wid = next(self._ids)
+        notes = self._notes(material)
+        osc = self._osc(material)
+        body: dict = {}
+        if notes:
+            pitches = [n[2] for n in notes]
+            body["min"] = min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1])
+            body["max"] = max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0])
+        snap = self.beats_to_units(self.quant) if self.quant > 0 else None
+        # The roll is a lane (the playhead/cursor addresses these) and a roll (the
+        # note edit-back resolves through these).
+        self._lanes[wid] = material
+        self._rolls[wid] = material
+        roll = pianoroll(wid, notes=notes or None, osc=osc or None, ruler="beats",
+                         tempo=self.tempo, sample_rate=self.sample_rate, snap=snap,
+                         label=_name(material), **body)
+        return window(roll, *self.extra, title=self.title,
+                      w=self.size[0], h=self.size[1], layout="col")
+
+    def open_pianoroll(self, host, material=None, id: int | None = None) -> int:
+        """`render` a single events material as a **dedicated piano-roll** window
+        and open it on ``host`` — the editor-grade note view (a keyboard, an
+        editable note grid, a velocity lane, an OSC-event lane) of one MIDI/OSC
+        material, as opposed to `open`, where the same notes are only a clip body.
+
+        Edits write back through `poll` exactly as the multitrack does, **when the
+        material is editable** — a `clausters.model.Track` (a
+        `clausters.seq.Timeline`): a dragged, added or removed note is rebuilt onto
+        its timeline. A **generator** (a `Pbind`/`Routine`) is forward-only, so its
+        bounced notes are shown *read-only* (bounce it to a `Track` to edit). OSC
+        events are shown but not edited back yet (a marker carries only its time
+        and address, not the full message). Returns the window id."""
+        self._host = host
+        self._mode = "pianoroll"
+        self._roll_material = self.material if material is None else material
         self._window = host.open(self.render(), id=id)
         return self._window
 
@@ -292,11 +354,16 @@ class Editor:
         group, so the position converts back through the base the clip was drawn
         at; and only what actually moved is written — a drag carries the clip's
         unchanged ``dur`` along, and snapping *that* to the grid would silently
-        shorten the material. ``/gui_closed`` drops the window; anything else is
-        ignored, so a whole poll loop can be fed straight in.
+        shorten the material. ``/gui_closed`` drops the window (its own — the
+        payload names the window id); anything else is ignored, so a whole poll
+        loop can be fed straight in — even one shared with a second editor
+        (a dedicated piano-roll beside the multitrack, say): every route resolves
+        through this editor's own registries, so another window's events fall
+        through untouched.
         """
         if addr == "/gui_closed":
-            self._window = None
+            if not args or self._window is None or int(args[0]) == self._window:
+                self._window = None
             return False
         if addr != "/gui_event" or len(args) < 2:
             return False
@@ -304,9 +371,16 @@ class Editor:
             return self._apply_wire(int(args[0]), args[2:])
         if args[1] == "locate":
             # A click on a lane's ruler (or its empty space): seek. A transport
-            # action, not an edit — the composition did not change.
-            self.locate(self.units_to_beats(float(args[2])))
+            # action, not an edit — the composition did not change (and another
+            # editor's lane is not ours to seek from).
+            if int(args[0]) in self._lanes:
+                self.locate(self.units_to_beats(float(args[2])))
             return False
+        if args[1] == "notes":
+            # A note edited in the dedicated piano-roll: rebuild the material's
+            # timeline (a generator is read-only, so it is ignored).
+            material = self._rolls.get(int(args[0]))
+            return material is not None and self._apply_notes(material, args[2:])
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -374,6 +448,48 @@ class Editor:
         auto.env = points_to_env(flat)
         self._changed()
         return True
+
+    def _apply_notes(self, material, values) -> bool:
+        """Notes edited in the dedicated piano-roll (the flat ``"notes"`` payload,
+        `start dur pitch velocity channel` quintuples): rebuilt onto the material's
+        editable `clausters.seq.Timeline` as `Event`s, times converted to beats,
+        preserving any OSC/MIDI items already on it. Returns ``False`` for a
+        forward-only generator material (read-only), so the edit is a no-op."""
+        timeline = _editable_timeline(material)
+        if timeline is None:
+            return False
+        new = []
+        for start, dur, pitch, vel, channel in _quintuples(list(values)):
+            params = dict(midinote=int(pitch), dur=self.units_to_beats(dur),
+                          amp=max(0.0, min(1.0, int(vel) / 127.0)),
+                          velocity=int(vel), legato=1.0)
+            if int(channel):
+                params["channel"] = int(channel)
+            new.append((self.units_to_beats(start), SeqEvent(params)))
+        # Replace the notes, keep the OSC/MIDI events (they share the timeline).
+        _rewrite_timeline(timeline, lambda it: _pitch(it) is None, new)
+        self._changed()
+        return True
+
+    def _osc(self, material) -> list:
+        """The OSC (and raw MIDI) events of a material as ``(time_units, label)``
+        pairs — the piano-roll's event lane. An `OscEvent` labels with its address,
+        a `MidiEvent` with a short tag. Display only: a marker carries the time and
+        a label, not the full message, so it is not written back (see
+        `open_pianoroll`)."""
+        if isinstance(material, (Group, Buffer)):
+            return []
+        try:
+            events = flatten(material, 0.0)
+        except (NotImplementedError, TypeError):
+            return []
+        out = []
+        for beat, item in events:
+            if isinstance(item, OscEvent):
+                out.append((self.beats_to_units(beat), str(item.addr)))
+            elif isinstance(item, MidiEvent):
+                out.append((self.beats_to_units(beat), "midi"))
+        return out
 
     def _changed(self) -> bool:
         """The model was edited: mark it, and re-realize now when `follow` is on.
@@ -736,6 +852,34 @@ def _quads(flat) -> list:
     curve)`` tuples (a trailing partial quad is dropped)."""
     flat = list(flat)
     return [tuple(flat[i:i + 4]) for i in range(0, len(flat) - 3, 4)]
+
+
+def _quintuples(flat) -> list:
+    """A flat ``[start, dur, pitch, velocity, channel, …]`` note list as
+    quintuple tuples (a trailing partial group is dropped) — the inverse of the
+    piano-roll's `notes` wire form."""
+    flat = list(flat)
+    return [tuple(flat[i:i + 5]) for i in range(0, len(flat) - 4, 5)]
+
+
+def _editable_timeline(material):
+    """The `clausters.seq.Timeline` a material's notes can be edited onto, or
+    ``None``. A `clausters.model.Track` wraps one — the random-access, editable
+    events container; a generator (a `Pbind`/`Routine`) does not, so it is
+    forward-only and the piano-roll shows it read-only."""
+    wraps = getattr(material, "wraps", None)
+    return wraps if isinstance(wraps, Timeline) else None
+
+
+def _rewrite_timeline(timeline, keep, new):
+    """Rewrite a timeline in place: keep the items ``keep(item)`` is true for,
+    drop the rest, and add ``new`` (a list of ``(beat, item)``) — so one kind of
+    item (the notes) is replaced while the others (OSC/MIDI events) are preserved.
+    Uses only the public timeline API (`range`/`clear`/`add`)."""
+    kept = [(b, it) for (b, it) in timeline.range(0.0, float("inf")) if keep(it)]
+    timeline.clear()
+    for beat, item in kept + list(new):
+        timeline.add(beat, item)
 
 
 def _curve_range(points) -> tuple:

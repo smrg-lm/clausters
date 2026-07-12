@@ -81,6 +81,15 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   la esquina. El botón **play** toca las notas dibujadas (un `Pbind`) → se **oye**
   la melodía que dibujaste. Refrescar antes el binario bundleado
   (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
+- **Vista dedicada del Editor (pianoroll ↔ modelo).** En `gui_composer.py`, la
+  celda "The melody, as a dedicated piano-roll" abre la melodía (un `Track`) en
+  su propia ventana pianoroll junto al multipista → **arrastrar una nota** y
+  presionar **play**: se **oye** la melodía cambiada — el roll reescribió el
+  `Timeline` del modelo, y el clip del multipista es otra vista del mismo
+  material. Un material *generador* (el `Pbind` del bajo, abierto igual) se
+  muestra **solo lectura**: arrastrar sus notas no cambia lo que suena (se
+  bouncea a `Track` para editarlo). Refrescar antes el binario bundleado
+  (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Patcher del grupo lógico (GUI).** Un `Group{logical}` se dibuja como *patch*
   (cajas de miembro, nodos de bus, un cable por `control ↔ bus`); arrastrar un
   puerto sobre otro bus lo **recablea** (sobre vacío, lo descablea) y la próxima

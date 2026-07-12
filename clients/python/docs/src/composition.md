@@ -131,6 +131,26 @@ playhead, so you hear it where you dropped it. The semantics there are honest:
 *re-schedule from here*, not a sample-exact splice, so a synth already sounding
 keeps sounding.
 
+### The dedicated piano-roll
+
+The multitrack draws a material of events as a clip body — the notes, but at a
+clip's size. To *author* the notes, open the material in the editor-grade view
+instead:
+
+```python
+roll = Editor(melody, sample_rate=SR, tempo=2.0, quant=0.25)
+roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC-event lanes
+```
+
+Edits flow back through `poll` exactly as the multitrack's do, **when the
+material is editable**: a dragged, added or removed note rebuilds a `Track`'s
+timeline (times converted to beats, any OSC/MIDI events on the same timeline
+preserved). A generator — a `Pbind`, a `Routine` — is forward-only, so its
+bounced notes are shown *read-only*; bounce it to a `Track` (the model's change
+of state) and the same view becomes an editor. OSC events are shown in their
+lane but not written back: their marker carries a time and a label, not the
+full message.
+
 ### Beats and samples
 
 The model places materials in **beats**; the view places clips in **timeline
