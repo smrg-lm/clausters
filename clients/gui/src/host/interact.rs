@@ -615,6 +615,24 @@ pub(crate) fn pianoroll_notes_edit<R>(
     }
 }
 
+/// Mutate a piano-roll's notes **and** its multi-note selection together (the
+/// block edits' write path: a marquee fills the selection, a block move/delete/
+/// velocity nudge reads it while rewriting the notes).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn pianoroll_state_edit<R>(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    f: impl FnOnce(&mut Vec<pianoroll::Note>, &mut Vec<usize>) -> R,
+) -> Option<R> {
+    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+        WidgetKind::PianoRoll {
+            notes, selected, ..
+        } => Some(f(notes, selected)),
+        _ => None,
+    }
+}
+
 /// Mutate a piano-roll's OSC-event list in the host tree.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn pianoroll_osc_edit<R>(

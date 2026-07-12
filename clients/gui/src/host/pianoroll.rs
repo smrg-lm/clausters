@@ -85,6 +85,8 @@ const KEY_LABEL: Color = [0.30, 0.32, 0.38, 1.0];
 const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
 const NOTE_FILL: Color = [0.55, 0.80, 0.62, 1.0];
 const NOTE_EDGE: Color = [0.78, 0.95, 0.82, 1.0];
+const SELECTED_FILL: Color = [0.80, 0.90, 0.98, 1.0];
+const SELECTED_EDGE: Color = [1.00, 1.00, 1.00, 1.0];
 const VEL_BAR: Color = [0.70, 0.55, 0.90, 1.0];
 const VEL_BG: Color = [0.07, 0.08, 0.10, 1.0];
 const OSC_BG: Color = [0.10, 0.09, 0.13, 1.0];
@@ -196,7 +198,9 @@ pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
 /// Draw a set of notes into `grid`, placed on the shared `nav` time axis
 /// (offset added, so a clip's roll moves with the clip) and over the pitch
 /// window `[lo, hi]`. The one primitive both the widget and the clip body use.
-/// When `color_velocity` the note fill brightens with velocity.
+/// When `color_velocity` the note fill brightens with velocity. `selected`
+/// indices draw highlighted (the multi-note selection; the clip body passes
+/// none).
 #[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
 pub fn draw_notes(
     mesh: &mut Mesh,
@@ -207,6 +211,7 @@ pub fn draw_notes(
     lo: f32,
     hi: f32,
     color_velocity: bool,
+    selected: &[usize],
 ) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
@@ -214,7 +219,7 @@ pub fn draw_notes(
     let rh = row_height(lo, hi, grid);
     let h = rh.clamp(NOTE_MIN_H, grid.h).max(NOTE_MIN_H);
     let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
-    for n in notes {
+    for (i, n) in notes.iter().enumerate() {
         let mut nx0 = to_x(offset + n.start, nav, grid) as f32;
         let mut nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, grid) as f32;
         nx0 = nx0.clamp(x_lo, x_hi);
@@ -224,7 +229,10 @@ pub fn draw_notes(
         }
         let yc = pitch_to_y(n.pitch, lo, hi, grid);
         let y = (yc - h * 0.5).clamp(grid.y, grid.y + grid.h - h);
-        let fill = if color_velocity {
+        let is_selected = selected.contains(&i);
+        let fill = if is_selected {
+            SELECTED_FILL
+        } else if color_velocity {
             let v = (n.velocity as f32 / 127.0).clamp(0.15, 1.0);
             [NOTE_FILL[0] * v, NOTE_FILL[1] * v, NOTE_FILL[2] * v, 1.0]
         } else {
@@ -232,7 +240,12 @@ pub fn draw_notes(
         };
         mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), fill);
         if nx1 - nx0 > 3.0 && h > 3.0 {
-            mesh.border(Rect::new(nx0, y, nx1 - nx0, h), 1.0, NOTE_EDGE);
+            let edge = if is_selected {
+                SELECTED_EDGE
+            } else {
+                NOTE_EDGE
+            };
+            mesh.border(Rect::new(nx0, y, nx1 - nx0, h), 1.0, edge);
         }
     }
 }
@@ -434,6 +447,122 @@ pub fn remove_note(notes: &mut Vec<Note>, index: usize) {
     }
 }
 
+// --- Multi-note selection and block edits (pure, mapping-free) -------------
+//
+// The selection is a set of note indices — view state, native-side. The
+// marquee is the shared time selection restricted in pitch: dragging the empty
+// grid keeps setting the linked views' time selection, and the notes inside
+// the time × pitch rectangle become the selected set.
+
+/// The indices of the notes intersecting the time span `[t0, t1)` whose row
+/// touches the pitch band `[p_lo, p_hi]` (a note's row spans half a semitone
+/// either side of its pitch). Either range may come reversed (a marquee drags
+/// both ways).
+pub fn notes_in_rect(notes: &[Note], t0: f64, t1: f64, p_lo: f32, p_hi: f32) -> Vec<usize> {
+    let (t0, t1) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
+    let (p_lo, p_hi) = if p_lo <= p_hi {
+        (p_lo, p_hi)
+    } else {
+        (p_hi, p_lo)
+    };
+    notes
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| {
+            n.start < t1
+                && n.start + n.dur.max(0.0) > t0
+                && n.pitch + 0.5 >= p_lo
+                && n.pitch - 0.5 <= p_hi
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// Move a block of notes rigidly from a press-time snapshot: `orig` is
+/// `(index, start, pitch)` per selected note, `dt`/`dp` the drag deltas. The
+/// deltas are clamped **as one** — no start below zero, no pitch outside
+/// `[lo, hi]` — so the block stops at an edge instead of folding against it.
+/// Durations are kept.
+pub fn move_notes_from(
+    notes: &mut [Note],
+    orig: &[(usize, f64, f32)],
+    dt: f64,
+    dp: f32,
+    lo: f32,
+    hi: f32,
+) {
+    if orig.is_empty() {
+        return;
+    }
+    let min_start = orig
+        .iter()
+        .map(|(_, s, _)| *s)
+        .fold(f64::INFINITY, f64::min);
+    let dt = dt.max(-min_start);
+    let (min_p, max_p) = orig
+        .iter()
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(a, b), (_, _, p)| {
+            (a.min(p.round()), b.max(p.round()))
+        });
+    // A block already wider than the window cannot move rigidly in pitch.
+    let dp = if lo - min_p <= hi - max_p {
+        dp.round().clamp(lo - min_p, hi - max_p)
+    } else {
+        0.0
+    };
+    for (i, s, p) in orig {
+        if let Some(n) = notes.get_mut(*i) {
+            n.start = s + dt;
+            n.pitch = (p.round() + dp).clamp(lo, hi);
+        }
+    }
+}
+
+/// Remove a set of notes by index (any order, duplicates tolerated).
+pub fn remove_notes(notes: &mut Vec<Note>, indices: &[usize]) {
+    let mut sorted: Vec<usize> = indices.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    for i in sorted.into_iter().rev() {
+        if i < notes.len() {
+            notes.remove(i);
+        }
+    }
+}
+
+/// Nudge a block of velocities relatively from a press-time snapshot: `orig`
+/// is `(index, velocity)` per selected note, `dv` the common delta — each note
+/// clamps to `0..127` on its own (a saturated bar stays put, the rest keep
+/// moving, and reversing restores the original spread).
+pub fn nudge_velocities_from(notes: &mut [Note], orig: &[(usize, i32)], dv: i32) {
+    for (i, v) in orig {
+        if let Some(n) = notes.get_mut(*i) {
+            n.velocity = (v + dv).clamp(0, 127);
+        }
+    }
+}
+
+/// The selection re-mapped after the note at `removed` left the list: the
+/// removed index drops out, higher indices shift down one.
+pub fn selection_after_removal(selected: &[usize], removed: usize) -> Vec<usize> {
+    selected
+        .iter()
+        .filter(|&&i| i != removed)
+        .map(|&i| if i > removed { i - 1 } else { i })
+        .collect()
+}
+
+/// Toggle a note in or out of the selection (Alt+click: a non-rectangular
+/// selection built one note at a time).
+pub fn toggle_selected(selected: &mut Vec<usize>, index: usize) {
+    match selected.iter().position(|&i| i == index) {
+        Some(p) => {
+            selected.remove(p);
+        }
+        None => selected.push(index),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -529,5 +658,91 @@ mod tests {
         assert_eq!(notes[0].pitch, 64.0);
         remove_note(&mut notes, 9); // out of range, no-op
         assert_eq!(notes.len(), 1);
+    }
+
+    // --- selection + block edits ---
+
+    fn three_notes() -> Vec<Note> {
+        vec![
+            Note::new(0.0, 100.0, 60.0),
+            Note::new(200.0, 100.0, 64.0),
+            Note::new(400.0, 100.0, 72.0),
+        ]
+    }
+
+    #[test]
+    fn a_marquee_selects_by_time_and_pitch_and_tolerates_reversed_ranges() {
+        let notes = three_notes();
+        // The middle note only: its time span, its pitch band.
+        assert_eq!(notes_in_rect(&notes, 150.0, 350.0, 62.0, 66.0), vec![1]);
+        // A reversed drag selects the same.
+        assert_eq!(notes_in_rect(&notes, 350.0, 150.0, 66.0, 62.0), vec![1]);
+        // The full time span but a pitch band excluding the top note.
+        assert_eq!(notes_in_rect(&notes, 0.0, 500.0, 58.0, 65.0), vec![0, 1]);
+        // A note intersecting the span's edge is in (its tail crosses t0).
+        assert_eq!(notes_in_rect(&notes, 50.0, 60.0, 59.0, 61.0), vec![0]);
+        // An empty rect selects nothing.
+        assert!(notes_in_rect(&notes, 120.0, 130.0, 60.0, 60.0).is_empty());
+    }
+
+    #[test]
+    fn a_block_move_is_rigid_and_clamps_as_one() {
+        // Free move: both notes shift by the same delta.
+        let mut notes = three_notes();
+        let orig = vec![(0, 0.0, 60.0f32), (1, 200.0, 64.0f32)];
+        move_notes_from(&mut notes, &orig, 50.0, 2.4, 24.0, 96.0);
+        assert_eq!((notes[0].start, notes[0].pitch), (50.0, 62.0));
+        assert_eq!((notes[1].start, notes[1].pitch), (250.0, 66.0));
+        // Clamped at time zero: the whole block stops, keeping the spread.
+        let mut notes = three_notes();
+        move_notes_from(&mut notes, &orig, -80.0, 0.0, 24.0, 96.0);
+        assert_eq!((notes[0].start, notes[1].start), (0.0, 200.0));
+        // Clamped at the pitch top: the highest note pins the block.
+        let mut notes = three_notes();
+        move_notes_from(&mut notes, &orig, 0.0, 40.0, 24.0, 96.0);
+        assert_eq!((notes[0].pitch, notes[1].pitch), (92.0, 96.0));
+        // Durations are never touched.
+        assert_eq!(notes[0].dur, 100.0);
+    }
+
+    #[test]
+    fn a_block_wider_than_the_pitch_window_does_not_fold() {
+        let mut notes = vec![Note::new(0.0, 10.0, 20.0), Note::new(0.0, 10.0, 100.0)];
+        let orig = vec![(0, 0.0, 20.0f32), (1, 0.0, 100.0f32)];
+        move_notes_from(&mut notes, &orig, 0.0, 5.0, 24.0, 96.0);
+        // The rigid pitch move is refused; the pitches only clamp into range.
+        assert_eq!((notes[0].pitch, notes[1].pitch), (24.0, 96.0));
+    }
+
+    #[test]
+    fn a_block_removal_takes_any_order_and_duplicates() {
+        let mut notes = three_notes();
+        remove_notes(&mut notes, &[2, 0, 0]);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].pitch, 64.0);
+    }
+
+    #[test]
+    fn a_velocity_nudge_is_relative_and_saturates_per_note() {
+        let mut notes = three_notes();
+        notes[0].velocity = 120;
+        notes[1].velocity = 60;
+        let orig = vec![(0, 120), (1, 60)];
+        nudge_velocities_from(&mut notes, &orig, 20);
+        assert_eq!((notes[0].velocity, notes[1].velocity), (127, 80));
+        // Reversing from the same snapshot restores the original spread.
+        nudge_velocities_from(&mut notes, &orig, -20);
+        assert_eq!((notes[0].velocity, notes[1].velocity), (100, 40));
+    }
+
+    #[test]
+    fn the_selection_follows_a_single_removal_and_toggles() {
+        assert_eq!(selection_after_removal(&[0, 1, 2], 1), vec![0, 1]);
+        assert_eq!(selection_after_removal(&[2], 2), Vec::<usize>::new());
+        let mut sel = vec![0];
+        toggle_selected(&mut sel, 2);
+        assert_eq!(sel, vec![0, 2]);
+        toggle_selected(&mut sel, 0);
+        assert_eq!(sel, vec![2]);
     }
 }

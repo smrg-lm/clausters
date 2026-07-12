@@ -17,7 +17,13 @@ parity):
   **Ctrl+click a note** removes it;
 - **drag in the velocity lane** to set a note's velocity;
 - **Ctrl+click the OSC lane** adds/removes an event; **drag one** to move it;
-- **wheel over the grid** zooms the shared time axis, **Shift+drag** pans it.
+- **wheel over the grid** zooms the shared time axis, **Shift+drag** pans it;
+- **drag empty grid** also marquee-selects the notes inside the time x pitch
+  rectangle (it is the same time-selection gesture, restricted in pitch);
+  **Alt+click** toggles a note in/out of the selection;
+- **drag a selected note** moves the whole selection (rigid, snapped);
+  **Delete/Backspace** removes it; **drag the velocity lane over a selected
+  note** nudges all the selected velocities relatively.
 
 Every edit flows back per the **edit-back pattern**: the host emits
 ``/gui_event <id> "notes" <start dur pitch velocity channel ...>`` (the note

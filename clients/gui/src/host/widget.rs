@@ -511,6 +511,11 @@ pub enum WidgetKind {
     PianoRoll {
         notes: Vec<super::track::Note>,
         osc: Vec<super::pianoroll::OscMark>,
+        /// The multi-note selection (note indices) — native view state, never
+        /// parsed from the wire: the marquee/Alt+click gestures build it, block
+        /// edits (move, delete, velocity) consume it, and it clears when the
+        /// script replaces `notes` (the indices would dangle).
+        selected: Vec<usize>,
         min: f32,
         max: f32,
         snap: f64,
@@ -911,6 +916,7 @@ impl Widget {
                 let osc = parse_osc(&node.props);
                 WidgetKind::PianoRoll {
                     notes: parse_notes(&node.props),
+                    selected: Vec::new(),
                     // The velocity lane is on by default; the OSC lane shows when
                     // there are events or it is explicitly asked for (so an empty
                     // lane can still be opened to author events).
@@ -1409,6 +1415,7 @@ impl WidgetKind {
             WidgetKind::PianoRoll {
                 notes,
                 osc,
+                selected,
                 min,
                 max,
                 snap,
@@ -1421,6 +1428,8 @@ impl WidgetKind {
                 // exactly like the clip's `notes`/`points` and the graph's parts.
                 "notes" => {
                     *notes = parse_notes(&as_array_props("notes", v));
+                    // The indices would dangle over the new list.
+                    selected.clear();
                     true
                 }
                 "osc" => {

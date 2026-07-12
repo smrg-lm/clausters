@@ -344,6 +344,7 @@ fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, _body: Rect, nav: &View, clip: &Cl
         clip.min,
         clip.max,
         false,
+        &[],
     );
 }
 

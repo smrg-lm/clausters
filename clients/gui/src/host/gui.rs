@@ -304,6 +304,48 @@ enum Drag {
         nav_len: f64,
         snap: f64,
     },
+    /// A marquee on the piano-roll's empty grid: the time span keeps driving the
+    /// **shared time selection** (linked views follow it, exactly as
+    /// [`Drag::Select`] does), and the notes inside the time × pitch rectangle
+    /// become the widget's multi-note selection.
+    SelectNotes {
+        id: i32,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        lo: f32,
+        hi: f32,
+        /// The absolute sample under the press.
+        anchor: f64,
+        /// The (fractional) pitch under the press.
+        anchor_pitch: f32,
+    },
+    /// Dragging a **selected** note moves the whole selection rigidly in time
+    /// and pitch. `orig` is the `(index, start, pitch)` snapshot at press time
+    /// — the grabbed note's entry leads it (the snap anchor) — so a clamped
+    /// block never drifts.
+    NoteBlock {
+        id: i32,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        lo: f32,
+        hi: f32,
+        press_time: f64,
+        press_pitch: f32,
+        snap: f64,
+        orig: Vec<(usize, f64, f32)>,
+    },
+    /// Dragging the velocity lane over a **selected** note nudges every selected
+    /// velocity by the same delta (relative, from the `(index, velocity)` press
+    /// snapshot — each note saturates on its own).
+    VelocityBlock {
+        id: i32,
+        lane: Rect,
+        /// The lane velocity under the press (the delta's zero).
+        press_velocity: i32,
+        orig: Vec<(usize, i32)>,
+    },
 }
 
 /// One open window: its GPU surface, the per-waveform slots, the painter, the
@@ -328,6 +370,9 @@ struct WindowState {
     shift: bool,
     /// Whether Ctrl is held (Ctrl+click adds/removes a `bpf` breakpoint).
     ctrl: bool,
+    /// Whether Alt is held (Alt+click toggles a piano-roll note in/out of the
+    /// multi-note selection).
+    alt: bool,
     drag: Option<Drag>,
     /// Recent control-bus samples per `scope` widget id (oldest .. newest).
     scopes: HashMap<i32, VecDeque<f32>>,
@@ -613,15 +658,21 @@ impl App {
     }
 
     /// Handles a plain (non-Shift) press on a `pianoroll`: start a note
-    /// move/resize, a velocity drag or an OSC-marker drag; Ctrl+click adds or
-    /// removes a note/marker; a press on empty grid selects. The edit-back
-    /// gestures, native-only (the browser keeps display + `/gui_set` parity).
+    /// move/resize (a **selected** note moves the whole selection), a velocity
+    /// drag (over a selected note, the whole selection's) or an OSC-marker
+    /// drag; Ctrl+click adds or removes a note/marker; Alt+click toggles a note
+    /// in/out of the multi-note selection; a press on empty grid drags the
+    /// marquee — the shared time selection restricted in pitch, which fills the
+    /// selected set. The edit-back gestures, native-only (the browser keeps
+    /// display + `/gui_set` parity).
+    #[allow(clippy::too_many_arguments)] // one press: a hit, two modifiers, a cursor
     fn pianoroll_press(
         &mut self,
         def_id: i32,
         id: i32,
         h: &interact::PianoRollHit,
         ctrl: bool,
+        alt: bool,
         cx: f64,
         cy: f64,
     ) {
@@ -631,13 +682,31 @@ impl App {
         };
         match h.region {
             interact::PrRegion::Grid => {
+                // Alt+click toggles a note in/out of the multi-note selection
+                // (a non-rectangular selection, one note at a time).
+                if alt {
+                    if let Some(nh) = h.note {
+                        interact::pianoroll_state_edit(&mut self.host, def_id, id, |_, sel| {
+                            pianoroll::toggle_selected(sel, nh.index);
+                        });
+                        self.redraw(def_id);
+                    }
+                    return;
+                }
                 if ctrl {
                     match h.note {
-                        // Ctrl+click on a note removes it.
+                        // Ctrl+click on a note removes it (the selection's
+                        // indices shift down past it).
                         Some(nh) => {
-                            interact::pianoroll_notes_edit(&mut self.host, def_id, id, |notes| {
-                                pianoroll::remove_note(notes, nh.index);
-                            });
+                            interact::pianoroll_state_edit(
+                                &mut self.host,
+                                def_id,
+                                id,
+                                |notes, sel| {
+                                    pianoroll::remove_note(notes, nh.index);
+                                    *sel = pianoroll::selection_after_removal(sel, nh.index);
+                                },
+                            );
                         }
                         // Ctrl+click on empty grid adds a note there, then drags
                         // its end to set the length until release.
@@ -694,10 +763,57 @@ impl App {
                 }
                 match h.note {
                     // Move (body) or resize (edge) the note under the cursor.
+                    // Grabbing the body of a **selected** note moves the whole
+                    // selection rigidly; grabbing an unselected one drops the
+                    // selection first (the single-note gesture, as before).
                     Some(nh) => {
+                        let press_time = pianoroll::time_at(h.grid, &nav, 0.0, cx as f32);
+                        if nh.part == pianoroll::NotePart::Body {
+                            let orig = interact::pianoroll_state_edit(
+                                &mut self.host,
+                                def_id,
+                                id,
+                                |notes, sel| {
+                                    if !sel.contains(&nh.index) {
+                                        sel.clear();
+                                        return Vec::new();
+                                    }
+                                    // The grabbed note's snapshot leads (the
+                                    // snap anchor).
+                                    let mut idx = sel.clone();
+                                    idx.retain(|&i| i != nh.index);
+                                    idx.insert(0, nh.index);
+                                    idx.iter()
+                                        .filter_map(|&i| {
+                                            notes.get(i).map(|n| (i, n.start, n.pitch))
+                                        })
+                                        .collect::<Vec<_>>()
+                                },
+                            )
+                            .unwrap_or_default();
+                            if !orig.is_empty() {
+                                let press_pitch =
+                                    pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid);
+                                self.set_drag(
+                                    def_id,
+                                    Drag::NoteBlock {
+                                        id,
+                                        grid: h.grid,
+                                        nav_start: h.nav.start,
+                                        nav_len: h.nav.len,
+                                        lo: h.lo,
+                                        hi: h.hi,
+                                        press_time,
+                                        press_pitch,
+                                        snap: h.snap,
+                                        orig,
+                                    },
+                                );
+                                return;
+                            }
+                        }
                         let (orig_start, orig_dur) =
                             self.note_at(def_id, id, nh.index).unwrap_or((0.0, 0.0));
-                        let press_time = pianoroll::time_at(h.grid, &nav, 0.0, cx as f32);
                         self.set_drag(
                             def_id,
                             Drag::Note {
@@ -716,27 +832,67 @@ impl App {
                             },
                         );
                     }
-                    // Empty grid: plain drag selects (the heavy-view convention).
+                    // Empty grid: plain drag selects (the heavy-view
+                    // convention), and the marquee doubles as the note
+                    // selection — the time span restricted in pitch.
                     None => {
                         if let Some((start, len, _)) = self.timeline_nav(id) {
                             let anchor =
                                 start + len * ((cx - h.grid.x as f64) / h.grid.w.max(1.0) as f64);
                             self.set_selection(def_id, id, anchor, anchor);
+                            let anchor_pitch = pianoroll::y_to_pitch(cy as f32, h.lo, h.hi, h.grid);
+                            // The marquee restarts: the previous set drops.
+                            interact::pianoroll_state_edit(&mut self.host, def_id, id, |_, sel| {
+                                sel.clear()
+                            });
                             self.set_drag(
                                 def_id,
-                                Drag::Select {
+                                Drag::SelectNotes {
                                     id,
-                                    body_x: h.grid.x as f64,
-                                    body_w: h.grid.w.max(1.0) as f64,
+                                    grid: h.grid,
+                                    nav_start: start,
+                                    nav_len: len,
+                                    lo: h.lo,
+                                    hi: h.hi,
                                     anchor,
+                                    anchor_pitch,
                                 },
                             );
+                            self.redraw(def_id);
                         }
                     }
                 }
             }
             interact::PrRegion::Velocity => {
                 if let Some(nh) = h.note {
+                    // Over a **selected** note the whole selection's velocities
+                    // nudge together (relative, from a press snapshot); over an
+                    // unselected one the single bar follows the cursor.
+                    let orig =
+                        interact::pianoroll_state_edit(&mut self.host, def_id, id, |notes, sel| {
+                            if !sel.contains(&nh.index) {
+                                return Vec::new();
+                            }
+                            sel.iter()
+                                .filter_map(|&i| notes.get(i).map(|n| (i, n.velocity)))
+                                .collect::<Vec<_>>()
+                        })
+                        .unwrap_or_default();
+                    if !orig.is_empty() {
+                        let lane = h.region_rect;
+                        let frac =
+                            ((lane.y + lane.h - cy as f32) / lane.h.max(1.0)).clamp(0.0, 1.0);
+                        self.set_drag(
+                            def_id,
+                            Drag::VelocityBlock {
+                                id,
+                                lane,
+                                press_velocity: (frac * 127.0).round() as i32,
+                                orig,
+                            },
+                        );
+                        return;
+                    }
                     self.set_drag(
                         def_id,
                         Drag::Velocity {
@@ -899,6 +1055,7 @@ impl App {
                 cursor: (0.0, 0.0),
                 shift: false,
                 ctrl: false,
+                alt: false,
                 drag: None,
                 scopes: HashMap::new(),
                 tap_windows: HashMap::new(),
@@ -1504,6 +1661,7 @@ impl App {
                 };
                 let shift = self.windows.get(&def_id).is_some_and(|w| w.shift);
                 let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
+                let alt = self.windows.get(&def_id).is_some_and(|w| w.alt);
                 // A press on the keyboard gutter (left of the grid) pans the pitch
                 // window — the keyboard is the piano-roll's vertical axis surface,
                 // the counterpart of the heavy views' y-ruler strip.
@@ -1541,7 +1699,7 @@ impl App {
                     }
                     return;
                 }
-                self.pianoroll_press(def_id, id, &h, ctrl, cx, cy);
+                self.pianoroll_press(def_id, id, &h, ctrl, alt, cx, cy);
             }
             WidgetKind::Waveform { ref editor, .. }
             | WidgetKind::Spectrogram { ref editor, .. } => {
@@ -1810,6 +1968,59 @@ impl App {
                     nav_len: *nav_len,
                     snap: *snap,
                 },
+                Drag::SelectNotes {
+                    id,
+                    grid,
+                    nav_start,
+                    nav_len,
+                    lo,
+                    hi,
+                    anchor,
+                    anchor_pitch,
+                } => DragMove::SelectNotes {
+                    id: *id,
+                    grid: *grid,
+                    nav_start: *nav_start,
+                    nav_len: *nav_len,
+                    lo: *lo,
+                    hi: *hi,
+                    anchor: *anchor,
+                    anchor_pitch: *anchor_pitch,
+                },
+                Drag::NoteBlock {
+                    id,
+                    grid,
+                    nav_start,
+                    nav_len,
+                    lo,
+                    hi,
+                    press_time,
+                    press_pitch,
+                    snap,
+                    orig,
+                } => DragMove::NoteBlock {
+                    id: *id,
+                    grid: *grid,
+                    nav_start: *nav_start,
+                    nav_len: *nav_len,
+                    lo: *lo,
+                    hi: *hi,
+                    press_time: *press_time,
+                    press_pitch: *press_pitch,
+                    snap: *snap,
+                    orig: orig.clone(),
+                },
+                Drag::VelocityBlock {
+                    id,
+                    lane,
+                    press_velocity,
+                    orig,
+                } => DragMove::VelocityBlock {
+                    id: *id,
+                    lane: *lane,
+                    press_velocity: *press_velocity,
+                    orig: orig.clone(),
+                },
             });
         match action {
             Some(DragMove::Slider(id, body, vertical)) => {
@@ -2016,6 +2227,69 @@ impl App {
                 });
                 self.host.sync_track_totals();
                 self.emit_osc(def_id, id);
+                self.redraw(def_id);
+            }
+            Some(DragMove::SelectNotes {
+                id,
+                grid,
+                nav_start,
+                nav_len,
+                lo,
+                hi,
+                anchor,
+                anchor_pitch,
+            }) => {
+                // The marquee: the time span keeps driving the shared selection
+                // (linked views follow it), and the time × pitch rectangle
+                // fills the widget's multi-note selection.
+                let cur = nav_start + nav_len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
+                self.set_selection(def_id, id, anchor, cur);
+                let pitch = pianoroll::y_to_pitch(cy as f32, lo, hi, grid);
+                interact::pianoroll_state_edit(&mut self.host, def_id, id, |notes, sel| {
+                    *sel = pianoroll::notes_in_rect(notes, anchor, cur, anchor_pitch, pitch);
+                });
+                self.redraw(def_id);
+            }
+            Some(DragMove::NoteBlock {
+                id,
+                grid,
+                nav_start,
+                nav_len,
+                lo,
+                hi,
+                press_time,
+                press_pitch,
+                snap,
+                orig,
+            }) => {
+                // The block move: the grabbed note (the leading snapshot entry)
+                // snaps to the note grid, and the whole selection moves rigidly
+                // by that delta — the core clamps it as one.
+                let time = nav_start + nav_len * ((cx - grid.x as f64) / grid.w.max(1.0) as f64);
+                let dt = match orig.first() {
+                    Some((_, s0, _)) => interact::snap(s0 + (time - press_time), snap) - s0,
+                    None => 0.0,
+                };
+                let dp = pianoroll::y_to_pitch(cy as f32, lo, hi, grid) - press_pitch;
+                interact::pianoroll_notes_edit(&mut self.host, def_id, id, |notes| {
+                    pianoroll::move_notes_from(notes, &orig, dt, dp, lo, hi);
+                });
+                self.host.sync_track_totals();
+                self.emit_notes(def_id, id);
+                self.redraw(def_id);
+            }
+            Some(DragMove::VelocityBlock {
+                id,
+                lane,
+                press_velocity,
+                orig,
+            }) => {
+                let frac = ((lane.y + lane.h - cy as f32) / lane.h.max(1.0)).clamp(0.0, 1.0);
+                let dv = (frac * 127.0).round() as i32 - press_velocity;
+                interact::pianoroll_notes_edit(&mut self.host, def_id, id, |notes| {
+                    pianoroll::nudge_velocities_from(notes, &orig, dv);
+                });
+                self.emit_notes(def_id, id);
                 self.redraw(def_id);
             }
             Some(DragMove::None) | None => {}
@@ -2247,6 +2521,34 @@ enum DragMove {
         nav_start: f64,
         nav_len: f64,
         snap: f64,
+    },
+    SelectNotes {
+        id: i32,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        lo: f32,
+        hi: f32,
+        anchor: f64,
+        anchor_pitch: f32,
+    },
+    NoteBlock {
+        id: i32,
+        grid: Rect,
+        nav_start: f64,
+        nav_len: f64,
+        lo: f32,
+        hi: f32,
+        press_time: f64,
+        press_pitch: f32,
+        snap: f64,
+        orig: Vec<(usize, f64, f32)>,
+    },
+    VelocityBlock {
+        id: i32,
+        lane: Rect,
+        press_velocity: i32,
+        orig: Vec<(usize, i32)>,
     },
     None,
 }
@@ -2602,6 +2904,7 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.shift = mods.state().shift_key();
                     ws.ctrl = mods.state().control_key();
+                    ws.alt = mods.state().alt_key();
                 }
             }
             WindowEvent::CursorLeft { .. } => {
@@ -2690,6 +2993,9 @@ impl ApplicationHandler<UserEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
+                    Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
+                        self.delete_selected_notes(def_id)
+                    }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }
@@ -2708,6 +3014,32 @@ impl App {
         let roots = self.host.zoom_timeline(id, factor, anchor);
         self.emit_view(def_id, id);
         self.redraw_all(&roots);
+    }
+
+    /// Delete/Backspace: remove every selected note of the piano-roll under the
+    /// cursor — the block delete (Ctrl+click removes one). A no-op when the
+    /// cursor is elsewhere or nothing is selected.
+    fn delete_selected_notes(&mut self, def_id: i32) {
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return;
+        };
+        let Some((id, _rect, WidgetKind::PianoRoll { .. })) = self.hit(def_id, cx, cy) else {
+            return;
+        };
+        let removed = interact::pianoroll_state_edit(&mut self.host, def_id, id, |notes, sel| {
+            if sel.is_empty() {
+                return false;
+            }
+            pianoroll::remove_notes(notes, sel);
+            sel.clear();
+            true
+        })
+        .unwrap_or(false);
+        if removed {
+            self.host.sync_track_totals();
+            self.emit_notes(def_id, id);
+            self.redraw(def_id);
+        }
     }
 
     fn reset_timelines(&mut self, def_id: i32) {

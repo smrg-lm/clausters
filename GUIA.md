@@ -79,8 +79,14 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   hace zoom del rango de **pitch** y arrastrarlo lo panea, y `r` resetea ambos
   ejes. Al mover el cursor sobre la grilla se lee el **nombre de nota + tiempo** en
   la esquina. El botón **play** toca las notas dibujadas (un `Pbind`) → se **oye**
-  la melodía que dibujaste. Refrescar antes el binario bundleado
-  (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
+  la melodía que dibujaste. **Selección múltiple:** arrastrar sobre grilla vacía
+  marca el rectángulo tiempo × pitch → las notas adentro quedan **resaltadas**
+  (la banda de selección de tiempo se sigue viendo igual que antes); Alt+click
+  suma/quita una nota; arrastrar una nota seleccionada **mueve todo el bloque**
+  (rígido — contra un borde se frena, no se deforma); Supr/Retroceso **borra**
+  las seleccionadas; arrastrar el carril de velocity sobre una seleccionada
+  mueve las velocities de todas **relativamente**. Refrescar antes el binario
+  bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Vista dedicada del Editor (pianoroll ↔ modelo).** En `gui_composer.py`, la
   celda "The melody, as a dedicated piano-roll" abre la melodía (un `Track`) en
   su propia ventana pianoroll junto al multipista → **arrastrar una nota** y

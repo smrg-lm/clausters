@@ -456,6 +456,23 @@ display-only and stays gui-side. The edit-back stays flat payloads, not new
 addresses: `"notes"` (`start dur pitch velocity channel …`) and `"osc"`
 (`time label …`) — the fourth use of the one edit-back pattern.
 
+**Multi-note selection: the marquee is the time selection, restricted in
+pitch.** The piano-roll needed a multi-note selection without stealing the
+grid's one free gesture — a plain drag on empty grid is the heavy views' *time
+selection* (the linked group follows it), and a DAW marquee wants that same
+drag. The resolution is that there is no second gesture: the marquee **is** the
+shared time selection, restricted in pitch. Dragging the empty grid keeps
+driving the linked views' time span exactly as before, and the notes inside the
+time × pitch rectangle become the selected set (Alt+click toggles one note in
+or out; Delete/Backspace removes the set; dragging a selected note moves the
+block rigidly, its clamp computed as one so an edge stops the block instead of
+folding it; the velocity lane nudges the set relatively, each note saturating
+on its own). The set itself is **native view state**, not a wire prop: it lives
+in the widget state, clears when the script replaces `notes` (the indices would
+dangle), and every block edit reaches the script as the same flat `"notes"`
+payload — the wire did not grow, so every client consumes block edits with the
+code it already had.
+
 **Edit-back to the model (the Editor's dedicated view).** When the `Editor`
 opens a material as a dedicated piano-roll, a per-note edit writes back only to
 **random-access material**: a `Track`'s editable `Timeline` is rebuilt from the

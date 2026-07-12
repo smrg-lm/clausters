@@ -200,6 +200,8 @@ struct PianoRollItem {
     rect: Rect,
     notes: Vec<pianoroll::Note>,
     osc: Vec<pianoroll::OscMark>,
+    /// The multi-note selection (note indices), drawn highlighted.
+    selected: Vec<usize>,
     min: f32,
     max: f32,
     velocity_lane: bool,
@@ -419,7 +421,17 @@ fn draw_pianoroll_item(
     let r = pianoroll::regions(item.rect, ruler_on, item.osc_lane, item.velocity_lane);
     let (lo, hi) = pitch_window(item);
     pianoroll::draw_grid_background(mesh, r.grid, lo, hi);
-    pianoroll::draw_notes(mesh, r.grid, nav, 0.0, &item.notes, lo, hi, true);
+    pianoroll::draw_notes(
+        mesh,
+        r.grid,
+        nav,
+        0.0,
+        &item.notes,
+        lo,
+        hi,
+        true,
+        &item.selected,
+    );
     pianoroll::draw_keyboard(mesh, r.keyboard, lo, hi);
     if item.osc_lane {
         pianoroll::draw_osc_lane(mesh, r.osc, nav, 0.0, &item.osc);
@@ -798,6 +810,7 @@ pub(crate) fn render(
             WidgetKind::PianoRoll {
                 notes,
                 osc,
+                selected,
                 min,
                 max,
                 velocity_lane,
@@ -812,6 +825,7 @@ pub(crate) fn render(
                         rect: p.rect,
                         notes: notes.clone(),
                         osc: osc.clone(),
+                        selected: selected.clone(),
                         min: *min,
                         max: *max,
                         velocity_lane: *velocity_lane,
