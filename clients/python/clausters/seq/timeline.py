@@ -112,6 +112,20 @@ class Timeline:
         self._entries.clear()
         return self
 
+    def quantize(self, grid):
+        """Snap every placement to the nearest multiple of ``grid`` (beats):
+        each entry's beat moves to the grid line, durations untouched. The
+        model-side counterpart of the piano-roll's `q` gesture (which quantizes
+        in the view when the GUI runs standalone). A zero/negative grid is a
+        no-op. Returns the timeline."""
+        g = float(grid)
+        if g <= 0.0:
+            return self
+        for e in self._entries:
+            e.beat = max(0.0, round(e.beat / g) * g)
+        self._entries.sort(key=lambda e: e.beat)
+        return self
+
     # ---- random access by time ----
 
     def index_at(self, beat) -> int:

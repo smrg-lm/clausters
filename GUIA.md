@@ -85,7 +85,9 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   suma/quita una nota; arrastrar una nota seleccionada **mueve todo el bloque**
   (rígido — contra un borde se frena, no se deforma); Supr/Retroceso **borra**
   las seleccionadas; arrastrar el carril de velocity sobre una seleccionada
-  mueve las velocities de todas **relativamente**. Refrescar antes el binario
+  mueve las velocities de todas **relativamente**; `q` **cuantiza** los starts
+  de las seleccionadas (o todas) a la grilla `snap` → se ven saltar a la
+  grilla y se **oye** la melodía cuadrada al tocarla. Refrescar antes el binario
   bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Vista dedicada del Editor (pianoroll ↔ modelo).** En `gui_composer.py`, la
   celda "The melody, as a dedicated piano-roll" abre la melodía (un `Track`) en

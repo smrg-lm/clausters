@@ -563,6 +563,33 @@ pub fn toggle_selected(selected: &mut Vec<usize>, index: usize) {
     }
 }
 
+/// Quantize note onsets to the `grid` (timeline samples): each start snaps to
+/// the nearest grid line, durations untouched. `indices` picks the notes (the
+/// selection); empty quantizes them all. A zero/negative grid is a no-op.
+/// Returns whether anything moved.
+pub fn quantize_notes(notes: &mut [Note], indices: &[usize], grid: f64) -> bool {
+    if grid <= 0.0 {
+        return false;
+    }
+    let snap = |s: f64| (s / grid).round() * grid;
+    let mut moved = false;
+    let mut apply = |n: &mut Note| {
+        let s = snap(n.start).max(0.0);
+        moved |= s != n.start;
+        n.start = s;
+    };
+    if indices.is_empty() {
+        notes.iter_mut().for_each(&mut apply);
+    } else {
+        for &i in indices {
+            if let Some(n) = notes.get_mut(i) {
+                apply(n);
+            }
+        }
+    }
+    moved
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -733,6 +760,28 @@ mod tests {
         // Reversing from the same snapshot restores the original spread.
         nudge_velocities_from(&mut notes, &orig, -20);
         assert_eq!((notes[0].velocity, notes[1].velocity), (100, 40));
+    }
+
+    #[test]
+    fn quantize_snaps_the_selection_or_everything_and_reports_movement() {
+        // The selection only: the third note keeps its offbeat start.
+        let mut notes = vec![
+            Note::new(90.0, 50.0, 60.0),
+            Note::new(260.0, 50.0, 64.0),
+            Note::new(430.0, 50.0, 67.0),
+        ];
+        assert!(quantize_notes(&mut notes, &[0, 1], 100.0));
+        assert_eq!(
+            (notes[0].start, notes[1].start, notes[2].start),
+            (100.0, 300.0, 430.0)
+        );
+        // No selection: everything snaps; durations never move.
+        assert!(quantize_notes(&mut notes, &[], 100.0));
+        assert_eq!(notes[2].start, 400.0);
+        assert_eq!(notes[2].dur, 50.0);
+        // Already on the grid (or no grid): nothing to report.
+        assert!(!quantize_notes(&mut notes, &[], 100.0));
+        assert!(!quantize_notes(&mut notes, &[], 0.0));
     }
 
     #[test]

@@ -23,7 +23,9 @@ parity):
   **Alt+click** toggles a note in/out of the selection;
 - **drag a selected note** moves the whole selection (rigid, snapped);
   **Delete/Backspace** removes it; **drag the velocity lane over a selected
-  note** nudges all the selected velocities relatively.
+  note** nudges all the selected velocities relatively;
+- **q** quantizes the selected notes' onsets (or all of them) to the snap
+  grid. (Model-side, ``seq.Timeline.quantize(grid)`` does the same in beats.)
 
 Every edit flows back per the **edit-back pattern**: the host emits
 ``/gui_event <id> "notes" <start dur pitch velocity channel ...>`` (the note

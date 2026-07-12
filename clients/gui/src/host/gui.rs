@@ -2996,6 +2996,9 @@ impl ApplicationHandler<UserEvent> for App {
                     Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
                         self.delete_selected_notes(def_id)
                     }
+                    Key::Character(ref c) if c.eq_ignore_ascii_case("q") => {
+                        self.quantize_roll(def_id)
+                    }
                     Key::Character(ref c) if c.eq_ignore_ascii_case("r") => {
                         self.reset_timelines(def_id)
                     }
@@ -3014,6 +3017,29 @@ impl App {
         let roots = self.host.zoom_timeline(id, factor, anchor);
         self.emit_view(def_id, id);
         self.redraw_all(&roots);
+    }
+
+    /// `q` over a piano-roll: quantize the selected notes' onsets (all of them
+    /// when nothing is selected) to the widget's `snap` grid — the same grid a
+    /// drag snaps to. Durations are kept; a roll with no grid is left alone.
+    /// (The client-side counterpart, in beats over the model, is the Python
+    /// `Timeline.quantize` — the standalone host cannot reach it, hence both.)
+    fn quantize_roll(&mut self, def_id: i32) {
+        let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {
+            return;
+        };
+        let Some((id, _rect, WidgetKind::PianoRoll { snap, .. })) = self.hit(def_id, cx, cy) else {
+            return;
+        };
+        let moved = interact::pianoroll_state_edit(&mut self.host, def_id, id, |notes, sel| {
+            pianoroll::quantize_notes(notes, sel, snap)
+        })
+        .unwrap_or(false);
+        if moved {
+            self.host.sync_track_totals();
+            self.emit_notes(def_id, id);
+            self.redraw(def_id);
+        }
     }
 
     /// Delete/Backspace: remove every selected note of the piano-roll under the

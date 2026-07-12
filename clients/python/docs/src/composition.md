@@ -151,6 +151,11 @@ of state) and the same view becomes an editor. OSC events are shown in their
 lane but not written back: their marker carries a time and a label, not the
 full message.
 
+Quantization exists on both surfaces, because the GUI also runs standalone:
+`q` over the roll snaps the selected notes' onsets (or all of them) to the
+widget's snap grid, flowing back like any other edit; model-side,
+`Timeline.quantize(grid)` snaps every placement to the beat grid directly.
+
 ### Beats and samples
 
 The model places materials in **beats**; the view places clips in **timeline

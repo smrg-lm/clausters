@@ -76,6 +76,14 @@ def test_timeline_remove_and_move_by_handle():
     assert len(tl) == 1
 
 
+def test_timeline_quantize_snaps_beats_and_keeps_order():
+    tl = Timeline([(0.1, "a"), (0.9, "b"), (1.3, "c")])
+    tl.quantize(0.5)
+    assert list(tl) == [(0.0, "a"), (1.0, "b"), (1.5, "c")]
+    tl.quantize(0.0)            # no grid: a no-op
+    assert [b for b, _ in tl] == [0.0, 1.0, 1.5]
+
+
 def test_timeline_random_access_by_time():
     tl = Timeline([(0.0, "a"), (1.0, "b"), (2.0, "c"), (3.0, "d")])
     assert tl.index_at(1.0) == 1          # first item at or after 1.0
