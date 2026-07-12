@@ -55,7 +55,10 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   clip lo **mueve** y arrastrar un borde lo **redimensiona**, y la consola imprime
   el evento `"clip" offset dur` (edit-back). El eje es **navegable**: la rueda
   hace zoom y Shift+arrastrar panea — las tres pistas se mueven juntas (comparten
-  el eje), y `r` resetea. Refrescar antes el binario bundleado
+  el eje), y `r` resetea. En un clip con **notas** (cuerpo piano-roll), si la
+  pista es lo bastante alta se leen los **nombres de nota** (cada C) en el borde
+  izquierdo del clip — la regla de pitch compacta del roll sin teclado.
+  Refrescar antes el binario bundleado
   (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Editor compositivo (el lazo completo).** `examples/gui_composer.py` compone
   con el modelo (un take bounceado y cargado de disco, una melodía, un patrón),

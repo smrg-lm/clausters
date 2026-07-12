@@ -250,6 +250,35 @@ pub fn draw_notes(
     }
 }
 
+/// Label each C row at the left edge of a roll body — the compact pitch ruler
+/// for a roll drawn **without** a keyboard gutter (the multitrack `clip`'s
+/// body; the dedicated widget names its Cs on the keyboard instead). Draws
+/// only when a semitone row is tall enough to read a label.
+pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
+    if grid.w <= 0.0 || grid.h <= 0.0 {
+        return;
+    }
+    let rh = row_height(lo, hi, grid);
+    if rh < font::height(KEY_SCALE) + 2.0 {
+        return;
+    }
+    let p0 = lo.floor() as i32;
+    let p1 = hi.ceil() as i32;
+    for p in p0..=p1 {
+        if scale::pitch_class(p) == 0 {
+            let top = pitch_to_y(p as f32 + 0.5, lo, hi, grid);
+            font::text(
+                mesh,
+                &scale::note_name(p),
+                grid.x + 2.0,
+                top + 1.0,
+                KEY_SCALE,
+                KEY_LABEL,
+            );
+        }
+    }
+}
+
 /// Draw the keyboard gutter: a white/black key per semitone row, with a note
 /// name on each C. `lo`/`hi` are the same pitch window as the grid.
 pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32) {
@@ -760,6 +789,18 @@ mod tests {
         // Reversing from the same snapshot restores the original spread.
         nudge_velocities_from(&mut notes, &orig, -20);
         assert_eq!((notes[0].velocity, notes[1].velocity), (100, 40));
+    }
+
+    #[test]
+    fn pitch_labels_draw_only_when_the_rows_can_be_read() {
+        // One octave over 240px: ~20px rows — the C label fits.
+        let mut mesh = Mesh::new();
+        draw_pitch_labels(&mut mesh, grid(), 55.0, 67.0);
+        assert!(mesh.vertex_count() > 0, "a readable C row gets its name");
+        // Eight octaves over the same height: sub-3px rows — nothing draws.
+        let mut mesh = Mesh::new();
+        draw_pitch_labels(&mut mesh, grid(), 12.0, 108.0);
+        assert_eq!(mesh.vertex_count(), 0);
     }
 
     #[test]

@@ -335,6 +335,9 @@ fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw
 /// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
 /// disagree. The clip body uses only that one layer (no keyboard/lanes).
 fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, _body: Rect, nav: &View, clip: &ClipDraw) {
+    // The compact pitch ruler: each C named at the clip's left edge (there is
+    // no keyboard gutter here), only when the rows are tall enough to read.
+    pianoroll::draw_pitch_labels(mesh, cr, clip.min, clip.max);
     pianoroll::draw_notes(
         mesh,
         cr,

@@ -347,7 +347,9 @@ The multitrack (G22d) draws notes only as a **clip body** — bars, no keyboard,
 
 - ✅ **G24e - Quantization, on both surfaces**: **the GUI runs standalone too, so the gesture and the model helper are complementary, not alternatives.** In the host, `q` over the roll quantizes the **selected** notes' onsets (all of them when nothing is selected) to the widget's `snap` grid — the same grid a drag snaps to — through the pure `pianoroll::quantize_notes` (durations kept, no-op without a grid), emitting the usual flat `"notes"` payload; that is the whole quantize story for a standalone host wired straight to the server. In the client, `seq.Timeline.quantize(grid)` snaps every placement to the beat grid **in the model** (the same rounding, in the model's own unit), for programmatic/NRT use and for materials never opened in a view. No wire change either way. Tests: the core op (selection vs all, durations kept, movement reported, gridless no-op) and the timeline method (snap, re-sort, gridless no-op).
 
-- **Next stages (G24f+, deferred):** a note-name pitch ruler on the clip roll; live MIDI input painting notes (client `MidiFunc` → roll **and** a host-side MIDI port — standalone again); cut/copy/paste (paste at the mouse cursor). Each firms up and is numbered as its design converges.
+- ✅ **G24f - The clip roll's note-name pitch ruler**: the multitrack `clip`'s roll body has no keyboard gutter, so it gets the **compact** form of the same knowledge — `pianoroll::draw_pitch_labels` names each C at the clip's left edge (via `clausters_core::scale::note_name`, the G7b placement again), drawn **only when a semitone row is tall enough to read** (the LOD discipline: a collapsed lane shows bars, an expanded one gains the names). Display-only, shared-core drawing, no wire change; tested by the row-height guard (a readable window draws, a squeezed one stays silent).
+
+- **Next stages (G24g+, deferred):** live MIDI input painting notes (client `MidiFunc` → roll **and** a host-side MIDI port — standalone again); cut/copy/paste (paste at the mouse cursor). Each firms up and is numbered as its design converges.
 
 ## Done outside the numbered tracks
 
