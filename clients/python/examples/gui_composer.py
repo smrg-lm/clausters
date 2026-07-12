@@ -156,11 +156,16 @@ SWEEP = 4.0        # the sweep's length in beats (the curve's, and its voice's)
 
 
 def drone(name: str = "drone") -> SynthDef:
-    """A sine reading its frequency from a **control bus** — the one the automation
-    writes — held by a gate: it sustains while the note is on and frees itself on
-    release. Its length is the *event's*, so it lasts exactly as long as its clip
-    (the event sends `gate 0` after its sustain; an envelope timed by a control
-    could not, since `sustain` is the event's own key and never reaches the def)."""
+    """A sine whose **frequency** is read from a control bus — the one the
+    automation writes — held by a gate and freed on release, so its life is the
+    *event's* (an envelope timed by a `sustain` control could not do it: `sustain`
+    is the event's own key and never reaches the def).
+
+    A curve's floor is its **parameter's minimum**, nothing more: this envelope
+    reaching the bottom of its clip is the lowest *frequency*, not a silence. Draw
+    an envelope over `amp` instead and the picture reads the other way — the bottom
+    is silence, and the silence is part of the clip's length. Same clip, same
+    curve; what it *means* is the control it drives."""
     bus = control("freq_bus", 0.0, "ir")
     amp = control("amp", 0.12, "kr")
     gate = control("gate", 1.0, "kr")
@@ -176,7 +181,7 @@ sweep = Automation.from_points(
     [(0.0, 200.0, 1, 0.0),      # 200 Hz ...
      (2.0, 900.0, 2, 0.0),      # ... up to 900 (exponential) ...
      (4.0, 300.0, 1, 0.0)],     # ... back down (linear); shapes are the server's
-    target=None, name="sweep")   # no target node: it just writes its bus
+    target=None, name="freq")    # no target node: it just writes its bus
 sweep.prepare(server)            # the control buffer + bus, off the clock thread
 
 # The envelope **attached to the voice it shapes**: a group whose members start
@@ -264,7 +269,8 @@ if __name__ == "__main__":
     try:
         while editor.window is not None:
             if ended():
-                editor.stop()          # the piece is over: back to the top
+                editor.pause()         # the piece is over: the cursor stays at
+                                       # the end (rewind goes back to the top)
             msg = gui.poll(0.05)
             if msg is None:
                 continue
