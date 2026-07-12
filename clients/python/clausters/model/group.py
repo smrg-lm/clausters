@@ -5,7 +5,7 @@ placement of materials with an offset, and the temporal *relation* derived from
 how the members sit in time. Everything else (the five primitives) already
 exists and is merely adorned by `clausters.model.material.Material`.
 
-Two kinds of grouping (§2.5):
+Two kinds of grouping:
 
 - **compositional** — a structural/temporal relation between the contents (a
   section holding clips, a melody holding note-events), with no processing
@@ -14,18 +14,18 @@ Two kinds of grouping (§2.5):
   bus-wired signal chain on the server, or a generative dependency on the
   client).
 
-Realization is a Fase 1B/1C concern; this module is pure structure plus the
+Realization lives in `clausters.model.realize`; this module is pure structure plus the
 temporal-relation derivation (a pure function over the members' placements).
 """
 
 import math
 
-#: The kind of a `Group` (§2.5).
+#: The kind of a `Group`.
 COMPOSITIONAL = "compositional"
 LOGICAL = "logical"
 
 #: The temporal relation between a group's members, derived from their placements
-#: (§2.3). ``successive`` — duration-only, tiling contiguously; ``simultaneous``
+#: ``successive`` — duration-only, tiling contiguously; ``simultaneous``
 #: — all starting and ending together (a container that can be reinterpreted,
 #: enabling recursion); ``mixed`` — any other combination.
 SUCCESSIVE = "successive"
@@ -190,7 +190,7 @@ class Group(Material):
 
         return MIXED
 
-    # ---- the logical realization: a GraphDef (Fase 1C) ----
+    # ---- the logical realization: a GraphDef ----
 
     def to_graphdef(self, name=None):
         """Translate this **logical** group into a `clausters.defs.GraphDef` — the

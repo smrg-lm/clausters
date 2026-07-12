@@ -112,9 +112,8 @@ with this modularity in mind.
   - **Rationale** — `docs/decisions.md` (the framework itself; the beats↔samples
     unit bridge; a buffer sounds through an instrument; the patcher shows a
     connection, not a direction).
-  The conceptual source is `third_party/modelo.pdf` (summary in
-  `third_party/resumen_modelo.md`); `DISENO_EDITOR_MULTIPISTA.md` is a personal
-  Spanish design note (like `GUIA.md`), not part of the docs.
+  The framework's own record is `docs/decisions.md` — there is no source document
+  behind it to consult.
 
 ## Commit workflow
 

@@ -1,4 +1,4 @@
-"""Realization — the *change of state* from the model to sound (Fase 1B).
+"""Realization — the *change of state* from the arrangement model to sound.
 
 A compositional `Group` is realized by **flattening** it: a tree-walk that
 accumulates the nested placement offsets into absolute beats, producing a flat
@@ -25,7 +25,7 @@ A `Buffer` is *data*: it sounds through the **instrument** that plays it (a def
 whose ``buf`` control takes the buffer number), so a `Buffer` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
 contributes structure only. The logical path (`Group{logical}` → a `GraphDef`) is
-Fase 1C; instancing a bare def still needs an instrument of its own and raises a
+the logical path; instancing a bare def still needs an instrument of its own and raises a
 clear `NotImplementedError` here.
 """
 
@@ -123,7 +123,7 @@ def _emit_material(material, base: float, out: list):
     if isinstance(material, Group):
         if material.kind != COMPOSITIONAL:
             raise NotImplementedError(
-                "realizing a logical Group is Fase 1C (it emits a GraphDef)"
+                "a logical Group is realized as a GraphDef, not flattened"
             )
         for member in material.handles:
             _emit(member.material, base + member.offset, out, member.dur)

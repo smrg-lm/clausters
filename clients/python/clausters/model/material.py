@@ -1,9 +1,11 @@
-"""The compositional model — materials and their temporal character.
+"""The arrangement model — materials and their temporal character.
 
-This is *the model* (see ``third_party/modelo.pdf``): the client-side conceptual
-layer under a multitrack editor of recursive granularity. A `Material` is an
-arbitrarily delimited entity that produces a unit of meaning and can be
-decomposed or combined. It is a **thin adornment** over the objects the client
+The client-side layer under a multitrack editor of recursive granularity: it
+places materials in time, groups them recursively and realizes them. A `Material`
+is an arbitrarily delimited entity that produces a unit of meaning and can be
+decomposed or combined — *generated* (the rendered thing, editable and
+random-access) or a *generator* (the algorithm that renders it, forward-only),
+with the change of state between them. It is a **thin adornment** over the objects the client
 already has (`clausters.seq.Event`, `clausters.seq.Timeline`, a `Buffer`, a
 `Pattern`, a def): it carries the temporal metadata (`onset`, `duration`, and the
 derived temporal *character*) and belongs to a `Group`, while it **delegates
@@ -11,7 +13,7 @@ realization** to the wrapped item's ``play(destination)`` — the double-dispatc
 seam every leaf item in the client already shares. The model does not
 reimplement or subclass those objects.
 
-The five primitives (§2.4 of the design note) map one-to-one onto what exists:
+The five primitives map one-to-one onto what the client already has:
 
 - `Event`     — *event/clip*: parameters grouped into one action (internally
   simultaneous), with its own onset/duration. Wraps `clausters.seq.Event`.
@@ -29,7 +31,7 @@ and transport-agnostic (factorable into ``clausters-core`` in a future port).
 """
 
 #: The temporal character of a material, derived from which of ``onset`` and
-#: ``duration`` are present (§2.3). ``segment`` has both; ``punctual`` has an
+#: ``duration`` are present. ``segment`` has both; ``punctual`` has an
 #: onset but no duration; ``relative`` has a duration but no onset; ``abstract``
 #: has neither (a pure context/container that only a parent gives concrete time).
 SEGMENT = "segment"
@@ -53,7 +55,7 @@ def temporal_character(onset, duration) -> str:
 
 
 class Material:
-    """Base of the compositional model: temporal metadata over a wrapped item.
+    """Base of the arrangement model: temporal metadata over a wrapped item.
 
     A material carries an optional ``onset`` and ``duration`` (in beats, relative
     to its context) and wraps an underlying client object it delegates to. The
@@ -87,7 +89,7 @@ class Material:
 
         Container and pattern-backed materials (`Group`, `Track`, a `Sequence`
         wrapping a `Pattern`) are **not** directly playable this way — they are
-        realized by ``realize()`` (Fase 1B). Delegating here requires the wrapped
+        realized by ``realize()``. Delegating here requires the wrapped
         object to follow the ``play(destination)`` protocol.
         """
         play = getattr(self.wraps, "play", None)
@@ -141,8 +143,8 @@ class Sequence(Material):
 
     Wraps a Python list or a `clausters.seq.pattern.Pattern`. The elements can be
     numbers, events, notes or whole materials; the structure fixes only their
-    successive order. Realized in Fase 1B (a pattern-backed sequence is bounced;
-    a list is interpreted by its content).
+    successive order. Realization bounces a pattern-backed sequence; a list is
+    interpreted by its content.
     """
 
     def __init__(self, items, onset=None, duration=None):
@@ -220,8 +222,8 @@ class Generator(Material):
     Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name)
     or a sequence generator (a `Pbind`/`Routine`). Its *change of state* —
     evaluating the generator into concrete material — happens at realization: a
-    contained event pattern is bounced to a timeline (Fase 1B); a def member of a
-    logical `Group` becomes a wired GraphDef member (Fase 1C).
+    contained event pattern is bounced to a timeline; a def member of a
+    logical `Group` becomes a wired GraphDef member.
 
     Args:
         generator: the wrapped def (name or object) or sequence generator.

@@ -1,4 +1,4 @@
-"""`Editor`: the bridge between the compositional model and the multitrack GUI.
+"""`Editor`: the bridge between the arrangement model and the multitrack GUI.
 
 The driver of the DAW-style view. It renders a `clausters.model` tree into a
 multitrack `GuiDef` (tracks of clips on one shared time axis), applies the clip
