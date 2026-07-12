@@ -268,6 +268,39 @@ The lifecycle is factory (compiler thread, `ffi_lock`, `-single -ftz 2`, stdlib 
 
 **Why Faust UI labels are the control names** (a deliberate decision, not a leftover): a def's parameters are named by whoever writes the def — exactly like the `controls` array in the UGen JSON format. Inventing a second naming layer (renaming, indices-only, a Clausters-side mapping table) would add a translation step for zero expressiveness: the label *is* the parameter's name in both def families, and `/s_new`/`/n_set` address both identically. Group paths (`hgroup`/`vgroup`) are ignored on purpose — bare labels, first declaration wins on collision. The two reserved names `out`/`in` (first output/input bus) come *after* the def's own params, and a def that declares its own `out`/`in` control wins over the reserved meaning. UI elements are plain values written by `/n_set` (zone stores, RT-safe) and can also be **bound to a bus** with `/n_map`/`/n_mapa` — the same mechanism unifies UGen controls and Faust zones (see *Control/bus mapping* above). The two reserved `out`/`in` routing controls are not mappable.
 
+## The compositional layer: where it lives
+
+The compositional model and its multitrack editor are **client-side** — the server
+knows nothing of them, and nothing in this section runs on the audio thread. What
+makes the layer thin is that every one of its concepts is a name for something the
+system already had; this is the map, for when you have to change one and want to
+know what else it touches. (The user-facing explanation is the composition chapter
+of the Python client's book; the reasoning behind it is in
+[Design decisions](decisions.md).)
+
+| Concept | What it already was | Where |
+|---|---|---|
+| Material (onset, duration) | a placed item on a timeline | `clients/python/clausters/model/material.py`, `seq/timeline.py` |
+| Group, compositional | a `Timeline` (client) projected onto server groups and timetagged bundles | `model/group.py`, `seq/timeline.py`, `src/node/mod.rs` |
+| Group, logical | a `GraphDef` — the bus-wired configuration the server already expresses | `model/group.py` (`to_graphdef`), `defs/graphdef.py`, `src/osc/graphdef.rs` |
+| Event | `seq.Event` (parameters in one action) | `seq/event.py` |
+| List (order, no concrete time) | a Python list, or a `Pattern` | `seq/pattern.py` |
+| Buffer (a list at constant time) | `defs.Buffer` over the server's immutable buffers | `defs/buffer.py`, `src/dsp/buffer.rs` |
+| Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
+| Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
+| Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/b_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
+| Change of state (process → material) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
+| Realization (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `model/realize.py`, `seq/timeline.py` (`Playhead`), `src/server/render.rs` |
+| The editor driver (model ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editor.py` |
+| Graphic unit (a clip: length = duration) | the placed rectangle and its bodies | `clients/gui/src/host/track.rs` |
+| Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editor.py` |
+| Shared time axis, playhead, cursor | the navigation groups (linked views), grown to hold lanes | `clients/gui/src/host/timeline.rs` |
+
+Two boundaries hold this together, and both are worth defending: the model imports
+**nothing** from the GUI (it is pure and transport-agnostic — the piece a future
+client factors into the shared core), and the driver is the **only** converter
+between the model's beats and the view's timeline samples.
+
 ## The GUI host: structure, and how to add a widget
 
 The GUI (`clients/gui`) is a **separate process**, not code linked into the audio
