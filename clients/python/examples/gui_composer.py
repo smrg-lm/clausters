@@ -238,10 +238,13 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 # %%
 session.start()                       # the clock runs the routines
 
-TRANSPORT = {PLAY: editor.play, PAUSE: editor.pause, STOP: editor.stop,
+# `play` is where the destination and the clock come from — realizing is *playing*,
+# so nothing is realized until the button is pressed (a window that sounds before
+# you press play is a window that plays itself).
+TRANSPORT = {PLAY: lambda: editor.play(server, session.clock),
+             PAUSE: editor.pause, STOP: editor.stop,
              REWIND: lambda: editor.locate(0.0)}
-editor.realize(server, session.clock, at=0.0)   # the destination and the clock
-editor.pause()                                  # ... but wait at the top
+editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
 
