@@ -6,9 +6,9 @@ This chapter takes you from a checkout to a sound: build the server, run it, pla
 
 - A recent stable Rust toolchain (`rustup`, edition 2024).
 - On Linux, the default build targets PipeWire (the standard on current systems): `libasound2-dev`, `libpipewire-0.3-dev` and `clang`. The default binary hard-links `libpipewire`, so it expects PipeWire present at runtime.
+- `faust` (the FaustDef family, **on by default**): `libfaust` built with the LLVM backend — a one-time from-source build, since distro packages ship without it; the recipe is in [Contributing](contributing.md). To build with nothing installed, drop the feature: `cargo build --no-default-features --features synth,realtime,midi,pipewire,rtprio`.
 - Optional, only for the matching feature:
   - `midi-jack` (route live MIDI through JACK for PipeWire-native MIDI): `libjack-jackd2-dev`.
-  - `faust` (libfaust embedding): `libfaust` built with the LLVM backend — see [Contributing](contributing.md).
 
   On Ubuntu 26.04:
 

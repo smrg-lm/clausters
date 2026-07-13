@@ -2,7 +2,7 @@
 
 An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`, and they are **peers**: neither is the "real" one, and a piece routinely uses both.
 
-- **`FaustDef`** — a Faust definition, sent with `/d_faust` and JIT-compiled by the server into a node. Its graph is the full Faust language, so it reaches **below the unit**: per-sample recursion, tables, foreign constants, and the whole Faust library ecosystem. Build it three ways — the **Signal API** (`signals`), the **Box API** (`boxes`), or **Faust source** — all equal citizens (see [Building one](#building-one)). It needs a server built with the `faust` feature (see [What the server must support](#what-the-server-must-support)).
+- **`FaustDef`** — a Faust definition, sent with `/d_faust` and JIT-compiled by the server into a node. Its graph is the full Faust language, so it reaches **below the unit**: per-sample recursion, tables, foreign constants, and the whole Faust library ecosystem. Build it three ways — the **Signal API** (`signals`), the **Box API** (`boxes`), or **Faust source** — all equal citizens (see [Building one](#building-one)). Like the SynthDef family, it works out of the box: the wheel bundles Faust (see [What the server must support](#what-the-server-must-support)).
 - **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback, FFT chains) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). The graph is an **assembly of ready-made units**: it composes what the server already implements, needs no JIT, and works on **any** server build, since the SynthDef family is on by default.
 
 Rule of thumb, not a hierarchy: reach for a `SynthDef` when the units you need already exist (and always for routing, buses and buffer playback); reach for a `FaustDef` when you want DSP the unit set does not cover, or want to write the DSP itself. Both run as ordinary nodes in the same tree and address each other through buses.
@@ -351,7 +351,7 @@ print(json.dumps(json.loads(fdef.dump_def()), indent=2)) # FaustDef signal/box t
 | Feedback | `rec` / `self_` (one sample) | `local_in` / `local_out` (one block) |
 | Granularity | **per sample** — you write the DSP | **per unit** — you wire DSP the server implements |
 | Reuse | the Faust libraries (`os.`, `fi.`, `re.`, `pm.`, …) | the UGen set (see the table above) |
-| Server build | needs the `faust` feature | always available (default) |
+| Server build | the `faust` feature — default, and bundled in the wheel | the `synth` feature — default |
 
 Neither is the fallback of the other. The units a `SynthDef` wires are the fastest way to say "an oscillator into a bus", they need no compiler on the server, and they are the only way to reach the server-side machinery that has no Faust equivalent (buffer playback, bus I/O, `send_reply`/`poll`, the FFT chain). A `FaustDef` is how you write DSP that is *not* in the unit set — a filter you derived, a physical model, an algorithm — either from Python (`signals` / `boxes`) or in Faust itself, with its libraries at hand.
 
@@ -359,12 +359,9 @@ The common pattern is to combine them: a FaustDef for the voice, a SynthDef to r
 
 ## What the server must support
 
-The two def families are independent **server build features**, and the client only builds the payload — whether the server accepts it depends on how it was built:
+Both def families are **on by default** on the server (`synth` and `faust` are Cargo features, and both are in the default set), and everything the wheel ships is built that way: the standalone `clausters` binary, the in-process embedded server and the offline renderer all take a `SynthDef` *and* a `FaustDef`. The package even bundles libfaust and the libLLVM it JITs with, so Faust works on a machine with neither installed — nothing to enable, nothing to build.
 
-- **`synth`** — the SynthDef family (`/d_recv`, the UGen registry). **On by default**, so any stock server takes a `SynthDef`.
-- **`faust`** — the FaustDef family (`/d_faust`, libfaust with the LLVM backend). **Off by default**: a server without it answers `/d_faust` with a `/fail` ("server built without faust support"), which the client raises as a `CommandError`.
-
-A server built with both takes either, and that is the usual development build. It is not automatic, though: the wheel builds its bundled artifacts with the **default** features, so add the feature explicitly when you want Faust everywhere — `cargo build --features faust` for the standalone server, and `CLAUSTERS_CARGO_FEATURES=embed,realtime,faust` when installing the package, for the embedded/offline paths. Both need libfaust built with the LLVM backend; the server book's build guide has the recipe. If `add_faustdef` raises a `CommandError` on a server you did not build yourself, this is what to check first.
+The one case where a `FaustDef` can fail is a server **someone built without the feature** (`--no-default-features`, e.g. a minimal SynthDef-only build). It answers `/d_faust` with a `/fail` — "server built without faust support" — which the client raises as a `CommandError`. If that happens against a server you did not build, that is what to check.
 
 ## Sending a def
 

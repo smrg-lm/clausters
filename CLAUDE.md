@@ -162,30 +162,36 @@ through `osc::decode_packet`, the single entry point (a thin wrapper over
 rosc's `decoder::decode_udp`). Keep that one door so decoding and any future
 hardening stay in one place.
 
-## The def-family features: `synth` (default) and `faust` (optional)
+## The def-family features: `synth` and `faust`, both default
 
-The two def families are independent Cargo features: `synth` (SynthDef/UGen
-graphs, `/d_recv`, on by default) and `faust` (FaustDefs, `/d_faust`). They
-combine freely; a custom build can ship either alone (see `BUILD.md` for the
-matrix). The node tree only sees `dyn SynthNode`, which keeps the families
-symmetrical — feature-gate new work accordingly.
+The two def families are independent Cargo features, and **both are on by
+default**: `synth` (SynthDef/UGen graphs, `/d_recv`) and `faust` (FaustDefs,
+`/d_faust`). They are **peers** — never treat one as the fallback of the other,
+in code or in docs. They combine freely; a custom build can ship either alone
+(see `BUILD.md` for the matrix). The node tree only sees `dyn SynthNode`, which
+keeps the families symmetrical — feature-gate new work accordingly.
 
-## Optional `faust` feature
+## The `faust` feature and libfaust
 
-`cargo test --features faust` needs libfaust built **with the LLVM backend**
-— Ubuntu's `libfaust2t64` ships without it and without headers, so it is
-built from source and installed under `~/.local` (see `BUILD.md`, "Building
-libfaust from source", for the reproducible recipe). `build.rs` locates it through
-`FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`. The core must
-always build and test without the feature and without libfaust installed.
+Because `faust` is default, a plain `cargo build` / `cargo test` needs libfaust
+built **with the LLVM backend** — Ubuntu's `libfaust2t64` ships without it and
+without headers, so it is built from source and installed under `~/.local` (see
+`BUILD.md`, "Building libfaust from source", for the reproducible recipe).
+`build.rs` locates it through `FAUST_PREFIX`, falling back to `~/.local`, then
+`/usr/local`. The core must still **build and test without the feature and
+without libfaust installed** (`--no-default-features`); keep that path green.
 
-**Run the faust tests single-threaded:** `cargo test --features faust --
---test-threads=1`. libfaust/LLVM is not safe for **concurrent** compilation in
-one process, so the default parallel test harness SIGSEGVs in the faust suites
-(`faust_compiler` and friends) — a known libfaust limitation, not a bug in our
-code. This only affects the test harness creating factories in parallel: the
-server itself compiles on a single thread holding `faust::ffi_lock()`, so
-production is unaffected.
+`build.rs` writes a `DT_RPATH` of `$ORIGIN`, `$ORIGIN/../_libs` and the build
+prefix, which keeps the artifacts relocatable: the Python wheel bundles
+`libfaust.so` and the `libLLVM.so` it JITs with in `clausters/_libs/` (staged by
+`clients/python/build_native.py`), so an installed package compiles FaustDefs
+with nothing else on the machine. It must stay `DT_RPATH` (not `RUNPATH`): only
+that one is inherited by transitive deps, and it is libfaust that needs libLLVM.
+
+The faust suites run in the **ordinary parallel harness** — every compilation
+FFI call goes through `faust::ffi_lock()`, which serializes libfaust in-process.
+(They historically needed `--test-threads=1`; that is obsolete. A SIGSEGV in a
+`faust_*` suite means an FFI path skipped the lock — look there first.)
 
 ## RT-safety (non-negotiable)
 

@@ -4,6 +4,8 @@
 
 The package is pure Python at runtime, but it reaches Rust through artifacts that **cargo** builds: two cdylibs — `libclausters_ffi` (the numeric/timing core) and `libclausters` (built with `embed,realtime` for the in-process server and offline render) — and the standalone server **binary**. The packaging **bundles** all of them inside one wheel, so an installed package is self-contained: the in-process embedded server and the offline renderer work out of the box, and the standalone server is on your `PATH` as the `clausters` command. No `target/` directory and no build step at import time.
 
+The wheel also bundles **Faust** — `libfaust` and the `libLLVM` it JIT-compiles with — so a `FaustDef` compiles on a machine with neither installed, exactly like a `SynthDef`. Both def families are on by default in the server, and the client treats them as peers; the price is a heavy wheel (~50 MB packed, most of it LLVM, since the Faust compiler *is* LLVM). Nothing to enable and nothing to install: this is the default install.
+
 The simplest setup, in a fresh virtualenv, run from the repository so the build hook can find the cargo workspace:
 
 ```sh
@@ -78,7 +80,7 @@ server.set(node, {"freq": 550.0})              # ...and now it is higher
 server.free(node)                              # silence
 ```
 
-The **other def format is a peer, not a fallback**: the same instrument as a `FaustDef`, which the server JIT-compiles. Write it as a signal graph, as a box graph reusing the Faust libraries, or as Faust source — three ways of saying the same thing (a Faust def needs a server built with the `faust` feature; see [Defining instruments](defs.md#what-the-server-must-support)):
+The **other def format is a peer, not a fallback**: the same instrument as a `FaustDef`, which the server JIT-compiles. Write it as a signal graph, as a box graph reusing the Faust libraries, or as Faust source — three ways of saying the same thing. Nothing to install: the package bundles Faust (see [What the server must support](defs.md#what-the-server-must-support)).
 
 ```python
 from clausters.defs import signals as S, boxes as box, FaustDef

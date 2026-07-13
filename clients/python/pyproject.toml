@@ -38,12 +38,15 @@ dev = ["pytest>=7"]
 packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs", "clausters.gui"]
 
 # The cargo-built artifacts that build_native.py stages into the package: the
-# cdylibs in _libs/ (embedded server / numeric core) and the two binaries in
-# _bin/ — the standalone server (run via the `clausters` console-script) and the
-# `clausters-gui` visual server (launched by `Session.gui`). Bundled in the wheel
-# so an installed package is self-contained: server and GUI, no separate install.
+# cdylibs in _libs/ (embedded server / numeric core), libfaust and the libLLVM it
+# JITs with (also _libs/, so a FaustDef compiles on a machine with neither
+# installed) and the two binaries in _bin/ — the standalone server (run via the
+# `clausters` console-script) and the `clausters-gui` visual server (launched by
+# `Session.gui`). Bundled in the wheel so an installed package is self-contained:
+# server, Faust and GUI, no separate install. The `.so*` glob is deliberate:
+# versioned sonames (libfaust.so.2, libLLVM.so.21.1) are what the loader asks for.
 [tool.setuptools.package-data]
-clausters = ["_libs/*.so", "_libs/*.dylib", "_libs/*.dll", "_bin/*"]
+clausters = ["_libs/*.so", "_libs/*.so.*", "_libs/*.dylib", "_libs/*.dll", "_bin/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

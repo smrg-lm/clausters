@@ -31,15 +31,18 @@ generate bindings); the toolchain itself stays `rustc` + `gcc`. The `midi-jack`
 build links against jackd2's `libjack` but resolves to PipeWire's `libjack`
 under `pw-jack` at runtime.
 
-## The `faust` feature
+## The `faust` feature (default)
 
-`cargo test --features faust` needs **libfaust built with the LLVM backend**. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`. The reproducible recipe is in `BUILD.md` (the "Building libfaust from source" section). `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
+The FaustDef family is **on by default**, so a plain `cargo build` / `cargo test` needs **libfaust built with the LLVM backend** on the machine. Distro packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers, so it is built from source and installed under `~/.local`, once. The reproducible recipe is in `BUILD.md` (the "Building libfaust from source" section). `build.rs` locates the library through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`.
 
 ```sh
-FAUST_PREFIX=~/.local cargo test --features faust
+FAUST_PREFIX=~/.local cargo test           # the prefix is only needed if it is not ~/.local
+cargo test --no-default-features --features synth,realtime   # no libfaust needed
 ```
 
-libfaust **cannot compile concurrently in one process** (it SIGSEGVs), so every compilation FFI call goes through `faust::compiler::ffi_lock()`; instantiating from an already-compiled factory is concurrency-safe.
+Every compilation FFI call goes through `faust::compiler::ffi_lock()`, which serializes libfaust within the process (instantiating from an already-compiled factory is concurrency-safe). That lock is what lets the Faust suites run in the ordinary parallel test harness; a SIGSEGV in a `faust_*` suite is the signature of an FFI path that skipped it.
+
+`build.rs` also writes a `DT_RPATH` of `$ORIGIN`, `$ORIGIN/../_libs` and the build prefix, so the artifacts are relocatable and a distribution can bundle libfaust and its libLLVM beside them (which is exactly what the Python wheel does — see `clients/python/build_native.py`). `DT_RPATH` rather than `DT_RUNPATH`: only the former is inherited by transitive dependencies, and it is libfaust, not our binary, that needs to find libLLVM.
 
 ## Real-time safety (non-negotiable)
 
@@ -76,11 +79,12 @@ is reproducible with the same line:
   in `clients/python`.
 - **docs** — both mdBooks with the same mdBook version Read the Docs uses,
   and the pydoc-markdown API page for the client book.
-- **faust** — `cargo test --features faust -- --test-threads=1`, with
-  libfaust built from source at the commit pinned in the workflow
-  (the recipe in `third_party/BUILD-FAUST.md`) and cached; a cache hit makes
-  the job cheap. Upgrading libfaust = bumping `FAUST_SHA` there after
-  verifying locally.
+- **faust** — the default `cargo test` covers it, with libfaust built from
+  source at the commit pinned in the workflow (the recipe in
+  `third_party/BUILD-FAUST.md`) and cached; a cache hit makes the job cheap.
+  Upgrading libfaust = bumping `FAUST_SHA` there after verifying locally. The
+  featureless / SynthDef-only runs (`--no-default-features`) are what keep the
+  build green on a machine with no libfaust.
 
 ## Releases and publishing
 

@@ -17,7 +17,7 @@ license = "GPL-3.0-or-later"
 crate-type = ["rlib", "cdylib"]
 
 [features]
-default = ["synth", "realtime", "midi", "pipewire", "rtprio"]
+default = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 # The SynthDef family (scsynth-style UGen graphs): the UGen library, the def
 # compiler (`/d_recv`) and `UGenSynth`. Default. Independent from — and
 # combinable with — `faust`: a custom build can ship either def family alone
@@ -40,8 +40,13 @@ midi = ["dep:midir"]
 # resolves to pipewire-jack via its ld.so.conf.d entry, so MIDI still goes
 # through PipeWire. The default `midi` feature keeps the ALSA backend.
 midi-jack = ["midi", "midir/jack"]
-# libfaust embedding (Box API + LLVM JIT). Needs libfaust built with the LLVM
-# backend; see build.rs for how the library is located (FAUST_PREFIX).
+# The FaustDef family: libfaust embedding (Signal/Box API + LLVM JIT, `/d_faust`).
+# Default — the two def families are peers, and a server that cannot compile a
+# FaustDef is a partial product. The cost is a build dependency: it needs
+# libfaust built with the LLVM backend (see BUILD.md for the recipe), located
+# by build.rs through FAUST_PREFIX, falling back to ~/.local, then /usr/local.
+# Drop it (`--no-default-features` plus the others) for a SynthDef-only server
+# that builds with no libfaust on the system.
 faust = []
 # M14: the C ABI for embedding the server in-process (clausters_* exports).
 embed = []

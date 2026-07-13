@@ -7,7 +7,7 @@ Runnable demos live in `examples/` (Rust and Python) and `clients/python/`. Unle
 | example | what it shows | run |
 |---|---|---|
 | `osc_ping` | Minimal OSC client for manual testing: subcommands `status`, `beep`, `vibrato`, `map` (the `/n_map`/`/n_mapa` demo), `quit`. | `cargo run --example osc_ping -- beep` |
-| `bench` | Graph-throughput benchmark (offline): how many copies of a graph fit in real time at 48 kHz, plus the parallel-group speedup. With `--features faust`, an apples-to-apples UGen-vs-Faust section runs the *same* DSP (the parity-test sine) through both engines to isolate per-synth audio-loop overhead. | `cargo run --release --example bench` |
+| `bench` | Graph-throughput benchmark (offline): how many copies of a graph fit in real time at 48 kHz, plus the parallel-group speedup. With the `faust` feature (default), an apples-to-apples UGen-vs-Faust section runs the *same* DSP (the parity-test sine) through both engines to isolate per-synth audio-loop overhead. | `cargo run --release --example bench` |
 | `stress` | Single-core stress test against a **running** server (the real-time complement to `bench`, which is offline): ramps nodes of an `n`-sinusoid def while watching the server's own CPU meter and late-block counter in `/status.reply`, and reports the last stable count before the peak load crosses `--limit` or a block runs late. Two axes: `--sines` (DSP weight per node) and the ramp step (per-node engine overhead). The client is portable and works against any build; the default *server* build runs real-time-scheduled (`rtprio`), so the numbers measure DSP throughput — against a server built without that feature they measure scheduling jitter instead (see BUILD.md). | `cargo run --release --example stress -- --sines 10` |
 | `render_golden` | Regenerates the golden reference WAVs in `tests/golden/` from the shared scenes — run it and **listen** before committing. | `cargo run --example render_golden` |
 
@@ -45,7 +45,7 @@ These import `clausters` from the **installed package** (no `sys.path` shim, no 
 
 | script | what it shows |
 |---|---|
-| `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs the `faust` feature and `oscsend`. |
+| `persistence.sh` | [Def persistence](schemas.md#persisting-defs-across-restarts): `/d_faust` a def with `--data-dir`, quit, then restart and instantiate it **without re-sending** — it reloaded from disk (with its bitcode cache). Needs `oscsend` (the `faust` feature is on by default). |
 | `midi_standalone.sh` | [MIDI-standalone](schemas.md#midi-standalone-bindings--boot-preset): set up a SynthDef + a GraphDef + a `/midi_bind` once, quit, then restart with `--midi` and the binding is **back with no OSC** — play it from a controller via `aconnect`. Needs `oscsend`. |
 
 ## Python binding (`clients/python/clausters/ipc.py`)

@@ -14,6 +14,12 @@ core through artifacts built by cargo, not pip:
   workspace) -> the **visual server** the launcher runs (`clausters.launch` /
   `clausters.Session.gui`). Bundled here too, stripped, so the one package is
   self-contained — server *and* GUI, no separate install.
+- ``libfaust`` and the ``libLLVM`` it JIT-compiles with, copied out of the build
+  machine's prefix (they are not ours to build) -> a `FaustDef` compiles on a
+  machine with neither installed. The `faust` feature is on by default, so this
+  is what keeps the two def families *equally* usable from an installed wheel.
+  It is also what makes the wheel heavy (~50 MB packed): the Faust compiler is
+  LLVM.
 
 This module builds them and copies the cdylibs into ``clausters/_libs/`` and the
 binaries into ``clausters/_bin/`` so they ship with the wheel (and are picked up
@@ -207,6 +213,61 @@ def stage_gui_binary(workspace: str, profile: str) -> str | None:
     return gui_bin_name()
 
 
+def _needed_libs(path: str) -> dict[str, str]:
+    """The shared libraries ``path`` links against, as ``{soname: resolved path}``.
+
+    Linux only (``ldd``); other platforms return nothing, which simply means no
+    Faust libraries are staged there.
+    """
+    if platform.system() != "Linux" or shutil.which("ldd") is None:
+        return {}
+    try:
+        out = subprocess.run(["ldd", path], check=True, capture_output=True,
+                             text=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    needed = {}
+    for line in out.splitlines():
+        # "  libfaust.so.2 => /home/u/.local/lib/libfaust.so.2 (0x00007f...)"
+        if "=>" not in line:
+            continue
+        soname, _, rest = line.strip().partition("=>")
+        resolved = rest.strip().split(" (")[0].strip()
+        if soname.strip() and os.path.isfile(resolved):
+            needed[soname.strip()] = resolved
+    return needed
+
+
+def stage_faust_libs(profile: str) -> list[str]:
+    """Copy libfaust — and the libLLVM it needs — beside the cdylibs in ``_libs/``.
+
+    The `faust` feature is on by default, so the built artifacts link libfaust
+    dynamically, and libfaust in turn links the LLVM shared library that *is* its
+    JIT. Bundling both is what makes an installed wheel able to compile a
+    FaustDef on a machine with neither installed — the same self-contained
+    packaging the ``clausters-gui`` binary gets. ``build.rs`` writes a `DT_RPATH`
+    of ``$ORIGIN``/``$ORIGIN/../_libs``, inherited by transitive dependencies, so
+    the loader finds these copies before (or without) any system ones.
+
+    The libraries are read off the *staged* artifacts, keyed by the exact soname
+    the loader asks for. A server built without the feature needs no libfaust, so
+    nothing is found and nothing is staged.
+    """
+    artifacts = [p for p in (staged_bin(), *staged_libs()) if p]
+    wanted: dict[str, str] = {}
+    for art in artifacts:
+        for soname, resolved in _needed_libs(art).items():
+            if soname.startswith(("libfaust.", "libLLVM.")):
+                wanted.setdefault(soname, resolved)
+    copied = []
+    for soname, resolved in sorted(wanted.items()):
+        dst = os.path.join(LIBS_DIR, soname)
+        shutil.copy2(os.path.realpath(resolved), dst)
+        _strip(dst)
+        copied.append(soname)
+    return copied
+
+
 def _strip(path: str):
     """Best-effort strip of debug symbols from a staged binary (POSIX). A missing
     ``strip`` tool or a Windows build leaves it as-is."""
@@ -267,6 +328,10 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
             copied.append(guiname)
     elif staged_gui_bin():
         copied.append(gui_bin_name())
+    # libfaust + its libLLVM, read off the staged artifacts: the `faust` feature
+    # is on by default, and bundling them is what lets an installed wheel
+    # JIT-compile a FaustDef with nothing else on the machine.
+    copied += stage_faust_libs(profile)
     print("clausters: staged " + ", ".join(copied)
           + f" into {LIBS_DIR} and {BIN_DIR}")
     return copied

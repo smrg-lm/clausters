@@ -11,7 +11,8 @@ milestone y no crece con cada feature nueva.
 - **Lo verificable con números** — RMS, picos, payloads de `/server_info.reply`,
   paridad bit-a-bit, no-alloc en el hilo de audio, conteos — lo cubren las
   suites automáticas y son la fuente de verdad: `cargo test`
-  (con y sin `--features faust`, este último `--test-threads=1`), los golden de
+  (que ya cubre las dos familias de defs; `--no-default-features` prueba el
+  build sin libfaust), los golden de
   `tests/golden.rs`, y `clients/python/tests` (`pytest`). Si algo aquí falla al
   oído pero los tests pasan, el problema está en el audio del sistema, no en el
   servidor (ver "Problemas frecuentes").
@@ -162,11 +163,13 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   jitter rompe el audio a ~la mitad de la capacidad. Una ráfaga grande de
   `/s_new` (cientos de nodos de una vez) también produce bloques tardíos
   puntuales — costo de inserción, no sobrecarga.
-- **`cargo build --features faust` no enlaza**: libfaust no está donde se espera.
-  Verificar `ls ~/.local/lib/libfaust.so` o exportar `FAUST_PREFIX`. Tras
-  cambiarlo, `cargo clean -p clausters` para que build.rs lo relea.
-- **`/d_faust` responde `/fail "server built without faust support"`**: el
-  servidor se compiló sin `--features faust`.
+- **`cargo build` no enlaza (libfaust)**: `faust` es feature por defecto, así que
+  el build normal necesita libfaust con backend LLVM. Verificar
+  `ls ~/.local/lib/libfaust.so` o exportar `FAUST_PREFIX`; tras cambiarlo,
+  `cargo clean -p clausters` para que build.rs lo relea. Para compilar sin
+  libfaust: `cargo build --no-default-features --features synth,realtime,midi,pipewire,rtprio`.
+- **`/d_faust` responde `/fail "server built without faust support"`**: ese
+  servidor se compiló con `--no-default-features` (sin la familia Faust).
 - **`import("stdfaust.lib")` falla**: falta la stdlib en `<prefijo>/share/faust`
   (la instala el `make install` de libfaust).
 - **Puerto ocupado** (`Address already in use`): quedó otro servidor vivo;

@@ -1,11 +1,20 @@
-//! Linker configuration for the optional `faust` feature. Without it this
-//! script does nothing and the core builds with no libfaust on the system.
+//! Linker configuration for the `faust` feature (on by default). Without it
+//! this script does nothing and the core builds with no libfaust on the system
+//! (`--no-default-features`, plus the other features you want).
 //!
-//! With `--features faust`, libfaust (built with the LLVM backend) is located
-//! through the `FAUST_PREFIX` environment variable, falling back to
-//! `~/.local`, then `/usr/local`. Distro packages are not an option on
-//! Debian/Ubuntu: `libfaust2t64` ships without the LLVM backend and without
-//! headers.
+//! libfaust must be built with the LLVM backend; it is located through the
+//! `FAUST_PREFIX` environment variable, falling back to `~/.local`, then
+//! `/usr/local`. Distro packages are not an option on Debian/Ubuntu:
+//! `libfaust2t64` ships without the LLVM backend and without headers. BUILD.md
+//! has the from-source recipe.
+//!
+//! The rpath keeps the artifacts **relocatable**: `$ORIGIN` and
+//! `$ORIGIN/../_libs` come before the build-time prefix, which is what lets the
+//! Python wheel ship libfaust (and the libLLVM it needs) beside the binary and
+//! the cdylibs, the way the GUI host binary is already bundled. It is emitted as
+//! `DT_RPATH` (`--disable-new-dtags`) rather than `DT_RUNPATH` because only
+//! `DT_RPATH` is inherited by *transitive* dependencies: libfaust carries no
+//! rpath of its own, so its libLLVM is found through ours.
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FAUST_PREFIX");
@@ -25,9 +34,20 @@ fn main() {
         }
     });
 
+    if !std::path::Path::new(&format!("{prefix}/lib/libfaust.so")).exists()
+        && !std::path::Path::new(&format!("{prefix}/lib/libfaust.a")).exists()
+    {
+        println!(
+            "cargo:warning=no libfaust under {prefix}/lib: the `faust` feature is on by default \
+             and needs libfaust built with the LLVM backend (BUILD.md has the recipe). Point \
+             FAUST_PREFIX at it, or build a SynthDef-only server with --no-default-features."
+        );
+    }
+
     println!("cargo:rustc-link-search=native={prefix}/lib");
     println!("cargo:rustc-link-lib=dylib=faust");
-    // Tests and binaries must find libfaust.so at runtime without
-    // LD_LIBRARY_PATH gymnastics.
+    println!("cargo:rustc-link-arg=-Wl,--disable-new-dtags");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../_libs");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
 }

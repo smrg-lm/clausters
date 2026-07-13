@@ -100,8 +100,10 @@ Guarded by `tests/denormals.rs` and the Faust-tail test in `tests/golden.rs`.
   one process SIGSEGV — Faust's global compiler state is not thread-safe, even
   for `createCDSPFactoryFromString`. Fix: a process-global `compiler::ffi_lock()`
   around every compilation call. A server has a single compiler thread, but the
-  test harness (and any multi-server embedder) needs the lock — which is why the
-  faust suites must run `--test-threads=1`.
+  test harness (and any multi-server embedder) needs the lock. With every FFI
+  compilation path behind it, the faust suites now run in the ordinary parallel
+  harness; the historical `--test-threads=1` rule is retired (a SIGSEGV there
+  would mean a path skipped the lock).
 - **Instantiation does *not* take the lock.** Creating instances from an
   already-compiled factory is independent of the compiler's global state (JIT
   code + malloc; FaustLive does it concurrently with compilations). The lock
@@ -113,6 +115,37 @@ Guarded by `tests/denormals.rs` and the Faust-tail test in `tests/golden.rs`.
   present through master-dev). Workaround: build `fmod` from a
   `CDSPToBoxes("process = fmod;")` fragment instead of the binding.
 - **Upstream bug — the `cos` box returned abs** likewise; fixed the same way.
+
+## Faust is a default feature, and the wheel ships it
+
+`faust` used to be an opt-in Cargo feature, purely to keep a development build
+free of the libfaust dependency. The cost of that convenience landed on the
+*user*: the packaged artifacts were built with the default features, so an
+installed wheel could not compile a `FaustDef` at all — `/d_faust` replied
+`/fail`, and one of the two def families was, in practice, unavailable. Two
+families we document as peers cannot have one of them missing from the product.
+
+So `faust` joins the default set, and the packaging bundles it:
+
+- **A default build needs libfaust** (built with the LLVM backend, a one-time
+  from-source install; `BUILD.md`). Building without it stays supported and
+  tested — `--no-default-features --features synth,realtime,…` is a SynthDef-only
+  server with no libfaust on the machine — but it is now the explicit choice,
+  not the default one.
+- **The wheel carries libfaust *and* libLLVM** in `clausters/_libs/`, staged by
+  `clients/python/build_native.py` off the built artifacts (keyed by the exact
+  soname the loader asks for). libLLVM is ~130 MB, which takes the wheel from a
+  few MB to ~50 MB packed. That is not accidental weight: the Faust JIT *is*
+  LLVM, and the alternative (static LLVM inside libfaust) is no lighter — the
+  server binary and the embed cdylib would each embed their own copy, where the
+  bundled shared library is loaded once by both.
+- **`DT_RPATH`, not `DT_RUNPATH`.** `build.rs` emits `-Wl,--disable-new-dtags`
+  with an rpath of `$ORIGIN`, `$ORIGIN/../_libs` and the build prefix. The
+  `$ORIGIN` entries make the artifacts relocatable (the wheel's `_bin/clausters`
+  finds `../_libs/libfaust.so.2`), and `DT_RPATH` is required because only it is
+  inherited by *transitive* dependencies: libfaust itself carries no rpath, so
+  its libLLVM is resolved through ours. With `RUNPATH` the loader would fall back
+  to the system libLLVM — or find none.
 
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 

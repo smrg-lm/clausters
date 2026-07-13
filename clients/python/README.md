@@ -32,7 +32,7 @@ server.free(node)                              # silence
 ```
 
 The other def format is a peer, not a fallback — the same voice as a `FaustDef`,
-which the server JIT-compiles (needs a server built with the `faust` feature):
+which the server JIT-compiles (Faust ships inside the wheel; nothing to install):
 
 ```python
 from clausters.defs import signals as S, boxes as box, FaustDef
@@ -140,6 +140,14 @@ The package is pure Python at runtime but reaches Rust through two cdylibs that
 with `embed,realtime` for the embedded server / offline render). The packaging
 **bundles** them inside the wheel, so an installed package is self-contained —
 no `target/` directory, no separate build step at import time.
+
+Self-contained includes **Faust**: both def families are on by default in the
+server, so the wheel also carries `libfaust` and the `libLLVM` it JIT-compiles
+with (in `clausters/_libs/`, found through the artifacts' `$ORIGIN` rpath). A
+`FaustDef` therefore compiles on a machine with neither installed. That is what
+makes the wheel heavy — ~50 MB packed, most of it LLVM: the Faust compiler *is*
+LLVM. Building the client from this repo needs libfaust present (see
+[`BUILD.md`](../../BUILD.md)); a `pip install` of a built wheel needs nothing.
 
 The simplest, standard, self-contained setup in a fresh venv (run from the repo,
 so the build hook can find the cargo workspace):

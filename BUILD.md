@@ -41,26 +41,31 @@ Feature matrix (see `Cargo.toml`):
 | `midi` | yes | live MIDI input via midir (ALSA seq on Linux) |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD (cpal's pipewire host, ALSA fallback at runtime) — needs `libpipewire-0.3-dev` and `clang` |
 | `rtprio` | yes | real-time scheduling for the audio callback thread (SCHED_FIFO/RR via RTKit over DBus — the standard path for Linux audio clients; needs `libdbus-1-dev`), plus the `--pin` CPU-affinity flag and a SIGXCPU guard: if RTKit's `RLIMIT_RTTIME` watchdog fires under sustained overload, the audio thread is demoted back to SCHED_OTHER (the audio degrades, the server survives). Without the feature the callback runs as SCHED_OTHER and scheduling jitter breaks the audio at roughly half capacity — drop it only for minimal builds (no DBus dep; Linux-specific code isolated in `server::rt`) |
+| `faust` | yes | the **FaustDef family**: libfaust embedding (Signal/Box API + LLVM JIT, `/d_faust`) — needs libfaust built with the LLVM backend (below) |
 | `midi-jack` | no | route live MIDI through midir's JACK backend instead of ALSA (for PipeWire-native MIDI routing) — needs `libjack-jackd2-dev`, run under `pw-jack` |
-| `faust` | no | the **FaustDef family**: libfaust embedding (Box API + LLVM JIT, `/d_faust`) — needs libfaust built with the LLVM backend |
 | `embed` | no | the C ABI (`clausters_*`) for embedding the server in-process |
 
-`synth` and `faust` are the two **def families**. They are independent and
-combinable — enable both for a server that mixes UGen and Faust synths on the
-same node tree, or ship a single-family binary for a custom build. With
-neither, the engine core (groups, buses, buffers, transports) still builds and
-runs, but there are no defs to instantiate: every `/s_new` fails, `/d_recv`
-and `/d_faust` reply `/fail` naming the missing feature, and persisted defs of
-the absent family are skipped with one warning at boot.
+`synth` and `faust` are the two **def families**, and **both are on by default**:
+they are peers, and a server that can compile only one of them is a partial
+product. They are independent and combinable, so a custom build can still ship a
+single family. With neither, the engine core (groups, buses, buffers,
+transports) still builds and runs, but there are no defs to instantiate: every
+`/s_new` fails, `/d_recv` and `/d_faust` reply `/fail` naming the missing
+feature, and persisted defs of the absent family are skipped with one warning at
+boot.
+
+The one cost of `faust` being default is a **build dependency**: a plain `cargo
+build` now needs libfaust with the LLVM backend on the machine (the next section
+builds it, once). Drop the feature to build with nothing installed.
 
 Common variants:
 
 ```sh
 # plain ALSA, no PipeWire libs linked
-cargo build --no-default-features --features synth,realtime,midi
+cargo build --no-default-features --features synth,faust,realtime,midi
 
-# both def families: UGen graphs (/d_recv) + Faust JIT (/d_faust)
-FAUST_PREFIX=~/.local cargo build --features faust
+# SynthDef-only server — builds with no libfaust on the system
+cargo build --no-default-features --features synth,realtime,midi,pipewire,rtprio
 
 # Faust-only custom build (no UGen library, smaller binary)
 FAUST_PREFIX=~/.local cargo build --no-default-features --features faust,realtime,midi,pipewire
@@ -72,16 +77,32 @@ cargo build --no-default-features
 cargo build --release --features embed,realtime
 ```
 
-### The `faust` feature
+### The `faust` feature (default)
 
-`--features faust` needs **libfaust built with the LLVM backend**. Distro
-packages (e.g. Ubuntu's `libfaust2t64`) ship without it and without headers,
-so build it from source and install it under `~/.local`. `build.rs` locates it
-through `FAUST_PREFIX`, falling back to `~/.local`, then `/usr/local`:
+The FaustDef family needs **libfaust built with the LLVM backend**. Since the
+feature is on by default, so does a plain `cargo build`. Distro packages (e.g.
+Ubuntu's `libfaust2t64`) ship without the LLVM backend and without headers, so
+build it from source and install it under `~/.local` (once — the recipe below).
+`build.rs` locates it through `FAUST_PREFIX`, falling back to `~/.local`, then
+`/usr/local`:
 
 ```sh
-FAUST_PREFIX=~/.local cargo build --features faust
+FAUST_PREFIX=~/.local cargo build          # the prefix is only needed if it is not ~/.local
 ```
+
+If you would rather not have the dependency, build the SynthDef-only server:
+`cargo build --no-default-features --features synth,realtime,midi,pipewire,rtprio`.
+
+**Relocatable artifacts.** With the feature on, `build.rs` writes a `DT_RPATH`
+of `$ORIGIN`, `$ORIGIN/../_libs` and the build-time prefix, in that order. The
+`$ORIGIN` entries are what let a distribution (the Python wheel) ship
+`libfaust.so` and the `libLLVM.so` it JITs with *beside* the binary and the
+cdylibs, so Faust works on a machine with neither installed. It must be
+`DT_RPATH`, not `DT_RUNPATH`: only the former is inherited by transitive
+dependencies, and libfaust — which carries no rpath of its own — is the one that
+needs to find libLLVM. This is also why the Python wheel weighs ~50 MB: libLLVM
+*is* the Faust JIT, and it is ~130 MB unpacked (see
+`clients/python/build_native.py`).
 
 #### Building libfaust from source (reproducible, no sudo)
 
@@ -158,7 +179,7 @@ both. See [`docs/configuration.md`](docs/configuration.md).
 ## Running the tests
 
 ```sh
-cargo test                       # the full core suite (no Faust, no audio device)
+cargo test                       # the full suite, both def families (no audio device)
 cargo clippy --all-targets       # lints (kept clean)
 cargo fmt --check                # formatting (rustfmt is the source of truth)
 ```
@@ -170,13 +191,12 @@ are gated on the `synth` feature: the featureless run is thin by design, and
 `cargo test --no-default-features --features synth` runs the same suite as the
 default build.
 
-With the Faust feature, **run single-threaded** — libfaust/LLVM cannot compile
-concurrently in one process, so the default parallel harness SIGSEGVs (a known
-libfaust limitation, not a bug in the suites):
-
-```sh
-cargo test --features faust -- --test-threads=1
-```
+The Faust suites run in the default parallel harness like any other: every
+compilation FFI call goes through `faust::compiler::ffi_lock()`, which
+serializes libfaust within the process. (Historically they had to run with
+`--test-threads=1` because concurrent compilation SIGSEGVed; that is no longer
+needed. If a segfault ever reappears in a `faust_*` suite, reach for
+`-- --test-threads=1` first — it points at an unlocked FFI path.)
 
 Suites worth knowing about: `tests/rt_safety.rs` asserts the audio thread
 never allocates (run it after touching anything on the audio path),

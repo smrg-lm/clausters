@@ -44,12 +44,13 @@ The project is a workspace with several coordinated parts:
 
 **Synthesis**
 
-- **Two def formats, loaded hot over OSC**: **FaustDefs** (Faust source or a
-  JSON box tree, JIT-compiled with the LLVM backend; `/d_faust`, optional
-  `faust` feature) and a flat **SynthDef JSON** UGen graph (`/d_recv`, default
-  `synth` feature). The two families are independent Cargo features: enable
-  both, or build a single-family server for a custom deployment (see
-  [`BUILD.md`](BUILD.md)).
+- **Two def formats, loaded hot over OSC**: **FaustDefs** (Faust source, or a
+  JSON signal/box tree, JIT-compiled with the LLVM backend; `/d_faust`) and a
+  flat **SynthDef JSON** UGen graph (`/d_recv`). They are peers, and both
+  families are **on by default** (the `faust` and `synth` Cargo features — a
+  default build therefore needs libfaust with the LLVM backend). They are
+  independent, so a custom deployment can still build a single-family server
+  (see [`BUILD.md`](BUILD.md)).
 - A growing UGen library with **first-class calculation rates** (`ar`/`kr`/
   `ir`), typed controls (triggers, lag/varlag, scalars), operator UGens,
   **envelopes with the full scsynth done-action set**, **wavetable oscillators**

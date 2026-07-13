@@ -185,16 +185,18 @@ same C ABI and the same OSC.
   build` and stages the libraries; `python -m build --wheel clients/python`
   produces the wheel. See the [Python client
   book](https://clausters-python.readthedocs.io/) for the install recipes and
-  the env knobs (`CLAUSTERS_WORKSPACE`, `CLAUSTERS_CARGO_FEATURES`, …).
-  Cross-platform CI wheels (cibuildwheel / manylinux) and a Faust-enabled build
-  are still future work.
+  the env knobs (`CLAUSTERS_WORKSPACE`, `CLAUSTERS_CARGO_FEATURES`, …). The
+  wheel is **Faust-enabled**: it bundles libfaust and the libLLVM it JITs with
+  beside the cdylibs, so a `FaustDef` compiles on a machine with neither
+  installed. Cross-platform CI wheels (cibuildwheel / manylinux) are still
+  future work.
 - **JavaScript (planned)**: an npm package with prebuilt N-API addons per
   platform and a wasm build for the browser.
 - **Reproducible Faust build (planned)**: the `faust` feature needs libfaust
-  built with the LLVM backend; for the wasm target and for Faust-enabled
-  wheels/npm builds this should be vendored under `third_party/` with documented
-  build steps. The current wheel ships the core embed build (no `faust`
-  feature).
+  built with the LLVM backend, and the wheel bundles the result of *this
+  machine's* build. For CI wheels, npm builds and the wasm target it should be
+  vendored under `third_party/` with documented build steps, so the bundled
+  libfaust/libLLVM are reproducible rather than whatever the build host had.
 
 ## Status at a glance
 
