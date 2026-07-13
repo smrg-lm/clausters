@@ -30,7 +30,7 @@ jobs:
       - name: System deps (cpal/midir/pipewire build deps)
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev clang
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -66,7 +66,7 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev clang
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
@@ -80,6 +80,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
+      # clients/gui links ALSA through midir (clausters-midi); the native
+      # `cargo test` below needs libasound2-dev. The wasm gate needs nothing.
+      - name: System deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: clients/gui
@@ -102,7 +108,7 @@ jobs:
       - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev clang
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
       - uses: Swatinem/rust-cache@v2
       # Debug profile: the tests only need working cdylibs, not optimized ones.
       - name: Build and stage the native artifacts
@@ -153,7 +159,7 @@ jobs:
       - name: System deps (incl. the libfaust build chain)
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev clang \
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang \
             cmake make g++ llvm-dev zlib1g-dev
       - name: Cache the libfaust install
         id: faust-cache
