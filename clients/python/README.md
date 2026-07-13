@@ -3,11 +3,67 @@
 High-level Python client for the [Clausters](../../README.md) audio server,
 ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)). It covers both of the server's
-definition formats as peers: **FaustDefs** built from the `signals` API (or
-from Faust source) and **UGen-graph `SynthDef`s**.
+definition formats as peers: **UGen-graph `SynthDef`s** and **`FaustDef`s** —
+the latter built, equally, from the `signals` API, the `boxes` API, or Faust
+source.
 
 The package is pure Python at runtime (stdlib only) and reaches the native
 side through `ctypes`, so client-side math matches the server by construction.
+
+## Quick start
+
+The client is driven **interactively** — from a REPL, or cell by cell in an
+editor. No globals to set up, no build context to open: every line stands alone.
+
+```python
+from clausters import Session
+from clausters.defs import SynthDef, control, sin_osc, out
+
+session = Session.live(latency=0.1)   # attaches to a server, or boots one
+server = session.server
+
+# an instrument: a def the server compiles once and instantiates many times
+sdef = SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0)) * control("amp", 0.2)))
+server.add_synthdef(sdef)                      # /d_recv, waits for the server's /done
+
+node = server.synth("beep", {"freq": 330.0})   # you hear it now
+server.set(node, {"freq": 550.0})              # change it while it sounds
+server.free(node)                              # silence
+```
+
+The other def format is a peer, not a fallback — the same voice as a `FaustDef`,
+which the server JIT-compiles (needs a server built with the `faust` feature):
+
+```python
+from clausters.defs import signals as S, boxes as box, FaustDef
+
+freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
+phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)         # one-sample feedback phasor
+server.add_faustdef(FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2))
+
+# or point-free with the box API, borrowing the oscillator from Faust's library:
+server.add_faustdef(FaustDef.from_box(
+    "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2))
+
+server.synth("bbeep", {"freq": 220.0})
+```
+
+Or hand a **pattern** to the session; its clock runs in its own thread, so the
+REPL stays yours:
+
+```python
+from clausters.seq import Pbind, Pseq, Pwhite
+
+session.play(Pbind(instrument="beep", freq=Pseq([330, 440, 550, 660], repeats=8),
+                   dur=0.25, amp=Pwhite(0.1, 0.2)))
+session.start()      # keep typing while it plays
+session.stop()
+session.close()      # stops everything the session started (server, GUI)
+```
+
+The same code runs **offline** or **in-process** by changing one call —
+`Session.nrt()` renders it to a WAV, `Session.embed()` runs the server inside
+this interpreter. See the [Getting started](docs/src/getting-started.md) chapter.
 
 ## What is in the package
 
@@ -23,15 +79,17 @@ side through `ctypes`, so client-side math matches the server by construction.
   `timebase` (monotonic or, anchored to the server's sample clock, `/sched`),
   `netaddr`, `main`, the destination interfaces `_oscinterface` (UDP / **TCP**
   / NRT) and `_midiinterface`, and the minimal OSC wire encoder `_osclib`.
-- `clausters.defs` — the definitions and server resources:
-  `signals` (lowercase callables mapping Faust's Signal API, composed into the
-  JSON graph), `FaustDef`, the `Synth`/`Group`/`Bus`/`Buffer` handles and
+- `clausters.defs` — the definitions and server resources. Two def families,
+  peers of each other: `ugens` (lowercase callables → `Ugen`/`Control`) with
+  `SynthDef` (`/d_recv`) — the server's UGen graph, plus `GraphDef` for
+  multi-node graphs with per-voice partitions — and `FaustDef` (`/d_faust`),
+  built from `signals` (Faust's Signal API as lowercase callables), from
+  `boxes` (its Box API, point-free, with `boxes.faust` pulling in the Faust
+  libraries) or from Faust source. All of it instance-based, with no global
+  build context. Alongside them the `Synth`/`Group`/`Bus`/`Buffer` handles and
   allocators, and `Server`. The **`Server` owns the communication interface and
   emits**: swap its interface to retarget a routine from live RT to an NRT
-  score without touching clock or routine. UGen-graph definitions are also here
-  — `ugens` (lowercase callables → `Ugen`/`Control`) and `SynthDef` (`/d_recv`),
-  the instance-based UGen counterpart of `signals`/`FaustDef`, plus `GraphDef`
-  (multi-node graphs with per-voice partitions). `clocksync` models the
+  score without touching clock or routine. `clocksync` models the
   server's sample clock over UDP (`Server.sample_clock()`) for drift-free
   `/sched` timing without shared memory.
 - `clausters.seq` — sequencing: `Event` (a note plays a synth and frees it

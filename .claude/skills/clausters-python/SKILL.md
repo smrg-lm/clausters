@@ -1,12 +1,14 @@
 ---
 name: clausters-python
-description: How to use the Clausters Python client idiomatically — the client/server split and the NRT/RT/embed seam, building Faust/UGen defs from the signal API, sending defs asynchronously with the /sync barrier, and sequencing with BOTH event patterns and generator routines (and the rule that a routine must never block the clock thread). Consult when writing any client-side Clausters Python.
+description: How to use the Clausters Python client idiomatically — the client/server split and the NRT/RT/embed seam, building both def families as peers (UGen-graph SynthDefs; FaustDefs from the signal API, the box API or Faust source), sending defs asynchronously with the /sync barrier, and sequencing with BOTH event patterns and generator routines (and the rule that a routine must never block the clock thread). Consult when writing any client-side Clausters Python.
 ---
 
 # Clausters Python client
 
-The high-level client (`clients/python/clausters`), a selective Faust-first port
-of SuperCollider's sc3. It builds OSC and drives a Clausters server — live over
+The high-level client (`clients/python/clausters`), a selective port of
+SuperCollider's sc3. It carries both def families as peers — UGen-graph
+SynthDefs and FaustDefs (the latter from `signals`, from `boxes` or from Faust
+source, all equal) — and never treats one as the fallback of the other. It builds OSC and drives a Clausters server — live over
 UDP/TCP, offline as an NRT score, or in-process via the embed library — from one
 codebase. Code, comments and identifiers are English (project rule); this skill
 is the idiomatic map, to be refined over time.
@@ -49,8 +51,20 @@ fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1
   the engine/NRT renderer runs (`freq / S.sr()`, RBJ coeffs, etc.). `signals.PI`/
   `signals.TAU` are *literals* (Faust's `ma.PI` is one too), so they are plain
   Python floats — no server round-trip.
-- `FaustDef.from_signals/from_source/from_box`; `SynthDef` is the UGen
-  counterpart (`/d_recv`), instance-based, only `+ - * /` compose UGens.
+- `boxes` (imported as `box`): the **Box API**, the peer of `signals` — Faust's
+  point-free algebra (`seq`/`par`/`split`/`merge`/`rec`), plus `box.faust(expr,
+  *eval_args)`, which compiles any Faust expression (the stdlib included:
+  `os.`, `fi.`, `re.`, `pm.`) into a composable `Box`. Each `box.wire()` is a
+  *distinct* input (never reuse one). It is a complete def-building API, not a
+  helper for `signals`.
+- `FaustDef.from_signals/from_box/from_source` — three equal ways to write a
+  Faust def: one output at a time, composed processors, or the language itself.
+  `SynthDef` (`/d_recv`) is the **peer family**, not a lesser one: instance-based
+  UGen graphs with the full unary/binary maths (the generic op UGens), and the
+  only way to reach bus I/O, buffer playback, `send_reply`/`poll` and the FFT
+  chain. Combine them freely (a FaustDef voice routed by a SynthDef).
+- `/d_faust` needs a server built with the **`faust` feature** (off by default);
+  `/d_recv` works on any build (`synth` is on by default).
 - Reserved controls `in`/`out` (bus selectors) are added by the server.
 
 ## Sending defs is asynchronous — use the /sync barrier

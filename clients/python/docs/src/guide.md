@@ -29,8 +29,9 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 
 ## `clausters.defs` — the server side
 
-- `signals` — lowercase callables mapping Faust's Signal API, composed into the JSON graph — and `FaustDef` (sent with `/d_faust`).
-- `ugens` — the UGen-graph counterpart, lowercase callables producing `Ugen`/`Control`, and `SynthDef` (sent with `/d_recv`). Both are built **instance-based, with no global build context**.
+- `ugens` — lowercase callables producing `Ugen`/`Control`, and `SynthDef` (sent with `/d_recv`): the server's UGens wired into a graph.
+- `FaustDef` (sent with `/d_faust`), its peer: DSP the server JIT-compiles, built from `signals` (Faust's Signal API as lowercase callables), from `boxes` (its Box API — point-free, with `boxes.faust` opening the Faust libraries), or from Faust source. The three forms are equals; so are the two def families.
+- Both families are built **instance-based, with no global build context**, and both instantiate as ordinary nodes in the same tree.
 - `Node`/`Bus`/`Buffer` handles and their allocators.
 - `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched` timing without shared memory.
 - `Server` — **owns the communication interface and emits.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.

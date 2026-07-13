@@ -1,9 +1,12 @@
 """FaustDef: a named Faust definition ready for ``/d_faust``.
 
 Wraps a graph built with `clausters.defs.signals` (the **signal tree**
-form), a Faust **source** string, or a raw **box tree** dict — the three
-payloads the server's ``/d_faust`` accepts (it sniffs which by the first byte;
-see the server's ``faust`` module). Sending and instantiating is the
+form), one built with `clausters.defs.boxes` (the **box tree** form — a `Box`,
+or a raw dict for machine-generated trees), or a Faust **source** string: the
+three payloads the server's ``/d_faust`` accepts, on equal footing (it sniffs
+which by the first byte; see the server's ``faust`` module). They are three ways
+of writing Faust, not a main road and two detours — pick the one that says what
+you mean. Sending and instantiating is the
 `Server`'s job; this only builds the payload and
 exposes the declared control names (UI labels), plus the reserved ``in``/``out``
 bus controls the server adds.

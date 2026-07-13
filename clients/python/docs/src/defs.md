@@ -1,9 +1,11 @@
 # Defining instruments: FaustDef and SynthDef
 
-An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`:
+An instrument is a **def** — a named processing graph the server compiles once and then instantiates many times as nodes. The client builds two kinds, both living in `clausters.defs`, and they are **peers**: neither is the "real" one, and a piece routinely uses both.
 
-- **`FaustDef`** — a Faust definition, sent with `/d_faust`. Its graph is the full Faust **Signal API**, so it has the complete maths vocabulary (trigonometry, `exp`/`log`, comparisons, tables, sample-accurate feedback). Reach for it for any actual DSP.
-- **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's **structural** UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). Genuinely custom per-sample DSP (recursion, tables, sample-accurate feedback) still goes in a `FaustDef`.
+- **`FaustDef`** — a Faust definition, sent with `/d_faust` and JIT-compiled by the server into a node. Its graph is the full Faust language, so it reaches **below the unit**: per-sample recursion, tables, foreign constants, and the whole Faust library ecosystem. Build it three ways — the **Signal API** (`signals`), the **Box API** (`boxes`), or **Faust source** — all equal citizens (see [Building one](#building-one)). It needs a server built with the `faust` feature (see [What the server must support](#what-the-server-must-support)).
+- **`SynthDef`** — a UGen graph, sent with `/d_recv`. It wires the server's UGens (oscillator, noise, impulse, bus I/O, buffer playback, feedback, FFT chains) and the full unary/binary **maths** — the arithmetic operators plus `%`, `min`/`max`, comparisons, `.sin()`, `.midicps()`, `.distort()` … — which compose the generic operator UGens (see [Maths on a UGen graph](#maths-on-a-ugen-graph)). The graph is an **assembly of ready-made units**: it composes what the server already implements, needs no JIT, and works on **any** server build, since the SynthDef family is on by default.
+
+Rule of thumb, not a hierarchy: reach for a `SynthDef` when the units you need already exist (and always for routing, buses and buffer playback); reach for a `FaustDef` when you want DSP the unit set does not cover, or want to write the DSP itself. Both run as ordinary nodes in the same tree and address each other through buses.
 
 Both are built the same way: **lowercase callables** that compose with ordinary Python operators into a JSON tree. Both are **instance-based** — there is no thread-global "current graph" as in sclang, so the tree *is* the composed objects and several defs build concurrently. And both are sent **asynchronously**, behind the `/sync` barrier (see [Sending a def](#sending-a-def)).
 
@@ -26,15 +28,15 @@ A plain number that meets a node becomes a **constant** in the graph. The operat
 
 ### Building one
 
-Three constructors, one per payload the server's `/d_faust` accepts:
+Three constructors, one per payload the server's `/d_faust` accepts. They are **three ways of writing Faust, not a main road and two detours** — the server compiles all three into the same kind of node, and the same def can be expressed in any of them:
 
 | Constructor | Payload | Use it for |
 | --- | --- | --- |
-| `FaustDef.from_signals(name, *outputs)` | a **signal tree** built with `clausters.defs.signals` | graphs assembled in Python from the primitives below |
-| `FaustDef.from_source(name, src)` | a Faust **source** string | hand-written Faust (`process = ...;`) |
+| `FaustDef.from_signals(name, *outputs)` | a **signal tree** built with `clausters.defs.signals` | graphs assembled one output at a time from arithmetic, feedback and controls (see [the signal API](#the-signal-api)) |
 | `FaustDef.from_box(name, box)` | a **box tree** — a `Box` built with `clausters.defs.boxes`, or a raw dict | point-free graphs of composed processors, with the Faust **libraries** available as boxes (see [the box API](#the-box-api-reusing-the-faust-libraries)); the dict form for machine-generated trees |
+| `FaustDef.from_source(name, src)` | a Faust **source** string | writing Faust directly — the whole language, `import`s included |
 
-Each argument to `from_signals` is one **output** (a `Signal` or a number): one argument is mono, two is stereo, and so on.
+**From signals.** Each argument to `from_signals` is one **output** (a `Signal` or a number): one argument is mono, two is stereo, and so on.
 
 ```python
 from clausters.defs import signals as S, FaustDef
@@ -45,11 +47,22 @@ sine = S.sin(phase * S.TAU) * 0.2
 fdef = FaustDef.from_signals("fsine", sine)          # one output -> mono
 ```
 
-A source def is the escape hatch when you would rather write Faust directly:
+**From boxes.** The same def as composed processors, with the Faust libraries in reach (`box.faust` compiles any Faust expression into a `Box`):
 
 ```python
-FaustDef.from_source("organ", "import(\"stdfaust.lib\"); process = os.osc(220) * 0.2;")
+from clausters.defs import boxes as box, FaustDef
+
+freq = box.hslider("freq", 220.0, 20.0, 20000.0, 0.01)
+fdef = FaustDef.from_box("bsine", box.faust("os.osc")(freq) * 0.2)
 ```
+
+**From source.** When you would rather write the Faust itself:
+
+```python
+FaustDef.from_source("organ", 'import("stdfaust.lib"); process = os.osc(220) * 0.2;')
+```
+
+Which one to pick is a question of *how you are thinking about the graph* — one output at a time, blocks plugged into blocks, or the language — and is discussed under [Choosing a form](#choosing-a-form). Whichever you use, the def is sent, instantiated and controlled identically.
 
 ### The signal API
 
@@ -133,26 +146,6 @@ lp = box.faust("fi.lowpass", 3)          # any Faust expression, stdlib included
 
 `box.faust` compiles a Faust expression into a `Box` that is indistinguishable from a primitive — so the Faust libraries (`os.`, `fi.`, `re.`, `pm.`, ...) join the same algebra **without transcribing them**, composed with sliders and arithmetic built in Python.
 
-**Choosing a form.** A fixed chain of `box.faust(...)` calls top to bottom often reads better as plain Faust (`from_source`, which an f-string already parametrizes). Regular banks — "N copies with index-dependent parameters" — are also best written in Faust itself, which iterates at compile time (`par(i, N, ...)`, widget labels with `%i`, `ba.take(i+1, list)`), parametrized from Python by splicing `N` and the lists (below). Boxes shine when:
-
-- the graph is **conceived as composed processors** — point-free routing built in Python;
-- its **structure is decided by Python data** (a different shape per element, conditionals over analysis results or configuration);
-- **library DSP mixes with Python-built pieces** (the `box.faust` fragments);
-- the tree is **machine-generated** (the raw-dict form of `from_box`).
-
-Two chains, side by side — a fixed chain (left) belongs in source; a data-driven bank (right) belongs in boxes:
-
-```python
-# fixed chain: write Faust            # irregular bank: build with boxes
-FaustDef.from_source("soft", """      def voice(f, kind):
-import("stdfaust.lib");                   src = ("os.osc" if kind == "sine"
-freq = hslider("freq",220,20,2000,.1);           else "os.sawtooth")
-process = os.osc(freq) * 0.2              return box.faust(src)(f) * 0.2
-  : fi.lowpass(3, 800)                mix = sum(voice(f, k) for f, k in spec)
-  <: re.stereo_freeverb(.8,.7,.5,23); fdef = FaustDef.from_box("bank", mix)
-""")
-```
-
 **Two stages of application, kept apart in the syntax.** Faust applies in two different stages, and the module never mixes them in one argument list:
 
 - Arguments to `box.faust(src, *eval_args)` are **evaluation-stage**: spliced into the source text as Faust application. `box.faust("fi.lowpass", 3)` compiles `fi.lowpass(3)`. Structural parameters — a filter order, a table size, a list of coefficients — must live here; they cannot travel as signals. Formatting: `int`/`float` as literals, a list/tuple as a Faust list `(a, b, c)`, a string verbatim (to pass an expression or a library function as an argument). `defs=` prepends helper definitions to the generated program.
@@ -175,6 +168,29 @@ left, right = st.outs()                               # or st[0], st[1]
 ```
 
 The composition surface mirrors the server's box schema one to one: `seq` / `par` / `split` / `merge` (n-ary, folded left), `rec(a, b)` (point-free `~`; for the `rec(lambda s: ...)` style use `signals` or a fragment), `wire` / `cut`, `delay` / `delay1`, `select2` / `select3`, the same controls, groups (`hgroup` / `vgroup`), foreign values (`fconst` / `fvar` / `sr()`) and tables (`waveform` / `rdtable` / `rwtable`) as the signal API, and the same operators on `Box` (with `%` mapping to Faust's `fmod`; the box schema has no shifts). See the [API reference](api.md) for signatures.
+
+### Choosing a form
+
+The three forms are interchangeable on the wire, so the choice is about which one *says what you mean* — and they mix freely inside one piece (and even inside one def, since `box.faust` embeds source into a box tree).
+
+| Write it as | When the graph is |
+| --- | --- |
+| **source** (`from_source`) | a **fixed chain** read top to bottom (`os.osc(freq) : fi.lowpass(3, 800) <: re.stereo_freeverb(...)`), or a **regular bank** — "N copies with index-dependent parameters", which Faust iterates at compile time (`par(i, N, ...)`, labels with `%i`, `ba.take(i+1, list)`). Parametrize it from Python with an f-string that splices `N` and the lists. |
+| **boxes** (`from_box`) | **conceived as composed processors** — point-free routing built in Python; its **structure decided by Python data** (a different shape per element, conditionals over analysis or configuration); **library DSP mixed with Python-built pieces** (the `box.faust` fragments); or **machine-generated** (the raw-dict form). |
+| **signals** (`from_signals`) | described **one output at a time**, referentially — arithmetic, comparisons, feedback (`rec`) and tables written as expressions over named values, the shape of a filter or an oscillator you are deriving rather than wiring. |
+
+Two graphs, side by side — a fixed chain (left) belongs in source; a data-driven bank (right) belongs in boxes:
+
+```python
+# fixed chain: write Faust            # irregular bank: build with boxes
+FaustDef.from_source("soft", """      def voice(f, kind):
+import("stdfaust.lib");                   src = ("os.osc" if kind == "sine"
+freq = hslider("freq",220,20,2000,.1);           else "os.sawtooth")
+process = os.osc(freq) * 0.2              return box.faust(src)(f) * 0.2
+  : fi.lowpass(3, 800)                mix = sum(voice(f, k) for f, k in spec)
+  <: re.stereo_freeverb(.8,.7,.5,23); fdef = FaustDef.from_box("bank", mix)
+""")
+```
 
 ### Controls and reserved ports
 
@@ -330,11 +346,25 @@ print(json.dumps(json.loads(fdef.dump_def()), indent=2)) # FaustDef signal/box t
 | --- | --- | --- |
 | Sent with | `/d_faust` | `/d_recv` |
 | Built from | `clausters.defs.signals` / `clausters.defs.boxes` / Faust source | `clausters.defs.ugens` |
-| Maths | full (trig, `exp`/`log`, comparisons, tables) | `+ - * /` for now (the rest not yet implemented) |
-| Feedback | `rec` / `self_` (one sample) | `local_in` / `local_out` |
-| Best for | oscillators, filters, any DSP | routing, mixing, buffer playback, bus I/O |
+| Compiled | JIT on the server (libfaust/LLVM) | assembled from the server's UGen registry |
+| Maths | full (trig, `exp`/`log`, comparisons, tables) | full (the same operator set, as generic op UGens) |
+| Feedback | `rec` / `self_` (one sample) | `local_in` / `local_out` (one block) |
+| Granularity | **per sample** — you write the DSP | **per unit** — you wire DSP the server implements |
+| Reuse | the Faust libraries (`os.`, `fi.`, `re.`, `pm.`, …) | the UGen set (see the table above) |
+| Server build | needs the `faust` feature | always available (default) |
 
-A common pattern is to combine them: a FaustDef for the voice, a SynthDef to route or play back buffers. Both run as ordinary nodes in the same tree.
+Neither is the fallback of the other. The units a `SynthDef` wires are the fastest way to say "an oscillator into a bus", they need no compiler on the server, and they are the only way to reach the server-side machinery that has no Faust equivalent (buffer playback, bus I/O, `send_reply`/`poll`, the FFT chain). A `FaustDef` is how you write DSP that is *not* in the unit set — a filter you derived, a physical model, an algorithm — either from Python (`signals` / `boxes`) or in Faust itself, with its libraries at hand.
+
+The common pattern is to combine them: a FaustDef for the voice, a SynthDef to route it, play back buffers or analyse the result. Both run as ordinary nodes in the same tree, on the same buses, and are controlled by the same `/n_set`.
+
+## What the server must support
+
+The two def families are independent **server build features**, and the client only builds the payload — whether the server accepts it depends on how it was built:
+
+- **`synth`** — the SynthDef family (`/d_recv`, the UGen registry). **On by default**, so any stock server takes a `SynthDef`.
+- **`faust`** — the FaustDef family (`/d_faust`, libfaust with the LLVM backend). **Off by default**: a server without it answers `/d_faust` with a `/fail` ("server built without faust support"), which the client raises as a `CommandError`.
+
+A server built with both takes either, and that is the usual development build. It is not automatic, though: the wheel builds its bundled artifacts with the **default** features, so add the feature explicitly when you want Faust everywhere — `cargo build --features faust` for the standalone server, and `CLAUSTERS_CARGO_FEATURES=embed,realtime,faust` when installing the package, for the embedded/offline paths. Both need libfaust built with the LLVM backend; the server book's build guide has the recipe. If `add_faustdef` raises a `CommandError` on a server you did not build yourself, this is what to check first.
 
 ## Sending a def
 

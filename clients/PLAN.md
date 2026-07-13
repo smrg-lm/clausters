@@ -1,8 +1,8 @@
-# Plan — High-level clients for Clausters (Faust-first), with a shared native Rust core
+# Plan — High-level clients for Clausters, with a shared native Rust core
 
 This plan covers the **Python** client (the first target) but is written to serve a future **JavaScript** client too: both share the same native Rust core and the same C-ABI contract. The language-specific part is only the coroutine driver and the thin binding wrappers.
 
-> **Note — sc3 as the reference model.** For any design or semantics question (module structure, clock/routine behavior, events, patterns, OSC/MIDI interfaces, names, conventions), fall back to [sc3](https://github.com/smrg-lm/sc3) as the model. This client is a clean, pruned rewrite (Faust-first), but sc3 is the source of truth on how these pieces should combine and behave; deviate from it only with an explicit reason (the Clausters-specific parts: FaustDefs, server resources, native Rust core).
+> **Note — sc3 as the reference model.** For any design or semantics question (module structure, clock/routine behavior, events, patterns, OSC/MIDI interfaces, names, conventions), fall back to [sc3](https://github.com/smrg-lm/sc3) as the model. This client is a clean, pruned rewrite, but sc3 is the source of truth on how these pieces should combine and behave; deviate from it only with an explicit reason (the Clausters-specific parts: FaustDefs, server resources, native Rust core).
 
 ## Build strategy — finish one client, then port (keep the seam modular)
 
@@ -63,7 +63,8 @@ clients/
 
 ### Client package (Python example; the JS client mirrors the same structure)
 
-Clean rewrite, mirroring sc3's structure but pruned and Faust-first:
+Clean rewrite, mirroring sc3's structure but pruned, and carrying both def
+families (SynthDef and FaustDef) as peers:
 
 ```
 clients/python/

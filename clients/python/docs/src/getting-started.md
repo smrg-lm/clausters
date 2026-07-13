@@ -48,9 +48,79 @@ The bundled artifacts that touch an audio device — the in-process embedded ser
 - `CLAUSTERS_SKIP_GUI_BUILD` — at build time, skip building/bundling the `clausters-gui` binary (a lighter, server-only wheel).
 - `CLAUSTERS_GUI_BIN` — at runtime, point the launcher directly at a `clausters-gui` host binary (overrides the bundled copy and the workspace `target/`).
 
+## Your first sound, line by line
+
+The client is meant to be driven **interactively** — from a REPL, or cell by cell in an editor. Nothing below is a script: type a line, hear the result, type the next one. There is no global state to set up and no build context to open, so every line is complete on its own.
+
+Start a session. `Session.live()` attaches to a running server, or starts one for you if none is up:
+
+```python
+from clausters import Session
+
+session = Session.live(latency=0.1)   # latency: schedule a hair ahead, so events land on time
+server = session.server               # the handle you send commands to
+```
+
+An instrument is a **def** — a named graph the server compiles once and instantiates many times. Build one as a UGen graph and send it:
+
+```python
+from clausters.defs import SynthDef, control, sin_osc, out
+
+sdef = SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0)) * control("amp", 0.2)))
+server.add_synthdef(sdef)             # sends /d_recv and waits for the server's /done
+```
+
+Now play it. `synth` starts a node — it sounds until you free it — and `set` changes its controls while it sounds:
+
+```python
+node = server.synth("beep", {"freq": 330.0})   # you hear it now
+server.set(node, {"freq": 550.0})              # ...and now it is higher
+server.free(node)                              # silence
+```
+
+The **other def format is a peer, not a fallback**: the same instrument as a `FaustDef`, which the server JIT-compiles. Write it as a signal graph, as a box graph reusing the Faust libraries, or as Faust source — three ways of saying the same thing (a Faust def needs a server built with the `faust` feature; see [Defining instruments](defs.md#what-the-server-must-support)):
+
+```python
+from clausters.defs import signals as S, boxes as box, FaustDef
+
+freq = S.hslider("freq", 440.0, 20.0, 20000.0, 0.01)
+phase = S.rec(lambda p: (p + freq / S.sr()) % 1.0)          # a one-sample feedback phasor
+server.add_faustdef(FaustDef.from_signals("fbeep", S.sin(phase * S.TAU) * 0.2))
+
+# the same voice, point-free, borrowing the oscillator from Faust's library:
+server.add_faustdef(FaustDef.from_box(
+    "bbeep", box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 20000.0, 0.01)) * 0.2))
+
+node = server.synth("bbeep", {"freq": 220.0})
+server.free(node)
+```
+
+Both defs are now installed on the server and play the same way — a `Synth` is a `Synth`, whichever family compiled it.
+
+Instead of starting nodes by hand, hand a **pattern** to the session. It plays on the session's clock, which runs in its own thread, so the REPL stays yours:
+
+```python
+from clausters.seq import Pbind, Pseq, Pwhite
+
+session.play(Pbind(instrument="beep",
+                   freq=Pseq([330, 440, 550, 660], repeats=8),
+                   dur=0.25,
+                   amp=Pwhite(0.1, 0.2)))
+session.start()      # the clock runs; keep typing while it plays
+session.stop()       # ...and stop it whenever
+```
+
+When you are done, close the session. Everything it started — the server it booted, a GUI it opened — stops with it:
+
+```python
+session.close()
+```
+
+That is the whole loop: a session, a def, nodes or patterns. From here, [Sessions](sessions.md) explains the offline and embedded flavours (the same code, a different factory), [Defining instruments](defs.md) is the full def-building vocabulary, and [Routines and clocks](routines-and-clocks.md) drives the clock by hand.
+
 ## Play a sound
 
-Three paths, the same code shape — they differ only in the session factory. **Embedded** runs the whole server inside the Python process (the bundled library); nothing to start:
+The examples below are the same ideas as *scripts*, so they can run unattended: they wrap the code in functions and drive the clock for a fixed time. Three paths, the same code shape — they differ only in the session factory. **Embedded** runs the whole server inside the Python process (the bundled library); nothing to start:
 
 ```sh
 python clients/python/examples/embedded.py

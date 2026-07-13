@@ -69,7 +69,7 @@ The smallest round trip, and the toolchain.
 Drive the audio server.
 
 - `defs/server.ts`: the `Server` object - send `/d_recv`/`/d_graph`/`/d_faust` specs, `/s_new`, `/n_set`/`/n_free`, groups, the `/sync` barrier, buses and buffers; receive replies through `responders` (W4 hardens this).
-- The def builders (`signals`/`ugens`/`synthdef`/`faustdef`/`graphdef`): start by sending the **same spec JSON the Python builders emit** (reused verbatim), then grow the typed TS builder API for parity, sc3/Faust-first as the reference.
+- The def builders (`signals`/`ugens`/`synthdef`/`faustdef`/`graphdef`): start by sending the **same spec JSON the Python builders emit** (reused verbatim), then grow the typed TS builder API for parity, with the Python builders (both def families) as the reference.
 
 **Acceptance:** from a browser page, define a synth/Faust def over WS and play it (`/s_new` then `/n_set`), with `/sync` ordering and an audible/queryable result on a `--ws` server.
 
