@@ -104,6 +104,11 @@ pub struct ClientConfig {
 pub struct GuiConfig {
     /// UDP port for the host's script-facing server front (`--port`).
     pub host_port: Option<u16>,
+    /// TCP leg of the script front (`--tcp`/`--no-tcp`): on by default at the
+    /// host port; `false` disables it, a number moves it.
+    pub tcp: Option<PortSetting>,
+    /// Largest OSC frame accepted on the TCP leg, in bytes (`--max-frame`).
+    pub max_frame: Option<usize>,
     /// `host:port` of the audio server to attach the client leg to (`--server`).
     pub server: Option<String>,
     /// Shared-memory segment to map for meters/scopes (`--shm`).
@@ -232,6 +237,8 @@ impl GuiConfig {
     fn merge(self, h: GuiConfig) -> GuiConfig {
         GuiConfig {
             host_port: pick(self.host_port, h.host_port),
+            tcp: pick(self.tcp, h.tcp),
+            max_frame: pick(self.max_frame, h.max_frame),
             server: pick(self.server, h.server),
             shm: pick(self.shm, h.shm),
             data_dir: pick(self.data_dir, h.data_dir),

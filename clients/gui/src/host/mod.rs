@@ -68,6 +68,8 @@ pub mod client;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod store;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod tcp;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod transport;
 
 // Reading the audio server's shared-memory segment for zero-message meters/
@@ -128,6 +130,9 @@ pub use widget::Widget;
 pub enum ClientId {
     /// A UDP datagram source (the native server front).
     Udp(SocketAddr),
+    /// A TCP connection on the native server front (G25), by connection id —
+    /// length-prefixed frames, replies routed back on the same connection.
+    Tcp(u64),
     /// The browser's in-page binding surface (the wasm front feeds OSC packets
     /// in and drains events out through it; there is no socket address).
     Web,
@@ -137,6 +142,7 @@ impl std::fmt::Display for ClientId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ClientId::Udp(addr) => write!(f, "{addr}"),
+            ClientId::Tcp(id) => write!(f, "tcp client {id}"),
             ClientId::Web => write!(f, "web"),
         }
     }

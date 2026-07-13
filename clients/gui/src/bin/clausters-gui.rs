@@ -1,7 +1,7 @@
 //! The `clausters-gui` host binary.
 //!
-//! Starts the GUI host's UDP server front and, optionally, its client leg to the
-//! audio server, then runs the `/gui_*` protocol. By default it opens windows
+//! Starts the GUI host's server front (UDP + TCP, one port) and, optionally,
+//! its client leg to the audio server, then runs the `/gui_*` protocol. By default it opens windows
 //! (winit + wgpu): a `window`-rooted GuiDef instantiates an OS window hosting the
 //! renderers. With `--headless` it runs the protocol with no display — for
 //! tests, automation and machines with no GPU. Drive it from a language client
@@ -32,9 +32,16 @@ use std::net::Ipv4Addr;
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
+                [--tcp [port] | --no-tcp] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
-      --port <n>            UDP port for the GUI host's server front
-                            (script -> host); default 57210
+      --port <n>            port for the GUI host's server front
+                            (script -> host, UDP and TCP); default 57210
+      --tcp [port]          length-prefixed OSC over TCP — on by default at the
+                            host port; the flag only moves it
+      --no-tcp              disable the TCP leg (UDP-only front)
+      --max-frame <bytes>   largest OSC frame on the TCP leg (default 16 MiB).
+                            A DoS ceiling, not a protocol limit; UDP keeps the
+                            ~64 KB datagram cap
       --server <host:port>  also attach the client leg to a running audio
                             server (host -> audio server); default off.
                             Needed for waveform widgets that reference a
@@ -97,6 +104,8 @@ fn run(args: &[String]) -> Result<(), String> {
     // file (the compiled default is the last fallback). Precedence per option:
     // flag > project clausters.toml > user config.toml > default.
     let mut cli_port: Option<u16> = None;
+    let mut cli_tcp: Option<Option<u16>> = None; // None = unset, Some(None) = off
+    let mut cli_max_frame: Option<usize> = None;
     let mut cli_server: Option<String> = None;
     let mut cli_shm: Option<String> = None;
     let mut cli_headless = false;
@@ -112,6 +121,24 @@ fn run(args: &[String]) -> Result<(), String> {
                     .next()
                     .ok_or_else(|| format!("--port needs a value\n{USAGE}"))?;
                 cli_port = Some(v.parse().map_err(|e| format!("--port: {e}"))?);
+            }
+            "--tcp" => {
+                // Optional port; without one, the TCP leg rides the host port.
+                let mut port = None;
+                if let Some(next) = it.peek()
+                    && let Ok(p) = next.parse::<u16>()
+                {
+                    port = Some(p);
+                    it.next();
+                }
+                cli_tcp = Some(port.or(Some(0))); // 0 = "the host port", resolved below
+            }
+            "--no-tcp" => cli_tcp = Some(None),
+            "--max-frame" => {
+                let v = it
+                    .next()
+                    .ok_or_else(|| format!("--max-frame needs a byte count\n{USAGE}"))?;
+                cli_max_frame = Some(v.parse().map_err(|e| format!("--max-frame: {e}"))?);
             }
             "--server" => {
                 let v = it
@@ -161,6 +188,22 @@ fn run(args: &[String]) -> Result<(), String> {
         None => Config::load(),
     };
     let port = cli_port.or(cfg.gui.host_port).unwrap_or(DEFAULT_PORT);
+    // The TCP leg is on by default at the host port (G25); `--no-tcp` (or
+    // `tcp = false` in the config) turns it off, a port moves it. The CLI's
+    // port-0 sentinel means "--tcp with no port": ride the host port.
+    let tcp_port: Option<u16> = match cli_tcp {
+        Some(Some(0)) => Some(port),
+        Some(Some(p)) => Some(p),
+        Some(None) => None,
+        None => match cfg.gui.tcp {
+            Some(setting) => setting.resolve(port),
+            None => Some(port),
+        },
+    };
+    let max_frame = cli_max_frame
+        .or(cfg.gui.max_frame)
+        .unwrap_or(clausters_core::osc::DEFAULT_MAX_FRAME)
+        .max(65536);
     let server = cli_server.or_else(|| cfg.gui.server.clone());
     let shm = cli_shm.or_else(|| cfg.gui.shm.clone());
     let headless = cli_headless || cfg.gui.headless == Some(true);
@@ -236,9 +279,26 @@ fn run(args: &[String]) -> Result<(), String> {
         if shm.is_some() {
             tracing::warn!("--shm has no effect headless (meters need a window)");
         }
-        transport::serve(host, socket).map_err(|e| e.to_string())
+        // The TCP leg's readers wake the serve loop through its own UDP socket.
+        let hub = match tcp_port {
+            Some(p) => {
+                let hub = transport::bind_tcp(&socket, p, max_frame).map_err(|e| e.to_string())?;
+                tracing::info!(
+                    "clausters-gui host listening on tcp://{} (script -> host)",
+                    hub.local_addr()
+                );
+                Some(hub)
+            }
+            None => None,
+        };
+        transport::serve(host, socket, hub).map_err(|e| e.to_string())
     } else {
-        gui::run(host, Arc::new(socket), shm)
+        gui::run(
+            host,
+            Arc::new(socket),
+            shm,
+            tcp_port.map(|p| (p, max_frame)),
+        )
     }
 }
 
@@ -309,11 +369,12 @@ fn run_standalone(
         origin,
     );
 
-    // gui::run still wants a script-front socket, unused in standalone.
+    // gui::run still wants a script-front socket, unused in standalone (a
+    // script could still attach over UDP; the TCP leg stays off here).
     let socket = UdpSocket::bind(("127.0.0.1", port))
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
     tracing::info!("standalone: opening GuiDef \"{name}\" (id {id})");
-    gui::run(host, Arc::new(socket), None)
+    gui::run(host, Arc::new(socket), None, None)
 }
 
 /// Encodes and sends one OSC message to the embedded server, warning if the ring

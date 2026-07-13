@@ -2,11 +2,14 @@
 
 The GUI host is a *sibling OSC front* of the audio server: it speaks the same
 OSC encoding over the same transports, only the vocabulary is ``/gui_*`` instead
-of the audio commands. So `GuiHost` reuses the existing OSC interface
-(`clausters.base._oscinterface.OscUdpInterface`) pointed at the host's port
-rather than the server's, and builds messages with the existing encoder — there
-is no parallel wire code here. Keep the split: building the GuiDef tree (see
-`clausters.gui.guidef`) is host-agnostic; only this object talks to the host.
+of the audio commands. So `GuiHost` reuses the existing OSC interfaces
+(`clausters.base.OscTcpInterface` by default — the host listens on TCP at the
+same port, so a ``/gui_def`` tree is not bounded by a UDP datagram —
+`clausters.base.OscUdpInterface` with ``transport="udp"``) pointed at the
+host's port rather than the server's, and builds messages with the existing
+encoder — there is no parallel wire code here. Keep the split: building the
+GuiDef tree (see `clausters.gui.guidef`) is host-agnostic; only this object
+talks to the host.
 
 This is the request/reply face used at the skeleton milestone: ``define`` sends
 a whole tree, ``set``/``free`` mutate it, and ``query`` round-trips a widget's
@@ -18,22 +21,35 @@ up as the interactive widgets land.
 import itertools
 
 from ..base import _osclib
-from ..base._oscinterface import OscUdpInterface
+from ..base._oscinterface import OscTcpInterface, OscUdpInterface
 from .guidef import to_json
 
 __all__ = ["GuiHost", "DEFAULT_PORT"]
 
-#: The GUI host's default UDP port (the host's ``transport::DEFAULT_PORT``),
-#: clear of the audio server's family (UDP/TCP 57110, WebSocket 57120).
+#: The GUI host's default port, UDP and TCP alike (the host's
+#: ``transport::DEFAULT_PORT``), clear of the audio server's family
+#: (UDP/TCP 57110, WebSocket 57120).
 DEFAULT_PORT = 57210
 
 
 class GuiHost:
-    """A connection to a running ``clausters-gui`` host over UDP."""
+    """A connection to a running ``clausters-gui`` host.
 
-    def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT):
+    ``transport`` picks the carrier: ``"tcp"`` (default — reliable, and a
+    ``/gui_def`` tree with its blobs can be as large as the host's frame
+    ceiling) or ``"udp"`` (each message must fit a datagram; for constrained
+    setups or a host started with ``--no-tcp``).
+    """
+
+    def __init__(self, host: str = "127.0.0.1", port: int = DEFAULT_PORT,
+                 transport: str = "tcp"):
         self.target = (host, port)
-        self._osc = OscUdpInterface()
+        if transport == "tcp":
+            self._osc = OscTcpInterface(host, port)
+        elif transport == "udp":
+            self._osc = OscUdpInterface()
+        else:
+            raise ValueError(f"unknown transport {transport!r} (tcp or udp)")
         #: window ids opened through `open` and not yet `close`d (auto-assigned
         #: ids start here, so they never clash with explicit small ids you pass).
         self._open: set[int] = set()
@@ -45,7 +61,8 @@ class GuiHost:
 
     @classmethod
     def boot(cls, server: "str | None" = None, *, shm: "str | None" = None,
-             port: "int | None" = None, verbose: int = 0, data_dir=None,
+             port: "int | None" = None, transport: str = "tcp",
+             verbose: int = 0, data_dir=None,
              extra_args=(), ready_timeout: float = 10.0) -> "GuiHost":
         """Start a ``clausters-gui`` visual-server process and return a `GuiHost`
         connected to and owning it.
@@ -62,7 +79,10 @@ class GuiHost:
                 a host with no client leg.
             shm: the audio server's shared-memory segment path to map (Unix
                 only), or ``None`` to skip it.
-            port: the GUI host's own UDP port; ``None`` uses the default (57210).
+            port: the GUI host's own port (UDP and TCP alike); ``None`` uses
+                the default (57210).
+            transport: the carrier this `GuiHost` talks over — ``"tcp"``
+                (default) or ``"udp"``.
             verbose: host log verbosity, like `clausters.defs.Server.boot`.
             data_dir: the host's ``--data-dir`` for its GuiDef store.
             extra_args: extra host CLI tokens.
@@ -77,7 +97,7 @@ class GuiHost:
         proc = GuiProcess(server=server, shm=shm, port=port, verbose=verbose,
                           data_dir=data_dir, extra_args=extra_args,
                           ready_timeout=ready_timeout).start()
-        host = cls("127.0.0.1", port).start()
+        host = cls("127.0.0.1", port, transport=transport).start()
         host._process = proc
         return host
 

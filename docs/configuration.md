@@ -63,7 +63,10 @@ port = 57110             # server UDP port
 latency = 0.0            # seconds added to each event's timetag
 
 [gui]                    # the GUI host
-host_port = 57210        # UDP port for the host's script-facing front
+host_port = 57210        # port for the host's script-facing front (UDP + TCP)
+# tcp = true             # the front's TCP leg (on by default at host_port):
+#                        # false disables it, a port number moves it
+# max_frame = 16777216   # largest OSC frame on the TCP leg, in bytes
 # server = "127.0.0.1:57110"  # also attach the client leg to this audio server
 # shm = "/clausters"          # map this segment for meters/scopes
 # data_dir = "/path"          # GuiDef store location
@@ -89,7 +92,8 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
   `--midi`, `--shm`, `--data-dir`, `--no-persist`). A flag on
   the command line overrides the file.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
-  (`--port`, `--server`, `--shm`, `--data-dir`, `--headless`); the `[standalone]`
+  (`--port`, `--tcp`/`--no-tcp`, `--max-frame`, `--server`, `--shm`,
+  `--data-dir`, `--headless`); the `[standalone]`
   section supplies the standalone launch. `clausters-gui --standalone` with no
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.

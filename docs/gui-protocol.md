@@ -2,8 +2,13 @@
 
 The GUI host is a **separate peer**, not part of the audio server: it owns the
 windows, the widgets and the GPU, and a script drives it over OSC — the same
-encoding the audio server speaks, only the vocabulary differs. Its default UDP
-port is **57210** (clear of the audio server's 57110/57120).
+encoding the audio server speaks, only the vocabulary differs. Its default port
+is **57210** (clear of the audio server's 57110/57120), on **UDP and TCP
+alike**: like the audio server, the host accepts length-prefixed OSC over TCP
+by default (`--no-tcp` disables it, `--max-frame` sets the frame ceiling,
+default 16 MiB), and the Python `GuiHost` connects over TCP by default — so a
+`/gui_def` tree with its blobs, the largest payload in the system, is not
+bounded by a UDP datagram.
 
 This page is the wire reference. The *why* behind it — the host's two roles, the
 declarative protocol, the GPU substrate, the composition views — is in

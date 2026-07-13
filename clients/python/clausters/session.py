@@ -172,7 +172,8 @@ class Session:
         iface = OscEmbedInterface(server, workers=workers)
         return cls(Server(interface=iface, latency=latency), TempoClock(tempo, timebase=timebase))
 
-    def gui(self, *, port: "int | None" = None, verbose: int = 0, data_dir=None,
+    def gui(self, *, port: "int | None" = None, transport: str = "tcp",
+            verbose: int = 0, data_dir=None,
             extra_args=(), ready_timeout: float = 10.0):
         """Launch (once) a ``clausters-gui`` visual server wired to this session's
         server, and return a `clausters.gui.GuiHost` connected to it.
@@ -189,8 +190,11 @@ class Session:
         other options of the first call stand).
 
         Args:
-            port: the GUI host's own UDP port (script -> host); ``None`` uses the
-                host default (57210).
+            port: the GUI host's own port (script -> host, UDP and TCP alike);
+                ``None`` uses the host default (57210).
+            transport: the carrier this session talks to the host over —
+                ``"tcp"`` (default; a ``/gui_def`` tree is not bounded by a
+                datagram) or ``"udp"``.
             verbose: host log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/``-vvv``).
             data_dir: the host's ``--data-dir`` for its GuiDef store.
             extra_args: extra host CLI tokens.
@@ -207,7 +211,8 @@ class Session:
 
         server_addr = f"{self.server.target.host}:{self.server.target.port}"
         self._gui = GuiHost.boot(
-            server=server_addr, shm=self.server.shm, port=port, verbose=verbose,
+            server=server_addr, shm=self.server.shm, port=port,
+            transport=transport, verbose=verbose,
             data_dir=data_dir, extra_args=extra_args, ready_timeout=ready_timeout,
         )
         return self._gui

@@ -271,7 +271,8 @@ class GuiProcess(_Process):
             buffer or bind to the server then have no target).
         shm: the audio server's shared-memory segment path to map (Unix only),
             or ``None`` to skip it.
-        port: the GUI host's own UDP port (script -> host); default 57210.
+        port: the GUI host's own port (script -> host, UDP and TCP alike);
+            default 57210.
         verbose: host log verbosity, like `ServerProcess`.
         data_dir: ``--data-dir`` for the GuiDef store; ``None`` uses the default.
         extra_args: extra CLI tokens appended verbatim.

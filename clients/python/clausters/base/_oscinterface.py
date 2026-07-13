@@ -200,7 +200,8 @@ class OscTcpInterface(OscInterface):
     same framing scsynth uses and the server's ``osc::tcp`` expects; replies
     arrive framed the same way over the one connection. A drop-in for
     `OscUdpInterface` (the ``target`` argument is ignored: the connection
-    already knows its peer). Start the server with ``--tcp``."""
+    already knows its peer). The server listens on TCP by default, at the same
+    port as UDP (``--no-tcp`` disables it)."""
 
     time_mode = "unix"
 

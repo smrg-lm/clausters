@@ -9,6 +9,16 @@
 
 pub use rosc::{OscBundle, OscMessage, OscPacket, OscTime, OscType};
 
+/// Default ceiling for one OSC frame on the stream transports (TCP and
+/// WebSocket), in bytes — shared by the audio server and the GUI host so both
+/// ends of the wire agree. With length-prefixed framing the ceiling is a DoS
+/// guard — an untrusted prefix must not drive an allocation — not a protocol
+/// limit, so it is boot-time configuration (`--max-frame`), sized generously
+/// for the target deployments (loopback and controlled networks): whole
+/// SynthDef/GuiDef payloads and megabyte buffer chunks fit in one frame. UDP
+/// keeps the ~64 KB datagram cap the OS imposes.
+pub const DEFAULT_MAX_FRAME: usize = 16 * 1024 * 1024;
+
 /// Seconds between the NTP epoch (1900-01-01) and the Unix epoch (1970-01-01).
 const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 

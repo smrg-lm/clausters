@@ -18,7 +18,7 @@
 //! a `<canvas>` surface and the rest is unchanged.
 
 use std::collections::{HashMap, VecDeque};
-use std::net::{Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr, TcpStream, UdpSocket};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -65,12 +65,27 @@ const FRAME: Duration = Duration::from_millis(33);
 /// poll picks up `/n_set` control changes (which raise no notification).
 const NODETREE_POLL: Duration = Duration::from_millis(200);
 
+/// The origin of a window with no script behind it (a standalone's pre-loaded
+/// GuiDef): a UDP port-0 placeholder no reply is ever sent to.
+const PLACEHOLDER_ORIGIN: ClientId = ClientId::Udp(SocketAddr::new(
+    std::net::IpAddr::V4(Ipv4Addr::LOCALHOST),
+    0,
+));
+
 /// What the background transport threads hand the main (winit) thread.
 #[derive(Debug)]
 pub enum UserEvent {
     /// One OSC datagram from a script and where it came from (decoded on the main
     /// thread, through the single shared door, to keep all logic on one thread).
     Osc { from: SocketAddr, bytes: Vec<u8> },
+    /// A new TCP connection on the script front (G25): its id and the write
+    /// half its replies go out through. The reader threads feed the event loop
+    /// directly (no wake datagram needed — the proxy *is* the wake).
+    TcpConnected { id: u64, stream: TcpStream },
+    /// One framed OSC packet from TCP connection `id`.
+    TcpOsc { id: u64, bytes: Vec<u8> },
+    /// TCP connection `id` closed; its write half is dropped.
+    TcpDisconnected { id: u64 },
     /// One OSC reply from the audio server (the client leg): `/b_info`, `/b_setn`.
     ServerOsc { bytes: Vec<u8> },
 }
@@ -78,8 +93,16 @@ pub enum UserEvent {
 /// Runs the windowed host: spawn the transport thread(s), map the shared segment
 /// if one was given, then own the winit event loop on this (main) thread until
 /// the process is stopped. `shm_path` is the audio server's `--shm` segment, read
-/// each frame for meters/scopes; `None` leaves those views reading zero.
-pub fn run(host: Host, socket: Arc<UdpSocket>, shm_path: Option<String>) -> Result<(), String> {
+/// each frame for meters/scopes; `None` leaves those views reading zero. `tcp`
+/// is the script front's TCP carrier — `(port, max_frame)` — bound here because
+/// its reader threads feed the event loop through its proxy (no wake datagram:
+/// the proxy is the wake); `None` leaves the front UDP-only.
+pub fn run(
+    host: Host,
+    socket: Arc<UdpSocket>,
+    shm_path: Option<String>,
+    tcp: Option<(u16, usize)>,
+) -> Result<(), String> {
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
         .map_err(|e| format!("cannot create the window event loop ({e}); use --headless on a machine with no display"))?;
@@ -93,6 +116,22 @@ pub fn run(host: Host, socket: Arc<UdpSocket>, shm_path: Option<String>) -> Resu
         .name("clausters-gui-osc".into())
         .spawn(move || transport_loop(recv_socket, script_proxy))
         .map_err(|e| e.to_string())?;
+    // The framed TCP leg of the same front, straight into the event loop.
+    if let Some((port, max_frame)) = tcp {
+        let tcp_proxy = proxy.clone();
+        let bound = super::tcp::bind_with_sink(("127.0.0.1", port), max_frame, move |event| {
+            let user_event = match event {
+                super::tcp::TcpEvent::Connected(id, stream) => {
+                    UserEvent::TcpConnected { id, stream }
+                }
+                super::tcp::TcpEvent::Frame(id, bytes) => UserEvent::TcpOsc { id, bytes },
+                super::tcp::TcpEvent::Disconnected(id) => UserEvent::TcpDisconnected { id },
+            };
+            tcp_proxy.send_event(user_event).is_ok()
+        })
+        .map_err(|e| format!("failed to bind TCP port {port}: {e}"))?;
+        tracing::info!("clausters-gui host listening on tcp://{bound} (script -> host)");
+    }
     // The host <- audio-server reply path: a background thread only for the UDP
     // leg (the embed link is polled in the event loop, no socket to drain).
     if let Some(leg_socket) = host.server().and_then(|s| s.udp_socket()) {
@@ -363,7 +402,7 @@ struct WindowState {
     /// The second mesh pass: editor chrome drawn over the heavy views
     /// (selection, playhead, rulers' overlay parts, cursor readout).
     overlay: Painter,
-    origin: SocketAddr,
+    origin: ClientId,
     cursor: (f64, f64),
     /// Whether Shift is held (Shift+drag pans a timeline view; plain drag
     /// selects).
@@ -392,8 +431,11 @@ struct App {
     shm: Option<Arc<dyn BusSource>>,
     windows: HashMap<i32, WindowState>,
     by_winit: HashMap<WindowId, i32>,
+    /// TCP write halves by connection id (the script front's stream carrier);
+    /// registered on `TcpConnected`, pruned on `TcpDisconnected`.
+    tcp_conns: HashMap<u64, TcpStream>,
     /// Window opens requested before the first `resumed`, flushed on resume.
-    pending: Vec<(i32, SocketAddr)>,
+    pending: Vec<(i32, ClientId)>,
     resumed: bool,
     /// Next scheduled repaint for animated (meter/scope) windows.
     next_frame: Instant,
@@ -441,6 +483,7 @@ impl App {
             shm,
             windows: HashMap::new(),
             by_winit: HashMap::new(),
+            tcp_conns: HashMap::new(),
             pending: Vec::new(),
             resumed: false,
             next_frame: Instant::now(),
@@ -536,7 +579,7 @@ impl App {
         })
     }
 
-    fn apply(&mut self, event_loop: &ActiveEventLoop, from: SocketAddr, effects: Vec<HostEffect>) {
+    fn apply(&mut self, event_loop: &ActiveEventLoop, from: ClientId, effects: Vec<HostEffect>) {
         for effect in effects {
             match effect {
                 HostEffect::Reply(msg) => self.send(from, msg),
@@ -557,16 +600,30 @@ impl App {
         }
     }
 
-    /// Encodes and sends one message to `to`.
-    fn send(&self, to: SocketAddr, msg: OscMessage) {
+    /// Encodes and sends one message to `to`, over the transport it belongs to.
+    fn send(&self, to: ClientId, msg: OscMessage) {
         let addr = msg.addr.clone();
-        match encode(&OscPacket::Message(msg)) {
-            Ok(bytes) => {
+        let bytes = match encode(&OscPacket::Message(msg)) {
+            Ok(bytes) => bytes,
+            Err(e) => return warn!("failed to encode {addr}: {e}"),
+        };
+        match to {
+            ClientId::Udp(to) => {
                 if let Err(e) = self.socket.send_to(&bytes, to) {
                     warn!("failed to send {addr} to {to}: {e}");
                 }
             }
-            Err(e) => warn!("failed to encode {addr}: {e}"),
+            ClientId::Tcp(id) => {
+                // Length-prefixed on the originating connection; dropped if it
+                // has since closed (TcpDisconnected prunes it).
+                if let Some(stream) = self.tcp_conns.get(&id)
+                    && let Err(e) = super::tcp::write_frame(stream, &bytes)
+                {
+                    warn!("failed to send {addr} to tcp client {id}: {e}");
+                }
+            }
+            // The wasm front never reaches the native event loop.
+            ClientId::Web => warn!("reply {addr} to a web client on the native front"),
         }
     }
 
@@ -1007,7 +1064,7 @@ impl App {
         self.emit(def_id, widget_id, args);
     }
 
-    fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: SocketAddr) {
+    fn open_window(&mut self, event_loop: &ActiveEventLoop, id: i32, origin: ClientId) {
         // Read the window metadata, releasing the host borrow before mutating
         // (drop_window) and before re-borrowing the tree for the waveforms.
         let Some((title, width, height)) = self.host.window_def(id).and_then(|t| match &t.kind {
@@ -1408,11 +1465,12 @@ impl App {
     }
 
     /// User-initiated close: tell the script, then drop the window. A standalone
-    /// window has the placeholder origin (port 0) — there is no script to notify,
-    /// so the `/gui_closed` is skipped (sending to port 0 fails with EINVAL).
+    /// window has the placeholder origin (UDP port 0) — there is no script to
+    /// notify, so the `/gui_closed` is skipped (sending to port 0 fails with
+    /// EINVAL).
     fn close_by_user(&mut self, id: i32) {
         if let Some(ws) = self.windows.get(&id)
-            && ws.origin.port() != 0
+            && ws.origin != PLACEHOLDER_ORIGIN
         {
             self.send(
                 ws.origin,
@@ -2801,7 +2859,7 @@ impl ApplicationHandler<UserEvent> for App {
         // (no `/gui_def` over the wire) is opened now. Its events have no script
         // to return to, so they go to a placeholder origin. Pre-loaded windows
         // mean this is a standalone app — closing the last one quits it.
-        let standalone_origin = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let standalone_origin = PLACEHOLDER_ORIGIN;
         let preloaded = self.host.window_def_ids();
         self.standalone = !preloaded.is_empty();
         for id in preloaded {
@@ -2818,8 +2876,24 @@ impl ApplicationHandler<UserEvent> for App {
                     Ok(p) => p,
                     Err(e) => return warn!("malformed OSC packet from {from}: {e}"),
                 };
-                let effects = self.host.handle_packet(packet, ClientId::Udp(from));
+                let from = ClientId::Udp(from);
+                let effects = self.host.handle_packet(packet, from);
                 self.apply(event_loop, from, effects);
+            }
+            UserEvent::TcpConnected { id, stream } => {
+                self.tcp_conns.insert(id, stream);
+            }
+            UserEvent::TcpOsc { id, bytes } => {
+                let packet = match clausters_core::osc::decode_packet(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => return warn!("malformed OSC packet from tcp client {id}: {e}"),
+                };
+                let from = ClientId::Tcp(id);
+                let effects = self.host.handle_packet(packet, from);
+                self.apply(event_loop, from, effects);
+            }
+            UserEvent::TcpDisconnected { id } => {
+                self.tcp_conns.remove(&id);
             }
             UserEvent::ServerOsc { bytes } => match clausters_core::osc::decode_packet(&bytes) {
                 Ok(packet) => self.handle_server_packet(packet),
