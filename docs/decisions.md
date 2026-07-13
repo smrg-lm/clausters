@@ -590,3 +590,27 @@ move (a `/tap_stream` window may fill a whole frame for a stream client; UDP
 keeps the datagram-safe clamp), and the IPC command rings deliberately stayed
 at 64 KiB — large payloads ride TCP even locally, and growing the ring would
 bump the versioned segment layout for no demonstrated need.
+
+## Package SemVer is decoupled from the binary ABI counters
+
+Compatibility is tracked by **two monotonic integer counters** —
+`ABI_VERSION` (the shm segment layout + embed C ABI) and `CORE_ABI_VERSION`
+(the core FFI surface) — not by the package's SemVer. A release bumps a counter
+only when *that* boundary changes incompatibly, and both are advertised by
+runtime calls (`clausters_abi_version()`, `clausters_core_abi_version()`) that a
+peer checks on attach/load, refusing to connect on a mismatch.
+
+**Why.** A binary boundary needs a check that a *already-compiled* peer can make
+at runtime, before it trusts a single byte of layout — SemVer strings cannot do
+that job, and the two boundaries evolve on independent cadences (the core FFI is
+already at v9 while the embed/IPC ABI is at v3). A monotonic integer per
+boundary is exactly the scsynth plugin-ABI lesson: every binary seam is
+versioned and verified where it is crossed. SemVer is left to govern the
+*package* — what `cargo`/`pip` resolves — where it belongs.
+
+The one **linkage** rule keeps them from drifting into contradiction: a release
+that bumps either counter must also bump SemVer's breaking tier (the minor while
+the major is `0`, per standard pre-1.0 SemVer where the minor acts as the major;
+the major once at `1.0`). The reverse is not required — a minor can ship purely
+additive source-API work without touching either counter. The mechanical
+release rules live in `CLAUDE.md` ("Versioning"); this entry is the *why*.

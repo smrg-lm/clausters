@@ -77,6 +77,37 @@ cargo build --no-default-features
 cargo build --release --features embed,realtime
 ```
 
+## Versioning and the ABI counters (release)
+
+Three version numbers answer different questions; keep them distinct:
+
+| number | where | contract | checked |
+|---|---|---|---|
+| package **SemVer** | `version` in `Cargo.toml` (+ the Python wheel) | source/package — what `cargo`/`pip` resolves | at resolve/install time |
+| embed / IPC **`ABI_VERSION`** | `src/server/ipc.rs`, via `clausters_abi_version()` | shm segment layout + embed C ABI | at runtime, on attach |
+| core FFI **`CORE_ABI_VERSION`** | `crates/clausters-ffi`, via `clausters_core_abi_version()` | the language-agnostic C surface | at runtime, on load |
+
+The two integer counters — not SemVer — are the **source of truth for binary
+compatibility**: monotonic, bumped only when their own boundary changes
+incompatibly, and verified at runtime by an already-compiled peer, which refuses
+to connect on a mismatch. SemVer governs the package, never the wire.
+
+**Release rules:**
+
+1. **Pre-1.0 (major `0`)** the **minor** is the breaking tier (standard SemVer —
+   the minor acts as the major). *Any* incompatible change (source API **or**
+   binary boundary) bumps the minor; additive/corrective changes bump the patch.
+2. Bump `ABI_VERSION` / `CORE_ABI_VERSION` **only** when that boundary changes
+   incompatibly, independently of SemVer.
+3. **Linkage (one-way):** a release that bumps either counter **must** bump
+   SemVer's breaking tier (minor pre-1.0, major post-1.0). The reverse does not
+   hold — a minor can ship purely additive work without touching a counter.
+4. At **`1.0.0`** the standard post-1.0 semantics take over (major breaks, minor
+   adds, patch fixes); the counters keep their role.
+
+The current tree is `0.1.0`; the next tag is `0.2.0`. Rationale for the decouple
+is in `docs/decisions.md`.
+
 ### The `faust` feature (default)
 
 The FaustDef family needs **libfaust built with the LLVM backend**. Since the
