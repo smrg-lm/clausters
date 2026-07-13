@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::faust::compiler::{CompilePayload, ffi_lock};
+use crate::faust::compiler::{CompilePayload, ffi_lock, host_target};
 use crate::faust::factory::FaustFactory;
 use crate::faust::ffi;
 use crate::server::defstore::{atomic_write, read_json_files, sanitize_name};
@@ -196,7 +196,7 @@ pub fn remove(dir: &Path, name: &str) {
 pub fn read_bitcode(path: &Path) -> Result<FaustFactory, String> {
     let path_c = CString::new(path.as_os_str().as_encoded_bytes())
         .map_err(|_| "NUL byte in cache path".to_string())?;
-    let target = CString::new("").unwrap(); // host
+    let target = host_target();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
 
     let _guard = ffi_lock();

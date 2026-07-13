@@ -27,6 +27,12 @@ env:
   FAUST_SHA: 56c9e678ddff8688bf113db145033ac8a10c4795
   # build.rs locates libfaust here (it also falls back to ~/.local on its own).
   FAUST_PREFIX: /home/runner/.local
+  # Force the Faust LLVM JIT onto a baseline x86-64 CPU (empty triple = host
+  # triple, generic mcpu). Virtualized CI runners can misreport their CPU
+  # features, so host-tuned JIT code SIGILLs at run time on some Azure SKUs;
+  # a baseline target is deterministic. Unset in production (wheel/server), so
+  # a real machine still gets host-tuned code. See docs/decisions.md.
+  CLAUSTERS_FAUST_TARGET: ":x86-64"
 
 jobs:
   # Build libfaust once (or hit the cache) so the faust-linking jobs below can

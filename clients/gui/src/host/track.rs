@@ -372,6 +372,9 @@ pub fn clip_source_at(body: Rect, nav: &View, clip: &ClipDraw, total: f64, x: f3
 /// body honours zoom and pan; when a column spans less than a couple of samples it
 /// draws the polyline instead (the zoomed-in regime). Never resolves finer than
 /// the screen — the one graphics rule.
+// mesh + target/body rects + nav + clip + total span + the two source accessors:
+// all distinct inputs to one wave-drawing pass, clearer flat than bundled.
+#[allow(clippy::too_many_arguments)]
 fn draw_wave_body(
     mesh: &mut Mesh,
     cr: Rect,

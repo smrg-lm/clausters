@@ -147,6 +147,31 @@ So `faust` joins the default set, and the packaging bundles it:
   its libLLVM is resolved through ours. With `RUNPATH` the loader would fall back
   to the system libLLVM — or find none.
 
+## CI with a default `faust`: one shared libfaust, and a baseline JIT CPU
+
+Making `faust` default turned every job that links the default build (clippy,
+the default-set tests, the Python client, the release wheel/server) into a
+libfaust consumer, where before only one dedicated job needed it. Two choices
+keep that cheap and green:
+
+- **One `libfaust` job builds it; everyone else restores a cache.** A single
+  job runs the from-source build (pinned to `FAUST_SHA`) and, crucially, stages
+  the libLLVM it JITs with *into `<prefix>/lib` beside libfaust.so*. Downstream
+  jobs `needs:` it and restore the cache through the `.github/actions/libfaust`
+  composite; the same `DT_RPATH` that makes the wheel self-contained
+  (`<prefix>/lib`, inherited transitively) then resolves both libfaust and its
+  libLLVM, so a consumer needs **no LLVM runtime installed** — only the restore.
+  A warm cache makes every downstream job free. `release.yml` uses the same
+  composite, so the wheel build no longer sets up libfaust by hand.
+- **CI pins a baseline JIT CPU (`CLAUSTERS_FAUST_TARGET=:x86-64`).** The Faust
+  factory JITs for `""` = the host machine, and LLVM tunes the code to the
+  detected CPU — correct and fast on a *real* machine, which is why production
+  leaves it unset. But virtualized CI runners can report CPU features the
+  hypervisor then traps, so host-tuned JIT code `SIGILL`s at run time on some
+  Azure SKUs (seen intermittently, VM-dependent). An empty triple with a generic
+  `mcpu` (`:x86-64`) emits baseline SSE2 code that runs anywhere. The override is
+  a plain env var read by `faust::compiler::host_target`, so only CI opts in.
+
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 
 Two layers, decided with the user:

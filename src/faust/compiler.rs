@@ -209,6 +209,18 @@ impl FaustArgs {
     }
 }
 
+/// The LLVM target the factory JITs for, as a Faust `triple:mcpu` string.
+///
+/// Empty — the default, and what a production server wants — means the host
+/// machine: LLVM detects the CPU and emits code tuned for it. The
+/// `CLAUSTERS_FAUST_TARGET` env var overrides it; CI sets a baseline CPU
+/// (`:x86-64`) because virtualized runners can misreport their CPU features and
+/// then SIGILL when the JIT emits host-tuned instructions the VM cannot run.
+pub(crate) fn host_target() -> CString {
+    let spec = std::env::var("CLAUSTERS_FAUST_TARGET").unwrap_or_default();
+    CString::new(spec).unwrap_or_default()
+}
+
 fn stdlib_dir() -> Option<String> {
     let mut prefixes = Vec::new();
     if let Ok(prefix) = std::env::var("FAUST_PREFIX") {
@@ -297,7 +309,7 @@ fn run_request(req: &CompileRequest) -> Result<FaustDef, String> {
 fn compile_source(name: &str, source: &str) -> Result<FaustFactory, String> {
     let name_c = CString::new(name).map_err(|_| "NUL byte in name".to_string())?;
     let source_c = CString::new(source).map_err(|_| "NUL byte in source".to_string())?;
-    let target = CString::new("").unwrap(); // current machine
+    let target = host_target();
     let args = FaustArgs::defaults();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
 
@@ -323,7 +335,7 @@ fn compile_json(name: &str, json: &str) -> Result<FaustFactory, String> {
     let root: serde_json::Value =
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
     let name_c = CString::new(name).map_err(|_| "NUL byte in name".to_string())?;
-    let target = CString::new("").unwrap();
+    let target = host_target();
     let args = FaustArgs::defaults();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
     // Labels handed to libfaust stay alive until the factory exists.
@@ -353,7 +365,7 @@ fn compile_signal(name: &str, json: &str) -> Result<FaustFactory, String> {
     let root: serde_json::Value =
         serde_json::from_str(json).map_err(|e| format!("invalid JSON: {e}"))?;
     let name_c = CString::new(name).map_err(|_| "NUL byte in name".to_string())?;
-    let target = CString::new("").unwrap();
+    let target = host_target();
     let args = FaustArgs::defaults();
     let mut error_msg = [0 as c_char; ffi::ERROR_MSG_SIZE];
     let mut cstrings = Vec::new();

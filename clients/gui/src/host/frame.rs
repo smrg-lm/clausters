@@ -281,6 +281,7 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) timelines: &'a TimelineGroups,
     /// A rewiring drag in flight on a `graph` patch: the widget, the port being
     /// dragged and the cursor — drawn as a wire following the pointer.
+    #[allow(clippy::type_complexity)] // node id, (port), (cursor) — documented above
     pub(crate) wiring: Option<(i32, (usize, usize), (f32, f32))>,
 }
 
