@@ -36,7 +36,7 @@ runs:
 
     - name: Restore the libfaust install
       id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           ${{ inputs.prefix }}/lib/libfaust*
