@@ -22,7 +22,7 @@ from ..base import _osclib
 from ..errors import CommandError, ReplyTimeout
 from ..base.main import main
 from ..base.netaddr import NetAddr
-from ..base._oscinterface import OscNrtInterface, OscUdpInterface
+from ..base._oscinterface import OscNrtInterface, OscTcpInterface, OscUdpInterface, OscWsInterface
 from ..base.timebase import SampleClockTimebase
 from .bus import (
     AudioBusAllocator,
@@ -247,11 +247,17 @@ class ServerInfo:
     #: (or predates taps).
     taps: int = 0
     tap_frames: int = 0
+    #: The stream-transport frame ceiling in bytes (``--max-frame``): the
+    #: largest OSC frame a TCP/WebSocket client may send or receive, what
+    #: bulk requests (`Server.get_samples` chunks) are sized from. Falls back
+    #: to the UDP datagram cap against a server too old to report it.
+    max_frame: int = 65536
 
 
 class Server:
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
-                 latency: "float | None" = None, options: "ServerOptions | None" = None):
+                 latency: "float | None" = None, options: "ServerOptions | None" = None,
+                 transport: "str | None" = None):
         # An explicit argument wins; otherwise the config file's ``[client]``
         # section provides the default, then the built-in fallback. This is the
         # client end of the same config the server reads.
@@ -260,9 +266,28 @@ class Server:
         port = port if port is not None else cfg.get("port", 57110)
         latency = latency if latency is not None else cfg.get("latency", 0.0)
         self.target = NetAddr(host, port)
-        #: the communication interface (RT/UDP, NRT/score, …). The Server owns
-        #: it; swapping it is the RT/NRT seam.
-        self.interface = interface if interface is not None else OscUdpInterface().start()
+        #: the communication interface (RT/TCP by default, NRT/score, …). The
+        #: Server owns it; swapping it is the RT/NRT seam. ``transport`` picks
+        #: the default carrier when no explicit ``interface`` is given:
+        #: ``"tcp"`` (the command plane — reliable, and a def or a bulk read is
+        #: not bounded by a datagram; the connection opens lazily on first
+        #: use), ``"udp"`` (each packet must fit a datagram) or ``"ws"``. UDP
+        #: remains the *discovery* protocol: `boot` probes over it before
+        #: connecting.
+        if interface is not None:
+            self.interface = interface
+        else:
+            transport = transport if transport is not None else cfg.get("transport", "tcp")
+            if transport == "tcp":
+                # Not started here: it connects on first send, so a handle may
+                # be built before (or without) a reachable server.
+                self.interface = OscTcpInterface(host, port)
+            elif transport == "udp":
+                self.interface = OscUdpInterface().start()
+            elif transport == "ws":
+                self.interface = OscWsInterface(host)
+            else:
+                raise ValueError(f"unknown transport {transport!r} (tcp, udp or ws)")
         #: seconds added to RT timetags so they land in the (near) future,
         #: sample-accurate, instead of "as soon as possible" (scsynth latency).
         self.latency = latency
@@ -276,6 +301,8 @@ class Server:
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator()
         self._sync_counter = 0      # ids for /sync -> /synced round-trips
+        #: the server's stream-frame ceiling, queried lazily by `_bulk_chunk`.
+        self._max_frame: "int | None" = None
         #: the server *process* this handle started and owns (`boot`), if any;
         #: stopped by `close`. ``None`` when attached to a server it did not
         #: start.
@@ -283,6 +310,7 @@ class Server:
 
     @classmethod
     def boot(cls, options: "ServerOptions | None" = None, *, shm="auto",
+             transport: "str | None" = None,
              verbose: int = 0, data_dir=None, server_args=(),
              latency: "float | None" = None, ready_timeout: float = 10.0) -> "Server":
         """Start a **separate** ``clausters`` server process and return a `Server`
@@ -300,6 +328,9 @@ class Server:
                 handle's allocators alike; ``None`` uses the server's defaults.
             shm: the shared-memory segment — ``"auto"`` picks one, a path forces
                 it, ``None`` launches without one. Remembered for a GUI to map.
+            transport: the carrier this handle talks over — ``"tcp"``
+                (default), ``"udp"`` or ``"ws"`` (a ``--ws`` server). The
+                boot-or-attach probe itself always rides UDP.
             verbose: server log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/
                 ``-vvv``; negative -> ``-q``).
             data_dir: the server's ``--data-dir``; ``None`` uses its default.
@@ -314,7 +345,8 @@ class Server:
 
         proc = ServerProcess(options, shm=shm, verbose=verbose, data_dir=data_dir,
                              extra_args=server_args, ready_timeout=ready_timeout).start()
-        server = cls(proc.host, proc.port, latency=latency, options=options)
+        server = cls(proc.host, proc.port, latency=latency, options=options,
+                     transport=transport)
         server._process = proc
         return server
 
@@ -435,6 +467,7 @@ class Server:
             max_ugen_inputs=at(10, int, DEFAULT_MAX_UGEN_INPUTS),
             taps=at(11, int, 0),
             tap_frames=at(12, int, 0),
+            max_frame=at(13, int, 65536),
         )
 
     # ---- node tree introspection (RT only) ----
@@ -805,13 +838,21 @@ class Server:
         return Buffer(bufnum, frames, channels, sample_rate)
 
     def get_samples(self, buf, start: int = 0, count: int = -1, *,
-                    chunk: int = 1024, timeout: float = 5.0):
+                    chunk: "int | None" = None, timeout: float = 5.0):
         """Fetch interleaved samples from a buffer (``/b_getn`` → ``/b_setn``),
         in chunks, as a stdlib ``array('f')``. ``count`` -1 = to the end (the
         shape is queried first). RT only (it needs replies); for display the GUI
-        host fetches buffers itself."""
+        host fetches buffers itself.
+
+        ``chunk`` (samples per round-trip) defaults to the transport's bound:
+        over a stream transport (TCP/WebSocket) it is sized from the frame
+        ceiling the server advertises in ``/server_info`` — megabytes per
+        reply — while over UDP each reply must fit a datagram, so it stays at
+        1024. Pass an explicit ``chunk`` to override either."""
         from array import array
         bufnum = buf.bufnum if isinstance(buf, Buffer) else buf
+        if chunk is None:
+            chunk = self._bulk_chunk(timeout)
         if count < 0:
             shape = self.query_buffer(buf, timeout=timeout)
             total = shape.frames * shape.channels
@@ -826,6 +867,20 @@ class Server:
             out.extend(float(v) for v in args[3:3 + int(args[2])])
             got += n
         return out
+
+    def _bulk_chunk(self, timeout: float) -> int:
+        """Samples per bulk round-trip for this interface: datagram-bounded
+        transports keep the classic 1024; a stream transport uses the frame
+        ceiling from ``/server_info`` (queried once and cached), minus headroom
+        for the reply's OSC envelope."""
+        if not isinstance(self.interface, (OscTcpInterface, OscWsInterface)):
+            return 1024
+        if self._max_frame is None:
+            try:
+                self._max_frame = self.query_info(timeout=timeout).max_frame
+            except ReplyTimeout:
+                return 1024  # no reply: stay conservative, retry next call
+        return max(1024, (self._max_frame - 256) // 4)
 
     # ---- offline render (NRT interface only) ----
 

@@ -92,10 +92,13 @@ pub struct ServerConfig {
 pub struct ClientConfig {
     /// The server host the client talks to.
     pub host: Option<String>,
-    /// The server's UDP port.
+    /// The server's port (one number serves UDP and TCP alike).
     pub port: Option<u16>,
     /// Seconds added to each event's timetag (scheduling latency).
     pub latency: Option<f64>,
+    /// The command carrier: `"tcp"` (the default), `"udp"` or `"ws"`. The
+    /// boot-or-attach probe always rides UDP.
+    pub transport: Option<String>,
 }
 
 /// `[gui]` — defaults for the GUI host's CLI options.
@@ -229,6 +232,7 @@ impl ClientConfig {
             host: pick(self.host, h.host),
             port: pick(self.port, h.port),
             latency: pick(self.latency, h.latency),
+            transport: pick(self.transport, h.transport),
         }
     }
 }

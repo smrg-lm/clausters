@@ -62,7 +62,7 @@ python clients/python/examples/embedded.py
 python clients/python/examples/offline_render.py out.wav
 ```
 
-**Live** sends the same pattern over UDP to a *separate* server. The wheel ships that server too, as the `clausters` command:
+**Live** sends the same pattern over the network (TCP by default; UDP probes for the server first) to a *separate* server. The wheel ships that server too, as the `clausters` command:
 
 ```sh
 clausters                                    # start the standalone server (its own process)

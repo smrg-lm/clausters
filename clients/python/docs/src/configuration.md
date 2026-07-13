@@ -19,8 +19,9 @@ Two sections feed the client's defaults:
   ```toml
   [client]
   host = "127.0.0.1"
-  port = 57110
+  port = 57110          # one number serves UDP and TCP alike
   latency = 0.0
+  # transport = "tcp"   # the command carrier: "tcp" (default), "udp" or "ws"
   ```
 
   With these set, `Session.live()` (no arguments) connects to `127.0.0.1:57110`

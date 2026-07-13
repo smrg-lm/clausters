@@ -85,9 +85,15 @@ class Session:
     @classmethod
     def live(cls, host: "str | None" = None, port: "int | None" = None, *,
              tempo: float = 1.0, latency: "float | None" = None, timebase=None,
-             boot: bool = True, options=None, shm="auto", verbose: int = 0,
+             boot: bool = True, options=None, shm="auto", transport: "str | None" = None,
+             verbose: int = 0,
              data_dir=None, server_args=(), ready_timeout: float = 10.0) -> "Session":
-        """Build a real-time session over UDP, **starting a server if none is up**.
+        """Build a real-time session, **starting a server if none is up**.
+
+        The probe (and the boot handshake) ride UDP — discovery stays
+        zero-config — and the session's command interface then connects over
+        **TCP by default** (``transport="udp"``/``"ws"`` opt across), so defs
+        and bulk reads are not bounded by a datagram.
 
         This is the everyday live-coding entry point. By default (``boot=True``)
         it ensures a server the way `nrt` ensures a renderer: if one already
@@ -121,6 +127,8 @@ class Session:
             shm: the shared-memory segment for a launched server — ``"auto"``
                 picks one, a path forces it, ``None`` launches without one. The
                 path is remembered so `gui` maps the same segment.
+            transport: the command carrier — ``"tcp"`` (default), ``"udp"`` or
+                ``"ws"``; ``None`` takes ``[client].transport`` from the config.
             verbose: launched-server log verbosity (``1``/``2``/``3`` -> ``-v``/
                 ``-vv``/``-vvv``; negative -> ``-q``).
             data_dir: a launched server's ``--data-dir``; ``None`` uses default.
@@ -132,10 +140,11 @@ class Session:
         """
         from .launch import server_is_up
 
-        server = Server(host, port, latency=latency, options=options)
+        server = Server(host, port, latency=latency, options=options, transport=transport)
         if boot and not server_is_up(server.target.host, server.target.port):
             server.close()  # drop the plain interface; boot opens its own
-            server = Server.boot(options=options, shm=shm, verbose=verbose,
+            server = Server.boot(options=options, shm=shm, transport=transport,
+                                 verbose=verbose,
                                  data_dir=data_dir, server_args=server_args,
                                  latency=latency, ready_timeout=ready_timeout)
         return cls(server, TempoClock(tempo, timebase=timebase))

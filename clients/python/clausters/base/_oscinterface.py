@@ -148,6 +148,12 @@ class OscInterface:
         pass
 
 
+#: The most bytes one UDP datagram can carry (the IPv4 ceiling minus headers).
+#: A packet over this cannot be sent at all — the OS rejects it — so the UDP
+#: interface refuses it early with an error naming the transport that can.
+_UDP_MAX = 65507
+
+
 class OscUdpInterface(OscInterface):
     """Real-time UDP: messages and bundles go out the socket immediately, and
     the server's replies come back to the bound socket (so the Server can do
@@ -177,12 +183,21 @@ class OscUdpInterface(OscInterface):
 
     def send_msg(self, target, addr, *args):
         self._ensure()
-        self._sock.sendto(_osclib.message(addr, *args), target)
+        self._sock.sendto(self._checked(_osclib.message(addr, *args), addr), target)
 
     def send_bundle(self, target, when, *messages):
         self._ensure()
         packets = [_osclib.message(*m) for m in messages]
-        self._sock.sendto(_osclib.bundle_at(when, *packets), target)
+        self._sock.sendto(self._checked(_osclib.bundle_at(when, *packets), "bundle"), target)
+
+    @staticmethod
+    def _checked(data: bytes, what) -> bytes:
+        if len(data) > _UDP_MAX:
+            raise ValueError(
+                f"OSC packet ({what}) is {len(data)} bytes, over the "
+                f"{_UDP_MAX}-byte UDP datagram cap; use the TCP transport "
+                f"(the default) for payloads this large")
+        return data
 
     def recv(self, timeout):
         self._ensure()

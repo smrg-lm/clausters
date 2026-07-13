@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Drive the server over OSC/TCP (client C8).
 
-The same `Server` facade as the UDP examples, but talking **length-prefixed
-OSC over a TCP connection** — a reliable, ordered, connection-oriented channel
-with no datagram-size limit. The only change is the destination interface:
-`Server(interface=OscTcpInterface().start())` instead of the default UDP. The
-server listens on TCP by default (same port as UDP; `--no-tcp` disables it):
+The `Server` facade talking **length-prefixed OSC over a TCP connection** — a
+reliable, ordered, connection-oriented channel with no datagram-size limit.
+Since C34 this is what `Server()` does by default; this example builds the
+interface explicitly (`Server(interface=OscTcpInterface().start())`) to show
+the seam, and `transport="udp"` is the way back to datagrams. The server
+listens on TCP by default (same port as UDP; `--no-tcp` disables it):
 
     cargo run --release                          # terminal 1 (OSC on TCP 57110)
     python3 examples/tcp_client.py               # terminal 2

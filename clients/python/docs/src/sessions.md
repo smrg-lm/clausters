@@ -12,7 +12,7 @@ This client deliberately has none of those globals. The clock does timing and no
 
 ## Kinds of session
 
-You almost always build a session with one of the factories rather than the constructor. They differ only in *where the bytes go* — offline into a score, over UDP to a separate server, or by function call to a server running inside this process — and otherwise behave identically.
+You almost always build a session with one of the factories rather than the constructor. They differ only in *where the bytes go* — offline into a score, over the network to a separate server, or by function call to a server running inside this process — and otherwise behave identically.
 
 `Session.nrt()` is an **offline** (non-real-time) session. Its server accumulates a timetagged *score* instead of sending anything, and `render()` turns that score into samples through the renderer bundled with the package. No server process and no audio device are involved.
 
@@ -37,7 +37,9 @@ the context that created it — never from per-pattern seeds, so `main.seed(n)`
 makes a whole piece reproducible end to end (see
 [Routines and clocks](routines-and-clocks.md)).
 
-`Session.live()` is a **real-time** session that sounds on a device over UDP. By default it **ensures a server** the way `nrt()` ensures a renderer: if one already answers it attaches to it, and if none does it **launches a separate `clausters` process** — choosing a shared-memory segment for you — and connects to that. So the everyday live case is one line, whether or not a server is already up; a server the session started is stopped when the session is closed or the interpreter exits, and one it merely attached to is left alone.
+`Session.live()` is a **real-time** session that sounds on a device over the network. By default it **ensures a server** the way `nrt()` ensures a renderer: if one already answers it attaches to it, and if none does it **launches a separate `clausters` process** — choosing a shared-memory segment for you — and connects to that. So the everyday live case is one line, whether or not a server is already up; a server the session started is stopped when the session is closed or the interpreter exits, and one it merely attached to is left alone.
+
+The two protocols have two roles: **UDP finds the server, TCP talks to it**. The boot-or-attach probe rides UDP (discovery stays zero-config, and any scsynth-style tool can do the same), and the session's command interface then connects over **TCP by default** — reliable, ordered, and not bounded by the ~64 KB UDP datagram, so a large def, a whole GuiDef tree or a megabyte buffer read travels as one frame (the ceiling is the server's `--max-frame`, advertised in `/server_info`). Pass `transport="udp"` (or set `[client].transport` in the config) for a datagram-only setup — e.g. a server started with `--no-tcp` — or `transport="ws"` for a `--ws` server. Timing is unaffected either way: it rides on bundle timetags and `/sched`, never on arrival time.
 
 ```python
 from clausters import Session
@@ -116,7 +118,7 @@ One rule carries over from the rest of the client: a routine must never block th
 
 ## The same code, live or offline
 
-The reason a session draws no line between "play" and "render" is the client's central design property, the *seam*: a `Server` holds one communication interface, and which interface it holds — not your pattern, not your clock — decides where the bytes go. A live session's server holds a UDP interface; an offline session's server holds a score-accumulating one. Everything above the server is identical.
+The reason a session draws no line between "play" and "render" is the client's central design property, the *seam*: a `Server` holds one communication interface, and which interface it holds — not your pattern, not your clock — decides where the bytes go. A live session's server holds a network interface (TCP by default); an offline session's server holds a score-accumulating one. Everything above the server is identical.
 
 So the only thing that changes between a live take and an offline render is **which factory you called**. You can write the pattern once and run it both ways:
 
