@@ -1,0 +1,20 @@
+# Pinned Faust toolchain for the vendored, reproducible build.
+#
+# Single source of truth for `third_party/build-faust.sh` (and, in a later
+# phase, the CI composite and the release build). Shell-sourceable: KEY=VALUE,
+# no spaces, no quoting needed.
+
+# The commit the bundled libfaust is built from: the master-dev base "Set
+# version to 2.86.0" (short 56c9e678d). Deliberately the UNPATCHED base -- the
+# clone may carry a local fix-boxcos-boxfmod branch for development, but the
+# shipped artifact stays on the base so the boxcos/boxfmod upstream-bug canaries
+# in tests/faust_box.rs and tests/faust_signal.rs remain valid. Full 40-char
+# SHA: fetching an arbitrary commit by SHA only resolves unabbreviated.
+FAUST_SHA=56c9e678ddff8688bf113db145033ac8a10c4795
+
+# The LLVM the shipped libLLVM is built against. Pinned so the bundled artifact
+# is deterministic regardless of build host (a plain `llvm-dev` would give
+# whatever the distro defaults to -- LLVM 18 on Ubuntu 24.04, e.g.). 21 is the
+# verified toolchain (Faust 2.86.0 + LLVM 21.1.8). The build drives it through
+# `llvm-config-<version>`; override with LLVM_CONFIG if yours is named otherwise.
+FAUST_LLVM_VERSION=21

@@ -6,8 +6,34 @@ How to build and install the Faust toolchain vendored in `third_party/faust`
 release: GRAME bumps the version string first thing after tagging), entirely in
 user space (no sudo). Clausters needs **libfaust with the LLVM backend**;
 Ubuntu's `libfaust2t64` ships without it and without headers, so building from
-source is mandatory (see the F0 section of `LOG.md` for the original findings
-with Faust 2.81.10 / LLVM 20).
+source is mandatory.
+
+## The vendored, reproducible build (`build-faust.sh`)
+
+The Faust source is **not committed** (it is heavy and git-ignored under
+`third_party/faust`); reproducibility comes instead from two committed files:
+
+- **`third_party/faust.pin`** — the single source of truth: the exact commit
+  (`FAUST_SHA`, the unpatched `master-dev` base) and the LLVM version the shipped
+  libLLVM is built against (`FAUST_LLVM_VERSION`, pinned to **21** so the bundled
+  artifact is deterministic instead of whatever the build host defaults to).
+- **`third_party/build-faust.sh`** — one recipe, run identically by local dev,
+  CI and the release wheel: fetch the pinned commit (+ submodules), build the
+  dynamic `libfaust.so`, install into a prefix, and stage the libLLVM beside it.
+
+```sh
+third_party/build-faust.sh              # installs into ~/.local
+third_party/build-faust.sh --prefix /some/where
+```
+
+It **protects an existing working clone**: if `third_party/faust` is checked out
+somewhere other than the pin (e.g. the `fix-boxcos-boxfmod` branch below) it
+refuses to move it — pass `FAUST_ALLOW_CHECKOUT=1` to check out the pin, or
+`FAUST_SKIP_FETCH=1` to build the current checkout as-is. Override the LLVM
+binary with `LLVM_CONFIG=…` if yours is not named `llvm-config-21`.
+
+The rest of this document explains what the script does, step by step, and the
+manual commands behind it.
 
 ## Requirements (native build)
 
@@ -26,28 +52,33 @@ everything else is user-space):
   `libmicrohttpd` (HTTPD support is optional and skipped automatically if
   absent).
 
-## Native build: compiler + libfaust (static and dynamic) + stdlib
+## Native build: compiler + libfaust (dynamic) + stdlib
 
-From `third_party/faust`:
+This is the command `build-faust.sh` runs — from `third_party/faust`:
 
 ```sh
 CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
-  CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-21"
+  CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config-21"
 ```
 
 - `make most` selects the `most.cmake` backends/targets: the `faust` CLI
   compiler, `libfaust.a` (static) and — in `most.cmake` — **not** the shared
   lib, hence `-DINCLUDE_DYNAMIC=ON` to add `libfaust.so`. Clausters'
   `build.rs` links `-lfaust` against the shared lib.
+- `-DINCLUDE_STATIC=off`: skips the static `libfaustwithllvm.a`, which Clausters
+  never links; it embeds LLVM's static component libs (needs Polly on some
+  LLVM builds). Only the dynamic `libfaust.so` is built and installed.
 - `-DLLVM_CONFIG=llvm-config-21`: Ubuntu installs only the versioned
   `llvm-config-21` binary (no plain `llvm-config`), so it must be named
-  explicitly. Adjust to your LLVM version.
+  explicitly — the pinned version (`faust.pin`'s `FAUST_LLVM_VERSION`). The
+  script derives it as `llvm-config-$FAUST_LLVM_VERSION`; override with
+  `LLVM_CONFIG=…`.
 - `-DLINK_LLVM_STATIC=off`: links the monolithic system `libLLVM.so`
   (`-lLLVM-21`). Result: `libfaust.so` ≈ 11 MB instead of a ≈ 35 MB
   `libfaustwithllvm.a`, and no Polly/zstd dev packages needed.
 - `CMAKEOPT` extras are appended *after* the `-C` target cache files on the
   cmake command line, so they override the `FORCE`d cache defaults — no need
-  to edit the cache in `build/faustdir` afterwards (the old F0 recipe did it
+  to edit the cache in `build/faustdir` afterwards (an earlier recipe did it
   in two steps).
 - The cmake configuration is cached in `build/faustdir`; on a re-run with
   different options, `make -C build distclean` first (it wipes only
@@ -62,11 +93,23 @@ make install PREFIX=$HOME/.local
 ```
 
 Installs `~/.local/bin/faust*` (compiler + the `faust2*` wrapper scripts),
-`~/.local/lib/libfaust.{a,so,so.2,so.2.86.0}`, headers under
+`~/.local/lib/libfaust.{so,so.2,so.2.86.0}`, headers under
 `~/.local/include/faust`, and the stdlib (`*.lib`) in `~/.local/share/faust`.
 No `ldconfig` or `LD_LIBRARY_PATH` needed for clausters: its `build.rs` finds
 the prefix (`FAUST_PREFIX` env var, falling back to `~/.local`, then
 `/usr/local`) and embeds an rpath.
+
+After installing, `build-faust.sh` also **stages the libLLVM** that
+`libfaust.so` is NEEDED-linked against into `<prefix>/lib` (found via `ldd`,
+copied with `cp -L`). That is what makes the prefix self-contained: Clausters'
+`DT_RPATH` (`<prefix>/lib`, inherited by transitive deps) then resolves both
+libfaust and its libLLVM with no LLVM runtime installed — the same layout the
+wheel bundles and CI restores. Doing it by hand:
+
+```sh
+cp -L "$(ldd ~/.local/lib/libfaust.so | awk 'tolower($0) ~ /llvm/ {print $3}')" \
+  ~/.local/lib/
+```
 
 Sanity check:
 
@@ -136,20 +179,19 @@ unpatched `master-dev` base (`56c9e678d`, "Set version to 2.86.0").
 From the repo root, with the install above in place:
 
 ```sh
-cargo build --features faust
-cargo test --features faust -- --test-threads=1
+cargo build            # faust is a default feature
+cargo test
 ```
 
-Notes (see also `BUILD.md` and the "Optional `faust` feature" section of
-`CLAUDE.md`):
+Notes (see also `BUILD.md` and the `faust` sections of `CLAUDE.md`):
 
 - `build.rs` locates the prefix via `FAUST_PREFIX` → `~/.local` →
   `/usr/local`; with the `~/.local` install nothing needs to be exported.
-- `--test-threads=1` is **required**: libfaust/LLVM global state is not safe
-  for concurrent factory creation/deletion in one process, so the parallel
-  test harness SIGSEGVs or flakes (`deleteDSPFactory factory not found!`).
-  The server itself is unaffected (single compiler thread under
-  `faust::ffi_lock()`).
+- **No `--test-threads=1` needed.** Every libfaust compilation FFI call now
+  goes through `faust::ffi_lock()`, which serializes the compiler in-process,
+  so the faust suites run in the ordinary parallel harness. (A SIGSEGV in a
+  `faust_*` suite means an FFI path skipped the lock — that is the signal to
+  look there, not a reason to serialize the whole run.)
 
 ### Verified 2026-07-05 (this build)
 
@@ -162,7 +204,7 @@ Notes (see also `BUILD.md` and the "Optional `faust` feature" section of
   own, so without that env var the build is serial and much slower).
 - Clausters: `cargo build --features faust` links out of the box (no
   `FAUST_PREFIX` needed — `~/.local` is the default fallback), and
-  `cargo test --features faust -- --test-threads=1` passes **343 tests
-  across 36 suites, 0 failures** (~3 s of test time). No source changes
-  were needed moving from the F0 toolchain (Faust 2.81.10 / LLVM 20) to
-  2.86.0 / LLVM 21 — the hand-written FFI surface is unchanged.
+  `cargo test --features faust` passes **343 tests across 36 suites, 0
+  failures** (~3 s of test time). No source changes were needed moving from
+  the earlier toolchain (Faust 2.81.10 / LLVM 20) to 2.86.0 / LLVM 21 — the
+  hand-written FFI surface is unchanged.
