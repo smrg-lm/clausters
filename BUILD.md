@@ -77,37 +77,6 @@ cargo build --no-default-features
 cargo build --release --features embed,realtime
 ```
 
-## Versioning and the ABI counters (release)
-
-Three version numbers answer different questions; keep them distinct:
-
-| number | where | contract | checked |
-|---|---|---|---|
-| package **SemVer** | `version` in `Cargo.toml` (+ the Python wheel) | source/package — what `cargo`/`pip` resolves | at resolve/install time |
-| embed / IPC **`ABI_VERSION`** | `src/server/ipc.rs`, via `clausters_abi_version()` | shm segment layout + embed C ABI | at runtime, on attach |
-| core FFI **`CORE_ABI_VERSION`** | `crates/clausters-ffi`, via `clausters_core_abi_version()` | the language-agnostic C surface | at runtime, on load |
-
-The two integer counters — not SemVer — are the **source of truth for binary
-compatibility**: monotonic, bumped only when their own boundary changes
-incompatibly, and verified at runtime by an already-compiled peer, which refuses
-to connect on a mismatch. SemVer governs the package, never the wire.
-
-**Release rules:**
-
-1. **Pre-1.0 (major `0`)** the **minor** is the breaking tier (standard SemVer —
-   the minor acts as the major). *Any* incompatible change (source API **or**
-   binary boundary) bumps the minor; additive/corrective changes bump the patch.
-2. Bump `ABI_VERSION` / `CORE_ABI_VERSION` **only** when that boundary changes
-   incompatibly, independently of SemVer.
-3. **Linkage (one-way):** a release that bumps either counter **must** bump
-   SemVer's breaking tier (minor pre-1.0, major post-1.0). The reverse does not
-   hold — a minor can ship purely additive work without touching a counter.
-4. At **`1.0.0`** the standard post-1.0 semantics take over (major breaks, minor
-   adds, patch fixes); the counters keep their role.
-
-The current tree is `0.1.0`; the next tag is `0.2.0`. Rationale for the decouple
-is in `docs/decisions.md`.
-
 ### The `faust` feature (default)
 
 The FaustDef family needs **libfaust built with the LLVM backend**. Since the
@@ -179,6 +148,73 @@ pw-jack ./target/debug/clausters --midi
 
 (Or activate PipeWire's JACK system-wide via its `ld.so.conf.d` drop-in — see
 the `pipewire-jack` package docs — and drop the `pw-jack` prefix.)
+
+## Release
+
+### Versioning and the ABI counters
+
+Three version numbers answer different questions; keep them distinct:
+
+| number | where | contract | checked |
+|---|---|---|---|
+| package **SemVer** | `version` in `Cargo.toml` (+ the Python wheel) | source/package — what `cargo`/`pip` resolves | at resolve/install time |
+| embed / IPC **`ABI_VERSION`** | `src/server/ipc.rs`, via `clausters_abi_version()` | shm segment layout + embed C ABI | at runtime, on attach |
+| core FFI **`CORE_ABI_VERSION`** | `crates/clausters-ffi`, via `clausters_core_abi_version()` | the language-agnostic C surface | at runtime, on load |
+
+The two integer counters — not SemVer — are the **source of truth for binary
+compatibility**: monotonic, bumped only when their own boundary changes
+incompatibly, and verified at runtime by an already-compiled peer, which refuses
+to connect on a mismatch. SemVer governs the package, never the wire.
+
+**Release rules:**
+
+1. **Pre-1.0 (major `0`)** the **minor** is the breaking tier (standard SemVer —
+   the minor acts as the major). *Any* incompatible change (source API **or**
+   binary boundary) bumps the minor; additive/corrective changes bump the patch.
+2. Bump `ABI_VERSION` / `CORE_ABI_VERSION` **only** when that boundary changes
+   incompatibly, independently of SemVer.
+3. **Linkage (one-way):** a release that bumps either counter **must** bump
+   SemVer's breaking tier (minor pre-1.0, major post-1.0). The reverse does not
+   hold — a minor can ship purely additive work without touching a counter.
+4. At **`1.0.0`** the standard post-1.0 semantics take over (major breaks, minor
+   adds, patch fixes); the counters keep their role.
+
+The current tree is `0.1.0`; the next tag is `0.2.0`. Rationale for the decouple
+is in `docs/decisions.md`.
+
+### The Python wheel is feature-complete
+
+The wheel deliberately ships **every documented usage mode** — size is traded
+for completeness so anyone can `pip install` it and exercise the whole surface
+with nothing else on the machine. `clients/python/build_native.py` stages four
+artifacts, each with the features its mode needs:
+
+| usage mode | artifact | features |
+|---|---|---|
+| standalone server (networked / shm), the `clausters` command | `clausters` binary | crate defaults |
+| in-process embedded server (the embed C ABI) | `libclausters` cdylib | defaults **+ `embed,realtime`** |
+| the language-agnostic core FFI (ctypes/N-API/wasm) | `libclausters_ffi` cdylib | its crate defaults |
+| the visual / GUI server | `clausters-gui` binary | its crate defaults |
+
+The crate defaults (`synth, faust, realtime, midi, pipewire, rtprio`) carry
+**both def families**, live audio, ALSA-seq MIDI and RT scheduling into every
+artifact, and `libfaust` + `libLLVM` are bundled alongside (the ~50 MB noted
+above) so a FaustDef JIT-compiles on a clean install. `--features embed,realtime`
+*adds* to the defaults (only `--no-default-features` replaces them), so the embed
+cdylib keeps `faust`, `synth`, `midi`, … too.
+
+Two things to hold when cutting a wheel:
+
+- **Do not set `CLAUSTERS_CARGO_FEATURES`** for a release build. It *replaces*
+  the embed cdylib's features, so an incomplete value (e.g. omitting `faust`)
+  silently ships a trimmed wheel. Leaving it unset keeps the full defaults.
+- **Do not set `CLAUSTERS_SKIP_GUI_BUILD`** — that yields a light, server-only
+  wheel missing the GUI mode.
+
+The only non-default feature left out is `midi-jack`, and by design: it is not a
+distinct mode but an alternative MIDI *backend* (the PipeWire-native routing
+above) — the "live MIDI" mode is already covered by the default `midi` (ALSA
+seq).
 
 ## Running the server
 
