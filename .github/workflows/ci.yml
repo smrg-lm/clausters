@@ -5,12 +5,12 @@
 # `faust` is a default feature, so every job that links the default build set
 # (clippy, the default+embed tests, the Python client, and the standalone
 # server) needs libfaust with the LLVM backend. A single `libfaust` job builds
-# it from source (the reproducible recipe in third_party/BUILD-FAUST.md, pinned
-# to FAUST_SHA) and caches the ~/.local install with its libLLVM staged beside
-# it; every downstream job `needs: libfaust` and restores that cache through the
-# `.github/actions/libfaust` composite (a cache hit makes it free, and no LLVM
-# runtime has to be installed to consume it). Bump FAUST_SHA (and the cache
-# `-vN` suffix inside the composite on a layout change) to upgrade.
+# it from source through the vendored recipe (third_party/build-faust.sh, pinned
+# by third_party/faust.pin) and caches the ~/.local install with its libLLVM
+# staged beside it; every downstream job `needs: libfaust` and restores that
+# cache through the `.github/actions/libfaust` composite (a cache hit makes it
+# free, and no LLVM runtime has to be installed to consume it). Edit faust.pin
+# to upgrade the commit or LLVM version (either changes the cache key).
 
 name: CI
 
@@ -21,10 +21,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # The commit BUILD-FAUST.md verified (master-dev, "Set version to 2.86.0";
-  # short form 56c9e678d). Full 40-char SHA: fetching an arbitrary commit by
-  # SHA only resolves unabbreviated. Bump deliberately, with a local re-verify.
-  FAUST_SHA: 56c9e678ddff8688bf113db145033ac8a10c4795
+  # The pinned Faust commit and LLVM version live in third_party/faust.pin (the
+  # single source of truth), read by the .github/actions/libfaust composite.
   # build.rs locates libfaust here (it also falls back to ~/.local on its own).
   FAUST_PREFIX: /home/runner/.local
   # Force the Faust LLVM JIT onto a baseline x86-64 CPU (empty triple = host
@@ -46,7 +44,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/libfaust
         with:
-          sha: ${{ env.FAUST_SHA }}
           prefix: ${{ env.FAUST_PREFIX }}
 
   lint:
@@ -61,7 +58,6 @@ jobs:
       # clippy --workspace lints the default build, which links libfaust.
       - uses: ./.github/actions/libfaust
         with:
-          sha: ${{ env.FAUST_SHA }}
           prefix: ${{ env.FAUST_PREFIX }}
       - name: System deps (cpal/midir/pipewire build deps)
         run: |
@@ -144,7 +140,6 @@ jobs:
       # runtime; all of that needs libfaust restored here.
       - uses: ./.github/actions/libfaust
         with:
-          sha: ${{ env.FAUST_SHA }}
           prefix: ${{ env.FAUST_PREFIX }}
       - name: System deps
         run: |
@@ -195,7 +190,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/libfaust
         with:
-          sha: ${{ env.FAUST_SHA }}
           prefix: ${{ env.FAUST_PREFIX }}
       - name: System deps
         run: |

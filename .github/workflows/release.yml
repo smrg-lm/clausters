@@ -19,9 +19,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  # Keep in step with ci.yml: `faust` is a default feature, so the wheel and the
-  # standalone server both link libfaust and the wheel bundles it (+ its libLLVM).
-  FAUST_SHA: 56c9e678ddff8688bf113db145033ac8a10c4795
+  # `faust` is a default feature, so the wheel and the standalone server both
+  # link libfaust and the wheel bundles it (+ its libLLVM). The pinned commit
+  # and LLVM version live in third_party/faust.pin, read by the libfaust composite.
   FAUST_PREFIX: /home/runner/.local
 
 jobs:
@@ -41,7 +41,6 @@ jobs:
       # out of <prefix>/lib into the wheel.
       - uses: ./.github/actions/libfaust
         with:
-          sha: ${{ env.FAUST_SHA }}
           prefix: ${{ env.FAUST_PREFIX }}
       - name: System deps
         run: |

@@ -192,11 +192,13 @@ same C ABI and the same OSC.
   future work.
 - **JavaScript (planned)**: an npm package with prebuilt N-API addons per
   platform and a wasm build for the browser.
-- **Reproducible Faust build (planned)**: the `faust` feature needs libfaust
-  built with the LLVM backend, and the wheel bundles the result of *this
-  machine's* build. For CI wheels, npm builds and the wasm target it should be
-  vendored under `third_party/` with documented build steps, so the bundled
-  libfaust/libLLVM are reproducible rather than whatever the build host had.
+- **Reproducible Faust build (done for native/CI/release)**: the `faust` feature
+  needs libfaust built with the LLVM backend. It is now vendored under
+  `third_party/` — `faust.pin` (the exact commit + LLVM version) and
+  `build-faust.sh` (one recipe: fetch, build, install, stage libLLVM) — so local
+  dev, CI and the release wheel produce a *deterministic* bundle instead of
+  whatever the build host had. The npm N-API and wasm targets still need their
+  own vendored builds.
 
 ## Status at a glance
 
@@ -211,5 +213,5 @@ same C ABI and the same OSC.
 | Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `graph`) and the driver that binds them to the arrangement | done |
-| JavaScript client + npm | planned |
-| `third_party` Faust build + Faust-enabled wheels | planned |
+| Reproducible `third_party` Faust build (pin + script; native/CI/release) | done |
+| JavaScript client + npm (incl. its Faust build) | planned |

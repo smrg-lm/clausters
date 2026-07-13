@@ -155,14 +155,24 @@ libfaust consumer, where before only one dedicated job needed it. Two choices
 keep that cheap and green:
 
 - **One `libfaust` job builds it; everyone else restores a cache.** A single
-  job runs the from-source build (pinned to `FAUST_SHA`) and, crucially, stages
-  the libLLVM it JITs with *into `<prefix>/lib` beside libfaust.so*. Downstream
-  jobs `needs:` it and restore the cache through the `.github/actions/libfaust`
-  composite; the same `DT_RPATH` that makes the wheel self-contained
-  (`<prefix>/lib`, inherited transitively) then resolves both libfaust and its
-  libLLVM, so a consumer needs **no LLVM runtime installed** — only the restore.
-  A warm cache makes every downstream job free. `release.yml` uses the same
-  composite, so the wheel build no longer sets up libfaust by hand.
+  job runs the from-source build and, crucially, stages the libLLVM it JITs with
+  *into `<prefix>/lib` beside libfaust.so*. Downstream jobs `needs:` it and
+  restore the cache through the `.github/actions/libfaust` composite; the same
+  `DT_RPATH` that makes the wheel self-contained (`<prefix>/lib`, inherited
+  transitively) then resolves both libfaust and its libLLVM, so a consumer needs
+  **no LLVM runtime installed** — only the restore. A warm cache makes every
+  downstream job free. `release.yml` uses the same composite, so the wheel build
+  no longer sets up libfaust by hand.
+- **The build is vendored and pinned, so the bundle is reproducible.** The Faust
+  source is too heavy to commit (it stays git-ignored under `third_party/faust`),
+  so reproducibility lives in two committed files: `third_party/faust.pin` (the
+  exact commit — the unpatched base, keeping the boxcos/boxfmod canaries valid —
+  and the LLVM version) and `third_party/build-faust.sh` (the one recipe). The
+  composite, `release.yml` and a developer all run *that* script and read *that*
+  pin — the CI cache key included — so the bundled libfaust/libLLVM are the same
+  everywhere, not whatever the build host defaulted to. Pinning **LLVM 21**
+  (pulled from apt.llvm.org in CI, newer than the distro's 18) is the point: the
+  wheel's ~130 MB libLLVM is then a known quantity.
 - **CI pins a baseline JIT CPU (`CLAUSTERS_FAUST_TARGET=:x86-64`).** The Faust
   factory JITs for `""` = the host machine, and LLVM tunes the code to the
   detected CPU — correct and fast on a *real* machine, which is why production
