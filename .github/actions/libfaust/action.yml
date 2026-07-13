@@ -1,0 +1,71 @@
+# Make libfaust (LLVM backend) available under a prefix, cheaply and shared.
+#
+# Restores it from the Actions cache; on a miss it builds it from source with
+# the reproducible recipe (third_party/BUILD-FAUST.md) and, crucially, stages
+# the libLLVM that libfaust JITs with *beside* libfaust.so in `<prefix>/lib`.
+# build.rs writes a DT_RPATH of `<prefix>/lib` (and `--disable-new-dtags` keeps
+# it an RPATH, inherited by transitive deps), so a job that only restores this
+# cache resolves both libfaust and its libLLVM through that rpath — no LLVM
+# runtime has to be installed on the consuming machine. This is the same
+# self-contained arrangement the Python wheel ships.
+#
+# Used by ci.yml (a `libfaust` job populates the cache; every faust-linking job
+# restores it) and release.yml. Bump the cache `-vN` suffix if the staged
+# layout changes; bump the caller's FAUST_SHA to upgrade the pinned commit.
+name: Set up libfaust
+description: Restore, or build and cache, libfaust with the LLVM backend and its libLLVM staged beside it.
+
+inputs:
+  sha:
+    description: Full 40-char faust commit SHA (unabbreviated; fetching by SHA only resolves the full form).
+    required: true
+  prefix:
+    description: Install prefix; libfaust lands in <prefix>/lib, headers in <prefix>/include/faust.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore the libfaust install
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ inputs.prefix }}/lib/libfaust*
+          ${{ inputs.prefix }}/lib/libLLVM*
+          ${{ inputs.prefix }}/include/faust
+          ${{ inputs.prefix }}/share/faust
+        key: libfaust-${{ inputs.sha }}-${{ runner.os }}-v2
+
+    - name: Build libfaust (LLVM backend) from source and stage its libLLVM
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y cmake make g++ llvm-dev zlib1g-dev clang pkg-config
+        # Shallow fetch of the pinned commit + submodules, then the recipe from
+        # third_party/BUILD-FAUST.md (dynamic libfaust.so against system libLLVM).
+        git init faust-src
+        cd faust-src
+        git remote add origin https://github.com/grame-cncm/faust
+        git fetch --depth 1 origin "${{ inputs.sha }}"
+        git checkout FETCH_HEAD
+        git submodule update --init --recursive --depth 1
+        # INCLUDE_STATIC=off: clausters links only the dynamic libfaust.so; the
+        # static libfaustwithllvm.a embeds LLVM's static component libs, which on
+        # the runner's llvm-dev (Ubuntu LLVM 18) needs libPolly and fails.
+        CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
+          CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config"
+        make install PREFIX="${{ inputs.prefix }}"
+        "${{ inputs.prefix }}/bin/faust" --version
+        # Copy the libLLVM libfaust.so is NEEDED-linked against into <prefix>/lib,
+        # so consumers that only restore this cache (no llvm-dev) still resolve it
+        # through clausters' DT_RPATH. cp -L follows the ldd-resolved symlink to
+        # the real file and keeps its SONAME basename.
+        libllvm=$(ldd "${{ inputs.prefix }}/lib/libfaust.so" | awk 'tolower($0) ~ /llvm/ {print $3}')
+        if [ -z "$libllvm" ] || [ ! -f "$libllvm" ]; then
+          echo "could not locate libLLVM via ldd of libfaust.so:"; ldd "${{ inputs.prefix }}/lib/libfaust.so"
+          exit 1
+        fi
+        cp -Lv "$libllvm" "${{ inputs.prefix }}/lib/$(basename "$libllvm")"

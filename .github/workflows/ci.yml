@@ -2,11 +2,15 @@
 # by hand, automated. Jobs mirror the local commands one-to-one so a red job
 # is reproducible locally with the same line.
 #
-# The `faust` job builds libfaust from source (the reproducible recipe in
-# third_party/BUILD-FAUST.md) pinned to the same commit verified locally, and
-# caches the ~/.local install; a cache hit makes the job cheap. Bump
-# FAUST_SHA (and the cache `-vN` suffix on rebuild-without-SHA-change) to
-# upgrade.
+# `faust` is a default feature, so every job that links the default build set
+# (clippy, the default+embed tests, the Python client, and the standalone
+# server) needs libfaust with the LLVM backend. A single `libfaust` job builds
+# it from source (the reproducible recipe in third_party/BUILD-FAUST.md, pinned
+# to FAUST_SHA) and caches the ~/.local install with its libLLVM staged beside
+# it; every downstream job `needs: libfaust` and restores that cache through the
+# `.github/actions/libfaust` composite (a cache hit makes it free, and no LLVM
+# runtime has to be installed to consume it). Bump FAUST_SHA (and the cache
+# `-vN` suffix inside the composite on a layout change) to upgrade.
 
 name: CI
 
@@ -17,16 +21,42 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The commit BUILD-FAUST.md verified (master-dev, "Set version to 2.86.0";
+  # short form 56c9e678d). Full 40-char SHA: fetching an arbitrary commit by
+  # SHA only resolves unabbreviated. Bump deliberately, with a local re-verify.
+  FAUST_SHA: 56c9e678ddff8688bf113db145033ac8a10c4795
+  # build.rs locates libfaust here (it also falls back to ~/.local on its own).
+  FAUST_PREFIX: /home/runner/.local
 
 jobs:
+  # Build libfaust once (or hit the cache) so the faust-linking jobs below can
+  # just restore it. On a cold cache this is the long pole; downstream jobs
+  # `needs: libfaust`, so they start only once the cache is warm.
+  libfaust:
+    name: build/cache libfaust (LLVM backend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/libfaust
+        with:
+          sha: ${{ env.FAUST_SHA }}
+          prefix: ${{ env.FAUST_PREFIX }}
+
   lint:
     name: fmt + clippy (workspace + gui)
+    needs: libfaust
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      # clippy --workspace lints the default build, which links libfaust.
+      - uses: ./.github/actions/libfaust
+        with:
+          sha: ${{ env.FAUST_SHA }}
+          prefix: ${{ env.FAUST_PREFIX }}
       - name: System deps (cpal/midir/pipewire build deps)
         run: |
           sudo apt-get update
@@ -47,19 +77,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The def-family build matrix from CLAUDE.md: the core must compile
-        # and test with any combination of `synth`/`faust` and without
-        # `embed`. The faust combos live in the `faust` job (they need
-        # libfaust); `embed` rides on top of the default set here.
+        # The libfaust-free half of the def-family matrix from CLAUDE.md: the
+        # core must compile and test with `synth` alone and with neither def
+        # family. These need no libfaust, so they carry no `needs: libfaust`
+        # and stay fast. The faust-linking combos (the full default set, and
+        # `+embed` on top of it) live in the `test-default` job below.
         include:
-          - name: default
-            flags: ""
           - name: no-features
             flags: --no-default-features
           - name: synth-only
             flags: --no-default-features --features synth
-          - name: default+embed
-            flags: --features embed
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -98,6 +125,7 @@ jobs:
 
   python:
     name: python client (pytest)
+    needs: libfaust
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,6 +133,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # build_native builds the default (faust) cdylibs and stages libfaust +
+      # its libLLVM into the package, and the FaustDef tests JIT-compile at
+      # runtime; all of that needs libfaust restored here.
+      - uses: ./.github/actions/libfaust
+        with:
+          sha: ${{ env.FAUST_SHA }}
+          prefix: ${{ env.FAUST_PREFIX }}
       - name: System deps
         run: |
           sudo apt-get update
@@ -142,57 +177,31 @@ jobs:
           pydoc-markdown
           mdbook build docs
 
-  faust:
-    name: cargo test --features faust (libfaust from source, cached)
+  # The faust-linking half of the def-family matrix: the full default set
+  # (synth + faust + realtime/midi/pipewire/rtprio) and `+embed` on top of it.
+  # Both link libfaust, restored from the shared cache.
+  test-default:
+    name: cargo test (default set + embed, faust)
+    needs: libfaust
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      # The commit BUILD-FAUST.md verified (master-dev, "Set version to
-      # 2.86.0"; short form 56c9e678d). Full 40-char SHA: fetching an
-      # arbitrary commit by SHA only resolves unabbreviated. Bump
-      # deliberately, together with a local re-verification.
-      FAUST_SHA: 56c9e678ddff8688bf113db145033ac8a10c4795
-      FAUST_PREFIX: /home/runner/.local
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: System deps (incl. the libfaust build chain)
+      - uses: ./.github/actions/libfaust
+        with:
+          sha: ${{ env.FAUST_SHA }}
+          prefix: ${{ env.FAUST_PREFIX }}
+      - name: System deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang \
-            cmake make g++ llvm-dev zlib1g-dev
-      - name: Cache the libfaust install
-        id: faust-cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.local/lib/libfaust*
-            ~/.local/include/faust
-            ~/.local/share/faust
-          key: libfaust-${{ env.FAUST_SHA }}-${{ runner.os }}-v1
-      - name: Build libfaust (LLVM backend) from source
-        if: steps.faust-cache.outputs.cache-hit != 'true'
-        run: |
-          # Shallow fetch of the pinned commit + its submodules, then the
-          # recipe from third_party/BUILD-FAUST.md (dynamic libfaust.so
-          # against the system libLLVM, installed under ~/.local).
-          git init faust-src
-          cd faust-src
-          git remote add origin https://github.com/grame-cncm/faust
-          git fetch --depth 1 origin "$FAUST_SHA"
-          git checkout FETCH_HEAD
-          git submodule update --init --recursive --depth 1
-          # INCLUDE_STATIC=off on top of the BUILD-FAUST.md recipe: clausters
-          # links only the dynamic libfaust.so, and the static
-          # libfaustwithllvm.a embeds LLVM's static component libs, which on
-          # the runner's llvm-dev (Ubuntu LLVM 18) needs libPolly and fails.
-          CMAKE_BUILD_PARALLEL_LEVEL=$(nproc) make most \
-            CMAKEOPT="-DINCLUDE_DYNAMIC=ON -DINCLUDE_STATIC=off -DLINK_LLVM_STATIC=off -DLLVM_CONFIG=llvm-config"
-          make install PREFIX="$HOME/.local"
-          "$HOME/.local/bin/faust" --version
+          sudo apt-get install -y pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
       - uses: Swatinem/rust-cache@v2
         with:
-          key: faust
-      # Single-threaded: libfaust/LLVM is not safe for concurrent compilation
-      # in one process (a known libfaust limitation; see CLAUDE.md).
-      - run: cargo test --features faust -- --test-threads=1
+          key: test-default
+      # `-- --test-threads=1`: the faust compilation FFI is serialized in-process
+      # by faust::ffi_lock(), but the historically-safe single-threaded run is
+      # kept here as the authoritative default-set check. The default feature
+      # set already includes faust, so a plain `cargo test --workspace` covers
+      # the synth+faust combo; `--features embed` adds the embed layer on top.
+      - run: cargo test --workspace -- --test-threads=1
+      - run: cargo test --workspace --features embed -- --test-threads=1
