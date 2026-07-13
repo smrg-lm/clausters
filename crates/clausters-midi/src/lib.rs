@@ -56,8 +56,15 @@ fn data_len(status: u8) -> Option<usize> {
 /// (the GUI host's note painting) reads off the wire with [`parse_note`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoteEvent {
-    On { channel: u8, pitch: u8, velocity: u8 },
-    Off { channel: u8, pitch: u8 },
+    On {
+        channel: u8,
+        pitch: u8,
+        velocity: u8,
+    },
+    Off {
+        channel: u8,
+        pitch: u8,
+    },
 }
 
 /// The note event carried by a raw MIDI message, if any: a note-on (a

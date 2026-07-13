@@ -485,3 +485,32 @@ arrangement model (above) doing its job at the granularity of a single note.
 OSC events stay display-only in this view too: the `(time, label)` flag is a
 lossy projection of the message, so writing it back would silently drop the
 arguments.
+
+## Transport roles: TCP as the default command plane, UDP as the probe
+
+**Decision.** The server accepts TCP on the OSC port **by default** (`--no-tcp`
+opts out), and clients connect their command interface over TCP by default while
+keeping the UDP *boot-or-attach* probe. Each transport has one role: **UDP** is
+discovery and small real-time control (scsynth compatibility included), **TCP**
+is the command plane, **shared memory** is the data plane (taps, control buses),
+**WebSocket** is the browser's TCP, and the **in-process link** is the packaged
+standalone's (no sockets at all).
+
+**Why.** A UDP datagram cannot exceed ~64 KB (the OS rejects the send), and off
+loopback anything over one MTU fragments at the IP layer, where a single lost
+fragment silently drops the whole packet. That bounds exactly the payloads a
+complex application needs to move — whole defs, GuiDef trees, buffer chunks,
+query replies — while the deployments this server targets (loopback as the
+common case, controlled networks for sound installations) get nothing back from
+staying datagram-only. TCP's framing makes size a **configuration**, not a
+protocol property: the length-prefix ceiling exists only so an untrusted prefix
+cannot drive an allocation, so it is a boot option (`--max-frame`, default
+16 MiB, advertised in `/server_info.reply` for clients to size bulk requests
+from) rather than a constant — no limit is hard-wired, per the rule that the
+project must stay usable as a desktop/mobile application without arbitrary
+ceilings. Timing is unaffected by the switch: it rides on bundle timetags and
+`/sched`, never on arrival time. Replies became transport-aware in the same
+move (a `/tap_stream` window may fill a whole frame for a stream client; UDP
+keeps the datagram-safe clamp), and the IPC command rings deliberately stayed
+at 64 KiB — large payloads ride TCP even locally, and growing the ring would
+bump the versioned segment layout for no demonstrated need.

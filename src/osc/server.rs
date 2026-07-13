@@ -63,10 +63,11 @@ const MAX_STREAM_BUSES: usize = 128;
 /// blob goes out per tap per period, so this bounds the reply traffic.
 const MAX_STREAM_TAPS: usize = 8;
 
-/// Largest `/tap_stream` window in samples: a 32 KB blob (8192 × `f32`), safe
-/// for every transport (a WS/TCP frame carries it whole; UDP callers should
-/// stay well under the datagram cap anyway). Also clamped to half the tap
-/// ring, the `tap_read_latest` tear-free bound.
+/// Largest `/tap_stream` window in samples for a **datagram-bounded** client
+/// (UDP, and the 64 KiB IPC reply ring): a 32 KB blob (8192 × `f32`) leaves
+/// room for the OSC envelope. A stream client (TCP/WebSocket) is bounded by
+/// the configurable frame ceiling instead (M25). Every window is also clamped
+/// to half the tap ring, the `tap_read_latest` tear-free bound.
 const MAX_TAP_WINDOW: usize = 8192;
 
 /// Information reported in `/status.reply` that does not come from the
@@ -142,6 +143,12 @@ pub struct OscServer {
     /// OSC reply is always sent; this only gates the console logging. On by
     /// default (matches scsynth's default error-posting).
     post_errors: bool,
+    /// Frame ceiling for the stream transports (TCP/WebSocket), in bytes
+    /// (`--max-frame`, default [`crate::osc::DEFAULT_MAX_FRAME`]). Bounds what
+    /// the hubs accept and what transport-aware replies (the `/tap_stream`
+    /// window) may grow to; advertised in `/server_info.reply` so clients size
+    /// their requests from it. UDP keeps the datagram cap regardless.
+    max_frame: usize,
 }
 
 /// The shared transport: a beat grid clients read to phase-align on the master
@@ -229,7 +236,17 @@ impl OscServer {
             pending_syncs: Vec::new(),
             transport: None,
             post_errors: true,
+            max_frame: crate::osc::DEFAULT_MAX_FRAME,
         })
+    }
+
+    /// Sets the stream-transport frame ceiling (`--max-frame`), the largest
+    /// OSC frame accepted from — and sent to — a TCP or WebSocket client.
+    /// Clamped to at least the UDP receive buffer, so no transport ever
+    /// carries less than a datagram. Call before [`Self::listen_tcp`] /
+    /// [`Self::listen_ws`]: the hubs capture the ceiling when they bind.
+    pub fn set_max_frame(&mut self, bytes: usize) {
+        self.max_frame = bytes.max(RECV_BUF_SIZE);
     }
 
     /// Enables on-disk persistence and reloads whatever defs the store
@@ -356,7 +373,7 @@ impl OscServer {
                 SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
             });
         }
-        let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target)?;
+        let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target, self.max_frame)?;
         let bound = hub.local_addr();
         self.tcp = Some(hub);
         Ok(bound)
@@ -375,7 +392,7 @@ impl OscServer {
                 SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
             });
         }
-        let hub = crate::osc::ws::WsHub::bind(addr, wake_target)?;
+        let hub = crate::osc::ws::WsHub::bind(addr, wake_target, self.max_frame)?;
         let bound = hub.local_addr();
         self.ws = Some(hub);
         Ok(bound)
@@ -982,10 +999,12 @@ impl OscServer {
     /// bus/allocator state from the server instead of hardcoding it:
     /// `/server_info.reply [audio_buses, control_buses, output_channels,
     /// block_size, nominal_sr, actual_sr, input_channels, max_nodes,
-    /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames]`.
-    /// The first six fields are stable; the boot-time capacities (S7) and the
-    /// tap region shape are appended so older clients that read only the six
-    /// keep working.
+    /// max_buffers, max_graph_children, max_ugen_inputs, taps, tap_frames,
+    /// max_frame]`. The first six fields are stable; the boot-time capacities
+    /// (S7), the tap region shape and the stream-transport frame ceiling
+    /// (M25 — what a client should size bulk requests like `/b_getn` chunks
+    /// from) are appended so older clients that read only the six keep
+    /// working.
     fn send_server_info(&mut self, to: ClientId) {
         let limits = self.handle.limits;
         let (taps, tap_frames) = self
@@ -1006,6 +1025,7 @@ impl OscServer {
             OscType::Int(limits.max_ugen_inputs as i32),
             OscType::Int(taps as i32),
             OscType::Int(tap_frames as i32),
+            OscType::Int(self.max_frame.min(i32::MAX as usize) as i32),
         ];
         self.reply(to, "/server_info.reply", args);
     }
@@ -1525,10 +1545,16 @@ impl OscServer {
                 format!("at most {MAX_STREAM_TAPS} tap indices per subscription"),
             );
         }
-        // Clamp, don't fail, the window: to the blob cap and to half the tap
-        // ring (the tear-free bound of `tap_read_latest`).
+        // Clamp, don't fail, the window: to the client's transport bound and
+        // to half the tap ring (the tear-free bound of `tap_read_latest`). A
+        // stream client may fill a whole frame (minus the OSC envelope); a
+        // datagram-bounded one keeps the 32 KB blob cap.
+        let transport_cap = match from {
+            ClientId::Tcp(_) | ClientId::Ws(_) => self.max_frame.saturating_sub(256) / 4,
+            ClientId::Udp(_) | ClientId::Ring => MAX_TAP_WINDOW,
+        };
         let frames = (*frames).max(1) as usize;
-        let frames = frames.min(MAX_TAP_WINDOW).min(segment.tap_frames() / 2);
+        let frames = frames.min(transport_cap).min(segment.tap_frames() / 2);
         self.tap_streams.retain(|s| s.client != from);
         self.reply(from, "/done", vec![OscType::String("/tap_stream".into())]);
         if *period_ms > 0 && !taps.is_empty() {
@@ -2119,8 +2145,10 @@ impl OscServer {
     /// client-side counterpart of `/b_setn`, and how a GUI client pulls a buffer
     /// to display it. `count` is clamped to what the buffer holds from `start`,
     /// so a request past the end returns only the available samples (none for an
-    /// unallocated buffer). Large buffers are read in client-chosen chunks (each
-    /// reply must fit a datagram); the bulk-transfer optimization is future work.
+    /// unallocated buffer). Large buffers are read in client-chosen chunks,
+    /// sized to the client's transport: a stream client (TCP/WS) may ask for
+    /// up to the `/server_info` frame ceiling per reply, a UDP client must
+    /// stay under the datagram cap. The shm bulk path is future work.
     fn handle_b_getn(&mut self, msg: &OscMessage, from: ClientId) {
         let Some((OscType::Int(bufnum), pairs)) = msg.args.split_first() else {
             return self.fail(from, "/b_getn", "expected bufnum then (start, count) pairs");

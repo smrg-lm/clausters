@@ -1472,6 +1472,62 @@ fn tcp_replies_route_to_the_originating_connection() {
     assert_eq!(b.recv_until("/status.reply").addr, "/status.reply");
 }
 
+/// M25: the stream transports carry frames well past the UDP datagram cap —
+/// a ~200 KB `/b_gen env` request (10k breakpoints) goes in as one frame, and
+/// the whole 40k-sample buffer comes back in one equally large `/b_setn`
+/// reply to a single `/b_getn`, no chunking either way.
+#[test]
+fn tcp_carries_frames_larger_than_a_datagram() {
+    let (tcp_addr, _join, _engine) = spawn_tcp_server();
+    let mut client = TcpClient::connect(tcp_addr);
+
+    const N: usize = 40_000;
+    const SEGS: usize = 10_000;
+    client.send(
+        "/b_alloc",
+        vec![OscType::Int(0), OscType::Int(N as i32), OscType::Int(1)],
+    );
+    assert_eq!(
+        client.recv_until("/done").args[0],
+        OscType::String("/b_alloc".into())
+    );
+
+    // One /b_gen env frame with 10k linear segments stepping 0 -> SEGS in
+    // equal times: 40k float args, far over the old 64 KiB ceiling.
+    let mut args = vec![
+        OscType::Int(0),
+        OscType::String("env".into()),
+        OscType::Float(0.0), // level0
+    ];
+    for i in 0..SEGS {
+        args.extend([
+            OscType::Float((i + 1) as f32), // level
+            OscType::Float(1.0),            // time (relative)
+            OscType::Float(1.0),            // shape: linear
+            OscType::Float(0.0),            // curve
+        ]);
+    }
+    client.send("/b_gen", args);
+    assert_eq!(
+        client.recv_until("/done").args[0],
+        OscType::String("/b_gen".into())
+    );
+
+    // Read the whole buffer back in a single equally large reply.
+    client.send(
+        "/b_getn",
+        vec![OscType::Int(0), OscType::Int(0), OscType::Int(N as i32)],
+    );
+    let reply = client.recv_until("/b_setn");
+    assert_eq!(reply.args.len(), 3 + N, "one reply frame carries it whole");
+    assert_eq!(reply.args[2], OscType::Int(N as i32));
+    // The ramp's tail sits at the last segment's level.
+    let OscType::Float(last) = reply.args[3 + N - 1] else {
+        panic!("expected float samples");
+    };
+    assert!((last - SEGS as f32).abs() < 2.0, "ramp tail, got {last}");
+}
+
 #[test]
 fn sync_answers_synced_with_the_same_id() {
     let server = TestServer::spawn();
@@ -2000,6 +2056,9 @@ fn server_info_reports_configured_limits() {
     // No segment in this harness: the tap region reports empty.
     assert_eq!(ints[11], 0, "taps");
     assert_eq!(ints[12], 0, "tap_frames");
+    // M25: the stream-transport frame ceiling, for clients to size bulk
+    // requests from.
+    assert_eq!(ints[13], 16 * 1024 * 1024, "max_frame");
     server.quit();
 }
 

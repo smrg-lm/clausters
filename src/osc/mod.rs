@@ -37,6 +37,15 @@ impl std::fmt::Display for ClientId {
     }
 }
 
+/// Default ceiling for one OSC frame on the stream transports (TCP and
+/// WebSocket), in bytes. With length-prefixed framing the ceiling is a DoS
+/// guard — an untrusted prefix must not drive an allocation — not a protocol
+/// limit, so it is boot-time configuration (`--max-frame`), sized generously
+/// for the target deployments (loopback and controlled networks): whole
+/// SynthDef/GuiDef payloads and megabyte buffer chunks fit in one frame. UDP
+/// keeps the ~64 KB datagram cap the OS imposes.
+pub const DEFAULT_MAX_FRAME: usize = 16 * 1024 * 1024;
+
 /// Decodes one OSC packet — the single decode entry point every transport
 /// funnels through (UDP datagrams and IPC ring contents alike), so decoding and
 /// any future hardening live in one place. Delegates to

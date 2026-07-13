@@ -22,11 +22,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-/// Largest OSC frame accepted on a TCP connection (same ceiling as the UDP
-/// receive buffer). A prefix above this — or a zero prefix — closes the
-/// connection instead of allocating on an untrusted length.
-const MAX_FRAME: usize = 65536;
-
 /// What a reader thread hands the command loop.
 enum TcpEvent {
     /// A new connection: its id and the write half for replies.
@@ -58,7 +53,15 @@ impl TcpHub {
     /// Binds a TCP listener on `addr` and starts accepting. `wake_target` is the
     /// server's own UDP address; reader threads send a zero-length datagram
     /// there to wake the command loop when a frame or disconnect is queued.
-    pub fn bind(addr: impl ToSocketAddrs, wake_target: SocketAddr) -> io::Result<Self> {
+    /// `max_frame` is the largest OSC frame accepted on a connection — a
+    /// prefix above it (or a zero prefix) closes the connection instead of
+    /// allocating on an untrusted length (see
+    /// [`super::DEFAULT_MAX_FRAME`]).
+    pub fn bind(
+        addr: impl ToSocketAddrs,
+        wake_target: SocketAddr,
+        max_frame: usize,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let local_addr = listener.local_addr()?;
         let (tx, rx) = channel();
@@ -66,7 +69,7 @@ impl TcpHub {
         let wake = Arc::new(UdpSocket::bind(("127.0.0.1", 0))?);
         std::thread::Builder::new()
             .name("clausters-tcp-accept".into())
-            .spawn(move || accept_loop(listener, tx, wake, wake_target))
+            .spawn(move || accept_loop(listener, tx, wake, wake_target, max_frame))
             .expect("failed to spawn the TCP acceptor thread");
         Ok(Self {
             events: rx,
@@ -124,6 +127,7 @@ fn accept_loop(
     tx: Sender<TcpEvent>,
     wake: Arc<UdpSocket>,
     wake_target: SocketAddr,
+    max_frame: usize,
 ) {
     let next_id = AtomicU64::new(1);
     for stream in listener.incoming() {
@@ -141,7 +145,7 @@ fn accept_loop(
         let wake = Arc::clone(&wake);
         std::thread::Builder::new()
             .name(format!("clausters-tcp-{id}"))
-            .spawn(move || reader_loop(id, stream, tx, &wake, wake_target))
+            .spawn(move || reader_loop(id, stream, tx, &wake, wake_target, max_frame))
             .ok();
     }
 }
@@ -152,11 +156,12 @@ fn reader_loop(
     tx: Sender<TcpEvent>,
     wake: &UdpSocket,
     wake_target: SocketAddr,
+    max_frame: usize,
 ) {
     let mut prefix = [0u8; 4];
     while stream.read_exact(&mut prefix).is_ok() {
         let len = u32::from_be_bytes(prefix) as usize;
-        if len == 0 || len > MAX_FRAME {
+        if len == 0 || len > max_frame {
             break; // protocol violation: drop the connection
         }
         let mut frame = vec![0u8; len];

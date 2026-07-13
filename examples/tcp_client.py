@@ -4,10 +4,10 @@
 The same `Server` facade as the UDP examples, but talking **length-prefixed
 OSC over a TCP connection** — a reliable, ordered, connection-oriented channel
 with no datagram-size limit. The only change is the destination interface:
-`Server(interface=OscTcpInterface().start())` instead of the default UDP. Start
-the server with TCP enabled first:
+`Server(interface=OscTcpInterface().start())` instead of the default UDP. The
+server listens on TCP by default (same port as UDP; `--no-tcp` disables it):
 
-    cargo run --release -- --tcp                 # terminal 1 (OSC on TCP 57110)
+    cargo run --release                          # terminal 1 (OSC on TCP 57110)
     python3 examples/tcp_client.py               # terminal 2
 
 Framing (handled inside `OscTcpInterface`, shown here only for reference): every
@@ -56,4 +56,4 @@ if __name__ == "__main__":
     try:
         main()
     except (OSError, ConnectionError) as e:
-        sys.exit(f"could not reach the server over TCP (start it with --tcp): {e}")
+        sys.exit(f"could not reach the server over TCP (is it running with --no-tcp?): {e}")

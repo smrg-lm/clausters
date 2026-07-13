@@ -51,8 +51,10 @@ tap_frames = 16384       # per-tap ring capacity in samples (a power of two)
 persist = true           # persist/reload defs; false is like --no-persist
 # data_dir = "/path"     # def store location (else the XDG data dir)
 # shm = "/clausters"     # shared-memory segment path for local clients
-# tcp = true             # TCP transport: true = default port, or a port number
+# tcp = true             # TCP transport (on by default at the OSC port):
+#                        # false disables it, a port number moves it
 # ws = 57120             # WebSocket transport: true = default port, or a number
+# max_frame = 16777216   # largest OSC frame on TCP/WebSocket, in bytes
 # midi = "clausters"     # virtual MIDI input: true = default name, or a name
 
 [client]                 # the Python (and future) client
@@ -75,14 +77,16 @@ boot = true              # run the GuiDef's boot messages and boot.json preset
 The `tcp`, `ws` and `midi` keys are toggles that may also carry a value:
 `true` enables the transport at the program's default port or name, `false`
 disables it, and a number (or, for `midi`, a string) enables it at that specific
-port or name.
+port or name. TCP is the one transport that is **on by default** (at the OSC
+port, alongside UDP), so its `true` is the implicit state and `false` (or
+`--no-tcp`) is the meaningful override.
 
 ## Per-program use
 
 - **Server** — the `[server]` section supplies the defaults for every flag of
   `clausters` (`--workers`, `--sample-rate`, `--audio-buses`, `--control-buses`,
-  `--taps`, `--tap-frames`, `--tcp`, `--ws`, `--midi`, `--shm`, `--data-dir`,
-  `--no-persist`). A flag on
+  `--taps`, `--tap-frames`, `--tcp`/`--no-tcp`, `--ws`, `--max-frame`,
+  `--midi`, `--shm`, `--data-dir`, `--no-persist`). A flag on
   the command line overrides the file.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
   (`--port`, `--server`, `--shm`, `--data-dir`, `--headless`); the `[standalone]`

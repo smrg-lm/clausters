@@ -24,8 +24,8 @@
 //! packet boundary, and replies go back as binary messages the same way. Every
 //! inbound packet decodes through the single [`super::decode_packet`] door, so
 //! WebSocket bytes are validated exactly like UDP/TCP/ring bytes. `tungstenite`
-//! enforces its own maximum message size, the DoS ceiling the TCP transport
-//! gets from `MAX_FRAME`.
+//! enforces the maximum message size — the same configurable ceiling the TCP
+//! transport applies to its length prefix (see [`super::DEFAULT_MAX_FRAME`]).
 
 use std::collections::HashMap;
 use std::io;
@@ -75,8 +75,13 @@ impl WsHub {
     /// Binds a TCP listener on `addr` and starts accepting WebSocket upgrades.
     /// `wake_target` is the server's own UDP address; connection threads send a
     /// zero-length datagram there to wake the command loop when a frame or
-    /// disconnect is queued.
-    pub fn bind(addr: impl ToSocketAddrs, wake_target: SocketAddr) -> io::Result<Self> {
+    /// disconnect is queued. `max_frame` is the largest message accepted on a
+    /// connection (see [`super::DEFAULT_MAX_FRAME`]), enforced by tungstenite.
+    pub fn bind(
+        addr: impl ToSocketAddrs,
+        wake_target: SocketAddr,
+        max_frame: usize,
+    ) -> io::Result<Self> {
         let listener = TcpListener::bind(addr)?;
         let local_addr = listener.local_addr()?;
         let (tx, rx) = channel();
@@ -84,7 +89,7 @@ impl WsHub {
         let wake = Arc::new(UdpSocket::bind(("127.0.0.1", 0))?);
         std::thread::Builder::new()
             .name("clausters-ws-accept".into())
-            .spawn(move || accept_loop(listener, tx, wake, wake_target))
+            .spawn(move || accept_loop(listener, tx, wake, wake_target, max_frame))
             .expect("failed to spawn the WebSocket acceptor thread");
         Ok(Self {
             events: rx,
@@ -143,6 +148,7 @@ fn accept_loop(
     tx: Sender<WsEvent>,
     wake: Arc<UdpSocket>,
     wake_target: SocketAddr,
+    max_frame: usize,
 ) {
     let next_id = AtomicU64::new(1);
     for stream in listener.incoming() {
@@ -155,7 +161,7 @@ fn accept_loop(
         // or non-WebSocket peer cannot stall the acceptor.
         std::thread::Builder::new()
             .name(format!("clausters-ws-{id}"))
-            .spawn(move || conn_loop(id, stream, tx, &wake, wake_target))
+            .spawn(move || conn_loop(id, stream, tx, &wake, wake_target, max_frame))
             .ok();
     }
 }
@@ -166,10 +172,16 @@ fn conn_loop(
     tx: Sender<WsEvent>,
     wake: &UdpSocket,
     wake_target: SocketAddr,
+    max_frame: usize,
 ) {
     // The handshake completes on the still-blocking stream; a non-WebSocket peer
     // just fails it and the connection is dropped, never announced.
-    let mut ws = match tungstenite::accept(stream) {
+    let config = tungstenite::protocol::WebSocketConfig {
+        max_message_size: Some(max_frame),
+        max_frame_size: Some(max_frame),
+        ..Default::default()
+    };
+    let mut ws = match tungstenite::accept_with_config(stream, Some(config)) {
         Ok(ws) => ws,
         Err(_) => return,
     };
@@ -235,7 +247,8 @@ mod tests {
         let wake = UdpSocket::bind(("127.0.0.1", 0)).unwrap();
         let wake_addr = wake.local_addr().unwrap();
 
-        let mut hub = WsHub::bind(("127.0.0.1", 0), wake_addr).unwrap();
+        let mut hub =
+            WsHub::bind(("127.0.0.1", 0), wake_addr, crate::osc::DEFAULT_MAX_FRAME).unwrap();
         let port = hub.local_addr().port();
 
         // Client side: a tungstenite WebSocket over a plain TCP connection.

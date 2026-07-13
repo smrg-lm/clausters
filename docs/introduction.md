@@ -13,7 +13,7 @@ It is **conceptually compatible** with scsynth (same node-tree model, the same `
 - **Auto-sorted groups** (`/g_sortMode`): execution order inferred from the buses each def reads and writes — no manual `/n_before` bookkeeping.
 - **Parallel groups** (`/g_parallel` + `--workers N`): independent children run on several cores, **bit-identical** to the sequential result.
 - **Control/bus mapping** (`/n_map`, `/n_mapa`): any control or Faust parameter can track a control or audio bus, live, every block.
-- **Several transports**: OSC over UDP, **TCP** (`--tcp`) and **WebSocket** (`--ws`), plus local shared memory (`--shm`) and an in-process **C ABI** for embedding, with the sample clock and control buses readable in mapped memory.
+- **Several transports**: OSC over UDP and **TCP** (both on by default) and **WebSocket** (`--ws`), plus local shared memory (`--shm`) and an in-process **C ABI** for embedding, with the sample clock and control buses readable in mapped memory.
 - **Configuration & persistence**: a shared **TOML config file** (user and per-project layers) behind every boot flag, and defs persisted and reloaded across runs (`--data-dir`).
 
 ## How to read this book

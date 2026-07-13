@@ -2,8 +2,8 @@ use clausters::server::render::{RenderConfig, Score, render_to_wav};
 
 const USAGE: &str = "\
 usage:
-  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port]] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
-                                               real-time server (OSC on UDP 57110)
+  clausters [--workers <n>] [--shm <path>] [--data-dir <dir>] [--no-persist] [--tcp [port] | --no-tcp] [--ws [port]] [--midi [name]] [--sample-rate <hz>]
+                                               real-time server (OSC on UDP + TCP 57110)
       --sample-rate <hz>   imposed output rate, default 48000; 0 follows the
                            device (PipeWire honors it per-app; other hosts fall
                            back to the device rate if unsupported)
@@ -23,8 +23,12 @@ usage:
       --max-buffers <n>        buffer pool size (default 1024)
       --max-graph-children <n> per-group child capacity (default 256)
       --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
-      --tcp [port]         also accept length-prefixed OSC over TCP (RT only;
-                           default port 57110)
+      --tcp [port]         length-prefixed OSC over TCP — on by default at the
+                           OSC port (57110); the flag only moves it (RT only)
+      --no-tcp             disable the TCP transport (UDP-only server)
+      --max-frame <bytes>  largest OSC frame on the stream transports (TCP and
+                           WebSocket; default 16 MiB). A DoS ceiling, not a
+                           protocol limit; UDP keeps the ~64 KB datagram cap
       --ws [port]          also accept OSC over WebSocket, reachable from a
                            browser (RT only; default port 57120; ws://host:port/)
       --midi [name]        open a virtual MIDI input port (RT only; default
@@ -158,7 +162,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // `persist = false` in config is the same as `--no-persist`; the flag can
     // still force it off, there is no flag to force it back on.
     let mut no_persist = cfg.persist == Some(false);
-    let mut tcp_port: Option<u16> = cfg.tcp.and_then(|t| t.resolve(DEFAULT_PORT));
+    // TCP is on by default (M25: the command plane for large payloads); the
+    // config's `tcp = false` — or `--no-tcp` below — turns it off.
+    let mut tcp_port: Option<u16> = match cfg.tcp {
+        Some(setting) => setting.resolve(DEFAULT_PORT),
+        None => Some(DEFAULT_PORT),
+    };
+    let mut max_frame: usize = cfg.max_frame.unwrap_or(clausters::osc::DEFAULT_MAX_FRAME);
     let mut ws_port: Option<u16> = cfg.ws.and_then(|w| w.resolve(DEFAULT_PORT + 10));
     let mut midi_port: Option<String> = cfg.midi.as_ref().and_then(|m| m.resolve("clausters"));
     // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
@@ -211,6 +221,13 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     it.next();
                 }
                 tcp_port = Some(port);
+            }
+            "--no-tcp" => tcp_port = None,
+            "--max-frame" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-frame needs a byte count\n{USAGE}"))?;
+                max_frame = value.parse().map_err(|e| format!("--max-frame: {e}"))?;
             }
             "--ws" => {
                 // Optional port; defaults away from --tcp's, since both bind a
@@ -404,6 +421,8 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
+    // Before the listeners: the TCP/WS hubs capture the ceiling when they bind.
+    osc.set_max_frame(max_frame);
     if !no_persist && let Some(dir) = resolve_data_dir(data_dir.as_deref()) {
         match DefStore::open(&dir) {
             Ok(store) => {
