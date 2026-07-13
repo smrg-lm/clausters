@@ -23,6 +23,14 @@ authors = [{ name = "Lucas Samaruga" }]
 # without it ever being a dependency here.
 dependencies = []
 
+# The PyPI sidebar: without these the published page links nowhere, and the
+# books are effectively unreachable (they do not surface in search on their own).
+[project.urls]
+Documentation = "https://clausters-python.readthedocs.io/"
+"Server documentation" = "https://clausters.readthedocs.io/"
+Source = "https://github.com/smrg-lm/clausters"
+Issues = "https://github.com/smrg-lm/clausters/issues"
+
 # `clausters` on the PATH: runs the bundled standalone server binary (a separate
 # networked / shared-memory server). The in-process embedded server needs no
 # command — it is imported (`clausters.Clausters`).

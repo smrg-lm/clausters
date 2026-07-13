@@ -9,6 +9,13 @@ name = "clausters"
 version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
+description = "A real-time audio synthesis server in the style of SuperCollider's scsynth, controlled over OSC, with Faust JIT-compiled synth definitions."
+# `documentation` points at the book, not at docs.rs (which builds the crate's
+# rustdoc anyway): the book is what a user of the *server* needs, and without
+# these links it does not surface in search.
+documentation = "https://clausters.readthedocs.io/"
+repository = "https://github.com/smrg-lm/clausters"
+readme = "README.md"
 
 [lib]
 # The cdylib is the M14 embed surface (a versioned C ABI, see src/embed.rs);

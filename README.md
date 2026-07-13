@@ -1,6 +1,11 @@
 # Clausters
 
 [![CI](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml/badge.svg)](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml)
+[![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
+[![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
+
+📖 **Documentation:** [server book](https://clausters.readthedocs.io/) ·
+[Python client book](https://clausters-python.readthedocs.io/)
 
 Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a
 real-time audio synthesis server controlled over OSC, with the same node-tree
@@ -129,14 +134,21 @@ cargo test
 
 ## Documentation
 
-Two mdBooks, one per platform (both Markdown, ReadTheDocs-deployable):
+Two books, one per platform, both published on Read the Docs:
 
-- **Server / workspace book** — full guide, OSC reference and architecture:
-  the mdBook in [`docs/`](docs/), starting at
+- **[Server / workspace book](https://clausters.readthedocs.io/)** — full
+  guide, OSC reference and architecture.
+- **[Python client book](https://clausters-python.readthedocs.io/)** — the
+  client's guide plus an API reference generated from its docstrings.
+
+Both are mdBooks kept in this repository (Markdown, ReadTheDocs-deployable), so
+they also build and read offline:
+
+- **Server / workspace book** — the mdBook in [`docs/`](docs/), starting at
   [`docs/introduction.md`](docs/introduction.md). Build with `mdbook build`.
-- **Python client book** — the client's guide plus an API reference generated
-  from docstrings: see
-  [`clients/python/README.md`](clients/python/README.md#documentation).
+- **Python client book** — [`clients/python/docs/`](clients/python/docs/); see
+  [`clients/python/README.md`](clients/python/README.md#documentation) for the
+  build (its API page is generated from the docstrings).
 - **Crate API reference** — `cargo doc --open` (the crate is usable as a
   library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
 - **Contributing / dev setup** — [`docs/contributing.md`](docs/contributing.md).

@@ -1,5 +1,12 @@
 # Clausters — Python client
 
+[![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
+[![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
+
+📖 **Documentation:** [Python client book](https://clausters-python.readthedocs.io/)
+(this package) · [server book](https://clausters.readthedocs.io/) (the OSC
+protocol, the wire formats, the engine)
+
 High-level Python client for the [Clausters](../../README.md) audio server,
 ported selectively from SuperCollider's class library
 ([sc3](https://github.com/smrg-lm/sc3)). It covers both of the server's
@@ -265,9 +272,16 @@ python clients/python/build_native.py            # release; --debug for the debu
 
 ## Documentation
 
-This client has its own mdBook — a guide plus an API reference **generated from
-the package docstrings**. It is a separate book from the server/workspace book
-at the repo root (two books, one per platform, cross-linked). Build it:
+📖 **[clausters-python.readthedocs.io](https://clausters-python.readthedocs.io/)**
+— the client's book online: the guide, the composition tutorial and the API
+reference. The server's own book (the OSC protocol, the wire formats, the
+engine) is at **[clausters.readthedocs.io](https://clausters.readthedocs.io/)**;
+the two cross-link.
+
+The book lives in this repository as an mdBook — a guide plus an API reference
+**generated from the package docstrings** — so it also builds and reads offline.
+It is a separate book from the server/workspace book at the repo root (two
+books, one per platform, cross-linked). Build it:
 
 ```sh
 uv tool install --python 3.12 pydoc-markdown   # user-space CLI in ~/.local/bin
