@@ -70,9 +70,10 @@ if [ "${FAUST_SKIP_FETCH:-0}" != 1 ]; then
   if ! git -C "$src" cat-file -e "${FAUST_SHA}^{commit}" 2>/dev/null; then
     git -C "$src" fetch --depth 1 origin "$FAUST_SHA"
   fi
-  head="$(git -C "$src" rev-parse HEAD 2>/dev/null || echo none)"
+  # --verify -q: empty (not the literal "HEAD") on a fresh/unborn checkout.
+  head="$(git -C "$src" rev-parse --verify -q HEAD || true)"
   if [ "$head" != "$FAUST_SHA" ]; then
-    if [ "$head" != none ] && [ "${FAUST_ALLOW_CHECKOUT:-0}" != 1 ]; then
+    if [ -n "$head" ] && [ "${FAUST_ALLOW_CHECKOUT:-0}" != 1 ]; then
       echo "error: $src is at $head, not the pinned $FAUST_SHA." >&2
       echo "       It looks like a working clone; refusing to move it." >&2
       echo "       Re-run with FAUST_ALLOW_CHECKOUT=1 to check out the pin," >&2
