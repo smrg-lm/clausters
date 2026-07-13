@@ -170,17 +170,25 @@ keep that cheap and green:
   and the LLVM version) and `third_party/build-faust.sh` (the one recipe). The
   composite, `release.yml` and a developer all run *that* script and read *that*
   pin — the CI cache key included — so the bundled libfaust/libLLVM are the same
-  everywhere, not whatever the build host defaulted to. Pinning **LLVM 21**
-  (pulled from apt.llvm.org in CI, newer than the distro's 18) is the point: the
-  wheel's ~130 MB libLLVM is then a known quantity.
-- **CI pins a baseline JIT CPU (`CLAUSTERS_FAUST_TARGET=:x86-64`).** The Faust
-  factory JITs for `""` = the host machine, and LLVM tunes the code to the
-  detected CPU — correct and fast on a *real* machine, which is why production
-  leaves it unset. But virtualized CI runners can report CPU features the
-  hypervisor then traps, so host-tuned JIT code `SIGILL`s at run time on some
-  Azure SKUs (seen intermittently, VM-dependent). An empty triple with a generic
-  `mcpu` (`:x86-64`) emits baseline SSE2 code that runs anywhere. The override is
-  a plain env var read by `faust::compiler::host_target`, so only CI opts in.
+  everywhere, not whatever the build host defaulted to. **LLVM is pinned to 18**:
+  it is Ubuntu 24.04's default (CI installs it from the distro repos, no
+  apt.llvm.org), and the distro build targets a baseline x86-64, which keeps the
+  wheel's ~130 MB libLLVM portable — it runs on any x86-64 CPU. A newer upstream
+  build (e.g. apt.llvm.org's 21) is built for a higher baseline and can itself
+  hit an illegal instruction on older machines, so it is the wrong thing to
+  ship; a developer who happens to have another LLVM builds locally with
+  `LLVM_CONFIG=llvm-config-NN` (the FFI surface is version-independent).
+- **CI pins a baseline JIT target (`CLAUSTERS_FAUST_TARGET`).** The Faust factory
+  JITs for `""` = the host machine, and LLVM tunes the code to the detected CPU —
+  correct and fast on a *real* machine, which is why production leaves it unset.
+  But virtualized CI runners can report CPU features the hypervisor then traps,
+  so host-tuned JIT code hits an illegal instruction at run time on some Azure
+  SKUs (seen intermittently, VM-dependent). The override forces a baseline
+  x86-64 target. It must be a **full triple** (`x86_64-unknown-linux-gnu:x86-64`):
+  faust sets `mcpu` from the string, but with an *empty* triple newer LLVM still
+  host-detects the CPU *features* and re-introduces the crash — only a concrete
+  triple pins it down. The override is a plain env var read by
+  `faust::compiler::host_target`, so only CI opts in.
 
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 

@@ -25,11 +25,13 @@ env:
   # single source of truth), read by the .github/actions/libfaust composite.
   # build.rs locates libfaust here (it also falls back to ~/.local on its own).
   FAUST_PREFIX: /home/runner/.local
-  # Force the Faust LLVM JIT onto a baseline x86-64 CPU (empty triple = host
-  # triple, generic mcpu). Virtualized CI runners can misreport their CPU
-  # features, so host-tuned JIT code SIGILLs at run time on some Azure SKUs;
-  # a baseline target is deterministic. Unset in production (wheel/server), so
-  # a real machine still gets host-tuned code. See docs/decisions.md.
+  # Force the Faust LLVM JIT onto a baseline x86-64 target (host triple, generic
+  # mcpu). Virtualized CI runners can misreport their CPU features, so host-tuned
+  # JIT code hits an illegal instruction at run time on some Azure SKUs. A full
+  # triple is needed (not just `:x86-64`): with an empty triple, newer LLVM still
+  # host-detects the CPU features and re-introduces the crash. Unset in
+  # production (wheel/server), so a real machine gets host-tuned code. See
+  # docs/decisions.md.
   CLAUSTERS_FAUST_TARGET: "x86_64-unknown-linux-gnu:x86-64"
 
 jobs:

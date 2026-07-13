@@ -50,13 +50,9 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        # The pinned LLVM (faust.pin) is newer than the distro default, so pull
-        # it from apt.llvm.org for the current Ubuntu codename.
-        codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
-        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
-          | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
-        echo "deb http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-${FAUST_LLVM_VERSION} main" \
-          | sudo tee /etc/apt/sources.list.d/llvm.list >/dev/null
+        # The pinned LLVM (faust.pin) is Ubuntu 24.04's default, so it installs
+        # straight from the distro repos. (A pin newer than the distro's default
+        # would need the apt.llvm.org repo added here first.)
         sudo apt-get update
         sudo apt-get install -y cmake make g++ zlib1g-dev pkg-config "llvm-${FAUST_LLVM_VERSION}-dev"
         # One recipe, shared with local dev and release: fetch the pin, build the

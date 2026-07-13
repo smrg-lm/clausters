@@ -15,8 +15,11 @@ The Faust source is **not committed** (it is heavy and git-ignored under
 
 - **`third_party/faust.pin`** — the single source of truth: the exact commit
   (`FAUST_SHA`, the unpatched `master-dev` base) and the LLVM version the shipped
-  libLLVM is built against (`FAUST_LLVM_VERSION`, pinned to **21** so the bundled
-  artifact is deterministic instead of whatever the build host defaults to).
+  libLLVM is built against (`FAUST_LLVM_VERSION`, pinned to **18** — Ubuntu
+  24.04's default, a baseline-x86-64 build that keeps the bundled libLLVM
+  portable). A developer on a different LLVM (this machine has 21) builds locally
+  with `LLVM_CONFIG=llvm-config-21 third_party/build-faust.sh`; only the *shipped*
+  artifact is pinned, and the hand-written FFI surface is version-independent.
 - **`third_party/build-faust.sh`** — one recipe, run identically by local dev,
   CI and the release wheel: fetch the pinned commit (+ submodules), build the
   dynamic `libfaust.so`, install into a prefix, and stage the libLLVM beside it.
