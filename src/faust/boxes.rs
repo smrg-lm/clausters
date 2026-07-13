@@ -357,6 +357,9 @@ unsafe fn build_op(
 /// `seq(par(inputs…), primitive)` — how upstream's own `Cbox*TableAux`
 /// helpers apply the 0-argument table primitives. Faust checks the summed
 /// output arity against the primitive's inputs at compile time.
+// The five build-context args (obj/op/path/cstrings/memo) thread through every
+// box builder here; min/max/primitive are what actually vary per table op.
+#[allow(clippy::too_many_arguments)]
 unsafe fn table_op(
     obj: &Map<String, Value>,
     op: &str,
