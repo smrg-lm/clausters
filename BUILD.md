@@ -151,6 +151,35 @@ the `pipewire-jack` package docs — and drop the `pw-jack` prefix.)
 
 ## Release
 
+### Cutting a release (CI → PyPI + RTD)
+
+A release is **driven entirely by pushing a `v*` tag** — that fires
+`.github/workflows/release.yml`; nothing is done by hand on PyPI or Read the
+Docs. Steps:
+
+1. **Pick the tier** — major / minor / patch — per *Versioning* below. (In our
+   Spanish workflow: "hacé una release" plus the tier — mayor / menor / bugfix.)
+2. **Bump `version` in lockstep** across the six packages — the root
+   `Cargo.toml`, `crates/clausters-{core,ffi,midi}`, `clients/gui` and
+   `clients/python/pyproject.toml` — and refresh both lockfiles (the root
+   `Cargo.lock` and `clients/gui/Cargo.lock`, e.g. `cargo update -w --offline`).
+3. If a binary boundary changed this cycle, bump the matching ABI counter (the
+   linkage rule below).
+4. **Commit** (`release: vX.Y.Z`) and **push to `main`**.
+5. **Tag and push**: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag triggers
+   `release.yml`, whose three jobs:
+   - **build** — the self-contained wheel (client + embedded server + standalone
+     binary + bundled libfaust/libLLVM) and a server-binary tarball (Linux
+     x86_64); the tarball version comes from the tag, the wheel version from
+     `pyproject.toml` (hence step 2).
+   - **publish-pypi** — publishes the wheel to PyPI via Trusted Publishing (OIDC,
+     the `pypi` environment, no stored token).
+   - **github-release** — creates the GitHub release with generated notes and
+     attaches both artifacts.
+6. **Read the Docs** rebuilds both books from the push/tag webhook (each project
+   selects its own `.readthedocs.yaml`); activate the new version in each RTD
+   project if it is not set to build tags automatically.
+
 ### Versioning and the ABI counters
 
 Three version numbers answer different questions; keep them distinct:
