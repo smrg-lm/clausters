@@ -23,8 +23,8 @@ piano-roll or an editable automation curve) and a ``graph`` **patcher** of a
 bus-wired node graph (drag a port onto a bus to rewire it);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.editor.Editor` drives that
-multitrack view from a `clausters.model` composition — rendering the model tree
-to a GuiDef, applying the clip edit-backs onto it, and re-realizing it. A ``waveform`` can also name a server buffer, a
+multitrack view from a `clausters.form` composition — drawing the arrangement
+tree as a GuiDef, applying the clip edit-backs onto it, and re-rendering it. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
 with ``Server.tap``). A widget can also be *bound*

@@ -23,7 +23,7 @@ clock = TempoClock(tempo=2.0)        # or: Session.live(host, port)
 - **Jitter-free *relative* timing.** Logical time is exact, so events keep their spacing even though the routine wakes at slightly irregular physical instants. The routine's *start* is arbitrary (wall-clock), exactly as in SuperCollider; the guarantee is no jitter *between* events, like MIDI.
 - Absolute alignment across machines is **NTP/PTP-quality**, not sample-exact.
 
-This is the model to assume unless you opt into another. Nothing to test beyond playing a routine — it just sounds.
+This is the timing model to assume unless you opt into another. Nothing to test beyond playing a routine — it just sounds.
 
 ## Sample clock — drift-free, locked to a master
 
@@ -59,7 +59,7 @@ print(f"counter advanced {after - before} samples = {(after - before) / sc.rate:
 
 ## Shared transport — phase-aligning several clients
 
-> This section is the *model* in brief; [A DAW-style transport](transport.md) is the full workflow guide — conducting, following, starting together on a bar, and following a tempo change live.
+> This section is that timing model in brief; [A DAW-style transport](transport.md) is the full workflow guide — conducting, following, starting together on a bar, and following a tempo change live.
 
 Locking to a master gives every client the same sample axis, but each routine still *starts* whenever you play it. To make several clients begin on the **same beat**, two pieces work together:
 

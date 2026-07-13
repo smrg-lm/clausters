@@ -1,7 +1,7 @@
-"""The arrangement model — materials and their temporal character.
+"""The arrangement — elements and their temporal character.
 
 The client-side layer under a multitrack editor of recursive granularity: it
-places materials in time, groups them recursively and realizes them. A `Material`
+places elements in time, groups them recursively and renders them. An `Element`
 is an arbitrarily delimited entity that produces a unit of meaning and can be
 decomposed or combined — *generated* (the rendered thing, editable and
 random-access) or a *generator* (the algorithm that renders it, forward-only),
@@ -9,8 +9,8 @@ with the change of state between them. It is a **thin adornment** over the objec
 already has (`clausters.seq.Event`, `clausters.seq.Timeline`, a `Buffer`, a
 `Pattern`, a def): it carries the temporal metadata (`onset`, `duration`, and the
 derived temporal *character*) and belongs to a `Group`, while it **delegates
-realization** to the wrapped item's ``play(destination)`` — the double-dispatch
-seam every leaf item in the client already shares. The model does not
+playing** to the wrapped item's ``play(destination)`` — the double-dispatch
+seam every leaf item in the client already shares. The arrangement does not
 reimplement or subclass those objects.
 
 The five primitives map one-to-one onto what the client already has:
@@ -21,16 +21,17 @@ The five primitives map one-to-one onto what the client already has:
   Wraps a Python list or a `Pattern`.
 - `Buffer`    — *Buffer*: a list at constant time (audio or control samples).
   Wraps `clausters.defs.Buffer`.
-- `Track`     — *Set*: mixed placement of materials, a DAW track. Wraps
+- `Track`     — *Set*: mixed placement of elements, a DAW track. Wraps
   `clausters.seq.Timeline`.
-- `Generator` — *Function*: logical/generator material — server DSP (a def) or a
+- `Generator` — *Function*: a generator element — server DSP (a def) or a
   sequence generator (`Pbind`/`Routine`).
 
-Grouping and realization live in `clausters.model.group`. This module is pure
-and transport-agnostic (factorable into ``clausters-core`` in a future port).
+Grouping and rendering live in `clausters.form.group` and
+`clausters.form.render`. This module is pure and transport-agnostic (factorable
+into ``clausters-core`` in a future port).
 """
 
-#: The temporal character of a material, derived from which of ``onset`` and
+#: The temporal character of an element, derived from which of ``onset`` and
 #: ``duration`` are present. ``segment`` has both; ``punctual`` has an
 #: onset but no duration; ``relative`` has a duration but no onset; ``abstract``
 #: has neither (a pure context/container that only a parent gives concrete time).
@@ -42,7 +43,7 @@ ABSTRACT = "abstract"
 
 def temporal_character(onset, duration) -> str:
     """The temporal character for a given ``onset``/``duration`` pair (the pure
-    rule behind `Material.temporal_character`)."""
+    rule behind `Element.temporal_character`)."""
     has_onset = onset is not None
     has_duration = duration is not None
     if has_onset and has_duration:
@@ -54,17 +55,17 @@ def temporal_character(onset, duration) -> str:
     return ABSTRACT
 
 
-class Material:
-    """Base of the arrangement model: temporal metadata over a wrapped item.
+class Element:
+    """Base of the arrangement: temporal metadata over a wrapped item.
 
-    A material carries an optional ``onset`` and ``duration`` (in beats, relative
+    An element carries an optional ``onset`` and ``duration`` (in beats, relative
     to its context) and wraps an underlying client object it delegates to. The
-    concrete onset of a material typically comes from its *placement* inside a
-    `clausters.model.group.Group`, not from the material itself, so a standalone
+    concrete onset of an element typically comes from its *placement* inside a
+    `clausters.form.group.Group`, not from the element itself, so a standalone
     leaf commonly has a duration but no onset (a ``relative`` character).
 
     Args:
-        wraps: the underlying object realization delegates to (or ``None`` for a
+        wraps: the underlying object playing delegates to (or ``None`` for a
             pure container like a `Group`).
         onset: start in beats relative to the context, or ``None``.
         duration: length in beats, or ``None``.
@@ -77,49 +78,49 @@ class Material:
 
     @property
     def temporal_character(self) -> str:
-        """This material's character (`SEGMENT`/`PUNCTUAL`/`RELATIVE`/`ABSTRACT`),
+        """This element's character (`SEGMENT`/`PUNCTUAL`/`RELATIVE`/`ABSTRACT`),
         derived from the presence of ``onset`` and ``duration``."""
         return temporal_character(self.onset, self.duration)
 
     def play(self, destination):
-        """Delegate realization to the wrapped item's ``play(destination)`` — the
+        """Delegate playing to the wrapped item's ``play(destination)`` — the
         double-dispatch seam shared by `clausters.seq.Event`,
         `clausters.seq.timeline.OscEvent`/`MidiEvent` and
         `clausters.seq.Automation`.
 
-        Container and pattern-backed materials (`Group`, `Track`, a `Sequence`
+        Container and pattern-backed elements (`Group`, `Track`, a `Sequence`
         wrapping a `Pattern`) are **not** directly playable this way — they are
-        realized by ``realize()``. Delegating here requires the wrapped
+        rendered by ``render()``. Delegating here requires the wrapped
         object to follow the ``play(destination)`` protocol.
         """
         play = getattr(self.wraps, "play", None)
         if play is None:
             raise NotImplementedError(
-                f"{type(self).__name__} is not directly playable; use realize()"
+                f"{type(self).__name__} is not directly playable; use render()"
             )
         return play(destination)
 
     def to_timeline(self, base: float = 0.0):
-        """Flatten this material to a flat `clausters.seq.Timeline` in absolute
+        """Flatten this element to a flat `clausters.seq.Timeline` in absolute
         beats (accumulating nested placement offsets). See
-        `clausters.model.realize`."""
-        from .realize import to_timeline
+        `clausters.form.render`."""
+        from .render import to_timeline
 
         return to_timeline(self, base)
 
-    def realize(self, destination, clock=None, *, at: float = 0.0, quant=None,
-                ports=None):
-        """Realize this material onto ``destination`` — the change of state to
-        sound. A compositional material flattens and plays through a
+    def render(self, destination, clock=None, *, at: float = 0.0, quant=None,
+               ports=None):
+        """Render this element onto ``destination`` — the change of state to
+        sound. A concrete element flattens and plays through a
         `clausters.seq.Playhead` over ``clock`` (returns the playhead); a logical
         `Group` sends and instances a `GraphDef` on the server (returns the
-        instance). See `clausters.model.realize.realize`."""
-        from .realize import realize
+        instance). See `clausters.form.render.render`."""
+        from .render import render
 
-        return realize(self, destination, clock, at=at, quant=quant, ports=ports)
+        return render(self, destination, clock, at=at, quant=quant, ports=ports)
 
 
-class Event(Material):
+class Event(Element):
     """*event/clip*: parameters grouped into one action, internally simultaneous.
 
     Wraps a `clausters.seq.Event` (or a plain ``dict`` of parameters). Its
@@ -138,12 +139,12 @@ class Event(Material):
         super().__init__(wraps=wrapped, onset=onset, duration=duration)
 
 
-class Sequence(Material):
+class Sequence(Element):
     """*List*: strict order with no concrete time — only sequence.
 
-    Wraps a Python list or a `clausters.seq.pattern.Pattern`. The elements can be
-    numbers, events, notes or whole materials; the structure fixes only their
-    successive order. Realization bounces a pattern-backed sequence; a list is
+    Wraps a Python list or a `clausters.seq.pattern.Pattern`. The items can be
+    numbers, events, notes or whole elements; the structure fixes only their
+    successive order. Rendering bounces a pattern-backed sequence; a list is
     interpreted by its content.
     """
 
@@ -151,16 +152,16 @@ class Sequence(Material):
         super().__init__(wraps=items, onset=onset, duration=duration)
 
 
-class Buffer(Material):
+class Buffer(Element):
     """*Buffer*: a list at constant time — audio or control samples.
 
     Wraps a `clausters.defs.Buffer`. An automation sampled at a constant interval
-    is a control buffer (the List/Buffer duality of the model).
+    is a control buffer (the List/Buffer duality of the arrangement).
 
-    A buffer is *data*, so realizing it as an **audio clip** needs an instrument:
+    A buffer is *data*, so rendering it as an **audio clip** needs an instrument:
     the def that plays it, named by ``instrument`` (a synth whose ``buf`` control
-    takes the buffer number, as a sampler's does). Realization then emits one
-    event playing that def — `to_event`. Without an instrument the material is
+    takes the buffer number, as a sampler's does). Rendering then emits one
+    event playing that def — `to_event`. Without an instrument the element is
     still perfectly good structure (and the editor draws its take), it simply has
     no sound of its own.
 
@@ -182,7 +183,7 @@ class Buffer(Material):
 
     def to_event(self):
         """The event that plays this buffer: the `instrument` def with the buffer
-        number in its ``buf`` control, sounding for the material's ``duration``.
+        number in its ``buf`` control, sounding for the element's ``duration``.
 
         ``legato`` is 1 so the take sounds its whole length (the note default of
         0.8 would cut it short — a sampled take is not a note with a gap).
@@ -191,7 +192,7 @@ class Buffer(Material):
 
         if self.instrument is None:
             raise NotImplementedError(
-                "a Buffer needs an instrument to be realized as an audio clip "
+                "a Buffer needs an instrument to be rendered as an audio clip "
                 "(Buffer(buf, instrument='take'): a def whose `buf` control plays it)"
             )
         params = dict(instrument=self.instrument, buf=self.wraps.bufnum, legato=1.0)
@@ -201,8 +202,8 @@ class Buffer(Material):
         return SeqEvent(params)
 
 
-class Track(Material):
-    """*Set*: mixed placement of materials — a DAW track.
+class Track(Element):
+    """*Set*: mixed placement of elements — a DAW track.
 
     Wraps a `clausters.seq.Timeline` (free placement of items by beat). A fresh
     empty `Timeline` is created when none is given.
@@ -216,12 +217,12 @@ class Track(Material):
         super().__init__(wraps=timeline, onset=onset, duration=duration)
 
 
-class Generator(Material):
-    """*Function*: logical/generator material.
+class Generator(Element):
+    """*Function*: a generator element.
 
     Wraps either server DSP (a `SynthDef`/`FaustDef`/`GraphDef`, or a def name)
     or a sequence generator (a `Pbind`/`Routine`). Its *change of state* —
-    evaluating the generator into concrete material — happens at realization: a
+    evaluating the generator into a generated element — happens at rendering: a
     contained event pattern is bounced to a timeline; a def member of a
     logical `Group` becomes a wired GraphDef member.
 

@@ -1,7 +1,7 @@
 """Automation: a break-point control curve as a control vector (buffer).
 
 An `Automation` places a break-point curve on the timeline that drives one or
-more ``(node, control)`` targets. It is realized as a **control vector**: the
+more ``(node, control)`` targets. It is rendered as a **control vector**: the
 curve is discretized on the server into a control buffer (``/b_gen "env"``,
 evaluated through the same envelope-shape math the ``EnvGen`` UGen plays), and a
 small control synth reads that buffer onto a control bus which the targets
@@ -81,7 +81,7 @@ def _env_gen_args(env):
 
 class Automation:
     """A control-automation lane: a break-point curve (`Env`) driving one or
-    more ``(node, control)`` targets, realized as a control buffer read onto a
+    more ``(node, control)`` targets, rendered as a control buffer read onto a
     control bus. Editable through `to_points`/`from_points` (the ``bpf`` widget's
     flat ``[time, value, shape, curve, ...]`` form, in real control units).
 

@@ -136,8 +136,8 @@ where dragging a port onto a bus rewires that control. The patch is deliberately
 undirected — a GraphDef knows that a control *touches* a bus, and which end writes
 is the server's own analysis (see [Design decisions](decisions.md)).
 
-The Python side of all this is `clausters.gui.Editor`: it renders a composition
-into that window, applies the edit-backs onto the model, and re-realizes it — so
+The Python side of all this is `clausters.gui.Editor`: it draws a composition
+into that window, applies the edit-backs onto the arrangement, and re-renders it — so
 the graphic is not a picture of the music, it *is* the music. Its user
 documentation is the composition chapter of the Python client's book.
 
@@ -209,7 +209,7 @@ same C ABI and the same OSC.
 | MIDI interfaces in the Python client (`MidiServer`, SMF / MIDI 2.0 clip export, live port) | done |
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
 | Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
-| Arrangement model in the Python client (materials, recursive groups, realization) | done |
-| Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `graph`) and the driver that binds them to the model | done |
+| Arrangement model in the Python client (elements, recursive groups, rendering) | done |
+| Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `graph`) and the driver that binds them to the arrangement | done |
 | JavaScript client + npm | planned |
 | `third_party` Faust build + Faust-enabled wheels | planned |

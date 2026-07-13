@@ -1,6 +1,6 @@
-"""The multitrack editor driver (`clausters.gui.editor`) — the model↔GuiDef bridge.
+"""The multitrack editor driver (`clausters.gui.editor`) — the arrangement↔GuiDef bridge.
 
-No server and no GUI host: the forward render is a pure function of the model
+No server and no GUI host: the forward draw is a pure function of the arrangement
 tree, so these check the mapping rule (lanes, clips, bodies), the beats↔timeline-
 samples unit bridge, and the id registry that the edit-back path writes through.
 """
@@ -9,7 +9,7 @@ import pytest
 
 from clausters.defs.buffer import Buffer as ServerBuffer
 from clausters.gui.editor import Editor
-from clausters.model import Buffer, Event, Group, Sequence, Track
+from clausters.form import Buffer, Event, Group, Sequence, Track
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Timeline
 
@@ -30,8 +30,8 @@ def song() -> Group:
     return Group([(0.0, audio), (0.0, lead)], name="song")
 
 
-def editor(material=None, **kwargs) -> Editor:
-    return Editor(material or song(), sample_rate=SR, tempo=TEMPO, **kwargs)
+def editor(element=None, **kwargs) -> Editor:
+    return Editor(element or song(), sample_rate=SR, tempo=TEMPO, **kwargs)
 
 
 def lanes(tree: dict) -> list:
@@ -53,16 +53,16 @@ def test_one_beat_is_sample_rate_over_tempo_timeline_units():
 
 
 def test_a_musical_quant_becomes_the_lanes_drag_grid():
-    tree = editor(quant=0.25).render()
+    tree = editor(quant=0.25).draw()
     assert all(lane["snap"] == pytest.approx(BEAT / 4) for lane in lanes(tree))
     # No quant: no grid (the host then snaps to whole samples).
-    assert "snap" not in lanes(editor().render())[0]
+    assert "snap" not in lanes(editor().draw())[0]
 
 
 # ---- the mapping rule: root members are lanes, their members are clips ----
 
 def test_each_root_member_becomes_a_lane_named_after_its_material():
-    tree = editor().render()
+    tree = editor().draw()
     assert [lane["label"] for lane in lanes(tree)] == ["audio", "lead"]
     # The bottom lane rules the shared axis (one ruler under the stack).
     assert lanes(tree)[-1]["ruler"] == "beats"
@@ -70,7 +70,7 @@ def test_each_root_member_becomes_a_lane_named_after_its_material():
 
 
 def test_a_buffer_clip_names_the_server_buffer_and_spans_its_frames():
-    audio = lanes(editor().render())[0]
+    audio = lanes(editor().draw())[0]
     (take,) = clips(audio)
     assert take["type"] == "clip"
     assert take["buffer"] == 7                    # fetched over the host's leg
@@ -80,20 +80,20 @@ def test_a_buffer_clip_names_the_server_buffer_and_spans_its_frames():
 
 def test_a_buffer_spans_its_frames_only_when_it_has_no_duration():
     """A buffer read but never queried has no frame count client-side; its
-    material's `duration` is what places it, and must win over the frames."""
+    element's `duration` is what places it, and must win over the frames."""
     unqueried = Buffer(ServerBuffer(bufnum=3), duration=2.0)   # frames unknown (0)
-    (lane,) = lanes(editor(Group([(0.0, unqueried)], name="take")).render())
+    (lane,) = lanes(editor(Group([(0.0, unqueried)], name="take")).draw())
     (c,) = clips(lane)
     assert c["dur"] == pytest.approx(2 * BEAT)
 
     # With no duration either, the take's own frames are its length.
     sized = Buffer(ServerBuffer(bufnum=3, frames=int(1.5 * BEAT)))
-    (lane,) = lanes(editor(Group([(0.0, sized)], name="take")).render())
+    (lane,) = lanes(editor(Group([(0.0, sized)], name="take")).draw())
     assert clips(lane)[0]["dur"] == pytest.approx(1.5 * BEAT)
 
 
 def test_an_events_material_draws_a_piano_roll_placed_by_its_offset():
-    lead = lanes(editor().render())[1]
+    lead = lanes(editor().draw())[1]
     (roll,) = clips(lead)
     # Placed at beat 2 of the song, in timeline samples.
     assert roll["offset"] == pytest.approx(2 * BEAT)
@@ -113,7 +113,7 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
     from clausters.seq.pattern import Pbind, Pseq
 
     seq = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
-    (lane,) = lanes(editor(Group([(0.0, seq)], name="gen")).render())
+    (lane,) = lanes(editor(Group([(0.0, seq)], name="gen")).draw())
     (roll,) = clips(lane)
     # Pitch is the 3rd of each (start, dur, pitch, velocity, channel) quintuple.
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 62.0]
@@ -121,7 +121,7 @@ def test_a_generator_lane_shows_the_notes_its_pattern_will_play():
 
 def _track_material():
     """A `Track` of two notes and one OSC event on an editable timeline."""
-    from clausters.model import Track
+    from clausters.form import Track
     from clausters.seq.event import Event as SeqEvent
     from clausters.seq.timeline import OscEvent, Timeline
 
@@ -132,11 +132,11 @@ def _track_material():
     return Track(tl), tl
 
 
-def test_a_material_renders_as_a_dedicated_piano_roll():
+def test_an_element_renders_as_a_dedicated_piano_roll():
     track, _tl = _track_material()
     ed = Editor(track, sample_rate=SR, tempo=TEMPO, quant=0.25)
-    ed._mode, ed._roll_material = "pianoroll", track
-    (roll,) = ed.render()["children"][:1]
+    ed._mode, ed._roll_element = "pianoroll", track
+    (roll,) = ed.draw()["children"][:1]
     assert roll["type"] == "pianoroll"
     # Notes as quintuples (pitch is the 3rd), the OSC event on its own lane.
     assert [roll["notes"][i] for i in (2, 7)] == [60.0, 64.0]
@@ -147,8 +147,8 @@ def test_a_material_renders_as_a_dedicated_piano_roll():
 def test_a_note_edit_rewrites_the_editable_timeline():
     track, tl = _track_material()
     ed = Editor(track, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._roll_material = "pianoroll", track
-    ed.render()  # builds the roll registry
+    ed._mode, ed._roll_element = "pianoroll", track
+    ed.draw()  # builds the roll registry
     wid = next(iter(ed._rolls))
     # Move pitch 60 -> 62 and add a note; times/durs in timeline units.
     edited = [0.0, BEAT, 62, 100, 0, 1.0 * BEAT, 0.5 * BEAT, 67, 90, 0]
@@ -166,8 +166,8 @@ def test_a_generator_material_is_read_only_in_the_piano_roll():
 
     gen = Sequence(Pbind(midinote=Pseq([60, 62], 1), dur=1.0))
     ed = Editor(gen, sample_rate=SR, tempo=TEMPO)
-    ed._mode, ed._roll_material = "pianoroll", gen
-    ed.render()
+    ed._mode, ed._roll_element = "pianoroll", gen
+    ed.draw()
     wid = next(iter(ed._rolls))
     # A generator is forward-only: the edit is ignored (no editable timeline).
     assert ed.apply("/gui_event", [wid, "notes", 0.0, BEAT, 65, 100, 0]) is False
@@ -182,7 +182,7 @@ def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
     outer = Group([(0.0, inner)], name="section")
     ed = editor(Group([(0.0, outer)], name="song"))
 
-    (lane,) = lanes(ed.render())
+    (lane,) = lanes(ed.draw())
     (summary,) = clips(lane)
     assert summary["label"] == "motif"
     assert "notes" not in summary and "buffer" not in summary  # a bare rectangle
@@ -190,7 +190,7 @@ def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
 
     # Expanded, the group resolves into a lane of its own with its members as clips.
     ed.expand(inner)
-    expanded = lanes(ed.render())
+    expanded = lanes(ed.draw())
     assert [lane["label"] for lane in expanded] == ["motif"]
     assert len(clips(expanded[0])) == 2
 
@@ -199,21 +199,21 @@ def test_a_nested_group_is_a_labeled_rectangle_until_it_is_expanded():
 
 def test_every_clip_registers_the_placement_it_came_from():
     ed = editor()
-    tree = ed.render()
+    tree = ed.draw()
     ids = [c["id"] for lane in lanes(tree) for c in clips(lane)]
     assert set(ids) == set(ed._clips)
     for wid in ids:
         placed = ed._clips[wid]
-        # The handle is the model's own: moving it moves the material.
+        # The handle is the arrangement's own: moving it moves the element.
         assert placed.member in placed.owner.handles
 
 
 def test_a_render_is_stable_across_calls():
     ed = editor()
-    assert ed.render() == ed.render()
+    assert ed.draw() == ed.draw()
 
 
-# ---- the edit-back: a dragged clip becomes a placement in the model ----
+# ---- the edit-back: a dragged clip becomes a placement in the tree ----
 
 def clip_event(wid: int, offset: float, dur: float) -> tuple:
     """The payload the host sends when a clip is dragged or resized."""
@@ -222,7 +222,7 @@ def clip_event(wid: int, offset: float, dur: float) -> tuple:
 
 def test_a_dragged_clip_moves_the_material_in_beats():
     ed = editor(quant=0.25)
-    tree = ed.render()
+    tree = ed.draw()
     roll = clips(lanes(tree)[1])[0]           # the lead's piano-roll, at beat 2
     placed = ed._clips[roll["id"]]
     owner, member = placed.owner, placed.member
@@ -236,9 +236,9 @@ def test_a_dragged_clip_moves_the_material_in_beats():
 
 def test_an_edit_snaps_to_the_musical_grid():
     ed = editor(quant=0.5)
-    roll = clips(lanes(ed.render())[1])[0]
+    roll = clips(lanes(ed.draw())[1])[0]
     member = ed._clips[roll["id"]].member
-    # A hair off a half-beat boundary (the wire carries 32-bit floats): the model
+    # A hair off a half-beat boundary (the wire carries 32-bit floats): the tree
     # gets the grid value, not the noise.
     ed.apply(*clip_event(roll["id"], 3.51 * BEAT, 2.0 * BEAT))
     assert member.offset == pytest.approx(3.5)
@@ -251,7 +251,7 @@ def test_a_clip_in_a_placed_group_converts_back_through_its_base():
     note = Event(SeqEvent(midinote=60, dur=1.0))
     section = Group([(1.0, note)], name="section")        # the note at beat 1 of it
     ed = editor(Group([(4.0, section)], name="song"))     # the section at beat 4
-    (c,) = clips(lanes(ed.render())[0])
+    (c,) = clips(lanes(ed.draw())[0])
     assert c["offset"] == pytest.approx(5 * BEAT)         # absolute: 4 + 1
 
     member = ed._clips[c["id"]].member
@@ -261,11 +261,11 @@ def test_a_clip_in_a_placed_group_converts_back_through_its_base():
 
 def test_moving_a_clip_leaves_its_length_alone():
     """A drag carries the clip's unchanged `dur` along; writing it back (snapped)
-    would silently reshape the material. Only what moved is written."""
+    would silently reshape the element. Only what moved is written."""
     ed = editor(quant=1.0)
-    roll = clips(lanes(ed.render())[1])[0]
+    roll = clips(lanes(ed.draw())[1])[0]
     member = ed._clips[roll["id"]].member
-    assert member.dur is None                             # the model set no length
+    assert member.dur is None                             # the placement set no length
 
     ed.apply(*clip_event(roll["id"], 5 * BEAT, roll["dur"]))
     assert member.offset == pytest.approx(5.0)
@@ -274,27 +274,27 @@ def test_moving_a_clip_leaves_its_length_alone():
 
 def test_render_apply_render_is_a_fixed_point():
     ed = editor(quant=0.25)
-    before = ed.render()
+    before = ed.draw()
     # Feed every clip its own placement back: nothing moved, so nothing changes.
     for lane in lanes(before):
         for c in clips(lane):
             ed.apply(*clip_event(c["id"], c["offset"], c["dur"]))
-    assert ed.render() == before
+    assert ed.draw() == before
 
 
-def test_an_edit_marks_the_model_changed_until_it_is_realized():
+def test_an_edit_marks_the_arrangement_changed_until_it_is_rendered():
     """An edit does not interrupt what is playing; it marks the composition, and
-    the next play (or a resume, or a seek) re-reads it — realizing always
-    re-flattens the model."""
+    the next play (or a resume, or a seek) re-reads it — rendering always
+    re-flattens the tree."""
     ed = editor(quant=1.0)
-    roll = clips(lanes(ed.render())[1])[0]
+    roll = clips(lanes(ed.draw())[1])[0]
     assert not ed.dirty
 
     ed.apply(*clip_event(roll["id"], 5 * BEAT, roll["dur"]))
     assert ed.dirty
 
     # A resize is an edit too — and it is the one that used to be silent: the
-    # placement's length now trims what the material plays.
+    # placement's length now trims what the element plays.
     placed = ed._clips[roll["id"]]
     assert (placed.offset, placed.dur) == (5 * BEAT, roll["dur"])   # registry kept true
     ed.apply(*clip_event(roll["id"], 5 * BEAT, 1 * BEAT))
@@ -302,11 +302,11 @@ def test_an_edit_marks_the_model_changed_until_it_is_realized():
 
 
 def test_the_composition_grows_when_a_clip_is_dragged_past_the_end():
-    """The piece's length is read from the model, never fixed: drag a clip beyond
+    """The piece's length is read from the arrangement, never fixed: drag a clip beyond
     the last one and the composition is longer — which is what a transport must ask
     to play it to its (new) end."""
     ed = editor(quant=1.0)
-    tree = ed.render()
+    tree = ed.draw()
     before = ed.extent()                          # the take (4 beats) is the longest
 
     lead = clips(lanes(tree)[1])[0]
@@ -372,7 +372,7 @@ def test_a_second_editors_events_fall_through_untouched():
 
 def test_unknown_messages_are_ignored():
     ed = editor()
-    ed.render()
+    ed.draw()
     assert not ed.apply("/gui_event", [1, "points", 0.0, 1.0])   # a bpf edit
     assert not ed.apply("/gui_event", [999_999, "clip", 0.0, 1.0])  # unknown id
     assert not ed.apply("/clock.reply", [1234.0])
@@ -382,7 +382,7 @@ def test_unknown_messages_are_ignored():
 
 def automation_song() -> tuple:
     """A composition with one automation lane: a filter sweep over four beats."""
-    from clausters.model import Material
+    from clausters.form import Element
     from clausters.seq import Automation
 
     # The flat bpf quads: (time, value, shape, curve) with the server's own shape
@@ -390,14 +390,14 @@ def automation_song() -> tuple:
     auto = Automation.from_points(
         [(0, 200.0, 1, 0.0), (2, 4000.0, 2, 0.0), (4, 800.0, 1, 0.0)],
         target=None, name="cutoff")
-    song = Group([(2.0, Group([(0.0, Material(auto))], name="filter"))], name="song")
+    song = Group([(2.0, Group([(0.0, Element(auto))], name="filter"))], name="song")
     return song, auto
 
 
 def test_an_automation_draws_as_a_curve_clip_on_the_timeline():
     song, auto = automation_song()
     ed = editor(song)
-    (lane,) = lanes(ed.render())
+    (lane,) = lanes(ed.draw())
     (curve,) = clips(lane)
 
     assert curve["offset"] == pytest.approx(2 * BEAT)   # placed at beat 2
@@ -416,7 +416,7 @@ def test_an_automation_draws_as_a_curve_clip_on_the_timeline():
 def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
     song, auto = automation_song()
     ed = editor(song)
-    (curve,) = clips(lanes(ed.render())[0])
+    (curve,) = clips(lanes(ed.draw())[0])
 
     # The host sends the same flat "points" payload the bpf view sends — here the
     # peak dragged down to 3000 Hz and a beat later.
@@ -425,11 +425,11 @@ def test_editing_the_curve_in_place_writes_it_back_onto_the_automation():
               4 * BEAT, 800.0, 1, 0.0]
     assert ed.apply("/gui_event", [curve["id"], "points", *edited])
 
-    # The automation's Env — its source of truth, what the next realization plays.
+    # The automation's Env — its source of truth, what the next rendering plays.
     assert auto.to_points()[4:6] == pytest.approx([3.0, 3000.0])  # in beats again
     assert auto.duration() == pytest.approx(4.0)
     # And the redraw shows what was dropped.
-    assert clips(lanes(ed.render())[0])[0]["points"][4:6] == pytest.approx(
+    assert clips(lanes(ed.draw())[0])[0]["points"][4:6] == pytest.approx(
         [3 * BEAT, 3000.0])
 
 
@@ -438,17 +438,17 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
     (its temporal relation says so), so it draws as one clip with **layered**
     bodies — the envelope over the event it shapes — and dragging it moves the
     whole group, not one of its parts."""
-    from clausters.model import Material
+    from clausters.form import Element
     from clausters.seq import Automation
 
     env = Automation.from_points([(0, 200.0, 1, 0.0), (4, 900.0, 2, 0.0)],
                                  target=None, name="sweep")
     voice = Event(SeqEvent(midinote=60, dur=4.0))
-    attached = Group([(0.0, voice), (0.0, Material(env, duration=4.0))], name="sweep")
+    attached = Group([(0.0, voice), (0.0, Element(env, duration=4.0))], name="sweep")
     assert attached.temporal_relation() == "simultaneous"
 
     ed = editor(Group([(2.0, attached)], name="song"))
-    (lane,) = lanes(ed.render())
+    (lane,) = lanes(ed.draw())
     (c,) = clips(lane)
     # One clip, both bodies — and each on its own value axis.
     assert c["notes"] and c["points"]
@@ -458,19 +458,19 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
     # Dragging it moves the group: the event and its envelope stay together.
     ed.apply(*clip_event(c["id"], 6 * BEAT, c["dur"]))
     placed = ed._clips[c["id"]]
-    assert placed.member.material is attached
+    assert placed.member.element is attached
     assert placed.member.offset == pytest.approx(6.0)
-    from clausters.model.realize import flatten
+    from clausters.form.render import flatten
 
-    assert min(b for b, _ in flatten(ed.material)) == pytest.approx(6.0)
+    assert min(b for b, _ in flatten(ed.element)) == pytest.approx(6.0)
 
 
 # ---- the logical group: a patch, not a lane ----
 
 def patch_song() -> tuple:
     """A composition with a logical group: source -> sink through a private bus."""
-    from clausters.model import Generator
-    from clausters.model.group import LOGICAL
+    from clausters.form import Generator
+    from clausters.form.group import LOGICAL
 
     src = Generator("gsrc", controls={"out": "mix", "level": 1.0})
     sink = Generator("gsink", controls={"in": "mix", "out": "OUT"})
@@ -484,7 +484,7 @@ def patches(tree: dict) -> list:
 
 def test_a_logical_group_draws_as_a_patch_not_a_lane():
     song, _chain, _src = patch_song()
-    tree = editor(song).render()
+    tree = editor(song).draw()
     assert lanes(tree) == [], "processing is not a timeline: no lane for it"
     (patch,) = patches(tree)
 
@@ -500,19 +500,19 @@ def test_a_logical_group_draws_as_a_patch_not_a_lane():
 def test_rewiring_a_port_rewrites_the_logical_group():
     song, _chain, src = patch_song()
     ed = editor(song)
-    (patch,) = patches(ed.render())
+    (patch,) = patches(ed.draw())
 
     # Dropped on the hardware bus: the source now writes straight to OUT.
     assert ed.apply("/gui_event", [patch["id"], "wire", 0, "out", "OUT"])
     assert src.controls["out"] == "OUT"
     assert src.controls["level"] == 1.0, "the untouched controls stay"
 
-    # The GraphDef the next realization sends follows the patch: the source's
+    # The GraphDef the next rendering sends follows the patch: the source's
     # `out` now names the hardware, not the private bus.
     _song, chain, _src = patch_song()
     Editor(Group([(0.0, chain)], name="song"), sample_rate=SR, tempo=TEMPO)
     ed2 = editor(Group([(0.0, chain)], name="song"))
-    (patch2,) = patches(ed2.render())
+    (patch2,) = patches(ed2.draw())
     ed2.apply("/gui_event", [patch2["id"], "wire", 0, "out", "OUT"])
     spec = chain.to_graphdef().spec()
     assert spec["members"][0]["controls"]["out"] == "OUT"
@@ -522,7 +522,7 @@ def test_rewiring_a_port_rewrites_the_logical_group():
     assert "out" not in src.controls
 
 
-# ---- realization: the edited composition plays what the screen shows ----
+# ---- rendering: the edited composition plays what the screen shows ----
 
 def _embed_or_skip():
     try:
@@ -543,9 +543,9 @@ def _inner_addr(raw: bytes) -> str:
     return addr
 
 
-def test_the_edited_composition_realizes_where_it_was_dropped():
+def test_the_edited_composition_renders_where_it_was_dropped():
     """A clip dragged in the GUI lands, in the score, at the beat it was dropped
-    on — the whole loop (render → edit-back → model → realize) in one assertion.
+    on — the whole loop (render → edit-back → model → render) in one assertion.
     NRT, so no socket and no port clash."""
     _embed_or_skip()
     from clausters.base import OscNrtInterface, TempoClock
@@ -564,10 +564,10 @@ def test_the_edited_composition_realizes_where_it_was_dropped():
         note = Event(SeqEvent(instrument="default", freq=440.0, dur=1.0))
         song = Group([(0.0, Group([(0.0, note)], name="lead"))], name="song")
         ed = Editor(song, sample_rate=SR, tempo=TEMPO, quant=1.0)
-        lane = lanes(ed.render())[0]
+        lane = lanes(ed.draw())[0]
         (c,) = clips(lane)
         ed.apply(*clip_event(c["id"], 3 * BEAT, 1 * BEAT))  # dragged to beat 3
-        ed.realize(server, clock)
+        ed.render(server, clock)
 
     # The score is in seconds: beat 3 at 2 beats/sec sounds at 1.5 s — the unit
     # bridge closing on the far side.

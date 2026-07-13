@@ -1,43 +1,44 @@
-"""The **arrangement model** — the client-side layer under the multitrack editor.
+"""The **arrangement** — the client-side layer under the multitrack editor.
 
-A recursive algebra of materials for composing music: the five primitives
+A recursive algebra of elements for composing music: the five primitives
 (`Event`, `Sequence`, `Buffer`, `Track`, `Generator`) as thin adornments over
 the objects the client already has, and `Group` — the one new structure —
-placing materials recursively with an offset and deriving their temporal
-relation. A material is *generated* (the rendered thing: random-access, editable)
+placing elements recursively with an offset and deriving their temporal
+relation. An element is *generated* (the rendered thing: random-access, editable)
 or a *generator* (the algorithm that renders it: forward-only), and evaluating the
-second into the first is the **change of state** realization performs. Pure and
+second into the first is the **change of state** rendering performs. Pure and
 transport-agnostic; the multitrack view of it lives in `clausters.gui.editor`.
 
-See `clausters.model.material` for the primitives and the temporal *character*,
-and `clausters.model.group` for grouping and the temporal *relation*.
+See `clausters.form.element` for the primitives and the temporal *character*,
+`clausters.form.group` for grouping and the temporal *relation*, and
+`clausters.form.render` for the change of state to sound.
 """
 
-from .material import (
+from .element import (
     ABSTRACT,
     PUNCTUAL,
     RELATIVE,
     SEGMENT,
     Buffer,
+    Element,
     Event,
     Generator,
-    Material,
     Sequence,
     Track,
     temporal_character,
 )
 from .group import (
-    COMPOSITIONAL,
+    CONCRETE,
     LOGICAL,
     MIXED,
     SIMULTANEOUS,
     SUCCESSIVE,
     Group,
 )
-from .realize import flatten, realize, realize_logical, to_timeline
+from .render import flatten, render, render_logical, to_timeline
 
 __all__ = [
-    "Material",
+    "Element",
     "Event",
     "Sequence",
     "Buffer",
@@ -47,15 +48,15 @@ __all__ = [
     "temporal_character",
     "flatten",
     "to_timeline",
-    "realize",
-    "realize_logical",
+    "render",
+    "render_logical",
     # temporal character
     "SEGMENT",
     "PUNCTUAL",
     "RELATIVE",
     "ABSTRACT",
     # group kind
-    "COMPOSITIONAL",
+    "CONCRETE",
     "LOGICAL",
     # temporal relation
     "SUCCESSIVE",

@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""Compose in the model, edit it on screen, hear the edit — the whole loop.
+"""Compose the arrangement, edit it on screen, hear the edit — the whole loop.
 
 The multitrack **editor**: `clausters.gui.Editor` is the bridge between the
-compositional model (`clausters.model` — materials placed recursively by offset)
-and the multitrack view (tracks of clips on one shared time axis). It renders the
-model tree to a GuiDef, applies the clip edit-backs the host sends *onto the
-model*, and re-realizes it. So the thing you drag is not a picture of the music:
-it is the music, and the score follows.
+arrangement (`clausters.form` — elements placed recursively by offset) and the
+multitrack view (tracks of clips on one shared time axis). It draws the
+arrangement tree as a GuiDef, applies the clip edit-backs the host sends *onto
+the arrangement*, and re-renders it. So the thing you drag is not a picture of
+the music: it is the music, and the score follows.
 
 What the mapping does, in one paragraph. The root group's members are the
 **lanes**; a lane's members are its **clips**. A `Buffer` clip names its server
 buffer and spans its frames (the host fetches it and decimates it — a real take
-never rides the wire as JSON). A material of *events* draws a **piano-roll**, and
+never rides the wire as JSON). An element of *events* draws a **piano-roll**, and
 a contained generator is bounced in the same pass, so a `Pbind` lane shows the
-notes it is about to play — the model's *change of state*, on screen. An
-`Automation` draws its **curve** as the clip body, editable in place. A nested
-group draws as the labeled rectangle that summarizes it, until you ``expand`` it
-into lanes of its own: that collapse/expand is the model's **base level**, the
-zoom that summarizes or resolves.
+notes it is about to play — the *change of state*, on screen. An `Automation`
+draws its **curve** as the clip body, editable in place. A nested group draws as
+the labeled rectangle that summarizes it, until you ``expand`` it into lanes of
+its own: that collapse/expand is the **base level**, the zoom that summarizes or
+resolves.
 
 The axis is navigable: the wheel zooms and Shift+drag pans, and every lane moves
 with it (they share one axis).
@@ -25,7 +25,7 @@ with it (they share one axis).
 Drag a clip (move) or its edge (resize) and, with ``follow=True``, the
 composition is re-scheduled from the playhead — you hear it where you dropped it.
 The lanes' playhead sweeps the clips with the engine clock, and the drag snaps to
-the musical ``quant`` grid, which is the same grid the model re-schedules on.
+the musical ``quant`` grid, which is the same grid the arrangement re-schedules on.
 
 Run it as a script (``python gui_composer.py``) or cell by cell (``# %%``).
 Needs a display and a GPU adapter; the install bundles the GUI binary (see
@@ -53,7 +53,7 @@ from clausters.defs import (
     sin_osc,
 )
 from clausters.gui import Editor, button, panel
-from clausters.model import Buffer, Event, Group, Material, Sequence, Track
+from clausters.form import Buffer, Element, Event, Group, Sequence, Track
 from clausters.seq import Automation, Timeline
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.pattern import Pbind, Pseq
@@ -67,7 +67,7 @@ QUANT = 0.5          # the drag grid: half a beat
 # The notes use the server's stock ``default`` def; the **take** needs an
 # instrument of its own, because a buffer is *data* — a `Buffer` material sounds
 # through the def named to play it, which reads the buffer number from its ``buf``
-# control. That is the model's rule, and this is the def that satisfies it.
+# control. That is the arrangement's rule, and this is the def that satisfies it.
 
 # %%
 def sampler(name: str = "take") -> SynthDef:
@@ -120,10 +120,10 @@ buf = server.query_buffer(server.read_buffer(wav))   # on the server, shape know
 
 # %% [markdown]
 # ## The material
-# Three materials, three of the model's primitives: the take is a **Buffer** (data
+# Three elements, three of the five primitives: the take is a **Buffer** (data
 # — it sounds through the *instrument* named to play it), the melody a **Track**
 # (a set of events placed in time), the bass a **Sequence** wrapping a pattern — a
-# **Function**, a generator the editor bounces to draw and the realization bounces
+# **Function**, a generator the editor bounces to draw and the render bounces
 # to play. Same tree, both times.
 
 # %%
@@ -141,7 +141,7 @@ bass = Sequence(Pbind(midinote=Pseq([48, 48, 55, 53], 2),  # a Function (generat
 # A break-point curve placed in time, driving a control — the same `bpf` model the
 # envelope editor draws, now a **clip** on a lane: its body *is* the curve, and it
 # is edited in place (drag a point, Ctrl+click to add or remove one). The edit
-# flows back onto the `Automation`, whose `Env` is what the next realization
+# flows back onto the `Automation`, whose `Env` is what the next render
 # plays, so the curve you draw is the curve you hear.
 #
 # The voice it drives is **in the composition**, not held by the script: an event
@@ -191,7 +191,7 @@ sweep.prepare(server)            # the control buffer + bus, off the clock threa
 # and the envelope cannot be left behind.
 voice = Event(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
                        dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
-sweep_clip = Group([(0.0, voice), (0.0, Material(sweep, duration=SWEEP))],
+sweep_clip = Group([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
                    name="sweep")
 
 # The composition: four lanes, each a group placing one material in time.
@@ -230,7 +230,7 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 # The same `Track`, opened in the **editor-grade note view**: a second `Editor`
 # in its dedicated mode (`open_pianoroll`), its widget ids moved clear of the
 # multitrack's. The two windows share the melody's timeline — drag a note here
-# and the next play realizes it; the multitrack's clip is another view of the
+# and the next play renders it; the multitrack's clip is another view of the
 # same material. A note edit needs **random-access** material (a `Track`): open
 # a *generator* this way (the bass `Pbind`, say) and its bounced notes show
 # read-only — bounce it to a `Track` to edit it.
@@ -243,10 +243,10 @@ print(f"opened window {roll_win} — drag a note; play re-reads the melody")
 
 # %% [markdown]
 # ## The transport
-# The editor owns it: `play` from where the cursor is (a fresh realization, so it
+# The editor owns it: `play` from where the cursor is (a fresh render, so it
 # plays the composition as it now stands), `pause` where we are, `stop` back to the
 # top, and `locate` — which is also what a click on a lane's ruler does. Every play
-# re-reads the model, so an edit made meanwhile is simply played.
+# re-reads the arrangement, so an edit made meanwhile is simply played.
 #
 # Nothing here silences anything, and nothing needs to: every voice in the
 # composition is an event with a length, so it ends with its clip.
@@ -254,8 +254,8 @@ print(f"opened window {roll_win} — drag a note; play re-reads the melody")
 # %%
 session.start()                       # the clock runs the routines
 
-# `play` is where the destination and the clock come from — realizing is *playing*,
-# so nothing is realized until the button is pressed (a window that sounds before
+# `play` is where the destination and the clock come from — rendering is *playing*,
+# so nothing is rendered until the button is pressed (a window that sounds before
 # you press play is a window that plays itself).
 TRANSPORT = {PLAY: lambda: editor.play(server, session.clock),
              PAUSE: editor.pause, STOP: editor.stop,
@@ -266,7 +266,7 @@ print("press play — click a lane's ruler (or its empty space) to move the curs
 
 def ended() -> bool:
     """Whether the playhead ran past the end of the *current* composition (its
-    length is read from the model, so dragging a clip out lengthens the piece)."""
+    length is read from the arrangement, so dragging a clip out lengthens the piece)."""
     ph = editor.playhead
     return ph is not None and ph.playing and ph.position() >= editor.extent()
 
@@ -279,8 +279,8 @@ def ended() -> bool:
 # Anything it does not recognize is the script's: here, the transport buttons.
 #
 # An edit does not interrupt what is sounding. It marks the composition
-# (`Editor.dirty`), and the next transport action re-reads it: realizing always
-# re-flattens the model, so play, a resume after pause and a rewind all play the
+# (`Editor.dirty`), and the next transport action re-reads it: rendering always
+# re-flattens the tree, so play, a resume after pause and a rewind all play the
 # composition *as it now stands*.
 
 # %%
@@ -306,7 +306,7 @@ if __name__ == "__main__":
             elif editor.apply(addr, args) or roll.apply(addr, args):
                 # An edit does not interrupt what is sounding: it changes the
                 # *model*, and the next play (or a resume, or a rewind) plays it —
-                # `realize` always re-flattens the composition, so it picks up the
+                # `render` always re-flattens the composition, so it picks up the
                 # new placements and lengths.
                 print("  edited — press play to hear it"
                       if not editor.playhead or not editor.playhead.playing
@@ -319,7 +319,7 @@ if __name__ == "__main__":
 
 # %% [markdown]
 # ## Bounce it
-# The same model, realized offline: `Session.nrt` renders the edited composition
+# The same arrangement, rendered offline: `Session.nrt` renders the edited composition
 # to a WAV — sample-identical to what the RT engine played, because both converge
 # on the same score.
 #
@@ -327,6 +327,6 @@ if __name__ == "__main__":
 # offline = Session.nrt(tempo=TEMPO)
 # offline.server.add_synthdef(sampler())
 # offline.server.read_buffer(wav)          # the take, on the offline server
-# song.realize(offline.server, offline.clock)
+# song.render(offline.server, offline.clock)
 # samples = offline.render()
 # ```

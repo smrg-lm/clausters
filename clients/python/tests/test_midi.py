@@ -1,4 +1,4 @@
-"""M17 client sub-part 1: an event pattern realized as standard MIDI.
+"""M17 client sub-part 1: an event pattern rendered as standard MIDI.
 
 A ``Pbind`` played on a ``MidiServer`` destination (the double-dispatch
 counterpart of the OSC ``Server``) records note on/off into a ``MidiScore`` in
@@ -28,7 +28,7 @@ def _note_offs(events):
     ]
 
 
-def test_pbind_realized_as_midi_in_beats():
+def test_pbind_rendered_as_midi_in_beats():
     midi = MidiServer(channel=0)
     clock = TempoClock(tempo=1.0)
     Pbind(

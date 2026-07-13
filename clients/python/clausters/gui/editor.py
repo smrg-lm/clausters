@@ -1,41 +1,41 @@
-"""`Editor`: the bridge between the arrangement model and the multitrack GUI.
+"""`Editor`: the bridge between the arrangement and the multitrack GUI.
 
-The driver of the DAW-style view. It renders a `clausters.model` tree into a
+The driver of the DAW-style view. It draws a `clausters.form` tree as a
 multitrack `GuiDef` (tracks of clips on one shared time axis), applies the clip
-edit-backs the host sends straight onto the model, and re-realizes it — the loop
-**data ↔ graphic ↔ sound**, which is what makes the composition editable at any
-granularity rather than merely displayable.
+edit-backs the host sends straight onto the arrangement, and re-renders it — the
+loop **data ↔ graphic ↔ sound**, which is what makes the composition editable at
+any granularity rather than merely displayable.
 
 Three things are worth knowing about how it is built.
 
-**The dependency arrow points this way.** `clausters.model` stays pure and
-transport-agnostic; the editor imports the model, never the reverse. This module
-is the only one that knows both worlds.
+**The dependency arrow points this way.** `clausters.form` stays pure and
+transport-agnostic; the editor imports the arrangement, never the reverse. This
+module is the only one that knows both worlds.
 
-**Beats meet samples here.** The model places materials in *beats*; the
+**Beats meet samples here.** The arrangement places elements in *beats*; the
 multitrack view places clips in *timeline samples*, because a clip's body is
 audio data and its sample 0 sits at the clip's offset. The editor is the only
 converter: one beat is `sample_rate / tempo` timeline units, so an audio take
 placed at its own length sits 1:1 on the axis. A musical `quant` becomes the
-lane's drag grid, so the grid a clip is dropped on is the grid the model
+lane's drag grid, so the grid a clip is dropped on is the grid the arrangement
 re-schedules on. The arithmetic itself is the core's (`beats_to_secs` →
 `secs_to_samples`), not a second implementation.
 
 **One mapping rule, not a heuristic per case.** The root `Group`'s members are
 the *lanes*; a lane's members are its *clips*; a `Buffer` clip draws its take, a
-material of events draws a piano-roll, and a nested `Group` draws as a labeled
+element of events draws a piano-roll, and a nested `Group` draws as a labeled
 rectangle — its summary — until it is `expand`ed into lanes of its own. That
-collapse/expand *is* the model's base level (the zoom that summarizes a group or
-resolves it), so it needs no protocol of its own.
+collapse/expand *is* the arrangement's base level (the zoom that summarizes a
+group or resolves it), so it needs no protocol of its own.
 """
 
 import itertools
 
 from .. import _native
-from ..model.group import COMPOSITIONAL, LOGICAL, SIMULTANEOUS, Group
-from ..model.material import Buffer, Material
+from ..form.group import CONCRETE, LOGICAL, SIMULTANEOUS, Group
+from ..form.element import Buffer, Element
 from ..defs.ugens import points_to_env
-from ..model.realize import flatten
+from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
@@ -52,7 +52,7 @@ PITCH_PAD = 2.0
 
 class _Placed:
     """What a clip widget was drawn from: the placement it shows (``owner`` group
-    and ``member`` handle, the model's stable identity), the ``base`` in beats its
+    and ``member`` handle, the arrangement's stable identity), the ``base`` in beats its
     group sits at (a clip's offset is absolute on the shared axis, a placement is
     relative to its group — this bridges the two), and the ``offset``/``dur`` in
     timeline units it was drawn with (so an edit-back can tell what actually
@@ -69,19 +69,19 @@ class _Placed:
 
 
 class Editor:
-    """A composition on screen: the model tree rendered as a multitrack view,
-    editable back into the model.
+    """A composition on screen: the arrangement tree drawn as a multitrack view,
+    editable back into the tree.
 
     Args:
-        material: the composition — a `clausters.model.group.Group` (its members
-            become the lanes) or any single `Material` (one lane).
+        element: the composition — a `clausters.form.group.Group` (its members
+            become the lanes) or any single `Element` (one lane).
         sample_rate: the engine's sample rate; with ``tempo`` it fixes the
             beats↔timeline-samples conversion.
         tempo: the clock's tempo in **beats per second** (the `TempoClock`
             convention — 2.0 is 120 bpm).
         quant: the musical drag grid in beats (``0.25`` = a sixteenth); ``0``
             snaps to whole samples.
-        follow: re-realize on every edit (the live editor).
+        follow: re-render on every edit (the live editor).
         extra: extra GuiDef nodes to place under the lanes (a transport panel,
             say). Their events are not the editor's: `apply` ignores them, so a
             script can handle them itself.
@@ -94,22 +94,22 @@ class Editor:
 
         editor = Editor(song, sample_rate=server.sample_rate, tempo=clock.tempo,
                         quant=0.25)
-        editor.open(gui)              # render and open the window
-        editor.apply(*gui.poll())     # a dragged clip moves the material
-        editor.realize(server, clock) # play the edited composition
+        editor.open(gui)              # draw and open the window
+        editor.apply(*gui.poll())     # a dragged clip moves the element
+        editor.render(server, clock)  # play the edited composition
     """
 
-    def __init__(self, material, *, sample_rate: float, tempo: float = 1.0,
+    def __init__(self, element, *, sample_rate: float, tempo: float = 1.0,
                  quant: float = 0.0, follow: bool = False, extra=(),
                  title: str = "Composition",
                  width: int = 1000, height: int = 520, base_id: int = 10_000):
-        self.material = material
+        self.element = element
         self.sample_rate = float(sample_rate)
         self.tempo = float(tempo)
         self.quant = float(quant)
-        #: Re-realize on every edit (the *live editor*: drag a clip and hear it
+        #: Re-render on every edit (the *live editor*: drag a clip and hear it
         #: where you dropped it). Off by default — an edit then only changes the
-        #: model, and `rerealize` decides when it is heard.
+        #: arrangement, and `rerender` decides when it is heard.
         self.follow = bool(follow)
         #: Widgets appended to the window after the lanes (a transport panel, a
         #: readout). They are the script's — the editor never touches their ids,
@@ -118,45 +118,45 @@ class Editor:
         self.title = title
         self.size = (int(width), int(height))
         self._base_id = int(base_id)
-        #: The materials shown as lanes of their own instead of a summary clip
+        #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: a group resolved rather than collapsed).
         self._expanded: set[int] = set()
-        #: widget id -> `_Placed` — where the clip came from in the model and
+        #: widget id -> `_Placed` — where the clip came from in the arrangement and
         #: what was drawn for it, which is what an edit-back writes through.
         self._clips: dict = {}
-        #: widget id -> material, for every lane (a `/gui_set` of the lane chrome
+        #: widget id -> element, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
         #: widget id -> the logical `Group` a `graph` patch draws, which a
         #: rewiring edit writes through.
         self._patches: dict = {}
         #: The view: the multitrack (`open`) or a dedicated piano-roll of one
-        #: events material (`open_pianoroll`). `render` dispatches on it.
+        #: events element (`open_pianoroll`). `render` dispatches on it.
         self._mode = "multitrack"
-        #: The material the dedicated piano-roll draws (its notes editable when it
-        #: is a `Track`), and widget id -> that material for the edit-back route.
-        self._roll_material = None
+        #: The element the dedicated piano-roll draws (its notes editable when it
+        #: is a `Track`), and widget id -> that element for the edit-back route.
+        self._roll_element = None
         self._rolls: dict = {}
         self._host = None
         self._window = None
-        #: The realization in flight: where it went, on what clock, and the
-        #: playhead playing it — what `rerealize` re-schedules after an edit.
+        #: The rendering in flight: where it went, on what clock, and the
+        #: playhead playing it — what `rerender` re-schedules after an edit.
         self._destination = None
         self._clock = None
         self._playhead = None
         #: The transport's position in beats (where the next `play` starts). A
         #: `locate` moves it — the multitrack has a cursor, playing or not.
         self._at = 0.0
-        #: Whether the model changed since the last realization — an edit does not
+        #: Whether the arrangement changed since the last render — an edit does not
         #: interrupt what is playing, so a transport (play, a resume after pause, a
         #: seek) reads this to know it must re-read the composition.
         self.dirty = False
 
-    # ---- the unit bridge: beats (the model) ↔ timeline samples (the view) ----
+    # ---- the unit bridge: beats (the data) ↔ timeline samples (the view) ----
 
     @property
     def units_per_beat(self) -> float:
-        """Timeline samples per beat — the whole of the model↔view unit bridge.
+        """Timeline samples per beat — the whole of the data↔view unit bridge.
         One timeline unit is one audio sample, so a take placed at its own frame
         count sits 1:1 on the axis."""
         return self.beats_to_units(1.0)
@@ -175,23 +175,23 @@ class Editor:
 
     # ---- the base level: collapse (a summary rectangle) vs expand (lanes) ----
 
-    def expand(self, material) -> "Editor":
+    def expand(self, element) -> "Editor":
         """Resolve a nested `Group` into lanes of its own (instead of the labeled
-        rectangle that summarizes it). The model's *base level*, made an edit."""
-        self._expanded.add(id(material))
+        rectangle that summarizes it). The arrangement's *base level*, made an edit."""
+        self._expanded.add(id(element))
         return self
 
-    def collapse(self, material) -> "Editor":
+    def collapse(self, element) -> "Editor":
         """Summarize a nested `Group` back into one labeled rectangle."""
-        self._expanded.discard(id(material))
+        self._expanded.discard(id(element))
         return self
 
-    def is_expanded(self, material) -> bool:
-        return id(material) in self._expanded
+    def is_expanded(self, element) -> bool:
+        return id(element) in self._expanded
 
-    # ---- the forward render: model -> GuiDef ----
+    # ---- the forward draw: the arrangement -> GuiDef ----
 
-    def render(self) -> dict:
+    def draw(self) -> dict:
         """The composition as a ``window``-rooted GuiDef: one `track` lane per
         member of the root group, each holding its members as clips on the shared
         time axis — and a `graph` **patch** for every *logical* group, whose
@@ -199,7 +199,7 @@ class Editor:
         wrong shape for it). Pure — it builds the tree and the id registry, and
         sends nothing."""
         if self._mode == "pianoroll":
-            return self._render_pianoroll()
+            return self._draw_pianoroll()
         self._ids = itertools.count(self._base_id)
         self._clips = {}
         self._lanes = {}
@@ -208,13 +208,13 @@ class Editor:
 
         lanes: list = []
         patches: list = []
-        root = self.material
-        if isinstance(root, Group) and root.kind == COMPOSITIONAL:
+        root = self.element
+        if isinstance(root, Group) and root.kind == CONCRETE:
             for member in root.handles:
-                if isinstance(member.material, Group) and member.material.kind == LOGICAL:
-                    patches.append(self._patch_for(member.material))
+                if isinstance(member.element, Group) and member.element.kind == LOGICAL:
+                    patches.append(self._patch_for(member.element))
                 else:
-                    lanes += self._lanes_for(member.material, member.offset, root, member)
+                    lanes += self._lanes_for(member.element, member.offset, root, member)
         elif isinstance(root, Group) and root.kind == LOGICAL:
             patches.append(self._patch_for(root))
         else:
@@ -232,7 +232,7 @@ class Editor:
         name plus the controls that name a bus — its ports), the group's buses the
         bus nodes (``OUT``, the hardware, among them), and a wire per
         ``(member, control) ↔ bus`` pair. The same 1:1 mapping onto a `GraphDef`
-        that realization uses, drawn instead of sent."""
+        that rendering uses, drawn instead of sent."""
         wid = next(self._ids)
         members, wires, buses = [], [], []
         for i, (_offset, _dur, child) in enumerate(group.members):
@@ -256,16 +256,16 @@ class Editor:
                      label=group.name or "patch")
 
     def open(self, host, id: int | None = None) -> int:
-        """`render` the composition and open it on ``host`` (a
+        """`draw` the composition and open it on ``host`` (a
         `clausters.gui.host.GuiHost`). Returns the window id."""
         self._host = host
         self._mode = "multitrack"
-        self._window = host.open(self.render(), id=id)
+        self._window = host.open(self.draw(), id=id)
         return self._window
 
-    def _render_pianoroll(self) -> dict:
+    def _draw_pianoroll(self) -> dict:
         """The dedicated piano-roll view: one `pianoroll` widget drawing a single
-        events material's MIDI notes (grid) and OSC events (lane), instead of a
+        events element's MIDI notes (grid) and OSC events (lane), instead of a
         multitrack of clips. The notes ride the shared beats grid; the pitch
         window frames them (falling back to `DEFAULT_PITCH`). Pure — it builds the
         tree and the edit-back registry."""
@@ -274,10 +274,10 @@ class Editor:
         self._lanes = {}
         self._patches = {}
         self._rolls = {}
-        material = self._roll_material
+        element = self._roll_element
         wid = next(self._ids)
-        notes = self._notes(material)
-        osc = self._osc(material)
+        notes = self._notes(element)
+        osc = self._osc(element)
         body: dict = {}
         if notes:
             pitches = [n[2] for n in notes]
@@ -286,22 +286,22 @@ class Editor:
         snap = self.beats_to_units(self.quant) if self.quant > 0 else None
         # The roll is a lane (the playhead/cursor addresses these) and a roll (the
         # note edit-back resolves through these).
-        self._lanes[wid] = material
-        self._rolls[wid] = material
+        self._lanes[wid] = element
+        self._rolls[wid] = element
         roll = pianoroll(wid, notes=notes or None, osc=osc or None, ruler="beats",
                          tempo=self.tempo, sample_rate=self.sample_rate, snap=snap,
-                         label=_name(material), **body)
+                         label=_name(element), **body)
         return window(roll, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 
-    def open_pianoroll(self, host, material=None, id: int | None = None) -> int:
-        """`render` a single events material as a **dedicated piano-roll** window
+    def open_pianoroll(self, host, element=None, id: int | None = None) -> int:
+        """`draw` a single events element as a **dedicated piano-roll** window
         and open it on ``host`` — the editor-grade note view (a keyboard, an
         editable note grid, a velocity lane, an OSC-event lane) of one MIDI/OSC
-        material, as opposed to `open`, where the same notes are only a clip body.
+        element, as opposed to `open`, where the same notes are only a clip body.
 
         Edits write back through `poll` exactly as the multitrack does, **when the
-        material is editable** — a `clausters.model.Track` (a
+        element is editable** — a `clausters.form.Track` (a
         `clausters.seq.Timeline`): a dragged, added or removed note is rebuilt onto
         its timeline. A **generator** (a `Pbind`/`Routine`) is forward-only, so its
         bounced notes are shown *read-only* (bounce it to a `Track` to edit). OSC
@@ -309,21 +309,21 @@ class Editor:
         and address, not the full message). Returns the window id."""
         self._host = host
         self._mode = "pianoroll"
-        self._roll_material = self.material if material is None else material
-        self._window = host.open(self.render(), id=id)
+        self._roll_element = self.element if element is None else element
+        self._window = host.open(self.draw(), id=id)
         return self._window
 
-    def extent(self, material=None) -> float:
-        """The composition's length in beats, **read from the model** — the end of
-        its last placed material. It is not a constant: move a clip past the end
+    def extent(self, element=None) -> float:
+        """The composition's length in beats, **read from the arrangement** — the
+        end of its last placed element. It is not a constant: move a clip past the end
         and the piece gets longer, which is exactly what a transport must ask
         (a hard-coded length would cut the playback short at the old end)."""
-        return self._extent(self.material if material is None else material)
+        return self._extent(self.element if element is None else element)
 
     @property
     def playhead(self):
         """The `clausters.seq.Playhead` playing the composition, or ``None`` before
-        the first `realize` — what a transport (play/pause/stop/locate) drives."""
+        the first `render` — what a transport (play/pause/stop/locate) drives."""
         return self._playhead
 
     @property
@@ -333,19 +333,19 @@ class Editor:
         return self._window
 
     def update(self):
-        """Push the current model back to the open window — a whole-tree redefine
-        (`GuiHost.define`), the honest way to show a structural edit (a material
-        added, a group expanded). A mere placement change needs no redefine: the
+        """Push the current arrangement back to the open window — a whole-tree
+        redefine (`GuiHost.define`), the honest way to show a structural edit (an
+        element added, a group expanded). A mere placement change needs no redefine: the
         host already moved the clip that was dragged."""
         if self._host is None or self._window is None:
             raise RuntimeError("open(host) the editor first")
-        self._host.define(self._window, self.render())
+        self._host.define(self._window, self.draw())
 
     # ---- the edit-back: a dragged clip becomes a placement ----
 
     def apply(self, addr: str, args) -> bool:
-        """Apply one message from the host to the **model**. Returns whether the
-        composition changed.
+        """Apply one message from the host to the **arrangement**. Returns whether
+        the composition changed.
 
         The clip edit-back (``/gui_event <id> "clip" <offset> <dur>``, the payload
         a drag or a resize sends) is resolved through the widget registry to the
@@ -354,7 +354,7 @@ class Editor:
         group, so the position converts back through the base the clip was drawn
         at; and only what actually moved is written — a drag carries the clip's
         unchanged ``dur`` along, and snapping *that* to the grid would silently
-        shorten the material. ``/gui_closed`` drops the window (its own — the
+        shorten the element. ``/gui_closed`` drops the window (its own — the
         payload names the window id); anything else is ignored, so a whole poll
         loop can be fed straight in — even one shared with a second editor
         (a dedicated piano-roll beside the multitrack, say): every route resolves
@@ -377,10 +377,10 @@ class Editor:
                 self.locate(self.units_to_beats(float(args[2])))
             return False
         if args[1] == "notes":
-            # A note edited in the dedicated piano-roll: rebuild the material's
+            # A note edited in the dedicated piano-roll: rebuild the element's
             # timeline (a generator is read-only, so it is ignored).
-            material = self._rolls.get(int(args[0]))
-            return material is not None and self._apply_notes(material, args[2:])
+            element = self._rolls.get(int(args[0]))
+            return element is not None and self._apply_notes(element, args[2:])
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -389,7 +389,7 @@ class Editor:
         if args[1] != "clip" or len(args) < 4:
             return False
         if placed.member is None:
-            return False  # the root material itself: nothing places it
+            return False  # the root element itself: nothing places it
 
         offset, dur = float(args[2]), float(args[3])
         moved = abs(offset - placed.offset) >= 0.5      # half a sample: a real edit
@@ -413,7 +413,7 @@ class Editor:
     def _apply_wire(self, wid: int, values) -> bool:
         """A control rewired on a `graph` patch (``"wire" <member> <control>
         <bus>``, an empty bus = unwired): the **logical group** is rewritten — the
-        member `Generator`'s control now names that bus — so the next realization
+        member `Generator`'s control now names that bus — so the next render
         sends a `GraphDef` wired the way the patch is drawn."""
         group = self._patches.get(wid)
         if group is None or len(values) < 3:
@@ -435,11 +435,11 @@ class Editor:
     def _apply_points(self, placed, values) -> bool:
         """A curve edited in place on an automation clip (the flat ``"points"``
         payload the `bpf` view also sends): the break-points go back onto the
-        material's `clausters.seq.Automation`, with their times converted from
+        element's `clausters.seq.Automation`, with their times converted from
         timeline units to beats. The `Env` is the automation's source of truth, so
-        this *is* the edit — the next realization plays the curve as drawn."""
-        auto = _automation(placed.member.material if placed.member is not None
-                           else self.material)
+        this *is* the edit — the next render plays the curve as drawn."""
+        auto = _automation(placed.member.element if placed.member is not None
+                           else self.element)
         if auto is None or not values:
             return False
         flat = []
@@ -449,13 +449,13 @@ class Editor:
         self._changed()
         return True
 
-    def _apply_notes(self, material, values) -> bool:
+    def _apply_notes(self, element, values) -> bool:
         """Notes edited in the dedicated piano-roll (the flat ``"notes"`` payload,
-        `start dur pitch velocity channel` quintuples): rebuilt onto the material's
+        `start dur pitch velocity channel` quintuples): rebuilt onto the element's
         editable `clausters.seq.Timeline` as `Event`s, times converted to beats,
         preserving any OSC/MIDI items already on it. Returns ``False`` for a
-        forward-only generator material (read-only), so the edit is a no-op."""
-        timeline = _editable_timeline(material)
+        forward-only generator element (read-only), so the edit is a no-op."""
+        timeline = _editable_timeline(element)
         if timeline is None:
             return False
         new = []
@@ -471,16 +471,16 @@ class Editor:
         self._changed()
         return True
 
-    def _osc(self, material) -> list:
-        """The OSC (and raw MIDI) events of a material as ``(time_units, label)``
+    def _osc(self, element) -> list:
+        """The OSC (and raw MIDI) events of an element as ``(time_units, label)``
         pairs — the piano-roll's event lane. An `OscEvent` labels with its address,
         a `MidiEvent` with a short tag. Display only: a marker carries the time and
         a label, not the full message, so it is not written back (see
         `open_pianoroll`)."""
-        if isinstance(material, (Group, Buffer)):
+        if isinstance(element, (Group, Buffer)):
             return []
         try:
-            events = flatten(material, 0.0)
+            events = flatten(element, 0.0)
         except (NotImplementedError, TypeError):
             return []
         out = []
@@ -492,17 +492,17 @@ class Editor:
         return out
 
     def _changed(self) -> bool:
-        """The model was edited: mark it, and re-realize now when `follow` is on.
-        Otherwise the edit simply waits — a realization already in flight is not
-        interrupted, and the next one (a play, a resume, a seek) plays the model as
-        it now stands, because realizing always re-flattens it."""
+        """The arrangement was edited: mark it, and re-render now when `follow` is
+        on. Otherwise the edit simply waits — a render already in flight is not
+        interrupted, and the next one (a play, a resume, a seek) plays the piece as
+        it now stands, because rendering always re-flattens the tree."""
         self.dirty = True
         if self.follow:
-            self.rerealize()
+            self.rerender()
         return True
 
     def poll(self, timeout: float = 0.0) -> bool:
-        """Drain the host's pending messages into the model (`apply` each).
+        """Drain the host's pending messages into the arrangement (`apply` each).
         Returns whether the composition changed. Call it from the script's loop —
         **never** from the clock thread, which a routine must never block."""
         if self._host is None:
@@ -515,40 +515,40 @@ class Editor:
 
     def _snap(self, beats: float) -> float:
         """Snap a beat value to the musical `quant` grid (the same grid the lane
-        snapped the drag to, now in the model's units — so the round trip
-        render → drag → apply → render is exact, free of the wire's float noise)."""
+        snapped the drag to, now in the arrangement's units — so the round trip
+        draw → drag → apply → draw is exact, free of the wire's float noise)."""
         if self.quant <= 0.0:
             return beats
         return round(beats / self.quant) * self.quant
 
-    # ---- realization: the edited model back to sound ----
+    # ---- rendering: the edited arrangement back to sound ----
 
-    def realize(self, destination, clock=None, *, at: float = 0.0, quant=None):
-        """Realize the composition onto ``destination`` — RT (a `Server` and a
+    def render(self, destination, clock=None, *, at: float = 0.0, quant=None):
+        """Render the composition onto ``destination`` — RT (a `Server` and a
         running clock) or NRT (a score) — and anchor the lanes' playhead so the
         line sweeps the clips as it plays. Returns the `clausters.seq.Playhead`.
 
-        This is the model's own `realize` (flatten to absolute beats, play through
-        a playhead): the editor adds no realization path, it only remembers the
-        destination so `rerealize` can re-schedule after an edit.
+        This is the arrangement's own `render` (flatten to absolute beats, play
+        through a playhead): the editor adds no rendering path of its own, it only
+        remembers the destination so `rerender` can re-schedule after an edit.
         """
-        from ..model.realize import realize as model_realize
+        from ..form.render import render as render_element
 
-        # Realizing again replaces the realization in flight: stop the playhead
-        # first, or the old one keeps feeding the same composition and the piece
-        # plays over itself.
+        # Rendering again replaces the render in flight: stop the playhead first,
+        # or the old one keeps feeding the same composition and the piece plays
+        # over itself.
         if self._playhead is not None:
             self._playhead.stop()
         self._destination, self._clock = destination, clock
         self._at = float(at)
-        self._playhead = model_realize(self.material, destination, clock,
+        self._playhead = render_element(self.element, destination, clock,
                                        at=at, quant=quant)
-        self.dirty = False            # what plays now *is* the model
+        self.dirty = False            # what plays now *is* the arrangement
         self._cursor(None)            # the clock's line takes over from the cursor
         self.anchor(destination, at=at)
         return self._playhead
 
-    def rerealize(self, *, at: float | None = None):
+    def rerender(self, *, at: float | None = None):
         """Re-schedule the (edited) composition from the playhead's current
         position: stop, re-flatten, play again.
 
@@ -558,10 +558,10 @@ class Editor:
         a fresh score.
         """
         if self._destination is None:
-            raise RuntimeError("realize(destination, clock) the editor first")
+            raise RuntimeError("render(destination, clock) the editor first")
         if at is None:
             at = self._playhead.position() if self._playhead is not None else 0.0
-        return self.realize(self._destination, self._clock, at=at)
+        return self.render(self._destination, self._clock, at=at)
 
     # ---- the transport: play, pause, stop, locate ----
 
@@ -573,15 +573,15 @@ class Editor:
         return ph.position() if (ph is not None and ph.playing) else self._at
 
     def play(self, destination=None, clock=None, *, at: float | None = None):
-        """Play (or resume) from the transport's position — a fresh realization, so
+        """Play (or resume) from the transport's position — a fresh render, so
         it plays the composition **as it now stands** (moved clips, new lengths,
-        redrawn curves). Reuses the destination and clock of the last `realize`
+        redrawn curves). Reuses the destination and clock of the last `render`
         when they are not given."""
         destination = self._destination if destination is None else destination
         clock = self._clock if clock is None else clock
         if destination is None:
-            raise RuntimeError("nothing to play onto: realize(destination, clock) first")
-        return self.realize(destination, clock,
+            raise RuntimeError("nothing to play onto: render(destination, clock) first")
+        return self.render(destination, clock,
                             at=self._at if at is None else float(at))
 
     def pause(self):
@@ -602,12 +602,12 @@ class Editor:
         return self
 
     def locate(self, beat: float):
-        """Seek: put the transport at ``beat``. Playing, it re-realizes from there
+        """Seek: put the transport at ``beat``. Playing, it re-renders from there
         (so a seek also picks up any edit); stopped, it just moves the cursor the
         lanes draw. This is what a click on a lane's ruler does."""
         beat = max(float(beat), 0.0)
         if self._playhead is not None and self._playhead.playing:
-            self.realize(self._destination, self._clock, at=beat)
+            self.render(self._destination, self._clock, at=beat)
         else:
             self._at = beat
             self._cursor(beat)
@@ -660,32 +660,32 @@ class Editor:
 
     # ---- the tree walk ----
 
-    def _lanes_for(self, material, base: float, owner, member) -> list:
-        """The lanes a material contributes: a compositional `Group` becomes one
+    def _lanes_for(self, element, base: float, owner, member) -> list:
+        """The lanes an element contributes: a concrete `Group` becomes one
         lane holding its members as clips (plus a lane of its own for every
         *expanded* nested group); anything else becomes a lane with one clip.
         ``base`` is its start in beats, ``owner``/``member`` the placement an
         edit-back writes through."""
-        if (isinstance(material, Group) and material.kind == COMPOSITIONAL
-                and len(material) > 1
-                and material.temporal_relation() == SIMULTANEOUS
-                and not self.is_expanded(material)):
+        if (isinstance(element, Group) and element.kind == CONCRETE
+                and len(element) > 1
+                and element.temporal_relation() == SIMULTANEOUS
+                and not self.is_expanded(element)):
             # Its members start and end together: they are *one* thing on the
             # timeline, so they are one clip with layered bodies — not a lane of
             # clips that must be dragged one by one.
-            return [self._lane([self._clip_for(material, base, owner, member)],
-                               _name(material))]
-        if isinstance(material, Group) and material.kind == COMPOSITIONAL:
+            return [self._lane([self._clip_for(element, base, owner, member)],
+                               _name(element))]
+        if isinstance(element, Group) and element.kind == CONCRETE:
             clips, extra = [], []
-            for child in material.handles:
+            for child in element.handles:
                 child_base = base + child.offset
-                if isinstance(child.material, Group) and self.is_expanded(child.material):
-                    extra += self._lanes_for(child.material, child_base, material, child)
+                if isinstance(child.element, Group) and self.is_expanded(child.element):
+                    extra += self._lanes_for(child.element, child_base, element, child)
                 else:
-                    clips.append(self._clip_for(child.material, child_base, material, child))
-            lane = [self._lane(clips, _name(material))] if clips else []
+                    clips.append(self._clip_for(child.element, child_base, element, child))
+            lane = [self._lane(clips, _name(element))] if clips else []
             return lane + extra
-        return [self._lane([self._clip_for(material, base, owner, member)], _name(material))]
+        return [self._lane([self._clip_for(element, base, owner, member)], _name(element))]
 
     def _lane(self, clips: list, label: str) -> dict:
         """One `track` lane holding ``clips``, with the shared time chrome."""
@@ -696,24 +696,24 @@ class Editor:
         self._lanes[wid] = label
         return lane
 
-    def _clip_for(self, material, base: float, owner, member) -> dict:
-        """One `clip`: the material placed at ``base`` beats (absolute on the shared
+    def _clip_for(self, element, base: float, owner, member) -> dict:
+        """One `clip`: the element placed at ``base`` beats (absolute on the shared
         axis), with the body (or **bodies**) its kind calls for. Registers what it
         drew, which is what the edit-back path resolves against."""
         wid = next(self._ids)
         offset = self.beats_to_units(base)
         # The length shown, in beats: the placement's when it overrides, else the
-        # material's own.
+        # element's own.
         dur_beats = member.dur if (member is not None and member.dur is not None) else None
-        if dur_beats is None and isinstance(material, Material):
-            dur_beats = material.duration
+        if dur_beats is None and isinstance(element, Element):
+            dur_beats = element.duration
         if dur_beats is None:
-            dur_beats = self._extent(material)
+            dur_beats = self._extent(element)
 
-        body = self._body_for(material)
+        body = self._body_for(element)
         # A take with no duration given is as long as it is (1 unit = 1 sample).
         if "buffer" in body and dur_beats <= 0.0:
-            dur = float(material.wraps.frames)
+            dur = float(element.wraps.frames)
         else:
             dur = self.beats_to_units(dur_beats)
 
@@ -721,13 +721,13 @@ class Editor:
         # a member's offset is relative to its group.
         parent_base = base - (member.offset if member is not None else 0.0)
         self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
-        return clip(wid, offset=offset, dur=dur, label=_name(material), **body)
+        return clip(wid, offset=offset, dur=dur, label=_name(element), **body)
 
-    def _body_for(self, material) -> dict:
-        """The clip-body props a material draws with — and a **simultaneous** group
+    def _body_for(self, element) -> dict:
+        """The clip-body props an element draws with — and a **simultaneous** group
         draws with *all of its members'*, layered in one clip.
 
-        That is the model's own answer to "attach an envelope to the event it
+        That is the arrangement's own answer to "attach an envelope to the event it
         shapes": a group whose members start and end together *is* one thing on the
         timeline (its temporal relation says so), so it is one clip — dragging it
         moves the whole group, and the bodies overlay instead of hiding each other.
@@ -736,48 +736,48 @@ class Editor:
         """
         # A simultaneous group first: it is one thing on the timeline, and its
         # members' bodies layer (each keeps its own value axis).
-        if (isinstance(material, Group) and len(material) > 1
-                and material.temporal_relation() == SIMULTANEOUS):
+        if (isinstance(element, Group) and len(element) > 1
+                and element.temporal_relation() == SIMULTANEOUS):
             body: dict = {}
-            for m in material.handles:
-                body.update(self._body_for(m.material))
+            for m in element.handles:
+                body.update(self._body_for(m.element))
             return body
 
-        auto = _automation(material)
+        auto = _automation(element)
         if auto is not None:
             points = [(self.beats_to_units(t), v, shape, curve)
                       for t, v, shape, curve in _quads(auto.to_points())]
             lo, hi = _curve_range(points)
             return dict(points=points, points_min=lo, points_max=hi)
 
-        if isinstance(material, Buffer):
-            buf = material.wraps
+        if isinstance(element, Buffer):
+            buf = element.wraps
             # The take rides the bulk path: the host fetches the server buffer and
             # decimates it through its peak pyramid.
             return dict(buffer=buf.bufnum, channels=max(1, buf.channels))
 
-        notes = self._notes(material)
+        notes = self._notes(element)
         if notes:
             pitches = [n[2] for n in notes]
             return dict(notes=notes,
                         min=min(min(pitches) - PITCH_PAD, DEFAULT_PITCH[1]),
                         max=max(max(pitches) + PITCH_PAD, DEFAULT_PITCH[0]))
-        # No body: a collapsed group (or a material with nothing to draw) is the
+        # No body: a collapsed group (or an element with nothing to draw) is the
         # labeled rectangle — the summary of the level above it.
         return {}
 
-    def _notes(self, material) -> list:
-        """The ``(start, dur, pitch)`` note events of a material, in timeline
-        units relative to the material — the piano-roll body. A `Group` is a
+    def _notes(self, element) -> list:
+        """The ``(start, dur, pitch)`` note events of an element, in timeline
+        units relative to the element — the piano-roll body. A `Group` is a
         summary, not a roll (it collapses to a rectangle), and a note is any
         flattened event that resolves a pitch: the *change of state* of a
         contained generator happens right here (a pattern is bounced by
-        `clausters.model.realize.flatten`), so a generator lane shows the notes it
+        `clausters.form.render.flatten`), so a generator lane shows the notes it
         will play."""
-        if isinstance(material, (Group, Buffer)):
+        if isinstance(element, (Group, Buffer)):
             return []
         try:
-            events = flatten(material, 0.0)
+            events = flatten(element, 0.0)
         except (NotImplementedError, TypeError):
             return []
         notes = []
@@ -790,57 +790,57 @@ class Editor:
                           pitch, _velocity(item), 0))
         return notes
 
-    def _extent(self, material) -> float:
-        """A material's length in beats: its own ``duration`` when it has one,
+    def _extent(self, element) -> float:
+        """An element's length in beats: its own ``duration`` when it has one,
         else what it spans — a group over its placed members, an envelope over its
         curve, anything else over its flattened events (a bounced pattern
         included)."""
-        if isinstance(material, Material) and material.duration is not None:
-            return float(material.duration)
-        auto = _automation(material)
+        if isinstance(element, Element) and element.duration is not None:
+            return float(element.duration)
+        auto = _automation(element)
         if auto is not None:
             return auto.duration()
-        if isinstance(material, Group):
+        if isinstance(element, Group):
             return max((m.offset + (m.dur if m.dur is not None
-                                    else self._extent(m.material))
-                        for m in material.handles), default=0.0)
-        if isinstance(material, Buffer):
-            buf = material.wraps
+                                    else self._extent(m.element))
+                        for m in element.handles), default=0.0)
+        if isinstance(element, Buffer):
+            buf = element.wraps
             rate = buf.sample_rate or self.sample_rate
             return self.units_to_beats(buf.frames * (self.sample_rate / rate))
         try:
-            events = flatten(material, 0.0)
+            events = flatten(element, 0.0)
         except (NotImplementedError, TypeError):
             return 0.0
         return max((beat + _event_dur(item) for beat, item in events), default=0.0)
 
 
-def _name(material) -> str:
-    """A material's display name: its own ``name`` when it has one (a group names
+def _name(element) -> str:
+    """An element's display name: its own ``name`` when it has one (a group names
     itself, an automation names the control it drives), else what it *is* — an
-    automation is an "envelope", not the `Material` that happens to wrap it."""
-    name = getattr(material, "name", None)
+    automation is an "envelope", not the `Element` that happens to wrap it."""
+    name = getattr(element, "name", None)
     if isinstance(name, str) and name:
         return name
-    auto = _automation(material)
+    auto = _automation(element)
     if auto is not None:
         return auto.name or "envelope"
-    return type(material).__name__.lower()
+    return type(element).__name__.lower()
 
 
-def _automation(material):
-    """The `clausters.seq.Automation` a material carries, or ``None``. An automation
-    is a *curve* — the List/Buffer duality of the model — so it needs no primitive
-    of its own: any material wrapping one draws (and edits) as an envelope.
+def _automation(element):
+    """The `clausters.seq.Automation` an element carries, or ``None``. An automation
+    is a *curve* — the List/Buffer duality of the arrangement — so it needs no primitive
+    of its own: any element wrapping one draws (and edits) as an envelope.
 
     A **simultaneous** group is searched too: an envelope attached to the event it
     shapes is one clip, and a curve edited on it must find the automation inside.
     """
-    if isinstance(getattr(material, "wraps", None), Automation):
-        return material.wraps
-    if (isinstance(material, Group) and len(material) > 1
-            and material.temporal_relation() == SIMULTANEOUS):
-        for _offset, _dur, child in material.members:
+    if isinstance(getattr(element, "wraps", None), Automation):
+        return element.wraps
+    if (isinstance(element, Group) and len(element) > 1
+            and element.temporal_relation() == SIMULTANEOUS):
+        for _offset, _dur, child in element.members:
             auto = _automation(child)
             if auto is not None:
                 return auto
@@ -862,12 +862,12 @@ def _quintuples(flat) -> list:
     return [tuple(flat[i:i + 5]) for i in range(0, len(flat) - 4, 5)]
 
 
-def _editable_timeline(material):
-    """The `clausters.seq.Timeline` a material's notes can be edited onto, or
-    ``None``. A `clausters.model.Track` wraps one — the random-access, editable
+def _editable_timeline(element):
+    """The `clausters.seq.Timeline` an element's notes can be edited onto, or
+    ``None``. A `clausters.form.Track` wraps one — the random-access, editable
     events container; a generator (a `Pbind`/`Routine`) does not, so it is
     forward-only and the piano-roll shows it read-only."""
-    wraps = getattr(material, "wraps", None)
+    wraps = getattr(element, "wraps", None)
     return wraps if isinstance(wraps, Timeline) else None
 
 
@@ -908,7 +908,7 @@ def _velocity(item) -> int:
     """The MIDI velocity (``0..127``) of a flattened note event: an explicit
     ``velocity`` key if given, else the event's linear ``amp`` mapped to the
     velocity range, else the default 100 — so the piano-roll's velocity lane
-    reflects the model's dynamics."""
+    reflects the dynamics of the events."""
     vel = item.get("velocity")
     if vel is not None:
         return max(0, min(127, int(vel)))

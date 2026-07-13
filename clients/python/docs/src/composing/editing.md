@@ -2,17 +2,17 @@
 
 This page is the working rhythm the whole layer was built for. It has three
 beats: **gesture** in the window, **`editor.poll()`** to fold the gesture into
-the model, **`editor.play()`** to hear the piece as it now stands. Everything
-else here is detail on those three.
+the arrangement, **`editor.play()`** to hear the piece as it now stands.
+Everything else here is detail on those three.
 
 ## The transport, from code
 
-The editor owns a transport over the model. Give it a destination and a clock
+The editor owns a transport over the piece. Give it a destination and a clock
 once, and drive it from the interpreter:
 
 ```python
 editor.locate(0.0)                     # the cursor waits at the top
-editor.play(server, session.clock)     # realize and play from the cursor
+editor.play(server, session.clock)     # render and play from the cursor
 ```
 
 The piece plays, and a line sweeps the clips — the **playhead**, anchored to
@@ -27,8 +27,8 @@ editor.pause()      # halt here; the position stays
 editor.play()       # resume from where we paused (destination remembered)
 ```
 
-`play` is always a **fresh realization** from the transport's position — the
-model is re-flattened, so it plays the composition as it now stands. `pause`
+`play` is always a **fresh render** from the transport's position — the tree
+is re-flattened, so it plays the composition as it now stands. `pause`
 stops the scheduling and keeps the position; what is already sounding finishes
 by itself (a transport is not a panic button — every voice in this piece ends
 with its clip). And:
@@ -39,10 +39,10 @@ editor.locate(4.0)   # seek: put the transport at beat 4
 ```
 
 `locate` while stopped just moves the **cursor** — the thin static line the
-lanes draw; while playing, it re-realizes from the new position (so a seek
+lanes draw; while playing, it re-renders from the new position (so a seek
 also picks up any pending edit). Clicking a lane's **ruler, or its empty
 space, is the same `locate`** — try it: click somewhere in the empty part of a
-lane and watch the cursor move. That click reaches the model the same way
+lane and watch the cursor move. That click reaches the data the same way
 every other gesture does, which is the next section.
 
 Two playheads, to be precise, and telling them apart matters: the *sweeping
@@ -52,8 +52,8 @@ set either directly — the transport calls do.
 
 ## The rhythm: gesture → `poll()` → `play()`
 
-The window accumulates your gestures as events; nothing touches the model
-until you ask. `editor.poll()` drains everything pending and applies it — one
+The window accumulates your gestures as events; nothing touches the
+arrangement until you ask. `editor.poll()` drains everything pending and applies it — one
 call, no loop. Run the whole cycle once: **drag the second drums clip**
 somewhere later in its lane (it snaps to the half-beat grid, your `quant`),
 then:
@@ -77,7 +77,7 @@ Pull the second take's right edge in to one beat, then:
 ```python
 editor.poll()
 print(drums.members)          # (offset, 1.0, <Buffer>) — trimmed
-print(take.to_event()["dur"]) # 2.0 — the material, untouched as ever
+print(take.to_event()["dur"]) # 2.0 — the element, untouched as ever
 editor.play(at=0.0)           # you hear one beat of it
 ```
 
@@ -94,23 +94,23 @@ and the three never disagree. A few mechanical notes:
 - Only what actually changed is written: a plain drag carries the clip's
   length along unchanged, and the editor is careful not to re-snap *that* —
   snapping a length that was never touched would silently shorten the
-  material.
+  element.
 
 ## `dirty`, and the `follow` variant
 
-An edit does not interrupt what is sounding. It changes the model and marks
-the editor:
+An edit does not interrupt what is sounding. It changes the arrangement and
+marks the editor:
 
 ```python
-print(editor.dirty)    # True after an applied edit, until the next realize
+print(editor.dirty)    # True after an applied edit, until the next render
 ```
 
 The next transport action — a play, a resume, a seek — re-reads the
-composition, because realizing always re-flattens. If you want the piece to
+composition, because rendering always re-flattens. If you want the piece to
 re-schedule *itself* on every edit instead, turn on **follow**:
 
 ```python
-editor.follow = True   # the live editor: poll() now re-realizes on each edit
+editor.follow = True   # the live editor: poll() now re-renders on each edit
 ```
 
 With `follow` on, the same rhythm loses its third step: gesture, `poll()`,
@@ -122,16 +122,16 @@ keeps sounding, and what changes is what has not been scheduled yet.
 editor.follow = False  # back to the explicit rhythm for the next pages
 ```
 
-## The piece ends where the model says
+## The piece ends where the arrangement says
 
 Let the piece play to the end: the playhead reaches `editor.extent()` — read
-from the model, remember — and the scan simply runs out of events. Drag a clip
+from the tree, remember — and the scan simply runs out of events. Drag a clip
 past the old end, `poll()`, `play()`: the piece is longer now, and the
 playhead sweeps to the *new* end. Nothing was configured; the length is not a
-setting, it is a fact about the material.
+setting, it is a fact about the elements.
 
-Undo, by the way, is the model again: you watched every edit land as a
-placement (`drums.members`), so putting one back is a `move` — from code or by
-dragging it home.
+Undo, by the way, is a placement again: you watched every edit land as one
+(`drums.members`), so putting one back is a `move` — from code or by dragging
+it home.
 
-Next: [Automation: a curve as material](automation.md).
+Next: [Automation: a curve as an element](automation.md).

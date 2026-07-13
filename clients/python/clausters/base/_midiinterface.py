@@ -3,7 +3,7 @@
 The same RT/NRT seam as the OSC side, for MIDI. A `MidiServer` is
 the double-dispatch counterpart of the OSC ``Server``: a clock + routine plays
 the *same* ``Pbind`` through it, and which **interface** it holds decides the
-realization — `MidiNrtInterface` accumulates a `MidiScore` (in
+rendering — `MidiNrtInterface` accumulates a `MidiScore` (in
 beats) that writes a `.mid`/clip file offline, `MidiRtInterface` sends
 the notes out a virtual OS port live, through the ``clausters-midi`` crate.
 
@@ -153,7 +153,7 @@ class MidiServer:
     """A MIDI destination for event patterns — the double-dispatch
     counterpart of the OSC `Server`. A
     `Pbind` played on a clock with this as the
-    destination realizes each `Event` as a note
+    destination renders each `Event` as a note
     on/off pair, handed to the held interface (NRT score or live port). Note
     number from `event.midinote()`, velocity from `amp` (0..1 → 0..127)."""
 

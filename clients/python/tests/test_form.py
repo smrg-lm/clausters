@@ -1,6 +1,6 @@
-"""The compositional model (Fase 1A) — pure structure and temporal algebra.
+"""The concrete model (Fase 1A) — pure structure and temporal algebra.
 
-No server: these check the temporal *character* of a material (from its
+No server: these check the temporal *character* of an element (from its
 onset/duration), the temporal *relation* derived from a `Group`'s member
 placements, the thin-wrapper delegation of `play`, and group editing by handle.
 Realization onto the server/NRT is a later phase.
@@ -10,9 +10,9 @@ import struct
 
 import pytest
 
-from clausters.model import (
+from clausters.form import (
     ABSTRACT,
-    COMPOSITIONAL,
+    CONCRETE,
     LOGICAL,
     MIXED,
     PUNCTUAL,
@@ -24,7 +24,7 @@ from clausters.model import (
     Event,
     Generator,
     Group,
-    Material,
+    Element,
     Sequence,
     Track,
     flatten,
@@ -42,16 +42,16 @@ def test_temporal_character_table():
 
 
 def test_material_character_property():
-    assert Material(onset=1.0, duration=4.0).temporal_character == SEGMENT
-    assert Material(onset=1.0).temporal_character == PUNCTUAL
-    assert Material(duration=4.0).temporal_character == RELATIVE
-    assert Material().temporal_character == ABSTRACT
+    assert Element(onset=1.0, duration=4.0).temporal_character == SEGMENT
+    assert Element(onset=1.0).temporal_character == PUNCTUAL
+    assert Element(duration=4.0).temporal_character == RELATIVE
+    assert Element().temporal_character == ABSTRACT
 
 
 def test_onset_duration_are_floats():
-    m = Material(onset=1, duration=2)
+    m = Element(onset=1, duration=2)
     assert isinstance(m.onset, float) and isinstance(m.duration, float)
-    assert Material().onset is None and Material().duration is None
+    assert Element().onset is None and Element().duration is None
 
 
 # ---- the five primitives are thin wrappers ----
@@ -108,7 +108,7 @@ def test_container_material_is_not_directly_playable():
     with pytest.raises(NotImplementedError):
         Group().play(_Dest())
     with pytest.raises(NotImplementedError):
-        Material().play(_Dest())
+        Element().play(_Dest())
 
 
 # ---- Group editing by handle ----
@@ -120,18 +120,18 @@ def test_group_kind_validated():
 
 
 def test_group_seed_forms():
-    a, b = Material(duration=1.0), Material(duration=1.0)
-    g = Group([a, (2.0, b), (4.0, 1.0, Material(duration=9.0))])
+    a, b = Element(duration=1.0), Element(duration=1.0)
+    g = Group([a, (2.0, b), (4.0, 1.0, Element(duration=9.0))])
     offsets = [off for off, _dur, _mat in g.members]
     assert offsets == [0.0, 2.0, 4.0]
-    # the (offset, dur, material) triple overrides the material's own duration
+    # the (offset, dur, element) triple overrides the element's own duration
     assert g.members[2][1] == 1.0
 
 
 def test_group_add_remove_move_by_handle():
     g = Group()
-    h1 = g.add(Material(duration=1.0), 0.0)
-    h2 = g.add(Material(duration=1.0), 1.0)
+    h1 = g.add(Element(duration=1.0), 0.0)
+    h2 = g.add(Element(duration=1.0), 1.0)
     assert len(g) == 2
     g.move(h1, 5.0)
     assert h1.offset == 5.0
@@ -147,7 +147,7 @@ def _grp(*placements):
     """A group of members at the given (offset, dur) placements."""
     g = Group()
     for offset, dur in placements:
-        g.add(Material(duration=dur), offset)
+        g.add(Element(duration=dur), offset)
     return g
 
 
@@ -167,8 +167,8 @@ def test_relation_simultaneous():
 def test_relation_simultaneous_durationless():
     # all start together and all have unknown (None) length -> still simultaneous
     g = Group()
-    g.add(Material(), 3.0)
-    g.add(Material(), 3.0)
+    g.add(Element(), 3.0)
+    g.add(Element(), 3.0)
     assert g.temporal_relation() == SIMULTANEOUS
 
 
@@ -187,14 +187,14 @@ def test_relation_mixed_overlap():
 
 
 def test_relation_placement_dur_drives_derivation():
-    # material durations differ, but the placement dur makes them tile
-    g = Group(kind=COMPOSITIONAL)
-    g.add(Material(duration=99.0), 0.0, dur=2.0)
-    g.add(Material(duration=99.0), 2.0, dur=2.0)
+    # element durations differ, but the placement dur makes them tile
+    g = Group(kind=CONCRETE)
+    g.add(Element(duration=99.0), 0.0, dur=2.0)
+    g.add(Element(duration=99.0), 2.0, dur=2.0)
     assert g.temporal_relation() == SUCCESSIVE
 
 
-# ---- realize: flatten to absolute beats (Fase 1B, pure) ----
+# ---- render: flatten to absolute beats (Fase 1B, pure) ----
 
 def test_flatten_accumulates_nested_offsets():
     from clausters.seq.event import Event as SeqEvent
@@ -222,7 +222,7 @@ def test_sequence_of_materials_is_laid_out_successively():
 
 
 def test_abstract_material_yields_no_event():
-    flat = flatten(Group([(0.0, Material()), (1.0, Event({"dur": 1.0}))]))
+    flat = flatten(Group([(0.0, Element()), (1.0, Event({"dur": 1.0}))]))
     assert [beat for beat, _ in flat] == [1.0]
 
 
@@ -245,12 +245,12 @@ def test_a_buffer_without_an_instrument_has_no_sound_of_its_own():
         Buffer(object()).to_event()
 
 
-def test_realize_bare_abstract_is_an_error():
+def test_render_bare_abstract_is_an_error():
     with pytest.raises(ValueError):
-        Material().realize(None, None)
+        Element().render(None, None)
 
 
-# ---- realize: NRT equivalence to a hand-built timeline (needs the FFI) ----
+# ---- render: NRT equivalence to a hand-built timeline (needs the FFI) ----
 
 def _embed_or_skip():
     try:
@@ -270,8 +270,8 @@ def _inner_addr(raw: bytes) -> str:
     return addr
 
 
-def test_realize_matches_handbuilt_timeline_nrt():
-    """A compositional group realized through the model produces the same score
+def test_render_matches_handbuilt_timeline_nrt():
+    """A concrete group rendered through the arrangement produces the same score
     (the same /s_new start beats) as the equivalent flat timeline played by a
     Playhead by hand — proving the flatten is correct and the change of state
     deterministic. NRT only (OscNrtInterface), so no socket and no port clash."""
@@ -299,7 +299,7 @@ def test_realize_matches_handbuilt_timeline_nrt():
                 (0.0, Event(SeqEvent(instrument="default", freq=550.0, dur=1.0))),
                 (1.0, Event(SeqEvent(instrument="default", freq=660.0, dur=1.0))),
             ])),
-        ]).realize(server, clock)
+        ]).render(server, clock)
 
     def by_hand(server, clock):
         tl = Timeline([
@@ -336,7 +336,7 @@ def test_a_buffer_sounds_through_the_instrument_that_plays_it():
 
 def test_a_placement_length_trims_what_the_material_plays():
     """A clip's length is what you hear of it: a placement `dur` drops the events
-    past its end and sizes a single-event material to it — the DAW rule, and what
+    past its end and sizes a single-event element to it — the DAW rule, and what
     resizing a clip in the editor must actually change."""
     from clausters.defs.buffer import Buffer as ServerBuffer
     from clausters.seq.event import Event as SeqEvent
@@ -355,7 +355,7 @@ def test_a_placement_length_trims_what_the_material_plays():
     assert len(flatten(group)) == 4
 
     # A take shortened by its placement sounds for exactly that long (its own
-    # event is untouched — a placement never rewrites the material).
+    # event is untouched — a placement never rewrites the element).
     take = Buffer(ServerBuffer(bufnum=1, frames=100), duration=4.0,
                   instrument="sampler")
     song = Group([(0.0, 1.5, take)])
@@ -364,7 +364,7 @@ def test_a_placement_length_trims_what_the_material_plays():
     assert take.to_event()["dur"] == 4.0
 
 
-# ---- realize: logical group -> GraphDef (Fase 1C, pure) ----
+# ---- render: logical group -> GraphDef (Fase 1C, pure) ----
 
 def test_generator_def_name_from_string_or_object():
     class _Def:
@@ -418,10 +418,10 @@ class _StubServer:
         return "INSTANCE"
 
 
-def test_realize_routes_a_logical_group_to_graphdef():
+def test_render_routes_a_logical_group_to_graphdef():
     g = Group(kind=LOGICAL, name="chain", buses=["mix"])
     g.add(Generator("gsrc", controls={"out": "mix"}))
     server = _StubServer()
-    instance = g.realize(server, ports={"gain": 0.5})
+    instance = g.render(server, ports={"gain": 0.5})
     assert instance == "INSTANCE"
     assert server.sent == [("d_graph", "chain"), ("graph_new", "chain", {"gain": 0.5})]

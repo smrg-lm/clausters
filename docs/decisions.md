@@ -350,9 +350,9 @@ display scale for frequency-like ranges, and times over an explicit
 `[0, duration]` domain — so a multitrack automation view later composes this
 model instead of designing a new one.
 
-## The multitrack editor: beats in the model, samples on the axis, and one converter
+## The multitrack editor: beats in the data, samples on the axis, and one converter
 
-The arrangement model places materials in **beats**; the multitrack view places
+The arrangement places elements in **beats**; the multitrack view places
 clips in **timeline samples**. Two units, and the temptation is to pick one. Both
 are load-bearing:
 
@@ -361,39 +361,39 @@ are load-bearing:
   A take placed at its own frame count then lands 1:1 on the axis, and its
   waveform draws where it sounds. In beats, every body would need a scale factor
   that only the client knows.
-- **The model must be in beats.** It is musical material, tempo-relative, and it
-  realizes onto a beat clock. Baking a sample rate into it would tie a
+- **The arrangement must be in beats.** Its elements are musical, tempo-relative,
+  and they render onto a beat clock. Baking a sample rate into them would tie a
   composition to one engine.
 
 **Decision:** keep both, and make the **editor driver the only converter** — one
 beat is `sample_rate / tempo` timeline units. It is also where a *musical* `quant`
 becomes the lane's pixel-drag grid, so the grid a clip is dropped on is the grid
-the model re-schedules on. The arithmetic itself is the core's
+the arrangement re-schedules on. The arithmetic itself is the core's
 (`beats_to_secs` → `secs_to_samples`), never a second implementation, so a port
 inherits it.
 
-**Consequence:** the model stays pure and transport-agnostic (it is the piece a
-future TypeScript client factors into `clausters-core`), the host stays unit-free
-(it only knows "timeline units"), and the whole conversion is a handful of lines
-in one client module. Its dependency arrow is one-way — the editor imports the
-model, never the reverse — the same call that moved the envelope point helpers out
-of the GUI submodule so `seq` would not depend on it.
+**Consequence:** `clausters.form` stays pure and transport-agnostic (it is the
+piece a future TypeScript client factors into `clausters-core`), the host stays
+unit-free (it only knows "timeline units"), and the whole conversion is a handful
+of lines in one client module. Its dependency arrow is one-way — the editor
+imports the arrangement, never the reverse — the same call that moved the envelope
+point helpers out of the GUI submodule so `seq` would not depend on it.
 
 ## A buffer sounds through an instrument, not by itself
 
-Realizing a `Buffer` material was deferred with a note that it "needs an
-instrument". The temptation on picking it back up was to give the model a built-in
-sampler def.
+Rendering a `Buffer` element was deferred with a note that it "needs an
+instrument". The temptation on picking it back up was to give the arrangement a
+built-in sampler def.
 
 **Decision:** a buffer is **data**, and it sounds through the def *named to play
 it* — `Buffer(buf, instrument="take")`, whose event carries the buffer number in a
-`buf` control. A buffer with no instrument is still perfectly good material: it
+`buf` control. A buffer with no instrument is still a perfectly good element: it
 draws in the editor and contributes its extent, but emits no event.
 
-**Consequence:** the model ships no DSP and no def of its own (it stays the
+**Consequence:** `clausters.form` ships no DSP and no def of its own (it stays the
 client-side structure it claims to be), the instrument stays the user's — any def
 that reads a buffer works, at any quality — and the "data vs. process" split the
-model is built on holds at its most tempting exception. The one concession is
+layer is built on holds at its most tempting exception. The one concession is
 practical: such an event sets `legato = 1` so a take sounds its whole length,
 where a note's default would cut it short.
 
@@ -418,33 +418,33 @@ engine, which is what decides it.
 
 **Consequence:** the view can never lie about signal flow, and the edit stays
 well-defined: rewiring means pointing a control at another bus (or at none), one
-wire per control, which is exactly the mutation the model and the GraphDef both
+wire per control, which is exactly the mutation the group and the GraphDef both
 accept. A directed rendering could be layered on later — but only from
 information the server surfaces, not from a name.
 
 ## The arrangement model: five primitives, one recursive group
 
 A sequencing layer (a timeline of items, a playhead) is enough to *play* music
-and not enough to *compose* it. A composition is material inside material — a
+and not enough to *compose* it. A composition is an element inside an element — a
 phrase inside a section, a take against a melody, a generator that has not been
 evaluated yet — and the client had no name for that. The question was what to add.
 
 **Context.** The tempting answer is a bag of editor types: an audio clip, a MIDI
 clip, an automation lane, a folder track, each with its own fields, its own view
-and its own realization path. That is how a DAW grows, and it is also why a DAW's
+and its own rendering path. That is how a DAW grows, and it is also why a DAW's
 granularity stops where its type list stops: you can edit a clip, but not "the
 inside of that clip at the level you happen to care about".
 
-**Decision.** A closed algebra instead of a type list. A **material** is anything
+**Decision.** A closed algebra instead of a type list. An **element** is anything
 bounded that produces a unit of meaning — in one of two modes, and this is the axis
 the layer turns on: **generated** (the rendered thing, editable data) or a
 **generator** (the algorithm that renders it). Evaluating the second into the first
 is the *change of state* — and it is a compositional act, not an optimization: what
 separates the two modes is not data versus process but what can be *done* with
-them. Generated material is random-access (an audio file plays backwards, slices,
+them. A generated element is random-access (an audio file plays backwards, slices,
 edits in place); a generator is forward-only (it evaluates, in order, and that is
 all). Bouncing is what turns something you can only produce into something you can
-manipulate. A material carries only two temporal
+manipulate. An element carries only two temporal
 properties — an *onset* and a *duration*, either of which may be absent (which
 gives it a temporal *character*: a segment, a punctual event, a relative segment,
 or a pure abstract context). There are exactly **five** kinds, and each is a thin
@@ -453,14 +453,14 @@ an **Event** (parameters in one action), a **List** (strict order, no concrete
 time), a **Buffer** (a list at constant time), a **Set** (mixed placement — a
 track), and a **Function** (a *process*: server DSP, or a generator of sequences).
 The one genuinely new structure is the **Group**: a recursive placement of
-materials by offset, in two kinds — *compositional* (a structural relation in
-time) and *logical* (a processing relation, wired by buses). A group's temporal
+elements by offset, in two kinds — *concrete* (a relation in time) and *logical*
+(a relation of processing, wired by buses). A group's temporal
 relation (successive / simultaneous / mixed) is **derived** from where its members
 sit, never declared.
 
 Two consequences of the shape are load-bearing:
 
-- **Realization is a change of state, not a second engine.** Realizing flattens
+- **Rendering is a change of state, not a second engine.** Rendering flattens
   the tree — accumulating nested offsets into absolute beats — into the flat
   timeline the client already plays, bouncing any contained generator in the same
   pass. RT and NRT differ only in the destination, so the offline render stays
@@ -470,12 +470,12 @@ Two consequences of the shape are load-bearing:
   the *look*, so the same structure serves the whole scale from a section to a
   note to a parameter — which is the granularity a type list cannot buy.
 
-**Consequence.** The model is pure and transport-agnostic: no DSP, no protocol, no
+**Consequence.** The layer is pure and transport-agnostic: no DSP, no protocol, no
 GUI — the piece a future client factors into the shared core. It carries the
 temptations too: a `Buffer` is data and sounds only through the *instrument* named
 to play it, and a logical group emits the bus-wired configuration the server
 already expresses (a `GraphDef`) rather than a wiring language of its own. Both
-exceptions were resolved in the model's favour, and both are recorded above.
+exceptions were resolved in the algebra's favour, and both are recorded above.
 
 ## The piano-roll: OSC events get their own lane, and the notes live once
 
@@ -494,7 +494,7 @@ in a **separate lane** below it, on the shared time axis but with no pitch
 pretence. Velocity gets its own lane too (the DAW convention), so the grid stays
 one clean plane of notes.
 
-**Reuse.** The note primitives — the model, the pitch/time mapping, the drawing,
+**Reuse.** The note primitives — the notes, the pitch/time mapping, the drawing,
 the hit-test, the drag clamps — live **once** in `host::pianoroll`, shared by the
 dedicated `pianoroll` widget and the multitrack `clip`'s roll body (which now
 delegates its drawing there). This is the `bpf::place_point` move again (G22h): a
@@ -531,9 +531,9 @@ dangle), and every block edit reaches the script as the same flat `"notes"`
 payload — the wire did not grow, so every client consumes block edits with the
 code it already had.
 
-**Edit-back to the model (the Editor's dedicated view).** When the `Editor`
-opens a material as a dedicated piano-roll, a per-note edit writes back only to
-**random-access material**: a `Track`'s editable `Timeline` is rebuilt from the
+**Edit-back to the data (the Editor's dedicated view).** When the `Editor`
+opens an element as a dedicated piano-roll, a per-note edit writes back only to a
+**generated element**: a `Track`'s editable `Timeline` is rebuilt from the
 `"notes"` payload (times converted to beats, the OSC/MIDI events sharing the
 timeline preserved). A generator (`Pbind`/`Routine`) is forward-only — there is
 no second note to rewrite until it evaluates again — so its bounced notes are

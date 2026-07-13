@@ -95,7 +95,7 @@ print(buf.bufnum, buf.frames, buf.channels)
 
 `read_buffer` loads the file into a server buffer and returns its number;
 `query_buffer` asks the server for the buffer's shape (frames, channels,
-sample rate), which the model and the editor will both read. Note the offline
+sample rate), which the arrangement and the editor will both read. Note the offline
 session is the *same* client code as the live one — only the destination
 differs; the last page of this section leans on exactly that.
 
@@ -113,8 +113,8 @@ Two beats of bass. (Timing always rides a clock: an event plays itself with
 `play(destination)` from *inside* a routine or a playhead running on a
 `TempoClock` — never from the bare interpreter, where there is no logical time
 to stamp it with. `session.play` wraps the pattern in exactly such a routine.)
-That `play(destination)` seam — an object realizing itself onto a server — is
+That `play(destination)` seam — an object rendering itself onto a server — is
 what the whole arrangement model delegates to, and everything after this page
 builds on it.
 
-Next: [Materials: the five primitives](materials.md).
+Next: [Elements: the five primitives](elements.md).

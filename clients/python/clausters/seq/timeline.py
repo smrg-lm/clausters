@@ -9,7 +9,7 @@ makes DAW-style transport controls possible: a `Playhead` scans the timeline
 forward as the clock advances, and **play / stop / locate / loop** re-seek the
 cursor by time at the boundaries.
 
-An *item* is anything that can realize itself on a destination — it has a
+An *item* is anything that can render itself on a destination — it has a
 `play(destination)` method. `clausters.seq.event.Event` already is one (it plays
 a note on a `Server` or a `MidiServer` — the same double dispatch the patterns
 use), so a timeline of `Event`s renders to OSC *or* MIDI by which destination
@@ -42,7 +42,7 @@ class _Entry:
 
 
 class OscEvent:
-    """A raw OSC message ``(addr, *args)`` as a timeline item: realizing it sends
+    """A raw OSC message ``(addr, *args)`` as a timeline item: rendering it sends
     the message at the playhead's current logical beat through a `Server`."""
 
     def __init__(self, addr, *args):
@@ -54,7 +54,7 @@ class OscEvent:
 
 
 class MidiEvent:
-    """Raw MIDI bytes as a timeline item: realizing it emits the message at the
+    """Raw MIDI bytes as a timeline item: rendering it emits the message at the
     playhead's current logical beat through a `MidiServer`."""
 
     def __init__(self, message):
@@ -115,7 +115,7 @@ class Timeline:
     def quantize(self, grid):
         """Snap every placement to the nearest multiple of ``grid`` (beats):
         each entry's beat moves to the grid line, durations untouched. The
-        model-side counterpart of the piano-roll's `q` gesture (which quantizes
+        data-side counterpart of the piano-roll's `q` gesture (which quantizes
         in the view when the GUI runs standalone). A zero/negative grid is a
         no-op. Returns the timeline."""
         g = float(grid)
@@ -195,7 +195,7 @@ class Playhead:
     """A transport over a `Timeline`: play / stop / locate / loop, and a song
     `position`.
 
-    The playhead scans the timeline forward as a `clock` advances, realizing each
+    The playhead scans the timeline forward as a `clock` advances, rendering each
     item on a `destination` (a `Server` for OSC, a `MidiServer` for MIDI — the
     same seam as the rest of the client). The forward scan is what `play` runs;
     the random access lives at the boundaries — `play(at=…)` and `locate(beat)`
@@ -244,7 +244,7 @@ class Playhead:
         return self
 
     def stop(self):
-        """Halt the playhead. Items already realized keep sounding (their
+        """Halt the playhead. Items already rendered keep sounding (their
         releases are scheduled); no further items are played."""
         self._running = False
         self._epoch += 1

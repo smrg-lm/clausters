@@ -1,27 +1,26 @@
-"""Grouping — composite materials and the derived temporal relation.
+"""The arrangement — grouping, and the derived temporal relation.
 
-A `Group` is the one genuinely new structure of the model: the recursive
-placement of materials with an offset, and the temporal *relation* derived from
+A `Group` is the one genuinely new structure of the arrangement: the recursive
+placement of elements with an offset, and the temporal *relation* derived from
 how the members sit in time. Everything else (the five primitives) already
-exists and is merely adorned by `clausters.model.material.Material`.
+exists and is merely adorned by `clausters.form.element.Element`.
 
 Two kinds of grouping:
 
-- **compositional** — a structural/temporal relation between the contents (a
-  section holding clips, a melody holding note-events), with no processing
-  relation.
-- **logical** — the contents relate by processing or generation logic (a
+- **concrete** — the members relate in time (a section holding clips, a melody
+  holding note-events), with no processing relation.
+- **logical** — the members relate by processing or generation logic (a
   bus-wired signal chain on the server, or a generative dependency on the
   client).
 
-Realization lives in `clausters.model.realize`; this module is pure structure plus the
+Rendering lives in `clausters.form.render`; this module is pure structure plus the
 temporal-relation derivation (a pure function over the members' placements).
 """
 
 import math
 
 #: The kind of a `Group`.
-COMPOSITIONAL = "compositional"
+CONCRETE = "concrete"
 LOGICAL = "logical"
 
 #: The temporal relation between a group's members, derived from their placements
@@ -32,7 +31,7 @@ SUCCESSIVE = "successive"
 SIMULTANEOUS = "simultaneous"
 MIXED = "mixed"
 
-from .material import Material  # noqa: E402  (constants first for the docstring)
+from .element import Element  # noqa: E402  (constants first for the docstring)
 
 
 class _Member:
@@ -40,26 +39,26 @@ class _Member:
     or ``move``d by identity after other edits shift things.
 
     ``offset`` is the member's start in beats relative to the group's context;
-    ``dur`` is an explicit placement length that overrides the material's own
+    ``dur`` is an explicit placement length that overrides the element's own
     ``duration`` when set.
     """
 
-    __slots__ = ("offset", "dur", "material")
+    __slots__ = ("offset", "dur", "element")
 
-    def __init__(self, offset, dur, material):
+    def __init__(self, offset, dur, element):
         self.offset = float(offset)
         self.dur = None if dur is None else float(dur)
-        self.material = material
+        self.element = element
 
     @property
     def length(self):
         """The effective length of this member: the placement ``dur`` if given,
-        else the material's own ``duration`` (may be ``None``)."""
-        return self.dur if self.dur is not None else self.material.duration
+        else the element's own ``duration`` (may be ``None``)."""
+        return self.dur if self.dur is not None else self.element.duration
 
 
-class Group(Material):
-    """A composite material: a set of placed members with a grouping ``kind``.
+class Group(Element):
+    """A composite element: a set of placed members with a grouping ``kind``.
 
     Members are placed by an ``offset`` (beats relative to the group's context)
     and an optional placement ``dur``. Edit freely — `add`, `remove`, `move`; a
@@ -72,9 +71,9 @@ class Group(Material):
 
     Args:
         children: optional iterable seeding the group. Each item is a
-            ``(offset, material)`` pair, a ``(offset, dur, material)`` triple, or
-            a bare `Material` (placed at offset 0).
-        kind: `COMPOSITIONAL` (default) or `LOGICAL`.
+            ``(offset, element)`` pair, a ``(offset, dur, element)`` triple, or
+            a bare `Element` (placed at offset 0).
+        kind: `CONCRETE` (default) or `LOGICAL`.
         name: the composition's name — the GraphDef name for a logical group.
         buses: internal buses for a logical group — each a ``name`` (audio,
             1 channel) or a ``(name, rate)`` / ``(name, rate, channels)`` tuple.
@@ -82,10 +81,10 @@ class Group(Material):
         duration: the group's own duration, or ``None``.
     """
 
-    def __init__(self, children=None, kind=COMPOSITIONAL, *, name=None,
+    def __init__(self, children=None, kind=CONCRETE, *, name=None,
                  buses=None, onset=None, duration=None):
         super().__init__(wraps=None, onset=onset, duration=duration)
-        if kind not in (COMPOSITIONAL, LOGICAL):
+        if kind not in (CONCRETE, LOGICAL):
             raise ValueError(f"unknown group kind: {kind!r}")
         self.kind = kind
         self.name = name
@@ -98,21 +97,21 @@ class Group(Material):
     # ---- editing ----
 
     def _add_child(self, child):
-        if isinstance(child, Material):
+        if isinstance(child, Element):
             self.add(child)
         elif len(child) == 2:
-            offset, material = child
-            self.add(material, offset)
+            offset, element = child
+            self.add(element, offset)
         elif len(child) == 3:
-            offset, dur, material = child
-            self.add(material, offset, dur)
+            offset, dur, element = child
+            self.add(element, offset, dur)
         else:
             raise ValueError(f"invalid child spec: {child!r}")
 
-    def add(self, material, offset=0.0, dur=None):
-        """Place ``material`` at ``offset`` (beats), optionally overriding its
+    def add(self, element, offset=0.0, dur=None):
+        """Place ``element`` at ``offset`` (beats), optionally overriding its
         length with ``dur``. Returns a member handle for `remove`/`move`."""
-        member = _Member(offset, dur, material)
+        member = _Member(offset, dur, element)
         self._members.append(member)
         return member
 
@@ -137,8 +136,8 @@ class Group(Material):
 
     @property
     def members(self) -> list:
-        """The members as ``(offset, dur, material)`` triples, insertion order."""
-        return [(m.offset, m.dur, m.material) for m in self._members]
+        """The members as ``(offset, dur, element)`` triples, insertion order."""
+        return [(m.offset, m.dur, m.element) for m in self._members]
 
     @property
     def handles(self) -> list:
@@ -190,22 +189,22 @@ class Group(Material):
 
         return MIXED
 
-    # ---- the logical realization: a GraphDef ----
+    # ---- the logical rendering: a GraphDef ----
 
     def to_graphdef(self, name=None):
         """Translate this **logical** group into a `clausters.defs.GraphDef` — the
-        1:1 mapping of the model's logical grouping (nodes wired by sender/
+        1:1 mapping of the arrangement's logical grouping (nodes wired by sender/
         receiver buses) onto the configuration the server already expresses.
 
-        Each member must be a `clausters.model.material.Generator` (its
+        Each member must be a `clausters.form.element.Generator` (its
         ``def_name`` is the member def; its ``controls`` — numbers, an internal
         bus name, or ``"OUT"`` — and ``maps`` wire it). The group's `buses` become
         the private internal buses. Placement offsets are ignored (a logical group
         is a signal graph, not a timeline). Returns the `GraphDef`; sending and
-        instancing it is `clausters.model.realize`.
+        instancing it is `clausters.form.render`.
         """
         from ..defs.graphdef import GraphDef
-        from .material import Generator
+        from .element import Generator
 
         gname = name or self.name
         if gname is None:

@@ -1,64 +1,64 @@
-"""Realization — the *change of state* from the arrangement model to sound.
+"""Rendering — the *change of state* from the arrangement to sound.
 
-A compositional `Group` is realized by **flattening** it: a tree-walk that
+A concrete `Group` is rendered by **flattening** it: a tree-walk that
 accumulates the nested placement offsets into absolute beats, producing a flat
 `clausters.seq.Timeline` of items that each know how to `play(destination)`. That
 timeline is then played by a `clausters.seq.Playhead` — RT (timetagged bundles)
 or NRT (a score for `Session.render`) purely by which destination and clock it
-holds, sample-identical, with no realization path of its own. This mirrors
-`Timeline.from_pattern`: the model reuses the sequencing layer rather than
+holds, sample-identical, with no scheduling path of its own. This mirrors
+`Timeline.from_pattern`: the arrangement reuses the sequencing layer rather than
 duplicating it.
 
-Scope of this phase (the compositional path):
+Scope of this phase (the concrete path):
 
-- `Group{compositional}` — flattened recursively; each member's ``offset`` (and
+- `Group{concrete}` — flattened recursively; each member's ``offset`` (and
   any nested group's) accumulates into the child's absolute beat.
 - `Track` — its `Timeline`'s items are shifted by the placement beat.
 - `Event` — placed as a single item at its beat.
 - `Sequence`/`Generator` wrapping an **event pattern** (a `Pbind`) — *bounced*
-  in the same pass (its change of state); a `Sequence` of materials is laid out
+  in the same pass (its change of state); a `Sequence` of elements is laid out
   successively by their durations.
-- An **abstract** material (no onset/duration, no content) contributes context,
+- An **abstract** element (no onset/duration, no content) contributes context,
   not an event.
 
 A `Buffer` is *data*: it sounds through the **instrument** that plays it (a def
 whose ``buf`` control takes the buffer number), so a `Buffer` with an
 ``instrument`` emits one event playing it — the audio clip — and one without
-contributes structure only. The logical path (`Group{logical}` → a `GraphDef`) is
-the logical path; instancing a bare def still needs an instrument of its own and raises a
-clear `NotImplementedError` here.
+contributes structure only. A `Group{logical}` takes the other path entirely (it
+becomes a `GraphDef`); instancing a bare def still needs an instrument of its own
+and raises a clear `NotImplementedError` here.
 """
 
-from .group import COMPOSITIONAL, LOGICAL, Group
-from .material import Buffer, Event, Generator, Material, Sequence, Track
+from .group import CONCRETE, LOGICAL, Group
+from .element import Buffer, Element, Event, Generator, Sequence, Track
 
 
-def flatten(material, base: float = 0.0) -> list:
-    """Flatten ``material`` into ``(absolute_beat, item)`` pairs, sorted by beat,
+def flatten(element, base: float = 0.0) -> list:
+    """Flatten ``element`` into ``(absolute_beat, item)`` pairs, sorted by beat,
     accumulating nested placement offsets onto ``base``. The items are playable
     (they follow the ``play(destination)`` protocol)."""
     out: list = []
-    _emit(material, float(base), out)
+    _emit(element, float(base), out)
     out.sort(key=lambda pair: pair[0])
     return out
 
 
-def to_timeline(material, base: float = 0.0):
-    """Flatten ``material`` into a flat `clausters.seq.Timeline` in absolute
+def to_timeline(element, base: float = 0.0):
+    """Flatten ``element`` into a flat `clausters.seq.Timeline` in absolute
     beats — the structure a `Playhead` plays and a transport seeks."""
     from ..seq.timeline import Timeline
 
     timeline = Timeline()
-    for beat, item in flatten(material, base):
+    for beat, item in flatten(element, base):
         timeline.add(beat, item)
     return timeline
 
 
-def realize(material, destination, clock=None, *, at: float = 0.0, quant=None,
-            ports=None):
-    """Realize ``material`` onto ``destination``.
+def render(element, destination, clock=None, *, at: float = 0.0, quant=None,
+           ports=None):
+    """Render ``element`` onto ``destination``.
 
-    A **compositional** material (a `Group`, `Track`, `Event`, …) is flattened to
+    A **concrete** element (a `Group`, `Track`, `Event`, …) is flattened to
     a timeline and played through a `Playhead` over ``clock`` — RT (start/run the
     clock) or NRT (`clock.render()` then ``destination.render()``, or
     `Session.render`), sample-identical; returns the `Playhead`.
@@ -66,24 +66,24 @@ def realize(material, destination, clock=None, *, at: float = 0.0, quant=None,
     A **logical** `Group` is translated to a `clausters.defs.GraphDef`, sent
     (``/d_graph``) and instanced (``/graph_new``, with ``ports`` overriding the
     surface defaults) on the `Server` ``destination``; returns the instance
-    group. The seam is the destination, not the model.
+    group. The seam is the destination, not the element.
     """
-    if isinstance(material, Group) and material.kind == LOGICAL:
-        return realize_logical(material, destination, ports=ports)
+    if isinstance(element, Group) and element.kind == LOGICAL:
+        return render_logical(element, destination, ports=ports)
 
     from ..seq.timeline import Playhead
 
-    if not isinstance(material, Group) and material.wraps is None:
+    if not isinstance(element, Group) and element.wraps is None:
         raise ValueError(
-            "an abstract material (no content) is pure context; it has no realization"
+            "an abstract element (no content) is pure context; it has nothing to render"
         )
-    timeline = to_timeline(material, float(material.onset or 0.0))
+    timeline = to_timeline(element, float(element.onset or 0.0))
     playhead = Playhead(timeline, clock, destination)
     playhead.play(at=at, quant=quant)
     return playhead
 
 
-def realize_logical(group, server, *, ports=None):
+def render_logical(group, server, *, ports=None):
     """Send a logical group's `GraphDef` (`Group.to_graphdef`) and instance it on
     ``server``. Returns the instance group (`server.graph`'s handle)."""
     gdef = group.to_graphdef()
@@ -93,14 +93,14 @@ def realize_logical(group, server, *, ports=None):
 
 # ---- the flatten dispatch ----
 
-def _emit(material, base: float, out: list, dur=None):
-    """Flatten ``material`` at ``base``, honouring the **placement length** its
-    group gave it: a placement ``dur`` *trims* what the material plays (the DAW
+def _emit(element, base: float, out: list, dur=None):
+    """Flatten ``element`` at ``base``, honouring the **placement length** its
+    group gave it: a placement ``dur`` *trims* what the element plays (the DAW
     rule — a clip's length is what you hear of it), so events past the placement's
-    end are dropped and a single-event material sounds for exactly that long. A
-    placement with no length lets the material be its own."""
+    end are dropped and a single-event element sounds for exactly that long. A
+    placement with no length lets the element be its own."""
     placed: list = []
-    _emit_material(material, base, placed)
+    _emit_element(element, base, placed)
     if dur is not None:
         end = base + float(dur)
         placed = [(beat, _sized(item, min(dur, end - beat)))
@@ -110,7 +110,7 @@ def _emit(material, base: float, out: list, dur=None):
 
 def _sized(item, dur: float):
     """An event resized to the placement's remaining length — a *copy*, since the
-    material's own event is shared and must not be rewritten by a placement.
+    element's own event is shared and must not be rewritten by a placement.
     Anything that is not an event (an automation, a raw OSC item) is untouched."""
     from ..seq.event import Event as SeqEvent
 
@@ -119,42 +119,42 @@ def _sized(item, dur: float):
     return item
 
 
-def _emit_material(material, base: float, out: list):
-    if isinstance(material, Group):
-        if material.kind != COMPOSITIONAL:
+def _emit_element(element, base: float, out: list):
+    if isinstance(element, Group):
+        if element.kind != CONCRETE:
             raise NotImplementedError(
-                "a logical Group is realized as a GraphDef, not flattened"
+                "a logical Group is rendered as a GraphDef, not flattened"
             )
-        for member in material.handles:
-            _emit(member.material, base + member.offset, out, member.dur)
-    elif isinstance(material, Track):
-        for beat, item in material.wraps:
+        for member in element.handles:
+            _emit(member.element, base + member.offset, out, member.dur)
+    elif isinstance(element, Track):
+        for beat, item in element.wraps:
             out.append((base + beat, item))
-    elif isinstance(material, Event):
-        out.append((base, material.wraps))
-    elif isinstance(material, (Sequence, Generator)):
-        _emit_sequence(material.wraps, base, out)
-    elif isinstance(material, Buffer):
+    elif isinstance(element, Event):
+        out.append((base, element.wraps))
+    elif isinstance(element, (Sequence, Generator)):
+        _emit_sequence(element.wraps, base, out)
+    elif isinstance(element, Buffer):
         # A buffer is data; the instrument is what makes it sound (a def whose
         # `buf` control plays it). Without one it is structure only — it draws in
         # the editor and contributes its extent, but emits no event.
-        if material.instrument is not None:
-            out.append((base, material.to_event()))
-    elif isinstance(material, Material):
-        if material.wraps is None:
-            return  # an abstract context material yields no event
-        if hasattr(material.wraps, "play"):
-            out.append((base, material.wraps))
+        if element.instrument is not None:
+            out.append((base, element.to_event()))
+    elif isinstance(element, Element):
+        if element.wraps is None:
+            return  # an abstract context element yields no event
+        if hasattr(element.wraps, "play"):
+            out.append((base, element.wraps))
         else:
             raise NotImplementedError(
-                f"cannot realize a material wrapping {type(material.wraps).__name__}"
+                f"cannot render an element wrapping {type(element.wraps).__name__}"
             )
     else:
-        raise TypeError(f"not a Material: {material!r}")
+        raise TypeError(f"not an Element: {element!r}")
 
 
 def _emit_sequence(wrapped, base: float, out: list):
-    """A List/Function backed by an event pattern is bounced; a list of materials
+    """A List/Function backed by an event pattern is bounced; a list of elements
     is laid out successively by their durations."""
     from ..seq.pattern import Pattern
     from ..seq.timeline import Timeline
@@ -168,7 +168,7 @@ def _emit_sequence(wrapped, base: float, out: list):
     else:
         cursor = base
         for item in wrapped:
-            if not isinstance(item, Material):
+            if not isinstance(item, Element):
                 raise NotImplementedError(
                     "a Sequence of raw values is data (a parameter), not events"
                 )

@@ -388,7 +388,7 @@ def bpf(id: int, *, points=None, min: float | None = None, max: float | None = N
     draws a flat, immediately editable line. See `env_to_points` /
     `points_to_env` for the round trip with `clausters.defs.Env`.
 
-    The model is general on purpose (the automation-lane shape): values live in
+    The widget is general on purpose (the automation-lane shape): values live in
     ``[min, max]`` — unipolar (the ``0``/``1`` default), bipolar, or any
     parameter span; an on/off lane is the ``"hold"`` shape over ``0``/``1``
     (each point's value held until the next point — ``"step"``, per the
@@ -551,7 +551,7 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
       the events-track view. The dedicated editor-grade `pianoroll` widget draws
       the same notes with a keyboard and editing; or
     - an **automation curve** — ``points``, break-points over the clip's span
-      (the `bpf` editor's model and shape math, placed on a lane): times relative
+      (the `bpf` editor's break-points and shape math, placed on a lane): times relative
       to the clip in samples, values over ``[min, max]`` (``exp=True`` gives a
       frequency-like range a geometric display scale). It is **editable in
       place** — drag a point, Ctrl+click to add one or remove the one under the
@@ -586,7 +586,7 @@ def clip(id: int, *, offset: float = 0.0, dur: float, data=None, blob: int | Non
 
     Dragging a clip (move) or its edge (resize) flows back as a ``"clip"``
     event carrying the new ``offset``/``dur`` — the edit-back path — so a driver
-    can update the composition model and re-realize."""
+    can update the arrangement and re-render."""
     extra = _drop_none(offset=offset,
                        data=list(data) if data is not None else None,
                        blob=blob, buffer=buffer, path=path, cache=cache,
@@ -634,7 +634,7 @@ def pianoroll(id: int, *, notes=None, osc=None, min: float | None = None,
     one to move it. ``snap`` is the drag grid in timeline samples (``0`` = whole
     samples). An edit flows back as a flat ``"notes"`` event (``start dur pitch
     velocity channel …``) or ``"osc"`` event (``time label …``) — the edit-back
-    pattern — so a driver updates the model and re-realizes.
+    pattern — so a driver updates the arrangement and re-renders.
 
     Navigation and chrome mirror the heavy editor views: it is a timeline widget,
     so ``link`` joins/splits its navigation group (zoom with the wheel over the
@@ -688,7 +688,7 @@ def graph(id: int, *, members=None, buses=None, wires=None,
     Dragging a port onto a bus **rewires** that control; dropping it on empty
     space unwires it. Either way the edit flows back as ``/gui_event <id> "wire"
     <member> <control> <bus>`` (an empty bus = unwired), so a driver updates the
-    logical group and re-realizes it — the same edit-back pattern the clips use.
+    logical group and re-renders it — the same edit-back pattern the clips use.
     """
     extra = _drop_none(
         members=[{"name": str(name), "ports": [str(c) for c in ports]}

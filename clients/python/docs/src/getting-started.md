@@ -141,7 +141,7 @@ clausters                                    # start the standalone server (its 
 python clients/python/examples/live_udp.py   # in another shell
 ```
 
-See [Sessions](sessions.md) for when to pick which, [Examples](examples.md) for what these do, and [The client, layer by layer](guide.md) for the model behind them.
+See [Sessions](sessions.md) for when to pick which, [Examples](examples.md) for what these do, and [The client, layer by layer](guide.md) for the architecture behind them.
 
 ## Run the tests
 

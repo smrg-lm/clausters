@@ -106,19 +106,19 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   **"clausters-in"**). Cada nota pintada emite el edit-back `"notes"` normal.
   Refrescar antes el binario bundleado (`clients/python/clausters/_bin/`) —
   ver `CLAUDE.md`.
-- **Vista dedicada del Editor (pianoroll ↔ modelo).** En `gui_composer.py`, la
+- **Vista dedicada del Editor (pianoroll ↔ datos).** En `gui_composer.py`, la
   celda "The melody, as a dedicated piano-roll" abre la melodía (un `Track`) en
   su propia ventana pianoroll junto al multipista → **arrastrar una nota** y
   presionar **play**: se **oye** la melodía cambiada — el roll reescribió el
-  `Timeline` del modelo, y el clip del multipista es otra vista del mismo
-  material. Un material *generador* (el `Pbind` del bajo, abierto igual) se
+  `Timeline` del arreglo, y el clip del multipista es otra vista del mismo
+  elemento. Un elemento *generador* (el `Pbind` del bajo, abierto igual) se
   muestra **solo lectura**: arrastrar sus notas no cambia lo que suena (se
   bouncea a `Track` para editarlo). Refrescar antes el binario bundleado
   (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Patcher del grupo lógico (GUI).** Un `Group{logical}` se dibuja como *patch*
   (cajas de miembro, nodos de bus, un cable por `control ↔ bus`); arrastrar un
   puerto sobre otro bus lo **recablea** (sobre vacío, lo descablea) y la próxima
-  realización manda el `GraphDef` cableado como se ve → **cambia lo que suena**. Refrescar antes el
+  render manda el `GraphDef` cableado como se ve → **cambia lo que suena**. Refrescar antes el
   binario bundleado (`clients/python/clausters/_bin/`) — ver `CLAUDE.md`.
 - **Salud de tiempo real bajo carga.** `cargo run --release --example stress`
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;

@@ -405,7 +405,7 @@ class Server:
         """Realize a note `Event` as OSC: `/s_new`
         at the routine's logical beat, then `/n_free` (or `gate 0`) after the
         sustain. The OSC side of the double dispatch — a MIDI destination
-        realizes the same event as note on/off. Returns the synth node id (or
+        renders the same event as note on/off. Returns the synth node id (or
         None for a rest)."""
         if event.get("type") == "rest":
             return None

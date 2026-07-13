@@ -2,7 +2,7 @@
 """Automate a synth control with a break-point curve -- an **automation lane**.
 
 An `Automation` is a control curve placed on the timeline that drives one or
-more ``(node, control)`` targets. It is realized as a **control vector**: the
+more ``(node, control)`` targets. It is rendered as a **control vector**: the
 break-point curve is discretized on the server into a control buffer
 (``/b_gen "env"``, evaluated through the same envelope-shape math the ``EnvGen``
 UGen plays), and a small control synth reads that buffer onto a control bus which

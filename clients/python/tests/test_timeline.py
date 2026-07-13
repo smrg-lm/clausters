@@ -29,7 +29,7 @@ from clausters.seq import (
 
 class RecordDest:
     """A destination that records ``(logical_beat, item)`` instead of sending,
-    for every realization path an item can take."""
+    for every rendering path an item can take."""
 
     def __init__(self):
         self.events = []
@@ -133,7 +133,7 @@ def test_playhead_loop_wraps():
     assert [e["freq"] for _, e in dest.events] == [440, 550, 440, 550, 440, 550]
 
 
-def test_playhead_realizes_raw_osc_and_midi_items():
+def test_playhead_renders_raw_osc_and_midi_items():
     tl = Timeline([(0.0, OscEvent("/foo", 1)), (1.0, MidiEvent(b"\x90\x3c\x64"))])
     clock = TempoClock(1.0)
     dest = RecordDest()

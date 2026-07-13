@@ -280,26 +280,26 @@ of the Python client's book; the reasoning behind it is in
 
 | Concept | What it already was | Where |
 |---|---|---|
-| Material (onset, duration) | a placed item on a timeline | `clients/python/clausters/model/material.py`, `seq/timeline.py` |
-| Group, compositional | a `Timeline` (client) projected onto server groups and timetagged bundles | `model/group.py`, `seq/timeline.py`, `src/node/mod.rs` |
-| Group, logical | a `GraphDef` — the bus-wired configuration the server already expresses | `model/group.py` (`to_graphdef`), `defs/graphdef.py`, `src/osc/graphdef.rs` |
+| Element (onset, duration) | a placed item on a timeline | `clients/python/clausters/form/element.py`, `seq/timeline.py` |
+| Group, concrete | a `Timeline` (client) projected onto server groups and timetagged bundles | `form/group.py`, `seq/timeline.py`, `src/node/mod.rs` |
+| Group, logical | a `GraphDef` — the bus-wired configuration the server already expresses | `form/group.py` (`to_graphdef`), `defs/graphdef.py`, `src/osc/graphdef.rs` |
 | Event | `seq.Event` (parameters in one action) | `seq/event.py` |
 | List (order, no concrete time) | a Python list, or a `Pattern` | `seq/pattern.py` |
 | Buffer (a list at constant time) | `defs.Buffer` over the server's immutable buffers | `defs/buffer.py`, `src/dsp/buffer.rs` |
 | Set (mixed placement — a track) | `seq.Timeline` | `seq/timeline.py` |
 | Function (a process) | a def (`SynthDef`/`FaustDef`/`GraphDef`) **or** a `Pbind`/`Routine` | `defs/`, `seq/pattern.py`, `base/stream.py` |
 | Automation (a curve) | an `Env` discretized into a control buffer, read onto a bus | `seq/automation.py`, `/b_gen "env"`, `src/dsp/io.rs` (`OutCtl`) |
-| Change of state (process → material) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
-| Realization (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `model/realize.py`, `seq/timeline.py` (`Playhead`), `src/server/render.rs` |
-| The editor driver (model ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editor.py` |
+| Change of state (generator → generated) | evaluating a def or bouncing a pattern | `Timeline.from_pattern`, `session.py`, `src/server/render.rs` |
+| Rendering (in time) | timetagged bundles (RT) or a `Score` (NRT) — one flattening, two destinations | `form/render.py`, `seq/timeline.py` (`Playhead`), `src/server/render.rs` |
+| The editor driver (data ↔ view) | — the one piece that is new, and the only one that knows both | `clients/python/clausters/gui/editor.py` |
 | Graphic unit (a clip: length = duration) | the placed rectangle and its bodies | `clients/gui/src/host/track.rs` |
 | Base level (coarser or finer) | the LOD rule, and a group collapsed to a summary or resolved into lanes | `clients/gui/src/{waveform,spectrogram}.rs`, `gui/editor.py` |
 | Shared time axis, playhead, cursor | the navigation groups (linked views), grown to hold lanes | `clients/gui/src/host/timeline.rs` |
 
-Two boundaries hold this together, and both are worth defending: the model imports
-**nothing** from the GUI (it is pure and transport-agnostic — the piece a future
-client factors into the shared core), and the driver is the **only** converter
-between the model's beats and the view's timeline samples.
+Two boundaries hold this together, and both are worth defending: `clausters.form`
+imports **nothing** from the GUI (it is pure and transport-agnostic — the piece a
+future client factors into the shared core), and the driver is the **only**
+converter between the arrangement's beats and the view's timeline samples.
 
 ## The GUI host: structure, and how to add a widget
 
@@ -316,7 +316,7 @@ split, and every rule below falls out of it:
 | `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
 | `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
-| `src/host/{track,pianoroll,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (model, mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
+| `src/host/{track,pianoroll,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
 | `src/host/{bulk,fetch,shm,mapfile}.rs` | The data seams: a local resource is mapped (native) or fetched (browser), a server buffer is pulled over the client leg, control buses are read from the shared segment |
@@ -366,11 +366,11 @@ Take a hypothetical `meterbar`. The steps are always the same:
 6. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
    `clients/python/examples/gui_*.py` when the widget is user-facing.
 
-A **compositional-model primitive** (a new material kind) is the client's
-business, not the host's: it lands in `clients/python/clausters/model/`, and it
+A **new element kind** (a new primitive of the arrangement) is the client's
+business, not the host's: it lands in `clients/python/clausters/form/`, and it
 reaches the screen through the editor driver (`clausters/gui/editor.py`), which is
-the only module that knows both the model and the widget tree. The Python book's
-composition chapter is its user documentation.
+the only module that knows both the arrangement and the widget tree. The Python
+book's composition chapter is its user documentation.
 
 ## Extending the server: the plugin question
 

@@ -3,7 +3,7 @@
 
 The DAW-style track editor. A ``track`` is a horizontal lane; a ``clip`` is a
 placed rectangle on it spanning ``[offset, offset + dur]`` in timeline sample
-units — the model's **graphic unit**, whose *length is its duration*. The
+units — the arrangement's **graphic unit**, whose *length is its duration*. The
 window's tracks share **one time axis** (aligned lanes), so a clip at a given
 offset lines up across tracks — the seat the linked-views work
 (``gui_linked.py``) designed: a member with a *placement* (offset) on the
@@ -19,7 +19,7 @@ engine's sample clock, so the composition can be watched playing over its clips.
 
 Dragging a clip (move) or its edge (resize) flows back as a ``"clip"`` event
 carrying the new ``offset``/``dur`` — the edit-back pattern — so a driver can
-update the composition model and re-realize. This script just prints those
+update the arrangement and re-render. This script just prints those
 events.
 
 Run it as a script (``python gui_multitrack.py``) or cell by cell (``# %%``).

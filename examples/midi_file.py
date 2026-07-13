@@ -3,7 +3,7 @@
 
 The same `Pbind` you would play live or render to audio can target a **MIDI
 destination** instead: `MidiServer` is the double-dispatch counterpart of the
-OSC `Server`. A pattern played on a `TempoClock` with a `MidiServer` realizes
+OSC `Server`. A pattern played on a `TempoClock` with a `MidiServer` renders
 each note `Event` as a note on/off pair into a `MidiScore` (in beats), and
 `write` serializes it to a `.mid` through the `clausters-midi` crate — the
 interop format every DAW reads. No server, no audio device: just a file.

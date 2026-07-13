@@ -1,8 +1,8 @@
-# Automation: a curve as material
+# Automation: a curve as an element
 
 The piece gets its fourth lane: a frequency sweep — a break-point curve
 driving a voice — placed in the composition like everything else. This page
-carries three ideas: an **`Automation`** is a curve realized as a control
+carries three ideas: an **`Automation`** is a curve rendered as a control
 signal; a curve and the voice it shapes can be **grouped into one clip**; and
 the curve is **edited in place**, on the lane, with the same
 gesture → `poll()` → `play()` rhythm as a clip.
@@ -49,7 +49,7 @@ print(sweep.duration(), sweep.bus.index)
 
 Break-points are `(time, value, shape, curve)` — times in beats, values in the
 control's real units (Hertz here); the stored curve is an `Env`, the same
-object the envelope editor round-trips. How it is realized is worth knowing,
+object the envelope editor round-trips. How it is rendered is worth knowing,
 because it is all server machinery you already have: the curve is discretized
 into a **control buffer** on the server (`/b_gen "env"`, evaluated through the
 same envelope math the `EnvGen` UGen plays — what is drawn is what is heard),
@@ -69,12 +69,12 @@ The voice is an event **in the composition** — not a synth held by your
 session — reading the automation's bus:
 
 ```python
-from clausters.model import Event, Group, Material
+from clausters.form import Element, Event, Group
 from clausters.seq.event import Event as SeqEvent
 
 voice = Event(SeqEvent(instrument="drone", freq_bus=sweep.bus.index,
                        dur=SWEEP, legato=1.0, amp=0.12, has_gate=True))
-sweep_clip = Group([(0.0, voice), (0.0, Material(sweep, duration=SWEEP))],
+sweep_clip = Group([(0.0, voice), (0.0, Element(sweep, duration=SWEEP))],
                    name="sweep")
 print(sweep_clip.temporal_relation())    # 'simultaneous'
 ```
@@ -86,8 +86,8 @@ timeline*, so the editor draws it as **one clip with layered bodies**: the
 curve over the note, dragging as one. The voice cannot outlive its envelope,
 and the envelope cannot be left behind.
 
-(The bare `Material(sweep, duration=SWEEP)` is the model's escape hatch: an
-`Automation` already knows how to `play(destination)`, so a plain `Material`
+(The bare `Element(sweep, duration=SWEEP)` is the escape hatch: an
+`Automation` already knows how to `play(destination)`, so a plain `Element`
 adorning it with a duration is enough — no sixth primitive needed.)
 
 Add the lane and show it:
@@ -108,7 +108,7 @@ frequency*, not silence. Draw a curve over `amp` instead and the bottom would
 be silence, and that silence part of the clip's length. Same clip, same
 curve; what it means is the control it drives.
 
-And because the voice is an event with a length, placed in the model: seek
+And because the voice is an event with a length, placed in the tree: seek
 past the clip (`editor.locate(6.0)` and play) and there is simply no drone. A
 synth still humming over empty timeline is not a drone, it is a leak — this
 piece cannot leak.
@@ -132,16 +132,16 @@ editor.play(at=0.0)
 ```
 
 The edit went back onto `sweep.env` itself — the `Env` is the single source of
-truth shared by the picture and the model. One step is still yours today: the
+truth shared by the picture and the data. One step is still yours today: the
 **server-side control buffer** was filled from the `Env` when you first
-`prepare`d it, and realization schedules the lane synth over that buffer
+`prepare`d it, and rendering schedules the lane synth over that buffer
 without re-filling it — so after a curve edit, call `prepare(server)` again
 (it re-runs the `/b_gen` on the buffer it already owns; cheap, and safe at the
 top level). Skip it and the next play sounds the curve as it was at the last
 `prepare`, not as drawn.
 
-The compositional side of the piece is now complete: four lanes, three
-material kinds, one automation, all editable from either side of the loop.
+The concrete side of the piece is now complete: four lanes, three element
+kinds, one automation, all editable from either side of the loop.
 One grouping kind remains.
 
 Next: [The logical side: groups as signal graphs](logical.md).

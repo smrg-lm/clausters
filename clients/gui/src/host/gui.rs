@@ -2482,7 +2482,7 @@ impl App {
                 // Released over a bus: the control is rewired to it. Over empty
                 // space: unwired (the bus is reported empty). Either way the tree
                 // is written and the edit leaves as a flat `"wire"` event, so the
-                // script updates the logical group and re-realizes it.
+                // script updates the logical group and re-renders it.
                 let (cx, cy) = self.windows.get(&def_id).map_or((0.0, 0.0), |w| w.cursor);
                 if let Some((member, control, bus)) =
                     interact::wire_set(&mut self.host, def_id, id, port, area, cx, cy)

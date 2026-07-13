@@ -165,7 +165,7 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 /// its control) is pointed at the bus under the cursor — or at **none**, when the
 /// release lands on empty space, which unwires it. Writes the patch in the host
 /// tree and returns the edit as `(member, control, bus)` (an empty bus = unwired)
-/// — the payload of the flat `"wire"` event a script re-realizes from. `None`
+/// — the payload of the flat `"wire"` event a script re-renders from. `None`
 /// when there was nothing to rewire.
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn wire_set(

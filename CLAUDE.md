@@ -90,20 +90,27 @@ with this modularity in mind.
     unspecified client** of the clausters server (a protocol consumer in
     general, not the Python one specifically).
 - **The arrangement model / multitrack editor** — the client-side layer that
-  places materials in time, groups them recursively and realizes them
-  (`clausters.model`), and its DAW-style view (`track`/`clip` widgets +
-  `clausters.gui.Editor`). Call them *"the arrangement model"* and *"the multitrack
-  editor"* / "el modelo de arreglo", "el editor multipista" — never the bare "the
-  model" (it reads as the node tree or a def), and not "the material model":
-  *material* is the model's **internal vocabulary**, and deliberately general — it
-  spans both **generated material** (the rendered thing: an audio file, a bounced
-  timeline — random-access, so it can be read backwards, sliced, edited in place)
-  and **generator material** (the algorithm that renders it: a def, a pattern —
-  forward-only, it can just be evaluated), with the *change of state* between them.
-  It names the contents, not the layer. The multitrack editor is the *view of the arrangement*. Its
-  documentation:
+  places elements in time, groups them recursively and renders them
+  (`clausters.form`), and its DAW-style view (`track`/`clip` widgets +
+  `clausters.gui.Editor`). **The module name is dissociated from the prose**:
+  `form` is a code name only — the documentation never says "the form". In prose
+  the layer is *"the arrangement"* (or *"the arrangement model"* when naming the
+  layer as such) / "el arreglo", "el modelo de arreglo", and its view is *"the
+  multitrack editor"* / "el editor multipista"; the work itself is *"the
+  composition"* / *"the piece"*, and the data is *"the tree"* / *"the elements"*.
+  Never the bare "the model" (it reads as the node tree or a def).
+  The layer's **internal vocabulary** for its contents is the **element**
+  (`Element`), deliberately general — it spans both a **generated element** (the
+  rendered thing: an audio file, a bounced timeline — random-access, so it can be
+  read backwards, sliced, edited in place) and a **generator element** (the
+  algorithm that renders it: a def, a pattern — forward-only, it can just be
+  evaluated), with the *change of state* between them. The verb for that change of
+  state to sound is **render** (`Element.render`, `Editor.render`), never
+  "realize"; the editor's *graphic* direction is **draw** (`Editor.draw`, the
+  GuiDef). A `Group` has two **kinds**: **concrete** (its members relate in time)
+  and **logical** (they relate by processing). Its documentation:
   - **User** — the composition chapter of the Python client's book
-    (`clients/python/docs/src/composition.md`): materials, grouping, realization,
+    (`clients/python/docs/src/composition.md`): elements, grouping, rendering,
     and how the editor maps and edits them.
   - **Wire** — `docs/gui-protocol.md` (the `/gui_*` reference: widgets, props,
     edit-back payloads).

@@ -1,10 +1,10 @@
 # Timelines and the playhead
 
-The sequencing you have seen so far is **generative**: a `Routine` is a Python generator, a `Pbind` an event pattern, and a `TempoClock` resumes them forward in time. That model is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
+The sequencing you have seen so far is **generative**: a `Routine` is a Python generator, a `Pbind` an event pattern, and a `TempoClock` resumes them forward in time. That way of working is open-ended and expressive, but it has one thing it fundamentally cannot do — **seek**. A generator's musical state lives in its local variables, so you cannot jump it to beat 100 without running through 0–100, and you cannot ask "what plays at bar 33?" without getting there.
 
-A `Timeline` is the complement: a **static, editable list of timed items, kept sorted by beat, with random access by time**. Because it is a data structure rather than a coroutine, a `Playhead` can give it real **transport controls** — play, stop, locate (seek), loop — and a song position. This is the DAW model: the arrangement is random-access for editing and seeking, and playback is a forward scan of it from the playhead.
+A `Timeline` is the complement: a **static, editable list of timed items, kept sorted by beat, with random access by time**. Because it is a data structure rather than a coroutine, a `Playhead` can give it real **transport controls** — play, stop, locate (seek), loop — and a song position. This is how a DAW works: the arrangement is random-access for editing and seeking, and playback is a forward scan of it from the playhead.
 
-This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two models coexist, and you can move between them (capture a pattern into a timeline, below).
+This page is the static counterpart to [Routines and clocks](routines-and-clocks.md); the two ways of sequencing coexist, and you can move between them (capture a pattern into a timeline, below).
 
 ## The timeline
 
@@ -37,7 +37,7 @@ tl.duration()         # the beat of the last item
 
 ### What an item is
 
-An *item* is anything that can realize itself on a destination — it has a `play(destination)` method. `Event` already is one (it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI — the same double dispatch the patterns use), so a timeline of `Event`s renders to OSC *or* MIDI depending only on the destination the playhead holds. For a plain editable OSC or MIDI score, `OscEvent` and `MidiEvent` wrap a raw message:
+An *item* is anything that can render itself on a destination — it has a `play(destination)` method. `Event` already is one (it plays a note on a `Server` for OSC, or a `MidiServer` for MIDI — the same double dispatch the patterns use), so a timeline of `Event`s renders to OSC *or* MIDI depending only on the destination the playhead holds. For a plain editable OSC or MIDI score, `OscEvent` and `MidiEvent` wrap a raw message:
 
 ```python
 from clausters.seq import OscEvent, MidiEvent
@@ -48,7 +48,7 @@ tl.add(1.0, MidiEvent(b"\x90\x3c\x64"))     # note on, key 60, vel 100
 
 ## The playhead
 
-A `Playhead` scans a timeline forward as a clock advances, realizing each item on a destination. It is built from a timeline, the clock that drives it, and the destination the items go to:
+A `Playhead` scans a timeline forward as a clock advances, rendering each item on a destination. It is built from a timeline, the clock that drives it, and the destination the items go to:
 
 ```python
 from clausters.seq import Playhead
@@ -63,7 +63,7 @@ The transport controls:
 | Call | What it does |
 | --- | --- |
 | `play(at=0.0, quant=None)` | Start (or restart) from beat `at`, snapping to a `quant` bar. Re-seeks the cursor, so it doubles as locate-and-play. |
-| `stop()` | Halt the playhead; no further items are realized (notes already started keep their scheduled releases). |
+| `stop()` | Halt the playhead; no further items are rendered (notes already started keep their scheduled releases). |
 | `locate(beat)` | Seek to `beat` — random access. While playing, restarts the scan there; while stopped, sets where the next `play` begins. |
 | `loop(start, end)` / `unloop()` | Loop the half-open window `[start, end)`; the scan wraps at `end`. |
 | `position()` | The current song position in beats (interpolated from the clock while playing). |
@@ -72,7 +72,7 @@ Under the hood the playhead is a thin cursor over the static structure: the rand
 
 ## Capturing a pattern into a timeline
 
-The two models meet here: run a pattern offline and record what it plays into a timeline — "bounce a pattern to a clip" — then edit and seek the result.
+The two meet here: run a pattern offline and record what it plays into a timeline — "bounce a pattern to a clip" — then edit and seek the result.
 
 ```python
 from clausters.seq import Timeline, Pbind, Pseq
@@ -111,7 +111,7 @@ Beat-aligned in plain wall-clock mode, sample-exact when the clock is also `lock
 
 ## See also
 
-- [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended model you can capture *from*).
+- [Routines and clocks](routines-and-clocks.md) — the generative counterpart (the open-ended side you can capture *from*).
 - [A DAW-style transport](transport.md) — the shared beat grid clients phase-align on.
 - [Timing models](timing-models.md) — the timing references a playhead inherits (`quant`, `lock_to`, `join_transport`).
 - [Examples](examples.md) — `timeline_transport.py`, the playhead live.

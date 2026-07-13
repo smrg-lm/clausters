@@ -21,8 +21,8 @@ The layers:
 - `clausters.defs` — the definition layer and server resources: the
   ``signals``/`FaustDef` pair, the UGen-graph ``ugens``/`SynthDef` pair, the
   node/bus/buffer handles and the `Server`.
-- `clausters.model` — the **arrangement model**: a recursive algebra
-  of materials over the sequencing/def layers, for composing at any granularity.
+- `clausters.form` — the **arrangement**: a recursive algebra of elements
+  over the sequencing/def layers, for composing at any granularity.
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.
 - `clausters.gui` — GuiDef building for the Clausters GUI host.

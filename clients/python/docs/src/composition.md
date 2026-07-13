@@ -1,48 +1,50 @@
-# Composition: the model and the multitrack editor
+# Composition: the arrangement and the multitrack editor
 
 A `Timeline` places items at beats and a `Playhead` plays them. That is enough to
 sequence, but not enough to *compose*: a composition is not a flat list of events,
-it is material inside material — a phrase inside a section inside a piece, a take
-placed against a melody, a generator that has not been evaluated yet.
+it is an element inside an element — a phrase inside a section inside a piece, a
+take placed against a melody, a generator that has not been evaluated yet.
 
-`clausters.model` is that layer, and `clausters.gui.Editor` puts it on screen as
-a multitrack view you can edit. The point of the pair is that the graphic is not a
-picture of the music: dragging a clip moves the *material*, and the score follows.
+`clausters.form` is that layer — the **arrangement model** — and
+`clausters.gui.Editor` puts it on screen as a multitrack view you can edit. The
+point of the pair is that the graphic is not a picture of the music: dragging a
+clip moves the *element*, and the score follows.
 
-## Materials
+## Elements
 
-A **material** is any bounded thing that produces a unit of meaning and can be
+An **element** is any bounded thing that produces a unit of meaning and can be
 decomposed or combined — and it comes in two modes, which is the axis the whole
-layer turns on. A material is either **generated** (the rendered thing: samples in
+layer turns on. An element is either **generated** (the rendered thing: samples in
 a buffer, a bounced timeline of events — data you can edit directly) or a
 **generator** (the algorithm that renders it: a def, a pattern, a routine).
-Evaluating a generator produces generated material; that is the *change of state*,
-and it is what realization does.
+Evaluating a generator produces a generated element; that is the *change of
+state*, and it is what rendering does.
 
 The difference is not merely data versus process — it is what you can *do* with
-each. Generated material is **random-access**: an audio file can be read backwards,
-sliced, scrubbed, edited in place. A generator is **forward-only**: it can be
-evaluated, in order, and that is all. So the change of state is a compositional
-act, not an optimization — it is what turns something you can only *produce* into
-something you can *manipulate*, which is why a pattern is bounced to be drawn and
-edited on a lane. It carries two optional temporal properties — an `onset`
-(where it starts, in beats, relative to its context) and a `duration` — and
-delegates the actual playing to the object it wraps. The model is a thin
-adornment over what the client already has, not a second implementation of it.
+each. A generated element is **random-access**: an audio file can be read
+backwards, sliced, scrubbed, edited in place. A generator is **forward-only**: it
+can be evaluated, in order, and that is all. So the change of state is a
+compositional act, not an optimization — it is what turns something you can only
+*produce* into something you can *manipulate*, which is why a pattern is bounced to
+be drawn and edited on a lane. An element carries two optional temporal
+properties — an `onset` (where it starts, in beats, relative to its context) and a
+`duration` — and delegates the actual playing to the object it wraps. The
+arrangement is a thin adornment over what the client already has, not a second
+implementation of it.
 
-Which of the two properties are present gives a material its temporal
+Which of the two properties are present gives an element its temporal
 *character*: both is a **segment**, an onset alone is **punctual**, a duration
 alone is **relative** (it has a length but no place yet), neither is **abstract**
 — pure context, which only a parent gives concrete time.
 
 There are five kinds, and they map one to one onto objects you already use:
 
-| Material    | What it is                                       | Wraps                                   |
+| Element     | What it is                                       | Wraps                                   |
 | ----------- | ------------------------------------------------ | --------------------------------------- |
 | `Event`     | parameters grouped into one action               | `clausters.seq.Event`                   |
 | `Sequence`  | strict order, no concrete time — only sequence   | a list, or a `Pattern`                  |
 | `Buffer`    | a list at constant time (samples)                | `clausters.defs.Buffer`                 |
-| `Track`     | mixed placement of materials — a DAW track       | `clausters.seq.Timeline`                |
+| `Track`     | mixed placement of elements — a DAW track        | `clausters.seq.Timeline`                |
 | `Generator` | a *process*: server DSP, or a sequence generator | a def, or a `Pbind`/`Routine`           |
 
 A `Buffer` is *data*, so it has no sound of its own: it sounds through the
@@ -50,17 +52,17 @@ A `Buffer` is *data*, so it has no sound of its own: it sounds through the
 number. That is the whole rule for an audio clip.
 
 ```python
-from clausters.model import Buffer, Group, Sequence, Track
+from clausters.form import Buffer, Group, Sequence, Track
 
 take = Buffer(buf, duration=2.0, instrument="take")   # a def that plays a buffer
 ```
 
 ## Grouping: the one new structure
 
-A `Group` places materials by an offset, recursively — and that recursion is the
-whole idea. It comes in two kinds. A **compositional** group is a structural
-relation between its contents (a section holding clips, a melody holding notes).
-A **logical** group is a *processing* relation: the members are wired to each
+A `Group` places elements by an offset, recursively — and that recursion is the
+whole idea. It comes in two kinds. A **concrete** group is a relation *in time*
+between its members (a section holding clips, a melody holding notes). A
+**logical** group is a relation of *processing*: the members are wired to each
 other through buses, which is exactly what a `GraphDef` expresses, so
 `Group.to_graphdef()` translates one into it.
 
@@ -76,34 +78,33 @@ From how its members sit in time, a group *derives* its temporal **relation**:
 `successive` when they tile contiguously, `simultaneous` when they start and end
 together, `mixed` otherwise. You do not set it; it is read from the placements.
 
-## Realization: the change of state
+## Rendering: the change of state
 
-Realizing a composition **flattens** it — a tree-walk accumulating the nested
+Rendering a composition **flattens** it — a tree-walk accumulating the nested
 offsets into absolute beats — into a flat `Timeline`, which a `Playhead` then
 plays. A generator contained in it is *bounced* in the same pass: that evaluation,
-the change from a process into concrete material, is the model's *change of
-state*.
+the change from a process into a generated element, is the *change of state*.
 
 ```python
-song.realize(server, clock)        # live, through a playhead
-song.realize(nrt.server, nrt.clock)  # offline: the same tree, a score
+song.render(server, clock)        # live, through a playhead
+song.render(nrt.server, nrt.clock)  # offline: the same tree, a score
 ```
 
-There is no new realization path: RT and NRT are the same flattening, differing
+There is no second rendering path: RT and NRT are the same flattening, differing
 only in the destination, so the offline render is sample-identical to what you
 heard.
 
 ## The multitrack editor
 
-`Editor` renders that tree into the multitrack view and applies its edits back
-onto the model. The mapping is one rule, not a heuristic per case:
+`Editor` draws that tree as the multitrack view and applies its edits back onto
+the tree. The mapping is one rule, not a heuristic per case:
 
 - the root group's members are the **lanes**;
 - a lane's members are its **clips**;
 - a `Buffer` clip names its server buffer and spans its frames — the host fetches
   the take and decimates it to the clip's pixel width, so a long take costs
   nothing on the wire;
-- a material of *events* draws a **piano-roll** — each note placed in pitch and
+- an element of *events* draws a **piano-roll** — each note placed in pitch and
   time, shaded by its velocity (an explicit `velocity`, else the event's `amp`) —
   and since a contained pattern is bounced to draw it, a generator lane shows the
   notes it is about to play. (The same notes drive the standalone, editor-grade
@@ -111,30 +112,30 @@ onto the model. The mapping is one rule, not a heuristic per case:
   lane and an OSC-event lane — when you want to author them directly rather than
   through the multitrack.)
 - a nested group draws as the labeled rectangle that **summarizes** it, until you
-  `expand` it into lanes of its own. That collapse/expand is the model's *base
-  level*: the same structure, seen coarser or finer.
+  `expand` it into lanes of its own. That collapse/expand is the arrangement's
+  *base level*: the same structure, seen coarser or finer.
 
 ```python
 from clausters.gui import Editor
 
 editor = Editor(song, sample_rate=SR, tempo=2.0, quant=0.5, follow=True)
-editor.open(gui)                    # the model, as a multitrack window
-editor.realize(server, clock)       # play it; the playhead sweeps the clips
+editor.open(gui)                    # the arrangement, as a multitrack window
+editor.render(server, clock)        # play it; the playhead sweeps the clips
 
 while editor.window is not None:
-    editor.poll(0.05)               # a dragged clip moves the material
+    editor.poll(0.05)               # a dragged clip moves the element
 ```
 
-`poll` drains the host's events into the model — drag a clip to move it, an edge
-to resize it — and with `follow=True` the composition is re-scheduled from the
+`poll` drains the host's events into the arrangement — drag a clip to move it, an
+edge to resize it — and with `follow=True` the composition is re-scheduled from the
 playhead, so you hear it where you dropped it. The semantics there are honest:
 *re-schedule from here*, not a sample-exact splice, so a synth already sounding
 keeps sounding.
 
 ### The dedicated piano-roll
 
-The multitrack draws a material of events as a clip body — the notes, but at a
-clip's size. To *author* the notes, open the material in the editor-grade view
+The multitrack draws an element of events as a clip body — the notes, but at a
+clip's size. To *author* the notes, open the element in the editor-grade view
 instead:
 
 ```python
@@ -143,22 +144,21 @@ roll.open_pianoroll(gui)      # keyboard, note grid, velocity + OSC-event lanes
 ```
 
 Edits flow back through `poll` exactly as the multitrack's do, **when the
-material is editable**: a dragged, added or removed note rebuilds a `Track`'s
+element is editable**: a dragged, added or removed note rebuilds a `Track`'s
 timeline (times converted to beats, any OSC/MIDI events on the same timeline
 preserved). A generator — a `Pbind`, a `Routine` — is forward-only, so its
-bounced notes are shown *read-only*; bounce it to a `Track` (the model's change
-of state) and the same view becomes an editor. OSC events are shown in their
-lane but not written back: their marker carries a time and a label, not the
-full message.
+bounced notes are shown *read-only*; bounce it to a `Track` (the change of state)
+and the same view becomes an editor. OSC events are shown in their lane but not
+written back: their marker carries a time and a label, not the full message.
 
 Quantization exists on both surfaces, because the GUI also runs standalone:
 `q` over the roll snaps the selected notes' onsets (or all of them) to the
-widget's snap grid, flowing back like any other edit; model-side,
+widget's snap grid, flowing back like any other edit; on the data side,
 `Timeline.quantize(grid)` snaps every placement to the beat grid directly.
 
 ### Beats and samples
 
-The model places materials in **beats**; the view places clips in **timeline
+The arrangement places elements in **beats**; the view places clips in **timeline
 samples**, because a clip's body is audio data and its sample 0 sits at the clip's
 offset. The editor is the only converter between the two: one beat is
 `sample_rate / tempo` timeline units, so a take placed at its own frame count sits
@@ -166,15 +166,15 @@ offset. The editor is the only converter between the two: one beat is
 closed.
 
 The `quant` you pass is a *musical* grid (`0.5` = half a beat). It becomes the
-lane's drag grid, so the grid a clip is dropped on is the grid the model
+lane's drag grid, so the grid a clip is dropped on is the grid the arrangement
 re-schedules on — what you see is what plays.
 
 ### Automation, and the logical side
 
 An `Automation` placed in the composition draws its **curve** as the clip's body —
-the same break-point model the envelope editor draws — and it is edited in place:
+the same break-points the envelope editor draws — and it is edited in place:
 drag a point, Ctrl+click to add one or remove the one under the cursor. The edit
-lands on the automation's `Env`, which is what the next realization plays, so the
+lands on the automation's `Env`, which is what the next render plays, so the
 curve you draw is the curve you hear.
 
 A **logical** group is not a timeline at all: its members relate by processing, so
@@ -183,7 +183,7 @@ connection. The patch is deliberately undirected: a GraphDef knows that a contro
 *touches* a bus, and which end writes is the server's own analysis, so the view
 shows the connection and leaves the direction to the engine. Dragging a port onto
 a bus rewires that control (onto empty space, unwires it), and the edit rewrites
-the group — so the next realization sends a GraphDef wired the way the patch is
+the group — so the next render sends a GraphDef wired the way the patch is
 drawn.
 
 `clients/python/examples/gui_composer.py` is the whole loop in one script: a take

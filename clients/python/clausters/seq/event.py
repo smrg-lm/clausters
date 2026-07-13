@@ -57,7 +57,7 @@ class Event(dict):
     The derived quantities compute the values actually used: `midinote` and
     `freq` resolve pitch (an explicit ``freq`` wins, else ``midinote``, else
     ``degree`` within ``octave``/``root``/``scale``), `delta` is the beats to
-    the next event and `sustain` the beats the synth sounds. `play` realizes the
+    the next event and `sustain` the beats the synth sounds. `play` renders the
     event on a destination -- a `Server` or a MIDI destination.
     """
 
