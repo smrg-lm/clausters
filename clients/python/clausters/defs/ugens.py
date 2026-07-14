@@ -549,7 +549,7 @@ class Env:
         (``Env.step([0, 1], [0.5, 0.5])`` holds 0 for 0.5, then 1 for 0.5).
 
         This is the conceptual interface of a value-with-duration sequence;
-        like SuperCollider's ``Env.step``, it is realized over the raw
+        like SuperCollider's ``Env.step``, it is expressed over the raw
         initial-level + (target, duration) form by prepending the first level
         with the ``"step"`` shape (which jumps to each segment's target at its
         start)."""
@@ -624,7 +624,7 @@ def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
     custom shape, the shape name otherwise).
 
     A first breakpoint later than ``time_at`` (default ``0.0``) is a drawn
-    initial delay, realized as a leading ``hold`` segment (the first level held
+    initial delay, encoded as a leading ``hold`` segment (the first level held
     for that duration) so what was drawn and what plays stay identical. Extra
     keywords (``release_node``, ``loop_node``) pass through to `Env`."""
     quads = [points[i:i + 4] for i in range(0, len(points) - len(points) % 4, 4)]

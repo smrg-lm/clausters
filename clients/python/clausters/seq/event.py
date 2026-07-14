@@ -124,7 +124,7 @@ class Event(dict):
     # ---- play ----
 
     def play(self, destination):
-        """Realize this event on ``destination`` (double dispatch): the OSC
+        """Play this event on ``destination`` (double dispatch): the OSC
         `Server` turns it into `/s_new` + release,
         a MIDI destination into note on/off — without the clock or routine
         knowing which. Returns whatever the destination's ``play_event`` does

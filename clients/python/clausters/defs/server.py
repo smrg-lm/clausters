@@ -264,7 +264,7 @@ class Server:
         cfg = client_config()
         host = host if host is not None else cfg.get("host", "127.0.0.1")
         port = port if port is not None else cfg.get("port", 57110)
-        latency = latency if latency is not None else cfg.get("latency", 0.0)
+        latency = latency if latency is not None else cfg.get("latency", None)
         self.target = NetAddr(host, port)
         #: the communication interface (RT/TCP by default, NRT/score, …). The
         #: Server owns it; swapping it is the RT/NRT seam. ``transport`` picks
@@ -290,6 +290,13 @@ class Server:
                 raise ValueError(f"unknown transport {transport!r} (tcp, udp or ws)")
         #: seconds added to RT timetags so they land in the (near) future,
         #: sample-accurate, instead of "as soon as possible" (scsynth latency).
+        #: When neither the argument nor the config sets it, the default is
+        #: transport-aware: a real-time interface (UDP/TCP/WS/embed, all
+        #: wall-clock timetagged) gets 0.1 s of lead so events land on time
+        #: instead of late, while an NRT/score interface keeps 0.0 (an offline
+        #: score has no real deadline).
+        if latency is None:
+            latency = 0.0 if getattr(self.interface, "time_mode", None) == "score" else 0.1
         self.latency = latency
         #: the client-owned server configuration; sizes the allocators below so
         #: they never hand out a bus the server does not have. Override it to
@@ -402,7 +409,7 @@ class Server:
             self.interface.send_bundle(self.target.addr(), wall + secs + self.latency, *messages)
 
     def play_event(self, event):
-        """Realize a note `Event` as OSC: `/s_new`
+        """Play a note `Event` as OSC: `/s_new`
         at the routine's logical beat, then `/n_free` (or `gate 0`) after the
         sustain. The OSC side of the double dispatch — a MIDI destination
         renders the same event as note on/off. Returns the synth node id (or

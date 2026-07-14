@@ -3,7 +3,7 @@
 No server: these check the temporal *character* of an element (from its
 onset/duration), the temporal *relation* derived from a `Group`'s member
 placements, the thin-wrapper delegation of `play`, and group editing by handle.
-Realization onto the server/NRT is a later phase.
+Rendering onto the server/NRT is a later phase.
 """
 
 import struct

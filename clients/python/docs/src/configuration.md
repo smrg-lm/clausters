@@ -20,7 +20,7 @@ Two sections feed the client's defaults:
   [client]
   host = "127.0.0.1"
   port = 57110          # one number serves UDP and TCP alike
-  latency = 0.0
+  # latency = 0.1       # RT lead; unset -> 0.1 (real-time transports), 0.0 (NRT)
   # transport = "tcp"   # the command carrier: "tcp" (default), "udp" or "ws"
   ```
 

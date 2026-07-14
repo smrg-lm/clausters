@@ -325,7 +325,7 @@ def test_done_action_constants_match_the_server():
 
 
 def test_env_step_holds_each_value_for_its_duration():
-    # The value-with-duration interface: equal-length levels/times, realized
+    # The value-with-duration interface: equal-length levels/times, expressed
     # (as in sclang) by prepending the first level over the step shape, whose
     # segments jump to their target at the start.
     e = Env.step([0.0, 1.0], [0.5, 0.5])

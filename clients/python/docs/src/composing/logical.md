@@ -56,7 +56,7 @@ print(json.dumps(chain.to_graphdef().spec(), indent=2))
 ```
 
 Two tones summed on `mix`, one gain stage reading it: the 1:1 mapping of the
-group onto a `GraphDef`. Realize it — for a logical group that means
+group onto a `GraphDef`. Render it — for a logical group that means
 *send and instance*, not flatten and play:
 
 ```python

@@ -116,7 +116,9 @@ class Session:
             latency: seconds added to each event's timetag so it reaches the
                 server slightly ahead of its play time and sounds on time
                 instead of late; a small value such as 0.1 is typical for a
-                live take. ``None`` takes the config file's ``[client].latency``.
+                live take. ``None`` takes the config file's ``[client].latency``,
+                falling back to 0.1 (the real-time default for a networked
+                transport) when the config sets none.
             timebase: the clock's pacing source. The default (monotonic) paces
                 in wall-clock seconds; a `SampleClockTimebase` anchors timing to
                 the server's sample clock for drift-free scheduling.
@@ -165,8 +167,10 @@ class Session:
         Args:
             tempo: the clock's tempo, in beats per second.
             latency: seconds added to each event's timetag so it lands a touch
-                in the future and sounds on time; a small value such as 0.05 is
-                typical even in-process.
+                in the future and sounds on time. The embedded server is
+                wall-clock timetagged like a networked one, so ``None`` takes
+                the config's ``[client].latency`` and then the same 0.1 real-time
+                default; a smaller value such as 0.05 is fine in-process.
             workers: engine worker threads for parallel node processing (0 lets
                 the server choose).
             timebase: the clock's pacing source (default monotonic wall clock).
