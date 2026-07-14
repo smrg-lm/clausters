@@ -123,12 +123,22 @@ class Event(dict):
 
     # ---- play ----
 
-    def play(self, destination):
+    def play(self, destination=None):
         """Play this event on ``destination`` (double dispatch): the OSC
         `Server` turns it into `/s_new` + release,
         a MIDI destination into note on/off — without the clock or routine
         knowing which. Returns whatever the destination's ``play_event`` does
-        (the synth node id for OSC, ``None`` for a rest or MIDI)."""
+        (the synth node id for OSC, ``None`` for a rest or MIDI).
+
+        ``destination`` is optional: omitted, it resolves to the ambient server
+        (the running session's, else the default session's — booted with
+        ``Server.boot()``), so ``Event().play()`` sounds a note with no `Session`
+        wiring. Outside a clock the note plays immediately; inside a routine it
+        emits at the routine's logical beat."""
+        if destination is None:
+            from ..base.main import main
+
+            destination = main.resolve_server()
         return destination.play_event(self)
 
 

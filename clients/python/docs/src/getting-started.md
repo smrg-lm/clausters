@@ -52,7 +52,18 @@ The bundled artifacts that touch an audio device — the in-process embedded ser
 
 ## Your first sound, line by line
 
-The client is meant to be driven **interactively** — from a REPL, or cell by cell in an editor. Nothing below is a script: type a line, hear the result, type the next one. There is no global state to set up and no build context to open, so every line is complete on its own.
+The client is meant to be driven **interactively** — from a REPL, or cell by cell in an editor. Nothing below is a script: type a line, hear the result, type the next one. Every line is complete on its own.
+
+The shortest path to sound is two lines — boot a server and play something:
+
+```python
+from clausters import Server, Event, play
+
+Server.boot()          # launches a server and becomes the default session
+play(Event(degree=0))  # one note, now — or: Event(degree=0).play()
+```
+
+`Server.boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `Pbind`, a routine) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
 
 Start a session. `Session.live()` attaches to a running server, or starts one for you if none is up:
 

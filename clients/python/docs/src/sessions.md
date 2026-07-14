@@ -6,9 +6,24 @@ A `Session` is the client's ergonomic entry point: one object that owns a `Serve
 
 SuperCollider's sclang is convenient largely because of globals: a default `Server`, a default clock, an implicit "current environment". You type `Synth("x")` and it just goes somewhere. That convenience has a cost — there is only ever *one* of each, so you cannot, say, run a live take and an offline render in the same script without them fighting over the same global state.
 
-This client deliberately has none of those globals. The clock does timing and nothing else, a `Server` is an ordinary object you construct, and routines find their clock through thread-local context rather than a global. That keeps real-time and offline work independent, but it means the convenient one-liner is gone: you would otherwise wire a server, a clock and a timebase together by hand every time.
+This client keeps the convenience but contains it. There is one ambient environment — the **default session** — and everything else is an explicit `Session` you name. The rule is one line: *what does not run in an explicit session runs in the default session*. So the one-liner works (a booted server, a bare `Event().play()`), and yet you can spin up several isolated sessions — a live take next to an offline render — that never touch the default one or each other.
 
-`Session` gives the convenience back **explicitly**. It is just an object that holds a `Server` and a `TempoClock` and offers `play` / `render` / `run`, plus two factories that pick sensible defaults. Because it is a plain object and not a global, you can have as many as you like.
+`Session` is that explicit, isolated environment: an object that holds a `Server` and one or more `TempoClock`s and offers `play` / `render` / `run`, plus factories that pick sensible defaults. Because it is a plain object and not a forced global, you can have as many as you like, each with its own server, clocks and random context.
+
+## The default session
+
+`clausters.default_session` (the `main` singleton) is the environment used whenever you did not name a session. It holds the ambient defaults: the default **server**, an opt-in default **clock** (created and started on first use), and the random context (`main.seed`). Booting a server free-standing adopts it there, first-wins:
+
+```python
+from clausters import Server, Event, play
+from clausters.seq import Pbind, Pseq
+
+Server.boot()                 # -> clausters.default_session.server (first-wins)
+play(Event(degree=0))         # one note now, no clock — resolves the default server
+play(Pbind(degree=Pseq([0, 2, 4]), dur=0.5))   # on the default session's clock
+```
+
+The free-standing `play` plays anything against this ambient context — an `Event` (immediate outside a clock, timetagged inside one), an event `Pbind`, or a `Routine` — resolving the server and clock for you. Each playable also has the same ambient `.play()`. A note or pattern played from *inside* a running session (its routine's clock) resolves *that* session instead, so isolation holds even for the ambient verb. An explicit `Session` never adopts the default: `Session.live()` and friends keep their server to themselves.
 
 ## Kinds of session
 

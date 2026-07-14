@@ -26,7 +26,10 @@ The layers:
 - `clausters.responders` — `OscFunc`/`MidiFunc`, callbacks on incoming OSC
   replies and live MIDI.
 - `clausters.gui` — GuiDef building for the Clausters GUI host.
-- `clausters.session` — `Session`, ergonomic defaults without global state.
+- `clausters.play` — the free-standing `play`, one verb for every playable,
+  resolved against the ambient session.
+- `clausters.session` — `Session`, an explicit isolated environment; and the
+  default session (`default_session`) it falls back to.
 - `clausters.launch` — launching and owning the server and GUI processes
   (`Session.live` / `Session.gui`, and `Server.boot` / `GuiHost.boot`, drive
   these under the hood).
@@ -47,9 +50,12 @@ from .errors import (
     SegmentError,
     ServerError,
 )
-from .base.main import main
+from .base.main import default_session, main
 from .base.rand import choice, next_below, next_f64, uniform
 from .responders import MidiFunc, OscFunc, midifunc, oscfunc
+from .seq.event import Event, rest
+from .defs import Server
+from .play import play
 from .session import Session
 from .launch import GuiProcess, ServerProcess, default_shm_path
 from .ipc import (
@@ -66,6 +72,11 @@ __all__ = [
     "Clausters",
     "ShmClient",
     "Session",
+    "Server",
+    "Event",
+    "rest",
+    "play",
+    "default_session",
     "ServerProcess",
     "GuiProcess",
     "default_shm_path",

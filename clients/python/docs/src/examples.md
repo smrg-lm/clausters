@@ -7,6 +7,12 @@ python -m venv .venv && . .venv/bin/activate
 pip install ./clients/python          # builds + bundles the native libs
 ```
 
+- **`hello_note.py`** — the shortest path to sound: `Server.boot()` then `play(Event(...))`, no `Session` and no clock wiring. The booted server becomes the default session, so a bare event plays immediately and frees itself. Start here.
+
+  ```sh
+  python clients/python/examples/hello_note.py
+  ```
+
 - **`embedded.py`** — the same pattern, live from a server running **inside the process** (`Session.embed`). Nothing to start: it opens the bundled engine in-process and plays. The batteries-included path. No server process, no socket.
 
   ```sh

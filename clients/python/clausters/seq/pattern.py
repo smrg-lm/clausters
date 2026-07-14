@@ -42,10 +42,21 @@ class Pattern:
         it = iter(self)
         return FunctionStream(lambda _=None: next(it))
 
-    def play(self, clock, server, quant=None):
-        """Play this (event) pattern on ``clock``, sending to ``server``."""
+    def play(self, clock=None, server=None, quant=None):
+        """Play this (event) pattern on ``clock``, sending to ``server``.
+
+        Both are optional and resolve against the ambient context (the running
+        session, else the default session): ``server=None`` takes the booted
+        default server, and ``clock=None`` takes the running routine's clock or,
+        outside one, the default session's clock — created and started on first
+        use. So ``Pbind(...).play()`` sounds with only a ``Server.boot()`` and no
+        `Session`."""
+        from ..base.main import main
         from .eventstream import EventStreamPlayer
 
+        server = main.resolve_server(server)
+        if clock is None:
+            clock = main.resolve_clock() or main.get_default_clock()
         return EventStreamPlayer(self, server).play(clock, quant)
 
 

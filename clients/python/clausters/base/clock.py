@@ -90,6 +90,12 @@ class TempoClock:
         self._thread = None
         self._sample_clock = None     # the master-clock tracker, set by lock_to()
         self._transport = None        # joined shared beat grid, set by join_transport()
+        #: the session this clock belongs to, so a play running on it resolves
+        #: that session's server/rng (``current_tt.clock.session``). A `Session`
+        #: (or the default session's `get_default_clock`) sets it; ``None`` for a
+        #: clock built standalone, which then resolves against the default
+        #: session.
+        self.session = None
 
     # ---- beat/second math (native) ----
 

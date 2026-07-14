@@ -319,7 +319,8 @@ class Server:
     def boot(cls, options: "ServerOptions | None" = None, *, shm="auto",
              transport: "str | None" = None,
              verbose: int = 0, data_dir=None, server_args=(),
-             latency: "float | None" = None, ready_timeout: float = 10.0) -> "Server":
+             latency: "float | None" = None, ready_timeout: float = 10.0,
+             _adopt_default: bool = True) -> "Server":
         """Start a **separate** ``clausters`` server process and return a `Server`
         connected to and owning it.
 
@@ -345,6 +346,12 @@ class Server:
             latency: seconds added to RT timetags (see the constructor).
             ready_timeout: seconds to wait for the server to answer.
 
+        A server booted free-standing (not from within a `Session`) is adopted
+        as the **default session's** server, first-wins: the first such boot sets
+        ``clausters.default_session.server``, so ``Event().play()`` and
+        ``clausters.play(...)`` find it with no session wiring. A later boot does
+        not displace it, and an explicit `Session` never adopts.
+
         Returns:
             A booted `Server`; ``server.shm`` is the segment path (or ``None``).
         """
@@ -355,6 +362,8 @@ class Server:
         server = cls(proc.host, proc.port, latency=latency, options=options,
                      transport=transport)
         server._process = proc
+        if _adopt_default and main.server is None:
+            main.server = server
         return server
 
     @property
@@ -410,23 +419,46 @@ class Server:
 
     def play_event(self, event):
         """Play a note `Event` as OSC: `/s_new`
-        at the routine's logical beat, then `/n_free` (or `gate 0`) after the
-        sustain. The OSC side of the double dispatch — a MIDI destination
-        renders the same event as note on/off. Returns the synth node id (or
-        None for a rest)."""
+        then `/n_free` (or `gate 0`) after the sustain. The OSC side of the
+        double dispatch — a MIDI destination renders the same event as note
+        on/off. Returns the synth node id (or None for a rest).
+
+        Two timing regimes, chosen by context. **Inside a routine** (a clock is
+        in flight) both go out as timetagged bundles at the routine's exact
+        logical beat, so a sequence stays sample-tight. **Outside any clock** (a
+        bare ``Event().play()``) the ``/s_new`` fires immediately and
+        untimetagged, and the release is a bundle at wall-clock now + the sustain
+        in seconds (tempo 1.0: beats == seconds) — so a single note sounds now
+        and frees itself without a `TempoClock`."""
         if event.get("type") == "rest":
             return None
         node_id = self.nodes.alloc()
-        self.send_bundle(
-            ("/s_new", event["instrument"], node_id, int(event["add_action"]),
-             int(event["target"]), *event._control_args())
-        )
+        s_new = ("/s_new", event["instrument"], node_id, int(event["add_action"]),
+                 int(event["target"]), *event._control_args())
+        release = (("/n_set", node_id, "gate", 0.0) if event.get("has_gate")
+                   else ("/n_free", node_id))
         sustain = event.sustain()
-        if event.get("has_gate"):
-            self.send_bundle(("/n_set", node_id, "gate", 0.0), delay_beats=sustain)
-        else:
-            self.send_bundle(("/n_free", node_id), delay_beats=sustain)
+        if getattr(main.current_tt, "clock", None) is None:
+            # No clock in context: immediate note, self-releasing on wall time.
+            self.send_msg(*s_new)
+            self.send_bundle_after(sustain, release)
+            return node_id
+        self.send_bundle(s_new)
+        self.send_bundle(release, delay_beats=sustain)
         return node_id
+
+    def send_bundle_after(self, delay_secs: float, *messages):
+        """Emit a timetagged bundle of ``(addr, *args)`` messages at wall-clock
+        now + ``delay_secs`` (+ `latency`), with **no clock** — the clockless
+        counterpart of `send_bundle`, used for the release of an immediate
+        `play_event`. In score (NRT) mode the delay is seconds from render
+        start."""
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            self.interface.send_bundle(self.target.addr(), delay_secs, *messages)
+            return
+        self.interface.send_bundle(
+            self.target.addr(), time.time() + delay_secs + self.latency, *messages
+        )
 
     def _send_sched(self, sample: int, messages):
         inner = _osclib.immediate_bundle(*[_osclib.message(*m) for m in messages])

@@ -20,6 +20,10 @@ Ejemplos en `clients/python/examples/` (catálogo en el mdBook del cliente,
 
 ## Smoke audible (cliente)
 
+- **Nota suelta sin `Session`.** `Server.boot()` y después `Event(degree=0).play()`
+  (o `play(Event(...))`) → se oye una nota que se libera sola tras su sustain, sin
+  reloj ni sesión (`examples/hello_note.py`). Un `play(Pbind(...))` a continuación
+  suena en el reloj de la sesión por defecto.
 - **Suena embebido, sin arrancar nada.** `Session.embed(...)` toca en proceso →
   se oye el patrón (`examples/embedded.py`).
 - **Suena en vivo por UDP.** `Session.live(...)` / `examples/live_patch.py` /

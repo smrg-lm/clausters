@@ -1,13 +1,17 @@
-"""Session: ergonomic defaults without global state.
+"""Session: an explicit, isolated environment (server + clocks).
 
-The client deliberately avoids global state, but sc3's ease of use came largely
-from its globals (`Server.default`, the default clock). A `Session` gives that
-ergonomics back **explicitly**: it bundles a `Server`
-and a `TempoClock` into one handle with ``play`` /
-``render`` / ``run``, and the ``nrt`` / ``live`` factories pick sensible
-defaults. Because it is an ordinary object, **several sessions coexist** — e.g.
-one offline NRT session for plotting next to a live RT one — in the same script,
-which globals make impossible.
+A `Session` is the unit of isolation: it bundles a `Server` and a `TempoClock`
+into one handle with ``play`` / ``render`` / ``run``, and the ``nrt`` / ``live``
+/ ``embed`` factories pick sensible defaults. Because each session owns its own
+state, **several coexist** — e.g. one offline NRT session for plotting next to a
+live RT one — in the same script without touching each other.
+
+The counterpart is the **default session**, `clausters.default_session` (the
+`clausters.base.main.Main` singleton, also reachable as ``main``): the ambient
+environment used whenever no session was named. Booting a server free-standing
+(``Server.boot()``) adopts it there, so ``Event().play()`` and `clausters.play`
+work with no `Session` at all. An explicit `Session` is simply a *named*
+environment that never touches the default one.
 
 ```python
 s = Session.nrt(tempo=2.0)
@@ -58,6 +62,10 @@ class Session:
     def __init__(self, server: Server, clock: TempoClock | None = None):
         self.server = server
         self.clock = clock if clock is not None else TempoClock()
+        #: back-reference so a play running on this clock resolves *this*
+        #: session's server/rng (``current_tt.clock.session``), keeping several
+        #: sessions isolated from each other and from the default session.
+        self.clock.session = self
         #: the GUI host opened lazily by `gui`, if any; it owns its own process
         #: and is stopped with the session. The server owns any process it
         #: booted (see `Server.boot` / `live`), stopped via ``server.close``.
@@ -148,7 +156,8 @@ class Session:
             server = Server.boot(options=options, shm=shm, transport=transport,
                                  verbose=verbose,
                                  data_dir=data_dir, server_args=server_args,
-                                 latency=latency, ready_timeout=ready_timeout)
+                                 latency=latency, ready_timeout=ready_timeout,
+                                 _adopt_default=False)  # an explicit session is not the default
         return cls(server, TempoClock(tempo, timebase=timebase))
 
     @classmethod
