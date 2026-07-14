@@ -202,9 +202,10 @@ pub fn draw_spectrum(
 }
 
 /// One curve of a per-bin dB array, sampled at each pixel column and drawn as a
-/// polyline. Factored so the live curve and the peak-hold trace share it.
+/// polyline. Factored so the live curve, the peak-hold trace and the static
+/// `plot`'s spectrum view share it.
 #[allow(clippy::too_many_arguments)]
-fn polyline(
+pub(crate) fn polyline(
     mesh: &mut Mesh,
     body: &Rect,
     columns: usize,

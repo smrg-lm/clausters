@@ -56,6 +56,7 @@ from .responders import MidiFunc, OscFunc, midifunc, oscfunc
 from .seq.event import Event, rest
 from .defs import Server
 from .play import play
+from .plot import PlotWindow, plot
 from .session import Session
 from .launch import GuiProcess, ServerProcess, default_shm_path
 from .ipc import (
@@ -76,6 +77,8 @@ __all__ = [
     "Event",
     "rest",
     "play",
+    "plot",
+    "PlotWindow",
     "default_session",
     "ServerProcess",
     "GuiProcess",

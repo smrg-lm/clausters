@@ -198,7 +198,7 @@ enum BulkRequest {
         hop: usize,
         sample_rate: f64,
     },
-    /// Raw little-endian `f32` for a `plot` (channel 0, no pyramid).
+    /// Raw little-endian `f32` for a `plot` (kept interleaved, no pyramid).
     Plot { url: String, channels: usize },
 }
 
@@ -814,6 +814,8 @@ impl WebApp {
                     } = &mut widget.kind
                 {
                     *plot_samples = samples;
+                    // Landed samples feed the spectral view: refresh its cache.
+                    widget.kind.refresh_plot_analysis();
                 }
             }
         }
@@ -1407,12 +1409,14 @@ async fn fetch_bulk(widget_id: i32, request: BulkRequest) {
             BulkData::Spectrogram(stfts)
         }
         BulkRequest::Plot { channels, .. } => {
-            let samples = decode_channel0(&bytes, channels);
+            let mut flat = decode_f32(&bytes);
+            let channels = channels.max(1);
+            flat.truncate(flat.len() / channels * channels);
             log(&format!(
-                "plot: fetched {} samples from {url}",
-                samples.len()
+                "plot: fetched {} samples x {channels} channel(s) from {url}",
+                flat.len() / channels
             ));
-            BulkData::Plot(samples)
+            BulkData::Plot(flat.into())
         }
     };
     if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
@@ -1436,17 +1440,6 @@ async fn fetch_bytes(url: &str) -> Result<Vec<u8>, String> {
         .await
         .map_err(|e| format!("{e:?}"))?;
     Ok(js_sys::Uint8Array::new(&buffer).to_vec())
-}
-
-/// Decodes raw little-endian `f32` bytes and de-interleaves channel 0 — the
-/// same layout the native `MappedFile::channel0_f32` reads from a mapped file.
-fn decode_channel0(bytes: &[u8], channels: usize) -> Arc<[f32]> {
-    let channels = channels.max(1);
-    bytes
-        .chunks_exact(4)
-        .step_by(channels)
-        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-        .collect()
 }
 
 /// Decodes raw little-endian `f32` bytes flat (interleaved as sent) — the

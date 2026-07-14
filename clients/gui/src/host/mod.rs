@@ -275,8 +275,9 @@ pub trait BulkLoader {
         base_bucket: usize,
     ) -> Option<crate::waveform::WaveformData>;
 
-    /// Resolves a plot's local `path` of raw `f32` to mono samples (channel 0 of
-    /// `channels`). `None` on an unsupported platform or an I/O error.
+    /// Resolves a plot's local `path` of raw `f32` to its samples, kept
+    /// interleaved (`channels` only trims a trailing partial frame — the plot
+    /// draws every channel). `None` on an unsupported platform or an I/O error.
     fn plot_samples(&self, path: &Path, channels: usize) -> Option<std::sync::Arc<[f32]>>;
 
     /// Reads a local `path` of raw little-endian `f32` into its de-interleaved

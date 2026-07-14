@@ -441,18 +441,41 @@ pub enum WidgetKind {
         exp: bool,
         label: Option<String>,
     },
-    /// A simple static plot of a signal over `[min, max]`: a polyline when the
-    /// data fits the width, a min/max envelope when it does not. Its samples
-    /// arrive inline (`data`/`blob`) or — the bulk path for an NRT render's
-    /// output — from a mapped local `path` of raw little-endian `f32`
-    /// (`channels` de-interleaves channel 0, default 1), filled when the host
-    /// maps it. Unlike the heavy `waveform`, it does not navigate.
+    /// The static plot of a signal — measurement without navigation. Its
+    /// samples arrive inline (`data`/`blob`) or — the bulk path for an NRT
+    /// render's output — from a mapped local `path` of raw little-endian
+    /// `f32`, filled when the host maps it; `channels` de-interleaves them and
+    /// **every** channel is drawn (stacked lanes, or `overlay` per-color
+    /// traces). `view` picks the presentation ([`super::plot::PlotView`], an
+    /// extensible enum): `signal` (value against time/index, decimated to the
+    /// pixel width so the whole sequence shows without visual aliasing) or
+    /// `spectrum` (the averaged magnitude spectrum in dB over `freq_scale` —
+    /// linear/log/mel/bark — analyzed once into `spectrum` at the widget's
+    /// mutation points, never per frame). `min`/`max` bound the signal view's
+    /// value axis; either side omitted (`None`) auto-fits to the data — the
+    /// arbitrary-range sequence case. `ruler`/`ruler_y` switch the x/y ruler
+    /// strips; `sample_rate` (0 = unknown) turns the x axis from sample counts
+    /// into clock time and places the spectral frequency axis. Hovering names
+    /// the exact sample (or bin) under the cursor. Unlike the heavy
+    /// `waveform`, it does not zoom, pan or edit.
     Plot {
         samples: Arc<[f32]>,
         path: Option<PathBuf>,
         channels: usize,
-        min: f32,
-        max: f32,
+        view: super::plot::PlotView,
+        overlay: bool,
+        sample_rate: f64,
+        min: Option<f32>,
+        max: Option<f32>,
+        ruler: Ruler,
+        ruler_y: bool,
+        fft_size: usize,
+        db_floor: f32,
+        db_ceil: f32,
+        freq_scale: FreqScale,
+        /// The cached spectral analysis (spectrum view; recomputed by
+        /// [`WidgetKind::refresh_plot_analysis`] whenever its inputs change).
+        spectrum: Option<Arc<super::plot::PlotSpectrum>>,
         label: Option<String>,
     },
     /// A continuous slider over `[min, max]`. `vertical` lays it out along the
@@ -862,23 +885,50 @@ impl Widget {
                     label: label(&node.props),
                 }
             }
-            "plot" => WidgetKind::Plot {
-                samples: inline_samples("plot", id, &node.props, blobs)?,
-                path: node
-                    .props
-                    .get("path")
-                    .and_then(Value::as_str)
-                    .map(PathBuf::from),
-                channels: node
-                    .props
-                    .get("channels")
-                    .and_then(Value::as_u64)
-                    .map(|n| (n as usize).max(1))
-                    .unwrap_or(1),
-                min: number(&node.props, "min", -1.0),
-                max: number(&node.props, "max", 1.0),
-                label: label(&node.props),
-            },
+            "plot" => {
+                let mut kind = WidgetKind::Plot {
+                    samples: inline_samples("plot", id, &node.props, blobs)?,
+                    path: node
+                        .props
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .map(PathBuf::from),
+                    channels: node
+                        .props
+                        .get("channels")
+                        .and_then(Value::as_u64)
+                        .map(|n| (n as usize).max(1))
+                        .unwrap_or(1),
+                    view: node
+                        .props
+                        .get("view")
+                        .and_then(Value::as_str)
+                        .and_then(super::plot::PlotView::parse)
+                        .unwrap_or_default(),
+                    overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
+                    sample_rate: number_f64(&node.props, "sample_rate", 0.0),
+                    min: opt_number(&node.props, "min"),
+                    max: opt_number(&node.props, "max"),
+                    ruler: Ruler::parse(&node.props),
+                    ruler_y: !matches!(
+                        node.props.get("ruler_y").and_then(Value::as_str),
+                        Some("off") | Some("none")
+                    ),
+                    fft_size: valid_fft_size(
+                        node.props
+                            .get("fft_size")
+                            .and_then(Value::as_u64)
+                            .unwrap_or(DEFAULT_PLOT_FFT as u64),
+                    ),
+                    db_floor: number(&node.props, "db_floor", -100.0),
+                    db_ceil: number(&node.props, "db_ceil", 0.0),
+                    freq_scale: parse_freq_scale(&node.props),
+                    spectrum: None,
+                    label: label(&node.props),
+                };
+                kind.refresh_plot_analysis();
+                kind
+            }
             "slider" => WidgetKind::Slider {
                 range: Range::parse(&node.props),
                 vertical: node.props.get("vertical").and_then(truthy).unwrap_or(false),
@@ -1147,6 +1197,34 @@ impl WidgetKind {
 
     /// Applies one `/gui_set` key/value to a live widget, returning whether it
     /// changed anything the renderer cares about.
+    /// Recomputes a `plot`'s cached spectral analysis from its current samples
+    /// and props — a no-op for every other widget, for the signal view and for
+    /// empty samples. Called at the widget's mutation points (parse, a bulk
+    /// load landing samples, a live `/gui_set` touching what the analysis
+    /// reads), which keeps the per-frame render pure and allocation-light.
+    pub fn refresh_plot_analysis(&mut self) {
+        if let WidgetKind::Plot {
+            samples,
+            channels,
+            view,
+            sample_rate,
+            fft_size,
+            spectrum,
+            ..
+        } = self
+        {
+            *spectrum =
+                (*view == super::plot::PlotView::Spectrum && !samples.is_empty()).then(|| {
+                    Arc::new(super::plot::analyze(
+                        samples,
+                        *channels,
+                        *fft_size,
+                        *sample_rate,
+                    ))
+                });
+        }
+    }
+
     pub fn apply(&mut self, key: &str, v: &Value) -> bool {
         match self {
             WidgetKind::Waveform {
@@ -1286,13 +1364,61 @@ impl WidgetKind {
                 _ => false,
             },
             WidgetKind::Plot {
-                min, max, label, ..
-            } => match key {
-                "min" => set_f(min, v),
-                "max" => set_f(max, v),
-                "label" => set_label(label, v),
-                _ => false,
-            },
+                view,
+                overlay,
+                sample_rate,
+                min,
+                max,
+                ruler,
+                ruler_y,
+                fft_size,
+                db_floor,
+                db_ceil,
+                freq_scale,
+                label,
+                ..
+            } => {
+                let handled = match key {
+                    // `min`/`max` also accept the string `"auto"` to give a
+                    // side back to the data fit.
+                    "min" => set_opt_f(min, v),
+                    "max" => set_opt_f(max, v),
+                    "view" => v
+                        .as_str()
+                        .and_then(super::plot::PlotView::parse)
+                        .map(|k| *view = k)
+                        .is_some(),
+                    "overlay" => truthy(v).map(|b| *overlay = b).is_some(),
+                    "sample_rate" => set_f64(sample_rate, v),
+                    "ruler" => ruler.set(v),
+                    "ruler_y" => match v.as_str() {
+                        Some("off") | Some("none") => {
+                            *ruler_y = false;
+                            true
+                        }
+                        Some(_) => {
+                            *ruler_y = true;
+                            true
+                        }
+                        None => false,
+                    },
+                    "fft_size" => v.as_u64().map(|n| *fft_size = valid_fft_size(n)).is_some(),
+                    "db_floor" => set_f(db_floor, v),
+                    "db_ceil" => set_f(db_ceil, v),
+                    "freq_scale" => v
+                        .as_str()
+                        .and_then(freq_scale_from_str)
+                        .map(|s| *freq_scale = s)
+                        .is_some(),
+                    "label" => set_label(label, v),
+                    _ => false,
+                };
+                // The analysis reads the view, size and rate: keep it current.
+                if handled && matches!(key, "view" | "fft_size" | "sample_rate") {
+                    self.refresh_plot_analysis();
+                }
+                return handled;
+            }
             WidgetKind::Canvas {
                 shader,
                 params,
@@ -1752,6 +1878,39 @@ fn set_f(slot: &mut f32, v: &Value) -> bool {
     }
 }
 
+/// An optional f32 prop: `None` when absent (the plot's auto-fit sides).
+fn opt_number(props: &serde_json::Map<String, Value>, key: &str) -> Option<f32> {
+    props.get(key).and_then(Value::as_f64).map(|n| n as f32)
+}
+
+/// Sets an optional f32 from a number, or clears it from the string `"auto"`.
+fn set_opt_f(slot: &mut Option<f32>, v: &Value) -> bool {
+    if v.as_str() == Some("auto") {
+        *slot = None;
+        return true;
+    }
+    match v.as_f64() {
+        Some(n) => {
+            *slot = Some(n as f32);
+            true
+        }
+        None => false,
+    }
+}
+
+/// The plot's default spectral analysis size.
+const DEFAULT_PLOT_FFT: usize = 2048;
+
+/// Clamps a requested analysis size to a supported FFT size.
+fn valid_fft_size(n: u64) -> usize {
+    let n = n as usize;
+    if clausters_core::fft::supports(n) {
+        n
+    } else {
+        DEFAULT_PLOT_FFT
+    }
+}
+
 /// Sets an optional label from a string JSON value.
 fn set_label(slot: &mut Option<String>, v: &Value) -> bool {
     match v.as_str() {
@@ -2128,8 +2287,8 @@ mod tests {
                 samples, min, max, ..
             } => {
                 assert_eq!(&samples[..], &[0.0, 1.0, -1.0]);
-                // The plot keeps an explicit range; min defaults bipolar.
-                assert_eq!((*min, *max), (-1.0, 2.0));
+                // An explicit side is kept; the omitted one auto-fits.
+                assert_eq!((*min, *max), (None, Some(2.0)));
             }
             other => panic!("expected plot, got {other:?}"),
         }
@@ -2137,6 +2296,69 @@ mod tests {
         assert!(w.find_mut(1).unwrap().kind.apply("group", &Value::from(0)));
         assert!(w.find_mut(2).unwrap().kind.apply("max", &Value::from(1.0)));
         assert_eq!(w.children[0].kind.node_tree_group(), Some(0));
+    }
+
+    #[test]
+    fn plot_parses_views_channels_and_applies_live() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"plot","data":[0.0,1.0,0.0,-1.0],"channels":2,
+                 "view":"spectrum","overlay":1,"sample_rate":48000.0,
+                 "fft_size":1024,"freq_scale":"mel","ruler":"time","ruler_y":"off"}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Plot {
+                channels,
+                view,
+                overlay,
+                sample_rate,
+                fft_size,
+                freq_scale,
+                ruler,
+                ruler_y,
+                spectrum,
+                ..
+            } => {
+                assert_eq!(*channels, 2);
+                assert_eq!(*view, super::super::plot::PlotView::Spectrum);
+                assert!(*overlay);
+                assert_eq!(*sample_rate, 48_000.0);
+                assert_eq!(*fft_size, 1024);
+                assert_eq!(*freq_scale, FreqScale::Mel);
+                assert_eq!(*ruler, Ruler::Time);
+                assert!(!*ruler_y);
+                // The spectrum view analyzed its (inline) samples at parse.
+                let spec = spectrum.as_ref().expect("analysis cached at parse");
+                assert_eq!(spec.curves.len(), 2);
+                assert_eq!(spec.fft_size, 1024);
+            }
+            other => panic!("expected plot, got {other:?}"),
+        }
+        // Live `/gui_set`: back to the signal view drops the analysis; a
+        // numeric `min` pins that side and the string "auto" releases it.
+        let kind = &mut w.find_mut(1).unwrap().kind;
+        assert!(kind.apply("view", &Value::from("signal")));
+        assert!(kind.apply("min", &Value::from(-2.0)));
+        match kind {
+            WidgetKind::Plot { spectrum, min, .. } => {
+                assert!(spectrum.is_none(), "signal view holds no analysis");
+                assert_eq!(*min, Some(-2.0));
+            }
+            other => panic!("expected plot, got {other:?}"),
+        }
+        assert!(kind.apply("min", &Value::from("auto")));
+        assert!(kind.apply("view", &Value::from("spectrum")));
+        match kind {
+            WidgetKind::Plot { spectrum, min, .. } => {
+                assert_eq!(*min, None);
+                assert!(spectrum.is_some(), "switching back re-analyzes");
+            }
+            other => panic!("expected plot, got {other:?}"),
+        }
+        // An unknown view name is rejected (the prop keeps its value).
+        assert!(!kind.apply("view", &Value::from("histogram")));
     }
 
     #[test]

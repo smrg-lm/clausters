@@ -2798,9 +2798,10 @@ fn collect_node_tree_groups(widget: &Widget, out: &mut Vec<i32>) {
 }
 
 /// Maps a `plot`'s local resource into its tree node: a `path` of raw
-/// little-endian `f32` mapped read-only and de-interleaved to channel 0 (the
-/// bulk path, no OSC). Walks children too. Already-loaded (inline) plots and
-/// plots without a path are left as they are.
+/// little-endian `f32` mapped read-only, kept interleaved — every channel is
+/// drawn (the bulk path, no OSC). Walks children too. Already-loaded (inline)
+/// plots and plots without a path are left as they are. Landing samples also
+/// refreshes the plot's cached spectral analysis.
 fn load_plot_paths(widget: &mut Widget) {
     if let WidgetKind::Plot {
         samples,
@@ -2813,6 +2814,7 @@ fn load_plot_paths(widget: &mut Widget) {
         && let Some(loaded) = MmapLoader.plot_samples(&p, *channels)
     {
         *samples = loaded;
+        widget.kind.refresh_plot_analysis();
     }
     for child in &mut widget.children {
         load_plot_paths(child);

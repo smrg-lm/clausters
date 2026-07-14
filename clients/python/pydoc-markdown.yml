@@ -14,6 +14,8 @@ loaders:
     search_path: ["."]
     modules:
       - clausters
+      - clausters.play
+      - clausters.plot
       - clausters.session
       - clausters.responders
       - clausters.ipc

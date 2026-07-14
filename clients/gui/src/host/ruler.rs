@@ -569,6 +569,48 @@ pub(crate) fn amp_ticks(
     }
 }
 
+/// The ticks of a plain linear **value axis** over `[lo, hi]` — any range, not
+/// tied to an amplitude convention (no margin, no full-scale): the `plot`'s
+/// vertical ruler for arbitrary numeric sequences. The step is the smallest
+/// 1-2-5 rung whose labels (one line of text each) keep clear space over
+/// `height_px`; majors are labeled with [`fmt_decimal`], minors (a fifth of
+/// the step) appear when they clear the minimum tick gap. `frac` is 0 at `lo`
+/// (the bottom), 1 at `hi`.
+pub(crate) fn value_ticks(lo: f64, hi: f64, height_px: f64) -> Vec<Tick> {
+    let span = hi - lo;
+    if span <= 0.0 || height_px <= 0.0 {
+        return Vec::new();
+    }
+    let px_per_value = height_px / span;
+    let step = snap_125(label_gap_v() / px_per_value);
+    let minor = step / 5.0;
+    let draw_minors = minor * px_per_value >= MINOR_GAP_PX;
+    let fine = if draw_minors { minor } else { step };
+    let mut out = Vec::new();
+    let mut k = (lo / fine).ceil() as i64;
+    loop {
+        let v = k as f64 * fine;
+        if v > hi + fine * 1e-9 {
+            break;
+        }
+        let major = (v / step - (v / step).round()).abs() < 1e-6;
+        out.push(Tick {
+            frac: ((v - lo) / span).clamp(0.0, 1.0),
+            label: major.then(|| fmt_decimal(v, step)),
+        });
+        k += 1;
+    }
+    out
+}
+
+/// The cursor-readout form of an arbitrary value on a `[lo, hi]` axis: enough
+/// decimals to resolve about a thousandth of the span (so a zoomed-in narrow
+/// range still reads distinct values), trailing zeros trimmed.
+pub(crate) fn readout_value(v: f64, span: f64) -> String {
+    let step = (span.abs() / 1000.0).max(f64::MIN_POSITIVE);
+    fmt_decimal(v, step)
+}
+
 /// Display coordinate `d` (0 = axis bottom, 1 = Nyquist) → frequency in Hz,
 /// the exact mapping the spectrogram shader applies per scale — the single
 /// inversion the ruler ticks and the cursor readout both use. `f_lo_norm` is
@@ -731,6 +773,97 @@ pub(crate) fn hz_ticks(
                 frac: d.clamp(0.0, 1.0),
                 label: major.then(|| fmt_hz(f)),
             });
+        }
+    }
+    out
+}
+
+/// The ticks of a **horizontal** frequency axis spanning `[0, Nyquist]` over
+/// `width_px` device pixels — the `plot`'s spectral x ruler. Same display→Hz
+/// geometry as [`hz_ticks`] (`display_to_hz` per `scale`), but the labels fit
+/// by their measured *width* (edge-clamped like the frame renderer draws
+/// them), since they sit side by side. The log and perceptual scales walk the
+/// decade scheme; the linear axis fits a 1-2-5 ladder in hertz. `frac` is 0
+/// at the axis start (left), 1 at Nyquist.
+pub(crate) fn hz_ticks_h(
+    nyquist: f64,
+    scale: FreqScale,
+    f_lo_norm: f64,
+    width_px: f64,
+) -> Vec<Tick> {
+    if nyquist <= 0.0 || width_px <= 0.0 {
+        return Vec::new();
+    }
+    let to_px = |f: f64| hz_to_display(f, nyquist, scale, f_lo_norm) * width_px;
+    // A label centered at `p`, edge-clamped into the strip: its drawn span.
+    let span_of = |label: &str, p: f64| {
+        let w = font::width(label, RULER_SCALE) as f64;
+        let lx = (p - w * 0.5).clamp(0.0, (width_px - w).max(0.0));
+        (lx, lx + w)
+    };
+    let mut out = Vec::new();
+    let mut prev_end = f64::NEG_INFINITY;
+    let mut last_any = f64::NEG_INFINITY;
+    let mut push = |f: f64, want_label: bool, out: &mut Vec<Tick>| {
+        let p = to_px(f);
+        if !(-1e-9..=width_px + 1e-9).contains(&p) {
+            return;
+        }
+        let label = if want_label {
+            let text = fmt_hz(f);
+            let (lx, rx) = span_of(&text, p);
+            (lx >= prev_end + LABEL_GAP_PX).then(|| {
+                prev_end = rx;
+                text
+            })
+        } else {
+            None
+        };
+        if label.is_none() && p - last_any < MINOR_GAP_PX {
+            return;
+        }
+        last_any = p;
+        out.push(Tick {
+            frac: (p / width_px).clamp(0.0, 1.0),
+            label,
+        });
+    };
+    if scale != FreqScale::Linear {
+        // Decade scheme: 1/2/5 multiples labeled (as they fit), the rest minors.
+        if scale != FreqScale::Log {
+            push(0.0, true, &mut out); // the perceptual scales reach a true 0
+        }
+        let floor = if scale == FreqScale::Log {
+            (f_lo_norm.clamp(1e-5, 0.5) * nyquist).max(1.0)
+        } else {
+            1.0
+        };
+        let mut decade = 10f64.powf(floor.log10().floor()).max(1.0);
+        while decade <= nyquist {
+            for mult in 1..10 {
+                let f = decade * mult as f64;
+                if f < floor || f > nyquist {
+                    continue;
+                }
+                push(f, matches!(mult, 1 | 2 | 5), &mut out);
+            }
+            decade *= 10.0;
+        }
+    } else {
+        // The linear axis: the smallest 1-2-5 step in hertz whose labels fit.
+        let fmt = |f: f64, _s: f64| fmt_hz(f);
+        let candidates = decimal_steps(nyquist, width_px, 1.0);
+        let step = fit_step(&candidates, 0.0, nyquist, width_px, &fmt);
+        let minor = step / 5.0;
+        let mut k = 0i64;
+        loop {
+            let f = k as f64 * minor;
+            if f > nyquist + minor * 1e-9 {
+                break;
+            }
+            let major = (f / step - (f / step).round()).abs() < 1e-6;
+            push(f, major, &mut out);
+            k += 1;
         }
     }
     out
@@ -1213,6 +1346,75 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn value_ticks_fit_any_range() {
+        // A non-normalized sequence range (say pwhite over [40, 4700]): round
+        // 1-2-5 steps, labels inside the range, no collisions.
+        let ticks = value_ticks(40.0, 4700.0, 400.0);
+        let l = labels(&ticks);
+        assert!(!l.is_empty());
+        assert!(l.contains(&"1000") || l.contains(&"500"), "{l:?}");
+        for t in &ticks {
+            assert!((0.0..=1.0).contains(&t.frac));
+        }
+        assert_no_v_collisions(&ticks, 400.0, "value 40..4700");
+        // A tiny fractional range refines below 1.
+        let fine = value_ticks(-0.02, 0.03, 400.0);
+        let fl = labels(&fine);
+        assert!(
+            fl.contains(&"0") && fl.iter().any(|s| s.contains('.')),
+            "{fl:?}"
+        );
+        assert_no_v_collisions(&fine, 400.0, "value -0.02..0.03");
+        // Degenerate span: nothing.
+        assert!(value_ticks(1.0, 1.0, 400.0).is_empty());
+        assert!(value_ticks(0.0, 1.0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn readout_value_resolves_a_thousandth_of_the_span() {
+        assert_eq!(readout_value(0.5, 2.0), "0.5");
+        assert_eq!(readout_value(1234.0, 5000.0), "1234");
+        assert_eq!(readout_value(0.1234567, 0.001), "0.123457");
+        assert_eq!(readout_value(-0.25, 2.0), "-0.25");
+    }
+
+    #[test]
+    fn horizontal_hz_ticks_fit_by_label_width() {
+        let nyq = 24_000.0;
+        let f_lo = 20.0 / nyq;
+        for scale in [
+            FreqScale::Linear,
+            FreqScale::Log,
+            FreqScale::Mel,
+            FreqScale::Bark,
+        ] {
+            let ticks = hz_ticks_h(nyq, scale, f_lo, 800.0);
+            let l = labels(&ticks);
+            assert!(l.contains(&"1K") || l.contains(&"2K"), "{scale:?}: {l:?}");
+            // Every label sits exactly on the shared display mapping.
+            for t in ticks.iter().filter(|t| t.label.is_some()) {
+                let f = display_to_hz(t.frac, nyq, scale, f_lo);
+                let named = t.label.as_deref().unwrap();
+                let parsed = if let Some(k) = named.strip_suffix('K') {
+                    k.parse::<f64>().unwrap() * 1000.0
+                } else {
+                    named.parse::<f64>().unwrap()
+                };
+                assert!(
+                    (f - parsed).abs() <= parsed.max(1.0) * 1e-3 + 0.5,
+                    "{scale:?}: tick {named} at {f} Hz"
+                );
+            }
+            assert_no_h_collisions(&ticks, 800.0, &format!("{scale:?} horizontal"));
+            // A narrow strip keeps fewer labels, still collision-free.
+            let narrow = hz_ticks_h(nyq, scale, f_lo, 120.0);
+            assert!(labels(&narrow).len() <= l.len());
+            assert_no_h_collisions(&narrow, 120.0, &format!("{scale:?} narrow"));
+        }
+        assert!(hz_ticks_h(0.0, FreqScale::Log, 0.001, 800.0).is_empty());
     }
 
     #[test]

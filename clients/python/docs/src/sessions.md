@@ -243,6 +243,55 @@ with ServerProcess() as server_proc:            # clausters --shm <auto>
         ...   # both processes stop when the `with` blocks exit
 ```
 
+## Plotting a signal: the free-standing `plot`
+
+`plot` is the visual sibling of the free-standing `play`: one verb that opens
+**its own window** for whatever signal-like thing you hand it, resolving the
+ambient context — the session's GUI host if one is up, else a host it boots
+lazily (with no client leg: plot data reaches the host as a mapped file, so no
+audio server is involved unless the object itself needs one).
+
+```python
+from clausters import plot
+from clausters.defs import Env
+from clausters.seq import Pwhite
+
+plot(my_synthdef, dur=2.0)            # a def's output, rendered offline
+plot(my_graphdef, defs=[member_def])  # a GraphDef (members ride along)
+plot(Env.adsr())                      # an envelope, played by the engine's EnvGen
+plot(some_buffer)                     # a buffer's contents, fetched live
+plot(Pwhite(40.0, 4700.0), n=200)     # a sequence: the value axis auto-fits
+```
+
+Dispatch is by kind. A **def** (`SynthDef`, `FaustDef`, `GraphDef`) is rendered
+by an ephemeral **offline (NRT) session** — sent, instanced with `controls`,
+freed at `dur` — and every output channel is drawn in its own lane: the way to
+eyeball what a def actually produces, with no server and no audio device. An
+**`Env`** is rendered through the server's own `EnvGen` (gate-released at its
+sustain point when it has one), so the curve you see is what the engine plays.
+A **`Buffer`** is fetched from the ambient live server, with its channel count
+and sample rate. Anything else **iterable of numbers** — a list, a `Pseq`, a
+`Pwhite`, any stream — is materialized (up to `n` items for the endless ones)
+and plotted as a sequence, index counts on the x axis and the value axis
+fitted to the data, whatever its range.
+
+The window is static (no zoom, pan or editing) but **measured**: x/y rulers fit
+the signal, the whole sequence is always drawn (a min/max envelope per pixel
+column when it outnumbers the pixels, so nothing aliases visually), and
+hovering shows a hairline plus the exact sample under the cursor — index or
+clock time, and the sample's value. `view="spectrum"` plots the **averaged
+magnitude spectrum** instead (dB over a log/linear/mel/bark frequency axis,
+analyzed with the same shared-core FFT the spectrogram uses; hovering reads
+the bin's frequency and level). The returned `PlotWindow` keeps the display
+live:
+
+```python
+win = plot(seq)
+win.set(view="spectrum", freq_scale="mel")   # /gui_set, no re-render
+win.set(min="auto")                          # give a pinned side back to the fit
+win.close()
+```
+
 ## When you don't need a Session
 
 A `Session` is sugar over two objects you can always build yourself. When you want more control — several servers behind one clock, a clock shared across subsystems, or a custom interface — skip the factory and wire them directly:

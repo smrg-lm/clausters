@@ -138,16 +138,24 @@ fn mapped_waveform(
     None
 }
 
-/// Reads `path` as raw little-endian `f32`, de-interleaving channel 0 of
-/// `channels` — the same read-only `mmap` the waveform bulk path uses. Unix-only;
-/// returns `None` (with a warning) elsewhere or on an I/O error.
+/// Reads `path` as raw little-endian `f32`, **kept interleaved** (the plot
+/// draws every channel; a trailing partial frame is dropped) — the same
+/// read-only `mmap` the waveform bulk path uses. Unix-only; returns `None`
+/// (with a warning) elsewhere or on an I/O error.
 #[cfg(unix)]
 fn map_plot_samples(path: &Path, channels: usize) -> Option<Arc<[f32]>> {
     use super::mapfile::MappedFile;
     let map = MappedFile::open(path)
         .map_err(|e| warn!("plot path {}: {e}", path.display()))
         .ok()?;
-    let samples: Arc<[f32]> = map.channel0_f32(channels).into();
+    let mut floats: Vec<f32> = map
+        .bytes()
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    let channels = channels.max(1);
+    floats.truncate(floats.len() / channels * channels);
+    let samples: Arc<[f32]> = floats.into();
     info!(
         "plot: mapped {} samples from {} (no OSC)",
         samples.len(),

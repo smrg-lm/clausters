@@ -88,6 +88,19 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/gui_editor.py    # as a script; or open the cells in VS Code / Jupyter
   ```
 
+- **`plotting.py`** — quick looks with the free-standing `clausters.plot`: each
+  call opens **its own window** (the GUI host boots lazily; no audio server —
+  defs render through the bundled NRT renderer). A `SynthDef`'s output in
+  per-channel lanes with x/y rulers, an `Env` played by the engine's own
+  `EnvGen`, sequences (`Pseq`, an arbitrary-range `Pwhite`) with the value axis
+  auto-fitted, a `GraphDef`'s averaged spectrum (`view="spectrum"`), and live
+  retuning through the returned handle (`win.set(freq_scale="mel")`). `# %%`
+  cells; needs a display and a GPU adapter.
+
+  ```sh
+  python clients/python/examples/plotting.py     # as a script; or open the cells in VS Code / Jupyter
+  ```
+
 The broader catalog of examples (including the low-level transports and the raw
 OSC helpers) lives in the repo-root [`examples/`](../../../examples/); those use
 a `sys.path` shim so they run straight from a source checkout without an install.

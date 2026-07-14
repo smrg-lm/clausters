@@ -159,9 +159,40 @@ pub(crate) fn timeline_body(rect: Rect, editor: &EditorProps) -> Rect {
 struct PlotItem {
     rect: Rect,
     samples: Arc<[f32]>,
-    min: f32,
-    max: f32,
+    channels: usize,
+    view: plot::PlotView,
+    overlay: bool,
+    sample_rate: f64,
+    min: Option<f32>,
+    max: Option<f32>,
+    ruler: Ruler,
+    ruler_y: bool,
+    spectrum: Option<Arc<plot::PlotSpectrum>>,
+    db_floor: f32,
+    db_ceil: f32,
+    freq_scale: FreqScale,
     label: Option<String>,
+}
+
+impl PlotItem {
+    fn params(&self) -> plot::PlotParams<'_> {
+        plot::PlotParams {
+            samples: &self.samples,
+            channels: self.channels,
+            view: self.view,
+            overlay: self.overlay,
+            sample_rate: self.sample_rate,
+            min: self.min,
+            max: self.max,
+            ruler: self.ruler,
+            ruler_y: self.ruler_y,
+            spectrum: self.spectrum.as_deref(),
+            db_floor: self.db_floor,
+            db_ceil: self.db_ceil,
+            freq_scale: self.freq_scale,
+            label: self.label.as_deref(),
+        }
+    }
 }
 
 /// A placed `bpf` widget and the data its draw needs, copied out of the host
@@ -763,15 +794,35 @@ pub(crate) fn render(
             }
             WidgetKind::Plot {
                 samples,
+                channels,
+                view,
+                overlay,
+                sample_rate,
                 min,
                 max,
+                ruler,
+                ruler_y,
+                spectrum,
+                db_floor,
+                db_ceil,
+                freq_scale,
                 label,
                 ..
             } => plot_rects.push(PlotItem {
                 rect: p.rect,
                 samples: Arc::clone(samples),
+                channels: *channels,
+                view: *view,
+                overlay: *overlay,
+                sample_rate: *sample_rate,
                 min: *min,
                 max: *max,
+                ruler: *ruler,
+                ruler_y: *ruler_y,
+                spectrum: spectrum.clone(),
+                db_floor: *db_floor,
+                db_ceil: *db_ceil,
+                freq_scale: *freq_scale,
                 label: label.clone(),
             }),
             WidgetKind::Bpf {
@@ -1031,14 +1082,13 @@ pub(crate) fn render(
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
     for item in &plot_rects {
-        plot::draw(
-            &mut mesh,
-            item.rect,
-            &item.samples,
-            item.min,
-            item.max,
-            item.label.as_deref(),
-        );
+        let params = item.params();
+        plot::draw(&mut mesh, item.rect, &params);
+        // The hover readout (hairline + the value under the cursor) rides the
+        // overlay mesh, like the editor views' chrome.
+        if let Some(cursor) = inputs.cursor {
+            plot::draw_readout(&mut over, item.rect, &params, cursor);
+        }
     }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
     // column through the shared shape math, discs for the breakpoints.

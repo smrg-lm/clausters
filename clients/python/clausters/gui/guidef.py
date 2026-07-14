@@ -470,23 +470,59 @@ def _flat_osc(osc) -> list:
 
 
 def plot(id: int, *, data=None, blob: int | None = None, path: str | None = None,
-         channels: int | None = None, min: float | None = None, max: float | None = None,
+         channels: int | None = None, view: str | None = None,
+         overlay: bool | None = None, sample_rate: float | None = None,
+         min: float | None = None, max: float | None = None,
+         ruler: str | None = None, ruler_y: str | None = None,
+         fft_size: int | None = None, db_floor: float | None = None,
+         db_ceil: float | None = None, freq_scale: str | None = None,
          label: str | None = None, **props) -> dict:
-    """A simple static ``plot`` of a signal over ``[min, max]`` (default the
-    bipolar ``-1``/``1``) — a line when the data fits the width, a min/max envelope
-    when it does not. Unlike the heavy `waveform`, it does not zoom or pan; it is
-    the catalog's "plot of an NRT-generated signal/file". Its samples come from:
+    """A static ``plot`` of a signal — measurement without navigation. Unlike
+    the heavy `waveform`, it does not zoom, pan or edit; it is the catalog's
+    "plot of an NRT-generated signal/file", grown x/y rulers, multichannel
+    lanes and a hover readout. Its samples come from:
 
-    - ``path`` — a file of raw little-endian ``f32`` (see `samples_to_file`, or an
-      NRT render written out) the host memory-maps; the **bulk path**, no OSC.
-      ``channels`` de-interleaves channel 0 (default 1).
+    - ``path`` — a file of raw little-endian ``f32`` (see `samples_to_file`, or
+      an NRT render written out) the host memory-maps; the **bulk path**, no
+      OSC. ``channels`` (default 1) de-interleaves it — **every** channel is
+      drawn, as stacked lanes or as ``overlay=True`` per-color traces.
     - ``data`` — a small list of floats inline in the JSON;
     - ``blob`` — the index of a binary blob carried beside the JSON (see
       `samples_to_blob` and `GuiHost.define`).
+
+    ``view`` picks the presentation (the set is host-extensible; live via
+    ``GuiHost.set``):
+
+    - ``"signal"`` (default) — value against time/index. The whole sequence is
+      always drawn (a polyline when it fits the width, a min/max envelope per
+      pixel column when it does not — no visual aliasing). The value axis is
+      ``[min, max]``; **omit either side and it auto-fits to the data** (the
+      arbitrary-range sequence case, e.g. a materialized ``Pwhite``); set a
+      side back to auto live with ``GuiHost.set(id, min="auto")``.
+    - ``"spectrum"`` — the averaged magnitude spectrum of the (short) signal,
+      one curve per channel: dB over ``[db_floor, db_ceil]`` (default
+      ``-100``/``0``) against frequency on ``freq_scale`` — ``"log"`` (the
+      default), ``"linear"``, ``"mel"`` or ``"bark"`` — analyzed host-side at
+      ``fft_size`` (a power of two, default 2048) with the same shared-core
+      FFT the spectrogram uses, so the two agree bin for bin.
+
+    The rulers sit in their own strips and are live: ``ruler`` labels the x
+    axis — ``"samples"`` (index counts; what an unknown rate falls back to),
+    ``"time"`` (the default; clock time when ``sample_rate`` is given) or
+    ``"off"`` — and ``ruler_y`` (``"off"`` to hide) labels the value axis (dB
+    on the spectrum view). ``sample_rate`` also places the spectral frequency
+    axis. Hovering the body shows a hairline plus the exact value under the
+    cursor: sample index/time and the **sample's value** on the signal view,
+    the bin's frequency (per the scale) and level in dB on the spectrum view.
     """
     extra = _drop_none(data=list(data) if data is not None else None,
-                       blob=blob, path=path, channels=channels, min=min, max=max,
+                       blob=blob, path=path, channels=channels, view=view,
+                       sample_rate=sample_rate, min=min, max=max,
+                       ruler=ruler, ruler_y=ruler_y, fft_size=fft_size,
+                       db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
                        label=label)
+    if overlay is not None:
+        extra["overlay"] = 1 if overlay else 0
     return node("plot", id=id, **extra, **props)
 
 
