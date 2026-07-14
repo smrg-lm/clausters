@@ -10,7 +10,10 @@ The base layer:
   ``yield`` coroutine layer).
 - `clock` — `TempoClock` (native-backed, RT + NRT
   drives).
-- `main` — the global context (`main`).
+- `environment` — `Environment`, an isolated place to make sound (server +
+  random context); the base of both the default session and `Session`.
+- `main` — the default session (`main`), the ambient `Environment` and the
+  process-wide execution registry.
 - `rand` — the random context: one seedable source (``main.seed`` +
   per-routine derived generators) behind every random value in the library.
 - `netaddr` — `NetAddr`.
@@ -21,6 +24,7 @@ The base layer:
 
 from .absobject import AbstractObject
 from .clock import TempoClock
+from .environment import Environment, RandomContext
 from .main import Main, main
 from .netaddr import NetAddr
 from .rand import choice, current_rng, next_below, next_f64, spawn_rng, uniform
@@ -51,6 +55,8 @@ __all__ = [
     "Timebase",
     "MonotonicTimebase",
     "SampleClockTimebase",
+    "Environment",
+    "RandomContext",
     "Main",
     "main",
     "NetAddr",

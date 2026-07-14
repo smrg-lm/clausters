@@ -23,11 +23,12 @@ samples, frames = s.render()        # drains the clock, renders the score
 from contextlib import contextmanager
 
 from .base import OscEmbedInterface, OscNrtInterface, TempoClock
-from .base.main import RandomContext, main
+from .base.environment import Environment
+from .base.main import main
 from .defs import Server
 
 
-class Session(RandomContext):
+class Session(Environment):
     """One `Server` plus one `TempoClock`, bundled into a single handle.
 
     This is the client's ergonomic entry point. Rather than wiring a server, a
@@ -46,12 +47,13 @@ class Session(RandomContext):
     `play` drives either kind, and an offline and a live session can run side
     by side in one script.
 
-    A session is also its **own random context** (`seed` / ``rng``, inherited
-    from `clausters.base.main.RandomContext`): ``session.seed(n)`` reproduces
-    *this* session's material without touching another's, so two sessions --
-    even both offline -- stay reproducible independently. Material created while
-    the session drives (``play`` / ``render``) or inside a ``with`` block draws
-    from this root.
+    It is an `clausters.base.environment.Environment` — the same base the default
+    session (`clausters.default_session`) extends — so a named session and the
+    default one are the same kind of thing. That makes it its **own random
+    context** (`seed` / ``rng``): ``session.seed(n)`` reproduces *this* session's
+    material without touching another's, so two sessions -- even both offline --
+    stay reproducible independently. Material created while the session drives
+    (``play`` / ``render``) or inside a ``with`` block draws from this root.
 
     Args:
         server: the `Server` to drive -- a live one, or one holding an
@@ -70,7 +72,7 @@ class Session(RandomContext):
     """
 
     def __init__(self, server: Server, clock: TempoClock | None = None):
-        super().__init__()          # its own RNG root (seed/rng), isolated
+        super().__init__()          # Environment: its own RNG root + server slot
         self.server = server
         self.clock = clock if clock is not None else TempoClock()
         #: back-reference so a play running on this clock resolves *this*

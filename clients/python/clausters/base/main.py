@@ -7,15 +7,17 @@ one line:
 > Everything that does not run in an explicit `clausters.Session` runs in the
 > default session, `main`.
 
-So `main` owns what used to be scattered "globals": the default `server` (set,
-first-wins, by a free-standing `Server.boot()`), an opt-in `default_clock`, and
-the random context (`rng`). It is exported as ``clausters.default_session`` too;
-``main`` is just its historical short name.
+`main` is an `clausters.base.environment.Environment` — the same base a
+`clausters.Session` extends — so it *is* a session, the default one. It owns what
+used to be scattered "globals": the default `server` (set first-wins by a
+free-standing `Server.boot()`), an opt-in `default_clock`, and the random
+context (`rng`). It is exported as ``clausters.default_session`` too; ``main`` is
+just its historical short name.
 
-An **explicit** `Session` is the same kind of thing -- its own server, its own
-clocks, its own state -- so several sessions (a live RT one next to an offline
-NRT render, each with its own configuration) coexist in one process without
-touching each other or the default session. A session can hold **several
+An **explicit** `Session` is the same kind of thing (an `Environment`) -- its own
+server, its own clocks, its own state -- so several sessions (a live RT one next
+to an offline NRT render, each with its own configuration) coexist in one process
+without touching each other or the default session. A session can hold **several
 clocks** at different tempos, including the default one.
 
 The process-wide pieces are thread-local: `current_tt`, "which routine is
@@ -28,62 +30,27 @@ was); together they say *which session you are in* -- at run time follow
 falls back to it.
 """
 
-import os
 import threading
 
+from .environment import Environment, RandomContext
 
-class RandomContext:
-    """One seedable RNG root (the shared native ``RngStream``).
+__all__ = ["Main", "main", "default_session", "Environment", "RandomContext"]
 
-    Both the default session (`Main`) and an explicit `clausters.Session` are
-    random contexts, so each reproduces **independently**: ``seed(n)`` on one
-    never touches another's stream. A `clausters.base.stream.Stream` created
-    while a context is active derives its own generator from that context's root
-    (see `clausters.base.rand`), so two sessions' material stays reproducible
-    per session regardless of interleaving.
+
+class Main(Environment):
+    """The default session: the ambient `Environment` resolution falls back to.
+
+    An `Environment` like any `clausters.Session` (server + random context), plus
+    the two roles only the *default* one plays: it holds the process-wide
+    thread-local execution registry (`current_tt` / `current_session`) and it is
+    the resolution authority — `resolve_server` / `resolve_clock` implement the
+    single rule shared with the free `clausters.play` and every playable's
+    ambient ``.play()``. It also keeps an opt-in `default_clock`. The default
+    `server` is adopted first-wins by a free-standing ``Server.boot()``.
     """
 
     def __init__(self):
-        self._rng = None      # lazy: creating it loads the native core
-        self._seed = None
-
-    def seed(self, value=None):
-        """Seeds this context's RNG (None reseeds from entropy). Returns the
-        seed actually used so the context can be reproduced."""
-        from .. import _native
-
-        if value is None:
-            value = int.from_bytes(os.urandom(8), "little")
-        self._seed = value
-        self._rng = _native.RngStream(value)
-        return value
-
-    @property
-    def rng(self):
-        """The context value stream (`clausters._native.RngStream`, the shared
-        core generator — reproducible across client languages). Created lazily,
-        seeded from entropy unless `seed` was called."""
-        if self._rng is None:
-            self.seed(self._seed)
-        return self._rng
-
-
-class Main(RandomContext):
-    """The default session: the ambient environment resolution falls back to.
-
-    Holds the default `server`, the opt-in `default_clock`, the random context
-    (`rng`, inherited from `RandomContext`) and the thread-local `current_tt` /
-    `current_session`. `resolve_server` / `resolve_clock` implement the single
-    resolution rule shared with the free `clausters.play` and every playable's
-    ambient ``.play()``.
-    """
-
-    def __init__(self):
-        super().__init__()
-        #: the default session's server, adopted first-wins by a free-standing
-        #: ``Server.boot()`` so ``event.play()`` finds it with no `Session`.
-        #: ``None`` until one is booted; an explicit `Session` never sets it.
-        self.server = None
+        super().__init__()          # RandomContext + the `server` slot (None)
         #: opt-in convenience default clock; ``None`` until first needed (see
         #: `get_default_clock`). An explicit `Session` brings its own clocks.
         self.default_clock = None

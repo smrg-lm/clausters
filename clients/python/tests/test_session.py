@@ -17,6 +17,19 @@ def _embed_or_skip():
         pytest.skip(f"clausters-ffi not built: {e}")
 
 
+def test_session_and_default_are_the_same_kind_of_environment():
+    # The default session and an explicit Session share one base: both are
+    # Environments (server + isolated random context). main *is* a session.
+    from clausters import main, default_session
+    from clausters.base import Environment
+
+    assert issubclass(Session, Environment)
+    assert isinstance(main, Environment)
+    assert default_session is main
+    for env in (main, Session.nrt(tempo=1.0)):
+        assert hasattr(env, "server") and hasattr(env, "seed") and hasattr(env, "rng")
+
+
 def test_nrt_session_plays_and_renders():
     _embed_or_skip()
     s = Session.nrt(tempo=2.0)

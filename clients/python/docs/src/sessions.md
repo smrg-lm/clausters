@@ -10,6 +10,8 @@ This client keeps the convenience but contains it. There is one ambient environm
 
 `Session` is that explicit, isolated environment: an object that holds a `Server` and one or more `TempoClock`s and offers `play` / `render` / `run`, plus factories that pick sensible defaults. Because it is a plain object and not a forced global, you can have as many as you like, each with its own server, clocks and random context.
 
+The default session and a named `Session` are literally *the same kind of thing* — both extend one `Environment` base (a server plus a random context), so `clausters.default_session` **is** a session, the one used when you name none. Everything below (`play`, seeding, isolation) reads the same whether it runs in the default session or an explicit one.
+
 ## The default session
 
 `clausters.default_session` (the `main` singleton) is the environment used whenever you did not name a session. It holds the ambient defaults: the default **server**, an opt-in default **clock** (created and started on first use), and the random context (`main.seed`). Booting a server free-standing adopts it there, first-wins:
