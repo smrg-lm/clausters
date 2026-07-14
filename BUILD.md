@@ -104,6 +104,20 @@ needs to find libLLVM. This is also why the Python wheel weighs ~50 MB: libLLVM
 *is* the Faust JIT, and it is ~130 MB unpacked (see
 `clients/python/build_native.py`).
 
+libLLVM does not stop at itself, though: it links libxml2, libzstd, libedit,
+libz, libffi and libtinfo (and *their* deps), none of which are ours and none
+guaranteed on the target — and their sonames drift between distro generations
+(a wheel built where LLVM linked `libxml2.so.2` won't load on a host that only
+ships `libxml2.so.16`). So `build_native.py` vendors the **whole transitive
+closure** of libfaust/libLLVM into `_libs/` (minus the glibc/`libgcc_s`/`libstdc++`
+baseline) and rewrites each vendored library's run path to `$ORIGIN` with
+**patchelf** — a build-time requirement on Linux. The rewrite is essential
+because libLLVM uses `DT_RUNPATH`, which is *not* inherited down the chain, so
+the binary's `$ORIGIN/../_libs` never reaches libLLVM's own dependencies; giving
+each vendored lib its own `$ORIGIN` (they all sit together in `_libs/`) makes the
+graph resolve locally. The release wheel is a plain `python -m build`, with no
+auditwheel/repair step, so this staging *is* the relocation.
+
 #### Building libfaust from source (reproducible, no sudo)
 
 Pin the same version the tree is tested against and build the dynamic library

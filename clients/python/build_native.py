@@ -238,8 +238,22 @@ def _needed_libs(path: str) -> dict[str, str]:
     return needed
 
 
+# Baseline shared libraries every glibc target is assumed to provide. These are
+# never vendored: bundling the C/C++ runtime or the loader would pin a copy older
+# than (or ABI-incompatible with) the host's and break everything that links them
+# system-wide. Matches the spirit of auditwheel's policy whitelist, scoped to what
+# libfaust/libLLVM can pull in. Everything else in their transitive closure *is*
+# vendored (see ``stage_faust_libs``).
+_SYSTEM_SONAME_PREFIXES = (
+    "libc.so", "libm.so", "libdl.so", "librt.so", "libpthread.so",
+    "libutil.so", "libresolv.so", "libnsl.so", "libgcc_s.so", "libstdc++.so",
+    "ld-linux",
+)
+
+
 def stage_faust_libs(profile: str) -> list[str]:
-    """Copy libfaust — and the libLLVM it needs — beside the cdylibs in ``_libs/``.
+    """Copy libfaust — and the libLLVM it needs, and *their* transitive deps —
+    beside the cdylibs in ``_libs/``.
 
     The `faust` feature is on by default, so the built artifacts link libfaust
     dynamically, and libfaust in turn links the LLVM shared library that *is* its
@@ -249,21 +263,54 @@ def stage_faust_libs(profile: str) -> list[str]:
     of ``$ORIGIN``/``$ORIGIN/../_libs``, inherited by transitive dependencies, so
     the loader finds these copies before (or without) any system ones.
 
+    libLLVM does not stop at itself: it links libxml2, libzstd, libedit, libz,
+    libffi, libtinfo… none of which are ours and none of which are guaranteed on
+    the target. Worse, their sonames drift between distro generations — a wheel
+    built where LLVM linked ``libxml2.so.2`` fails to load on a host that only
+    ships ``libxml2.so.16`` (exactly the "cannot open shared object file" the
+    standalone server dies with). So we vendor the **whole transitive closure**
+    of libfaust/libLLVM, minus the baseline system libraries in
+    ``_SYSTEM_SONAME_PREFIXES``. ``ldd`` already flattens the tree, so one pass
+    over each root's resolved path captures deps-of-deps (libbsd -> libmd, …).
+
     The libraries are read off the *staged* artifacts, keyed by the exact soname
     the loader asks for. A server built without the feature needs no libfaust, so
     nothing is found and nothing is staged.
     """
     artifacts = [p for p in (staged_bin(), *staged_libs()) if p]
-    wanted: dict[str, str] = {}
+    # The two libraries we deliberately vendor (the Faust JIT compiler), each
+    # keyed by the exact soname the loader asks for and its resolved build-host
+    # path. We scope the closure to *these* roots, not to the whole binary, so we
+    # never drag in the GUI's graphics/audio system stack.
+    roots: dict[str, str] = {}
     for art in artifacts:
         for soname, resolved in _needed_libs(art).items():
             if soname.startswith(("libfaust.", "libLLVM.")):
-                wanted.setdefault(soname, resolved)
+                roots.setdefault(soname, resolved)
+    wanted: dict[str, str] = dict(roots)
+    for resolved in list(roots.values()):
+        for soname, dep in _needed_libs(resolved).items():
+            if soname.startswith(_SYSTEM_SONAME_PREFIXES):
+                continue
+            wanted.setdefault(soname, dep)
+    if wanted and platform.system() == "Linux" and shutil.which("patchelf") is None:
+        raise SystemExit(
+            "clausters: patchelf is required to bundle libfaust/libLLVM into a "
+            "relocatable wheel (it rewrites their run path to $ORIGIN). Install it "
+            "with `pip install patchelf` (a self-contained wheel) or your package "
+            "manager, then rebuild."
+        )
     copied = []
     for soname, resolved in sorted(wanted.items()):
         dst = os.path.join(LIBS_DIR, soname)
-        shutil.copy2(os.path.realpath(resolved), dst)
-        _strip(dst)
+        src = os.path.realpath(resolved)
+        # Re-running staging resolves a root to its already-staged copy (the
+        # artifacts' rpath includes ``_libs``); don't copy a file onto itself.
+        if os.path.realpath(dst) != src:
+            shutil.copy2(src, dst)
+            _strip(dst)
+        if platform.system() == "Linux":
+            _set_origin_rpath(dst)
         copied.append(soname)
     return copied
 
@@ -277,6 +324,25 @@ def _strip(path: str):
         subprocess.run(["strip", path], check=True)
     except (OSError, subprocess.CalledProcessError):
         pass
+
+
+def _set_origin_rpath(path: str):
+    """Rewrite a vendored library's run path to ``$ORIGIN`` so it finds its
+    siblings in ``_libs/`` (Linux only).
+
+    libfaust/libLLVM and their transitive deps come from the build host, not our
+    build, so they carry the host's run paths — libLLVM's is ``$ORIGIN/../lib``,
+    a directory that does not exist in the wheel. Worse, libLLVM uses ``DT_RUNPATH``,
+    which (unlike the ``DT_RPATH`` ``build.rs`` gives *our* artifacts) is **not**
+    inherited down the dependency chain: the standalone binary's ``$ORIGIN/../_libs``
+    is therefore not consulted for libLLVM's own deps (libxml2, libzstd, …), and
+    the loader falls through to the system, whose soname may differ (the
+    ``libxml2.so.2`` vs ``libxml2.so.16`` failure). Pointing every vendored lib at
+    ``$ORIGIN`` — the same directory they all live in — makes each one resolve its
+    direct deps locally, which covers the whole graph. This is what auditwheel
+    does; here it must run in ``build_native`` because the release builds a plain
+    wheel with no auditwheel/repair step."""
+    subprocess.run(["patchelf", "--set-rpath", "$ORIGIN", path], check=True)
 
 
 def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> list[str]:
