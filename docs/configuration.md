@@ -78,10 +78,11 @@ persist = true           # persist/reload defs; false is like --no-persist
 host = "127.0.0.1"       # server host
 port = 57110             # server UDP port
 latency = 0.0            # seconds added to each event's timetag
-clock = "sample"         # Session.live() clock timebase: "sample" (default, the
-#                        # server's sample clock — drift-free) or "monotonic"
+clock = "sample"         # real-time session clock timebase: "sample" (default,
+#                        # the server's sample clock — drift-free) or "monotonic"
 #                        # (wall-clock timetags). Falls back to wall-clock if no
-#                        # server answers; embed and render/nrt stay wall-clock.
+#                        # server answers; applies to Session.live() and
+#                        # Session.embed(); render/nrt stay wall-clock.
 # transport = "tcp"      # command carrier: "tcp" (default), "udp" or "ws"
 
 [gui]                    # the GUI host
@@ -122,10 +123,10 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
 - **Python client** — the `[client]` section provides the defaults for
   `Session.live()` / `Server` (`host`, `port`, `latency`, `transport`, `clock`);
   the `[server]` section provides the `ServerOptions` defaults (`audio_buses`,
-  `control_buses`, `sample_rate`). `clock` picks a `Session.live()`'s default
-  timebase — `"sample"` anchors to the server's sample clock, `"monotonic"`
-  keeps wall-clock timetags (embed and offline stay wall-clock). See the Python
-  client's own documentation.
+  `control_buses`, `sample_rate`). `clock` picks a real-time session's
+  default timebase (`Session.live()` and `Session.embed()` alike) — `"sample"`
+  anchors to the server's sample clock, `"monotonic"` keeps wall-clock timetags
+  (offline stays wall-clock). See the Python client's own documentation.
 
 ## The standalone app
 

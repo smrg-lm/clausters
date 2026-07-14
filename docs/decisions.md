@@ -631,14 +631,19 @@ Two out-of-the-box defaults, chosen for the common case of a **local** session:
   "default"` to gate-release. So the safety of the free-by-default choice is kept
   while the built-in sounds clean.
 
-- **`Session.live()` anchors to the server's sample clock by default** (config
-  `[client].clock`, default `"sample"`), rather than wall-clock OSC timetags.
-  For a local session the sample clock is strictly better — drift-free and
-  sample-exact — and making it the default also exercises the `/sched` path on
-  every run. It falls back to wall-clock gracefully if no master answers, so a
-  client with no Clausters server still works; `"monotonic"` opts out for driving
-  a remote or non-Clausters peer. **`Session.embed()` is deliberately excluded:**
-  the sample-clock tracker reaches the server over its own UDP socket, and an
-  in-process embed server exposes no such endpoint, so auto-locking it would only
-  burn the lock timeout on a guaranteed-failing attempt. Embed keeps wall-clock
-  until an in-process tracker exists. `render`/`nrt` never had a live clock.
+- **`Session.live()` and `Session.embed()` anchor to the server's sample clock
+  by default** (config `[client].clock`, default `"sample"`), rather than
+  wall-clock OSC timetags. For a local session the sample clock is strictly
+  better — drift-free and sample-exact — and making it the default also
+  exercises the `/sched` path on every run. It falls back to wall-clock
+  gracefully if no master answers, so a client with no Clausters server still
+  works; `"monotonic"` opts out for driving a remote or non-Clausters peer.
+  `Session.embed()` was excluded at first — the sample-clock tracker reaches the
+  server over its own UDP socket, which an in-process server has no endpoint
+  for, so auto-locking would only have burned the 2 s lock timeout on a
+  guaranteed-failing attempt. It joined once the in-process reader existed:
+  the embed handle already publishes the sample counter through shared memory
+  (`clausters_clock`), so `EmbedSampleClock` reads it directly — no socket, no
+  model, no timeout — behind the same tracker surface `lock_to` drives, and
+  `Server.sample_clock()` picks the reader by interface. `render`/`nrt` never
+  had a live clock.

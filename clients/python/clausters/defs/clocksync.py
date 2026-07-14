@@ -1,8 +1,15 @@
-"""Track the server's sample clock over UDP.
+"""Track the server's sample clock: over UDP, or read directly in-process.
 
-To use a `SampleClockTimebase` over UDP — where
-the client can't read the sample counter directly (as shm/embed can) — it
-queries the server's ``/clock`` and models
+Two ways to feed a `SampleClockTimebase`:
+
+- `UdpSampleClock` — over UDP, where the client can't read the sample counter
+  directly, it queries the server's ``/clock`` and models the counter (below).
+- `EmbedSampleClock` — for an in-process embedded server, whose handle exposes
+  the counter itself: no socket, no round trips, no model — every read *is* the
+  counter. It mirrors the tracker's surface so `TempoClock.lock_to` treats both
+  alike.
+
+The UDP tracker models
 
     sample(t_local) = a + b * t_local
 
@@ -172,3 +179,49 @@ class UdpSampleClock:
         self.untrack()
         self._iface.close()
         self.model.close()
+
+
+class EmbedSampleClock:
+    """The in-process counterpart of `UdpSampleClock`: reads an embedded
+    server's sample counter straight from its handle (`clausters.ipc.Clausters`
+    or `ShmClient` — anything with ``clock`` and ``sample_rate``).
+
+    There is nothing to track: the counter is shared memory, so `anchor` /
+    `warmup` / `track` are trivial no-ops kept only for surface parity with the
+    UDP tracker, and they never block or time out. `close` releases nothing —
+    the handle belongs to the interface that opened it.
+    """
+
+    def __init__(self, handle):
+        self._handle = handle
+        self._rate = float(handle.sample_rate)
+
+    def anchor(self) -> float:
+        # A direct read has no round trip: probe the handle once (a closed or
+        # dead handle raises here, which lock_to turns into a graceful
+        # fall-back) and report zero uncertainty.
+        self._handle.clock
+        return 0.0
+
+    def warmup(self, n: int = 5, gap: float = 0.05) -> float:
+        return 0.0
+
+    def track(self, interval: float = 0.5):
+        return self
+
+    def untrack(self):
+        pass
+
+    def now(self) -> int:
+        return self._handle.clock
+
+    @property
+    def rate(self) -> float:
+        return self._rate
+
+    def timebase(self) -> SampleClockTimebase:
+        """A `SampleClockTimebase` reading the handle's counter directly."""
+        return SampleClockTimebase(lambda: self._handle.clock, self._rate)
+
+    def close(self):
+        pass

@@ -165,10 +165,12 @@ class TempoClock:
         Opt-in: a plain clock paces against wall-clock OSC time, which works
         standalone, against another program, or across a network. `lock_to`
         switches it to the server's sample clock — over UDP it tracks the
-        server's published `/clock` anchor on its own socket. The switch is
-        **graceful**: an offline (score) server, or a master that does not
-        answer, leaves the clock on wall-clock time, so a client with no
-        Clausters server keeps working. Returns ``self``.
+        server's published `/clock` anchor on its own socket; an in-process
+        embedded server needs no tracker at all (the counter is read directly
+        from shared memory). The switch is **graceful**: an offline (score)
+        server, or a master that does not answer, leaves the clock on
+        wall-clock time, so a client with no Clausters server keeps working.
+        Returns ``self``.
 
         **Blocking — call it before `start`/`run`, never from inside a
         routine** (it does `/clock` round trips). Release it with `unlock` or

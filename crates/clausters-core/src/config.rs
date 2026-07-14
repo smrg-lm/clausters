@@ -99,12 +99,13 @@ pub struct ClientConfig {
     /// The command carrier: `"tcp"` (the default), `"udp"` or `"ws"`. The
     /// boot-or-attach probe always rides UDP.
     pub transport: Option<String>,
-    /// The clock timebase a live session anchors to: `"sample"` (the default —
-    /// the server's own sample clock, sample-accurate and drift-free) or
-    /// `"monotonic"` (wall-clock OSC timetags). Read by the client only; a
+    /// The clock timebase a real-time session anchors to: `"sample"` (the
+    /// default — the server's own sample clock, sample-accurate and drift-free)
+    /// or `"monotonic"` (wall-clock OSC timetags). Read by the client only; a
     /// `"sample"` session falls back to wall-clock gracefully if no master
-    /// answers. Only `Session.live()` honours it — an in-process embed session
-    /// and `render`/`nrt` stay on wall-clock (no reachable sample-clock endpoint).
+    /// answers. Both `Session.live()` (UDP tracker) and `Session.embed()`
+    /// (direct in-process read) honour it; `render`/`nrt` stay on wall-clock
+    /// (a score server has no live clock).
     pub clock: Option<String>,
 }
 

@@ -180,14 +180,15 @@ class Session(Environment):
         """Anchor a live session's clock to its server's sample clock by default.
 
         With no explicit ``timebase``, the clock follows the config's
-        ``[client].clock`` (default ``"sample"``): a local live session is
+        ``[client].clock`` (default ``"sample"``): a local real-time session is
         sample-accurate and drift-free out of the box. Graceful — if no master
         answers, `lock_to` leaves it on wall-clock time (see `TempoClock.lock_to`).
         An explicit ``timebase`` is honoured as-is (no auto-lock). Returns ``self``.
 
-        Only `live` calls this: it reaches the server through the (UDP)
-        sample-clock tracker, which an in-process `embed` server has no endpoint
-        for, so `embed` keeps the wall-clock default.
+        Both real-time factories call this: `live` locks through the UDP
+        sample-clock tracker, `embed` through a direct in-process read of the
+        shared counter (no socket, no timeout). Offline (`nrt`) never does —
+        a score server has no live clock.
         """
         if timebase is not None:
             return self
@@ -219,11 +220,13 @@ class Session(Environment):
                 default; a smaller value such as 0.05 is fine in-process.
             workers: engine worker threads for parallel node processing (0 lets
                 the server choose).
-            timebase: the clock's pacing source (default monotonic wall clock).
-                Unlike `live`, an embedded session does **not** sample-lock by
-                default: the in-process server exposes no endpoint for the
-                (UDP) sample-clock tracker, so ``[client].clock`` does not apply
-                here. Pass a `SampleClockTimebase` explicitly if you build one.
+            timebase: the clock's pacing source. Left unset, the session
+                **anchors to the server's sample clock by default**, exactly
+                like `live` (config ``[client].clock``, default ``"sample"``) —
+                and in-process the lock is a direct read of the shared counter,
+                with no tracker, socket or timeout at all. Pass
+                ``timebase=MonotonicTimebase()`` (or set ``[client].clock =
+                "monotonic"``) to keep wall-clock OSC timetags.
             server: an existing `clausters.Clausters` handle to reuse; when
                 omitted the session opens and owns a fresh embedded server and
                 closes it on `close`.
@@ -233,7 +236,8 @@ class Session(Environment):
             `live`.
         """
         iface = OscEmbedInterface(server, workers=workers)
-        return cls(Server(interface=iface, latency=latency), TempoClock(tempo, timebase=timebase))
+        session = cls(Server(interface=iface, latency=latency), TempoClock(tempo, timebase=timebase))
+        return session._apply_default_clock(timebase)
 
     def gui(self, *, port: "int | None" = None, transport: str = "tcp",
             verbose: int = 0, data_dir=None,

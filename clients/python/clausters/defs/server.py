@@ -972,11 +972,16 @@ class Server:
         self.send_msg("/quit")
 
     def sample_clock(self, window: int = 64, timeout: float = 2.0):
-        """A `UdpSampleClock` tracking this
-        server's sample clock over UDP. Pass its ``.timebase()`` to a
-        ``TempoClock`` to anchor timing to the server and schedule by ``/sched``."""
-        from .clocksync import UdpSampleClock
+        """A sample-clock reader for this server: an `EmbedSampleClock` when the
+        server is in-process (the embed interface exposes the counter directly —
+        no socket, no round trips), otherwise a `UdpSampleClock` tracking it
+        over UDP. Pass its ``.timebase()`` to a ``TempoClock`` to anchor timing
+        to the server and schedule by ``/sched``."""
+        from ..base._oscinterface import OscEmbedInterface
+        from .clocksync import EmbedSampleClock, UdpSampleClock
 
+        if isinstance(self.interface, OscEmbedInterface):
+            return EmbedSampleClock(self.interface.server)
         return UdpSampleClock(self, window=window, timeout=timeout)
 
     def transport(self, timeout: float = 5.0):

@@ -74,6 +74,28 @@ def test_embed_session_drives_in_process_server():
         s.close()
 
 
+def test_embed_session_anchors_to_the_sample_clock_by_default():
+    # Like live, an embed session sample-locks out of the box — but through a
+    # direct in-process read of the shared counter (EmbedSampleClock), with no
+    # UDP tracker: no socket, no round trips, no timeout to burn.
+    from clausters.base.timebase import SampleClockTimebase
+    from clausters.defs.clocksync import EmbedSampleClock
+
+    s = _embed_session_or_skip()
+    try:
+        assert isinstance(s.clock.timebase, SampleClockTimebase)
+        assert isinstance(s.clock._sample_clock, EmbedSampleClock)
+        # the timebase reads the handle's counter directly
+        embed = s.server.interface.server
+        assert s.clock.timebase.current_sample() == pytest.approx(embed.clock, abs=8192)
+        # lock_to is idempotent: a manual lock keeps the in-process reader
+        sc = s.clock._sample_clock
+        assert s.lock_to_server() is s
+        assert s.clock._sample_clock is sc
+    finally:
+        s.close()
+
+
 def test_embed_session_is_independent_from_others():
     # No global state: an embedded session coexists with an offline one, each
     # with its own server and clock.

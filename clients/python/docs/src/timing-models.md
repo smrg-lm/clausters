@@ -5,18 +5,18 @@ A clock can keep time in a few different ways — *models* — and this page is 
 | Model | In one line | How to select it |
 | --- | --- | --- |
 | Wall-clock OSC time | the client's own clock; works everywhere, including with no server | a bare `TempoClock(tempo)` |
-| Sample clock | locks to a server's sample counter; drift-free, sample-exact | `clock.lock_to(server)` — **and the default for `Session.live()`** |
+| Sample clock | locks to a server's sample counter; drift-free, sample-exact | `clock.lock_to(server)` — **and the default for `Session.live()` and `Session.embed()`** |
 | Shared transport | a server-hosted beat grid several clients align on | `clock.join_transport(server)` + `quant` |
 
 All three ride **logical time** — the jitter-free relative timing a routine's `yield`s define (see [Routines and clocks](routines-and-clocks.md)). They differ in the *reference* the clock paces against and how it addresses events on the wire.
 
 **Which default you get depends on how you build the clock.** A bare
-`TempoClock(tempo)` paces on wall-clock time (below); a `Session.live()`
-**anchors to the server's sample clock by default** (the next section), because
-it has a networked server to lock to. That default is set by the config key
-`[client].clock` (`"sample"` by default, `"monotonic"` to opt out), or per call
-by passing an explicit `timebase=`. (`Session.embed()` stays on wall-clock: its
-in-process server exposes no endpoint for the sample-clock tracker.)
+`TempoClock(tempo)` paces on wall-clock time (below); a `Session.live()` or
+`Session.embed()` **anchors to the server's sample clock by default** (the next
+section) — `live` by tracking it over UDP, `embed` by reading the in-process
+counter directly (no tracker, no round trips). That default is set by the
+config key `[client].clock` (`"sample"` by default, `"monotonic"` to opt out),
+or per call by passing an explicit `timebase=`.
 
 ## Wall-clock OSC time
 
@@ -114,7 +114,7 @@ MIDI output never uses the sample clock. A `MidiServer` writing a score keeps it
 
 ## The API, at a glance
 
-- `TempoClock.lock_to(server)` / `unlock()` — switch to / off the server's sample clock. `Session.lock_to_server()` is the session wrapper. Blocking (it does `/clock` round trips); call before `start`/`run`, never from a routine.
+- `TempoClock.lock_to(server)` / `unlock()` — switch to / off the server's sample clock. `Session.lock_to_server()` is the session wrapper. Blocking over UDP (it does `/clock` round trips; instant on an embedded server); call before `start`/`run`, never from a routine.
 - `TempoClock.join_transport(server)` / `leave_transport()` — adopt / drop the server's shared transport grid. `Session.join_transport()` is the wrapper.
 - `Server.set_transport(origin_sample, tempo)` / `Server.transport()` — define / read the shared grid (the conductor sets it once).
 - `play(routine, quant=...)` — start on the next `quant`-beat boundary of the current grid.
