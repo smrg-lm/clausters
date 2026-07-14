@@ -20,11 +20,14 @@ samples, frames = s.render()        # drains the clock, renders the score
 ```
 """
 
+from contextlib import contextmanager
+
 from .base import OscEmbedInterface, OscNrtInterface, TempoClock
+from .base.main import RandomContext, main
 from .defs import Server
 
 
-class Session:
+class Session(RandomContext):
     """One `Server` plus one `TempoClock`, bundled into a single handle.
 
     This is the client's ergonomic entry point. Rather than wiring a server, a
@@ -43,6 +46,13 @@ class Session:
     `play` drives either kind, and an offline and a live session can run side
     by side in one script.
 
+    A session is also its **own random context** (`seed` / ``rng``, inherited
+    from `clausters.base.main.RandomContext`): ``session.seed(n)`` reproduces
+    *this* session's material without touching another's, so two sessions --
+    even both offline -- stay reproducible independently. Material created while
+    the session drives (``play`` / ``render``) or inside a ``with`` block draws
+    from this root.
+
     Args:
         server: the `Server` to drive -- a live one, or one holding an
             `OscNrtInterface` for offline rendering.
@@ -60,6 +70,7 @@ class Session:
     """
 
     def __init__(self, server: Server, clock: TempoClock | None = None):
+        super().__init__()          # its own RNG root (seed/rng), isolated
         self.server = server
         self.clock = clock if clock is not None else TempoClock()
         #: back-reference so a play running on this clock resolves *this*
@@ -241,6 +252,19 @@ class Session:
 
     # ---- driving ----
 
+    @contextmanager
+    def _active(self):
+        """Mark this session active on the calling thread for the duration of a
+        driving call, so material created in it (a played routine, a top-level
+        draw) resolves to *this* session's server/clock/rng — not the default
+        session's. Save/restore, so nesting and other threads are unaffected."""
+        prev = main.current_session
+        main.current_session = self
+        try:
+            yield
+        finally:
+            main.current_session = prev
+
     def play(self, pattern, quant=None):
         """Play an event pattern on this session's clock and server.
 
@@ -252,7 +276,8 @@ class Session:
         Returns:
             The `EventStreamPlayer` driving the pattern.
         """
-        return pattern.play(self.clock, self.server, quant)
+        with self._active():
+            return pattern.play(self.clock, self.server, quant)
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2):
         """Drain the clock and render the accumulated score (offline only).
@@ -270,7 +295,8 @@ class Session:
             ``array('f')`` and the frame count. Schedule a closing event (e.g.
             freeing the root group) so the render has a defined duration.
         """
-        self.clock.render()
+        with self._active():
+            self.clock.render()
         return self.server.render(sample_rate=sample_rate, channels=channels)
 
     def lock_to_server(self):
@@ -333,7 +359,12 @@ class Session:
         self.server.close()    # stops a launched server process too
 
     def __enter__(self):
+        # Activate for the whole block, so material created inside (patterns,
+        # routines, top-level draws) resolves to this session's server/clock/rng.
+        self._prev_session = main.current_session
+        main.current_session = self
         return self
 
     def __exit__(self, *exc):
+        main.current_session = getattr(self, "_prev_session", None)
         self.close()

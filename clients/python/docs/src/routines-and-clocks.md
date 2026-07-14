@@ -50,35 +50,42 @@ A few things worth knowing:
 
 **A routine must never block the clock thread.** It runs *on* that thread, so a `time.sleep`, a blocking `server.sync()`, or any `wait=True` def send freezes every other routine and the whole timeline. Cede time with `yield` instead. To load a def from within a routine, send it asynchronously — `server.add_synthdef(sdef, wait=False)` — and `yield` enough time before the first note that uses it.
 
-## The random context: one seed for a whole script
+## The random context: one seed per session
 
 Everything random — `Pwhite`, `Prand`, and the module functions
 `clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` / `choice(items)`
-— draws from **one seedable context**, the sclang model:
+— draws from **one seedable context**, the sclang model. The context is the
+**session**: each has its own root, so each reproduces independently.
 
-- `main.seed(n)` seeds the root generator. Called before you build and play,
-  it makes every random value in the script reproducible, end to end.
+- `session.seed(n)` seeds *that* session's root. Called before you build and
+  play, it makes every random value in the session reproducible, end to end;
+  `main.seed(n)` does the same for the **default session** (free-standing
+  draws and anything played without a `Session`). Seeding one session never
+  perturbs another.
 - Every routine gets its **own** generator when it is created, seeded from the
-  context creating it. Same root seed + same creation order = the same music;
-  and because each routine draws from its own stream, concurrent routines
-  (several clocks, live RT next to an NRT render) stay reproducible per
-  routine no matter how their wakes interleave.
-- A draw always uses the generator of the routine running right now, falling
-  back to the root outside any routine.
+  context creating it (its session's root). Same root seed + same creation
+  order = the same music; and because each routine draws from its own stream,
+  concurrent routines (several clocks, live RT next to an NRT render) stay
+  reproducible per routine no matter how their wakes interleave.
+- A draw always uses the generator of the routine running right now; outside a
+  routine it uses the active session's root — the session driving on this
+  thread (or entered with ``with``), else the default session.
 
 There are **no per-pattern seeds** — independent seeds would break
-whole-script consistency. To isolate some material, play it inside its own
-routine: it gets its own derived stream by construction. The generator itself
-lives in the shared native core, so the same seed replays the same values in
-every Clausters client language.
+per-session consistency. To isolate some material, play it inside its own
+routine (its own derived stream by construction) or its own session. The
+generator itself lives in the shared native core, so the same seed replays the
+same values in every Clausters client language.
 
 ```python
-from clausters import main, uniform
+from clausters import Session, uniform
 from clausters.seq import Pbind, Pwhite
 
-main.seed(2026)                  # the whole script is now reproducible
-detune = uniform(-3.0, 3.0)      # a one-off draw from the same context
-pattern = Pbind(degree=Pwhite(0, 7), dur=0.25)   # draws when played
+with Session.nrt(tempo=2.0) as session:
+    session.seed(2026)               # this session is now reproducible
+    base = uniform(-3.0, 3.0)        # a one-off draw from the session's root
+    session.play(Pbind(freq=Pwhite(400.0, 800.0), dur=0.25))   # draws when played
+    session.render()
 ```
 
 ## Offline, with the same code

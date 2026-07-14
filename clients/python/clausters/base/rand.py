@@ -12,8 +12,11 @@ beginning to end:
   same streams, and concurrent routines (several clocks, RT next to NRT) stay
   reproducible **per routine** regardless of how their wakes interleave.
 - A draw always uses the generator of the **routine running right now**
-  (`current_rng`, via the thread-local ``main.current_tt``), falling back to the
-  root generator outside any routine.
+  (`current_rng`, via the thread-local ``main.current_tt``). Outside any routine
+  it falls back to the **active session's** root — the explicit
+  `clausters.Session` on this thread if any, else the default session
+  (``main``) — so ``seed(n)`` on one session reproduces *its* material without
+  touching another's.
 
 The generator itself lives in the shared native core (one ``u64`` of state, the
 same splitmix64/xorshift64 as the server's ``WhiteNoise``), so the same seed
@@ -26,12 +29,17 @@ from .main import main
 
 
 def current_rng():
-    """The generator of the routine running on this thread, or the root
-    context generator (``main.rng``) outside any routine. This is where every
-    random value in the library comes from."""
+    """The generator of the routine running on this thread; outside a routine,
+    the root generator of the active session — the explicit `clausters.Session`
+    on this thread (`clausters.base.main.Main.current_session`) if any, else the
+    default session (``main.rng``). This is where every random value in the
+    library comes from, and why each session reproduces independently."""
     tt = main.current_tt
     rng = getattr(tt, "rng", None)
-    return rng if rng is not None else main.rng
+    if rng is not None:
+        return rng
+    sess = main.current_session
+    return sess.rng if sess is not None else main.rng
 
 
 def spawn_rng():

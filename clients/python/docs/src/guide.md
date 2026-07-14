@@ -19,9 +19,10 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 - The value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`. The random
   patterns (`Pwhite`, `Prand`) draw from the **random context** — the running
   routine's generator, derived at creation from the context that created it,
-  with `main.seed(n)` seeding the root (sclang's model: no per-pattern seeds).
-  One root seed reproduces a whole script, and the generator lives in the
-  shared native core, so the same seed replays the same music in every
+  seeded per session (`session.seed(n)`, or `main.seed(n)` for the default
+  session; sclang's model, no per-pattern seeds). One seed reproduces that
+  session end to end, sessions reproduce independently, and the generator lives
+  in the shared native core, so the same seed replays the same music in every
   Clausters client language. The context is also exposed directly as
   `clausters.next_f64()` / `uniform(lo, hi)` / `next_below(n)` /
   `choice(items)`.

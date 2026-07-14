@@ -20,7 +20,6 @@ import struct
 import sys
 import wave
 
-import clausters
 from clausters import Session
 from clausters.seq import Pbind, Pseq, Pwhite
 
@@ -41,10 +40,11 @@ def main():
     out = next((a for a in sys.argv[1:] if not a.startswith("-")), "offline_render.wav")
 
     # An NRT session: same Pbind API as live, but the clock drives a score the
-    # bundled embed renderer turns into samples. No global state, no server.
-    # One root seed reproduces every random draw (Pwhite here) end to end.
-    clausters.main.seed(1)
+    # bundled embed renderer turns into samples. No server, no audio device.
+    # The session is its own random context, so its seed reproduces every random
+    # draw (Pwhite here) end to end -- independently of any other session.
     session = Session.nrt(tempo=2.0)
+    session.seed(1)
     session.play(phrase())
     samples, frames = session.render(sample_rate=SR, channels=2)
 
