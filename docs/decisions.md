@@ -614,3 +614,31 @@ the major is `0`, per standard pre-1.0 SemVer where the minor acts as the major;
 the major once at `1.0`). The reverse is not required — a minor can ship purely
 additive source-API work without touching either counter. The mechanical
 release rules live in `CLAUDE.md` ("Versioning"); this entry is the *why*.
+
+## Client defaults for the wheel: sample clock (live only) and an enveloped default synth
+
+Two out-of-the-box defaults, chosen for the common case of a **local** session:
+
+- **The built-in `default` synth carries a gated envelope.** It was a bare
+  `SinOsc(freq) * amp`, which clicked at note-on (level jumps from 0) and at
+  note-off (the node is freed mid-cycle). It is now `SinOsc * EnvGen * amp` with
+  a gated ASR — equal-power sine ramps (0.01 s attack, 0.3 s release),
+  `doneAction = FREE_SELF` — the same shape as SuperCollider's `\default`. Because
+  a click-free note-off *requires* a release ramp, and a direct `/n_free` cuts
+  the ramp, the player must release this instrument by **closing its gate**. The
+  global event default stays `has_gate = False` (a gate-less custom def is still
+  freed directly, so it can never leak); the player special-cases `instrument ==
+  "default"` to gate-release. So the safety of the free-by-default choice is kept
+  while the built-in sounds clean.
+
+- **`Session.live()` anchors to the server's sample clock by default** (config
+  `[client].clock`, default `"sample"`), rather than wall-clock OSC timetags.
+  For a local session the sample clock is strictly better — drift-free and
+  sample-exact — and making it the default also exercises the `/sched` path on
+  every run. It falls back to wall-clock gracefully if no master answers, so a
+  client with no Clausters server still works; `"monotonic"` opts out for driving
+  a remote or non-Clausters peer. **`Session.embed()` is deliberately excluded:**
+  the sample-clock tracker reaches the server over its own UDP socket, and an
+  in-process embed server exposes no such endpoint, so auto-locking it would only
+  burn the lock timeout on a guaranteed-failing attempt. Embed keeps wall-clock
+  until an in-process tracker exists. `render`/`nrt` never had a live clock.

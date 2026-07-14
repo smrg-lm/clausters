@@ -37,11 +37,28 @@ def _embed_or_skip():
 
 
 def _py_default(name="py_default") -> SynthDef:
-    """The client-side equivalent of the server's built-in ``default``:
-    ``SinOsc(freq) * amp`` to buses 0 and 1."""
+    """A minimal client-side def: ``SinOsc(freq) * amp`` to buses 0 and 1.
+    Used by the structural tests (spec shape, subgraph dedup)."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     sig = sin_osc(freq) * amp
+    return SynthDef(name, out(0.0, sig), out(1.0, sig))
+
+
+def _py_default_env(name="py_default_env") -> SynthDef:
+    """A faithful client-side replica of the server's built-in ``default``:
+    ``SinOsc(freq) * EnvGen(gate) * amp`` with a gated ASR (equal-power sine
+    ramps, 0.01 s attack, 0.3 s release, ``FREE_SELF``) — the same graph the
+    server registers, so it must render sample-identically."""
+    freq = control("freq", 440.0)
+    amp = control("amp", 0.2)
+    gate = control("gate", 1.0)
+    env = env_gen(
+        Env.asr(attack=0.01, sustain=1.0, release=0.3, curve="sin"),
+        gate=gate,
+        done_action=DoneAction.FREE_SELF,
+    )
+    sig = sin_osc(freq) * env * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
@@ -360,17 +377,19 @@ def test_env_rejects_unknown_shape_name():
 def test_custom_synthdef_renders_like_builtin_default():
     _embed_or_skip()
 
-    # The built-in "default" path.
+    # The built-in "default" path (gate-released, as the player does for it).
     s0 = Server(interface=OscNrtInterface())
     c0 = TempoClock(tempo=1.0)
     Pbind(instrument="default", freq=Pseq(FREQS), dur=0.5, amp=0.2).play(c0, s0)
     c0.render()
 
-    # The client-defined equivalent: add it to the score, then the same Pbind.
+    # The client-defined equivalent (same graph, incl. the gated envelope): add
+    # it to the score, then the same Pbind — released by gate too (has_gate).
     s1 = Server(interface=OscNrtInterface())
-    s1.add_synthdef(_py_default())          # /d_recv at time 0 in the score
+    s1.add_synthdef(_py_default_env())      # /d_recv at time 0 in the score
     c1 = TempoClock(tempo=1.0)
-    Pbind(instrument="py_default", freq=Pseq(FREQS), dur=0.5, amp=0.2).play(c1, s1)
+    Pbind(instrument="py_default_env", freq=Pseq(FREQS), dur=0.5, amp=0.2,
+          has_gate=True).play(c1, s1)
     c1.render()
 
     try:

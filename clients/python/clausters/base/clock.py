@@ -172,8 +172,15 @@ class TempoClock:
 
         **Blocking — call it before `start`/`run`, never from inside a
         routine** (it does `/clock` round trips). Release it with `unlock` or
-        `close`.
+        `close`. **Idempotent**: on an already sample-locked clock it is a no-op
+        (keeps the live tracker), so it is safe to call after a
+        `Session.live()`/`embed()` that already anchored by default.
         """
+        # Idempotent: already sample-locked (e.g. the session auto-locked on
+        # creation and the caller also calls lock_to_server) -> keep the live
+        # tracker instead of building a second one and leaking the first.
+        if self._sample_clock is not None:
+            return self
         # An offline (score) destination has no live clock to lock to.
         if getattr(getattr(server, "interface", None), "time_mode", "unix") == "score":
             return self

@@ -39,7 +39,7 @@ LISTEN_PORT = 57121
 
 def main() -> None:
     # A live session to play into, and a clock to time note releases on (the
-    # built-in "default" def has no gate, so each note is freed after its dur).
+    # built-in "default" def gate-releases after each note's dur, ramping out).
     session = Session.live(tempo=1.0, latency=0.1)
     server = session.server
     session.start()

@@ -32,6 +32,13 @@ persist = true
 host = "127.0.0.1"
 port = 57110
 latency = 0.0
+# Clock timebase a live session anchors to. "sample" (the default) tracks the
+# server's own sample clock: sample-accurate, drift-free, and the right choice
+# for a local session; it falls back to wall-clock gracefully if no server
+# answers. "monotonic" keeps wall-clock OSC timetags (e.g. driving a remote or
+# non-Clausters peer). Only Session.live() honours this; an in-process embed
+# session and render/nrt stay on wall-clock.
+clock = "sample"
 
 [gui]
 # Defaults for the clausters-gui host.

@@ -9,7 +9,10 @@ clock's job: an event emits at the running routine's exact logical beat (via
 By default a note **frees** its synth after ``sustain`` (``/n_free``) rather
 than closing a gate — unless ``has_gate`` is set, in which case it sends
 ``gate 0`` (for defs whose `env_gen` envelope has a release node and a
-``doneAction`` that frees the synth once the release finishes).
+``doneAction`` that frees the synth once the release finishes). The built-in
+``"default"`` instrument is the exception: it carries such an envelope and is
+always released by its gate, so it ramps out without a click even with the
+global ``has_gate`` default left False.
 """
 
 from .. import _native

@@ -15,8 +15,10 @@ frees itself -- no ``/n_free`` bookkeeping from the client.
 ``Pbind(..., has_gate=True)`` is what closes the gate: for each note the player
 sends ``gate 0`` after the note's ``sustain`` instead of freeing the node
 outright, which starts the release segment; the synth disappears when that
-release finishes. Compare with ``offline_render.py``, whose built-in ``default``
-instrument has no envelope and is freed directly.
+release finishes. The built-in ``default`` instrument carries a gated envelope
+of exactly this shape (a fixed ASR) and is gate-released for you; this example
+shows how to build your **own** envelope -- a full ADSR with a chosen attack,
+decay, sustain and release.
 """
 
 import struct

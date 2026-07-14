@@ -140,9 +140,12 @@ class Session(Environment):
                 live take. ``None`` takes the config file's ``[client].latency``,
                 falling back to 0.1 (the real-time default for a networked
                 transport) when the config sets none.
-            timebase: the clock's pacing source. The default (monotonic) paces
-                in wall-clock seconds; a `SampleClockTimebase` anchors timing to
-                the server's sample clock for drift-free scheduling.
+            timebase: the clock's pacing source. Left unset, the session
+                **anchors to the server's sample clock by default** (config
+                ``[client].clock``, default ``"sample"``) — sample-accurate and
+                drift-free, falling back to wall-clock if no master answers. Pass
+                ``timebase=MonotonicTimebase()`` (or set ``[client].clock =
+                "monotonic"``) to keep wall-clock OSC timetags.
             boot: start a server if none is already answering (default). ``False``
                 attaches only, never launching a process.
             options: a `clausters.defs.ServerOptions` sizing a *launched* server
@@ -171,7 +174,28 @@ class Session(Environment):
                                  data_dir=data_dir, server_args=server_args,
                                  latency=latency, ready_timeout=ready_timeout,
                                  _adopt_default=False)  # an explicit session is not the default
-        return cls(server, TempoClock(tempo, timebase=timebase))
+        return cls(server, TempoClock(tempo, timebase=timebase))._apply_default_clock(timebase)
+
+    def _apply_default_clock(self, timebase):
+        """Anchor a live session's clock to its server's sample clock by default.
+
+        With no explicit ``timebase``, the clock follows the config's
+        ``[client].clock`` (default ``"sample"``): a local live session is
+        sample-accurate and drift-free out of the box. Graceful — if no master
+        answers, `lock_to` leaves it on wall-clock time (see `TempoClock.lock_to`).
+        An explicit ``timebase`` is honoured as-is (no auto-lock). Returns ``self``.
+
+        Only `live` calls this: it reaches the server through the (UDP)
+        sample-clock tracker, which an in-process `embed` server has no endpoint
+        for, so `embed` keeps the wall-clock default.
+        """
+        if timebase is not None:
+            return self
+        from .config import client_config
+
+        if client_config().get("clock", "sample") == "sample":
+            self.lock_to_server()
+        return self
 
     @classmethod
     def embed(cls, tempo: float = 1.0, latency: "float | None" = None, workers: int = 0,
@@ -196,6 +220,10 @@ class Session(Environment):
             workers: engine worker threads for parallel node processing (0 lets
                 the server choose).
             timebase: the clock's pacing source (default monotonic wall clock).
+                Unlike `live`, an embedded session does **not** sample-lock by
+                default: the in-process server exposes no endpoint for the
+                (UDP) sample-clock tracker, so ``[client].clock`` does not apply
+                here. Pass a `SampleClockTimebase` explicitly if you build one.
             server: an existing `clausters.Clausters` handle to reuse; when
                 omitted the session opens and owns a fresh embedded server and
                 closes it on `close`.

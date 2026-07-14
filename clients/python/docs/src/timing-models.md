@@ -4,18 +4,27 @@ A clock can keep time in a few different ways — *models* — and this page is 
 
 | Model | In one line | How to select it |
 | --- | --- | --- |
-| Wall-clock OSC time | the client's own clock; works everywhere, including with no server | the default — `TempoClock(tempo)` |
-| Sample clock | locks to a server's sample counter; drift-free, sample-exact | `clock.lock_to(server)` |
+| Wall-clock OSC time | the client's own clock; works everywhere, including with no server | a bare `TempoClock(tempo)` |
+| Sample clock | locks to a server's sample counter; drift-free, sample-exact | `clock.lock_to(server)` — **and the default for `Session.live()`** |
 | Shared transport | a server-hosted beat grid several clients align on | `clock.join_transport(server)` + `quant` |
 
 All three ride **logical time** — the jitter-free relative timing a routine's `yield`s define (see [Routines and clocks](routines-and-clocks.md)). They differ in the *reference* the clock paces against and how it addresses events on the wire.
 
-## Wall-clock OSC time — the default
+**Which default you get depends on how you build the clock.** A bare
+`TempoClock(tempo)` paces on wall-clock time (below); a `Session.live()`
+**anchors to the server's sample clock by default** (the next section), because
+it has a networked server to lock to. That default is set by the config key
+`[client].clock` (`"sample"` by default, `"monotonic"` to opt out), or per call
+by passing an explicit `timebase=`. (`Session.embed()` stays on wall-clock: its
+in-process server exposes no endpoint for the sample-clock tracker.)
 
-A plain clock paces against wall-clock **OSC time** (OSC timetags are NTP: absolute seconds since 1900). You get it by doing nothing special:
+## Wall-clock OSC time
+
+A plain clock paces against wall-clock **OSC time** (OSC timetags are NTP: absolute seconds since 1900). You get it from a bare clock, or from a session told not to lock:
 
 ```python
-clock = TempoClock(tempo=2.0)        # or: Session.live(host, port)
+clock = TempoClock(tempo=2.0)                        # a hand-built clock
+session = Session.live(host, port, timebase=MonotonicTimebase())  # or: [client].clock = "monotonic"
 ```
 
 - **Self-contained.** It is the client's own clock; across machines you can discipline it with NTP/PTP, but nothing here depends on a Clausters server.
@@ -23,14 +32,15 @@ clock = TempoClock(tempo=2.0)        # or: Session.live(host, port)
 - **Jitter-free *relative* timing.** Logical time is exact, so events keep their spacing even though the routine wakes at slightly irregular physical instants. The routine's *start* is arbitrary (wall-clock), exactly as in SuperCollider; the guarantee is no jitter *between* events, like MIDI.
 - Absolute alignment across machines is **NTP/PTP-quality**, not sample-exact.
 
-This is the timing model to assume unless you opt into another. Nothing to test beyond playing a routine — it just sounds.
+This is the model for a bare clock, or when driving something other than a Clausters server (another OSC program, a remote peer). Nothing to test beyond playing a routine — it just sounds.
 
-## Sample clock — drift-free, locked to a master
+## Sample clock — drift-free, locked to a master (the session default)
 
-Locking the clock to a Clausters server makes it schedule on the **server's own sample counter** (via `/sched`, by absolute sample), which removes the drift between the client's clock and the audio device:
+Locking the clock to a Clausters server makes it schedule on the **server's own sample counter** (via `/sched`, by absolute sample), which removes the drift between the client's clock and the audio device. A `Session.live()` does this **for you by default**, so a local live session is drift-free out of the box; a bare clock opts in with one call:
 
 ```python
-clock.lock_to(server)                # or: Session.live(host, port).lock_to_server()
+session = Session.live(host, port)   # already sample-locked (config [client].clock = "sample")
+clock.lock_to(server)                # a hand-built clock: lock it explicitly
 ```
 
 - The server becomes the **master clock**. Over UDP the client tracks the server's published `/clock` anchor on its own socket; with an in-process or shared-memory server it reads the counter directly.
@@ -91,10 +101,12 @@ The time model is **orthogonal to the destination** — where the OSC actually g
 
 | You are talking to… | Model | How |
 | --- | --- | --- |
-| nothing / another OSC program | wall-clock OSC time | the default — do nothing |
-| a remote server across a network | wall-clock OSC time | the default (NTP/PTP-quality sync) |
-| a local / LAN Clausters server | sample clock | `lock_to` (drift-free, the master) |
-| several clients, one server | sample clock + transport | each `lock_to`, then `join_transport` |
+| nothing / another OSC program | wall-clock OSC time | a bare `TempoClock`, or `[client].clock = "monotonic"` |
+| a remote server across a network | wall-clock OSC time | `[client].clock = "monotonic"` (NTP/PTP-quality sync) |
+| a local / LAN Clausters server | sample clock | `Session.live()` default; `lock_to` for a bare clock |
+| several clients, one server | sample clock + transport | the session default `lock_to`, then `join_transport` |
+
+A `Session` sample-locks by default and falls back to wall-clock if no master answers, so the "local server" row is the zero-config case. The `"monotonic"` rows are the opt-out for when you *want* wall-clock — driving a remote or non-Clausters peer.
 
 ## MIDI always rides OSC time
 

@@ -410,11 +410,13 @@ fn query_tree_reports_structure_and_controls() {
         OscType::Int(1001), // the synth
         OscType::Int(-1),   // synth marker
         OscType::String("default".into()),
-        OscType::Int(2), // control count
+        OscType::Int(3), // control count
         OscType::String("freq".into()),
         OscType::Float(220.0), // /s_new override, mirrored
         OscType::String("amp".into()),
         OscType::Float(0.2), // default
+        OscType::String("gate".into()),
+        OscType::Float(1.0), // default
     ];
     assert_eq!(reply.args, expected);
     server.quit();

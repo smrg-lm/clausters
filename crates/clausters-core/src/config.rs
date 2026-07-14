@@ -99,6 +99,13 @@ pub struct ClientConfig {
     /// The command carrier: `"tcp"` (the default), `"udp"` or `"ws"`. The
     /// boot-or-attach probe always rides UDP.
     pub transport: Option<String>,
+    /// The clock timebase a live session anchors to: `"sample"` (the default —
+    /// the server's own sample clock, sample-accurate and drift-free) or
+    /// `"monotonic"` (wall-clock OSC timetags). Read by the client only; a
+    /// `"sample"` session falls back to wall-clock gracefully if no master
+    /// answers. Only `Session.live()` honours it — an in-process embed session
+    /// and `render`/`nrt` stay on wall-clock (no reachable sample-clock endpoint).
+    pub clock: Option<String>,
 }
 
 /// `[gui]` — defaults for the GUI host's CLI options.
@@ -233,6 +240,7 @@ impl ClientConfig {
             port: pick(self.port, h.port),
             latency: pick(self.latency, h.latency),
             transport: pick(self.transport, h.transport),
+            clock: pick(self.clock, h.clock),
         }
     }
 }

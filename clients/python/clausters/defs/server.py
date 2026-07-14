@@ -423,6 +423,10 @@ class Server:
         double dispatch — a MIDI destination renders the same event as note
         on/off. Returns the synth node id (or None for a rest).
 
+        Release is by ``gate 0`` when the event sets ``has_gate`` **or** the
+        instrument is the built-in ``"default"`` (which carries a gated,
+        self-freeing envelope); otherwise it is a direct ``/n_free``.
+
         Two timing regimes, chosen by context. **Inside a routine** (a clock is
         in flight) both go out as timetagged bundles at the routine's exact
         logical beat, so a sequence stays sample-tight. **Outside any clock** (a
@@ -435,7 +439,12 @@ class Server:
         node_id = self.nodes.alloc()
         s_new = ("/s_new", event["instrument"], node_id, int(event["add_action"]),
                  int(event["target"]), *event._control_args())
-        release = (("/n_set", node_id, "gate", 0.0) if event.get("has_gate")
+        # The built-in "default" instrument carries a gated envelope that frees
+        # itself on release, so it is released by closing its gate even though
+        # the global `has_gate` default is False (which keeps gate-less custom
+        # defs freed directly). Any def can opt in per event with `has_gate`.
+        gate_release = event.get("has_gate") or event["instrument"] == "default"
+        release = (("/n_set", node_id, "gate", 0.0) if gate_release
                    else ("/n_free", node_id))
         sustain = event.sustain()
         if getattr(main.current_tt, "clock", None) is None:

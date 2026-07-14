@@ -24,6 +24,18 @@ Ejemplos en `clients/python/examples/` (catálogo en el mdBook del cliente,
   (o `play(Event(...))`) → se oye una nota que se libera sola tras su sustain, sin
   reloj ni sesión (`examples/hello_note.py`). Un `play(Pbind(...))` a continuación
   suena en el reloj de la sesión por defecto.
+- **El `default` no clickea.** Con el instrumento por defecto (p.ej.
+  `examples/hello_note.py`, cualquier `Pbind` sin `instrument=`) → cada nota
+  entra y sale con rampa (ataque ~0.01 s, release ~0.3 s), sin el chasquido de
+  ataque/corte de antes. El `default` libera por gate y se auto-libera al
+  terminar el release.
+- **La sesión live va sobre sample clock por defecto.** `Session.live(...)` sin
+  pasar `timebase` → `session.clock.timebase` es un `SampleClockTimebase` y los
+  eventos se agendan por muestra (drift-free) sin llamar a `lock_to_server()` a
+  mano; con el servidor en trace se ve el sample exacto de cada evento. Poner
+  `[client].clock = "monotonic"` (o `timebase=MonotonicTimebase()`) lo vuelve a
+  wall-clock. (`Session.embed()` sigue en wall-clock: el servidor in-process no
+  expone endpoint para el tracker.)
 - **Suena embebido, sin arrancar nada.** `Session.embed(...)` toca en proceso →
   se oye el patrón (`examples/embedded.py`).
 - **Suena en vivo por UDP.** `Session.live(...)` / `examples/live_patch.py` /

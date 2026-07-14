@@ -22,6 +22,23 @@ Two layers combine, the **project** layer overriding the **user** layer:
    current working directory, the way Cargo finds `Cargo.toml`. The first match
    wins; the search stops at the filesystem root.
 
+## Runtime paths (what the programs write)
+
+The config file above is only read. Everything a program writes at runtime lives
+elsewhere:
+
+| What | Default path | Overrides |
+| --- | --- | --- |
+| Def store (`defs/`, `midi.json`, `boot.json`) | `$XDG_DATA_HOME/clausters`, else `~/.local/share/clausters` | `--data-dir` / `[server].data_dir` / `$CLAUSTERS_DATA_DIR`; disable with `--no-persist` / `[server].persist = false` |
+| Shared-memory segment | `/dev/shm/clausters_<pid>_<n>` (else `$TMPDIR/...`); removed on exit | `--shm` / `[server].shm` |
+| Faust standard library (read only) | searched under `$FAUST_PREFIX/share/faust`, then `~/.local/share/faust`, then `/usr/local/share/faust` | `$FAUST_PREFIX` |
+
+Def persistence is **on by default**: a server — including one a Python session
+launches — reloads its def store on boot and writes new defs to it, so the only
+directory the library creates under your home is `~/.local/share/clausters`. Pass
+`--no-persist` (or `persist = false`, or a throwaway `data_dir`) for a server
+that writes nothing.
+
 ## Precedence
 
 From highest to lowest:
@@ -61,6 +78,11 @@ persist = true           # persist/reload defs; false is like --no-persist
 host = "127.0.0.1"       # server host
 port = 57110             # server UDP port
 latency = 0.0            # seconds added to each event's timetag
+clock = "sample"         # Session.live() clock timebase: "sample" (default, the
+#                        # server's sample clock — drift-free) or "monotonic"
+#                        # (wall-clock timetags). Falls back to wall-clock if no
+#                        # server answers; embed and render/nrt stay wall-clock.
+# transport = "tcp"      # command carrier: "tcp" (default), "udp" or "ws"
 
 [gui]                    # the GUI host
 host_port = 57210        # port for the host's script-facing front (UDP + TCP)
@@ -98,9 +120,12 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.
 - **Python client** — the `[client]` section provides the defaults for
-  `Session.live()` / `Server` (`host`, `port`, `latency`); the `[server]` section
-  provides the `ServerOptions` defaults (`audio_buses`, `control_buses`,
-  `sample_rate`). See the Python client's own documentation.
+  `Session.live()` / `Server` (`host`, `port`, `latency`, `transport`, `clock`);
+  the `[server]` section provides the `ServerOptions` defaults (`audio_buses`,
+  `control_buses`, `sample_rate`). `clock` picks a `Session.live()`'s default
+  timebase — `"sample"` anchors to the server's sample clock, `"monotonic"`
+  keeps wall-clock timetags (embed and offline stay wall-clock). See the Python
+  client's own documentation.
 
 ## The standalone app
 
