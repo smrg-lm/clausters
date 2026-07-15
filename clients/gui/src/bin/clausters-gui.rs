@@ -414,8 +414,11 @@ fn init_logging(verbosity: i8) {
         _ => "trace",
     };
     // RUST_LOG wins if set, like the server; otherwise the -v level applies.
+    // sctk-adwaita (winit's Wayland window decorations) logs a benign ERROR
+    // when the XDG settings portal misses its 100 ms color-scheme query (it
+    // just falls back to the default theme), so it is muted by default.
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(format!("clausters_gui={level},warn")));
+        .unwrap_or_else(|_| EnvFilter::new(format!("clausters_gui={level},sctk_adwaita=off,warn")));
     let _ = fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
