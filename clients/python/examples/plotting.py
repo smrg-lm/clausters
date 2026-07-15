@@ -79,9 +79,15 @@ win_spec.set(freq_scale="mel")
 
 time.sleep(3)
 
-# %% ...and a *view* can change too: the ping window turns from its two
-# waveform lanes into the averaged spectrum.
-win_def.set(view="spectrum", freq_scale="mel")
+# %% ...and the *view* itself is live too: the ping window turns from its two
+# waveform lanes into the averaged spectrum...
+win_def.set(view="spectrum")
+
+time.sleep(3)
+
+# %% ...and back — so every window ends up showing its own thing (only the
+# spectrum window keeps a spectral axis, now in mel).
+win_def.set(view="signal")
 
 time.sleep(3)
 
