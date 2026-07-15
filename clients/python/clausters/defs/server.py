@@ -17,6 +17,7 @@ touching clock or routine.
 import time
 from dataclasses import dataclass, field
 
+from .. import _native
 from ..config import client_config, server_config
 from ..base import _osclib
 from ..errors import CommandError, ReplyTimeout
@@ -303,10 +304,22 @@ class Server:
         #: match a server launched with `--audio-buses`/`--control-buses`, or
         #: reconcile it from a running server with `query_info`.
         self.options = options if options is not None else ServerOptions()
-        self.nodes = NodeIdAllocator()
+        # Allocators are registries of the server's finite boot-time resources,
+        # sized from the options so client and server agree by construction.
+        # The node-id range comes from the shared partition formula
+        # (`--max-nodes` scales every range); in score (NRT) mode it is
+        # unbounded — an offline render has no live `/n_end` stream to recycle
+        # from, and no real-time bound on ids over the score's length.
+        part = _native.node_id_partition(self.options.max_nodes)
+        score = getattr(self.interface, "time_mode", "unix") == "score"
+        self.nodes = NodeIdAllocator(
+            part["client_base"], None if score else part["client_capacity"])
         self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
-        self.buffers = BufferAllocator()
+        self.buffers = BufferAllocator(size=self.options.max_buffers)
+        #: the `/n_end` side-channel that returns node ids to the registry
+        #: (an `OscReceiver` + `/notify`), started lazily by `_ensure_recycler`.
+        self._recycler = None
         self._sync_counter = 0      # ids for /sync -> /synced round-trips
         #: the server's stream-frame ceiling, queried lazily by `_bulk_chunk`.
         self._max_frame: "int | None" = None
@@ -436,7 +449,7 @@ class Server:
         and frees itself without a `TempoClock`."""
         if event.get("type") == "rest":
             return None
-        node_id = self.nodes.alloc()
+        node_id = self._node_id()
         s_new = ("/s_new", event["instrument"], node_id, int(event["add_action"]),
                  int(event["target"]), *event._control_args())
         # The built-in "default" instrument carries a gated envelope that frees
@@ -632,15 +645,50 @@ class Server:
 
     # ---- nodes ----
 
+    def _node_id(self) -> int:
+        """A free node id from the registry, with the recycling side-channel
+        up: every id stays tracked until its ``/n_end`` returns it to the
+        pool, so the client range never exhausts while nodes keep dying."""
+        self._ensure_recycler()
+        return self.nodes.alloc()
+
+    def _ensure_recycler(self):
+        """Starts the ``/n_end`` listener once per server handle: a dedicated
+        `OscReceiver` registered with ``/notify 1`` **from its own socket**, so
+        the server's node-lifecycle pushes land here whatever transport the
+        command path uses (UDP, TCP, WS — notify registration is per source).
+        Ids outside the client range (the server's auto/MIDI ranges, other
+        clients) are ignored by `NodeIdAllocator.free`. Score
+        (NRT) interfaces skip this: their registry is unbounded and an offline
+        score has no live notifications."""
+        if self._recycler is not None or \
+                getattr(self.interface, "time_mode", "unix") == "score":
+            return
+        from ..base._oscinterface import OscReceiver
+
+        def on_node_end(addr, args, when, src):
+            if addr == "/n_end" and args:
+                self.nodes.free(int(args[0]))
+            elif addr == "/fail" and len(args) >= 3 and isinstance(args[2], int):
+                # An engine rejection (duplicate id / full table) is async:
+                # the node never existed, so no /n_end will come — reconcile
+                # the in-flight id here instead of losing it.
+                self.nodes.free(int(args[2]))
+
+        recv = OscReceiver().start()
+        recv.add(on_node_end)
+        recv.send(self.target.addr(), "/notify", 1)
+        self._recycler = recv
+
     def synth(self, defname, controls=None, *, target=ROOT_NODE_ID,
               action=AddAction.TAIL) -> Synth:
-        node_id = self.nodes.alloc()
+        node_id = self._node_id()
         self.send_msg("/s_new", defname, node_id, int(action), int(target),
                       *_flatten_controls(controls))
         return Synth(node_id, defname)
 
     def group(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL) -> Group:
-        node_id = self.nodes.alloc()
+        node_id = self._node_id()
         self.send_msg("/g_new", node_id, int(action), int(target))
         return Group(node_id)
 
@@ -652,7 +700,7 @@ class Server:
         through the surface with `set` (``/n_set`` resolves names against
         the surface, not the private members) and tear it down with
         `free` (which also reclaims its private buses)."""
-        node_id = self.nodes.alloc()
+        node_id = self._node_id()
         self.send_msg("/graph_new", defname, node_id, int(action), int(target),
                       *_flatten_controls(ports))
         return Group(node_id)
@@ -664,7 +712,7 @@ class Server:
         the voice-port defaults. The returned group is the voice: drive it
         through its surface with `set` and free it with `free`."""
         inst_id = instance.id if hasattr(instance, "id") else instance
-        node_id = self.nodes.alloc()
+        node_id = self._node_id()
         self.send_msg("/graph_voice", inst_id, node_id, *_flatten_controls(ports))
         return Group(node_id)
 
@@ -689,11 +737,12 @@ class Server:
                       int(ugen_index), str(name), *(float(a) for a in args))
 
     def free(self, *nodes):
+        """Frees nodes (``/n_free``). The id is **not** returned to the
+        registry here: it stays tracked until the server confirms the death
+        with ``/n_end`` — releasing at send time could re-hand an id whose
+        node is still alive on the server."""
         for n in nodes:
-            nid = n.id if hasattr(n, "id") else n
-            self.send_msg("/n_free", nid)
-            if hasattr(n, "id"):
-                self.nodes.free(nid)
+            self.send_msg("/n_free", n.id if hasattr(n, "id") else n)
 
     def run(self, node, flag: bool = True):
         """Pauses (``flag=False``) or resumes (``flag=True``) a node — a synth
@@ -1054,8 +1103,12 @@ class Server:
         return self
 
     def close(self):
-        """Close the communication interface and, if this handle `boot`-ed a
-        server process, stop it too."""
+        """Close the communication interface (and the ``/n_end`` recycling
+        listener) and, if this handle `boot`-ed a server process, stop it
+        too."""
+        if self._recycler is not None:
+            self._recycler.close()
+            self._recycler = None
         self.interface.close()
         if self._process is not None:
             self._process.close()

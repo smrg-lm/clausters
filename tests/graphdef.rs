@@ -217,23 +217,27 @@ fn free_reclaims_private_buses() {
             OscType::Int(0),
         ],
     );
-    let first_mix = control(&t, members(&t, 500)[0], 0);
-
     run(&mut t, "/n_free", vec![OscType::Int(500)]);
     assert!(!t.graph_instances.contains_key(&500));
 
-    // A fresh instance reuses the reclaimed bus.
-    run(
-        &mut t,
-        "/graph_new",
-        vec![
-            OscType::String("chain".into()),
-            OscType::Int(501),
-            OscType::Int(0),
-            OscType::Int(0),
-        ],
-    );
-    assert_eq!(control(&t, members(&t, 501)[0], 0), first_mix);
+    // Every reclaimed bus is allocatable again: cycling instances far past
+    // the reserved range's width (32 audio buses) never exhausts the pool.
+    for i in 0..100 {
+        let id = 501 + i;
+        run(
+            &mut t,
+            "/graph_new",
+            vec![
+                OscType::String("chain".into()),
+                OscType::Int(id),
+                OscType::Int(0),
+                OscType::Int(0),
+            ],
+        );
+        assert!(t.graph_instances.contains_key(&id), "instance {id} built");
+        run(&mut t, "/n_free", vec![OscType::Int(id)]);
+        assert!(!t.graph_instances.contains_key(&id));
+    }
 }
 
 #[test]

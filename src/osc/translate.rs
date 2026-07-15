@@ -27,7 +27,7 @@ use crate::osc::graph::ugen_usage;
 use crate::osc::graph::{BusUsage, MirrorBody, TreeMirror};
 use crate::osc::graphdef::{
     BusRate, ControlValue, GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED, GraphDefSpec,
-    GraphInstance, GraphVoice, RangeAllocator, ResolvedSurface,
+    GraphInstance, GraphVoice, ResolvedSurface,
 };
 use crate::server::engine::Cmd;
 use crate::server::nrt::NrtJob;
@@ -35,12 +35,10 @@ use crate::server::nrt::NrtJob;
 use crate::synthdef::instance::UGenSynth;
 #[cfg(feature = "synth")]
 use crate::synthdef::{SynthDef, SynthDefSpec, compile, default_spec};
+use clausters_core::registry::{NodeIdPartition, Registry};
 
 #[cfg(feature = "faust")]
 use crate::osc::graph::faust_usage;
-
-/// Auto-assigned node IDs (`/s_new` with ID -1) start above this.
-const AUTO_NODE_ID_BASE: i32 = 2_000_000;
 
 /// Result of a GraphDef bus allocation: the symbolic-name → first-index map,
 /// plus the `(first, width)` runs taken from the audio and control pools (in
@@ -157,7 +155,11 @@ pub struct CmdTranslator {
     /// Mirror of which def each live node was built from. Maintained from
     /// `/s_new` and from collected garbage (see [`CmdTranslator::forget_node`]).
     pub node_defs: HashMap<i32, NodeDef>,
-    next_auto_id: i32,
+    /// Registry of the server's auto node-id range (`/s_new -1`, GraphDef
+    /// members): ids return on `/n_end` (or on engine rejection), so the
+    /// range recycles instead of counting up. Sized by the node-id partition
+    /// (`NodeIdPartition::from_max_nodes`).
+    auto_ids: Registry,
     /// Compiled Faust defs by name, refcounted (every instance holds a clone).
     #[cfg(feature = "faust")]
     pub faust_defs: HashMap<String, Arc<FaustDef>>,
@@ -178,8 +180,8 @@ pub struct CmdTranslator {
     /// Per-voice sub-graphs spawned by `/graph_voice` (or MIDI notes), keyed by
     /// their sub-group id.
     pub graph_voices: HashMap<i32, GraphVoice>,
-    graph_audio_buses: RangeAllocator,
-    graph_control_buses: RangeAllocator,
+    graph_audio_buses: Registry,
+    graph_control_buses: Registry,
     /// Boot-time pool capacities. `max_group_children` sizes every non-root
     /// group this translator builds (`/g_new`, `/s_new`'s graph subgroups);
     /// `max_ugen_inputs` caps accepted inputs when compiling a def; the buffer
@@ -213,6 +215,10 @@ impl CmdTranslator {
         // the reservation if the configured count is smaller than the default.
         let audio_reserved = GRAPH_AUDIO_BUS_RESERVED.min(audio_buses);
         let control_reserved = GRAPH_CONTROL_BUS_RESERVED.min(control_buses);
+        // Every node-id range scales from the node table's capacity — the
+        // resource that actually bounds concurrent nodes (shared formula,
+        // reported to clients over `/server_info`).
+        let partition = NodeIdPartition::from_max_nodes(limits.max_nodes);
         #[cfg(feature = "synth")]
         let synth_defs = {
             let mut synth_defs = HashMap::new();
@@ -225,18 +231,18 @@ impl CmdTranslator {
             #[cfg(feature = "synth")]
             synth_defs,
             node_defs: HashMap::new(),
-            next_auto_id: AUTO_NODE_ID_BASE,
+            auto_ids: Registry::new(partition.auto_base, partition.auto_capacity),
             #[cfg(feature = "faust")]
             faust_defs: HashMap::new(),
             mirror: TreeMirror::new(),
             buffers: empty_pool_with(limits.max_buffers),
-            midi: MidiBindings::new(),
+            midi: MidiBindings::new(partition.midi_base, partition.midi_capacity),
             graph_defs: HashMap::new(),
             graph_instances: HashMap::new(),
             graph_voices: HashMap::new(),
-            graph_audio_buses: RangeAllocator::new(audio_buses - audio_reserved, audio_reserved),
-            graph_control_buses: RangeAllocator::new(
-                control_buses - control_reserved,
+            graph_audio_buses: Registry::new((audio_buses - audio_reserved) as i64, audio_reserved),
+            graph_control_buses: Registry::new(
+                (control_buses - control_reserved) as i64,
                 control_reserved,
             ),
             limits,
@@ -837,6 +843,90 @@ impl CmdTranslator {
         self.graph_defs.remove(name);
     }
 
+    /// Allocates one id from the auto range (`/s_new -1`, GraphDef groups and
+    /// members). Exhaustion is an explicit error, never a wrap: the range
+    /// recycles as nodes die, so running out means the table-scaled margin is
+    /// genuinely full of live or in-flight nodes.
+    fn alloc_auto_id(&mut self) -> Result<i32, String> {
+        self.auto_ids.alloc(1).map(|id| id as i32).ok_or_else(|| {
+            format!(
+                "out of auto node ids ({} in use): ids recycle when their nodes end",
+                self.auto_ids.in_use()
+            )
+        })
+    }
+
+    /// Allocates `n` auto ids, all or nothing — a shortfall hands back what
+    /// it took, so no id is lost to a half-built instance.
+    fn alloc_auto_ids(&mut self, n: usize) -> Result<Vec<i32>, String> {
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            match self.auto_ids.alloc(1) {
+                Some(id) => out.push(id as i32),
+                None => {
+                    let err = format!(
+                        "out of auto node ids ({} in use): ids recycle when their nodes end",
+                        self.auto_ids.in_use()
+                    );
+                    self.release_auto_ids(&out);
+                    return Err(err);
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Returns freshly allocated auto ids on a failed instantiation.
+    fn release_auto_ids(&mut self, ids: &[i32]) {
+        for &id in ids {
+            let _ = self.auto_ids.release(id as i64, 1);
+        }
+    }
+
+    /// The ids of a GraphDef instantiation, all or nothing: the group (auto
+    /// when `id_arg` is -1, the client's otherwise) plus one per member. A
+    /// shortfall hands back every id it took.
+    fn alloc_graph_ids(&mut self, id_arg: i32, members: usize) -> Result<(i32, Vec<i32>), String> {
+        let group_id = if id_arg == -1 {
+            self.alloc_auto_id()?
+        } else {
+            id_arg
+        };
+        match self.alloc_auto_ids(members) {
+            Ok(member_ids) => Ok((group_id, member_ids)),
+            Err(e) => {
+                if id_arg == -1 {
+                    self.release_auto_ids(&[group_id]);
+                }
+                Err(e)
+            }
+        }
+    }
+
+    /// Hands a failed instantiation's private buses back to their pools.
+    fn free_graph_buses(&mut self, audio: &[(usize, usize)], control: &[(usize, usize)]) {
+        for &(f, w) in audio {
+            let _ = self.graph_audio_buses.release(f as i64, w);
+        }
+        for &(f, w) in control {
+            let _ = self.graph_control_buses.release(f as i64, w);
+        }
+    }
+
+    /// Returns a dead (or rejected) node's id to whichever server-owned range
+    /// it belongs — the auto range or the MIDI voice range. Ids outside both
+    /// are the clients' business (their own registries recycle them from the
+    /// same `/n_end` notifications). Every node death reports here, so no
+    /// server-allocated id is ever lost.
+    pub fn release_node_id(&mut self, id: i32) {
+        let id = id as i64;
+        if self.auto_ids.contains(id) {
+            let _ = self.auto_ids.release(id, 1);
+        } else {
+            self.midi.release_id(id);
+        }
+    }
+
     /// Allocates a GraphDef's private buses (resolved name → first index).
     /// On a shortfall it hands back everything it took, so the caller's later
     /// steps stay side-effect-free until this succeeds. Returns the name→index
@@ -853,13 +943,14 @@ impl CmdTranslator {
             };
             let Some(first) = first else {
                 for (f, w) in audio {
-                    self.graph_audio_buses.free(f, w);
+                    let _ = self.graph_audio_buses.release(f as i64, w);
                 }
                 for (f, w) in control {
-                    self.graph_control_buses.free(f, w);
+                    let _ = self.graph_control_buses.release(f as i64, w);
                 }
                 return Err("out of private buses for GraphDef".into());
             };
+            let first = first as usize;
             match b.rate {
                 BusRate::Audio => audio.push((first, width)),
                 BusRate::Control => control.push((first, width)),
@@ -870,25 +961,26 @@ impl CmdTranslator {
     }
 
     /// Instantiates the members at `indices` inside `parent`, consuming the
-    /// pre-built synths (parallel to `indices`): sets each control (bus
-    /// references resolved against `bus_index`, `"OUT"` → bus 0) and applies
-    /// the `/n_map` wiring. Returns member index → node id. Infallible — the
-    /// fallible `make_synth` happened in the caller, so an instance is never
-    /// left half-built.
+    /// pre-built synths and pre-allocated node ids (both parallel to
+    /// `indices`): sets each control (bus references resolved against
+    /// `bus_index`, `"OUT"` → bus 0) and applies the `/n_map` wiring. Returns
+    /// member index → node id. Infallible — the fallible `make_synth` and id
+    /// allocation happened in the caller, so an instance is never left
+    /// half-built.
+    #[allow(clippy::too_many_arguments)]
     fn build_members(
         &mut self,
         def: &GraphDefSpec,
         indices: &[usize],
         built: Vec<(Box<dyn SynthNode>, NodeDef)>,
+        ids: Vec<i32>,
         parent: i32,
         bus_index: &HashMap<String, usize>,
         cmds: &mut Vec<Cmd>,
     ) -> HashMap<usize, i32> {
         let mut node_of: HashMap<usize, i32> = HashMap::new();
-        for (&mi, (mut synth, ndef)) in indices.iter().zip(built) {
+        for ((&mi, (mut synth, ndef)), node_id) in indices.iter().zip(built).zip(ids) {
             let member = &def.members[mi];
-            self.next_auto_id += 1;
-            let node_id = self.next_auto_id;
             let mut controls = ndef.control_defaults();
             for (cname, cval) in &member.controls {
                 let Some(index) = ndef.control_index(cname) else {
@@ -1014,14 +1106,9 @@ impl CmdTranslator {
             .cloned()
             .ok_or_else(|| format!("GraphDef not found: {name}"))?;
         let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
-        let group_id = match *id {
-            -1 => {
-                self.next_auto_id += 1;
-                self.next_auto_id
-            }
-            n if n > 0 => n,
-            _ => return Err("group ID must be positive or -1".into()),
-        };
+        if *id != -1 && *id <= 0 {
+            return Err("group ID must be positive or -1".into());
+        }
 
         // --- fallible phase: nothing observable happens until it all passes.
         let shared: Vec<usize> = def
@@ -1036,6 +1123,16 @@ impl CmdTranslator {
             built.push(self.make_synth(&def.members[mi].def)?);
         }
         let (bus_index, audio_buses, control_buses) = self.alloc_graph_buses(&def)?;
+        // Ids last, so an id shortfall only has buses to hand back (and a bus
+        // shortfall never touched the id registry).
+        let ids = match self.alloc_graph_ids(*id, shared.len()) {
+            Ok(ids) => ids,
+            Err(e) => {
+                self.free_graph_buses(&audio_buses, &control_buses);
+                return Err(e);
+            }
+        };
+        let (group_id, member_ids) = ids;
 
         // --- infallible phase: build the instance. The instance group is
         // auto-sorted so member (and voice sub-group) order follows the bus
@@ -1056,7 +1153,8 @@ impl CmdTranslator {
             *target,
             action,
         );
-        let shared_nodes = self.build_members(&def, &shared, built, group_id, &bus_index, cmds);
+        let shared_nodes =
+            self.build_members(&def, &shared, built, member_ids, group_id, &bus_index, cmds);
         self.resort_from(Some(group_id), cmds);
         let surface = self.resolve_ports(&def, &shared_nodes);
         self.graph_instances.insert(
@@ -1111,19 +1209,15 @@ impl CmdTranslator {
             .filter(|(_, m)| m.voice)
             .map(|(i, _)| i)
             .collect();
-        let voice_id = match *id {
-            -1 => {
-                self.next_auto_id += 1;
-                self.next_auto_id
-            }
-            n if n > 0 => n,
-            _ => return Err("voice ID must be positive or -1".into()),
-        };
+        if *id != -1 && *id <= 0 {
+            return Err("voice ID must be positive or -1".into());
+        }
         // fallible: build the voice's synths before touching anything.
         let mut built = Vec::with_capacity(voice_indices.len());
         for &mi in &voice_indices {
             built.push(self.make_synth(&def.members[mi].def)?);
         }
+        let (voice_id, member_ids) = self.alloc_graph_ids(*id, voice_indices.len())?;
         // infallible: the voice sub-group, into the instance group.
         cmds.push(Cmd::AddGroup {
             id: voice_id,
@@ -1141,8 +1235,15 @@ impl CmdTranslator {
             *instance,
             AddAction::Head,
         );
-        let voice_nodes =
-            self.build_members(&def, &voice_indices, built, voice_id, &bus_index, cmds);
+        let voice_nodes = self.build_members(
+            &def,
+            &voice_indices,
+            built,
+            member_ids,
+            voice_id,
+            &bus_index,
+            cmds,
+        );
         // Resort the voice's own members and, up the chain, the instance group
         // (so the voice runs before the shared mixer that reads its bus).
         self.resort_from(Some(voice_id), cmds);
@@ -1239,11 +1340,21 @@ impl CmdTranslator {
             for v in inst.voices {
                 self.graph_voices.remove(&v);
             }
+            // A refused release here would mean the instance lost track of a
+            // bus — surface it, never absorb it.
             for (first, width) in inst.audio_buses {
-                self.graph_audio_buses.free(first, width);
+                if self.graph_audio_buses.release(first as i64, width).is_err() {
+                    tracing::warn!("graph instance {id} released untracked audio bus {first}");
+                }
             }
             for (first, width) in inst.control_buses {
-                self.graph_control_buses.free(first, width);
+                if self
+                    .graph_control_buses
+                    .release(first as i64, width)
+                    .is_err()
+                {
+                    tracing::warn!("graph instance {id} released untracked control bus {first}");
+                }
             }
         }
     }
@@ -1267,8 +1378,7 @@ impl CmdTranslator {
                 let (mut synth, def) = self.make_synth(name)?;
                 let action = AddAction::from_i32(*action).ok_or("add action must be 0-4")?;
                 let id = if *id == -1 {
-                    self.next_auto_id += 1;
-                    self.next_auto_id
+                    self.alloc_auto_id()?
                 } else if *id > 0 {
                     *id
                 } else {
@@ -1586,7 +1696,10 @@ impl CmdTranslator {
                 "GraphDef {instrument:?} has no per-voice members to bind to MIDI"
             ));
         }
-        let instance = self.midi.alloc_id();
+        let instance = self
+            .midi
+            .alloc_id()
+            .ok_or("out of MIDI voice ids: ids recycle when their nodes end")?;
         let new = midi_message(
             "/graph_new",
             vec![
@@ -1596,7 +1709,10 @@ impl CmdTranslator {
                 OscType::Int(target),
             ],
         );
-        self.graph_new(&new, cmds)?;
+        if let Err(e) = self.graph_new(&new, cmds) {
+            self.midi.release_id(instance as i64);
+            return Err(e);
+        }
         Ok(Some(instance))
     }
 
@@ -1798,7 +1914,10 @@ impl CmdTranslator {
         if self.midi.voices.contains_key(&(channel, note)) {
             self.midi_note_off(channel, note, cmds)?;
         }
-        let id = self.midi.alloc_id();
+        let id = self
+            .midi
+            .alloc_id()
+            .ok_or("out of MIDI voice ids: ids recycle when their nodes end")?;
         let freq = OscType::Float(convert::midi2freq(note as f32));
         let amp = OscType::Float(convert::velocity2amp(velocity));
         // A GraphDef binding spawns a per-voice sub-graph into the shared
@@ -1830,7 +1949,10 @@ impl CmdTranslator {
                 ],
             ),
         };
-        self.translate(&msg, cmds)?;
+        if let Err(e) = self.translate(&msg, cmds) {
+            self.midi.release_id(id as i64);
+            return Err(e);
+        }
         self.midi.voices.insert((channel, note), id);
         Ok(())
     }

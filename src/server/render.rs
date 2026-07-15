@@ -25,7 +25,7 @@ use crate::dsp::NUM_AUDIO_BUSES;
 use crate::osc::translate::parse_d_faust;
 use crate::osc::translate::{CmdTranslator, parse_b_gen, parse_buffer_msg};
 use crate::server::engine::{
-    BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, engine_pair_with_workers,
+    BLOCK_SIZE, Cmd, Engine, EngineHandle, Garbage, NodeEventKind, engine_pair_with_workers,
 };
 use crate::server::nrt::{NrtAction, run_job, wav_format};
 
@@ -397,6 +397,7 @@ impl Renderer {
                     }
                 }
                 Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
+                    self.translator.release_node_id(id);
                     tracing::warn!(
                         "nrt render: engine rejected node {id} (duplicate ID, bad target or full table)"
                     );
@@ -404,6 +405,12 @@ impl Renderer {
                 Garbage::FreedGroup { .. } | Garbage::FreedBuffer(_) => {}
             }
         }
-        while self.handle.pop_event().is_some() {}
+        // Offline there is no client to notify, but the server-owned id
+        // ranges still recycle on death, same as live.
+        while let Some(ev) = self.handle.pop_event() {
+            if ev.kind == NodeEventKind::End {
+                self.translator.release_node_id(ev.id);
+            }
+        }
     }
 }

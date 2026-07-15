@@ -1,10 +1,16 @@
 """Buffers, with client-side index allocation.
 
-The server has 1024 buffer slots, indices allocated by the client (like
-scsynth). `Buffer` is a flat handle; the actual allocation/loading
-happens on the server via ``/b_alloc``/``/b_allocRead``/… driven by
-`Server`.
+The server's buffer pool is a finite boot-time resource (``--max-buffers``,
+1024 by default), indices allocated by the client (like scsynth). `Buffer` is
+a flat handle; the actual allocation/loading happens on the server via
+``/b_alloc``/``/b_allocRead``/… driven by `Server`.
+
+The allocator is a **registry** (the core's occupancy map): a freed slot is
+always reusable, a double free is refused loudly, exhaustion raises instead of
+wrapping. The `Server` sizes it from its `ServerOptions` (``max_buffers``).
 """
+
+from .. import _native
 
 NUM_BUFFERS = 1024
 
@@ -23,17 +29,24 @@ class Buffer:
 class BufferAllocator:
     def __init__(self, size: int = NUM_BUFFERS):
         self.size = size
-        self._next = 0
-        self._freed: list[int] = []
+        self._registry = _native.Registry(0, size)
 
     def alloc(self) -> int:
-        if self._freed:
-            return self._freed.pop()
-        if self._next >= self.size:
+        """A free buffer index; raises when the pool is exhausted."""
+        bufnum = self._registry.alloc()
+        if bufnum is None:
             raise RuntimeError("out of buffer slots")
-        bufnum = self._next
-        self._next += 1
         return bufnum
 
     def free(self, bufnum: int):
-        self._freed.append(bufnum)
+        """Returns ``bufnum`` to the pool. A double free (or an index this
+        allocator never handed out) raises — a lost buffer slot is a client
+        bug, never absorbed silently."""
+        if self._registry.release(bufnum) != 0:
+            raise RuntimeError(
+                f"double free of buffer {bufnum}: not currently allocated")
+
+    @property
+    def in_use(self) -> int:
+        """How many buffer slots are currently allocated."""
+        return self._registry.in_use

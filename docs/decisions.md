@@ -647,3 +647,46 @@ Two out-of-the-box defaults, chosen for the common case of a **local** session:
   model, no timeout — behind the same tracker surface `lock_to` drives, and
   `Server.sample_clock()` picks the reader by interface. `render`/`nrt` never
   had a live clock.
+
+## Id allocators are registries of finite resources, never counters
+
+Node ids, buses and buffers are finite server resources fixed at boot; an id
+allocator — on either side of the wire — is the **registry** of one such
+resource's usage. Three invariants, adopted 2026-07 after an audit found every
+allocator violating at least one: every released resource becomes allocatable
+again; no monotonically increasing counter anywhere; no operation may lose
+track of a resource. The audit's headline: the event player allocated one node
+id per note and never returned it, so a long-running session marched the id
+space monotonically into the server's reserved ranges (silent duplicate-id
+rejections at two million notes) and eventually into `struct.pack` overflow;
+the server's own `/s_new -1` and MIDI-voice counters wrapped `i32` in release
+builds; the client bus allocator reused freed runs only at exact width and
+would hand out the GraphDef reserved top of the bus space.
+
+The fix is one shared implementation, `clausters_core::registry::Registry` —
+a bounded occupancy map with a next-fit hint (releases are reusable and runs
+coalesce by construction; a double release or foreign id is refused, not
+absorbed; exhaustion is an explicit `None`) — used by the server's reserved
+ranges directly and by every client over the core FFI, per the build-strategy
+rule that language-agnostic logic lives in the core. Two design points carry
+the weight:
+
+- **Release follows the resource, not the request.** A node id returns to its
+  registry when the node *dies* — the server releases auto/MIDI ids as `End`
+  events drain, a client releases its ids on `/n_end` (never at `/n_free`-send
+  time, which could re-hand an id whose node is still alive). The registry is
+  passive (events are fed in; it never calls out), which keeps it identical
+  across bindings and wasm-compatible. The corollary: an engine rejection
+  produces no `/n_end`, so the server broadcasts `/fail` **with the id
+  appended** — otherwise the client's in-flight id would be lost, violating
+  invariant three.
+- **Every capacity is bounded at boot, including node ids**, even though ids
+  are "dynamic": concurrent nodes are bounded by the node table anyway, so
+  the id space only needs table capacity plus in-flight margin
+  (`NodeIdPartition::from_max_nodes` — client 4×, auto 2×, MIDI 2× — replacing
+  the magic 2M/3M bases). A bounded registry turns a leak into a visible
+  fail-fast error, preallocates once (no growth, no `i32` overflow), and lets
+  clients size themselves from `/server_info`'s `max_nodes` by the shared
+  formula — by query, not convention. The sanctioned exception is NRT/score:
+  no real-time bound and no live `/n_end` stream, so a score client's node-id
+  registry is unbounded by design.

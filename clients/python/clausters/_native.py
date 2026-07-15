@@ -23,7 +23,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 9
+CORE_ABI_VERSION = 10
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -262,6 +262,32 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_correlation.argtypes = [f32p, f32p, ctypes.c_size_t, f32p]
     lib.clausters_core_lissajous.restype = ctypes.c_int32
     lib.clausters_core_lissajous.argtypes = [f32p, f32p, ctypes.c_size_t, f32p]
+    # Finite-resource registry (ABI v10): the one id-allocator model — node
+    # ids, buses, buffers — shared with the server's reserved ranges.
+    lib.clausters_registry_new.restype = ctypes.c_void_p
+    lib.clausters_registry_new.argtypes = [ctypes.c_int64, ctypes.c_uint64]
+    lib.clausters_registry_free.restype = None
+    lib.clausters_registry_free.argtypes = [ctypes.c_void_p]
+    lib.clausters_registry_alloc.restype = ctypes.c_int64
+    lib.clausters_registry_alloc.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+    lib.clausters_registry_release.restype = ctypes.c_int32
+    lib.clausters_registry_release.argtypes = [ctypes.c_void_p, ctypes.c_int64, ctypes.c_uint64]
+    lib.clausters_registry_in_use.restype = ctypes.c_uint64
+    lib.clausters_registry_in_use.argtypes = [ctypes.c_void_p]
+    lib.clausters_registry_capacity.restype = ctypes.c_uint64
+    lib.clausters_registry_capacity.argtypes = [ctypes.c_void_p]
+    lib.clausters_registry_contains.restype = ctypes.c_int32
+    lib.clausters_registry_contains.argtypes = [ctypes.c_void_p, ctypes.c_int64]
+    lib.clausters_registry_clear.restype = None
+    lib.clausters_registry_clear.argtypes = [ctypes.c_void_p]
+    lib.clausters_registry_node_partition.restype = ctypes.c_int32
+    lib.clausters_registry_node_partition.argtypes = [
+        ctypes.c_uint64, ctypes.POINTER(ctypes.c_int64),
+    ]
+    lib.clausters_registry_graph_audio_reserved.restype = ctypes.c_uint64
+    lib.clausters_registry_graph_audio_reserved.argtypes = []
+    lib.clausters_registry_graph_control_reserved.restype = ctypes.c_uint64
+    lib.clausters_registry_graph_control_reserved.argtypes = []
     # WebSocket client transport (ABI v2). A connection is an opaque handle;
     # bytes (with embedded NULs) cross via c_char_p + an explicit length, so OSC
     # packets are passed whole, not NUL-truncated.
@@ -547,6 +573,98 @@ class Scheduler:
             self.close()
         except Exception:
             pass
+
+
+# ---- finite-resource registry ----
+
+
+class Registry:
+    """The core's finite-resource id registry over ``[base, base + capacity)``.
+
+    Node ids, buses and buffers are finite server resources fixed at boot; a
+    registry is the occupancy map of one such space. Every `release` makes the
+    ids allocatable again, exhaustion is an explicit ``None`` (never a wrapped
+    counter), and a bad release reports instead of corrupting the map. The
+    handle is internally locked, so the clock thread can allocate while the
+    reply thread releases on ``/n_end``. ``capacity=None`` builds the
+    **unbounded** registry (NRT/score rendering: allocation never fails).
+    Free with `close` (``__del__`` is the backstop)."""
+
+    #: `release` refusal codes (mirror the C surface).
+    OUT_OF_RANGE = -1
+    NOT_ALLOCATED = -2
+
+    def __init__(self, base: int, capacity: "int | None"):
+        if capacity is not None and capacity <= 0:
+            raise ValueError(f"registry capacity must be positive, got {capacity}")
+        self._lib = lib()
+        self._handle = self._lib.clausters_registry_new(
+            int(base), 0 if capacity is None else int(capacity))
+
+    def alloc(self, width: int = 1) -> "int | None":
+        """First id of a run of ``width`` contiguous ids, or ``None`` when the
+        space is exhausted."""
+        first = self._lib.clausters_registry_alloc(self._handle, max(1, int(width)))
+        return None if first == -1 else first
+
+    def release(self, first: int, width: int = 1) -> int:
+        """Returns a run to the pool. ``0`` on success, `OUT_OF_RANGE` or
+        `NOT_ALLOCATED` on refusal (nothing released)."""
+        return self._lib.clausters_registry_release(
+            self._handle, int(first), max(1, int(width)))
+
+    def contains(self, id_: int) -> bool:
+        """Whether ``id_`` falls in this registry's space — the filter for
+        foreign ``/n_end`` ids."""
+        return bool(self._lib.clausters_registry_contains(self._handle, int(id_)))
+
+    @property
+    def in_use(self) -> int:
+        return self._lib.clausters_registry_in_use(self._handle)
+
+    @property
+    def capacity(self) -> "int | None":
+        """The size of the id space; ``None`` when unbounded."""
+        cap = self._lib.clausters_registry_capacity(self._handle)
+        return None if cap == 0 else cap
+
+    def clear(self):
+        """Releases everything back to the pool (a client reset)."""
+        self._lib.clausters_registry_clear(self._handle)
+
+    def close(self):
+        handle = getattr(self, "_handle", None)
+        if handle:
+            self._lib.clausters_registry_free(handle)
+            self._handle = None
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
+
+
+def node_id_partition(max_nodes: int) -> dict:
+    """The boot-derived partition of the node-id space for a node table of
+    ``max_nodes`` slots — the same formula the server applies, so the two
+    agree by construction. Returns the keys ``client_base``,
+    ``client_capacity``, ``auto_base``, ``auto_capacity``, ``midi_base``,
+    ``midi_capacity``."""
+    out = (ctypes.c_int64 * 6)()
+    if lib().clausters_registry_node_partition(max(1, int(max_nodes)), out) != 0:
+        raise RuntimeError("node_id_partition failed")
+    keys = ("client_base", "client_capacity", "auto_base",
+            "auto_capacity", "midi_base", "midi_capacity")
+    return dict(zip(keys, out))
+
+
+def graph_bus_reserved() -> tuple[int, int]:
+    """The ``(audio, control)`` bus widths GraphDef instances reserve at the
+    top of each bus space (before clamping to a smaller configured count)."""
+    l = lib()
+    return (l.clausters_registry_graph_audio_reserved(),
+            l.clausters_registry_graph_control_reserved())
 
 
 # ---- sample-clock tracking model ----

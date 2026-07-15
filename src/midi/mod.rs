@@ -25,15 +25,17 @@
 
 use std::collections::HashMap;
 
+use clausters_core::registry::Registry;
 use serde::{Deserialize, Serialize};
 
 pub mod convert;
 #[cfg(feature = "midi")]
 pub mod live;
 
-/// MIDI-spawned voices get node IDs from a reserved range, disjoint from the
-/// client ID space and the `/s_new -1` auto range (`AUTO_NODE_ID_BASE`).
-pub const MIDI_NODE_ID_BASE: i32 = 3_000_000;
+// MIDI-spawned voices get node IDs from a reserved range of the node-id
+// partition (`clausters_core::registry::NodeIdPartition`), disjoint from the
+// client ID space and the `/s_new -1` auto range, every range scaled from
+// `--max-nodes`. The range is a registry: ids return on `/n_end`.
 
 /// A decoded standard channel-voice message, normalized to MIDI 2.0 / UMP
 /// resolution. One variant per message type the actuation path handles.
@@ -214,28 +216,38 @@ impl MidiBinding {
 }
 
 /// The server's MIDI binding state: per-channel bindings, the live
-/// `(channel, note) → node` voice table, and the reserved node-ID allocator.
-/// Lives on the network thread.
-#[derive(Default)]
+/// `(channel, note) → node` voice table, and the registry of the reserved
+/// node-id range. Lives on the network thread.
 pub struct MidiBindings {
     pub channels: HashMap<u8, MidiBinding>,
     pub voices: HashMap<(u8, u8), i32>,
-    next_id: i32,
+    ids: Registry,
 }
 
 impl MidiBindings {
-    pub fn new() -> Self {
+    /// Bindings whose voice ids come from `[base, base + capacity)` — the
+    /// MIDI range of the node-id partition.
+    pub fn new(base: i64, capacity: usize) -> Self {
         Self {
             channels: HashMap::new(),
             voices: HashMap::new(),
-            next_id: MIDI_NODE_ID_BASE,
+            ids: Registry::new(base, capacity),
         }
     }
 
-    /// Allocate the next node ID for a MIDI-spawned voice.
-    pub fn alloc_id(&mut self) -> i32 {
-        self.next_id += 1;
-        self.next_id
+    /// Allocate a node ID for a MIDI-spawned voice; `None` when every id in
+    /// the range is still tied to a live or in-flight voice (ids return as
+    /// their nodes end — the range recycles, never counts up).
+    pub fn alloc_id(&mut self) -> Option<i32> {
+        self.ids.alloc(1).map(|id| id as i32)
+    }
+
+    /// Returns a dead voice's id to the range; ids outside it are ignored
+    /// (they belong to another registry).
+    pub fn release_id(&mut self, id: i64) {
+        if self.ids.contains(id) {
+            let _ = self.ids.release(id, 1);
+        }
     }
 
     /// The current bindings as a stable, persistable list (M19), sorted by

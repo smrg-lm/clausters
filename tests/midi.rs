@@ -5,10 +5,11 @@
 
 #![cfg(feature = "synth")]
 
-use clausters::midi::{ChannelVoiceMessage::*, MIDI_NODE_ID_BASE, convert};
+use clausters::midi::{ChannelVoiceMessage::*, convert};
 use clausters::osc::translate::CmdTranslator;
 use clausters::rosc::{OscMessage, OscType};
 use clausters::server::engine::Cmd;
+use clausters_core::registry::NodeIdPartition;
 
 const SR: f32 = 48_000.0;
 
@@ -51,8 +52,11 @@ fn bind_and_note(t: &mut CmdTranslator, note: u8, velocity: u16) -> (i32, Vec<Cm
 fn note_on_spawns_voice_with_converted_controls() {
     let mut t = CmdTranslator::new(SR);
     let (id, _) = bind_and_note(&mut t, 69, u16::MAX);
-    // Voice IDs come from the reserved MIDI range.
-    assert!(id > MIDI_NODE_ID_BASE);
+    // Voice IDs come from the MIDI range of the node-id partition (the
+    // default translator uses the default node-table size).
+    let part = NodeIdPartition::from_max_nodes(1024);
+    assert!(id as i64 >= part.midi_base);
+    assert!((id as i64) < part.midi_base + part.midi_capacity as i64);
     let (def_name, controls) = t.mirror.synth_info(id).expect("voice mirrored");
     assert_eq!(def_name, "default");
     let def = t.node_defs.get(&id).unwrap();

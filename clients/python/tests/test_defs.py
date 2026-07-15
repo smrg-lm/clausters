@@ -92,27 +92,66 @@ def test_faustdef_source_dump():
 
 # ---- resource allocators ----
 
-def test_node_id_allocator_reuses_freed():
-    a = NodeIdAllocator(start=1000)
+def test_node_id_allocator_recycles_and_never_wraps():
+    a = NodeIdAllocator(1000, 4)
     assert (a.alloc(), a.alloc()) == (1000, 1001)
-    a.free(1000)
-    assert a.alloc() == 1000
+    # Every freed id becomes allocatable again: with frees keeping pace the
+    # space never exhausts, however many ids pass through.
+    for _ in range(100):
+        a.free(a.alloc())
+    assert a.in_use == 2
+    # Exhaustion is an explicit error, never a wrapped counter.
+    a.alloc(), a.alloc()
+    with pytest.raises(RuntimeError, match="out of node ids"):
+        a.alloc()
+    # Foreign ids (the server's ranges, other clients) are ignored quietly:
+    # every /n_end on the server is reported here, not only ours.
+    a.free(999)
+    a.free(1004)
 
 
-def test_audio_bus_allocator_reserves_outputs():
+def test_node_id_allocator_unbounded_for_scores():
+    a = NodeIdAllocator(1000, None)   # the NRT/score variant
+    assert all(a.alloc() == 1000 + i for i in range(10_000))
+
+
+def test_audio_bus_allocator_reserves_outputs_and_graph_top():
     a = AudioBusAllocator(size=128, reserved=2)
     b2 = a.alloc(2)
     assert b2.index == 2 and b2.channels == 2     # above the 2 hardware outs
     assert a.alloc(1).index == 4
     a.free(b2)
-    assert a.alloc(2).index == 2                   # exact-width reuse
+    # Next-fit rotates: fresh space first, the freed run again on wrap.
+    assert a.alloc(2).index == 5
+    assert a.alloc(89).index == 7                  # rest of the free space
+    assert a.alloc(2).index == 2                   # wrapped onto the freed run
+    # The GraphDef private range at the top (32 audio buses) is never handed
+    # out: 128 - 2 reserved - 32 = 94 allocatable.
+    a2 = AudioBusAllocator(size=128, reserved=2)
+    assert a2.alloc(94).index == 2
+    with pytest.raises(RuntimeError, match="out of audio buses"):
+        a2.alloc(1)
+
+
+def test_bus_allocator_refuses_double_free():
+    a = AudioBusAllocator(size=128, reserved=2)
+    b = a.alloc(2)
+    a.free(b)
+    with pytest.raises(RuntimeError, match="double free"):
+        a.free(b)
 
 
 def test_buffer_allocator():
-    a = BufferAllocator()
+    a = BufferAllocator(size=4)
     assert (a.alloc(), a.alloc()) == (0, 1)
     a.free(0)
-    assert a.alloc() == 0
+    for _ in range(100):                           # recycles, never exhausts
+        a.free(a.alloc())
+    a.alloc(), a.alloc(), a.alloc()
+    with pytest.raises(RuntimeError, match="out of buffer slots"):
+        a.alloc()
+    with pytest.raises(RuntimeError, match="double free"):
+        a.free(5)
 
 
 # ---- Server over a fake communication interface ----

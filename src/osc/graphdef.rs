@@ -28,9 +28,10 @@ use serde::{Deserialize, Serialize};
 /// of each bus space so it never collides with client-allocated buses. The
 /// base is `bus_count - reserved`, computed from the live counts in
 /// `CmdTranslator::new` (so it tracks `--audio-buses`/`--control-buses`).
-/// Documented in `docs/schemas.md`.
-pub const GRAPH_AUDIO_BUS_RESERVED: usize = 32; // top 32 audio buses
-pub const GRAPH_CONTROL_BUS_RESERVED: usize = 128; // top 128 control buses
+/// The constants live in `clausters_core::registry` — the shared resource
+/// model — so client allocators subtract the same reservation they were built
+/// against. Documented in `docs/schemas.md`.
+pub use clausters_core::registry::{GRAPH_AUDIO_BUS_RESERVED, GRAPH_CONTROL_BUS_RESERVED};
 
 /// Rate of an internal GraphDef bus.
 #[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, Debug)]
@@ -190,46 +191,6 @@ impl GraphDefSpec {
     /// `true` if any member is per-voice (so `/graph_voice` / MIDI notes apply).
     pub fn has_voice_members(&self) -> bool {
         self.members.iter().any(|m| m.voice)
-    }
-}
-
-/// Allocates contiguous runs of buses from a fixed reserved range. A
-/// `Vec<bool>` busy map: small (≤128 entries) and only touched on
-/// instantiate/free on the network thread.
-pub struct RangeAllocator {
-    base: usize,
-    used: Vec<bool>,
-}
-
-impl RangeAllocator {
-    pub fn new(base: usize, len: usize) -> Self {
-        Self {
-            base,
-            used: vec![false; len],
-        }
-    }
-
-    /// Allocates `width` contiguous buses; returns the first index.
-    pub fn alloc(&mut self, width: usize) -> Option<usize> {
-        let w = width.max(1);
-        let n = self.used.len();
-        let mut i = 0;
-        while i + w <= n {
-            if self.used[i..i + w].iter().all(|&b| !b) {
-                self.used[i..i + w].iter_mut().for_each(|b| *b = true);
-                return Some(self.base + i);
-            }
-            i += 1;
-        }
-        None
-    }
-
-    /// Returns a previously allocated run to the pool.
-    pub fn free(&mut self, first: usize, width: usize) {
-        let start = first.saturating_sub(self.base);
-        for b in self.used.iter_mut().skip(start).take(width.max(1)) {
-            *b = false;
-        }
     }
 }
 

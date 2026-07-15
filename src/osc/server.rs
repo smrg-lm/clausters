@@ -736,8 +736,24 @@ impl OscServer {
                 }
                 Garbage::RejectedSynth { id, .. } | Garbage::RejectedGroup { id, .. } => {
                     // Don't touch the mirror: on a duplicate-ID rejection the
-                    // original node is still alive under this ID.
+                    // original node is still alive under this ID. The rejected
+                    // id never became a node — return it to its registry, and
+                    // tell the `/notify` clients (the rejection is async, so
+                    // there is no requester to reply to): a client registry
+                    // reconciles its in-flight id off this `/fail`, since no
+                    // `/n_end` will ever come for it.
+                    self.translator.release_node_id(id);
                     warn!("engine rejected node {id} (duplicate ID, bad target or full table)");
+                    let args = vec![
+                        OscType::String("/s_new".into()),
+                        OscType::String(format!(
+                            "engine rejected node {id}: duplicate ID, bad target or full table"
+                        )),
+                        OscType::Int(id),
+                    ];
+                    for client in &self.clients {
+                        self.reply(*client, "/fail", args.clone());
+                    }
                 }
             }
         }
@@ -746,6 +762,12 @@ impl OscServer {
                 NodeEventKind::Go => "/n_go",
                 NodeEventKind::End => "/n_end",
             };
+            // A death returns the id to whichever server-owned range it came
+            // from (auto, MIDI); client-range ids recycle client-side off the
+            // same `/n_end` broadcast below.
+            if ev.kind == NodeEventKind::End {
+                self.translator.release_node_id(ev.id);
+            }
             // scsynth shape: id, parent, previous, next, isGroup. We don't
             // track sibling IDs on this side, so previous/next are -1.
             let args = vec![

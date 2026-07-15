@@ -42,6 +42,10 @@
 //! - [`envshape`] — the envelope segment shapes (the SuperCollider shape
 //!   curves), shared by the server's `EnvGen` and any client drawing or
 //!   editing envelopes, so what an editor draws is what the server plays.
+//! - [`registry`] — the finite-resource id registry (node ids, buses,
+//!   buffers): a bounded occupancy map where every release is reusable and
+//!   exhaustion is explicit, shared so the server's reserved ranges and every
+//!   client's allocators enforce the same invariants.
 //! - [`peaks`] — the min/max peak pyramid behind any client's navigable
 //!   waveform view, with its memory-mappable cache. General client
 //!   functionality (not real-time), shared so every client builds the identical
@@ -58,6 +62,7 @@ pub mod fft;
 pub mod measure;
 pub mod osc;
 pub mod peaks;
+pub mod registry;
 pub mod rng;
 pub mod scale;
 pub mod tempoclock;
