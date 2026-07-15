@@ -1221,7 +1221,13 @@ pub(crate) fn render(
     let frame = match gpu.surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(f) | wgpu::CurrentSurfaceTexture::Suboptimal(f) => f,
         _ => {
+            // No drawable this turn (outdated/timed-out surface — e.g. the
+            // compositor stopped consuming a covered window's frames):
+            // reconfigure and ask for another redraw, so the frame that was
+            // requested is not silently dropped and the window never shows
+            // stale state once it is presentable again.
             gpu.surface.configure(&gpu.device, &gpu.config);
+            gpu.window.request_redraw();
             return;
         }
     };
@@ -1311,6 +1317,11 @@ pub(crate) fn render(
         overlay.draw(&mut pass);
     }
     gpu.queue.submit(std::iter::once(encoder.finish()));
+    // The winit present contract: lets winit attach the compositor frame
+    // callback to this commit, so later `request_redraw`s are delivered (and
+    // throttled) correctly — without it, Wayland redraw delivery can stall on
+    // an unfocused or covered window until the compositor repaints it anyway.
+    gpu.window.pre_present_notify();
     frame.present();
 }
 

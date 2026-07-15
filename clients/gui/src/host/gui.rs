@@ -2508,6 +2508,7 @@ impl App {
     /// the same code the browser front drives — here fed the live inputs (the
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
+        tracing::trace!("rendering window {def_id}");
         let active_button = match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
             Some(Drag::Button { id }) => Some(*id),
             _ => None,
