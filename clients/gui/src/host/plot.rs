@@ -658,6 +658,33 @@ mod tests {
     }
 
     #[test]
+    fn spectrum_geometry_follows_the_freq_scale() {
+        // A live freq_scale change must move the drawn curve and ruler: the
+        // same analysis drawn under each scale yields different geometry.
+        let sr = 48_000.0;
+        let sig: Vec<f32> = (0..8192)
+            .map(|i| (std::f32::consts::TAU * 440.0 * i as f32 / sr as f32).sin())
+            .collect();
+        let spec = analyze(&sig, 1, 1024, sr);
+        let mesh_for = |scale: FreqScale| {
+            let mut p = params(&sig, 1);
+            p.view = PlotView::Spectrum;
+            p.spectrum = Some(&spec);
+            p.sample_rate = sr;
+            p.freq_scale = scale;
+            let mut m = Mesh::new();
+            draw(&mut m, Rect::new(0.0, 0.0, 400.0, 200.0), &p);
+            m.positions().collect::<Vec<_>>()
+        };
+        let lin = mesh_for(FreqScale::Linear);
+        let mel = mesh_for(FreqScale::Mel);
+        let log = mesh_for(FreqScale::Log);
+        assert_ne!(lin, mel, "linear vs mel must draw differently");
+        assert_ne!(mel, log, "mel vs log must draw differently");
+        assert_ne!(lin, log, "linear vs log must draw differently");
+    }
+
+    #[test]
     fn readout_draws_only_inside_the_body_and_names_the_sample() {
         let samples: Vec<f32> = (0..100).map(|i| i as f32).collect();
         let p = params(&samples, 1);

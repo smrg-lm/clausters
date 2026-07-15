@@ -27,6 +27,7 @@ the processes fall back to the network paths.
 import atexit
 import itertools
 import os
+import socket
 import subprocess
 import tempfile
 import time
@@ -136,6 +137,7 @@ class _Process:
         timeout). Idempotent: a second call while running is a no-op."""
         if self.proc is not None and self.proc.poll() is None:
             return self
+        self._probe_port_free()
         argv = self._argv()
         try:
             self.proc = subprocess.Popen(argv)
@@ -156,6 +158,27 @@ class _Process:
 
     #: seconds to wait for the process to answer before giving up.
     ready_timeout = 10.0
+
+    def _probe_port_free(self):
+        """Refuse to spawn over a port something else already owns.
+
+        The readiness poll (`_wait_ready`) only checks that *something*
+        answers on the port — if a stale process from an earlier session is
+        still bound there, the fresh child cannot bind, yet the poll gets the
+        stale one's reply and adopts it silently, so every later message goes
+        to the old binary. A quick UDP bind probe turns that into a clear
+        error instead."""
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.bind((self.host, self.port))
+            finally:
+                probe.close()
+        except OSError as e:
+            raise ServerError(
+                f"port {self.port} is already in use — likely a stale "
+                f"{self.kind} from an earlier session; close that process "
+                f"(or attach to it instead of booting)") from e
 
     def _died_early(self):
         code = self.proc.poll() if self.proc else None

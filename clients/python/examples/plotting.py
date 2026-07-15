@@ -64,8 +64,11 @@ win_spec = plot(g, defs=[ping()], dur=0.6, channels=2,
 
 # %% The display is live: retune a window without re-rendering.
 win_def.set(view="spectrum", freq_scale="mel")   # the ping window, now spectral
-win_rand.set(min=0.0)                            # pin a side...
-win_rand.set(min="auto")                         # ...and give it back to the fit
+win_rand.set(min=0.0)                            # pin the value axis at zero
+
+# %% ...and give the pinned side back to the auto-fit (a separate cell, so the
+# pinned state above is visible before it is released).
+win_rand.set(min="auto")
 
 # %% Close them (or just close the windows / exit the interpreter).
 # for w in (win_def, win_env, win_seq, win_rand, win_spec):
