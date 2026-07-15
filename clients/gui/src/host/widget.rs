@@ -1079,6 +1079,16 @@ impl Widget {
         )
     }
 
+    /// Whether this tree contains a widget whose overlay follows the pointer
+    /// — the cursor readout of the timeline views and the plot. The windowed
+    /// front asks on cursor motion: such a window needs a frame per move
+    /// (a fully static one, like a plot's, has no other frame source).
+    pub fn has_hover_readout(&self) -> bool {
+        self.is_timeline()
+            || matches!(self.kind, WidgetKind::Plot { .. })
+            || self.children.iter().any(Widget::has_hover_readout)
+    }
+
     /// The widget with id `id` anywhere in this tree.
     pub fn find(&self, id: i32) -> Option<&Widget> {
         if self.id == Some(id) {
@@ -1417,7 +1427,7 @@ impl WidgetKind {
                 if handled && matches!(key, "view" | "fft_size" | "sample_rate") {
                     self.refresh_plot_analysis();
                 }
-                return handled;
+                handled
             }
             WidgetKind::Canvas {
                 shader,

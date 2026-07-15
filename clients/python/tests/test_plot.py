@@ -1,6 +1,7 @@
 """The free-standing ``plot``: dispatch, window-tree building and the offline
 render paths, without a GUI host process (a fake host captures the tree)."""
 
+import itertools
 import os
 
 import pytest
@@ -27,6 +28,10 @@ class FakeHost:
         self.opened = []
         self.sets = []
         self.closed = []
+        self._ids = itertools.count(1000)
+
+    def alloc_id(self):
+        return next(self._ids)
 
     def open(self, tree, *blobs, id=None):
         self.opened.append(tree)
@@ -96,6 +101,18 @@ def test_plot_opens_one_window_with_inline_data():
     assert host.sets == [(widget["id"], {"view": "spectrum"})]
     win.close()
     assert host.closed == [1000]
+
+
+def test_each_plot_takes_a_fresh_widget_id():
+    # Widget ids share the host's global namespace: two windows carrying the
+    # same widget id would collide (the second is skipped at define time and
+    # its handle would retune the first window's plot).
+    host = FakeHost()
+    a = plot([1.0, 2.0], host=host)
+    b = plot([3.0, 4.0], host=host)
+    assert a.widget_id != b.widget_id
+    ids = [_plot_widget(t)["id"] for t in host.opened]
+    assert ids == [a.widget_id, b.widget_id]
 
 
 def test_plot_bulk_data_goes_through_a_mapped_file():

@@ -54,14 +54,12 @@ pub(crate) const RULER_H: f32 = 18.0;
 pub(crate) const RULER_W: f32 = 46.0;
 const VIEW_FIELD: Color = [0.08, 0.09, 0.11, 1.0];
 const VIEW_FRAME: Color = [0.25, 0.45, 0.38, 1.0];
-const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
-const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
 const LANE_DIVIDER: Color = [0.30, 0.33, 0.38, 0.8];
 const SELECTION_FILL: Color = [0.55, 0.75, 0.95, 0.18];
 const SELECTION_EDGE: Color = [0.55, 0.75, 0.95, 0.75];
 const PLAYHEAD: Color = [0.95, 0.55, 0.30, 0.9];
 const READOUT: Color = [0.85, 0.87, 0.90, 0.9];
-use super::ruler::RULER_SCALE;
+use super::ruler::{RULER_SCALE, RULER_TEXT};
 
 /// A waveform widget's GPU view. Its navigation window lives in the widget's
 /// timeline group ([`super::timeline`]), not here — a slot is per window, a
@@ -412,16 +410,7 @@ fn draw_time_ruler(
         return;
     }
     let ticks = ruler::time_ticks(nav.start, nav.len, strip.w as f64, rate, time_unit(editor));
-    for tick in &ticks {
-        let x = strip.x + strip.w * tick.frac as f32;
-        let h = if tick.label.is_some() { 6.0 } else { 3.0 };
-        mesh.rect(Rect::new(x, strip.y, 1.0, h), RULER_LINE);
-        if let Some(label) = &tick.label {
-            let w = super::font::width(label, RULER_SCALE);
-            let lx = (x - w * 0.5).clamp(strip.x, strip.x + strip.w - w);
-            super::font::text(mesh, label, lx, strip.y + 7.0, RULER_SCALE, RULER_TEXT);
-        }
-    }
+    ruler::draw_ticks_h(mesh, strip, &ticks);
 }
 
 /// The visible MIDI pitch window `[lo, hi]` of a piano-roll: the widget's
@@ -541,27 +530,6 @@ fn draw_pianoroll_item(
             RULER_SCALE,
             RULER_TEXT,
         );
-    }
-}
-
-/// Draws one lane's worth of vertical-ruler ticks into the strip left of the
-/// body: tick marks against the body's left edge, labels right-aligned beside
-/// them. Shared by the amplitude and frequency rulers — the caller supplies
-/// the lane-relative ticks (frac 0 = lane bottom).
-fn draw_y_ruler(mesh: &mut Mesh, body_x: f32, strip_x: f32, lane: Rect, ticks: &[ruler::Tick]) {
-    if lane.h <= 4.0 {
-        return;
-    }
-    for tick in ticks {
-        let y = lane.y + lane.h * (1.0 - tick.frac as f32);
-        let w = if tick.label.is_some() { 8.0 } else { 4.0 };
-        mesh.rect(Rect::new(body_x - w, y, w, 1.0), RULER_LINE);
-        if let Some(label) = &tick.label {
-            let lw = super::font::width(label, RULER_SCALE);
-            let lx = (body_x - 10.0 - lw).max(strip_x);
-            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - super::font::height(RULER_SCALE));
-            super::font::text(mesh, label, lx, ty, RULER_SCALE, RULER_TEXT);
-        }
     }
 }
 
@@ -1020,7 +988,7 @@ pub(crate) fn render(
                             y0,
                             y_len,
                         );
-                        draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
+                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
                 }
                 for ch in 1..draw_lanes {
@@ -1061,7 +1029,7 @@ pub(crate) fn render(
                             item.editor.y_view().0,
                             item.editor.y_view().1,
                         );
-                        draw_y_ruler(&mut mesh, body.x, item.rect.x, lane, &ticks);
+                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
                 }
                 draw_editor_overlay(

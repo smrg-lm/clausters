@@ -19,8 +19,10 @@
 //! spectrogram shader uses (linear, log, mel or bark; the perceptual forms
 //! from `clausters_core::scale`), so a tick labeled 1 kHz sits exactly on the
 //! 1 kHz row of pixels. No GPU, no widget types: positions come out as
-//! fractions of the visible span, and the frame renderer turns them into
-//! painter geometry.
+//! fractions of the visible span, and the two strip painters here
+//! ([`draw_ticks_h`]/[`draw_ticks_v`]) turn them into mesh geometry — one
+//! drawing of a ruler strip, shared by every ruled view (the editor-grade
+//! frames and the plot).
 
 use clausters_core::scale::{bark_to_hz, hz_to_bark, hz_to_mel, mel_to_hz};
 use clausters_core::tempoclock;
@@ -29,6 +31,8 @@ use crate::spectrogram::FreqScale;
 use crate::waveform::AMP_MARGIN;
 
 use super::font;
+use super::layout::Rect;
+use super::paint::{Color, Mesh};
 use super::widget::RulerY;
 
 /// One ruler tick: its position as a fraction of the visible axis span
@@ -867,6 +871,50 @@ pub(crate) fn hz_ticks_h(
         }
     }
     out
+}
+
+/// The color of a ruler strip's labels.
+pub(crate) const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
+/// The color of a ruler strip's tick marks.
+pub(crate) const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
+
+/// Draws the ticks of a horizontal ruler `strip` sitting under a view body:
+/// a mark up against the body's bottom edge (taller when labeled), the label
+/// centered under it and edge-clamped into the strip. The one drawing of the
+/// x-ruler strip — the editor frames and the plot both call it.
+pub(crate) fn draw_ticks_h(mesh: &mut Mesh, strip: Rect, ticks: &[Tick]) {
+    for tick in ticks {
+        let x = strip.x + strip.w * tick.frac as f32;
+        let h = if tick.label.is_some() { 6.0 } else { 3.0 };
+        mesh.rect(Rect::new(x, strip.y, 1.0, h), RULER_LINE);
+        if let Some(label) = &tick.label {
+            let w = font::width(label, RULER_SCALE);
+            let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
+            font::text(mesh, label, lx, strip.y + 7.0, RULER_SCALE, RULER_TEXT);
+        }
+    }
+}
+
+/// Draws one lane's worth of vertical-ruler ticks into the strip left of the
+/// body: tick marks against the body's left edge at `body_x` (longer when
+/// labeled), labels right-aligned beside them and kept inside the strip
+/// starting at `strip_x`. `frac` 0 is the lane's bottom. The one drawing of
+/// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
+pub(crate) fn draw_ticks_v(mesh: &mut Mesh, body_x: f32, strip_x: f32, lane: Rect, ticks: &[Tick]) {
+    if lane.h <= 4.0 {
+        return;
+    }
+    for tick in ticks {
+        let y = lane.y + lane.h * (1.0 - tick.frac as f32);
+        let w = if tick.label.is_some() { 8.0 } else { 4.0 };
+        mesh.rect(Rect::new(body_x - w, y, w, 1.0), RULER_LINE);
+        if let Some(label) = &tick.label {
+            let lw = font::width(label, RULER_SCALE);
+            let lx = (body_x - 10.0 - lw).max(strip_x);
+            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(RULER_SCALE));
+            font::text(mesh, label, lx, ty, RULER_SCALE, RULER_TEXT);
+        }
+    }
 }
 
 #[cfg(test)]

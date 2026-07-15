@@ -3048,6 +3048,15 @@ impl ApplicationHandler<UserEvent> for App {
                 let dragging = self.windows.get(&def_id).is_some_and(|w| w.drag.is_some());
                 if dragging {
                     self.on_drag(def_id, position.x, position.y);
+                } else if self
+                    .host
+                    .window_def(def_id)
+                    .is_some_and(Widget::has_hover_readout)
+                {
+                    // The hover readout follows the pointer, so it needs a
+                    // frame per move — a static window (a plot's) has no
+                    // other frame source.
+                    self.redraw(def_id);
                 }
             }
             WindowEvent::MouseInput {

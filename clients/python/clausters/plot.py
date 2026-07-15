@@ -143,7 +143,11 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
     host = host if host is not None else _ambient_host()
     from .gui import guidef
 
-    widget_id = 1
+    # Widget ids live in the host's one global namespace (all windows, all
+    # scripts on it), so each plot's widget takes a fresh unique id — a
+    # repeated id would be skipped at define time and /gui_set would hit
+    # whichever widget registered it first.
+    widget_id = host.alloc_id()
     props: dict = {"channels": chans, "view": view, "overlay": overlay or None,
                    "min": min, "max": max, "freq_scale": freq_scale,
                    "fft_size": fft_size, "db_floor": db_floor,

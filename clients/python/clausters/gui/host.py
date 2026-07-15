@@ -115,6 +115,13 @@ class GuiHost:
 
     # ---- windows: open / close (the tree is a `window`-rooted GuiDef) ----
 
+    def alloc_id(self) -> int:
+        """A fresh id, unique across everything this host client names —
+        windows and widgets share the host's one id namespace, so a widget id
+        must not repeat across windows (`open` draws its window ids from the
+        same counter)."""
+        return next(self._ids)
+
     def open(self, tree: dict, *blobs: bytes, id: "int | None" = None) -> int:
         """Open a window from a ``window``-rooted GuiDef and return its id.
 

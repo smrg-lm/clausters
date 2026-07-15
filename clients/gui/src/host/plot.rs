@@ -46,8 +46,6 @@ const FIELD: Color = [0.10, 0.11, 0.14, 1.0];
 const FRAME: Color = [0.45, 0.55, 0.70, 1.0];
 const BASELINE: Color = [0.28, 0.32, 0.38, 1.0];
 const LANE_DIVIDER: Color = [0.30, 0.33, 0.38, 0.8];
-const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
-const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
 const READOUT: Color = [0.85, 0.87, 0.90, 0.9];
 const HAIRLINE: Color = [0.85, 0.87, 0.90, 0.35];
 const PAD: f32 = 4.0;
@@ -246,40 +244,6 @@ fn x_unit(p: &PlotParams) -> TimeUnit {
     }
 }
 
-/// Draws the ticks of the horizontal ruler strip: a line up into the body's
-/// edge, the label centered under it (edge-clamped into the strip).
-fn draw_x_ruler(mesh: &mut Mesh, strip: Rect, ticks: &[ruler::Tick]) {
-    for tick in ticks {
-        let x = strip.x + strip.w * tick.frac as f32;
-        let h = if tick.label.is_some() { 6.0 } else { 3.0 };
-        mesh.rect(Rect::new(x, strip.y, 1.0, h), RULER_LINE);
-        if let Some(label) = &tick.label {
-            let w = font::width(label, RULER_SCALE);
-            let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
-            font::text(mesh, label, lx, strip.y + 7.0, RULER_SCALE, RULER_TEXT);
-        }
-    }
-}
-
-/// Draws the ticks of a vertical value ruler beside `lane` (labels right-
-/// aligned against the body edge, kept inside the strip).
-fn draw_y_ruler(mesh: &mut Mesh, body_x: f32, strip_x: f32, lane: Rect, ticks: &[ruler::Tick]) {
-    if lane.h <= 4.0 {
-        return;
-    }
-    for tick in ticks {
-        let y = lane.y + lane.h * (1.0 - tick.frac as f32);
-        let w = if tick.label.is_some() { 8.0 } else { 4.0 };
-        mesh.rect(Rect::new(body_x - w, y, w, 1.0), RULER_LINE);
-        if let Some(label) = &tick.label {
-            let lw = font::width(label, RULER_SCALE);
-            let lx = (body_x - 10.0 - lw).max(strip_x);
-            let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(RULER_SCALE));
-            font::text(mesh, label, lx, ty, RULER_SCALE, RULER_TEXT);
-        }
-    }
-}
-
 /// Draws a plot into `mesh`: the label strip, the framed field, the rulers and
 /// the view's traces (stacked per-channel lanes, or overlaid when asked).
 pub fn draw(mesh: &mut Mesh, rect: Rect, p: &PlotParams) {
@@ -308,14 +272,14 @@ fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
     let (lo, hi) = value_range(p);
     if let Some(strip) = g.x_strip {
         let ticks = ruler::time_ticks(0.0, n as f64, strip.w as f64, p.sample_rate, x_unit(p));
-        draw_x_ruler(mesh, strip, &ticks);
+        ruler::draw_ticks_h(mesh, strip, &ticks);
     }
     for ch in 0..channels {
         let lane = lane_rect(g.body, g.lanes, if p.overlay { 0 } else { ch });
         if ch == 0 || !p.overlay {
             if let Some(strip_x) = g.strip_x {
                 let ticks = ruler::value_ticks(lo as f64, hi as f64, lane.h as f64);
-                draw_y_ruler(mesh, g.body.x, strip_x, lane, &ticks);
+                ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks);
             }
             // A zero baseline, when 0 is within the displayed range.
             if lo < 0.0 && hi > 0.0 {
@@ -372,7 +336,7 @@ fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {
         let ticks = ruler::hz_ticks_h(nyquist, p.freq_scale, f_lo, strip.w as f64);
-        draw_x_ruler(mesh, strip, &ticks);
+        ruler::draw_ticks_h(mesh, strip, &ticks);
     }
     let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
     for (ch, curve) in spec.curves.iter().enumerate() {
@@ -384,7 +348,7 @@ fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
             && let Some(strip_x) = g.strip_x
         {
             let ticks = ruler::value_ticks(dlo as f64, dhi as f64, lane.h as f64);
-            draw_y_ruler(mesh, g.body.x, strip_x, lane, &ticks);
+            ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks);
         }
         let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
         let columns = lane.w.max(1.0) as usize;
