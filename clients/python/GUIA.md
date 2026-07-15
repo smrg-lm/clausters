@@ -102,14 +102,14 @@ ventana **dibuje y responda**:
   `"points"`.
 - **Bulk data.** `examples/gui_bulk.py` → un buffer grande se transfiere por
   recurso compartido / fetch y se muestra.
-- **Plots de medición.** `examples/plotting.py` → cada `plot(...)` abre su
-  propia ventana (el host se lanza solo, sin servidor de audio): la salida de
-  una def renderizada offline en lanes por canal con reglas x/y, una envolvente
-  tocada por el `EnvGen` del motor, y una secuencia (`Pwhite` de rango
-  arbitrario) con el eje de valores auto-ajustado. Pasar el mouse muestra el
-  hairline con el valor exacto de la muestra (o del bin en Hz/dB en la vista
-  `spectrum`); `win.set(view="spectrum", freq_scale="mel")` retunea la vista en
-  vivo sin re-render.
+- **Plots de medición.** `examples/plotting.py` → recorrido visual
+  **secuencial**: cada ventana aparece sola (el host se lanza solo, sin
+  servidor de audio), se anuncia por consola, hace un cambio en vivo *ida y
+  vuelta* (`view` signal↔spectrum en la def, `min` pineado y liberado con
+  `"auto"`, `freq_scale` log↔mel en el espectro del GraphDef — todo con
+  `win.set`, sin re-render) y se cierra antes de la siguiente. Pasar el mouse
+  muestra el hairline con el valor exacto de la muestra (o del bin en Hz/dB en
+  la vista `spectrum`).
 - **Bundle standalone.** `examples/gui_standalone.py` autorea un bundle (GuiDef +
   GraphDefs); lanzarlo con `--standalone <name>` abre un instrumento
   autocontenido, sin cliente de lenguaje, que suena y responde.

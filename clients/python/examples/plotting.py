@@ -4,22 +4,24 @@
 `clausters.plot` is the visual sibling of `clausters.play`: one verb that opens
 **its own window** for whatever you hand it, booting the GUI host lazily on
 first use (no audio server involved — a def is rendered *offline* by the
-bundled NRT renderer and reaches the host as a mapped file). Each call is one
-window; the returned handle retunes the display live and closes it.
+bundled NRT renderer and reaches the host as a mapped file). The returned
+handle retunes the display live and closes the window.
 
-What to look at in each window: the x/y rulers fit the signal (a sequence of
-arbitrary range auto-fits its value axis), every channel draws in its own lane,
-and hovering the trace shows a hairline with the exact sample under the cursor
-— index or clock time, and the sample's value; on a spectrum view, the bin's
-frequency (in the chosen scale) and its level in dB.
+This is a **sequential visual tour**: each window appears alone, announces
+itself on the console, makes one live change *and comes back* (view, pinned
+axis side, frequency scale — all through ``win.set``, no re-render), and
+closes before the next one opens. While a window is up, hover the trace: a
+hairline names the exact sample under the cursor (index or clock time, and the
+value; on a spectrum view, the bin's frequency in the chosen scale and its
+level in dB).
 
-Run it as a script (``python plotting.py``; windows stay open until you close
-them) or cell by cell (``# %%``). Needs a display and a GPU adapter; the
-install bundles the GUI binary.
+Run it as a script (``python plotting.py``) or cell by cell (``# %%``). Needs
+a display and a GPU adapter; the install bundles the GUI binary.
 """
 
-# %% A def's rendered output — eyeball what a SynthDef actually produces.
+# %% Setup.
 import time
+
 from clausters import plot
 from clausters.defs import (
     DoneAction,
@@ -33,8 +35,10 @@ from clausters.defs import (
 )
 from clausters.seq import Pseq, Pwhite
 
+#: Seconds each visual step stays on screen.
+PAUSE = 3.0
 
-# %%
+
 def ping(name: str = "ping") -> SynthDef:
     """A sine ping shaped by a percussive envelope, self-freeing."""
     freq = control("freq", 660.0)
@@ -44,71 +48,65 @@ def ping(name: str = "ping") -> SynthDef:
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-win_def = plot(ping(), dur=0.6, channels=2)   # two lanes, time ruler, hover it
+# %% 1/5 — a def's rendered output: eyeball what a SynthDef actually produces.
+print("1/5 ping (SynthDef, rendered offline): two channel lanes, time ruler")
+win_def = plot(ping(), dur=0.6, channels=2)
+time.sleep(PAUSE)
+print("    view -> spectrum (the same render, analyzed)")
+win_def.set(view="spectrum")
+time.sleep(PAUSE)
+print("    view -> signal (round trip), and the window closes")
+win_def.set(view="signal")
+time.sleep(PAUSE)
+win_def.close()
 
-time.sleep(3)
-
-# %% An envelope, rendered through the engine's own EnvGen — what you plot is
-# what an EnvGen plays (the gate closes at the sustain point, so the release
-# segments show too).
+# %% 2/5 — an envelope, rendered through the engine's own EnvGen (the gate
+# closes at the sustain point, so the release segments show too).
+print("2/5 env (adsr through the engine's EnvGen): the whole curve")
 win_env = plot(Env.adsr(attack=0.05, decay=0.2, sustain=0.6, release=0.4))
+time.sleep(PAUSE)
+print("    min -> -1.0 (pin the floor: the curve squashes into the top half)")
+win_env.set(min=-1.0)
+time.sleep(PAUSE)
+print("    min -> auto (the fit gets the side back), and the window closes")
+win_env.set(min="auto")
+time.sleep(PAUSE)
+win_env.close()
 
-time.sleep(3)
+# %% 3/5 — a finite pattern: any iterable of numbers plots as a sequence,
+# index counts on the x ruler.
+print("3/5 sequence (Pseq): stepped values over an index axis")
+win_seq = plot(Pseq([0, 2, 4, 7, 4, 2], repeats=4))
+time.sleep(PAUSE)
+win_seq.close()
 
-# %% Sequences — any iterable of numbers, whatever its range. A pattern is
-# materialized (endless ones capped at n); the value axis auto-fits and the
-# x ruler reads index counts.
-win_seq = plot(Pseq([0, 2, 4, 7, 4, 2], repeats=4))          # a finite pattern
-win_rand = plot(Pwhite(40.0, 4700.0), n=200)                 # arbitrary range
+# %% 4/5 — an arbitrary-range sequence: the value axis auto-fits, whatever
+# the range; a pinned side is released live with "auto".
+print("4/5 sequence (Pwhite 40..4700): the value axis auto-fits the range")
+win_rand = plot(Pwhite(40.0, 4700.0), n=200)
+time.sleep(PAUSE)
+print("    min -> -4700 (pin far below the data: traces squash up)")
+win_rand.set(min=-4700.0)
+time.sleep(PAUSE)
+print("    min -> auto (round trip), and the window closes")
+win_rand.set(min="auto")
+time.sleep(PAUSE)
+win_rand.close()
 
-time.sleep(3)
-
-# %% The spectrum view — the averaged magnitude spectrum of a short signal,
-# here a GraphDef's output (member defs ride along via `defs`).
+# %% 5/5 — the spectrum view of a GraphDef's output (member defs ride along
+# via `defs`), retuning the frequency scale live.
+print("5/5 ping_chain (GraphDef spectrum): the 880 Hz peak on a log axis")
 g = GraphDef("ping_chain")
 g.add("ping", {"freq": 880.0})
 win_spec = plot(g, defs=[ping()], dur=0.6, channels=2,
                 view="spectrum", freq_scale="log")
-
-time.sleep(3)
-
-# %% The display is live: retune a window without re-rendering. The spectrum
-# window swaps its frequency axis from log to mel (watch the 880 Hz peak and
-# the ruler move)...
+time.sleep(PAUSE)
+print("    freq_scale -> mel (watch the peak and the ruler move)")
 win_spec.set(freq_scale="mel")
+time.sleep(PAUSE)
+print("    freq_scale -> log (round trip), and the window closes")
+win_spec.set(freq_scale="log")
+time.sleep(PAUSE)
+win_spec.close()
 
-time.sleep(3)
-
-# %% ...and the *view* itself is live too: the ping window turns from its two
-# waveform lanes into the averaged spectrum...
-win_def.set(view="spectrum")
-
-time.sleep(3)
-
-# %% ...and back — so every window ends up showing its own thing (only the
-# spectrum window keeps a spectral axis, now in mel).
-win_def.set(view="signal")
-
-time.sleep(3)
-
-# %% Pin one side of the random sequence's value axis. Far below the data, so
-# the pin is unmistakable: the traces squash into the top half.
-win_rand.set(min=-4700.0)
-
-time.sleep(3)
-
-# %% ...and "auto" gives the pinned side back to the data fit.
-win_rand.set(min="auto")
-
-time.sleep(3)
-
-# %% Close them (or just close the windows / exit the interpreter).
-# for w in (win_def, win_env, win_seq, win_rand, win_spec):
-#     w.close()
-
-if __name__ == "__main__":
-    print("five plot windows are up; close them or Ctrl+C to end")
-    try:
-        time.sleep(60.0)
-    except KeyboardInterrupt:
-        pass
+print("done — five windows appeared, retuned live and closed")

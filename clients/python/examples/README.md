@@ -90,11 +90,14 @@ pip install ./clients/python          # builds + bundles the native libs
 
 - **`plotting.py`** — quick looks with the free-standing `clausters.plot`: each
   call opens **its own window** (the GUI host boots lazily; no audio server —
-  defs render through the bundled NRT renderer). A `SynthDef`'s output in
-  per-channel lanes with x/y rulers, an `Env` played by the engine's own
-  `EnvGen`, sequences (`Pseq`, an arbitrary-range `Pwhite`) with the value axis
-  auto-fitted, a `GraphDef`'s averaged spectrum (`view="spectrum"`), and live
-  retuning through the returned handle (`win.set(freq_scale="mel")`). `# %%`
+  defs render through the bundled NRT renderer). A **sequential visual tour**,
+  one window at a time, each announced on the console: a `SynthDef`'s output in
+  per-channel lanes (view retuned to spectrum and back), an `Env` played by the
+  engine's own `EnvGen` (a value-axis side pinned and released), sequences
+  (`Pseq`; an arbitrary-range `Pwhite` with the axis auto-fitted), and a
+  `GraphDef`'s averaged spectrum with its frequency scale swapped log→mel→log —
+  every live change through the returned handle (`win.set(...)`), and each
+  window closes before the next appears. `# %%`
   cells; needs a display and a GPU adapter.
 
   ```sh
