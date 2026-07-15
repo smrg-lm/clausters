@@ -39,14 +39,14 @@ Two sections feed the client's defaults:
   ```toml
   [server]
   audio_buses = 128
-  control_buses = 1024
+  control_buses = 16384
   sample_rate = 48000
   # Boot-time hardware channels and pre-allocated pools:
   outputs = 2          # omit to follow the device default
   inputs = 0           # >0 opens the input device; In reads it
-  max_nodes = 1024
-  max_buffers = 1024
-  max_graph_children = 256
+  max_nodes = 8192
+  max_buffers = 4096
+  max_graph_children = 512
   max_ugen_inputs = 32
   ```
 

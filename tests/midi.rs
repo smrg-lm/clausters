@@ -54,7 +54,7 @@ fn note_on_spawns_voice_with_converted_controls() {
     let (id, _) = bind_and_note(&mut t, 69, u16::MAX);
     // Voice IDs come from the MIDI range of the node-id partition (the
     // default translator uses the default node-table size).
-    let part = NodeIdPartition::from_max_nodes(1024);
+    let part = NodeIdPartition::from_max_nodes(clausters::dsp::Limits::default().max_nodes);
     assert!(id as i64 >= part.midi_base);
     assert!((id as i64) < part.midi_base + part.midi_capacity as i64);
     let (def_name, controls) = t.mirror.synth_info(id).expect("voice mirrored");

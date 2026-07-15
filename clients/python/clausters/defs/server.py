@@ -127,16 +127,16 @@ def _parse_n_info(args) -> dict:
 # buses exist is the server's property, and these are only the fallback when the
 # caller does not specify. The bus allocators carry no defaults of their own.
 DEFAULT_AUDIO_BUSES = 128
-DEFAULT_CONTROL_BUSES = 1024
+DEFAULT_CONTROL_BUSES = 16384
 DEFAULT_SAMPLE_RATE = 48000
 # Boot-time pre-allocated pool sizes, mirroring the Rust server's `Limits`
 # defaults (`--max-nodes`/`--max-buffers`/`--max-graph-children`/
 # `--max-ugen-inputs`). 32 is the hard ceiling on UGen inputs, like 128 for
 # audio buses. Hardware channels default to the device's outputs (``None`` =
 # no flag) and no live input.
-DEFAULT_MAX_NODES = 1024
-DEFAULT_MAX_BUFFERS = 1024
-DEFAULT_MAX_GRAPH_CHILDREN = 256
+DEFAULT_MAX_NODES = 8192
+DEFAULT_MAX_BUFFERS = 4096
+DEFAULT_MAX_GRAPH_CHILDREN = 512
 DEFAULT_MAX_UGEN_INPUTS = 32
 # The audio-tap region (`--taps`/`--tap-frames`): pre-allocated sample rings
 # an audio bus can be routed into with `Server.tap`, read by a GUI host out of

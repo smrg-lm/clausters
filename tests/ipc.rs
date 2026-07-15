@@ -107,10 +107,13 @@ fn file_segments_validate_magic_and_version() {
     assert!(err.contains("size"), "{err}");
     let _ = std::fs::remove_file(&path);
     // Pins the layout for out-of-process clients (clients/python parses
-    // these offsets): changing it requires bumping ABI_VERSION.
-    // v3 = v2's 135,360 (header + rings + 1024 control buses) aligned to 64,
-    // plus 8 default taps × (64-byte cursor line + 16384 × f32 ring).
-    assert_eq!(SEGMENT_SIZE, 660_160);
+    // these offsets): changing the *structure* requires bumping ABI_VERSION.
+    // This is the default-count instance of the v3 layout: header + rings +
+    // 16384 default control buses, aligned to 64, plus 8 default taps ×
+    // (64-byte cursor line + 16384 × f32 ring). The counts travel in the
+    // header, so a non-default boot changes the size, never the offsets'
+    // derivation.
+    assert_eq!(SEGMENT_SIZE, 721_600);
 }
 
 /// The audio-tap rings (ABI v3): block writes, the newest-window read, the

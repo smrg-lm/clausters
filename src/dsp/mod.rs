@@ -74,7 +74,7 @@ impl Block {
 /// Audio buses (scsynth `-a`); buses `0..channels` are the hardware outputs.
 pub const NUM_AUDIO_BUSES: usize = 128;
 /// Control buses (scsynth `-c`).
-pub const NUM_CONTROL_BUSES: usize = 1024;
+pub const NUM_CONTROL_BUSES: usize = 16384;
 /// Hard ceiling on inputs per UGen: the synth builds its input list on a
 /// fixed stack array of this width (see `synthdef::instance`), so it is a
 /// compile-time invariant, not a tunable. EnvGen already needs 21 (ADSR).
@@ -108,9 +108,9 @@ impl Default for Limits {
         Self {
             // Kept in sync with `node::MAX_NODES` / `node::MAX_GROUP_CHILDREN`
             // / `buffer::NUM_BUFFERS`; those consts stay the documented default.
-            max_nodes: 1024,
-            max_buffers: 1024,
-            max_group_children: 256,
+            max_nodes: 8192,
+            max_buffers: 4096,
+            max_group_children: 512,
             max_ugen_inputs: MAX_UGEN_INPUTS,
         }
     }

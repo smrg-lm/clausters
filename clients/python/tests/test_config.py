@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 import clausters.config as config
-from clausters.defs.server import Server, ServerInfo, ServerOptions
+from clausters.defs.server import DEFAULT_MAX_NODES, Server, ServerInfo, ServerOptions
 
 
 @pytest.fixture(autouse=True)
@@ -129,5 +129,5 @@ def test_server_info_capacity_fields_default_for_old_servers():
         actual_sample_rate=48000.0,
     )
     assert info.input_channels == 0
-    assert info.max_nodes == 1024
+    assert info.max_nodes == DEFAULT_MAX_NODES
     assert info.max_ugen_inputs == 32

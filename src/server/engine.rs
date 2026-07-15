@@ -29,9 +29,15 @@ use crate::server::ipc::Segment;
 use crate::server::workers::WorkerPool;
 
 const CMD_FIFO_CAPACITY: usize = 1024;
+/// Floor for the garbage FIFO; scaled to `2 * max_nodes` at boot so a
+/// mass-free of a full tree never spills into the leak path.
 const GARBAGE_FIFO_CAPACITY: usize = 1024;
 /// Local holding list for when the garbage FIFO is full.
 const PENDING_GARBAGE_CAPACITY: usize = 64;
+/// Floor for the node-event FIFO; scaled to `2 * max_nodes` at boot. Events
+/// stay best-effort, but the id registries recycle off `/n_end` (S10), so the
+/// capacity must cover at least one full-tree turnover per drain — a dropped
+/// end event is a client-side id that never comes back.
 const EVENT_FIFO_CAPACITY: usize = 2048;
 /// Side-effect reply messages (`SendReply`/`SendTrig`/`Poll`, S9) buffered from
 /// the audio thread to the network thread; over capacity they drop, best-effort
@@ -406,8 +412,8 @@ pub fn engine_pair_full(
     let audio_buses = audio_buses.clamp(channels.max(1), NUM_AUDIO_BUSES);
     assert!(channels > 0 && channels <= audio_buses);
     let (cmd_tx, cmd_rx) = RingBuffer::new(CMD_FIFO_CAPACITY);
-    let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY);
-    let (events_tx, events_rx) = RingBuffer::new(EVENT_FIFO_CAPACITY);
+    let (garbage_tx, garbage_rx) = RingBuffer::new(GARBAGE_FIFO_CAPACITY.max(2 * limits.max_nodes));
+    let (events_tx, events_rx) = RingBuffer::new(EVENT_FIFO_CAPACITY.max(2 * limits.max_nodes));
     let (reply_tx, reply_rx) = RingBuffer::new(REPLY_FIFO_CAPACITY);
     let counters = Arc::new(Counters {
         synths: AtomicU32::new(0),

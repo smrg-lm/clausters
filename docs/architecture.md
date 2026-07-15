@@ -135,17 +135,17 @@ Audited: `tests/capacity.rs` overflows each structure on purpose and pins the be
 | Structure | Capacity (default) | Boot flag | When full |
 |---|---|---|---|
 | Command FIFO | 1024 | — | reply `/fail … command FIFO full` (render mode: abort with the event time) |
-| Garbage FIFO | 1024 | — | spills into a 64-slot holding list retried next block; if that also fills, the memory is **leaked** (`mem::forget`) — leaking is the only RT-safe option left |
-| Event FIFO (`/n_go`/`/n_end`) | 2048 | — | events are POD and best-effort: dropped silently |
+| Garbage FIFO | 1024, scaled to `2 × max_nodes` at boot | (follows `--max-nodes`) | spills into a 64-slot holding list retried next block; if that also fills, the memory is **leaked** (`mem::forget`) — leaking is the only RT-safe option left |
+| Event FIFO (`/n_go`/`/n_end`) | 2048, scaled to `2 × max_nodes` at boot | (follows `--max-nodes`) | events are POD and best-effort: dropped silently — the scaling keeps a full-tree mass-free deliverable, since the id registries recycle off `/n_end` |
 | Reply FIFO (`SendReply`/`SendTrig`/`Poll`) | 2048 | — | POD reply messages, best-effort: dropped silently (plus a per-block per-UGen buffer of 8) |
 | Schedule queue (timed bundles) | 1024 | — | the bundle is rejected and returned whole as a non-empty `Garbage::SpentBundle` (render mode: abort) |
-| Node slab | 1024 (`node::MAX_NODES`) | `--max-nodes` | command rejected → `Garbage::Rejected*` |
+| Node slab | 8192 (`node::MAX_NODES`) | `--max-nodes` | command rejected → `Garbage::Rejected*` |
 | Node-id ranges (client / auto / MIDI) | 4× / 2× / 2× `max_nodes` (`registry::NodeIdPartition`) | `--max-nodes` | allocation refused with an explicit error; ids recycle on node end — see "Finite-resource registries" below |
-| Children per non-root group | 256 (`node::MAX_GROUP_CHILDREN`) | `--max-graph-children` | command rejected → `Garbage::Rejected*` |
-| Buffer pool | 1024 (`buffer::NUM_BUFFERS`) | `--max-buffers` | `/b_*` validates the index up front and replies `/fail` |
+| Children per non-root group | 512 (`node::MAX_GROUP_CHILDREN`) | `--max-graph-children` | command rejected → `Garbage::Rejected*` |
+| Buffer pool | 4096 (`buffer::NUM_BUFFERS`) | `--max-buffers` | `/b_*` validates the index up front and replies `/fail` |
 | Inputs per UGen | 32 (`dsp::MAX_UGEN_INPUTS`, hard ceiling) | `--max-ugen-inputs` | `/d_recv` rejects the def with `/fail` |
 | Audio buses | 128 (`dsp::NUM_AUDIO_BUSES`, hard ceiling) | `--audio-buses` | bus-index inputs are clamped per block |
-| Control buses | 1024 | `--control-buses` | out-of-range reads return 0.0, writes are ignored |
+| Control buses | 16384 | `--control-buses` | out-of-range reads return 0.0, writes are ignored |
 | IPC rings | 64 KiB each | `--shm` | backpressure: `push` fails, the producer retries; nothing is dropped (a full *reply* ring drops the reply with a log — the client stopped draining) |
 
 The **boot-flag** column marks what is configurable at server start (S7): the four pool sizes plus the buses and the hardware I/O channels (`--outputs`/`--inputs`). Every one sizes a slab or `Vec` built **once at startup** — fixed at runtime, never at compile time — fed by the same config-file → flag precedence as the other options (`[server]` keys `max_nodes`, `max_buffers`, `max_graph_children`, `max_ugen_inputs`, `outputs`, `inputs`). Two carry a compile-time hard ceiling the flag clamps to, because they size a fixed-width structure the audio thread relies on: audio buses at 128 (the `BusUsage` mask is a `u128`) and UGen inputs at 32 (the per-UGen input list is a stack array in `synthdef::instance`). A client discovers the live values with `/server_info` (see `schemas.md`). `tests/capacity.rs` overflows the configurable slabs at both the default and a small custom size.

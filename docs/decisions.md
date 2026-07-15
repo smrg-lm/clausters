@@ -690,3 +690,17 @@ the weight:
   formula — by query, not convention. The sanctioned exception is NRT/score:
   no real-time bound and no live `/n_end` stream, so a score client's node-id
   registry is unbounded by design.
+
+**Generous defaults (2026-07-16 follow-up).** With every id space bounded and
+recycling, the boot defaults were raised so a limit is only ever hit when
+something is genuinely wrong: `--max-nodes` 1024 → **8192** (a node can be a
+note; the id partition scales with it automatically), `--max-buffers` 1024 →
+**4096**, `--control-buses` 1024 → **16384** (scsynth's own default),
+`--max-graph-children` 256 → **512** (per *direct* children of one group — it
+pre-reserves 8 bytes each per created group and never multiplies `max_nodes`).
+The memory cost is small: ~2 MB of node slab, 64 KB of control buses (the shm
+segment's default instance grows to 721 600 bytes), 4 KB per created group.
+One capacity now *scales* rather than being constant: the node-event and
+garbage FIFOs grow to `2 × max_nodes` at boot (floor 2048/1024), because the
+registries recycle off `/n_end` — a dropped end event is a client id that
+never returns, so a full-tree mass-free must fit one turnover per drain.

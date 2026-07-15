@@ -18,7 +18,7 @@ use std::sync::Arc;
 /// Default buffer-pool size, like scsynth's default `-b`. The live server sizes
 /// its pool at boot from `--max-buffers` (see [`empty_pool_with`]); this stays
 /// the fallback used by the NRT renderer and tests.
-pub const NUM_BUFFERS: usize = 1024;
+pub const NUM_BUFFERS: usize = 4096;
 
 /// The engine-side pool: index → installed buffer.
 pub type BufferPool = Vec<Option<Arc<Buffer>>>;

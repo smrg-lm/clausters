@@ -59,7 +59,12 @@ fn synth_count(handle: &EngineHandle) -> u32 {
 /// freeing on the RT path — and keep working.
 #[test]
 fn garbage_overflow_leaks_instead_of_blocking() {
-    let (mut engine, mut handle) = engine_pair(SR, 2);
+    // A small node slab keeps the boot-scaled garbage FIFO at its 1024 floor
+    // (it grows with `2 * max_nodes`), so the overflow stays reachable.
+    let (mut engine, mut handle) = engine_with_limits(Limits {
+        max_nodes: 512,
+        ..Limits::default()
+    });
     // 6 rounds × 250 create+free pairs = 1500 dead synths, never collected:
     // well past 1024 (FIFO) + 64 (holding list).
     for round in 0..6 {
@@ -113,11 +118,14 @@ fn event_overflow_drops_silently() {
     assert_eq!(synth_count(&handle), 1, "the engine state stays exact");
 }
 
-/// Node slab (1024 incl. root) full: extra synths come back as
-/// `RejectedSynth` garbage; the tree caps exactly at capacity.
+/// A full node slab (configured here at 1024, root included): extra synths
+/// come back as `RejectedSynth` garbage; the tree caps exactly at capacity.
 #[test]
 fn full_node_slab_rejects_gracefully() {
-    let (mut engine, mut handle) = engine_pair(SR, 2);
+    let (mut engine, mut handle) = engine_with_limits(Limits {
+        max_nodes: 1024,
+        ..Limits::default()
+    });
     // 1100 adds in FIFO-sized chunks; the slab fits 1023 beside the root.
     for chunk in 0..4 {
         for i in 0..275 {
@@ -138,8 +146,9 @@ fn full_node_slab_rejects_gracefully() {
     tick(&mut engine, 2); // still processing
 }
 
-/// Non-root groups pre-reserve 256 child slots: the 257th add is rejected,
-/// never grown (growing would allocate on the audio thread).
+/// Non-root groups pre-reserve their child slots (configured here at 256):
+/// the 257th add is rejected, never grown (growing would allocate on the
+/// audio thread).
 #[test]
 fn full_group_rejects_extra_children() {
     let (mut engine, mut handle) = engine_pair(SR, 2);
@@ -148,7 +157,9 @@ fn full_group_rejects_extra_children() {
             id: 1,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            group: Group::new(),
+            // The capacity travels with the pre-built group (the translator
+            // sizes it from `--max-graph-children`); 256 here.
+            group: Group::with_capacity(256),
         })
         .ok()
         .unwrap();

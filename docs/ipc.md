@@ -12,7 +12,7 @@ All three coexist: a `--shm` server still serves UDP; the embedded server keeps 
 
 ## The segment
 
-A single memory region (ABI v3; 660 160 bytes with the default 1024 control buses and 8 audio taps of 16 384 samples) holding, in order:
+A single memory region (ABI v3; 721 600 bytes with the default 16 384 control buses and 8 audio taps of 16 384 samples) holding, in order:
 
 - **Header**: magic `"CLAU"`, **layout version** — checked on attach, a mismatch refuses to connect (the scsynth plugin-ABI lesson: every binary boundary is versioned) — the device sample rate, the sample clock, the **control-bus count** and the **tap region shape** (tap count and per-tap ring capacity), so a client maps the whole file and derives every offset from the header alone.
 - **Command plane**: two SPSC byte rings (64 KiB each) of length-prefixed OSC packets — client→server commands, server→client replies. Unlike UDP, a full ring gives **backpressure** (the push fails and you retry) instead of silently dropping packets. Ring contents are untrusted bytes: the server validates exactly as it does UDP datagrams, and garbage resyncs the ring instead of wedging it.

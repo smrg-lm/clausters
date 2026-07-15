@@ -8,7 +8,7 @@ usage:
                            device (PipeWire honors it per-app; other hosts fall
                            back to the device rate if unsupported)
       --audio-buses <n>    audio buses (default 128, the hard maximum)
-      --control-buses <n>  control buses (default 1024)
+      --control-buses <n>  control buses (default 16384)
       --taps <n>           audio-tap rings for oscilloscopes (default 8;
                            0 disables): /tap routes an audio bus into one,
                            read from the shared segment or via /tap_stream
@@ -19,9 +19,9 @@ usage:
       --inputs <n>         hardware input channels (default 0 = no input); opens
                            the default input device, readable via In on audio
                            buses outputs..outputs+inputs
-      --max-nodes <n>          node slab capacity, root included (default 1024)
-      --max-buffers <n>        buffer pool size (default 1024)
-      --max-graph-children <n> per-group child capacity (default 256)
+      --max-nodes <n>          node slab capacity, root included (default 8192)
+      --max-buffers <n>        buffer pool size (default 4096)
+      --max-graph-children <n> per-group child capacity (default 512)
       --max-ugen-inputs <n>    accepted inputs per UGen (default 32, the max)
       --tcp [port]         length-prefixed OSC over TCP — on by default at the
                            OSC port (57110); the flag only moves it (RT only)

@@ -74,9 +74,9 @@ impl ControlMap {
 /// Default capacity of the node slab (scsynth's `-n`). The live server sizes
 /// its tree at boot from `--max-nodes` (see [`NodeTree::with_capacity`]); this
 /// is the fallback for [`NodeTree::new`], the NRT renderer and tests.
-pub const MAX_NODES: usize = 1024;
+pub const MAX_NODES: usize = 8192;
 /// Default pre-reserved child capacity of non-root groups (`--max-graph-children`).
-pub const MAX_GROUP_CHILDREN: usize = 256;
+pub const MAX_GROUP_CHILDREN: usize = 512;
 /// Root node ID, like scsynth.
 pub const ROOT_NODE_ID: i32 = 0;
 

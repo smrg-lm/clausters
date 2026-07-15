@@ -1,7 +1,7 @@
 """Buffers, with client-side index allocation.
 
 The server's buffer pool is a finite boot-time resource (``--max-buffers``,
-1024 by default), indices allocated by the client (like scsynth). `Buffer` is
+4096 by default), indices allocated by the client (like scsynth). `Buffer` is
 a flat handle; the actual allocation/loading happens on the server via
 ``/b_alloc``/``/b_allocRead``/… driven by `Server`.
 
@@ -12,7 +12,7 @@ wrapping. The `Server` sizes it from its `ServerOptions` (``max_buffers``).
 
 from .. import _native
 
-NUM_BUFFERS = 1024
+NUM_BUFFERS = 4096
 
 
 class Buffer:
