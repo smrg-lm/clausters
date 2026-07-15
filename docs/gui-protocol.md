@@ -43,7 +43,13 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
 
 - **`type`** names the widget; every other key is a **property** of it.
 - **`id`** addresses the node for `/gui_set`, `/gui_free`, `/gui_query`, bindings
-  and events. The root's id is the one given to `/gui_def`.
+  and events. The root's id is the one given to `/gui_def`. Ids live in **one
+  namespace per host**, across all windows (exactly like the audio server's node
+  ids): a duplicate id is skipped at define time with a warning, so a client must
+  keep ids unique host-wide. It is the **client's** job to allocate them — the
+  Python client assigns a fresh id to any widget built without one (and to every
+  window), from one counter starting at 1000, so hand-picked ids below 1000 and
+  assigned ids never collide.
 - **`children`** nests (containers only: `window`, `panel`, `track`).
 - **`bind`** as an inline prop registers a binding declaratively, so a saved
   GuiDef carries its own (no separate `/gui_bind` at boot).

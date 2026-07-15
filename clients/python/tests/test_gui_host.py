@@ -27,3 +27,38 @@ def test_udp_opt_down():
 def test_unknown_transport_is_refused():
     with pytest.raises(ValueError):
         GuiHost(transport="ws")
+
+
+class _Recorder:
+    """A stub OSC interface capturing what GuiHost would send."""
+
+    def __init__(self):
+        self.sent = []
+
+    def send_msg(self, target, *args):
+        self.sent.append(args)
+
+
+def test_open_assigns_missing_widget_ids_in_place():
+    from clausters.gui import guidef
+
+    host = GuiHost("127.0.0.1", 57998)
+    host._osc = _Recorder()
+    knob = guidef.knob(label="freq")            # no id: assigned at open
+    slider = guidef.slider(7)                   # explicit id: kept verbatim
+    inner = guidef.button()
+    panel = guidef.panel(None, inner)           # nested id-less children too
+    win_a = host.open(guidef.window(knob, slider, panel))
+    win_b = host.open(guidef.window(guidef.knob()))
+    # Assigned in place, host-unique across windows, disjoint from hand ids.
+    assigned = [knob["id"], panel["id"], inner["id"], win_a, win_b]
+    assert len(set(assigned)) == len(assigned)
+    assert all(i >= 1000 for i in assigned)
+    assert slider["id"] == 7
+
+
+def test_a_non_integer_widget_id_is_refused():
+    from clausters.gui import guidef
+
+    with pytest.raises(TypeError, match="widget id"):
+        guidef.knob("freq")  # a label mistaken for the positional id

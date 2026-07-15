@@ -90,6 +90,29 @@ def _verbosity_flags(verbose: int) -> "list[str]":
     return []
 
 
+# Linux: the libc handle for PR_SET_PDEATHSIG, resolved once at import (the
+# preexec hook runs between fork and exec, where importing is not safe).
+_libc = None
+if os.name == "posix" and os.uname().sysname == "Linux":  # pragma: no branch
+    try:
+        import ctypes
+
+        _libc = ctypes.CDLL(None, use_errno=True)
+    except OSError:  # pragma: no cover - no usable libc
+        _libc = None
+
+
+def _die_with_parent():
+    """`Popen` preexec hook (Linux): have the kernel SIGTERM the child when
+    this interpreter dies — *however* it dies. The atexit/finalizer teardown
+    covers clean exits, but not a SIGKILL, a closed terminal's SIGHUP or a
+    crashed kernel: without this a stale ``clausters``/``clausters-gui`` could
+    survive and squat the port for the next session."""
+    if _libc is not None:
+        PR_SET_PDEATHSIG = 1
+        _libc.prctl(PR_SET_PDEATHSIG, 15, 0, 0, 0)  # SIGTERM
+
+
 def _terminate(proc: "subprocess.Popen"):
     """Stop a child politely (SIGTERM / ``terminate``), then forcibly (SIGKILL /
     ``kill``) if it does not exit promptly. Idempotent and never raises."""
@@ -140,7 +163,11 @@ class _Process:
         self._probe_port_free()
         argv = self._argv()
         try:
-            self.proc = subprocess.Popen(argv)
+            # On Linux the child is bound to this interpreter's life by the
+            # kernel (`_die_with_parent`); elsewhere only the atexit teardown
+            # applies. Both server and GUI host go through here.
+            preexec = _die_with_parent if _libc is not None else None
+            self.proc = subprocess.Popen(argv, preexec_fn=preexec)
         except OSError as e:
             raise ServerError(f"could not launch {self.kind}: {e}") from e
         # Die with this interpreter even on an abandoned handle: a finalizer for

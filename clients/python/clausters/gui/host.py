@@ -128,9 +128,10 @@ class GuiHost:
         A thin, id-managing wrapper over `define`: with ``id=None`` an id is
         assigned for you (and remembered so `close` / `close_all` can free it);
         pass an explicit ``id`` to name the root yourself (e.g. to `set` its
-        children by their own ids later). Editing the open window is `set`;
-        closing it is `close`. Any trailing ``blobs`` ride along exactly as in
-        `define`."""
+        children by their own ids later). Id-less **widgets** inside ``tree``
+        are assigned too, in place — see `define`. Editing the open window is
+        `set`; closing it is `close`. Any trailing ``blobs`` ride along exactly
+        as in `define`."""
         if id is None:
             id = next(self._ids)
         self.define(id, tree, *blobs)
@@ -160,8 +161,25 @@ class GuiHost:
         """``/gui_def <id> <json> [blob…]`` — build a whole widget tree in one
         message. Any trailing ``blobs`` (e.g. waveform samples from
         `clausters.gui.guidef.samples_to_blob`) ride alongside the JSON and are
-        referenced by index from a widget's ``blob`` property."""
+        referenced by index from a widget's ``blob`` property.
+
+        Widgets built **without an id** (`clausters.gui.guidef` builders take
+        ``id=None``) get a fresh host-unique one here, **written into the
+        caller's dict in place** — so after ``define``/`open` the widget you
+        kept a reference to reads back as ``widget["id"]``, ready for `set` /
+        `bind`. Ids you did pick are kept verbatim; they share one namespace
+        across every window on this host (allocation starts at 1000, so hand
+        ids below 1000 never collide with assigned ones)."""
+        self._fill_ids(tree)
         self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
+
+    def _fill_ids(self, node: dict):
+        """Assigns a fresh id to every id-less widget under ``node``, in place
+        (the root itself carries no id — it is the ``/gui_def`` argument)."""
+        for child in node.get("children", ()):
+            if "id" not in child:
+                child["id"] = self.alloc_id()
+            self._fill_ids(child)
 
     def set(self, id: int, **props):
         """``/gui_set <id> <k> <v> ...`` — update one live widget. Property types
