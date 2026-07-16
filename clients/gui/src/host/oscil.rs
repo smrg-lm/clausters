@@ -27,16 +27,17 @@ pub(crate) fn raw_frames(display: usize) -> usize {
     display * 2
 }
 
-/// Start index of the triggered display window inside `raw`: the **latest**
-/// rising crossing of `level` that still leaves a full `display` window after
-/// it. The trigger re-arms only after the signal dips below `level` minus a
-/// hysteresis of 2% of the window's peak-to-peak, so noise riding on the
-/// level does not fire mid-cycle. Falls back to the newest window (free-run)
-/// when no crossing exists — silence, DC, or a window without a rising edge —
-/// so the scope always draws something.
-pub(crate) fn align(raw: &[f32], display: usize, level: f32) -> usize {
+/// Start index of the triggered display window inside `raw`, and whether the
+/// trigger actually fired (`true` = locked; the read-out the scope shows).
+/// The start is the **latest** rising crossing of `level` that still leaves a
+/// full `display` window after it. The trigger re-arms only after the signal
+/// dips below `level` minus a hysteresis of 2% of the window's peak-to-peak,
+/// so noise riding on the level does not fire mid-cycle. Falls back to the
+/// newest window (free-run, `false`) when no crossing exists — silence, DC,
+/// or a window without a rising edge — so the scope always draws something.
+pub(crate) fn align(raw: &[f32], display: usize, level: f32) -> (usize, bool) {
     if raw.len() <= display {
-        return 0;
+        return (0, false);
     }
     let newest = raw.len() - display;
     let (mut lo, mut hi) = (f32::INFINITY, f32::NEG_INFINITY);
@@ -58,7 +59,7 @@ pub(crate) fn align(raw: &[f32], display: usize, level: f32) -> usize {
             armed = true;
         }
     }
-    found.unwrap_or(newest)
+    (found.unwrap_or(newest), found.is_some())
 }
 
 #[cfg(test)]
@@ -87,7 +88,8 @@ mod tests {
         let display = 256;
         let a = sine(raw_frames(display), 128, 0.3);
         let b = sine(raw_frames(display), 128, 2.1);
-        let (sa, sb) = (align(&a, display, 0.0), align(&b, display, 0.0));
+        let ((sa, la), (sb, lb)) = (align(&a, display, 0.0), align(&b, display, 0.0));
+        assert!(la && lb, "a periodic signal locks");
         for i in 0..display {
             assert!(
                 (a[sa + i] - b[sb + i]).abs() < 0.06,
@@ -113,17 +115,17 @@ mod tests {
             raw[at - 1] = -0.5;
             raw[at] = 0.5;
         }
-        assert_eq!(align(&raw, display, 0.0), 60);
+        assert_eq!(align(&raw, display, 0.0), (60, true));
     }
 
     #[test]
     fn silence_and_dc_free_run_at_the_newest_window() {
         let display = 64;
         let silent = vec![0.0f32; raw_frames(display)];
-        assert_eq!(align(&silent, display, 0.0), display, "newest window");
+        assert_eq!(align(&silent, display, 0.0), (display, false), "newest");
         let dc = vec![0.7f32; raw_frames(display)];
-        assert_eq!(align(&dc, display, 0.0), display);
+        assert_eq!(align(&dc, display, 0.0), (display, false));
         let short = vec![0.0f32; display / 2];
-        assert_eq!(align(&short, display, 0.0), 0, "short data starts at 0");
+        assert_eq!(align(&short, display, 0.0), (0, false), "short data at 0");
     }
 }

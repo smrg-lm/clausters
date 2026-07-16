@@ -38,12 +38,33 @@ pub(crate) fn collect_scopes(widget: &Widget, out: &mut Vec<(i32, i32)>) {
     }
 }
 
-/// One audio-rate scope's per-tick read spec: which tap, how big a window,
-/// where to trigger, and whether the trace is frozen.
+/// One tap consumer's per-tick display window: `channels` interleaved
+/// channels of samples (frame-major, like every interleaved buffer in the
+/// system), plus whether the oscilloscope's trigger locked this tick (always
+/// `false` for a phasescope — it has no trigger). Stored per widget id by the
+/// tick; the render draws it verbatim.
+#[derive(Clone, PartialEq, Debug, Default)]
+pub(crate) struct TapWindow {
+    pub samples: Vec<f32>,
+    pub channels: usize,
+    pub locked: bool,
+}
+
+impl TapWindow {
+    /// Frames per channel in this window.
+    pub fn frames(&self) -> usize {
+        self.samples.len() / self.channels.max(1)
+    }
+}
+
+/// One audio-rate scope's per-tick read spec: its first tap and how many
+/// adjacent rings, how big a window, where to trigger, and whether the trace
+/// is frozen.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct TapScope {
     pub widget_id: i32,
     pub tap: i32,
+    pub channels: usize,
     pub window_ms: f32,
     pub trigger: f32,
     pub hold: bool,
@@ -53,6 +74,7 @@ pub(crate) struct TapScope {
 pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
     if let WidgetKind::Scope {
         tap,
+        channels,
         window_ms,
         trigger,
         hold,
@@ -64,6 +86,7 @@ pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
         out.push(TapScope {
             widget_id: id,
             tap: *tap,
+            channels: *channels,
             window_ms: *window_ms,
             trigger: *trigger,
             hold: *hold,
@@ -114,21 +137,25 @@ pub(crate) fn tree_has_playhead(widget: &Widget) -> bool {
 }
 
 /// Refreshes the aligned display window of every audio-rate scope in `tree`,
-/// once per animation tick. `read_raw` fills a raw window of tap samples
-/// (newest at the end) from wherever the platform gets them — the shm segment
-/// natively, the `/tap_data` store in the browser — returning `false` when no
-/// data is available yet. The stored value per widget id is the triggered
-/// display window the render then draws verbatim; a `hold` scope keeps its
-/// last window.
+/// once per animation tick. `read_raw` fills a raw window of one tap's
+/// samples (newest at the end) from wherever the platform gets them — the shm
+/// segment natively, the `/tap_data` store in the browser — returning `false`
+/// when no data is available yet. The trigger is searched in the **first**
+/// channel and the found alignment applied to every channel, so the channels
+/// keep their true relative phase; the stored [`TapWindow`] per widget id is
+/// what the render draws verbatim. A `hold` scope keeps its last window; a
+/// scope whose first channel has no data yet is skipped (later channels with
+/// no data draw silence, so a short run does not blank the whole scope).
 pub(crate) fn update_tap_windows(
     tree: &Widget,
     sample_rate: f64,
     read_raw: impl Fn(i32, &mut [f32]) -> bool,
-    windows: &mut HashMap<i32, Vec<f32>>,
+    windows: &mut HashMap<i32, TapWindow>,
 ) {
     let mut specs = Vec::new();
     collect_tap_scopes(tree, &mut specs);
     let mut raw = Vec::new();
+    let mut chans: Vec<Vec<f32>> = Vec::new();
     for spec in specs {
         if spec.hold {
             continue;
@@ -138,9 +165,30 @@ pub(crate) fn update_tap_windows(
         if !read_raw(spec.tap, &mut raw) {
             continue;
         }
-        let start = super::oscil::align(&raw, display, spec.trigger);
+        let (start, locked) = super::oscil::align(&raw, display, spec.trigger);
         let end = (start + display).min(raw.len());
-        windows.insert(spec.widget_id, raw[start..end].to_vec());
+        chans.clear();
+        chans.push(raw[start..end].to_vec());
+        for k in 1..spec.channels {
+            raw.fill(0.0);
+            let _ = read_raw(spec.tap + k as i32, &mut raw);
+            chans.push(raw[start..end].to_vec());
+        }
+        let frames = end - start;
+        let mut samples = Vec::with_capacity(frames * spec.channels);
+        for f in 0..frames {
+            for ch in &chans {
+                samples.push(ch[f]);
+            }
+        }
+        windows.insert(
+            spec.widget_id,
+            TapWindow {
+                samples,
+                channels: spec.channels,
+                locked,
+            },
+        );
     }
 }
 
@@ -190,7 +238,7 @@ pub(crate) fn update_phase_windows(
     tree: &Widget,
     sample_rate: f64,
     read_raw: impl Fn(i32, &mut [f32]) -> bool,
-    windows: &mut HashMap<i32, Vec<f32>>,
+    windows: &mut HashMap<i32, TapWindow>,
 ) {
     let mut specs = Vec::new();
     collect_phase_scopes(tree, &mut specs);
@@ -210,15 +258,24 @@ pub(crate) fn update_phase_windows(
             inter.push(l[i]);
             inter.push(r[i]);
         }
-        windows.insert(spec.widget_id, inter);
+        windows.insert(
+            spec.widget_id,
+            TapWindow {
+                samples: inter,
+                channels: 2,
+                locked: false,
+            },
+        );
     }
 }
 
-/// One spectrum's per-tick read spec: its tap, FFT size and display smoothing.
+/// One spectrum's per-tick read spec: its first tap and how many adjacent
+/// rings, FFT size and display smoothing.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct SpectrumSpec {
     pub widget_id: i32,
     pub tap: i32,
+    pub channels: usize,
     pub fft_size: usize,
     pub averaging: f32,
     pub peak_hold: bool,
@@ -228,6 +285,7 @@ pub(crate) struct SpectrumSpec {
 pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
     if let WidgetKind::Spectrum {
         tap,
+        channels,
         fft_size,
         averaging,
         peak_hold,
@@ -238,6 +296,7 @@ pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
         out.push(SpectrumSpec {
             widget_id: id,
             tap: *tap,
+            channels: *channels,
             fft_size: *fft_size,
             averaging: *averaging,
             peak_hold: *peak_hold,
@@ -248,25 +307,29 @@ pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
     }
 }
 
-/// Folds each spectrum's newest FFT window into its persistent
-/// [`SpectrumState`], once per tick. `read_raw` fills a full FFT window of the
-/// tap; a tap with no data yet leaves the state (and its curve) as it was.
+/// Folds each spectrum channel's newest FFT window into its persistent
+/// [`SpectrumState`] (one state per channel, kept in step with the widget's
+/// `channels`), once per tick. `read_raw` fills a full FFT window of one tap;
+/// a tap with no data yet leaves that channel's state (and curve) as it was.
 pub(crate) fn update_spectra(
     tree: &Widget,
     read_raw: impl Fn(i32, &mut [f32]) -> bool,
-    states: &mut HashMap<i32, super::spectrum::SpectrumState>,
+    states: &mut HashMap<i32, Vec<super::spectrum::SpectrumState>>,
 ) {
     let mut specs = Vec::new();
     collect_spectra(tree, &mut specs);
     let mut raw = Vec::new();
     for spec in specs {
-        let state = states
-            .entry(spec.widget_id)
-            .or_insert_with(|| super::spectrum::SpectrumState::new(spec.fft_size));
-        state.ensure_size(spec.fft_size);
-        raw.resize(state.window_len(), 0.0);
-        if read_raw(spec.tap, &mut raw) {
-            state.update(&raw, spec.averaging, spec.peak_hold);
+        let chans = states.entry(spec.widget_id).or_default();
+        chans.resize_with(spec.channels, || {
+            super::spectrum::SpectrumState::new(spec.fft_size)
+        });
+        for (k, state) in chans.iter_mut().enumerate() {
+            state.ensure_size(spec.fft_size);
+            raw.resize(state.window_len(), 0.0);
+            if read_raw(spec.tap + k as i32, &mut raw) {
+                state.update(&raw, spec.averaging, spec.peak_hold);
+            }
         }
     }
 }
@@ -453,6 +516,70 @@ mod tests {
             3.0 + (SCOPE_HISTORY + 9) as f32,
             "newest sample read from the scope's bus"
         );
+    }
+
+    #[test]
+    fn tap_windows_interleave_channels_aligned_on_the_first() {
+        // A 2-channel scope: the trigger crossing found in channel 0 aligns
+        // both channels, so their relative phase is preserved verbatim.
+        let w = tree(
+            r#"{"type":"window","children":[
+                {"id":7,"type":"scope","tap":0,"channels":2,"window_ms":1.0}]}"#,
+        );
+        let mut windows = HashMap::new();
+        // Channel 0 rises through zero at a known index; channel 1 counts, so
+        // the alignment applied to it is directly observable.
+        let read = |tap: i32, out: &mut [f32]| {
+            for (i, s) in out.iter_mut().enumerate() {
+                *s = if tap == 0 {
+                    if i % 24 < 12 { -1.0 } else { 1.0 }
+                } else {
+                    i as f32
+                };
+            }
+            true
+        };
+        update_tap_windows(&w, 48_000.0, read, &mut windows);
+        let win = &windows[&7];
+        assert_eq!(win.channels, 2);
+        assert!(win.locked, "a periodic square locks");
+        let frames = win.frames();
+        assert!(frames >= 16);
+        assert_eq!(win.samples.len(), frames * 2);
+        // Channel 0 starts at its rising crossing; channel 1 carries the same
+        // start index (a multiple of nothing in particular, but consecutive).
+        assert_eq!(win.samples[0], 1.0, "starts at the rising edge");
+        let ch1_start = win.samples[1];
+        assert_eq!(win.samples[3], ch1_start + 1.0, "channel 1 is consecutive");
+        assert_eq!(ch1_start % 24.0, 12.0, "aligned to channel 0's crossing");
+    }
+
+    #[test]
+    fn spectra_keep_one_state_per_channel() {
+        let w = tree(
+            r#"{"type":"window","children":[
+                {"id":9,"type":"spectrum","tap":2,"channels":2,"fft_size":256}]}"#,
+        );
+        let mut states = HashMap::new();
+        // Tap 2 carries a tone, tap 3 silence: the two channel states diverge.
+        let read = |tap: i32, out: &mut [f32]| {
+            for (i, s) in out.iter_mut().enumerate() {
+                *s = if tap == 2 {
+                    (std::f32::consts::TAU * i as f32 / 8.0).sin()
+                } else {
+                    0.0
+                };
+            }
+            true
+        };
+        update_spectra(&w, read, &mut states);
+        let chans = &states[&9];
+        assert_eq!(chans.len(), 2);
+        let peak = |s: &super::super::spectrum::SpectrumState| {
+            s.avg_db.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+        };
+        assert!(peak(&chans[0]) > -6.0, "the tone channel peaks near 0 dB");
+        assert!(peak(&chans[1]) < -60.0, "the silent channel stays down");
     }
 
     #[test]

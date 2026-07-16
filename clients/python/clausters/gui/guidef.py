@@ -308,25 +308,39 @@ def meter(id: int | None, bus: int, *, min: float | None = None, max: float | No
 
 
 def scope(id: int | None = None, bus: int = 0, *, tap: int | None = None,
+          channels: int | None = None, overlay: bool | None = None,
           window_ms: float | None = None, trigger: float | None = None,
           hold: bool | None = None, min: float | None = None,
-          max: float | None = None, label: str | None = None, **props) -> dict:
+          max: float | None = None, ruler: "bool | str | None" = None,
+          ruler_y: "bool | str | None" = None, label: str | None = None,
+          **props) -> dict:
     """A time-domain ``scope``, in one of two rates. By default (control rate)
     it plots the recent history of control ``bus``, read from shared memory
     each frame (needs ``--shm`` like `meter`). Passing ``tap`` makes it an
-    audio-rate **oscilloscope** over that audio-tap ring of the server (route
-    a bus into it first with ``Server.tap``): a ``window_ms`` display window
-    (default 20 ms), re-read every frame and aligned on a rising crossing of
-    ``trigger`` (default ``0.0``, with hysteresis; free-running when the
-    signal never crosses), so a periodic signal draws a stable trace.
-    ``hold`` freezes the trace. Natively the host reads the tap out of the
-    ``--shm`` segment with zero messages; in the browser it subscribes
-    ``/tap_stream`` over the server leg. ``min``/``max`` set the vertical
-    range (default the bipolar ``-1``/``1``)."""
-    extra = _drop_none(tap=tap, window_ms=window_ms, trigger=trigger,
-                       min=min, max=max, label=label)
-    if hold is not None:
-        extra["hold"] = 1 if hold else 0
+    audio-rate **oscilloscope** over ``channels`` (default 1) **adjacent**
+    audio-tap rings of the server starting at ``tap`` (route each bus into its
+    ring first with ``Server.tap``): a ``window_ms`` display window (default
+    20 ms), re-read every frame and aligned on a rising crossing of
+    ``trigger`` found in the **first** channel (default level ``0.0``, with
+    hysteresis; free-running when the signal never crosses), so a periodic
+    signal draws a stable trace and the channels keep their true relative
+    phase — a lock/free read-out names which mode it is in. Channels draw as
+    stacked lanes, or as color-coded traces in one field with ``overlay``.
+    ``hold`` freezes the trace. The audio-rate form carries axis rulers:
+    ``ruler`` (x, in milliseconds of the window) and ``ruler_y`` (value over
+    ``[min, max]``), both shown by default and hidden with ``False`` (or
+    ``"off"``). Natively the host reads the taps out of the ``--shm`` segment
+    with zero messages; in the browser it subscribes ``/tap_stream`` over the
+    server leg. ``min``/``max`` set the vertical range (default the bipolar
+    ``-1``/``1``)."""
+    extra = _drop_none(tap=tap, channels=channels, window_ms=window_ms,
+                       trigger=trigger, min=min, max=max, label=label)
+    for key, flag in (("hold", hold), ("overlay", overlay)):
+        if flag is not None:
+            extra[key] = 1 if flag else 0
+    for key, strip in (("ruler", ruler), ("ruler_y", ruler_y)):
+        if strip is not None:
+            extra[key] = strip if isinstance(strip, str) else (1 if strip else "off")
     return node("scope", id=id, bus=bus, **extra, **props)
 
 
@@ -351,29 +365,40 @@ def phasescope(id: int | None, tap: int, tap2: int | None = None, *,
     return node("phasescope", id=id, tap=tap, **extra, **props)
 
 
-def spectrum(id: int | None, tap: int, *, fft_size: int | None = None,
+def spectrum(id: int | None, tap: int, *, channels: int | None = None,
+             fft_size: int | None = None,
              db_floor: float | None = None, db_ceil: float | None = None,
              freq_scale: str | None = None, log_freq: bool | None = None,
              averaging: float | None = None, peak_hold: bool | None = None,
+             ruler: "bool | str | None" = None,
+             ruler_y: "bool | str | None" = None,
              label: str | None = None, **props) -> dict:
     """A live ``spectrum`` (spectroscope): one forward FFT per frame over the
-    newest window of audio tap ``tap``, drawn as a magnitude curve. ``fft_size``
-    is a power of two (256..4096, default 2048); the vertical axis is dB over
-    ``[db_floor, db_ceil]`` (default ``-100``/``0``); ``freq_scale`` picks the
-    frequency axis — ``"log"`` (default), ``"linear"``, ``"mel"`` or ``"bark"``,
-    the same scales as the spectrogram (``log_freq`` is the legacy boolean
-    alias). Raw per-frame FFTs flicker, so ``averaging`` (0..1, default 0.5)
-    exponentially smooths each bin and ``peak_hold`` (default false) overlays a
-    slowly decaying peak trace. Route a bus into the tap first with
+    newest window of each of ``channels`` (default 1) **adjacent** audio taps
+    starting at ``tap``, drawn as one magnitude curve per channel (color-coded
+    when there is more than one). ``fft_size`` is a power of two (256..4096,
+    default 2048); the vertical axis is dB over ``[db_floor, db_ceil]``
+    (default ``-100``/``0``); ``freq_scale`` picks the frequency axis —
+    ``"log"`` (default), ``"linear"``, ``"mel"`` or ``"bark"``, the same
+    scales as the spectrogram (``log_freq`` is the legacy boolean alias). Raw
+    per-frame FFTs flicker, so ``averaging`` (0..1, default 0.5) exponentially
+    smooths each bin and ``peak_hold`` (default false) overlays a slowly
+    decaying peak trace per channel. Axis rulers: ``ruler`` (x, hertz on the
+    active scale) and ``ruler_y`` (dB), both shown by default and hidden with
+    ``False`` (or ``"off"``). Route each bus into its tap first with
     ``Server.tap``; the analysis uses the shared-core FFT and Hann window,
     so it agrees with the spectrogram. Native reads the segment; the browser
     subscribes ``/tap_stream``."""
-    extra = _drop_none(fft_size=fft_size, db_floor=db_floor, db_ceil=db_ceil,
+    extra = _drop_none(channels=channels, fft_size=fft_size,
+                       db_floor=db_floor, db_ceil=db_ceil,
                        freq_scale=freq_scale, averaging=averaging, label=label)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
     if peak_hold is not None:
         extra["peak_hold"] = 1 if peak_hold else 0
+    for key, strip in (("ruler", ruler), ("ruler_y", ruler_y)):
+        if strip is not None:
+            extra[key] = strip if isinstance(strip, str) else (1 if strip else "off")
     return node("spectrum", id=id, tap=tap, **extra, **props)
 
 

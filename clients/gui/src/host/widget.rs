@@ -360,17 +360,27 @@ pub enum WidgetKind {
     /// control-rate (`tap < 0`, the default) plots the rolling history of
     /// control bus `bus`, one sample per frame tick; audio-rate (`tap >= 0`,
     /// set by a `tap` prop or `rate: "audio"`) is a real oscilloscope — a
-    /// `window_ms` window of segment tap ring `tap` (see the server's `/tap`),
-    /// re-read every frame and aligned on a rising crossing of `trigger`
-    /// (free-running when none is found); `hold` freezes the trace.
+    /// `window_ms` window of `channels` **adjacent** segment tap rings
+    /// starting at `tap` (see the server's `/tap`), re-read every frame and
+    /// aligned on a rising crossing of `trigger` found in the **first**
+    /// channel, so the channels keep their true relative phase (free-running
+    /// when no crossing is found; a lock/free read-out shows which). Channels
+    /// draw as stacked lanes, or as color-coded traces in one field with
+    /// `overlay`; `hold` freezes the trace. `ruler`/`ruler_y` (`"off"` to
+    /// hide) are the audio-rate form's axis strips: x in milliseconds of the
+    /// window, y in signal value over `[min, max]`.
     Scope {
         bus: i32,
         tap: i32,
+        channels: usize,
+        overlay: bool,
         window_ms: f32,
         trigger: f32,
         hold: bool,
         min: f32,
         max: f32,
+        ruler: bool,
+        ruler_y: bool,
         label: Option<String>,
     },
     /// A phase/goniometer view of a stereo pair of audio taps, drawn as the
@@ -386,22 +396,28 @@ pub enum WidgetKind {
         hold: bool,
         label: Option<String>,
     },
-    /// A live FFT magnitude curve (spectroscope) over audio tap `tap`: one
-    /// forward FFT per frame of the newest `fft_size` window, magnitudes in dB
-    /// over `[db_floor, db_ceil]`, the frequency axis on `freq_scale`
+    /// A live FFT magnitude curve (spectroscope) over `channels` **adjacent**
+    /// audio taps starting at `tap`: one forward FFT per channel per frame of
+    /// the newest `fft_size` window, magnitudes in dB over
+    /// `[db_floor, db_ceil]`, the frequency axis on `freq_scale`
     /// (linear/log/mel/bark; `log_freq` is the legacy boolean alias). The
-    /// `averaging` (0..1) exponentially smooths each bin so the curve does
-    /// not flicker; `peak_hold` overlays a slowly decaying peak trace. The
-    /// analysis reuses the shared-core FFT + Hann window, so it agrees with the
-    /// spectrogram.
+    /// channels overlay as color-coded curves in one field. `averaging`
+    /// (0..1) exponentially smooths each bin so the curve does not flicker;
+    /// `peak_hold` overlays a slowly decaying peak trace per channel.
+    /// `ruler`/`ruler_y` (`"off"` to hide) are the axis strips: x in hertz on
+    /// the active scale, y in dB. The analysis reuses the shared-core FFT +
+    /// Hann window, so it agrees with the spectrogram.
     Spectrum {
         tap: i32,
+        channels: usize,
         fft_size: usize,
         db_floor: f32,
         db_ceil: f32,
         freq_scale: FreqScale,
         averaging: f32,
         peak_hold: bool,
+        ruler: bool,
+        ruler_y: bool,
         label: Option<String>,
     },
     /// A live text view of the audio server's node tree rooted at `group`,
@@ -818,11 +834,15 @@ impl Widget {
                     } else {
                         -1
                     },
+                    channels: int_prop(&node.props, "channels", 1).max(1) as usize,
+                    overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
                     window_ms: number(&node.props, "window_ms", 20.0),
                     trigger: number(&node.props, "trigger", 0.0),
                     hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
                     min: number(&node.props, "min", -1.0),
                     max: number(&node.props, "max", 1.0),
+                    ruler: strip_shown(&node.props, "ruler"),
+                    ruler_y: strip_shown(&node.props, "ruler_y"),
                     label: label(&node.props),
                 }
             }
@@ -840,6 +860,7 @@ impl Widget {
             }
             "spectrum" => WidgetKind::Spectrum {
                 tap: int_prop(&node.props, "tap", 0),
+                channels: int_prop(&node.props, "channels", 1).max(1) as usize,
                 fft_size: fft_size(&node.props),
                 db_floor: number(&node.props, "db_floor", -100.0),
                 db_ceil: number(&node.props, "db_ceil", 0.0),
@@ -850,6 +871,8 @@ impl Widget {
                     .get("peak_hold")
                     .and_then(truthy)
                     .unwrap_or(false),
+                ruler: strip_shown(&node.props, "ruler"),
+                ruler_y: strip_shown(&node.props, "ruler_y"),
                 label: label(&node.props),
             },
             "nodetree" => WidgetKind::NodeTree {
@@ -1136,7 +1159,8 @@ impl WidgetKind {
         }
     }
 
-    /// The audio-tap ring an audio-rate scope reads each frame, if this is one.
+    /// The first audio-tap ring an audio-rate scope reads each frame, if this
+    /// is one.
     pub fn live_tap(&self) -> Option<i32> {
         match self {
             WidgetKind::Scope { tap, .. } if *tap >= 0 => Some(*tap),
@@ -1144,14 +1168,18 @@ impl WidgetKind {
         }
     }
 
-    /// Appends every audio-tap ring this widget reads each frame — one for an
-    /// audio-rate `scope` or a `spectrum`, two (left and right) for a
-    /// `phasescope`. Drives the tap subscription/animation set, so all three tap
-    /// consumers are covered uniformly.
+    /// Appends every audio-tap ring this widget reads each frame — `channels`
+    /// adjacent rings for an audio-rate `scope` or a `spectrum`, two (left and
+    /// right) for a `phasescope`. Drives the tap subscription/animation set,
+    /// so all three tap consumers are covered uniformly.
     pub fn taps_read(&self, out: &mut Vec<i32>) {
         match self {
-            WidgetKind::Scope { tap, .. } if *tap >= 0 => out.push(*tap),
-            WidgetKind::Spectrum { tap, .. } if *tap >= 0 => out.push(*tap),
+            WidgetKind::Scope { tap, channels, .. } if *tap >= 0 => {
+                out.extend((0..*channels as i32).map(|k| *tap + k));
+            }
+            WidgetKind::Spectrum { tap, channels, .. } if *tap >= 0 => {
+                out.extend((0..*channels as i32).map(|k| *tap + k));
+            }
             WidgetKind::Phasescope { tap, tap2, .. } => {
                 if *tap >= 0 {
                     out.push(*tap);
@@ -1281,20 +1309,31 @@ impl WidgetKind {
             WidgetKind::Scope {
                 bus,
                 tap,
+                channels,
+                overlay,
                 window_ms,
                 trigger,
                 hold,
                 min,
                 max,
+                ruler,
+                ruler_y,
                 label,
             } => match key {
                 "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
                 "tap" => v.as_i64().map(|n| *tap = n as i32).is_some(),
+                "channels" => v
+                    .as_i64()
+                    .map(|n| *channels = (n as usize).max(1))
+                    .is_some(),
+                "overlay" => truthy(v).map(|b| *overlay = b).is_some(),
                 "window_ms" => set_f(window_ms, v),
                 "trigger" => set_f(trigger, v),
                 "hold" => truthy(v).map(|b| *hold = b).is_some(),
                 "min" => set_f(min, v),
                 "max" => set_f(max, v),
+                "ruler" => set_strip(ruler, v),
+                "ruler_y" => set_strip(ruler_y, v),
                 "label" => set_label(label, v),
                 _ => false,
             },
@@ -1314,15 +1353,24 @@ impl WidgetKind {
             },
             WidgetKind::Spectrum {
                 tap,
+                channels,
                 fft_size,
                 db_floor,
                 db_ceil,
                 freq_scale,
                 averaging,
                 peak_hold,
+                ruler,
+                ruler_y,
                 label,
             } => match key {
                 "tap" => v.as_i64().map(|n| *tap = n as i32).is_some(),
+                "channels" => v
+                    .as_i64()
+                    .map(|n| *channels = (n as usize).max(1))
+                    .is_some(),
+                "ruler" => set_strip(ruler, v),
+                "ruler_y" => set_strip(ruler_y, v),
                 "fft_size" => v
                     .as_u64()
                     .filter(|n| clausters_core::fft::supports(*n as usize))
@@ -1731,6 +1779,18 @@ fn parse_graph(props: &serde_json::Map<String, Value>) -> super::graph::GraphDra
     }
 }
 
+/// A ruler-strip toggle property: shown by default, hidden with the string
+/// `"off"` (the plot/editor convention) or a falsy value.
+fn strip_shown(props: &serde_json::Map<String, Value>, key: &str) -> bool {
+    match props.get(key) {
+        None => true,
+        Some(v) => match v.as_str() {
+            Some(s) => s != "off",
+            None => truthy(v).unwrap_or(true),
+        },
+    }
+}
+
 /// The `freq_scale` property (`"linear"`/`"log"`/`"mel"`/`"bark"`), falling
 /// back to the legacy `log_freq` boolean (default: log).
 fn parse_freq_scale(props: &serde_json::Map<String, Value>) -> FreqScale {
@@ -1894,6 +1954,18 @@ fn set_f(slot: &mut f32, v: &Value) -> bool {
             true
         }
         None => false,
+    }
+}
+
+/// Sets a ruler-strip toggle: the string `"off"` (or a falsy value) hides it,
+/// anything else shows it — the live counterpart of `strip_shown`.
+fn set_strip(slot: &mut bool, v: &Value) -> bool {
+    match v.as_str() {
+        Some(s) => {
+            *slot = s != "off";
+            true
+        }
+        None => truthy(v).map(|b| *slot = b).is_some(),
     }
 }
 
@@ -2563,6 +2635,59 @@ mod tests {
             } => {
                 assert_eq!(*fft_size, 2048);
                 assert_eq!(*freq_scale, FreqScale::Mel);
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn multichannel_scope_and_spectrum_read_adjacent_taps() {
+        let n = node(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"scope","tap":4,"channels":2,"overlay":1,"ruler":"off"},
+                {"id":2,"type":"spectrum","tap":6,"channels":3,"ruler_y":"off"}
+            ]}"#,
+        );
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Scope {
+                channels,
+                overlay,
+                ruler,
+                ruler_y,
+                ..
+            } => {
+                assert_eq!(*channels, 2);
+                assert!(*overlay);
+                assert!(!*ruler, "\"off\" hides the x strip");
+                assert!(*ruler_y, "the y strip defaults on");
+            }
+            other => panic!("expected scope, got {other:?}"),
+        }
+        // Each consumer reads its whole adjacent run.
+        let mut taps = Vec::new();
+        w.children[0].kind.taps_read(&mut taps);
+        assert_eq!(taps, vec![4, 5]);
+        taps.clear();
+        w.children[1].kind.taps_read(&mut taps);
+        assert_eq!(taps, vec![6, 7, 8]);
+        // Live: grow the runs and toggle a strip back on.
+        assert!(
+            w.find_mut(1)
+                .unwrap()
+                .kind
+                .apply("channels", &Value::from(4))
+        );
+        assert!(w.find_mut(1).unwrap().kind.apply("ruler", &Value::from(1)));
+        taps.clear();
+        w.find_mut(1).unwrap().kind.taps_read(&mut taps);
+        assert_eq!(taps, vec![4, 5, 6, 7]);
+        match &w.children[1].kind {
+            WidgetKind::Spectrum {
+                channels, ruler_y, ..
+            } => {
+                assert_eq!(*channels, 3);
+                assert!(!*ruler_y);
             }
             _ => unreachable!(),
         }

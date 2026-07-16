@@ -294,29 +294,40 @@ win.close()
 
 ## Scoping a live signal: the free-standing `scope`
 
-`scope` is the real-time sibling of `plot`: where `plot` draws a *finished* signal, `scope` opens a window that follows a **live audio bus** of the ambient server, frame by frame. One call does the whole wiring — it resolves the ambient live server and GUI host (here booted as a *client of the server*, mapping its shared-memory segment), takes a free **audio tap** from the server's tap registry (`server.taps`, a finite boot-time resource like buses — `--taps` rings, 8 by default), routes the bus into it with `/tap`, and opens the window. The host then reads the ring straight out of shared memory: zero messages per frame.
+`scope` is the real-time sibling of `plot`: one call opens a window that follows **live audio buses** of the running server, frame by frame, with no per-frame messages (the GUI host reads the server's shared memory). Everything is wired for you — the ambient server and GUI host are resolved, free **audio taps** are taken from the server's registry (`server.taps`, a finite boot-time resource like buses: `--taps` rings, 8 by default) and the buses routed into them with `/tap`.
+
+**Open one:**
 
 ```python
 from clausters import Server, scope
 
 server = Server.boot()
 # ... play something ...
-win = scope()                       # oscilloscope on hardware out 0
-scope(0, view="phase")              # the stereo field of outs 0/1
-scope(0, view="spectrum", freq_scale="mel")
+win = scope()                        # hardware out 0, oscilloscope
+win = scope(0, channels=2)           # outs 0/1, one lane per channel
+win = scope(bus)                     # a Bus monitors all its channels
+win = scope(0, view="phase")         # the stereo field of outs 0/1
+win = scope(0, view="spectrum", channels=2, freq_scale="mel")
 ```
 
-`view` picks the instrument. **`"signal"`** (default) is a triggered oscilloscope: a `window_ms` display window re-read every frame and aligned on a rising crossing of `trigger` (with hysteresis; free-running when the signal never crosses), so a periodic signal draws a stable trace. **`"phase"`** is the phasescope (goniometer): the stereo pair `bus`/`bus + 1` drawn as the 45°-rotated Lissajous figure with a correlation read-out — mono reads vertical, anti-phase horizontal, a wide field fills the lozenge; it takes **two adjacent taps**. **`"spectrum"`** is the live spectroscope: one FFT per frame of the newest `fft_size` window, in dB over a `freq_scale` frequency axis (log/linear/mel/bark, the same scales as the spectrogram), exponentially smoothed (`averaging`) with an optional decaying `peak_hold` trace.
+One rule covers every view: the verb monitors `channels` consecutive buses from `bus` (a `Bus` handle brings its own count; a plain index defaults to 1), each on its own adjacent tap ring, and each **view** presents them its way (`view=`):
 
-The returned `ScopeWindow` retunes the display live and — unlike a plot — owns server resources, so prefer its `close` to the window's close button:
+- **`"signal"`** — a triggered **oscilloscope**. Each channel is a lane (or a color-coded trace with `overlay=True`); the x ruler reads milliseconds of the `window_ms` display window, the y ruler signal value over `[min, max]`. The trace is *phase-locked*: every frame is aligned on a rising crossing of the `trigger` level (marked by a faint line) found in the **first** channel, so a periodic signal stands still and the channels keep their true relative phase. The corner read-out says `lock` (the trigger fired) or `free` (no crossing — silence or DC — so the window free-runs).
+- **`"phase"`** — a **phasescope** (goniometer), the fixed two-channel case: the pair `bus`/`bus + 1` drawn as the 45°-rotated Lissajous figure — mono draws a vertical line, anti-phase horizontal, a wide field fills the lozenge; the bar underneath is the correlation.
+- **`"spectrum"`** — a live **spectrum**: one FFT per channel per frame, one color-coded curve each; the x ruler reads hertz on `freq_scale` (log/linear/mel/bark, the spectrogram's scales), the y ruler dB over `[db_floor, db_ceil]`.
+
+**Adjust it live** with `win.set(...)` — any prop of the open view:
 
 ```python
-win = scope(0, view="spectrum")
-win.set(freq_scale="mel", fft_size=4096)   # /gui_set, live
-win.close()                                # stops the tap and frees it
+win.set(window_ms=5.0)                        # signal: zoom the time window
+win.set(trigger=0.2, min=-0.5, max=0.5)
+win.set(freq_scale="linear", fft_size=4096)   # spectrum
+win.set(ruler="off", ruler_y="off")           # bare field, no axis strips
 ```
 
-Two scopes never fight over one ring: the tap indices come from the client-side registry (sized from `ServerOptions.taps`, like the bus allocators), and `close` both stops the tap on the server (`/tap … -1`) and returns the index. Because the native host reads taps from the shared segment, the resolved server must carry one (`Server.boot` and `Session.live` create it by default); to scope a server you merely *attached* to, pass `host=` pointed at a `GuiHost` booted with that server's segment path.
+**Close it** with `win.close()` — it stops the taps (`/tap … -1`), returns them to the registry and closes the window. Closing from the window manager does **not** free the taps, so prefer `close`. Taps are finite: a stereo scope holds two while open, so close scopes you are done with; two scopes never fight over one ring, because every index comes from the client-side registry.
+
+**Requirements.** A live server with a shared-memory segment (`Server.boot` and `Session.live` create one by default) — the native host reads the tap rings straight from it. To scope a server you merely *attached* to, pass `host=` pointed at a `GuiHost` booted with that server's segment path.
 
 ## When you don't need a Session
 

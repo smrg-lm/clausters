@@ -32,7 +32,7 @@ use super::spectrum::SpectrumState;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::{
-    BusSource, bpf, controls, graph, meters, phasescope, pianoroll, plot, spectrum, track,
+    BusSource, bpf, controls, graph, live, meters, phasescope, pianoroll, plot, spectrum, track,
 };
 
 /// The window's clear color (the dark chrome backdrop).
@@ -239,8 +239,23 @@ struct PianoRollItem {
     editor: EditorProps,
 }
 
+/// A placed audio-rate `scope`, copied out of the host tree: its id (to fetch
+/// the tick's aligned tap window) and display parameters.
+struct WaveItem {
+    id: i32,
+    rect: Rect,
+    min: f32,
+    max: f32,
+    window_ms: f32,
+    trigger: f32,
+    overlay: bool,
+    ruler: bool,
+    ruler_y: bool,
+    label: Option<String>,
+}
+
 /// A placed `spectrum` widget, copied out of the host tree: its id (to fetch the
-/// analysis state), rect and display parameters (the dB window and axis flags).
+/// analysis states), rect and display parameters (the dB window and axis flags).
 struct SpectrumItem {
     id: i32,
     rect: Rect,
@@ -248,6 +263,8 @@ struct SpectrumItem {
     db_ceil: f32,
     freq_scale: FreqScale,
     peak_hold: bool,
+    ruler: bool,
+    ruler_y: bool,
     label: Option<String>,
 }
 
@@ -640,8 +657,8 @@ pub(crate) fn render(
     spectrograms: &mut HashMap<i32, SpectrogramSlot>,
     canvases: &mut HashMap<i32, CanvasView>,
     scopes: &HashMap<i32, VecDeque<f32>>,
-    tap_windows: &HashMap<i32, Vec<f32>>,
-    spectra: &HashMap<i32, SpectrumState>,
+    tap_windows: &HashMap<i32, live::TapWindow>,
+    spectra: &HashMap<i32, Vec<SpectrumState>>,
     tree: &Widget,
     inputs: &FrameInputs,
 ) {
@@ -658,7 +675,7 @@ pub(crate) fn render(
     // (`advance_scopes`); the render only draws the stored history. Audio-rate
     // scopes draw their stored tap window instead (`wave_rects`).
     let mut scope_rects: Vec<(i32, Rect, f32, f32, Option<String>)> = Vec::new();
-    let mut wave_rects: Vec<(i32, Rect, f32, f32, Option<String>)> = Vec::new();
+    let mut wave_rects: Vec<WaveItem> = Vec::new();
     // Phasescope rects (drawn from the interleaved L/R window in `tap_windows`)
     // and spectrum rects (drawn from the persistent `spectra` analysis states).
     let mut phase_rects: Vec<(i32, Rect, Option<String>)> = Vec::new();
@@ -721,17 +738,32 @@ pub(crate) fn render(
             } => meter_rects.push((p.rect, *bus, *min, *max, label.clone())),
             WidgetKind::Scope {
                 tap,
+                overlay,
+                window_ms,
+                trigger,
                 min,
                 max,
+                ruler,
+                ruler_y,
                 label,
                 ..
             } => {
                 if let Some(id) = p.widget.id {
-                    let item = (id, p.rect, *min, *max, label.clone());
                     if *tap >= 0 {
-                        wave_rects.push(item);
+                        wave_rects.push(WaveItem {
+                            id,
+                            rect: p.rect,
+                            min: *min,
+                            max: *max,
+                            window_ms: *window_ms,
+                            trigger: *trigger,
+                            overlay: *overlay,
+                            ruler: *ruler,
+                            ruler_y: *ruler_y,
+                            label: label.clone(),
+                        });
                     } else {
-                        scope_rects.push(item);
+                        scope_rects.push((id, p.rect, *min, *max, label.clone()));
                     }
                 }
             }
@@ -745,6 +777,8 @@ pub(crate) fn render(
                 db_ceil,
                 freq_scale,
                 peak_hold,
+                ruler,
+                ruler_y,
                 label,
                 ..
             } => {
@@ -756,6 +790,8 @@ pub(crate) fn render(
                         db_ceil: *db_ceil,
                         freq_scale: *freq_scale,
                         peak_hold: *peak_hold,
+                        ruler: *ruler,
+                        ruler_y: *ruler_y,
                         label: label.clone(),
                     });
                 }
@@ -925,31 +961,54 @@ pub(crate) fn render(
             .unwrap_or_default();
         meters::draw_scope(&mut mesh, *rect, &samples, *min, *max, label.as_deref());
     }
-    // Audio-rate scopes likewise draw the triggered window stored on the tick
-    // (`live::update_tap_windows`); an empty one draws just the framed field.
-    for (id, rect, min, max, label) in &wave_rects {
-        let samples = tap_windows.get(id).map(Vec::as_slice).unwrap_or(&[]);
-        meters::draw_wave(&mut mesh, *rect, samples, *min, *max, label.as_deref());
+    // Audio-rate scopes likewise draw the triggered multichannel window stored
+    // on the tick (`live::update_tap_windows`); an empty one draws just the
+    // framed field.
+    let empty_window = live::TapWindow::default();
+    for item in &wave_rects {
+        let window = tap_windows.get(&item.id).unwrap_or(&empty_window);
+        meters::draw_wave(
+            &mut mesh,
+            item.rect,
+            &meters::WaveParams {
+                window,
+                min: item.min,
+                max: item.max,
+                window_ms: item.window_ms,
+                trigger: item.trigger,
+                overlay: item.overlay,
+                ruler: item.ruler,
+                ruler_y: item.ruler_y,
+                label: item.label.as_deref(),
+            },
+        );
     }
     // Phasescopes draw the interleaved L/R window the tick stored (the same
     // `tap_windows` map, keyed by their own ids); spectra draw the per-bin
-    // curves the tick folded into their persistent analysis state.
+    // curves the tick folded into their per-channel analysis states.
     for (id, rect, label) in &phase_rects {
-        let inter = tap_windows.get(id).map(Vec::as_slice).unwrap_or(&[]);
+        let inter = tap_windows
+            .get(id)
+            .map(|w| w.samples.as_slice())
+            .unwrap_or(&[]);
         phasescope::draw_phasescope(&mut mesh, *rect, inter, label.as_deref());
     }
     for item in &spectrum_rects {
-        if let Some(state) = spectra.get(&item.id) {
+        if let Some(states) = spectra.get(&item.id) {
             spectrum::draw_spectrum(
                 &mut mesh,
                 item.rect,
-                state,
-                inputs.sample_rate,
-                item.db_floor,
-                item.db_ceil,
-                item.freq_scale,
-                item.peak_hold,
-                item.label.as_deref(),
+                states,
+                &spectrum::SpectrumParams {
+                    sample_rate: inputs.sample_rate,
+                    db_floor: item.db_floor,
+                    db_ceil: item.db_ceil,
+                    freq_scale: item.freq_scale,
+                    peak_hold: item.peak_hold,
+                    ruler: item.ruler,
+                    ruler_y: item.ruler_y,
+                    label: item.label.as_deref(),
+                },
             );
         }
     }

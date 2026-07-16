@@ -25,6 +25,7 @@ use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
 use crate::host::gestures::Gestures;
 #[cfg(feature = "midi")]
 use crate::host::interact;
+use crate::host::live::TapWindow;
 use crate::host::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
@@ -63,13 +64,14 @@ pub(super) struct WindowState {
     pub(super) gestures: Gestures,
     /// Recent control-bus samples per `scope` widget id (oldest .. newest).
     pub(super) scopes: HashMap<i32, VecDeque<f32>>,
-    /// Triggered display window per audio-rate `scope` widget id, refreshed on
-    /// the frame tick from the shared segment's tap rings. Also holds each
-    /// `phasescope`'s interleaved L/R window (ids do not collide).
-    pub(super) tap_windows: HashMap<i32, Vec<f32>>,
-    /// Persistent FFT analysis state per `spectrum` widget id (the smoothed and
-    /// peak-hold curves), advanced on the frame tick.
-    pub(super) spectra: HashMap<i32, SpectrumState>,
+    /// Triggered multichannel display window per audio-rate `scope` widget id,
+    /// refreshed on the frame tick from the shared segment's tap rings. Also
+    /// holds each `phasescope`'s interleaved L/R window (ids do not collide).
+    pub(super) tap_windows: HashMap<i32, TapWindow>,
+    /// Persistent FFT analysis states per `spectrum` widget id (the smoothed
+    /// and peak-hold curves, one entry per channel), advanced on the frame
+    /// tick.
+    pub(super) spectra: HashMap<i32, Vec<SpectrumState>>,
 }
 
 pub(super) struct App {

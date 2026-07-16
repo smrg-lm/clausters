@@ -253,10 +253,10 @@ struct WebApp {
     /// Triggered display window per audio-rate scope widget id, refreshed on
     /// the tick (`live::update_tap_windows`). Also holds each phasescope's
     /// interleaved L/R window (ids do not collide).
-    tap_windows: HashMap<i32, Vec<f32>>,
+    tap_windows: HashMap<i32, live::TapWindow>,
     /// Persistent FFT analysis state per `spectrum` widget id, advanced on the
     /// tick (`live::update_spectra`), exactly as the native front does.
-    spectra: HashMap<i32, SpectrumState>,
+    spectra: HashMap<i32, Vec<SpectrumState>>,
     /// The `(taps, window frames)` currently subscribed with `/tap_stream`,
     /// so a tree change only resubscribes when they actually changed.
     tap_streamed: (Vec<i32>, usize),

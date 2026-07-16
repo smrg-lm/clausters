@@ -105,9 +105,9 @@ script actually names these. The catalog itself:
 | `button`, `toggle` | Momentary / latching | `label`, `value` |
 | `text`, `menu` | A string field, a choice | `value` / `options`, `index` |
 | `meter` | A control-bus level, read from the server's shared segment | `bus`, `min`, `max` |
-| `scope` | An oscilloscope: a control bus, or an audio **tap** | `bus` / `tap`, `trigger`, `hold` |
+| `scope` | An oscilloscope: a control bus, or `channels` adjacent audio **taps** (trigger searched in the first channel; a lock/free read-out) | `bus` / `tap`, `channels`, `overlay`, `window_ms`, `trigger`, `hold`, `min`/`max`, `ruler` (ms) / `ruler_y` (value; `"off"` hides) |
 | `phasescope` | A goniometer (stereo field) over two taps | `tap`, `tap2`, `hold` |
-| `spectrum` | A live spectroscope over a tap | `tap`, `fft_size`, `db_floor`/`db_ceil`, `freq_scale` (`log`/`linear`/`mel`/`bark`; `log_freq` is the legacy boolean alias), `averaging`, `peak_hold` |
+| `spectrum` | A live spectroscope: one color-coded curve per channel over `channels` adjacent taps | `tap`, `channels`, `fft_size`, `db_floor`/`db_ceil`, `freq_scale` (`log`/`linear`/`mel`/`bark`; `log_freq` is the legacy boolean alias), `averaging`, `peak_hold`, `ruler` (Hz) / `ruler_y` (dB; `"off"` hides) |
 | `nodetree` | The server's node graph, live | `group`, `controls` |
 | `waveform` | The editor-grade waveform: multichannel lanes, rulers, selection, playhead, linked navigation | the data (`data`/`blob`/`buffer`/`path`/`cache`), `channels`, `ruler`, `ruler_y`, `sel_*`, `playhead_at`, `link`, `offset` |
 | `spectrogram` | The editor-grade spectrogram, the same chrome | the data, `window_size`, `hop`, `freq_scale`, `db_floor`/`db_ceil`, `colormap` |

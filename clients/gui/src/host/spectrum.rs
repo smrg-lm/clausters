@@ -18,9 +18,11 @@
 use clausters_core::fft;
 
 use crate::spectrogram::FreqScale;
+use crate::waveform::CHANNEL_COLORS;
 
 use super::controls::body_rect;
 use super::font;
+use super::frame::{RULER_H, RULER_W};
 use super::layout::Rect;
 use super::meters::fraction;
 use super::paint::{Color, Mesh};
@@ -30,7 +32,6 @@ const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
 const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
 const FRAME: Color = [0.30, 0.78, 0.55, 1.0];
 const TRACE: Color = [0.40, 0.85, 0.62, 1.0];
-const PEAK: Color = [0.85, 0.80, 0.40, 0.7];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 
@@ -125,82 +126,115 @@ impl SpectrumState {
     }
 }
 
-/// Draws a spectrum curve: a framed field with the smoothed magnitude polyline
-/// (and, when `peak_hold`, a fainter peak trace over it), one point per pixel
-/// column mapped through the `freq_scale` frequency axis and the
-/// `[db_floor, db_ceil]` vertical window. `sample_rate` places the frequency
-/// axis (48 kHz assumed when unknown).
-#[allow(clippy::too_many_arguments)]
-pub fn draw_spectrum(
+/// The display parameters of one spectrum draw.
+pub(crate) struct SpectrumParams<'a> {
+    pub sample_rate: f64,
+    pub db_floor: f32,
+    pub db_ceil: f32,
+    pub freq_scale: FreqScale,
+    pub peak_hold: bool,
+    pub ruler: bool,
+    pub ruler_y: bool,
+    pub label: Option<&'a str>,
+}
+
+/// Draws a spectrum: a framed field with one smoothed magnitude polyline per
+/// channel state (color-coded when there is more than one; a fainter peak
+/// trace over each when `peak_hold`), one point per pixel column mapped
+/// through the `freq_scale` frequency axis and the `[db_floor, db_ceil]`
+/// vertical window. `ruler` is the x strip in hertz on the active scale
+/// (shared with the spectrogram's rulers), `ruler_y` the dB strip.
+/// `sample_rate` places the frequency axis (48 kHz assumed when unknown).
+pub(crate) fn draw_spectrum(
     mesh: &mut Mesh,
     rect: Rect,
-    state: &SpectrumState,
-    sample_rate: f64,
-    db_floor: f32,
-    db_ceil: f32,
-    freq_scale: FreqScale,
-    peak_hold: bool,
-    label: Option<&str>,
+    states: &[SpectrumState],
+    p: &SpectrumParams,
 ) {
-    if let Some(text) = label {
+    if let Some(text) = p.label {
         font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
     }
-    let body = body_rect(rect, label.is_some());
+    let mut body = body_rect(rect, p.label.is_some());
+    let strip_x = (p.ruler_y && body.w > RULER_W * 2.0).then(|| {
+        let x = body.x;
+        body.x += RULER_W;
+        body.w -= RULER_W;
+        x
+    });
+    let x_strip = (p.ruler && body.h > RULER_H * 2.0).then(|| {
+        body.h -= RULER_H;
+        Rect::new(body.x, body.y + body.h, body.w, RULER_H)
+    });
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
     mesh.rect(body, FIELD);
     mesh.border(body, 1.0, FRAME);
 
-    let n_bins = state.avg_db.len();
-    if n_bins == 0 {
-        return;
-    }
-    let sr = if sample_rate > 0.0 {
-        sample_rate as f32
+    let sr = if p.sample_rate > 0.0 {
+        p.sample_rate as f32
     } else {
         FALLBACK_SR as f32
     };
     let nyquist = sr * 0.5;
     let f_lo = F_LO_HZ.min(nyquist * 0.5).max(1.0);
-    let columns = body.w.max(1.0) as usize;
-
-    // The bin (fractional) a screen column maps to, through the display→Hz
-    // geometry shared with the spectrogram and its rulers.
     let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
-    let bin_at = |c: usize| -> f32 {
-        let frac = if columns <= 1 {
-            0.0
-        } else {
-            c as f64 / (columns - 1) as f64
+    if let Some(strip) = x_strip {
+        let ticks = ruler::hz_ticks_h(nyquist as f64, p.freq_scale, f_lo_norm, strip.w as f64);
+        ruler::draw_ticks_h(mesh, strip, &ticks);
+    }
+    if let Some(strip_x) = strip_x {
+        let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64);
+        ruler::draw_ticks_v(mesh, body.x, strip_x, body, &ticks);
+    }
+    let columns = body.w.max(1.0) as usize;
+    let db_ceil = p.db_ceil.max(p.db_floor + 1.0);
+    let y_at = |db: f32| body.y + body.h * (1.0 - fraction(db, p.db_floor, db_ceil));
+    for (ch, state) in states.iter().enumerate() {
+        let n_bins = state.avg_db.len();
+        if n_bins == 0 {
+            continue;
+        }
+        // The bin (fractional) a screen column maps to, through the display→Hz
+        // geometry shared with the spectrogram and its rulers.
+        let bin_at = |c: usize| -> f32 {
+            let frac = if columns <= 1 {
+                0.0
+            } else {
+                c as f64 / (columns - 1) as f64
+            };
+            let hz = ruler::display_to_hz(frac, nyquist as f64, p.freq_scale, f_lo_norm) as f32;
+            (hz * state.fft_size as f32 / sr).clamp(0.0, (n_bins - 1) as f32)
         };
-        let hz = ruler::display_to_hz(frac, nyquist as f64, freq_scale, f_lo_norm) as f32;
-        (hz * state.fft_size as f32 / sr).clamp(0.0, (n_bins - 1) as f32)
-    };
-    let y_at = |db: f32| body.y + body.h * (1.0 - fraction(db, db_floor, db_ceil));
-
-    if peak_hold {
+        let color = if states.len() > 1 {
+            CHANNEL_COLORS[ch % CHANNEL_COLORS.len()]
+        } else {
+            TRACE
+        };
+        if p.peak_hold {
+            let faint = [color[0], color[1], color[2], 0.55];
+            polyline(
+                mesh,
+                &body,
+                columns,
+                &bin_at,
+                &y_at,
+                &state.peak_db,
+                faint,
+                1.0,
+            );
+        }
         polyline(
             mesh,
             &body,
             columns,
             &bin_at,
             &y_at,
-            &state.peak_db,
-            PEAK,
-            1.0,
+            &state.avg_db,
+            color,
+            1.5,
         );
     }
-    polyline(
-        mesh,
-        &body,
-        columns,
-        &bin_at,
-        &y_at,
-        &state.avg_db,
-        TRACE,
-        1.5,
-    );
 }
 
 /// One curve of a per-bin dB array, sampled at each pixel column and drawn as a

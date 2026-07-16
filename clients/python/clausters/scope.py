@@ -1,48 +1,63 @@
-"""The free-standing ``scope`` — one verb for watching a live signal.
+"""``scope`` — watch live audio buses in a window. A brief manual.
 
-`scope` is the real-time sibling of `clausters.plot`: where `plot` renders and
-draws a *finished* signal, `scope` opens a window that follows a **live audio
-bus** of the ambient server, frame by frame. One call does the whole wiring —
-it resolves the ambient live server (`clausters.base.main.Main.resolve_server`)
-and the ambient GUI host (the same one `plot` uses, here booted as a *client of
-the server*: its address and shared-memory segment), takes a free audio tap
-from the server's tap registry (``server.taps``), routes the bus into it with
-``/tap``, and opens the window. ``view`` picks the instrument:
+**What it is.** The real-time sibling of `clausters.plot`: one call opens a
+window that follows ``channels`` consecutive audio buses of the running
+server, frame by frame, with no per-frame messages (the GUI host reads the
+server's shared memory). Everything is wired for you: the ambient server and
+GUI host are resolved, free audio taps are taken from the server's registry
+(``server.taps``) and the buses routed into them (``/tap``).
 
-- ``"signal"`` (default) — a triggered **oscilloscope**: a ``window_ms``
-  display window re-read every frame, aligned on a rising crossing of
-  ``trigger`` (with hysteresis; free-running when the signal never crosses),
-  so a periodic signal draws a stable trace.
-- ``"phase"`` — the **phasescope** (goniometer): the stereo pair ``bus`` /
-  ``bus + 1`` as the 45°-rotated Lissajous figure with a correlation read-out
-  (mono reads vertical, anti-phase horizontal). Takes **two adjacent** taps.
-- ``"spectrum"`` — the live **spectrum** (spectroscope): one FFT per frame of
-  the newest ``fft_size`` window, in dB over a ``freq_scale`` frequency axis
-  (log/linear/mel/bark), exponentially ``averaging``-smoothed, optional
-  ``peak_hold``.
-
-The returned `ScopeWindow` retunes the display live (``.set(...)`` →
-``/gui_set``: the trigger, the FFT size, the frequency scale…) and ``.close()``
-**releases the resources** — it stops the tap(s) (``/tap … -1``), returns them
-to the registry and closes the window. Closing the window from the OS frees the
-widgets but not the taps: prefer ``.close()``.
-
-Natively the host reads the taps out of the server's shared-memory segment
-(zero messages), so the resolved server must carry one (``shm``; `Server.boot`
-and `Session.live` create it by default). A host over ``/tap_stream`` (the
-browser path) can be passed explicitly with ``host=``.
+**Open one:**
 
 ```python
 from clausters import Server, scope
 
-Server.boot()
-# ... play something on bus 0 ...
-win = scope()                        # oscilloscope on hardware out 0
-win.set(window_ms=5.0)               # tighter window, live
-scope(0, view="phase")               # stereo field of outs 0/1
-scope(0, view="spectrum", freq_scale="mel")
-win.close()                          # stops the tap and frees it
+server = Server.boot()
+# ... play something ...
+win = scope()                        # hardware out 0, oscilloscope
+win = scope(0, channels=2)           # outs 0/1, one lane per channel
+win = scope(bus)                     # a Bus monitors all its channels
+win = scope(0, view="phase")         # stereo field of outs 0/1
+win = scope(0, view="spectrum", channels=2, freq_scale="mel")
 ```
+
+**The three views** (``view=``):
+
+- ``"signal"`` — a triggered **oscilloscope**. Each channel is a lane (or a
+  color-coded trace with ``overlay=True``); the x ruler reads milliseconds of
+  the ``window_ms`` display window, the y ruler signal value over
+  ``[min, max]``. The trace is *phase-locked*: every frame is aligned on a
+  rising crossing of the ``trigger`` level (marked by a faint line) found in
+  the **first** channel, so a periodic signal stands still and the channels
+  keep their true relative phase. The corner read-out says ``lock`` (the
+  trigger fired) or ``free`` (no crossing — silence or DC — so the window
+  free-runs).
+- ``"phase"`` — a **phasescope** (goniometer) of the stereo pair ``bus`` /
+  ``bus + 1``: mono draws a vertical line, anti-phase horizontal, a wide
+  field fills the lozenge; the bar underneath is the correlation.
+- ``"spectrum"`` — a live **spectrum**: one FFT per channel per frame, one
+  color-coded curve each; the x ruler reads hertz on ``freq_scale``
+  (log/linear/mel/bark), the y ruler dB over ``[db_floor, db_ceil]``.
+
+**Adjust it live** with ``win.set(...)`` (any prop of the open view — the
+window, the trigger, the scale, the FFT size):
+
+```python
+win.set(window_ms=5.0)               # signal: zoom the time window
+win.set(trigger=0.2, min=-0.5, max=0.5)
+win.set(freq_scale="linear", fft_size=4096)   # spectrum
+win.set(ruler="off", ruler_y="off")  # bare field, no axis strips
+```
+
+**Close it** with ``win.close()`` — it stops the taps (``/tap … -1``),
+returns them to the registry and closes the window. Closing from the window
+manager does **not** free the taps, so prefer ``close``.
+
+**Requirements.** A live server with a shared-memory segment (`Server.boot`
+and `Session.live` create one by default). Taps are finite (``--taps``
+rings, 8 by default): a stereo scope holds two while open, so close scopes
+you are done with. To scope a server you only *attached* to, pass ``host=``
+pointed at a `clausters.gui.GuiHost` booted with that server's segment path.
 """
 
 __all__ = ["scope", "ScopeWindow"]
@@ -74,9 +89,11 @@ class ScopeWindow:
 
     def set(self, **props):
         """Live-set the scope widget's props via ``/gui_set`` — per view:
-        ``window_ms``/``trigger``/``hold``/``min``/``max`` (signal),
-        ``window_ms``/``hold`` (phase), ``fft_size``/``freq_scale``/
-        ``db_floor``/``db_ceil``/``averaging``/``peak_hold`` (spectrum)."""
+        ``window_ms``/``trigger``/``hold``/``min``/``max``/``overlay``
+        (signal), ``window_ms``/``hold`` (phase), ``fft_size``/``freq_scale``/
+        ``db_floor``/``db_ceil``/``averaging``/``peak_hold`` (spectrum);
+        ``ruler``/``ruler_y`` (``"off"`` hides an axis strip) and ``label``
+        on any."""
         self.host.set(self.widget_id, **props)
         return self
 
@@ -95,27 +112,37 @@ class ScopeWindow:
         return f"ScopeWindow(id={self.id}, tap={self.tap})"
 
 
-def scope(bus=0, *, view: str = "signal",
+def scope(bus=0, *, view: str = "signal", channels: int | None = None,
+          overlay: bool | None = None,
           window_ms: float | None = None, trigger: float | None = None,
           hold: bool | None = None, min: float | None = None,
           max: float | None = None, fft_size: int | None = None,
           db_floor: float | None = None, db_ceil: float | None = None,
           freq_scale: str | None = None, averaging: float | None = None,
-          peak_hold: bool | None = None, label: str | None = None,
+          peak_hold: bool | None = None, ruler: "bool | str | None" = None,
+          ruler_y: "bool | str | None" = None, label: str | None = None,
           title: str | None = None, w: int = 480, h: int | None = None,
           server=None, host=None) -> ScopeWindow:
-    """Watch audio ``bus`` of the ambient live server in its own window.
+    """Watch ``channels`` consecutive audio buses from ``bus`` in a window.
+
+    See the module manual above for how each view reads. Signal and spectrum
+    views monitor ``channels`` buses (``bus .. bus + channels - 1``, each on
+    its own tap ring); the phase view is the two-channel case — it always
+    reads the pair ``bus`` / ``bus + 1``.
 
     Args:
-        bus: the audio bus to watch — a `clausters.defs.Bus` or a plain index
-            (default ``0``, the first hardware output). ``view="phase"`` reads
-            the stereo pair ``bus`` and ``bus + 1``.
+        bus: the first audio bus to watch — a `clausters.defs.Bus` or a plain
+            index (default ``0``, the first hardware output).
         view: ``"signal"`` (oscilloscope, default), ``"phase"`` (goniometer)
-            or ``"spectrum"`` (live FFT curve).
+            or ``"spectrum"`` (live FFT curves).
+        channels: how many consecutive buses to monitor. Default: a `Bus`'s
+            own channel count, else ``1``; the phase view is fixed at ``2``.
+        overlay: signal view — color-coded traces in one field instead of
+            stacked lanes.
         window_ms: the display window — signal (default 20 ms) and phase
             (trail persistence, default 30 ms) views.
         trigger: signal view — the rising-crossing trigger level (default
-            ``0.0``, with hysteresis; free-running when never crossed).
+            ``0.0``; searched in the first channel, marked by a faint line).
         hold: freeze the trace (signal/phase; also live via ``set``).
         min: vertical range of the signal view (default ``-1``).
         max: see ``min`` (default ``1``).
@@ -127,10 +154,13 @@ def scope(bus=0, *, view: str = "signal",
             ``"linear"``, ``"mel"``, ``"bark"``; live via ``set``.
         averaging: spectrum per-bin exponential smoothing, 0..1 (default 0.5).
         peak_hold: spectrum — overlay a slowly decaying peak trace.
-        label: the widget's label strip (defaults to the bus, per view).
+        ruler: the x axis strip (ms / Hz per view), shown by default;
+            ``False`` or ``"off"`` hides it. The phase view has no rulers.
+        ruler_y: the y axis strip (value / dB), likewise.
+        label: the widget's label strip (defaults to the buses, per view).
         title: the window title (defaults to the label).
         w: window width in px.
-        h: window height (default sized per view).
+        h: window height (default sized per view and channel count).
         server: an explicit `clausters.defs.Server`; ``None`` resolves the
             ambient live one (the running/current session's, else the default
             session's).
@@ -150,6 +180,15 @@ def scope(bus=0, *, view: str = "signal",
 
     if view not in _VIEWS:
         raise ValueError(f"unknown view {view!r} (one of {_VIEWS})")
+    if view == "phase":
+        if channels is not None and channels != 2:
+            raise ValueError("view='phase' reads exactly 2 channels "
+                             f"(bus and bus + 1), got channels={channels}")
+        channels = 2
+    elif channels is None:
+        channels = bus.channels if isinstance(bus, Bus) else 1
+    if channels < 1:
+        raise ValueError(f"channels must be >= 1, got {channels}")
     server = main.resolve_server(server)
     if host is None:
         if server.shm is None:
@@ -163,35 +202,42 @@ def scope(bus=0, *, view: str = "signal",
         host = _ambient_host(server)
 
     index = bus.index if isinstance(bus, Bus) else int(bus)
-    count = 2 if view == "phase" else 1
-    tap0 = server.taps.alloc(count)
-    for k in range(count):
+    tap0 = server.taps.alloc(channels)
+    for k in range(channels):
         server.tap(tap0 + k, index + k)
 
-    label = label if label is not None else (
-        f"bus {index}/{index + 1}" if view == "phase" else f"bus {index}")
+    if label is None:
+        if view == "phase":
+            label = f"bus {index}/{index + 1}"
+        elif channels > 1:
+            label = f"bus {index}-{index + channels - 1}"
+        else:
+            label = f"bus {index}"
     widget_id = host.alloc_id()
     if view == "signal":
-        widget = guidef.scope(widget_id, tap=tap0, window_ms=window_ms,
+        widget = guidef.scope(widget_id, tap=tap0, channels=channels,
+                              overlay=overlay, window_ms=window_ms,
                               trigger=trigger, hold=hold, min=min, max=max,
-                              label=label)
-        h = h if h is not None else 240
+                              ruler=ruler, ruler_y=ruler_y, label=label)
+        lanes = 1 if overlay else channels
+        h = h if h is not None else (200 + 90 * lanes)
     elif view == "phase":
         widget = guidef.phasescope(widget_id, tap0, tap0 + 1,
                                    window_ms=window_ms, hold=hold, label=label)
         h = h if h is not None else 420
     else:
-        widget = guidef.spectrum(widget_id, tap0, fft_size=fft_size,
-                                 db_floor=db_floor, db_ceil=db_ceil,
-                                 freq_scale=freq_scale, averaging=averaging,
-                                 peak_hold=peak_hold, label=label)
-        h = h if h is not None else 260
+        widget = guidef.spectrum(widget_id, tap0, channels=channels,
+                                 fft_size=fft_size, db_floor=db_floor,
+                                 db_ceil=db_ceil, freq_scale=freq_scale,
+                                 averaging=averaging, peak_hold=peak_hold,
+                                 ruler=ruler, ruler_y=ruler_y, label=label)
+        h = h if h is not None else 280
     tree = guidef.window(widget, title=title or label, w=w, h=h)
     try:
         window_id = host.open(tree)
     except Exception:
-        for k in range(count):
+        for k in range(channels):
             server.tap(tap0 + k, -1)
-        server.taps.free(tap0, count)
+        server.taps.free(tap0, channels)
         raise
-    return ScopeWindow(host, window_id, widget_id, server, tap0, count)
+    return ScopeWindow(host, window_id, widget_id, server, tap0, channels)

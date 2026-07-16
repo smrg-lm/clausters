@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Watching a live bus with the free-standing ``scope`` — the three views.
+"""Watching live buses with the free-standing ``scope`` — the three views.
 
 `clausters.scope` is the real-time sibling of `clausters.plot`: where `plot`
-draws a finished render, `scope` opens a window that follows a **live audio
-bus**, frame by frame. One call resolves the ambient server and GUI host,
-takes a free audio tap from the server's registry (``server.taps``), routes
-the bus into it (``/tap``) and opens the window; closing the handle stops the
-tap and returns it. The host reads the tap rings straight out of the server's
-shared-memory segment — zero messages per frame.
+draws a finished render, `scope` opens a window that follows **live audio
+buses**, frame by frame. One rule covers every view: the verb monitors
+``channels`` consecutive buses from ``bus`` (each on its own audio tap, taken
+from the server's registry and released on ``win.close()``), and each view
+presents them its way — oscilloscope lanes, the stereo phase field, one
+spectrum curve per channel. The host reads the tap rings straight out of the
+server's shared-memory segment — zero messages per frame.
 
 This is a **sequential visual tour**: each window appears alone, announces
 itself on the console, makes one live change *and comes back* (the trace
-window, the stereo width, the frequency scale — all through ``win.set`` or
-``/n_set``), and closes before the next one opens.
+window, the overlay, the stereo width, the frequency scale — all through
+``win.set`` or ``/n_set``), and closes before the next one opens. Watch the
+oscilloscope's corner read-out: ``lock`` means the trigger found a rising
+crossing and the trace stands still (the faint line marks the level);
+``free`` means it is free-running (silence or DC).
 
 Run it as a script (``python scoping.py``) or cell by cell (``# %%``). Needs a
 display, a GPU adapter and an audio device; the install bundles both binaries.
@@ -44,15 +48,18 @@ server.add_synthdef(drone)
 server.sync()
 node = server.synth("scoping_drone")
 
-# %% 1/3 — the oscilloscope (view="signal"): a stable, triggered trace.
-print("1/3 signal: an oscilloscope on bus 0, 20 ms window, trigger at 0")
-win = scope(0)
+# %% 1/3 — the oscilloscope (view="signal"): both channels, phase-locked.
+print("1/3 signal: outs 0/1 as two lanes; 'lock' + the trigger line at 0")
+win = scope(0, channels=2)
 time.sleep(PAUSE)
-print("    window_ms -> 5 (a few cycles fill the field)")
+print("    window_ms -> 5 (the ms ruler follows; a few cycles fill it)")
 win.set(window_ms=5.0)
 time.sleep(PAUSE)
-print("    window_ms -> 20 (round trip), and the window closes")
-win.set(window_ms=20.0)
+print("    overlay -> on (both channels as colored traces in one field)")
+win.set(overlay=1, window_ms=20.0)
+time.sleep(PAUSE)
+print("    overlay -> off (round trip), and the window closes")
+win.set(overlay=0)
 time.sleep(PAUSE)
 win.close()
 
@@ -68,11 +75,12 @@ server.set(node, {"spread": 0.0})
 time.sleep(PAUSE)
 win.close()
 
-# %% 3/3 — the live spectrum (view="spectrum"): the partials, per frame.
-print("3/3 spectrum: the 220 Hz peak on a log axis")
-win = scope(0, view="spectrum")
+# %% 3/3 — the live spectrum (view="spectrum"): one curve per channel.
+print("3/3 spectrum: outs 0/1, the 220 Hz peak on a log axis with Hz/dB rulers")
+server.set(node, {"spread": 1.0})   # detune R so the two curves differ
+win = scope(0, view="spectrum", channels=2)
 time.sleep(PAUSE)
-print("    freq_scale -> mel (watch the peak move), fft_size -> 4096")
+print("    freq_scale -> mel (watch the peak and ruler move), fft_size -> 4096")
 win.set(freq_scale="mel", fft_size=4096)
 time.sleep(PAUSE)
 print("    freq_scale -> log (round trip), and the window closes")

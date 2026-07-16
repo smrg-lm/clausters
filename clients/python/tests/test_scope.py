@@ -127,6 +127,50 @@ def test_scope_spectrum_carries_the_freq_scale():
     win.close()
 
 
+def test_scope_signal_monitors_consecutive_channels():
+    server, host = FakeServer(), FakeHost()
+    win = scope(2, channels=3, server=server, host=host)
+    widget = _widget(host.opened[0], "scope")
+    assert widget["channels"] == 3
+    assert widget["label"] == "bus 2-4"
+    assert server.tapped == [(win.tap, 2), (win.tap + 1, 3), (win.tap + 2, 4)]
+    assert server.taps.in_use == 3
+    win.close()
+    assert server.taps.in_use == 0
+
+
+def test_scope_channels_default_from_a_bus_handle():
+    server, host = FakeServer(), FakeHost()
+    win = scope(Bus(4, channels=2), server=server, host=host)
+    widget = _widget(host.opened[0], "scope")
+    assert widget["channels"] == 2, "a Bus monitors all its channels"
+    assert server.tapped == [(win.tap, 4), (win.tap + 1, 5)]
+    win.close()
+    # An explicit channels= wins over the handle's count.
+    win = scope(Bus(4, channels=2), channels=1, server=server, host=host)
+    assert _widget(host.opened[1], "scope")["channels"] == 1
+    win.close()
+
+
+def test_scope_phase_is_the_fixed_two_channel_case():
+    server, host = FakeServer(), FakeHost()
+    with pytest.raises(ValueError, match="exactly 2"):
+        scope(0, view="phase", channels=4, server=server, host=host)
+    assert server.taps.in_use == 0
+
+
+def test_scope_spectrum_channels_and_strips_ride_the_wire():
+    server, host = FakeServer(), FakeHost()
+    win = scope(0, view="spectrum", channels=2, ruler_y=False,
+                server=server, host=host)
+    widget = _widget(host.opened[0], "spectrum")
+    assert widget["channels"] == 2
+    assert widget["ruler_y"] == "off"
+    assert server.taps.in_use == 2
+    win.close()
+    assert server.taps.in_use == 0
+
+
 def test_scope_accepts_a_bus_handle_and_labels_from_it():
     server, host = FakeServer(), FakeHost()
     win = scope(Bus(6, channels=2), view="phase", server=server, host=host)
