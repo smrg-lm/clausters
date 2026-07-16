@@ -149,6 +149,12 @@ pub struct OscServer {
     /// window) may grow to; advertised in `/server_info.reply` so clients size
     /// their requests from it. UDP keeps the datagram cap regardless.
     max_frame: usize,
+    /// Ceiling for concurrent stream clients, TCP + WebSocket combined
+    /// (`--max-clients`, default [`crate::osc::DEFAULT_MAX_CLIENTS`]).
+    max_clients: usize,
+    /// The live-client slots both stream fronts share, created when the first
+    /// of them binds (so `set_max_clients` can still change the ceiling).
+    client_slots: Option<std::sync::Arc<crate::osc::ClientSlots>>,
 }
 
 /// The shared transport: a beat grid clients read to phase-align on the master
@@ -237,6 +243,8 @@ impl OscServer {
             transport: None,
             post_errors: true,
             max_frame: crate::osc::DEFAULT_MAX_FRAME,
+            max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
+            client_slots: None,
         })
     }
 
@@ -247,6 +255,22 @@ impl OscServer {
     /// [`Self::listen_ws`]: the hubs capture the ceiling when they bind.
     pub fn set_max_frame(&mut self, bytes: usize) {
         self.max_frame = bytes.max(RECV_BUF_SIZE);
+    }
+
+    /// Sets the ceiling for concurrent stream clients, TCP + WebSocket
+    /// combined (`--max-clients`); a connection past it is dropped at accept.
+    /// Call before [`Self::listen_tcp`] / [`Self::listen_ws`]: the shared
+    /// slot pool is created when the first front binds.
+    pub fn set_max_clients(&mut self, n: usize) {
+        self.max_clients = n.max(1);
+    }
+
+    /// The live-client slots both stream fronts share, created on first use.
+    fn client_slots(&mut self) -> std::sync::Arc<crate::osc::ClientSlots> {
+        let max = self.max_clients;
+        self.client_slots
+            .get_or_insert_with(|| std::sync::Arc::new(crate::osc::ClientSlots::new(max)))
+            .clone()
     }
 
     /// Enables on-disk persistence and reloads whatever defs the store
@@ -373,7 +397,8 @@ impl OscServer {
                 SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
             });
         }
-        let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target, self.max_frame)?;
+        let slots = self.client_slots();
+        let hub = crate::osc::tcp::TcpHub::bind(addr, wake_target, self.max_frame, slots)?;
         let bound = hub.local_addr();
         self.tcp = Some(hub);
         Ok(bound)
@@ -392,7 +417,8 @@ impl OscServer {
                 SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
             });
         }
-        let hub = crate::osc::ws::WsHub::bind(addr, wake_target, self.max_frame)?;
+        let slots = self.client_slots();
+        let hub = crate::osc::ws::WsHub::bind(addr, wake_target, self.max_frame, slots)?;
         let bound = hub.local_addr();
         self.ws = Some(hub);
         Ok(bound)

@@ -72,6 +72,7 @@ persist = true           # persist/reload defs; false is like --no-persist
 #                        # false disables it, a port number moves it
 # ws = 57120             # WebSocket transport: true = default port, or a number
 # max_frame = 16777216   # largest OSC frame on TCP/WebSocket, in bytes
+# max_clients = 64       # concurrent stream clients, TCP + WebSocket combined
 # midi = "clausters"     # virtual MIDI input: true = default name, or a name
 
 [client]                 # the Python (and future) client
@@ -112,7 +113,7 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
 - **Server** — the `[server]` section supplies the defaults for every flag of
   `clausters` (`--workers`, `--sample-rate`, `--audio-buses`, `--control-buses`,
   `--taps`, `--tap-frames`, `--tcp`/`--no-tcp`, `--ws`, `--max-frame`,
-  `--midi`, `--shm`, `--data-dir`, `--no-persist`). A flag on
+  `--max-clients`, `--midi`, `--shm`, `--data-dir`, `--no-persist`). A flag on
   the command line overrides the file.
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
   (`--port`, `--tcp`/`--no-tcp`, `--max-frame`, `--server`, `--shm`,

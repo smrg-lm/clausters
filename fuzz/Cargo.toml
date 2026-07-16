@@ -1,0 +1,26 @@
+# Fuzzing harness for the network edge (cargo-fuzz / libFuzzer).
+#
+# Not a workspace member (see `[workspace]` below): it needs nightly and only
+# ever builds through `cargo +nightly fuzz run <target>`. See
+# `docs/contributing.md` ("Fuzzing") for how to run it.
+[package]
+name = "clausters-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+clausters-core = { path = "../crates/clausters-core" }
+
+[[bin]]
+name = "decode_packet"
+path = "fuzz_targets/decode_packet.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

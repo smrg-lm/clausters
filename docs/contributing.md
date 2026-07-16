@@ -61,6 +61,27 @@ Some CI/sandbox environments isolate the network **between** shell invocations: 
 
 All incoming OSC bytes decode through `osc::decode_packet`, the single entry point (every transport funnels through it). It is a thin wrapper over `rosc::decoder::decode_udp` — keep that one door so decoding and any future hardening stay in one place.
 
+## Fuzzing the network edge
+
+Because every transport funnels through that one door, one fuzz target covers
+the whole inbound parse surface. The harness lives in `fuzz/` (a cargo-fuzz
+crate, deliberately **not** a workspace member — it needs nightly and only
+builds through cargo-fuzz):
+
+```sh
+rustup toolchain install nightly --profile minimal
+cargo install cargo-fuzz
+cargo +nightly fuzz run decode_packet fuzz/corpus/decode_packet fuzz/seeds/decode_packet -- -max_total_time=300
+```
+
+Run it from the repo root. `fuzz/seeds/` holds a few versioned valid packets
+(message, args, blob, bundle) to start coverage from; the growing corpus and
+any crash artifacts land in `fuzz/corpus/` and `fuzz/artifacts/` (both
+git-ignored). Arbitrary bytes must decode to `Ok` or `Err` — a panic, hang or
+memory blow-up is a bug; minimize it with `cargo +nightly fuzz tmin` and fix
+it (or report it upstream to `rosc`) before release. Run a few minutes of
+fuzzing before publishing a release that touched the OSC path.
+
 ## Continuous integration
 
 GitHub Actions runs the same checks this page asks for by hand

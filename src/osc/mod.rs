@@ -42,6 +42,56 @@ impl std::fmt::Display for ClientId {
 /// docs for the rationale).
 pub use clausters_core::osc::DEFAULT_MAX_FRAME;
 
+/// Default ceiling for concurrent stream clients (TCP + WebSocket combined,
+/// `--max-clients`). Each connection costs a thread and queue slots, so the
+/// count is bounded like every other boot-time pool — a DoS guard in the
+/// spirit of scsynth's `maxLogins`, sized generously for the target
+/// deployments (a session rarely holds more than a handful of clients). UDP
+/// is connectionless and unaffected.
+pub const DEFAULT_MAX_CLIENTS: usize = 64;
+
+/// Live stream-client slots, shared by the TCP and WebSocket acceptors so the
+/// `--max-clients` ceiling bounds both fronts together. An acceptor takes a
+/// slot per connection ([`try_acquire`](Self::try_acquire)) and the returned
+/// guard gives it back when the connection's thread exits.
+pub struct ClientSlots {
+    live: std::sync::atomic::AtomicUsize,
+    max: usize,
+}
+
+impl ClientSlots {
+    pub fn new(max: usize) -> Self {
+        Self {
+            live: std::sync::atomic::AtomicUsize::new(0),
+            max,
+        }
+    }
+
+    /// Claims a slot, or `None` when the ceiling is reached (the acceptor
+    /// drops the connection). The guard releases the slot on drop, covering
+    /// every exit path of a connection thread.
+    pub fn try_acquire(self: &std::sync::Arc<Self>) -> Option<SlotGuard> {
+        use std::sync::atomic::Ordering;
+        self.live
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < self.max).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| SlotGuard(std::sync::Arc::clone(self)))
+    }
+}
+
+/// Releases its [`ClientSlots`] slot on drop.
+pub struct SlotGuard(std::sync::Arc<ClientSlots>);
+
+impl Drop for SlotGuard {
+    fn drop(&mut self) {
+        self.0
+            .live
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
 /// Decodes one OSC packet — the single decode entry point every transport
 /// funnels through (UDP datagrams and IPC ring contents alike), so decoding and
 /// any future hardening live in one place. Delegates to

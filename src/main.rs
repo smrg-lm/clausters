@@ -29,6 +29,9 @@ usage:
       --max-frame <bytes>  largest OSC frame on the stream transports (TCP and
                            WebSocket; default 16 MiB). A DoS ceiling, not a
                            protocol limit; UDP keeps the ~64 KB datagram cap
+      --max-clients <n>    concurrent stream clients, TCP + WebSocket combined
+                           (default 64); a connection past the ceiling is
+                           dropped at accept. UDP is connectionless, unaffected
       --ws [port]          also accept OSC over WebSocket, reachable from a
                            browser (RT only; default port 57120; ws://host:port/)
       --midi [name]        open a virtual MIDI input port (RT only; default
@@ -169,6 +172,9 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         None => Some(DEFAULT_PORT),
     };
     let mut max_frame: usize = cfg.max_frame.unwrap_or(clausters::osc::DEFAULT_MAX_FRAME);
+    let mut max_clients: usize = cfg
+        .max_clients
+        .unwrap_or(clausters::osc::DEFAULT_MAX_CLIENTS);
     let mut ws_port: Option<u16> = cfg.ws.and_then(|w| w.resolve(DEFAULT_PORT + 10));
     let mut midi_port: Option<String> = cfg.midi.as_ref().and_then(|m| m.resolve("clausters"));
     // The server imposes 48 kHz by default (PipeWire honors it per-app); `0`
@@ -228,6 +234,12 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                     .next()
                     .ok_or(format!("--max-frame needs a byte count\n{USAGE}"))?;
                 max_frame = value.parse().map_err(|e| format!("--max-frame: {e}"))?;
+            }
+            "--max-clients" => {
+                let value = it
+                    .next()
+                    .ok_or(format!("--max-clients needs a count\n{USAGE}"))?;
+                max_clients = value.parse().map_err(|e| format!("--max-clients: {e}"))?;
             }
             "--ws" => {
                 // Optional port; defaults away from --tcp's, since both bind a
@@ -423,6 +435,7 @@ fn realtime_main(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let mut osc = OscServer::bind(("127.0.0.1", DEFAULT_PORT), info, handle)?;
     // Before the listeners: the TCP/WS hubs capture the ceiling when they bind.
     osc.set_max_frame(max_frame);
+    osc.set_max_clients(max_clients);
     if !no_persist && let Some(dir) = resolve_data_dir(data_dir.as_deref()) {
         match DefStore::open(&dir) {
             Ok(store) => {

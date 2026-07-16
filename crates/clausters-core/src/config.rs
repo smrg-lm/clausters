@@ -82,6 +82,9 @@ pub struct ServerConfig {
     /// WebSocket), in bytes (`--max-frame`). A DoS guard, not a protocol
     /// limit; UDP keeps the datagram cap regardless.
     pub max_frame: Option<usize>,
+    /// Ceiling for concurrent stream clients, TCP + WebSocket combined
+    /// (`--max-clients`). UDP is connectionless and unaffected.
+    pub max_clients: Option<usize>,
     /// Virtual MIDI input (`--midi`): `true` for the default name, or a name.
     pub midi: Option<MidiSetting>,
 }
@@ -229,6 +232,7 @@ impl ServerConfig {
             tcp: pick(self.tcp, h.tcp),
             ws: pick(self.ws, h.ws),
             max_frame: pick(self.max_frame, h.max_frame),
+            max_clients: pick(self.max_clients, h.max_clients),
             midi: pick(self.midi, h.midi),
         }
     }
