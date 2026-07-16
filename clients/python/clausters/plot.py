@@ -11,10 +11,17 @@ involved unless the object itself needs one). It dispatches by kind:
   session: the def is sent, instanced with ``controls``, freed at ``dur``) and
   its output plotted, every channel in its own lane. The way to eyeball what a
   def actually produces without a server or an audio device.
+- a bare **expression** — a `clausters.defs.Ugen` graph, a Faust
+  `clausters.defs.Signal` or `clausters.defs.Box` — takes the same offline
+  path through the ephemeral-def coercion `play` uses
+  (`clausters.defs.asdef.as_def`), so ``plot(sin_osc(440) * 0.5)`` shows the
+  signal directly. It plots as wide as it writes: one lane, unless a `Box`
+  brings its own arity or ``channels`` says otherwise.
 - an `clausters.defs.Env` is rendered through the server's own ``EnvGen`` (a
   one-node NRT render, gate-released at its sustain point when it has one), so
   the drawn curve is exactly what the engine plays — not a client-side
-  re-evaluation.
+  re-evaluation. An `clausters.seq.automation.Automation` plots the same way —
+  its curve is an `Env` — labelled with the automation's control name.
 - a `clausters.defs.Buffer` (or a buffer number) is fetched from the ambient
   **live** server (`clausters.base.main.Main.resolve_server`) with its shape
   and sample rate, and plotted — the way to check a buffer's contents.
@@ -102,9 +109,11 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
 
     Args:
         obj: what to plot — a def (`SynthDef`/`FaustDef`/`GraphDef`, rendered
-            offline), an `Env` (rendered through ``EnvGen``), a `Buffer` or
-            buffer number (fetched from the ambient live server), or an
-            iterable of numbers / of per-channel number lists (materialized).
+            offline) or a bare expression (`Ugen`/`Signal`/`Box`, coerced to
+            an ephemeral def first), an `Env` or `Automation` (rendered
+            through ``EnvGen``), a `Buffer` or buffer number (fetched from
+            the ambient live server), or an iterable of numbers / of
+            per-channel number lists (materialized).
         dur: seconds a def is held before it is freed — the rendered length.
         controls: ``{name: value}`` controls (ports, for a `GraphDef`) the
             instance is started with.
@@ -127,7 +136,8 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         db_floor: spectrum dB window (default ``-100`` / ``0``).
         db_ceil: see ``db_floor``.
         label: the plot's label strip (defaults to something sensible per
-            kind: the def's name, ``buffer <n>``, ``env``, ``sequence``).
+            kind: the def's name, ``expr``, ``buffer <n>``, ``env``, an
+            automation's control name, ``sequence``).
         title: the window title (defaults to the label).
         w: window width in px.
         h: window height (default sized to the channel count).
@@ -180,14 +190,30 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
 def _materialize(obj, *, dur, controls, defs, n, sample_rate, channels):
     """Resolves ``obj`` to ``(samples, channels, sample_rate, label)`` —
     interleaved floats; ``sample_rate`` 0 marks an index (sequence) axis."""
+    from .defs.asdef import as_def
+    from .defs.boxes import Box
     from .defs.buffer import Buffer
     from .defs.faustdef import FaustDef
     from .defs.graphdef import GraphDef
+    from .defs.signals import Signal
     from .defs.synthdef import SynthDef
-    from .defs.ugens import Env
+    from .defs.ugens import Env, Ugen
+    from .seq.automation import Automation
 
     if isinstance(obj, Env):
         return _render_env(obj, sample_rate)
+    if isinstance(obj, Automation):
+        samples, chans, rate, _ = _render_env(obj.env, sample_rate)
+        return samples, chans, rate, obj.name
+    if isinstance(obj, (Ugen, Signal, Box)):
+        # A bare expression: the same ephemeral-def coercion play uses. It is
+        # as wide as it writes — one channel unless asked otherwise (a Box
+        # brings its own arity).
+        if channels is None:
+            channels = (obj.num_outputs or 2) if isinstance(obj, Box) else 1
+        samples = _render_def(as_def(obj), dur, controls, defs, sample_rate,
+                              channels)
+        return samples, channels, sample_rate, "expr"
     if isinstance(obj, (SynthDef, FaustDef, GraphDef)):
         chans = channels if channels is not None else 2
         samples = _render_def(obj, dur, controls, defs, sample_rate, chans)

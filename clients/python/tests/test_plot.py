@@ -166,6 +166,37 @@ def test_plot_renders_an_env_through_the_engine():
     assert abs(frames - 0.4 * SR) <= 128, f"~0.4 s (sum of times), got {frames}"
 
 
+def test_plot_renders_a_bare_ugen_expression():
+    _embed_or_skip()
+    from clausters.defs import sin_osc
+
+    host = FakeHost()
+    win = plot(sin_osc(440.0) * 0.5, dur=0.25, sample_rate=SR, host=host)
+    assert isinstance(win, PlotWindow)
+    widget = _plot_widget(host.opened[0])
+    # A bare expression plots as wide as it writes: one lane, real audio.
+    assert widget["label"] == "expr"
+    assert widget["sample_rate"] == SR
+    assert widget.get("channels", 1) == 1
+    frames = os.path.getsize(widget["path"]) // 4
+    assert abs(frames - 0.25 * SR) <= 128, f"~0.25 s rendered, got {frames}"
+
+
+def test_plot_renders_an_automation_curve():
+    _embed_or_skip()
+    from clausters.defs import Env
+    from clausters.seq.automation import Automation
+
+    auto = Automation(Env(levels=[200.0, 4000.0, 200.0], times=[0.1, 0.3]),
+                      target=(None, "cutoff"))
+    host = FakeHost()
+    plot(auto, sample_rate=SR, host=host)
+    widget = _plot_widget(host.opened[0])
+    assert widget["label"] == "cutoff"
+    frames = os.path.getsize(widget["path"]) // 4
+    assert abs(frames - 0.4 * SR) <= 128, f"~0.4 s (sum of times), got {frames}"
+
+
 def test_plot_renders_a_graphdef_offline():
     _embed_or_skip()
     from clausters.defs import GraphDef, SynthDef, control, out, sin_osc
