@@ -51,7 +51,9 @@ class Event(dict):
     """A note event: a ``dict`` of parameters that knows how to play itself.
 
     Built from `DEFAULTS` overlaid with whatever you pass, exactly like a dict
-    (``Event(freq=440, amp=0.2)``), so unknown keys are simply stored. The keys
+    -- keyword arguments (``Event(freq=440, amp=0.2)``), a mapping
+    (``Event({"freq": 440, "amp": 0.2})``), or both merged, with keywords
+    winning -- so unknown keys are simply stored. The keys
     split in two: a fixed **reserved** set drives timing and structure (``dur``,
     ``legato``, ``stretch``, ``add_action``/``target``, the pitch keys, ...) and
     is never sent to the synth; every other numeric key is forwarded as a synth

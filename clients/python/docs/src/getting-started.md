@@ -123,6 +123,11 @@ session.start()      # the clock runs; keep typing while it plays
 session.stop()       # ...and stop it whenever
 ```
 
+`Pbind` (like `Event`) constructs exactly as a `dict` does: the keyword form
+above is a shorthand, and a plain mapping —
+`Pbind({"instrument": "beep", "dur": 0.25})` — works the same, matching how
+`server.synth` takes its controls.
+
 When you are done, close the session. Everything it started — the server it booted, a GUI it opened — stops with it:
 
 ```python

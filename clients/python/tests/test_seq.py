@@ -126,6 +126,19 @@ def test_event_pitch_from_midinote_and_degree():
     assert Event(degree=0).freq() == pytest.approx(midicps(60.0))
 
 
+def test_event_and_pbind_accept_a_dict_like_kwargs():
+    # The dict form of the constructor is equivalent to kwargs (as in Synth's
+    # controls), and keywords win when both are given.
+    assert Event({"freq": 440.0, "amp": 0.3}) == Event(freq=440.0, amp=0.3)
+    assert Event({"freq": 440.0}, freq=220.0)["freq"] == 220.0
+
+    d = Pbind({"instrument": "default", "freq": Pseq([100.0, 200.0]), "dur": 0.5})
+    k = Pbind(instrument="default", freq=Pseq([100.0, 200.0]), dur=0.5)
+    assert list(d) == list(k)
+    merged = Pbind({"dur": 0.5}, dur=0.25, freq=Pseq([100.0]))
+    assert list(merged)[0]["dur"] == 0.25
+
+
 def test_pbind_yields_events_and_stops_with_finite_key():
     p = Pbind(instrument="default", freq=Pseq([100.0, 200.0]), dur=0.5)
     events = list(p)

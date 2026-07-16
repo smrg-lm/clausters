@@ -201,10 +201,16 @@ class Pn(Pattern):
 class Pbind(Pattern):
     """Binds keys to value patterns; yields an `Event` per step, stopping
     when any key's stream stops. Constant values are held; sub-patterns advance
-    one value per event."""
+    one value per event.
 
-    def __init__(self, **patterns):
-        self.patterns = patterns
+    Constructs exactly like a ``dict`` -- keyword arguments
+    (``Pbind(freq=Pseq([440, 880]), dur=0.5)``), a mapping
+    (``Pbind({"freq": Pseq([440, 880]), "dur": 0.5})``), or both merged, with
+    keywords winning. The dict form also admits keys that are not valid Python
+    identifiers."""
+
+    def __init__(self, *args, **patterns):
+        self.patterns = dict(*args, **patterns)
 
     def __iter__(self):
         streams = {key: iter(as_pattern(value)) for key, value in self.patterns.items()}
