@@ -39,8 +39,9 @@ def test_the_child_dies_with_a_killed_interpreter():
         _cli.gui_path()
     except Exception as e:  # pragma: no cover - source tree always bundles it
         pytest.skip(f"no clausters-gui binary: {e}")
+    # --headless: the host must come up on a machine with no display (CI).
     code = ("import time; from clausters.launch import GuiProcess; "
-            "p = GuiProcess(port=57931).start(); "
+            "p = GuiProcess(port=57931, extra_args=['--headless']).start(); "
             "print(p.proc.pid, flush=True); time.sleep(30)")
     child = subprocess.Popen([sys.executable, "-c", code],
                              stdout=subprocess.PIPE, text=True)
