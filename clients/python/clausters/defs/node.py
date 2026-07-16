@@ -22,16 +22,30 @@ class AddAction(IntEnum):
 
 
 class Node:
-    def __init__(self, node_id: int):
+    def __init__(self, node_id: int, server=None):
         self.id = node_id
+        #: the `Server` that created this handle (set by ``server.synth`` and
+        #: friends), so `free` knows where to send without being told.
+        self.server = server
+
+    def free(self):
+        """Free this node now (``/n_free``) — the way to cut something whose
+        life is long (a `play`'d expression, a slow take). Sends through the
+        server that created the handle, else the ambient one."""
+        server = self.server
+        if server is None:
+            from ..base.main import main
+
+            server = main.resolve_server(None)
+        server.free(self)
 
     def __repr__(self):
         return f"{type(self).__name__}(id={self.id})"
 
 
 class Synth(Node):
-    def __init__(self, node_id: int, defname: str):
-        super().__init__(node_id)
+    def __init__(self, node_id: int, defname: str, server=None):
+        super().__init__(node_id, server)
         self.defname = defname
 
 

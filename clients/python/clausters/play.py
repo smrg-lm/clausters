@@ -87,11 +87,14 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             the other kinds.
 
     Returns:
-        Whatever the underlying play returns — the synth node id for an event,
-        the `clausters.seq.eventstream.EventStreamPlayer` for a pattern, the
-        routine for a routine, the node handle (a `clausters.defs.Synth` or
-        instance `clausters.defs.Group`) for a def or expression, the
-        `clausters.seq.timeline.Playhead` for a timeline.
+        Something that knows how to end what just started: the completed
+        event for an event or dict (``.free()`` / ``.release()``), the
+        `clausters.seq.eventstream.EventStreamPlayer` for a pattern
+        (``.stop()``), the routine for a routine, the node handle — a
+        `clausters.defs.Synth` or instance `clausters.defs.Group` — for a
+        def, expression or buffer (``.free()``), the
+        `clausters.seq.timeline.Playhead` for a timeline (``.stop()``), and
+        the `clausters.seq.automation.Automation` itself (``.stop()``).
     """
     from .seq.automation import Automation
     from .seq.event import Event
@@ -129,7 +132,8 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             # Interactive trigger: we are off the clock thread, so preparing
             # (allocating and filling the control buffer) may block here.
             playable.prepare(resolved)
-        return playable.play(resolved)
+        playable.play(resolved)
+        return playable
     from .form.element import Element
 
     if isinstance(playable, Element):

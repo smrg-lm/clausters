@@ -218,6 +218,74 @@ def test_free_play_falls_back_to_the_timeline_item_protocol(clean_default):
     assert seen == [server]
 
 
+def _addrs(server) -> list:
+    """The OSC addresses in the NRT score, in insertion order."""
+    import struct
+
+    from clausters.base import _osclib as osc
+
+    out = []
+    for _t, raw in server.interface.score.bundles:
+        length = struct.unpack(">i", raw[16:20])[0]
+        addr, _ = osc.decode(raw[20:20 + length])
+        out.append(addr)
+    return out
+
+
+def test_node_handles_free_themselves(clean_default):
+    server = _nrt_server()
+    main.server = server
+    node = play(sin_osc(440.0) * 0.1)       # a Synth handle, server attached
+    assert node.server is server
+    node.free()
+    assert _addrs(server)[-1] == "/n_free"
+
+
+def test_event_play_returns_the_completed_event(clean_default):
+    from clausters.base.builtins import midicps
+
+    server = _nrt_server()
+    main.server = server
+    e = play({"degree": 0, "dur": 8.0})     # long on purpose: interruptible
+    assert isinstance(e, Event)
+    assert e["node"] is not None and e["server"] is server
+    assert e["freq"] == pytest.approx(midicps(60.0))
+    assert e["sustain"] == pytest.approx(8.0 * 0.8)
+    e.free()                                # cut it now, sustain be damned
+    assert _addrs(server)[-1] == "/n_free"
+
+
+def test_event_release_closes_the_gate_or_frees(clean_default):
+    server = _nrt_server()
+    main.server = server
+    gated = play(Event(instrument="default", degree=0, dur=8.0))
+    gated.release()                         # the default releases by gate
+    assert _addrs(server)[-1] == "/n_set"
+    plain = play(Event(instrument="beep", degree=0, dur=8.0))
+    plain.release()                         # a gate-less def just frees
+    assert _addrs(server)[-1] == "/n_free"
+    # An unplayed event (or a rest) is a no-op, not an error.
+    Event(degree=0).free()
+    rest_ev = play(Event(type="rest"))
+    rest_ev.free()
+    rest_ev.release()
+
+
+def test_automation_stops_early(clean_default):
+    from clausters.defs import Env
+    from clausters.seq.automation import Automation
+
+    server = _nrt_server()
+    main.server = server
+    auto = play(Automation(Env([200.0, 800.0], [60.0]), target=(5, "freq")))
+    assert isinstance(auto, Automation)     # the verb returns the stoppable
+    assert auto.node is not None
+    auto.stop()                             # a minute of sweep, cut now
+    assert auto.node is None
+    assert _addrs(server)[-1] == "/n_free"
+    auto.stop()                             # idempotent
+
+
 # ---- as_def: the shared expression -> def coercion ----
 
 def test_as_def_wraps_a_bare_ugen_in_out():

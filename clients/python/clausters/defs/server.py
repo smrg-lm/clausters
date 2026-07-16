@@ -738,12 +738,12 @@ class Server:
         node_id = self._node_id()
         self.send_msg("/s_new", defname, node_id, int(action), int(target),
                       *_flatten_controls(controls))
-        return Synth(node_id, defname)
+        return Synth(node_id, defname, self)
 
     def group(self, *, target=ROOT_NODE_ID, action=AddAction.TAIL) -> Group:
         node_id = self._node_id()
         self.send_msg("/g_new", node_id, int(action), int(target))
-        return Group(node_id)
+        return Group(node_id, server=self)
 
     def graph(self, defname, ports=None, *, target=ROOT_NODE_ID,
               action=AddAction.TAIL) -> Group:
@@ -756,7 +756,7 @@ class Server:
         node_id = self._node_id()
         self.send_msg("/graph_new", defname, node_id, int(action), int(target),
                       *_flatten_controls(ports))
-        return Group(node_id)
+        return Group(node_id, server=self)
 
     def graph_voice(self, instance, ports=None) -> Group:
         """Spawns a per-voice sub-graph (``/graph_voice``) inside a running
@@ -767,7 +767,7 @@ class Server:
         inst_id = instance.id if hasattr(instance, "id") else instance
         node_id = self._node_id()
         self.send_msg("/graph_voice", inst_id, node_id, *_flatten_controls(ports))
-        return Group(node_id)
+        return Group(node_id, server=self)
 
     def set(self, node, controls):
         self.send_msg("/n_set", node.id if hasattr(node, "id") else node,

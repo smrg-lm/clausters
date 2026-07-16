@@ -60,34 +60,44 @@ play(arpeggio)
 time.sleep(PAUSE + 1.0)
 
 # %% A bare expression: the verb wraps it in an ephemeral def (adding the
-# `out`), sends it and instances it. It sounds until you free it.
+# `out`), sends it and instances it. Everything play returns knows how to end
+# what it started — a Synth handle frees itself.
 print("a bare UGen expression, sounding until freed")
 node = play(sin_osc(330.0) * 0.15)
 time.sleep(PAUSE)
-server.free(node)
+node.free()
 
 # %% The Faust family is a peer: a box expression takes the same door.
 print("a Faust box expression (os.osc from the Faust library)")
 node = play(box.faust("os.osc")(box.hslider("freq", 440.0, 20.0, 2000.0, 0.01)) * 0.15)
 time.sleep(PAUSE)
-server.free(node)
+node.free()
 
-# %% A named def, instanced with controls.
-print("a named def with controls")
+# %% A named def, instanced with controls. A played event is also actionable
+# after the fact: play returns it completed (node/server/derived keys filled),
+# so a note with an extreme sustain can be cut (.free()) or ended musically
+# (.release()) before its time.
+print("a named def with controls; a long note, released early")
 beep = SynthDef("verbs_beep", out(0.0, sin_osc(control("freq", 440.0)) * 0.15))
 node = play(beep, controls={"freq": 660.0})
 time.sleep(PAUSE)
-server.free(node)
+node.free()
+long_note = play(Event(degree=0, dur=30.0))   # would sustain ~24 s...
+time.sleep(PAUSE)
+long_note.free()                              # ...cut now
 
 # %% An automation coupled to a sounding node: the curve is written to a
 # control bus and /n_map'd onto the control — the node follows it, then keeps
-# the last value. Outside a clock the curve's beats read as seconds.
-print("an automation sweeping a sounding node's freq")
+# the last value. Outside a clock the curve's beats read as seconds; the
+# returned automation stops the sweep early (the control holds where it was).
+print("an automation sweeping a sounding node's freq, interrupted mid-sweep")
 node = play(sin_osc(control("freq", 440.0)) * 0.15)
-sweep = Automation(Env([440.0, 1760.0, 440.0], [1.0, 1.0]), target=(node, "freq"))
-play(sweep)
-time.sleep(2.5)
-server.free(node)
+sweep = play(Automation(Env([440.0, 1760.0, 440.0], [1.5, 1.5]),
+                        target=(node, "freq")))
+time.sleep(1.5)
+sweep.stop()                # interrupted at the top: the freq holds there
+time.sleep(1.0)
+node.free()
 
 # %% A timeline: already-generated placement, driven by a playhead on the
 # ambient clock.

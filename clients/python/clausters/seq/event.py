@@ -19,10 +19,11 @@ from .. import _native
 from ..base.builtins import cpsmidi, midicps
 
 #: Keys that drive timing/structure and are never sent as synth controls.
+#: ``node`` and ``server`` are the play-completed keys (see `Event.play`).
 _RESERVED = {
     "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
     "add_action", "target", "group", "server", "has_gate",
-    "midinote", "degree", "octave", "root", "scale",
+    "midinote", "degree", "octave", "root", "scale", "node",
 }
 
 #: Default parameters merged into every `Event`. ``type`` selects behaviour
@@ -132,8 +133,15 @@ class Event(dict):
         """Play this event on ``destination`` (double dispatch): the OSC
         `Server` turns it into `/s_new` + release,
         a MIDI destination into note on/off — without the clock or routine
-        knowing which. Returns whatever the destination's ``play_event`` does
-        (the synth node id for OSC, ``None`` for a rest or MIDI).
+        knowing which.
+
+        Returns **this event, with its keys completed**: the derived
+        quantities are written in (``midinote``, ``freq``, ``delta``,
+        ``sustain`` — the values actually used) along with ``node`` (the
+        synth node id; ``None`` for a rest or MIDI) and ``server`` (the
+        destination), so the note stays actionable after the fact — `free`
+        cuts it, `release` closes it musically. The scheduled self-release
+        still arrives regardless.
 
         ``destination`` is optional: omitted, it resolves to the ambient server
         (the running session's, else the default session's — booted with
@@ -144,7 +152,34 @@ class Event(dict):
             from ..base.main import main
 
             destination = main.resolve_server()
-        return destination.play_event(self)
+        midinote, freq = self.midinote(), self.freq()
+        delta, sustain = self.delta(), self.sustain()
+        self.update(midinote=midinote, freq=freq, delta=delta, sustain=sustain)
+        self["node"] = destination.play_event(self)
+        self["server"] = destination
+        return self
+
+    def free(self):
+        """Cut the played note **now** (``/n_free``), without waiting for its
+        sustain — for interrupting an extreme duration. A no-op when the event
+        has not sounded (a rest, a MIDI play, or never played). The release
+        already scheduled at play time still arrives and is harmless."""
+        node, server = self.get("node"), self.get("server")
+        if node is not None and server is not None:
+            server.free(node)
+
+    def release(self):
+        """End the played note **musically**, now: the event's own release
+        gesture — ``gate 0`` when it releases by gate (``has_gate``, or the
+        built-in ``"default"`` instrument's envelope), a plain ``/n_free``
+        otherwise. Same no-op rule as `free`."""
+        node, server = self.get("node"), self.get("server")
+        if node is None or server is None:
+            return
+        if self.get("has_gate") or self["instrument"] == "default":
+            server.set(node, {"gate": 0.0})
+        else:
+            server.free(node)
 
 
 def rest(dur: float = 1.0) -> Event:

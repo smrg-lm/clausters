@@ -101,6 +101,10 @@ class Automation:
         self.frames = int(frames)
         self.buf = None
         self.bus = None
+        #: the lane synth of the last `play` and its destination, so `stop`
+        #: can interrupt the sweep early.
+        self.node = None
+        self._playing_on = None
 
     @classmethod
     def from_points(cls, points, target, *, name=None, frames: int = DEFAULT_FRAMES,
@@ -155,6 +159,7 @@ class Automation:
         dur_secs = dur_beats if clock is None else dur_beats / clock.tempo
 
         node = destination.nodes.alloc()
+        self.node, self._playing_on = node, destination
         s_new = ("/s_new", LANE_DEF, node, int(AddAction.HEAD), int(ROOT_NODE_ID),
                  "buf", self.buf.bufnum, "bus", self.bus.index, "dur", dur_secs)
         maps = [("/n_map", tnode.id if hasattr(tnode, "id") else int(tnode),
@@ -171,6 +176,15 @@ class Automation:
             destination.send_bundle(m)
         destination.send_bundle(("/n_free", node), delay_beats=dur_beats)
         return node
+
+    def stop(self):
+        """Interrupt the sweep **now**: free the lane synth of the last `play`,
+        so the curve stops advancing and the mapped controls hold their last
+        value. A no-op when nothing is playing; the end-of-curve free already
+        scheduled still arrives and is harmless."""
+        if self.node is not None and self._playing_on is not None:
+            self._playing_on.free(self.node)
+        self.node = self._playing_on = None
 
     def free(self, server):
         """Return the buffer and bus to their allocators."""

@@ -12,6 +12,7 @@ from clausters.defs import sin_osc
 
 Server.boot()
 node = play(sin_osc(440.0) * 0.2)       # a bare expression, sounding now
+node.free()                             # ...and gone
 plot(sin_osc(440.0) * 0.2, dur=0.02)    # the same signal, on screen
 samples, frames = render(sin_osc(440.0) * 0.2, dur=2.0, path="beep.wav")
 ```
@@ -37,15 +38,22 @@ function is the uniform entry that picks the right one.
 
 | You hand it | It does | Returns |
 |---|---|---|
-| an `Event`, or a plain **dict** of event keys | one note, now (timetagged at the logical beat inside a routine) | the synth node id |
-| an event pattern (`Pbind`) | schedules it on a clock | the `EventStreamPlayer` |
+| an `Event`, or a plain **dict** of event keys | one note, now (timetagged at the logical beat inside a routine) | the **completed event** — the derived keys (`freq`, `sustain`, …) plus `node`/`server` written in; `.free()` cuts it, `.release()` ends it musically (gate 0 when it releases by gate) |
+| an event pattern (`Pbind`) | schedules it on a clock | the `EventStreamPlayer` — `.stop()` |
 | a `Routine` / `Stream`, or a bare **generator** | schedules it on a clock | the routine |
-| a **bare expression** — a `Ugen` graph, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one), sends and instances it; it sounds until you free it | the `Synth` |
-| a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) |
-| a `Timeline` | drives it through a playhead on the ambient clock | the `Playhead` |
-| a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` |
-| an `Automation` | prepares it if needed and applies the curve to its target controls, now | the lane node id |
+| a **bare expression** — a `Ugen` graph, a Faust `Signal` or `Box` | wraps it in an ephemeral def (adding the `out` if it lacks one), sends and instances it; it sounds until you free it | the `Synth` — `.free()` |
+| a def — `SynthDef` / `FaustDef` / `GraphDef` | sends and instances it, with optional `controls` | the `Synth` (or instance `Group`) — `.free()` |
+| a `Timeline` | drives it through a playhead on the ambient clock | the `Playhead` — `.stop()` (and `locate`/`loop`) |
+| a `Buffer` | sounds it through the stock playbuf instrument (`rate`/`amp` controls, freed when the take ends) | the `Synth` — `.free()` cuts the take early |
+| an `Automation` | prepares it if needed and applies the curve to its target controls, now | the automation itself — `.stop()` interrupts the sweep (the controls hold their last value) |
 | anything with `play(destination)` (the timeline-item protocol: `OscEvent`, `MidiEvent`, …) | dispatches to it | whatever it returns |
+
+Everything `play` returns knows how to **end what it started** — even the
+self-terminating kinds, whose duration can be extreme: a note frees itself
+after its sustain, but the completed event's `.free()` cuts it *now*; a take
+and a sweep end on their own, but the handle's `.free()` / the automation's
+`.stop()` interrupt them. (The release already scheduled at play time still
+arrives; it lands on a node that is gone and is harmless.)
 
 **Plottables** — `plot(x)` (each call opens its own window; see the
 [`plot` API](api.md) for the display options — `view="spectrum"`, rulers,
