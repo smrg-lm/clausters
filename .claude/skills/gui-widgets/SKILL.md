@@ -15,7 +15,7 @@ Adding a widget is **never a protocol change** — the generic GuiDef node (`{id
 2. **Renderer** — two shapes exist; pick by cost:
    - *Cheap*: pure functions over the flat-geometry `Mesh` (`src/host/paint.rs` `Painter`: rect/quad/line/disc + the `src/host/font.rs` bitmap text), like `meters`/`nodetree`/`plot`. GPU-free, unit-testable without a window.
    - *Heavy GPU*: an own pipeline/view like `waveform`/`spectrogram`/`canvas` (the `TimelineView` shape). Only when a mesh per frame cannot express it (textures, shaders, very dense geometry).
-3. **Frame plumbing** — live inputs reach the shared per-window render `src/host/frame.rs` (`FrameInputs`); both fronts (native `gui.rs`, web `web.rs`) call the same `frame::render`, so a widget drawn there is browser-correct by construction.
+3. **Frame plumbing** — live inputs reach the shared per-window render `src/host/frame.rs` (`FrameInputs`); both fronts (native `gui/`, web `web.rs`) call the same `frame::render`, so a widget drawn there is browser-correct by construction.
 4. **Interaction** — hit-test + mutation in `src/host/interact.rs` (shared by both fronts); a value-bearing interaction goes through the one `deliver` path: binding `forward` first, `/gui_event` when unbound.
 5. **Python builder** — one function in `clients/python/clausters/gui/guidef.py` (mirror the existing ones: keyword props, `_drop_none`), plus a commented example in `examples/`.
 6. **Tests** — GPU-free logic (models, math, parse) in `cargo test` from `clients/gui/`; window binaries and E2E follow the single-Bash-invocation rule.

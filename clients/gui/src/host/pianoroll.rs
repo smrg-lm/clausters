@@ -462,6 +462,14 @@ pub fn set_velocity(notes: &mut [Note], index: usize, velocity: i32) {
     }
 }
 
+/// The 0..127 velocity a cursor height maps to within the velocity lane
+/// (lane bottom = 0, lane top = 127; clamped) — the inverse of the lane's bar
+/// drawing, shared by the single-bar and block velocity drags.
+pub fn velocity_at(lane: Rect, y: f64) -> i32 {
+    let frac = ((lane.y + lane.h - y as f32) / lane.h.max(1.0)).clamp(0.0, 1.0);
+    (frac * 127.0).round() as i32
+}
+
 /// Insert a note, returning its index (appended; the list is not kept sorted —
 /// draw order is insertion order, matching the clip's).
 pub fn insert_note(notes: &mut Vec<Note>, note: Note) -> usize {
@@ -662,6 +670,16 @@ mod tests {
             start: 0.0,
             len: 1000.0,
         }
+    }
+
+    #[test]
+    fn velocity_at_maps_lane_height_to_0_127() {
+        let lane = Rect::new(0.0, 100.0, 400.0, 60.0);
+        assert_eq!(velocity_at(lane, 160.0), 0); // lane bottom
+        assert_eq!(velocity_at(lane, 100.0), 127); // lane top
+        assert_eq!(velocity_at(lane, 130.0), 64); // midway, rounded
+        assert_eq!(velocity_at(lane, 500.0), 0); // below: clamped
+        assert_eq!(velocity_at(lane, 0.0), 127); // above: clamped
     }
 
     #[test]

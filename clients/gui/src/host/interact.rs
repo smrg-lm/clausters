@@ -695,6 +695,42 @@ pub(crate) fn snap(v: f64, grid: f64) -> f64 {
     }
 }
 
+/// Maps a cursor x within a view's body strip to a timeline sample through the
+/// shared navigation window — the inverse of the renderer's sample→pixel map,
+/// used by every timeline gesture (select, locate, clip/note/marker drags).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, x: f64) -> f64 {
+    nav_start + nav_len * ((x - body_x) / body_w.max(1.0))
+}
+
+/// The clip placement one drag step produces, against the press-time snapshot
+/// (`press_sample`, `orig_offset`, `orig_dur`) so a clamped edge never drifts:
+/// a body drag moves the offset, an edge drag resizes — the end never crosses
+/// the start, the start stays within `[0, end]` — snapped to `grid`.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn clip_drag_placement(
+    part: ClipPart,
+    sample: f64,
+    press_sample: f64,
+    orig_offset: f64,
+    orig_dur: f64,
+    grid: f64,
+) -> (f64, f64) {
+    let delta = sample - press_sample;
+    let end = orig_offset + orig_dur;
+    match part {
+        ClipPart::Body => (snap(orig_offset + delta, grid), orig_dur),
+        ClipPart::End => {
+            let new_end = snap(end + delta, grid).max(orig_offset);
+            (orig_offset, new_end - orig_offset)
+        }
+        ClipPart::Start => {
+            let new_off = snap(orig_offset + delta, grid).clamp(0.0, end);
+            (new_off, end - new_off)
+        }
+    }
+}
+
 /// The 0..1 fraction a slider press/drag at `(cx, cy)` maps to, by orientation:
 /// the cursor x along a horizontal track, or y (bottom = 0, top = 1) on a
 /// `vertical` one.
@@ -759,6 +795,32 @@ mod tests {
         assert_eq!(snap(437.0, 100.0), 400.0);
         assert_eq!(snap(451.0, 100.0), 500.0);
         assert_eq!(snap(12.4, 0.0), 12.0); // no grid: whole samples
+    }
+
+    #[test]
+    fn sample_at_inverts_the_body_pixel_map() {
+        // A 1000-sample window over a 500 px body starting at x = 100.
+        assert_eq!(sample_at(0.0, 1000.0, 100.0, 500.0, 100.0), 0.0);
+        assert_eq!(sample_at(0.0, 1000.0, 100.0, 500.0, 600.0), 1000.0);
+        assert_eq!(sample_at(2000.0, 1000.0, 100.0, 500.0, 350.0), 2500.0);
+        // A degenerate body never divides by zero.
+        assert!(sample_at(0.0, 1000.0, 100.0, 0.0, 300.0).is_finite());
+    }
+
+    #[test]
+    fn clip_drag_placement_moves_and_resizes_from_the_snapshot() {
+        // Body: the offset follows the delta, snapped; the duration is kept.
+        let (off, dur) = clip_drag_placement(ClipPart::Body, 730.0, 500.0, 400.0, 300.0, 100.0);
+        assert_eq!((off, dur), (600.0, 300.0));
+        // End: resizing never crosses the start (duration floors at 0).
+        let (off, dur) = clip_drag_placement(ClipPart::End, 0.0, 690.0, 400.0, 300.0, 100.0);
+        assert_eq!(off, 400.0);
+        assert!(dur >= 0.0);
+        // Start: the onset stays within [0, end], the end fixed.
+        let (off, dur) = clip_drag_placement(ClipPart::Start, 0.0, 900.0, 400.0, 300.0, 100.0);
+        assert_eq!((off, dur), (0.0, 700.0));
+        let (off, dur) = clip_drag_placement(ClipPart::Start, 950.0, 400.0, 400.0, 300.0, 100.0);
+        assert_eq!((off, dur), (700.0, 0.0));
     }
 
     #[test]
