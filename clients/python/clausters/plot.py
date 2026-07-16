@@ -197,19 +197,6 @@ def _materialize(obj, *, dur, controls, defs, n, sample_rate, channels):
     return _sequence(obj, n)
 
 
-def _add_def(server, d):
-    """Sends any def kind to ``server`` (scored at time 0 in NRT)."""
-    from .defs.faustdef import FaustDef
-    from .defs.graphdef import GraphDef
-
-    if isinstance(d, GraphDef):
-        server.add_graphdef(d)
-    elif isinstance(d, FaustDef):
-        server.add_faustdef(d)
-    else:
-        server.add_synthdef(d)
-
-
 def _render_def(obj, dur, controls, defs, sample_rate, channels):
     """Renders a def offline: an ephemeral NRT session, the ``defs`` it needs
     plus the def itself sent at score time 0, one instance with ``controls``,
@@ -220,8 +207,8 @@ def _render_def(obj, dur, controls, defs, sample_rate, channels):
     session = Session.nrt(tempo=1.0)  # beats == seconds
     server = session.server
     for d in defs:
-        _add_def(server, d)
-    _add_def(server, obj)
+        server.add_def(d)
+    server.add_def(obj)
     if isinstance(obj, GraphDef):
         node = server.graph(obj.name, controls)
     else:

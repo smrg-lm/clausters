@@ -24,6 +24,7 @@ and the server resources:
 from . import boxes
 from . import signals
 from . import ugens
+from .asdef import as_def
 from .boxes import Box
 from .bus import AudioBusAllocator, Bus, ControlBusAllocator
 from .clocksync import SampleClockModel, UdpSampleClock
@@ -75,6 +76,7 @@ __all__ = [
     "boxes",
     "signals",
     "ugens",
+    "as_def",
     "Box",
     "Signal",
     "FaustDef",

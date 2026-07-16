@@ -612,6 +612,19 @@ class Server:
 
     # ---- definitions ----
 
+    def add_def(self, d, *, wait: bool = True, timeout: float = 10.0) -> str:
+        """Sends a def of any family — dispatches to `add_synthdef`,
+        `add_faustdef` or `add_graphdef` by the def's type. Same semantics:
+        ``wait=True`` (default) blocks in RT until ``/done``/``/fail``;
+        in NRT the send is scored at time 0."""
+        from .graphdef import GraphDef
+
+        if isinstance(d, GraphDef):
+            return self.add_graphdef(d, wait=wait, timeout=timeout)
+        if isinstance(d, FaustDef):
+            return self.add_faustdef(d, wait=wait, timeout=timeout)
+        return self.add_synthdef(d, wait=wait, timeout=timeout)
+
     def add_faustdef(self, fdef: FaustDef, *, wait: bool = True,
                      timeout: float = 10.0) -> str:
         """Sends a `FaustDef` via ``/d_faust``.
