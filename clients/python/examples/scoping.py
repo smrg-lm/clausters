@@ -30,7 +30,7 @@ from clausters import Server, scope
 from clausters.defs import SynthDef, control, lag, out, sin_osc
 
 #: Seconds each visual step stays on screen.
-PAUSE = 3.0
+PAUSE = 4.0
 
 server = Server.boot()
 
@@ -79,16 +79,19 @@ server.set(node, {"spread": 0.0})
 time.sleep(PAUSE)
 win.close()
 
-# %% 3/3 — the live spectrum (view="spectrum"): one curve per channel.
-print("3/3 spectrum: outs 0/1, the 220 Hz peak on a log axis with Hz/dB rulers")
+# %% 3/3 — the live spectrum (view="spectrum"): one curve per channel, and
+# the four frequency scales in turn. The corner read-out names the FFT size
+# and the active scale (e.g. "2048 LOG").
+print("3/3 spectrum: outs 0/1, the 220 Hz peak — the corner reads '2048 LOG'")
 server.set(node, {"spread": 1.0})   # detune R so the two curves differ
 win = scope(0, view="spectrum", channels=2)
 time.sleep(PAUSE)
-print("    freq_scale -> mel (watch the peak and ruler move), fft_size -> 4096")
-win.set(freq_scale="mel", fft_size=4096)
-time.sleep(PAUSE)
-print("    freq_scale -> log (round trip), and the window closes")
-win.set(freq_scale="log", fft_size=2048)
+for scale in ("lin", "mel", "bark"):
+    print(f"    freq_scale -> {scale} (watch the peak, the ruler and the tag)")
+    win.set(freq_scale=scale)
+    time.sleep(PAUSE)
+print("    back to log with fft_size -> 4096 ('4096 LOG'), and it closes")
+win.set(freq_scale="log", fft_size=4096)
 time.sleep(PAUSE)
 win.close()
 

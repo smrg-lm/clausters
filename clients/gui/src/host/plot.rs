@@ -332,8 +332,10 @@ fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
     let Some(spec) = p.spectrum else {
         return;
     };
-    // The active scale, named over the view (the live views' corner slot).
-    super::meters::value_text(mesh, ruler::scale_tag(p.freq_scale), g.body);
+    // The FFT size and active scale, named over the view (the live views'
+    // corner slot); the size pads to 4 digits so the text never moves.
+    let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
+    super::meters::value_text(mesh, &tag, g.body);
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {

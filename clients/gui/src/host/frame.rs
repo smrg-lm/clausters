@@ -259,6 +259,7 @@ struct WaveItem {
 struct SpectrumItem {
     id: i32,
     rect: Rect,
+    fft_size: usize,
     db_floor: f32,
     db_ceil: f32,
     freq_scale: FreqScale,
@@ -773,6 +774,7 @@ pub(crate) fn render(
                 }
             }
             WidgetKind::Spectrum {
+                fft_size,
                 db_floor,
                 db_ceil,
                 freq_scale,
@@ -786,6 +788,7 @@ pub(crate) fn render(
                     spectrum_rects.push(SpectrumItem {
                         id,
                         rect: p.rect,
+                        fft_size: *fft_size,
                         db_floor: *db_floor,
                         db_ceil: *db_ceil,
                         freq_scale: *freq_scale,
@@ -1001,6 +1004,7 @@ pub(crate) fn render(
                 states,
                 &spectrum::SpectrumParams {
                     sample_rate: inputs.sample_rate,
+                    fft_size: item.fft_size,
                     db_floor: item.db_floor,
                     db_ceil: item.db_ceil,
                     freq_scale: item.freq_scale,

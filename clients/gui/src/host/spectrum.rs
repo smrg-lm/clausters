@@ -129,6 +129,7 @@ impl SpectrumState {
 /// The display parameters of one spectrum draw.
 pub(crate) struct SpectrumParams<'a> {
     pub sample_rate: f64,
+    pub fft_size: usize,
     pub db_floor: f32,
     pub db_ceil: f32,
     pub freq_scale: FreqScale,
@@ -170,9 +171,11 @@ pub(crate) fn draw_spectrum(
     }
     mesh.rect(body, FIELD);
     mesh.border(body, 1.0, FRAME);
-    // The active scale, named over the view (the scope's lock/free corner):
-    // log/mel/bark are not tellable apart from the tick spacing at a glance.
-    super::meters::value_text(mesh, ruler::scale_tag(p.freq_scale), body);
+    // The FFT size and active scale, named over the view (the scope's
+    // lock/free corner): log/mel/bark are not tellable apart from the tick
+    // spacing at a glance. The size pads to 4 digits so the text never moves.
+    let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
+    super::meters::value_text(mesh, &tag, body);
 
     let sr = if p.sample_rate > 0.0 {
         p.sample_rate as f32

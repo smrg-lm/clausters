@@ -878,14 +878,15 @@ pub(crate) const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
 /// The color of a ruler strip's tick marks.
 pub(crate) const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
 
-/// The display name of a frequency scale, as the Hz rulers tag it — three
-/// letters each, so the tag's footprint is constant across scales.
+/// The display name of a frequency scale, as the spectral views' corner
+/// read-out tags it — three letters each, so the tag's footprint is constant
+/// across scales.
 pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
     match scale {
-        FreqScale::Linear => "lin",
-        FreqScale::Log => "log",
-        FreqScale::Mel => "mel",
-        FreqScale::Bark => "brk",
+        FreqScale::Linear => "LIN",
+        FreqScale::Log => "LOG",
+        FreqScale::Mel => "MEL",
+        FreqScale::Bark => "BRK",
     }
 }
 
