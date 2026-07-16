@@ -314,7 +314,7 @@ One rule covers every view: the verb monitors `channels` consecutive buses from 
 
 - **`"signal"`** — a triggered **oscilloscope**. Each channel is a lane (or a color-coded trace with `overlay=True`); the x ruler reads milliseconds of the `window_ms` display window, the y ruler signal value over `[min, max]`. The trace is *phase-locked*: every frame is aligned on a rising crossing of the `trigger` level (marked by a faint line) found in the **first** channel, so a periodic signal stands still and the channels keep their true relative phase. The corner read-out says `lock` (the trigger fired) or `free` (no crossing — silence or DC — so the window free-runs).
 - **`"phase"`** — a **phasescope** (goniometer), the fixed two-channel case: the pair `bus`/`bus + 1` drawn as the 45°-rotated Lissajous figure — mono draws a vertical line, anti-phase horizontal, a wide field fills the lozenge; the bar underneath is the correlation.
-- **`"spectrum"`** — a live **spectrum**: one FFT per channel per frame, one color-coded curve each; the x ruler reads hertz on `freq_scale` (log/linear/mel/bark, the spectrogram's scales), the y ruler dB over `[db_floor, db_ceil]`.
+- **`"spectrum"`** — a live **spectrum**: one FFT per channel per frame, one color-coded curve each; the x ruler reads hertz on `freq_scale` (log/linear/mel/bark, the spectrogram's scales), the y ruler dB over `[db_floor, db_ceil]`. The corner read-out names the active scale (`lin`/`log`/`mel`/`brk`) — the tick spacing alone does not tell them apart.
 
 **Adjust it live** with `win.set(...)` — any prop of the open view:
 

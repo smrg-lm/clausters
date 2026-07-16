@@ -1091,6 +1091,10 @@ pub(crate) fn render(
                         ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks);
                     }
                 }
+                // The active scale, named over the view (the live views'
+                // corner slot) — log/mel/bark are not tellable apart from
+                // the tick spacing at a glance.
+                meters::value_text(&mut over, ruler::scale_tag(*freq_scale), body);
                 draw_editor_overlay(
                     &mut over,
                     item,

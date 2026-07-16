@@ -217,8 +217,9 @@ fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect) {
     }
 }
 
-/// A value read-out at the top-right of a body.
-fn value_text(mesh: &mut Mesh, s: &str, body: Rect) {
+/// A value read-out at the top-right of a body — the corner slot the scope's
+/// `lock`/`free` state and the spectral views' scale tag share.
+pub(crate) fn value_text(mesh: &mut Mesh, s: &str, body: Rect) {
     let w = font::width(s, TEXT_SCALE);
     let x = (body.x + body.w - w - PAD).max(body.x);
     font::text(mesh, s, x, body.y + PAD, TEXT_SCALE, TEXT);

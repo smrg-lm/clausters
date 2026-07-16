@@ -878,6 +878,17 @@ pub(crate) const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
 /// The color of a ruler strip's tick marks.
 pub(crate) const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
 
+/// The display name of a frequency scale, as the Hz rulers tag it — three
+/// letters each, so the tag's footprint is constant across scales.
+pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
+    match scale {
+        FreqScale::Linear => "lin",
+        FreqScale::Log => "log",
+        FreqScale::Mel => "mel",
+        FreqScale::Bark => "brk",
+    }
+}
+
 /// Draws the ticks of a horizontal ruler `strip` sitting under a view body:
 /// a mark up against the body's bottom edge (taller when labeled), the label
 /// centered under it and edge-clamped into the strip. The one drawing of the
@@ -923,6 +934,20 @@ mod tests {
 
     fn labels(ticks: &[Tick]) -> Vec<&str> {
         ticks.iter().filter_map(|t| t.label.as_deref()).collect()
+    }
+
+    #[test]
+    fn scale_tags_are_three_letters() {
+        // The corner read-out slot is sized once: every tag is exactly three
+        // characters, so switching scales never moves the chrome.
+        for scale in [
+            FreqScale::Linear,
+            FreqScale::Log,
+            FreqScale::Mel,
+            FreqScale::Bark,
+        ] {
+            assert_eq!(scale_tag(scale).len(), 3, "{scale:?}");
+        }
     }
 
     /// Recomputes the drawn label intervals of a horizontal ruler the way the
