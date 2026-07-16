@@ -1,5 +1,6 @@
 # Clausters — Python client
 
+[![PyPI](https://img.shields.io/pypi/v/clausters)](https://pypi.org/project/clausters/)
 [![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
 [![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
 
@@ -18,6 +19,13 @@ The package is pure Python at runtime (stdlib only) and reaches the native
 side through `ctypes`, so client-side math matches the server by construction.
 
 ## Quick start
+
+Install [from PyPI](https://pypi.org/project/clausters/) — the wheel is
+self-contained (client + server + GUI host + libfaust; Linux x86_64 for now):
+
+```sh
+pip install clausters
+```
 
 The client is driven **interactively** — from a REPL, or cell by cell in an
 editor. No globals to set up, no build context to open: every line stands alone.

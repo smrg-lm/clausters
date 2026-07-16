@@ -16,3 +16,4 @@ build-dir = "book"
 [output.html]
 default-theme = "rust"
 preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/smrg-lm/clausters"

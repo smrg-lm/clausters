@@ -1,6 +1,7 @@
 # Clausters
 
 [![CI](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml/badge.svg)](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/clausters)](https://pypi.org/project/clausters/)
 [![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
 [![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
 
@@ -110,10 +111,14 @@ python3 examples/json_client.py score    # writes /tmp/clausters_score.osc
 cargo run --release -- --nrt /tmp/clausters_score.osc /tmp/out.wav
 ```
 
-Or drive everything from Python (with the server from above still running):
+Or drive everything from Python — the package is
+[on PyPI](https://pypi.org/project/clausters/) as a self-contained wheel
+(client + server + libfaust; Linux x86_64 for now), or installs from this
+checkout:
 
 ```sh
-pip install ./clients/python
+pip install clausters             # from PyPI, or:
+pip install ./clients/python      # from this checkout (builds the Rust side)
 python clients/python/examples/live_udp.py
 ```
 
