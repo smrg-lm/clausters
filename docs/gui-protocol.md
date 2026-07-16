@@ -107,7 +107,7 @@ script actually names these. The catalog itself:
 | `meter` | A control-bus level, read from the server's shared segment | `bus`, `min`, `max` |
 | `scope` | An oscilloscope: a control bus, or an audio **tap** | `bus` / `tap`, `trigger`, `hold` |
 | `phasescope` | A goniometer (stereo field) over two taps | `tap`, `tap2`, `hold` |
-| `spectrum` | A live spectroscope over a tap | `tap`, `fft_size`, `averaging` |
+| `spectrum` | A live spectroscope over a tap | `tap`, `fft_size`, `db_floor`/`db_ceil`, `freq_scale` (`log`/`linear`/`mel`/`bark`; `log_freq` is the legacy boolean alias), `averaging`, `peak_hold` |
 | `nodetree` | The server's node graph, live | `group`, `controls` |
 | `waveform` | The editor-grade waveform: multichannel lanes, rulers, selection, playhead, linked navigation | the data (`data`/`blob`/`buffer`/`path`/`cache`), `channels`, `ruler`, `ruler_y`, `sel_*`, `playhead_at`, `link`, `offset` |
 | `spectrogram` | The editor-grade spectrogram, the same chrome | the data, `window_size`, `hop`, `freq_scale`, `db_floor`/`db_ceil`, `colormap` |

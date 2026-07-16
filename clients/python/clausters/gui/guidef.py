@@ -353,21 +353,23 @@ def phasescope(id: int | None, tap: int, tap2: int | None = None, *,
 
 def spectrum(id: int | None, tap: int, *, fft_size: int | None = None,
              db_floor: float | None = None, db_ceil: float | None = None,
-             log_freq: bool | None = None, averaging: float | None = None,
-             peak_hold: bool | None = None, label: str | None = None,
-             **props) -> dict:
+             freq_scale: str | None = None, log_freq: bool | None = None,
+             averaging: float | None = None, peak_hold: bool | None = None,
+             label: str | None = None, **props) -> dict:
     """A live ``spectrum`` (spectroscope): one forward FFT per frame over the
     newest window of audio tap ``tap``, drawn as a magnitude curve. ``fft_size``
     is a power of two (256..4096, default 2048); the vertical axis is dB over
-    ``[db_floor, db_ceil]`` (default ``-100``/``0``); ``log_freq`` (default true)
-    selects a log frequency axis. Raw per-frame FFTs flicker, so ``averaging``
-    (0..1, default 0.5) exponentially smooths each bin and ``peak_hold`` (default
-    false) overlays a slowly decaying peak trace. Route a bus into the tap first
-    with ``Server.tap``; the analysis uses the shared-core FFT and Hann window,
+    ``[db_floor, db_ceil]`` (default ``-100``/``0``); ``freq_scale`` picks the
+    frequency axis — ``"log"`` (default), ``"linear"``, ``"mel"`` or ``"bark"``,
+    the same scales as the spectrogram (``log_freq`` is the legacy boolean
+    alias). Raw per-frame FFTs flicker, so ``averaging`` (0..1, default 0.5)
+    exponentially smooths each bin and ``peak_hold`` (default false) overlays a
+    slowly decaying peak trace. Route a bus into the tap first with
+    ``Server.tap``; the analysis uses the shared-core FFT and Hann window,
     so it agrees with the spectrogram. Native reads the segment; the browser
     subscribes ``/tap_stream``."""
     extra = _drop_none(fft_size=fft_size, db_floor=db_floor, db_ceil=db_ceil,
-                       averaging=averaging, label=label)
+                       freq_scale=freq_scale, averaging=averaging, label=label)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
     if peak_hold is not None:

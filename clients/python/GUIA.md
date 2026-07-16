@@ -110,6 +110,14 @@ ventana **dibuje y responda**:
   `win.set`, sin re-render) y se cierra antes de la siguiente. Pasar el mouse
   muestra el hairline con el valor exacto de la muestra (o del bin en Hz/dB en
   la vista `spectrum`).
+- **Scopes en vivo.** `examples/scoping.py` → recorrido visual **secuencial**
+  sobre un dron suave que suena todo el tiempo (se lanza solo: servidor + host
+  GUI): 1) el osciloscopio disparado sobre el bus 0 (achicar `window_ms` en
+  vivo y volver — la traza queda estable por el trigger); 2) el phasescope del
+  par 0/1 (con `spread` 0 → línea vertical y correlación ~+1, con 1 → el campo
+  se abre y la correlación baja, ida y vuelta por `/n_set`); 3) el espectro en
+  vivo (el pico de 220 Hz; `freq_scale` log↔mel y `fft_size` en vivo). Cada
+  `win.close()` detiene su tap y lo devuelve al registro (`server.taps`).
 - **Bundle standalone.** `examples/gui_standalone.py` autorea un bundle (GuiDef +
   GraphDefs); lanzarlo con `--standalone <name>` abre un instrumento
   autocontenido, sin cliente de lenguaje, que suena y responde.

@@ -11,16 +11,20 @@
 //! The analysis keeps two per-bin traces across frames — an exponential average
 //! (raw per-frame FFTs flicker) and an optional decaying peak-hold — because
 //! both are stateful and cheap to carry between ticks. The drawing maps them to
-//! the screen through a log or linear frequency axis with one curve point per
+//! the screen through a linear/log/mel/bark frequency axis (the [`FreqScale`]
+//! geometry the spectrogram and its rulers share) with one curve point per
 //! pixel column (never finer than the screen).
 
 use clausters_core::fft;
+
+use crate::spectrogram::FreqScale;
 
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
 use super::paint::{Color, Mesh};
+use super::ruler;
 
 const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
 const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
@@ -123,7 +127,7 @@ impl SpectrumState {
 
 /// Draws a spectrum curve: a framed field with the smoothed magnitude polyline
 /// (and, when `peak_hold`, a fainter peak trace over it), one point per pixel
-/// column mapped through a log or linear frequency axis and the
+/// column mapped through the `freq_scale` frequency axis and the
 /// `[db_floor, db_ceil]` vertical window. `sample_rate` places the frequency
 /// axis (48 kHz assumed when unknown).
 #[allow(clippy::too_many_arguments)]
@@ -134,7 +138,7 @@ pub fn draw_spectrum(
     sample_rate: f64,
     db_floor: f32,
     db_ceil: f32,
-    log_freq: bool,
+    freq_scale: FreqScale,
     peak_hold: bool,
     label: Option<&str>,
 ) {
@@ -161,19 +165,17 @@ pub fn draw_spectrum(
     let f_lo = F_LO_HZ.min(nyquist * 0.5).max(1.0);
     let columns = body.w.max(1.0) as usize;
 
-    // The bin (fractional) a screen column maps to, through the chosen axis.
+    // The bin (fractional) a screen column maps to, through the display→Hz
+    // geometry shared with the spectrogram and its rulers.
+    let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
     let bin_at = |c: usize| -> f32 {
         let frac = if columns <= 1 {
             0.0
         } else {
-            c as f32 / (columns - 1) as f32
+            c as f64 / (columns - 1) as f64
         };
-        let freq = if log_freq {
-            f_lo * (nyquist / f_lo).powf(frac)
-        } else {
-            frac * nyquist
-        };
-        (freq * state.fft_size as f32 / sr).clamp(0.0, (n_bins - 1) as f32)
+        let hz = ruler::display_to_hz(frac, nyquist as f64, freq_scale, f_lo_norm) as f32;
+        (hz * state.fft_size as f32 / sr).clamp(0.0, (n_bins - 1) as f32)
     };
     let y_at = |db: f32| body.y + body.h * (1.0 - fraction(db, db_floor, db_ceil));
 

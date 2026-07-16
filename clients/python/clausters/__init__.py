@@ -28,6 +28,9 @@ The layers:
 - `clausters.gui` — GuiDef building for the Clausters GUI host.
 - `clausters.play` — the free-standing `play`, one verb for every playable,
   resolved against the ambient session.
+- `clausters.plot` / `clausters.scope` — the free-standing visual verbs: one
+  window per call on the ambient GUI host, for a rendered signal (`plot`) or
+  a live bus through the server's audio taps (`scope`).
 - `clausters.session` — `Session`, an explicit isolated environment; and the
   default session (`default_session`) it falls back to.
 - `clausters.launch` — launching and owning the server and GUI processes
@@ -57,6 +60,7 @@ from .seq.event import Event, rest
 from .defs import Server
 from .play import play
 from .plot import PlotWindow, plot
+from .scope import ScopeWindow, scope
 from .session import Session
 from .launch import GuiProcess, ServerProcess, default_shm_path
 from .ipc import (
@@ -79,6 +83,8 @@ __all__ = [
     "play",
     "plot",
     "PlotWindow",
+    "scope",
+    "ScopeWindow",
     "default_session",
     "ServerProcess",
     "GuiProcess",

@@ -388,8 +388,9 @@ pub enum WidgetKind {
     },
     /// A live FFT magnitude curve (spectroscope) over audio tap `tap`: one
     /// forward FFT per frame of the newest `fft_size` window, magnitudes in dB
-    /// over `[db_floor, db_ceil]`, on a log (`log_freq`) or linear frequency
-    /// axis. `averaging` (0..1) exponentially smooths each bin so the curve does
+    /// over `[db_floor, db_ceil]`, the frequency axis on `freq_scale`
+    /// (linear/log/mel/bark; `log_freq` is the legacy boolean alias). The
+    /// `averaging` (0..1) exponentially smooths each bin so the curve does
     /// not flicker; `peak_hold` overlays a slowly decaying peak trace. The
     /// analysis reuses the shared-core FFT + Hann window, so it agrees with the
     /// spectrogram.
@@ -398,7 +399,7 @@ pub enum WidgetKind {
         fft_size: usize,
         db_floor: f32,
         db_ceil: f32,
-        log_freq: bool,
+        freq_scale: FreqScale,
         averaging: f32,
         peak_hold: bool,
         label: Option<String>,
@@ -842,7 +843,7 @@ impl Widget {
                 fft_size: fft_size(&node.props),
                 db_floor: number(&node.props, "db_floor", -100.0),
                 db_ceil: number(&node.props, "db_ceil", 0.0),
-                log_freq: node.props.get("log_freq").and_then(truthy).unwrap_or(true),
+                freq_scale: parse_freq_scale(&node.props),
                 averaging: number(&node.props, "averaging", 0.5).clamp(0.0, 0.99),
                 peak_hold: node
                     .props
@@ -1316,7 +1317,7 @@ impl WidgetKind {
                 fft_size,
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 averaging,
                 peak_hold,
                 label,
@@ -1329,7 +1330,15 @@ impl WidgetKind {
                     .is_some(),
                 "db_floor" => set_f(db_floor, v),
                 "db_ceil" => set_f(db_ceil, v),
-                "log_freq" => truthy(v).map(|b| *log_freq = b).is_some(),
+                "freq_scale" => v
+                    .as_str()
+                    .and_then(freq_scale_from_str)
+                    .map(|s| *freq_scale = s)
+                    .is_some(),
+                // Legacy boolean alias: 1 -> log, 0 -> linear.
+                "log_freq" => truthy(v)
+                    .map(|b| *freq_scale = if b { FreqScale::Log } else { FreqScale::Linear })
+                    .is_some(),
                 "averaging" => v
                     .as_f64()
                     .map(|x| *averaging = (x as f32).clamp(0.0, 0.99))
@@ -2505,17 +2514,22 @@ mod tests {
                 fft_size,
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 ..
             } => {
                 assert_eq!((*tap, *fft_size), (0, 1024));
                 assert_eq!((*db_floor, *db_ceil), (-100.0, 0.0));
-                assert!(!*log_freq, "log_freq: 0 turns it off");
+                assert_eq!(
+                    *freq_scale,
+                    FreqScale::Linear,
+                    "legacy log_freq: 0 reads as linear"
+                );
             }
             other => panic!("expected spectrum, got {other:?}"),
         }
         // Live `/gui_set`: retarget a tap, resize the FFT (only a supported size
-        // takes), retune the phasescope window and freeze it.
+        // takes), reshape the frequency axis, retune the phasescope window and
+        // freeze it.
         assert!(
             w.find_mut(2)
                 .unwrap()
@@ -2528,9 +2542,28 @@ mod tests {
                 .kind
                 .apply("fft_size", &Value::from(1000))
         );
+        assert!(
+            w.find_mut(2)
+                .unwrap()
+                .kind
+                .apply("freq_scale", &Value::from("mel"))
+        );
+        assert!(
+            !w.find_mut(2)
+                .unwrap()
+                .kind
+                .apply("freq_scale", &Value::from("nope"))
+        );
         assert!(w.find_mut(1).unwrap().kind.apply("hold", &Value::from(1)));
         match &w.find_mut(2).unwrap().kind {
-            WidgetKind::Spectrum { fft_size, .. } => assert_eq!(*fft_size, 2048),
+            WidgetKind::Spectrum {
+                fft_size,
+                freq_scale,
+                ..
+            } => {
+                assert_eq!(*fft_size, 2048);
+                assert_eq!(*freq_scale, FreqScale::Mel);
+            }
             _ => unreachable!(),
         }
     }

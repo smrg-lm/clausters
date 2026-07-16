@@ -52,8 +52,11 @@ __all__ = ["plot", "PlotWindow"]
 #: go through a temp raw-f32 file the host maps (the bulk path).
 _INLINE_MAX = 2048
 
-#: The module-level GUI host `plot` boots lazily when no session brought one.
+#: The module-level GUI host the ambient verbs (`plot`, `clausters.scope`)
+#: boot lazily when no session brought one, and the server its client leg
+#: points at (``None`` for the leg-less host `plot` alone needs).
 _own_host = None
+_own_host_server = None
 #: Temp files behind open plots, removed at interpreter exit.
 _tmp_files: list[str] = []
 
@@ -290,21 +293,40 @@ def _is_sequence(x) -> bool:
 
 # ---- the ambient GUI host ----
 
-def _ambient_host():
-    """The GUI host plots open on: the current (else default) session's `gui`
-    host when one is already up, else a standalone host booted once and owned
-    by this module (no client leg — plot data rides mapped files)."""
-    global _own_host
+def _ambient_host(server=None):
+    """The GUI host the ambient visual verbs open windows on: the current
+    (else default) session's `gui` host when one is already up, else a
+    standalone host booted once and owned by this module.
+
+    ``server`` is the audio server the caller needs the host to be a client
+    of — `clausters.scope` passes the resolved live server so the owned host
+    boots with its address and shared-memory segment (the tap/bus read path);
+    `plot` passes nothing (plot data rides mapped files, no client leg). An
+    owned host booted leg-less is **rebooted** wired when a leg is first
+    needed — any windows still open on it close (a session's host never is:
+    `Session.gui` wires the leg from the start)."""
+    global _own_host, _own_host_server
     from .base.main import main, default_session
 
     for session in (main.current_session, default_session):
         gui = getattr(session, "_gui", None)
         if gui is not None:
             return gui
-    if _own_host is None:
-        from .gui import GuiHost
+    if _own_host is not None and (server is None or server is _own_host_server):
+        return _own_host
+    from .gui import GuiHost
 
+    if _own_host is not None:
+        # The owned host lacks the client leg this call needs (or points at
+        # another server): replace it with one wired to `server`.
+        _own_host.stop()
+        _own_host = None
+    if server is None:
         _own_host = GuiHost.boot(server=None)
+    else:
+        addr = f"{server.target.host}:{server.target.port}"
+        _own_host = GuiHost.boot(server=addr, shm=server.shm)
+    _own_host_server = server
     return _own_host
 
 

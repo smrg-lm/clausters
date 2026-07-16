@@ -255,6 +255,45 @@ class ServerInfo:
     max_frame: int = 65536
 
 
+class TapAllocator:
+    """The server's audio-tap rings as a client-side registry.
+
+    Taps are a finite boot-time resource exactly like buses (``--taps`` rings
+    in the shared segment), so their indices are allocated the same way: a
+    registry (the core's occupancy map) sized from ``ServerOptions.taps`` —
+    reconcilable against a running server with `Server.query_info` — where a
+    freed run is always reusable, a double free raises loudly and exhaustion
+    raises instead of aliasing a ring two scopes would then fight over.
+    ``count > 1`` allocates **adjacent** rings, the natural layout for a
+    stereo pair (a phasescope reads taps ``t`` and ``t + 1``).
+    """
+
+    def __init__(self, size: int):
+        self._registry = _native.Registry(0, size) if size > 0 else None
+
+    def alloc(self, count: int = 1) -> int:
+        """The first index of a free run of ``count`` adjacent taps. Raises
+        when no such run is free (or the server has no tap region)."""
+        index = self._registry.alloc(count) if self._registry else None
+        if index is None:
+            raise RuntimeError("out of audio taps")
+        return index
+
+    def free(self, tap: int, count: int = 1):
+        """Returns a run to the pool. A double free (or a run this allocator
+        never handed out) raises — losing track of a tap is a client bug,
+        never absorbed silently."""
+        if self._registry is None or self._registry.release(tap, count) != 0:
+            raise RuntimeError(
+                f"double free of audio tap {tap} (count={count}): "
+                "not currently allocated here")
+
+    @property
+    def in_use(self) -> int:
+        """How many taps are currently allocated."""
+        return self._registry.in_use if self._registry else 0
+
+
 class Server:
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
                  latency: "float | None" = None, options: "ServerOptions | None" = None,
@@ -317,6 +356,7 @@ class Server:
         self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator(size=self.options.max_buffers)
+        self.taps = TapAllocator(size=self.options.taps)
         #: the `/n_end` side-channel that returns node ids to the registry
         #: (an `OscReceiver` + `/notify`), started lazily by `_ensure_recycler`.
         self._recycler = None
@@ -800,7 +840,10 @@ class Server:
         `stream_taps`). ``bus = -1`` stops the tap. No ack, like ``/n_map``
         (failures reply ``/fail``); sequence with `sync` when needed. The
         server must have a tap region (``--taps > 0``, the default) -- check
-        `query_info`."""
+        `query_info`. Take ``tap`` from the `taps` registry
+        (``server.taps.alloc()``) rather than picking an index by hand, so two
+        scopes never fight over one ring; `clausters.scope` does exactly
+        that."""
         index = bus.index if isinstance(bus, Bus) else int(bus)
         self.send_msg("/tap", int(tap), index)
 

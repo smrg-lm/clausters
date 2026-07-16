@@ -292,6 +292,32 @@ win.set(min="auto")                          # give a pinned side back to the fi
 win.close()
 ```
 
+## Scoping a live signal: the free-standing `scope`
+
+`scope` is the real-time sibling of `plot`: where `plot` draws a *finished* signal, `scope` opens a window that follows a **live audio bus** of the ambient server, frame by frame. One call does the whole wiring — it resolves the ambient live server and GUI host (here booted as a *client of the server*, mapping its shared-memory segment), takes a free **audio tap** from the server's tap registry (`server.taps`, a finite boot-time resource like buses — `--taps` rings, 8 by default), routes the bus into it with `/tap`, and opens the window. The host then reads the ring straight out of shared memory: zero messages per frame.
+
+```python
+from clausters import Server, scope
+
+server = Server.boot()
+# ... play something ...
+win = scope()                       # oscilloscope on hardware out 0
+scope(0, view="phase")              # the stereo field of outs 0/1
+scope(0, view="spectrum", freq_scale="mel")
+```
+
+`view` picks the instrument. **`"signal"`** (default) is a triggered oscilloscope: a `window_ms` display window re-read every frame and aligned on a rising crossing of `trigger` (with hysteresis; free-running when the signal never crosses), so a periodic signal draws a stable trace. **`"phase"`** is the phasescope (goniometer): the stereo pair `bus`/`bus + 1` drawn as the 45°-rotated Lissajous figure with a correlation read-out — mono reads vertical, anti-phase horizontal, a wide field fills the lozenge; it takes **two adjacent taps**. **`"spectrum"`** is the live spectroscope: one FFT per frame of the newest `fft_size` window, in dB over a `freq_scale` frequency axis (log/linear/mel/bark, the same scales as the spectrogram), exponentially smoothed (`averaging`) with an optional decaying `peak_hold` trace.
+
+The returned `ScopeWindow` retunes the display live and — unlike a plot — owns server resources, so prefer its `close` to the window's close button:
+
+```python
+win = scope(0, view="spectrum")
+win.set(freq_scale="mel", fft_size=4096)   # /gui_set, live
+win.close()                                # stops the tap and frees it
+```
+
+Two scopes never fight over one ring: the tap indices come from the client-side registry (sized from `ServerOptions.taps`, like the bus allocators), and `close` both stops the tap on the server (`/tap … -1`) and returns the index. Because the native host reads taps from the shared segment, the resolved server must carry one (`Server.boot` and `Session.live` create it by default); to scope a server you merely *attached* to, pass `host=` pointed at a `GuiHost` booted with that server's segment path.
+
 ## When you don't need a Session
 
 A `Session` is sugar over two objects you can always build yourself. When you want more control — several servers behind one clock, a clock shared across subsystems, or a custom interface — skip the factory and wire them directly:

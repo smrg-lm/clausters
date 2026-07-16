@@ -246,7 +246,7 @@ struct SpectrumItem {
     rect: Rect,
     db_floor: f32,
     db_ceil: f32,
-    log_freq: bool,
+    freq_scale: FreqScale,
     peak_hold: bool,
     label: Option<String>,
 }
@@ -743,7 +743,7 @@ pub(crate) fn render(
             WidgetKind::Spectrum {
                 db_floor,
                 db_ceil,
-                log_freq,
+                freq_scale,
                 peak_hold,
                 label,
                 ..
@@ -754,7 +754,7 @@ pub(crate) fn render(
                         rect: p.rect,
                         db_floor: *db_floor,
                         db_ceil: *db_ceil,
-                        log_freq: *log_freq,
+                        freq_scale: *freq_scale,
                         peak_hold: *peak_hold,
                         label: label.clone(),
                     });
@@ -947,7 +947,7 @@ pub(crate) fn render(
                 inputs.sample_rate,
                 item.db_floor,
                 item.db_ceil,
-                item.log_freq,
+                item.freq_scale,
                 item.peak_hold,
                 item.label.as_deref(),
             );

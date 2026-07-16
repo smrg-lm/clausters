@@ -159,7 +159,7 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `scope` | heavy GPU view | Time-domain scope, both rates: the control-bus history form, and the audio-rate triggered oscilloscope over a server audio tap (a `tap`/`rate: "audio"` prop). |
 | `phasescope` | view | Phase/goniometer (Lissajous) view of a stereo tap pair, with a correlation readout (G19). |
 | `meter` | heavy GPU view | Level meter reading a control bus directly from shared memory. |
-| `spectrum` | view | Live FFT magnitude curve (spectroscope) over an audio tap (G19). |
+| `spectrum` | view | Live FFT magnitude curve (spectroscope) over an audio tap: adjustable dB window, linear/log/mel/bark frequency axis, averaging + peak-hold (G19). |
 | `plot` | view | Static plot of an NRT-generated signal/file or a numeric sequence: multichannel lanes, x/y rulers, hover readout, signal/spectrum views (extensible). |
 | `nodetree` | view | Live text/graphic view of the audio server's node tree and parameters, updated in real time. |
 | `canvas` | view | A surface that runs a supplied WGSL shader, driven by OSC params or server audio - custom visuals. |
