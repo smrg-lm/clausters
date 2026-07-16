@@ -94,6 +94,14 @@ There is no second rendering path: RT and NRT are the same flattening, differing
 only in the destination, so the offline render is sample-identical to what you
 heard.
 
+The free-standing `clausters.render` verb carries the same seam: with a
+`destination` it delegates here; without one it **bounces** the element in an
+ephemeral offline session and returns the samples (`render(song, path="song.wav")`
+writes them out). Note the division of verbs it implies: an element is
+*rendered*, never played — `play` is for what already sounds directly — while a
+flat `Timeline`, being already generated, is playable
+(`play(timeline)` drives it through a playhead on the ambient clock).
+
 ## The multitrack editor
 
 `Editor` draws that tree as the multitrack view and applies its edits back onto

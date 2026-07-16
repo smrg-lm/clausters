@@ -224,24 +224,11 @@ def _materialize(obj, *, dur, controls, defs, n, sample_rate, channels):
 
 
 def _render_def(obj, dur, controls, defs, sample_rate, channels):
-    """Renders a def offline: an ephemeral NRT session, the ``defs`` it needs
-    plus the def itself sent at score time 0, one instance with ``controls``,
-    freed at ``dur`` seconds."""
-    from .defs.graphdef import GraphDef
-    from .session import Session
+    """A def's offline samples — `clausters.render.bounce_def`, the shared
+    change of state (`render` delivers it, `plot` draws it)."""
+    from .render import bounce_def
 
-    session = Session.nrt(tempo=1.0)  # beats == seconds
-    server = session.server
-    for d in defs:
-        server.add_def(d)
-    server.add_def(obj)
-    if isinstance(obj, GraphDef):
-        node = server.graph(obj.name, controls)
-    else:
-        node = server.synth(obj.name, controls)
-    server.send_bundle_after(float(dur), ("/n_free", node.id))
-    samples, _frames = session.render(sample_rate=sample_rate, channels=channels)
-    return samples
+    return bounce_def(obj, dur, controls, defs, sample_rate, channels)
 
 
 def _render_env(env, sample_rate):

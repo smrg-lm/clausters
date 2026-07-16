@@ -313,7 +313,8 @@ class Session(Environment):
         with self._active():
             return pattern.play(self.clock, self.server, quant)
 
-    def render(self, sample_rate: float = 48_000.0, channels: int = 2):
+    def render(self, sample_rate: float = 48_000.0, channels: int = 2,
+               until: float | None = None):
         """Drain the clock and render the accumulated score (offline only).
 
         Advances the clock logically with no real-time waiting, so every
@@ -323,6 +324,10 @@ class Session(Environment):
         Args:
             sample_rate: render sample rate, in Hz.
             channels: number of interleaved output channels.
+            until: stop draining the clock at this beat (see
+                `TempoClock.render`); ``None`` drains everything scheduled —
+                required for an endless source (an infinite pattern never
+                drains on its own).
 
         Returns:
             ``(samples, frames)`` -- interleaved float32 in a stdlib
@@ -330,7 +335,7 @@ class Session(Environment):
             freeing the root group) so the render has a defined duration.
         """
         with self._active():
-            self.clock.render()
+            self.clock.render(until)
         return self.server.render(sample_rate=sample_rate, channels=channels)
 
     def lock_to_server(self):

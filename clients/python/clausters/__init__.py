@@ -7,9 +7,10 @@ formats as peers: FaustDefs and UGen-graph SynthDefs.
 The layers:
 
 - `clausters.ipc` — the low-level local transports (embedded server, shared
-  memory, offline render). Its public names are re-exported here, so existing
-  code using ``from clausters import Clausters, ShmClient, render`` keeps
-  working.
+  memory, offline render). Its public names are re-exported here; the
+  top-level ``render`` is now the dispatching verb (`clausters.render`),
+  whose ``bytes`` branch is exactly the historical `clausters.ipc.render`,
+  so ``from clausters import Clausters, ShmClient, render`` keeps working.
 - `clausters._native` — the ctypes binding over the shared native core
   (``clausters-ffi``): builtins, seeded white noise and clock/sample math, all
   matching the server by construction.
@@ -28,6 +29,10 @@ The layers:
 - `clausters.gui` — GuiDef building for the Clausters GUI host.
 - `clausters.play` — the free-standing `play`, one verb for every playable,
   resolved against the ambient session.
+- `clausters.render` — the free-standing `render`, one verb for the change
+  of state to sound: scores, defs and bare expressions, arrangement
+  elements, timelines, patterns and routines, bounced offline to samples or
+  a WAV (or delegated to a live destination).
 - `clausters.plot` / `clausters.scope` — the free-standing visual verbs: one
   window per call on the ambient GUI host, for a rendered signal (`plot`) or
   a live bus through the server's audio taps (`scope`).
@@ -60,6 +65,7 @@ from .seq.event import Event, rest
 from .defs import Server
 from .play import play
 from .plot import PlotWindow, plot
+from .render import render
 from .scope import ScopeWindow, scope
 from .session import Session
 from .launch import GuiProcess, ServerProcess, default_shm_path
@@ -68,7 +74,6 @@ from .ipc import (
     SEGMENT_SIZE,
     Clausters,
     ShmClient,
-    render,
 )
 
 __all__ = [

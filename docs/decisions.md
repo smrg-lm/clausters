@@ -705,3 +705,29 @@ One capacity now *scales* rather than being constant: the node-event and
 garbage FIFOs grow to `2 × max_nodes` at boot (floor 2048/1024), because the
 registries recycle off `/n_end` — a dropped end event is a client id that
 never returns, so a full-tree mass-free must fit one turnover per drain.
+
+## The verbs divide by state: an element is rendered, a timeline is played
+
+Extending the ambient verbs (`play`, `plot`, `render`) raised the question of
+whether an arrangement element should also be playable — `play(song)` reads
+naturally, and every other sounding thing goes through `play`.
+
+**Decision:** the verbs follow the generated/generator split the arrangement is
+built on. `play` takes what already sounds directly — events, patterns,
+routines, defs and bare expressions, and a flat `Timeline` (already generated:
+random-access, a `Playhead` just reads it). `render` is the *change of state*:
+an `Element` is rendered, never played, and `play(element)`'s `TypeError`
+points there. Without a destination, `render` **bounces** — an ephemeral NRT
+session plays the source and returns `(samples, frames)`, optionally writing a
+float32 WAV — so forward-only sources (an event pattern, a routine, a bare
+generator) are renderable too; with a destination it delegates to the
+arrangement's own seam (`form.render`), where RT and NRT already differ only by
+the destination.
+
+**Consequence:** each verb states a semantic, not a dispatch convenience — you
+can read `play`/`render` in a script as "sounds now" vs. "changes state" —
+and the historical byte-score `render` survives unchanged as the `bytes`
+branch of the promoted verb. The coercions the verbs share live once:
+`defs.as_def` (a bare `Ugen`/`Signal`/`Box` into an ephemeral def, used by
+`play`, `plot` and `render`) and `render.bounce_def` (a def's offline samples,
+drawn by `plot`, delivered by `render`).
