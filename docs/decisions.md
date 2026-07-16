@@ -189,6 +189,18 @@ keep that cheap and green:
   host-detects the CPU *features* and re-introduces the crash — only a concrete
   triple pins it down. The override is a plain env var read by
   `faust::compiler::host_target`, so only CI opts in.
+  - *Provisional note (2026-07-16):* one SIGILL recurred **with the override
+    active** (`auto_order::faust_synths_sort_by_their_reserved_buses`, run
+    29492474371 on an unrelated docs-only commit; the rerun passed on another
+    runner). A single occurrence since the pin, treated as an isolated
+    incident — nothing changed. If it recurs, the baseline *JIT* target is
+    evidently not the whole story; the next suspect is host-tuned code in the
+    **cached libfaust build itself** (`build-faust.sh` compiles on whichever
+    runner misses the cache, and the cache is shared repo-wide, so a build
+    host with CPU features another runner lacks would ship them in the
+    library, not in the JIT output). Diagnose by comparing the failing
+    runner's CPU with the cache-populating one, or preempt it by building
+    libfaust/libLLVM with an explicit baseline `-march=x86-64`.
 
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 
