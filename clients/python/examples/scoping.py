@@ -27,7 +27,7 @@ It plays a quiet drone throughout.
 import time
 
 from clausters import Server, scope
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, lag, out, sin_osc
 
 #: Seconds each visual step stays on screen.
 PAUSE = 3.0
@@ -37,13 +37,17 @@ server = Server.boot()
 # Left is a plain sine; right crossfades (with `spread`) from a copy of the
 # left (mono — a phasescope draws a vertical line) to a detuned sine
 # (decorrelated — the trace opens into the lozenge). Quiet on purpose.
+# The control is lagged: an /n_set lands as a step, and stepping a crossfade
+# clicks — smoothing it is the def's job (the scopes themselves are passive:
+# a tap only copies a bus into shared memory and can never alter the sound).
 freq = control("freq", 220.0)
-spread = control("spread", 0.0)
+spread = lag(control("spread", 0.0), 0.1)
+amp = lag(control("amp", 0.1), 0.1)
 left = sin_osc(freq)
 right = left * (1.0 - spread) + sin_osc(freq * 1.02) * spread
 drone = SynthDef("scoping_drone",
-                 out(0.0, left * 0.1),
-                 out(1.0, right * 0.1))
+                 out(0.0, left * amp),
+                 out(1.0, right * amp))
 server.add_synthdef(drone)
 server.sync()
 node = server.synth("scoping_drone")
@@ -88,7 +92,9 @@ win.set(freq_scale="log", fft_size=2048)
 time.sleep(PAUSE)
 win.close()
 
-# %% Teardown.
+# %% Teardown: fade to silence before freeing, so the cut is inaudible too.
+server.set(node, {"amp": 0.0})
+time.sleep(0.3)
 server.free(node)
 server.close()
 print("done — three scopes appeared, retuned live and closed; taps all freed")
