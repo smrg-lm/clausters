@@ -10,6 +10,15 @@ python -m venv .venv && . .venv/bin/activate
 pip install ./clients/python          # builds + bundles the native libs
 ```
 
+- **`verbs.py`** — the ambient verbs end to end: one `play` for every playable
+  kind (event, dict, generator, bare UGen/Faust expression, named def,
+  automation, timeline, buffer) and one `render` for the change of state — a
+  phrase bounced to a WAV, loaded back and played as a take.
+
+  ```sh
+  python clients/python/examples/verbs.py
+  ```
+
 - **`embedded.py`** — the same pattern, live from a server running **inside the
   process** (`Session.embed`): the bundled engine, no separate process and no
   socket. Nothing to start.

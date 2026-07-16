@@ -13,6 +13,12 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/hello_note.py
   ```
 
+- **`verbs.py`** — the ambient verbs end to end: one `play` for every playable kind (event, dict, generator, bare UGen/Faust expression, named def, automation, timeline, buffer) and one `render` for the change of state — a phrase bounced to a WAV, loaded back and played as a take. See [The ambient verbs](verbs.md).
+
+  ```sh
+  python clients/python/examples/verbs.py
+  ```
+
 - **`embedded.py`** — the same pattern, live from a server running **inside the process** (`Session.embed`). Nothing to start: it opens the bundled engine in-process and plays. The batteries-included path. No server process, no socket.
 
   ```sh

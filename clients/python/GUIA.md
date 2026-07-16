@@ -36,6 +36,13 @@ Ejemplos en `clients/python/examples/` (catálogo en el mdBook del cliente,
   `[client].clock = "monotonic"` (o `timebase=MonotonicTimebase()`) lo vuelve a
   wall-clock. (`Session.embed()` sigue en wall-clock: el servidor in-process no
   expone endpoint para el tracker.)
+- **Los verbos ambientes, de punta a punta.** `examples/verbs.py` → se oye cada
+  playable en secuencia: nota (event y dict), arpegio (generador), señal suelta
+  (`play(sin_osc(440) * 0.15)`, UGen y box Faust), def con controls, barrido de
+  automation acoplado a un nodo sonando (el freq sube y baja y queda en el
+  último valor), timeline, y al final la frase bounceada a WAV
+  (`render(..., path=)`) vuelve como buffer por el instrumento playbuf de stock
+  (misma altura y tempo — el `rate` reescala por el sample rate del archivo).
 - **Suena embebido, sin arrancar nada.** `Session.embed(...)` toca en proceso →
   se oye el patrón (`examples/embedded.py`).
 - **Suena en vivo por UDP.** `Session.live(...)` / `examples/live_patch.py` /
