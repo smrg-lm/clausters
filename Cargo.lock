@@ -217,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "clausters"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "assert_no_alloc",
  "clausters-core",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-core"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "microfft",
  "rosc",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-ffi"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "clausters-core",
  "tungstenite",
@@ -256,7 +256,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-midi"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "midi2",
  "midir",
