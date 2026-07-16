@@ -10,10 +10,10 @@
 //! datum that lives in front-side GPU slots) and, at press time, a pointer-grab
 //! callback (native pointer lock; a front without one returns `false`).
 //!
-//! The module is platform-agnostic by design (no winit, no web-sys); it is
-//! cfg-gated native-only solely because the [`interact`] gesture helpers it
-//! drives still are — the browser front adopts it (and both cfgs lift) in the
-//! second leg of the milestone that introduced it.
+//! The module is platform-agnostic (no winit, no web-sys): the native windowed
+//! front ([`super::gui`]) and the browser front ([`super::web`]) both drive it,
+//! so a selection, a clip drag or a BPF edit behaves identically on either
+//! platform by construction.
 
 use std::collections::HashMap;
 

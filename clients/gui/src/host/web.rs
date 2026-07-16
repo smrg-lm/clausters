@@ -30,8 +30,9 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode}
 use wasm_bindgen::prelude::*;
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
+use winit::keyboard::{Key, NamedKey};
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
@@ -43,13 +44,13 @@ use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
 use super::frame::{self, SpectrogramSlot, WaveformSlot};
-use super::interact;
-use super::layout::Rect;
+use super::gestures::{GestureCtx, GestureEffect, Gestures};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
+use super::pianoroll;
 use super::spectrum::SpectrumState;
 use super::widget::{Widget, WidgetKind};
-use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink, controls};
+use super::{BusSource, ClientId, GUI_EVENT, Host, HostEffect, ServerLink};
 
 /// The default canvas size; a fed GuiDef lays out into it (the layout uses the
 /// framebuffer size, not the def's declared `w`/`h`).
@@ -202,13 +203,6 @@ enum BulkRequest {
     Plot { url: String, channels: usize },
 }
 
-/// An in-progress pointer drag in the browser window.
-enum Drag {
-    Slider { id: i32, body: Rect, vertical: bool },
-    Vertical { id: i32, last_y: f64, body_h: f32 },
-    Button { id: i32 },
-}
-
 /// The per-window GPU resources (the browser has a single window/canvas).
 struct WindowRender {
     gpu: Gpu,
@@ -234,7 +228,15 @@ struct WebApp {
     /// frame, not a stale 1x1.
     pending_size: Option<(u32, u32)>,
     cursor: (f64, f64),
-    drag: Option<Drag>,
+    /// This canvas' gesture state — the shared machine both fronts drive.
+    gestures: Gestures,
+    /// Modifier keys (winit `ModifiersChanged`), snapshotted into each
+    /// [`GestureCtx`] so Shift-pan/Ctrl-edit/Alt-select work as on the desktop.
+    shift: bool,
+    ctrl: bool,
+    alt: bool,
+    /// The piano-roll note clipboard (Ctrl+C/X/V), page-wide.
+    clipboard: Vec<pianoroll::Note>,
     /// Live control-bus values streamed from the audio server (`/c_stream` →
     /// `/c_set`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -289,7 +291,11 @@ impl WebApp {
             current_def: None,
             pending_size: None,
             cursor: (0.0, 0.0),
-            drag: None,
+            gestures: Gestures::default(),
+            shift: false,
+            ctrl: false,
+            alt: false,
+            clipboard: Vec::new(),
             buses: Arc::new(StreamedBuses::default()),
             scopes: HashMap::new(),
             streamed: Vec::new(),
@@ -869,10 +875,7 @@ impl WebApp {
     /// browser node-tree path exists.
     fn draw(&mut self) {
         let Some(def) = self.current_def else { return };
-        let active_button = match &self.drag {
-            Some(Drag::Button { id }) => Some(*id),
-            _ => None,
-        };
+        let active_button = self.gestures.active_button();
         let server_attached = self.host.server().is_some();
         let Some(tree) = self.host.window_def(def) else {
             return;
@@ -885,6 +888,11 @@ impl WebApp {
             sample_clock: self.server_clock,
             cursor: Some(self.cursor),
             timelines: self.host.timelines(),
+            // A rewiring drag in flight draws its wire to the pointer.
+            wiring: self
+                .gestures
+                .wiring()
+                .map(|(id, port)| (id, port, (self.cursor.0 as f32, self.cursor.1 as f32))),
             ..Default::default()
         };
         let Some(render) = self.render.as_mut() else {
@@ -923,111 +931,119 @@ impl WebApp {
         }
     }
 
-    /// Pointer press: hit-test and act by widget kind (the shared
-    /// [`interact`] primitives), then deliver the value (bound → server, else a
-    /// `/gui_event` to the page).
-    fn on_press(&mut self) {
-        let Some(def) = self.current_def else { return };
+    /// Snapshots the gesture context for the current def: framebuffer size,
+    /// modifier keys, and the heavy views' lane counts (channel/lane splits
+    /// live in this front's GPU slots, so they are copied out here) — the
+    /// browser twin of the native front's snapshot.
+    fn gesture_ctx(&self, def: i32) -> GestureCtx {
         let (fb_w, fb_h) = self.fb();
-        let (cx, cy) = self.cursor;
-        let Some((id, rect, kind)) = interact::hit(&self.host, def, fb_w, fb_h, cx, cy) else {
-            return;
-        };
-        match kind {
-            WidgetKind::Slider { range: r, vertical } => {
-                let body = controls::body_rect(rect, r.label.is_some());
-                let t = interact::slider_t(body, cx, cy, vertical);
-                interact::set_fraction(&mut self.host, def, id, t);
-                self.deliver_value(def, id);
-                self.drag = Some(Drag::Slider { id, body, vertical });
-                self.request_redraw();
+        let mut ctx = GestureCtx::new(def, fb_w, fb_h);
+        ctx.shift = self.shift;
+        ctx.ctrl = self.ctrl;
+        ctx.alt = self.alt;
+        if let Some(render) = self.render.as_ref() {
+            for (id, slot) in &render.waveforms {
+                ctx.wave_lanes.insert(*id, slot.view.num_channels());
             }
-            WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                let body = controls::body_rect(rect, r.label.is_some());
-                self.drag = Some(Drag::Vertical {
-                    id,
-                    last_y: cy,
-                    body_h: body.h,
-                });
+            for (id, slot) in &render.spectrograms {
+                ctx.spect_lanes.insert(*id, slot.views.len());
             }
-            WidgetKind::Button { .. } => {
-                self.deliver(def, id, OscType::Int(1));
-                self.drag = Some(Drag::Button { id });
-                self.request_redraw();
+        }
+        ctx
+    }
+
+    /// Carries out a gesture's effects over this front's sinks: `/gui_event`s
+    /// to the page outbox (a bound widget already forwarded inside the
+    /// machine), repaints of the one canvas. There is no pointer grab in the
+    /// browser (the grab callback returns `false`), so releases are no-ops.
+    fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
+        for effect in effects {
+            match effect {
+                GestureEffect::Emit {
+                    widget_id, args, ..
+                } => {
+                    let mut msg_args = vec![OscType::Int(widget_id)];
+                    msg_args.extend(args);
+                    self.queue(OscMessage {
+                        addr: GUI_EVENT.into(),
+                        args: msg_args,
+                    });
+                }
+                // One canvas: every repaint lands on it, whichever window a
+                // linked-view mutation names.
+                GestureEffect::Redraw(_) => self.request_redraw(),
+                GestureEffect::ReleasePointer(_) => {}
             }
-            WidgetKind::Toggle { .. } => {
-                interact::flip_toggle(&mut self.host, def, id);
-                self.deliver_value(def, id);
-                self.request_redraw();
-            }
-            WidgetKind::Menu { .. } => {
-                interact::cycle_menu(&mut self.host, def, id);
-                self.deliver_value(def, id);
-                self.request_redraw();
-            }
-            _ => {}
         }
     }
 
-    /// Pointer move while dragging: drive the dragged control.
+    /// Pointer press: the shared gesture machine acts by widget kind.
+    fn on_press(&mut self) {
+        let Some(def) = self.current_def else { return };
+        let (cx, cy) = self.cursor;
+        let ctx = self.gesture_ctx(def);
+        let effects = self
+            .gestures
+            .press(&mut self.host, &ctx, cx, cy, &mut || false);
+        self.apply_gesture_effects(effects);
+    }
+
+    /// Pointer move while dragging: the machine drives the dragged target.
     fn on_move(&mut self) {
         let Some(def) = self.current_def else { return };
         let (cx, cy) = self.cursor;
-        match &self.drag {
-            Some(Drag::Slider { id, body, vertical }) => {
-                let (id, body, vertical) = (*id, *body, *vertical);
-                let t = interact::slider_t(body, cx, cy, vertical);
-                interact::set_fraction(&mut self.host, def, id, t);
-                self.deliver_value(def, id);
-                self.request_redraw();
-            }
-            Some(Drag::Vertical { id, last_y, body_h }) => {
-                let (id, last_y, body_h) = (*id, *last_y, *body_h);
-                let cur = interact::fraction_of(&self.host, def, id).unwrap_or(0.0);
-                let t = (cur + controls::drag_fraction_delta(cy - last_y, body_h)).clamp(0.0, 1.0);
-                interact::set_fraction(&mut self.host, def, id, t);
-                if let Some(Drag::Vertical { last_y, .. }) = self.drag.as_mut() {
-                    *last_y = cy;
-                }
-                self.deliver_value(def, id);
-                self.request_redraw();
-            }
-            _ => {}
-        }
+        let ctx = self.gesture_ctx(def);
+        let effects = self.gestures.drag_to(&mut self.host, &ctx, cx, cy);
+        self.apply_gesture_effects(effects);
     }
 
-    /// Pointer release: a held button emits 0, then the drag ends.
+    /// Pointer release: the machine finishes the drag (button up, wire landing).
     fn on_release(&mut self) {
-        if let (Some(def), Some(Drag::Button { id })) = (self.current_def, &self.drag) {
-            let id = *id;
-            self.deliver(def, id, OscType::Int(0));
-            self.request_redraw();
-        }
-        self.drag = None;
+        let Some(def) = self.current_def else { return };
+        let (cx, cy) = self.cursor;
+        let ctx = self.gesture_ctx(def);
+        let effects = self.gestures.release(&mut self.host, &ctx, cx, cy);
+        self.apply_gesture_effects(effects);
     }
 
-    /// Delivers a widget's current event value (the value used for `/gui_event`
-    /// or the bound forward).
-    fn deliver_value(&mut self, def: i32, id: i32) {
-        if let Some(value) = self
-            .host
-            .window_def(def)
-            .and_then(|t| interact::value_of(t, id))
-        {
-            self.deliver(def, id, value);
-        }
+    /// Wheel: the machine zooms the time axis or the vertical display window.
+    fn on_wheel(&mut self, steps: f64) {
+        let Some(def) = self.current_def else { return };
+        let (cx, cy) = self.cursor;
+        let ctx = self.gesture_ctx(def);
+        let effects = self.gestures.wheel(&mut self.host, &ctx, cx, cy, steps);
+        self.apply_gesture_effects(effects);
     }
 
-    /// Routes a widget's value: to the audio server when bound (`/gui_bind`, the
-    /// bypass path), else as a `/gui_event` queued for the page.
-    fn deliver(&mut self, _def: i32, id: i32, value: OscType) {
-        if self.host.forward(id, value.clone()) {
-            return; // bound: it went straight to the --ws audio server
-        }
-        self.queue(OscMessage {
-            addr: GUI_EVENT.into(),
-            args: vec![OscType::Int(id), value],
-        });
+    /// Keyboard: the same editing operations the desktop front maps (Delete,
+    /// Ctrl+C/X/V, `q` quantize, `r` reset) — minus Escape, which closes an OS
+    /// window there but has no window to close here.
+    fn on_key(&mut self, key: &Key) {
+        let Some(def) = self.current_def else { return };
+        let (cx, cy) = self.cursor;
+        let ctx = self.gesture_ctx(def);
+        let effects = match key {
+            Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
+                self.gestures.delete_selected(&mut self.host, &ctx, cx, cy)
+            }
+            Key::Character(c) if self.ctrl && c.eq_ignore_ascii_case("c") => self
+                .gestures
+                .copy_selected(&mut self.host, &ctx, cx, cy, false, &mut self.clipboard),
+            Key::Character(c) if self.ctrl && c.eq_ignore_ascii_case("x") => self
+                .gestures
+                .copy_selected(&mut self.host, &ctx, cx, cy, true, &mut self.clipboard),
+            Key::Character(c) if self.ctrl && c.eq_ignore_ascii_case("v") => self
+                .gestures
+                .paste_at_cursor(&mut self.host, &ctx, cx, cy, &self.clipboard),
+            Key::Character(c) if c.eq_ignore_ascii_case("q") => {
+                self.gestures.quantize(&mut self.host, &ctx, cx, cy)
+            }
+            Key::Character(c) if c.eq_ignore_ascii_case("r") => {
+                self.gestures.reset_timelines(&mut self.host, &ctx)
+            }
+            _ => return,
+        };
+        self.apply_gesture_effects(effects);
     }
 }
 
@@ -1148,10 +1164,22 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 }
                 self.request_redraw();
             }
+            WindowEvent::ModifiersChanged(mods) => {
+                self.shift = mods.state().shift_key();
+                self.ctrl = mods.state().control_key();
+                self.alt = mods.state().alt_key();
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.cursor = (position.x, position.y);
-                if self.drag.is_some() {
+                if self.gestures.dragging() {
                     self.on_move();
+                } else if self
+                    .current_def
+                    .and_then(|def| self.host.window_def(def))
+                    .is_some_and(Widget::has_hover_readout)
+                {
+                    // The hover readout follows the pointer (the native rule).
+                    self.request_redraw();
                 }
             }
             WindowEvent::MouseInput {
@@ -1162,6 +1190,17 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 ElementState::Pressed => self.on_press(),
                 ElementState::Released => self.on_release(),
             },
+            WindowEvent::MouseWheel { delta, .. } => {
+                let steps = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => y as f64,
+                    MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
+                };
+                self.on_wheel(steps);
+            }
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
+                let key = event.logical_key.clone();
+                self.on_key(&key);
+            }
             WindowEvent::RedrawRequested => self.draw(),
             _ => {}
         }

@@ -95,11 +95,9 @@ pub mod mapfile;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bulk;
 
-// The shared pointer-gesture state machine. Platform-agnostic by design (no
-// winit, no web-sys); cfg-gated native-only solely because the `interact`
-// gesture helpers it drives still are — the browser front adopts it (and both
-// cfgs lift together) in the second leg of its milestone.
-#[cfg(not(target_arch = "wasm32"))]
+// The shared pointer-gesture state machine (no winit, no web-sys): both the
+// native windowed front and the browser front drive it, so every editing
+// gesture behaves identically on either platform by construction.
 pub mod gestures;
 
 // The windowed host (winit + wgpu) is native-only; the wasm build swaps it for

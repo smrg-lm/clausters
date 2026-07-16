@@ -11,16 +11,12 @@
 
 use clausters_core::osc::OscType;
 
-#[cfg(not(target_arch = "wasm32"))]
 use super::bpf;
 use super::layout::{self, Rect};
-#[cfg(not(target_arch = "wasm32"))]
 use super::pianoroll;
-#[cfg(not(target_arch = "wasm32"))]
 use super::track;
 use super::widget::{Widget, WidgetKind};
 use super::{Host, controls};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::viewport::View;
 
 /// The deepest interactive widget under `(x, y)` in window `def_id`: its id, its
@@ -119,10 +115,8 @@ pub(crate) fn value_of(tree: &Widget, id: i32) -> Option<OscType> {
 /// envelope edit goes through, so the fronts never unpack the variant
 /// themselves. `f` gets the breakpoints and the display mapping (the time
 /// domain, the value range and the `exp` scale); its return value is passed
-/// through (`None` when the widget is not a `bpf`). Editing gestures are
-/// native-only today (the browser keeps display + `/gui_set` parity, the
-/// editor-view posture), so the helpers are compiled out of the wasm build.
-#[cfg(not(target_arch = "wasm32"))]
+/// through (`None` when the widget is not a `bpf`). Both fronts reach these
+/// helpers through the shared gesture machine ([`super::gestures`]).
 pub(crate) fn bpf_edit<R>(
     host: &mut Host,
     def_id: i32,
@@ -149,7 +143,6 @@ pub(crate) fn bpf_edit<R>(
 /// by the `bpf` view and the **automation clip**, whose curve is the same model
 /// placed on a lane: one payload, so a script (or an `Automation`) consumes an
 /// edit without caring which view drew it.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     let points = match &tree.find(id)?.kind {
         WidgetKind::Bpf { points, .. } => points,
@@ -167,7 +160,6 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 /// tree and returns the edit as `(member, control, bus)` (an empty bus = unwired)
 /// — the payload of the flat `"wire"` event a script re-renders from. `None`
 /// when there was nothing to rewire.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn wire_set(
     host: &mut Host,
     def_id: i32,
@@ -203,7 +195,6 @@ pub(crate) fn wire_set(
 
 /// Runs `f` over an automation clip's break-points in the host tree — the one
 /// door a curve edit on a lane goes through (the clip sibling of `bpf_edit`).
-#[cfg(not(target_arch = "wasm32"))]
 fn clip_curve<R>(
     host: &mut Host,
     def_id: i32,
@@ -227,7 +218,6 @@ fn clip_curve<R>(
 /// back through the **shared axis** (a clip's curve lives on the timeline, not on
 /// a widget-local domain) and the value through the clip's range, then the point
 /// is placed with the `bpf` model's own monotonic clamp. Returns whether it moved.
-#[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::too_many_arguments)] // one display mapping, all scalars
 pub(crate) fn clip_point_move(
     host: &mut Host,
@@ -257,7 +247,6 @@ pub(crate) fn clip_point_move(
 
 /// Adds a break-point at the cursor on an automation clip (Ctrl+click), or
 /// removes the one under it — the `bpf` view's gesture, on a lane.
-#[cfg(not(target_arch = "wasm32"))]
 #[allow(clippy::too_many_arguments)] // one display mapping, all scalars
 pub(crate) fn clip_point_edit(
     host: &mut Host,
@@ -286,7 +275,6 @@ pub(crate) fn clip_point_edit(
 /// Which part of a clip a press landed on: its body (move) or one of its edges
 /// (resize). The edge zone is a few pixels at each end; a clip too narrow for
 /// two edge zones is all body.
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ClipPart {
     Body,
@@ -297,7 +285,6 @@ pub(crate) enum ClipPart {
 /// A clip press: the clip id, its current placement (`offset`/`dur`), the lane
 /// body and the shared navigation window the drag maps through (so the front
 /// turns cursor pixels into timeline samples), and which part was hit.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct ClipHit {
     pub id: i32,
     pub offset: f64,
@@ -315,14 +302,12 @@ pub(crate) struct ClipHit {
 }
 
 /// The clip edge hit zone, device pixels.
-#[cfg(not(target_arch = "wasm32"))]
 const CLIP_EDGE_PX: f32 = 6.0;
 
 /// The topmost `clip` under `(x, y)`, if the point is over a track's lane body
 /// (not its header) and inside a clip. Reconstructs the shared time axis
 /// ([`track::window_nav`]) so it hit-tests against the same geometry the
 /// renderer drew. Native-only, like the other edit-back gestures.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clip_hit(
     host: &Host,
     def_id: i32,
@@ -385,7 +370,6 @@ pub(crate) fn clip_hit(
 }
 
 /// Which part of a clip spanning pixels `[x0, x1]` the pointer x fell on.
-#[cfg(not(target_arch = "wasm32"))]
 fn clip_part(x0: f32, x1: f32, x: f32) -> ClipPart {
     if x1 - x0 < 2.0 * CLIP_EDGE_PX {
         return ClipPart::Body; // too narrow to grab an edge
@@ -401,7 +385,6 @@ fn clip_part(x0: f32, x1: f32, x: f32) -> ClipPart {
 
 /// Writes a clip's placement (`offset`/`dur`, each clamped `>= 0`) in the host
 /// tree — the drag's mutation, the sibling of [`set_fraction`].
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clip_set(
     host: &mut Host,
     def_id: i32,
@@ -426,7 +409,6 @@ pub(crate) fn clip_set(
 /// what a `/gui_event` carries to the script (and what a bound clip would
 /// forward). Flat OSC primitives, the same pattern as the `bpf` `"points"`
 /// payload.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     match &tree.find(id)?.kind {
         WidgetKind::Clip { offset, dur, .. } => Some(vec![
@@ -441,7 +423,6 @@ pub(crate) fn clip_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 // --- Piano-roll interaction (native gestures) -----------------------------
 
 /// Which region of a `pianoroll` a press landed on.
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PrRegion {
     Grid,
@@ -454,7 +435,6 @@ pub(crate) enum PrRegion {
 /// snap grid, which region was hit, and the note/OSC-marker under the cursor (if
 /// any). The renderer's geometry is reconstructed here so a note is grabbed by
 /// the pixels it is drawn on, exactly as `clip_hit` does for a clip.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) struct PianoRollHit {
     pub grid: Rect,
     /// The rect of the region that was hit (the grid, the velocity lane or the
@@ -472,7 +452,6 @@ pub(crate) struct PianoRollHit {
 /// The pitch window `[lo, hi]` a piano-roll draws through — its `[min, max]`
 /// axis sliced by the vertical display window (`y_start`/`y_len`), the same math
 /// the renderer's `pitch_window` uses so the hit-test matches the pixels.
-#[cfg(not(target_arch = "wasm32"))]
 fn pitch_window(editor: &super::widget::EditorProps, min: f32, max: f32) -> (f32, f32) {
     let (y0, yl) = editor.y_view();
     let span = (max - min) as f64;
@@ -484,7 +463,6 @@ fn pitch_window(editor: &super::widget::EditorProps, min: f32, max: f32) -> (f32
 
 /// The content extent (samples) of a piano-roll's notes and OSC events — the
 /// fallback navigation window when the widget is in no group yet.
-#[cfg(not(target_arch = "wasm32"))]
 fn pianoroll_span(notes: &[pianoroll::Note], osc: &[pianoroll::OscMark]) -> f64 {
     let mut span = 0.0f64;
     for n in notes {
@@ -499,7 +477,6 @@ fn pianoroll_span(notes: &[pianoroll::Note], osc: &[pianoroll::OscMark]) -> f64 
 /// Hit-test a press against the `pianoroll` under `(x, y)`, reconstructing the
 /// same regions and navigation window the renderer drew. Native-only, the
 /// edit-back gesture posture.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn pianoroll_hit(
     host: &Host,
     def_id: i32,
@@ -574,7 +551,6 @@ pub(crate) fn pianoroll_hit(
 
 /// The index of the note whose start is nearest the cursor x (within a small
 /// pixel tolerance) — the velocity lane's bar picker.
-#[cfg(not(target_arch = "wasm32"))]
 fn nearest_note(lane: Rect, nav: &View, notes: &[pianoroll::Note], x: f32) -> Option<usize> {
     let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
     notes
@@ -587,7 +563,6 @@ fn nearest_note(lane: Rect, nav: &View, notes: &[pianoroll::Note], x: f32) -> Op
 }
 
 /// The index of the OSC marker whose time is nearest the cursor x.
-#[cfg(not(target_arch = "wasm32"))]
 fn nearest_osc(lane: Rect, nav: &View, marks: &[pianoroll::OscMark], x: f32) -> Option<usize> {
     let to_x = |s: f64| lane.x + ((s - nav.start) / nav.len.max(1.0) * lane.w as f64) as f32;
     marks
@@ -602,7 +577,6 @@ fn nearest_osc(lane: Rect, nav: &View, marks: &[pianoroll::OscMark], x: f32) -> 
 /// Mutate a piano-roll's note list in the host tree (the drag's write path, the
 /// sibling of [`bpf_edit`]). Returns `None` when the widget is gone or not a
 /// piano-roll.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn pianoroll_notes_edit<R>(
     host: &mut Host,
     def_id: i32,
@@ -618,7 +592,6 @@ pub(crate) fn pianoroll_notes_edit<R>(
 /// Mutate a piano-roll's notes **and** its multi-note selection together (the
 /// block edits' write path: a marquee fills the selection, a block move/delete/
 /// velocity nudge reads it while rewriting the notes).
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn pianoroll_state_edit<R>(
     host: &mut Host,
     def_id: i32,
@@ -634,7 +607,6 @@ pub(crate) fn pianoroll_state_edit<R>(
 }
 
 /// Mutate a piano-roll's OSC-event list in the host tree.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn pianoroll_osc_edit<R>(
     host: &mut Host,
     def_id: i32,
@@ -651,7 +623,6 @@ pub(crate) fn pianoroll_osc_edit<R>(
 /// quintuple list (`start dur pitch velocity channel` per note) — the wire form
 /// the `pianoroll` and `clip` share. A `/gui_event` carries it to the script; a
 /// bound editor forwards it (minus the tag) to the audio server.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn notes_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     let notes = match &tree.find(id)?.kind {
         WidgetKind::PianoRoll { notes, .. } => notes,
@@ -671,7 +642,6 @@ pub(crate) fn notes_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 
 /// A piano-roll's OSC-events edit-back payload: the `"osc"` tag plus the flat
 /// `time label` pairs (an empty string when a marker has no label).
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn osc_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     let WidgetKind::PianoRoll { osc, .. } = &tree.find(id)?.kind else {
         return None;
@@ -686,7 +656,6 @@ pub(crate) fn osc_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 
 /// Snaps a timeline sample value to a drag grid: to the nearest multiple of
 /// `grid` when it is positive, else to a whole sample.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn snap(v: f64, grid: f64) -> f64 {
     if grid > 0.0 {
         (v / grid).round() * grid
@@ -698,7 +667,6 @@ pub(crate) fn snap(v: f64, grid: f64) -> f64 {
 /// Maps a cursor x within a view's body strip to a timeline sample through the
 /// shared navigation window — the inverse of the renderer's sample→pixel map,
 /// used by every timeline gesture (select, locate, clip/note/marker drags).
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, x: f64) -> f64 {
     nav_start + nav_len * ((x - body_x) / body_w.max(1.0))
 }
@@ -707,7 +675,6 @@ pub(crate) fn sample_at(nav_start: f64, nav_len: f64, body_x: f64, body_w: f64, 
 /// (`press_sample`, `orig_offset`, `orig_dur`) so a clamped edge never drifts:
 /// a body drag moves the offset, an edge drag resizes — the end never crosses
 /// the start, the start stays within `[0, end]` — snapped to `grid`.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clip_drag_placement(
     part: ClipPart,
     sample: f64,

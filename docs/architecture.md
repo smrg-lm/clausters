@@ -330,6 +330,7 @@ split, and every rule below falls out of it:
 | `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
 | `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
+| `src/host/gestures.rs` | The one press → drag → release → wheel state machine **both fronts drive**: it mutates the `Host` through the `interact` doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks, so every editing gesture behaves identically on either platform by construction |
 | `src/host/{track,pianoroll,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |

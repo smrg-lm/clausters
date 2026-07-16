@@ -282,7 +282,8 @@ choices were on the table and both are worth recording:
   amplitude window composes with `AMP_MARGIN` without leaking it into the
   protocol. Living in the widget tree means `/gui_set` drives it and the
   browser renders it through the same shared frame path with zero extra wiring
-  (display + `/gui_set` parity; drag/wheel gestures stay native for now).
+  (display + `/gui_set` parity; the drag/wheel gestures, native-only at
+  first, later moved into the shared gesture machine both fronts drive).
   Changes emit `/gui_event id "view_y" y_start y_len`, the `"view"` posture.
 
 The y state is deliberately **per widget** while the horizontal view is slated
