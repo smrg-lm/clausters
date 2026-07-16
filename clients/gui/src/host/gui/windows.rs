@@ -105,7 +105,7 @@ impl App {
                 shift: false,
                 ctrl: false,
                 alt: false,
-                drag: None,
+                gestures: Default::default(),
                 scopes: HashMap::new(),
                 tap_windows: HashMap::new(),
                 spectra: HashMap::new(),

@@ -22,8 +22,9 @@ use crate::gpu::Gpu;
 use crate::host::canvas::CanvasView;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
-use crate::host::interact::{self, value_of};
-use crate::host::layout::Rect;
+use crate::host::gestures::Gestures;
+#[cfg(feature = "midi")]
+use crate::host::interact;
 use crate::host::live::{collect_scopes, push_sample, tree_has_canvas, tree_has_live_widget};
 use crate::host::nodetree::NodeTree;
 use crate::host::paint::Painter;
@@ -31,7 +32,6 @@ use crate::host::spectrum::SpectrumState;
 use crate::host::widget::{Widget, WidgetKind};
 use crate::host::{BusSource, ClientId, GUI_EVENT, Host, HostEffect};
 
-use super::input::Drag;
 use super::{FRAME, NODETREE_POLL, PLACEHOLDER_ORIGIN, UserEvent};
 
 /// One open window: its GPU surface, the per-waveform slots, the painter, the
@@ -59,7 +59,8 @@ pub(super) struct WindowState {
     /// Whether Alt is held (Alt+click toggles a piano-roll note in/out of the
     /// multi-note selection).
     pub(super) alt: bool,
-    pub(super) drag: Option<Drag>,
+    /// This window's gesture state (the shared machine's in-progress drag).
+    pub(super) gestures: Gestures,
     /// Recent control-bus samples per `scope` widget id (oldest .. newest).
     pub(super) scopes: HashMap<i32, VecDeque<f32>>,
     /// Triggered display window per audio-rate `scope` widget id, refreshed on
@@ -295,94 +296,17 @@ impl App {
         );
     }
 
-    /// Delivers a control's current value: straight to the audio server when the
-    /// widget is bound (`/gui_bind` — no script round-trip), otherwise as a
-    /// `/gui_event` to the script.
-    pub(super) fn emit_value(&self, def_id: i32, widget_id: i32) {
-        if let Some(value) = self
-            .host
-            .window_def(def_id)
-            .and_then(|t| value_of(t, widget_id))
-        {
-            self.deliver(def_id, widget_id, value);
-        }
-    }
-
-    /// Routes a widget's new `value` to the audio server when it is bound
-    /// (`/gui_bind`, the low-latency path that bypasses the script), or to the
-    /// script as a `/gui_event` otherwise. Every interaction that produces a
-    /// value goes through here, so a single binding check covers them all.
-    pub(super) fn deliver(&self, def_id: i32, widget_id: i32, value: OscType) {
-        if self.host.forward(widget_id, value.clone()) {
-            return; // bound: the value went straight to the audio server
-        }
-        self.emit(def_id, widget_id, vec![value]);
-    }
-
-    /// Delivers a `bpf` widget's edited breakpoint list — the edit-back
-    /// pattern: a **bound** editor forwards the flat `t v shape curve …` list
-    /// straight to the audio server (without the `"points"` tag, which names
-    /// the event payload, not a server argument); an unbound one emits
-    /// `/gui_event id "points" <flat list…>` to the script.
-    pub(super) fn emit_points(&self, def_id: i32, widget_id: i32) {
-        let Some(args) = self
-            .host
-            .window_def(def_id)
-            .and_then(|t| interact::bpf_event_args(t, widget_id))
-        else {
-            return;
-        };
-        if self.host.is_bound(widget_id) {
-            self.host.forward_args(widget_id, args[1..].to_vec());
-            return;
-        }
-        self.emit(def_id, widget_id, args);
-    }
-
-    /// Delivers a `clip`'s edited placement — the edit-back pattern, the sibling
-    /// of [`App::emit_points`]: a **bound** clip forwards the flat `offset dur`
-    /// straight to the audio server (without the `"clip"` tag); an unbound one
-    /// emits `/gui_event id "clip" offset dur` to the script that built it.
-    pub(super) fn emit_clip(&self, def_id: i32, widget_id: i32) {
-        let Some(args) = self
-            .host
-            .window_def(def_id)
-            .and_then(|t| interact::clip_event_args(t, widget_id))
-        else {
-            return;
-        };
-        if self.host.is_bound(widget_id) {
-            self.host.forward_args(widget_id, args[1..].to_vec());
-            return;
-        }
-        self.emit(def_id, widget_id, args);
-    }
-
-    /// Delivers a piano-roll's edited notes — the edit-back pattern, the sibling
-    /// of [`App::emit_clip`]: a **bound** roll forwards the flat note list
-    /// straight to the audio server (without the `"notes"` tag); an unbound one
-    /// emits `/gui_event id "notes" start dur pitch vel channel …` to the script.
+    /// Delivers a piano-roll's edited notes (the MIDI painting path; gesture
+    /// edits go through the machine's own delivery): a **bound** roll forwards
+    /// the flat note list straight to the audio server (without the `"notes"`
+    /// tag); an unbound one emits `/gui_event id "notes" start dur pitch vel
+    /// channel …` to the script.
+    #[cfg(feature = "midi")]
     pub(super) fn emit_notes(&self, def_id: i32, widget_id: i32) {
         let Some(args) = self
             .host
             .window_def(def_id)
             .and_then(|t| interact::notes_event_args(t, widget_id))
-        else {
-            return;
-        };
-        if self.host.is_bound(widget_id) {
-            self.host.forward_args(widget_id, args[1..].to_vec());
-            return;
-        }
-        self.emit(def_id, widget_id, args);
-    }
-
-    /// Delivers a piano-roll's edited OSC events — `/gui_event id "osc" time label …`.
-    pub(super) fn emit_osc(&self, def_id: i32, widget_id: i32) {
-        let Some(args) = self
-            .host
-            .window_def(def_id)
-            .and_then(|t| interact::osc_event_args(t, widget_id))
         else {
             return;
         };
@@ -401,39 +325,15 @@ impl App {
             .unwrap_or((1, 1))
     }
 
-    /// The deepest widget under `(x, y)`: its id, rect and a clone of its kind
-    /// (the shared hit-test over the host tree).
-    pub(super) fn hit(&self, def_id: i32, x: f64, y: f64) -> Option<(i32, Rect, WidgetKind)> {
-        let (fb_w, fb_h) = self.fb(def_id);
-        interact::hit(&self.host, def_id, fb_w, fb_h, x, y)
-    }
-
-    /// The current 0..1 fraction of a continuous control (slider/knob/number) in
-    /// the host tree — the live value used to drive an incremental drag.
-    pub(super) fn fraction_of(&self, def_id: i32, widget_id: i32) -> Option<f32> {
-        interact::fraction_of(&self.host, def_id, widget_id)
-    }
-
-    /// Sets a continuous control's value from a 0..1 fraction, in the host tree.
-    pub(super) fn set_fraction(&mut self, def_id: i32, widget_id: i32, t: f32) {
-        interact::set_fraction(&mut self.host, def_id, widget_id, t);
-    }
-
     pub(super) fn redraw(&self, def_id: i32) {
         if let Some(ws) = self.windows.get(&def_id) {
             ws.gpu.window.request_redraw();
         }
     }
 
-    /// Repaints every window in `roots` (the windows a group mutation touched).
-    pub(super) fn redraw_all(&self, roots: &[i32]) {
-        for root in roots {
-            self.redraw(*root);
-        }
-    }
-
     /// The navigation window of timeline view `id`'s group:
     /// `(start, len, total)` in timeline samples.
+    #[cfg(feature = "midi")]
     pub(super) fn timeline_nav(&self, id: i32) -> Option<(f64, f64, usize)> {
         self.host
             .timeline_nav(id)
@@ -445,10 +345,10 @@ impl App {
     /// shared-memory bus, the scope histories, the node trees, the held button).
     fn render(&mut self, def_id: i32) {
         tracing::trace!("rendering window {def_id}");
-        let active_button = match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
-            Some(Drag::Button { id }) => Some(*id),
-            _ => None,
-        };
+        let active_button = self
+            .windows
+            .get(&def_id)
+            .and_then(|w| w.gestures.active_button());
         let server_attached = self.host.server().is_some();
         // Disjoint field borrows: the tree (host), the bus (shm), the node trees,
         // and the window's GPU resources are separate fields of `self`.
@@ -466,12 +366,11 @@ impl App {
             cursor,
             timelines: self.host.timelines(),
             // A rewiring drag in flight draws its wire to the pointer.
-            wiring: match self.windows.get(&def_id).and_then(|w| w.drag.as_ref()) {
-                Some(Drag::Wire { id, port, .. }) => {
-                    cursor.map(|(cx, cy)| (*id, *port, (cx as f32, cy as f32)))
-                }
-                _ => None,
-            },
+            wiring: self
+                .windows
+                .get(&def_id)
+                .and_then(|w| w.gestures.wiring())
+                .and_then(|(id, port)| cursor.map(|(cx, cy)| (id, port, (cx as f32, cy as f32)))),
         };
         let Some(ws) = self.windows.get_mut(&def_id) else {
             return;
@@ -551,31 +450,12 @@ impl ApplicationHandler<UserEvent> for App {
     /// Raw relative motion drives a *locked* knob/number drag. The pointer is
     /// locked in place (so it cannot wander onto the title bar or out of the
     /// window, where `CursorMoved` is lost), and its movement arrives here as a
-    /// device delta instead — applied incrementally to the dragged control.
+    /// device delta instead — the gesture machine applies it incrementally.
     fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
         let DeviceEvent::MouseMotion { delta: (_, dy) } = event else {
             return;
         };
-        // The window (if any) whose active drag is a locked knob/number. Only one
-        // pointer drag runs at a time, so the first match is the target.
-        let Some((def_id, id, body_h)) =
-            self.windows.iter().find_map(|(def_id, ws)| match &ws.drag {
-                Some(Drag::Vertical {
-                    id,
-                    body_h,
-                    locked: true,
-                    ..
-                }) => Some((*def_id, *id, *body_h)),
-                _ => None,
-            })
-        else {
-            return;
-        };
-        let cur = self.fraction_of(def_id, id).unwrap_or(0.0);
-        let t = (cur + crate::host::controls::drag_fraction_delta(dy, body_h)).clamp(0.0, 1.0);
-        self.set_fraction(def_id, id, t);
-        self.emit_value(def_id, id);
-        self.redraw(def_id);
+        self.on_relative_motion(dy);
     }
 
     /// After handling events, schedule the next wake-up: a ~30 fps repaint for
@@ -689,7 +569,10 @@ impl ApplicationHandler<UserEvent> for App {
                 if let Some(ws) = self.windows.get_mut(&def_id) {
                     ws.cursor = (position.x, position.y);
                 }
-                let dragging = self.windows.get(&def_id).is_some_and(|w| w.drag.is_some());
+                let dragging = self
+                    .windows
+                    .get(&def_id)
+                    .is_some_and(|w| w.gestures.dragging());
                 if dragging {
                     self.on_drag(def_id, position.x, position.y);
                 } else if self

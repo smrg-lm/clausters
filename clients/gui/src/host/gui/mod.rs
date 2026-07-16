@@ -19,13 +19,14 @@
 //!
 //! The module is split by role, all methods on the one [`app::App`]:
 //! [`app`] owns the state and the winit handler, [`windows`] the window
-//! lifecycle, [`serverleg`] the audio-server client leg, [`input`] the pointer
-//! gestures, [`roll`] the piano-roll editing gestures (keyboard and MIDI
-//! included).
+//! lifecycle, [`serverleg`] the audio-server client leg, [`input`] the thin
+//! adapters onto the shared gesture machine ([`crate::host::gestures`], which
+//! owns all interaction logic), [`midi`] the live MIDI note painting.
 
 mod app;
 mod input;
-mod roll;
+#[cfg(feature = "midi")]
+mod midi;
 mod serverleg;
 mod windows;
 
