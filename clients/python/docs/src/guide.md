@@ -43,6 +43,10 @@ See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-buil
 
 `Session` bundles a `Server` and a clock, with `Session.nrt()` / `Session.live()` factories and `.play(pattern)` / `.render()` / `.run(s)`. Several sessions coexist — an offline NRT one for plots next to a live RT one — in the same script. See [Sessions](sessions.md) for the full picture.
 
+## The ambient verbs — `play`, `plot`, `render`
+
+On top of the sessions sit three free-standing verbs that resolve the ambient context (the running session, else the default one), each a single entry for many kinds: `play` sounds what already sounds directly (an event or dict, a pattern, a routine or generator, a def or bare expression, a timeline, a buffer, an automation), `render` performs the change of state to audio (defs and expressions, arrangement elements, timelines, patterns — offline to samples or a WAV, or delegated to a live destination), and `plot` (with its live sibling `scope`) is the visual counterpart. See [The ambient verbs](verbs.md) for the full dispatch tables and the play/render split.
+
 ## The seam, restated
 
 Everything above the `Server` (clock, routines, patterns, defs) is written once. The `Server`'s interface is the only thing that decides whether the OSC reaches a live device, a shared-memory transport, or an in-process renderer producing a WAV. That is what lets a single script do a live take and an offline render side by side.

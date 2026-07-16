@@ -6,6 +6,12 @@ differing only in the destination, so the render is sample-identical to what
 you heard. There is no export path; there is `render`, pointed at an offline
 session.
 
+For a **self-contained** piece — no buffers or automations prepared on a live
+server — the free-standing verb does all of this in one line:
+`render(piece, path="piece.wav")` bounces it in an ephemeral offline session
+(see [The ambient verbs](../verbs.md)). This piece carries server-bound state,
+which is exactly what the rest of this page moves by hand.
+
 ## The offline session
 
 ```python

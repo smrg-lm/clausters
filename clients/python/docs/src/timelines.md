@@ -58,6 +58,10 @@ session.start()                 # the clock must be running for live playback
 head.play(at=0.0, quant=4)      # start on the next bar, from the top
 ```
 
+(The free-standing `play(timeline)` builds this for you on the ambient clock
+and server and returns the playhead — see
+[The ambient verbs](verbs.md).)
+
 The transport controls:
 
 | Call | What it does |

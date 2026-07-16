@@ -13,6 +13,7 @@ This is the **package documentation**. The server itself — the OSC protocol, t
 - **Definitions and server resources** (`clausters.defs`): the UGen graph (`ugens` + `SynthDef`) and `FaustDef` (from `signals`, from `boxes`, or from Faust source), plus the `Node`/`Bus`/`Buffer` handles. The `Server` owns the communication interface and emits — swap its interface to retarget the *same* code from a live RT take to an offline NRT score.
 - **Sequencing** (`clausters.seq`): `Event`, the value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`, and `EventStreamPlayer`, with yield-exact timing.
 - **Ergonomic defaults without global state** (`clausters.Session`): bundles a `Server` and a clock; several sessions (e.g. an offline one for plots next to a live one) coexist in one script.
+- **The ambient verbs** (`play` / `plot` / `render`, plus the live `scope`): one free-standing entry each for sounding, showing and bouncing whatever you have — an event, a pattern, a bare signal expression, a def, a timeline, a buffer — resolved against the ambient session.
 
 ## The RT / NRT / embed seam
 
@@ -22,7 +23,7 @@ The key design property is a single seam: the `Server` holds a communication int
 
 - **New here?** Start with [Getting started](getting-started.md): install the package and make a sound, line by line in a REPL.
 - **Want the mental model?** Read [The client, layer by layer](guide.md): `base`, `seq`, `defs` and the seam.
-- **Want the ergonomic entry point?** [Sessions](sessions.md) shows how one handle drives a live take or an offline render.
+- **Want the ergonomic entry point?** [Sessions](sessions.md) shows how one handle drives a live take or an offline render, and [The ambient verbs](verbs.md) covers `play`, `plot` and `render` — what each accepts and why the split.
 - **Driving the clock yourself?** [Routines and clocks](routines-and-clocks.md) writes routines by hand, and [Timing models](timing-models.md) covers the `TempoClock`'s timing modes — wall-clock, sample-locked, shared transport — and how to observe each.
 - **Looking for runnable code?** See [Examples](examples.md).
 - **Looking for a symbol?** The [API reference](api.md) is generated from the package docstrings.

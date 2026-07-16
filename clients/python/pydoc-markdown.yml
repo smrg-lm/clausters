@@ -16,6 +16,7 @@ loaders:
       - clausters
       - clausters.play
       - clausters.plot
+      - clausters.render
       - clausters.scope
       - clausters.session
       - clausters.responders
@@ -38,6 +39,7 @@ loaders:
       - clausters.defs.signals
       - clausters.defs.boxes
       - clausters.defs.ugens
+      - clausters.defs.asdef
       - clausters.defs.faustdef
       - clausters.defs.synthdef
       - clausters.defs.graphdef

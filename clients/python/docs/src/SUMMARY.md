@@ -9,6 +9,7 @@
 - [The client, layer by layer](guide.md)
 - [Defining instruments: FaustDef and SynthDef](defs.md)
 - [Sessions](sessions.md)
+- [The ambient verbs: play, plot, render](verbs.md)
 - [Routines and clocks](routines-and-clocks.md)
 - [Timelines and the playhead](timelines.md)
 - [Timing models](timing-models.md)
