@@ -19,8 +19,19 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   ``play(sin_osc(440))`` just sounds. Returns the node handle — it plays
   until you free it;
 - a `clausters.seq.timeline.Timeline` -> a `clausters.seq.timeline.Playhead`
-  over the ambient clock and server. An arrangement `Element` is **not**
-  playable — its change of state to sound is `clausters.form.render`.
+  over the ambient clock and server;
+- a `clausters.defs.Buffer` -> sounded through the stock playbuf instrument
+  (a buffer sounds through an instrument; here the verb provides the default
+  one — ``rate``/``amp`` controls, freed when the take ends);
+- an `clausters.seq.automation.Automation` -> prepared if needed and
+  triggered on the ambient server — the interactive "apply this curve to
+  that node's control, now" (outside a clock its beats read as seconds);
+- anything else following the **timeline-item protocol**
+  (``play(destination)`` — an `OscEvent`, a `MidiEvent`, ...) -> dispatched
+  to it with the ambient server.
+
+An arrangement `Element` is **not** playable — its change of state to sound
+is `clausters.form.render`.
 
 Everything resolves against the ambient environment (the running session, else
 the default session `clausters.default_session`): ``server`` defaults to the
@@ -55,8 +66,12 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
             or a bare generator (object or function); a bare expression
             (`clausters.defs.Ugen`, `clausters.defs.Signal`,
             `clausters.defs.Box`) or a def (`clausters.defs.SynthDef` /
-            `clausters.defs.FaustDef` / `clausters.defs.GraphDef`); or a
-            `clausters.seq.timeline.Timeline`.
+            `clausters.defs.FaustDef` / `clausters.defs.GraphDef`); a
+            `clausters.seq.timeline.Timeline`; a `clausters.defs.Buffer`
+            (sounded through the stock playbuf instrument); an
+            `clausters.seq.automation.Automation` (prepared and triggered);
+            or anything with a ``play(destination)`` (the timeline-item
+            protocol).
         server: the destination server; ``None`` resolves the ambient one (the
             running session's, else the booted default — see
             `clausters.base.main.Main.resolve_server`).
@@ -67,7 +82,9 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         quant: start quantization for a pattern/routine/timeline (see
             `clausters.base.clock.TempoClock.play`).
         controls: ``{name: value}`` controls (ports, for a `GraphDef`) a def
-            or expression is instanced with. Ignored by the other kinds.
+            or expression is instanced with; for a `Buffer`, the stock
+            instrument's (``rate``, a musical ratio, and ``amp``). Ignored by
+            the other kinds.
 
     Returns:
         Whatever the underlying play returns — the synth node id for an event,
@@ -76,11 +93,12 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         instance `clausters.defs.Group`) for a def or expression, the
         `clausters.seq.timeline.Playhead` for a timeline.
     """
+    from .seq.automation import Automation
     from .seq.event import Event
     from .seq.pattern import Pattern
     from .seq.timeline import Playhead, Timeline
     from .base.stream import Stream, Routine
-    from .defs import Box, FaustDef, GraphDef, Signal, SynthDef, Ugen
+    from .defs import Box, Buffer, FaustDef, GraphDef, Signal, SynthDef, Ugen
     from .defs.asdef import as_def
 
     if isinstance(playable, Event):
@@ -103,11 +121,34 @@ def play(playable, *, server=None, clock=None, quant=None, controls=None):
         playhead = Playhead(playable, clock, main.resolve_server(server))
         playhead.play(quant=quant)
         return playhead
+    if isinstance(playable, Buffer):
+        return _play_buffer(playable, main.resolve_server(server), controls)
+    if isinstance(playable, Automation):
+        resolved = main.resolve_server(server)
+        if playable.buf is None or playable.bus is None:
+            # Interactive trigger: we are off the clock thread, so preparing
+            # (allocating and filling the control buffer) may block here.
+            playable.prepare(resolved)
+        return playable.play(resolved)
+    from .form.element import Element
+
+    if isinstance(playable, Element):
+        # An Element carries a timeline-item play() (the hook flattening
+        # uses), but the verb keeps the state split: rendering is its door.
+        raise TypeError(
+            "an arrangement Element is rendered, not played — see "
+            "clausters.render / clausters.form.render"
+        )
+    if callable(getattr(playable, "play", None)):
+        # The timeline-item protocol (`OscEvent`, `MidiEvent`, and anything
+        # else a Playhead could play): play(destination).
+        return playable.play(main.resolve_server(server))
     raise TypeError(
         f"don't know how to play {type(playable).__name__}; expected an Event "
         "or event dict, an event Pattern (Pbind), a Routine/Stream or "
-        "generator, a def or bare expression (Ugen/Signal/Box), or a "
-        "Timeline. An arrangement Element is rendered, not played — see "
+        "generator, a def or bare expression (Ugen/Signal/Box), a Timeline, "
+        "a Buffer, an Automation, or anything with play(destination). An "
+        "arrangement Element is rendered, not played — see "
         "clausters.form.render."
     )
 
@@ -132,3 +173,38 @@ def _play_def(d, server, controls):
     if isinstance(d, GraphDef):
         return server.graph(d.name, controls)
     return server.synth(d.name, controls)
+
+
+def _play_buffer(buffer, server, controls):
+    """A buffer sounds through an instrument (see docs/decisions.md); here
+    the verb provides the stock one — one `play_buf` lane per channel, with
+    ``rate`` and ``amp`` controls — and frees it when the take ends (the
+    buffer's frames over its rate). Returns the `Synth`."""
+    from .defs import (
+        SynthDef, buf_sample_rate, control, out, play_buf, sample_rate,
+    )
+
+    if not buffer.frames and getattr(server.interface, "time_mode",
+                                     "unix") != "score":
+        server.query_buffer(buffer)     # fills frames/channels/sample_rate
+    if not buffer.frames:
+        raise ValueError(
+            "cannot play a buffer of unknown length; fill the handle's "
+            "frames (RT queries the server; NRT needs them up front)")
+    channels = max(1, buffer.channels)
+    buf = control("buf", 0.0)
+    # `rate` is a musical ratio: the def rescales it by the buffer's own
+    # sample rate (like sclang's BufRateScale), so a take plays at pitch on
+    # any engine rate.
+    rate = control("rate", 1.0) * buf_sample_rate(buf) / sample_rate()
+    amp = control("amp", 1.0)
+    sdef = SynthDef(f"_playbuf{channels}",
+                    *[out(float(ch), play_buf(buf, float(ch), rate) * amp)
+                      for ch in range(channels)])
+    server.add_def(sdef)
+    controls = {"buf": float(buffer.bufnum), **(controls or {})}
+    node = server.synth(sdef.name, controls)
+    file_sr = buffer.sample_rate or 48_000.0
+    dur = buffer.frames / file_sr / float(controls.get("rate", 1.0))
+    server.send_bundle_after(dur, ("/n_free", node.id))
+    return node

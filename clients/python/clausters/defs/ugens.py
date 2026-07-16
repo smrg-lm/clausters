@@ -380,6 +380,11 @@ def buf_frames(bufnum) -> Ugen:
     return Ugen("BufFrames", [bufnum], rate="kr")
 
 
+def buf_sample_rate(bufnum) -> Ugen:
+    """The buffer's own sample rate (Hz), block-constant (``kr``)."""
+    return Ugen("BufSampleRate", [bufnum], rate="kr")
+
+
 def rand(lo=0.0, hi=1.0) -> Ugen:
     """One uniform random value in ``[lo, hi)``, drawn once at synth init and
     held for the node's life (``ir``); ``lo``/``hi`` must be constants or ``ir``."""

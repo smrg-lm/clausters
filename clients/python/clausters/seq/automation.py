@@ -134,9 +134,15 @@ class Automation:
         return self
 
     def play(self, destination):
-        """Timeline-item hook: schedule the lane synth at the routine's logical
-        beat, ``/n_map`` the targets, and free the synth after the curve's
-        duration. Non-blocking. Self-prepares only in NRT (where it is scored)."""
+        """Timeline-item hook and interactive trigger: schedule the lane synth,
+        ``/n_map`` the targets, and free the synth after the curve's duration.
+        Non-blocking. Self-prepares only in NRT (where it is scored).
+
+        Two timing regimes, chosen by context like an `Event`'s. **Inside a
+        routine** everything goes out as timetagged bundles at the routine's
+        exact logical beat. **Outside any clock** (an interactive
+        ``play(auto)``) the lane starts immediately and frees itself on wall
+        time, the curve's beats read as seconds (tempo 1.0)."""
         if self.buf is None or self.bus is None:
             if getattr(destination.interface, "time_mode", "unix") != "score":
                 raise RuntimeError(
@@ -145,18 +151,24 @@ class Automation:
             self.prepare(destination)
 
         clock = getattr(main.current_tt, "clock", None)
-        if clock is None:
-            raise RuntimeError("Automation.play must run within a routine on a TempoClock")
         dur_beats = self.duration()
-        dur_secs = dur_beats / clock.tempo
+        dur_secs = dur_beats if clock is None else dur_beats / clock.tempo
 
         node = destination.nodes.alloc()
-        destination.send_bundle(
-            ("/s_new", LANE_DEF, node, int(AddAction.HEAD), int(ROOT_NODE_ID),
-             "buf", self.buf.bufnum, "bus", self.bus.index, "dur", dur_secs))
-        for tnode, ctl in self.targets:
-            tid = tnode.id if hasattr(tnode, "id") else int(tnode)
-            destination.send_bundle(("/n_map", tid, ctl, self.bus.index))
+        s_new = ("/s_new", LANE_DEF, node, int(AddAction.HEAD), int(ROOT_NODE_ID),
+                 "buf", self.buf.bufnum, "bus", self.bus.index, "dur", dur_secs)
+        maps = [("/n_map", tnode.id if hasattr(tnode, "id") else int(tnode),
+                 ctl, self.bus.index) for tnode, ctl in self.targets]
+        if clock is None:
+            # No clock in context: immediate lane, self-freeing on wall time.
+            destination.send_msg(*s_new)
+            for m in maps:
+                destination.send_msg(*m)
+            destination.send_bundle_after(dur_secs, ("/n_free", node))
+            return node
+        destination.send_bundle(s_new)
+        for m in maps:
+            destination.send_bundle(m)
         destination.send_bundle(("/n_free", node), delay_beats=dur_beats)
         return node
 
