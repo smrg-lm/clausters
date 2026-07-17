@@ -22,7 +22,7 @@ waveshaper (``osc``/``oscn``/``vosc``, ``shaper``), bus and buffer I/O
 ``buf_*`` info queries), streaming disk I/O (``disk_in``/``disk_out``),
 feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
 ``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the fused
-``mul_add``/``sum3``/``sum4``. **Maths works**: ``+ - * /`` map to the
+``madd``/``sum3``/``sum4``. **Maths works**: ``+ - * /`` map to the
 ``Add``/``Sub``/``Mul``/``Div`` kinds and every other operator or method
 (``%``, ``min``/``max``, comparisons, ``.sin()``, ``.midicps()``,
 ``.distort()`` …) composes a generic ``BinaryOpUGen``/``UnaryOpUGen`` carrying
@@ -388,7 +388,7 @@ def local_out(channel, signal) -> Ugen:
 # ---- fused arithmetic (the forms the server optimizes) ----
 
 
-def mul_add(a, b, c) -> Ugen:
+def madd(a, b, c) -> Ugen:
     """``a*b + c`` in one UGen (the multiply-accumulate the server fuses). The
     plain expression ``a * b + c`` builds the same value with two op UGens; this
     is the fused equivalent."""
