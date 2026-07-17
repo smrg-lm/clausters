@@ -210,7 +210,7 @@ fn shaper_passes_through_with_a_linear_transfer() {
     let shaper = spec_synth(json!({
         "name": "shaper",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 110.0}]},
+            {"kind": "Sine", "inputs": [{"const": 110.0}]},
             {"kind": "Shaper", "inputs": [{"const": 0.0}, {"ugen": 0}]},
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]

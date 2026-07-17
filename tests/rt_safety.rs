@@ -325,7 +325,7 @@ fn table_oscillators_do_not_allocate_on_the_audio_thread() {
             "ugens": [
                 {"kind": "Osc",  "inputs": [{"const": 0.0}, {"const": 220.0}, {"const": 0.0}]},
                 {"kind": "VOsc", "inputs": [{"const": 0.5}, {"const": 110.0}, {"const": 0.0}]},
-                {"kind": "SinOsc", "inputs": [{"const": 55.0}]},
+                {"kind": "Sine", "inputs": [{"const": 55.0}]},
                 {"kind": "Shaper", "inputs": [{"const": 2.0}, {"ugen": 2}]},
                 {"kind": "Sum3", "inputs": [{"ugen": 0}, {"ugen": 1}, {"ugen": 3}]},
                 {"kind": "Out",  "inputs": [{"const": 0.0}, {"ugen": 4}]}
@@ -363,13 +363,13 @@ fn spectral_chain_does_not_allocate_on_the_audio_thread() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
 
-    // SinOsc -> FFT -> PV_BrickWall -> PV_MagAbove -> IFFT -> Out. A 512-point
+    // Sine -> FFT -> PV_BrickWall -> PV_MagAbove -> IFFT -> Out. A 512-point
     // window with a 128-sample hop, so a transform fires every other block.
     let spec: SynthDefSpec = serde_json::from_str(
         r#"{
             "name": "fftchain",
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
                 {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
                  "fft_size": 512, "hop": 0.25, "wintype": 0},
                 {"kind": "PV_BrickWall", "inputs": [{"ugen": 1}, {"const": 0.3}]},
@@ -525,7 +525,7 @@ fn typed_controls_do_not_allocate_on_the_audio_thread() {
                 {"name": "seed", "default": 1.0, "rate": "ir"}
             ],
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"control": 1}]},
+                {"kind": "Sine", "inputs": [{"control": 1}]},
                 {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 0}]},
                 {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
             ]
@@ -598,12 +598,12 @@ fn operator_ugens_do_not_allocate_on_the_audio_thread() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
 
-    // SinOsc -> distort -> *0.3 (mul) -> MulAdd -> Sum3 -> Sum4.
+    // Sine -> distort -> *0.3 (mul) -> MulAdd -> Sum3 -> Sum4.
     let spec: SynthDefSpec = serde_json::from_str(
         r#"{
             "name": "ops",
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
                 {"kind": "UnaryOpUGen", "op": "distort", "inputs": [{"ugen": 0}]},
                 {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"ugen": 1}, {"const": 0.3}]},
                 {"kind": "MulAdd", "inputs": [{"ugen": 2}, {"const": 1.0}, {"const": 0.0}]},
@@ -897,7 +897,7 @@ fn parallel_dispatch_does_not_allocate() {
         let spec: SynthDefSpec = serde_json::from_value(serde_json::json!({
             "name": format!("p{i}"),
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"const": 110.0 + i as f64}]},
+                {"kind": "Sine", "inputs": [{"const": 110.0 + i as f64}]},
                 {"kind": "Out", "inputs": [{"const": 16.0 + i as f64}, {"ugen": 0}]}
             ]
         }))

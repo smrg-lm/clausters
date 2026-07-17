@@ -399,7 +399,7 @@ fn control_buses_feed_the_audio_thread() {
         "name": "ctl",
         "ugens": [
             {"kind": "InCtl",  "inputs": [{"const": 7.0}]},
-            {"kind": "SinOsc", "inputs": [{"ugen": 0}]},
+            {"kind": "Sine", "inputs": [{"ugen": 0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 1}, {"const": 0.2}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 2}]}
         ]

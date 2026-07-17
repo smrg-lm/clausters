@@ -27,7 +27,7 @@ It plays a quiet drone throughout.
 import time
 
 from clausters import Server, scope
-from clausters.defs import SynthDef, control, lag, out, sin_osc
+from clausters.defs import SynthDef, control, lag, out, sine
 
 #: Seconds each visual step stays on screen.
 PAUSE = 4.0
@@ -43,8 +43,8 @@ server = Server.boot()
 freq = control("freq", 220.0)
 spread = lag(control("spread", 0.0), 0.1)
 amp = lag(control("amp", 0.1), 0.1)
-left = sin_osc(freq)
-right = left * (1.0 - spread) + sin_osc(freq * 1.02) * spread
+left = sine(freq)
+right = left * (1.0 - spread) + sine(freq * 1.02) * spread
 drone = SynthDef("scoping_drone",
                  out(0.0, left * amp),
                  out(1.0, right * amp))

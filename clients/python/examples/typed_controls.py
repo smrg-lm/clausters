@@ -36,7 +36,7 @@ from clausters.defs import (
     env_gen,
     out,
     rand,
-    sin_osc,
+    sine,
 )
 
 SR = 48000.0
@@ -51,7 +51,7 @@ def glide_lead(name: str = "glide_lead") -> SynthDef:
     detune = rand(-4.0, 4.0)                          # ir: drawn once, held
     env = env_gen(Env.perc(attack=0.005, release=0.2), gate=gate,
                   done_action=DoneAction.NONE)
-    sig = sin_osc(freq + detune) * env * amp
+    sig = sine(freq + detune) * env * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

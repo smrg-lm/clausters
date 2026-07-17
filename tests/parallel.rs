@@ -34,12 +34,12 @@ fn s_new(name: &str, id: i32, target: i32, ctls: &[(&str, f32)]) -> OscMessage {
     msg("/s_new", args)
 }
 
-/// A source summing `SinOsc(freq)·0.2` into a constant bus.
+/// A source summing `Sine(freq)·0.2` into a constant bus.
 fn src_def(name: &str, bus: f32, freq: f32) -> OscMessage {
     let def = json!({
         "name": name,
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": freq}]},
+            {"kind": "Sine", "inputs": [{"const": freq}]},
             {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.2}]},
             {"kind": "Out", "inputs": [{"const": bus}, {"ugen": 1}]}
         ]
@@ -109,7 +109,7 @@ fn torture_graph() -> Vec<OscMessage> {
     let dynread = json!({
         "name": "dynread",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 0.25}]},
+            {"kind": "Sine", "inputs": [{"const": 0.25}]},
             {"kind": "In", "inputs": [{"ugen": 0}]},
             {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 1}]}
         ]
@@ -123,7 +123,7 @@ fn torture_graph() -> Vec<OscMessage> {
         "name": "srcvar",
         "controls": [{"name": "bus", "default": 19.0}],
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 110.0}]},
+            {"kind": "Sine", "inputs": [{"const": 110.0}]},
             {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.1}]},
             {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 1}]}
         ]

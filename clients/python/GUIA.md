@@ -38,7 +38,7 @@ Ejemplos en `clients/python/examples/` (catálogo en el mdBook del cliente,
   expone endpoint para el tracker.)
 - **Los verbos ambientes, de punta a punta.** `examples/verbs.py` → se oye cada
   playable en secuencia: nota (event y dict), arpegio (generador), señal suelta
-  (`play(sin_osc(440) * 0.15)`, UGen y box Faust), def con controls, una nota
+  (`play(sine(440) * 0.15)`, UGen y box Faust), def con controls, una nota
   larga cortada antes de tiempo (`play(...)` devuelve el evento completado,
   `.free()`/`.release()`), barrido de automation acoplado a un nodo sonando e
   **interrumpido a mitad de subida** (`sweep.stop()` — el freq queda donde

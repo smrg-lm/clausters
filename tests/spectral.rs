@@ -53,11 +53,11 @@ fn rms(s: &[f32], from: usize, to: usize) -> f32 {
 #[test]
 fn fft_ifft_round_trip_reconstructs_a_tone() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
-    // SinOsc(440) -> FFT(512, 0.5, Hann) -> IFFT -> Out.
+    // Sine(440) -> FFT(512, 0.5, Hann) -> IFFT -> Out.
     let synth = spec_synth(json!({
         "name": "roundtrip",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
             {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}],
              "fft_size": 512, "hop": 0.5, "wintype": 0},
             {"kind": "IFFT", "inputs": [{"ugen": 1}]},
@@ -92,7 +92,7 @@ fn pv_brickwall_attenuates_a_high_tone() {
             spec_synth(json!({
                 "name": "pass",
                 "ugens": [
-                    {"kind": "SinOsc", "inputs": [{"const": tone}]},
+                    {"kind": "Sine", "inputs": [{"const": tone}]},
                     {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
                     {"kind": "IFFT", "inputs": [{"ugen": 1}]},
                     {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
@@ -111,7 +111,7 @@ fn pv_brickwall_attenuates_a_high_tone() {
         spec_synth(json!({
             "name": "brickwall",
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"const": tone}]},
+                {"kind": "Sine", "inputs": [{"const": tone}]},
                 {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
                 {"kind": "PV_BrickWall", "inputs": [{"ugen": 1}, {"const": 0.85}]},
                 {"kind": "IFFT", "inputs": [{"ugen": 2}]},
@@ -142,7 +142,7 @@ fn pv_magabove_gates_below_threshold() {
         json!({
             "name": "magabove",
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"const": 3000.0}]},
+                {"kind": "Sine", "inputs": [{"const": 3000.0}]},
                 {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
                 {"kind": "PV_MagAbove", "inputs": [{"ugen": 1}, {"const": thresh}]},
                 {"kind": "IFFT", "inputs": [{"ugen": 2}]},
@@ -182,7 +182,7 @@ fn compiler_validates_the_chain() {
     let bad_size: SynthDefSpec = serde_json::from_value(json!({
         "name": "badsize",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
             {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 777},
             {"kind": "IFFT", "inputs": [{"ugen": 1}]}
         ]
@@ -193,7 +193,7 @@ fn compiler_validates_the_chain() {
     let bad_chain: SynthDefSpec = serde_json::from_value(json!({
         "name": "badchain",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
             // IFFT fed a plain audio wire, not a spectral chain.
             {"kind": "IFFT", "inputs": [{"ugen": 0}]}
         ]

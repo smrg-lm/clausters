@@ -5,7 +5,7 @@
 //! Two levels of "equivalent":
 //! - Stateless arithmetic on the same input signal is **bit-exact**: both
 //!   sides compute the same f32 ops on the same samples.
-//! - Oscillators agree only **within a float tolerance**: our `SinOsc`
+//! - Oscillators agree only **within a float tolerance**: our `Sine`
 //!   accumulates phase in f64 while Faust (`-single`) accumulates in f32, so
 //!   the phases drift apart a few ULP per sample. The tolerance is chosen
 //!   well below the error a one-sample phase offset would cause, which keeps
@@ -99,12 +99,12 @@ fn max_abs_diff(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0, f32::max)
 }
 
-/// `SinOsc(440) * 0.2` as a UGen def, summing into the given bus.
+/// `Sine(440) * 0.2` as a UGen def, summing into the given bus.
 fn sine_spec(name: &str, bus: f32) -> String {
     json!({
         "name": name,
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.2}]},
             {"kind": "Out",    "inputs": [{"const": bus}, {"ugen": 1}]}
         ]
@@ -112,7 +112,7 @@ fn sine_spec(name: &str, bus: f32) -> String {
     .to_string()
 }
 
-/// The same graph through the JSON→Box schema, phase-aligned with `SinOsc`:
+/// The same graph through the JSON→Box schema, phase-aligned with `Sine`:
 /// our oscillator emits `sin(2π·n·f/SR)` starting at 0, while the raw Faust
 /// phasor `(+(f/SR) : wrap) ~ _` starts at `f/SR` — the 1-sample `delay`
 /// (init 0) realigns it.

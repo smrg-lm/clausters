@@ -14,7 +14,7 @@ involved unless the object itself needs one). It dispatches by kind:
 - a bare **expression** — a `clausters.defs.Ugen` graph, a Faust
   `clausters.defs.Signal` or `clausters.defs.Box` — takes the same offline
   path through the ephemeral-def coercion `play` uses
-  (`clausters.defs.asdef.as_def`), so ``plot(sin_osc(440) * 0.5)`` shows the
+  (`clausters.defs.asdef.as_def`), so ``plot(sine(440) * 0.5)`` shows the
   signal directly. It plots as wide as it writes: one lane, unless a `Box`
   brings its own arity or ``channels`` says otherwise.
 - an `clausters.defs.Env` is rendered through the server's own ``EnvGen`` (a

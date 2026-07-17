@@ -205,11 +205,11 @@ process = os.osc(freq) * 0.2              return box.faust(src)(f) * 0.2
 A `SynthDef` takes a name and one or more **output UGens** — the things that actually write to a bus. A def with no output UGen is silent on the server.
 
 ```python
-from clausters.defs import SynthDef, control, sin_osc, out
+from clausters.defs import SynthDef, control, sine, out
 
 freq = control("freq", 440.0)
 amp = control("amp", 0.2)
-sig = sin_osc(freq) * amp
+sig = sine(freq) * amp
 sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # two outputs -> stereo
 ```
 
@@ -229,7 +229,7 @@ A control can carry a **type** (and, for a smoothed control, a lag time), mirror
 
 An unknown `rate`, or a `lag_down` without a `lag`, raises a `ValueError` at build. Audio-rate controls are not a control *type* here — read an audio signal off a bus with `in_` / `in_ctl` and map it with `/n_mapa`.
 
-Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (control), `ar` (audio), `dr` (demand). It defaults per kind (signal UGens are `ar`, `rand` / `sample_rate` are `ir`, the demand sources are `dr`); set it explicitly with `Ugen.at_rate`, e.g. `sin_osc(5.0).at_rate("kr")` for a control-rate LFO. The full rate model and its coercion rules live in the [Clausters server book](https://clausters.readthedocs.io/) (schemas / OSC reference).
+Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (control), `ar` (audio), `dr` (demand). It defaults per kind (signal UGens are `ar`, `rand` / `sample_rate` are `ir`, the demand sources are `dr`); set it explicitly with `Ugen.at_rate`, e.g. `sine(5.0).at_rate("kr")` for a control-rate LFO. The full rate model and its coercion rules live in the [Clausters server book](https://clausters.readthedocs.io/) (schemas / OSC reference).
 
 ### The UGen set
 
@@ -237,7 +237,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 
 | Group | Callable | Does |
 | --- | --- | --- |
-| Sources | `sin_osc(freq=440.0)` | sine by f64 phase accumulation, starting at phase 0 |
+| Sources | `sine(freq=440.0)` | sine by f64 phase accumulation, starting at phase 0 |
 | | `impulse(freq=1.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence) |
 | | `white_noise()` | uniform white noise in ±1 |
 | Bus input | `in_(bus=0.0)` | reads an audio bus (sampled per block) |
@@ -273,12 +273,12 @@ The **side-effect** UGens exist for a reply or a console post rather than audio,
 Beyond the four arithmetic operators, the **full unary/binary maths** works on a SynthDef graph: `%`, `min`/`max`, the comparisons, `.sin()`, `.midicps()`, `.distort()`, `.clip2(x)` and the rest compose the server's generic **`BinaryOpUGen`/`UnaryOpUGen`**, each carrying the operator by name. It is the same operation set the value side (`clausters.base.builtins`) computes — one shared `clausters-core` implementation — so a value you compute ahead of time and the UGen on the audio thread agree **bit-for-bit** for the native ops.
 
 ```python
-from clausters.defs import SynthDef, control, sin_osc, out
+from clausters.defs import SynthDef, control, sine, out
 
 note = control("note", 60.0)
 freq = note.midicps()                     # UnaryOpUGen (midicps)
-sig = sin_osc(freq).distort() * 0.3       # UnaryOpUGen (distort), then Mul
-lfo = (sin_osc(5.0) * 0.5 + 0.5).clip2(0.8)  # % min max > .fold/.clip … all compose
+sig = sine(freq).distort() * 0.3       # UnaryOpUGen (distort), then Mul
+lfo = (sine(5.0) * 0.5 + 0.5).clip2(0.8)  # % min max > .fold/.clip … all compose
 sdef = SynthDef("lead", out(0.0, sig * lfo))
 ```
 
@@ -287,10 +287,10 @@ The `+ - * /` operators keep their dedicated `Add`/`Sub`/`Mul`/`Div` kinds (so e
 Feedback within a block uses the `LocalIn` / `LocalOut` pair. `LocalIn` must be emitted before its `LocalOut`; the topological walk guarantees that as long as the output graph reaches the `local_in` before the `local_out`. Make the `local_out` one of the def's outputs so its write stays in the graph:
 
 ```python
-from clausters.defs import SynthDef, sin_osc, local_in, local_out, out
+from clausters.defs import SynthDef, sine, local_in, local_out, out
 
 fb = local_in(0.0)                            # private channel 0
-sig = sin_osc(440.0) * 0.2 + fb * 0.5
+sig = sine(440.0) * 0.2 + fb * 0.5
 echo = local_out(0.0, sig)                    # writes channel 0, passes sig through
 sdef = SynthDef("fb", out(0.0, sig), echo)    # echo as an output keeps the write
 ```

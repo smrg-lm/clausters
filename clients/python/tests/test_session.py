@@ -47,13 +47,13 @@ def test_nrt_render_with_workers_is_bit_identical():
     # A parallel group of independent voices: `workers` must only change
     # wall-clock time, never the samples.
     _embed_or_skip()
-    from clausters.defs import SynthDef, control, out, sin_osc
+    from clausters.defs import SynthDef, control, out, sine
 
     def build():
         s = Session.nrt(tempo=1.0)
         server = s.server
         server.add_synthdef(SynthDef(
-            "par_voice", out(0.0, sin_osc(control("freq", 330.0)) * 0.1)))
+            "par_voice", out(0.0, sine(control("freq", 330.0)) * 0.1)))
         band = server.group()
         server.send_msg("/g_parallel", band.id, 1)
         voices = [server.synth("par_voice", {"freq": 220.0 * (i + 1)},

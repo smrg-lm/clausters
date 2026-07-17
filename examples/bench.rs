@@ -15,7 +15,7 @@
 //! buffers) against one Faust LLVM `compute` call. Only `process` is timed;
 //! instantiation and JIT happen before the loop.
 //!
-//! - **sine** (`sin(2π·phasor)·0.2`): realistic, but our `SinOsc` works in f64
+//! - **sine** (`sin(2π·phasor)·0.2`): realistic, but our `Sine` works in f64
 //!   while Faust `-single` is f32, so part of the gap is precision.
 //! - **gain** (`·0.5` on a shared bus): bit-exact, no transcendental — the
 //!   cleanest read of pure engine overhead.
@@ -40,7 +40,7 @@ fn main() {
     println!(
         "graph benchmark — {SAMPLE_RATE} Hz, blocks of {BLOCK_SIZE} frames, release-mode wall clock"
     );
-    println!("\ndefault def (SinOsc · amp → 2× Out):");
+    println!("\ndefault def (Sine · amp → 2× Out):");
     for &n in VOICE_COUNTS {
         report(n, bench(n, |_| make_default_synth()));
     }
@@ -99,7 +99,7 @@ fn bench_ugen_vs_faust() {
                 "name": "cmp_usine",
                 "controls": [{"name": "freq", "default": 440.0}],
                 "ugens": [
-                    {"kind": "SinOsc", "inputs": [{"control": 0}]},
+                    {"kind": "Sine", "inputs": [{"control": 0}]},
                     {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.2}]},
                     {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
                 ]
@@ -109,7 +109,7 @@ fn bench_ugen_vs_faust() {
         .expect("ugen sine compiles"),
     );
 
-    // Same recurrence as `SinOsc`: a wrapped phasor fed into `sin`, then ·0.2.
+    // Same recurrence as `Sine`: a wrapped phasor fed into `sin`, then ·0.2.
     // No `import` (keeps the def minimal), one hslider `freq` at control 0.
     let faust_src = format!(
         "freq = hslider(\"freq\", 440, 20, 20000, 0.01);\n\
@@ -149,7 +149,7 @@ fn bench_ugen_vs_faust() {
         );
     }
     println!(
-        "  (slowdown < 1.0 = Faust is faster. Caveat: SinOsc accumulates phase\n\
+        "  (slowdown < 1.0 = Faust is faster. Caveat: Sine accumulates phase\n\
          \x20  and calls sin in f64; Faust -single does both in f32, which is cheaper,\n\
          \x20  so part of the gap is arithmetic precision, not engine overhead.)"
     );
@@ -172,7 +172,7 @@ fn bench_gain_overhead() {
             serde_json::from_value(serde_json::json!({
                 "name": "cmp_src",
                 "ugens": [
-                    {"kind": "SinOsc", "inputs": [{"const": 220.0}]},
+                    {"kind": "Sine", "inputs": [{"const": 220.0}]},
                     {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.2}]},
                     {"kind": "Out",    "inputs": [{"const": 4.0}, {"ugen": 1}]}
                 ]
@@ -328,7 +328,7 @@ fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
             "name": format!("chain{k}"),
             "controls": [{"name": "freq", "default": 220.0}],
             "ugens": [
-                {"kind": "SinOsc", "inputs": [{"control": 0}]},
+                {"kind": "Sine", "inputs": [{"control": 0}]},
                 {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.001}]},
                 {"kind": "Out", "inputs": [{"const": bus}, {"ugen": 1}]}
             ]

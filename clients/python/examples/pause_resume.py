@@ -28,7 +28,7 @@ import wave
 
 from clausters import Session
 from clausters.base import Routine
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 
 SR = 48000.0
 
@@ -38,7 +38,7 @@ def drone(name: str = "drone") -> SynthDef:
     its phase is what we watch survive a pause and resume."""
     freq = control("freq", 220.0)
     amp = control("amp", 0.2)
-    sig = sin_osc(freq) * amp
+    sig = sine(freq) * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

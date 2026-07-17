@@ -25,10 +25,10 @@ def _embed_or_skip():
 
 def test_render_bounces_a_bare_expression(tmp_path):
     _embed_or_skip()
-    from clausters.defs import sin_osc
+    from clausters.defs import sine
 
     wav = tmp_path / "expr.wav"
-    samples, frames = render(sin_osc(440.0) * 0.2, dur=0.25, sample_rate=SR,
+    samples, frames = render(sine(440.0) * 0.2, dur=0.25, sample_rate=SR,
                              channels=1, path=wav)
     assert abs(frames - 0.25 * SR) <= 128
     assert len(samples) == frames

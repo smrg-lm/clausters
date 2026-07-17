@@ -32,13 +32,13 @@ editor. No globals to set up, no build context to open: every line stands alone.
 
 ```python
 from clausters import Session
-from clausters.defs import SynthDef, control, sin_osc, out
+from clausters.defs import SynthDef, control, sine, out
 
 session = Session.live(latency=0.1)   # attaches to a server, or boots one
 server = session.server
 
 # an instrument: a def the server compiles once and instantiates many times
-sdef = SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0)) * control("amp", 0.2)))
+sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
 server.add_synthdef(sdef)                      # /d_recv, waits for the server's /done
 
 node = server.synth("beep", {"freq": 330.0})   # you hear it now

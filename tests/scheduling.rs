@@ -199,7 +199,7 @@ fn earlier_times_fire_first_regardless_of_send_order() {
 fn scheduled_impulse_lands_on_its_exact_sample() {
     // The example's mechanism: a `/sched`'d Impulse(0) splits the block at
     // the target and fires its single impulse on that exact frame — unlike
-    // SinOsc (which starts at sin(0) = 0), the marked sample itself is 1.0.
+    // Sine (which starts at sin(0) = 0), the marked sample itself is 1.0.
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     let target = 100u64; // mid-block: block 1, offset 36
     handle

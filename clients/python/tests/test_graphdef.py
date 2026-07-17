@@ -8,7 +8,7 @@ import pytest
 
 from clausters import render
 from clausters.base import OscNrtInterface, Routine, TempoClock
-from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sin_osc
+from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
 
 SR = 48000.0
 
@@ -60,7 +60,7 @@ def test_port_needs_a_target_and_graph_needs_a_member():
 
 def _members():
     freq, out_bus = control("freq", 440.0), control("out", 0.0)
-    tone = SynthDef("tone", out(out_bus, sin_osc(freq) * 0.15))
+    tone = SynthDef("tone", out(out_bus, sine(freq) * 0.15))
     in_bus, gain = control("in", 0.0), control("gain", 0.4)
     amp = SynthDef("gain", out(0.0, in_(in_bus) * gain), out(1.0, in_(in_bus) * gain))
     return tone, amp
@@ -126,7 +126,7 @@ def test_voice_flag_serializes():
 
 def _poly():
     freq, out_bus, level = control("freq", 440.0), control("out", 0.0), control("level", 0.2)
-    vtone = SynthDef("vtone", out(out_bus, sin_osc(freq) * level))
+    vtone = SynthDef("vtone", out(out_bus, sine(freq) * level))
     in_bus, gain = control("in", 0.0), control("gain", 0.3)
     vgain = SynthDef("vgain", out(0.0, in_(in_bus) * gain), out(1.0, in_(in_bus) * gain))
 

@@ -163,7 +163,7 @@ fn d_recv_compiles_def_and_plays_it() {
         "name": "beep2",
         "controls": [{"name": "freq", "default": 220.0}],
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"control": 0}]},
+            {"kind": "Sine", "inputs": [{"control": 0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.1}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]
@@ -226,7 +226,7 @@ fn d_recv_bad_graph_fails_with_compile_error() {
 #[test]
 fn d_free_removes_def() {
     let server = TestServer::spawn();
-    let json = r#"{"name":"temp","ugens":[{"kind":"SinOsc","inputs":[{"const":440.0}]}]}"#;
+    let json = r#"{"name":"temp","ugens":[{"kind":"Sine","inputs":[{"const":440.0}]}]}"#;
     server.send("/d_recv", vec![OscType::String(json.into())]);
     assert_eq!(server.recv().addr, "/done");
 
@@ -1867,7 +1867,7 @@ fn d_load_reads_a_synthdef_from_disk() {
         "name": "loaded",
         "controls": [{"name": "freq", "default": 210.0}],
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"control": 0}]},
+            {"kind": "Sine", "inputs": [{"control": 0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.1}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]

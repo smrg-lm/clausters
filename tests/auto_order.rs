@@ -137,12 +137,12 @@ fn rms(buf: &[f32]) -> f32 {
     (buf.iter().map(|x| x * x).sum::<f32>() / buf.len() as f32).sqrt()
 }
 
-/// SinOsc(330)·0.2 summed into bus 16.
+/// Sine(330)·0.2 summed into bus 16.
 fn src_def() -> serde_json::Value {
     json!({
         "name": "src",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 330.0}]},
+            {"kind": "Sine", "inputs": [{"const": 330.0}]},
             {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.2}]},
             {"kind": "Out", "inputs": [{"const": 16.0}, {"ugen": 1}]}
         ]
@@ -429,7 +429,7 @@ fn dynamic_bus_indexes_are_reported_and_act_as_barriers() {
     server.d_recv(&json!({
         "name": "dynread",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 1.0}]},
+            {"kind": "Sine", "inputs": [{"const": 1.0}]},
             {"kind": "In", "inputs": [{"ugen": 0}]},
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]
@@ -512,7 +512,7 @@ fn n_set_on_a_bus_control_resorts() {
         "name": "srcvar",
         "controls": [{"name": "bus", "default": 20.0}],
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 330.0}]},
+            {"kind": "Sine", "inputs": [{"const": 330.0}]},
             {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.2}]},
             {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 1}]}
         ]

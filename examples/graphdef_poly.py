@@ -28,7 +28,7 @@ import wave
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, Routine, TempoClock
-from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sin_osc
+from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
 
 SR = 48000.0
 NOTES = (220.0, 277.0, 330.0, 440.0)  # an A-major arpeggio
@@ -38,7 +38,7 @@ def member_defs():
     """`vtone` (per voice): a sine at `freq`·`level` into the bus `out`.
     `vgain` (shared): reads the bus `in`, scales by `gain`, to the speakers."""
     freq, out_bus, level = control("freq", 440.0), control("out", 0.0), control("level", 0.2)
-    vtone = SynthDef("vtone", out(out_bus, sin_osc(freq) * level))
+    vtone = SynthDef("vtone", out(out_bus, sine(freq) * level))
 
     in_bus, gain = control("in", 0.0), control("gain", 0.3)
     sig = in_(in_bus) * gain

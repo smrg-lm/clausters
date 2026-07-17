@@ -138,7 +138,7 @@ Faust carries no license restriction either.)
 
 ## Testing
 
-- Offline parity goldens: same graph as UGen (`SinOsc`) and as box
+- Offline parity goldens: same graph as UGen (`Sine`) and as box
   (`sin(2π·phasor)`), rendered through the same engine — outputs must match
   within tolerance (see [[audio-testing]]).
 - The compiler thread is async: tests drive it with explicit completion waits

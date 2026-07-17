@@ -13,10 +13,10 @@ A member of a signal chain reads and writes buses through its own controls —
 by convention named `in` and `out`:
 
 ```python
-from clausters.defs import SynthDef, control, in_, out, sin_osc
+from clausters.defs import SynthDef, control, in_, out, sine
 
 freq, out_bus = control("freq", 440.0), control("out", 0.0)
-tone = SynthDef("tone", out(out_bus, sin_osc(freq) * 0.15))
+tone = SynthDef("tone", out(out_bus, sine(freq) * 0.15))
 
 in_bus, level = control("in", 0.0), control("level", 0.4)
 gain = SynthDef("gain", out(0.0, in_(in_bus) * level),

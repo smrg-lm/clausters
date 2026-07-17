@@ -183,7 +183,7 @@ impl BinaryOp {
 pub enum UnaryOp {
     Neg = 0,
     Abs = 1,
-    Sin = 2,
+    Sine = 2,
     Cos = 3,
     Tan = 4,
     Asin = 5,
@@ -245,7 +245,7 @@ impl UnaryOp {
         Some(match v {
             0 => Neg,
             1 => Abs,
-            2 => Sin,
+            2 => Sine,
             3 => Cos,
             4 => Tan,
             5 => Asin,
@@ -290,7 +290,7 @@ impl UnaryOp {
         match self {
             Neg => "neg",
             Abs => "abs",
-            Sin => "sin",
+            Sine => "sin",
             Cos => "cos",
             Tan => "tan",
             Asin => "asin",
@@ -437,7 +437,7 @@ pub fn apply_unary(op: UnaryOp, x: f32) -> f32 {
     match op {
         Neg => -x,
         Abs => x.abs(),
-        Sin => x.sin(),
+        Sine => x.sin(),
         Cos => x.cos(),
         Tan => x.tan(),
         Asin => x.asin(),

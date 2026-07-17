@@ -138,7 +138,7 @@ The blob is a JSON object:
     {"name": "amp",  "default": 0.2}
   ],
   "ugens": [
-    {"kind": "SinOsc", "inputs": [{"control": 0}]},
+    {"kind": "Sine", "inputs": [{"control": 0}]},
     {"kind": "Mul",    "inputs": [{"ugen": 0}, {"control": 1}]},
     {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
   ]
@@ -179,7 +179,7 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 
 | kind | inputs | output |
 |---|---|---|
-| `SinOsc` | freq (Hz) | sine by f64 phase accumulation, starts at phase 0 |
+| `Sine` | freq (Hz) | sine by f64 phase accumulation, starts at phase 0 |
 | `Impulse` | freq (Hz) | single-sample `1.0` every `freq` Hz, `0.0` between; the first output sample is always an impulse, so a `/sched`'d `/s_new` places it on an exact frame; `freq` 0 emits one impulse then silence (f64 phase, drift-free) |
 | `WhiteNoise` | — | uniform white noise in ±1 |
 | `BinaryOpUGen` | a, b | one of a table of binary operators, chosen by the `op` **name** — see the operator note below |
@@ -610,4 +610,4 @@ Reloading is **incremental**: the socket starts serving immediately and the libr
 
 ## Generating defs programmatically
 
-`examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `SinOsc` accumulates phase in f64 and Faust in f32).
+`examples/json_client.py` (Python, stdlib only) builds all three formats with a few helper functions and drives the whole lifecycle over OSC — use it as a reference client. The equivalence of the families is pinned down by the golden tests in `tests/faust_parity.rs`: a UGen graph, the box translation and the signal translation render side by side in one engine and must agree (bit-exactly for stateless arithmetic on shared input, within float tolerance for oscillators, since `Sine` accumulates phase in f64 and Faust in f32).

@@ -33,7 +33,7 @@ GROUP = 100
 def defs() -> dict[str, bytes]:
     """The three defs of the chain, as /d_recv JSON blobs."""
     src = osc.SynthDefBuilder("src")
-    sine = src.add("Mul", src.add("SinOsc", src.control("freq", 330.0)), 0.2)
+    sine = src.add("Mul", src.add("Sine", src.control("freq", 330.0)), 0.2)
     src.add("Out", 16, sine)
 
     fx = osc.SynthDefBuilder("fx")

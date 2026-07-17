@@ -41,7 +41,7 @@ import sys
 import time
 
 from clausters import Session
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import GuiHost, panel, scope, window
 
 
@@ -70,7 +70,7 @@ def main():
         # A sine on audio bus 0 (the hardware out), and bus 0 routed into
         # audio tap 0. The tap is what the oscilloscopes read.
         server.add_synthdef(SynthDef(
-            "tone", out(0.0, sin_osc(control("freq", 220.0)) * control("amp", 0.2))))
+            "tone", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.2))))
         synth = server.synth("tone", {"freq": 220.0})
         server.tap(0, 0)
 

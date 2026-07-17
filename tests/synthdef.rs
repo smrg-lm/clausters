@@ -67,7 +67,7 @@ fn json_def_compiles_and_plays() {
             {"name": "amp",  "default": 0.5}
         ],
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"control": 0}]},
+            {"kind": "Sine", "inputs": [{"control": 0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 0}, {"control": 1}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]
@@ -89,7 +89,7 @@ fn const_input_works() {
     let json = r#"{
         "name": "fixed",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 880.0}]},
+            {"kind": "Sine", "inputs": [{"const": 880.0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 0.3}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]
@@ -105,8 +105,8 @@ fn add_mixes_two_oscillators() {
     let json = r#"{
         "name": "two",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
             {"kind": "Add",    "inputs": [{"ugen": 0}, {"ugen": 1}]},
             {"kind": "Mul",    "inputs": [{"ugen": 2}, {"const": 0.1}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 3}]}
@@ -138,14 +138,14 @@ fn white_noise_is_loud_and_finite() {
 
 #[test]
 fn audible_modulation_fm_style() {
-    // SinOsc modulating another's frequency: freq = 440 + mod*100
+    // Sine modulating another's frequency: freq = 440 + mod*100
     let json = r#"{
         "name": "vibrato",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 5.0}]},
+            {"kind": "Sine", "inputs": [{"const": 5.0}]},
             {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 100.0}]},
             {"kind": "Add",    "inputs": [{"ugen": 1}, {"const": 440.0}]},
-            {"kind": "SinOsc", "inputs": [{"ugen": 2}]},
+            {"kind": "Sine", "inputs": [{"ugen": 2}]},
             {"kind": "Mul",    "inputs": [{"ugen": 3}, {"const": 0.2}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 4}]}
         ]
@@ -221,7 +221,7 @@ fn inctl_reads_a_control_bus() {
 fn def_without_out_is_silent() {
     let json = r#"{
         "name": "mute",
-        "ugens": [{"kind": "SinOsc", "inputs": [{"const": 440.0}]}]
+        "ugens": [{"kind": "Sine", "inputs": [{"const": 440.0}]}]
     }"#;
     let mut synth = synth_from_json(json);
     let out = render(&mut synth, 100);
@@ -248,7 +248,7 @@ fn rejects_forward_wire_reference() {
         "name": "x",
         "ugens": [
             {"kind": "Mul", "inputs": [{"ugen": 1}, {"const": 1.0}]},
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]}
+            {"kind": "Sine", "inputs": [{"const": 440.0}]}
         ]
     }"#;
     let err = compile(spec_from_json(json)).unwrap_err();
@@ -257,14 +257,14 @@ fn rejects_forward_wire_reference() {
 
 #[test]
 fn rejects_bad_control_index() {
-    let json = r#"{"name":"x","ugens":[{"kind":"SinOsc","inputs":[{"control":3}]}]}"#;
+    let json = r#"{"name":"x","ugens":[{"kind":"Sine","inputs":[{"control":3}]}]}"#;
     let err = compile(spec_from_json(json)).unwrap_err();
     assert!(err.contains("out of range"), "{err}");
 }
 
 #[test]
 fn rejects_wrong_arity() {
-    let json = r#"{"name":"x","ugens":[{"kind":"SinOsc","inputs":[]}]}"#;
+    let json = r#"{"name":"x","ugens":[{"kind":"Sine","inputs":[]}]}"#;
     let err = compile(spec_from_json(json)).unwrap_err();
     assert!(err.contains("expected 1 inputs"), "{err}");
 }

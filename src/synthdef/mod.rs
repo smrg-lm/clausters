@@ -17,7 +17,7 @@
 //!     {"name": "amp",  "default": 0.2}
 //!   ],
 //!   "ugens": [
-//!     {"kind": "SinOsc", "inputs": [{"control": 0}]},
+//!     {"kind": "Sine", "inputs": [{"control": 0}]},
 //!     {"kind": "Mul",    "inputs": [{"ugen": 0}, {"control": 1}]},
 //!     {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 1}]}
 //!   ]
@@ -566,7 +566,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
 }
 
 /// The built-in "default" def, registered at startup:
-/// `SinOsc(freq) * EnvGen(gate) * amp` to buses 0 and 1 (the hardware outputs).
+/// `Sine(freq) * EnvGen(gate) * amp` to buses 0 and 1 (the hardware outputs).
 /// Built through the same spec/compile path as client-sent defs.
 ///
 /// The envelope is a gated ASR (equal-power sine ramps: 0.01 s attack, sustain
@@ -629,7 +629,7 @@ pub fn default_spec() -> SynthDefSpec {
         ],
         ugens: vec![
             UGenSpec {
-                kind: "SinOsc".into(),
+                kind: "Sine".into(),
                 inputs: vec![InputSpec::Control(0)],
                 ..Default::default()
             },

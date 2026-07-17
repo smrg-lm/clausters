@@ -32,7 +32,7 @@ import wave
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, TempoClock
-from clausters.defs import Server, SynthDef, control, sin_osc, out
+from clausters.defs import Server, SynthDef, control, sine, out
 from clausters.seq import Pbind, Pseq
 
 FREQS = [262.0, 330.0, 392.0, 523.0]
@@ -40,12 +40,12 @@ SR = 48000.0
 
 
 def py_default(name="py_default") -> SynthDef:
-    """`SinOsc(freq) * amp` to buses 0 and 1 — the client-side twin of the
+    """`Sine(freq) * amp` to buses 0 and 1 — the client-side twin of the
     server's built-in `default`. `freq`/`amp` are named controls (the
     `/s_new`/`/n_set` parameters a `Pbind` drives)."""
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
-    sig = sin_osc(freq) * amp          # `*` composes a Mul UGen
+    sig = sine(freq) * amp          # `*` composes a Mul UGen
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

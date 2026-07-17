@@ -49,7 +49,7 @@ import json
 import os
 import sys
 
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import knob, window
 
 #: The instrument's def name; the GuiDef's ``boot`` /s_new references it, and it
@@ -67,7 +67,7 @@ def drone() -> SynthDef:
     """A quiet stereo sine drone whose pitch is the ``freq`` control (default
     160 Hz) — the boot ``/s_new`` instantiates it and the knob's binding drives
     its ``freq``."""
-    sig = sin_osc(freq=control("freq", 160.0)) * 0.2
+    sig = sine(freq=control("freq", 160.0)) * 0.2
     return SynthDef(SYNTH_NAME, out(0.0, sig), out(1.0, sig))
 
 

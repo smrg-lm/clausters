@@ -8,13 +8,13 @@ quick take never spells out a server, a clock or a GUI host:
 
 ```python
 from clausters import Server, play, plot, render
-from clausters.defs import sin_osc
+from clausters.defs import sine
 
 Server.boot()
-node = play(sin_osc(440.0) * 0.2)       # a bare expression, sounding now
+node = play(sine(440.0) * 0.2)       # a bare expression, sounding now
 node.free()                             # ...and gone
-plot(sin_osc(440.0) * 0.2, dur=0.02)    # the same signal, on screen
-samples, frames = render(sin_osc(440.0) * 0.2, dur=2.0, path="beep.wav")
+plot(sine(440.0) * 0.2, dur=0.02)    # the same signal, on screen
+samples, frames = render(sine(440.0) * 0.2, dur=2.0, path="beep.wav")
 ```
 
 The three verbs carry one semantic each, and the split is deliberate:

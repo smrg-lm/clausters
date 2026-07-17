@@ -29,9 +29,9 @@ a float32 WAV there.
 
 ```python
 from clausters import render
-from clausters.defs import sin_osc
+from clausters.defs import sine
 
-samples, frames = render(sin_osc(440.0) * 0.2, dur=2.0)
+samples, frames = render(sine(440.0) * 0.2, dur=2.0)
 render(Pbind(degree=Pseq([0, 2, 4]), dur=0.5), path="phrase.wav")
 render(my_piece, until=64.0, path="piece.wav")     # an arrangement, bounced
 ```

@@ -40,7 +40,7 @@ import sys
 import time
 
 from clausters import Session
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import GuiHost, panel, phasescope, spectrum, window
 
 
@@ -53,8 +53,8 @@ def stereo_def() -> SynthDef:
     goes 0 -> 90 -> 180 degrees."""
     freq = control("freq", 220.0)
     amp = control("amp", 0.2)
-    left = sin_osc(freq)
-    side = sin_osc(freq * 1.5)  # a fifth up: decorrelated from `left`
+    left = sine(freq)
+    side = sine(freq * 1.5)  # a fifth up: decorrelated from `left`
     right = left * control("wm", 1.0) + side * control("ws", 0.0)
     return SynthDef("stereo_image", out(0.0, left * amp), out(1.0, right * amp))
 

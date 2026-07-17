@@ -30,7 +30,7 @@ then run one or more demos (default: status):
          one-block feedback delay makes a one-channel loop ring at
          sampleRate/64 (≈ 750 Hz at 48 kHz).
 `demand`  a demand-rate step sequencer (S1): an Impulse-driven `Demand` pulls
-         note frequencies from a `Dseq` (`"rate": "dr"`) into a SinOsc.
+         note frequencies from a `Dseq` (`"rate": "dr"`) into a Sine.
 `signal` builds Faust defs with the **Signal API** (`{"signals": […]}`): a
          sine from an explicit `recursion`/`self` phasor, and a one-pole
          lowpass on noise — explicit sample-accurate feedback (needs the
@@ -188,10 +188,10 @@ class SynthDefBuilder:
 
 
 def demo_ugen(client: Client):
-    """Amplitude-modulated noise: WhiteNoise · (SinOsc(rate)·0.5 + 0.5) · amp."""
+    """Amplitude-modulated noise: WhiteNoise · (Sine(rate)·0.5 + 0.5) · amp."""
     d = SynthDefBuilder("amnoise")
     rate, amp = d.control("rate", 2.0), d.control("amp", 0.2)
-    lfo = d.add("Mul", d.add("Add", d.add("Mul", d.add("SinOsc", rate), 0.5), 0.5), amp)
+    lfo = d.add("Mul", d.add("Add", d.add("Mul", d.add("Sine", rate), 0.5), 0.5), amp)
     signal = d.add("Mul", d.add("WhiteNoise"), lfo)
     d.add("Out", 0, signal)
     d.add("Out", 1, signal)
@@ -426,7 +426,7 @@ def demo_bgen(client: Client):
     client.reply()
     shp = SynthDefBuilder("wtshaper")
     drive = shp.control("drive", 0.9)
-    tone = shp.add("Mul", shp.add("SinOsc", 220.0), drive)
+    tone = shp.add("Mul", shp.add("Sine", 220.0), drive)
     shp.add("Out", 0, shp.add("Mul", shp.add("Shaper", 21, tone), 0.2))
     client.send("/d_recv", shp.blob())
     client.reply()
@@ -449,9 +449,9 @@ def demo_disk(client: Client):
     time, so the file can be arbitrarily long."""
     path = os.path.join("/tmp", f"clausters_diskdemo_{os.getpid()}.wav")
 
-    # 1. DiskOut: SinOsc(440)*0.2 -> mono float WAV. No Out, so it only records.
+    # 1. DiskOut: Sine(440)*0.2 -> mono float WAV. No Out, so it only records.
     rec = SynthDefBuilder("drec")
-    sig = rec.add("Mul", rec.add("SinOsc", 440.0), 0.2)
+    sig = rec.add("Mul", rec.add("Sine", 440.0), 0.2)
     rec.add("DiskOut", sig, path=path, format="float")
     client.send("/d_recv", rec.blob())
     client.reply()
@@ -590,7 +590,7 @@ def demo_demand(client: Client):
     """A demand-rate melody (S1). A `Dseq` holds a list of note frequencies and
     yields the next one only when *pulled*; a `Demand` driver pulls it on each
     tick of a 4 Hz `Impulse`, holding the frequency between ticks. That held
-    (control-like) signal drives a `SinOsc`, so the sine hops through the
+    (control-like) signal drives a `Sine`, so the sine hops through the
     sequence — a step sequencer with no per-note `/s_new`. The `"rate": "dr"`
     on the `Dseq` marks it demand-rate; the compiler then only lets it feed the
     `Demand`'s source slot. `repeats` 0 loops the list forever."""
@@ -600,7 +600,7 @@ def demo_demand(client: Client):
         "Dseq", 0.0, 330.0, 392.0, 440.0, 587.0, 440.0, 392.0, rate="dr"
     )  # repeats=0 -> loop
     freq = d.add("Demand", trig, 0.0, seq)  # held note frequency
-    osc = d.add("Mul", d.add("SinOsc", freq), 0.2)
+    osc = d.add("Mul", d.add("Sine", freq), 0.2)
     d.add("Out", 0, osc)
     d.add("Out", 1, osc)
 

@@ -15,7 +15,7 @@ the event's length is the voice's length:
 
 ```python
 from clausters.defs import (DoneAction, Env, SynthDef, control, env_gen,
-                            in_ctl, out, sin_osc)
+                            in_ctl, out, sine)
 
 def drone(name: str = "drone") -> SynthDef:
     """A sine whose frequency is read from a control bus, held by a gate and
@@ -25,7 +25,7 @@ def drone(name: str = "drone") -> SynthDef:
     gate = control("gate", 1.0, "kr")
     shape = env_gen(Env.asr(attack=0.05, release=0.4), gate=gate,
                     done_action=DoneAction.FREE_SELF)
-    sig = sin_osc(in_ctl(bus)) * shape * amp
+    sig = sine(in_ctl(bus)) * shape * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 server.add_synthdef(drone())

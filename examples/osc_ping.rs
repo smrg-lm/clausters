@@ -84,10 +84,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "name": "vibrato",
                     "controls": [{"name": "freq", "default": 440.0}],
                     "ugens": [
-                        {"kind": "SinOsc", "inputs": [{"const": 5.0}]},
+                        {"kind": "Sine", "inputs": [{"const": 5.0}]},
                         {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 25.0}]},
                         {"kind": "Add",    "inputs": [{"ugen": 1}, {"control": 0}]},
-                        {"kind": "SinOsc", "inputs": [{"ugen": 2}]},
+                        {"kind": "Sine", "inputs": [{"ugen": 2}]},
                         {"kind": "Mul",    "inputs": [{"ugen": 3}, {"const": 0.2}]},
                         {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 4}]},
                         {"kind": "Out",    "inputs": [{"const": 1.0}, {"ugen": 4}]}
@@ -144,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let lfo = r#"{
                     "name": "lfo",
                     "ugens": [
-                        {"kind": "SinOsc", "inputs": [{"const": 3.0}]},
+                        {"kind": "Sine", "inputs": [{"const": 3.0}]},
                         {"kind": "Mul",    "inputs": [{"ugen": 0}, {"const": 120.0}]},
                         {"kind": "Add",    "inputs": [{"ugen": 1}, {"const": 480.0}]},
                         {"kind": "Out",    "inputs": [{"const": 20.0}, {"ugen": 2}]}

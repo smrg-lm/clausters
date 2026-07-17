@@ -281,12 +281,12 @@ fn d_graph_rejects_bad_surface_and_bus_refs() {
 
 // ---- per-voice partition (/graph_voice) ----
 
-/// A per-voice oscillator: writes `SinOsc(freq) * level` to the bus `out`.
+/// A per-voice oscillator: writes `Sine(freq) * level` to the bus `out`.
 const VTONE: &str = r#"{
     "name": "vtone",
     "controls": [{"name": "out", "default": 0.0}, {"name": "freq", "default": 440.0}, {"name": "level", "default": 0.2}],
     "ugens": [
-        {"kind": "SinOsc", "inputs": [{"control": 1}]},
+        {"kind": "Sine", "inputs": [{"control": 1}]},
         {"kind": "Mul", "inputs": [{"ugen": 0}, {"control": 2}]},
         {"kind": "Out", "inputs": [{"control": 0}, {"ugen": 1}]}
     ]

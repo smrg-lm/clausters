@@ -16,7 +16,7 @@ Like SuperCollider's ``play`` (and sc3's), it dispatches by kind:
   `clausters.defs.GraphDef`) -> sent and instanced on the server; an
   expression is first wrapped in an ephemeral def
   (`clausters.defs.asdef.as_def` adds the ``out`` when it lacks one), so
-  ``play(sin_osc(440))`` just sounds. Returns the node handle — it plays
+  ``play(sine(440))`` just sounds. Returns the node handle — it plays
   until you free it;
 - a `clausters.seq.timeline.Timeline` -> a `clausters.seq.timeline.Playhead`
   over the ambient clock and server;

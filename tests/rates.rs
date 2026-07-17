@@ -50,7 +50,7 @@ fn ar_output_varies_within_a_block() {
     let json = r#"{
         "name": "ar",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 2000.0}]},
+            {"kind": "Sine", "inputs": [{"const": 2000.0}]},
             {"kind": "Out",    "inputs": [{"const": 0.0}, {"ugen": 0}]}
         ]
     }"#;
@@ -71,7 +71,7 @@ fn kr_output_is_constant_within_each_block() {
     let json = r#"{
         "name": "kr",
         "ugens": [
-            {"kind": "SinOsc", "inputs": [{"const": 440.0}]},
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
             {"kind": "Mul", "rate": "kr", "inputs": [{"ugen": 0}, {"const": 1.0}]},
             {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
         ]
@@ -189,7 +189,7 @@ fn dr_demand_reset_restarts_the_stream() {
 
 #[test]
 fn rejects_unknown_rate() {
-    let json = r#"{"name":"x","ugens":[{"kind":"SinOsc","rate":"xr","inputs":[{"const":1.0}]}]}"#;
+    let json = r#"{"name":"x","ugens":[{"kind":"Sine","rate":"xr","inputs":[{"const":1.0}]}]}"#;
     assert!(compile_err(json).contains("unknown rate"));
 }
 
@@ -197,7 +197,7 @@ fn rejects_unknown_rate() {
 fn rejects_rate_not_allowed_for_kind() {
     // Out is audio-rate only.
     let json = r#"{"name":"x","ugens":[
-        {"kind":"SinOsc","inputs":[{"const":1.0}]},
+        {"kind":"Sine","inputs":[{"const":1.0}]},
         {"kind":"Out","rate":"kr","inputs":[{"const":0.0},{"ugen":0}]}
     ]}"#;
     assert!(compile_err(json).contains("not allowed"));

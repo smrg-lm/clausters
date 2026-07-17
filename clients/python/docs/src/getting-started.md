@@ -58,16 +58,16 @@ The shortest path to sound is two lines — boot a server and play something:
 
 ```python
 from clausters import Server, Event, play
-from clausters.defs import sin_osc
+from clausters.defs import sine
 
 Server.boot()          # launches a server and becomes the default session
 play(Event(degree=0))  # one note, now — or: Event(degree=0).play()
 
-node = play(sin_osc(440.0) * 0.2)   # a bare signal, sounding now...
+node = play(sine(440.0) * 0.2)   # a bare signal, sounding now...
 node.free()                         # ...until you free it
 ```
 
-`Server.boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `Pbind`, a routine, a bare signal expression like the `sin_osc` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
+`Server.boot()` adopts the server it starts as the **default session**, so a bare `Event().play()` (or the free-standing `play`, which plays anything — an event, a `Pbind`, a routine, a bare signal expression like the `sine` above; see [The ambient verbs](verbs.md)) finds it with no wiring. A note played outside a clock sounds immediately and frees itself after its sustain. That is all you need for a quick sound; a `Session` (below) is for when you want to name and isolate an environment — several at once, offline next to live.
 
 Start a session. `Session.live()` attaches to a running server, or starts one for you if none is up:
 
@@ -81,9 +81,9 @@ server = session.server               # the handle you send commands to
 An instrument is a **def** — a named graph the server compiles once and instantiates many times. Build one as a UGen graph and send it:
 
 ```python
-from clausters.defs import SynthDef, control, sin_osc, out
+from clausters.defs import SynthDef, control, sine, out
 
-sdef = SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0)) * control("amp", 0.2)))
+sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
 server.add_synthdef(sdef)             # sends /d_recv and waits for the server's /done
 ```
 

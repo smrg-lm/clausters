@@ -7,11 +7,11 @@ the lowercase callables in `clausters.defs.ugens`), walks the graph and
 serializes the ``{"name", "controls", "ugens"}`` JSON the server compiles.
 
 ```python
-from clausters.defs import SynthDef, control, sin_osc, out
+from clausters.defs import SynthDef, control, sine, out
 
 freq = control("freq", 440.0)
 amp = control("amp", 0.2)
-sig = sin_osc(freq) * amp
+sig = sine(freq) * amp
 sdef = SynthDef("beep", out(0.0, sig), out(1.0, sig))   # stereo
 server.add_synthdef(sdef)                                # /d_recv
 ```

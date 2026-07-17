@@ -649,8 +649,8 @@ release rules live in `CLAUDE.md` ("Versioning"); this entry is the *why*.
 Two out-of-the-box defaults, chosen for the common case of a **local** session:
 
 - **The built-in `default` synth carries a gated envelope.** It was a bare
-  `SinOsc(freq) * amp`, which clicked at note-on (level jumps from 0) and at
-  note-off (the node is freed mid-cycle). It is now `SinOsc * EnvGen * amp` with
+  `Sine(freq) * amp`, which clicked at note-on (level jumps from 0) and at
+  note-off (the node is freed mid-cycle). It is now `Sine * EnvGen * amp` with
   a gated ASR — equal-power sine ramps (0.01 s attack, 0.3 s release),
   `doneAction = FREE_SELF` — the same shape as SuperCollider's `\default`. Because
   a click-free note-off *requires* a release ramp, and a direct `/n_free` cuts
@@ -759,3 +759,26 @@ branch of the promoted verb. The coercions the verbs share live once:
 `defs.as_def` (a bare `Ugen`/`Signal`/`Box` into an ephemeral def, used by
 `play`, `plot` and `render`) and `render.bounce_def` (a def's offline samples,
 drawn by `plot`, delivered by `render`).
+
+## `SinOsc` is renamed `Sine`: the name follows the implementation
+
+The first oscillator kept scsynth's name, `SinOsc`, from the M0 walking
+skeleton onward. But scsynth's `SinOsc` is a wavetable oscillator (8192-point
+table, linear interpolation) — ours is direct phase accumulation calling
+`sin()` per sample with the phase held in `f64`, which is *more* precise
+(no interpolation noise, tuning stable over long sessions) on hardware where
+a `sin()` per sample stopped being the bottleneck decades ago. Once the real
+wavetable family landed (`Osc`/`OscN`/`VOsc` + `Shaper`, reading user-visible
+buffers), the borrowed name claimed an implementation the UGen does not have.
+
+**Decision:** the kind is `Sine` (wire), `Sine` (Rust), `sine` (Python) —
+named for the signal it produces, not for a lookup strategy it does not use.
+The bare `Sin`/`sin` was rejected: `sin` is already the unary math operator
+(`UnaryOpUGen`'s selector, `.sin()` on `Ugen`, `signals.sin`/`boxes.sin`),
+and an oscillator and a waveshaper must not share a name. Pre-1.0 wire
+rename, no compatibility alias.
+
+**Consequence:** the wire vocabulary reserves the `*Osc` spelling for the
+table-reading family, and a future table-based sine (if massive-additive
+profiling ever justifies one) can take a new name instead of redefining this
+one.

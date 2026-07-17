@@ -16,7 +16,7 @@ that tree to emit the spec. Nothing is global, so several defs can be built
 concurrently.
 
 **The server's UGen set is deliberately focused**: oscillators/sources
-(``sin_osc``, ``impulse``, ``white_noise``, `rand`), bus and buffer I/O
+(``sine``, ``impulse``, ``white_noise``, `rand`), bus and buffer I/O
 (``in_``/``in_ctl``, ``out``/``replace_out``, ``play_buf``/``buf_rd``),
 feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
 ``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the fused
@@ -123,7 +123,7 @@ class Ugen(_Node):
 
     def at_rate(self, rate: str) -> "Ugen":
         """Set this UGen's output rate (``"ir"``/``"kr"``/``"ar"``/``"dr"``) and
-        return it, e.g. ``sin_osc(5.0).at_rate("kr")`` for a control-rate LFO."""
+        return it, e.g. ``sine(5.0).at_rate("kr")`` for a control-rate LFO."""
         self.rate = str(rate)
         return self
 
@@ -186,9 +186,9 @@ def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
 # Input order matches the server's registry; see docs/schemas.md.
 
 
-def sin_osc(freq=440.0) -> Ugen:
+def sine(freq=440.0) -> Ugen:
     """Sine by f64 phase accumulation, starting at phase 0."""
-    return Ugen("SinOsc", [freq])
+    return Ugen("Sine", [freq])
 
 
 def impulse(freq=1.0) -> Ugen:

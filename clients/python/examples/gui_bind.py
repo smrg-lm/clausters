@@ -46,7 +46,7 @@ import sys
 import time
 
 from clausters import Session
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 from clausters.gui import GuiHost, knob, window
 
 
@@ -61,7 +61,7 @@ def scene() -> dict:
 def beep() -> SynthDef:
     """A quiet stereo sine whose frequency is the ``freq`` control (default
     220 Hz) — the binding target ``/n_set <node> freq <value>`` drives."""
-    sig = sin_osc(freq=control("freq", 220.0)) * 0.2
+    sig = sine(freq=control("freq", 220.0)) * 0.2
     return SynthDef("gui_bind_beep", out(0.0, sig), out(1.0, sig))
 
 

@@ -113,7 +113,7 @@ impl TestServer {
     }
 }
 
-const VTONE: &str = r#"{"name":"vtone","controls":[{"name":"out","default":0.0},{"name":"freq","default":440.0},{"name":"level","default":0.2}],"ugens":[{"kind":"SinOsc","inputs":[{"control":1}]},{"kind":"Mul","inputs":[{"ugen":0},{"control":2}]},{"kind":"Out","inputs":[{"control":0},{"ugen":1}]}]}"#;
+const VTONE: &str = r#"{"name":"vtone","controls":[{"name":"out","default":0.0},{"name":"freq","default":440.0},{"name":"level","default":0.2}],"ugens":[{"kind":"Sine","inputs":[{"control":1}]},{"kind":"Mul","inputs":[{"ugen":0},{"control":2}]},{"kind":"Out","inputs":[{"control":0},{"ugen":1}]}]}"#;
 const VGAIN: &str = r#"{"name":"vgain","controls":[{"name":"in","default":0.0},{"name":"gain","default":0.3}],"ugens":[{"kind":"In","inputs":[{"control":0}]},{"kind":"Mul","inputs":[{"ugen":0},{"control":1}]},{"kind":"Out","inputs":[{"const":0.0},{"ugen":0}]}]}"#;
 const POLY: &str = r#"{"name":"poly","buses":[{"name":"mix","rate":"audio"}],"members":[{"def":"vgain","controls":{"in":"mix"}},{"def":"vtone","controls":{"out":"mix"},"voice":true}],"surface":{"gain":[{"member":0,"control":"gain"}],"freq":[{"member":1,"control":"freq"}],"amp":[{"member":1,"control":"level"}]},"defaults":{"gain":0.3,"amp":0.2}}"#;
 

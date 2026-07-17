@@ -37,7 +37,7 @@ import sys
 import time
 
 from clausters import Session
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 from clausters.defs.node import AddAction
 from clausters.gui import GuiHost, nodetree, window
 
@@ -54,7 +54,7 @@ def main():
     with Session.live() as session:  # UDP to 127.0.0.1:57110
         server = session.server
         server.add_synthdef(SynthDef(
-            "beep", out(0.0, sin_osc(control("freq", 220.0)) * control("amp", 0.1))))
+            "beep", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.1))))
         group = server.group()
         sweeper = server.synth("beep", {"freq": 220.0}, target=group.id, action=AddAction.TAIL)
         server.synth("beep", {"freq": 330.0}, target=group.id, action=AddAction.TAIL)

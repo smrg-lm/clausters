@@ -25,7 +25,7 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscTcpInterface
-from clausters.defs import Server, SynthDef, control, sin_osc, out
+from clausters.defs import Server, SynthDef, control, sine, out
 
 
 def main():
@@ -39,7 +39,7 @@ def main():
         # Define a synth over TCP and play it for a moment.
         freq = control("freq", 440.0)
         amp = control("amp", 0.2)
-        sig = sin_osc(freq) * amp
+        sig = sine(freq) * amp
         name = server.add_synthdef(SynthDef("tcp_beep", out(0.0, sig), out(1.0, sig)))
         print("added synthdef:", name)
 

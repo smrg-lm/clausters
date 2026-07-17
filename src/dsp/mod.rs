@@ -47,7 +47,7 @@ pub mod reply;
 #[cfg(feature = "synth")]
 pub mod scalar;
 #[cfg(feature = "synth")]
-pub mod sinosc;
+pub mod sine;
 #[cfg(feature = "synth")]
 pub mod spectral;
 #[cfg(feature = "synth")]

@@ -21,7 +21,7 @@ import wave
 
 from clausters import Session
 from clausters.base import Routine
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 
 SR = 48000.0
 
@@ -32,12 +32,12 @@ def maths_lead(name: str = "maths_lead") -> SynthDef:
     amp = control("amp", 0.3)
 
     freq = note.midicps()                       # UnaryOpUGen: MIDI note -> Hz
-    vib = sin_osc(5.0) * (freq * 0.01)          # 1% vibrato (Mul, then +)
-    tone = sin_osc(freq + vib)
+    vib = sine(5.0) * (freq * 0.01)          # 1% vibrato (Mul, then +)
+    tone = sine(freq + vib)
 
     shaped = tone.distort()                      # UnaryOpUGen: soft saturation
     # A unipolar LFO clipped to 0.8 -> a gentle tremolo (>=, clip2 both compose).
-    trem = (sin_osc(3.0) * 0.5 + 0.5).clip2(0.8)
+    trem = (sine(3.0) * 0.5 + 0.5).clip2(0.8)
 
     sig = shaped * trem * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))

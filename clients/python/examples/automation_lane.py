@@ -32,7 +32,7 @@ import wave
 
 from clausters import Session
 from clausters.base.stream import Routine
-from clausters.defs import SynthDef, control, out, sin_osc
+from clausters.defs import SynthDef, control, out, sine
 from clausters.seq import Automation
 
 SR = 48000
@@ -44,7 +44,7 @@ def tone(name: str = "tone") -> SynthDef:
     can be ``/n_map``-ed to a control bus and tracked per block."""
     freq = control("freq", 220.0, "kr")
     amp = control("amp", 0.2, "kr")
-    sig = sin_osc(freq) * amp
+    sig = sine(freq) * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

@@ -45,7 +45,7 @@ def _repo_root():
 REPO = _repo_root()
 sys.path.insert(0, os.path.join(REPO, "clients", "python"))
 
-from clausters.defs import Server, ServerOptions, SynthDef, control, out, sin_osc
+from clausters.defs import Server, ServerOptions, SynthDef, control, out, sine
 from clausters.defs.node import AddAction
 
 BIN = os.environ.get("CLAUSTERS_BIN", os.path.join(REPO, "target", "release", "clausters"))
@@ -116,7 +116,7 @@ show_tree("empty tree (just the root group 0)")
 # `/done` (it is an async command).
 
 # %%
-beep = SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0)) * control("amp", 0.2)))
+beep = SynthDef("beep", out(0.0, sine(control("freq", 440.0)) * control("amp", 0.2)))
 server.add_synthdef(beep)
 print("loaded def 'beep'; status:", server.status())   # [..., num_defs, ...]
 

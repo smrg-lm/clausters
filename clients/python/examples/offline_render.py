@@ -12,7 +12,7 @@ audio device and no ``target/`` directory in sight::
     python clients/python/examples/offline_render.py out.wav
 
 It renders a short arpeggio through the embedded NRT renderer and writes a WAV.
-Because the synthesis (native ``SinOsc``) and the offline render both run inside
+Because the synthesis (native ``Sine``) and the offline render both run inside
 the bundled libraries, the result is bit-identical to the live server's.
 """
 

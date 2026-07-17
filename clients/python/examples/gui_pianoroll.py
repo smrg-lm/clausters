@@ -55,7 +55,7 @@ import sys
 import time
 
 from clausters import Session
-from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sin_osc
+from clausters.defs import DoneAction, Env, SynthDef, control, env_gen, out, sine
 from clausters.gui import button, label, pianoroll, window
 from clausters.seq.pattern import Pbind, Pseq
 
@@ -90,7 +90,7 @@ def voice() -> SynthDef:
     freq = control("freq", 440.0)
     amp = control("amp", 0.2)
     env = env_gen(Env.perc(0.005, 0.35), done_action=DoneAction.FREE_SELF)
-    sig = sin_osc(freq) * env * amp
+    sig = sine(freq) * env * amp
     return SynthDef("gui_pr_voice", out(0.0, sig), out(1.0, sig))
 
 

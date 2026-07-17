@@ -102,11 +102,11 @@ impl Options {
 
 /// The stress def: `sines` detuned sinusoids around the `freq` control,
 /// summed and scaled to `amp`, written to bus 0. Per sinusoid past the first
-/// that is one `Mul` (the detune ratio), one `SinOsc` and one `Add`.
+/// that is one `Mul` (the detune ratio), one `Sine` and one `Add`.
 fn stress_def_json(sines: usize, amp: f32) -> String {
     let mut ugens = String::new();
-    // ugen 0: SinOsc(freq)
-    ugens.push_str(r#"{"kind": "SinOsc", "inputs": [{"control": 0}]}"#);
+    // ugen 0: Sine(freq)
+    ugens.push_str(r#"{"kind": "Sine", "inputs": [{"control": 0}]}"#);
     let mut acc = 0usize; // index of the running sum
     let mut next = 1usize;
     for k in 1..sines {
@@ -115,7 +115,7 @@ fn stress_def_json(sines: usize, amp: f32) -> String {
             r#", {{"kind": "Mul", "inputs": [{{"control": 0}}, {{"const": {ratio}}}]}}"#
         ));
         ugens.push_str(&format!(
-            r#", {{"kind": "SinOsc", "inputs": [{{"ugen": {next}}}]}}"#
+            r#", {{"kind": "Sine", "inputs": [{{"ugen": {next}}}]}}"#
         ));
         ugens.push_str(&format!(
             r#", {{"kind": "Add", "inputs": [{{"ugen": {acc}}}, {{"ugen": {}}}]}}"#,

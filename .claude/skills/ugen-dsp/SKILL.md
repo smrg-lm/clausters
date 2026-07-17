@@ -25,7 +25,7 @@ must read their input per sample.
 
 ## Oscillators
 
-### SinOsc — accumulated phase
+### Sine — accumulated phase
 
 Accumulating phase in `f64` and calling `sin()` is correct and sufficient for v1:
 

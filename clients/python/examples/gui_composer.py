@@ -50,7 +50,7 @@ from clausters.defs import (
     in_ctl,
     out,
     play_buf,
-    sin_osc,
+    sine,
 )
 from clausters.gui import Editor, button, panel
 from clausters.form import Buffer, Element, Event, Group, Sequence, Track
@@ -171,7 +171,7 @@ def drone(name: str = "drone") -> SynthDef:
     gate = control("gate", 1.0, "kr")
     shape = env_gen(Env.asr(attack=0.05, release=0.4), gate=gate,
                     done_action=DoneAction.FREE_SELF)
-    sig = sin_osc(in_ctl(bus)) * shape * amp
+    sig = sine(in_ctl(bus)) * shape * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

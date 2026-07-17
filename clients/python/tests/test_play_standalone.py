@@ -8,7 +8,7 @@ import pytest
 
 from clausters import Event, play, main, default_session
 from clausters.defs import (
-    FaustDef, Server, SynthDef, as_def, boxes, out, send_trig, signals, sin_osc,
+    FaustDef, Server, SynthDef, as_def, boxes, out, send_trig, signals, sine,
 )
 from clausters.defs.node import Group, Synth
 from clausters.base._oscinterface import OscNrtInterface
@@ -112,7 +112,7 @@ def test_free_play_accepts_a_generator(clean_default):
 def test_free_play_sounds_a_bare_ugen_expression(clean_default):
     server = _nrt_server()
     main.server = server
-    node = play(sin_osc(440.0) * 0.1)
+    node = play(sine(440.0) * 0.1)
     assert isinstance(node, Synth)
     # the ephemeral def (/d_recv at 0) plus its /s_new
     assert len(server.interface.score.bundles) == 2
@@ -123,7 +123,7 @@ def test_free_play_instances_a_def_with_controls(clean_default):
     main.server = server
     from clausters.defs import control
 
-    sdef = SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0))))
+    sdef = SynthDef("beep", out(0.0, sine(control("freq", 440.0))))
     node = play(sdef, controls={"freq": 220.0})
     assert isinstance(node, Synth) and node.defname == "beep"
 
@@ -235,7 +235,7 @@ def _addrs(server) -> list:
 def test_node_handles_free_themselves(clean_default):
     server = _nrt_server()
     main.server = server
-    node = play(sin_osc(440.0) * 0.1)       # a Synth handle, server attached
+    node = play(sine(440.0) * 0.1)       # a Synth handle, server attached
     assert node.server is server
     node.free()
     assert _addrs(server)[-1] == "/n_free"
@@ -289,20 +289,20 @@ def test_automation_stops_early(clean_default):
 # ---- as_def: the shared expression -> def coercion ----
 
 def test_as_def_wraps_a_bare_ugen_in_out():
-    sdef = as_def(sin_osc(440.0))
+    sdef = as_def(sine(440.0))
     assert isinstance(sdef, SynthDef)
     assert sdef.outputs[0].kind == "Out"
 
 
 def test_as_def_keeps_an_output_or_side_effect_root():
-    assert as_def(out(1.0, sin_osc(440.0))).outputs[0].kind == "Out"
-    assert as_def(send_trig(sin_osc(1.0))).outputs[0].kind == "SendTrig"
+    assert as_def(out(1.0, sine(440.0))).outputs[0].kind == "Out"
+    assert as_def(send_trig(sine(1.0))).outputs[0].kind == "SendTrig"
 
 
 def test_as_def_passes_defs_through_and_autonames_expressions():
-    sdef = SynthDef("named", out(0.0, sin_osc(440.0)))
+    sdef = SynthDef("named", out(0.0, sine(440.0)))
     assert as_def(sdef) is sdef
-    a, b = as_def(sin_osc(1.0)), as_def(sin_osc(2.0))
+    a, b = as_def(sine(1.0)), as_def(sine(2.0))
     assert a.name != b.name
 
 

@@ -32,7 +32,7 @@ import wave
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
 from clausters.base import OscNrtInterface, Routine, TempoClock
-from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sin_osc
+from clausters.defs import GraphDef, Server, SynthDef, control, in_, out, sine
 
 SR = 48000.0
 
@@ -42,7 +42,7 @@ def member_defs():
     the bus named by its `out` control; `gain` reads its `in` bus, scales it,
     and writes to the hardware buses 0/1."""
     freq, out_bus = control("freq", 440.0), control("out", 0.0)
-    tone = SynthDef("tone", out(out_bus, sin_osc(freq) * 0.15))
+    tone = SynthDef("tone", out(out_bus, sine(freq) * 0.15))
 
     in_bus, g = control("in", 0.0), control("gain", 0.4)
     sig = in_(in_bus) * g

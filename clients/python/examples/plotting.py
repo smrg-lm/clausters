@@ -31,7 +31,7 @@ from clausters.defs import (
     control,
     env_gen,
     out,
-    sin_osc,
+    sine,
 )
 from clausters.seq import Pseq, Pwhite
 
@@ -44,7 +44,7 @@ def ping(name: str = "ping") -> SynthDef:
     freq = control("freq", 660.0)
     env = env_gen(Env.perc(attack=0.01, release=0.4),
                   done_action=DoneAction.FREE_SELF)
-    sig = sin_osc(freq) * env * 0.4
+    sig = sine(freq) * env * 0.4
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

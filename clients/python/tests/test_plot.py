@@ -147,10 +147,10 @@ def test_plot_spectrum_props_reach_the_widget():
 
 def test_plot_renders_a_synthdef_offline():
     _embed_or_skip()
-    from clausters.defs import SynthDef, control, out, sin_osc
+    from clausters.defs import SynthDef, control, out, sine
 
     freq = control("freq", 440.0)
-    sd = SynthDef("plot_probe", out(0.0, sin_osc(freq) * 0.5))
+    sd = SynthDef("plot_probe", out(0.0, sine(freq) * 0.5))
     host = FakeHost()
     win = plot(sd, dur=0.25, sample_rate=SR, channels=1, host=host)
     assert isinstance(win, PlotWindow)
@@ -177,10 +177,10 @@ def test_plot_renders_an_env_through_the_engine():
 
 def test_plot_renders_a_bare_ugen_expression():
     _embed_or_skip()
-    from clausters.defs import sin_osc
+    from clausters.defs import sine
 
     host = FakeHost()
-    win = plot(sin_osc(440.0) * 0.5, dur=0.25, sample_rate=SR, host=host)
+    win = plot(sine(440.0) * 0.5, dur=0.25, sample_rate=SR, host=host)
     assert isinstance(win, PlotWindow)
     widget = _plot_widget(host.opened[0])
     # A bare expression plots as wide as it writes: one lane, real audio.
@@ -208,10 +208,10 @@ def test_plot_renders_an_automation_curve():
 
 def test_plot_renders_a_graphdef_offline():
     _embed_or_skip()
-    from clausters.defs import GraphDef, SynthDef, control, out, sin_osc
+    from clausters.defs import GraphDef, SynthDef, control, out, sine
 
     freq = control("freq", 330.0)
-    member = SynthDef("plot_gsrc", out(0.0, sin_osc(freq) * 0.25))
+    member = SynthDef("plot_gsrc", out(0.0, sine(freq) * 0.25))
     g = GraphDef("plot_chain")
     g.add("plot_gsrc")
     host = FakeHost()

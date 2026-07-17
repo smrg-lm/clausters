@@ -30,7 +30,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "clients", "python"))
 
-from clausters.defs import Server, ServerOptions, SynthDef, control, out, sin_osc
+from clausters.defs import Server, ServerOptions, SynthDef, control, out, sine
 from clausters.defs.node import AddAction
 
 REPO = os.path.join(os.path.dirname(__file__), "..")
@@ -60,7 +60,7 @@ def connect(timeout: float = 8.0) -> Server:
 def build_tree(server: Server):
     """A group holding two synths; the second's freq is mapped to a control
     bus, so it shows up as a `/n_map` in the node detail."""
-    server.add_synthdef(SynthDef("beep", out(0.0, sin_osc(control("freq", 440.0))
+    server.add_synthdef(SynthDef("beep", out(0.0, sine(control("freq", 440.0))
                                               * control("amp", 0.2))))
     group = server.group()
     a = server.synth("beep", {"freq": 220.0}, target=group.id, action=AddAction.TAIL)

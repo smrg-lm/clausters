@@ -24,7 +24,7 @@ import tempfile
 import time
 
 from clausters import Event, play, render
-from clausters.defs import SynthDef, boxes as box, control, out, sin_osc
+from clausters.defs import SynthDef, boxes as box, control, out, sine
 from clausters.defs.ugens import Env
 from clausters.seq import Pbind, Pseq
 from clausters.seq.automation import Automation
@@ -63,7 +63,7 @@ time.sleep(PAUSE + 1.0)
 # `out`), sends it and instances it. Everything play returns knows how to end
 # what it started — a Synth handle frees itself.
 print("a bare UGen expression, sounding until freed")
-node = play(sin_osc(330.0) * 0.15)
+node = play(sine(330.0) * 0.15)
 time.sleep(PAUSE)
 node.free()
 
@@ -78,7 +78,7 @@ node.free()
 # so a note with an extreme sustain can be cut (.free()) or ended musically
 # (.release()) before its time.
 print("a named def with controls; a long note, released early")
-beep = SynthDef("verbs_beep", out(0.0, sin_osc(control("freq", 440.0)) * 0.15))
+beep = SynthDef("verbs_beep", out(0.0, sine(control("freq", 440.0)) * 0.15))
 node = play(beep, controls={"freq": 660.0})
 time.sleep(PAUSE)
 node.free()
@@ -91,7 +91,7 @@ long_note.free()                              # ...cut now
 # the last value. Outside a clock the curve's beats read as seconds; the
 # returned automation stops the sweep early (the control holds where it was).
 print("an automation sweeping a sounding node's freq, interrupted mid-sweep")
-node = play(sin_osc(control("freq", 440.0)) * 0.15)
+node = play(sine(control("freq", 440.0)) * 0.15)
 sweep = play(Automation(Env([440.0, 1760.0, 440.0], [1.5, 1.5]),
                         target=(node, "freq")))
 time.sleep(1.5)

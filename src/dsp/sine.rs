@@ -5,23 +5,23 @@ use crate::dsp::{ProcessCtx, UGen, at};
 /// Sine oscillator by phase accumulation. Input 0: frequency in Hz (signal or
 /// constant). The phase is kept in `f64` so the tuning does not degrade over
 /// long sessions.
-pub struct SinOsc {
+pub struct Sine {
     phase: f64,
 }
 
-impl SinOsc {
+impl Sine {
     pub fn new() -> Self {
         Self { phase: 0.0 }
     }
 }
 
-impl Default for SinOsc {
+impl Default for Sine {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl UGen for SinOsc {
+impl UGen for Sine {
     fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let freq = inputs[0];
         let sr = ctx.sample_rate as f64;

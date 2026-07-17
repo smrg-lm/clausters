@@ -33,7 +33,7 @@ from clausters.defs import (
     control,
     env_gen,
     out,
-    sin_osc,
+    sine,
 )
 from clausters.seq import Pbind, Pseq
 
@@ -51,7 +51,7 @@ def adsr_pad(name: str = "adsr_pad") -> SynthDef:
         gate=gate,
         done_action=DoneAction.FREE_SELF,
     )
-    sig = sin_osc(freq) * env * amp
+    sig = sine(freq) * env * amp
     return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 

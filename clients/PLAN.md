@@ -58,7 +58,7 @@ clients/
 
 ### Numeric equivalence — a realistic contract
 
-- Ops the server computes **natively** (`add/sub/mul/div`, `SinOsc` phase, `WhiteNoise` RNG): refactor the server to use `clausters-core` → **bit-exact by construction** (single source of truth). Mind RT-safety: `#[inline]` functions, no alloc/lock/IO (CLAUDE.md, `tests/rt_safety.rs`).
+- Ops the server computes **natively** (`add/sub/mul/div`, `Sine` phase, `WhiteNoise` RNG): refactor the server to use `clausters-core` → **bit-exact by construction** (single source of truth). Mind RT-safety: `#[inline]` functions, no alloc/lock/IO (CLAUDE.md, `tests/rt_safety.rs`).
 - Higher math that in the server exists **only via Faust/LLVM** (`sin`, `log`, etc.): `clausters-core` implements the **same formula/semantics** (libm), but bit-for-bit equality with Faust's LLVM codegen is **not guaranteed**. Contract: same formula + documented tolerance; parity tests with tolerance.
 
 ### Client package (Python example; the JS client mirrors the same structure)

@@ -2,7 +2,7 @@
 //! JIT-compile it to native code and verify the audio. Gated behind the
 //! `faust` feature: `cargo test --features faust --test faust_smoke`.
 //!
-//! The graph is the SinOsc equivalent, built from primitives (no Faust
+//! The graph is the Sine equivalent, built from primitives (no Faust
 //! stdlib): `sin(2π · phasor(freq))` with `phasor(f) = (+(f/SR) : wrap) ~ _`
 //! and `wrap(x) = x - floor(x)`. `freq` is an hslider left at its default
 //! (440), so the parameter path is exercised without UIGlue (that's F3).

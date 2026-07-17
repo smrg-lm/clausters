@@ -77,7 +77,7 @@ next*, not the shipped protocol.
 
 ## Initial UGens
 
-Oscillators: `SinOsc`, `Saw` (PolyBLEP), `Pulse`, `WhiteNoise`, `Phasor`.
+Oscillators: `Sine`, `Saw` (PolyBLEP), `Pulse`, `WhiteNoise`, `Phasor`.
 Filters: `LPF`/`HPF` (biquad), `OnePole`, `Lag`.
 Envelopes/control: `EnvGen` (with done actions: free self, like scsynth), `Line`.
 I/O: `Out`, `In`, `ReplaceOut`. Buffers: `PlayBuf`, `BufRd`. Math: binary/unary

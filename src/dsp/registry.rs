@@ -25,7 +25,7 @@ use crate::dsp::noise::WhiteNoise;
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
-use crate::dsp::sinosc::SinOsc;
+use crate::dsp::sine::Sine;
 use crate::dsp::spectral::{Fft, Ifft, MagMode, PvBrickWall, PvMag};
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{Rate, UGen};
@@ -298,14 +298,14 @@ use Rate::{Ar, Dr, Ir, Kr};
 static UGENS: &[UGenDescriptor] = &[
     // --- generators (audio or control rate; the default shape) ---
     desc(
-        "SinOsc",
+        "Sine",
         Fixed(1),
         Ar,
         R_KR_AR,
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(SinOsc::new()),
+        |_| Box::new(Sine::new()),
     ),
     desc(
         "Impulse",

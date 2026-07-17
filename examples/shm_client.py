@@ -46,7 +46,7 @@ def main():
     # entirely in the data plane.
     d = osc.SynthDefBuilder("shmsine")
     amp = d.add("InCtl", 7)
-    sine = d.add("Mul", d.add("Mul", d.add("SinOsc", 330), 0.3), amp)
+    sine = d.add("Mul", d.add("Mul", d.add("Sine", 330), 0.3), amp)
     d.add("Out", 0, sine)
     d.add("Out", 1, sine)
     addr, _ = osc.decode(c.request(osc.message("/d_recv", d.blob())))
