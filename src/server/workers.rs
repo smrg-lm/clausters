@@ -231,7 +231,7 @@ fn worker_main(shared: &Shared, me: usize) {
         let mut spins = 0u32;
         let epoch = loop {
             let e = shared.epoch.load(Ordering::Acquire);
-            if e != seen && e % 2 == 0 {
+            if e != seen && e.is_multiple_of(2) {
                 break e; // odd = the conductor is writing the next job
             }
             if shared.shutdown.load(Ordering::Relaxed) {
