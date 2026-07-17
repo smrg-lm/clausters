@@ -233,7 +233,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 
 ### The UGen set
 
-`clausters.defs.ugens` exposes the UGen callables the client implements today — a subset of the server's registry. The set is small for now:
+`clausters.defs.ugens` exposes a callable per UGen kind in the server's registry (the arithmetic kinds come from operators rather than callables — see [Operators compose UGens](#operators-compose-ugens)):
 
 | Group | Callable | Does |
 | --- | --- | --- |
@@ -246,6 +246,15 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `replace_out(bus, signal)` | **overwrites** an audio bus instead of summing |
 | Buffers | `play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0)` | mono buffer player, linear interpolation; `rate` in frames per output sample |
 | | `buf_rd(bufnum, chan, phase, loop=0.0)` | reads a buffer at a `phase` signal in frames |
+| Buffer info | `buf_sample_rate(bufnum)` / `buf_frames(bufnum)` | the buffer's own sample rate (Hz) / frame count, block-constant (`kr`) |
+| | `buf_rate_scale(bufnum)` | `file_sr / server_sr` — feed `play_buf`'s `rate` to play at the file's true pitch |
+| | `buf_channels(bufnum)` / `buf_dur(bufnum)` | channel count / duration in seconds, block-constant (`kr`) |
+| Tables | `osc(bufnum, freq=440.0, phase=0.0)` | interpolating wavetable oscillator over a **wavetable-format** buffer (`/b_gen`); `phase` in radians |
+| | `oscn(bufnum, freq=440.0, phase=0.0)` | non-interpolating oscillator over a **plain** buffer; rawer/cheaper |
+| | `vosc(bufpos, freq=440.0, phase=0.0)` | `osc` with the buffer number as a signal: crossfades tables `bufpos`/`bufpos+1`, so sweeping it morphs a contiguous bank |
+| | `shaper(bufnum, signal)` | waveshaper: maps `signal` (±1) through a `cheby` transfer table |
+| Disk | `disk_in(path, chan=0.0, loop=False)` | streams a file from disk, one channel per UGen, no resampling |
+| | `disk_out(path, signal, format="int16")` | streams `signal` to a mono WAV on disk; passes `signal` through |
 | Feedback | `local_in(channel=0.0)` | reads a synth-private feedback channel |
 | | `local_out(channel, signal)` | writes a feedback channel, and passes `signal` through |
 | Smoothers | `lag(signal, time=0.1)` | one-pole smoother (symmetric); the same UGen a lagged control inserts, usable on any signal |

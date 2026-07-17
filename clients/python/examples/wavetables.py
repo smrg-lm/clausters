@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""The table family: `osc` / `vosc` over `/b_gen` wavetables, and `shaper`.
+
+Runs from the *installed* package, offline, like ``offline_render.py``::
+
+    python -m venv .venv && . .venv/bin/activate
+    pip install ./clients/python
+    python clients/python/examples/wavetables.py out.wav
+
+The point of interest is the buffer-backed oscillators:
+
+- Two **wavetable-format** buffers are filled with ``/b_gen sine1`` (flag 7 =
+  normalize | wavetable | clear): buffer 0 a pure sine, buffer 1 a bright
+  sawtooth-like harmonic stack. The wavetable flag stores scsynth's
+  offset/slope pairs, which is what the interpolating readers expect.
+- ``vosc(pos, freq)`` reads the table at ``pos`` and crossfades toward the
+  next one by its fractional part, so a lagged ``pos`` control gliding 0 -> 1
+  **morphs** sine into saw while the note holds. (``osc(0, freq)`` is the same
+  reader pinned to one table; ``oscn`` is the cheap non-interpolating one for
+  *plain* buffers.)
+- Buffer 2 holds a ``cheby`` transfer curve, and ``shaper(2, sine * drive)``
+  waveshapes a pure sine through it: sweeping ``drive`` fades harmonics in —
+  distortion with an exact, band-limited recipe instead of a clipped edge.
+
+The morph plays first (two bars), the waveshaped note answers (one bar).
+"""
+
+import struct
+import sys
+import wave
+
+from clausters import Session
+from clausters.base import Routine
+from clausters.defs import (
+    DoneAction,
+    Env,
+    SynthDef,
+    control,
+    env_gen,
+    out,
+    shaper,
+    sine,
+    vosc,
+)
+
+SR = 48000.0
+
+#: /b_gen flags: normalize (1) | wavetable (2) | clear (4).
+WT = 7
+
+
+def morph(name: str = "wt_morph") -> SynthDef:
+    """`vosc` between adjacent tables; ``pos`` glides thanks to its lag."""
+    pos = control("pos", 0.0, lag=2.0)               # the morph itself
+    freq = control("freq", 110.0)
+    gate = control("gate", 1.0)
+    amp = control("amp", 0.1)
+    env = env_gen(Env.asr(attack=0.05, release=0.5), gate=gate,
+                  done_action=DoneAction.FREE_SELF)
+    sig = vosc(pos, freq) * env * amp
+    return SynthDef(name, out(0.0, sig), out(1.0, sig))
+
+
+def shaped(name: str = "wt_shaped") -> SynthDef:
+    """A pure sine pushed through the cheby transfer table; ``drive`` (also
+    lagged) is how far into the curve the input reaches."""
+    drive = control("drive", 0.1, lag=1.5)
+    freq = control("freq", 165.0)
+    gate = control("gate", 1.0)
+    amp = control("amp", 0.1)
+    env = env_gen(Env.asr(attack=0.05, release=0.5), gate=gate,
+                  done_action=DoneAction.FREE_SELF)
+    sig = shaper(2.0, sine(freq) * drive) * env * amp
+    return SynthDef(name, out(0.0, sig), out(1.0, sig))
+
+
+def main():
+    out_path = next((a for a in sys.argv[1:] if not a.startswith("-")), "wavetables.wav")
+
+    session = Session.nrt(tempo=2.0)
+    server = session.server
+
+    # Three buffers, scored at time 0. 2048 frames hold a 1024-point table.
+    # vosc reads pos and pos+1, so the two wavetables must be adjacent and
+    # equally sized; the allocator hands out 0, 1, 2 in order.
+    sine_buf = server.alloc_buffer(2048, 1)
+    server.gen_buffer(sine_buf, "sine1", WT, 1.0)
+    saw_buf = server.alloc_buffer(2048, 1)
+    server.gen_buffer(saw_buf, "sine1", WT, *(1.0 / k for k in range(1, 9)))
+    cheby_buf = server.alloc_buffer(2048, 1)
+    server.gen_buffer(cheby_buf, "cheby", WT, 1.0, 0.0, 0.6, 0.0, 0.3)
+
+    server.add_synthdef(morph())
+    server.add_synthdef(shaped())
+
+    def sequence():
+        # Timetagged bundles, as in every NRT routine: the beat stamps them.
+        voice = server.synth("wt_morph", {"freq": 110.0, "pos": 0.0})
+        yield 1.0
+        server.send_bundle(("/n_set", voice.id, "pos", 1.0))  # glide to saw
+        yield 3.0
+        server.send_bundle(("/n_set", voice.id, "gate", 0.0))
+        yield 0.5
+        answer = server.synth("wt_shaped", {"freq": 165.0, "drive": 0.1})
+        server.send_bundle(("/n_set", answer.id, "drive", 0.9))  # harmonics in
+        yield 2.0
+        server.send_bundle(("/n_set", answer.id, "gate", 0.0))
+        yield 0.5
+
+    Routine(sequence).play(session.clock)
+    samples, frames = session.render(sample_rate=SR, channels=2)
+
+    peak = max((abs(s) for s in samples), default=0.0)
+    print(f"rendered {frames} frames ({frames / SR:.2f} s) | peak {peak:.3f}")
+
+    with wave.open(out_path, "wb") as w:
+        w.setnchannels(2)
+        w.setsampwidth(2)
+        w.setframerate(int(SR))
+        w.writeframes(b"".join(
+            struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
+        ))
+    print(f"wrote {out_path} - listen with: ffplay -autoexit {out_path}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, RuntimeError) as e:
+        sys.exit(str(e))

@@ -34,6 +34,14 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/offline_render.py out.wav
   ```
 
+- **`wavetables.py`** — the table family, offline: `/b_gen` wavetables read by
+  `vosc` (a lagged `pos` morphs sine into saw) and a `cheby` transfer curve
+  driven through `shaper`. No server, no audio device.
+
+  ```sh
+  python clients/python/examples/wavetables.py out.wav
+  ```
+
 - **`live_udp.py`** — the same pattern, live over UDP to a **separate, running**
   server. The wheel ships that server as the `clausters` command (or use
   `cargo run --release`).

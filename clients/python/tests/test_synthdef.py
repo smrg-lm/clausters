@@ -277,6 +277,61 @@ def test_fft_defaults():
     assert f["fft_size"] == 1024 and f["hop"] == 0.5 and f["wintype"] == 0
 
 
+def test_table_oscillators_and_shaper_serialize():
+    # S5: the table readers take (bufnum, freq, phase) — bufnum a constant for
+    # Osc/OscN, a signal for VOsc — and Shaper maps a signal through a table.
+    from clausters.defs import osc, oscn, shaper, vosc
+
+    pos = sine(0.5) * 2.0 + 3.0
+    spec = SynthDef(
+        "tables",
+        out(0.0, osc(0, 220.0)),
+        out(1.0, oscn(1, 220.0, 1.5)),
+        out(2.0, vosc(pos, 110.0)),
+        out(3.0, shaper(2, sine(330.0))),
+    ).spec()
+    by_kind = {u["kind"]: u for u in spec["ugens"]}
+    assert by_kind["Osc"]["inputs"] == [
+        {"const": 0.0},
+        {"const": 220.0},
+        {"const": 0.0},
+    ]
+    assert by_kind["OscN"]["inputs"][2] == {"const": 1.5}
+    add_index = spec["ugens"].index(by_kind["Add"])
+    assert by_kind["VOsc"]["inputs"][0] == {"ugen": add_index}  # bufpos is a signal
+    assert by_kind["Shaper"]["inputs"][0] == {"const": 2.0}
+
+
+def test_disk_io_serializes_with_static_fields():
+    # DiskIn/DiskOut carry path/loop/format as static fields next to inputs.
+    from clausters.defs import disk_in, disk_out
+
+    spec = SynthDef(
+        "disk",
+        out(0.0, disk_in("/tmp/in.wav", chan=1.0, loop=True)),
+        disk_out("/tmp/rec.wav", sine(440.0) * 0.2, format="float"),
+    ).spec()
+    by_kind = {u["kind"]: u for u in spec["ugens"]}
+    din, dout = by_kind["DiskIn"], by_kind["DiskOut"]
+    assert din["inputs"] == [{"const": 1.0}]
+    assert din["path"] == "/tmp/in.wav" and din["loop"] is True
+    assert dout["path"] == "/tmp/rec.wav" and dout["format"] == "float"
+    mul_index = spec["ugens"].index(by_kind["Mul"])
+    assert dout["inputs"] == [{"ugen": mul_index}]
+
+
+def test_buf_info_queries_default_to_kr():
+    from clausters.defs import buf_channels, buf_dur, buf_rate_scale, play_buf
+
+    spec = SynthDef(
+        "bufinfo",
+        out(0.0, play_buf(0, rate=buf_rate_scale(0)) * (buf_dur(0) + buf_channels(0))),
+    ).spec()
+    for kind in ("BufRateScale", "BufDur", "BufChannels"):
+        u = next(x for x in spec["ugens"] if x["kind"] == kind)
+        assert u["rate"] == "kr"
+
+
 # ---- envelopes (Env / env_gen) ----
 
 

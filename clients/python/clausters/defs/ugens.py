@@ -16,8 +16,10 @@ that tree to emit the spec. Nothing is global, so several defs can be built
 concurrently.
 
 **The server's UGen set is deliberately focused**: oscillators/sources
-(``sine``, ``impulse``, ``white_noise``, `rand`), bus and buffer I/O
-(``in_``/``in_ctl``, ``out``/``replace_out``, ``play_buf``/``buf_rd``),
+(``sine``, ``impulse``, ``white_noise``, `rand`), the table oscillators and
+waveshaper (``osc``/``oscn``/``vosc``, ``shaper``), bus and buffer I/O
+(``in_``/``in_ctl``, ``out``/``replace_out``, ``play_buf``/``buf_rd``, the
+``buf_*`` info queries), streaming disk I/O (``disk_in``/``disk_out``),
 feedback (``local_in``/``local_out``), the ``env_gen`` envelope, the ``lag``/
 ``var_lag`` smoothers, the demand pair (``dseq``/``demand``), and the fused
 ``mul_add``/``sum3``/``sum4``. **Maths works**: ``+ - * /`` map to the
@@ -317,6 +319,57 @@ def buf_rd(bufnum, chan, phase, loop=0.0) -> Ugen:
     return Ugen("BufRd", [bufnum, chan, phase, loop])
 
 
+# ---- table oscillators & waveshaper (read `/b_gen` tables) ----
+
+
+def osc(bufnum, freq=440.0, phase=0.0) -> Ugen:
+    """Interpolating wavetable oscillator. ``bufnum`` must hold a
+    **wavetable-format** buffer (fill it with ``Server.gen_buffer`` and a
+    ``/b_gen`` command whose wavetable flag is set); ``phase`` is an offset in
+    radians."""
+    return Ugen("Osc", [bufnum, freq, phase])
+
+
+def oscn(bufnum, freq=440.0, phase=0.0) -> Ugen:
+    """Non-interpolating oscillator over a **plain** (non-wavetable) buffer;
+    rawer and cheaper than `osc`."""
+    return Ugen("OscN", [bufnum, freq, phase])
+
+
+def vosc(bufpos, freq=440.0, phase=0.0) -> Ugen:
+    """Like `osc` but the buffer number is a signal: reads wavetables
+    ``bufpos`` and ``bufpos + 1`` and crossfades by the fractional part, so
+    sweeping ``bufpos`` morphs a bank of adjacent tables (allocate them
+    contiguously, all the same size)."""
+    return Ugen("VOsc", [bufpos, freq, phase])
+
+
+def shaper(bufnum, signal) -> Ugen:
+    """Waveshaper: maps ``signal`` (in +-1, clamped) through a transfer table
+    in wavetable format (typically a ``cheby`` `/b_gen`); the table's first
+    point is ``signal = -1``, its last ``signal = +1``."""
+    return Ugen("Shaper", [bufnum, signal])
+
+
+# ---- streaming disk I/O (self-contained: one I/O thread + ring each) ----
+
+
+def disk_in(path, chan=0.0, loop=False) -> Ugen:
+    """Streams a file from disk, one file frame per server sample (no
+    resampling — pitch follows the sample-rate ratio). Mono per UGen: ``chan``
+    picks the channel, a stereo file is two `disk_in`\\ s. ``loop`` restarts at
+    the end of the stream. For a handful of streams, not per-voice (each spawns
+    its own I/O thread)."""
+    return Ugen("DiskIn", [chan], static={"path": str(path), "loop": bool(loop)})
+
+
+def disk_out(path, signal, format="int16") -> Ugen:
+    """Streams ``signal`` to a mono WAV at ``path`` (``format`` is ``"int16"``,
+    ``"int24"`` or ``"float"``) and passes ``signal`` through as its output.
+    Record stereo with two `disk_out`\\ s."""
+    return Ugen("DiskOut", [signal], static={"path": str(path), "format": str(format)})
+
+
 def local_in(channel=0.0) -> Ugen:
     """Reads synth-private feedback channel ``channel`` (a constant); pairs with
     `local_out` for one-block feedback. ``LocalIn`` must precede its
@@ -383,6 +436,24 @@ def buf_frames(bufnum) -> Ugen:
 def buf_sample_rate(bufnum) -> Ugen:
     """The buffer's own sample rate (Hz), block-constant (``kr``)."""
     return Ugen("BufSampleRate", [bufnum], rate="kr")
+
+
+def buf_rate_scale(bufnum) -> Ugen:
+    """``file_sr / server_sr``, block-constant (``kr``); feed `play_buf`'s
+    ``rate`` (``buf_rate_scale(buf) * pitch``) to play at the file's true pitch
+    without the client knowing either rate."""
+    return Ugen("BufRateScale", [bufnum], rate="kr")
+
+
+def buf_channels(bufnum) -> Ugen:
+    """The buffer's channel count, block-constant (``kr``)."""
+    return Ugen("BufChannels", [bufnum], rate="kr")
+
+
+def buf_dur(bufnum) -> Ugen:
+    """The buffer's duration in seconds (``frames / file_sr``), block-constant
+    (``kr``)."""
+    return Ugen("BufDur", [bufnum], rate="kr")
 
 
 def rand(lo=0.0, hi=1.0) -> Ugen:
