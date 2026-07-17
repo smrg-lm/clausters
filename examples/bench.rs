@@ -45,6 +45,8 @@ fn main() {
         report(n, bench(n, |_| make_default_synth()));
     }
 
+    bench_sine_vs_wavetable();
+
     #[cfg(feature = "faust")]
     {
         bench_ugen_vs_faust();
@@ -71,6 +73,89 @@ fn main() {
     counts.dedup();
     for w in counts {
         report_parallel(w, bench_parallel(w, chains, voices), base);
+    }
+}
+
+/// `Sine` (f64 phase accumulation + `sin()` per sample) against the table
+/// readers `Osc` (linear interpolation) and `OscN` (no interpolation) on a
+/// sine wavetable of scsynth's size (8192 samples = 4096 points) — the
+/// measurement behind keeping `Sine` transcendental: if the table were much
+/// faster at high voice counts, a table-based sine would earn a place.
+/// Same graph shape for all three (osc · 0.001 → Out 0, freq at control 0).
+fn bench_sine_vs_wavetable() {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::dsp::wavetable::{GenCommand, GenFlags};
+
+    let table = Arc::new(
+        GenCommand::Sine1 {
+            flags: GenFlags {
+                normalize: true,
+                wavetable: true,
+                clear: true,
+            },
+            amps: vec![1.0],
+        }
+        .apply(&Buffer::zeroed(8192, 1, SAMPLE_RATE)),
+    );
+
+    let def = |name: &str, kind: &str| -> Arc<clausters::synthdef::SynthDef> {
+        let inputs = if kind == "Sine" {
+            serde_json::json!([{"control": 0}])
+        } else {
+            serde_json::json!([{"const": 0.0}, {"control": 0}, {"const": 0.0}])
+        };
+        Arc::new(
+            compile(
+                serde_json::from_value(serde_json::json!({
+                    "name": name,
+                    "controls": [{"name": "freq", "default": 440.0}],
+                    "ugens": [
+                        {"kind": kind, "inputs": inputs},
+                        {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.001}]},
+                        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+                    ]
+                }))
+                .unwrap(),
+            )
+            .expect("def compiles"),
+        )
+    };
+    let defs = [
+        ("Sine", def("cmp_sine", "Sine")),
+        ("Osc", def("cmp_osc", "Osc")),
+        ("OscN", def("cmp_oscn", "OscN")),
+    ];
+
+    println!("\nSine (f64 phase + sin) vs wavetable Osc/OscN (8192-sample table), xRT:");
+    println!(
+        "  {:>6}  {:>11}  {:>11}  {:>11}",
+        "synths", "Sine", "Osc", "OscN"
+    );
+    for &n in VOICE_COUNTS {
+        let mut cols = Vec::new();
+        for (_, d) in &defs {
+            let d = Arc::clone(d);
+            let t = Arc::clone(&table);
+            let blocks = bench_with(n, move |_| Box::new(UGenSynth::new(Arc::clone(&d))), {
+                let t = Arc::clone(&t);
+                move |engine, handle, out| {
+                    send_cmd(
+                        engine,
+                        handle,
+                        out,
+                        Cmd::SetBuffer {
+                            index: 0,
+                            buffer: Some(Arc::clone(&t)),
+                        },
+                    );
+                }
+            });
+            cols.push(blocks * BLOCK_SIZE as f64 / SAMPLE_RATE);
+        }
+        println!(
+            "  {n:>6}  {:>10.1}x  {:>10.1}x  {:>10.1}x",
+            cols[0], cols[1], cols[2]
+        );
     }
 }
 
@@ -394,9 +479,20 @@ fn report(n: usize, blocks_per_sec: f64) {
 
 /// Builds an engine with `n` synths (detuned via control 0) and measures
 /// block throughput on this thread, exactly as the audio callback would run.
-fn bench(n: usize, mut make: impl FnMut(usize) -> Box<dyn SynthNode>) -> f64 {
+fn bench(n: usize, make: impl FnMut(usize) -> Box<dyn SynthNode>) -> f64 {
+    bench_with(n, make, |_, _, _| {})
+}
+
+/// `bench` with a setup hook run before the synths are added (e.g. to plug a
+/// wavetable buffer into the engine).
+fn bench_with(
+    n: usize,
+    mut make: impl FnMut(usize) -> Box<dyn SynthNode>,
+    setup: impl FnOnce(&mut Engine, &mut EngineHandle, &mut [f32]),
+) -> f64 {
     let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    setup(&mut engine, &mut handle, &mut out);
     for i in 0..n {
         let mut synth = make(i);
         synth.set_control(0, 50.0 + i as f32); // spread the frequencies
