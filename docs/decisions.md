@@ -189,18 +189,34 @@ keep that cheap and green:
   host-detects the CPU *features* and re-introduces the crash — only a concrete
   triple pins it down. The override is a plain env var read by
   `faust::compiler::host_target`, so only CI opts in.
-  - *Provisional note (2026-07-16):* one SIGILL recurred **with the override
-    active** (`auto_order::faust_synths_sort_by_their_reserved_buses`, run
-    29492474371 on an unrelated docs-only commit; the rerun passed on another
-    runner). A single occurrence since the pin, treated as an isolated
-    incident — nothing changed. If it recurs, the baseline *JIT* target is
-    evidently not the whole story; the next suspect is host-tuned code in the
-    **cached libfaust build itself** (`build-faust.sh` compiles on whichever
-    runner misses the cache, and the cache is shared repo-wide, so a build
-    host with CPU features another runner lacks would ship them in the
-    library, not in the JIT output). Diagnose by comparing the failing
-    runner's CPU with the cache-populating one, or preempt it by building
-    libfaust/libLLVM with an explicit baseline `-march=x86-64`.
+  - *Provisional note (2026-07-16, revised 2026-07-17):* one SIGILL recurred
+    **with the override active**
+    (`auto_order::faust_synths_sort_by_their_reserved_buses`, run 29492474371
+    on an unrelated docs-only commit; the rerun passed on another runner). A
+    single occurrence since the pin — nothing changed, and it has not recurred
+    since. Two suspects were investigated and one survives:
+    - **Ruled out: host-tuned code in the cached libfaust build itself.**
+      Faust's CMake does not pass `-march=native`, the bundled libLLVM is the
+      distro's baseline build, and nothing in our Rust uses `target-cpu` or
+      feature detection — the shared cache cannot ship instructions a
+      restoring runner lacks.
+    - **Current suspect: LLVM's own feature autodetection in
+      `EngineBuilder::selectTarget()`.** In the vendored Faust source
+      (`llvm_dynamic_dsp_aux.cpp`), our target string pins the *triple* and
+      *mcpu*, but the target machine's **feature attributes** are left to
+      `selectTarget()` — and when the passed triple equals the host process's
+      triple, LLVM may still autodetect the virtualized CPU's features (the
+      same mechanism already documented above for the empty triple). A
+      hypervisor that misreports features would then make the JIT emit
+      instructions the VM traps.
+    If it recurs: diagnose with a manual workflow that dumps `/proc/cpuinfo`
+    flags and loops the test to capture the bad SKU (plus the trapping
+    instruction from the core); fix by keeping `selectTarget()` from
+    inheriting host features — e.g. a triple spelled differently from the
+    process's (`x86_64-pc-linux-gnu` vs `-unknown-`) to break LLVM's
+    host-triple comparison, after checking in LLVM 18's source whether a
+    non-empty MCPU already inhibits the autodetection (which would rule this
+    suspect out too).
 
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 
