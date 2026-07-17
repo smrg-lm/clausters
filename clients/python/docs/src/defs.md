@@ -304,6 +304,27 @@ echo = local_out(0.0, sig)                    # writes channel 0, passes sig thr
 sdef = SynthDef("fb", out(0.0, sig), echo)    # echo as an output keeps the write
 ```
 
+### Multichannel: dup, channel lists and mix
+
+Multichannel on a UGen graph is an **explicit container**, the `ChannelList` — there is no sclang-style implicit expansion (`sine([440, 443])` does not fan out; a channel list reaching a single-channel input raises `TypeError` at serialization, pointing here). The container never crosses the wire: outputs unroll it onto consecutive buses and the serialization flattens it, so the server only ever sees single-channel UGens.
+
+```python
+from clausters.defs import SynthDef, control, dup, mix, out, rand, sine, white_noise
+
+stereo = dup(sine(440.0))                  # 2 channels, ONE Sine (by reference)
+bank = dup(lambda: sine(rand(438.0, 442.0)), 8)   # 8 DISTINCT detuned sines
+sig = mix(bank) * 0.1                      # folded via Sum4/Sum4/Add, one channel
+sdef = SynthDef("bank", out(0.0, dup(sig)))       # channels -> buses 0, 1
+```
+
+The rules, in order of appearance:
+
+- **`dup(x, n=2)`** fans out. A node (or number) is repeated **by reference** — identity dedup serializes it *once*, so `dup(sine(440))` is a cheap mono→stereo of identical channels. A **callable** is evaluated `n` times, building *distinct* UGens — what a decorrelated or detuned bank needs (`dup(white_noise, 8)`; duplicating one `white_noise` by reference would give eight copies of the *same* noise). The method form `sine(440).dup(8)` is always by reference; the callable form is the reference↔fresh contrast, mirroring sclang's `ugen.dup` vs `{ }.dup`.
+- **Operators broadcast or zip.** A scalar operand (number, `Ugen`, `Control`) applies to every channel; a list operand pairs channel-wise, and unequal lengths wrap the shorter side modulo — the same rule the value side applies to plain lists, so graph and values agree. Plain Python lists coerce in operator positions (`bank * [0.1, 0.2]`), but only `ChannelList` *is* an operator object — `[a, b] * 2` is list repetition.
+- **`out(bus, chans)` turns channels into buses**: one writer per channel on `bus`, `bus+1`, … (`replace_out`/`out_ctl` likewise). The base bus must be a constant. `as_def` follows: `play(dup(expr))` sounds stereo, `plot`/`render` inherit it.
+- **`mix(chans)`** folds back to one channel through the fused sums (`sum4`/`sum3` chunks, not an `Add` chain — an 8-channel mix is 3 UGens). A list of plain numbers folds to a number; a scalar passes through.
+- **Not implemented (yet):** per-argument expansion and nested channel lists. Both error early with pointed messages. This section is the specification a later client (JS/TS) should port, rules included.
+
 ### The frequency-domain chain
 
 Spectral processing wires an `fft` to an `ifft` with any number of `pv_*` filters between them: `fft` windows an audio signal and transforms it to a spectral frame once per hop, the `pv_*` filters mutate the frame, and `ifft` resynthesises audio by overlap-add. Wire them in order — the output of one is the input of the next:

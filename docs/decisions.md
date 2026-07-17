@@ -782,3 +782,35 @@ rename, no compatibility alias.
 table-reading family, and a future table-based sine (if massive-additive
 profiling ever justifies one) can take a new name instead of redefining this
 one.
+
+## Multichannel is an explicit container, not implicit expansion
+
+sclang expands multichannel implicitly: an array argument anywhere fans the
+whole UGen call out, invisibly. The Python client takes the explicit half of
+that design (following the sc3 client, which reduced expansion to an array of
+UGens — here `ChannelList`): `dup` fans out, operators broadcast/zip over the
+container, `out` lays channels on consecutive buses, `mix` folds back. A
+channel list reaching a single-channel input is a serialization `TypeError`,
+and `sine([440, 443])` does not expand.
+
+**Decision details with non-obvious context:**
+
+- **dup duplicates by reference; a callable is evaluated.** Reference dup +
+  identity dedup serializes the shared node once — mono→N for free — while
+  `dup(white_noise, 8)` by reference would be eight copies of the *same*
+  noise (correlated, almost never wanted). The callable form builds distinct
+  nodes, mirroring sclang's `ugen.dup` vs `{ }.dup` without needing an
+  AbstractFunction port: `dup(callable, n)` covers the one use it would have.
+- **Zip wraps the shorter side modulo** — not an error — because that is
+  already the client's rule for plain lists on the value side
+  (`clausters.base.builtins._extend`), and graph maths and value maths must
+  agree; it is also the sclang behavior users' habits assume.
+- **The container never crosses the wire.** The server's spec stays
+  single-channel-per-UGen; a future multi-output UGen (a panner, a stereo
+  buffer reader) will need a wire extension, and its client-side return type
+  is then naturally a `ChannelList` — the container is forward-compatible
+  with that without re-design.
+- Per-argument expansion is deferred, not rejected: every constructor funnels
+  through `Ugen(kind, inputs)`, so one hook there can add full expansion
+  later, desugaring to the same container. The rules above are written down
+  in the composition docs as the spec a later client ports.

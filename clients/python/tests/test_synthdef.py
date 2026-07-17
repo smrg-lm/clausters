@@ -332,6 +332,85 @@ def test_buf_info_queries_default_to_kr():
         assert u["rate"] == "kr"
 
 
+def test_dup_by_reference_shares_the_node():
+    # dup(node) repeats the reference; identity dedup serializes ONE Sine
+    # fanned out to consecutive buses.
+    from clausters.defs import dup
+
+    spec = SynthDef("st", out(0.0, dup(sine(440.0)) * 0.1)).spec()
+    kinds = [u["kind"] for u in spec["ugens"]]
+    assert kinds.count("Sine") == 1
+    outs = [u for u in spec["ugens"] if u["kind"] == "Out"]
+    assert [o["inputs"][0] for o in outs] == [{"const": 0.0}, {"const": 1.0}]
+
+
+def test_dup_of_a_callable_builds_distinct_nodes():
+    from clausters.defs import dup
+
+    spec = SynthDef("nz", out(0.0, dup(white_noise, 3) * 0.1)).spec()
+    kinds = [u["kind"] for u in spec["ugens"]]
+    assert kinds.count("WhiteNoise") == 3
+    # The method form is always by reference.
+    assert [u["kind"] for u in SynthDef(
+        "m", out(0.0, white_noise().dup(3) * 0.1)
+    ).spec()["ugens"]].count("WhiteNoise") == 1
+
+
+def test_channel_ops_broadcast_and_wrap():
+    from clausters.defs import chans
+
+    # scalar broadcasts, both sides
+    cl = chans(sine(440.0), sine(660.0))
+    assert [u.kind for u in cl * 0.5] == ["Mul", "Mul"]
+    assert [u.kind for u in 0.5 * cl] == ["Mul", "Mul"]
+    # a plain list zips; the shorter side wraps modulo (the value-side rule)
+    three = chans(sine(1.0), sine(2.0), sine(3.0))
+    prod = three * [0.1, 0.2]
+    assert [u.inputs[1] for u in prod] == [0.1, 0.2, 0.1]
+    # a scalar node broadcasts too, shared by reference
+    amp = control("amp", 0.1)
+    assert all(u.inputs[1] is amp for u in three * amp)
+    # numeric channels compute on the value side
+    assert list(chans(1.0, 2.0) + 1.0) == [2.0, 3.0]
+
+
+def test_mix_folds_with_the_fused_sums():
+    from clausters.defs import dup, mix
+
+    spec = SynthDef("mx", out(0.0, mix(dup(white_noise, 8)) * 0.1)).spec()
+    kinds = [u["kind"] for u in spec["ugens"]]
+    # 8 -> Sum4 + Sum4 -> Add: 3 sum UGens, no Add chain of 7.
+    assert kinds.count("Sum4") == 2 and kinds.count("Add") == 1
+    assert mix(2.0) == 2.0
+    assert mix([1.0, 2.0, 3.0]) == 6.0
+
+
+def test_channel_list_as_def_and_root_flattening():
+    from clausters.defs import dup
+    from clausters.defs.asdef import as_def
+
+    sdef = as_def(dup(sine(440.0)) * 0.1, name="st")
+    outs = [u for u in sdef.spec()["ugens"] if u["kind"] == "Out"]
+    assert [o["inputs"][0]["const"] for o in outs] == [0.0, 1.0]
+
+
+def test_channel_list_rejected_as_single_channel_input():
+    from clausters.defs import chans, dup, env_gen
+
+    sig = env_gen(Env.perc(), gate=chans(1.0, control("g", 1.0)))
+    with pytest.raises(TypeError, match="channel list"):
+        SynthDef("bad", out(0.0, sig)).spec()
+    with pytest.raises(TypeError, match="nested"):
+        chans(dup(sine(1.0)), sine(2.0))
+
+
+def test_multichannel_out_needs_a_constant_bus():
+    from clausters.defs import dup
+
+    with pytest.raises(TypeError, match="constant bus"):
+        out(control("bus", 0.0), dup(sine(440.0)))
+
+
 # ---- envelopes (Env / env_gen) ----
 
 

@@ -36,6 +36,10 @@ Ejemplos en `clients/python/examples/` (catálogo en el mdBook del cliente,
   `[client].clock = "monotonic"` (o `timebase=MonotonicTimebase()`) lo vuelve a
   wall-clock. (`Session.embed()` sigue en wall-clock: el servidor in-process no
   expone endpoint para el tracker.)
+- **Multicanal explícito.** `play(dup(sine(440)) * 0.1)` suena **estéreo**
+  (los dos parlantes); `examples/multichannel.py` renderiza el banco de
+  unísono desafinado — 12 `sine` *distintos* (`dup` de un callable), plegados
+  con `mix`, se oye el batido grueso del detune, no un seno limpio.
 - **Los verbos ambientes, de punta a punta.** `examples/verbs.py` → se oye cada
   playable en secuencia: nota (event y dict), arpegio (generador), señal suelta
   (`play(sine(440) * 0.15)`, UGen y box Faust), def con controls, una nota

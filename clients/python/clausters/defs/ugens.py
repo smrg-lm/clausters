@@ -30,6 +30,15 @@ the operator name — the same op the value side computes, so the two agree
 bit-for-bit. Reach for a Faust def (`clausters.defs.signals`) only for genuinely
 custom per-sample DSP (recursion, tables, sample-accurate feedback).
 
+**Multichannel is an explicit container**, not implicit expansion: `dup` fans
+a signal out into a `ChannelList` (by reference for a node, by evaluation for
+a callable), operators broadcast/zip over it (wrapping the shorter side
+modulo, the value side's rule), ``out(bus, chans)`` lays the channels on
+consecutive buses, and `mix` folds a list back to one channel through the
+fused sums. sclang-style per-argument expansion (``sine([440, 443])``) is
+deliberately **not** implemented — a channel list reaching a single-channel
+input is a `TypeError` at serialization.
+
 Each UGen output carries a **rate** (``ir``/``kr``/``ar``/``dr``); it defaults
 per kind and can be set with `Ugen.at_rate`. Controls carry a **type** and an
 optional **lag** — see `control`/`Control`.
@@ -41,6 +50,7 @@ Reserved controls ``in`` and ``out`` (the input/output buses, set with
 ``/s_new … "in" b "out" b``) are added by the server, not declared here.
 """
 
+from ..base import builtins as _builtins
 from ..base.absobject import AbstractObject
 
 #: The four arithmetic selectors keep their dedicated alias kinds, so existing
@@ -75,6 +85,8 @@ class _Node(AbstractObject):
     `BinaryOpUGen`/`UnaryOpUGen` carrying the operator name."""
 
     def _compose_binop(self, selector, other):
+        if isinstance(other, (ChannelList, list, tuple)):
+            return ChannelList(other)._rcompose_binop(selector, self)
         kind = _BINOP_UGEN.get(selector)
         if kind is not None:
             return Ugen(kind, [self, other])
@@ -83,6 +95,8 @@ class _Node(AbstractObject):
         return Ugen("BinaryOpUGen", [self, other], op=selector)
 
     def _rcompose_binop(self, selector, other):
+        if isinstance(other, (ChannelList, list, tuple)):
+            return ChannelList(other)._compose_binop(selector, self)
         kind = _BINOP_UGEN.get(selector)
         if kind is not None:
             return Ugen(kind, [other, self])
@@ -97,6 +111,10 @@ class _Node(AbstractObject):
 
     def _compose_narop(self, selector, *args):
         raise TypeError(f"no n-ary UGen for {selector!r}")
+
+    def dup(self, n=2) -> "ChannelList":
+        """This node repeated (by reference) as ``n`` channels — see `dup`."""
+        return ChannelList([self] * n)
 
 
 class Ugen(_Node):
@@ -184,6 +202,169 @@ def control(name, default=0.0, rate=None, lag=None, lag_down=None) -> Control:
     return Control(name, default, rate=rate, lag=lag, lag_down=lag_down)
 
 
+def _channel(m):
+    """Validates one channel-list member: a graph leaf or a plain number."""
+    if isinstance(m, ChannelList):
+        raise TypeError(
+            "nested channel lists are not supported: mix() the inner one down "
+            "or build a flat list"
+        )
+    if isinstance(m, bool) or not isinstance(m, (_Node, int, float)):
+        raise TypeError(f"not a UGen graph node: {m!r}")
+    return m
+
+
+def _channel_unop(m, selector):
+    if isinstance(m, _Node):
+        return m._compose_unop(selector)
+    return _builtins.UNARY[selector](m)
+
+
+def _channel_binop(a, selector, b):
+    if isinstance(a, _Node):
+        return a._compose_binop(selector, b)
+    if isinstance(b, _Node):
+        return b._rcompose_binop(selector, a)
+    return _builtins.BINARY[selector](a, b)
+
+
+class ChannelList(AbstractObject):
+    """An ordered list of channels — the client's multichannel container.
+
+    Members are graph leaves (`Ugen`/`Control`) or plain numbers. Operators
+    and math methods map over the members and return a new `ChannelList`: a
+    scalar operand **broadcasts** to every channel, a list operand **zips**
+    channel-wise, and unequal lengths wrap the shorter one modulo — the same
+    rule the value side applies to plain lists (`clausters.base.builtins`).
+    Plain Python lists/tuples are accepted anywhere a `ChannelList` is (they
+    coerce), but the class is the one with graph operators — ``[a, b] * 2``
+    is Python list repetition, ``chans(a, b) * 2`` is a graph.
+
+    The container never crosses the wire: `out` and friends unroll it onto
+    consecutive buses, and the `SynthDef` serialization flattens it — the
+    server only ever sees single-channel UGens. Feeding one to a
+    single-channel input (``env_gen(gate=chans(...))``) is an error: index it
+    or `mix` it down. Build one with `dup`, a literal list at an accepting
+    argument, or `chans`."""
+
+    def __init__(self, items):
+        if isinstance(items, ChannelList):
+            items = items.items
+        members = [_channel(m) for m in items]
+        if not members:
+            raise ValueError("a channel list needs at least one channel")
+        self.items = members
+
+    def __iter__(self):
+        return iter(self.items)
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, i):
+        got = self.items[i]
+        return ChannelList(got) if isinstance(i, slice) else got
+
+    def __repr__(self):
+        return f"ChannelList({self.items!r})"
+
+    def _pairs(self, other):
+        """Channel pairs for a binary op: broadcast a scalar, zip a list
+        (wrapping the shorter side modulo)."""
+        if isinstance(other, (ChannelList, list, tuple)):
+            o = ChannelList(other).items
+            n = max(len(self.items), len(o))
+            return [(self.items[i % len(self.items)], o[i % len(o)]) for i in range(n)]
+        return [(m, other) for m in self.items]
+
+    def _compose_unop(self, selector):
+        return ChannelList([_channel_unop(m, selector) for m in self.items])
+
+    def _compose_binop(self, selector, other):
+        return ChannelList(
+            [_channel_binop(a, selector, b) for a, b in self._pairs(other)]
+        )
+
+    def _rcompose_binop(self, selector, other):
+        return ChannelList(
+            [_channel_binop(b, selector, a) for a, b in self._pairs(other)]
+        )
+
+    def _compose_narop(self, selector, *args):
+        raise TypeError(f"no n-ary UGen for {selector!r}")
+
+    def at_rate(self, rate: str) -> "ChannelList":
+        """Sets every member's output rate (see `Ugen.at_rate`)."""
+        for m in self.items:
+            if isinstance(m, Ugen):
+                m.at_rate(rate)
+        return self
+
+    def mix(self):
+        """This list folded to one channel — see `mix`."""
+        return mix(self)
+
+
+def chans(*items) -> ChannelList:
+    """A `ChannelList` from the arguments (``chans(a, b)``) or from a single
+    iterable (``chans([a, b])``)."""
+    if len(items) == 1 and isinstance(items[0], (ChannelList, list, tuple)):
+        return ChannelList(items[0])
+    return ChannelList(items)
+
+
+def dup(x, n=2) -> ChannelList:
+    """``x`` as ``n`` channels.
+
+    A graph node (or a number) is repeated **by reference** — the graph
+    serializes it once, fanned out to every channel, so ``dup(sine(440))`` is
+    a cheap mono→stereo: identical channels. A **callable** is evaluated ``n``
+    times — ``dup(white_noise, 8)`` (or ``dup(lambda: sine(rand(438, 442)),
+    8)``) builds ``n`` *distinct* UGens, which is what a decorrelated or
+    detuned bank needs; duplicating a `white_noise` by reference would give
+    ``n`` copies of the *same* noise. This mirrors sclang's ``ugen.dup`` vs
+    ``{ }.dup``. Also available as a method: ``sine(440).dup(8)`` (always by
+    reference)."""
+    if isinstance(n, bool) or not isinstance(n, int) or n < 1:
+        raise ValueError(f"dup needs a positive channel count, got {n!r}")
+    if isinstance(x, (int, float)) or isinstance(x, AbstractObject):
+        return ChannelList([x] * n)
+    if callable(x):
+        return ChannelList([x() for _ in range(n)])
+    raise TypeError(f"cannot dup {x!r}: expected a graph node, a number or a callable")
+
+
+def mix(x):
+    """``x`` folded to one channel by summing.
+
+    The inverse gesture of `dup`: a `ChannelList` (or plain list) becomes one
+    signal, folded with the fused sum kinds — `sum4`/`sum3` chunks instead of
+    an `Add` chain, so an 8-channel mix costs 2 UGens + 1, not 7. A scalar or
+    single node passes through; a list of plain numbers folds to a number."""
+    if not isinstance(x, (ChannelList, list, tuple)):
+        return x
+    items = ChannelList(x).items
+    if all(not isinstance(m, _Node) for m in items):
+        total = items[0]
+        for m in items[1:]:
+            total = _builtins.BINARY["add"](total, m)
+        return total
+    while len(items) > 1:
+        folded = []
+        for k in range(0, len(items), 4):
+            chunk = items[k:k + 4]
+            if len(chunk) == 4:
+                folded.append(sum4(*chunk))
+            elif len(chunk) == 3:
+                folded.append(sum3(*chunk))
+            elif len(chunk) == 2:
+                folded.append(_channel_binop(chunk[0], "add", chunk[1]))
+            else:
+                folded.append(chunk[0])
+        items = folded
+    return items[0]
+
+
 # ---- lowercase UGen callables (the client's "instruction set") ----
 # Input order matches the server's registry; see docs/schemas.md.
 
@@ -214,20 +395,45 @@ def in_ctl(bus=0.0) -> Ugen:
     return Ugen("InCtl", [bus])
 
 
-def out_ctl(bus, signal) -> Ugen:
+def _out_channels(kind, bus, signal):
+    """One writer per channel on consecutive buses (``bus``, ``bus+1``, …) —
+    the point where a channel list becomes buses. The base ``bus`` must be a
+    number: a signal bus cannot be offset per channel client-side."""
+    if isinstance(bus, bool) or not isinstance(bus, (int, float)):
+        raise TypeError(
+            f"a multichannel {kind} needs a constant bus to lay channels on "
+            f"consecutive buses, got {bus!r}"
+        )
+    sig = ChannelList(signal)
+    return ChannelList(
+        [Ugen(kind, [float(bus) + i, s]) for i, s in enumerate(sig.items)]
+    )
+
+
+def out_ctl(bus, signal) -> "Ugen | ChannelList":
     """Writes ``signal``'s latest per-block value to a **control** ``bus`` — the
     write side of `in_ctl`, so a node reading that bus (via ``/n_map`` or
-    `in_ctl`) tracks it. Passes ``signal`` through as its output."""
+    `in_ctl`) tracks it. Passes ``signal`` through as its output. A channel
+    list writes its channels to consecutive buses."""
+    if isinstance(signal, (ChannelList, list, tuple)):
+        return _out_channels("OutCtl", bus, signal)
     return Ugen("OutCtl", [bus, signal])
 
 
-def out(bus, signal) -> Ugen:
-    """Sums ``signal`` into the audio ``bus`` (output happens only here)."""
+def out(bus, signal) -> "Ugen | ChannelList":
+    """Sums ``signal`` into the audio ``bus`` (output happens only here). A
+    channel list writes its channels to consecutive buses: ``out(0,
+    dup(sig))`` is a stereo output."""
+    if isinstance(signal, (ChannelList, list, tuple)):
+        return _out_channels("Out", bus, signal)
     return Ugen("Out", [bus, signal])
 
 
-def replace_out(bus, signal) -> Ugen:
-    """Overwrites the audio ``bus`` with ``signal`` instead of summing."""
+def replace_out(bus, signal) -> "Ugen | ChannelList":
+    """Overwrites the audio ``bus`` with ``signal`` instead of summing. A
+    channel list overwrites consecutive buses."""
+    if isinstance(signal, (ChannelList, list, tuple)):
+        return _out_channels("ReplaceOut", bus, signal)
     return Ugen("ReplaceOut", [bus, signal])
 
 

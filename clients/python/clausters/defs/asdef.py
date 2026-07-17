@@ -16,7 +16,7 @@ from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .signals import Signal
 from .synthdef import SynthDef
-from .ugens import Ugen, out
+from .ugens import ChannelList, Ugen, out
 
 #: UGen kinds that already are valid SynthDef roots (outputs and
 #: side-effect UGens) — an expression rooted in one is not re-wrapped.
@@ -33,9 +33,11 @@ def as_def(expr, name: str | None = None):
 
     A `SynthDef`/`FaustDef`/`GraphDef` passes through unchanged (``name`` is
     ignored). A `Ugen` becomes a `SynthDef` — wrapped in ``out(0.0, expr)``
-    when it is not already an output or side-effect root. A `Signal` becomes
-    a one-output `FaustDef`, a `Box` a `FaustDef` with the box's own arity.
-    Anything else raises `TypeError`.
+    when it is not already an output or side-effect root. A `ChannelList`
+    becomes a multichannel `SynthDef`: its channels land on buses 0, 1, …
+    (so ``play(dup(expr))`` is stereo). A `Signal` becomes a one-output
+    `FaustDef`, a `Box` a `FaustDef` with the box's own arity. Anything else
+    raises `TypeError`.
     """
     if isinstance(expr, (SynthDef, FaustDef, GraphDef)):
         return expr
@@ -44,11 +46,15 @@ def as_def(expr, name: str | None = None):
     if isinstance(expr, Ugen):
         root = expr if expr.kind in _ROOT_KINDS else out(0.0, expr)
         return SynthDef(name, root)
+    if isinstance(expr, ChannelList):
+        if all(isinstance(m, Ugen) and m.kind in _ROOT_KINDS for m in expr):
+            return SynthDef(name, *expr)
+        return SynthDef(name, out(0.0, expr))
     if isinstance(expr, Signal):
         return FaustDef.from_signals(name, expr)
     if isinstance(expr, Box):
         return FaustDef.from_box(name, expr)
     raise TypeError(
         f"cannot make a def out of {type(expr).__name__}; expected a Ugen, "
-        "a Signal, a Box, or a def (SynthDef/FaustDef/GraphDef)"
+        "a ChannelList, a Signal, a Box, or a def (SynthDef/FaustDef/GraphDef)"
     )

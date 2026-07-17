@@ -42,6 +42,15 @@ pip install ./clients/python          # builds + bundles the native libs
   python clients/python/examples/wavetables.py out.wav
   ```
 
+- **`multichannel.py`** — `dup`, the channel list and `mix`, offline: a
+  12-voice detuned unison bank (`dup` of a callable = distinct UGens), folded
+  with `mix`, fanned to stereo (`dup` by reference). No server, no audio
+  device.
+
+  ```sh
+  python clients/python/examples/multichannel.py out.wav
+  ```
+
 - **`live_udp.py`** — the same pattern, live over UDP to a **separate, running**
   server. The wheel ships that server as the `clausters` command (or use
   `cargo run --release`).

@@ -27,7 +27,7 @@ context is touched, so defs build concurrently.
 
 import json
 
-from .ugens import Control, Ugen
+from .ugens import ChannelList, Control, Ugen
 
 
 class SynthDef:
@@ -40,16 +40,24 @@ class SynthDef:
     graph). A def with no output UGen is simply silent on the server."""
 
     def __init__(self, name: str, *roots: Ugen):
-        if not roots:
+        flat: list[Ugen] = []
+        for o in roots:
+            # A multichannel root (out(bus, dup(sig)) returns a ChannelList of
+            # Outs) contributes one root per channel.
+            if isinstance(o, ChannelList):
+                flat.extend(o.items)
+            else:
+                flat.append(o)
+        if not flat:
             raise ValueError(
                 "a SynthDef needs at least one root UGen (an output like "
                 "out(bus, signal), or a side-effect UGen like send_trig(...))"
             )
-        for o in roots:
+        for o in flat:
             if not isinstance(o, Ugen):
                 raise TypeError(f"SynthDef roots must be UGens, got {o!r}")
         self.name = str(name)
-        self.outputs = list(roots)
+        self.outputs = flat
 
     def spec(self) -> dict:
         """The ``SynthDefSpec`` dict the server's ``/d_recv`` compiles."""
@@ -76,6 +84,12 @@ class SynthDef:
                         f"control {node.name!r} used with conflicting definitions "
                         f"(default/type/lag differ)"
                     )
+            elif isinstance(node, ChannelList):
+                raise TypeError(
+                    "a channel list cannot feed a single-channel input -- "
+                    "index it (chans[0]) or mix() it down; per-argument "
+                    "multichannel expansion is not implemented"
+                )
             elif isinstance(node, bool) or not isinstance(node, (int, float)):
                 raise TypeError(f"not a UGen graph node: {node!r}")
             # a plain number is a constant: nothing to gather here
