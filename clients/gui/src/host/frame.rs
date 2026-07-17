@@ -535,8 +535,9 @@ fn draw_pianoroll_item(
                 item.editor.tempo,
                 item.editor.beat_at,
                 item.editor.quant,
+                nav.len / rate * item.editor.tempo / r.grid.w.max(1.0) as f64,
             ),
-            _ => ruler::readout_time(s, rate),
+            _ => ruler::readout_time(s, rate, nav.len / rate / r.grid.w.max(1.0) as f64),
         };
         let text = format!("{}  {time}", clausters_core::scale::note_name(pitch));
         let w = super::font::width(&text, RULER_SCALE);
@@ -604,9 +605,17 @@ fn draw_editor_overlay(
         let time = match editor.ruler {
             Ruler::Samples => ruler::readout_samples(s),
             Ruler::Beats => {
-                ruler::readout_beats(s, rate, editor.tempo, editor.beat_at, editor.quant)
+                let beats_per_px = nav.len / rate * editor.tempo / body.w.max(1.0) as f64;
+                ruler::readout_beats(
+                    s,
+                    rate,
+                    editor.tempo,
+                    editor.beat_at,
+                    editor.quant,
+                    beats_per_px,
+                )
             }
-            _ => ruler::readout_time(s, rate),
+            _ => ruler::readout_time(s, rate, nav.len / rate / body.w.max(1.0) as f64),
         };
         let lane = lane_rect(body, lanes.max(1), lane_at(body, lanes.max(1), cy));
         let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
@@ -627,7 +636,9 @@ fn draw_editor_overlay(
             None => {
                 let amp = (2.0 * display - 1.0) / crate::waveform::AMP_MARGIN as f64;
                 let amp = amp.clamp(-1.0, 1.0);
-                let value = ruler::readout_amp(amp, editor.ruler_y, editor.bit_depth);
+                let amp_per_px =
+                    2.0 * y_len / crate::waveform::AMP_MARGIN as f64 / lane.h.max(1.0) as f64;
+                let value = ruler::readout_amp(amp, editor.ruler_y, editor.bit_depth, amp_per_px);
                 format!("{time}  {value}")
             }
         };

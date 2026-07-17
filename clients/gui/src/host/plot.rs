@@ -409,7 +409,10 @@ pub fn draw_readout(over: &mut Mesh, rect: Rect, p: &PlotParams, cursor: (f64, f
             let y = lane.y + lane.h * (1.0 - fraction(v, lo, hi));
             hairline_and_dot(over, lane, x, y);
             let pos = match x_unit(p) {
-                TimeUnit::Seconds => ruler::readout_time(i as f64, p.sample_rate),
+                TimeUnit::Seconds => {
+                    let secs_per_px = (n - 1) as f64 / p.sample_rate / g.body.w.max(1.0) as f64;
+                    ruler::readout_time(i as f64, p.sample_rate, secs_per_px)
+                }
                 _ => ruler::readout_samples(i as f64),
             };
             let value = ruler::readout_value(v as f64, (hi - lo) as f64);

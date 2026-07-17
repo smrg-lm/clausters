@@ -365,11 +365,19 @@ fn fmt_hz(f: f64) -> String {
     }
 }
 
-/// The cursor-readout form of a sample position in clock time (millisecond
-/// precision), falling back to a sample count when no rate is known.
-pub(crate) fn readout_time(sample: f64, sample_rate: f64) -> String {
+/// The cursor-readout form of a sample position in clock time — millisecond
+/// precision, refined to the view's pixel resolution (`secs_per_px`) when a
+/// pixel spans less than a millisecond, so at deep zoom the readout never
+/// shows fewer decimals than the ruler labels — falling back to a sample
+/// count when no rate is known.
+pub(crate) fn readout_time(sample: f64, sample_rate: f64, secs_per_px: f64) -> String {
     if sample_rate > 0.0 {
-        fmt_time(sample.max(0.0) / sample_rate, 0.001)
+        let step = if secs_per_px > 0.0 {
+            secs_per_px.min(1e-3)
+        } else {
+            1e-3
+        };
+        fmt_time(sample.max(0.0) / sample_rate, step)
     } else {
         readout_samples(sample)
     }
@@ -380,31 +388,50 @@ pub(crate) fn readout_samples(sample: f64) -> String {
     format!("{}", sample.max(0.0).round() as i64)
 }
 
+/// The decimals a cursor readout needs to resolve `step` (one pixel of the
+/// view, in the readout's unit), floored at the unit's base precision so a
+/// coarse view never loses it and capped at the matching ruler labels' own
+/// cap — the readout never shows fewer decimals than the ruler.
+fn readout_decimals(step: f64, floor: usize, cap: usize) -> usize {
+    if step > 0.0 {
+        (-step.log10()).ceil().clamp(floor as f64, cap as f64) as usize
+    } else {
+        floor
+    }
+}
+
 /// The cursor-readout form of a sample position on the beat grid:
-/// `bar:beat` with two decimals (plain beats without a grid), falling back
-/// to the sample count when the rate or tempo is unknown.
+/// `bar:beat` (plain beats without a grid) with two decimals, refined to the
+/// view's pixel resolution (`beats_per_px`) up to the ruler labels' own
+/// four-decimal cap, falling back to the sample count when the rate or tempo
+/// is unknown.
 pub(crate) fn readout_beats(
     sample: f64,
     sample_rate: f64,
     tempo: f64,
     beat_at: f64,
     quant: f64,
+    beats_per_px: f64,
 ) -> String {
     if sample_rate <= 0.0 || tempo <= 0.0 {
         return readout_samples(sample);
     }
+    let decimals = readout_decimals(beats_per_px, 2, 4);
     let beats = beat_at + sample.max(0.0) / sample_rate * tempo;
     if quant <= 0.0 {
-        return format!("{beats:.2}");
+        return format!("{beats:.decimals$}");
     }
     let bar = tempoclock::bar(beats, quant) + 1.0;
     let beat = tempoclock::beat_in_bar(beats, quant) + 1.0;
-    format!("{}:{beat:.2}", bar as i64)
+    format!("{}:{beat:.decimals$}", bar as i64)
 }
 
 /// The cursor-readout form of a normalized amplitude in the vertical-ruler
-/// unit (`Norm` for the unit-less kinds).
-pub(crate) fn readout_amp(amp: f64, unit: RulerY, bit_depth: u32) -> String {
+/// unit (`Norm` for the unit-less kinds). The linear units (`Norm`,
+/// `Percent`) refine their decimals to the view's pixel resolution
+/// (`amp_per_px`, normalized amplitude per device pixel) under vertical
+/// zoom; `Db` and `Bits` already out-resolve their integer ruler labels.
+pub(crate) fn readout_amp(amp: f64, unit: RulerY, bit_depth: u32, amp_per_px: f64) -> String {
     match unit {
         RulerY::Db => {
             let mag = amp.abs();
@@ -418,8 +445,14 @@ pub(crate) fn readout_amp(amp: f64, unit: RulerY, bit_depth: u32) -> String {
             let full = 2f64.powi(bit_depth.saturating_sub(1) as i32);
             format!("{}", (amp * full).round() as i64)
         }
-        RulerY::Percent => format!("{:.0}%", amp * 100.0),
-        _ => format!("{amp:+.2}"),
+        RulerY::Percent => {
+            let decimals = readout_decimals(amp_per_px * 100.0, 0, 6);
+            format!("{:.decimals$}%", amp * 100.0)
+        }
+        _ => {
+            let decimals = readout_decimals(amp_per_px, 2, 6);
+            format!("{amp:+.decimals$}")
+        }
     }
 }
 
@@ -1155,9 +1188,44 @@ mod tests {
     #[test]
     fn readout_beats_reads_bar_beat() {
         // 48k samples at 2 beats/s = 2 beats in; quant 4 -> bar 1, beat 3.
-        assert_eq!(readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0), "1:3.00");
-        assert_eq!(readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 0.0), "2.00");
-        assert_eq!(readout_beats(48_000.0, 0.0, 2.0, 0.0, 4.0), "48000");
+        assert_eq!(
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 0.01),
+            "1:3.00"
+        );
+        assert_eq!(
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 0.0, 0.01),
+            "2.00"
+        );
+        assert_eq!(readout_beats(48_000.0, 0.0, 2.0, 0.0, 4.0, 0.01), "48000");
+        // Deep zoom (a pixel spans well under a hundredth of a beat): the
+        // decimals refine with the view, up to the ruler's four-decimal cap.
+        assert_eq!(
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 1e-3),
+            "1:3.000"
+        );
+        assert_eq!(
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 1e-6),
+            "1:3.0000"
+        );
+        // No pixel resolution known: the two-decimal floor.
+        assert_eq!(
+            readout_beats(48_000.0, 48_000.0, 2.0, 0.0, 4.0, 0.0),
+            "1:3.00"
+        );
+    }
+
+    #[test]
+    fn readout_time_refines_with_the_pixel_resolution() {
+        // Normal zoom (a pixel spans >= 1 ms): millisecond precision.
+        assert_eq!(readout_time(24_000.0, 48_000.0, 0.01), "0.500");
+        // Deep zoom (one 440 Hz cycle over ~600 px): finer than the ruler's
+        // 4-decimal labels, never coarser.
+        let secs_per_px = (1.0 / 440.0) / 600.0;
+        assert_eq!(readout_time(48.0, 48_000.0, secs_per_px), "0.001000");
+        // No pixel resolution known: the millisecond floor.
+        assert_eq!(readout_time(24_000.0, 48_000.0, 0.0), "0.500");
+        // No rate known: the sample count.
+        assert_eq!(readout_time(24_000.0, 0.0, 0.01), "24000");
     }
 
     #[test]
@@ -1255,12 +1323,26 @@ mod tests {
 
     #[test]
     fn amp_readout_formats_per_unit() {
-        assert_eq!(readout_amp(0.5, RulerY::Norm, 16), "+0.50");
-        assert_eq!(readout_amp(0.5, RulerY::Db, 16), "-6.0 DB");
-        assert_eq!(readout_amp(0.0, RulerY::Db, 16), "-INF DB");
-        assert_eq!(readout_amp(-0.5, RulerY::Bits, 16), "-16384");
-        assert_eq!(readout_amp(0.5, RulerY::Percent, 16), "50%");
-        assert_eq!(readout_amp(-0.5, RulerY::Percent, 16), "-50%");
+        assert_eq!(readout_amp(0.5, RulerY::Norm, 16, 0.01), "+0.50");
+        assert_eq!(readout_amp(0.5, RulerY::Db, 16, 0.01), "-6.0 DB");
+        assert_eq!(readout_amp(0.0, RulerY::Db, 16, 0.01), "-INF DB");
+        assert_eq!(readout_amp(-0.5, RulerY::Bits, 16, 0.01), "-16384");
+        assert_eq!(readout_amp(0.5, RulerY::Percent, 16, 0.01), "50%");
+        assert_eq!(readout_amp(-0.5, RulerY::Percent, 16, 0.01), "-50%");
+    }
+
+    #[test]
+    fn amp_readout_refines_with_the_pixel_resolution() {
+        // Deep vertical zoom: the linear units refine to what a pixel
+        // resolves, so the readout never shows fewer decimals than the
+        // zoomed ruler labels.
+        assert_eq!(readout_amp(0.5, RulerY::Norm, 16, 1e-4), "+0.5000");
+        assert_eq!(readout_amp(0.5, RulerY::Percent, 16, 1e-4), "50.00%");
+        // No pixel resolution known: the units' base precision.
+        assert_eq!(readout_amp(0.5, RulerY::Norm, 16, 0.0), "+0.50");
+        assert_eq!(readout_amp(0.5, RulerY::Percent, 16, 0.0), "50%");
+        // dB keeps its tenth regardless (its ruler labels whole rungs).
+        assert_eq!(readout_amp(0.5, RulerY::Db, 16, 1e-4), "-6.0 DB");
     }
 
     #[test]
