@@ -103,6 +103,7 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
          min: float | None = None, max: float | None = None,
          freq_scale: str | None = None, fft_size: int | None = None,
          db_floor: float | None = None, db_ceil: float | None = None,
+         ruler: str | None = None, ruler_y: str | None = None,
          label: str | None = None, title: str | None = None,
          w: int = 760, h: int | None = None, host=None) -> PlotWindow:
     """Plot ``obj`` in its own window on the ambient GUI host.
@@ -135,6 +136,12 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         fft_size: spectrum analysis size (a power of two, default 2048).
         db_floor: spectrum dB window (default ``-100`` / ``0``).
         db_ceil: see ``db_floor``.
+        ruler: the signal view's time (x) unit — ``"time"`` (clock seconds,
+            the default when the data has a sample rate), ``"samples"``
+            (plain sample counts, the default for rate-less sequences) or
+            ``"off"`` to hide the strip. Live-switchable later via
+            ``win.set(ruler=...)``.
+        ruler_y: ``"off"`` hides the value-axis strip (shown by default).
         label: the plot's label strip (defaults to something sensible per
             kind: the def's name, ``expr``, ``buffer <n>``, ``env``, an
             automation's control name, ``sequence``).
@@ -164,10 +171,12 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
     props: dict = {"channels": chans, "view": view, "overlay": overlay or None,
                    "min": min, "max": max, "freq_scale": freq_scale,
                    "fft_size": fft_size, "db_floor": db_floor,
-                   "db_ceil": db_ceil, "label": label}
+                   "db_ceil": db_ceil, "ruler": ruler, "ruler_y": ruler_y,
+                   "label": label}
     if rate > 0.0:
         props["sample_rate"] = float(rate)
-    else:
+    elif ruler is None:
+        # No rate: clock time is meaningless, so the x axis reads in counts.
         props["ruler"] = "samples"
     props = {k: v for k, v in props.items() if v is not None}
     if len(samples) <= _INLINE_MAX:

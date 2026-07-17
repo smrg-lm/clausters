@@ -103,6 +103,15 @@ def test_plot_opens_one_window_with_inline_data():
     assert host.closed == [1000]
 
 
+def test_plot_passes_the_ruler_units_through():
+    # An explicit ruler rides the wire and overrides the rate-less
+    # "samples" default; ruler_y hides the value strip.
+    host = FakeHost()
+    plot([1.0, 2.0], ruler="off", ruler_y="off", host=host)
+    widget = _plot_widget(host.opened[0])
+    assert (widget["ruler"], widget["ruler_y"]) == ("off", "off")
+
+
 def test_each_plot_takes_a_fresh_widget_id():
     # Widget ids share the host's global namespace: two windows carrying the
     # same widget id would collide (the second is skipped at define time and
