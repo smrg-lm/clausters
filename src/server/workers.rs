@@ -6,6 +6,9 @@
 //! waits for completion and moves on. Stages never overlap, so a stage's
 //! raw pointers are only dereferenced while the conductor's stack frame —
 //! the owner of tree, buses and buffers — is pinned in `run_stage`.
+//! Publishing is seqlock-style (odd epoch = job being rewritten) and a
+//! worker validates the epoch *after* registering in `active`, so a
+//! late-waking worker can never read a job mid-rewrite.
 //!
 //! The hot path is syscall- and allocation-free: publishing is a handful
 //! of atomic stores, waiting is bounded spinning. Workers that find no
@@ -148,7 +151,16 @@ impl WorkerPool {
             return;
         };
 
-        // Publish. The job write happens-before the Release epoch bump.
+        // Publish, seqlock style. The odd epoch marks "writing": a worker
+        // that observed the previous epoch but has not yet registered in
+        // `active` re-validates the epoch after registering and backs off,
+        // so `job` is never read while it is being rewritten. The bump and
+        // the `active` drain below are SeqCst because they form a Dekker
+        // pair with the worker's register-then-validate sequence.
+        shared.epoch.fetch_add(1, Ordering::SeqCst);
+        while shared.active.load(Ordering::SeqCst) != 0 {
+            std::hint::spin_loop();
+        }
         unsafe {
             *shared.job.get() = Job {
                 tree,
@@ -164,7 +176,7 @@ impl WorkerPool {
         }
         shared.cursor.store(0, Ordering::Relaxed);
         shared.remaining.store(stage.len(), Ordering::Relaxed);
-        shared.epoch.fetch_add(1, Ordering::Release);
+        shared.epoch.fetch_add(1, Ordering::Release); // even: published
         for (i, t) in self.threads.iter().enumerate() {
             if shared.states[i].load(Ordering::Relaxed) == STATE_PARKED {
                 t.thread().unpark();
@@ -219,8 +231,8 @@ fn worker_main(shared: &Shared, me: usize) {
         let mut spins = 0u32;
         let epoch = loop {
             let e = shared.epoch.load(Ordering::Acquire);
-            if e != seen {
-                break e;
+            if e != seen && e % 2 == 0 {
+                break e; // odd = the conductor is writing the next job
             }
             if shared.shutdown.load(Ordering::Relaxed) {
                 return;
@@ -242,14 +254,23 @@ fn worker_main(shared: &Shared, me: usize) {
                 spins = 0;
             }
         };
-        seen = epoch;
         if shared.shutdown.load(Ordering::Relaxed) {
             return;
         }
 
-        shared.active.fetch_add(1, Ordering::AcqRel);
-        // SAFETY: `job` was written before the Acquire-observed epoch bump
-        // and is not rewritten until `active` returns to 0.
+        // Register, then re-validate. The conductor rewrites `job` only
+        // behind an odd epoch after draining `active`, so an epoch still
+        // unchanged *after* registering pins the job until we deregister;
+        // a changed one means a republish slipped in — back off and
+        // retry. SeqCst: Dekker pair with the conductor's publish.
+        shared.active.fetch_add(1, Ordering::SeqCst);
+        if shared.epoch.load(Ordering::SeqCst) != epoch {
+            shared.active.fetch_sub(1, Ordering::Release);
+            continue 'outer;
+        }
+        seen = epoch;
+        // SAFETY: `job` was written before the epoch publish observed
+        // above, and cannot be rewritten while `active` holds our count.
         let job = unsafe { *shared.job.get() };
         if job.tree.is_null() {
             shared.active.fetch_sub(1, Ordering::Release);

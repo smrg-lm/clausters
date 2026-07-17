@@ -442,9 +442,16 @@ mod osc {
                 OscType::Float(660.0),
             ],
         );
-        let left = render_channel(&mut engine, 750, 0);
-        let freq = estimated_freq(&left);
-        assert!((freq - 660.0).abs() < 7.0, "estimated freq = {freq}");
+        // /s_new also crosses the network thread before the engine sees it;
+        // poll until the voice settles at its initial pitch.
+        let mut freq = 0.0;
+        for _ in 0..50 {
+            freq = estimated_freq(&render_channel(&mut engine, 150, 0));
+            if (freq - 660.0).abs() < 5.0 {
+                break;
+            }
+        }
+        assert!((freq - 660.0).abs() < 5.0, "estimated freq = {freq}");
 
         // /n_set by name through the def mirror.
         send(
