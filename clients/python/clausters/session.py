@@ -107,7 +107,7 @@ class Session(Environment):
     def live(cls, host: "str | None" = None, port: "int | None" = None, *,
              tempo: float = 1.0, latency: "float | None" = None, timebase=None,
              boot: bool = True, options=None, shm="auto", transport: "str | None" = None,
-             verbose: int = 0,
+             verbose: int = 0, workers: "int | None" = None,
              data_dir=None, server_args=(), ready_timeout: float = 10.0) -> "Session":
         """Build a real-time session, **starting a server if none is up**.
 
@@ -148,8 +148,11 @@ class Session(Environment):
                 "monotonic"``) to keep wall-clock OSC timetags.
             boot: start a server if none is already answering (default). ``False``
                 attaches only, never launching a process.
-            options: a `clausters.defs.ServerOptions` sizing a *launched* server
-                and this client's allocators alike; ``None`` uses the defaults.
+            options: a `clausters.defs.ServerOptions` — the enumeration of
+                **every** option a launched server takes (sizing *and*
+                behavior: transports, MIDI, persistence, workers, ...) —
+                sizing this client's allocators alike; ``None`` uses the
+                defaults.
             shm: the shared-memory segment for a launched server — ``"auto"``
                 picks one, a path forces it, ``None`` launches without one. The
                 path is remembered so `gui` maps the same segment.
@@ -157,8 +160,14 @@ class Session(Environment):
                 ``"ws"``; ``None`` takes ``[client].transport`` from the config.
             verbose: launched-server log verbosity (``1``/``2``/``3`` -> ``-v``/
                 ``-vv``/``-vvv``; negative -> ``-q``).
+            workers: shortcut for ``options.workers`` (a launched server's DSP
+                worker threads for parallel groups); it wins over a value set
+                there. Like every launch option, it only affects a server this
+                call boots — an attach never reconfigures a running server.
             data_dir: a launched server's ``--data-dir``; ``None`` uses default.
-            server_args: extra CLI tokens for a launched server (e.g. ``["--tcp"]``).
+            server_args: raw CLI tokens appended **last** (they win over
+                everything above) — an escape hatch for flags newer than this
+                client; prefer `clausters.defs.ServerOptions` fields.
             ready_timeout: seconds to wait for a launched server to answer.
 
         Returns:
@@ -170,7 +179,7 @@ class Session(Environment):
         if boot and not server_is_up(server.target.host, server.target.port):
             server.close()  # drop the plain interface; boot opens its own
             server = Server.boot(options=options, shm=shm, transport=transport,
-                                 verbose=verbose,
+                                 verbose=verbose, workers=workers,
                                  data_dir=data_dir, server_args=server_args,
                                  latency=latency, ready_timeout=ready_timeout,
                                  _adopt_default=False)  # an explicit session is not the default
@@ -314,7 +323,7 @@ class Session(Environment):
             return pattern.play(self.clock, self.server, quant)
 
     def render(self, sample_rate: float = 48_000.0, channels: int = 2,
-               until: float | None = None):
+               until: float | None = None, workers: int = 0):
         """Drain the clock and render the accumulated score (offline only).
 
         Advances the clock logically with no real-time waiting, so every
@@ -328,6 +337,9 @@ class Session(Environment):
                 `TempoClock.render`); ``None`` drains everything scheduled —
                 required for an endless source (an infinite pattern never
                 drains on its own).
+            workers: DSP worker threads for the score's parallel groups
+                (``0`` renders sequentially). Bit-identical either way — the
+                workers only change how long the render takes.
 
         Returns:
             ``(samples, frames)`` -- interleaved float32 in a stdlib
@@ -336,7 +348,8 @@ class Session(Environment):
         """
         with self._active():
             self.clock.render(until)
-        return self.server.render(sample_rate=sample_rate, channels=channels)
+        return self.server.render(sample_rate=sample_rate, channels=channels,
+                                  workers=workers)
 
     def lock_to_server(self):
         """Lock this session's clock to its server's sample clock — the

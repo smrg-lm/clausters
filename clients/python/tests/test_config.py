@@ -117,6 +117,45 @@ def test_server_options_outputs_flag_omitted_by_default(monkeypatch):
     assert args[args.index("--inputs") + 1] == "0"
 
 
+def test_server_options_behavior_flags_omitted_by_default(monkeypatch):
+    """The behavior fields default to None = no flag, so the launched
+    server's own config layering (flag > project > user > default) decides."""
+    monkeypatch.delenv("CLAUSTERS_CONFIG", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    config.load_config(refresh=True)
+    args = ServerOptions().args()
+    for flag in ("--workers", "--tcp", "--no-tcp", "--ws", "--midi",
+                 "--no-persist", "--max-frame", "--max-clients", "--pin"):
+        assert flag not in args, flag
+
+
+def test_server_options_behavior_flags_emitted_when_set(monkeypatch):
+    monkeypatch.delenv("CLAUSTERS_CONFIG", raising=False)
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    config.load_config(refresh=True)
+
+    args = ServerOptions(workers=3, tcp=6000, ws=True, midi="mysynth",
+                         persist=False, max_frame=1 << 20, max_clients=8,
+                         pin=(0, 1)).args()
+    assert args[args.index("--workers") + 1] == "3"
+    assert args[args.index("--tcp") + 1] == "6000"
+    assert "--ws" in args and args[args.index("--ws") + 1] != "True"
+    assert args[args.index("--midi") + 1] == "mysynth"
+    assert "--no-persist" in args
+    assert args[args.index("--max-frame") + 1] == str(1 << 20)
+    assert args[args.index("--max-clients") + 1] == "8"
+    assert args[args.index("--pin") + 1] == "0,1"
+
+    # The valueless spellings: booleans emit the bare flag; a bool is an
+    # int, so True must never leak as a port number.
+    args = ServerOptions(tcp=True, ws=8080, midi=True).args()
+    assert args[args.index("--tcp") + 1] != "True"
+    assert args[args.index("--ws") + 1] == "8080"
+    i = args.index("--midi")
+    assert i == len(args) - 1 or args[i + 1].startswith("--")
+    assert ServerOptions(tcp=False).args().count("--no-tcp") == 1
+
+
 def test_server_info_capacity_fields_default_for_old_servers():
     """A pre-S7 server reports only the six original fields; the appended
     capacity fields fall back to the defaults on the dataclass."""

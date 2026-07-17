@@ -149,10 +149,20 @@ DEFAULT_TAP_FRAMES = 16384
 @dataclass
 class ServerOptions:
     """Client-owned server configuration, the way SuperCollider's
-    ``ServerOptions`` works: it both **sizes the client's bus allocators** and
-    emits the **CLI flags** to launch a matching server (`args`), so the
-    two agree by construction. Verify a running server with
-    `Server.query_info`.
+    ``ServerOptions`` works — the one enumeration of every option a launched
+    server takes (`Server.boot` / `Session.live` accept it as ``options``).
+    Two families of fields, with different defaulting:
+
+    - **Sizing** (buses, pools, taps, hardware I/O): these also size the
+      client's allocators, so their defaults read the same config file the
+      server reads and `args` always emits them — the launched server and
+      this object agree by construction. Verify a running server with
+      `Server.query_info`.
+    - **Behavior** (``workers``, ``tcp``, ``ws``, ``midi``, ``persist``,
+      ``max_frame``, ``max_clients``, ``pin``): server-only, no client-side
+      counterpart. Their default ``None`` emits **no flag**, leaving the
+      server's own precedence intact (CLI flag > project config > user
+      config > compiled default); a set value emits the flag, which wins.
     """
 
     # The defaults come from the config file's ``[server]`` section (the same
@@ -198,6 +208,34 @@ class ServerOptions:
         default_factory=lambda: server_config().get("tap_frames", DEFAULT_TAP_FRAMES)
     )
 
+    # --- behavior options: ``None`` emits no flag (the server's own config
+    # layering decides); a set value emits the flag and wins.
+    #: DSP worker threads for parallel groups (``--workers``).
+    workers: "int | None" = None
+    #: The TCP command plane: ``False`` disables it (``--no-tcp``), ``True``
+    #: forces it on at the default port, a number moves it (``--tcp <port>``).
+    #: It is on by default server-side; ``None`` leaves that as is.
+    tcp: "bool | int | None" = None
+    #: OSC over WebSocket: ``True`` opens it at the default port (57120), a
+    #: number picks the port (``--ws [port]``). There is no off flag — leave
+    #: ``None`` and keep it out of the server's config to run without it.
+    ws: "bool | int | None" = None
+    #: Virtual MIDI input: ``True`` opens it with the default name, a string
+    #: names the port (``--midi [name]``).
+    midi: "bool | str | None" = None
+    #: Def persistence: ``False`` disables it for this run (``--no-persist``).
+    #: There is no force-on flag — ``True`` is expressible only by keeping
+    #: ``persist = false`` out of the server's config.
+    persist: "bool | None" = None
+    #: Largest OSC frame on the stream transports, bytes (``--max-frame``).
+    max_frame: "int | None" = None
+    #: Concurrent stream clients, TCP + WebSocket (``--max-clients``).
+    max_clients: "int | None" = None
+    #: CPU affinity list (``--pin``): first CPU for the audio callback, the
+    #: rest round-robin over the DSP workers. Experimental, Linux only, and
+    #: only accepted by a server built with the ``rtprio`` feature.
+    pin: "tuple | list | str | None" = None
+
     def args(self) -> list[str]:
         """The ``clausters`` CLI flags that launch a server matching these
         options (pass to ``subprocess`` after the binary path). ``outputs`` is
@@ -218,6 +256,35 @@ class ServerOptions:
         ]
         if self.outputs is not None:
             flags += ["--outputs", str(self.outputs)]
+        # Behavior flags: emitted only when set (`None` defers to the
+        # server's own config). `is True`/`is False` first — a bool is an
+        # int, so the port/number branch must come after.
+        if self.workers is not None:
+            flags += ["--workers", str(self.workers)]
+        if self.tcp is False:
+            flags += ["--no-tcp"]
+        elif self.tcp is True:
+            flags += ["--tcp"]
+        elif self.tcp is not None:
+            flags += ["--tcp", str(self.tcp)]
+        if self.ws is True:
+            flags += ["--ws"]
+        elif self.ws not in (None, False):
+            flags += ["--ws", str(self.ws)]
+        if self.midi is True:
+            flags += ["--midi"]
+        elif self.midi not in (None, False):
+            flags += ["--midi", str(self.midi)]
+        if self.persist is False:
+            flags += ["--no-persist"]
+        if self.max_frame is not None:
+            flags += ["--max-frame", str(self.max_frame)]
+        if self.max_clients is not None:
+            flags += ["--max-clients", str(self.max_clients)]
+        if self.pin is not None:
+            cpus = self.pin if isinstance(self.pin, str) \
+                else ",".join(str(c) for c in self.pin)
+            flags += ["--pin", cpus]
         return flags
 
 
@@ -371,7 +438,8 @@ class Server:
     @classmethod
     def boot(cls, options: "ServerOptions | None" = None, *, shm="auto",
              transport: "str | None" = None,
-             verbose: int = 0, data_dir=None, server_args=(),
+             verbose: int = 0, workers: "int | None" = None,
+             data_dir=None, server_args=(),
              latency: "float | None" = None, ready_timeout: float = 10.0,
              _adopt_default: bool = True) -> "Server":
         """Start a **separate** ``clausters`` server process and return a `Server`
@@ -385,8 +453,10 @@ class Server:
         for the bundled, clock-included path.
 
         Args:
-            options: a `ServerOptions` sizing the launched server and this
-                handle's allocators alike; ``None`` uses the server's defaults.
+            options: a `ServerOptions` — the enumeration of **every** option a
+                launched server takes (sizing *and* behavior: transports, MIDI,
+                persistence, workers, ...) — sizing this handle's allocators
+                alike; ``None`` uses the server's defaults.
             shm: the shared-memory segment — ``"auto"`` picks one, a path forces
                 it, ``None`` launches without one. Remembered for a GUI to map.
             transport: the carrier this handle talks over — ``"tcp"``
@@ -394,8 +464,13 @@ class Server:
                 boot-or-attach probe itself always rides UDP.
             verbose: server log verbosity (``1``/``2``/``3`` -> ``-v``/``-vv``/
                 ``-vvv``; negative -> ``-q``).
+            workers: shortcut for ``options.workers`` (DSP worker threads for
+                parallel groups); it wins over a value set there. ``None``
+                emits no flag.
             data_dir: the server's ``--data-dir``; ``None`` uses its default.
-            server_args: extra server CLI tokens (e.g. ``["--tcp"]``).
+            server_args: raw CLI tokens appended **last** (they win over
+                everything above) — an escape hatch for flags newer than this
+                client; prefer `ServerOptions` fields.
             latency: seconds added to RT timetags (see the constructor).
             ready_timeout: seconds to wait for the server to answer.
 
@@ -410,8 +485,11 @@ class Server:
         """
         from ..launch import ServerProcess
 
+        extra = list(server_args)
+        if workers is not None:
+            extra = ["--workers", str(workers)] + extra
         proc = ServerProcess(options, shm=shm, verbose=verbose, data_dir=data_dir,
-                             extra_args=server_args, ready_timeout=ready_timeout).start()
+                             extra_args=extra, ready_timeout=ready_timeout).start()
         server = cls(proc.host, proc.port, latency=latency, options=options,
                      transport=transport)
         server._process = proc
@@ -1037,13 +1115,16 @@ class Server:
 
     # ---- offline render (NRT interface only) ----
 
-    def render(self, sample_rate: float = 48_000.0, channels: int = 2):
+    def render(self, sample_rate: float = 48_000.0, channels: int = 2,
+               workers: int = 0):
         """Renders the accumulated score (the interface must be an
         `OscNrtInterface`). Schedule a closing bundle (e.g. ``/n_free 0``)
-        so the render has a defined duration."""
+        so the render has a defined duration. ``workers`` adds DSP threads
+        for the score's parallel groups — bit-identical, only faster."""
         if not isinstance(self.interface, OscNrtInterface):
             raise RuntimeError("render() needs a Server with an OscNrtInterface")
-        return self.interface.render(sample_rate=sample_rate, channels=channels)
+        return self.interface.render(sample_rate=sample_rate, channels=channels,
+                                     workers=workers)
 
     # ---- server control ----
 

@@ -56,6 +56,14 @@ Two sections feed the client's defaults:
   `Server.query_info()` reads the same fields back from a running server
   (including `input_channels` and the pool sizes) as a `ServerInfo`.
 
+  `ServerOptions` also carries the server's **behavior options** — `workers`,
+  `tcp`, `ws`, `midi`, `persist`, `max_frame`, `max_clients`, `pin` — which
+  have no client-side counterpart: their default `None` emits no flag, so the
+  server's own precedence (CLI flag > project config > user config > compiled
+  default) stays intact, and a set value emits the flag, which wins. E.g.
+  `Session.live(options=ServerOptions(ws=True, workers=3))` launches a server
+  that also listens on WebSocket and runs three DSP workers.
+
 ## Reading it yourself
 
 `clausters.config.load_config()` returns the merged configuration as a nested

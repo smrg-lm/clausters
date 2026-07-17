@@ -43,6 +43,66 @@ def test_nrt_session_plays_and_renders():
     assert max(abs(x) for x in samples) > 0.0
 
 
+def test_nrt_render_with_workers_is_bit_identical():
+    # A parallel group of independent voices: `workers` must only change
+    # wall-clock time, never the samples.
+    _embed_or_skip()
+    from clausters.defs import SynthDef, control, out, sin_osc
+
+    def build():
+        s = Session.nrt(tempo=1.0)
+        server = s.server
+        server.add_synthdef(SynthDef(
+            "par_voice", out(0.0, sin_osc(control("freq", 330.0)) * 0.1)))
+        band = server.group()
+        server.send_msg("/g_parallel", band.id, 1)
+        voices = [server.synth("par_voice", {"freq": 220.0 * (i + 1)},
+                               target=band.id) for i in range(4)]
+
+        def score():
+            yield 0.5
+            server.send_bundle(*[("/n_free", v.id) for v in voices])
+
+        from clausters.base.stream import Routine
+        s.clock.play(Routine(score))
+        return s
+
+    try:
+        seq, frames = build().render(channels=2)
+        par, frames2 = build().render(channels=2, workers=2)
+    except (OSError, RuntimeError, AttributeError) as e:
+        pytest.skip(f"embed library not built/usable: {e}")
+    assert frames == frames2 and frames > 0
+    assert list(seq) == list(par)
+
+
+def test_boot_workers_becomes_the_cli_flag(monkeypatch):
+    # Server.boot(workers=N) must launch `clausters --workers N` (before any
+    # explicit server_args, so those stay the escape hatch that wins).
+    import clausters.launch as launch
+
+    captured = {}
+
+    class FakeProcess:
+        def __init__(self, options=None, **kwargs):
+            captured.update(kwargs)
+            self.host, self.port, self.shm = "127.0.0.1", 57997, None
+
+        def start(self):
+            return self
+
+    monkeypatch.setattr(launch, "ServerProcess", FakeProcess)
+    server = Server.boot(workers=3, server_args=("--tcp",), transport="udp",
+                         _adopt_default=False)
+    try:
+        assert captured["extra_args"] == ["--workers", "3", "--tcp"]
+    finally:
+        server.interface.close()
+    # None emits no flag: the server keeps its config-file default.
+    Server.boot(transport="udp", _adopt_default=False).interface.close()
+    assert captured["extra_args"] == []
+
+
 def _embed_session_or_skip():
     """An embedded live session, or skip if the embed library is unusable here
     (not built with embed,realtime, or no audio device available)."""

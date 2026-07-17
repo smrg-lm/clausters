@@ -373,15 +373,18 @@ class OscNrtInterface(OscInterface):
         packets = [_osclib.message(*m) for m in messages]
         self.score.add(when, _osclib.score_bundle(when, *packets))
 
-    def render(self, sample_rate: float = 48_000.0, channels: int = 2):
+    def render(self, sample_rate: float = 48_000.0, channels: int = 2,
+               workers: int = 0):
         """Renders the accumulated score through the embed transport.
 
         Schedule a closing bundle (e.g. ``/n_free 0``) at the end so the render
         has a defined duration — scsynth semantics (its commands do not sound).
+        ``workers`` adds DSP threads for the score's parallel groups.
         """
         from .. import ipc
 
-        return ipc.render(self.score.bytes(), sample_rate=sample_rate, channels=channels)
+        return ipc.render(self.score.bytes(), sample_rate=sample_rate,
+                          channels=channels, workers=workers)
 
 
 class OscEmbedInterface(OscInterface):

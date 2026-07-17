@@ -13,6 +13,13 @@ clausters --nrt score.osc out.wav --workers 3   # faster offline renders too
 /g_parallel groupID mode    # 1 = process children in stages, 0 = strict order
 ```
 
+From the Python client, `workers` is a first-class argument on every path that
+owns the engine: `Session.live(workers=3)` / `Server.boot(workers=3)` for a
+launched server (`None`, the default, emits no flag so the server's own
+config-file `[server].workers` still applies), `Session.embed(workers=3)` for
+the in-process server, and `session.render(workers=3)` / `ipc.render(...,
+workers=3)` for offline scores.
+
 Without `--workers` (the default) everything stays sequential; `/g_parallel` is then a no-op flag, accepted and remembered. The flag is schedulable in timed bundles and valid in NRT scores, like `/g_sortMode`.
 
 The layout that benefits is *independent chains*: subgroups (voices, mixer channels) under one parallel group, each chain writing its own buses. Each child of the parallel group — synth or whole subgroup — is one unit; units that touch disjoint buses run concurrently.
