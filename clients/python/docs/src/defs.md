@@ -371,11 +371,13 @@ src = fft(white_noise() * 0.25)
 # bites harder on the highs. Not in any catalog -- it is just an expression.
 gated = pv_kernel(
     src,
-    mag=mag * (mag >= param(0) * (1 + 3 * bin_index / nbins)),
-    params=[control("thresh", 0.5)],
+    mag=mag * (mag >= param(0) * (1 + 4 * bin_index / nbins)),
+    params=[control("thresh", 2.0)],
 )
 sdef = SynthDef("tiltgate", out(0.0, ifft(gated)))
 ```
+
+**Calibrate thresholds to the FFT's magnitude scale.** A bin's `mag` is a raw transform magnitude, **not** a 0..1 value: it scales with the input level, the window and the `fft_size` (for the source above — noise at amplitude 0.25 through a 1024-point Hann — magnitudes spread over roughly 0.5..5, median ≈ 2.3). A threshold far below that spread gates almost nothing, and the chain's one-window latency alone will make the output *sound* vaguely different (decorrelated) while the spectrum is essentially untouched — a classic miscalibration trap. Probe the scale first (render and inspect, or `poll` a reference), or express the threshold relative to a known reference level.
 
 Each expression maps **one bin's values** — its magnitude, its phase (radians), its index, the bin count, its center frequency, and the `params` signals sampled once per hop — to that bin's new magnitude (`mag=`) or phase (`phase=`). An omitted expression is the identity, and an identity phase keeps each bin's phase *exactly*: a pure magnitude map takes the same cheap scaling path as the built-in `pv_*` filters (a kernel reimplementing `pv_mag_above` renders sample-identically to it — that equivalence is a server test). The client serializes the expression to a small postfix program; the server validates it at `/d_recv` (unknown terms, malformed expressions and out-of-range `param` indices fail the def with `/fail`, never at render time) and interprets it per bin, per frame — pure `f32`, allocation-free, bit-identical between real-time and offline rendering.
 

@@ -51,14 +51,25 @@ def tilted_gate(name: str = "tiltgate") -> SynthDef:
 
     The expression reads like the rule it implements: keep a bin only when its
     magnitude clears a threshold that grows with the bin index — `thresh` at
-    DC, `4 * thresh` at Nyquist. `mag >= t` evaluates to 1 or 0 per bin, so
+    DC, `5 * thresh` at Nyquist. `mag >= t` evaluates to 1 or 0 per bin, so
     multiplying by it *is* the gate; the phase is untouched (identity), which
     keeps the kernel on the exact, cheap magnitude-scaling path.
+
+    **Calibrating the threshold**: bin magnitudes are on the FFT's scale, not
+    0..1 — for this source (noise at amplitude 0.25, 1024-point Hann) they
+    spread over roughly 0.5..5 with a median near 2.3. The default `thresh`
+    of 2.0 puts the gate right at that median at DC and far above the loudest
+    bins up high, so the lows survive sparsely and the highs are wiped — the
+    audible result is a dark, crackly residue, unmistakable next to the raw
+    noise. A threshold well below the magnitude spread would gate almost
+    nothing (the output then only *sounds* like decorrelated noise, because
+    the chain also delays by one window). Sweep it live with
+    `/n_set thresh ...` on a running server to hear the gate open and close.
     """
     chain = fft(white_noise() * 0.25, fft_size=1024)
-    tilt = param(0) * (1 + 3 * bin_index / nbins)  # rising threshold
+    tilt = param(0) * (1 + 4 * bin_index / nbins)  # rising threshold
     chain = pv_kernel(chain, mag=mag * (mag >= tilt),
-                      params=[control("thresh", 0.4)])
+                      params=[control("thresh", 2.0)])
     return SynthDef(name, out(1.0, ifft(chain)))
 
 

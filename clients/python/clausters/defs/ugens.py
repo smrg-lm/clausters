@@ -602,12 +602,17 @@ def pv_kernel(chain, mag=None, phase=None, params=()) -> Ugen:
     ``/d_recv`` (stack discipline, parameter arity, unknown words) and
     rejects a bad def with ``/fail``.
 
+    Note that ``mag`` is a raw transform magnitude — it scales with the input
+    level, the window and the ``fft_size``, it is **not** normalized to 0..1 —
+    so thresholds and constants must be calibrated to the material (probe a
+    render, or ``poll`` a reference).
+
     ```python
     from clausters.defs.pv_expr import mag, bin_index, nbins, param
     # A tilted spectral gate: the threshold rises with frequency.
     chain = pv_kernel(chain,
-                      mag=mag * (mag >= param(0) * (1 + bin_index / nbins)),
-                      params=[control("thresh", 1.0)])
+                      mag=mag * (mag >= param(0) * (1 + 4 * bin_index / nbins)),
+                      params=[control("thresh", 2.0)])
     ```"""
     from .pv_expr import pv_tokens
     static = {}
