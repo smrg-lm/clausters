@@ -84,6 +84,10 @@ pub(super) struct App {
     /// TCP write halves by connection id (the script front's stream carrier);
     /// registered on `TcpConnected`, pruned on `TcpDisconnected`.
     pub(super) tcp_conns: HashMap<u64, TcpStream>,
+    /// WebSocket reply channels by connection id (each connection's thread
+    /// writes them; the raw handle force-drops a slow consumer); registered
+    /// on `WsConnected`, pruned on `WsDisconnected`.
+    pub(super) ws_conns: HashMap<u64, (std::sync::mpsc::SyncSender<Vec<u8>>, TcpStream)>,
     /// Window opens requested before the first `resumed`, flushed on resume.
     pub(super) pending: Vec<(i32, ClientId)>,
     pub(super) resumed: bool,
@@ -134,6 +138,7 @@ impl App {
             windows: HashMap::new(),
             by_winit: HashMap::new(),
             tcp_conns: HashMap::new(),
+            ws_conns: HashMap::new(),
             pending: Vec::new(),
             resumed: false,
             next_frame: Instant::now(),
@@ -277,6 +282,9 @@ impl App {
                     warn!("failed to send {addr} to tcp client {id}: {e}");
                 }
             }
+            // Queued to the originating connection's thread, which writes it
+            // as one binary message (WsDisconnected prunes it).
+            ClientId::Ws(id) => crate::host::ws::reply(&self.ws_conns, id, &bytes),
             // The wasm front never reaches the native event loop.
             ClientId::Web => warn!("reply {addr} to a web client on the native front"),
         }
@@ -441,6 +449,21 @@ impl ApplicationHandler<UserEvent> for App {
             }
             UserEvent::TcpDisconnected { id } => {
                 self.tcp_conns.remove(&id);
+            }
+            UserEvent::WsConnected { id, reply, raw } => {
+                self.ws_conns.insert(id, (reply, raw));
+            }
+            UserEvent::WsOsc { id, bytes } => {
+                let packet = match clausters_core::osc::decode_packet(&bytes) {
+                    Ok(p) => p,
+                    Err(e) => return warn!("malformed OSC packet from ws client {id}: {e}"),
+                };
+                let from = ClientId::Ws(id);
+                let effects = self.host.handle_packet(packet, from);
+                self.apply(event_loop, from, effects);
+            }
+            UserEvent::WsDisconnected { id } => {
+                self.ws_conns.remove(&id);
             }
             UserEvent::ServerOsc { bytes } => match clausters_core::osc::decode_packet(&bytes) {
                 Ok(packet) => self.handle_server_packet(packet),

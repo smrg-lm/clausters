@@ -74,6 +74,9 @@ libc = "0.2"
 # Target-gated off wasm — the browser host keeps display parity only.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clausters-midi = { path = "../../crates/clausters-midi", features = ["live"], optional = true }
+# The WebSocket leg of the script front (`--ws`): the browser's carrier into a
+# native host, mirroring the audio server's `osc::ws` (same version).
+tungstenite = "0.21"
 
 # The browser host (`host::web`, G12/G13): wasm-bindgen for the JS entry point
 # and the binding surface, wasm-bindgen-futures to await the async WebGPU

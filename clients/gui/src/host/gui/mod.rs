@@ -69,6 +69,19 @@ pub enum UserEvent {
     TcpOsc { id: u64, bytes: Vec<u8> },
     /// TCP connection `id` closed; its write half is dropped.
     TcpDisconnected { id: u64 },
+    /// A new WebSocket connection on the script front (`--ws`): its id, the
+    /// channel its replies are queued through (the connection thread writes
+    /// them — a tungstenite socket owns both halves) and the raw handle an
+    /// overflowing reply force-drops it with.
+    WsConnected {
+        id: u64,
+        reply: std::sync::mpsc::SyncSender<Vec<u8>>,
+        raw: TcpStream,
+    },
+    /// One OSC packet (a binary message) from WebSocket connection `id`.
+    WsOsc { id: u64, bytes: Vec<u8> },
+    /// WebSocket connection `id` closed; its reply channel is dropped.
+    WsDisconnected { id: u64 },
     /// One OSC reply from the audio server (the client leg): `/b_info`, `/b_setn`.
     ServerOsc { bytes: Vec<u8> },
 }
@@ -85,6 +98,7 @@ pub fn run(
     socket: Arc<UdpSocket>,
     shm_path: Option<String>,
     tcp: Option<(u16, usize)>,
+    ws: Option<(u16, usize)>,
 ) -> Result<(), String> {
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
@@ -114,6 +128,25 @@ pub fn run(
         })
         .map_err(|e| format!("failed to bind TCP port {port}: {e}"))?;
         tracing::info!("clausters-gui host listening on tcp://{bound} (script -> host)");
+    }
+    // The WebSocket leg (`--ws`), the browser's carrier — same shape as TCP:
+    // the connection threads feed the event loop through its proxy.
+    if let Some((port, max_frame)) = ws {
+        let ws_proxy = proxy.clone();
+        let bound = super::ws::bind_with_sink(("0.0.0.0", port), max_frame, move |event| {
+            let user_event = match event {
+                super::ws::WsEvent::Connected(id, reply, raw) => {
+                    UserEvent::WsConnected { id, reply, raw }
+                }
+                super::ws::WsEvent::Frame(id, bytes) => UserEvent::WsOsc { id, bytes },
+                super::ws::WsEvent::Disconnected(id) => UserEvent::WsDisconnected { id },
+            };
+            ws_proxy.send_event(user_event).is_ok()
+        })
+        .map_err(|e| format!("failed to bind WebSocket port {port}: {e}"))?;
+        tracing::info!(
+            "clausters-gui host listening on ws://{bound} (script -> host, browser-reachable)"
+        );
     }
     // The host <- audio-server reply path: a background thread only for the UDP
     // leg (the embed link is polled in the event loop, no socket to drain).

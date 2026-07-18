@@ -8,7 +8,11 @@ alike**: like the audio server, the host accepts length-prefixed OSC over TCP
 by default (`--no-tcp` disables it, `--max-frame` sets the frame ceiling,
 default 16 MiB), and the Python `GuiHost` connects over TCP by default — so a
 `/gui_def` tree with its blobs, the largest payload in the system, is not
-bounded by a UDP datagram.
+bounded by a UDP datagram. A third, opt-in carrier is **WebSocket** (`--ws
+[port]`, default 57220, the same flag the audio server takes): one OSC packet
+per binary message, browser-reachable — the carrier the TypeScript client uses
+to drive a *native* host from a page, exactly as it drives a `clausters --ws`
+audio server.
 
 This page is the wire reference. The *why* behind it — the host's two roles, the
 declarative protocol, the GPU substrate, the composition views — is in

@@ -76,6 +76,8 @@ pub mod store;
 pub mod tcp;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod transport;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod ws;
 
 // Reading the audio server's shared-memory segment for zero-message meters/
 // scopes (G5), the native [`BusSource`]. Unix-only, as the server's segment is.
@@ -143,6 +145,10 @@ pub enum ClientId {
     /// A TCP connection on the native server front (G25), by connection id —
     /// length-prefixed frames, replies routed back on the same connection.
     Tcp(u64),
+    /// A WebSocket connection on the native server front (`--ws`), by
+    /// connection id — one OSC packet per binary message, replies routed back
+    /// on the same connection. The browser's carrier into a native host.
+    Ws(u64),
     /// The browser's in-page binding surface (the wasm front feeds OSC packets
     /// in and drains events out through it; there is no socket address).
     Web,
@@ -153,6 +159,7 @@ impl std::fmt::Display for ClientId {
         match self {
             ClientId::Udp(addr) => write!(f, "{addr}"),
             ClientId::Tcp(id) => write!(f, "tcp client {id}"),
+            ClientId::Ws(id) => write!(f, "ws client {id}"),
             ClientId::Web => write!(f, "web"),
         }
     }

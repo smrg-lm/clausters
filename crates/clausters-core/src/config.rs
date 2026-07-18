@@ -121,7 +121,11 @@ pub struct GuiConfig {
     /// TCP leg of the script front (`--tcp`/`--no-tcp`): on by default at the
     /// host port; `false` disables it, a number moves it.
     pub tcp: Option<PortSetting>,
-    /// Largest OSC frame accepted on the TCP leg, in bytes (`--max-frame`).
+    /// WebSocket leg of the script front (`--ws`): `true` for the default
+    /// port, or a number. The browser's carrier into a native host.
+    pub ws: Option<PortSetting>,
+    /// Largest OSC frame accepted on the stream legs (TCP and WebSocket), in
+    /// bytes (`--max-frame`).
     pub max_frame: Option<usize>,
     /// `host:port` of the audio server to attach the client leg to (`--server`).
     pub server: Option<String>,
@@ -255,6 +259,7 @@ impl GuiConfig {
         GuiConfig {
             host_port: pick(self.host_port, h.host_port),
             tcp: pick(self.tcp, h.tcp),
+            ws: pick(self.ws, h.ws),
             max_frame: pick(self.max_frame, h.max_frame),
             server: pick(self.server, h.server),
             shm: pick(self.shm, h.shm),

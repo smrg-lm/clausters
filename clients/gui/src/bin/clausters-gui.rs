@@ -32,16 +32,20 @@ use std::net::Ipv4Addr;
 const USAGE: &str = "\
 usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
-                [--tcp [port] | --no-tcp] [--max-frame <bytes>]
+                [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
       --tcp [port]          length-prefixed OSC over TCP — on by default at the
                             host port; the flag only moves it
       --no-tcp              disable the TCP leg (UDP-only front)
-      --max-frame <bytes>   largest OSC frame on the TCP leg (default 16 MiB).
-                            A DoS ceiling, not a protocol limit; UDP keeps the
-                            ~64 KB datagram cap
+      --ws [port]           also accept /gui_* over WebSocket, reachable from a
+                            browser (default port 57220; ws://host:port/) — the
+                            same flag the audio server takes
+      --max-frame <bytes>   largest OSC frame on the stream legs, TCP and
+                            WebSocket alike (default 16 MiB). A DoS ceiling,
+                            not a protocol limit; UDP keeps the ~64 KB
+                            datagram cap
       --server <host:port>  also attach the client leg to a running audio
                             server (host -> audio server); default off.
                             Needed for waveform widgets that reference a
@@ -105,6 +109,7 @@ fn run(args: &[String]) -> Result<(), String> {
     // flag > project clausters.toml > user config.toml > default.
     let mut cli_port: Option<u16> = None;
     let mut cli_tcp: Option<Option<u16>> = None; // None = unset, Some(None) = off
+    let mut cli_ws: Option<u16> = None;
     let mut cli_max_frame: Option<usize> = None;
     let mut cli_server: Option<String> = None;
     let mut cli_shm: Option<String> = None;
@@ -134,6 +139,18 @@ fn run(args: &[String]) -> Result<(), String> {
                 cli_tcp = Some(port.or(Some(0))); // 0 = "the host port", resolved below
             }
             "--no-tcp" => cli_tcp = Some(None),
+            "--ws" => {
+                // Optional port; defaults away from the host port, since the
+                // WS leg binds its own TCP listener (the server's pattern).
+                let mut port = DEFAULT_PORT + 10;
+                if let Some(next) = it.peek()
+                    && let Ok(p) = next.parse::<u16>()
+                {
+                    port = p;
+                    it.next();
+                }
+                cli_ws = Some(port);
+            }
             "--max-frame" => {
                 let v = it
                     .next()
@@ -200,6 +217,11 @@ fn run(args: &[String]) -> Result<(), String> {
             None => Some(port),
         },
     };
+    // The WebSocket leg is opt-in (`--ws`, or `ws = true`/a port in the
+    // config), the audio server's own semantics; its default port sits clear
+    // of the host port since both bind a TCP listener.
+    let ws_port: Option<u16> =
+        cli_ws.or_else(|| cfg.gui.ws.and_then(|w| w.resolve(DEFAULT_PORT + 10)));
     let max_frame = cli_max_frame
         .or(cfg.gui.max_frame)
         .unwrap_or(clausters_core::osc::DEFAULT_MAX_FRAME)
@@ -279,7 +301,8 @@ fn run(args: &[String]) -> Result<(), String> {
         if shm.is_some() {
             tracing::warn!("--shm has no effect headless (meters need a window)");
         }
-        // The TCP leg's readers wake the serve loop through its own UDP socket.
+        // The TCP/WS legs' readers wake the serve loop through its own UDP
+        // socket.
         let hub = match tcp_port {
             Some(p) => {
                 let hub = transport::bind_tcp(&socket, p, max_frame).map_err(|e| e.to_string())?;
@@ -291,13 +314,25 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             None => None,
         };
-        transport::serve(host, socket, hub).map_err(|e| e.to_string())
+        let ws_hub = match ws_port {
+            Some(p) => {
+                let hub = transport::bind_ws(&socket, p, max_frame).map_err(|e| e.to_string())?;
+                tracing::info!(
+                    "clausters-gui host listening on ws://{} (script -> host, browser-reachable)",
+                    hub.local_addr()
+                );
+                Some(hub)
+            }
+            None => None,
+        };
+        transport::serve(host, socket, hub, ws_hub).map_err(|e| e.to_string())
     } else {
         gui::run(
             host,
             Arc::new(socket),
             shm,
             tcp_port.map(|p| (p, max_frame)),
+            ws_port.map(|p| (p, max_frame)),
         )
     }
 }
@@ -370,11 +405,11 @@ fn run_standalone(
     );
 
     // gui::run still wants a script-front socket, unused in standalone (a
-    // script could still attach over UDP; the TCP leg stays off here).
+    // script could still attach over UDP; the TCP and WS legs stay off here).
     let socket = UdpSocket::bind(("127.0.0.1", port))
         .map_err(|e| format!("failed to bind UDP port {port}: {e}"))?;
     tracing::info!("standalone: opening GuiDef \"{name}\" (id {id})");
-    gui::run(host, Arc::new(socket), None, None)
+    gui::run(host, Arc::new(socket), None, None, None)
 }
 
 /// Encodes and sends one OSC message to the embedded server, warning if the ring
