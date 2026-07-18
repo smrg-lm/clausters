@@ -83,6 +83,15 @@ The smallest round trip, and the toolchain. **Rewritten 2026-07-18**: the origin
 
 ### W1 - Server client + the def model
 
+**On hold (2026-07-18) — waiting for the Python client review.** W1 is the
+first milestone that mirrors the *Python API surface* (not just the wire, as
+W0 did), and so does everything after it (W2 the gui builders/host, W3 seq,
+W4 responders). The reference client is under review; starting the mirror
+before it settles would turn every Python change into two changes — exactly
+what the cross-client build strategy exists to avoid ("finish and polish one
+reference client at a time, then port"). The wire-level work is unaffected
+and done: the W0 seam, the host's `--ws` front, the bundle formats.
+
 Drive the audio server.
 
 - `defs/server.ts`: the `Server` object - send `/d_recv`/`/d_graph`/`/d_faust` specs, `/s_new`, `/n_set`/`/n_free`, groups, the `/sync` barrier, buses and buffers; receive replies through `responders` (W4 hardens this).
