@@ -71,6 +71,48 @@ handle.collect_garbage();
 
 You can also construct `Cmd` values directly (see the rustdoc for the enum) if you don't need OSC. `engine_pair_with_workers` adds a DSP worker pool for `/g_parallel` groups; `engine_pair_full` wires an IPC segment so external processes share the control buses and sample clock.
 
+## The pulled server: the whole server inside your audio callback
+
+Between the raw engine pair (above) and the threaded in-process server (below)
+sits `clausters::embed::ClaustersHeadless` (feature `embed`, no `realtime`
+needed): the **complete server** — the OSC translator, def machinery, buffer
+commands, `/c_stream`/`/tap_stream`, `/sync`, everything — with **no device,
+no sockets and no threads**. The host owns the audio thread and pulls,
+callback-style:
+
+```rust,ignore
+use clausters::embed::ClaustersHeadless;
+
+let mut server = ClaustersHeadless::new(48_000.0, 2, unix_now_secs)?;
+server.send(&osc_packet_bytes);        // complete OSC packets, any command
+let mut out = vec![0.0f32; 64 * 2];
+server.process_block(&mut out)?;       // a serving turn + the engine blocks
+let mut buf = vec![0u8; 64 * 1024];
+while let Some(len) = server.poll_into(&mut buf) { /* replies */ }
+# Ok::<(), String>(())
+```
+
+Three properties define the mode:
+
+- **Time follows the sample clock.** Stream periods and bundle timetags are
+  measured on the engine's sample axis (anchored at `unix_epoch`, the third
+  constructor argument), not the wall clock — so an offline or faster-than-
+  real-time drive stays deterministic, and a paused callback pauses time.
+- **NRT work runs inline.** `/b_alloc` and friends execute on the calling
+  thread in submission order; `b_load(index, channels, sample_rate, samples)`
+  installs host-decoded samples directly — the `/b_allocRead` replacement for
+  hosts without a filesystem (a browser page decodes with `decodeAudioData`
+  and hands the engine the floats).
+- **Not RT-strict.** The serving turn allocates on the calling thread (the
+  translate/NRT work the threaded server does elsewhere). A host that needs
+  the native no-alloc callback keeps using `Clausters` or the full server;
+  the pulled mode trades that guarantee for having no thread of its own.
+
+This is the exact shape the browser build runs (the AudioWorklet is the
+caller; `crates/clausters-web` wraps this type 1:1 as `WebServer`), and it is
+just as usable natively — a plugin process or a test that wants the whole
+protocol in one thread.
+
 ## Embedding in another process (C ABI)
 
 With the `embed` feature the `cdylib` exposes a versioned C ABI (`clausters_render` for synchronous offline renders, plus a live in-process server: `clausters_open` / `send` / `poll` / `clock` / `ctl_*`). The boundary passes only plain `f32`/integers. Full reference, the shared-memory transport, and the stdlib-only Python binding are in [Local transports & embedding](ipc.md).

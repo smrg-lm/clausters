@@ -39,7 +39,7 @@ use crate::osc::translate::{
 };
 use crate::server::defstore::DefStore;
 use crate::server::engine::{Cmd, EngineHandle, Garbage, NodeEventKind};
-use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtThread};
+use crate::server::nrt::{NrtAction, NrtJob, NrtRequest, NrtRunner};
 
 /// Default scsynth port.
 pub const DEFAULT_PORT: u16 = 57110;
@@ -83,7 +83,10 @@ enum Flow {
 }
 
 pub struct OscServer {
-    socket: UdpSocket,
+    /// The UDP front. `None` for a headless pulled server ([`Self::headless`]):
+    /// commands come only through the attached ring, replies only through it,
+    /// and the host drives the loop by calling [`Self::step`].
+    socket: Option<UdpSocket>,
     info: ServerInfo,
     handle: EngineHandle,
     /// Def tables, node→def mirror and message→command translation, shared
@@ -93,7 +96,7 @@ pub struct OscServer {
     /// `/b_write` and `/b_zero` the current contents/shape, and a Faust
     /// instance its `soundfile` data.
     translator: CmdTranslator,
-    nrt: NrtThread,
+    nrt: NrtRunner,
     /// Clients registered via `/notify 1`; the client ID is index + 1.
     clients: Vec<ClientId>,
     /// Active `/c_stream` subscriptions, at most one per client: the network
@@ -107,6 +110,8 @@ pub struct OscServer {
     /// window; reused across pumps.
     tap_buf: Vec<f32>,
     recv_buf: Vec<u8>,
+    /// Where streams and timetags read time from (see [`TimeSource`]).
+    clock: TimeSource,
     /// M14: the shared-memory / in-process ring endpoint, when attached.
     ipc: Option<crate::server::ipc::IpcPeer>,
     /// TCP transport, when `listen_tcp` was called: accepts length-prefixed OSC
@@ -181,7 +186,8 @@ struct BusStream {
     client: ClientId,
     period: Duration,
     buses: Vec<i32>,
-    next_due: Instant,
+    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
+    next_due: f64,
 }
 
 /// One client's `/tap_stream` subscription: which audio taps it watches, the
@@ -192,7 +198,8 @@ struct TapStream {
     /// Snapshot window in samples (≤ [`MAX_TAP_WINDOW`], ≤ half the tap ring).
     frames: usize,
     taps: Vec<i32>,
-    next_due: Instant,
+    /// In [`OscServer::mono_secs`] seconds (wall or sample time).
+    next_due: f64,
 }
 
 /// A `/sync` waiting for the async pipelines to drain up to its targets.
@@ -201,6 +208,21 @@ struct PendingSync {
     id: i32,
     nrt_target: u64,
     faust_target: u64,
+}
+
+/// Where the server reads time from. `Wall` is the native default: streams
+/// pace on the monotonic clock and NTP timetags convert through the system
+/// wall clock, as always. `Sample` is the headless/pulled mode (B1): both
+/// derive from the **engine sample clock** — the only clock a wasm build has,
+/// and the natural one for a host that drives `process_block` itself (an
+/// offline host makes streams and timetags follow render time, not wall
+/// time). `unix_epoch` anchors sample 0 on the Unix axis so wall-clocked
+/// clients' timetags still land correctly.
+enum TimeSource {
+    /// Monotonic seconds since `epoch` (construction time).
+    Wall { epoch: Instant },
+    /// Seconds = engine sample clock / sample rate.
+    Sample { unix_epoch: f64 },
 }
 
 impl OscServer {
@@ -219,15 +241,18 @@ impl OscServer {
             handle.limits,
         );
         Ok(Self {
-            socket,
+            socket: Some(socket),
             info,
             handle,
             translator,
-            nrt: NrtThread::spawn(),
+            nrt: NrtRunner::spawn(),
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
             tap_buf: Vec::new(),
+            clock: TimeSource::Wall {
+                epoch: Instant::now(),
+            },
             ipc: None,
             tcp: None,
             #[cfg(not(target_arch = "wasm32"))]
@@ -249,6 +274,107 @@ impl OscServer {
             max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
             client_slots: None,
         })
+    }
+
+    /// A server with **no socket front** — the pulled mode (B1). Commands and
+    /// replies travel only through the ring attached with
+    /// [`Self::attach_ipc`], and the host drives the loop by calling
+    /// [`Self::step`] before each block instead of [`Self::run`]. This is the
+    /// shape behind the wasm/AudioWorklet build and the native pulled-callback
+    /// embedding (`ClaustersHeadless`).
+    ///
+    /// Differences from [`Self::bind`], all consequences of having no thread
+    /// of its own: NRT jobs run **inline** on the driving thread (same order,
+    /// same results), and streams/timetags take their time from the **engine
+    /// sample clock** rather than the wall clock ([`TimeSource::Sample`]) —
+    /// `unix_epoch` (Unix seconds at sample 0) anchors that axis so a
+    /// wall-clocked client's bundle timetags still land correctly; pass the
+    /// current time for live use, or any fixed origin for deterministic runs.
+    pub fn headless(info: ServerInfo, handle: EngineHandle, unix_epoch: f64) -> Self {
+        let translator = CmdTranslator::with_limits(
+            handle.sample_rate,
+            handle.audio_buses,
+            handle.control_buses().len(),
+            handle.limits,
+        );
+        Self {
+            socket: None,
+            info,
+            handle,
+            translator,
+            nrt: NrtRunner::inline(),
+            clients: Vec::new(),
+            streams: Vec::new(),
+            tap_streams: Vec::new(),
+            tap_buf: Vec::new(),
+            clock: TimeSource::Sample { unix_epoch },
+            ipc: None,
+            tcp: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            ws: None,
+            #[cfg(feature = "midi")]
+            midi: None,
+            store: None,
+            recv_buf: vec![0; RECV_BUF_SIZE],
+            #[cfg(feature = "faust")]
+            faust_compiler: CompilerThread::spawn(),
+            nrt_submitted: 0,
+            nrt_drained: 0,
+            faust_submitted: 0,
+            faust_drained: 0,
+            pending_syncs: Vec::new(),
+            transport: None,
+            post_errors: true,
+            max_frame: crate::osc::DEFAULT_MAX_FRAME,
+            max_clients: crate::osc::DEFAULT_MAX_CLIENTS,
+            client_slots: None,
+        }
+    }
+
+    /// Monotonic seconds for stream pacing: wall time natively, engine sample
+    /// time in the headless mode (so an offline drive paces streams in render
+    /// time — deterministic, and the only clock wasm has).
+    fn mono_secs(&self) -> f64 {
+        match &self.clock {
+            TimeSource::Wall { epoch } => epoch.elapsed().as_secs_f64(),
+            TimeSource::Sample { .. } => {
+                self.handle.current_samples() as f64 / self.handle.sample_rate as f64
+            }
+        }
+    }
+
+    /// Unix seconds for NTP timetag conversion (`/clock.reply`, bundle
+    /// scheduling): the system wall clock natively; in the headless mode the
+    /// sample axis anchored at `unix_epoch`, so the advertised clock anchor
+    /// and incoming timetags stay mutually consistent.
+    fn unix_secs(&self) -> f64 {
+        match &self.clock {
+            TimeSource::Wall { .. } => SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64(),
+            TimeSource::Sample { unix_epoch } => {
+                unix_epoch + self.handle.current_samples() as f64 / self.handle.sample_rate as f64
+            }
+        }
+    }
+
+    /// One pulled iteration of the serving loop: drain the ring, send due
+    /// stream snapshots, collect garbage and async results. The headless
+    /// counterpart of one [`Self::run`] turn — call it before each
+    /// `process_block` (or at any convenient cadence). Returns `true` once a
+    /// `/quit` has arrived.
+    pub fn step(&mut self) -> bool {
+        if let Flow::Quit = self.drain_ring() {
+            return true;
+        }
+        self.pump_streams();
+        self.pump_tap_streams();
+        self.collect_garbage();
+        self.collect_nrt_results();
+        #[cfg(feature = "faust")]
+        self.collect_faust_results();
+        false
     }
 
     /// Sets the stream-transport frame ceiling (`--max-frame`), the largest
@@ -382,7 +508,15 @@ impl OscServer {
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.socket.local_addr()
+        self.udp()?.local_addr()
+    }
+
+    /// The UDP socket, or the error a socket-front operation reports on a
+    /// headless server.
+    fn udp(&self) -> io::Result<&UdpSocket> {
+        self.socket
+            .as_ref()
+            .ok_or_else(|| io::Error::other("headless server: no UDP front"))
     }
 
     /// Starts accepting length-prefixed OSC over TCP on `addr` (server track M /
@@ -393,7 +527,7 @@ impl OscServer {
     pub fn listen_tcp(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
         // Reader threads wake the loop by pinging the UDP socket; if we bound to
         // an unspecified address, ping loopback on the same port.
-        let mut wake_target = self.socket.local_addr()?;
+        let mut wake_target = self.udp()?.local_addr()?;
         if wake_target.ip().is_unspecified() {
             wake_target.set_ip(match wake_target {
                 SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
@@ -414,7 +548,7 @@ impl OscServer {
     /// browser with `ws://<addr>/`.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn listen_ws(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
-        let mut wake_target = self.socket.local_addr()?;
+        let mut wake_target = self.udp()?.local_addr()?;
         if wake_target.ip().is_unspecified() {
             wake_target.set_ip(match wake_target {
                 SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
@@ -434,7 +568,7 @@ impl OscServer {
     /// GC tick. See [`crate::midi::live`].
     #[cfg(feature = "midi")]
     pub fn listen_midi(&mut self, port_name: &str) -> io::Result<()> {
-        let mut wake_target = self.socket.local_addr()?;
+        let mut wake_target = self.udp()?.local_addr()?;
         if wake_target.ip().is_unspecified() {
             wake_target.set_ip(match wake_target {
                 SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
@@ -452,14 +586,17 @@ impl OscServer {
     /// cross-process semaphore (v1 trade-off), the socket timeout — the
     /// loop's tick — is shortened.
     pub fn attach_ipc(&mut self, peer: crate::server::ipc::IpcPeer) -> io::Result<()> {
-        self.socket
-            .set_read_timeout(Some(Duration::from_millis(2)))?;
+        if let Some(socket) = &self.socket {
+            socket.set_read_timeout(Some(Duration::from_millis(2)))?;
+        }
         self.ipc = Some(peer);
         Ok(())
     }
 
-    /// Blocks serving requests until a `/quit` arrives.
+    /// Blocks serving requests until a `/quit` arrives. Requires the UDP
+    /// front ([`Self::bind`]); a headless server is driven by [`Self::step`].
     pub fn run(&mut self) -> io::Result<()> {
+        self.udp()?;
         loop {
             if let Flow::Quit = self.drain_ring() {
                 return Ok(());
@@ -474,7 +611,8 @@ impl OscServer {
             self.prune_disconnected();
             self.pump_streams();
             self.pump_tap_streams();
-            let (len, from) = match self.socket.recv_from(&mut self.recv_buf) {
+            let socket = self.socket.as_ref().expect("run() checked the socket");
+            let (len, from) = match socket.recv_from(&mut self.recv_buf) {
                 Ok(ok) => ok,
                 Err(e)
                     if matches!(
@@ -872,7 +1010,7 @@ impl OscServer {
     /// converted to a sample target and shipped to the engine's scheduler,
     /// which fires them sample-accurately (M6).
     fn handle_bundle(&mut self, bundle: OscBundle, from: ClientId) -> Flow {
-        match timetag_delta_secs(bundle.timetag) {
+        match self.timetag_delta_secs(bundle.timetag) {
             Some(delta) if delta > 0.0 => {
                 self.schedule_bundle(bundle, delta, from);
                 Flow::Continue
@@ -1106,7 +1244,7 @@ impl OscServer {
         let args = vec![
             OscType::Long(sample as i64),
             OscType::Double(self.info.actual_sample_rate),
-            OscType::Time(now_ntp()),
+            OscType::Time(self.now_ntp()),
         ];
         self.reply(from, "/clock.reply", args);
     }
@@ -1479,7 +1617,7 @@ impl OscServer {
                 client: from,
                 period,
                 buses,
-                next_due: Instant::now() + period,
+                next_due: self.mono_secs() + period.as_secs_f64(),
             });
             // The immediate snapshot: the client paints without waiting a period.
             let args = self.stream_args(self.streams.len() - 1);
@@ -1496,7 +1634,7 @@ impl OscServer {
         if self.streams.is_empty() {
             return;
         }
-        let now = Instant::now();
+        let now = self.mono_secs();
         for i in 0..self.streams.len() {
             if now < self.streams[i].next_due {
                 continue;
@@ -1506,7 +1644,7 @@ impl OscServer {
             self.reply(client, "/c_set", args);
             // Rebase on `now` (no catch-up bursts after a stall).
             let period = self.streams[i].period;
-            self.streams[i].next_due = now + period;
+            self.streams[i].next_due = now + period.as_secs_f64();
         }
     }
 
@@ -1623,7 +1761,7 @@ impl OscServer {
                 period,
                 frames,
                 taps,
-                next_due: Instant::now() + period,
+                next_due: self.mono_secs() + period.as_secs_f64(),
             });
             // The immediate snapshot: the client paints without waiting a
             // period (taps that have not yet filled a window send nothing).
@@ -1639,7 +1777,7 @@ impl OscServer {
         if self.tap_streams.is_empty() {
             return;
         }
-        let now = Instant::now();
+        let now = self.mono_secs();
         for i in 0..self.tap_streams.len() {
             if now < self.tap_streams[i].next_due {
                 continue;
@@ -1647,7 +1785,7 @@ impl OscServer {
             self.send_tap_snapshots(i);
             // Rebase on `now` (no catch-up bursts after a stall).
             let period = self.tap_streams[i].period;
-            self.tap_streams[i].next_due = now + period;
+            self.tap_streams[i].next_due = now + period.as_secs_f64();
         }
     }
 
@@ -1700,7 +1838,11 @@ impl OscServer {
             .chain(self.tap_streams.iter().map(|s| s.period))
             .min()
             .map_or(GC_INTERVAL, |p| p.min(GC_INTERVAL));
-        if let Err(e) = self.socket.set_read_timeout(Some(timeout)) {
+        let Some(socket) = &self.socket else {
+            // Headless: the host's own step cadence is the tick.
+            return;
+        };
+        if let Err(e) = socket.set_read_timeout(Some(timeout)) {
             warn!("failed to retune the socket timeout: {e}");
         }
     }
@@ -2068,6 +2210,31 @@ impl OscServer {
 
     /// Drains finished NRT jobs: installs/clears buffers in the engine and
     /// the mirror, and sends the async `/done cmd bufnum` / `/fail` replies.
+    /// Installs a host-built buffer at `index`: the network-side mirror and
+    /// the engine swap, exactly the `NrtAction::Install` path minus the OSC
+    /// reply. The embed `b_load` door (B1): a headless host hands the server
+    /// samples it decoded itself (the browser's `/b_allocRead` replacement,
+    /// where there is no filesystem).
+    pub fn install_buffer(
+        &mut self,
+        index: usize,
+        buffer: Arc<crate::dsp::buffer::Buffer>,
+    ) -> Result<(), String> {
+        if index >= self.translator.buffers.len() {
+            return Err(format!(
+                "buffer index {index} out of range (max {})",
+                self.translator.buffers.len() - 1
+            ));
+        }
+        self.translator.buffers[index] = Some(Arc::clone(&buffer));
+        self.handle
+            .send(Cmd::SetBuffer {
+                index,
+                buffer: Some(buffer),
+            })
+            .map_err(|_| "command FIFO full".to_string())
+    }
+
     fn collect_nrt_results(&mut self) {
         while let Some(result) = self.nrt.try_result() {
             self.nrt_drained += 1;
@@ -2322,7 +2489,10 @@ impl OscServer {
         };
         match to {
             ClientId::Udp(addr_to) => {
-                if let Err(e) = self.socket.send_to(&bytes, addr_to) {
+                // A headless server has no UDP clients; dropped if so.
+                if let Some(socket) = &self.socket
+                    && let Err(e) = socket.send_to(&bytes, addr_to)
+                {
                     warn!("failed to send {addr} to {addr_to}: {e}");
                 }
             }
@@ -2377,11 +2547,7 @@ const NTP_UNIX_OFFSET: f64 = 2_208_988_800.0;
 /// math in [`timetag_delta_secs`]. Published alongside the sample counter in
 /// `/clock.reply` so a client gets the anchor `(osc_time, sample)` it needs to
 /// place its logical OSC time on this server's sample axis.
-fn now_ntp() -> OscTime {
-    let unix = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64();
+fn unix_to_ntp(unix: f64) -> OscTime {
     let ntp = unix + NTP_UNIX_OFFSET;
     let seconds = ntp.trunc();
     OscTime {
@@ -2390,16 +2556,20 @@ fn now_ntp() -> OscTime {
     }
 }
 
-/// Seconds from now until the timetag fires. `None` is the OSC
-/// "immediately" tag (seconds 0, fractional 1 — rosc keeps it verbatim).
-fn timetag_delta_secs(t: OscTime) -> Option<f64> {
-    if t.seconds == 0 && t.fractional <= 1 {
-        return None;
+impl OscServer {
+    /// The server's current time as an OSC/NTP timetag, from its
+    /// [`TimeSource`] (wall natively, the anchored sample axis headless).
+    fn now_ntp(&self) -> OscTime {
+        unix_to_ntp(self.unix_secs())
     }
-    let target = t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64();
-    Some(target - now)
+
+    /// Seconds from now until the timetag fires. `None` is the OSC
+    /// "immediately" tag (seconds 0, fractional 1 — rosc keeps it verbatim).
+    fn timetag_delta_secs(&self, t: OscTime) -> Option<f64> {
+        if t.seconds == 0 && t.fractional <= 1 {
+            return None;
+        }
+        let target = t.seconds as f64 - NTP_UNIX_OFFSET + t.fractional as f64 / 2f64.powi(32);
+        Some(target - self.unix_secs())
+    }
 }

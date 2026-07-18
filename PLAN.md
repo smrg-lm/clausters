@@ -293,15 +293,21 @@ unnumbered optimization.
   max delta 1.5e-8; strict bit-identity is impossible cross-libm — see
   `docs/decisions.md`).
 
-- [ ] **B1 — the headless live server (pulled mode), natively testable** — a
-  socketless `OscServer` constructor plus a public `step()` (drain the IPC
-  ring + collect NRT results + tick streams) factored out of `run()`; the NRT
-  jobs get an inline mode; stream/timetag time from an injected clock (the
-  engine sample clock on wasm); a supported native embed API in `src/embed.rs`
-  (`ClaustersHeadless`: `send`/`poll_into`/`process_block`/`clock`/`ctl_*`,
-  plus `b_load` for caller-provided samples — the browser's `/b_allocRead`
-  replacement), documented in `docs/using-as-a-library.md`. Native cargo
-  tests drive it end to end; the wasm shell wraps it 1:1.
+- ✅ **B1 — the headless live server (pulled mode), natively testable**
+  *(done 2026-07-18)* — `OscServer::headless` (no socket, inline NRT via
+  `NrtRunner`, streams/timetags on the **engine sample clock** through the
+  `TimeSource` seam — wall time on the native `bind` path, unchanged) plus a
+  public `step()`, one pulled serving turn run before **each** engine block;
+  `ClaustersHeadless` in `src/embed.rs` (feature `embed`, no `realtime`
+  needed: `send`/`poll_into`/`process_block`/`clock`/`ctl_*`/`quit_requested`,
+  plus `b_load` installing host-decoded samples through the same path as the
+  async `/b_*` installs — the browser's `/b_allocRead` replacement),
+  documented in `docs/using-as-a-library.md` as a supported native embed
+  mode. `tests/headless.rs` drives it end to end (tone + `/done`s, `/c_stream`
+  pacing deterministic on sample time, a timed bundle landing on its exact
+  mid-block sample, inline `/b_alloc`, `b_load` + `/b_query`, `/quit`
+  reported not enacted); the wasm shell wraps it 1:1 as `WebServer` with a
+  native smoke pulling 128-frame quanta.
 
 - [ ] **B2 — the AudioWorklet backend: the engine live in a page** — the
   worklet processor module (wasm compiled on the main thread, instantiated

@@ -29,16 +29,12 @@
 
 #[cfg(feature = "realtime")]
 use std::path::Path;
-#[cfg(feature = "realtime")]
 use std::sync::Arc;
-#[cfg(feature = "realtime")]
 use std::sync::atomic::Ordering;
 #[cfg(feature = "realtime")]
 use std::thread::JoinHandle;
 
-use crate::server::ipc::ABI_VERSION;
-#[cfg(feature = "realtime")]
-use crate::server::ipc::{IpcPeer, Role, Segment};
+use crate::server::ipc::{ABI_VERSION, IpcPeer, Role, Segment};
 use crate::server::render::{RenderConfig, Score, render_to_vec};
 
 /// The C ABI version (== the IPC segment layout version).
@@ -124,6 +120,162 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
     if !ptr.is_null() {
         // SAFETY: reconstructs the Box from clausters_render.
         drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, samples as usize)) });
+    }
+}
+
+/// An in-process server in **pulled mode** (B1): engine + serving logic with
+/// **no device, no sockets and no threads** — the host owns the audio thread
+/// and calls [`ClaustersHeadless::process_block`] itself, callback-style.
+/// This is the native face of the browser build (the AudioWorklet calls
+/// exactly this from its render quantum) and a supported embed mode in its
+/// own right: a plugin or another host that already has an audio callback
+/// embeds the whole server this way.
+///
+/// The wiring is the embed model minus cpal and minus the socket loop:
+/// commands are complete OSC packets pushed into the in-memory ring
+/// ([`ClaustersHeadless::send`]), replies are pulled from the reply ring
+/// ([`ClaustersHeadless::poll_into`]), and each `process_block` first runs
+/// one serving turn (`OscServer::step`: drain the ring, pump `/c_stream`/
+/// `/tap_stream`, collect async results) — so everything the socket server
+/// does, paced by the host's own callback. NRT jobs run inline on the
+/// calling thread, and stream periods/timetags follow the **engine sample
+/// clock** (deterministic under offline drive; see `OscServer::headless`).
+///
+/// Not RT-strict: the serving turn allocates (translate, NRT) on the calling
+/// thread, the accepted relaxation of this mode — a host that needs the
+/// native no-alloc audio callback uses [`Clausters`] (its own threads) or
+/// the full server instead.
+pub struct ClaustersHeadless {
+    engine: crate::server::engine::Engine,
+    server: crate::osc::server::OscServer,
+    peer: IpcPeer,
+    segment: Arc<Segment>,
+    channels: usize,
+    quit: bool,
+}
+
+impl ClaustersHeadless {
+    /// Builds the pulled server: `sample_rate`/`channels` are the host
+    /// callback's format; `unix_epoch` (Unix seconds at sample 0) anchors
+    /// the sample axis for wall-clocked clients' timetags — pass the current
+    /// time for live use, any fixed value for deterministic runs.
+    pub fn new(sample_rate: f64, channels: usize, unix_epoch: f64) -> Result<Self, String> {
+        use crate::osc::server::{OscServer, ServerInfo};
+
+        let segment = Segment::in_memory();
+        let (engine, handle) = crate::server::engine::engine_pair_full(
+            sample_rate as f32,
+            channels,
+            0, // workers: sequential, bit-identical — the only wasm mode
+            Some(Arc::clone(&segment)),
+            crate::server::engine::DEFAULT_AUDIO_BUSES,
+            crate::server::engine::DEFAULT_CONTROL_BUSES,
+            crate::dsp::Limits::default(),
+        );
+        let info = ServerInfo {
+            nominal_sample_rate: sample_rate,
+            actual_sample_rate: sample_rate,
+        };
+        let mut server = OscServer::headless(info, handle, unix_epoch);
+        server
+            .attach_ipc(IpcPeer::new(Arc::clone(&segment), Role::Server))
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            engine,
+            server,
+            peer: IpcPeer::new(Arc::clone(&segment), Role::Client),
+            segment,
+            channels,
+            quit: false,
+        })
+    }
+
+    /// Delivers one complete OSC packet (message or bundle) through the
+    /// command ring; it takes effect on the next [`Self::process_block`].
+    /// Returns `false` when the ring is momentarily full (backpressure).
+    pub fn send(&self, packet: &[u8]) -> bool {
+        self.peer.push(packet)
+    }
+
+    /// Pops one pending reply into `buf`, returning its length, or `None`
+    /// when none is pending. A reply larger than `buf` is dropped (use
+    /// 64 KiB).
+    pub fn poll_into(&self, buf: &mut [u8]) -> Option<usize> {
+        self.peer.try_pop(buf)
+    }
+
+    /// Renders into `out` (interleaved, length a multiple of
+    /// `BLOCK_SIZE * channels`): a serving turn (`OscServer::step`) before
+    /// **each** engine block, so stream pacing and async results keep their
+    /// per-block cadence however large the pulled buffer is. The host's
+    /// audio callback calls this once per buffer.
+    pub fn process_block(&mut self, out: &mut [f32]) -> Result<(), String> {
+        let block = crate::server::engine::BLOCK_SIZE * self.channels;
+        if block == 0 || !out.len().is_multiple_of(block) {
+            return Err(format!(
+                "output length {} is not a multiple of BLOCK_SIZE * channels ({block})",
+                out.len()
+            ));
+        }
+        for chunk in out.chunks_exact_mut(block) {
+            if self.server.step() {
+                self.quit = true;
+            }
+            self.engine.process_block(chunk);
+        }
+        Ok(())
+    }
+
+    /// Whether a `/quit` has arrived. The pulled server has no loop to end,
+    /// so quitting is the host's decision: it reads this and stops calling
+    /// [`Self::process_block`] (dropping the value releases everything).
+    pub fn quit_requested(&self) -> bool {
+        self.quit
+    }
+
+    /// The engine's sample counter (block-accurate).
+    pub fn clock(&self) -> u64 {
+        self.segment.clock().load(Ordering::Acquire)
+    }
+
+    /// Writes a control bus directly in the data plane (no command round
+    /// trip), exactly like the C ABI's `clausters_ctl_set`.
+    pub fn ctl_set(&self, index: usize, value: f32) {
+        self.segment.control_buses().set(index, value);
+    }
+
+    /// Reads a control bus from the data plane.
+    pub fn ctl_get(&self, index: usize) -> f32 {
+        self.segment.control_buses().get(index)
+    }
+
+    /// Installs host-provided samples as buffer `index` (interleaved,
+    /// `data.len() = frames * channels`): the browser's `/b_allocRead`
+    /// replacement — the page fetches and decodes (Web Audio's
+    /// `decodeAudioData`), then hands the engine the samples. Runs on the
+    /// calling thread through the same install path as the async `/b_*`
+    /// commands, so `/b_query` and the def machinery see it identically.
+    pub fn b_load(
+        &mut self,
+        index: usize,
+        channels: usize,
+        sample_rate: f64,
+        data: &[f32],
+    ) -> Result<(), String> {
+        if channels == 0 || !data.len().is_multiple_of(channels) {
+            return Err(format!(
+                "data length {} is not a multiple of {channels} channels",
+                data.len()
+            ));
+        }
+        let frames = data.len() / channels;
+        let buffer = Arc::new(crate::dsp::buffer::Buffer::new(
+            data.to_vec(),
+            channels,
+            frames,
+            sample_rate,
+        ));
+        self.server.install_buffer(index, buffer)
     }
 }
 

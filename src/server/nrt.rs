@@ -162,6 +162,53 @@ impl Drop for NrtThread {
     }
 }
 
+/// How the server runs its NRT jobs: on the background [`NrtThread`] (the
+/// native run loop), or **inline** on the calling thread (the headless pulled
+/// server, B1) — same submission order, same results, no thread. Inline is
+/// the wasm mode (no threads there) and the accepted relaxation that buffer
+/// work happens on whichever thread drives the server.
+pub enum NrtRunner {
+    Thread(NrtThread),
+    /// Results of inline-executed jobs, drained like the thread's queue.
+    Inline(std::collections::VecDeque<NrtResult>),
+}
+
+impl NrtRunner {
+    pub fn spawn() -> Self {
+        NrtRunner::Thread(NrtThread::spawn())
+    }
+
+    pub fn inline() -> Self {
+        NrtRunner::Inline(std::collections::VecDeque::new())
+    }
+
+    /// Queues a job (thread mode) or runs it right now (inline mode). Fails
+    /// only if the NRT thread died.
+    #[allow(clippy::result_large_err)]
+    pub fn submit(&mut self, request: NrtRequest) -> Result<(), NrtRequest> {
+        match self {
+            NrtRunner::Thread(t) => t.submit(request),
+            NrtRunner::Inline(results) => {
+                results.push_back(NrtResult {
+                    cmd: request.cmd,
+                    index: request.index,
+                    client: request.client,
+                    outcome: run_job(request.job),
+                });
+                Ok(())
+            }
+        }
+    }
+
+    /// Non-blocking: one finished job, if any.
+    pub fn try_result(&mut self) -> Option<NrtResult> {
+        match self {
+            NrtRunner::Thread(t) => t.try_result(),
+            NrtRunner::Inline(results) => results.pop_front(),
+        }
+    }
+}
+
 /// Performs one job. The NRT thread calls this per request; the offline
 /// renderer (`server::render`) calls it directly, synchronously.
 pub fn run_job(job: NrtJob) -> Result<NrtAction, String> {
