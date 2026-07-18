@@ -233,3 +233,55 @@ fn u_cmd_swaps_the_fft_window() {
         num_args: 1,
     });
 }
+
+/// S11 hop-phase stagger: the node id shifts *when* a chain's first frame
+/// fires (a deterministic sub-hop, block-quantized offset), without touching
+/// the reconstruction itself. Two identical passthrough chains under different
+/// node ids start `stagger` samples apart but agree sample-for-sample in the
+/// steady state — the analysis grid shifts, the content timing does not.
+#[test]
+fn hop_stagger_shifts_only_the_first_frame() {
+    // FFT(512, 50% hop) at BLOCK_SIZE 64: 4 blocks per hop. Node id 4 ≡ 0
+    // (mod 4) keeps offset 0; node id 6 staggers by 2 blocks = 128 samples.
+    let build = || {
+        spec_synth(json!({
+            "name": "stagger",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ]
+        }))
+    };
+    let render = |id: i32| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        handle.send(add_synth(id, build())).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let aligned = render(4);
+    let staggered = render(6);
+
+    // Onset: before its first frame an `IFFT` emits exact zeros (the FIFO is
+    // empty), so the first nonzero sample marks the first fire — it moves by
+    // exactly the 128-sample stagger.
+    let onset = |s: &[f32]| s.iter().position(|&x| x != 0.0).unwrap();
+    let shift = onset(&staggered) as i64 - onset(&aligned) as i64;
+    assert_eq!(shift, 128, "onset shift");
+
+    // Steady state: both chains carry the same latency (the stagger delays
+    // the first fire, not the reconstruction), so past the startup the two
+    // outputs are the same sine, sample-aligned.
+    for i in 4000..12000 {
+        assert!(
+            (aligned[i] - staggered[i]).abs() < 1e-3,
+            "steady-state mismatch at {i}: {} vs {}",
+            aligned[i],
+            staggered[i]
+        );
+    }
+
+    // Determinism: the same node id renders bit-identically.
+    let again = render(6);
+    assert_eq!(staggered, again);
+}

@@ -686,9 +686,13 @@ impl Engine {
                     id,
                     target,
                     action,
-                    synth,
+                    mut synth,
                     usage,
                 } => {
+                    // Every add path funnels here, so this is the one place a
+                    // synth learns its id (arithmetic only — RT-safe). See
+                    // `SynthNode::set_node_id`.
+                    synth.set_node_id(id);
                     match self.tree.insert(
                         id,
                         NodeKind::Synth { node: synth, usage },

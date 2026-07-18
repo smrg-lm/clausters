@@ -71,6 +71,12 @@ impl UGenSynth {
 }
 
 impl SynthNode for UGenSynth {
+    fn set_node_id(&mut self, id: i32) {
+        for u in &mut self.ugens {
+            u.set_node_id(id);
+        }
+    }
+
     fn process(&mut self, ctx: &mut ProcessCtx) {
         // Pull any bus-mapped controls before running UGens: a control bus
         // value, or one frame of an audio bus (control-rate, `/n_mapa`).

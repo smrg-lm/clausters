@@ -231,21 +231,19 @@ fn bench_spectral() {
         .expect("spectral def compiles"),
     );
 
-    println!(
-        "\nspectral chain (Sine → FFT 1024 → PV_MagAbove → IFFT → Out), hops aligned (worst case):"
-    );
-    println!(
-        "  {:>6}  {:>11}  {:>12}  {:>13}",
-        "synths", "xRT", "avg block", "peak block"
-    );
-    for &n in VOICE_COUNTS {
+    // Node ids drive the S11 hop-phase stagger, so the id spacing selects the
+    // scenario: consecutive ids spread their hops (the default behavior),
+    // while ids congruent modulo blocks-per-hop (512-sample hop / 64 = 8) all
+    // hop on the same block — the pre-S11 aligned worst case, kept measurable
+    // on purpose.
+    let run = |n: usize, id_step: i32| {
         let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
         for i in 0..n {
             let mut synth: Box<dyn SynthNode> = Box::new(UGenSynth::new(Arc::clone(&def)));
             synth.set_control(0, 50.0 + i as f32);
             let cmd = Cmd::AddSynth {
-                id: 1000 + i as i32,
+                id: 1000 + i as i32 * id_step,
                 target: 0,
                 action: AddAction::Tail,
                 synth,
@@ -255,14 +253,29 @@ fn bench_spectral() {
         }
         engine.process_block(&mut out);
         handle.collect_garbage();
-        let (blocks_per_sec, avg_us, peak_us) = measure_peak(&mut engine, &mut out);
+        measure_peak(&mut engine, &mut out)
+    };
+
+    println!(
+        "\nspectral chain (Sine → FFT 1024 → PV_MagAbove → IFFT → Out), aligned vs S11-staggered hops:"
+    );
+    println!(
+        "  {:>6}  {:>11}  {:>12}  {:>14}  {:>14}",
+        "synths", "xRT", "avg block", "peak aligned", "peak staggered"
+    );
+    for &n in VOICE_COUNTS {
+        let (_, _, peak_aligned) = run(n, 8); // ids ≡ 0 (mod 8): one hop block
+        let (blocks_per_sec, avg_us, peak_stag) = run(n, 1); // consecutive ids
         let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
-        println!("  {n:>6}  {xrt:>10.1}x  {avg_us:>9.1} us  {peak_us:>10.1} us");
+        println!(
+            "  {n:>6}  {xrt:>10.1}x  {avg_us:>9.1} us  {peak_aligned:>11.1} us  {peak_stag:>11.1} us"
+        );
     }
     println!(
-        "  (peak block = the hop block, where every chain transforms at once; the budget\n\
-         \x20  is {budget_us:.0} us per block — but the hard deadline is the audio callback,\n\
-         \x20  which amortizes the spike when it covers more than one block.)"
+        "  (peak = the worst single block; aligned, every chain transforms on the same\n\
+         \x20  hop block, staggered (S11, id-derived) the spikes spread. The budget is\n\
+         \x20  {budget_us:.0} us per block — and the hard deadline is the audio callback,\n\
+         \x20  which further amortizes when it covers more than one block.)"
     );
 }
 

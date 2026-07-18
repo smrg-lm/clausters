@@ -31,12 +31,23 @@
 //! [`clausters_core::fft`] / [`clausters_core::window`], shared with the clients
 //! for bit-identical analysis. Every per-hop transform reuses pre-allocated
 //! scratch, so nothing here allocates on the audio thread.
+//!
+//! ## Hop-phase stagger (S11)
+//!
+//! A chain concentrates all its work on the block where its hop closes; chains
+//! instantiated on the same block would all hop on the same block, stacking
+//! their transform spikes. So each [`Fft`] delays its *first* frame by a
+//! deterministic sub-hop offset derived from its node id
+//! ([`UGen::set_node_id`], delivered by the engine when the node enters the
+//! tree). Only the initial fire shifts — the cadence, the analysis discipline
+//! and a chain's own latency-to-content are unchanged — and the same score
+//! yields the same ids, so RT and NRT renders stay sample-identical.
 
 use clausters_core::fft;
 use clausters_core::window::Window;
 
 use crate::dsp::registry::UGenConfig;
-use crate::dsp::{ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
+use crate::dsp::{BLOCK_SIZE, ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
 
 /// Default FFT window size when a `FFT`/`IFFT` def omits it. A power of two in
 /// [`fft::SUPPORTED_SIZES`].
@@ -109,6 +120,15 @@ pub struct Fft {
     filled: usize,
     /// Samples accumulated since the last emitted frame.
     since_hop: usize,
+    /// Hop-phase stagger (S11): samples still to elapse before this instance
+    /// may emit its *first* frame. Set once from the node id in
+    /// [`UGen::set_node_id`] — a deterministic sub-hop offset (a block
+    /// multiple) so chains instantiated on the same block spread their
+    /// transform spikes across blocks instead of stacking them on one. Only
+    /// the first fire shifts; the per-hop cadence and the analysis discipline
+    /// are untouched, and the same node id yields the same offset (RT and NRT
+    /// renders of one score stay sample-identical).
+    stagger: usize,
     /// De-circularized, windowed frame handed to the forward transform.
     scratch: Vec<f32>,
 }
@@ -129,6 +149,7 @@ impl Fft {
             write: 0,
             filled: 0,
             since_hop: 0,
+            stagger: 0,
             scratch: vec![0.0; winsize],
         }
     }
@@ -160,7 +181,11 @@ impl UGen for Fft {
         self.since_hop += frames;
         // Emit at most one frame per slice (the hop is quantized up to the
         // slice length; scsynth likewise transforms at block granularity).
-        if active && self.filled >= self.winsize && self.since_hop >= self.hop_size {
+        if active
+            && self.stagger == 0
+            && self.filled >= self.winsize
+            && self.since_hop >= self.hop_size
+        {
             // De-circularize: `write` points at the oldest sample.
             for k in 0..self.winsize {
                 let s = self.inbuf[(self.write + k) % self.winsize];
@@ -170,10 +195,26 @@ impl UGen for Fft {
             chain.advance = self.since_hop;
             chain.ready = true;
             self.since_hop = 0;
+        } else if self.filled >= self.winsize {
+            // Count the stagger down only once the window is full and only on
+            // slices that did not fire: it defers the *first* frame by whole
+            // elapsed slices past the fill point (see the field docs).
+            self.stagger = self.stagger.saturating_sub(frames);
         }
         // The wire only orders the chain; carry the slot marker for debugging.
         if let Some(o) = output.first_mut() {
             *o = if chain.ready { 1.0 } else { 0.0 };
+        }
+    }
+
+    fn set_node_id(&mut self, id: i32) {
+        // S11: derive the deterministic hop-phase stagger — the node id modulo
+        // the hop's block count, in whole blocks. A hop no longer than one
+        // block cannot stack (at most one frame per slice already), so it
+        // keeps offset 0.
+        let blocks_per_hop = self.hop_size / BLOCK_SIZE;
+        if blocks_per_hop > 1 {
+            self.stagger = (id.unsigned_abs() as usize % blocks_per_hop) * BLOCK_SIZE;
         }
     }
 

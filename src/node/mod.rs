@@ -41,6 +41,13 @@ pub trait SynthNode: Send {
     /// one opaque block). Runs on the audio thread — allocation-free.
     fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
 
+    /// Tells the synth its node id, once, when the engine inserts it into the
+    /// tree (every path funnels there: OSC, NRT scores, graphdef and MIDI
+    /// voices, direct embedding). `UGenSynth` forwards it to its UGens — the
+    /// consumer is `FFT`'s hop-phase stagger (S11). Runs on the audio thread —
+    /// must stay allocation-free. Default: ignored (e.g. a Faust synth).
+    fn set_node_id(&mut self, _id: i32) {}
+
     /// Whether this synth contains any side-effect UGen (`SendReply`/`SendTrig`/
     /// `Poll`, S9). The tree enqueues such synths for the after-block reply
     /// drain. Default: no reply UGens.

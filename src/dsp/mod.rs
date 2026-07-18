@@ -507,6 +507,13 @@ pub trait UGen: Send {
         DoneAction::None
     }
 
+    /// Tells the UGen which node it lives in, once, when the node enters the
+    /// tree. The only consumer today is `FFT`'s hop-phase stagger (S11), which
+    /// derives a deterministic per-instance offset from the id — same id, same
+    /// offset, so RT and NRT renders of the same score stay sample-identical.
+    /// Runs on the audio thread — must stay allocation-free (arithmetic only).
+    fn set_node_id(&mut self, _id: i32) {}
+
     /// Demand-rate pull (S1): a demand *source* (`Dseq`, and later the rest of
     /// the `D*` family) returns its next value when its driver pulls it, or
     /// `NaN` once the stream is exhausted. Non-demand UGens never see this.
