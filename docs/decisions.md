@@ -889,3 +889,81 @@ pool and the no-allocation callback.
   intrinsic latency (one partition), so it lands the `latency()` hook on
   `UGen`/`SynthNode` that the auto-ordering work anticipated. Parallel-path
   compensation (PDC) remains open, per `docs/model-vs-daw.md`.
+
+## The spectral frame is user-programmable through a bin-expression program, not a new rate or a JIT kernel
+
+The M29 spike weighed how to make the spectral frame user-programmable — the
+long-term answer to the PV-catalog problem, so that a bin operation outside
+the curated set stops requiring a server release. The plan named two
+candidates: **(a) bin algebra** — magnitude/phase as frame-rate values the
+existing operator vocabulary composes in the graph (the Max/MSP `pfft~`
+model), and **(b) a JIT per-frame kernel** — a Faust callback over the frame
+via the existing factory/instance patterns. The spike concludes on a third
+design that dominates both on every axis the plan fixed: **a bin-expression
+program** — one `PV_Kernel` UGen holding a compile-time-validated postfix
+program over per-bin values (`mag`, `phase`, `bin`, `nbins`, parameters),
+whose opcodes are the discriminants of the operator vocabulary that
+`clausters-core::builtins` already single-sources between server and client,
+evaluated per fresh frame by a tiny stack machine with a pre-allocated stack.
+The user-visible surface is exactly (a)'s algebra — the client composes
+symbolic `mag`/`phase` expressions with the operator overloads it already has
+— but the evaluation strategy is an interpreter inside one UGen, not a new
+compiler rate and not a JIT. Implementation is deferred until a real declined
+op demands it; (b) is not rejected but repositioned as the escalation path
+for kernels that outgrow a per-bin map.
+
+**Decision details with non-obvious context:**
+
+- **Why not the bin algebra as a rate (a)**: a true frame rate means signal
+  vectors of length `winsize/2 + 1` — per *chain*, not global — advancing on
+  a per-hop clock, not per block. That touches rate inference, output-buffer
+  sizing (fixed at the block size today), a spectral exec mode on every
+  operator UGen, and chain-slot threading through the whole expression — the
+  largest compiler surface of the three for no expressiveness the program
+  form lacks. The cheap sub-variant (fixed unpack/pack UGens over the demand
+  substrate, scsynth's `Unpack1FFT`/`PackFFT`/`pvcollect` lineage) is the
+  honest prior art, and it is the cautionary tale: either the graph unrolls
+  per bin (unusable at 513 bins) or one expression is re-evaluated per bin
+  through demand-UGen indirection — an expression evaluator with extra
+  steps. `pfft~` does not transfer: Max's whole graph is already
+  vector-per-buffer and its subpatch runs natively on the frame clock; a
+  block-rate engine has no such substrate.
+- **Why not the Faust kernel (b) as the general mechanism**: the spectral
+  chain lives in the `synth` family, so a Faust kernel couples `synth` to
+  `faust` — a new cell in the feature matrix, and the mechanism vanishes on
+  builds without libfaust (the wrong shape for "the long-term answer").
+  Mapping bins to samples (`compute(nbins)` with mag/phase as two input
+  channels once per hop) fits Faust's stream model well, but the instance
+  carries state across `compute` calls, so bin 0 of frame *N* silently sees
+  state from the last bin of frame *N − 1* — cross-bin access falls out for
+  free with a semantic trap at the seam. And NRT determinism weakens from
+  "pure f32, bit-exact by construction" to "deterministic per
+  libfaust/LLVM build" — golden files held hostage to a JIT version.
+- **Why the program form wins**: the opcode table already exists as shared
+  data — `BinaryOp`/`UnaryOp` in `clausters-core::builtins` (`from_name`,
+  `apply_binary`/`apply_unary`), single-sourced between the server's op
+  UGens and the client's value maths — so the VM adds load/store opcodes and
+  a stack loop, nothing else. The program is validated on the network thread
+  at def time (opcode validity, stack depth, parameter arity); the RT thread
+  runs a fixed loop over pre-allocated scratch — zero allocation, pure f32,
+  so RT ≡ NRT bit-exactly, on every feature combination. The authoring story
+  is (a)'s: the client compiles overloaded-operator expressions over
+  symbolic `mag`/`phase`/`bin` terms into the postfix program; only the
+  execution strategy differs.
+- **The honest limit, and the escalation path**: the program form is a
+  per-bin map (plus cheap neighbor reads from the input frame if wanted).
+  Cross-frame state (freeze, smear) and bin permutation (shift) stay curated
+  parameterized implementations per the M27 stance — and a kernel that
+  outgrows the map escalates to (b), implemented behind `synth`+`faust` only
+  on demonstrated need. Every declined op remains the demand signal; this
+  entry records the design so implementation can start the day one arrives.
+- **Sketch kept with the decision** (to fix the shape, not to start work):
+  the evaluator lands in `clausters-core` as a peer of `builtins`; the def
+  carries the program as a static field (it becomes wire surface — version
+  it like the other static fields); one `desc_spectral` registry row
+  (`SpectralRole::Filter`); the Python client grows a symbolic-expression
+  module beside the `pv_*` builders. The acceptance test is the mechanism
+  reproducing curated ops (`PV_BrickWall`, `PV_MagAbove`) sample-identically.
+  Named risks: mag/phase↔re/im conversion cost per hop (consider exposing
+  re/im operands too), the packed layout's real-only dc/nyquist slots, and
+  phase of zero-magnitude bins (NaN discipline).
