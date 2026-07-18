@@ -582,6 +582,35 @@ def pv_mag_shift(chain, stretch=1.0, shift=0.0) -> Ugen:
     return Ugen("PV_MagShift", [chain, stretch, shift])
 
 
+def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
+    """Partitioned convolution: convolves ``source`` with a **prepared**
+    kernel — a buffer written by ``server.gen_buffer(dest, "prepare_partconv",
+    fft_size, ir_bufnum)`` (size ``dest`` with `partconv_frames`). The IR's
+    spectra are computed once, off the audio thread; the UGen's steady per-
+    block cost is flat (the partition products are spread across the hop).
+
+    ``fft_size`` is the transform size (a supported power of two); the
+    partition length — and the intrinsic latency — is ``fft_size / 2``
+    samples. ``partitions`` caps the kernel length this instance accepts
+    (its pre-allocated state). Moving ``kernel`` to a *different* prepared
+    buffer crossfades over one partition; regenerating the same buffer
+    switches hard."""
+    return Ugen(
+        "Conv", [source, kernel],
+        static={"fft_size": int(fft_size), "partitions": int(partitions)},
+    )
+
+
+def partconv_frames(ir_frames: int, fft_size: int = 1024) -> int:
+    """Frames a kernel buffer needs to hold ``ir_frames`` of impulse response
+    prepared at ``fft_size`` (partitions of ``fft_size / 2``, plus the two-
+    sample header) — the size to `Server.alloc_buffer` before
+    ``gen_buffer(..., "prepare_partconv", fft_size, ir_bufnum)``."""
+    part = fft_size // 2
+    parts = -(-int(ir_frames) // part)
+    return 2 + parts * int(fft_size)
+
+
 def play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0) -> Ugen:
     """Mono buffer player with linear interpolation; ``rate`` is frames per
     output sample (1.0 = server rate)."""

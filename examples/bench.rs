@@ -277,6 +277,122 @@ fn bench_spectral() {
          \x20  {budget_us:.0} us per block — and the hard deadline is the audio callback,\n\
          \x20  which further amortizes when it covers more than one block.)"
     );
+
+    bench_conv(budget_us);
+}
+
+/// The M28 partitioned convolver: one voice convolving white noise with a
+/// 2 s impulse response (94 partitions of 1024 at fft 2048). The point is the
+/// peak-vs-average gap: the FDL MACs are spread across the hop's blocks, so
+/// the hop block only adds the input FFT/IFFT pair — without the spreading,
+/// all ~94 MACs (hundreds of us, see the MAC row above) would land on it.
+fn bench_conv(budget_us: f64) {
+    use clausters::dsp::buffer::Buffer;
+    use clausters::dsp::conv::layout;
+    use clausters::dsp::wavetable::GenCommand;
+
+    let fft_size = 2048usize;
+    let part = fft_size / 2;
+    let ir_frames = 2 * SAMPLE_RATE as usize; // 2 s
+    let parts = ir_frames.div_ceil(part);
+    let ir: Vec<f32> = (0..ir_frames)
+        .map(|k| ((k as f32 * 0.37).sin()) * (-(k as f32) / 24000.0).exp() * 0.05)
+        .collect();
+    let prepared = GenCommand::PreparePartConv {
+        src: Arc::new(Buffer::new(ir, 1, ir_frames, SAMPLE_RATE)),
+        fft_size,
+    }
+    .apply(&Buffer::zeroed(
+        layout::frames(fft_size, parts),
+        1,
+        SAMPLE_RATE,
+    ));
+
+    let def = Arc::new(
+        compile(
+            serde_json::from_value(serde_json::json!({
+                "name": "cmp_conv",
+                "controls": [{"name": "freq", "default": 440.0}],
+                "ugens": [
+                    {"kind": "WhiteNoise", "inputs": []},
+                    {"kind": "Conv", "inputs": [{"ugen": 0}, {"const": 0.0}],
+                     "fft_size": fft_size, "partitions": parts},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+                ]
+            }))
+            .unwrap(),
+        )
+        .expect("conv def compiles"),
+    );
+
+    let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    send_cmd(
+        &mut engine,
+        &mut handle,
+        &mut out,
+        Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(prepared)),
+        },
+    );
+    send_cmd(
+        &mut engine,
+        &mut handle,
+        &mut out,
+        Cmd::AddSynth {
+            id: 1000,
+            target: 0,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def)),
+            usage: Default::default(),
+        },
+    );
+    engine.process_block(&mut out);
+    handle.collect_garbage();
+
+    // Per-phase profile of the hop period, min-filtered: the minimum over
+    // many periods strips OS scheduling noise from each block phase, leaving
+    // the deterministic per-block cost — flat spread share everywhere, plus
+    // the FFT/IFFT pair on the hop phase. A raw single max would mostly
+    // measure preemption blips.
+    let phases = part / BLOCK_SIZE;
+    for _ in 0..(100 * phases) {
+        engine.process_block(&mut out); // warmup, and settle the hop phase
+    }
+    let mut phase_min = vec![f64::INFINITY; phases];
+    let mut sum = 0.0f64;
+    let periods = 400usize;
+    for _ in 0..periods {
+        for slot in phase_min.iter_mut() {
+            let t = Instant::now();
+            engine.process_block(&mut out);
+            let dt = t.elapsed().as_secs_f64();
+            sum += dt;
+            if dt < *slot {
+                *slot = dt;
+            }
+        }
+    }
+    let avg_us = sum / (periods * phases) as f64 * 1e6;
+    let peak_us = phase_min.iter().fold(0.0f64, |a, &b| a.max(b)) * 1e6;
+    let flat_us = phase_min
+        .iter()
+        .fold(f64::INFINITY, |a, &b| a.min(b))
+        .max(0.0)
+        * 1e6;
+    println!(
+        "\npartitioned convolution (Conv, 2 s IR, {parts} partitions of {part}, MACs spread):"
+    );
+    println!(
+        "  1 voice: avg block {avg_us:>6.1} us | steady phase {flat_us:>6.1} us | hop phase \
+         {peak_us:>6.1} us (budget {budget_us:.0} us)"
+    );
+    println!(
+        "  (per-phase minima over {periods} hop periods, so OS noise is filtered out:\n\
+         \x20  the spread MAC share is the steady phase, and the hop phase adds only the\n\
+         \x20  input FFT/IFFT pair — compare the un-spread MAC row above.)"
+    );
 }
 
 /// Times one call of `f` in a warmed-up loop, in microseconds.

@@ -234,6 +234,7 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `PV_BinShift` | chain, stretch, shift | remaps bin `b` to `round(b·stretch + shift)`: colliding bins sum, out-of-range bins are dropped |
 | `PV_MagShift` | chain, stretch, shift | the same remap applied to the magnitude envelope only, over the frame's original phases |
 | `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`wintype` are inherited from the chain's `FFT` (given only on the `FFT`) |
+| `Conv` | in, kernel | partitioned convolution against a **prepared** kernel buffer (`/b_gen prepare_partconv`); static fields `fft_size` (transform size; the partition — and intrinsic latency — is `fft_size/2`) and `partitions` (the longest kernel accepted, default 16); see the convolution note below |
 
 **Envelopes (`EnvGen`).** `EnvGen` plays a breakpoint envelope, modelled on SuperCollider's. Its inputs are five fixed signals followed by a flat **envelope array**: `gate, levelScale, levelBias, timeScale, doneAction`, then `initLevel, numSegments, releaseNode, loopNode`, then four values **per segment** — `target, duration, shape, curve`. The output is `envelope · levelScale + levelBias`; `timeScale` stretches every segment's duration. A rising `gate` (re)triggers from `initLevel`; while the gate is held the envelope **sustains** at `releaseNode` (an index into the levels — hold that level until release); when the gate falls it plays the segments from `releaseNode` on. `releaseNode < 0` disables the sustain, so the envelope plays straight through (a one-shot). With a `loopNode` (an index `< releaseNode`), the held phase **cycles** the segments in `[loopNode, releaseNode)` instead of holding a single level, carrying the level at the release node back as the loop's start; the release still plays out from `releaseNode` when the gate falls. `loopNode < 0` disables looping. The **shape** numbers are `0` step, `1` linear, `2` exponential (needs same-sign, non-zero levels), `3` sine, `4` welch, `5` custom-curvature (bent by the `curve` value: 0 linear, positive starts slow, negative starts fast), `6` squared, `7` cubed, `8` hold. When the last segment finishes the UGen applies its `doneAction` — scsynth's full set (0–15), with the freeing done on the audio thread through the garbage FIFO, never a blocking free:
 
@@ -290,6 +291,27 @@ frame. It acts on the blocks chain A has a fresh frame, reading chain B's
 latest frame. The operator is a property of the *name*; all six are one
 server-side implementation.
 
+**Partitioned convolution (`Conv`).** Convolution is **not** a `PV_*`: fast
+convolution needs zero-padded rectangular segments whose hop is fixed by the
+partition size, which is incompatible with the windowed COLA analysis chain (a
+spectral multiply inside the chain computes *circular* convolution). `Conv` is
+a self-contained audio UGen — one name covering what scsynth splits into
+`Convolution`/`2`/`2L`/`3`/`StereoConvolution2L`. The kernel must be
+**prepared off the audio thread**: `/b_gen bufnum prepare_partconv fftSize
+irBufnum` partitions the IR in `irBufnum` (channel 0) into blocks of
+`fftSize/2`, transforms each once on the NRT queue, and writes
+`[L, P, P × fftSize packed spectra]` into the target (size it as
+`2 + P·fftSize` frames). The audio thread only ever multiplies against the
+ready spectra, and its per-block cost is **flat**: the partition products are
+spread across the hop's blocks, so a long reverb tail does not spike the hop
+block. Intrinsic latency is one partition (`fftSize/2` samples), reported by
+the node (the first consumer of the latency hook; no delay compensation yet).
+Moving the `kernel` input to a *different* prepared buffer crossfades over one
+partition (scsynth's `Convolution2L` behavior); regenerating the same buffer
+index switches hard — use a fresh buffer when the transition matters. An
+unprepared, missing or mismatched (`L` differs) kernel plays silence; the
+input history keeps running, so a valid kernel resumes cleanly.
+
 Analysis and resynthesis use the same window (Hann by default), and the
 overlap-add is **window-normalized** (divided by the steady-state window-overlap
 denominator, COLA), so a plain `FFT`→`IFFT` reconstructs the signal at unity
@@ -336,7 +358,7 @@ Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output 
 
 ### Table generation and the wavetable format (`/b_gen`)
 
-`/b_gen bufnum cmd flags args…` fills an **already-allocated** buffer with a computed signal — additive spectra, a waveshaping curve, or a copy from another buffer. Like `/b_read` it reads the target's shape from the current contents, so a `/b_gen` right after a `/b_alloc` must be separated by a `/sync` (the alloc has to complete first). It runs on the same NRT queue and replies `/done /b_gen bufnum`.
+`/b_gen bufnum cmd flags args…` fills an **already-allocated** buffer with a computed signal — additive spectra, a waveshaping curve, a copy from another buffer, or a prepared convolution kernel. Like `/b_read` it reads the target's shape from the current contents, so a `/b_gen` right after a `/b_alloc` must be separated by a `/sync` (the alloc has to complete first). It runs on the same NRT queue and replies `/done /b_gen bufnum`.
 
 The `flags` int packs three bits, `normalize`(1) + `wavetable`(2) + `clear`(4) — the usual value is `7` (all three). `normalize` scales the result to a peak magnitude of 1; `clear` starts from silence (without it the new signal is **added** on top of the buffer's current contents); `wavetable` stores the result in the interleaved wavetable format below (an `N`-sample buffer then holds `N/2` period points). `copy` takes no flags.
 

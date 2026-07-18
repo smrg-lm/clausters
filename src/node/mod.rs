@@ -41,6 +41,15 @@ pub trait SynthNode: Send {
     /// one opaque block). Runs on the audio thread — allocation-free.
     fn ugen_command(&mut self, _index: u32, _cmd: &crate::dsp::UGenCmd) {}
 
+    /// Intrinsic latency of this synth in samples — the sum of its UGens'
+    /// intrinsic latencies (M28): how far its output lags its input by
+    /// construction, e.g. a partitioned convolver's partition length.
+    /// Informational for now — the graph does not yet compensate parallel
+    /// paths (see `docs/model-vs-daw.md`); a future PDC pass consumes this.
+    fn latency(&self) -> usize {
+        0
+    }
+
     /// Tells the synth its node id, once, when the engine inserts it into the
     /// tree (every path funnels there: OSC, NRT scores, graphdef and MIDI
     /// voices, direct embedding). `UGenSynth` forwards it to its UGens — the

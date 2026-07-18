@@ -847,3 +847,45 @@ kernel, the M29 design spike), not added as another name.
   synth hop on the same blocks anyway (the S11 stagger is per *node*, not per
   UGen), so the frames align in practice without any cross-chain
   synchronization machinery.
+
+## Convolution: one UGen, kernels prepared off-RT, load spread across the hop
+
+scsynth ships five convolution UGens (`Convolution`/`2`/`2L`/`3`/
+`StereoConvolution2L`) whose names encode parameters (kernel source, swap
+interpolation, time vs spectral domain, channel count), and its `Convolution2`
+re-transforms the kernel *inside the audio callback* on a swap trigger — a
+cost spike that violates every RT rule Clausters has. M28 takes the opposite
+shape: **one** `Conv` UGen (uniformly partitioned overlap-save with a
+frequency-domain delay line), with the kernel spectra computed **once, off the
+audio thread**, by the typed `/b_gen prepare_partconv` routine into an
+ordinary immutable pool buffer — the scsynth `PartConv`+`PreparePartConv`
+lineage, which was always the one design compatible with the immutable-buffer
+pool and the no-allocation callback.
+
+**Decision details with non-obvious context:**
+
+- **Load spreading is the design constraint, not an optimization.** A uniform
+  FDL does all its partition MACs on the hop block (~217 us for a 2 s IR —
+  measured in the bench before the implementation existed), a sawtooth the
+  block budget cannot absorb at low latency. The `p >= 1` terms of hop `n+1`
+  depend only on spectra present after hop `n`, so `Conv` accumulates them
+  across the intervening blocks and the hop block adds only the input
+  FFT/IFFT pair and the `p = 0` term (~36 us vs ~6 us steady, bench-verified
+  with per-phase minima). This pairs with the S11 stagger as the two halves
+  of "spectral load must be flat".
+- **The FDL is input history, so kernel swaps are cheap**: swapping never
+  rebuilds state; the swap hop computes the outgoing kernel's tail and a full
+  fresh sum, crossfading over one partition (the `Convolution2L` behavior).
+  Regenerating the *same* buffer index is a hard switch — the old spectra are
+  gone (the pool swapped the Arc), so there is nothing to fade from; the docs
+  say to use a fresh buffer when the transition matters.
+- **Static `fft_size`/`partitions` instead of buffer-driven sizing**: the
+  FDL and scratch must pre-allocate at build (network thread), so the def
+  declares the partition size and the maximum kernel length; a mismatched
+  kernel plays silence rather than resizing. scsynth's `PartConv` sizes from
+  the spec buffer at construction — equivalent in effect, but our form keeps
+  the kernel freely swappable at runtime within the declared capacity.
+- **Latency is reported, not compensated**: `Conv` is the first UGen with
+  intrinsic latency (one partition), so it lands the `latency()` hook on
+  `UGen`/`SynthNode` that the auto-ordering work anticipated. Parallel-path
+  compensation (PDC) remains open, per `docs/model-vs-daw.md`.

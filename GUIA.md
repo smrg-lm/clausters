@@ -49,6 +49,11 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   `clients/python/examples/spectral_cross.py` → a la derecha se oye el ruido
   vistiendo la envolvente espectral de la melodía (izquierda, seca); en los
   últimos beats el `freeze` congela el acorde final como textura sostenida.
+- **Convolución particionada (reverb).**
+  `clients/python/examples/convolution.py` → a la izquierda el pluck seco, a la
+  derecha la cola de reverberación convolucionada (IR de ruido decayente
+  preparada con `/b_gen prepare_partconv`); la cola sigue sonando tras cada
+  nota.
 - **Envolventes (EnvGen).** Un synth con `gate`/pausa → se oye el corte y la
   reanudación (la suite mide `beat RMS ~0.141` on / `0.000` en pausa).
 - **Editor multipista (GUI).** `examples/gui_multitrack.py` abre una ventana con

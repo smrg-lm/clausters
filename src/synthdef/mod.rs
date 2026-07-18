@@ -138,6 +138,10 @@ pub struct UGenSpec {
     /// Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wintype: Option<i32>,
+    /// `Conv` (M28): maximum partition count (FDL capacity — the longest
+    /// prepared kernel the instance accepts). Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partitions: Option<usize>,
 }
 
 /// An input is a constant, a named control, or the output of an earlier UGen.
@@ -353,7 +357,19 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             fft_size: u.fft_size,
             hop: u.hop,
             wintype: u.wintype,
+            partitions: u.partitions,
         };
+        // Any kind that takes an `fft_size` (the spectral chain's FFT, the
+        // partitioned convolver) must name a supported transform size.
+        if let Some(sz) = u.fft_size
+            && !fft::supports(sz)
+        {
+            return Err(format!(
+                "ugens[{i}] ({}): unsupported fft_size {sz}; use one of {:?}",
+                u.kind,
+                fft::SUPPORTED_SIZES
+            ));
+        }
 
         let mut inputs = Vec::with_capacity(u.inputs.len());
         for (k, inp) in u.inputs.iter().enumerate() {
@@ -411,15 +427,6 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         match desc.spectral {
             SpectralRole::None => {}
             SpectralRole::Source => {
-                if let Some(sz) = u.fft_size
-                    && !fft::supports(sz)
-                {
-                    return Err(format!(
-                        "ugens[{i}] ({}): unsupported fft_size {sz}; use one of {:?}",
-                        u.kind,
-                        fft::SUPPORTED_SIZES
-                    ));
-                }
                 let winsize = resolve_fft_size(u.fft_size);
                 config.fft_size = Some(winsize);
                 chain_slot = Some(spectral_sizes.len());

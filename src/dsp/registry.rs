@@ -13,6 +13,7 @@
 
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
+use crate::dsp::conv::Conv;
 use crate::dsp::demand::{Demand, Dseq};
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
@@ -70,6 +71,10 @@ pub struct UGenConfig {
     /// [`Window`](clausters_core::window::Window) `wintype` integer, default `0`
     /// (Hann). Also settable live via `/u_cmd`. Ignored by every other kind.
     pub wintype: Option<i32>,
+    /// `Conv` (M28): FDL capacity in partitions — the longest prepared kernel
+    /// this instance accepts, sizing its pre-allocated state. Ignored by
+    /// every other kind.
+    pub partitions: Option<usize>,
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -820,6 +825,21 @@ static UGENS: &[UGenDescriptor] = &[
         R_KR,
         SpectralRole::Filter,
         |c| Box::new(PvBinShift::new(c, true)),
+    ),
+    // --- partitioned convolution (M28): one UGen, kernel spectra prepared
+    //     off the RT thread by `/b_gen prepare_partconv`, MACs spread across
+    //     the hop's blocks for flat load. Not a PV_*: fast convolution's
+    //     zero-padded rectangular segments are incompatible with the windowed
+    //     COLA chain. See `dsp::conv`. ---
+    desc(
+        "Conv",
+        Fixed(2),
+        Ar,
+        R_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c| Box::new(Conv::new(c)),
     ),
 ];
 

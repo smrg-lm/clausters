@@ -45,6 +45,7 @@ pip install ./clients/python          # builds + bundles the native libs
 
 - **`spectral.py`** — also self-contained (renders a WAV, no server): a frequency-domain `fft` → `pv_brick_wall` → `ifft` chain (S8) that low-passes white noise **in the spectral domain**, rendered next to the raw noise so the effect is audible. No buffer is allocated; the frame is synth-private scratch on the server. See [The frequency-domain chain](defs.md#the-frequency-domain-chain).
 - **`spectral_cross.py`** — the two-chain PV family: `pv_mag_mul` cross-synthesis (white noise wearing the spectral envelope of a small harmonic stack playing a melody) with a `pv_mag_freeze` ending that holds the last envelope as a sustained texture. Two `fft` chains combined inside one def — no buffers, no buses between the stages.
+- **`convolution.py`** — convolution reverb: a synthetic decaying-noise impulse response loaded from a WAV, prepared once off the audio thread with `gen_buffer(kernel, "prepare_partconv", ...)`, and convolved against plucked tones by the partitioned `conv` UGen (dry left, wet right). Shows the whole kernel pipeline and the `partconv_frames` sizing helper.
 
   ```sh
   python clients/python/examples/spectral.py out.wav

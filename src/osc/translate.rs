@@ -2363,6 +2363,27 @@ pub fn parse_b_gen(args: &[OscType], mirror: &BufferPool) -> Result<(i32, NrtJob
                 },
             }
         }
+        "prepare_partconv" => {
+            // prepare_partconv fftSize srcBufnum -- the typed heir of
+            // scsynth's PreparePartConv (dest holds the partitioned spectra
+            // the Conv UGen reads; size it with dsp::conv::layout::frames).
+            let [OscType::Int(fft_size), OscType::Int(src_buf)] = rest else {
+                return Err("prepare_partconv expects: fftSize, srcBufnum".into());
+            };
+            if *fft_size < 0 || !clausters_core::fft::supports(*fft_size as usize) {
+                return Err(format!(
+                    "prepare_partconv: unsupported fftSize {fft_size}; use one of {:?}",
+                    clausters_core::fft::SUPPORTED_SIZES
+                ));
+            }
+            let Some(src) = mirror_buffer(mirror, *src_buf) else {
+                return Err(format!("no source buffer allocated at {src_buf}"));
+            };
+            GenCommand::PreparePartConv {
+                src,
+                fft_size: *fft_size as usize,
+            }
+        }
         "env" => {
             // env level0 [level time shape curve]...
             let vals: Vec<f32> = rest.iter().filter_map(float_value).collect();

@@ -975,7 +975,10 @@ class Server:
 
     def gen_buffer(self, buf, cmd: str, *args, wait: bool = True, timeout: float = 5.0):
         """Fills a buffer through ``/b_gen`` (the wavetable/generator commands:
-        ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``).
+        ``"env"``, ``"sine1"``/``"sine2"``/``"sine3"``, ``"cheby"``, ``"copy"``,
+        and ``"prepare_partconv" fft_size ir_bufnum`` — the partitioned-kernel
+        preparation the `conv` UGen reads; size the target with
+        `clausters.defs.partconv_frames`).
         Like `alloc_buffer`: NRT scores at time 0; RT ``wait=True`` blocks on
         ``/done``, ``wait=False`` is fire-and-forget."""
         bufnum = buf.bufnum if isinstance(buf, Buffer) else buf

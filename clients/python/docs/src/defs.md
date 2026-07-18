@@ -278,6 +278,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `pv_mag_smear(chain, bins=0)` | average each bin's magnitude over `bins` neighbors per side (spectral blur) |
 | | `pv_bin_shift(chain, stretch=1, shift=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
+| Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `gen_buffer(dest, "prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
 

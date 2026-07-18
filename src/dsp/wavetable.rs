@@ -80,6 +80,17 @@ pub enum GenCommand {
         src_start: usize,
         num: i64,
     },
+    /// `prepare_partconv fftSize srcBuf`: partition `src`'s samples into the
+    /// prepared-kernel layout the `Conv` UGen reads (M28): partitions of
+    /// `L = fftSize/2` samples, each zero-padded to `fftSize` and
+    /// forward-transformed **here, off the audio thread** — the RT side only
+    /// ever multiplies against the ready spectra. Layout in
+    /// `dsp::conv::layout`; the partition count is capped by the target
+    /// buffer's capacity. A multichannel source contributes channel 0.
+    PreparePartConv {
+        src: std::sync::Arc<Buffer>,
+        fft_size: usize,
+    },
     /// `env level0 [level time shape curve]...`: discretize a break-point
     /// envelope across the whole buffer, evaluating each segment through
     /// `clausters_core::envshape` — the same curve math the `EnvGen` UGen plays
@@ -125,6 +136,7 @@ impl GenCommand {
             GenCommand::Env { initial, segments } => {
                 env_curve(*initial, segments, frames, channels)
             }
+            GenCommand::PreparePartConv { src, fft_size } => prepare_partconv(src, *fft_size, len),
             _ => {
                 let flags = self.flags();
                 // Period length: half the samples in wavetable mode (the format
@@ -155,7 +167,9 @@ impl GenCommand {
             | GenCommand::Sine2 { flags, .. }
             | GenCommand::Sine3 { flags, .. }
             | GenCommand::Cheby { flags, .. } => *flags,
-            GenCommand::Copy { .. } | GenCommand::Env { .. } => GenFlags {
+            GenCommand::Copy { .. }
+            | GenCommand::Env { .. }
+            | GenCommand::PreparePartConv { .. } => GenFlags {
                 normalize: false,
                 wavetable: false,
                 clear: true,
@@ -207,8 +221,11 @@ impl GenCommand {
                     *s += cheby_sum(coeffs, x);
                 }
             }
-            // Copy and Env short-circuit in `apply` and never reach here.
-            GenCommand::Copy { .. } | GenCommand::Env { .. } => {}
+            // Copy, Env and PreparePartConv short-circuit in `apply` and
+            // never reach here.
+            GenCommand::Copy { .. }
+            | GenCommand::Env { .. }
+            | GenCommand::PreparePartConv { .. } => {}
         }
     }
 }
@@ -400,4 +417,42 @@ mod tests {
             assert!((v - 0.7).abs() < 1e-6);
         }
     }
+}
+
+/// `prepare_partconv`: the impulse response in `src` (channel 0) partitioned
+/// and forward-transformed into the [`crate::dsp::conv::layout`] a `Conv`
+/// UGen reads: `[L, P, P × fft_size packed spectra]`, `L = fft_size / 2`.
+/// The partition count is what fits both the source and the target capacity
+/// (`len` samples); a target too small for even one partition yields an
+/// all-zero (invalid) kernel, which `Conv` plays as silence.
+fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
+    use crate::dsp::conv::layout;
+
+    let mut data = vec![0.0f32; len];
+    let part = fft_size / 2;
+    let channels = src.channels().max(1);
+    let ir_len = src.data().len() / channels;
+    let parts_src = ir_len.div_ceil(part.max(1));
+    let parts_cap = len.saturating_sub(layout::HEADER) / fft_size;
+    let parts = parts_src.min(parts_cap);
+    if part == 0 || parts == 0 {
+        return data;
+    }
+    data[0] = part as f32;
+    data[1] = parts as f32;
+    let mut scratch = vec![0.0f32; fft_size];
+    for p in 0..parts {
+        scratch.fill(0.0);
+        for k in 0..part {
+            let frame = p * part + k;
+            if frame >= ir_len {
+                break;
+            }
+            // Channel 0 of an interleaved buffer.
+            scratch[k] = src.data()[frame * channels];
+        }
+        let out = &mut data[layout::HEADER + p * fft_size..layout::HEADER + (p + 1) * fft_size];
+        clausters_core::fft::rfft_into(&scratch, out);
+    }
+    data
 }

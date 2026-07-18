@@ -71,6 +71,13 @@ impl UGenSynth {
 }
 
 impl SynthNode for UGenSynth {
+    fn latency(&self) -> usize {
+        // The sum over UGens is exact for a serial chain (the common shape);
+        // a graph with parallel paths of unequal latency is the open PDC
+        // problem this hook feeds later.
+        self.ugens.iter().map(|u| u.latency()).sum()
+    }
+
     fn set_node_id(&mut self, id: i32) {
         for u in &mut self.ugens {
             u.set_node_id(id);

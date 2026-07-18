@@ -20,6 +20,10 @@ pub mod wavetable;
 pub mod binop;
 #[cfg(feature = "synth")]
 pub mod buf;
+// `conv` is listed with the core modules below: its kernel layout is data
+// the `/b_gen prepare_partconv` routine (feature-independent) writes; only
+// the UGen inside it is synth-gated.
+pub mod conv;
 #[cfg(feature = "synth")]
 pub mod demand;
 #[cfg(feature = "synth")]
@@ -505,6 +509,15 @@ pub trait UGen: Send {
     /// Called after `process` to signal completion (e.g., EnvGen reaching its end).
     fn done(&self) -> DoneAction {
         DoneAction::None
+    }
+
+    /// Intrinsic latency in samples: how far this UGen's output lags its
+    /// input by construction (M28's partitioned convolver reports its
+    /// partition length; almost everything else is 0, the default). Reported
+    /// through `SynthNode::latency` for a future delay-compensation pass —
+    /// today it is informational only (see `docs/model-vs-daw.md`).
+    fn latency(&self) -> usize {
+        0
     }
 
     /// Tells the UGen which node it lives in, once, when the node enters the
