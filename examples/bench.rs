@@ -19,6 +19,11 @@
 //!   while Faust `-single` is f32, so part of the gap is precision.
 //! - **gain** (`·0.5` on a shared bus): bit-exact, no transcendental — the
 //!   cleanest read of pure engine overhead.
+//!
+//! The **spectral** section measures the frequency-domain family, where the
+//! interesting number is not throughput but the *peak block*: an FFT chain
+//! concentrates all its work on the block where the hop closes, a sawtooth
+//! load that averages (and EMA load meters) underreport.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -46,6 +51,8 @@ fn main() {
     }
 
     bench_sine_vs_wavetable();
+
+    bench_spectral();
 
     #[cfg(feature = "faust")]
     {
@@ -157,6 +164,185 @@ fn bench_sine_vs_wavetable() {
             cols[0], cols[1], cols[2]
         );
     }
+}
+
+/// The spectral (`fr`) family, in three views:
+///
+/// 1. **Raw transforms** — one `rfft`/`irfft` call per supported size against
+///    the 64-frame block budget. This is the whole per-hop cost of an
+///    `FFT`/`IFFT` bookend pair (the `PV_*` in between are linear scans).
+/// 2. **Partitioned-convolution MAC** — the frequency-domain delay-line inner
+///    loop a future partitioned convolver runs per hop (`P` complex bin-wise
+///    multiply–accumulates). Uniformly partitioned, all of it lands on the hop
+///    block unless the implementation spreads the partitions across the hop's
+///    blocks — this row is the spike that spreading would flatten.
+/// 3. **A full chain through the engine** — `Sine → FFT → PV_MagAbove → IFFT
+///    → Out` per voice. The xRT column is the average story; the peak-block
+///    column is the real-time one: every voice is added on the same block, so
+///    all hops land on the same block — the aligned worst case (hop-phase
+///    staggering at instantiation is the lever that would spread it).
+fn bench_spectral() {
+    use clausters_core::fft;
+
+    let budget_us = BLOCK_SIZE as f64 / SAMPLE_RATE * 1e6;
+    println!(
+        "\nspectral transforms (per call; one {BLOCK_SIZE}-frame block @ {SAMPLE_RATE} Hz = {budget_us:.0} us):"
+    );
+    println!(
+        "  {:>6}  {:>10}  {:>10}  {:>15}",
+        "n", "rfft", "irfft", "pair, % block"
+    );
+    for &n in fft::SUPPORTED_SIZES {
+        let input: Vec<f32> = (0..n).map(|i| (i as f32 * 0.01).sin()).collect();
+        let mut frame = vec![0.0f32; n];
+        let mut time = vec![0.0f32; n];
+        let fwd = time_per_call(|| fft::rfft_into(std::hint::black_box(&input), &mut frame));
+        let inv = time_per_call(|| fft::irfft_into(std::hint::black_box(&frame), &mut time));
+        println!(
+            "  {n:>6}  {fwd:>8.2} us  {inv:>8.2} us  {:>14.1}%",
+            (fwd + inv) / budget_us * 100.0
+        );
+    }
+
+    println!("  partitioned-convolution spectral MAC per hop (uniform FDL):");
+    for &(n, parts, label) in &[(4096usize, 47usize, "2 s IR"), (4096, 12, "0.5 s IR")] {
+        let us = time_conv_mac(n, parts);
+        println!(
+            "    n={n} x {parts} partitions ({label} @ 48k): {us:>6.1} us = {:.1}% of block",
+            us / budget_us * 100.0
+        );
+    }
+
+    let def = Arc::new(
+        compile(
+            serde_json::from_value(serde_json::json!({
+                "name": "cmp_spectral",
+                "controls": [{"name": "freq", "default": 440.0}],
+                "ugens": [
+                    {"kind": "Sine", "inputs": [{"control": 0}]},
+                    {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+                    {"kind": "PV_MagAbove", "inputs": [{"ugen": 1}, {"const": 0.0}]},
+                    {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+                ]
+            }))
+            .unwrap(),
+        )
+        .expect("spectral def compiles"),
+    );
+
+    println!(
+        "\nspectral chain (Sine → FFT 1024 → PV_MagAbove → IFFT → Out), hops aligned (worst case):"
+    );
+    println!(
+        "  {:>6}  {:>11}  {:>12}  {:>13}",
+        "synths", "xRT", "avg block", "peak block"
+    );
+    for &n in VOICE_COUNTS {
+        let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
+        let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+        for i in 0..n {
+            let mut synth: Box<dyn SynthNode> = Box::new(UGenSynth::new(Arc::clone(&def)));
+            synth.set_control(0, 50.0 + i as f32);
+            let cmd = Cmd::AddSynth {
+                id: 1000 + i as i32,
+                target: 0,
+                action: AddAction::Tail,
+                synth,
+                usage: Default::default(),
+            };
+            send_cmd(&mut engine, &mut handle, &mut out, cmd);
+        }
+        engine.process_block(&mut out);
+        handle.collect_garbage();
+        let (blocks_per_sec, avg_us, peak_us) = measure_peak(&mut engine, &mut out);
+        let xrt = blocks_per_sec * BLOCK_SIZE as f64 / SAMPLE_RATE;
+        println!("  {n:>6}  {xrt:>10.1}x  {avg_us:>9.1} us  {peak_us:>10.1} us");
+    }
+    println!(
+        "  (peak block = the hop block, where every chain transforms at once; the budget\n\
+         \x20  is {budget_us:.0} us per block — but the hard deadline is the audio callback,\n\
+         \x20  which amortizes the spike when it covers more than one block.)"
+    );
+}
+
+/// Times one call of `f` in a warmed-up loop, in microseconds.
+fn time_per_call(mut f: impl FnMut() -> bool) -> f64 {
+    for _ in 0..1000 {
+        assert!(f());
+    }
+    let iters = 20000usize;
+    let start = Instant::now();
+    for _ in 0..iters {
+        f();
+    }
+    start.elapsed().as_secs_f64() / iters as f64 * 1e6
+}
+
+/// One hop of a uniformly partitioned convolver's inner loop: accumulate
+/// `parts` complex bin-wise products of packed size-`n` frames (the
+/// [`fft::rfft_into`] layout: `[dc, nyquist, re, im, …]`) into one frame.
+fn time_conv_mac(n: usize, parts: usize) -> f64 {
+    let frames: Vec<Vec<f32>> = (0..parts)
+        .map(|p| (0..n).map(|i| ((i + p) as f32 * 0.001).sin()).collect())
+        .collect();
+    let kernel = frames.clone();
+    let mut acc = vec![0.0f32; n];
+    let half = n / 2;
+    let iters = 2000usize;
+    let start = Instant::now();
+    for _ in 0..iters {
+        acc.iter_mut().for_each(|v| *v = 0.0);
+        for p in 0..parts {
+            let (a, b) = (
+                std::hint::black_box(&frames[p]),
+                std::hint::black_box(&kernel[p]),
+            );
+            acc[0] += a[0] * b[0]; // DC
+            acc[1] += a[1] * b[1]; // Nyquist
+            for k in 1..half {
+                let (ar, ai) = (a[2 * k], a[2 * k + 1]);
+                let (br, bi) = (b[2 * k], b[2 * k + 1]);
+                acc[2 * k] += ar * br - ai * bi;
+                acc[2 * k + 1] += ar * bi + ai * br;
+            }
+        }
+        std::hint::black_box(&acc);
+    }
+    start.elapsed().as_secs_f64() / iters as f64 * 1e6
+}
+
+/// Like [`measure`], but also times every block individually: returns
+/// (blocks/s, average block time in us, worst single block in us). The peak
+/// is the number that matters for a sawtooth (hop-concentrated) load.
+fn measure_peak(engine: &mut Engine, out: &mut [f32]) -> (f64, f64, f64) {
+    for _ in 0..100 {
+        engine.process_block(out); // warmup
+    }
+    let start = Instant::now();
+    let mut blocks = 0u64;
+    let mut peak = 0.0f64;
+    loop {
+        for _ in 0..64 {
+            let t = Instant::now();
+            engine.process_block(out);
+            let dt = t.elapsed().as_secs_f64();
+            if dt > peak {
+                peak = dt;
+            }
+        }
+        blocks += 64;
+        if start.elapsed().as_secs_f64() >= MEASURE_SECS {
+            break;
+        }
+    }
+    let elapsed = start.elapsed().as_secs_f64();
+    assert!(out.iter().all(|s| s.is_finite()));
+    (
+        blocks as f64 / elapsed,
+        elapsed / blocks as f64 * 1e6,
+        peak * 1e6,
+    )
 }
 
 fn make_default_synth() -> Box<dyn SynthNode> {
