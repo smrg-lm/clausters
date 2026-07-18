@@ -270,7 +270,13 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `poll(trig, signal, label="poll", trig_id=-1)` | posts `signal` to the server console (and a `/tr` when `trig_id >= 0`); passes `signal` through |
 | Spectral | `fft(source, active=1.0, *, fft_size=1024, hop=0.5, wintype=0)` | opens a spectral chain (windows and transforms `source` per hop) |
 | | `pv_mag_above(chain, threshold)` / `pv_mag_below(chain, threshold)` | pass bins above / below a magnitude threshold |
+| | `pv_mag_clip(chain, threshold)` | limit each bin's magnitude to the threshold (phases kept) |
 | | `pv_brick_wall(chain, wipe)` | zero a band (`wipe > 0` low pass, `< 0` high pass) |
+| | `pv_add(a, b)` / `pv_mul(a, b)` / `pv_min(a, b)` / `pv_max(a, b)` | two-chain combiners: per-bin complex sum / product / smaller / larger magnitude |
+| | `pv_mag_mul(a, b)` / `pv_copy_phase(a, b)` | cross-synthesis: A's bins scaled by B's magnitudes / A's magnitudes with B's phases |
+| | `pv_mag_freeze(chain, freeze=0)` | hold the stored magnitude envelope while `freeze > 0` (phases keep running) |
+| | `pv_mag_smear(chain, bins=0)` | average each bin's magnitude over `bins` neighbors per side (spectral blur) |
+| | `pv_bin_shift(chain, stretch=1, shift=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
@@ -338,6 +344,8 @@ sdef = SynthDef("spec_lp", out(0.0, ifft(chain)))
 ```
 
 The FFT frame is **synth-private scratch on the server** (SuperCollider's `LocalBuf` model) — no buffer is allocated and none is required. Only `fft` names the window size, hop and window type (they size the transform); the server propagates them to the rest of the chain. A bare `fft` → `ifft` reconstructs the signal at unity gain, delayed by one window.
+
+A **two-chain combiner** (`pv_add`, `pv_mul`, `pv_min`, `pv_max`, `pv_mag_mul`, `pv_copy_phase`) takes two chains — both from an `fft` of the **same `fft_size`**, and distinct — and writes the result into chain A (its first argument), which the combiner's output carries onward. `pv_mag_mul` is the classic cross-synthesis: a noise carrier in chain A comes out wearing the spectral envelope of the modulator in chain B (see `examples/spectral_cross.py`, which also freezes the ending with `pv_mag_freeze`).
 
 The window type is also settable **live** with `Server.u_cmd`, which addresses one UGen instance inside a running synth:
 
