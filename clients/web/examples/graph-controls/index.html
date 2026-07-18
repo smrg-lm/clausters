@@ -25,7 +25,15 @@ between. The power button is the autoplay gesture.</div>
 
     <!--
       The component page of examples/graph-controls (see make_bundle.py for
-      the authoring half and the bundle's contents). ?smoke=1 auto-boots and
+      the authoring half and the bundle's contents).
+
+      Serve from clients/web — the PACKAGE ROOT, never this folder: the
+      imports below reach ../../dist/, which must stay inside the served
+      root (serving graph-controls/ itself turns them into 404s/MIME
+      errors). From clients/web:  python3 -m http.server  and open
+      /examples/graph-controls/.
+
+      ?smoke=1 auto-boots and
       asserts the chain end to end — the graph's LFO streaming on control bus
       0 (the /graph_new instantiated and sounding) and an /n_set of a named
       surface port accepted without /fail — beaconing the verdict as a fetch,

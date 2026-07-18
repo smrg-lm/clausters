@@ -30,11 +30,16 @@ Generate the bundle (from this directory; the client importable as usual —
 Then the **same** bundle runs on every leg, no script attached to any of them:
 
 - **Browser, as a web component** (the wasm engine in an AudioWorklet):
-  build/stage the package once (``../../build.sh``), serve the package root
-  (``cd ../.. && python3 -m http.server``) and open
-  ``http://localhost:8000/examples/graph-controls/`` — `index.html` here is
-  just ``<clausters-bundle src="bundle">``; its power button boots the whole
-  instrument in the tab.
+  build/stage the package once (``../../build.sh``), then serve **from
+  ``clients/web`` — the package root, never this folder** (the page imports
+  ``../../dist/...``, which must stay inside the served root; serving
+  ``graph-controls/`` itself turns those imports into 404s)::
+
+      cd clients/web && python3 -m http.server
+
+  and open ``http://localhost:8000/examples/graph-controls/`` — `index.html`
+  here is just ``<clausters-bundle src="bundle">``; its power button boots
+  the whole instrument in the tab.
 - **Desktop, self-contained** (the embedded server; from ``clients/gui``)::
 
       cargo run --features standalone --bin clausters-gui -- \\
@@ -182,8 +187,10 @@ def main():
     data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bundle")
     write_bundle(data_dir)
     print(f"bundle written to {data_dir}")
-    print("\nserve the package root and open the component page:\n")
-    print("    (cd ../.. && ./build.sh && python3 -m http.server)")
+    print("\nserve the PACKAGE ROOT (clients/web) — not this folder — and "
+          "open the component page:\n")
+    print("    cd ../..   # clients/web")
+    print("    ./build.sh && python3 -m http.server")
     print("    http://localhost:8000/examples/graph-controls/\n")
     print("or run the same bundle self-contained on the desktop "
           "(from clients/gui):\n")
