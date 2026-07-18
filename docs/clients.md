@@ -143,7 +143,7 @@ documentation is the composition chapter of the Python client's book.
 
 ## The GUI host in the browser
 
-The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to a **separate audio server over WebSocket** — start the server with `--ws` (default port 57120). There is no in-process engine in the browser; the embed/standalone path is native-only.
+The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to an audio server over one of two legs: a **separate server over WebSocket** (start it with `--ws`, default port 57120), or the **in-page engine** — the audio server itself compiled to wasm, running inside an AudioWorklet on the same page (`GuiBridge.connect_page`; see the standalone quick start below). No server process is required in the second case.
 
 The browser fills the host's data paths over the network instead of shared memory and mapped files:
 
@@ -158,7 +158,19 @@ The browser fills the host's data paths over the network instead of shared memor
 (cd web && python3 -m http.server)   # then open http://localhost:8000/
 ```
 
-The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and `connect_server(url)` attaches the audio-server leg to a `--ws` server (a `bind`-ed widget then forwards straight to it, with no script round-trip). `web/index.html` is a documented throwaway harness with a panel, a meters and a bulk demo — it proves the host; the product browser client is the separate TypeScript track below.
+The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). `web/index.html` is a documented throwaway harness with a panel, a meters and a bulk demo — it proves the host; the product browser client is the separate TypeScript track below.
+
+### A standalone bundle in a tab
+
+A bundle saved for the native `clausters-gui --standalone <name>` (the data directory: `defs/synthdefs`, `defs/graphdefs`, `defs/guidefs`, `boot.json`) boots **entirely in a browser tab**: the engine runs in an AudioWorklet ([Using as a library](using-as-a-library.md) describes the pulled server it wraps), the GUI host on a canvas, and the streamed data paths (`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) ride the in-page leg unchanged — meters, scopes and buffer views are live with no server process anywhere.
+
+Serving a bundle over HTTP needs one extra file the native flow does not: a `bundle.json` manifest at the bundle's root naming the def files (HTTP cannot list directories) — generate it with `clients/gui/web/bundle-manifest.py <data-dir>`. Its optional `"buffers"` map (`{"<index>": "<audio url>"}`) loads samples through fetch + `decodeAudioData` into the engine (the browser's `/b_allocRead`). Then, after `./web/build.sh` (which also stages the engine bundle into `web/engine/`), copy or symlink the bundle into the served directory and open:
+
+```
+http://localhost:8000/standalone.html?bundle=<bundle url>&name=<GuiDef name>
+```
+
+The boot replays the persisted files over the wire in the server's own boot order (defs → graphdefs → `boot.json` preset → the GuiDef's `boot` messages), `/sync`-bracketed so the page knows when the instrument is up. The scripted acceptance is `scripts/smoke-web-standalone.sh` (headless Chrome).
 
 ## A JavaScript client (planned)
 

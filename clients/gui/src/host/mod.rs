@@ -58,6 +58,11 @@ pub mod timeline;
 pub mod track;
 pub mod widget;
 
+// Booting a persisted bundle over the wire — the ordering/encoding half of the
+// browser standalone path, platform-agnostic and natively unit-tested (the
+// fetching half is page JS).
+pub mod bundle;
+
 // The native I/O shell, excluded from `wasm32`: the UDP client leg
 // ([`Transport`]), on-disk GuiDef persistence ([`DefStore`]) and the UDP server
 // front. The browser fills the same seams over WebSocket/fetch in later
@@ -176,6 +181,11 @@ pub enum ServerLink {
     /// can open to a separate process). Bound widgets forward through it.
     #[cfg(target_arch = "wasm32")]
     Ws(web::WsServerLink),
+    /// The in-page engine (the AudioWorklet backend): outbound OSC handed to a
+    /// page-registered callback, which forwards it to the worklet; replies come
+    /// back through `GuiBridge::server_reply`. No process, no socket.
+    #[cfg(target_arch = "wasm32")]
+    Page(web::PageServerLink),
 }
 
 impl ServerLink {
@@ -198,6 +208,8 @@ impl ServerLink {
             }
             #[cfg(target_arch = "wasm32")]
             ServerLink::Ws(link) => link.send(msg),
+            #[cfg(target_arch = "wasm32")]
+            ServerLink::Page(link) => link.send(msg),
         }
     }
 

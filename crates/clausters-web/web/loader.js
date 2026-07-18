@@ -55,14 +55,31 @@ export async function bootClausters({
                 node.port.postMessage({ type: "clock" });
             });
         },
+        // Installs host-decoded samples as buffer `index` — the browser's
+        // /b_allocRead (fetch + decodeAudioData, interleave, then this).
+        // `samples` is a Float32Array, transferred, not copied.
+        bLoad(index, channels, sampleRate, samples) {
+            return new Promise((resolve, reject) => {
+                loadWaiters.push({ resolve, reject });
+                node.port.postMessage(
+                    { type: "b_load", index, channels, sampleRate, data: samples.buffer },
+                    [samples.buffer],
+                );
+            });
+        },
     };
 
     const clockWaiters = [];
+    const loadWaiters = [];
     node.port.onmessage = (e) => {
         const msg = e.data;
         if (msg.type === "osc") handle.onReply?.(new Uint8Array(msg.data));
         else if (msg.type === "clock") clockWaiters.shift()?.(msg.clock);
-        else if (msg.type === "quit") handle.onQuit?.();
+        else if (msg.type === "b_load") {
+            const waiter = loadWaiters.shift();
+            if (msg.ok) waiter?.resolve(msg.index);
+            else waiter?.reject(new Error(msg.message));
+        } else if (msg.type === "quit") handle.onQuit?.();
         else if (msg.type === "error") handle.onError?.(msg.message);
     };
 

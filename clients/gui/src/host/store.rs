@@ -16,7 +16,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use clausters_core::osc::{OscMessage, OscType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -143,43 +142,10 @@ impl super::DefStore for GuiStore {
     }
 }
 
-/// The `boot` messages declared at a GuiDef's root: a list of `[addr, args…]`
-/// the standalone host sends to the server right after the defs load, to bring
-/// the instrument up (e.g. `["/s_new", "drone", 1000, 0, 0]`). The int/float
-/// distinction is preserved (a JSON integer is an OSC `Int`, so node ids stay
-/// integers). Empty when the GuiDef declares no `boot`.
-pub fn boot_messages(tree_json: &[u8]) -> Vec<OscMessage> {
-    let Ok(Value::Object(root)) = serde_json::from_slice::<Value>(tree_json) else {
-        return Vec::new();
-    };
-    let Some(Value::Array(list)) = root.get("boot") else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for entry in list {
-        if let Value::Array(items) = entry
-            && let Some(Value::String(addr)) = items.first()
-        {
-            let args = items[1..].iter().filter_map(value_to_osc).collect();
-            out.push(OscMessage {
-                addr: addr.clone(),
-                args,
-            });
-        }
-    }
-    out
-}
-
-/// One JSON value as an OSC primitive, keeping integers and floats apart.
-fn value_to_osc(v: &Value) -> Option<OscType> {
-    match v {
-        Value::Number(n) if n.is_i64() || n.is_u64() => Some(OscType::Int(n.as_i64()? as i32)),
-        Value::Number(n) => Some(OscType::Float(n.as_f64()? as f32)),
-        Value::String(s) => Some(OscType::String(s.clone())),
-        Value::Bool(b) => Some(OscType::Int(*b as i32)),
-        _ => None,
-    }
-}
+/// The GuiDef root's `boot` messages — moved to the platform-agnostic
+/// [`bundle`](super::bundle) module (the browser bundle boot needs it too);
+/// re-exported so the native standalone path keeps its `store::` spelling.
+pub use super::bundle::boot_messages;
 
 /// Maps an arbitrary def name to a safe file stem (percent-encoding anything
 /// outside `[A-Za-z0-9._-]`), matching the server's `defstore::sanitize_name`.
@@ -224,6 +190,7 @@ fn read_json_files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clausters_core::osc::OscType;
 
     fn temp_dir() -> PathBuf {
         let mut p = std::env::temp_dir();

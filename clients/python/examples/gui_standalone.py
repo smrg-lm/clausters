@@ -43,6 +43,12 @@ The ``standalone`` feature links the embedded audio server into ``clausters-gui`
 (from ``clients/gui``) and a window opens whose knob drives the drone's frequency
 on the embedded server — no other process involved. Close the window to stop.
 Needs a display and a Vulkan/Metal/DX12/GL adapter.
+
+The same bundle also boots **in a browser tab** — the engine in an
+AudioWorklet, the GUI host on a canvas, still no server process. That path
+needs one extra file (a ``bundle.json`` manifest, since HTTP cannot list
+directories) and the served page; the script prints those steps too. See "A
+standalone bundle in a tab" in ``docs/clients.md``.
 """
 
 import json
@@ -131,6 +137,14 @@ def main(argv):
           "in your config, just `clausters-gui --standalone`) runs the app "
           "directly. The embedded server loads the data-dir's defs and "
           "boot.json itself.")
+    print("\nor boot the same bundle in a browser tab (from clients/gui, after "
+          "./web/build.sh):\n")
+    print(f"    python3 web/bundle-manifest.py {data_dir}")
+    print(f"    ln -s {data_dir} web/my-bundle")
+    print("    (cd web && python3 -m http.server)  # then open")
+    print("    http://localhost:8000/standalone.html?bundle=my-bundle\n")
+    print("the engine runs in an AudioWorklet, the GUI on a canvas — no server "
+          "process anywhere.")
 
 
 if __name__ == "__main__":

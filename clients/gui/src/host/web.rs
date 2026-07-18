@@ -145,6 +145,29 @@ impl WsServerLink {
     }
 }
 
+/// The host's audio-server leg to the **in-page engine** (the AudioWorklet
+/// backend): outbound OSC packets are handed to a page-registered JS callback
+/// (which forwards them to the worklet's MessagePort); inbound replies arrive
+/// through [`GuiBridge::server_reply`]. The whole audio server lives in the
+/// same tab — no process, no socket, no headers.
+pub struct PageServerLink {
+    callback: js_sys::Function,
+}
+
+impl PageServerLink {
+    /// Sends one OSC message by invoking the page's callback with the encoded
+    /// bytes (a fresh `Uint8Array` per call; the page may transfer it onward).
+    pub fn send(&self, msg: OscMessage) -> std::io::Result<()> {
+        let bytes = encode(&OscPacket::Message(msg))
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        let array = js_sys::Uint8Array::from(bytes.as_slice());
+        self.callback
+            .call1(&JsValue::NULL, &array)
+            .map_err(|e| std::io::Error::other(format!("{e:?}")))?;
+        Ok(())
+    }
+}
+
 /// What the binding surface and the async GPU hand the running app, through the
 /// winit web event loop's proxy (single-threaded, so the non-`Send` `Gpu` and
 /// the byte buffers move freely).
@@ -155,6 +178,9 @@ enum WebEvent {
     Inbound(Vec<u8>),
     /// Attach the audio-server leg to this `--ws` URL (for bound widgets).
     ConnectServer(String),
+    /// Attach the audio-server leg to the in-page engine: outbound packets go
+    /// to this page-registered callback (replies via `server_reply`).
+    ConnectPage(js_sys::Function),
     /// One inbound OSC packet from the audio server over the WS leg (a streamed
     /// `/c_set`, a `/b_info`/`/b_setn` reply, a `/fail`).
     ServerInbound(Vec<u8>),
@@ -364,6 +390,22 @@ impl WebApp {
                 }
             }
         }
+    }
+
+    /// A freshly attached server leg (WS or in-page) holds no subscription:
+    /// forget the old ones and subscribe the current tree's buses and taps
+    /// (WS frames queue until the socket opens, so sending now is safe).
+    /// `/clock` fetches the rate the oscilloscope windows are sized with.
+    fn on_server_attached(&mut self) {
+        self.streamed.clear();
+        self.tap_streamed = (Vec::new(), 0);
+        if let Some(server) = self.host.server() {
+            let _ = server.send(OscMessage {
+                addr: "/clock".into(),
+                args: vec![],
+            });
+        }
+        self.on_tree_changed();
     }
 
     /// Re-derives everything that follows from the current tree's live widgets:
@@ -1129,23 +1171,16 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 Ok(link) => {
                     self.host.set_server_link(ServerLink::Ws(link));
                     log(&format!("audio-server leg connecting to {url}"));
-                    // A fresh connection holds no subscription: forget the old
-                    // ones and subscribe the current tree's buses and taps
-                    // (frames queue until the socket opens, so sending now is
-                    // safe). `/clock` fetches the rate the oscilloscope
-                    // windows are sized with.
-                    self.streamed.clear();
-                    self.tap_streamed = (Vec::new(), 0);
-                    if let Some(server) = self.host.server() {
-                        let _ = server.send(OscMessage {
-                            addr: "/clock".into(),
-                            args: vec![],
-                        });
-                    }
-                    self.on_tree_changed();
+                    self.on_server_attached();
                 }
                 Err(e) => log(&format!("cannot open audio-server WebSocket {url}: {e}")),
             },
+            WebEvent::ConnectPage(callback) => {
+                self.host
+                    .set_server_link(ServerLink::Page(PageServerLink { callback }));
+                log("audio-server leg attached to the in-page engine");
+                self.on_server_attached();
+            }
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::Tick => self.on_tick(),
             WebEvent::BulkReady { widget_id, data } => self.on_bulk_ready(widget_id, data),
@@ -1534,6 +1569,60 @@ impl GuiBridge {
             .proxy
             .send_event(WebEvent::ConnectServer(url.to_string()));
     }
+
+    /// Attaches the host's audio-server leg to the **in-page engine**: every
+    /// outbound OSC packet (bound-widget values, `/c_stream`/`/tap_stream`
+    /// subscriptions, buffer fetches, `/clock`) is handed to `send` as a
+    /// `Uint8Array`; the page forwards it to the engine and feeds the engine's
+    /// replies back through [`server_reply`](Self::server_reply).
+    pub fn connect_page(&self, send: js_sys::Function) {
+        let _ = self.proxy.send_event(WebEvent::ConnectPage(send));
+    }
+
+    /// Feeds one reply packet from the in-page engine (a streamed `/c_set`, a
+    /// `/tap_data`, a `/b_info`/`/b_setn`, a `/clock.reply`) into the host —
+    /// the inbound half of [`connect_page`](Self::connect_page), the same
+    /// dispatch the WS leg's `onmessage` uses.
+    pub fn server_reply(&self, packet: &[u8]) {
+        let _ = self
+            .proxy
+            .send_event(WebEvent::ServerInbound(packet.to_vec()));
+    }
+}
+
+/// The ordered boot packets of a persisted bundle, for the page to send to the
+/// in-page engine: `synthdefs`/`graphdefs` are arrays of `Uint8Array` (each
+/// file's bytes verbatim), `boot_json` the optional `boot.json` text,
+/// `guidef_tree` the GuiDef tree JSON (its root `boot` messages run last).
+/// Returns an array of `Uint8Array` packets ending in `/sync sync_id+1` — the
+/// page knows the bundle is up when `/synced sync_id+1` comes back. The
+/// ordering/encoding logic lives in the platform-agnostic `host::bundle`
+/// module, natively unit-tested.
+#[wasm_bindgen]
+pub fn bundle_boot_packets(
+    synthdefs: js_sys::Array,
+    graphdefs: js_sys::Array,
+    boot_json: Option<String>,
+    guidef_tree: &str,
+    sync_id: i32,
+) -> js_sys::Array {
+    let to_bytes = |array: js_sys::Array| -> Vec<Vec<u8>> {
+        array
+            .iter()
+            .map(|v| js_sys::Uint8Array::new(&v).to_vec())
+            .collect()
+    };
+    let packets = super::bundle::boot_packets(
+        &to_bytes(synthdefs),
+        &to_bytes(graphdefs),
+        boot_json.as_ref().map(|s| s.as_bytes()),
+        guidef_tree.as_bytes(),
+        sync_id,
+    );
+    packets
+        .into_iter()
+        .map(|bytes| js_sys::Uint8Array::from(bytes.as_slice()))
+        .collect()
 }
 
 /// The wasm entry point: build the event loop, spawn the app on the browser's

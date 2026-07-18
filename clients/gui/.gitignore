@@ -4,3 +4,7 @@ Cargo.lock
 /web/clausters_gui_bg.wasm
 /web/sine.f32
 /web/sine.peaks
+# The staged in-page engine (copied from crates/clausters-web by web/build.sh)
+# and the demo bundle the standalone smoke writes.
+/web/engine/
+/web/bundle-demo/

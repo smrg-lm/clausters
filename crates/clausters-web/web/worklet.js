@@ -19,8 +19,13 @@ import { initSync, WebServer } from "./clausters_web.js";
 // Port protocol, both directions tagged by `type`:
 //   main -> worklet: {type:"osc", data}   one complete OSC packet (bytes)
 //                    {type:"clock"}       ask for the sample clock
+//                    {type:"b_load", index, channels, sampleRate, data}
+//                        install host-decoded samples as buffer `index` (the
+//                        browser's /b_allocRead: fetch + decodeAudioData on
+//                        the main thread, interleaved floats in here)
 //   worklet -> main: {type:"osc", data}   one reply packet (bytes)
 //                    {type:"clock", clock, epoch}
+//                    {type:"b_load", index, ok, message?}  the install's ack
 //                    {type:"quit"}        a /quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
 class ClaustersProcessor extends AudioWorkletProcessor {
@@ -47,6 +52,20 @@ class ClaustersProcessor extends AudioWorkletProcessor {
                 clock: this.server.clock(),
                 epoch: this.epoch,
             });
+        } else if (msg.type === "b_load") {
+            // Runs between quanta on this thread — the same inline install
+            // the native headless embed mode performs (see ClaustersHeadless).
+            try {
+                this.server.b_load(
+                    msg.index, msg.channels, msg.sampleRate,
+                    new Float32Array(msg.data),
+                );
+                this.port.postMessage({ type: "b_load", index: msg.index, ok: true });
+            } catch (e) {
+                this.port.postMessage({
+                    type: "b_load", index: msg.index, ok: false, message: String(e),
+                });
+            }
         }
     }
 

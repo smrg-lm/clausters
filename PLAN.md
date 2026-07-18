@@ -326,14 +326,23 @@ unnumbered optimization.
   HTTP access log — real-time audio vs. Chrome's virtual time, see
   `docs/decisions.md`).
 
-- [ ] **B3 — GuiDef standalone equivalence: a bundle boots in a tab** — a
-  wasm-only `ServerLink` variant in the GUI host (outbound OSC to a
-  page-registered callback; inbound via a `GuiBridge.server_reply`), the
-  streamed data paths (`/c_stream`, `/tap_stream`, `/b_getn`) unchanged over
-  it, and the browser bundle boot (fetch GuiDef + GraphDefs + boot list, the
-  same persisted formats as native `--standalone`, `/sync`-ordered). Sample
-  loading: fetch + `decodeAudioData` → `b_load`. Acceptance: a native-saved
-  standalone bundle runs in a tab with no server process, meters/scopes live.
+- ✅ **B3 — GuiDef standalone equivalence: a bundle boots in a tab**
+  *(done 2026-07-18)* — `ServerLink::Page` in the GUI host (wasm-only:
+  outbound OSC to a page-registered callback via `GuiBridge.connect_page`;
+  inbound via `GuiBridge.server_reply`), the streamed data paths
+  (`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) unchanged over it; the
+  bundle boot's ordering/encoding in the platform-agnostic `host::bundle`
+  (natively unit-tested, mirroring the server's own data-dir boot order,
+  bracketed by two `/sync`s — the second is the page's "bundle up" signal),
+  exposed to JS as `bundle_boot_packets`; the fetch half in
+  `clients/gui/web/bundle.js` (+ `bundle.json` manifest, the one addition to
+  the persisted formats — HTTP cannot list directories;
+  `web/bundle-manifest.py` generates it) and the page
+  `web/standalone.html`; samples fetch + `decodeAudioData` → the engine's
+  `bLoad` over the worklet port. Acceptance `scripts/smoke-web-standalone.sh`:
+  a native-format bundle (SynthDef spec + GuiDef with `boot`/`bind`) boots
+  entirely in a headless-Chrome tab, `/synced` confirms, and the meter's
+  control bus streams live values over the in-page leg.
 
 - [ ] **B4 — web components + the per-page singleton (thin capstone)** — an
   npm package seeding `clients/web/` (the future W track adopts it): a lazy

@@ -1046,3 +1046,36 @@ Two findings worth keeping with this record:
   drive a smoke that waits on real audio progress. `scripts/smoke-web.sh`
   instead runs Chrome in real time and has the page beacon its verdict as a
   `fetch` of `/smoke-verdict-…`, read from the HTTP server's access log.
+
+## The browser bundle boot replays the persisted files over the wire; the only new artifact is a manifest
+
+Context (the B track): a standalone bundle must boot in a tab exactly as
+`clausters-gui --standalone` boots it natively. Natively the *embedded server*
+loads the data directory itself (defs, `boot.json`) and the host only replays
+the GuiDef; a browser has neither a filesystem nor an embedded loader.
+
+Decision: the browser boots the **same persisted files, fetched as URLs and
+replayed as ordinary OSC** to the in-page engine — no browser-specific bundle
+format. The split of labor is deliberate: the boot's **ordering and encoding**
+live in the GUI host's platform-agnostic `host::bundle` module (natively
+unit-tested; it mirrors the server's own boot order — defs → graphdefs → boot
+preset → the GuiDef's `boot` messages), while the **fetching** stays in page
+JS (`clients/gui/web/bundle.js`). The replay is bracketed by two `/sync`s: the
+engine serves strictly in order, so the trailing `/synced` is the page's
+"bundle is up" signal — no per-command acking.
+
+- **The one addition is `bundle.json`**, a manifest at the bundle's root
+  naming the def files, because HTTP cannot list a directory the way the
+  native store lists it. It is generated (`web/bundle-manifest.py`), never
+  hand-maintained, and also carries the one genuinely browser-side mapping:
+  which audio URL feeds which server buffer (fetch + `decodeAudioData` →
+  the engine's `b_load` — the browser's `/b_allocRead`, decoded by the host
+  page because the wasm engine has no sndfile).
+- **The in-page leg is one more `ServerLink` variant, not a new protocol.**
+  `ServerLink::Page` hands outbound packets to a page-registered callback and
+  takes replies through `GuiBridge.server_reply`; the host's streamed data
+  paths (`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) run over it
+  unchanged — the acceptance smoke watches the meter's `/c_set` stream arrive
+  with moving values.
+- MIDI bindings, the remaining thing the native data-dir boot restores, are
+  deliberately not replayed: the browser has no MIDI leg.

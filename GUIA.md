@@ -145,6 +145,15 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   del def `default` corriendo en el AudioWorklet; `/status` responde en el log
   de la página y el reloj de samples avanza. Versión scriptada:
   `scripts/smoke-web.sh` (Chrome headless).
+- **Un bundle standalone bootea entero en una pestaña.**
+  `scripts/smoke-web-standalone.sh` deja todo armado (builds + bundle demo en
+  `clients/gui/web/bundle-demo`); para verlo a mano:
+  `(cd clients/gui/web && python3 -m http.server)` y abrir
+  `http://localhost:8000/standalone.html?bundle=bundle-demo` → Power → suena el
+  drone del bundle (formato nativo de `--standalone`), el meter y el scope se
+  mueven con el LFO por `/c_stream` sobre el engine in-page, y la perilla
+  `freq` (bindeada `/n_set`) cambia el tono al arrastrarla. Sin ningún proceso
+  servidor.
 
 ### Con la feature `faust`
 
