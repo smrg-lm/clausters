@@ -814,3 +814,36 @@ and `sine([440, 443])` does not expand.
   through `Ugen(kind, inputs)`, so one hook there can add full expansion
   later, desugaring to the same container. The rules above are written down
   in the composition docs as the spec a later client ports.
+
+## The PV set is curated and parameterized, never a per-op catalog
+
+scsynth grew one UGen per spectral operation — `PV_MagAbove` and `PV_MagBelow`
+are one algorithm and a boolean, the sc3-plugins tail is dozens of
+near-duplicate C plugins with inconsistent parameter conventions and no
+maintenance — and the vocabulary is *closed*: a user who wants a bin operation
+the catalog lacks must write a server plugin (sclang's `pvcalc`/`pvcollect`
+escape hatch is the admission). Clausters takes the opposite stance (M27): the
+`PV_*` vocabulary grows only as **parameterized implementations** under
+scsynth-compatible registered names — `PvMag` is one filter behind
+`PV_MagAbove`/`Below`/`Clip`, `PvCombine` is one two-chain combiner behind
+`PV_Add`/`Mul`/`Min`/`Max`/`MagMul`/`CopyPhase`, `PvBinShift` one remap behind
+`PV_BinShift`/`PV_MagShift` — and an operation outside the curated set is
+declined in favor of the long-term mechanism (a user-programmable per-frame
+kernel, the M29 design spike), not added as another name.
+
+**Decision details with non-obvious context:**
+
+- **The structural fact behind the stance**: all the machinery lives in the
+  bookends (windowing, transform, hop, COLA overlap-add — `FFT`/`IFFT`); a
+  PV op is a trivial per-frame loop. Its real cost is registry, wire name,
+  client binding, docs and tests — which is why near-duplicates are pure debt.
+- **The combiner needed the one piece of engine work** (`SpectralRole::
+  Filter2`): a spectral UGen reading two chain slots, result in chain A. The
+  compiler enforces equal window sizes and distinct chains; the instance
+  split-borrows the two synth-private chains. Everything else in M27 is loose
+  rows over the S8 substrate.
+- **B's latest frame, not a barrier**: a combiner acts when chain A has a
+  fresh frame and reads whatever frame B holds. Two same-config `FFT`s in one
+  synth hop on the same blocks anyway (the S11 stagger is per *node*, not per
+  UGen), so the frames align in practice without any cross-chain
+  synchronization machinery.

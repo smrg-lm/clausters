@@ -45,6 +45,10 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   vivas.
 - **Cadena espectral (FFT/PV_*/IFFT).** Un def de FFT→PV_*→IFFT sobre ruido → se
   oye el ruido filtrado (p. ej. low-pass); `/u_cmd` cambia la ventana en vivo.
+- **Síntesis cruzada y freeze espectral (dos cadenas).**
+  `clients/python/examples/spectral_cross.py` → a la derecha se oye el ruido
+  vistiendo la envolvente espectral de la melodía (izquierda, seca); en los
+  últimos beats el `freeze` congela el acorde final como textura sostenida.
 - **Envolventes (EnvGen).** Un synth con `gate`/pausa → se oye el corte y la
   reanudación (la suite mide `beat RMS ~0.141` on / `0.000` en pausa).
 - **Editor multipista (GUI).** `examples/gui_multitrack.py` abre una ventana con

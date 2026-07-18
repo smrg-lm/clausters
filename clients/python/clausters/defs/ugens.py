@@ -514,6 +514,74 @@ def pv_brick_wall(chain, wipe) -> Ugen:
     return Ugen("PV_BrickWall", [chain, wipe])
 
 
+def pv_mag_clip(chain, threshold) -> Ugen:
+    """Limits each bin's magnitude **to** ``threshold``: louder bins are scaled
+    down to it (phases kept), quieter bins pass untouched."""
+    return Ugen("PV_MagClip", [chain, threshold])
+
+
+def pv_add(chain_a, chain_b) -> Ugen:
+    """Two-chain combiner: per-bin complex sum. Both inputs must be spectral
+    chains of the same ``fft_size`` (and distinct); the result lands in chain A,
+    which the combiner's output carries onward."""
+    return Ugen("PV_Add", [chain_a, chain_b])
+
+
+def pv_mul(chain_a, chain_b) -> Ugen:
+    """Two-chain combiner: per-bin complex product (spectral ring modulation)."""
+    return Ugen("PV_Mul", [chain_a, chain_b])
+
+
+def pv_min(chain_a, chain_b) -> Ugen:
+    """Two-chain combiner: per bin, whichever input has the **smaller**
+    magnitude."""
+    return Ugen("PV_Min", [chain_a, chain_b])
+
+
+def pv_max(chain_a, chain_b) -> Ugen:
+    """Two-chain combiner: per bin, whichever input has the **larger**
+    magnitude."""
+    return Ugen("PV_Max", [chain_a, chain_b])
+
+
+def pv_mag_mul(chain_a, chain_b) -> Ugen:
+    """Two-chain combiner: A's bins scaled by B's magnitudes — A's phases kept
+    (a spectral envelope transfer, the classic "vocoder" cross-synthesis)."""
+    return Ugen("PV_MagMul", [chain_a, chain_b])
+
+
+def pv_copy_phase(chain_a, chain_b) -> Ugen:
+    """Two-chain combiner: A's magnitudes with B's phases (the complementary
+    cross-synthesis to `pv_mag_mul`)."""
+    return Ugen("PV_CopyPhase", [chain_a, chain_b])
+
+
+def pv_mag_freeze(chain, freeze=0.0) -> Ugen:
+    """While ``freeze <= 0`` stores each frame's magnitudes and passes through;
+    while ``> 0`` rescales every bin to the stored magnitudes — the spectral
+    envelope holds while the phases keep running."""
+    return Ugen("PV_MagFreeze", [chain, freeze])
+
+
+def pv_mag_smear(chain, bins=0.0) -> Ugen:
+    """Averages each bin's magnitude over ``bins`` neighbors on each side
+    (``0`` is transparent), phases untouched — a spectral blur."""
+    return Ugen("PV_MagSmear", [chain, bins])
+
+
+def pv_bin_shift(chain, stretch=1.0, shift=0.0) -> Ugen:
+    """Remaps bin ``b`` to ``round(b * stretch + shift)``: colliding bins sum,
+    out-of-range bins are dropped. ``stretch=1, shift=0`` is transparent; a
+    positive ``shift`` moves every partial up by ``shift`` bin widths."""
+    return Ugen("PV_BinShift", [chain, stretch, shift])
+
+
+def pv_mag_shift(chain, stretch=1.0, shift=0.0) -> Ugen:
+    """The `pv_bin_shift` remap applied to the magnitude envelope only, laid
+    over the frame's original phases."""
+    return Ugen("PV_MagShift", [chain, stretch, shift])
+
+
 def play_buf(bufnum, chan=0.0, rate=1.0, loop=0.0) -> Ugen:
     """Mono buffer player with linear interpolation; ``rate`` is frames per
     output sample (1.0 = server rate)."""

@@ -201,12 +201,32 @@ impl SynthNode for UGenSynth {
                     let slot = self.def.ugens[i]
                         .chain_slot
                         .expect("compile assigns a chain slot to every spectral UGen");
-                    self.ugens[i].process_spectral(
-                        ctx,
-                        &inputs[..refs.len()],
-                        output,
-                        &mut self.chains[slot],
-                    );
+                    // A two-chain combiner (M27) borrows both of its chains at
+                    // once; compile guarantees the slots are distinct, so the
+                    // split borrow is always disjoint.
+                    if let Some(slot_b) = self.def.ugens[i].chain_slot_b {
+                        let (a, b) = if slot < slot_b {
+                            let (lo, hi) = self.chains.split_at_mut(slot_b);
+                            (&mut lo[slot], &mut hi[0])
+                        } else {
+                            let (lo, hi) = self.chains.split_at_mut(slot);
+                            (&mut hi[0], &mut lo[slot_b])
+                        };
+                        self.ugens[i].process_spectral_pair(
+                            ctx,
+                            &inputs[..refs.len()],
+                            output,
+                            a,
+                            b,
+                        );
+                    } else {
+                        self.ugens[i].process_spectral(
+                            ctx,
+                            &inputs[..refs.len()],
+                            output,
+                            &mut self.chains[slot],
+                        );
+                    }
                 }
                 ExecMode::Normal => self.ugens[i].process(ctx, &inputs[..refs.len()], output),
             }

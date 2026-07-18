@@ -222,6 +222,17 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `PV_MagAbove` | chain, threshold | passes only bins whose magnitude is **above** `threshold`, zeroing the rest; `chain` is the wire from an earlier `FFT`/`PV_*` |
 | `PV_MagBelow` | chain, threshold | passes only bins whose magnitude is **below** `threshold` |
 | `PV_BrickWall` | chain, wipe | brick-wall band limit: `wipe > 0` zeroes the top fraction of bins (low pass), `wipe < 0` the bottom (high pass), `0` passes everything (`wipe` in −1..1) |
+| `PV_MagClip` | chain, threshold | limits each bin's magnitude **to** `threshold` (louder bins are scaled down, phases kept) |
+| `PV_Add` | chainA, chainB | two-chain combiner: per-bin complex sum, result in chain A — see the combiner note below |
+| `PV_Mul` | chainA, chainB | two-chain combiner: per-bin complex product |
+| `PV_Min` | chainA, chainB | two-chain combiner: per bin, whichever input has the **smaller** magnitude |
+| `PV_Max` | chainA, chainB | two-chain combiner: per bin, whichever input has the **larger** magnitude |
+| `PV_MagMul` | chainA, chainB | two-chain combiner: A's bins scaled by B's magnitudes (A's phases kept) |
+| `PV_CopyPhase` | chainA, chainB | two-chain combiner: A's magnitudes with B's phases |
+| `PV_MagFreeze` | chain, freeze | while `freeze ≤ 0` stores each frame's magnitudes and passes through; while `> 0` rescales every bin to the stored magnitude (phases keep running) |
+| `PV_MagSmear` | chain, bins | averages each bin's magnitude over `bins` neighbors on each side (`0` is transparent), phases untouched |
+| `PV_BinShift` | chain, stretch, shift | remaps bin `b` to `round(b·stretch + shift)`: colliding bins sum, out-of-range bins are dropped |
+| `PV_MagShift` | chain, stretch, shift | the same remap applied to the magnitude envelope only, over the frame's original phases |
 | `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`wintype` are inherited from the chain's `FFT` (given only on the `FFT`) |
 
 **Envelopes (`EnvGen`).** `EnvGen` plays a breakpoint envelope, modelled on SuperCollider's. Its inputs are five fixed signals followed by a flat **envelope array**: `gate, levelScale, levelBias, timeScale, doneAction`, then `initLevel, numSegments, releaseNode, loopNode`, then four values **per segment** — `target, duration, shape, curve`. The output is `envelope · levelScale + levelBias`; `timeScale` stretches every segment's duration. A rising `gate` (re)triggers from `initLevel`; while the gate is held the envelope **sustains** at `releaseNode` (an index into the levels — hold that level until release); when the gate falls it plays the segments from `releaseNode` on. `releaseNode < 0` disables the sustain, so the envelope plays straight through (a one-shot). With a `loopNode` (an index `< releaseNode`), the held phase **cycles** the segments in `[loopNode, releaseNode)` instead of holding a single level, carrying the level at the release node back as the loop's start; the release still plays out from `releaseNode` when the gate falls. `loopNode < 0` disables looping. The **shape** numbers are `0` step, `1` linear, `2` exponential (needs same-sign, non-zero levels), `3` sine, `4` welch, `5` custom-curvature (bent by the `curve` value: 0 linear, positive starts slow, negative starts fast), `6` squared, `7` cubed, `8` hold. When the last segment finishes the UGen applies its `doneAction` — scsynth's full set (0–15), with the freeing done on the audio thread through the garbage FIFO, never a blocking free:
@@ -269,6 +280,15 @@ rate. The window size is a **static** field (`fft_size`, a power of two in
 (and the window type) to the rest of the chain, so `PV_*`/`IFFT` need no size. An
 unsupported size, or a `PV_*`/`IFFT` whose first input is not a spectral chain,
 fails the def with `/fail`.
+
+A **two-chain combiner** (`PV_Add`/`PV_Mul`/`PV_Min`/`PV_Max`/`PV_MagMul`/
+`PV_CopyPhase`) takes **two** chain inputs — both must be spectral chains, of
+the **same `fft_size`**, and **distinct** (the same chain on both sides fails
+the def). The result lands in **chain A** (input 0): the combiner's output wire
+carries chain A onward, and whatever `PV_*`/`IFFT` follows reads the combined
+frame. It acts on the blocks chain A has a fresh frame, reading chain B's
+latest frame. The operator is a property of the *name*; all six are one
+server-side implementation.
 
 Analysis and resynthesis use the same window (Hann by default), and the
 overlap-add is **window-normalized** (divided by the steady-state window-overlap

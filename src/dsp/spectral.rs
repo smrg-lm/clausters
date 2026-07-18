@@ -376,17 +376,23 @@ impl UGen for Ifft {
 }
 
 /// The kind of magnitude threshold a [`PvMag`] filter applies to each bin.
+/// One implementation, three registered names — the mode is a parameter, not
+/// a UGen (the M27 stance: no one-UGen-per-op catalog).
 #[derive(Clone, Copy)]
 pub enum MagMode {
     /// Keep bins whose magnitude is **above** the threshold (`PV_MagAbove`).
     Above,
     /// Keep bins whose magnitude is **below** the threshold (`PV_MagBelow`).
     Below,
+    /// Limit each bin's magnitude **to** the threshold, keeping its phase
+    /// (`PV_MagClip`).
+    Clip,
 }
 
-/// A magnitude-threshold spectral filter: `PV_MagAbove`/`PV_MagBelow`. Input:
-/// `[chain, threshold]`. It zeroes the bins failing the test on each fresh
-/// frame; other blocks pass the (unchanged) chain through.
+/// A magnitude-threshold spectral filter: `PV_MagAbove`/`PV_MagBelow`/
+/// `PV_MagClip`. Input: `[chain, threshold]`. It transforms the bins failing
+/// the test on each fresh frame; other blocks pass the (unchanged) chain
+/// through.
 pub struct PvMag {
     mode: MagMode,
 }
@@ -422,6 +428,45 @@ fn bin_mag(frame: &[f32], b: usize, half: usize) -> f32 {
     }
 }
 
+/// Bin `b` of the packed frame as a complex pair (DC/Nyquist are real-only).
+#[inline]
+fn get_bin(frame: &[f32], b: usize, half: usize) -> (f32, f32) {
+    if b == 0 {
+        (frame[0], 0.0)
+    } else if b == half {
+        (frame[1], 0.0)
+    } else {
+        (frame[2 * b], frame[2 * b + 1])
+    }
+}
+
+/// Writes bin `b` of the packed frame (the imaginary part is dropped on the
+/// real-only DC/Nyquist slots).
+#[inline]
+fn set_bin(frame: &mut [f32], b: usize, half: usize, re: f32, im: f32) {
+    if b == 0 {
+        frame[0] = re;
+    } else if b == half {
+        frame[1] = re;
+    } else {
+        frame[2 * b] = re;
+        frame[2 * b + 1] = im;
+    }
+}
+
+/// Scales bin `b` by the real factor `s` (magnitude change, phase kept).
+#[inline]
+fn scale_bin(frame: &mut [f32], b: usize, half: usize, s: f32) {
+    if b == 0 {
+        frame[0] *= s;
+    } else if b == half {
+        frame[1] *= s;
+    } else {
+        frame[2 * b] *= s;
+        frame[2 * b + 1] *= s;
+    }
+}
+
 impl UGen for PvMag {
     fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
         output.fill(0.0);
@@ -438,13 +483,287 @@ impl UGen for PvMag {
             let thresh = at(inputs[1], 0);
             let half = chain.winsize / 2;
             for b in 0..=half {
-                let keep = match self.mode {
-                    MagMode::Above => bin_mag(&chain.frame, b, half) >= thresh,
-                    MagMode::Below => bin_mag(&chain.frame, b, half) <= thresh,
-                };
-                if !keep {
-                    zero_bin(&mut chain.frame, b, half);
+                let mag = bin_mag(&chain.frame, b, half);
+                match self.mode {
+                    MagMode::Above if mag < thresh => zero_bin(&mut chain.frame, b, half),
+                    MagMode::Below if mag > thresh => zero_bin(&mut chain.frame, b, half),
+                    MagMode::Clip if mag > thresh && mag > 0.0 => {
+                        scale_bin(&mut chain.frame, b, half, thresh.max(0.0) / mag);
+                    }
+                    _ => {}
                 }
+            }
+        }
+        if let Some(o) = output.first_mut() {
+            *o = if chain.ready { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// The operator of a [`PvCombine`] two-chain combiner — a parameter of one
+/// implementation, registered under the scsynth-compatible names (the M27
+/// stance: the operator set is data, not a UGen catalog).
+#[derive(Clone, Copy)]
+pub enum CombineOp {
+    /// Complex addition (`PV_Add`).
+    Add,
+    /// Complex multiplication (`PV_Mul`).
+    Mul,
+    /// Per bin, keep whichever input has the **smaller** magnitude (`PV_Min`).
+    Min,
+    /// Per bin, keep whichever input has the **larger** magnitude (`PV_Max`).
+    Max,
+    /// A's bin scaled by B's magnitude — A's phases kept (`PV_MagMul`).
+    MagMul,
+    /// A's magnitudes with B's phases (`PV_CopyPhase`).
+    CopyPhase,
+}
+
+/// A two-chain spectral combiner (`SpectralRole::Filter2`): inputs
+/// `[chain_a, chain_b]`, the result written into chain A bin by bin. It acts
+/// on the slices where **A** has a fresh frame, reading B's *latest* frame
+/// (the frame is persistent chain state; two same-config `FFT`s in one synth
+/// hop on the same blocks anyway, S11 staggering included — the offset is
+/// per-node, not per-UGen).
+pub struct PvCombine {
+    op: CombineOp,
+}
+
+impl PvCombine {
+    pub fn new(op: CombineOp) -> Self {
+        Self { op }
+    }
+}
+
+impl UGen for PvCombine {
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn process_spectral_pair(
+        &mut self,
+        _ctx: &mut ProcessCtx,
+        _inputs: &[&[f32]],
+        output: &mut [f32],
+        a: &mut SpectralChain,
+        b: &mut SpectralChain,
+    ) {
+        if a.ready {
+            let half = a.winsize / 2;
+            for k in 0..=half {
+                let (ar, ai) = get_bin(&a.frame, k, half);
+                let (br, bi) = get_bin(&b.frame, k, half);
+                let (re, im) = match self.op {
+                    CombineOp::Add => (ar + br, ai + bi),
+                    CombineOp::Mul => (ar * br - ai * bi, ar * bi + ai * br),
+                    CombineOp::Min | CombineOp::Max => {
+                        let (ma, mb) = (ar * ar + ai * ai, br * br + bi * bi);
+                        let take_b = match self.op {
+                            CombineOp::Min => mb < ma,
+                            _ => mb > ma,
+                        };
+                        if take_b { (br, bi) } else { (ar, ai) }
+                    }
+                    CombineOp::MagMul => {
+                        let mb = (br * br + bi * bi).sqrt();
+                        (ar * mb, ai * mb)
+                    }
+                    CombineOp::CopyPhase => {
+                        let ma = (ar * ar + ai * ai).sqrt();
+                        let mb = (br * br + bi * bi).sqrt();
+                        if mb > 0.0 {
+                            (br * ma / mb, bi * ma / mb)
+                        } else {
+                            (ma, 0.0) // B is silent: keep A's magnitude at phase 0.
+                        }
+                    }
+                };
+                set_bin(&mut a.frame, k, half, re, im);
+            }
+        }
+        if let Some(o) = output.first_mut() {
+            *o = if a.ready { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// Freezes the frame's magnitudes (`PV_MagFreeze`). Input: `[chain, freeze]`.
+/// While `freeze <= 0` it stores each fresh frame's magnitudes and passes the
+/// chain through; while `freeze > 0` every bin is rescaled to the stored
+/// magnitude, phases left running — the spectral envelope holds while the
+/// texture keeps moving.
+pub struct PvMagFreeze {
+    /// Stored magnitudes, one per bin (`half + 1`), captured un-frozen.
+    mags: Vec<f32>,
+}
+
+impl PvMagFreeze {
+    pub fn new(config: &UGenConfig) -> Self {
+        let winsize = resolve_fft_size(config.fft_size);
+        Self {
+            mags: vec![0.0; winsize / 2 + 1],
+        }
+    }
+}
+
+impl UGen for PvMagFreeze {
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn process_spectral(
+        &mut self,
+        _ctx: &mut ProcessCtx,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        chain: &mut SpectralChain,
+    ) {
+        if chain.ready {
+            let freeze = at(inputs[1], 0) > 0.0;
+            let half = chain.winsize / 2;
+            for b in 0..=half {
+                let mag = bin_mag(&chain.frame, b, half);
+                if freeze {
+                    if mag > 0.0 {
+                        scale_bin(&mut chain.frame, b, half, self.mags[b] / mag);
+                    }
+                    // A silent bin stays silent: there is no phase to rescale.
+                } else {
+                    self.mags[b] = mag;
+                }
+            }
+        }
+        if let Some(o) = output.first_mut() {
+            *o = if chain.ready { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// Averages each bin's magnitude over its neighbors (`PV_MagSmear`). Input:
+/// `[chain, bins]` — `bins` neighbors on each side (0 = pass through), phases
+/// untouched. O(bins²)-free: a prefix sum over the magnitudes makes every
+/// window average O(1).
+pub struct PvMagSmear {
+    /// Prefix sums of the frame's magnitudes (`half + 2` entries).
+    prefix: Vec<f32>,
+}
+
+impl PvMagSmear {
+    pub fn new(config: &UGenConfig) -> Self {
+        let winsize = resolve_fft_size(config.fft_size);
+        Self {
+            prefix: vec![0.0; winsize / 2 + 2],
+        }
+    }
+}
+
+impl UGen for PvMagSmear {
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn process_spectral(
+        &mut self,
+        _ctx: &mut ProcessCtx,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        chain: &mut SpectralChain,
+    ) {
+        if chain.ready {
+            let bins = (at(inputs[1], 0).max(0.0)) as usize;
+            let half = chain.winsize / 2;
+            if bins > 0 {
+                // prefix[b+1] = Σ mag[0..=b], so a clamped window average is
+                // one subtraction and one divide per bin.
+                self.prefix[0] = 0.0;
+                for b in 0..=half {
+                    self.prefix[b + 1] = self.prefix[b] + bin_mag(&chain.frame, b, half);
+                }
+                for b in 0..=half {
+                    let lo = b.saturating_sub(bins);
+                    let hi = (b + bins).min(half);
+                    let avg = (self.prefix[hi + 1] - self.prefix[lo]) / (hi - lo + 1) as f32;
+                    let mag = bin_mag(&chain.frame, b, half);
+                    if mag > 0.0 {
+                        scale_bin(&mut chain.frame, b, half, avg / mag);
+                    } else {
+                        set_bin(&mut chain.frame, b, half, avg, 0.0);
+                    }
+                }
+            }
+        }
+        if let Some(o) = output.first_mut() {
+            *o = if chain.ready { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// Remaps bin positions (`PV_BinShift` / `PV_MagShift`): destination bin
+/// `round(b·stretch + shift)`, colliding bins summed, out-of-range bins
+/// dropped. Inputs: `[chain, stretch, shift]`. One implementation, two
+/// registered names — `PV_BinShift` moves the full complex bins (phases
+/// travel with their magnitudes), `PV_MagShift` (`mags_only`) remaps only the
+/// magnitude envelope onto the frame's original phases.
+pub struct PvBinShift {
+    mags_only: bool,
+    /// Remap scratch: a full packed frame (complex mode) or `half + 1`
+    /// magnitudes (`mags_only`); sized at build, zeroed per fresh frame.
+    scratch: Vec<f32>,
+}
+
+impl PvBinShift {
+    pub fn new(config: &UGenConfig, mags_only: bool) -> Self {
+        let winsize = resolve_fft_size(config.fft_size);
+        Self {
+            mags_only,
+            scratch: vec![0.0; winsize],
+        }
+    }
+}
+
+impl UGen for PvBinShift {
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn process_spectral(
+        &mut self,
+        _ctx: &mut ProcessCtx,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        chain: &mut SpectralChain,
+    ) {
+        if chain.ready {
+            let stretch = at(inputs[1], 0);
+            let shift = at(inputs[2], 0);
+            let half = chain.winsize / 2;
+            self.scratch.fill(0.0);
+            for b in 0..=half {
+                let t = (b as f32 * stretch + shift).round();
+                if t < 0.0 || t > half as f32 {
+                    continue;
+                }
+                let t = t as usize;
+                if self.mags_only {
+                    self.scratch[t] += bin_mag(&chain.frame, b, half);
+                } else {
+                    let (re, im) = get_bin(&chain.frame, b, half);
+                    let (tr, ti) = get_bin(&self.scratch, t, half);
+                    set_bin(&mut self.scratch, t, half, tr + re, ti + im);
+                }
+            }
+            if self.mags_only {
+                // Remapped magnitude envelope over the original phases.
+                for b in 0..=half {
+                    let mag = bin_mag(&chain.frame, b, half);
+                    if mag > 0.0 {
+                        scale_bin(&mut chain.frame, b, half, self.scratch[b] / mag);
+                    } else {
+                        set_bin(&mut chain.frame, b, half, self.scratch[b], 0.0);
+                    }
+                }
+            } else {
+                chain.frame.copy_from_slice(&self.scratch);
             }
         }
         if let Some(o) = output.first_mut() {

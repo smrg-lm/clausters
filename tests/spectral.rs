@@ -285,3 +285,269 @@ fn hop_stagger_shifts_only_the_first_frame() {
     let again = render(6);
     assert_eq!(staggered, again);
 }
+
+// ---- M27: the curated PV set ----
+
+/// `PV_MagClip` limits loud bins to the threshold but is transparent when the
+/// threshold clears every magnitude: same def, huge vs tiny threshold.
+#[test]
+fn pv_magclip_limits_loud_bins() {
+    let build = |thresh: f32| {
+        spec_synth(json!({
+            "name": "clip",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "PV_MagClip", "inputs": [{"ugen": 1}, {"const": thresh}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }))
+    };
+    let render = |thresh: f32| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        handle.send(add_synth(1, build(thresh))).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let clipped = render(1.0); // bin magnitudes of a unit sine are way above 1
+    let open = render(1.0e9); // clears everything: transparent
+    let passthrough = {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({
+            "name": "pass",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ]
+        }));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    assert_eq!(open, passthrough, "an over-threshold clip is transparent");
+    let (r_clip, r_open) = (rms(&clipped, 6000, 19000), rms(&open, 6000, 19000));
+    assert!(
+        r_clip < r_open * 0.5,
+        "clipping attenuates: {r_clip} vs {r_open}"
+    );
+    assert!(r_clip > 1e-4, "clipped tone still sounds");
+}
+
+/// `PV_Add` (the two-chain combiner): summing the spectra of two tones carries
+/// both — the combined power matches the two individual renders' power sum.
+#[test]
+fn pv_add_combines_two_chains() {
+    let one = |freq: f32| {
+        spec_synth(json!({
+            "name": "single",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": freq}]},
+                {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.2}]},
+                {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }))
+    };
+    let both = spec_synth(json!({
+        "name": "added",
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.2}]},
+            {"kind": "FFT", "inputs": [{"ugen": 1}, {"const": 1.0}], "fft_size": 512},
+            {"kind": "Sine", "inputs": [{"const": 3000.0}]},
+            {"kind": "Mul", "inputs": [{"ugen": 3}, {"const": 0.2}]},
+            {"kind": "FFT", "inputs": [{"ugen": 4}, {"const": 1.0}], "fft_size": 512},
+            {"kind": "PV_Add", "inputs": [{"ugen": 2}, {"ugen": 5}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 6}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 7}]}
+        ]
+    }));
+    let render = |s: UGenSynth| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        handle.send(add_synth(1, s)).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let a = rms(&render(one(440.0)), 6000, 19000);
+    let b = rms(&render(one(3000.0)), 6000, 19000);
+    let sum = rms(&render(both), 6000, 19000);
+    let expect = (a * a + b * b).sqrt();
+    assert!(
+        (sum - expect).abs() < expect * 0.1,
+        "combined power {sum} vs expected {expect}"
+    );
+}
+
+/// The compiler validates a combiner's two chains: both inputs must be chains,
+/// of equal window size, and distinct.
+#[test]
+fn compiler_validates_the_combiner() {
+    let compile = |ugens: Value| {
+        clausters::synthdef::compile(
+            serde_json::from_value(json!({"name": "bad", "ugens": ugens})).unwrap(),
+        )
+    };
+    // Input 1 is a plain audio wire, not a chain.
+    assert!(
+        compile(json!([
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+            {"kind": "PV_Add", "inputs": [{"ugen": 1}, {"ugen": 0}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 2}]}
+        ]))
+        .is_err()
+    );
+    // Window sizes differ.
+    assert!(
+        compile(json!([
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+            {"kind": "PV_Add", "inputs": [{"ugen": 1}, {"ugen": 2}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 3}]}
+        ]))
+        .is_err()
+    );
+    // The same chain on both sides.
+    assert!(
+        compile(json!([
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+            {"kind": "PV_Add", "inputs": [{"ugen": 1}, {"ugen": 1}]},
+            {"kind": "IFFT", "inputs": [{"ugen": 2}]}
+        ]))
+        .is_err()
+    );
+}
+
+/// `PV_MagFreeze`: un-frozen it is transparent; frozen from the first frame it
+/// holds the initial (zero) magnitudes — silence.
+#[test]
+fn pv_magfreeze_holds_magnitudes() {
+    let build = |freeze: f32| {
+        spec_synth(json!({
+            "name": "freeze",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "PV_MagFreeze", "inputs": [{"ugen": 1}, {"const": freeze}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }))
+    };
+    let render = |freeze: f32| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        handle.send(add_synth(1, build(freeze))).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let open = render(0.0);
+    assert!(rms(&open, 6000, 19000) > 0.5, "un-frozen passes the tone");
+    let frozen = render(1.0);
+    assert!(
+        rms(&frozen, 6000, 19000) < 1e-4,
+        "frozen-at-zero magnitudes stay silent"
+    );
+}
+
+/// `PV_MagSmear`: zero neighbors is exactly transparent; a wide smear changes
+/// the signal (the tone's energy spreads across bins).
+#[test]
+fn pv_magsmear_zero_is_transparent() {
+    let build = |bins: f32| {
+        spec_synth(json!({
+            "name": "smear",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "PV_MagSmear", "inputs": [{"ugen": 1}, {"const": bins}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }))
+    };
+    let render = |bins: f32| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        handle.send(add_synth(1, build(bins))).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let passthrough = {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({
+            "name": "pass",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ]
+        }));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    assert_eq!(render(0.0), passthrough, "bins = 0 is transparent");
+    let smeared = render(32.0);
+    let diff: f32 = smeared
+        .iter()
+        .zip(&passthrough)
+        .map(|(x, y)| (x - y).abs())
+        .sum();
+    assert!(diff > 1.0, "a wide smear changes the signal");
+}
+
+/// `PV_BinShift`: identity parameters are exactly transparent, and a +10-bin
+/// shift moves a 440 Hz tone to ~440 + 10·(48000/512) ≈ 1377 Hz (measured by
+/// zero crossings in the steady state).
+#[test]
+fn pv_binshift_moves_the_tone() {
+    let build = |stretch: f32, shift: f32| {
+        spec_synth(json!({
+            "name": "binshift",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "PV_BinShift",
+                 "inputs": [{"ugen": 1}, {"const": stretch}, {"const": shift}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ]
+        }))
+    };
+    let render = |stretch: f32, shift: f32| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        handle
+            .send(add_synth(1, build(stretch, shift)))
+            .ok()
+            .unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let passthrough = {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({
+            "name": "pass",
+            "ugens": [
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ]
+        }));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    assert_eq!(
+        render(1.0, 0.0),
+        passthrough,
+        "stretch 1, shift 0 is transparent"
+    );
+
+    let shifted = render(1.0, 10.0);
+    let seg = &shifted[6000..19000];
+    let crossings = seg.windows(2).filter(|w| w[0] < 0.0 && w[1] >= 0.0).count();
+    let freq = crossings as f32 * SR / seg.len() as f32;
+    assert!(
+        (1250.0..1510.0).contains(&freq),
+        "shifted tone at {freq} Hz, expected ~1377"
+    );
+}

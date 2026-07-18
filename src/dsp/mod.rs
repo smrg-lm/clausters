@@ -562,6 +562,22 @@ pub trait UGen: Send {
     ) {
     }
 
+    /// Two-chain variant of [`process_spectral`](Self::process_spectral) for a
+    /// combiner (`SpectralRole::Filter2`, M27): reads chains `a` (input 0) and
+    /// `b` (input 1), writes the result into `a`. The compiler guarantees the
+    /// two are distinct slots of equal window size. Same audio-thread rules.
+    /// Only combiner UGens ever see this.
+    #[cfg(feature = "synth")]
+    fn process_spectral_pair(
+        &mut self,
+        _ctx: &mut ProcessCtx,
+        _inputs: &[&[f32]],
+        _output: &mut [f32],
+        _a: &mut spectral::SpectralChain,
+        _b: &mut spectral::SpectralChain,
+    ) {
+    }
+
     /// Whether this is a side-effect UGen (`SendReply`/`SendTrig`/`Poll`, S9)
     /// that emits reply messages instead of (or besides) audio. The synth uses
     /// it to enqueue itself for the reply drain after each block. Default: not

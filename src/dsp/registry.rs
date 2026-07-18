@@ -26,7 +26,10 @@ use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sine::Sine;
-use crate::dsp::spectral::{Fft, Ifft, MagMode, PvBrickWall, PvMag};
+use crate::dsp::spectral::{
+    CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvMag, PvMagFreeze,
+    PvMagSmear,
+};
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{Rate, UGen};
 
@@ -111,6 +114,10 @@ pub enum SpectralRole {
     /// Transforms a chain in place (`PV_*`). Its input 0 is the upstream chain
     /// wire; it inherits that chain's slot.
     Filter,
+    /// Combines **two** chains (`PV_Add`/`PV_Mul`/…, M27): inputs 0 and 1 are
+    /// chain wires of equal window size and distinct slots; the result lands
+    /// in chain A (input 0), whose slot the combiner inherits.
+    Filter2,
     /// Closes a chain: resynthesises audio from it (`IFFT`). Its input 0 is the
     /// upstream chain wire; it inherits that chain's slot.
     Sink,
@@ -740,6 +747,79 @@ static UGENS: &[UGenDescriptor] = &[
         R_KR,
         SpectralRole::Filter,
         |_| Box::new(PvBrickWall),
+    ),
+    // M27: the curated PV set — parameterized implementations under the
+    // scsynth-compatible names, deliberately not a one-UGen-per-op catalog
+    // (see docs/decisions.md). PvMag gains a clip mode; PvCombine is ONE
+    // binary implementation behind six names; the stateful pair and the bin
+    // remap allocate their scratch at build (network thread).
+    desc_spectral(
+        "PV_MagClip",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |_| Box::new(PvMag::new(MagMode::Clip)),
+    ),
+    desc_spectral("PV_Add", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
+        Box::new(PvCombine::new(CombineOp::Add))
+    }),
+    desc_spectral("PV_Mul", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
+        Box::new(PvCombine::new(CombineOp::Mul))
+    }),
+    desc_spectral("PV_Min", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
+        Box::new(PvCombine::new(CombineOp::Min))
+    }),
+    desc_spectral("PV_Max", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
+        Box::new(PvCombine::new(CombineOp::Max))
+    }),
+    desc_spectral(
+        "PV_MagMul",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter2,
+        |_| Box::new(PvCombine::new(CombineOp::MagMul)),
+    ),
+    desc_spectral(
+        "PV_CopyPhase",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter2,
+        |_| Box::new(PvCombine::new(CombineOp::CopyPhase)),
+    ),
+    desc_spectral(
+        "PV_MagFreeze",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |c| Box::new(PvMagFreeze::new(c)),
+    ),
+    desc_spectral(
+        "PV_MagSmear",
+        Fixed(2),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |c| Box::new(PvMagSmear::new(c)),
+    ),
+    desc_spectral(
+        "PV_BinShift",
+        Fixed(3),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |c| Box::new(PvBinShift::new(c, false)),
+    ),
+    desc_spectral(
+        "PV_MagShift",
+        Fixed(3),
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |c| Box::new(PvBinShift::new(c, true)),
     ),
 ];
 

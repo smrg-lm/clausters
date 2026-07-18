@@ -174,6 +174,9 @@ pub struct UGenDef {
     /// Assigned by the compiler — a fresh slot for each `FFT`, inherited by the
     /// `PV_*`/`IFFT` downstream. `None` for every non-spectral UGen.
     pub chain_slot: Option<usize>,
+    /// Second chain slot of a two-chain combiner (`SpectralRole::Filter2`,
+    /// M27): the chain read as input 1 (chain B). `None` everywhere else.
+    pub chain_slot_b: Option<usize>,
 }
 
 impl std::fmt::Debug for UGenDef {
@@ -387,6 +390,24 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         // slot, window size and (if unset) window type — so the client only
         // specifies the size once, on the `FFT`.
         let mut chain_slot: Option<usize> = None;
+        let mut chain_slot_b: Option<usize> = None;
+        // Resolves spectral input `k` to the chain slot it carries.
+        let chain_of =
+            |k: usize, inputs: &[InputRef], ugens: &[UGenDef]| -> Result<usize, String> {
+                let InputRef::Wire(w) = inputs[k] else {
+                    return Err(format!(
+                        "ugens[{i}] ({}): input {k} must be the spectral chain from an earlier \
+                     FFT/PV_* UGen",
+                        u.kind
+                    ));
+                };
+                ugens[w].chain_slot.ok_or_else(|| {
+                    format!(
+                        "ugens[{i}] ({}): input {k} (ugen {w}, {}) is not a spectral chain",
+                        u.kind, ugens[w].desc.name
+                    )
+                })
+            };
         match desc.spectral {
             SpectralRole::None => {}
             SpectralRole::Source => {
@@ -405,20 +426,11 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 spectral_sizes.push(winsize);
             }
             SpectralRole::Filter | SpectralRole::Sink => {
+                let slot = chain_of(0, &inputs, &ugens)?;
                 let InputRef::Wire(w) = inputs[0] else {
-                    return Err(format!(
-                        "ugens[{i}] ({}): input 0 must be the spectral chain from an earlier \
-                         FFT/PV_* UGen",
-                        u.kind
-                    ));
+                    unreachable!("chain_of validated the wire")
                 };
                 let up = &ugens[w];
-                let slot = up.chain_slot.ok_or_else(|| {
-                    format!(
-                        "ugens[{i}] ({}): input 0 (ugen {w}, {}) is not a spectral chain",
-                        u.kind, up.desc.name
-                    )
-                })?;
                 chain_slot = Some(slot);
                 config.fft_size = Some(spectral_sizes[slot]);
                 if config.wintype.is_none() {
@@ -427,6 +439,29 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 if config.hop.is_none() {
                     config.hop = up.config.hop;
                 }
+            }
+            // A two-chain combiner (M27): inputs 0 and 1 are chains of equal
+            // window size and distinct slots; the result lands in chain A, so
+            // the combiner inherits A's slot (a downstream filter/sink then
+            // reads the combined chain through it).
+            SpectralRole::Filter2 => {
+                let a = chain_of(0, &inputs, &ugens)?;
+                let b = chain_of(1, &inputs, &ugens)?;
+                if a == b {
+                    return Err(format!(
+                        "ugens[{i}] ({}): both inputs read the same spectral chain",
+                        u.kind
+                    ));
+                }
+                if spectral_sizes[a] != spectral_sizes[b] {
+                    return Err(format!(
+                        "ugens[{i}] ({}): chain window sizes differ ({} vs {})",
+                        u.kind, spectral_sizes[a], spectral_sizes[b]
+                    ));
+                }
+                chain_slot = Some(a);
+                chain_slot_b = Some(b);
+                config.fft_size = Some(spectral_sizes[a]);
             }
         }
 
@@ -493,6 +528,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             rate,
             config,
             chain_slot,
+            chain_slot_b,
         });
     }
 
@@ -527,6 +563,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 rate: Rate::Ar,
                 config: UGenConfig::default(),
                 chain_slot: None,
+                chain_slot_b: None,
             });
         }
         // Original UGens shift down by `n_lag`; their wire refs shift too, and
@@ -536,6 +573,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             rate: u.rate,
             config: u.config,
             chain_slot: u.chain_slot,
+            chain_slot_b: u.chain_slot_b,
             inputs: u
                 .inputs
                 .into_iter()
