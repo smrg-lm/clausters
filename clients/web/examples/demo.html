@@ -19,7 +19,7 @@
       <div id="note">the bundle below is one HTML element; its power button is
 the autoplay gesture. After it is up, the buttons drive the SAME engine
 through the raw singleton — the REPL surface a future TS client builds on.</div>
-      <clausters-bundle src="bundle-demo"></clausters-bundle>
+      <clausters-bundle src="../bundle-demo"></clausters-bundle>
       <div>
         <button id="status" disabled>/status</button>
         <button id="up" disabled>freq +50</button>
@@ -37,7 +37,8 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
       beaconed as a fetch, read from the HTTP access log.
     -->
     <script type="module">
-      import { server, encodeMessage, decodePacket } from "./index.js";
+      import { server, loadOsc, encodeMessage, decodePacket }
+        from "../dist/index.js";
 
       const params = new URLSearchParams(location.search);
       const smoke = params.has("smoke");
@@ -58,6 +59,7 @@ through the raw singleton — the REPL surface a future TS client builds on.</di
         verdict(`FAIL: ${e.detail.error}`));
       element.addEventListener("clausters-ready", async (e) => {
         log(`bundle up: GuiDef ${e.detail.id}`);
+        await loadOsc(); // the codec runs through the shared core (wasm)
         const engine = await server();
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {

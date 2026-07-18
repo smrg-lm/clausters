@@ -1,0 +1,19 @@
+[package]
+name = "clausters-core-web"
+version = "0.3.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "The shared core's JS door: a thin wasm-bindgen shell over clausters-core (OSC codec first) for the web client, numerically identical to the server and the Python client by construction."
+
+[lib]
+# cdylib is what wasm-bindgen consumes; rlib lets native cargo tests exercise
+# the same shell functions (the clausters-web pattern).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clausters-core = { path = "../clausters-core" }
+
+# The JS binding surface only exists on the wasm target.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+js-sys = "0.3"

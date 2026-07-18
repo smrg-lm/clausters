@@ -1,0 +1,99 @@
+// The carrier seam: one connection interface, two carriers.
+//
+// Everything the client builds (defs, sequencing, the GUI driver) sits above
+// `Connection` and never names a transport — the same rule the Python client
+// keeps ("only a Server object knows the connection"). The two carriers:
+//
+// - `WsConnection` — a browser `WebSocket` to a `--ws` clausters server
+//   (default port 57120): the remote/native-server carrier, one OSC packet
+//   per binary frame (the server's WS wire format). Also works under node,
+//   whose global `WebSocket` speaks the same standard API.
+// - `pageConnection()` — the in-page engine: the audio server compiled to
+//   wasm in this page's AudioWorklet, reached through the per-page
+//   `server()` singleton. No process, no socket.
+
+import { server } from "../engine/server.ts";
+
+/// A duplex OSC byte pipe to an audio server.
+export interface Connection {
+    /// Sends one complete OSC packet.
+    send(packet: Uint8Array): void;
+    /// Subscribes to every reply packet.
+    addReply(listener: (packet: Uint8Array) => void): void;
+    removeReply(listener: (packet: Uint8Array) => void): void;
+    /// Releases the carrier (never stops the shared in-page engine).
+    close(): void;
+}
+
+export class WsConnection implements Connection {
+    private socket: WebSocket;
+    private listeners = new Set<(packet: Uint8Array) => void>();
+
+    private constructor(socket: WebSocket) {
+        this.socket = socket;
+        socket.addEventListener("message", (event: MessageEvent) => {
+            const dispatch = (bytes: Uint8Array) => {
+                for (const listener of [...this.listeners]) listener(bytes);
+            };
+            if (event.data instanceof ArrayBuffer) {
+                dispatch(new Uint8Array(event.data));
+            } else if (typeof Blob !== "undefined" && event.data instanceof Blob) {
+                event.data.arrayBuffer().then((b) => dispatch(new Uint8Array(b)));
+            }
+        });
+    }
+
+    /// Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`), resolving
+    /// once the handshake completes (sends never race the handshake).
+    static open(url: string): Promise<WsConnection> {
+        return new Promise((resolve, reject) => {
+            const socket = new WebSocket(url);
+            socket.binaryType = "arraybuffer";
+            socket.addEventListener("open", () =>
+                resolve(new WsConnection(socket)));
+            socket.addEventListener("error", () =>
+                reject(new Error(`cannot open ${url}`)));
+        });
+    }
+
+    send(packet: Uint8Array): void {
+        // Our packets always sit on a plain ArrayBuffer; the cast bridges
+        // TS's `ArrayBufferLike` typed-array generics to WebSocket's input.
+        this.socket.send(packet as Uint8Array<ArrayBuffer>);
+    }
+
+    addReply(listener: (packet: Uint8Array) => void): void {
+        this.listeners.add(listener);
+    }
+
+    removeReply(listener: (packet: Uint8Array) => void): void {
+        this.listeners.delete(listener);
+    }
+
+    close(): void {
+        this.socket.close();
+    }
+}
+
+/// The in-page carrier: a `Connection` over the per-page engine singleton.
+/// Closing detaches this connection's listeners; the engine keeps running
+/// (it is shared page state, not this connection's to stop).
+export async function pageConnection(): Promise<Connection> {
+    const engine = await server();
+    const mine = new Set<(packet: Uint8Array) => void>();
+    return {
+        send: (packet) => engine.send(packet),
+        addReply: (listener) => {
+            mine.add(listener);
+            engine.addReply(listener);
+        },
+        removeReply: (listener) => {
+            mine.delete(listener);
+            engine.removeReply(listener);
+        },
+        close: () => {
+            for (const listener of mine) engine.removeReply(listener);
+            mine.clear();
+        },
+    };
+}

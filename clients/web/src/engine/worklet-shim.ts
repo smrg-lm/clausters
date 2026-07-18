@@ -2,7 +2,7 @@
 //
 // The wasm-bindgen glue (clausters_web.js) instantiates a TextDecoder at
 // module-evaluation time, and the AudioWorkletGlobalScope ships neither
-// TextDecoder nor TextEncoder. worklet.js imports this module *before* the
+// TextDecoder nor TextEncoder. worklet.ts imports this module *before* the
 // glue — ES modules evaluate dependencies in import order — so the shim is in
 // place when the glue's top level runs. Only the decoder is needed: the
 // WebServer surface passes no strings into wasm (numbers and byte arrays
@@ -11,7 +11,11 @@
 // UTF-8 only, which is all wasm-bindgen ever asks for.
 
 class TextDecoderShim {
-    constructor(label = "utf-8", options = {}) {
+    encoding: string;
+    fatal: boolean;
+    ignoreBOM: boolean;
+
+    constructor(label = "utf-8", options: { fatal?: boolean; ignoreBOM?: boolean } = {}) {
         if (!/^utf-?8$/i.test(label)) {
             throw new RangeError(`TextDecoderShim: unsupported encoding ${label}`);
         }
@@ -20,7 +24,7 @@ class TextDecoderShim {
         this.ignoreBOM = !!options.ignoreBOM;
     }
 
-    decode(input) {
+    decode(input?: ArrayBuffer | ArrayBufferView): string {
         if (input === undefined) return "";
         const bytes = input instanceof Uint8Array
             ? input
@@ -29,8 +33,8 @@ class TextDecoderShim {
                 : new Uint8Array(input);
         // Decode into code points, buffering fromCharCode in chunks so huge
         // strings do not overflow the argument list.
-        const units = [];
-        const parts = [];
+        const units: number[] = [];
+        const parts: string[] = [];
         const flush = () => {
             if (units.length) {
                 parts.push(String.fromCharCode(...units));
@@ -47,7 +51,7 @@ class TextDecoderShim {
             return 0xfffd;
         };
         while (i < bytes.length) {
-            const b0 = bytes[i++];
+            const b0 = bytes[i++]!;
             let cp;
             if (b0 < 0x80) {
                 cp = b0;
@@ -64,7 +68,7 @@ class TextDecoderShim {
                     i++;
                 }
                 if (!ok || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) ||
-                    cp < [0, 0x80, 0x800, 0x10000][need]) {
+                    cp < [0, 0x80, 0x800, 0x10000][need]!) {
                     cp = bad();
                 }
             }
@@ -82,5 +86,5 @@ class TextDecoderShim {
 }
 
 if (typeof globalThis.TextDecoder === "undefined") {
-    globalThis.TextDecoder = TextDecoderShim;
+    (globalThis as { TextDecoder: unknown }).TextDecoder = TextDecoderShim;
 }

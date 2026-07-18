@@ -1,25 +1,60 @@
 #!/usr/bin/env bash
-# Stage the clausters web package: build the two wasm bundles (the engine and
-# the GUI host) and copy them into engine/ and gui-host/, so this directory is
-# a complete, servable ES-module package (no bundler, no node toolchain — the
-# future TS track adds those; see PLAN.md).
+# Build the clausters web package: compile the three wasm crates (the engine,
+# the GUI host, the shared core's OSC codec), stage their wasm-bindgen bundles
+# into dist/, and emit the TypeScript sources next to them — dist/ is the
+# complete, servable package (src/ -> dist/ 1:1; the staged bundles are the
+# browser's _bin/_libs).
+#
+# The glue's .js/.d.ts are also staged into src/ mirror spots (src/core/,
+# src/gui-host/, the engine .d.ts) so type-checking and node-from-source
+# resolve the same specifiers the emitted modules use.
 #
 # One-time setup: rustup target add wasm32-unknown-unknown, and
 # cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen version.
 #
 # From clients/web/:  ./build.sh   (release; pass `debug` for faster builds).
-# Serve and open the demo:  python3 -m http.server  → /demo.html
+# Serve and open the demo:  python3 -m http.server  → /examples/demo.html
 set -euo pipefail
 
 cd "$(dirname "$0")"
 profile="${1:-release}"
+flag=""
+[ "$profile" = release ] && flag="--release"
 
-# The GUI host's build also builds the engine and stages it in its web/engine/.
-../gui/web/build.sh "$profile"
+if ! command -v wasm-bindgen >/dev/null; then
+    echo "wasm-bindgen is missing; install it with:" >&2
+    echo "  cargo install wasm-bindgen-cli --version <Cargo.lock wasm-bindgen version>" >&2
+    exit 1
+fi
 
-mkdir -p engine gui-host
-cp ../gui/web/engine/* engine/
-cp ../gui/web/clausters_gui.js ../gui/web/clausters_gui_bg.wasm gui-host/
+# The engine and the shared core's JS door (workspace crates).
+# shellcheck disable=SC2086
+(cd ../.. && cargo build -p clausters-web -p clausters-core-web --lib $flag \
+    --target wasm32-unknown-unknown)
+# The GUI host (its own workspace under clients/gui).
+# shellcheck disable=SC2086
+(cd ../gui && cargo build --lib $flag --target wasm32-unknown-unknown)
 
-echo "package staged: engine/ + gui-host/ next to the ES modules"
-echo "demo:  python3 -m http.server  then open http://localhost:8000/demo.html"
+wasm-bindgen --target web --out-dir dist/engine \
+    "../../target/wasm32-unknown-unknown/$profile/clausters_web.wasm"
+wasm-bindgen --target web --out-dir dist/gui-host \
+    "../gui/target/wasm32-unknown-unknown/$profile/clausters_gui.wasm"
+wasm-bindgen --target web --out-dir dist/core \
+    "../../target/wasm32-unknown-unknown/$profile/clausters_core_web.wasm"
+
+# The src/ stubs: .d.ts for type-checking everywhere; the core also gets the
+# glue .js because node runs src/base/osc.ts directly (tests need no build).
+mkdir -p src/core src/gui-host
+cp dist/core/clausters_core_web.js dist/core/clausters_core_web.d.ts src/core/
+cp dist/gui-host/clausters_gui.d.ts src/gui-host/
+cp dist/engine/clausters_web.d.ts src/engine/
+
+# Type-check + emit the package into dist/ (js + d.ts + maps).
+if [ -d node_modules ]; then
+    npm run --silent build
+else
+    echo "note: node_modules missing — run 'npm install' then 'npm run build'" >&2
+fi
+
+echo "package staged: dist/ (modules + engine/ gui-host/ core/ wasm bundles)"
+echo "demo:  python3 -m http.server  then open http://localhost:8000/examples/demo.html"

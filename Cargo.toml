@@ -3,6 +3,7 @@
 # the shared native core and its C ABI live under `crates/`. See clients/PLAN.md.
 members = [
     "crates/clausters-core",
+    "crates/clausters-core-web",
     "crates/clausters-ffi",
     "crates/clausters-midi",
     "crates/clausters-web",

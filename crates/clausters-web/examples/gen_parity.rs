@@ -1,7 +1,8 @@
-//! Native side of the wasm parity harness: emits `web/score.bin` (the binary
-//! score) and `web/native.f32` (the native render of that exact byte stream),
-//! for `web/parity.html` to render through the wasm build and compare sample
-//! by sample. Run from the crate: `cargo run --example gen_parity`.
+//! Native side of the wasm parity harness: emits `score.bin` (the binary
+//! score) and `native.f32` (the native render of that exact byte stream)
+//! into `clients/web/tests/`, for the web package's `tests/parity.html` to
+//! render through the wasm build and compare sample by sample. Run:
+//! `cargo run -p clausters-web --example gen_parity`.
 //!
 //! The scene is deterministic (no noise) and the generator asserts the native
 //! render contains no subnormal samples: wasm has no flush-to-zero mode, so
@@ -116,8 +117,8 @@ fn main() {
         subnormals, 0,
         "the parity scene must stay denormal-free (FTZ parity policy)"
     );
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("web");
-    std::fs::create_dir_all(&dir).expect("create web/");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../clients/web/tests");
+    std::fs::create_dir_all(&dir).expect("create clients/web/tests/");
     std::fs::write(dir.join("score.bin"), &score).expect("write score.bin");
     let mut bytes = Vec::with_capacity(samples.len() * 4);
     for x in &samples {
@@ -125,7 +126,7 @@ fn main() {
     }
     std::fs::write(dir.join("native.f32"), &bytes).expect("write native.f32");
     println!(
-        "wrote web/score.bin ({} bytes) and web/native.f32 ({} samples, {} ch, {} Hz)",
+        "wrote clients/web/tests/score.bin ({} bytes) and native.f32 ({} samples, {} ch, {} Hz)",
         score.len(),
         samples.len(),
         CHANNELS,

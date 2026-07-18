@@ -1111,3 +1111,71 @@ Context (the B track's capstone): the web components had a deferred design
   standardized in the components themselves (`<clausters-bundle>`'s boot
   button, `<clausters-power>` alone for raw-singleton pages), not left to
   each embedding page.
+
+## The web client toolchain is tsc + node:test, nothing else; OSC parity is a committed vector file
+
+Context (the TS track's start): the web client needed a JS toolchain, and the
+default answer in that ecosystem (vite + vitest, or any bundler) contradicts
+both the repo's no-heavy-deps posture and the package's already-settled shape
+(plain servable ES modules, wasm bundles and the AudioWorklet module as
+static assets — the things bundlers fight).
+
+- **`tsc` is the whole toolchain**: type-checker and emitter (module-per-module,
+  `.js`-extension imports, output identical in shape to the hand-written B4
+  modules). TypeScript 7 (the native compiler) is a single package with no
+  transitive dependencies; `@types/node` rides along as declarations only.
+  The dev server stays `python3 -m http.server`; the evaluation of
+  vite/esbuild/vitest and the reasons each was declined are recorded in
+  `clients/web/PLAN.md` ("Tooling").
+- **Tests run from source under `node --test`** — node's native type
+  stripping (default since 23.6) runs `.ts` directly, so the pure-logic
+  suites need no compile step and no runner package. Browser-only behavior
+  keeps the B-track posture (headless-Chrome smokes, access-log beacon);
+  `clients/web/test.sh` is the one entry that runs all three layers.
+- **Codec parity is a frozen artifact, not a convention.** The TS codec goes
+  through `clausters-core` compiled to wasm (`crates/clausters-core-web`), so
+  it is the server's codec by construction — and the tie to the *Python*
+  client is held by `clients/web/tests/osc-vectors.json`, generated from
+  `clausters.base._osclib` and committed. Both clients answer to the same
+  frozen bytes; regenerating the file is an explicit act (new cases), never
+  part of a test run.
+
+## The web front-end lives in one package that mirrors the Python client
+
+Context: the B track left the browser JS/HTML where each milestone was born —
+the worklet/loader runtime and its harnesses beside the engine crate
+(`crates/clausters-web/web/`), the standalone page, the bundle fetch module
+and the manifest generator in the GUI host's harness directory
+(`clients/gui/web/`), and the package itself in `clients/web/` — with a
+two-hop staging chain copying the engine bundle between them, the bundle boot
+implemented twice (the harness's single-consumer `bundle.js` next to the
+package's `bundle.ts`) and the interim page codec still shipped after the
+core-backed one replaced it. Unmaintainable as the client track grows.
+
+- **`clients/web` is the only web directory.** All browser JS/HTML — package
+  modules, the worklet/loader runtime, examples, test pages, tools — lives in
+  the `clausters` package; the crates (`clausters-web`, `clausters-core-web`,
+  `clients/gui`) stay Rust-only and their wasm-bindgen glue is staged into
+  the package by `clients/web/build.sh`, directly, with no intermediate
+  copies. The duplicates died: `bundle.js` was absorbed by `bundle.ts` (the
+  standalone page now boots over the package singletons) and the interim
+  codec was deleted.
+- **The package structurally mirrors `clients/python`.** Sources under
+  `src/` at the same relative paths as `clausters/`'s modules (`base/`,
+  `gui/`, later `defs/`/`seq/`/`responders`/`session`), with `examples/`,
+  `tests/` and (later) `docs/` beside them; `dist/` reproduces the `src/`
+  tree 1:1 and the wasm bundles staged inside it (`engine/`, `gui-host/`,
+  `core/`) are the browser's `_bin`/`_libs` — binary artifacts inside the
+  installable tree, no source beside them.
+- **Node-TS conventions, servable output.** Sources import each other with
+  `.ts` extensions (`rewriteRelativeImportExtensions`), so node runs them
+  directly (tests never need a build); `tsc` emits `dist/` with declarations
+  and source/declaration maps — the browser interface is JS with a type map,
+  ready for in-page typed consumption (livecoding). Imports of the
+  wasm-bindgen glue keep `.js` and resolve against staged copies (full
+  bundles in `dist/`; `.d.ts` stubs — plus the core's glue `.js` for
+  node-from-source — mirrored into `src/`).
+- Consuming the package from node to control local servers (a native
+  WebSocket carrier, headless scripting) is a **separate future feature**
+  ("Node target" in `clients/web/PLAN.md`), deliberately not folded into the
+  consolidation.

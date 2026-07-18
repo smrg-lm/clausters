@@ -1,0 +1,34 @@
+{
+    // tsc is the whole build (no bundler; see PLAN.md "Tooling"). Sources
+    // live in src/ (the module tree mirrors clients/python/clausters);
+    // tsconfig.build.json emits them to dist/ — .js plus declarations and
+    // source/declaration maps — next to the staged wasm bundles, so dist/ is
+    // the servable package. This file is the type-check config (src + tests,
+    // no emit): `npm run check`.
+    //
+    // Imports of our own modules are written with .ts extensions
+    // (rewriteRelativeImportExtensions turns them into .js on emit), which is
+    // what lets node run the sources directly — tests and the node test
+    // runner never need a build. Imports of the wasm-bindgen glue keep .js
+    // and resolve against staged copies: build.sh stages the glue's .js/.d.ts
+    // into src/ mirror spots (src/core/, src/gui-host/, the engine .d.ts)
+    // for type-checking and node, and the full bundles into dist/ for the
+    // browser.
+    "compilerOptions": {
+        "target": "es2022",
+        "module": "nodenext",
+        "moduleResolution": "nodenext",
+        "lib": ["es2022", "dom", "dom.iterable"],
+        "types": ["node"],
+        "strict": true,
+        "noUncheckedIndexedAccess": false,
+        // node runs the tests straight from .ts (native type stripping),
+        // which only allows erasable TS syntax; this enforces it everywhere.
+        "verbatimModuleSyntax": true,
+        "erasableSyntaxOnly": true,
+        "rewriteRelativeImportExtensions": true,
+        "skipLibCheck": true,
+        "noEmit": true
+    },
+    "include": ["src/**/*.ts", "tests/*.ts"]
+}

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters client seam</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 40rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the client seam over the in-page carrier: <code>pageConnection()</code>
+        boots the engine and speaks OSC through the <code>Connection</code>
+        interface — the same interface <code>WsConnection</code> gives a native
+        server. No bundle, no GUI: just the protocol surface.</div>
+      <button id="boot">boot + /status</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page-carrier acceptance (clients/web/test.sh, headless Chrome):
+      ?smoke=1 auto-runs, asserts a /status round trip through the carrier
+      and that close() detaches without stopping the shared engine (a second
+      connection still gets replies). Verdict beaconed as a fetch, read from
+      the HTTP access log.
+    -->
+    <script type="module">
+      import { pageConnection, loadOsc, encodeMessage, decodePacket }
+        from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      // One /status round trip over `connection`, resolving the synth count.
+      const status = (connection, timeoutMs = 10000) =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            connection.removeReply(onReply);
+            reject(new Error("no /status.reply"));
+          }, timeoutMs);
+          const onReply = (bytes) => {
+            for (const { addr, args } of decodePacket(bytes)) {
+              if (addr === "/status.reply") {
+                clearTimeout(timer);
+                connection.removeReply(onReply);
+                resolve(args[2]);
+              }
+            }
+          };
+          connection.addReply(onReply);
+          connection.send(encodeMessage("/status"));
+        });
+
+      async function run() {
+        await loadOsc();
+        const first = await pageConnection();
+        const synths = await status(first);
+        log(`first connection: /status.reply, ${synths} synth(s)`);
+        first.close(); // detaches its listeners, engine keeps running
+        const second = await pageConnection();
+        await status(second);
+        log("second connection after close(): /status.reply again");
+        verdict(`PASS: page carrier round trip, ${synths} synth(s), ` +
+          `close() left the engine up`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

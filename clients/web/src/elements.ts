@@ -9,8 +9,8 @@
 // into its shadow DOM.
 //
 // `<clausters-power>` is the affordance alone, for pages that drive the raw
-// singletons (a REPL, a future TS client) and only need the gesture: it
-// toggles the engine's AudioContext between running and suspended.
+// singletons (a REPL, the TS client) and only need the gesture: it toggles
+// the engine's AudioContext between running and suspended.
 //
 // Elements share the singletons by construction: one engine, one GUI host per
 // page — components meet in the same node/bus/buffer namespace. The host
@@ -20,9 +20,9 @@
 // Events: `clausters-ready` (detail: `{ id }`) after the bundle is up,
 // `clausters-error` (detail: `{ error }`) on failure.
 
-import { server } from "./server.js";
-import { guiHost } from "./gui.js";
-import { bootBundle } from "./bundle.js";
+import { server } from "./engine/server.ts";
+import { guiHost } from "./gui/host.ts";
+import { bootBundle } from "./bundle.ts";
 
 const BUTTON_STYLE = `
     button {
@@ -34,6 +34,8 @@ const BUTTON_STYLE = `
 `;
 
 export class ClaustersBundle extends HTMLElement {
+    private button: HTMLButtonElement;
+
     constructor() {
         super();
         const shadow = this.attachShadow({ mode: "open" });
@@ -45,13 +47,13 @@ export class ClaustersBundle extends HTMLElement {
             </style>
             <button part="power">&#9211; power</button>
         `;
-        this.button = shadow.querySelector("button");
+        this.button = shadow.querySelector("button") as HTMLButtonElement;
         this.button.onclick = () => this.boot();
     }
 
     /// Boots the bundle (also callable from script; needs a prior gesture for
     /// audible output if not called from one).
-    async boot() {
+    async boot(): Promise<void> {
         this.button.disabled = true;
         this.button.textContent = "booting…";
         try {
@@ -64,7 +66,7 @@ export class ClaustersBundle extends HTMLElement {
             });
             // The page-wide canvas moves into whichever element booted last.
             this.button.remove();
-            this.shadowRoot.append(gui.canvas);
+            this.shadowRoot!.append(gui.canvas);
             this.dispatchEvent(new CustomEvent("clausters-ready", {
                 detail: { id },
                 bubbles: true,
@@ -81,12 +83,14 @@ export class ClaustersBundle extends HTMLElement {
 }
 
 export class ClaustersPower extends HTMLElement {
+    private button: HTMLButtonElement;
+
     constructor() {
         super();
         const shadow = this.attachShadow({ mode: "open" });
         shadow.innerHTML = `<style>${BUTTON_STYLE}</style>
             <button part="power">&#9211; power</button>`;
-        this.button = shadow.querySelector("button");
+        this.button = shadow.querySelector("button") as HTMLButtonElement;
         this.button.onclick = async () => {
             const engine = await server();
             if (engine.context.state === "running") {

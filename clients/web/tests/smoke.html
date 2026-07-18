@@ -13,8 +13,8 @@
 <body>
 <pre id="result">running…</pre>
 <script type="module">
-import { bootClausters } from "./loader.js";
-import { encodeMessage, decodePacket } from "./osc.js";
+import { bootClausters } from "../dist/engine/loader.js";
+import { loadOsc, encodeMessage, decodePacket } from "../dist/index.js";
 
 const out = document.getElementById("result");
 const verdict = (text) => {
@@ -30,6 +30,7 @@ const deadline = (promise, ms, what) => Promise.race([
 ]);
 
 try {
+    await loadOsc(); // the codec runs through the shared core (wasm)
     const server = await bootClausters({ channels: 2 });
 
     // Tap the output: worklet -> analyser (already wired to destination).

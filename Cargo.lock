@@ -247,6 +247,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clausters-core-web"
+version = "0.3.0"
+dependencies = [
+ "clausters-core",
+ "js-sys",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "clausters-ffi"
 version = "0.3.0"
 dependencies = [

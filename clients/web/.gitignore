@@ -1,6 +1,19 @@
-# Staged wasm bundles (build.sh copies them from crates/clausters-web and
-# clients/gui) and the demo bundle the smoke writes.
-/engine/
-/gui-host/
-/bundle-demo/
+# The emitted package (tsc: js + d.ts + maps) with the staged wasm bundles
+# (build.sh copies them from crates/clausters-web, clients/gui and
+# crates/clausters-core-web) — the browser's _bin/_libs.
+/dist/
 node_modules/
+
+# Glue stubs staged into src/ by build.sh (type-checking + node-from-source).
+/src/core/
+/src/gui-host/
+/src/engine/clausters_web.d.ts
+
+# The demo bundle the smokes write (tools/demo-bundle.sh).
+/bundle-demo/
+
+# Fixtures the parity/bulk harnesses generate next to the test pages.
+/tests/score.bin
+/tests/native.f32
+/tests/sine.f32
+/tests/sine.peaks

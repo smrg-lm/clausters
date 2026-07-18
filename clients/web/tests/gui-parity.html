@@ -45,7 +45,7 @@
           --enable-logging=stderr 'http://localhost:8000/parity.html'
     -->
     <script type="module">
-      import init, { start } from "./clausters_gui.js";
+      import init, { start } from "../dist/gui-host/clausters_gui.js";
 
       const N = 4096;
       const data = Array.from({ length: N }, (_, i) => {

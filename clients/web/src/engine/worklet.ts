@@ -13,7 +13,7 @@
 // block, so command pacing stays fine and deterministic (see
 // tests/headless.rs, which drives the same path natively).
 
-import "./worklet-shim.js";
+import "./worklet-shim.ts";
 import { initSync, WebServer } from "./clausters_web.js";
 
 // Port protocol, both directions tagged by `type`:
@@ -28,8 +28,32 @@ import { initSync, WebServer } from "./clausters_web.js";
 //                    {type:"b_load", index, ok, message?}  the install's ack
 //                    {type:"quit"}        a /quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
+type InMessage =
+    | { type: "osc"; data: ArrayBuffer }
+    | { type: "clock" }
+    | {
+          type: "b_load";
+          index: number;
+          channels: number;
+          sampleRate: number;
+          data: ArrayBuffer;
+      };
+
+interface ProcessorOptions {
+    module: WebAssembly.Module;
+    channels: number;
+    unixEpoch: number;
+}
+
 class ClaustersProcessor extends AudioWorkletProcessor {
-    constructor(options) {
+    channels: number;
+    epoch: number;
+    server: WebServer;
+    interleaved: Float32Array;
+    pending: Uint8Array[]; // packets awaiting ring space (backpressure)
+    dead: boolean;
+
+    constructor(options: { processorOptions: ProcessorOptions }) {
         super();
         const { module, channels, unixEpoch } = options.processorOptions;
         initSync({ module });
@@ -38,12 +62,12 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         // sampleRate is the AudioWorkletGlobalScope global: the context rate.
         this.server = new WebServer(sampleRate, channels, unixEpoch);
         this.interleaved = new Float32Array(128 * channels);
-        this.pending = []; // packets awaiting ring space (backpressure)
+        this.pending = [];
         this.dead = false;
-        this.port.onmessage = (e) => this.onMessage(e.data);
+        this.port.onmessage = (e) => this.onMessage(e.data as InMessage);
     }
 
-    onMessage(msg) {
+    onMessage(msg: InMessage): void {
         if (msg.type === "osc") {
             this.pending.push(new Uint8Array(msg.data));
         } else if (msg.type === "clock") {
@@ -57,28 +81,40 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             // the native headless embed mode performs (see ClaustersHeadless).
             try {
                 this.server.b_load(
-                    msg.index, msg.channels, msg.sampleRate,
+                    msg.index,
+                    msg.channels,
+                    msg.sampleRate,
                     new Float32Array(msg.data),
                 );
-                this.port.postMessage({ type: "b_load", index: msg.index, ok: true });
+                this.port.postMessage({
+                    type: "b_load",
+                    index: msg.index,
+                    ok: true,
+                });
             } catch (e) {
                 this.port.postMessage({
-                    type: "b_load", index: msg.index, ok: false, message: String(e),
+                    type: "b_load",
+                    index: msg.index,
+                    ok: false,
+                    message: String(e),
                 });
             }
         }
     }
 
-    process(_inputs, outputs) {
+    process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
         if (this.dead) return false;
         try {
             // Feed the ring in arrival order; stop at the first refusal so
             // ordering survives backpressure (retry next quantum).
-            while (this.pending.length && this.server.send(this.pending[0])) {
+            while (
+                this.pending.length &&
+                this.server.send(this.pending[0]!)
+            ) {
                 this.pending.shift();
             }
 
-            const out = outputs[0];
+            const out = outputs[0] ?? [];
             const frames = out[0] ? out[0].length : 128;
             const need = frames * this.channels;
             if (this.interleaved.length !== need) {
@@ -86,16 +122,21 @@ class ClaustersProcessor extends AudioWorkletProcessor {
             }
             this.server.process(this.interleaved);
             for (let ch = 0; ch < out.length; ch++) {
-                const dst = out[ch];
-                if (ch >= this.channels) { dst.fill(0); continue; }
+                const dst = out[ch]!;
+                if (ch >= this.channels) {
+                    dst.fill(0);
+                    continue;
+                }
                 for (let f = 0; f < frames; f++) {
-                    dst[f] = this.interleaved[f * this.channels + ch];
+                    dst[f] = this.interleaved[f * this.channels + ch]!;
                 }
             }
 
-            let reply;
+            let reply: Uint8Array | undefined;
             while ((reply = this.server.poll()) !== undefined) {
-                this.port.postMessage({ type: "osc", data: reply }, [reply.buffer]);
+                this.port.postMessage({ type: "osc", data: reply }, [
+                    reply.buffer,
+                ]);
             }
 
             if (this.server.quit_requested()) {

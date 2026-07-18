@@ -68,13 +68,13 @@
       - meters: a meter + scope on control bus 10 streamed over WebSocket
         (/c_stream), driven by the bound `bus 10` knob — a self-contained
         loop: knob -> /c_set -> server -> /c_set snapshots -> meter.
-      - bulk:   three waveforms — a fetched peak cache (sine.peaks), fetched
-        raw f32 samples (sine.f32, pyramid built in wasm), and a server
-        buffer pulled over /b_query + chunked /b_getn. Generate the two
-        files and buffer with the steps in GUIA (or gui_bulk.py's setup).
+      - bulk:   three waveforms — a fetched peak cache (tests/sine.peaks),
+        fetched raw f32 samples (tests/sine.f32, pyramid built in wasm), and
+        a server buffer pulled over /b_query + chunked /b_getn. Generate the
+        two files and buffer with gui_bulk.py's setup.
     -->
     <script type="module">
-      import init, { start } from "./clausters_gui.js";
+      import init, { start } from "../dist/gui-host/clausters_gui.js";
 
       // A short synthetic signal for the inline waveform view.
       const N = 4096;
@@ -138,9 +138,9 @@
           layout: "col",
           children: [
             { id: 1, type: "label", text: "peak cache (fetch)" },
-            { id: 2, type: "waveform", cache: "sine.peaks" },
+            { id: 2, type: "waveform", cache: "../tests/sine.peaks" },
             { id: 3, type: "label", text: "raw f32 (fetch + wasm pyramid)" },
-            { id: 4, type: "waveform", path: "sine.f32", base_bucket: 512 },
+            { id: 4, type: "waveform", path: "../tests/sine.f32", base_bucket: 512 },
             { id: 5, type: "label", text: "server buffer 0 (/b_getn over WS)" },
             { id: 6, type: "waveform", buffer: 0 },
           ],

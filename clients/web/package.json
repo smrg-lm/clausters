@@ -1,22 +1,30 @@
 {
   "name": "clausters",
   "version": "0.3.0",
-  "description": "Clausters in the browser: the audio engine in an AudioWorklet, the GUI host on a canvas, web components that boot standalone bundles — no server process. Seeds the future TypeScript client.",
+  "description": "Clausters in the browser: the audio engine in an AudioWorklet, the GUI host on a canvas, web components that boot standalone bundles, and the OSC/connection seam of the TypeScript client — no server process needed.",
   "type": "module",
-  "main": "index.js",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
-    "index.js",
-    "server.js",
-    "gui.js",
-    "bundle.js",
-    "elements.js",
-    "engine/",
-    "gui-host/",
+    "dist/",
+    "src/",
     "README.md",
     "COPYING"
   ],
+  "scripts": {
+    "check": "tsc",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "node --test 'tests/*.test.ts'"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^7"
+  },
   "license": "GPL-3.0-or-later"
 }

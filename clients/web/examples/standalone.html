@@ -21,11 +21,12 @@ tab: the engine in an AudioWorklet, the GUI host on a canvas, no server
 process anywhere. Press Power (the autoplay gesture) to boot.</div>
 
     <!--
-      The browser twin of `clausters-gui --standalone <name>`: fetches the
-      bundle (?bundle=<url prefix>, default "bundle"; ?name=<GuiDef name>,
-      default the manifest's), replays its defs and boot into the in-page
-      engine, and opens its GuiDef against the wasm GUI host. See bundle.js
-      for the manifest, and docs/clients.md for the quick start.
+      The browser twin of `clausters-gui --standalone <name>`, on the raw
+      package API (the element version is examples/demo.html): fetches the
+      bundle (?bundle=<url prefix>, default "../bundle-demo"; ?name=<GuiDef
+      name>, default the manifest's) and boots it with `bootBundle` over the
+      page singletons. See src/bundle.ts for the manifest, and
+      docs/clients.md for the quick start.
 
       ?smoke=1 is the scripted-acceptance mode (scripts/smoke-web-standalone.sh
       under headless Chrome): boots without the gesture, watches the streamed
@@ -33,9 +34,8 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
       fetch the runner reads from the HTTP access log.
     -->
     <script type="module">
-      import init, { start } from "./clausters_gui.js";
-      import { bootClausters } from "./engine/loader.js";
-      import { bootBundle } from "./bundle.js";
+      import { server, bootBundle, loadOsc, decodePacket }
+        from "../dist/index.js";
 
       const params = new URLSearchParams(location.search);
       const smoke = params.has("smoke");
@@ -50,30 +50,27 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
       };
 
       const boot = async () => {
-        // The three actors: the GUI host (wasm, canvas below), the engine
-        // (wasm, inside an AudioWorklet), and the bundle glue between them.
-        await init();
-        const bridge = start();
-        const engine = await bootClausters({ channels: 2 });
+        const engine = await server();
         await engine.resume();
+        await loadOsc();
 
         // Observe the bus stream for the harness/smoke readout: every
-        // /c_set the meter subscription brings in, after the bridge got it.
+        // /c_set the meter subscription brings in.
         let snapshots = 0;
         const seen = new Set();
         let dead = null;
-        engineOnReplyHook = (addr, args) => {
-          if (addr === "/fail") dead = `engine /fail: ${JSON.stringify(args)}`;
-          if (addr !== "/c_set") return;
-          snapshots += 1;
-          for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
-        };
+        engine.addReply((bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr === "/fail") dead = `engine /fail: ${JSON.stringify(args)}`;
+            if (addr !== "/c_set") continue;
+            snapshots += 1;
+            for (let i = 0; i + 1 < args.length; i += 2) seen.add(args[i + 1]);
+          }
+        });
 
         const { id } = await bootBundle({
-          bridge, engine,
-          base: params.get("bundle") ?? "bundle",
+          base: params.get("bundle") ?? "../bundle-demo",
           name: params.get("name"),
-          onReply: (addr, args) => engineOnReplyHook(addr, args),
         });
         note(`bundle up: GuiDef ${id} opened, engine live (context ` +
              `${engine.context.sampleRate} Hz). Meters stream over /c_stream.`);
@@ -96,7 +93,6 @@ process anywhere. Press Power (the autoplay gesture) to boot.</div>
         throw new Error(`meter stream never moved (${snapshots} snapshots, ` +
           `values ${JSON.stringify([...seen])})`);
       };
-      let engineOnReplyHook = () => {};
 
       const power = document.getElementById("power");
       power.onclick = () => {

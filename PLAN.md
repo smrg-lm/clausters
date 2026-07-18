@@ -281,6 +281,13 @@ priority inversion; DSP itself stays allocation-free). The ring seam keeps a
 later SAB/wasm-threads build (zero-message in-page `BusSource`) open as an
 unnumbered optimization.
 
+**Consolidation note (with W0):** every browser JS/HTML artifact the B
+milestones describe below (the worklet/loader runtime, the harness and
+standalone pages, the bundle fetch module, the manifest generator) now lives
+in the web package — `clients/web/` — with the crates staying Rust-only; the
+entries keep their original paths as a record of what shipped where. See
+`docs/decisions.md` ("The web front-end lives in one package").
+
 - ✅ **B0 — wasm32 build gate + offline render parity** *(done 2026-07-18)* —
   the engine compiles and renders on `wasm32-unknown-unknown` before any Web
   Audio work: `tungstenite`/`osc::ws` target-gated off wasm (the one compile

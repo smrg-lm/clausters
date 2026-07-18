@@ -2,8 +2,9 @@
 """Writes <data-dir>/bundle.json — the manifest a browser bundle boot needs.
 
 A native standalone bundle is a data directory the host and server read by
-listing it; HTTP cannot list directories, so serving a bundle to
-web/standalone.html requires this one extra file at the bundle's root. It
+listing it; HTTP cannot list directories, so serving a bundle to the browser
+boot (`bootBundle`, `<clausters-bundle>`, examples/standalone.html) requires
+this one extra file at the bundle's root. It
 enumerates the persisted defs (file stems, exactly as saved) and names the
 GuiDef; the optional "buffers" map (server buffer index -> audio URL relative
 to the bundle) is left for hand-editing, since which files feed which buffers

@@ -139,25 +139,25 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   al sobrecargar a propósito el servidor **glitchea pero no muere** (el guard de
   SIGXCPU lo degrada a SCHED_OTHER, ver abajo).
 - **El engine suena en el navegador (sin proceso servidor).**
-  `crates/clausters-web/web/build.sh`, después
-  `(cd crates/clausters-web/web && python3 -m http.server)` y abrir
-  `http://localhost:8000/` → Power (el gesto), Sine → se oye el seno de 440 Hz
-  del def `default` corriendo en el AudioWorklet; `/status` responde en el log
-  de la página y el reloj de samples avanza. Versión scriptada:
-  `scripts/smoke-web.sh` (Chrome headless).
+  `clients/web/build.sh`, después
+  `(cd clients/web && python3 -m http.server)` y abrir
+  `http://localhost:8000/examples/engine.html` → Power (el gesto), Sine → se
+  oye el seno de 440 Hz del def `default` corriendo en el AudioWorklet;
+  `/status` responde en el log de la página y el reloj de samples avanza.
+  Versión scriptada: `scripts/smoke-web.sh` (Chrome headless).
 - **El bundle como componente web (paquete `clausters`).**
   `scripts/smoke-web-components.sh` deja `clients/web` staged con su
   `bundle-demo`; a mano: `(cd clients/web && python3 -m http.server)` y abrir
-  `http://localhost:8000/demo.html` → el botón power del elemento
+  `http://localhost:8000/examples/demo.html` → el botón power del elemento
   `<clausters-bundle>` es el gesto → suena el drone y el canvas del GUI queda
   dentro del elemento; los botones `/status` y `freq +50` hablan por el
   singleton crudo con el mismo engine (el `/n_set` sube el tono del synth que
   booteó el elemento — un solo namespace).
 - **Un bundle standalone bootea entero en una pestaña.**
   `scripts/smoke-web-standalone.sh` deja todo armado (builds + bundle demo en
-  `clients/gui/web/bundle-demo`); para verlo a mano:
-  `(cd clients/gui/web && python3 -m http.server)` y abrir
-  `http://localhost:8000/standalone.html?bundle=bundle-demo` → Power → suena el
+  `clients/web/bundle-demo`); para verlo a mano:
+  `(cd clients/web && python3 -m http.server)` y abrir
+  `http://localhost:8000/examples/standalone.html` → Power → suena el
   drone del bundle (formato nativo de `--standalone`), el meter y el scope se
   mueven con el LFO por `/c_stream` sobre el engine in-page, y la perilla
   `freq` (bindeada `/n_set`) cambia el tono al arrastrarla. Sin ningún proceso

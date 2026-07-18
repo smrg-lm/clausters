@@ -151,35 +151,51 @@ The browser fills the host's data paths over the network instead of shared memor
 - **Audio-tap views**: the host subscribes the audio taps its audio-rate scopes, phasescopes (a stereo pair) and live spectra read with `/tap_stream` and the server streams `/tap_data` windows back — the network counterpart of the segment's tap rings (see the audio-tap commands in [Def schemas](schemas.md)). The phasescope's correlation and goniometer geometry and the spectrum's FFT all come from `clausters-core`, so the browser computes them in wasm identically to the desktop.
 - **Bulk waveform/spectrogram/plot/clip data**: a `path`/`cache` reference is fetched as a URL against the page origin (raw `f32` samples — every interleaved channel kept — a prebuilt peak-pyramid cache, or an STFT cache; the pyramids and STFT lanes for raw fetches are built in wasm — the analysis lives in `clausters-core`), and a server `buffer` reference is pulled over `/b_query` + chunked `/b_getn` on the WebSocket leg. The editor chrome of the two heavy views (multichannel lanes, adaptive time/Hz rulers, the selection overlay, the vertical `y_start`/`y_len` view window) renders through the same shared frame path as the desktop — a `/gui_set` of any of it displays identically in the browser, and the pointer/wheel/keyboard gestures (drag-select, pan, zoom, BPF and clip editing, the piano-roll editing set) ride the same shared gesture machine as the desktop, so an edit behaves identically on either front; the playhead is driven by polling `/clock` once per animation tick instead of reading the shared segment's sample clock. The **linked navigation groups** (an explicit `link` prop shares one horizontal view, selection and playhead across timeline views; `/gui_set` of `view_start`/`view_len`/`sel_*`/`playhead_at` on any member applies group-wide) live in the host core's protocol dispatch, so they behave identically in the browser.
 
-**Quick start** (from `clients/gui/`; one-time setup: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version <the wasm-bindgen version in Cargo.lock>`):
+**Quick start** (from `clients/web/`, the one web directory — the host's wasm bundle is staged into the package's `dist/gui-host/`; one-time setup: `rustup target add wasm32-unknown-unknown` and `cargo install wasm-bindgen-cli --version <the wasm-bindgen version in Cargo.lock>`):
 
 ```sh
-./web/build.sh                       # cargo wasm build + wasm-bindgen into web/
-(cd web && python3 -m http.server)   # then open http://localhost:8000/
+./build.sh                # the wasm builds + wasm-bindgen, staged into dist/
+python3 -m http.server    # then open http://localhost:8000/examples/gui-host.html
 ```
 
-The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). `web/index.html` is a documented throwaway harness with a panel, a meters and a bulk demo — it proves the host; the product browser client is the separate TypeScript track below.
+The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). `clients/web/examples/gui-host.html` is a documented throwaway harness with a panel, a meters and a bulk demo — it proves the host; the product browser client is the TypeScript track growing in the same package.
 
 ### A standalone bundle in a tab
 
 A bundle saved for the native `clausters-gui --standalone <name>` (the data directory: `defs/synthdefs`, `defs/graphdefs`, `defs/guidefs`, `boot.json`) boots **entirely in a browser tab**: the engine runs in an AudioWorklet ([Using as a library](using-as-a-library.md) describes the pulled server it wraps), the GUI host on a canvas, and the streamed data paths (`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) ride the in-page leg unchanged — meters, scopes and buffer views are live with no server process anywhere.
 
-Serving a bundle over HTTP needs one extra file the native flow does not: a `bundle.json` manifest at the bundle's root naming the def files (HTTP cannot list directories) — generate it with `clients/gui/web/bundle-manifest.py <data-dir>`. Its optional `"buffers"` map (`{"<index>": "<audio url>"}`) loads samples through fetch + `decodeAudioData` into the engine (the browser's `/b_allocRead`). Then, after `./web/build.sh` (which also stages the engine bundle into `web/engine/`), copy or symlink the bundle into the served directory and open:
+Serving a bundle over HTTP needs one extra file the native flow does not: a `bundle.json` manifest at the bundle's root naming the def files (HTTP cannot list directories) — generate it with `clients/web/tools/bundle-manifest.py <data-dir>`. Its optional `"buffers"` map (`{"<index>": "<audio url>"}`) loads samples through fetch + `decodeAudioData` into the engine (the browser's `/b_allocRead`). Then, after `clients/web/build.sh` (which stages both wasm bundles into the package's `dist/`), copy or symlink the bundle into the served `clients/web/` and open:
 
 ```
-http://localhost:8000/standalone.html?bundle=<bundle url>&name=<GuiDef name>
+http://localhost:8000/examples/standalone.html?bundle=<bundle url>&name=<GuiDef name>
 ```
 
 The boot replays the persisted files over the wire in the server's own boot order (defs → graphdefs → `boot.json` preset → the GuiDef's `boot` messages), `/sync`-bracketed so the page knows when the instrument is up. The scripted acceptance is `scripts/smoke-web-standalone.sh` (headless Chrome).
 
 ### Web components: a bundle as one HTML element
 
-The `clausters` package in `clients/web/` (plain ES modules; `./build.sh` stages the two wasm bundles so the directory serves as-is) wraps all of the above as **web components** over **per-page singletons**: `server()` boots the engine lazily on first use and exposes the raw surface a REPL or the future TypeScript client builds on (`send`/`addReply` OSC bytes, `clock`, `bLoad`), `guiHost()` boots the GUI host and wires the in-page leg once, and `<clausters-bundle src="…">` is a standalone bundle as one element — its power button is the standard autoplay-policy gesture, and the host's canvas is adopted into its shadow DOM once up (`<clausters-power>` is the affordance alone). Everything on the page shares the one engine and host, so components and scripts meet in the same node/bus/buffer namespace. `clients/web/demo.html` is the live demo; `scripts/smoke-web-components.sh` the scripted acceptance.
+The `clausters` package in `clients/web/` (TypeScript sources under `src/`, mirroring the Python client's module tree; `./build.sh` emits them to `dist/` — plain ES modules with declarations and source maps — and stages the wasm bundles beside them, so serving the directory is enough) wraps all of the above as **web components** over **per-page singletons**: `server()` boots the engine lazily on first use and exposes the raw surface a REPL or the future TypeScript client builds on (`send`/`addReply` OSC bytes, `clock`, `bLoad`), `guiHost()` boots the GUI host and wires the in-page leg once, and `<clausters-bundle src="…">` is a standalone bundle as one element — its power button is the standard autoplay-policy gesture, and the host's canvas is adopted into its shadow DOM once up (`<clausters-power>` is the affordance alone). Everything on the page shares the one engine and host, so components and scripts meet in the same node/bus/buffer namespace. `clients/web/examples/demo.html` is the live demo; `scripts/smoke-web-components.sh` the scripted acceptance.
+
+## The TypeScript client (started)
+
+The browser-first TypeScript client grows inside the same `clients/web/`
+package (roadmap: `clients/web/PLAN.md`). Its first layer is in place: the
+**OSC codec through the shared core** (`crates/clausters-core-web`, a thin
+wasm-bindgen shell over `clausters-core`, staged as `dist/core/` —
+byte-identical to the server and the Python client, held by committed parity
+vectors generated from the Python codec) and the **carrier seam**
+(`Connection`): `WsConnection` to a `--ws` server and `pageConnection()` over
+the in-page engine, one interface, so everything built above never names a
+transport. The package mirrors the Python client's structure (`src/base`,
+`src/gui`, … with `examples/` and `tests/` beside them) and the toolchain is
+deliberately minimal — `tsc` type-checks and emits `src/` to `dist/` (plain
+ES modules plus declarations and source maps), tests run from source under
+`node --test` with no runner package; see `clients/web/BUILD.md`.
 
 ## A JavaScript client (planned)
 
-A JS client mirrors the Python one with **no new native work**: it sits on the
-same C ABI and the same OSC.
+A desktop/Node JS client mirrors the Python one with **no new native work**:
+it sits on the same C ABI and the same OSC.
 
 - **Native bridge**: Node/Deno **N-API** (or `Deno.dlopen`) over
   `libclausters_ffi`/`libclausters` for desktop; **WebAssembly** for the

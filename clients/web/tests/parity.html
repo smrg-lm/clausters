@@ -1,12 +1,13 @@
 <!doctype html>
-<!-- Wasm render parity: loads the wasm engine, renders web/score.bin and
-     compares the samples bit-for-bit against web/native.f32 (the native render
-     of the same bytes, written by `cargo run --example gen_parity`).
+<!-- Wasm render parity: loads the wasm engine, renders tests/score.bin and
+     compares the samples bit-for-bit against tests/native.f32 (the native
+     render of the same bytes, written by `cargo run -p clausters-web
+     --example gen_parity`).
 
-     Scripted harness: `scripts/parity-web.sh` serves this directory and reads
+     Scripted harness: `scripts/parity-web.sh` serves clients/web/ and reads
      the verdict from the DOM under headless Chrome. Manual run: build with
-     web/build.sh, generate the fixtures, then
-       (cd web && python3 -m http.server)  and open /parity.html.
+     ./build.sh, generate the fixtures, then
+       python3 -m http.server   and open /tests/parity.html.
 
      The comparison mirrors tests/golden.rs's cross-platform posture: renders
      on one platform are bit-identical, but native (system libm) and wasm
@@ -21,8 +22,9 @@
 const out = document.getElementById("result");
 const verdict = (text) => { out.textContent = text; document.title = text.split("\n")[0]; };
 try {
-    const init = (await import("./clausters_web.js")).default;
-    const { render, abi_version } = await import("./clausters_web.js");
+    const init = (await import("../dist/engine/clausters_web.js")).default;
+    const { render, abi_version } =
+        await import("../dist/engine/clausters_web.js");
     await init();
     const score = new Uint8Array(await (await fetch("./score.bin")).arrayBuffer());
     const native = new Uint32Array(await (await fetch("./native.f32")).arrayBuffer());

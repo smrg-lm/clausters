@@ -1,13 +1,13 @@
 <!doctype html>
-<!-- The live harness (the B2 milestone made audible): the engine running in
-     an AudioWorklet on this page, no server process anywhere.
+<!-- The live engine harness (made audible): the engine running in an
+     AudioWorklet on this page, no server process anywhere.
 
-     Run: build with web/build.sh, then
-       (cd web && python3 -m http.server)  and open http://localhost:8000/
+     Run: build with ./build.sh, then
+       python3 -m http.server   and open /examples/engine.html
      Press Power (the autoplay gesture), then Sine: a 440 Hz default-def tone
      from the wasm engine. Status round-trips /status over the MessagePort.
 
-     The scripted counterpart is smoke.html + scripts/smoke-web.sh. -->
+     The scripted counterpart is tests/smoke.html + scripts/smoke-web.sh. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -30,8 +30,10 @@
 </p>
 <pre id="log">loading…</pre>
 <script type="module">
-import { bootClausters } from "./loader.js";
-import { encodeMessage, decodePacket } from "./osc.js";
+import { bootClausters } from "../dist/engine/loader.js";
+import { loadOsc, encodeMessage, decodePacket } from "../dist/index.js";
+
+await loadOsc(); // the codec runs through the shared core (wasm)
 
 const $ = (id) => document.getElementById(id);
 const log = (line) => { $("log").textContent += line + "\n"; };

@@ -10,21 +10,30 @@
 // components share one host and one engine — the shared node/bus/buffer
 // namespace.
 
-import init, { start } from "./gui-host/clausters_gui.js";
-import { server } from "./server.js";
+import init, { start, GuiBridge } from "../gui-host/clausters_gui.js";
+import { server } from "../engine/server.ts";
 
-let instance = null;
+export type EventListener = (packet: Uint8Array) => void;
 
-/// The page's GUI host, booting it (and the engine) on first call:
-/// `{ bridge, canvas, addEvent, removeEvent }` — `addEvent` listeners get
-/// every outbound host packet (`/gui_event`/`/gui_info`/`/gui_closed`) as
-/// bytes.
-export function guiHost() {
+/// The shared host surface: the raw binding bridge, the page-wide canvas
+/// (re-parent it freely; the GPU context survives), and the outbound
+/// `/gui_event`/`/gui_info`/`/gui_closed` stream as byte packets.
+export interface ClaustersGui {
+    bridge: GuiBridge;
+    canvas: HTMLCanvasElement;
+    addEvent(listener: EventListener): void;
+    removeEvent(listener: EventListener): void;
+}
+
+let instance: Promise<ClaustersGui> | null = null;
+
+/// The page's GUI host, booting it (and the engine) on first call.
+export function guiHost(): Promise<ClaustersGui> {
     instance ??= boot();
     return instance;
 }
 
-async function boot() {
+async function boot(): Promise<ClaustersGui> {
     const engine = await server();
     const before = new Set(document.querySelectorAll("body > canvas"));
     await init();
@@ -32,11 +41,11 @@ async function boot() {
 
     // winit appends the host's canvas to <body> asynchronously (on its first
     // animation frame); wait for it so callers can re-parent it.
-    const canvas = await new Promise((resolve, reject) => {
+    const canvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
         const t0 = performance.now();
         const look = () => {
             for (const c of document.querySelectorAll("body > canvas")) {
-                if (!before.has(c)) return resolve(c);
+                if (!before.has(c)) return resolve(c as HTMLCanvasElement);
             }
             if (performance.now() - t0 > 5000) {
                 return reject(new Error("the GUI host's canvas never appeared"));
@@ -48,12 +57,12 @@ async function boot() {
 
     // The in-page server leg, wired once for the whole page.
     engine.addReply((bytes) => bridge.server_reply(bytes));
-    bridge.connect_page((bytes) => engine.send(bytes));
+    bridge.connect_page((bytes: Uint8Array) => engine.send(bytes));
 
     // Drain the host's outbound events to the page's listeners.
-    const listeners = new Set();
+    const listeners = new Set<EventListener>();
     setInterval(() => {
-        let packet;
+        let packet: Uint8Array | undefined;
         while ((packet = bridge.poll()) !== undefined) {
             for (const listener of [...listeners]) listener(packet);
         }
