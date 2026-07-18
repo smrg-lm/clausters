@@ -43,6 +43,11 @@ def main(argv):
         "synthdefs": stems(os.path.join(data_dir, "defs", "synthdefs")),
         "graphdefs": stems(os.path.join(data_dir, "defs", "graphdefs")),
     }
+    # Declaring the optional boot.json here spares the browser boot a probe
+    # (whose 404 would land in the console). Re-run this tool after adding or
+    # removing the preset.
+    if os.path.exists(os.path.join(data_dir, "boot.json")):
+        manifest["boot"] = True
     path = os.path.join(data_dir, "bundle.json")
     existing = {}
     if os.path.exists(path):

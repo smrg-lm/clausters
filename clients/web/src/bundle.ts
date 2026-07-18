@@ -18,6 +18,10 @@ export interface BundleManifest {
     gui: string;
     synthdefs?: string[];
     graphdefs?: string[];
+    /// Whether the bundle carries a `boot.json` preset. Declared here so the
+    /// boot never probes for the optional file (a probe's 404 would litter
+    /// the console); absent means none. The generator sets it by looking.
+    boot?: boolean;
     /// Server buffer index -> audio URL relative to the bundle.
     buffers?: Record<string, string>;
 }
@@ -77,9 +81,20 @@ export async function bootBundle({
                 await fetch(`${base}/defs/guidefs/${guiName}.json`)
             ).json()) as GuiDefRecord)(),
     ]);
-    // boot.json is optional — a missing file is an empty preset, as natively.
-    const bootResponse = await fetch(`${base}/boot.json`);
-    const bootJson = bootResponse.ok ? await bootResponse.text() : null;
+    // boot.json is optional — an absent preset is empty, as natively. The
+    // manifest declares it, so an unlisted preset is never probed for (no
+    // stray 404 in the console); a declared-but-missing one is a real error.
+    let bootJson: string | null = null;
+    if (manifest.boot) {
+        const bootResponse = await fetch(`${base}/boot.json`);
+        if (!bootResponse.ok) {
+            throw new Error(
+                `${base}/boot.json: HTTP ${bootResponse.status} ` +
+                    "(declared by the manifest but not served)",
+            );
+        }
+        bootJson = await bootResponse.text();
+    }
 
     // Samples first, so a boot /s_new can already play them.
     for (const [index, url] of Object.entries(manifest.buffers ?? {})) {
