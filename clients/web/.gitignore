@@ -1,0 +1,6 @@
+# Staged wasm bundles (build.sh copies them from crates/clausters-web and
+# clients/gui) and the demo bundle the smoke writes.
+/engine/
+/gui-host/
+/bundle-demo/
+node_modules/

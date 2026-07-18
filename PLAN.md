@@ -344,14 +344,22 @@ unnumbered optimization.
   entirely in a headless-Chrome tab, `/synced` confirms, and the meter's
   control bus streams live values over the in-page leg.
 
-- [ ] **B4 — web components + the per-page singleton (thin capstone)** — an
-  npm package seeding `clients/web/` (the future W track adopts it): a lazy
-  per-page server singleton (AudioContext + worklet + engine, raw
-  `send`/`onReply` exposed for a future TS client/REPL), custom elements
-  wrapping the GuiBridge canvas in shadow DOM and booting bundles against the
-  singleton, a standard power/play affordance for the autoplay policy.
-  Components interact through the shared node/bus/buffer namespace. Detailed
-  design converges when this milestone starts.
+- ✅ **B4 — web components + the per-page singleton (thin capstone)**
+  *(done 2026-07-18)* — the `clausters` npm package seeding `clients/web/`
+  (plain ES modules, no bundler/node toolchain — W0 adds those; `build.sh`
+  stages the two wasm bundles into `engine/`/`gui-host/` so the directory is
+  servable as-is): `server()` the lazy per-page engine singleton (raw
+  `send`/`addReply` fan-out, `clock`, `bLoad`, resume/suspend — the REPL/TS
+  surface), `guiHost()` the per-page host singleton (wires the in-page leg
+  once: engine replies → `server_reply`, outbound → `engine.send`; captures
+  the winit canvas for adoption), `bootBundle()` over both, and the custom
+  elements: `<clausters-bundle src name>` (boots a bundle, adopts the canvas
+  into its shadow DOM, its button the standard autoplay-gesture affordance;
+  `clausters-ready`/`-error` events) and `<clausters-power>` (the affordance
+  alone). Components share one engine/host by construction — the common
+  node/bus/buffer namespace. Acceptance `scripts/smoke-web-components.sh` +
+  `demo.html?smoke=1`: element up with the canvas in its shadow root, raw
+  `server()` sees the element's synth (`/status`), meter bus streaming.
 
 ## Testing strategy
 

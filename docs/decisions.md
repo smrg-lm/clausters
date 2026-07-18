@@ -1079,3 +1079,35 @@ engine serves strictly in order, so the trailing `/synced` is the page's
   with moving values.
 - MIDI bindings, the remaining thing the native data-dir boot restores, are
   deliberately not replayed: the browser has no MIDI leg.
+
+## The web package is plain ES modules over per-page singletons; the canvas moves to the last-booted element
+
+Context (the B track's capstone): the web components had a deferred design
+("converges when the milestone starts"). What converged:
+
+- **Plain ES modules, no toolchain.** The `clausters` package in
+  `clients/web/` ships as ES modules a static server can serve as-is; a
+  `build.sh` stages the two wasm bundles (`engine/`, `gui-host/`) next to
+  them. No bundler and no node dependency today — the TS track (W0) adds its
+  toolchain *around* this package later, rather than this milestone
+  front-loading one the repo cannot even run (no node on the dev machine, and
+  nothing here needs it).
+- **Two lazy per-page singletons, wired once.** `server()` (the engine) and
+  `guiHost()` (the GUI host) boot on first use; the in-page server leg —
+  engine replies → `GuiBridge.server_reply`, host outbound → `engine.send` —
+  is wired inside `guiHost()`'s first boot, exactly once. The engine handle's
+  single `onReply` slot is owned by the singleton and fanned out to a
+  listener set, so any number of components, watchers and REPL scripts
+  coexist; per-boot `/sync` ids keep concurrent bundle boots from mistaking
+  each other's `/synced`.
+- **One canvas, adopted by the last-booted element.** The browser GUI host
+  shows one window-rooted def on one canvas (its long-standing shape), so
+  `<clausters-bundle>` does not pretend otherwise: booting an element moves
+  the page's host canvas into that element's shadow DOM (re-parenting
+  preserves the GPU context and winit's listeners). Multiple elements share
+  the engine namespace today and take turns showing; per-element windows are
+  a host-side multi-window question, not a packaging one.
+- **The gesture is the element's power button.** The autoplay affordance is
+  standardized in the components themselves (`<clausters-bundle>`'s boot
+  button, `<clausters-power>` alone for raw-singleton pages), not left to
+  each embedding page.

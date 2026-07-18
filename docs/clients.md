@@ -172,6 +172,10 @@ http://localhost:8000/standalone.html?bundle=<bundle url>&name=<GuiDef name>
 
 The boot replays the persisted files over the wire in the server's own boot order (defs → graphdefs → `boot.json` preset → the GuiDef's `boot` messages), `/sync`-bracketed so the page knows when the instrument is up. The scripted acceptance is `scripts/smoke-web-standalone.sh` (headless Chrome).
 
+### Web components: a bundle as one HTML element
+
+The `clausters` package in `clients/web/` (plain ES modules; `./build.sh` stages the two wasm bundles so the directory serves as-is) wraps all of the above as **web components** over **per-page singletons**: `server()` boots the engine lazily on first use and exposes the raw surface a REPL or the future TypeScript client builds on (`send`/`addReply` OSC bytes, `clock`, `bLoad`), `guiHost()` boots the GUI host and wires the in-page leg once, and `<clausters-bundle src="…">` is a standalone bundle as one element — its power button is the standard autoplay-policy gesture, and the host's canvas is adopted into its shadow DOM once up (`<clausters-power>` is the affordance alone). Everything on the page shares the one engine and host, so components and scripts meet in the same node/bus/buffer namespace. `clients/web/demo.html` is the live demo; `scripts/smoke-web-components.sh` the scripted acceptance.
+
 ## A JavaScript client (planned)
 
 A JS client mirrors the Python one with **no new native work**: it sits on the

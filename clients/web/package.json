@@ -1,0 +1,22 @@
+{
+  "name": "clausters",
+  "version": "0.3.0",
+  "description": "Clausters in the browser: the audio engine in an AudioWorklet, the GUI host on a canvas, web components that boot standalone bundles — no server process. Seeds the future TypeScript client.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "server.js",
+    "gui.js",
+    "bundle.js",
+    "elements.js",
+    "engine/",
+    "gui-host/",
+    "README.md",
+    "COPYING"
+  ],
+  "license": "GPL-3.0-or-later"
+}

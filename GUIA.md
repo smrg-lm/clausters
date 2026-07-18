@@ -145,6 +145,14 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   del def `default` corriendo en el AudioWorklet; `/status` responde en el log
   de la página y el reloj de samples avanza. Versión scriptada:
   `scripts/smoke-web.sh` (Chrome headless).
+- **El bundle como componente web (paquete `clausters`).**
+  `scripts/smoke-web-components.sh` deja `clients/web` staged con su
+  `bundle-demo`; a mano: `(cd clients/web && python3 -m http.server)` y abrir
+  `http://localhost:8000/demo.html` → el botón power del elemento
+  `<clausters-bundle>` es el gesto → suena el drone y el canvas del GUI queda
+  dentro del elemento; los botones `/status` y `freq +50` hablan por el
+  singleton crudo con el mismo engine (el `/n_set` sube el tono del synth que
+  booteó el elemento — un solo namespace).
 - **Un bundle standalone bootea entero en una pestaña.**
   `scripts/smoke-web-standalone.sh` deja todo armado (builds + bundle demo en
   `clients/gui/web/bundle-demo`); para verlo a mano:
