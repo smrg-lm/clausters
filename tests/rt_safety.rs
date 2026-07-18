@@ -363,8 +363,10 @@ fn spectral_chain_does_not_allocate_on_the_audio_thread() {
     let (mut engine, mut handle) = engine_pair(48_000.0, 2);
     let mut out = vec![0.0f32; BLOCK_SIZE * 2];
 
-    // Sine -> FFT -> PV_BrickWall -> PV_MagAbove -> IFFT -> Out. A 512-point
-    // window with a 128-sample hop, so a transform fires every other block.
+    // Sine -> FFT -> PV_BrickWall -> PV_MagAbove -> PV_Kernel -> IFFT -> Out.
+    // A 512-point window with a 128-sample hop, so a transform fires every
+    // other block. The `PV_Kernel` runs both bin-expression programs (M29) —
+    // its pre-allocated eval stack and the polar phase path included.
     let spec: SynthDefSpec = serde_json::from_str(
         r#"{
             "name": "fftchain",
@@ -374,8 +376,11 @@ fn spectral_chain_does_not_allocate_on_the_audio_thread() {
                  "fft_size": 512, "hop": 0.25, "wintype": 0},
                 {"kind": "PV_BrickWall", "inputs": [{"ugen": 1}, {"const": 0.3}]},
                 {"kind": "PV_MagAbove", "inputs": [{"ugen": 2}, {"const": 0.0}]},
-                {"kind": "IFFT", "inputs": [{"ugen": 3}]},
-                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 4}]}
+                {"kind": "PV_Kernel", "inputs": [{"ugen": 3}, {"const": 0.5}],
+                 "mag_expr": ["mag", "mag", "p0", "ge", "mul"],
+                 "phase_expr": ["phase", 0.1, "add"]},
+                {"kind": "IFFT", "inputs": [{"ugen": 4}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 5}]}
             ]
         }"#,
     )

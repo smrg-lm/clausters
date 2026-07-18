@@ -62,6 +62,7 @@ pub mod fft;
 pub mod measure;
 pub mod osc;
 pub mod peaks;
+pub mod pvprog;
 pub mod registry;
 pub mod rng;
 pub mod scale;

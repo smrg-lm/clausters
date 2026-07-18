@@ -49,6 +49,11 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   `clients/python/examples/spectral_cross.py` → a la derecha se oye el ruido
   vistiendo la envolvente espectral de la melodía (izquierda, seca); en los
   últimos beats el `freeze` congela el acorde final como textura sostenida.
+- **Op espectral escrita por el usuario (expresión de bins).**
+  `clients/python/examples/spectral_kernel.py` → a la izquierda el ruido crudo,
+  a la derecha el gate espectral inclinado (el umbral sube con la frecuencia):
+  queda un residuo oscuro y ralo — una operación que no existe en el catálogo,
+  escrita como expresión con `pv_kernel`.
 - **Convolución particionada (reverb).**
   `clients/python/examples/convolution.py` → a la izquierda el pluck seco, a la
   derecha la cola de reverberación convolucionada (IR de ruido decayente

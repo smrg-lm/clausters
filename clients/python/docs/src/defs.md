@@ -277,6 +277,7 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `pv_mag_freeze(chain, freeze=0)` | hold the stored magnitude envelope while `freeze > 0` (phases keep running) |
 | | `pv_mag_smear(chain, bins=0)` | average each bin's magnitude over `bins` neighbors per side (spectral blur) |
 | | `pv_bin_shift(chain, stretch=1, shift=0)` / `pv_mag_shift(...)` | remap bin positions (complex bins / magnitude envelope only) |
+| | `pv_kernel(chain, mag=None, phase=None, params=())` | apply **user-written bin expressions** to every bin of each fresh frame — see [Writing your own spectral operation](#writing-your-own-spectral-operation) |
 | | `ifft(chain)` | closes a spectral chain (resynthesises audio by overlap-add) |
 | Convolution | `conv(source, kernel, *, fft_size=1024, partitions=16)` | partitioned convolution against a kernel prepared with `gen_buffer(dest, "prepare_partconv", fft_size, ir_bufnum)` (size `dest` with `partconv_frames`); latency `fft_size / 2` samples |
 
@@ -356,6 +357,34 @@ server.u_cmd(synth, fft_index, "window", Window.BLACKMAN)  # swap the FFT window
 ```
 
 where `fft_index` is the FFT's position in the serialized graph. The smoothing windows themselves are shared with the server through the native core — `clausters._native.window(Window.HANN, n)` returns the **same** coefficients the server's FFT applies, so a client that pre-windows audio matches the server bit for bit.
+
+### Writing your own spectral operation
+
+The `pv_*` set above is deliberately **curated** — it grows as parameterized implementations, never as a catalog of near-duplicates. When the operation you want is not there, you usually do not need a new server UGen at all: `pv_kernel` applies **bin expressions you write yourself** to every bin of each fresh frame. The symbolic terms live in `clausters.defs.pv_expr` — `mag`, `phase`, `bin_index`, `nbins`, `binfreq` and `param(i)` — and compose with ordinary Python operators and math methods, the same vocabulary UGen graphs and off-RT values use:
+
+```python
+from clausters.defs import SynthDef, control, fft, ifft, out, pv_kernel, white_noise
+from clausters.defs.pv_expr import mag, bin_index, nbins, param
+
+src = fft(white_noise() * 0.25)
+# A tilted spectral gate: the threshold rises with frequency, so the gate
+# bites harder on the highs. Not in any catalog -- it is just an expression.
+gated = pv_kernel(
+    src,
+    mag=mag * (mag >= param(0) * (1 + 3 * bin_index / nbins)),
+    params=[control("thresh", 0.5)],
+)
+sdef = SynthDef("tiltgate", out(0.0, ifft(gated)))
+```
+
+Each expression maps **one bin's values** — its magnitude, its phase (radians), its index, the bin count, its center frequency, and the `params` signals sampled once per hop — to that bin's new magnitude (`mag=`) or phase (`phase=`). An omitted expression is the identity, and an identity phase keeps each bin's phase *exactly*: a pure magnitude map takes the same cheap scaling path as the built-in `pv_*` filters (a kernel reimplementing `pv_mag_above` renders sample-identically to it — that equivalence is a server test). The client serializes the expression to a small postfix program; the server validates it at `/d_recv` (unknown terms, malformed expressions and out-of-range `param` indices fail the def with `/fail`, never at render time) and interprets it per bin, per frame — pure `f32`, allocation-free, bit-identical between real-time and offline rendering.
+
+**What fits, and what does not.** An expression is a **pure per-bin map**, and that boundary is the design:
+
+- **Fits** — anything that decides each bin from that bin alone: gates and thresholds (fixed, tilted, frequency-dependent via `binfreq`), spectral tilts and shelves, magnitude algebra (compression via `.pow()`, saturation via `.tanh()`), masks over bin ranges (`bin_index`/`nbins` comparisons), phase manipulation (offsets, scrambles deterministic in `bin_index`).
+- **Does not fit** — state across frames (freeze, smear, running averages: use `pv_mag_freeze` / `pv_mag_smear`), moving energy *between* bins (shift, stretch: use `pv_bin_shift` / `pv_mag_shift`), reading another chain (use the two-chain combiners), and whole algorithms with their own structure (convolution is `conv`, with its off-thread kernel preparation — some operations genuinely deserve a dedicated UGen).
+
+Expressions are capped at 256 tokens, and `params` accepts any signal — a control, an LFO, another UGen — so a kernel stays fully modulatable at run time. A commented walk-through is `examples/spectral_kernel.py`.
 
 ### Spec, dump and controls
 

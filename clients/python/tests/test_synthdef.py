@@ -277,6 +277,43 @@ def test_fft_defaults():
     assert f["fft_size"] == 1024 and f["hop"] == 0.5 and f["wintype"] == 0
 
 
+def test_pv_kernel_serializes_bin_expressions():
+    # M29's mechanism: the symbolic per-bin expressions compile to the postfix
+    # token lists the server's PV_Kernel validates; params become inputs 1..
+    # read as p0, p1, ...
+    from clausters.defs import control, fft, ifft, pv_kernel, white_noise
+    from clausters.defs.pv_expr import bin_index, mag, nbins, param, phase, pv_tokens
+
+    # Postfix serialization: operands in order, operator last.
+    assert pv_tokens(mag * (mag >= param(0))) == ["mag", "mag", "p0", "ge", "mul"]
+    assert pv_tokens(phase + 1.5) == ["phase", 1.5, "add"]
+    assert pv_tokens(2.0) == [2.0]
+    assert pv_tokens((bin_index / nbins).sqrt()) == ["bin", "nbins", "div", "sqrt"]
+
+    chain = fft(white_noise())
+    k = pv_kernel(
+        chain,
+        mag=mag * (mag >= param(0)),
+        params=[control("thresh", 1.0)],
+    )
+    spec = SynthDef("kern", out(0.0, ifft(k))).spec()
+    u = next(u for u in spec["ugens"] if u["kind"] == "PV_Kernel")
+    assert u["mag_expr"] == ["mag", "mag", "p0", "ge", "mul"]
+    assert "phase_expr" not in u  # omitted = identity, stays off the wire
+    assert u["inputs"][1] == {"control": 0}  # the threshold parameter
+
+    # An identity kernel serializes with no expression fields at all.
+    plain = SynthDef("idk", out(0.0, ifft(pv_kernel(fft(white_noise()))))).spec()
+    u = next(u for u in plain["ugens"] if u["kind"] == "PV_Kernel")
+    assert "mag_expr" not in u and "phase_expr" not in u
+
+    # A non-numeric operand fails client-side, before anything hits the wire.
+    import pytest
+
+    with pytest.raises(TypeError):
+        mag * "loud"
+
+
 def test_table_oscillators_and_shaper_serialize():
     # S5: the table readers take (bufnum, freq, phase) — bufnum a constant for
     # Osc/OscN, a signal for VOsc — and Shaper maps a signal through a table.

@@ -233,6 +233,7 @@ The `kind` field is an **opaque string** as far as the protocol is concerned: th
 | `PV_MagSmear` | chain, bins | averages each bin's magnitude over `bins` neighbors on each side (`0` is transparent), phases untouched |
 | `PV_BinShift` | chain, stretch, shift | remaps bin `b` to `round(b·stretch + shift)`: colliding bins sum, out-of-range bins are dropped |
 | `PV_MagShift` | chain, stretch, shift | the same remap applied to the magnitude envelope only, over the frame's original phases |
+| `PV_Kernel` | chain, p0, p1, … | applies user-written **bin expressions** to every bin of each fresh frame: static fields `mag_expr`/`phase_expr` are postfix token lists mapping one bin's values to its new magnitude / phase; the variadic `p0…` inputs are parameters the expressions read, sampled at the hop — see the bin-expression note below |
 | `IFFT` | chain | closes a spectral chain: inverse-transforms each fresh frame and overlap-adds it back to audio; `fft_size`/`wintype` are inherited from the chain's `FFT` (given only on the `FFT`) |
 | `Conv` | in, kernel | partitioned convolution against a **prepared** kernel buffer (`/b_gen prepare_partconv`); static fields `fft_size` (transform size; the partition — and intrinsic latency — is `fft_size/2`) and `partitions` (the longest kernel accepted, default 16); see the convolution note below |
 
@@ -290,6 +291,31 @@ carries chain A onward, and whatever `PV_*`/`IFFT` follows reads the combined
 frame. It acts on the blocks chain A has a fresh frame, reading chain B's
 latest frame. The operator is a property of the *name*; all six are one
 server-side implementation.
+
+**Bin expressions (`PV_Kernel`).** The general per-frame mechanism: instead of
+one registered name per spectral operation, `PV_Kernel` interprets a pair of
+**user-written programs** over every bin of each fresh frame. The wire format
+is a **postfix token list** per program, in the static fields `mag_expr` (the
+bin's new magnitude) and `phase_expr` (its new phase):
+
+- a **number** pushes a constant;
+- a **word** is either a per-bin load — `mag`, `phase` (radians), `bin` (the
+  index), `nbins` (`fft_size/2 + 1`), `binfreq` (the bin's center Hz),
+  `p0`…`p31` (the UGen's parameter inputs, sampled at the hop) — or an
+  **operator wire name** from the shared builtins tables (`mul`, `ge`, `max`,
+  `tanh`, `pow`, … — the same names `BinaryOpUGen`/`UnaryOpUGen` accept).
+
+Example — a spectral gate whose threshold is input 1:
+`{"kind": "PV_Kernel", "inputs": [chain, thresh], "mag_expr": ["mag", "mag",
+"p0", "ge", "mul"]}`. An omitted program is the identity; an identity
+`phase_expr` keeps each bin's phase exactly (pure magnitude maps skip the
+polar conversion). The def is validated at `/d_recv` and fails with `/fail`
+on an unknown word, a program whose stack discipline is broken (an operator
+without operands, or a program not netting exactly one value), a `pN` past
+the UGen's parameter inputs, a non-finite constant, or more than 256 tokens.
+A program is a **pure per-bin map** — it cannot read other bins, keep state
+across frames, or move energy between bins; those remain the dedicated
+`PV_MagFreeze`/`PV_MagSmear`/`PV_BinShift` rows above.
 
 **Partitioned convolution (`Conv`).** Convolution is **not** a `PV_*`: fast
 convolution needs zero-padded rectangular segments whose hop is fixed by the

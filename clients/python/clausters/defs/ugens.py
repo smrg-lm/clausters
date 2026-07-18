@@ -582,6 +582,42 @@ def pv_mag_shift(chain, stretch=1.0, shift=0.0) -> Ugen:
     return Ugen("PV_MagShift", [chain, stretch, shift])
 
 
+def pv_kernel(chain, mag=None, phase=None, params=()) -> Ugen:
+    """The general per-frame mechanism: applies user-written **bin
+    expressions** to every bin of each fresh frame. ``mag`` and ``phase`` are
+    symbolic per-bin expressions built from `clausters.defs.pv_expr`'s terms
+    (its ``mag``/``phase``/``bin_index``/``nbins``/``binfreq``/``param``)
+    with ordinary Python operators; each maps one bin's values to that bin's
+    new magnitude / phase. An omitted expression is the identity — and an
+    identity ``phase`` keeps each bin's phase *exactly* (the cheap path: pure
+    magnitude maps skip the polar conversion).
+
+    ``params`` are extra signal inputs (controls, LFOs, constants) the
+    expressions read as ``param(0)``, ``param(1)``, … — sampled once per hop.
+
+    An expression is a **pure per-bin map**: no state across bins or frames,
+    no reading other bins. Gates, tilts, masks and magnitude algebra belong
+    here; freeze/smear (cross-frame state) and shift (bin remaps) stay with
+    the dedicated ``pv_*`` filters. The server validates the program at
+    ``/d_recv`` (stack discipline, parameter arity, unknown words) and
+    rejects a bad def with ``/fail``.
+
+    ```python
+    from clausters.defs.pv_expr import mag, bin_index, nbins, param
+    # A tilted spectral gate: the threshold rises with frequency.
+    chain = pv_kernel(chain,
+                      mag=mag * (mag >= param(0) * (1 + bin_index / nbins)),
+                      params=[control("thresh", 1.0)])
+    ```"""
+    from .pv_expr import pv_tokens
+    static = {}
+    if mag is not None:
+        static["mag_expr"] = pv_tokens(mag)
+    if phase is not None:
+        static["phase_expr"] = pv_tokens(phase)
+    return Ugen("PV_Kernel", [chain, *params], static=static or None)
+
+
 def conv(source, kernel, *, fft_size=1024, partitions=16) -> Ugen:
     """Partitioned convolution: convolves ``source`` with a **prepared**
     kernel — a buffer written by ``server.gen_buffer(dest, "prepare_partconv",

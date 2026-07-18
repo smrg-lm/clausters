@@ -44,10 +44,11 @@
 //! yields the same ids, so RT and NRT renders stay sample-identical.
 
 use clausters_core::fft;
+use clausters_core::pvprog::{BinCtx, PvOp, PvProgram};
 use clausters_core::window::Window;
 
 use crate::dsp::registry::UGenConfig;
-use crate::dsp::{BLOCK_SIZE, ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
+use crate::dsp::{BLOCK_SIZE, MAX_UGEN_INPUTS, ProcessCtx, UGen, UGenCmd, at, ugen_cmd_selector};
 
 /// Default FFT window size when a `FFT`/`IFFT` def omits it. A power of two in
 /// [`fft::SUPPORTED_SIZES`].
@@ -764,6 +765,106 @@ impl UGen for PvBinShift {
                 }
             } else {
                 chain.frame.copy_from_slice(&self.scratch);
+            }
+        }
+        if let Some(o) = output.first_mut() {
+            *o = if chain.ready { 1.0 } else { 0.0 };
+        }
+    }
+}
+
+/// The general per-frame mechanism (`PV_Kernel`): interprets a pair of
+/// compile-validated bin-expression programs (`clausters_core::pvprog`) over
+/// every bin of each fresh frame — magnitude and phase each get one program
+/// mapping `(mag, phase, bin, nbins, binfreq, p0…)` to the bin's new value.
+/// Inputs: `[chain, p0, p1, …]` — the parameters are ordinary signal inputs
+/// sampled at the hop, so they can be controls, LFOs, anything.
+///
+/// An omitted program is the identity, and the identity *phase* program takes
+/// the exact scaling path of the curated magnitude ops (`scale_bin`, no
+/// `atan2`/`cos`/`sin` round trip): a pure magnitude map is both cheap and
+/// bit-identical to a hand-written `PV_*` filter computing the same formula.
+/// The polar phase is only computed when some program actually reads it.
+///
+/// The programs are a **per-bin map** — no state across bins or frames, no
+/// bin remapping. Those stay curated implementations (`PV_MagFreeze`,
+/// `PV_BinShift`, …) per the M27 stance; see `docs/decisions.md`.
+pub struct PvKernel {
+    mag: PvProgram,
+    phase: PvProgram,
+    /// Shared evaluation stack, sized at build to the deeper program.
+    stack: Vec<f32>,
+}
+
+impl PvKernel {
+    pub fn new(config: &UGenConfig) -> Self {
+        let mag = config
+            .mag_prog
+            .clone()
+            .unwrap_or_else(|| PvProgram::identity(PvOp::Mag));
+        let phase = config
+            .phase_prog
+            .clone()
+            .unwrap_or_else(|| PvProgram::identity(PvOp::Phase));
+        let stack = vec![0.0; mag.stack_depth().max(phase.stack_depth())];
+        Self { mag, phase, stack }
+    }
+}
+
+impl UGen for PvKernel {
+    fn process(&mut self, _ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
+        output.fill(0.0);
+    }
+
+    fn process_spectral(
+        &mut self,
+        ctx: &mut ProcessCtx,
+        inputs: &[&[f32]],
+        output: &mut [f32],
+        chain: &mut SpectralChain,
+    ) {
+        if chain.ready {
+            // Parameters: inputs 1.. sampled at the hop (block-rate reads).
+            let mut params = [0.0f32; MAX_UGEN_INPUTS];
+            let n_params = inputs.len().saturating_sub(1);
+            for (p, input) in params.iter_mut().zip(&inputs[1..]) {
+                *p = at(input, 0);
+            }
+            let half = chain.winsize / 2;
+            let hz_per_bin = ctx.sample_rate / chain.winsize as f32;
+            // The identity phase program keeps each bin's phase by *scaling*
+            // the complex pair — exact, and no polar conversion unless a
+            // program reads `phase`.
+            let keep_phase = self.phase.is_identity(PvOp::Phase);
+            let need_phase = !keep_phase || self.mag.uses_phase();
+            for b in 0..=half {
+                let (re, im) = get_bin(&chain.frame, b, half);
+                let mag = (re * re + im * im).sqrt();
+                let bin_ctx = BinCtx {
+                    mag,
+                    phase: if need_phase { im.atan2(re) } else { 0.0 },
+                    bin: b as f32,
+                    nbins: (half + 1) as f32,
+                    binfreq: b as f32 * hz_per_bin,
+                    params: &params[..n_params],
+                };
+                let new_mag = self.mag.eval(&bin_ctx, &mut self.stack);
+                if keep_phase {
+                    if mag > 0.0 {
+                        scale_bin(&mut chain.frame, b, half, new_mag / mag);
+                    } else {
+                        set_bin(&mut chain.frame, b, half, new_mag, 0.0);
+                    }
+                } else {
+                    let new_phase = self.phase.eval(&bin_ctx, &mut self.stack);
+                    set_bin(
+                        &mut chain.frame,
+                        b,
+                        half,
+                        new_mag * new_phase.cos(),
+                        new_mag * new_phase.sin(),
+                    );
+                }
             }
         }
         if let Some(o) = output.first_mut() {

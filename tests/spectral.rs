@@ -551,3 +551,182 @@ fn pv_binshift_moves_the_tone() {
         "shifted tone at {freq} Hz, expected ~1377"
     );
 }
+
+/// M29 `PV_Kernel`: a bin-expression program reproducing a curated op renders
+/// **sample-identically** to the built-in row — the mechanism's acceptance
+/// test. Here `mag * (mag >= p0)` (a spectral gate) against `PV_MagAbove`.
+#[test]
+fn pv_kernel_reproduces_mag_above() {
+    let thresh = 1.0f32;
+    let render = |ugens: Value| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({"name": "k", "ugens": ugens}));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let builtin = render(json!([
+        {"kind": "Sine", "inputs": [{"const": 440.0}]},
+        {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+        {"kind": "PV_MagAbove", "inputs": [{"ugen": 1}, {"const": thresh}]},
+        {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+    ]));
+    let kernel = render(json!([
+        {"kind": "Sine", "inputs": [{"const": 440.0}]},
+        {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+        {"kind": "PV_Kernel", "inputs": [{"ugen": 1}, {"const": thresh}],
+         "mag_expr": ["mag", "mag", "p0", "ge", "mul"]},
+        {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+    ]));
+    assert!(
+        rms(&builtin, 6000, 18000) > 0.3,
+        "the gated tone should survive"
+    );
+    assert_eq!(
+        builtin, kernel,
+        "kernel gate must match PV_MagAbove exactly"
+    );
+}
+
+/// A kernel low pass over the bin index (`mag * (bin < cutoff)`) matches
+/// `PV_BrickWall` sample-for-sample (cutoff precomputed to the builtin's
+/// rounding), and actually removes a high tone.
+#[test]
+fn pv_kernel_reproduces_brick_wall() {
+    let wipe = 0.85f32;
+    let cutoff = (513.0f32 * (1.0 - wipe)).round(); // PV_BrickWall's cutoff
+    let render = |ugens: Value| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let synth = spec_synth(json!({"name": "k", "ugens": ugens}));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 300)
+    };
+    let builtin = render(json!([
+        {"kind": "Sine", "inputs": [{"const": 9000.0}]},
+        {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+        {"kind": "PV_BrickWall", "inputs": [{"ugen": 1}, {"const": wipe}]},
+        {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+    ]));
+    let kernel = render(json!([
+        {"kind": "Sine", "inputs": [{"const": 9000.0}]},
+        {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 1024},
+        {"kind": "PV_Kernel", "inputs": [{"ugen": 1}],
+         "mag_expr": ["mag", "bin", cutoff, "lt", "mul"]},
+        {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+    ]));
+    assert!(
+        rms(&builtin, 6000, 18000) < 0.05,
+        "the brick wall should remove the tone"
+    );
+    assert_eq!(
+        builtin, kernel,
+        "kernel low pass must match PV_BrickWall exactly"
+    );
+}
+
+/// A `PV_Kernel` with no expressions is the identity: the render equals the
+/// bare `FFT`->`IFFT` round trip exactly.
+#[test]
+fn pv_kernel_identity_is_transparent() {
+    let render = |with_kernel: bool| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let ugens = if with_kernel {
+            json!([
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "PV_Kernel", "inputs": [{"ugen": 1}]},
+                {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+            ])
+        } else {
+            json!([
+                {"kind": "Sine", "inputs": [{"const": 440.0}]},
+                {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+                {"kind": "IFFT", "inputs": [{"ugen": 1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+            ])
+        };
+        let synth = spec_synth(json!({"name": "k", "ugens": ugens}));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 200)
+    };
+    assert_eq!(render(false), render(true));
+}
+
+/// The phase path: `phase + pi` flips every bin, so the reconstruction is the
+/// negated round trip (within the polar round-trip tolerance — this path goes
+/// through `atan2`/`cos`/`sin`, unlike the exact magnitude-scaling path).
+#[test]
+fn pv_kernel_phase_program_inverts_with_pi() {
+    let render = |phase_expr: Option<Value>| {
+        let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+        let mut kernel = json!({"kind": "PV_Kernel", "inputs": [{"ugen": 1}]});
+        if let Some(e) = phase_expr {
+            kernel["phase_expr"] = e;
+        }
+        let synth = spec_synth(json!({"name": "k", "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+            kernel,
+            {"kind": "IFFT", "inputs": [{"ugen": 2}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+        ]}));
+        handle.send(add_synth(1, synth)).ok().unwrap();
+        render_channel(&mut engine, 200)
+    };
+    let plain = render(None);
+    let flipped = render(Some(json!(["phase", std::f32::consts::PI, "add"])));
+    let residue = rms(
+        &plain
+            .iter()
+            .zip(&flipped)
+            .map(|(a, b)| a + b)
+            .collect::<Vec<_>>(),
+        4000,
+        12000,
+    );
+    let level = rms(&plain, 4000, 12000);
+    assert!(level > 0.3, "the round trip should carry the tone");
+    assert!(
+        residue < 0.02 * level,
+        "flipped render should negate the plain one: residue {residue} vs level {level}"
+    );
+}
+
+/// The compiler rejects malformed kernel programs with a `/fail`-able error:
+/// unknown words, stack underflow, a program netting two values, and a
+/// parameter index past the UGen's inputs.
+#[test]
+fn compiler_validates_kernel_programs() {
+    let compile = |kernel: Value| {
+        let spec: SynthDefSpec = serde_json::from_value(json!({"name": "bad", "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "FFT", "inputs": [{"ugen": 0}, {"const": 1.0}], "fft_size": 512},
+            kernel,
+            {"kind": "IFFT", "inputs": [{"ugen": 2}]}
+        ]}))
+        .unwrap();
+        clausters::synthdef::compile(spec)
+    };
+    let cases = [
+        json!({"kind": "PV_Kernel", "inputs": [{"ugen": 1}], "mag_expr": ["bogus"]}),
+        json!({"kind": "PV_Kernel", "inputs": [{"ugen": 1}], "mag_expr": ["mul"]}),
+        json!({"kind": "PV_Kernel", "inputs": [{"ugen": 1}], "mag_expr": ["mag", "phase"]}),
+        json!({"kind": "PV_Kernel", "inputs": [{"ugen": 1}], "mag_expr": ["p0"]}),
+        json!({"kind": "PV_Kernel", "inputs": [{"ugen": 1}], "phase_expr": []}),
+        // No chain input at all (the variadic guard).
+        json!({"kind": "PV_Kernel", "inputs": []}),
+    ];
+    for (i, kernel) in cases.into_iter().enumerate() {
+        assert!(compile(kernel).is_err(), "case {i} should fail to compile");
+    }
+    // The valid forms pass: p0 with one parameter input, both exprs given.
+    let ok = json!({"kind": "PV_Kernel",
+        "inputs": [{"ugen": 1}, {"const": 0.5}],
+        "mag_expr": ["mag", "mag", "p0", "ge", "mul"],
+        "phase_expr": ["phase"]});
+    assert!(compile(ok).is_ok());
+}

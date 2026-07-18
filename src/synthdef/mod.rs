@@ -31,7 +31,7 @@ pub mod instance;
 
 use serde::{Deserialize, Serialize};
 
-use clausters_core::builtins;
+use clausters_core::{builtins, pvprog};
 
 use crate::dsp::registry::{
     Arity, DEMAND_SOURCE_SLOT, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
@@ -142,6 +142,54 @@ pub struct UGenSpec {
     /// prepared kernel the instance accepts). Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partitions: Option<usize>,
+    /// `PV_Kernel`: the magnitude bin-expression as a **postfix token list** —
+    /// a number pushes a constant, a word is a per-bin load (`"mag"`,
+    /// `"phase"`, `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`…) or an operator wire
+    /// name from the shared `clausters_core::builtins` tables (`"mul"`,
+    /// `"ge"`, `"tanh"`, …). Omitted means the identity (`["mag"]`). Validated
+    /// at compile time (see `clausters_core::pvprog`). Ignored by every other
+    /// kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mag_expr: Option<Vec<PvTokenSpec>>,
+    /// `PV_Kernel`: the phase bin-expression, same token format as
+    /// `mag_expr`. Omitted means the identity (`["phase"]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase_expr: Option<Vec<PvTokenSpec>>,
+}
+
+/// One wire token of a `PV_Kernel` bin expression: a literal number (pushes a
+/// constant) or a word (a load or an operator name — see
+/// [`clausters_core::pvprog::parse_word`]).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum PvTokenSpec {
+    Num(f32),
+    Word(String),
+}
+
+/// Resolves a `PV_Kernel` token list into a validated program. `what` names
+/// the field for the error message; `n_params` is the UGen's parameter-input
+/// count (inputs past the chain).
+fn compile_pv_expr(
+    tokens: &[PvTokenSpec],
+    n_params: usize,
+    what: &str,
+) -> Result<pvprog::PvProgram, String> {
+    let mut ops = Vec::with_capacity(tokens.len());
+    for t in tokens {
+        ops.push(match t {
+            PvTokenSpec::Num(x) => {
+                if !x.is_finite() {
+                    return Err(format!("{what}: non-finite constant"));
+                }
+                pvprog::PvOp::Const(*x)
+            }
+            PvTokenSpec::Word(w) => {
+                pvprog::parse_word(w).ok_or_else(|| format!("{what}: unknown word '{w}'"))?
+            }
+        });
+    }
+    pvprog::compile(ops, n_params).map_err(|e| format!("{what}: {e}"))
 }
 
 /// An input is a constant, a named control, or the output of an earlier UGen.
@@ -358,6 +406,8 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             hop: u.hop,
             wintype: u.wintype,
             partitions: u.partitions,
+            mag_prog: None,
+            phase_prog: None,
         };
         // Any kind that takes an `fft_size` (the spectral chain's FFT, the
         // partitioned convolver) must name a supported transform size.
@@ -369,6 +419,19 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 u.kind,
                 fft::SUPPORTED_SIZES
             ));
+        }
+        // `PV_Kernel` bin expressions (M29): resolve and validate the postfix
+        // token lists now, so the RT thread only ever runs a program that
+        // passed the stack/arity checks. The parameters a program may read
+        // (`p0`…) are this UGen's inputs past the chain (input 0).
+        let n_params = u.inputs.len().saturating_sub(1);
+        if let Some(tokens) = &u.mag_expr {
+            let what = format!("ugens[{i}] ({}) mag_expr", u.kind);
+            config.mag_prog = Some(compile_pv_expr(tokens, n_params, &what)?);
+        }
+        if let Some(tokens) = &u.phase_expr {
+            let what = format!("ugens[{i}] ({}) phase_expr", u.kind);
+            config.phase_prog = Some(compile_pv_expr(tokens, n_params, &what)?);
         }
 
         let mut inputs = Vec::with_capacity(u.inputs.len());
@@ -410,6 +473,14 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
         // Resolves spectral input `k` to the chain slot it carries.
         let chain_of =
             |k: usize, inputs: &[InputRef], ugens: &[UGenDef]| -> Result<usize, String> {
+                // Guards the variadic spectral kinds (`PV_Kernel`), whose
+                // fixed-arity check above does not run.
+                if k >= inputs.len() {
+                    return Err(format!(
+                        "ugens[{i}] ({}): missing input {k} (the spectral chain)",
+                        u.kind
+                    ));
+                }
                 let InputRef::Wire(w) = inputs[k] else {
                     return Err(format!(
                         "ugens[{i}] ({}): input {k} must be the spectral chain from an earlier \

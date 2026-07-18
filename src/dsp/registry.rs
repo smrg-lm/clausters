@@ -28,8 +28,8 @@ use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sine::Sine;
 use crate::dsp::spectral::{
-    CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvMag, PvMagFreeze,
-    PvMagSmear,
+    CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
+    PvMagFreeze, PvMagSmear,
 };
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{Rate, UGen};
@@ -75,6 +75,12 @@ pub struct UGenConfig {
     /// this instance accepts, sizing its pre-allocated state. Ignored by
     /// every other kind.
     pub partitions: Option<usize>,
+    /// `PV_Kernel`: the compiled magnitude / phase bin-expression programs
+    /// (validated at def compile time from the spec's `mag_expr`/`phase_expr`
+    /// token lists — see `clausters_core::pvprog`). `None` means the identity.
+    /// Ignored by every other kind.
+    pub mag_prog: Option<clausters_core::pvprog::PvProgram>,
+    pub phase_prog: Option<clausters_core::pvprog::PvProgram>,
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -826,6 +832,14 @@ static UGENS: &[UGenDescriptor] = &[
         SpectralRole::Filter,
         |c| Box::new(PvBinShift::new(c, true)),
     ),
+    // M29: the general per-frame mechanism — one UGen interpreting a
+    // compile-validated bin-expression program (`mag_expr`/`phase_expr`) over
+    // every bin of each fresh frame. Inputs: `[chain, p0, p1, …]` (variadic
+    // parameters, sampled at the hop). An op outside the curated set is a
+    // program here, never a new registry row (see docs/decisions.md).
+    desc_spectral("PV_Kernel", Variadic, Kr, R_KR, SpectralRole::Filter, |c| {
+        Box::new(PvKernel::new(c))
+    }),
     // --- partitioned convolution (M28): one UGen, kernel spectra prepared
     //     off the RT thread by `/b_gen prepare_partconv`, MACs spread across
     //     the hop's blocks for flat load. Not a PV_*: fast convolution's

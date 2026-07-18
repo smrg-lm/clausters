@@ -35,6 +35,7 @@ from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
 from .server import Server, ServerInfo, ServerOptions
 from .signals import Signal
 from .synthdef import SynthDef
+from . import pv_expr
 from .ugens import (
     ChannelList,
     Control,
@@ -72,6 +73,7 @@ from .ugens import (
     conv,
     partconv_frames,
     pv_add,
+    pv_kernel,
     pv_bin_shift,
     pv_brick_wall,
     pv_copy_phase,
@@ -142,6 +144,8 @@ __all__ = [
     "pv_mag_smear",
     "pv_bin_shift",
     "pv_mag_shift",
+    "pv_kernel",
+    "pv_expr",
     "conv",
     "partconv_frames",
     "play_buf",

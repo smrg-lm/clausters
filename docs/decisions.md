@@ -908,9 +908,10 @@ evaluated per fresh frame by a tiny stack machine with a pre-allocated stack.
 The user-visible surface is exactly (a)'s algebra — the client composes
 symbolic `mag`/`phase` expressions with the operator overloads it already has
 — but the evaluation strategy is an interpreter inside one UGen, not a new
-compiler rate and not a JIT. Implementation is deferred until a real declined
-op demands it; (b) is not rejected but repositioned as the escalation path
-for kernels that outgrow a per-bin map.
+compiler rate and not a JIT. (b) is not rejected but repositioned as the
+escalation path for kernels that outgrow a per-bin map. The design is
+implemented: `clausters_core::pvprog` (the program + evaluator), the
+`PV_Kernel` row, and the client's `clausters.defs.pv_expr` symbolic terms.
 
 **Decision details with non-obvious context:**
 
@@ -957,13 +958,22 @@ for kernels that outgrow a per-bin map.
   outgrows the map escalates to (b), implemented behind `synth`+`faust` only
   on demonstrated need. Every declined op remains the demand signal; this
   entry records the design so implementation can start the day one arrives.
-- **Sketch kept with the decision** (to fix the shape, not to start work):
-  the evaluator lands in `clausters-core` as a peer of `builtins`; the def
-  carries the program as a static field (it becomes wire surface — version
-  it like the other static fields); one `desc_spectral` registry row
-  (`SpectralRole::Filter`); the Python client grows a symbolic-expression
-  module beside the `pv_*` builders. The acceptance test is the mechanism
-  reproducing curated ops (`PV_BrickWall`, `PV_MagAbove`) sample-identically.
-  Named risks: mag/phase↔re/im conversion cost per hop (consider exposing
-  re/im operands too), the packed layout's real-only dc/nyquist slots, and
-  phase of zero-magnitude bins (NaN discipline).
+- **The implemented shape**: the evaluator lives in `clausters-core` as a
+  peer of `builtins` (`pvprog`); the def carries each program as a postfix
+  token list in static fields (`mag_expr`/`phase_expr` — wire surface,
+  operator *names* crossing the wire like `BinaryOpUGen`'s `op`); one
+  `desc_spectral` row (`SpectralRole::Filter`, the first **variadic**
+  spectral kind — inputs past the chain are the `p0…` parameters); the
+  Python client's `clausters.defs.pv_expr` composes the expressions with the
+  shared `AbstractObject` operators. The acceptance tests are the mechanism
+  reproducing curated ops (`PV_BrickWall`, `PV_MagAbove`)
+  **sample-identically** in `tests/spectral.rs`.
+- **The conversion-cost risks resolved themselves in the identity path**: an
+  identity phase program (the common, pure-magnitude case) keeps each bin's
+  phase by scaling the complex pair — the exact arithmetic of the curated
+  filters, no `atan2`/`cos`/`sin` at all (which is what makes the
+  equivalence tests exact rather than approximate); the polar phase is
+  computed only when a program reads it. The packed layout's real-only
+  DC/Nyquist slots go through the same `get_bin`/`set_bin` accessors as the
+  curated ops (imaginary part dropped there), and a zero-magnitude bin's
+  phase is `atan2(0, 0) = 0` — no NaN can enter the frame.
