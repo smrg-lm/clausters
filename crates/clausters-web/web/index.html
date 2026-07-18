@@ -1,0 +1,88 @@
+<!doctype html>
+<!-- The live harness (the B2 milestone made audible): the engine running in
+     an AudioWorklet on this page, no server process anywhere.
+
+     Run: build with web/build.sh, then
+       (cd web && python3 -m http.server)  and open http://localhost:8000/
+     Press Power (the autoplay gesture), then Sine: a 440 Hz default-def tone
+     from the wasm engine. Status round-trips /status over the MessagePort.
+
+     The scripted counterpart is smoke.html + scripts/smoke-web.sh. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>clausters in a page</title>
+<style>
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 48rem; }
+    button { font: inherit; padding: .4rem 1rem; margin-right: .5rem; }
+    #log { background: #1a1a1a; color: #cfc; padding: 1rem; min-height: 10rem;
+           white-space: pre-wrap; overflow-y: auto; max-height: 24rem; }
+    #clock { font-variant-numeric: tabular-nums; color: #666; }
+</style>
+</head>
+<body>
+<h1>clausters in a page</h1>
+<p>
+    <button id="power" disabled>Power</button>
+    <button id="sine" disabled>Sine</button>
+    <button id="status" disabled>/status</button>
+    <span id="clock"></span>
+</p>
+<pre id="log">loading…</pre>
+<script type="module">
+import { bootClausters } from "./loader.js";
+import { encodeMessage, decodePacket } from "./osc.js";
+
+const $ = (id) => document.getElementById(id);
+const log = (line) => { $("log").textContent += line + "\n"; };
+$("log").textContent = "";
+
+const server = await bootClausters({ channels: 2 });
+server.onReply = (bytes) => {
+    for (const { addr, args } of decodePacket(bytes)) {
+        log(`<- ${addr} ${args.map((a) => JSON.stringify(a)).join(" ")}`);
+    }
+};
+server.onError = (m) => log(`!! worklet error: ${m}`);
+server.onQuit = () => log("!! /quit — engine stopped");
+log(`engine loaded (context ${server.context.sampleRate} Hz, state ${server.context.state})`);
+
+let powered = false;
+$("power").disabled = false;
+$("power").onclick = async () => {
+    powered = !powered;
+    await (powered ? server.resume() : server.suspend());
+    log(`context ${server.context.state}`);
+    for (const id of ["sine", "status"]) $(id).disabled = !powered;
+};
+
+let sineOn = false;
+const SINE_ID = 1000;
+$("sine").onclick = () => {
+    sineOn = !sineOn;
+    if (sineOn) {
+        server.send(encodeMessage("/s_new", [
+            ["s", "default"], ["i", SINE_ID], ["i", 0], ["i", 0],
+            ["s", "freq"], ["f", 440], ["s", "amp"], ["f", 0.2],
+        ]));
+        log(`-> /s_new default ${SINE_ID} (440 Hz)`);
+    } else {
+        server.send(encodeMessage("/n_free", [["i", SINE_ID]]));
+        log(`-> /n_free ${SINE_ID}`);
+    }
+    $("sine").textContent = sineOn ? "Sine off" : "Sine";
+};
+
+$("status").onclick = () => {
+    server.send(encodeMessage("/status"));
+    log("-> /status");
+};
+
+setInterval(async () => {
+    const samples = await server.clock();
+    $("clock").textContent =
+        `sample ${samples} (${(samples / server.context.sampleRate).toFixed(1)} s)`;
+}, 500);
+</script>
+</body>
+</html>

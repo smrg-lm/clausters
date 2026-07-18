@@ -109,9 +109,12 @@ Three properties define the mode:
   the pulled mode trades that guarantee for having no thread of its own.
 
 This is the exact shape the browser build runs (the AudioWorklet is the
-caller; `crates/clausters-web` wraps this type 1:1 as `WebServer`), and it is
-just as usable natively — a plugin process or a test that wants the whole
-protocol in one thread.
+caller; `crates/clausters-web` wraps this type 1:1 as `WebServer`, and its
+`web/worklet.js` + `web/loader.js` are the browser host: the wasm module is
+compiled on the main thread, instantiated synchronously in the worklet, OSC
+bytes travel over the MessagePort — see `crates/clausters-web/web/index.html`
+for a complete page), and it is just as usable natively — a plugin process or
+a test that wants the whole protocol in one thread.
 
 ## Embedding in another process (C ABI)
 

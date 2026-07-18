@@ -138,6 +138,13 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   ramea nodos: el medidor publica avg/peak y `late_blocks` en `/status.reply`;
   al sobrecargar a propósito el servidor **glitchea pero no muere** (el guard de
   SIGXCPU lo degrada a SCHED_OTHER, ver abajo).
+- **El engine suena en el navegador (sin proceso servidor).**
+  `crates/clausters-web/web/build.sh`, después
+  `(cd crates/clausters-web/web && python3 -m http.server)` y abrir
+  `http://localhost:8000/` → Power (el gesto), Sine → se oye el seno de 440 Hz
+  del def `default` corriendo en el AudioWorklet; `/status` responde en el log
+  de la página y el reloj de samples avanza. Versión scriptada:
+  `scripts/smoke-web.sh` (Chrome headless).
 
 ### Con la feature `faust`
 

@@ -1,0 +1,91 @@
+<!doctype html>
+<!-- The B2 acceptance smoke, scripted by scripts/smoke-web.sh under headless
+     Chrome (--autoplay-policy=no-user-gesture-required stands in for the
+     gesture). Asserts, against the engine live in the AudioWorklet:
+       1. a /status round trip over the MessagePort,
+       2. the engine sample clock advancing (the worklet is really pulled),
+       3. an /s_new default sine measurably present at an AnalyserNode.
+     The verdict lands in the DOM/title (parity.html style) and is also
+     beaconed as a fetch of /smoke-verdict-…, so the runner can read it from
+     the HTTP server's access log in real time. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>clausters worklet smoke</title></head>
+<body>
+<pre id="result">running…</pre>
+<script type="module">
+import { bootClausters } from "./loader.js";
+import { encodeMessage, decodePacket } from "./osc.js";
+
+const out = document.getElementById("result");
+const verdict = (text) => {
+    out.textContent = text;
+    document.title = text.split("\n")[0];
+    fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+        .catch(() => {});
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const deadline = (promise, ms, what) => Promise.race([
+    promise,
+    sleep(ms).then(() => { throw new Error(`timeout: ${what}`); }),
+]);
+
+try {
+    const server = await bootClausters({ channels: 2 });
+
+    // Tap the output: worklet -> analyser (already wired to destination).
+    const analyser = server.context.createAnalyser();
+    analyser.fftSize = 2048;
+    server.node.connect(analyser);
+
+    const replies = [];
+    let wake = null;
+    server.onReply = (bytes) => {
+        replies.push(...decodePacket(bytes));
+        wake?.();
+    };
+    const awaitReply = (addr, ms) => deadline((async () => {
+        for (;;) {
+            const i = replies.findIndex((m) => m.addr === addr);
+            if (i >= 0) return replies.splice(i, 1)[0];
+            await new Promise((r) => { wake = r; });
+        }
+    })(), ms, addr);
+
+    await server.resume();
+    if (server.context.state !== "running") {
+        throw new Error(`context did not run: ${server.context.state}`);
+    }
+
+    // 1. /status round trip.
+    server.send(encodeMessage("/status"));
+    const status = await awaitReply("/status.reply", 10000);
+
+    // 2. Clock advance: two round trips through the audio thread; retry
+    //    until the second reads later (paced by real messages, capped).
+    const c0 = await server.clock();
+    let c1 = c0;
+    for (let i = 0; i < 4000 && c1 <= c0; i++) c1 = await server.clock();
+    if (c1 <= c0) throw new Error(`clock stuck at ${c0}`);
+
+    // 3. The sine is present at the analyser.
+    server.send(encodeMessage("/s_new", [
+        ["s", "default"], ["i", 1000], ["i", 0], ["i", 0],
+        ["s", "freq"], ["f", 440], ["s", "amp"], ["f", 0.2],
+    ]));
+    let rms = 0;
+    const wave = new Float32Array(analyser.fftSize);
+    for (let i = 0; i < 100 && rms < 0.01; i++) {
+        await sleep(50);
+        analyser.getFloatTimeDomainData(wave);
+        rms = Math.sqrt(wave.reduce((s, x) => s + x * x, 0) / wave.length);
+    }
+    if (rms < 0.01) throw new Error(`no signal at the analyser (rms ${rms})`);
+
+    verdict(`PASS: /status ${JSON.stringify(status.args)}; ` +
+        `clock ${c0} -> ${c1}; sine rms ${rms.toFixed(3)}`);
+} catch (e) {
+    verdict(`FAIL: ${e}`);
+}
+</script>
+</body>
+</html>

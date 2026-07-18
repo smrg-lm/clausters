@@ -1004,3 +1004,45 @@ f32 ULP at signal scale) on the B0 scene, so the tolerance is three orders
 above the legitimate noise and three below any plausible DSP bug. The harness
 is `scripts/parity-web.sh` (native fixture generator + headless-Chrome page,
 the same scripted-page pattern as the GUI's `web/parity.html`).
+
+## The browser engine is one wasm instance inside the AudioWorklet, spoken to over the MessagePort
+
+Context (the B track): the live browser backend has to host GUI
+components that embed on **arbitrary pages** — documentation sites, notebooks,
+pages we do not control the headers of.
+
+Decision: one wasm instance — OSC translate + engine together — lives inside
+the `AudioWorkletGlobalScope`. OSC bytes travel over the node's MessagePort in
+both directions; commands cross into the engine through the same in-memory
+ring the native embed mode uses (`Segment::in_memory`), and each 128-frame
+render quantum runs one serving turn before its two 64-frame engine blocks
+(the pulled `step()` pacing, tested natively in `tests/headless.rs`).
+
+- **No SharedArrayBuffer, by requirement.** SAB needs COOP/COEP isolation
+  headers, which an embeddable component cannot demand of its host page. The
+  MessagePort path has no header requirement at all. The ring seam keeps a
+  later SAB/wasm-threads build (a zero-message in-page `BusSource`) open as an
+  optimization, not a redesign.
+- **The one relaxation vs. the native RT rules**: OSC→Cmd translation
+  allocates on the worklet (audio) thread. wasm malloc is a bump over linear
+  memory — no page faults, no locks, no priority inversion — and the DSP
+  itself stays allocation-free, so the native no-alloc discipline keeps its
+  value without being extended to a heap that cannot misbehave the same way.
+- **Synchronous instantiation, async compilation.** The main thread
+  `WebAssembly.compileStreaming`s the module and passes it through
+  `processorOptions` (a `WebAssembly.Module` is structured-cloneable); the
+  processor constructor runs wasm-bindgen's `initSync` — the worklet never
+  awaits anything, and is live from its first quantum.
+
+Two findings worth keeping with this record:
+
+- **The worklet scope has no `TextDecoder`**, and the wasm-bindgen glue
+  instantiates one at module-evaluation time. The fix is import order:
+  `worklet.js` imports `worklet-shim.js` (a minimal UTF-8 `TextDecoder`)
+  *before* the glue — ES modules evaluate dependencies in import order, so
+  the shim is installed when the glue's top level runs.
+- **Chrome's `--virtual-time-budget` races timers ahead of the audio clock**,
+  so the B0 parity trick (dump the DOM after a virtual-time budget) cannot
+  drive a smoke that waits on real audio progress. `scripts/smoke-web.sh`
+  instead runs Chrome in real time and has the page beacon its verdict as a
+  `fetch` of `/smoke-verdict-…`, read from the HTTP server's access log.

@@ -80,7 +80,9 @@ cargo build --release --features embed,realtime
 # on wasm32 — no cpal, no libfaust, no sockets. `scripts/check-wasm.sh` gates
 # the lean feature sets on this target; `scripts/parity-web.sh` renders a score
 # through the wasm build (crates/clausters-web) and compares it to the native
-# NRT render. One-time setup: rustup target add wasm32-unknown-unknown, and
+# NRT render; `scripts/smoke-web.sh` runs the live engine in an AudioWorklet
+# under headless Chrome (/status round trip, clock advance, audible sine).
+# One-time setup: rustup target add wasm32-unknown-unknown, and
 # cargo install wasm-bindgen-cli at Cargo.lock's wasm-bindgen version.
 cargo check --lib --target wasm32-unknown-unknown --no-default-features --features synth,embed
 ```

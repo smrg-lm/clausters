@@ -270,7 +270,7 @@ anticipated; that section now points here. The GUI host's browser build
 scope (LLVM JIT — a Faust *interpreter* backend is its own future work), so the
 wasm engine is the `synth,embed` build.
 
-**Topology (decided; record in `docs/decisions.md` when B2 lands):** one wasm
+**Topology (decided; recorded in `docs/decisions.md` with B2):** one wasm
 instance — OSC translate + engine — inside the AudioWorkletGlobalScope, OSC
 bytes over MessagePort both ways, commands through the in-memory ring
 (`Segment::in_memory`). No COOP/COEP requirement (components must embed on
@@ -309,15 +309,22 @@ unnumbered optimization.
   reported not enacted); the wasm shell wraps it 1:1 as `WebServer` with a
   native smoke pulling 128-frame quanta.
 
-- [ ] **B2 — the AudioWorklet backend: the engine live in a page** — the
-  worklet processor module (wasm compiled on the main thread, instantiated
-  synchronously in the worklet via `processorOptions`; `port.onmessage` →
-  `send`; `process()` = step + `process_block` bridged to the 128-frame
-  quantum; replies → `postMessage`), the main-thread loader
-  (AudioContext + resume-on-gesture) and a harness page in
-  `crates/clausters-web/web/`. Acceptance: a `/s_new` sine audible from the
-  harness; a headless-Chrome smoke asserts `/status` round-trip and clock
-  advance.
+- ✅ **B2 — the AudioWorklet backend: the engine live in a page**
+  *(done 2026-07-18)* — `web/worklet.js` (the processor: the wasm module
+  compiled on the main thread, passed through `processorOptions` and
+  instantiated **synchronously** in the constructor via `initSync`;
+  `port.onmessage` → `send` with ordered backpressure retry; each 128-frame
+  quantum one `WebServer.process` call, de-interleaved into the output;
+  replies drained to `postMessage`), `web/worklet-shim.js` (the worklet scope
+  lacks `TextDecoder`; imported before the glue), `web/loader.js`
+  (`bootClausters`: compile + `addModule`, `AudioWorkletNode`, raw
+  `send`/`onReply`/`clock`, `resume()` as the gesture hook), `web/osc.js` (a
+  page-side OSC codec), the audible harness `web/index.html`, and the
+  acceptance `web/smoke.html` + `scripts/smoke-web.sh` under headless Chrome:
+  `/status` round trip over the MessagePort, engine clock advance, and the
+  `/s_new` sine measured at an AnalyserNode (the verdict beaconed through the
+  HTTP access log — real-time audio vs. Chrome's virtual time, see
+  `docs/decisions.md`).
 
 - [ ] **B3 — GuiDef standalone equivalence: a bundle boots in a tab** — a
   wasm-only `ServerLink` variant in the GUI host (outbound OSC to a
