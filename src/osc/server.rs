@@ -114,7 +114,9 @@ pub struct OscServer {
     tcp: Option<crate::osc::tcp::TcpHub>,
     /// WebSocket transport, when `listen_ws` was called: the same OSC encoding
     /// over WebSocket binary messages, reachable from a browser. Multiplexed
-    /// into the same loop as TCP. See [`crate::osc::ws`].
+    /// into the same loop as TCP. See [`crate::osc::ws`]. Native only: on
+    /// wasm32 the engine lives in the page and is fed through the ring.
+    #[cfg(not(target_arch = "wasm32"))]
     ws: Option<crate::osc::ws::WsHub>,
     /// M17 live MIDI input, when `listen_midi` was called: a virtual ALSA port
     /// whose decoded messages the loop drains. See [`crate::midi::live`].
@@ -228,6 +230,7 @@ impl OscServer {
             tap_buf: Vec::new(),
             ipc: None,
             tcp: None,
+            #[cfg(not(target_arch = "wasm32"))]
             ws: None,
             #[cfg(feature = "midi")]
             midi: None,
@@ -409,6 +412,7 @@ impl OscServer {
     /// WebSocket frames every iteration and a connection thread pings our UDP
     /// socket the moment a frame arrives. Returns the bound address; connect a
     /// browser with `ws://<addr>/`.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn listen_ws(&mut self, addr: impl ToSocketAddrs) -> io::Result<SocketAddr> {
         let mut wake_target = self.socket.local_addr()?;
         if wake_target.ip().is_unspecified() {
@@ -576,9 +580,16 @@ impl OscServer {
         }
     }
 
+    /// No WebSocket hub exists on wasm32; the stub keeps the run loop's shape.
+    #[cfg(target_arch = "wasm32")]
+    fn drain_ws(&mut self) -> Flow {
+        Flow::Continue
+    }
+
     /// Handles every complete WebSocket frame currently queued. Same validation
     /// path as UDP (`decode_packet`); WebSocket bytes are untrusted. Replies
     /// route back to the originating connection via [`ClientId::Ws`].
+    #[cfg(not(target_arch = "wasm32"))]
     fn drain_ws(&mut self) -> Flow {
         loop {
             // Scope the `&mut self.ws` borrow so `handle_packet(&mut self)` and
@@ -1703,6 +1714,7 @@ impl OscServer {
         if let Some(hub) = &mut self.tcp {
             gone.extend(hub.take_disconnects().into_iter().map(ClientId::Tcp));
         }
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(hub) = &mut self.ws {
             gone.extend(hub.take_disconnects().into_iter().map(ClientId::Ws));
         }
@@ -2321,6 +2333,7 @@ impl OscServer {
                     hub.reply(id, &bytes);
                 }
             }
+            #[cfg(not(target_arch = "wasm32"))]
             ClientId::Ws(id) => {
                 // Binary-message reply on the originating connection; dropped if
                 // it has since closed.
@@ -2328,6 +2341,9 @@ impl OscServer {
                     hub.reply(id, &bytes);
                 }
             }
+            // No WebSocket hub exists on wasm32; the variant is unreachable.
+            #[cfg(target_arch = "wasm32")]
+            ClientId::Ws(_) => {}
             ClientId::Ring => {
                 // Backpressure, not loss: a full reply ring means the client
                 // stopped draining; dropping the reply is all we can do

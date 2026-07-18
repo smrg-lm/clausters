@@ -15,6 +15,7 @@ use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::conv::Conv;
 use crate::dsp::demand::{Demand, Dseq};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
@@ -576,7 +577,8 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_| Box::new(BufInfo(BufInfoKind::Duration)),
     ),
-    // --- streaming disk I/O (need a path) ---
+    // --- streaming disk I/O (need a path; native only — see dsp::disk) ---
+    #[cfg(not(target_arch = "wasm32"))]
     desc(
         "DiskIn",
         Fixed(1),
@@ -587,6 +589,7 @@ static UGENS: &[UGenDescriptor] = &[
         true,
         |c| Box::new(DiskIn::open(c)),
     ),
+    #[cfg(not(target_arch = "wasm32"))]
     desc(
         "DiskOut",
         Fixed(1),

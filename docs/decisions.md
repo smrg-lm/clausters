@@ -977,3 +977,30 @@ implemented: `clausters_core::pvprog` (the program + evaluator), the
   DC/Nyquist slots go through the same `get_bin`/`set_bin` accessors as the
   curated ops (imaginary part dropped there), and a zero-magnitude bin's
   phase is `atan2(0, 0) = 0` — no NaN can enter the frame.
+
+## Native↔wasm render parity is a tight tolerance, not bit-identity
+
+Context (the B track): the engine compiles to `wasm32` and the B0 acceptance
+compares the wasm render of a score against the native NRT render of the same
+bytes. Two platform facts make strict bit-identity the wrong bar there — and
+only there (same-platform RT ≡ NRT stays bit-exact, unchanged):
+
+- **Different libm implementations.** Native Rust lowers `f64::sin` & co. to
+  the system libm; `wasm32-unknown-unknown` uses Rust's own libm port. The two
+  legitimately round a few ULP apart — the same fact `tests/golden.rs` already
+  records for its cross-platform tolerance. UGens call transcendentals per
+  sample (`Sine` is `phase.sin()`), so the difference is unavoidable without
+  forcing one libm on every target (a rejected option: pinning the Rust libm
+  natively would change the native sample stream and buy nothing users can
+  hear).
+- **No flush-to-zero on wasm.** wasm has no FTZ/DAZ mode, so a render that
+  enters the denormal range diverges from the FTZ-armed native engine. The
+  parity scene is therefore required to be denormal-free (the generator
+  asserts it), which keeps this factor out of the comparison entirely.
+
+The bar chosen: max |delta| ≤ 1e-6 with the bit-exact count reported —
+measured reality is 47990/48000 samples bit-exact and max delta 1.5e-8 (one
+f32 ULP at signal scale) on the B0 scene, so the tolerance is three orders
+above the legitimate noise and three below any plausible DSP bug. The harness
+is `scripts/parity-web.sh` (native fixture generator + headless-Chrome page,
+the same scripted-page pattern as the GUI's `web/parity.html`).

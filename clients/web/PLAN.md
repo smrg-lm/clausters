@@ -113,4 +113,4 @@ Make it a real, shippable client.
 
 - **Node target.** The same package outside the browser (a Node `WebSocket` carrier and the same wasm core) for headless scripting/CI, the way `clients/python` runs without a display.
 - **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning.
-- **Bundled standalone web app.** A built page that boots a GuiDef bundle (the web analogue of `--standalone`) against a remote `--ws` server - no embedded engine in the browser, but a one-file instrument front.
+- **Bundled standalone web app.** A built page that boots a GuiDef bundle (the web analogue of `--standalone`) against a remote `--ws` server - no embedded engine in the browser, but a one-file instrument front. **Update (2026-07-18):** the embedded-engine limitation is being lifted by the server's B track (root `PLAN.md`: wasm engine + AudioWorklet + in-tab bundle boot); B4 seeds the npm package in this directory, which W0 then adopts.

@@ -336,7 +336,9 @@ pub struct Engine {
     reply_tx: Producer<ReplyMsg>,
     counters: Arc<Counters>,
     /// EMA state of the CPU meter (fraction of the block budget, ~1 s time
-    /// constant); published to `counters.avg_cpu` every block.
+    /// constant); published to `counters.avg_cpu` every block. Compiled out
+    /// on wasm32 with the meter itself.
+    #[cfg(not(target_arch = "wasm32"))]
     avg_cpu: f32,
 }
 
@@ -456,6 +458,7 @@ pub fn engine_pair_full(
         events_tx,
         reply_tx,
         counters: Arc::clone(&counters),
+        #[cfg(not(target_arch = "wasm32"))]
         avg_cpu: 0.0,
     };
     let handle = EngineHandle {
@@ -536,7 +539,10 @@ impl Engine {
         debug_assert_eq!(out.len(), BLOCK_SIZE * self.channels);
         // CPU meter start. `Instant::now` is RT-safe on the platforms we
         // target: `clock_gettime(CLOCK_MONOTONIC)` through the vDSO — no
-        // allocation, no lock, no kernel trap.
+        // allocation, no lock, no kernel trap. On wasm32 `Instant::now`
+        // panics (no monotonic clock in the bare target), so the meter is
+        // compiled out and `/status` CPU fields read 0 there.
+        #[cfg(not(target_arch = "wasm32"))]
         let meter_start = std::time::Instant::now();
         self.drain_commands();
         self.flush_pending_garbage();
@@ -625,20 +631,23 @@ impl Engine {
         // CPU meter end: this block's wall time as a fraction of its real-time
         // budget (`BLOCK_SIZE / sample_rate`). Only meaningful when the caller
         // is paced by an audio device; NRT renders just measure render speed.
-        let budget = BLOCK_SIZE as f64 / self.sample_rate as f64;
-        let busy = (meter_start.elapsed().as_secs_f64() / budget) as f32;
-        // EMA with a ~1 s time constant: alpha = block duration / 1 s.
-        self.avg_cpu += (busy - self.avg_cpu) * budget as f32;
-        self.counters
-            .avg_cpu
-            .store(self.avg_cpu.to_bits(), Ordering::Relaxed);
-        // Non-negative floats order like their bit patterns: a bitwise
-        // `fetch_max` is a float max.
-        self.counters
-            .peak_cpu
-            .fetch_max(busy.to_bits(), Ordering::Relaxed);
-        if busy > 1.0 {
-            self.counters.late_blocks.fetch_add(1, Ordering::Relaxed);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let budget = BLOCK_SIZE as f64 / self.sample_rate as f64;
+            let busy = (meter_start.elapsed().as_secs_f64() / budget) as f32;
+            // EMA with a ~1 s time constant: alpha = block duration / 1 s.
+            self.avg_cpu += (busy - self.avg_cpu) * budget as f32;
+            self.counters
+                .avg_cpu
+                .store(self.avg_cpu.to_bits(), Ordering::Relaxed);
+            // Non-negative floats order like their bit patterns: a bitwise
+            // `fetch_max` is a float max.
+            self.counters
+                .peak_cpu
+                .fetch_max(busy.to_bits(), Ordering::Relaxed);
+            if busy > 1.0 {
+                self.counters.late_blocks.fetch_add(1, Ordering::Relaxed);
+            }
         }
     }
 

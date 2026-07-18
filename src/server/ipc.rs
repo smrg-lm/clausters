@@ -40,8 +40,11 @@
 //! server polls the ring on a short socket timeout instead of a semaphore —
 //! documented trade-offs in `docs/ipc.md`.
 
+#[cfg(unix)]
 use std::fs::OpenOptions;
+#[cfg(unix)]
 use std::io;
+#[cfg(unix)]
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};

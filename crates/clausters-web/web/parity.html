@@ -1,0 +1,53 @@
+<!doctype html>
+<!-- Wasm render parity: loads the wasm engine, renders web/score.bin and
+     compares the samples bit-for-bit against web/native.f32 (the native render
+     of the same bytes, written by `cargo run --example gen_parity`).
+
+     Scripted harness: `scripts/parity-web.sh` serves this directory and reads
+     the verdict from the DOM under headless Chrome. Manual run: build with
+     web/build.sh, generate the fixtures, then
+       (cd web && python3 -m http.server)  and open /parity.html.
+
+     The comparison mirrors tests/golden.rs's cross-platform posture: renders
+     on one platform are bit-identical, but native (system libm) and wasm
+     (Rust's libm) round transcendentals a few ULP apart, so the bar is a
+     tolerance (1e-6: well above the observed 1-ULP deltas, well below any
+     DSP bug), with the bit-exact count and max delta reported. -->
+<html lang="en">
+<head><meta charset="utf-8"><title>clausters wasm parity</title></head>
+<body>
+<pre id="result">running…</pre>
+<script type="module">
+const out = document.getElementById("result");
+const verdict = (text) => { out.textContent = text; document.title = text.split("\n")[0]; };
+try {
+    const init = (await import("./clausters_web.js")).default;
+    const { render, abi_version } = await import("./clausters_web.js");
+    await init();
+    const score = new Uint8Array(await (await fetch("./score.bin")).arrayBuffer());
+    const native = new Uint32Array(await (await fetch("./native.f32")).arrayBuffer());
+    const SAMPLE_RATE = 48000, CHANNELS = 2;
+    const rendered = render(score, SAMPLE_RATE, CHANNELS);
+    const bits = new Uint32Array(rendered.buffer, rendered.byteOffset, rendered.length);
+    const nativeF = new Float32Array(native.buffer);
+    if (bits.length !== native.length) {
+        verdict(`FAIL: length ${bits.length} vs native ${native.length}`);
+    } else {
+        const TOLERANCE = 1e-6;   // >> the observed 1-ULP libm deltas, << any DSP bug
+        let exact = 0, maxDelta = 0, worst = -1;
+        for (let i = 0; i < bits.length; i++) {
+            if (bits[i] === native[i]) { exact++; continue; }
+            const d = Math.abs(rendered[i] - nativeF[i]);
+            if (!(d <= maxDelta)) { maxDelta = d; worst = i; }
+        }
+        const stats = `${exact}/${bits.length} bit-exact, max |delta| ${maxDelta}` +
+            (worst >= 0 ? ` at sample ${worst}` : "") + ` (ABI v${abi_version()})`;
+        verdict(Number.isFinite(maxDelta) && maxDelta <= TOLERANCE
+            ? `PASS: ${stats}` : `FAIL: ${stats}`);
+    }
+} catch (e) {
+    verdict(`FAIL: ${e}`);
+}
+</script>
+</body>
+</html>

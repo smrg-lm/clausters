@@ -27,12 +27,18 @@
 
 #![cfg(feature = "embed")]
 
+#[cfg(feature = "realtime")]
 use std::path::Path;
+#[cfg(feature = "realtime")]
 use std::sync::Arc;
+#[cfg(feature = "realtime")]
 use std::sync::atomic::Ordering;
+#[cfg(feature = "realtime")]
 use std::thread::JoinHandle;
 
-use crate::server::ipc::{ABI_VERSION, IpcPeer, Role, Segment};
+use crate::server::ipc::ABI_VERSION;
+#[cfg(feature = "realtime")]
+use crate::server::ipc::{IpcPeer, Role, Segment};
 use crate::server::render::{RenderConfig, Score, render_to_vec};
 
 /// The C ABI version (== the IPC segment layout version).

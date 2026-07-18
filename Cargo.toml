@@ -1,7 +1,12 @@
 [workspace]
 # C0: the server crate is the workspace root (all existing paths stay put);
 # the shared native core and its C ABI live under `crates/`. See clients/PLAN.md.
-members = ["crates/clausters-core", "crates/clausters-ffi", "crates/clausters-midi"]
+members = [
+    "crates/clausters-core",
+    "crates/clausters-ffi",
+    "crates/clausters-midi",
+    "crates/clausters-web",
+]
 resolver = "3"
 
 [package]
@@ -115,12 +120,16 @@ sha2 = "0.10"
 # runtime-reloadable filter the `/verbosity` OSC command swaps.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # WebSocket transport (`osc::ws`): a first-class carrier of the same OSC encoding
-# beside UDP/TCP/shm — the one a browser can reach — so it is always built, like
-# the TCP and shared-memory transports (not behind a feature). Synchronous, no
-# async runtime: the handshake + frame codec over a std `TcpStream`, matching the
-# thread-per-connection model `osc::tcp` uses. Default features only (handshake,
-# no TLS): we serve `ws://`, not `wss://`.
+# beside UDP/TCP/shm — the one a browser can reach — so it is always built on
+# native, like the TCP and shared-memory transports (not behind a feature).
+# Synchronous, no async runtime: the handshake + frame codec over a std
+# `TcpStream`, matching the thread-per-connection model `osc::tcp` uses. Default
+# features only (handshake, no TLS): we serve `ws://`, not `wss://`. Target-gated
+# off wasm32 (its `rand` pulls `getrandom`, which cannot build there): in the
+# browser the engine *is* in the page, so a WebSocket server front is meaningless
+# — the page pushes OSC bytes straight into the in-memory ring.
 tungstenite = "0.21"
 
 [target.'cfg(unix)'.dependencies]

@@ -257,6 +257,80 @@ Section added 2026-07-01. The base UGen set and the node/bus/def machinery are i
 
 - ✅ **S11 — Hop-phase staggering for spectral chains** *(done 2026-07-18)* — de-align the hop blocks of concurrently running `FFT` chains so their transform spikes spread across blocks instead of stacking on one. Today every chain instantiated on the same block hops on the same block: the `bench` spectral section measures 32 aligned 1024-point chains at ~8% average load but ~65% of the block budget on the hop block — the sawtooth worst case. The fix is an initial `since_hop` offset chosen **deterministically per instance** (derived from the node id modulo the hop, quantized to blocks), so RT and NRT stay sample-identical for the same score and a given chain's own analysis is untouched (the hop was always quantized to the processing slice; only *which* block a chain first fires on shifts). Acceptance metric: the peak-block column of `examples/bench.rs` at 32/128 voices approaches `avg + one chain's pair cost`. Document the stagger in `docs/architecture.md` (spectral section) and note the determinism rule next to the NRT sample-identity invariant.
 
+## B track — the engine in the browser (wasm)
+
+Section added 2026-07-18. Compile the engine to `wasm32` and run it **in the
+page** behind an AudioWorklet, so browser GUI components stop needing a native
+server process: first the engine itself (headless, then live), then the GuiDef
+standalone equivalence (a bundle boots entirely in a tab — the browser twin of
+`--standalone`), and only then the web-component packaging as a thin capstone.
+This is the track `clients/gui/PLAN.md`'s "In-browser audio engine" section
+anticipated; that section now points here. The GUI host's browser build
+(G11–G17) is the substrate and stays untouched; the `faust` feature is out of
+scope (LLVM JIT — a Faust *interpreter* backend is its own future work), so the
+wasm engine is the `synth,embed` build.
+
+**Topology (decided; record in `docs/decisions.md` when B2 lands):** one wasm
+instance — OSC translate + engine — inside the AudioWorkletGlobalScope, OSC
+bytes over MessagePort both ways, commands through the in-memory ring
+(`Segment::in_memory`). No COOP/COEP requirement (components must embed on
+arbitrary pages), which rules out SharedArrayBuffer initially; the one
+relaxation vs. native RT rules is that OSC→Cmd translation allocates on the
+worklet thread (wasm malloc is a bump over linear memory — no page faults, no
+priority inversion; DSP itself stays allocation-free). The ring seam keeps a
+later SAB/wasm-threads build (zero-message in-page `BusSource`) open as an
+unnumbered optimization.
+
+- ✅ **B0 — wasm32 build gate + offline render parity** *(done 2026-07-18)* —
+  the engine compiles and renders on `wasm32-unknown-unknown` before any Web
+  Audio work: `tungstenite`/`osc::ws` target-gated off wasm (the one compile
+  blocker), the `Instant` CPU meter and `DiskIn`/`DiskOut` gated, the new
+  workspace member `crates/clausters-web` (the JS door, sibling of
+  `clausters-ffi`'s C door: `abi_version`, `render` over `render_to_vec`,
+  workers = 0), `scripts/check-wasm.sh` as the build gate and
+  `scripts/parity-web.sh` as the acceptance: the wasm render of a
+  denormal-free score matches the native NRT render within 1e-6 (measured
+  max delta 1.5e-8; strict bit-identity is impossible cross-libm — see
+  `docs/decisions.md`).
+
+- [ ] **B1 — the headless live server (pulled mode), natively testable** — a
+  socketless `OscServer` constructor plus a public `step()` (drain the IPC
+  ring + collect NRT results + tick streams) factored out of `run()`; the NRT
+  jobs get an inline mode; stream/timetag time from an injected clock (the
+  engine sample clock on wasm); a supported native embed API in `src/embed.rs`
+  (`ClaustersHeadless`: `send`/`poll_into`/`process_block`/`clock`/`ctl_*`,
+  plus `b_load` for caller-provided samples — the browser's `/b_allocRead`
+  replacement), documented in `docs/using-as-a-library.md`. Native cargo
+  tests drive it end to end; the wasm shell wraps it 1:1.
+
+- [ ] **B2 — the AudioWorklet backend: the engine live in a page** — the
+  worklet processor module (wasm compiled on the main thread, instantiated
+  synchronously in the worklet via `processorOptions`; `port.onmessage` →
+  `send`; `process()` = step + `process_block` bridged to the 128-frame
+  quantum; replies → `postMessage`), the main-thread loader
+  (AudioContext + resume-on-gesture) and a harness page in
+  `crates/clausters-web/web/`. Acceptance: a `/s_new` sine audible from the
+  harness; a headless-Chrome smoke asserts `/status` round-trip and clock
+  advance.
+
+- [ ] **B3 — GuiDef standalone equivalence: a bundle boots in a tab** — a
+  wasm-only `ServerLink` variant in the GUI host (outbound OSC to a
+  page-registered callback; inbound via a `GuiBridge.server_reply`), the
+  streamed data paths (`/c_stream`, `/tap_stream`, `/b_getn`) unchanged over
+  it, and the browser bundle boot (fetch GuiDef + GraphDefs + boot list, the
+  same persisted formats as native `--standalone`, `/sync`-ordered). Sample
+  loading: fetch + `decodeAudioData` → `b_load`. Acceptance: a native-saved
+  standalone bundle runs in a tab with no server process, meters/scopes live.
+
+- [ ] **B4 — web components + the per-page singleton (thin capstone)** — an
+  npm package seeding `clients/web/` (the future W track adopts it): a lazy
+  per-page server singleton (AudioContext + worklet + engine, raw
+  `send`/`onReply` exposed for a future TS client/REPL), custom elements
+  wrapping the GuiBridge canvas in shadow DOM and booting bundles against the
+  singleton, a standard power/play affordance for the autoplay policy.
+  Components interact through the shared node/bus/buffer namespace. Detailed
+  design converges when this milestone starts.
+
 ## Testing strategy
 
 - **Per-UGen unit tests**: offline render of N blocks, asserts on the signal

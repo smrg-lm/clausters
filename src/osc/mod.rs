@@ -6,6 +6,9 @@ pub mod graphdef;
 pub mod server;
 pub mod tcp;
 pub mod translate;
+// The WebSocket hub rides tungstenite, which cannot build for wasm32 (and an
+// in-page engine has no use for a socket server front) — native only.
+#[cfg(not(target_arch = "wasm32"))]
 pub mod ws;
 
 use std::net::SocketAddr;

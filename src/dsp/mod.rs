@@ -26,7 +26,10 @@ pub mod buf;
 pub mod conv;
 #[cfg(feature = "synth")]
 pub mod demand;
-#[cfg(feature = "synth")]
+// Streaming disk I/O owns a background file thread — meaningless on wasm32
+// (no fs, no threads), so the module and its two registry entries are gated
+// off and a def naming `DiskIn`/`DiskOut` fails cleanly as an unknown UGen.
+#[cfg(all(feature = "synth", not(target_arch = "wasm32")))]
 pub mod disk;
 #[cfg(feature = "synth")]
 pub mod envgen;
