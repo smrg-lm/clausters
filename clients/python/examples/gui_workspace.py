@@ -14,8 +14,9 @@ same widget configured down, not separate widgets:
 This example puts all three in one window so the degeneration is visible side
 by side, and prints the ``"view" x y zoom`` events the gestures emit. The view
 state is settable back with `set` (the round trip that lets a script own the
-navigation), which the script demonstrates by recentring the plane after a few
-seconds.
+navigation), which the **reset button** next to the plane demonstrates: its
+press comes in as a ``/gui_event`` and the script answers by putting the view
+back at the origin, zoom 1.
 
 The example **launches its own GUI host** (`GuiHost.boot`) and needs no audio
 server at all: a workspace is pure layout and navigation. Needs a display and a
@@ -36,7 +37,7 @@ Drag and wheel over each of the three panes; every navigation prints here.
 import sys
 import time
 
-from clausters.gui import GuiHost, knob, label, panel, scroll, toggle, window
+from clausters.gui import GuiHost, button, knob, label, panel, scroll, toggle, window
 
 # The plane's content area, in content units (the workspace's own coordinates).
 PLANE_W, PLANE_H = 1600.0, 1200.0
@@ -83,7 +84,10 @@ def horizontal_strip(id: int) -> dict:
 def workspace() -> dict:
     return window(
         panel(2,
-              label(10, "free plane — drag to pan, wheel to zoom", h=20.0),
+              panel(5,
+                    label(10, "free plane — drag to pan, wheel to zoom"),
+                    button(13, label="reset view", w=120.0),
+                    layout="row", h=26.0, margin=0),
               plane(20),
               layout="col", weight=3),
         panel(3,
@@ -104,32 +108,31 @@ def main():
     with GuiHost.boot() as gui:
         gui.define(1, workspace())
         print("drag and wheel over each pane; navigation events print here")
+        print("('reset view' puts the plane back at the origin, zoom 1)")
         print("(close the window to end, or wait ~45 s)")
 
-        # The view is state a script can own: after a few seconds, put the
-        # plane at its centre, zoomed out a little. The same three keys the
-        # gestures emit.
-        recentre_at = time.monotonic() + 5.0
         deadline = time.monotonic() + 45.0
-        recentred = False
         closed = False
 
         while not closed and time.monotonic() < deadline:
             msg = gui.poll(timeout=0.1)
-            if msg is not None:
-                addr, args = msg
-                if addr == "/gui_closed":
-                    print(f"window {args[0]} closed")
-                    closed = True
-                elif len(args) >= 4 and args[1] == "view":
-                    x, y, zoom = args[2], args[3], args[4]
-                    print(f"widget {args[0]}: view x={x:.1f} y={y:.1f} zoom={zoom:.2f}")
-                else:
-                    print(f"event from widget {args[0]}: {args[1:]}")
-            if not recentred and time.monotonic() > recentre_at:
-                gui.set(20, view_x=PLANE_W / 4, view_y=PLANE_H / 4, view_zoom=0.75)
-                print("script recentred the plane")
-                recentred = True
+            if msg is None:
+                continue
+            addr, args = msg
+            if addr == "/gui_closed":
+                print(f"window {args[0]} closed")
+                closed = True
+            elif len(args) >= 4 and args[1] == "view":
+                x, y, zoom = args[2], args[3], args[4]
+                print(f"widget {args[0]}: view x={x:.1f} y={y:.1f} zoom={zoom:.2f}")
+            elif args[0] == 13 and args[1:] == [1]:
+                # The reset button, pressed: the view is state the script owns,
+                # so it answers the event by putting the plane back — the same
+                # three keys the gestures emit.
+                gui.set(20, view_x=0.0, view_y=0.0, view_zoom=1.0)
+                print("view reset to the origin, zoom 1")
+            elif args[0] != 13:
+                print(f"event from widget {args[0]}: {args[1:]}")
 
 
 if __name__ == "__main__":

@@ -193,9 +193,10 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   **scroll vertical** en el medio (`axis="y"`, `zoom=0`) → la rueda desplaza
   hacia abajo y la x nunca se mueve ni cambia la escala; la **tira horizontal**
   abajo (`axis="x"`) → la rueda recorre los compases y frena al final del
-  contenido. Cada gesto imprime `view x= y= zoom=` en la terminal, y a los ~5
-  segundos el script recentra el plano por `/gui_set` (salta a la posición
-  nueva). Girar una perilla dentro de una caja del plano sigue funcionando
+  contenido. Cada gesto imprime `view x= y= zoom=` en la terminal, y el botón
+  **reset view** junto al plano lo devuelve al origen con zoom 1 — el evento
+  del botón llega al script y este responde por `/gui_set` (el round trip que
+  deja la navegación en manos del script). Girar una perilla dentro de una caja del plano sigue funcionando
   (el widget gana el press; el plano solo toma el fondo vacío).
 - **Texto: tamaño, wrap y alineación.** `examples/gui_text.py` abre una
   ventana con el mismo label a `text_size` crecientes (1.0 a 4.0 — el 2.0 es
