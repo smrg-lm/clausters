@@ -1204,3 +1204,27 @@ from any client, and allocates them from a dedicated window:
 
 The same reasoning will apply to any future host-managed spawner (an XY pad
 playing voices, a drum grid): reuse this window, not a new one per widget.
+
+## EnvGen: a gate already closed at the first sample is a release, not a wait
+
+Context (found through the piano widget, but a server-wide property): a live
+client's note-on (`/s_new … gate 1`) and its note-off (`/n_set … gate 0`) can
+land in the **same command drain** — the engine drains the whole FIFO at block
+start, and both messages may have accumulated during one audio callback
+interval (a PipeWire quantum is ~20 ms; any note shorter than that can lose
+the race). The gate control is then already `0` before the node's first block,
+so the envelope never sees a rising *or* falling edge. The old behavior played
+the attack/decay anyway and **sustained forever on a closed gate** — a stuck,
+audible node whose tree entry even shows `gate: 0`.
+
+Decision: `EnvGen` treats a gate found already closed **on its very first
+sample** as a release edge from `initLevel` — the envelope plays the release
+segment out (silently, from the initial level) and finishes, so the
+`doneAction` still frees the node. scsynth instead holds such an envelope at
+`initLevel` waiting for the gate — silent, but the node leaks the same way;
+live clients there avoid the race with timetagged bundles, which an
+interactive keyboard cannot use. The one pattern this forgoes — spawning a
+voice with `gate 0` to open later — still works while the release tail lasts
+(the rising gate retriggers from `initLevel`), and beyond that was never
+reliable against `FREE_SELF` anyway. Guarded by
+`tests/envgen.rs::gate_already_closed_at_the_first_block_releases_and_frees`.

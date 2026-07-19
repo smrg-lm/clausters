@@ -2152,6 +2152,47 @@ mod tests {
     }
 
     #[test]
+    fn piano_glissando_across_two_keys_releases_each_left_key() {
+        // A glissando spanning more than one crossing: every key left behind
+        // must get its note-off, and the final release offs the last key only.
+        let (mut host, l) = piano_host("");
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 712, 132);
+        let c = piano::key_rect(&l, 60).unwrap();
+        g.press(
+            &mut host,
+            &ctx,
+            (c.x + c.w * 0.5) as f64,
+            (c.y + c.h - 1.0) as f64,
+            &mut || false,
+        );
+        let d = piano::key_rect(&l, 62).unwrap();
+        g.drag_to(
+            &mut host,
+            &ctx,
+            (d.x + d.w * 0.5) as f64,
+            (d.y + d.h * 0.5) as f64,
+        );
+        let e = piano::key_rect(&l, 64).unwrap();
+        let effects = g.drag_to(
+            &mut host,
+            &ctx,
+            (e.x + e.w * 0.5) as f64,
+            (e.y + e.h * 0.5) as f64,
+        );
+        let notes = note_emits(&effects);
+        assert_eq!(notes.len(), 2, "second crossing: one off, one on");
+        assert_eq!((notes[0].0, notes[0].2), (62, 0), "the key left is 62");
+        assert_eq!((notes[1].0, notes[1].2), (64, 1));
+        assert_eq!(piano_pressed(&host), vec![64]);
+        let effects = g.release(&mut host, &ctx, e.x as f64, e.y as f64);
+        let notes = note_emits(&effects);
+        assert_eq!(notes.len(), 1);
+        assert_eq!((notes[0].0, notes[0].2), (64, 0));
+        assert!(piano_pressed(&host).is_empty());
+    }
+
+    #[test]
     fn piano_fixed_velocity_and_grayed_keys() {
         // A fixed velocity overrides the press-height map.
         let (mut host, l) = piano_host(r#","velocity":90"#);

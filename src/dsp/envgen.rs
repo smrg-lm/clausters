@@ -26,6 +26,10 @@ pub struct EnvGen {
     current_segment: usize,
     segment_phase: usize,
     gate_prev: f32,
+    /// Whether any sample has been processed yet. The gate's state at birth is
+    /// only knowable on the first sample, and a gate *already* closed there
+    /// counts as a release edge (see the comment at the edge detection).
+    primed: bool,
     /// Set once the gate falls; cleared on a fresh trigger. Distinguishes
     /// "sustaining, waiting for release" from "released, playing out".
     released: bool,
@@ -47,6 +51,7 @@ impl EnvGen {
             current_segment: 0,
             segment_phase: 0,
             gate_prev: 0.0,
+            primed: false,
             released: false,
             finished: false,
             start_level: 0.0,
@@ -91,7 +96,17 @@ impl UGen for EnvGen {
             let time_scale = at(inputs[3], i);
 
             let trig = gate > 0.0 && self.gate_prev <= 0.0;
-            let release_edge = gate <= 0.0 && self.gate_prev > 0.0;
+            // A falling gate releases — and so does a gate found *already*
+            // closed on the very first sample. A live client's note-on and
+            // note-off can land in the same command drain (both applied
+            // before the node's first block), so the envelope never sees an
+            // edge; without this it would play its segments and sustain
+            // forever on a closed gate — a stuck, audible node. Born
+            // released, it plays the release segment from the initial level
+            // and finishes, so the done action still frees the node.
+            let born = !self.primed;
+            self.primed = true;
+            let release_edge = gate <= 0.0 && (self.gate_prev > 0.0 || born);
             self.gate_prev = gate;
 
             if trig {
@@ -103,6 +118,11 @@ impl UGen for EnvGen {
                 self.last_val = self.start_level;
             } else if release_edge && !self.finished {
                 self.released = true;
+                if born {
+                    // Never triggered: the level "reached so far" is the
+                    // envelope's initial level.
+                    self.last_val = at(inputs[5], i);
+                }
                 if has_release {
                     // Resume from the release segment, starting at the level
                     // reached so far (which may be mid-sustain-decay).

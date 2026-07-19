@@ -179,6 +179,50 @@ fn gate_sustains_at_the_release_node_then_releases() {
 }
 
 #[test]
+fn gate_already_closed_at_the_first_block_releases_and_frees() {
+    // The stuck-voice race: a note-on (/s_new, gate 1) and its note-off
+    // (/n_set gate 0) applied in the same command drain, before the node's
+    // first block. The envelope never sees a gate edge — it must count the
+    // gate found closed at birth as a release, play the release segment out
+    // silently and let the done action free the node, instead of playing the
+    // full envelope and sustaining forever on a closed gate.
+    let spec = envgen_spec(
+        0.0,
+        2.0, // freeSelf
+        2.0,
+        -1.0,
+        &[
+            [1.0, secs(64), 1.0, 0.0],
+            [0.5, secs(64), 1.0, 0.0],
+            [0.0, secs(64), 1.0, 0.0],
+        ],
+    );
+    let (mut engine, mut handle) = spawn(spec);
+    // The note-off lands in the same drain as the add, before any block runs.
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value: 0.0,
+        })
+        .ok()
+        .unwrap();
+    // Born released from level 0: the release segment (64 samples) is silent.
+    let out = render(&mut engine, 1);
+    for (i, s) in out.iter().enumerate() {
+        assert!(s.abs() < 1e-6, "born-released sample {i}: {s} != 0.0");
+    }
+    // The segment completes in block 2 (freed at its end); block 3 observes
+    // the now-empty tree in the published counter.
+    render(&mut engine, 2);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        0,
+        "the never-heard voice freed itself"
+    );
+}
+
+#[test]
 fn done_action_free_self_frees_the_node() {
     // A one-shot envelope with doneAction = 2 (freeSelf): when the segment
     // ends the engine frees the node.
