@@ -35,7 +35,7 @@ See [Routines and clocks](routines-and-clocks.md) for driving these directly —
 - Both families are built **instance-based, with no global build context**, and both instantiate as ordinary nodes in the same tree.
 - `Node`/`Bus`/`Buffer` handles and their allocators.
 - `clocksync` — models the server's sample clock over UDP (`Server.sample_clock()`) for drift-free `/sched` timing without shared memory.
-- `Server` — **owns the communication interface and emits.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.
+- `Server` — **owns the communication interface and emits through it.** Swapping its interface retargets a routine from a live RT server to an NRT score without touching the clock or the routine. Interfaces include `OscUdpInterface`, `OscTcpInterface` (length-prefixed OSC; start the server with `--tcp`), and `OscWsInterface` (OSC over WebSocket, the browser-reachable transport; start the server with `--ws`), all drop-in.
 
 See [Defining instruments: FaustDef and SynthDef](defs.md) for the full def-building vocabulary — every `signals` / `ugens` callable, how the two def kinds differ, and how a def is sent behind the `/sync` barrier.
 

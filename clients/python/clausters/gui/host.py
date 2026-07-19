@@ -140,7 +140,7 @@ class GuiHost:
 
     def close(self, id: int):
         """Close a window opened with `open` (or any widget subtree): ``/gui_free``
-        destroys the subtree and, for a ``window`` root, its OS window. The
+        frees the subtree and, for a ``window`` root, its OS window. The
         counterpart to `open`; `set` edits a window in between."""
         self.free(id)
         self._open.discard(id)
@@ -191,7 +191,7 @@ class GuiHost:
         self._osc.send_msg(self.target, "/gui_set", id, *args)
 
     def free(self, id: int):
-        """``/gui_free <id>`` — destroy a widget and its subtree."""
+        """``/gui_free <id>`` — free a widget and its subtree."""
         self._osc.send_msg(self.target, "/gui_free", id)
 
     def bind(self, id: int, address: str, *prefix):

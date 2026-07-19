@@ -85,7 +85,7 @@ The rule behind everything: **memory is allocated on the network (or NRT / compi
 
 Two shared structures cross threads without the FIFOs:
 
-- **Control buses**: 1024 atomics (`dsp::ControlBuses`). Immediate `/c_set` and `/c_get` are served directly on the network thread; the audio thread reads them through `InCtl`. A *scheduled* `/c_set` must land on its exact sample, so it travels as `Cmd::SetControlBus` instead. With an IPC segment the backing array lives in shared memory: other processes write the same atomics.
+- **Control buses**: `--control-buses` atomics, 16384 by default (`dsp::ControlBuses`). Immediate `/c_set` and `/c_get` are served directly on the network thread; the audio thread reads them through `InCtl`. A *scheduled* `/c_set` must land on its exact sample, so it travels as `Cmd::SetControlBus` instead. With an IPC segment the backing array lives in shared memory: other processes write the same atomics.
 - **Audio taps**: single-channel sample rings in the IPC segment (`--taps` × `--tap-frames`; segment ABI v3). `/tap` sends `Cmd::SetTap`, which flips an entry in the engine's pre-allocated tap table; at the end of every block the audio thread appends each routed bus's block to its ring — one `memcpy` plus one Release store per tap, then the clock store, so a reader that sees clock N sees block N. Readers (the GUI host's oscilloscope over shared memory, `/tap_stream` on the network thread) copy the newest window lock-free with a cursor double-check; `tests/rt_safety.rs` guards the write.
 - **Buffers**: `Arc<Buffer>`, **immutable once installed**. The NRT thread builds them, `Cmd::SetBuffer` swaps them into the engine pool, the replaced `Arc` returns as `Garbage::FreedBuffer`. "Mutating" commands (`/b_zero`, `/b_read` into an existing buffer, `/b_gen` filling a wavetable) build a replacement instead of touching shared memory. The network thread keeps a mirror for `/b_query`/`/b_write` and for validation.
 
@@ -196,7 +196,7 @@ The delay is **block-rate**, not sample-accurate: a one-channel loop is a comb r
 
 ## The frequency-domain chain (`FFT`/`PV_*`/`IFFT`)
 
-Spectral processing (`src/dsp/spectral.rs`) is the second consumer of synth-private state, and a second kind of "not every block": the **frame rate (`fr`)**. An `FFT` opens a chain, `PV_*` UGens transform the frame, an `IFFT` closes it back to audio. Like the demand (`dr`) sub-list, this is not block-execution as usual — but where `dr` is a *pull*, `fr` is a **hop gate**: `FFT` emits one spectral frame every hop's worth of input samples, and the `PV_*`/`IFFT` only do work on the slices a fresh frame is ready.
+Spectral processing (`src/dsp/spectral.rs`) is the second consumer of synth-private state, and a second kind of "not every block": the **frame rate (`fr`)**. An `FFT` opens a chain, `PV_*` UGens transform the frame, an `IFFT` closes it back to audio. Like the demand (`dr`) sub-list, this is not block-execution as usual — but where `dr` is a *pull*, `fr` is a **hop gate**: `FFT` emits one spectral frame every hop's worth of input samples, and the `PV_*`/`IFFT` only do work on the slices where a fresh frame is ready.
 
 The chain UGens share one **`SpectralChain`** — the packed complex frame (`[dc, nyquist, re₁, im₁, …]`, the `clausters_core::fft::rfft_into` layout), a `ready` flag, and the hop `advance`. It is synth-private scratch in `UGenSynth::chains`, allocated at instantiation and persistent across blocks, exactly like the feedback `locals`. Each spectral UGen carries a compile-assigned **chain slot**: the `FFT` (`SpectralRole::Source`) gets a fresh slot, recorded in `SynthDef::spectral_sizes`; each `PV_*`/`IFFT` (`Filter`/`Sink`) follows its input-0 wire back to the upstream spectral UGen and **inherits** that slot (and window size, so the size is given only on the `FFT`). `UGenSynth::process` special-cases `ExecMode::Spectral` — it resolves the slot and calls `UGen::process_spectral(ctx, inputs, output, &mut self.chains[slot])`; the wire between the UGens only enforces topological order (`chains` is a distinct field from `ugens`, so both borrow mutably at once). This is the same "synth-coordinated execution" mechanism as `LocalIn`/`LocalOut` and the demand driver, generalized: the small closed set of `ExecMode`s the engine special-cases.
 
@@ -362,7 +362,7 @@ looks for:
 - **Edit-back is a payload, not an address.** A view that writes data back emits
   `/gui_event <id> <tag> <flat values…>` — `"points"` for a curve, `"clip"` for a
   placement, `"wire"` for a connection. The widget tree stays the source of truth
-  on the host side; the script's model stays it on the other.
+  on the host side; the script's model remains the source of truth on the other.
 
 ### Adding a widget
 

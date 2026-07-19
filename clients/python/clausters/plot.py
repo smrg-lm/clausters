@@ -143,7 +143,7 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
             ``win.set(ruler=...)``.
         ruler_y: ``"off"`` hides the value-axis strip (shown by default).
         label: the plot's label strip (defaults to something sensible per
-            kind: the def's name, ``expr``, ``buffer <n>``, ``env``, an
+            kind — the def's name, ``expr``, ``buffer <n>``, ``env``, an
             automation's control name, ``sequence``).
         title: the window title (defaults to the label).
         w: window width in px.

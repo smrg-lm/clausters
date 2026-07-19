@@ -228,7 +228,7 @@ Two layers, decided with the user:
   there, by the same path as a fresh `/d_recv`/`/d_faust`. The `FaustDef` itself
   is never serialized — its factory is opaque LLVM JIT state.
 - **A — the LLVM bitcode cache is non-authoritative.** `faustdefs/<name>.<sha16>.bc`
-  is restored only if the libfaust version matches and the file reads well; any
+  is restored only if the libfaust version matches and the file reads cleanly; any
   miss recompiles from source and rewrites it. A libfaust upgrade invalidates
   every `.bc` automatically, and a corrupt cache never serves a wrong def
   (named by payload sha, so a stale `.bc` never pairs with a newer record).
@@ -629,7 +629,7 @@ only when *that* boundary changes incompatibly, and both are advertised by
 runtime calls (`clausters_abi_version()`, `clausters_core_abi_version()`) that a
 peer checks on attach/load, refusing to connect on a mismatch.
 
-**Why.** A binary boundary needs a check that a *already-compiled* peer can make
+**Why.** A binary boundary needs a check that an *already-compiled* peer can make
 at runtime, before it trusts a single byte of layout — SemVer strings cannot do
 that job, and the two boundaries evolve on independent cadences (the core FFI is
 already at v9 while the embed/IPC ABI is at v3). A monotonic integer per

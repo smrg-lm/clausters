@@ -62,7 +62,7 @@ grouped by audience.
 workers = 0              # DSP worker threads; 0 lets the server choose
 sample_rate = 48000      # imposed output rate in Hz; 0 follows the device
 audio_buses = 128        # audio bus count
-control_buses = 1024     # control bus count
+control_buses = 16384    # control bus count
 taps = 8                 # audio-tap rings for oscilloscopes; 0 disables
 tap_frames = 16384       # per-tap ring capacity in samples (a power of two)
 persist = true           # persist/reload defs; false is like --no-persist
@@ -92,7 +92,7 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 #                        # false disables it, a port number moves it
 # ws = true              # the front's WebSocket leg (off by default): true for
 #                        # port 57220, or a port number — browser-reachable,
-#                        # the same toggle the server's ws key is
+#                        # the same toggle as the server's ws key
 # max_frame = 16777216   # largest OSC frame on the stream legs (TCP and
 #                        # WebSocket), in bytes
 # server = "127.0.0.1:57110"  # also attach the client leg to this audio server

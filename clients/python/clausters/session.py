@@ -150,7 +150,7 @@ class Session(Environment):
                 attaches only, never launching a process.
             options: a `clausters.defs.ServerOptions` — the enumeration of
                 **every** option a launched server takes (sizing *and*
-                behavior: transports, MIDI, persistence, workers, ...) —
+                behavior — transports, MIDI, persistence, workers, ...) —
                 sizing this client's allocators alike; ``None`` uses the
                 defaults.
             shm: the shared-memory segment for a launched server — ``"auto"``

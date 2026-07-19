@@ -58,7 +58,7 @@ The `-n` variants address **consecutive** controls in one message, for defs with
 
 ### `/s_noid` and `/n_trace`
 
-`/s_noid id...` exists for scsynth compatibility. In scsynth it releases integer node IDs back to the pool; Clausters assigns IDs per client (auto IDs come from a reserved server range) and never reuses a live or freed ID under a new node, so there is nothing to release — the command validates the IDs name live synths and replies `/done`. `/n_trace id...` is a debug aid: it logs each node's current control values (or a group's children) to the server console through the `clausters::osc` trace target, no OSC reply (matching scsynth's console trace).
+`/s_noid id...` exists for scsynth compatibility. In scsynth it releases integer node IDs back to the pool; Clausters assigns IDs per client (auto IDs come from a reserved server range) and never reuses a live or freed ID under a new node, so there is nothing to release — the command validates that the IDs name live synths and replies `/done`. `/n_trace id...` is a debug aid: it logs each node's current control values (or a group's children) to the server console through the `clausters::osc` trace target, no OSC reply (matching scsynth's console trace).
 
 ### Pausing and resuming nodes (`/n_run`)
 
@@ -269,7 +269,7 @@ The tables are open — a new operator is one more `clausters_core::builtins` en
 **Frequency-domain chain (`FFT`/`PV_*`/`IFFT`).** Spectral processing bookends a
 chain of `PV_*` (phase-vocoder) UGens between an `FFT` and an `IFFT`: `FFT`
 windows an audio input and transforms it to a complex frame once per **hop**;
-each `PV_*` mutates that frame (only on the blocks a fresh one is ready); `IFFT`
+each `PV_*` mutates that frame (only on the blocks where a fresh one is ready); `IFFT`
 inverse-transforms and overlap-adds it back to audio. Wire them in order —
 `FFT`'s output feeds the first `PV_*`, whose output feeds the next, and the last
 feeds `IFFT` — exactly like scsynth's chain. A def may of course also feed
@@ -288,7 +288,7 @@ A **two-chain combiner** (`PV_Add`/`PV_Mul`/`PV_Min`/`PV_Max`/`PV_MagMul`/
 the **same `fft_size`**, and **distinct** (the same chain on both sides fails
 the def). The result lands in **chain A** (input 0): the combiner's output wire
 carries chain A onward, and whatever `PV_*`/`IFFT` follows reads the combined
-frame. It acts on the blocks chain A has a fresh frame, reading chain B's
+frame. It acts on the blocks where chain A has a fresh frame, reading chain B's
 latest frame. The operator is a property of the *name*; all six are one
 server-side implementation.
 

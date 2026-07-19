@@ -25,7 +25,7 @@ adding a widget are in [Architecture](architecture.md).
 |---|---|
 | `/gui_def id json [blob…]` | Build a whole widget tree in one message. `json` is the GuiDef document (below); trailing blobs carry bulk data a widget references by index. Re-sending an existing id **redefines** it (the old subtree is freed first), exactly as re-sending a `SynthDef` replaces it. |
 | `/gui_set id key value …` | Update one live widget's properties. Types are preserved (an OSC int stays an int). A value that is logically an array (a curve's break-points, a patch's wires) rides as its **JSON string**, since an OSC key/value is a scalar. |
-| `/gui_free id` | Destroy a widget and its subtree. Freeing a `window`-rooted def closes its window. |
+| `/gui_free id` | Free a widget and its subtree. Freeing a `window`-rooted def closes its window. |
 | `/gui_query id` | Ask for a widget's state. Replies `/gui_info id type key value …`; an **empty type** (`""`) means no such widget — the host answers either way, as the audio server replies even on a miss. |
 | `/gui_bind id "server" address prefix…` | Forward this widget's value **straight to the audio server**, bypassing the script: on every change the host sends `address` with the fixed `prefix` arguments followed by the value (e.g. `"/n_set" 1001 "freq"` makes the widget send `/n_set 1001 freq <value>`). A bound widget stops emitting `/gui_event`. |
 | `/gui_bind id` | (no target) Remove the binding; the widget emits events again. |

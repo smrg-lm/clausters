@@ -1,6 +1,6 @@
 # Clausters
 
-Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a real-time audio synthesis server controlled over **OSC** (UDP, default port `127.0.0.1:57110`). A single process opens the audio device, keeps a tree of nodes (synths and groups), and receives OSC commands to create and destroy synths, set parameters, manage buses and buffers — all with sample-accurate scheduling.
+Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a real-time audio synthesis server controlled over **OSC** (UDP, default port `127.0.0.1:57110`). A single process opens the audio device, keeps a tree of nodes (synths and groups), and receives OSC commands to create and free synths, set parameters, manage buses and buffers — all with sample-accurate scheduling.
 
 It is **conceptually compatible** with scsynth (same node-tree model, the same `/s_new`, `/n_set`, `/c_set`, `/b_*` commands) but uses its own def formats instead of the binary `.scsyndef`. Its main addition over scsynth is the **FaustDef** — a synth definition written in [Faust](https://faust.grame.fr/) and JIT-compiled by the server — as an alternative to SuperCollider's UGen graphs, which Clausters also supports through its own JSON SynthDef format.
 

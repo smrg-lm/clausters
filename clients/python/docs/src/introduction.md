@@ -10,7 +10,7 @@ This is the **package documentation**. The server itself — the OSC protocol, t
 ## Components
 
 - A **server-agnostic** timing and value layer (`clausters.base`): scalar/list math backed by the same core the server uses (so results match by construction), operator overloading, the `Routine`/`yield` coroutine layer, a `TempoClock` that does timing only, and a choice of timebase (monotonic or the server's sample clock).
-- **Definitions and server resources** (`clausters.defs`): the UGen graph (`ugens` + `SynthDef`) and `FaustDef` (from `signals`, from `boxes`, or from Faust source), plus the `Node`/`Bus`/`Buffer` handles. The `Server` owns the communication interface and emits — swap its interface to retarget the *same* code from a live RT take to an offline NRT score.
+- **Definitions and server resources** (`clausters.defs`): the UGen graph (`ugens` + `SynthDef`) and `FaustDef` (from `signals`, from `boxes`, or from Faust source), plus the `Node`/`Bus`/`Buffer` handles. The `Server` owns the communication interface and emits through it — swap its interface to retarget the *same* code from a live RT take to an offline NRT score.
 - **Sequencing** (`clausters.seq`): `Event`, the value patterns (`Pseq`, `Pwhite`, `Pseries`, ...) and `Pbind`, and `EventStreamPlayer`, with yield-exact timing.
 - **Ergonomic defaults without global state** (`clausters.Session`): bundles a `Server` and a clock; several sessions (e.g. an offline one for plots next to a live one) coexist in one script.
 - **The ambient verbs** (`play` / `plot` / `render`, plus the live `scope`): one free-standing entry each for sounding, showing and bouncing whatever you have — an event, a pattern, a bare signal expression, a def, a timeline, a buffer — resolved against the ambient session.

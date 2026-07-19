@@ -17,7 +17,7 @@ The engine (`server::engine`) knows nothing about the audio backend: it processe
 | `realtime` | yes | the cpal backend (the live server). Disable it for offline/embedded use with no audio device. |
 | `pipewire` | yes | native PipeWire audio backend on Linux/BSD via cpal's pipewire host. `cpal::default_host()` prefers PipeWire, falling back to ALSA at runtime, so no code changes. Default (the binary hard-links `libpipewire`); drop it with `--no-default-features` for a plain-ALSA build. Building it needs `libpipewire-0.3-dev` and `clang`. |
 | `midi-jack` | no | routes live MIDI through midir's JACK backend instead of ALSA seq (needed on PipeWire systems — the ALSA-seq backend panics on the timestamp of events bridged from PipeWire). Building it needs `libjack-jackd2-dev`. |
-| `faust` | no | the FaustDef family: libfaust embedding (Box API + LLVM JIT, `/d_faust`). Needs libfaust built with the LLVM backend — see [Contributing](contributing.md). |
+| `faust` | yes | the FaustDef family: libfaust embedding (Box API + LLVM JIT, `/d_faust`). Needs libfaust built with the LLVM backend — see [Contributing](contributing.md). |
 | `embed` | no | the C ABI (`clausters_*` exports) for embedding the server in another process — see [Local transports & embedding](ipc.md). |
 
 ## Offline rendering (the simplest entry point)

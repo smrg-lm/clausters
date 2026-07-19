@@ -231,8 +231,8 @@ class Generator(Element):
         controls: control values for a logical-graph member — numbers, an
             internal-bus name (a ``str`` matching a `Group` bus), or ``"OUT"``
             (hardware). Used by `Group.to_graphdef`.
-        maps: control-bus bindings for a logical-graph member (``/n_map``),
-            ``{control: bus_name}``.
+        maps: control-bus bindings for a logical-graph member
+            (``/n_map``), as a ``{control: bus_name}`` dict.
     """
 
     def __init__(self, generator, onset=None, duration=None, *, controls=None, maps=None):

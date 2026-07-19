@@ -11,8 +11,8 @@ In scsynth, execution order is the client's problem: a node reading an audio bus
 ```
 
 - **`/g_sortMode groupID 1`** sorts the group's children right away and re-sorts on every change that can affect the order: a node added or removed, a def's bus retargeted via `/n_set`, a subtree moved in. The root group (0) is allowed. Inside an auto group, manual `/n_before`/`/n_after` reply `/fail` — ordering is the group's job now; `mode 0` hands it back. All of it is schedulable in timed bundles and usable in NRT scores.
-- **`/g_queryTree [groupID = 0] [flag = 0]`** replies the scsynth-style tree listing: `flag`, the group, its child count, then depth-first per node the ID and child count (`-1` marks a synth), the synth's def name, and — with `flag = 1` — control count and (name, value) pairs.
-- **`/g_dumpGraph [groupID = 0]`** replies a human-readable view of what the analysis inferred: per child, the buses read and written and whether it is `dynamic` (see below).
+- **`/g_queryTree [groupID = 0] [flag = 0]`** replies with the scsynth-style tree listing: `flag`, the group, its child count, then depth-first per node the ID and child count (`-1` marks a synth), the synth's def name, and — with `flag = 1` — control count and (name, value) pairs.
+- **`/g_dumpGraph [groupID = 0]`** replies with a human-readable view of what the analysis inferred: per child, the buses read and written and whether it is `dynamic` (see below).
 
 ## How the analysis works
 
