@@ -22,6 +22,11 @@ pub type Color = [f32; 4];
 #[derive(Default)]
 pub struct Mesh {
     verts: Vec<f32>,
+    /// The active clip rectangle, if any: every triangle emitted while it is
+    /// set is clipped to it geometrically (so a scrolled widget's chrome never
+    /// bleeds outside its `scroll` container). Geometry, not a GPU scissor —
+    /// the batch stays **one** upload and one draw on every front.
+    clip: Option<Rect>,
 }
 
 impl Mesh {
@@ -50,11 +55,76 @@ impl Mesh {
             .extend_from_slice(&[p[0], p[1], c[0], c[1], c[2], c[3]]);
     }
 
-    /// A triangle.
+    /// Sets (or clears) the clip rectangle applied to everything emitted next.
+    pub fn set_clip(&mut self, clip: Option<Rect>) {
+        self.clip = clip;
+    }
+
+    /// A triangle (clipped to the active clip rectangle, if any).
     pub fn tri(&mut self, a: [f32; 2], b: [f32; 2], c: [f32; 2], color: Color) {
-        self.vertex(a, color);
-        self.vertex(b, color);
-        self.vertex(c, color);
+        let Some(clip) = self.clip else {
+            self.vertex(a, color);
+            self.vertex(b, color);
+            self.vertex(c, color);
+            return;
+        };
+        // Sutherland-Hodgman against the clip rect's four half-planes: a
+        // triangle clips to a convex polygon of at most 7 vertices, emitted
+        // as a fan.
+        let mut poly = [[0.0f32; 2]; 8];
+        let mut n = 3;
+        poly[..3].copy_from_slice(&[a, b, c]);
+        for edge in 0..4 {
+            let inside = |p: [f32; 2]| match edge {
+                0 => p[0] >= clip.x,
+                1 => p[0] <= clip.x + clip.w,
+                2 => p[1] >= clip.y,
+                _ => p[1] <= clip.y + clip.h,
+            };
+            let cross = |p: [f32; 2], q: [f32; 2]| {
+                let (bound, axis) = match edge {
+                    0 => (clip.x, 0),
+                    1 => (clip.x + clip.w, 0),
+                    2 => (clip.y, 1),
+                    _ => (clip.y + clip.h, 1),
+                };
+                let other = 1 - axis;
+                let t = (bound - p[axis]) / (q[axis] - p[axis]);
+                let mut v = [0.0f32; 2];
+                // The clipped axis lands *exactly* on the boundary (an
+                // interpolated value can round just past it and re-enter the
+                // next edge's outside), the other one interpolates.
+                v[axis] = bound;
+                v[other] = p[other] + t * (q[other] - p[other]);
+                v
+            };
+            let mut next = [[0.0f32; 2]; 8];
+            let mut m = 0;
+            for i in 0..n {
+                let (p, q) = (poly[i], poly[(i + 1) % n]);
+                if inside(p) {
+                    next[m] = p;
+                    m += 1;
+                    if !inside(q) {
+                        next[m] = cross(p, q);
+                        m += 1;
+                    }
+                } else if inside(q) {
+                    next[m] = cross(p, q);
+                    m += 1;
+                }
+            }
+            poly = next;
+            n = m;
+            if n == 0 {
+                return; // fully outside
+            }
+        }
+        for i in 1..n - 1 {
+            self.vertex(poly[0], color);
+            self.vertex(poly[i], color);
+            self.vertex(poly[i + 1], color);
+        }
     }
 
     /// A quad from four corners in order (two triangles); winding-agnostic
@@ -260,5 +330,32 @@ mod tests {
         let mut m = Mesh::new();
         m.rect(Rect::new(0.0, 0.0, 0.0, 10.0), [1.0; 4]);
         assert!(m.is_empty());
+    }
+
+    #[test]
+    fn clip_keeps_every_vertex_inside_the_rect() {
+        let clip = Rect::new(10.0, 10.0, 50.0, 40.0);
+        let mut m = Mesh::new();
+        m.set_clip(Some(clip));
+        // A rect poking out on every side, a line crossing it, a disc around
+        // a corner: all clipped geometrically.
+        m.rect(Rect::new(0.0, 0.0, 100.0, 100.0), [1.0; 4]);
+        m.line([0.0, 30.0], [100.0, 30.0], 4.0, [1.0; 4]);
+        m.disc(10.0, 10.0, 20.0, [1.0; 4]);
+        m.set_clip(None);
+        assert!(!m.is_empty());
+        for (x, y) in m.positions() {
+            assert!((10.0..=60.0).contains(&x) && (10.0..=50.0).contains(&y));
+        }
+    }
+
+    #[test]
+    fn clip_drops_fully_outside_geometry_and_keeps_inside_intact() {
+        let mut m = Mesh::new();
+        m.set_clip(Some(Rect::new(0.0, 0.0, 10.0, 10.0)));
+        m.rect(Rect::new(50.0, 50.0, 10.0, 10.0), [1.0; 4]);
+        assert!(m.is_empty(), "fully outside geometry is dropped");
+        m.rect(Rect::new(2.0, 2.0, 4.0, 4.0), [1.0; 4]);
+        assert_eq!(m.vertex_count(), 6, "fully inside geometry is unchanged");
     }
 }

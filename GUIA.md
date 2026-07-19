@@ -184,6 +184,19 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   y el osciloscopio dibuja la salida estéreo real (taps); mover el knob/slider
   → se oye el cambio, la barra de estado dice `freq ... Hz` / `amp ...` en
   cada gesto y la onda del scope cambia con él.
+- **El workspace 2D (`scroll`) y sus formas acotadas.** `examples/gui_workspace.py`
+  abre una ventana con tres paneles del *mismo* widget configurado distinto: el
+  **plano libre** arriba (9 cajas dispersas en un área virtual de 1600x1200) →
+  arrastrar el fondo vacío desplaza en **ambos ejes**, la rueda hace zoom
+  **anclado en el cursor** (el punto bajo el puntero no se mueve) y las cajas
+  que salen del panel se **recortan** en el borde, no invaden al vecino; el
+  **scroll vertical** en el medio (`axis="y"`, `zoom=0`) → la rueda desplaza
+  hacia abajo y la x nunca se mueve ni cambia la escala; la **tira horizontal**
+  abajo (`axis="x"`) → la rueda recorre los compases y frena al final del
+  contenido. Cada gesto imprime `view x= y= zoom=` en la terminal, y a los ~5
+  segundos el script recentra el plano por `/gui_set` (salta a la posición
+  nueva). Girar una perilla dentro de una caja del plano sigue funcionando
+  (el widget gana el press; el plano solo toma el fondo vacío).
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

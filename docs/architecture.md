@@ -376,6 +376,7 @@ updates this table in the same change** (step 7 of the recipe below).
 | Widget | Implementation | Fed by |
 |---|---|---|
 | `window`, `panel` | parse/layout only: `host/widget.rs`, `host/layout.rs` | the GuiDef |
+| `scroll` | `host/layout.rs` (the view transform + the content extents) over the pure navigation math in `host/scroll.rs`; the clip is geometric in `host/paint.rs` and a pass scissor in `host/frame.rs`; gestures in `host/gestures.rs` | the GuiDef and `/gui_set`; pan/zoom emits `"view"` |
 | `label`, `text` | `host/controls.rs` over `host/paint.rs` + `host/font.rs` | the GuiDef, `/gui_set` |
 | `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
 | `button`, `toggle`, `menu` | `host/controls.rs` | idem |

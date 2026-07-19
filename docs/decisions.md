@@ -1228,3 +1228,41 @@ voice with `gate 0` to open later — still works while the release tail lasts
 (the rising gate retriggers from `initLevel`), and beyond that was never
 reliable against `FREE_SELF` anyway. Guarded by
 `tests/envgen.rs::gate_already_closed_at_the_first_block_releases_and_frees`.
+
+## The 2D workspace has one uniform scale, and it clips with geometry rather than a scissor
+
+Context (the `scroll` container): the workspace shows a virtual content area
+through a panning, zooming window. Two implementation choices went against the
+obvious reading of the roadmap, and both are load-bearing enough to record.
+
+**One scale, two offsets — not a `viewport::View` per axis.** The plan said
+"one `viewport::View` per axis, so the anchor-preserving zoom/pan math is
+reused rather than rewritten". A `View` carries a *start and a length*, so a
+pair of them carries two independent scales, and each axis' clamp adjusts its
+own length — which silently de-couples them the first time one axis hits the
+content edge, and the plane shears. A workspace showing boxes and wires must
+never distort, so the state is instead **one uniform `view_zoom` (device pixels
+per content unit) plus a pan offset per axis**. The reuse the plan asked for
+still happens, just at the right level: the anchor-preserving *pivot math* of
+`View::zoom` is applied to the shared scale factor (`host/scroll.rs::zoom_at`),
+so the content point under the cursor stays fixed exactly as it does in the
+timeline views. The constrained forms then fall out of configuration rather
+than of geometry: `axis` gates which offsets a gesture may move, `zoom: 0`
+gates the scale — one gesture path, as intended.
+
+**A geometric clip, not a per-widget scissor.** A scrolled widget must not
+paint outside its container. The reflex answer is a GPU scissor rect per
+widget, but the host's whole light-widget economy rests on the opposite
+property: *a whole window is one mesh upload and one draw call*, which is what
+lets an application face cost what a panel of sliders costs (the L-track cost
+rule). A scissor is pipeline state, so honoring it per widget would split that
+batch into one draw per clipped widget. So the clip lives in `paint::Mesh`
+instead: a clip rectangle set around each placed widget's geometry, applied by
+a Sutherland-Hodgman polygon clip as triangles are emitted (a triangle against
+a rectangle yields at most 7 vertices; fully-outside geometry is dropped
+before it reaches the buffer). The batch stays single, and the clipping is
+identical on both fronts by construction because it happens before the GPU.
+The **heavy views keep a real scissor** (`host/frame.rs::apply_scissor`) —
+they own their own pipelines and draw through `set_viewport`, which positions
+but does not cut, so there is no batch to protect there and nothing else can
+do the job.

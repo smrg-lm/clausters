@@ -336,6 +336,102 @@ impl Flow {
     }
 }
 
+/// Which axes a `scroll` workspace pans along. The default is the full 2D
+/// workspace (`Both`); the constrained scroll views degrade from it by
+/// configuration — `axis: "y"` is a plain vertical scroll view, `axis: "x"` a
+/// horizontal strip. One widget, one gesture path; the axis only gates the
+/// *panning* gestures, never the layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Axis {
+    Both,
+    X,
+    Y,
+}
+
+impl Axis {
+    fn parse(props: &serde_json::Map<String, Value>) -> Axis {
+        props
+            .get("axis")
+            .and_then(Value::as_str)
+            .and_then(Axis::from_str)
+            .unwrap_or(Axis::Both)
+    }
+
+    fn from_str(s: &str) -> Option<Axis> {
+        match s {
+            "both" | "xy" => Some(Axis::Both),
+            "x" => Some(Axis::X),
+            "y" => Some(Axis::Y),
+            _ => None,
+        }
+    }
+}
+
+/// A `scroll` container's 2D window onto its virtual content area: the pan
+/// offsets and the scale (all view state, settable via `/gui_set` and emitted
+/// as the `"view"` payload when a gesture moves them), plus the configuration
+/// that constrains the workspace — the pannable [`Axis`], whether wheel zoom
+/// is enabled (`zoom: 0` disables it), and an explicit content size (absent,
+/// the content area sizes from the children's free-placement extents, or the
+/// widget's own area).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ScrollView {
+    pub axis: Axis,
+    /// Whether the wheel zooms (`zoom: 0` degrades the workspace to a plain
+    /// scroll view; the wheel then pans along the axis).
+    pub zoom_enabled: bool,
+    pub content_w: Option<f32>,
+    pub content_h: Option<f32>,
+    /// The content coordinate at the widget's left edge.
+    pub view_x: f64,
+    /// The content coordinate at the widget's top edge.
+    pub view_y: f64,
+    /// Device pixels per content unit (uniform on both axes), > 0.
+    pub view_zoom: f64,
+}
+
+impl ScrollView {
+    fn parse(props: &serde_json::Map<String, Value>) -> ScrollView {
+        let f = |k: &str| props.get(k).and_then(Value::as_f64).map(|v| v as f32);
+        ScrollView {
+            axis: Axis::parse(props),
+            zoom_enabled: props.get("zoom").and_then(truthy).unwrap_or(true),
+            content_w: f("content_w"),
+            content_h: f("content_h"),
+            view_x: number_f64(props, "view_x", 0.0),
+            view_y: number_f64(props, "view_y", 0.0),
+            view_zoom: super::scroll::clamp_zoom(number_f64(props, "view_zoom", 1.0)),
+        }
+    }
+
+    /// Applies one `/gui_set` key. `true` if the key is a scroll-view prop.
+    fn apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "axis" => v
+                .as_str()
+                .and_then(Axis::from_str)
+                .map(|a| self.axis = a)
+                .is_some(),
+            "zoom" => truthy(v).map(|b| self.zoom_enabled = b).is_some(),
+            "content_w" => {
+                self.content_w = v.as_f64().map(|n| n as f32);
+                true
+            }
+            "content_h" => {
+                self.content_h = v.as_f64().map(|n| n as f32);
+                true
+            }
+            "view_x" => set_f64(&mut self.view_x, v),
+            "view_y" => set_f64(&mut self.view_y, v),
+            "view_zoom" => v
+                .as_f64()
+                .map(|n| self.view_zoom = super::scroll::clamp_zoom(n))
+                .is_some(),
+            _ => false,
+        }
+    }
+}
+
 /// The generic layout props **any** widget may carry, applied by the layout
 /// engine: a fixed main-axis size in a `row`/`col` (`w`/`h`, device pixels), a
 /// `weight` for the shared remainder (absent = 1), and a `free`-layout
@@ -394,6 +490,17 @@ pub enum WidgetKind {
     },
     /// A nestable container.
     Panel { layout: Layout, flow: Flow },
+    /// The 2D workspace: a container whose children live in a **virtual
+    /// content area** seen through a scrolling, zooming window ([`ScrollView`]).
+    /// General first — the default pans both axes and zooms at the cursor; the
+    /// constrained scroll views (`axis`, `zoom: 0`) degrade from it by
+    /// configuration. `layout` arranges the children *inside* the content
+    /// area (default `free`), exactly as a panel does inside its rect.
+    Scroll {
+        layout: Layout,
+        flow: Flow,
+        view: ScrollView,
+    },
     /// Static text.
     Label { text: String },
     /// The heavy waveform view: its samples and the peak-pyramid bucket size.
@@ -866,6 +973,19 @@ impl Widget {
                 layout: Layout::parse(&node.props),
                 flow: Flow::parse(&node.props),
             },
+            "scroll" => WidgetKind::Scroll {
+                // The workspace's natural arrangement is free placement (the
+                // virtual content area sizes from the placement extents), so
+                // `layout` defaults to `free` here, not `col`.
+                layout: node
+                    .props
+                    .get("layout")
+                    .and_then(Value::as_str)
+                    .and_then(Layout::from_str)
+                    .unwrap_or(Layout::Free),
+                flow: Flow::parse(&node.props),
+                view: ScrollView::parse(&node.props),
+            },
             "label" => WidgetKind::Label {
                 text: node
                     .props
@@ -1241,7 +1361,10 @@ impl Widget {
         // Only containers carry children into the typed tree; a leaf's children
         // (if any) are ignored. A `track` carries its clips.
         let children = match kind {
-            WidgetKind::Window { .. } | WidgetKind::Panel { .. } | WidgetKind::Track { .. } => node
+            WidgetKind::Window { .. }
+            | WidgetKind::Panel { .. }
+            | WidgetKind::Scroll { .. }
+            | WidgetKind::Track { .. } => node
                 .children
                 .iter()
                 .map(|c| Self::build(None, c, blobs))
@@ -1446,6 +1569,14 @@ impl WidgetKind {
                     _ => flow.apply(key, v),
                 }
             }
+            WidgetKind::Scroll { layout, flow, view } => match key {
+                "layout" => v
+                    .as_str()
+                    .and_then(Layout::from_str)
+                    .map(|l| *layout = l)
+                    .is_some(),
+                _ => view.apply(key, v) || flow.apply(key, v),
+            },
             WidgetKind::Waveform {
                 overlay, editor, ..
             } => match key {

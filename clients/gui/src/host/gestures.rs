@@ -21,8 +21,8 @@ use clausters_core::osc::OscType;
 
 use super::interact::{self, slider_t, value_of};
 use super::layout::Rect;
-use super::widget::{Ruler, RulerY, Widget, WidgetKind};
-use super::{Host, bpf, controls, frame, graph, piano, pianoroll, track};
+use super::widget::{Axis, Ruler, RulerY, ScrollView, Widget, WidgetKind};
+use super::{Host, bpf, controls, frame, graph, piano, pianoroll, scroll, track};
 use crate::viewport::View;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
@@ -279,6 +279,18 @@ enum Drag {
         min0: i32,
         max0: i32,
         anchor: i32,
+    },
+    /// Panning a `scroll` workspace from a press on its empty area: the view
+    /// follows the cursor absolutely from the press snapshot (`x0`/`y0`), so a
+    /// clamped edge never drifts. `area` is the container's laid-out rect at
+    /// press time (the clamp geometry).
+    ScrollPan {
+        id: i32,
+        area: Rect,
+        origin_x: f64,
+        origin_y: f64,
+        x0: f64,
+        y0: f64,
     },
 }
 
@@ -633,6 +645,23 @@ impl Gestures {
             }
             _ => {}
         }
+        // Nothing consumed the press: inside a `scroll` workspace, grab the
+        // plane and pan it (a press on the container's empty area hits the
+        // `scroll` itself; one on a non-interactive child falls through here).
+        if self.drag.is_none()
+            && out.is_empty()
+            && let Some((sid, area)) = scroll_hit(host, ctx, cx, cy)
+            && let Some(view) = scroll_view(host, def_id, sid)
+        {
+            self.drag = Some(Drag::ScrollPan {
+                id: sid,
+                area,
+                origin_x: cx,
+                origin_y: cy,
+                x0: view.view_x,
+                y0: view.view_y,
+            });
+        }
         out
     }
 
@@ -736,6 +765,31 @@ impl Gestures {
                 let cur = piano::overview_hit(strip, cx as f32);
                 let (nmin, nmax) = piano::pan_range(min0, max0, cur - anchor);
                 set_piano_range(host, &mut out, def_id, id, nmin, nmax);
+            }
+            Drag::ScrollPan {
+                id,
+                area,
+                origin_x,
+                origin_y,
+                x0,
+                y0,
+            } => {
+                // Dragging the plane moves the content with the cursor: the
+                // view offsets run against the drag, in content units (the
+                // zoom divides the pixel displacement), gated by the axis.
+                let Some(view) = scroll_view(host, def_id, id) else {
+                    return out;
+                };
+                let zoom = scroll::clamp_zoom(view.view_zoom);
+                let nx = match view.axis {
+                    Axis::Y => x0,
+                    _ => x0 - (cx - origin_x) / zoom,
+                };
+                let ny = match view.axis {
+                    Axis::X => y0,
+                    _ => y0 - (cy - origin_y) / zoom,
+                };
+                set_scroll_view(host, &mut out, def_id, id, area, (nx, ny, zoom));
             }
             Drag::BpfPoint { id, index, body } => {
                 interact::bpf_edit(host, def_id, id, |p, duration, lo, hi, exp| {
@@ -1127,6 +1181,28 @@ impl Gestures {
             } else {
                 zoom_timeline(host, &mut out, def_id, id, body, cx, factor);
             }
+            return out;
+        }
+        // The 2D workspace: wheel zooms the plane anchored at the cursor;
+        // with zoom disabled it pans along the axis instead (Shift pans x in
+        // a two-axis workspace) — the plain scroll view's wheel. A widget
+        // with its own wheel (a timeline view, a piano) won above.
+        if let Some((id, area)) = scroll_hit(host, ctx, cx, cy)
+            && let Some(view) = scroll_view(host, def_id, id)
+        {
+            let zoom = scroll::clamp_zoom(view.view_zoom);
+            let next = if view.zoom_enabled {
+                let factor = 0.85f64.powf(-steps); // wheel up zooms in
+                scroll::zoom_at((view.view_x, view.view_y, zoom), area, (cx, cy), factor)
+            } else {
+                let d = steps * scroll::WHEEL_PAN_PX / zoom;
+                match view.axis {
+                    Axis::X => (view.view_x - d, view.view_y, zoom),
+                    _ if ctx.shift => (view.view_x - d, view.view_y, zoom),
+                    _ => (view.view_x, view.view_y - d, zoom),
+                }
+            };
+            set_scroll_view(host, &mut out, def_id, id, area, next);
         }
         out
     }
@@ -1553,6 +1629,47 @@ fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect, Widg
     interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y)
 }
 
+/// The innermost `scroll` workspace under the cursor, if any.
+fn scroll_hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect)> {
+    interact::scroll_at(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y)
+}
+
+/// A `scroll` widget's current view state and configuration.
+fn scroll_view(host: &Host, def_id: i32, id: i32) -> Option<ScrollView> {
+    match &host.window_def(def_id)?.find(id)?.kind {
+        WidgetKind::Scroll { view, .. } => Some(*view),
+        _ => None,
+    }
+}
+
+/// Applies a `scroll` view change (clamped through the shared door) and, when
+/// it actually moved, emits the `"view" x y zoom` payload and repaints. Always
+/// an event, never a bound forward: the view is view state, exactly as the
+/// timeline views' `"view"` and the piano's `"range"`.
+fn set_scroll_view(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    area: Rect,
+    next: (f64, f64, f64),
+) {
+    if let Some((x, y, zoom)) = interact::scroll_set_view(host, def_id, id, area, next) {
+        emit(
+            out,
+            def_id,
+            id,
+            vec![
+                OscType::String("view".into()),
+                OscType::Float(x as f32),
+                OscType::Float(y as f32),
+                OscType::Float(zoom as f32),
+            ],
+        );
+        out.push(GestureEffect::Redraw(def_id));
+    }
+}
+
 /// The navigation window of timeline view `id`'s group:
 /// `(start, len, total)` in timeline samples.
 fn nav(host: &Host, id: i32) -> Option<(f64, f64, usize)> {
@@ -1938,6 +2055,132 @@ mod tests {
             WidgetKind::Slider { range, .. } => range.value,
             other => panic!("not a slider: {other:?}"),
         }
+    }
+
+    /// A `scroll` workspace's live view state.
+    fn view_of(host: &Host, id: i32) -> ScrollView {
+        match &host.window_def(1).unwrap().find(id).unwrap().kind {
+            WidgetKind::Scroll { view, .. } => *view,
+            other => panic!("not a scroll: {other:?}"),
+        }
+    }
+
+    /// A window holding one 2D workspace with a 2000x2000 content area.
+    fn workspace(extra: &str) -> Host {
+        host_from(&format!(
+            r#"{{"type":"window","margin":0,"children":[
+                {{"id":20,"type":"scroll","margin":0,
+                  "content_w":2000,"content_h":2000{extra},
+                  "children":[{{"id":21,"type":"label","text":"a",
+                                "x":100,"y":100,"w":80,"h":40}}]}}]}}"#
+        ))
+    }
+
+    #[test]
+    fn wheel_zooms_the_workspace_anchored_at_the_cursor() {
+        let mut host = workspace("");
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let (cx, cy) = (300.0, 200.0);
+        let before = view_of(&host, 20);
+        let content_under_cursor =
+            |v: ScrollView| (v.view_x + cx / v.view_zoom, v.view_y + cy / v.view_zoom);
+        let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
+        let after = view_of(&host, 20);
+        assert!(after.view_zoom > before.view_zoom, "wheel up zooms in");
+        let (bx, by) = content_under_cursor(before);
+        let (ax, ay) = content_under_cursor(after);
+        assert!((bx - ax).abs() < 1e-6 && (by - ay).abs() < 1e-6);
+        // View state: always an event (never a bound forward), plus a repaint.
+        assert!(has_emit_tag(&effects, 20, "view"));
+        assert!(effects.contains(&GestureEffect::Redraw(1)));
+    }
+
+    #[test]
+    fn dragging_the_empty_plane_pans_both_axes() {
+        let mut host = workspace("");
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        // A press on the container's empty area (away from the child) grabs it.
+        g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+        assert!(g.dragging());
+        let effects = g.drag_to(&mut host, &ctx, 450.0, 300.0);
+        let v = view_of(&host, 20);
+        // The content follows the cursor: dragging left/up moves the view right/down.
+        assert_eq!((v.view_x, v.view_y), (50.0, 50.0));
+        assert!(has_emit_tag(&effects, 20, "view"));
+        g.release(&mut host, &ctx, 450.0, 300.0);
+        assert!(!g.dragging());
+    }
+
+    #[test]
+    fn a_vertical_scroll_view_is_the_workspace_constrained_by_configuration() {
+        // `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view: the
+        // wheel scrolls, x never moves, the zoom stays put.
+        let mut host = workspace(r#","axis":"y","zoom":0"#);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        g.wheel(&mut host, &ctx, 300.0, 200.0, -1.0);
+        let v = view_of(&host, 20);
+        assert_eq!(v.view_zoom, 1.0, "zoom disabled: the wheel does not scale");
+        assert_eq!(v.view_x, 0.0, "the x axis is not pannable");
+        assert_eq!(v.view_y, scroll::WHEEL_PAN_PX, "the wheel scrolls down");
+        // A drag on the plane likewise moves only y.
+        g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+        g.drag_to(&mut host, &ctx, 400.0, 300.0);
+        let v = view_of(&host, 20);
+        assert_eq!(v.view_x, 0.0);
+        assert_eq!(v.view_y, scroll::WHEEL_PAN_PX + 50.0);
+    }
+
+    #[test]
+    fn a_horizontal_strip_pans_only_x_and_clamps_to_the_content() {
+        let mut host = workspace(r#","axis":"x","zoom":0"#);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        // The wheel drives the single axis; far past the end it clamps to
+        // content - visible = 2000 - 600.
+        for _ in 0..100 {
+            g.wheel(&mut host, &ctx, 300.0, 200.0, -1.0);
+        }
+        let v = view_of(&host, 20);
+        assert_eq!(v.view_x, 1400.0);
+        assert_eq!(v.view_y, 0.0);
+    }
+
+    #[test]
+    fn a_widget_inside_the_workspace_still_takes_the_press() {
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":20,"type":"scroll","margin":0,"content_w":2000,"content_h":2000,
+                 "children":[{"id":21,"type":"toggle","value":0,
+                              "x":0,"y":0,"w":100,"h":50}]}]}"#,
+        );
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        // Over the toggle: the widget wins, no pan drag starts.
+        let effects = g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
+        assert!(!g.dragging(), "the toggle consumed the press");
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, GestureEffect::Emit { widget_id: 21, .. }))
+        );
+        // Scrolled out of view, the same widget is no longer hit: the press
+        // falls through to the plane.
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: super::super::GUI_SET.into(),
+                args: vec![
+                    OscType::Int(20),
+                    OscType::String("view_x".into()),
+                    OscType::Float(500.0),
+                ],
+            }),
+            from(),
+        );
+        g.press(&mut host, &ctx, 50.0, 25.0, &mut || false);
+        assert!(g.dragging(), "the scrolled-away widget is not hit");
     }
 
     #[test]

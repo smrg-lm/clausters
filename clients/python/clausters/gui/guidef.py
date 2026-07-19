@@ -36,12 +36,17 @@ layout (all in device pixels, all optional, all live via ``set``):
 - ``x``/``y`` — the position inside a ``free`` container; a free child with
   none of these props overlays the whole container area.
 
-Containers (``window``/``panel``) additionally take ``margin`` (the inset
-before their children, default 6), ``gap`` (between children, default 6) and
-``cols`` (a fixed ``grid`` column count; default near-square). A fixed-height
-menu bar over a weighted content area over a fixed status bar — the
-application shell — is just ``window(bar(h=28), content(), status(h=20),
+Containers (``window``/``panel``/``scroll``) additionally take ``margin`` (the
+inset before their children, default 6), ``gap`` (between children, default 6)
+and ``cols`` (a fixed ``grid`` column count; default near-square). A
+fixed-height menu bar over a weighted content area over a fixed status bar —
+the application shell — is just ``window(bar(h=28), content(), status(h=20),
 layout="col")``.
+
+When the content does not fit its container, `scroll` is the container that
+pans and zooms: its children live in a **virtual content area** seen through a
+2D window, and the constrained forms (a vertical scroll view, a horizontal
+strip) are that same widget configured down.
 """
 
 import array
@@ -53,6 +58,7 @@ __all__ = [
     "node",
     "window",
     "panel",
+    "scroll",
     "label",
     "knob",
     "slider",
@@ -127,6 +133,41 @@ def panel(id: int | None = None, *children, layout: str | None = None,
     """
     extra = _drop_none(layout=layout, margin=margin, gap=gap, cols=cols)
     return node("panel", id=id, children=children, **extra, **props)
+
+
+def scroll(id: int | None = None, *children, axis: str | None = None,
+           zoom: bool | None = None, content_w: float | None = None,
+           content_h: float | None = None, view_x: float | None = None,
+           view_y: float | None = None, view_zoom: float | None = None,
+           layout: str | None = None, margin: float | None = None,
+           gap: float | None = None, cols: int | None = None, **props) -> dict:
+    """A ``scroll`` container: a 2D workspace onto a virtual content area.
+
+    The children lay out into a content area larger than the widget, seen
+    through a window that pans and zooms — dragging the empty plane pans it,
+    the wheel zooms anchored at the cursor. The general case is the full 2D
+    workspace; the constrained scroll views come from configuration, not from
+    a different widget:
+
+    - ``axis="y", zoom=False`` is a plain vertical scroll view (the wheel
+      scrolls, x never moves),
+    - ``axis="x", zoom=False`` a horizontal strip,
+    - the default (``axis="both"``, zoom on) is the free plane.
+
+    ``layout`` arranges the children inside the content area and defaults to
+    ``free`` here (the workspace's natural arrangement), so a child's ``x``/
+    ``y``/``w``/``h`` place it in content units. The content area sizes from
+    those placement extents unless ``content_w``/``content_h`` say otherwise.
+    ``view_x``/``view_y`` (content units at the widget's top-left corner) and
+    ``view_zoom`` (device pixels per content unit) are the view state: live via
+    ``/gui_set``, and emitted as ``"view" x y zoom`` when a gesture moves them.
+    """
+    extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
+                       view_x=view_x, view_y=view_y, view_zoom=view_zoom,
+                       layout=layout, margin=margin, gap=gap, cols=cols)
+    if zoom is not None:
+        extra["zoom"] = 1 if zoom else 0
+    return node("scroll", id=id, children=children, **extra, **props)
 
 
 def label(id: int | None, text: str, **props) -> dict:

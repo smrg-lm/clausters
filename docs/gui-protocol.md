@@ -54,7 +54,7 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   Python client assigns a fresh id to any widget built without one (and to every
   window), from one counter starting at 1000, so hand-picked ids below 1000 and
   assigned ids never collide.
-- **`children`** nests (containers only: `window`, `panel`, `track`).
+- **`children`** nests (containers only: `window`, `panel`, `scroll`, `track`).
 - **The place props** — every widget, whatever its type, may carry `w`, `h`,
   `weight`, `x`, `y` (all numbers, device pixels, all live via `/gui_set`):
   in a `row`/`col` a child with a fixed main-axis size (`w` in a row, `h` in a
@@ -100,7 +100,7 @@ The **edit-back payloads**:
 | `"wire"` | `member control bus` (an empty bus = unwired) | a `graph` patch rewired |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
 | `"selection"` | `start len` (samples) | a selection dragged on a timeline view |
-| `"view"` | `start len` (samples) | the shared navigation window zoomed or panned |
+| `"view"` | `start len` (samples), or `x y zoom` on a `scroll` | the navigation window zoomed or panned — the timeline group's shared window, or a 2D workspace's plane |
 | `"view_y"` | `start len` (0..1) | the vertical display window zoomed or panned |
 
 Edited data flows as a **payload, never a new address**: the `/gui_*` family does
@@ -117,6 +117,7 @@ script actually names these. The catalog itself:
 |---|---|---|
 | `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols` |
 | `panel` | A nestable container | `layout`, `margin`, `gap`, `cols` |
+| `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols` |
 | `label` | Static text | `text` |
 | `knob`, `slider`, `number` | Continuous controls | `min`, `max`, `value`, `label` (`vertical` on a slider) |
 | `button`, `toggle` | Momentary / latching | `label`, `value` |
@@ -136,6 +137,8 @@ script actually names these. The catalog itself:
 | `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |
 | `graph` | A **patcher** of a bus-wired node graph: member boxes, bus nodes, a wire per connection | `members`, `buses`, `wires`, `label` |
 | `canvas` | A script-supplied WGSL shader over the widget area | `shader`, `params`, `buses` |
+
+The `scroll` container is **one widget with one gesture path**, and the familiar constrained scroll views are configurations of it rather than separate types: `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view, `axis: "x"` a horizontal strip, and the default is the full 2D plane — drag the empty background to pan both axes, wheel to zoom anchored at the cursor. Its children's place props (`x`/`y`/`w`/`h`) are read in **content units**, not device pixels: the content area sizes itself from their extents unless `content_w`/`content_h` name it. `view_x`/`view_y` are the content coordinates at the widget's top-left corner and `view_zoom` is device pixels per content unit; all three are live via `/gui_set` and travel back as the `"view"` payload when a gesture moves them. A widget scrolled outside its container is clipped away — it is neither drawn nor hit.
 
 A timeline view (and a lane) shows the transport two ways, and they are different
 things: `playhead_at` **anchors the line to the engine clock** (it is the clock

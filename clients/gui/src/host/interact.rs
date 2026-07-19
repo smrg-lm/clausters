@@ -21,7 +21,10 @@ use crate::viewport::View;
 
 /// The deepest interactive widget under `(x, y)` in window `def_id`: its id, its
 /// laid-out rect and a clone of its kind. Containers (`window`/`panel`) are not
-/// hit targets. `fb_w`/`fb_h` is the window's framebuffer size in device pixels.
+/// hit targets — except `scroll`, whose empty area is the pan gesture's surface
+/// (its children, laid out through its view transform, still win over it). A
+/// widget scrolled out of its container's window (outside its clip) is not hit.
+/// `fb_w`/`fb_h` is the window's framebuffer size in device pixels.
 pub(crate) fn hit(
     host: &Host,
     def_id: i32,
@@ -35,6 +38,7 @@ pub(crate) fn hit(
     let mut found = None;
     for p in layout::layout(area, tree) {
         if p.rect.contains(x, y)
+            && p.clip.is_none_or(|c| c.contains(x, y))
             && let Some(id) = p.widget.id
             && !matches!(
                 p.widget.kind,
@@ -45,6 +49,62 @@ pub(crate) fn hit(
         }
     }
     found
+}
+
+/// The innermost `scroll` container under `(x, y)`: its id and laid-out rect.
+/// The wheel and the empty-area pan drag address the workspace itself even
+/// when the cursor sits over a scrolled child that consumed nothing.
+pub(crate) fn scroll_at(
+    host: &Host,
+    def_id: i32,
+    fb_w: u32,
+    fb_h: u32,
+    x: f64,
+    y: f64,
+) -> Option<(i32, Rect)> {
+    let tree = host.window_def(def_id)?;
+    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    let mut found = None;
+    for p in layout::layout(area, tree) {
+        if p.rect.contains(x, y)
+            && p.clip.is_none_or(|c| c.contains(x, y))
+            && matches!(p.widget.kind, WidgetKind::Scroll { .. })
+            && let Some(id) = p.widget.id
+        {
+            found = Some((id, p.rect));
+        }
+    }
+    found
+}
+
+/// Sets a `scroll`'s view state (clamped against its content in `area`),
+/// returning the clamped `(view_x, view_y, view_zoom)` when something actually
+/// moved — the one door every scroll navigation goes through, so a gesture and
+/// a `/gui_set` clamp identically.
+pub(crate) fn scroll_set_view(
+    host: &mut Host,
+    def_id: i32,
+    id: i32,
+    area: Rect,
+    (vx, vy, zoom): (f64, f64, f64),
+) -> Option<(f64, f64, f64)> {
+    let tree = host.window_def_mut(def_id)?;
+    let content = layout::scroll_content(tree.find(id)?, area);
+    let w = tree.find_mut(id)?;
+    let WidgetKind::Scroll { view, .. } = &mut w.kind else {
+        return None;
+    };
+    let zoom = super::scroll::clamp_zoom(zoom);
+    let next = (
+        super::scroll::clamp_pan(vx, area.w, zoom, content.0),
+        super::scroll::clamp_pan(vy, area.h, zoom, content.1),
+        zoom,
+    );
+    if next == (view.view_x, view.view_y, view.view_zoom) {
+        return None;
+    }
+    (view.view_x, view.view_y, view.view_zoom) = next;
+    Some(next)
 }
 
 /// The current 0..1 fraction of a continuous control (slider/knob/number) in the
