@@ -225,6 +225,7 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
 /// tree and returns the edit as `(member, control, bus)` (an empty bus = unwired)
 /// — the payload of the flat `"wire"` event a script re-renders from. `None`
 /// when there was nothing to rewire.
+#[allow(clippy::too_many_arguments)] // one drop: the widget, the port, the place
 pub(crate) fn wire_set(
     host: &mut Host,
     def_id: i32,
@@ -233,6 +234,7 @@ pub(crate) fn wire_set(
     area: Rect,
     cx: f64,
     cy: f64,
+    scale: f32,
 ) -> Option<(usize, String, String)> {
     let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
     let WidgetKind::Graph { graph, .. } = &mut w.kind else {
@@ -240,8 +242,8 @@ pub(crate) fn wire_set(
     };
     let (member, index) = port;
     let control = graph.members.get(member)?.ports.get(index)?.clone();
-    let bus = super::graph::bus_hit(area, graph, cx, cy)
-        .and_then(|b| graph.buses.get(b).cloned())
+    let bus = super::graph::bus_hit(area, graph, cx, cy, scale)
+        .and_then(|b| graph.buses.get(b).map(|bus| bus.name.clone()))
         .unwrap_or_default();
 
     // One wire per (member, control): a control touches one bus, or none.
@@ -256,6 +258,97 @@ pub(crate) fn wire_set(
         });
     }
     Some((member, control, bus))
+}
+
+/// Sets a `graph` patch's selected set (the click/marquee gestures' write).
+pub(crate) fn graph_select(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    set: Vec<(super::graph::BoxKind, usize)>,
+) {
+    if let Some(w) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(widget_id))
+        && let WidgetKind::Graph { selected, .. } = &mut w.kind
+    {
+        *selected = set;
+    }
+}
+
+/// Moves `graph` boxes to explicit canvas positions (the move drag's write):
+/// each `(kind, index, x, y)` lands on the member's/bus's `x`/`y`, making an
+/// auto-placed box's position explicit from its first drag.
+pub(crate) fn graph_move(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    moves: &[(super::graph::BoxKind, usize, f32, f32)],
+) {
+    let Some(w) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(widget_id))
+    else {
+        return;
+    };
+    let WidgetKind::Graph { graph, .. } = &mut w.kind else {
+        return;
+    };
+    for &(kind, i, x, y) in moves {
+        match kind {
+            super::graph::BoxKind::Member => {
+                if let Some(m) = graph.members.get_mut(i) {
+                    (m.x, m.y) = (Some(x), Some(y));
+                }
+            }
+            super::graph::BoxKind::Bus => {
+                if let Some(b) = graph.buses.get_mut(i) {
+                    (b.x, b.y) = (Some(x), Some(y));
+                }
+            }
+        }
+    }
+}
+
+/// Sets a `graph`'s selection to the boxes intersecting the marquee between
+/// `a` and `b` (device pixels) — the box-selection drag, live on every move.
+pub(crate) fn graph_marquee(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    area: Rect,
+    a: (f64, f64),
+    b: (f64, f64),
+    scale: f32,
+) {
+    let Some(w) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(widget_id))
+    else {
+        return;
+    };
+    let WidgetKind::Graph {
+        graph, selected, ..
+    } = &mut w.kind
+    else {
+        return;
+    };
+    let sel = super::gestures::corner_rect(a, b);
+    let overlaps = |r: Rect| {
+        r.x < sel.x + sel.w && sel.x < r.x + r.w && r.y < sel.y + sel.h && sel.y < r.y + r.h
+    };
+    let mut set = Vec::new();
+    for i in 0..graph.members.len() {
+        if overlaps(super::graph::member_rect(area, graph, i, scale)) {
+            set.push((super::graph::BoxKind::Member, i));
+        }
+    }
+    for bidx in 0..graph.buses.len() {
+        if overlaps(super::graph::bus_rect(area, graph, bidx, scale)) {
+            set.push((super::graph::BoxKind::Bus, bidx));
+        }
+    }
+    *selected = set;
 }
 
 /// Runs `f` over an automation clip's break-points in the host tree — the one
@@ -1110,7 +1203,7 @@ mod tests {
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let g = patch(&host);
         // Drag the source's `out` (member 0, port 0) onto the `OUT` bus (index 1).
-        let bus = super::super::graph::bus_rect(area, &g, 1);
+        let bus = super::super::graph::bus_rect(area, &g, 1, 1.0);
         let edit = wire_set(
             &mut host,
             1,
@@ -1119,6 +1212,7 @@ mod tests {
             area,
             bus.x as f64 + 4.0,
             bus.y as f64 + 4.0,
+            1.0,
         )
         .unwrap();
         assert_eq!(edit, (0, "out".to_string(), "OUT".to_string()));
@@ -1134,7 +1228,7 @@ mod tests {
         let mut host = graph_host();
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         // Released over the middle of the patch: no bus there.
-        let edit = wire_set(&mut host, 1, 7, (1, 0), area, 300.0, 380.0).unwrap();
+        let edit = wire_set(&mut host, 1, 7, (1, 0), area, 300.0, 380.0, 1.0).unwrap();
         assert_eq!(
             edit,
             (1, "in".to_string(), String::new()),

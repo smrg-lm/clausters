@@ -382,6 +382,9 @@ pub(crate) struct FrameInputs<'a> {
     /// The host's timeline navigation groups: each waveform/spectrogram draws
     /// its group's shared window (linked views navigate as one).
     pub(crate) timelines: &'a TimelineGroups,
+    /// A selection marquee in flight on a `graph` patch: the widget and the
+    /// rectangle (device pixels), drawn over the canvas.
+    pub(crate) marquee: Option<(i32, Rect)>,
     /// A rewiring drag in flight on a `graph` patch: the widget, the port being
     /// dragged and the cursor — drawn as a wire following the pointer.
     #[allow(clippy::type_complexity)] // node id, (port), (cursor) — documented above
@@ -403,6 +406,7 @@ impl Default for FrameInputs<'_> {
             cursor: None,
             timelines: NO_GROUPS.get_or_init(TimelineGroups::default),
             wiring: None,
+            marquee: None,
         }
     }
 }
@@ -1069,14 +1073,36 @@ pub(crate) fn render(
                     });
                 }
             }
-            WidgetKind::Graph { graph, label } => {
+            WidgetKind::Graph {
+                graph,
+                selected,
+                label,
+            } => {
                 // The patcher view of a logical group: drawn in the base mesh
-                // (flat geometry, like the other static views).
+                // (flat geometry, like the other static views). The canvas
+                // scales with the enclosing workspace's zoom (`p.scale`), so
+                // boxes, wires and text zoom together.
                 let live = inputs
                     .wiring
                     .filter(|(id, _, _)| Some(*id) == p.widget.id)
                     .map(|(_, port, cursor)| (port, cursor));
-                graph::draw(&mut mesh, p.rect, graph, label.as_deref(), live, th);
+                let marquee = inputs
+                    .marquee
+                    .filter(|(id, _)| Some(*id) == p.widget.id)
+                    .map(|(_, r)| r);
+                graph::draw(
+                    &mut mesh,
+                    p.rect,
+                    graph,
+                    label.as_deref(),
+                    &graph::CanvasState {
+                        live,
+                        selected,
+                        marquee,
+                        scale: p.scale,
+                    },
+                    th,
+                );
             }
             WidgetKind::NodeTree {
                 group,

@@ -168,11 +168,34 @@ enum Drag {
     },
     /// A wire being pulled from a `graph` patch's port: the widget, the port
     /// (member, control) and the widget's area — released over a bus to rewire
-    /// it, over empty space to unwire.
+    /// it, over empty space to unwire. `scale` is the workspace zoom the
+    /// patch is seen through, so the pin geometry matches the drawing.
     Wire {
         id: i32,
         port: (usize, usize),
         area: Rect,
+        scale: f32,
+    },
+    /// A `graph` box (or the whole selection) being moved on the patch
+    /// canvas: the grabbed boxes with their positions at press time (canvas
+    /// units), moved together by the cursor delta and emitted as one
+    /// `"move"` event per box on release.
+    Box {
+        id: i32,
+        scale: f32,
+        origin: (f64, f64),
+        grabbed: Vec<(super::graph::BoxKind, usize, f32, f32)>,
+        moved: bool,
+    },
+    /// The selection marquee on a `graph` patch's empty canvas: the selected
+    /// set follows the rectangle live; the rectangle itself draws through
+    /// [`Gestures::marquee`].
+    Marquee {
+        id: i32,
+        area: Rect,
+        scale: f32,
+        origin: (f64, f64),
+        cursor: (f64, f64),
     },
     /// A break-point of an **automation clip** being dragged in place: the clip
     /// and the point, plus the geometry mapping the cursor back onto the shared
@@ -316,6 +339,18 @@ impl Gestures {
         }
     }
 
+    /// The selection marquee in flight, if any: the `graph` widget and the
+    /// rectangle between the press and the cursor (device pixels), for the
+    /// renderer to draw over the patch.
+    pub fn marquee(&self) -> Option<(i32, Rect)> {
+        match &self.drag {
+            Some(Drag::Marquee {
+                id, origin, cursor, ..
+            }) => Some((*id, corner_rect(*origin, *cursor))),
+            _ => None,
+        }
+    }
+
     /// The rewiring drag in flight, if any: the `graph` widget and the grabbed
     /// port (the renderer draws the wire to the pointer).
     pub fn wiring(&self) -> Option<(i32, (usize, usize))> {
@@ -425,15 +460,54 @@ impl Gestures {
                     });
                 }
             }
-            WidgetKind::Graph { ref graph, .. } => {
-                // A patch's port is the grab point of a rewiring drag; the rest of
-                // the patch is display.
-                if let Some(port) = graph::port_hit(rect, graph, cx, cy) {
+            WidgetKind::Graph {
+                ref graph,
+                ref selected,
+                ..
+            } => {
+                // A port wins: the rewiring drag. Then a box: select it and
+                // start a move (a press on an already-selected box keeps the
+                // set, so the drag moves the whole selection). Then the empty
+                // canvas: the selection marquee.
+                if let Some(port) = graph::port_hit(rect, graph, cx, cy, scale) {
                     self.drag = Some(Drag::Wire {
                         id,
                         port,
                         area: rect,
+                        scale,
                     });
+                } else if let Some(hit_box) = graph::box_hit(rect, graph, cx, cy, scale) {
+                    let set = if selected.contains(&hit_box) {
+                        selected.clone()
+                    } else {
+                        vec![hit_box]
+                    };
+                    let grabbed = set
+                        .iter()
+                        .map(|&(k, i)| {
+                            let (x, y) = graph::box_pos(rect, graph, k, i, scale);
+                            (k, i, x, y)
+                        })
+                        .collect();
+                    interact::graph_select(host, def_id, id, set);
+                    self.drag = Some(Drag::Box {
+                        id,
+                        scale,
+                        origin: (cx, cy),
+                        grabbed,
+                        moved: false,
+                    });
+                    out.push(GestureEffect::Redraw(def_id));
+                } else {
+                    interact::graph_select(host, def_id, id, Vec::new());
+                    self.drag = Some(Drag::Marquee {
+                        id,
+                        area: rect,
+                        scale,
+                        origin: (cx, cy),
+                        cursor: (cx, cy),
+                    });
+                    out.push(GestureEffect::Redraw(def_id));
                 }
             }
             WidgetKind::Track {
@@ -685,6 +759,40 @@ impl Gestures {
             // knob drag is driven by relative motion (`relative_motion`), not by
             // these cursor positions.
             Drag::Button { .. } | Drag::Wire { .. } => {}
+            Drag::Box {
+                id,
+                scale,
+                origin,
+                ref grabbed,
+                ..
+            } => {
+                // The whole grabbed set moves by the cursor delta, in canvas
+                // units (the screen delta divided by the workspace zoom).
+                let dx = ((cx - origin.0) / scale as f64) as f32;
+                let dy = ((cy - origin.1) / scale as f64) as f32;
+                let moves: Vec<_> = grabbed
+                    .iter()
+                    .map(|&(k, i, x0, y0)| (k, i, x0 + dx, y0 + dy))
+                    .collect();
+                interact::graph_move(host, def_id, id, &moves);
+                if let Some(Drag::Box { moved, .. }) = self.drag.as_mut() {
+                    *moved = true;
+                }
+                out.push(GestureEffect::Redraw(def_id));
+            }
+            Drag::Marquee {
+                id,
+                area,
+                scale,
+                origin,
+                ..
+            } => {
+                interact::graph_marquee(host, def_id, id, area, origin, (cx, cy), scale);
+                if let Some(Drag::Marquee { cursor, .. }) = self.drag.as_mut() {
+                    *cursor = (cx, cy);
+                }
+                out.push(GestureEffect::Redraw(def_id));
+            }
             Drag::Vertical { locked: true, .. } => {}
             Drag::Slider { id, body, vertical } => {
                 let t = slider_t(body, cx, cy, vertical);
@@ -1045,13 +1153,18 @@ impl Gestures {
                 piano_note(host, &mut out, def_id, id, pitch, 0, 0, channel);
                 out.push(GestureEffect::Redraw(def_id));
             }
-            Some(Drag::Wire { id, port, area }) => {
+            Some(Drag::Wire {
+                id,
+                port,
+                area,
+                scale,
+            }) => {
                 // Released over a bus: the control is rewired to it. Over empty
                 // space: unwired (the bus is reported empty). Either way the tree
                 // is written and the edit leaves as a flat `"wire"` event, so the
                 // script updates the logical group and re-renders it.
                 if let Some((member, control, bus)) =
-                    interact::wire_set(host, def_id, id, port, area, cx, cy)
+                    interact::wire_set(host, def_id, id, port, area, cx, cy, scale)
                 {
                     out.push(GestureEffect::Emit {
                         def_id,
@@ -1065,6 +1178,41 @@ impl Gestures {
                     });
                     out.push(GestureEffect::Redraw(def_id));
                 }
+            }
+            Some(Drag::Box {
+                id,
+                scale,
+                origin,
+                grabbed,
+                moved,
+                ..
+            }) => {
+                // The boxes were moved live along the drag; the release emits
+                // the round trip — one `"move" kind index x y` per box, so
+                // the driver owns the geometry (the clip pattern).
+                if moved {
+                    let dx = ((cx - origin.0) / scale as f64) as f32;
+                    let dy = ((cy - origin.1) / scale as f64) as f32;
+                    for (kind, index, x0, y0) in grabbed {
+                        out.push(GestureEffect::Emit {
+                            def_id,
+                            widget_id: id,
+                            args: vec![
+                                OscType::String("move".into()),
+                                OscType::String(kind.as_str().into()),
+                                OscType::Int(index as i32),
+                                OscType::Float(x0 + dx),
+                                OscType::Float(y0 + dy),
+                            ],
+                        });
+                    }
+                    out.push(GestureEffect::Redraw(def_id));
+                }
+            }
+            Some(Drag::Marquee { .. }) => {
+                // The selection followed the rectangle live; the release just
+                // drops the marquee chrome.
+                out.push(GestureEffect::Redraw(def_id));
             }
             _ => {}
         }
@@ -1626,6 +1774,13 @@ impl Gestures {
 
 // ---- shared helpers (tree queries, delivery, timeline navigation) ----
 
+/// The rectangle spanned by two corner points, whatever their order.
+pub(crate) fn corner_rect(a: (f64, f64), b: (f64, f64)) -> Rect {
+    let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+    let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
+    Rect::new(x0 as f32, y0 as f32, (x1 - x0) as f32, (y1 - y0) as f32)
+}
+
 /// The deepest widget under `(x, y)`: its id, rect, workspace zoom and a
 /// clone of its kind.
 fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect, f32, WidgetKind)> {
@@ -2077,6 +2232,106 @@ mod tests {
                   "children":[{{"id":21,"type":"label","text":"a",
                                 "x":100,"y":100,"w":80,"h":40}}]}}]}}"#
         ))
+    }
+
+    /// A window holding one full-area `graph` patch (the classic layout: the
+    /// two members stack down the left, the buses down the right).
+    fn patch_host() -> Host {
+        host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":7,"type":"graph",
+                 "members":[{"name":"gsrc","ports":["out"]},
+                            {"name":"gsink","ports":["in","out"]}],
+                 "buses":["mix","OUT"],
+                 "wires":[0,"out","mix",1,"in","mix"]}]}"#,
+        )
+    }
+
+    fn patch_of(host: &Host) -> super::super::graph::GraphDraw {
+        match &host.window_def(1).unwrap().find(7).unwrap().kind {
+            WidgetKind::Graph { graph, .. } => graph.clone(),
+            other => panic!("not a graph: {other:?}"),
+        }
+    }
+
+    fn selection_of(host: &Host) -> Vec<(graph::BoxKind, usize)> {
+        match &host.window_def(1).unwrap().find(7).unwrap().kind {
+            WidgetKind::Graph { selected, .. } => selected.clone(),
+            other => panic!("not a graph: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn dragging_a_box_selects_it_moves_it_and_emits_the_move() {
+        let mut host = patch_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let before = patch_of(&host);
+        let m0 = graph::member_rect(area, &before, 0, 1.0);
+        let (px, py) = ((m0.x + 20.0) as f64, (m0.y + 6.0) as f64);
+        let mut grab = || false;
+        g.press(&mut host, &ctx, px, py, &mut grab);
+        assert_eq!(selection_of(&host), vec![(graph::BoxKind::Member, 0)]);
+        g.drag_to(&mut host, &ctx, px + 150.0, py + 80.0);
+        let effects = g.release(&mut host, &ctx, px + 150.0, py + 80.0);
+        assert!(has_emit_tag(&effects, 7, "move"), "the round trip leaves");
+        let after = patch_of(&host);
+        // The first drag makes the auto placement explicit, moved by the delta.
+        let (x0, y0) = (m0.x - area.x, m0.y - area.y);
+        assert_eq!(after.members[0].x, Some(x0 + 150.0));
+        assert_eq!(after.members[0].y, Some(y0 + 80.0));
+        // The untouched member and the buses keep their auto placement.
+        assert_eq!(after.members[1].x, None);
+        assert!(after.buses.iter().all(|b| b.x.is_none()));
+    }
+
+    #[test]
+    fn the_marquee_selects_the_boxes_it_spans_and_empty_click_clears() {
+        let mut host = patch_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let before = patch_of(&host);
+        // Sweep a marquee from the canvas middle-bottom (empty) over the two
+        // member boxes on the left.
+        let m1 = graph::member_rect(area, &before, 1, 1.0);
+        g.press(&mut host, &ctx, 300.0, 390.0, &mut || false);
+        g.drag_to(&mut host, &ctx, (m1.x - 2.0) as f64, 2.0);
+        assert_eq!(
+            selection_of(&host),
+            vec![(graph::BoxKind::Member, 0), (graph::BoxKind::Member, 1)],
+            "the marquee spans both members and no bus"
+        );
+        assert!(g.marquee().is_some(), "the rectangle draws while dragging");
+        g.release(&mut host, &ctx, (m1.x - 2.0) as f64, 2.0);
+        assert!(g.marquee().is_none());
+        // A plain click on empty canvas clears the set.
+        g.press(&mut host, &ctx, 300.0, 390.0, &mut || false);
+        g.release(&mut host, &ctx, 300.0, 390.0);
+        assert!(selection_of(&host).is_empty());
+    }
+
+    #[test]
+    fn a_wire_drag_still_wins_over_the_box_under_the_port() {
+        let mut host = patch_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        let area = Rect::new(0.0, 0.0, 600.0, 400.0);
+        let before = patch_of(&host);
+        let (px, py) = graph::port_pin(area, &before, 0, 0, 1.0);
+        g.press(&mut host, &ctx, px as f64, py as f64, &mut || false);
+        assert!(g.wiring().is_some(), "a press on a port starts the wire");
+        // Released over the OUT bus: the rewire lands, no move is emitted.
+        let out_bus = graph::bus_rect(area, &before, 1, 1.0);
+        let effects = g.release(
+            &mut host,
+            &ctx,
+            (out_bus.x + 4.0) as f64,
+            (out_bus.y + 4.0) as f64,
+        );
+        assert!(has_emit_tag(&effects, 7, "wire"));
+        assert!(!has_emit_tag(&effects, 7, "move"));
     }
 
     #[test]

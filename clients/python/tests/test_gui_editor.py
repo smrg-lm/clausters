@@ -497,6 +497,28 @@ def test_a_logical_group_draws_as_a_patch_not_a_lane():
     assert patch["wires"] == [0, "out", "mix", 1, "in", "mix", 1, "out", "OUT"]
 
 
+def test_a_moved_box_persists_beside_the_group_and_redraws_placed():
+    """The "move" edit-back: a member box dragged on the patch canvas keeps its
+    position across redraws (the Editor owns the geometry, beside the logical
+    group), a moved bus is keyed by its stable name, and the composition itself
+    is reported unchanged — geometry is presentation, not sound."""
+    song, _chain, _src = patch_song()
+    ed = editor(song)
+    (patch,) = patches(ed.draw())
+
+    # Geometry is presentation: apply() reports no composition change.
+    assert not ed.apply("/gui_event", [patch["id"], "move", "member", 1, 260.0, 40.0])
+    assert not ed.apply("/gui_event", [patch["id"], "move", "bus", 1, 420.0, 180.0])
+
+    (again,) = patches(ed.draw())
+    assert again["members"][0] == {"name": "gsrc", "ports": ["out"]}, \
+        "an unmoved box keeps the auto layout"
+    assert again["members"][1]["x"] == 260.0 and again["members"][1]["y"] == 40.0
+    # Bus 1 was "OUT": placed by name, the other stays a plain string.
+    assert again["buses"][0] == "mix"
+    assert again["buses"][1] == {"name": "OUT", "x": 420.0, "y": 180.0}
+
+
 def test_rewiring_a_port_rewrites_the_logical_group():
     song, _chain, src = patch_song()
     ed = editor(song)

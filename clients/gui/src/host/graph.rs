@@ -34,11 +34,51 @@ const TEXT_SCALE: f32 = 1.5;
 pub const PORT_R: f32 = 4.0;
 
 /// One member of the graph: its def name and the controls that are wired (each
-/// drawn as a port on the box's right edge).
+/// drawn as a port on the box's right edge). `x`/`y` place the box freely on
+/// the canvas (canvas units, relative to the widget's origin); absent, the box
+/// auto-places in the classic stacked left column.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Member {
     pub name: String,
     pub ports: Vec<String>,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+}
+
+/// One bus node: its name, and the same optional free placement (absent, the
+/// stacked right column).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Bus {
+    pub name: String,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+}
+
+impl Bus {
+    pub fn named(name: impl Into<String>) -> Bus {
+        Bus {
+            name: name.into(),
+            x: None,
+            y: None,
+        }
+    }
+}
+
+/// Which kind of box a canvas gesture addresses — the `"move"` event's tag.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoxKind {
+    Member,
+    Bus,
+}
+
+impl BoxKind {
+    /// The wire form of the kind (the `"move"` payload's second argument).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            BoxKind::Member => "member",
+            BoxKind::Bus => "bus",
+        }
+    }
 }
 
 /// One wire: a member's control, and the bus it touches.
@@ -54,7 +94,7 @@ pub struct Wire {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct GraphDraw {
     pub members: Vec<Member>,
-    pub buses: Vec<String>,
+    pub buses: Vec<Bus>,
     pub wires: Vec<Wire>,
 }
 
@@ -63,43 +103,65 @@ fn member_h(member: &Member) -> f32 {
     HEAD_H + member.ports.len() as f32 * ROW_H + PAD
 }
 
-/// The box of member `i`: the members stack down the left column.
-pub fn member_rect(area: Rect, graph: &GraphDraw, i: usize) -> Rect {
-    let mut y = area.y + PAD;
-    for m in &graph.members[..i.min(graph.members.len())] {
-        y += member_h(m) + PAD;
+/// The box of member `i`, at `scale` (the enclosing workspace's zoom, `1.0`
+/// bare): placed at its explicit `x`/`y` when it has them, else auto-stacked
+/// down the left column (the classic layout, and still the default).
+pub fn member_rect(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> Rect {
+    let h = graph.members.get(i).map_or(HEAD_H, member_h) * scale;
+    let w = (NODE_W * scale).min(area.w - 2.0 * PAD * scale);
+    if let Some(m) = graph.members.get(i)
+        && let (Some(x), Some(y)) = (m.x, m.y)
+    {
+        return Rect::new(area.x + x * scale, area.y + y * scale, w, h);
     }
-    let h = graph.members.get(i).map_or(HEAD_H, member_h);
-    Rect::new(area.x + PAD, y, NODE_W.min(area.w - 2.0 * PAD), h)
+    let mut y = area.y + PAD * scale;
+    for m in &graph.members[..i.min(graph.members.len())] {
+        y += (member_h(m) + PAD) * scale;
+    }
+    Rect::new(area.x + PAD * scale, y, w, h)
 }
 
 /// The pin of member `i`'s port `p`: the square on the box's right edge, one row
 /// per wired control. `(x, y)` is its centre.
-pub fn port_pin(area: Rect, graph: &GraphDraw, i: usize, p: usize) -> (f32, f32) {
-    let r = member_rect(area, graph, i);
-    (r.x + r.w, r.y + HEAD_H + (p as f32 + 0.5) * ROW_H)
+pub fn port_pin(area: Rect, graph: &GraphDraw, i: usize, p: usize, scale: f32) -> (f32, f32) {
+    let r = member_rect(area, graph, i, scale);
+    (r.x + r.w, r.y + (HEAD_H + (p as f32 + 0.5) * ROW_H) * scale)
 }
 
-/// The box of bus `b`: the buses stack down the right column.
-pub fn bus_rect(area: Rect, _graph: &GraphDraw, b: usize) -> Rect {
-    let x = area.x + area.w - PAD - BUS_W.min(area.w * 0.4);
-    let y = area.y + PAD + b as f32 * (BUS_H + PAD);
-    Rect::new(x, y, BUS_W.min(area.w * 0.4), BUS_H)
+/// The box of bus `b`: at its explicit `x`/`y` when it has them, else
+/// auto-stacked down the right column.
+pub fn bus_rect(area: Rect, graph: &GraphDraw, b: usize, scale: f32) -> Rect {
+    let w = (BUS_W * scale).min(area.w * 0.4);
+    let h = BUS_H * scale;
+    if let Some(bus) = graph.buses.get(b)
+        && let (Some(x), Some(y)) = (bus.x, bus.y)
+    {
+        return Rect::new(area.x + x * scale, area.y + y * scale, w, h);
+    }
+    let x = area.x + area.w - PAD * scale - w;
+    let y = area.y + (PAD + b as f32 * (BUS_H + PAD)) * scale;
+    Rect::new(x, y, w, h)
 }
 
 /// The pin of bus `b`: the point wires land on (its left edge, centred).
-pub fn bus_pin(area: Rect, graph: &GraphDraw, b: usize) -> (f32, f32) {
-    let r = bus_rect(area, graph, b);
+pub fn bus_pin(area: Rect, graph: &GraphDraw, b: usize, scale: f32) -> (f32, f32) {
+    let r = bus_rect(area, graph, b, scale);
     (r.x, r.y + r.h * 0.5)
 }
 
 /// The member port under `(x, y)`, as `(member, port)` — the grab point of a
 /// rewiring drag.
-pub fn port_hit(area: Rect, graph: &GraphDraw, x: f64, y: f64) -> Option<(usize, usize)> {
-    let radius = (PORT_R * 2.0).max(6.0) as f64;
+pub fn port_hit(
+    area: Rect,
+    graph: &GraphDraw,
+    x: f64,
+    y: f64,
+    scale: f32,
+) -> Option<(usize, usize)> {
+    let radius = ((PORT_R * scale) * 2.0).max(6.0) as f64;
     for (i, m) in graph.members.iter().enumerate() {
         for p in 0..m.ports.len() {
-            let (px, py) = port_pin(area, graph, i, p);
+            let (px, py) = port_pin(area, graph, i, p, scale);
             let d = ((x - px as f64).powi(2) + (y - py as f64).powi(2)).sqrt();
             if d <= radius {
                 return Some((i, p));
@@ -111,79 +173,140 @@ pub fn port_hit(area: Rect, graph: &GraphDraw, x: f64, y: f64) -> Option<(usize,
 
 /// The bus under `(x, y)` — the drop target of a rewiring drag (its whole box,
 /// so it is easy to hit). `None` over empty space, which *unwires*.
-pub fn bus_hit(area: Rect, graph: &GraphDraw, x: f64, y: f64) -> Option<usize> {
-    (0..graph.buses.len()).find(|&b| bus_rect(area, graph, b).contains(x, y))
+pub fn bus_hit(area: Rect, graph: &GraphDraw, x: f64, y: f64, scale: f32) -> Option<usize> {
+    (0..graph.buses.len()).find(|&b| bus_rect(area, graph, b, scale).contains(x, y))
 }
 
-/// Draws the patch: the member boxes with their ports, the bus nodes, and a wire
-/// per connection. `live` is a rewiring drag in flight — the port being dragged
-/// and the cursor — drawn as a wire to the pointer.
+/// The box under `(x, y)` — the grab point of a move drag and the click
+/// target of the selection. Members win over buses (they are the larger
+/// boxes); a port hit is the caller's business and wins over both.
+pub fn box_hit(
+    area: Rect,
+    graph: &GraphDraw,
+    x: f64,
+    y: f64,
+    scale: f32,
+) -> Option<(BoxKind, usize)> {
+    for i in 0..graph.members.len() {
+        if member_rect(area, graph, i, scale).contains(x, y) {
+            return Some((BoxKind::Member, i));
+        }
+    }
+    (0..graph.buses.len())
+        .find(|&b| bus_rect(area, graph, b, scale).contains(x, y))
+        .map(|b| (BoxKind::Bus, b))
+}
+
+/// The current position of a box in canvas units (its explicit `x`/`y`, or
+/// where the auto layout put it) — the value a starting move drag latches, so
+/// the first drag of an auto-placed box turns its position explicit.
+pub fn box_pos(area: Rect, graph: &GraphDraw, kind: BoxKind, b: usize, scale: f32) -> (f32, f32) {
+    let r = match kind {
+        BoxKind::Member => member_rect(area, graph, b, scale),
+        BoxKind::Bus => bus_rect(area, graph, b, scale),
+    };
+    ((r.x - area.x) / scale, (r.y - area.y) / scale)
+}
+
+/// The transient canvas state the renderer passes per frame: a rewiring drag
+/// in flight (the port being dragged and the cursor, drawn as a wire to the
+/// pointer), the selected set, the marquee rectangle, and the workspace zoom
+/// the patch is seen through.
+pub struct CanvasState<'a> {
+    pub live: Option<((usize, usize), (f32, f32))>,
+    pub selected: &'a [(BoxKind, usize)],
+    pub marquee: Option<Rect>,
+    pub scale: f32,
+}
+
+/// Draws the patch: the member boxes with their ports, the bus nodes, and a
+/// wire per connection, plus the transient canvas chrome in `state`.
 pub fn draw(
     mesh: &mut Mesh,
     area: Rect,
     graph: &GraphDraw,
     label: Option<&str>,
-    live: Option<((usize, usize), (f32, f32))>,
+    state: &CanvasState<'_>,
     theme: &Theme,
 ) {
+    let CanvasState {
+        live,
+        selected,
+        marquee,
+        scale,
+    } = *state;
+    let ts = TEXT_SCALE * scale;
+    let port_r = PORT_R * scale;
     mesh.rect(area, theme.view_field);
     mesh.border(area, 1.0, theme.frame);
     if let Some(text) = label {
         font::text(
             mesh,
             text,
-            area.x + PAD,
+            area.x + PAD * scale,
             area.y + 2.0,
-            TEXT_SCALE,
+            ts,
             theme.text,
         );
     }
 
-    // The buses (right column): a node per bus, `OUT` among them.
+    // The buses: a node per bus, `OUT` among them.
     for (b, bus) in graph.buses.iter().enumerate() {
-        let r = bus_rect(area, graph, b);
+        let r = bus_rect(area, graph, b, scale);
         mesh.rect(r, theme.bus_fill);
-        mesh.border(r, 1.0, theme.hilite);
+        let sel = selected.contains(&(BoxKind::Bus, b));
+        let edge = if sel {
+            theme.selected_edge
+        } else {
+            theme.hilite
+        };
+        mesh.border(r, if sel { 2.0 } else { 1.0 }, edge);
         font::text(
             mesh,
-            bus,
-            r.x + PAD * 0.5,
-            r.y + 4.0,
-            TEXT_SCALE,
+            &bus.name,
+            r.x + PAD * 0.5 * scale,
+            r.y + 4.0 * scale,
+            ts,
             theme.text,
         );
-        let (px, py) = bus_pin(area, graph, b);
+        let (px, py) = bus_pin(area, graph, b, scale);
         mesh.rect(
-            Rect::new(px - PORT_R, py - PORT_R, PORT_R * 2.0, PORT_R * 2.0),
+            Rect::new(px - port_r, py - port_r, port_r * 2.0, port_r * 2.0),
             theme.port,
         );
     }
 
-    // The members (left column): the def name, then a row per wired control.
+    // The members: the def name, then a row per wired control.
     for (i, m) in graph.members.iter().enumerate() {
-        let r = member_rect(area, graph, i);
+        let r = member_rect(area, graph, i, scale);
         mesh.rect(r, theme.object_fill);
-        mesh.border(r, 1.0, theme.object_edge);
+        let sel = selected.contains(&(BoxKind::Member, i));
+        let edge = if sel {
+            theme.selected_edge
+        } else {
+            theme.object_edge
+        };
+        mesh.border(r, if sel { 2.0 } else { 1.0 }, edge);
         font::text(
             mesh,
             &m.name,
-            r.x + PAD * 0.5,
-            r.y + 4.0,
-            TEXT_SCALE,
+            r.x + PAD * 0.5 * scale,
+            r.y + 4.0 * scale,
+            ts,
             theme.text,
         );
         for (p, port) in m.ports.iter().enumerate() {
-            let (px, py) = port_pin(area, graph, i, p);
+            let (px, py) = port_pin(area, graph, i, p, scale);
             font::text(
                 mesh,
                 port,
-                r.x + PAD * 0.5,
-                py - font::height(TEXT_SCALE) * 0.5,
-                TEXT_SCALE,
+                r.x + PAD * 0.5 * scale,
+                py - font::height(ts) * 0.5,
+                ts,
                 theme.text,
             );
             mesh.rect(
-                Rect::new(px - PORT_R, py - PORT_R, PORT_R * 2.0, PORT_R * 2.0),
+                Rect::new(px - port_r, py - port_r, port_r * 2.0, port_r * 2.0),
                 theme.port,
             );
         }
@@ -198,18 +321,29 @@ pub fn draw(
         else {
             continue;
         };
-        let Some(b) = graph.buses.iter().position(|bus| *bus == wire.bus) else {
+        let Some(b) = graph.buses.iter().position(|bus| bus.name == wire.bus) else {
             continue;
         };
-        let (x0, y0) = port_pin(area, graph, wire.member, p);
-        let (x1, y1) = bus_pin(area, graph, b);
-        mesh.line([x0, y0], [x1, y1], 1.5, with_alpha(theme.selection, 0.9));
+        let (x0, y0) = port_pin(area, graph, wire.member, p, scale);
+        let (x1, y1) = bus_pin(area, graph, b, scale);
+        mesh.line(
+            [x0, y0],
+            [x1, y1],
+            1.5 * scale,
+            with_alpha(theme.selection, 0.9),
+        );
     }
 
     // The wire being dragged, from its port to the cursor.
     if let Some(((i, p), (cx, cy))) = live {
-        let (x0, y0) = port_pin(area, graph, i, p);
-        mesh.line([x0, y0], [cx, cy], 1.5, theme.live);
+        let (x0, y0) = port_pin(area, graph, i, p, scale);
+        mesh.line([x0, y0], [cx, cy], 1.5 * scale, theme.live);
+    }
+
+    // The selection marquee in flight, over everything.
+    if let Some(r) = marquee {
+        mesh.rect(r, with_alpha(theme.selection, 0.15));
+        mesh.border(r, 1.0, theme.selection);
     }
 }
 
@@ -223,13 +357,17 @@ mod tests {
                 Member {
                     name: "gsrc".into(),
                     ports: vec!["out".into()],
+                    x: None,
+                    y: None,
                 },
                 Member {
                     name: "gsink".into(),
                     ports: vec!["in".into(), "out".into()],
+                    x: None,
+                    y: None,
                 },
             ],
-            buses: vec!["mix".into(), "OUT".into()],
+            buses: vec![Bus::named("mix"), Bus::named("OUT")],
             wires: vec![
                 Wire {
                     member: 0,
@@ -257,31 +395,74 @@ mod tests {
     #[test]
     fn members_stack_down_the_left_and_buses_down_the_right() {
         let g = chain();
-        let m0 = member_rect(area(), &g, 0);
-        let m1 = member_rect(area(), &g, 1);
+        let m0 = member_rect(area(), &g, 0, 1.0);
+        let m1 = member_rect(area(), &g, 1, 1.0);
         assert!(m1.y > m0.y + m0.h, "the second member sits below the first");
         assert!(m1.h > m0.h, "a member with two ports is taller");
-        let b0 = bus_rect(area(), &g, 0);
+        let b0 = bus_rect(area(), &g, 0, 1.0);
         assert!(b0.x > m0.x + m0.w, "the buses are the right column");
+    }
+
+    #[test]
+    fn explicit_positions_win_and_scale_with_the_zoom() {
+        let mut g = chain();
+        g.members[1].x = Some(300.0);
+        g.members[1].y = Some(40.0);
+        g.buses[0].x = Some(120.0);
+        g.buses[0].y = Some(250.0);
+        let a = area();
+        let m1 = member_rect(a, &g, 1, 1.0);
+        assert_eq!((m1.x, m1.y), (a.x + 300.0, a.y + 40.0));
+        let b0 = bus_rect(a, &g, 0, 1.0);
+        assert_eq!((b0.x, b0.y), (a.x + 120.0, a.y + 250.0));
+        // Under a 2x workspace zoom everything doubles from the area origin.
+        let m1z = member_rect(a, &g, 1, 2.0);
+        assert_eq!((m1z.x, m1z.y), (a.x + 600.0, a.y + 80.0));
+        assert_eq!(m1z.w, m1.w * 2.0);
+        // The auto-placed first member scales its stacked position too.
+        let m0 = member_rect(a, &g, 0, 1.0);
+        let m0z = member_rect(a, &g, 0, 2.0);
+        assert_eq!(m0z.x - a.x, (m0.x - a.x) * 2.0);
+    }
+
+    #[test]
+    fn boxes_hit_and_report_their_position() {
+        let mut g = chain();
+        g.members[0].x = Some(200.0);
+        g.members[0].y = Some(100.0);
+        let a = area();
+        // Hit through a 2x transform: the box sits at 2x its canvas position.
+        let hit = box_hit(a, &g, (a.x + 410.0) as f64, (a.y + 210.0) as f64, 2.0);
+        assert_eq!(hit, Some((BoxKind::Member, 0)));
+        assert_eq!(box_pos(a, &g, BoxKind::Member, 0, 2.0), (200.0, 100.0));
+        // An auto-placed bus reports where the stack put it (canvas units),
+        // so a starting drag can latch it as its explicit position.
+        let b = bus_rect(a, &g, 1, 1.0);
+        assert_eq!(box_pos(a, &g, BoxKind::Bus, 1, 1.0), (b.x - a.x, b.y - a.y));
+        // Empty canvas hits nothing (the marquee's surface).
+        assert_eq!(box_hit(a, &g, 500.0, 390.0, 1.0), None);
     }
 
     #[test]
     fn a_port_is_hit_where_its_pin_is_drawn() {
         let g = chain();
-        let (px, py) = port_pin(area(), &g, 1, 1); // gsink's `out`
-        assert_eq!(port_hit(area(), &g, px as f64, py as f64), Some((1, 1)));
+        let (px, py) = port_pin(area(), &g, 1, 1, 1.0); // gsink's `out`
+        assert_eq!(
+            port_hit(area(), &g, px as f64, py as f64, 1.0),
+            Some((1, 1))
+        );
         // Away from any pin: nothing (the drag starts only on a port).
-        assert_eq!(port_hit(area(), &g, px as f64 + 30.0, py as f64), None);
+        assert_eq!(port_hit(area(), &g, px as f64 + 30.0, py as f64, 1.0), None);
     }
 
     #[test]
     fn a_bus_is_the_drop_target_and_empty_space_is_not() {
         let g = chain();
-        let r = bus_rect(area(), &g, 0);
+        let r = bus_rect(area(), &g, 0, 1.0);
         let (cx, cy) = (r.x as f64 + 4.0, r.y as f64 + 4.0);
-        assert_eq!(bus_hit(area(), &g, cx, cy), Some(0));
+        assert_eq!(bus_hit(area(), &g, cx, cy, 1.0), Some(0));
         // Dropping on nothing unwires (the caller reads `None` that way).
-        assert_eq!(bus_hit(area(), &g, 300.0, 380.0), None);
+        assert_eq!(bus_hit(area(), &g, 300.0, 380.0, 1.0), None);
     }
 
     #[test]
@@ -307,19 +488,30 @@ mod tests {
             area(),
             &chain(),
             Some("chain"),
-            None,
+            &CanvasState {
+                live: None,
+                selected: &[],
+                marquee: None,
+                scale: 1.0,
+            },
             &Theme::default(),
         );
         assert!(!m.is_empty());
 
-        // A wire in flight adds the line to the cursor.
+        // A wire in flight adds the line to the cursor; a selection and a
+        // marquee add their chrome.
         let mut with_live = Mesh::new();
         draw(
             &mut with_live,
             area(),
             &chain(),
             Some("chain"),
-            Some(((0, 0), (400.0, 200.0))),
+            &CanvasState {
+                live: Some(((0, 0), (400.0, 200.0))),
+                selected: &[(BoxKind::Member, 0)],
+                marquee: Some(Rect::new(50.0, 50.0, 120.0, 90.0)),
+                scale: 1.0,
+            },
             &Theme::default(),
         );
         assert!(with_live.vertex_count() > m.vertex_count());

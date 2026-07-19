@@ -936,10 +936,22 @@ def graph(id: int | None = None, *, members=None, buses=None, wires=None,
     server's own analysis (it sorts the graph), so the patch shows the connection
     and leaves the direction to the engine.
 
-    - ``members`` — the nodes, each ``(def_name, [control, …])``: the def and the
-      controls that are wired (each drawn as a port on its box).
-    - ``buses`` — the internal bus names, plus ``"OUT"`` (the hardware) when used.
+    - ``members`` — the nodes, each ``(def_name, [control, …])``: the def and
+      the controls that are wired (each drawn as a port on its box). A member
+      may carry its **canvas position** as ``(def_name, [controls], x, y)``;
+      without one it auto-places in the classic stacked left column.
+    - ``buses`` — the internal bus names, plus ``"OUT"`` (the hardware) when
+      used. A bus likewise takes a position as ``(name, x, y)``; a plain
+      string auto-places in the right column.
     - ``wires`` — the connections, each ``(member_index, control, bus)``.
+
+    The patch is a **canvas**: a box drags freely (moving a selected box moves
+    the whole selection; a drag on empty canvas sweeps a box selection), and
+    each move flows back as ``/gui_event <id> "move" <kind> <index> <x> <y>``
+    (``kind`` is ``"member"`` or ``"bus"``; positions in canvas units), so the
+    driver owns the geometry — re-send ``members``/``buses`` with the
+    positions to place them. Inside a `scroll` workspace the whole canvas
+    pans and zooms (boxes, wires and text together).
 
     Dragging a port onto a bus **rewires** that control; dropping it on empty
     space unwires it. Either way the edit flows back as ``/gui_event <id> "wire"
@@ -947,13 +959,29 @@ def graph(id: int | None = None, *, members=None, buses=None, wires=None,
     logical group and re-renders it — the same edit-back pattern the clips use.
     """
     extra = _drop_none(
-        members=[{"name": str(name), "ports": [str(c) for c in ports]}
-                 for name, ports in members] if members is not None else None,
-        buses=[str(b) for b in buses] if buses is not None else None,
+        members=[_graph_member(m) for m in members] if members is not None else None,
+        buses=[_graph_bus(b) for b in buses] if buses is not None else None,
         wires=[x for w in wires for x in (int(w[0]), str(w[1]), str(w[2]))]
         if wires is not None else None,
         label=label, color=color)
     return node("graph", id=id, **extra, **props)
+
+
+def _graph_member(m) -> dict:
+    """A `graph` member spec: ``(name, ports)`` or ``(name, ports, x, y)``."""
+    spec = {"name": str(m[0]), "ports": [str(c) for c in m[1]]}
+    if len(m) >= 4:
+        spec["x"], spec["y"] = float(m[2]), float(m[3])
+    return spec
+
+
+def _graph_bus(b):
+    """A `graph` bus spec: a plain name, or ``(name, x, y)`` placed."""
+    if isinstance(b, str):
+        return b
+    if len(b) >= 3:
+        return {"name": str(b[0]), "x": float(b[1]), "y": float(b[2])}
+    return str(b[0])
 
 
 def canvas(id: int | None = None, shader: str | None = None, *, params=None, buses=None,

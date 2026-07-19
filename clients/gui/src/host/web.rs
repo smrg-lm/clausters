@@ -938,6 +938,7 @@ impl WebApp {
                 .gestures
                 .wiring()
                 .map(|(id, port)| (id, port, (self.cursor.0 as f32, self.cursor.1 as f32))),
+            marquee: self.gestures.marquee(),
             ..Default::default()
         };
         let Some(render) = self.render.as_mut() else {

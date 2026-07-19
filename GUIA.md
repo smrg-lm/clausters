@@ -206,6 +206,17 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   en vez de pisar al vecino, y la perilla/toggle/menu a `text_size=3.0` se
   leen al triple. A los ~3 s el título crece en vivo por `/gui_set` y el
   párrafo del medio cambia de alineación dos veces.
+- **El patch canvas: colocación libre, selección y navegación.**
+  `examples/gui_patch.py` abre un patcher (osc → filter → verb → OUT) dentro
+  de un workspace: dos cajas y dos buses están **colocados** con `x`/`y` y el
+  resto cae en las columnas clásicas → arrastrar una caja la mueve (la
+  terminal imprime `moved member 0 to (x, y)`; los cables la siguen);
+  arrastrar sobre el canvas vacío barre una **marquesina** que selecciona
+  varias (borde resaltado) y arrastrar una caja seleccionada mueve todo el
+  conjunto; click en el vacío deselecciona; arrastrar un **puerto** hasta un
+  bus recablea (imprime `wired ...`), sobre el vacío descablea; arrastrar el
+  espacio *fuera* del patch panea el plano y la rueda hace zoom anclado al
+  cursor — cajas, cables y texto escalan juntos.
 - **Grupos de tema y acentos por widget.** `examples/gui_style.py` arranca el
   host con un archivo de tema cálido (naranja) y abre una ventana con cuatro
   filas: la primera toma el tema del host, la segunda es un **grupo de tema**

@@ -130,6 +130,14 @@ class Editor:
         #: widget id -> the logical `Group` a `graph` patch draws, which a
         #: rewiring edit writes through.
         self._patches: dict = {}
+        #: id(group) -> the patch's **canvas geometry** (``("member", i)`` /
+        #: ``("bus", name)`` -> ``(x, y)``), persisted beside the logical group
+        #: so a patch reopens as it was left. Presentation only — the render
+        #: never reads it (a box's position means nothing to the sound).
+        self._patch_geometry: dict = {}
+        #: widget id -> the drawn bus-name order, so a ``"move"`` event's bus
+        #: index resolves to its stable name.
+        self._patch_buses: dict = {}
         #: The view: the multitrack (`open`) or a dedicated piano-roll of one
         #: events element (`open_pianoroll`). `render` dispatches on it.
         self._mode = "multitrack"
@@ -234,13 +242,18 @@ class Editor:
         ``(member, control) ↔ bus`` pair. The same 1:1 mapping onto a `GraphDef`
         that rendering uses, drawn instead of sent."""
         wid = next(self._ids)
+        geometry = self._patch_geometry.get(id(group), {})
         members, wires, buses = [], [], []
         for i, (_offset, _dur, child) in enumerate(group.members):
             controls = dict(getattr(child, "controls", None) or {})
             maps = dict(getattr(child, "maps", None) or {})
             ports = [c for c, v in controls.items() if isinstance(v, str)]
             ports += [c for c in maps if c not in ports]
-            members.append((child.def_name, ports))
+            # A member whose box was moved carries its persisted canvas
+            # position; the rest keep the auto layout.
+            pos = geometry.get(("member", i))
+            members.append((child.def_name, ports, *pos) if pos
+                           else (child.def_name, ports))
             for control in ports:
                 bus = controls.get(control) or maps.get(control)
                 if isinstance(bus, str):
@@ -252,7 +265,10 @@ class Editor:
         declared = [spec["name"] for spec in group._bus_specs]
         buses = declared + [b for b in buses if b not in declared]
         self._patches[wid] = group
-        return graph(wid, members=members, buses=buses, wires=wires,
+        self._patch_buses[wid] = list(buses)
+        placed_buses = [(name, *geometry[("bus", name)])
+                        if ("bus", name) in geometry else name for name in buses]
+        return graph(wid, members=members, buses=placed_buses, wires=wires,
                      label=group.name or "patch")
 
     def open(self, host, id: int | None = None) -> int:
@@ -369,6 +385,12 @@ class Editor:
             return False
         if args[1] == "wire":
             return self._apply_wire(int(args[0]), args[2:])
+        if args[1] == "move":
+            # A box moved on a patch canvas: geometry is presentation, owned
+            # here and persisted beside the group — the composition itself did
+            # not change (y and x mean nothing to the render).
+            self._apply_move(int(args[0]), args[2:])
+            return False
         if args[1] == "locate":
             # A click on a lane's ruler (or its empty space): seek. A transport
             # action, not an edit — the composition did not change (and another
@@ -409,6 +431,24 @@ class Editor:
         placed.offset, placed.dur = offset, dur
         self._changed()
         return True
+
+    def _apply_move(self, wid: int, values) -> None:
+        """A box moved on a `graph` patch (``"move" <kind> <index> <x> <y>``):
+        the canvas position is persisted beside the logical group (a member by
+        its index, a bus by its stable name), so the next `draw` — and any
+        later reopening of the patch — places the box where it was left."""
+        group = self._patches.get(wid)
+        if group is None or len(values) < 4:
+            return
+        kind, index = str(values[0]), int(values[1])
+        pos = (float(values[2]), float(values[3]))
+        geometry = self._patch_geometry.setdefault(id(group), {})
+        if kind == "member":
+            geometry[("member", index)] = pos
+        elif kind == "bus":
+            names = self._patch_buses.get(wid, [])
+            if 0 <= index < len(names):
+                geometry[("bus", names[index])] = pos
 
     def _apply_wire(self, wid: int, values) -> bool:
         """A control rewired on a `graph` patch (``"wire" <member> <control>

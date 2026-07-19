@@ -923,6 +923,11 @@ pub enum WidgetKind {
     /// `"wire"` event. The model's *logical grouping*, on screen. A leaf.
     Graph {
         graph: super::graph::GraphDraw,
+        /// The multi-box selection (`(kind, index)` pairs) — native view
+        /// state, never parsed from the wire: the click/marquee gestures
+        /// build it, the move drag consumes it, and it clears when the
+        /// script replaces `members`/`buses` (the indices would dangle).
+        selected: Vec<(super::graph::BoxKind, usize)>,
         label: Option<String>,
     },
     /// A type this build does not render yet. Laid out so it reserves space, but
@@ -1456,6 +1461,7 @@ impl Widget {
                 label: label(&node.props),
             },
             "graph" => WidgetKind::Graph {
+                selected: Vec::new(),
                 graph: parse_graph(&node.props),
                 label: label(&node.props),
             },
@@ -2016,7 +2022,11 @@ impl WidgetKind {
                 "text_size" => set_size(text_size, v),
                 _ => false,
             },
-            WidgetKind::Graph { graph, label } => match key {
+            WidgetKind::Graph {
+                graph,
+                selected,
+                label,
+            } => match key {
                 // The whole patch at once (its parts are arrays, and a `/gui_set`
                 // value is a scalar — so they ride as their JSON, like `points`).
                 "members" | "buses" | "wires" => {
@@ -2036,6 +2046,10 @@ impl WidgetKind {
                         "buses" if !parsed.buses.is_empty() => graph.buses = parsed.buses,
                         "wires" => graph.wires = parsed.wires,
                         _ => return false,
+                    }
+                    // The indices would dangle over the replaced lists.
+                    if key != "wires" {
+                        selected.clear();
                     }
                     true
                 }
@@ -2308,18 +2322,30 @@ fn parse_graph(props: &serde_json::Map<String, Value>) -> super::graph::GraphDra
                                     .collect()
                             })
                             .unwrap_or_default(),
+                        x: m.get("x").and_then(Value::as_f64).map(|n| n as f32),
+                        y: m.get("y").and_then(Value::as_f64).map(|n| n as f32),
                     })
                 })
                 .collect()
         })
         .unwrap_or_default();
-    let buses: Vec<String> = props
+    // A bus is a plain name string (the classic form, auto-placed), or an
+    // object `{"name": …, "x": …, "y": …}` carrying its free placement.
+    let buses: Vec<super::graph::Bus> = props
         .get("buses")
         .and_then(Value::as_array)
         .map(|items| {
             items
                 .iter()
-                .filter_map(|b| b.as_str().map(str::to_string))
+                .filter_map(|b| match b {
+                    Value::String(name) => Some(super::graph::Bus::named(name.clone())),
+                    Value::Object(o) => Some(super::graph::Bus {
+                        name: o.get("name")?.as_str()?.to_string(),
+                        x: o.get("x").and_then(Value::as_f64).map(|n| n as f32),
+                        y: o.get("y").and_then(Value::as_f64).map(|n| n as f32),
+                    }),
+                    _ => None,
+                })
                 .collect()
         })
         .unwrap_or_default();
