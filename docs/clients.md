@@ -99,7 +99,9 @@ Two design choices carry the rest:
   fetch in the browser), never chunked over the wire.
 
 The wire reference — the commands, the GuiDef document, the events and the widget
-catalog — is [The GUI protocol](gui-protocol.md).
+catalog — is [The GUI protocol](gui-protocol.md). The crate's front door — a
+quick start, the widget vocabulary at a glance and its documentation map — is
+[the `clients/gui` README](https://github.com/smrg-lm/clausters/blob/main/clients/gui/README.md).
 
 The widget catalog runs from the ordinary controls (labels, knobs, sliders,
 numbers, buttons, toggles, text, menus) through the live meters and scopes
