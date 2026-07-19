@@ -181,8 +181,9 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   área de trabajo elástica (sidebar de ancho fijo con knob/slider + scope que
   se estira), barra de estado abajo. Redimensionar la ventana → las barras
   conservan su altura y solo el área central crece; play → suena la voz suave
-  y el scope dibuja el LFO; mover el knob/slider → la barra de estado dice
-  `freq ... Hz` / `amp ...` en cada gesto.
+  y el osciloscopio dibuja la salida estéreo real (taps); mover el knob/slider
+  → se oye el cambio, la barra de estado dice `freq ... Hz` / `amp ...` en
+  cada gesto y la onda del scope cambia con él.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

@@ -16,10 +16,11 @@ elements a control panel uses:
   absolutely — not used here, same props, different layout.
 
 Everything is live: the sidebar's controls retune a quiet server voice, the
-scope draws the LFO this script writes to a control bus (read by the host from
-shared memory, zero per-frame messages), and the status bar is a plain
-``label`` the script rewrites via ``set`` on every event — the whole
-"application" is one GuiDef plus ordinary client code.
+oscilloscope draws the server's **actual stereo output** (two audio taps on
+buses 0/1, read by the host from shared memory — zero per-frame messages),
+and the status bar is a plain ``label`` the script rewrites via ``set`` on
+every event — the whole "application" is one GuiDef plus ordinary client
+code.
 
 This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
 Install once, from the repo root::
@@ -34,7 +35,6 @@ audio device.
 """
 
 # %%
-import math
 import sys
 import time
 
@@ -45,8 +45,8 @@ from clausters.gui import button, knob, label, menu, panel, scope, slider, windo
 # %% [markdown]
 # ## Launch the server and the GUI
 # `Session.live()` boots the server with a shared-memory segment (`shm="auto"`),
-# and `session.gui()` maps the same segment — the scope reads its control bus
-# straight from it.
+# and `session.gui()` maps the same segment — the oscilloscope reads the audio
+# taps straight from it.
 
 # %%
 session = Session.live()
@@ -70,7 +70,11 @@ def voice(name: str = "gui_shell_voice") -> SynthDef:
 
 
 server.add_synthdef(voice())
-lfo_bus = server.control_bus()
+
+# Two adjacent audio taps on the output buses: the oscilloscope's source.
+tap0 = server.taps.alloc(2)
+for k in range(2):
+    server.tap(tap0 + k, k)
 
 # %% [markdown]
 # ## The shell
@@ -90,8 +94,8 @@ freq_knob = knob(label="freq", min=55.0, max=880.0, value=220.0)
 amp_slider = slider(label="amp", min=0.0, max=0.15, value=0.08)
 sidebar = panel(None, freq_knob, amp_slider, layout="col", w=190)
 
-lfo_scope = scope(bus=lfo_bus.index, min=-1.0, max=1.0, label="lfo (control bus)")
-work_area = panel(None, sidebar, lfo_scope, layout="row", weight=1.0, gap=4)
+out_scope = scope(tap=tap0, channels=2, window_ms=25.0, label="output")
+work_area = panel(None, sidebar, out_scope, layout="row", weight=1.0, gap=4)
 
 status = label(None, "ready", h=24)
 
@@ -104,9 +108,8 @@ print(f"opened window {win}")
 # ## Drive it
 # The script is the application logic: button presses start/stop the voice,
 # the knob and slider retune it, and every action rewrites the status label —
-# `set(status, text=...)` is the whole status-bar API. Meanwhile the LFO the
-# scope draws is just this loop writing the control bus (to the audio server;
-# the GUI reads it from the segment).
+# `set(status, text=...)` is the whole status-bar API. The oscilloscope needs
+# nothing from this loop — the host reads the taps from the segment on its own.
 
 # %%
 _voice = None
@@ -141,12 +144,10 @@ def on_event(widget_id: int, value) -> None:
 
 
 def run(seconds: float) -> None:
-    """Animates the LFO bus and dispatches shell events for ``seconds``."""
+    """Dispatches shell events for ``seconds``."""
     global _closed
     start = time.monotonic()
     while time.monotonic() - start < seconds and not _closed:
-        phase = time.monotonic() - start
-        server.set_bus(lfo_bus, math.sin(2 * math.pi * 0.5 * phase))
         msg = gui.poll(timeout=0.03)
         if msg is None:
             continue
@@ -166,4 +167,4 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
             server.set(_voice, {"gate": 0.0})
         session.close()
 else:
-    print("shell up - run(10) to animate and dispatch, session.close() to end")
+    print("shell up - run(10) to dispatch events, session.close() to end")
