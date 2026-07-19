@@ -186,11 +186,13 @@ the package (`clients/python/clausters/_bin/`, `_libs/`) → workspace
 `target/`**. In this source checkout the package is installed editable, so
 the *bundled* copy wins and goes stale the moment a crate is rebuilt — a
 manual test can silently exercise pre-change binaries. Before any manual or
-visual test launched through Python, refresh the bundled copy (e.g.
-`cargo build --release` in `clients/gui/`, then copy
-`target/release/clausters-gui` over `clients/python/clausters/_bin/`), or
-point the override env vars (`CLAUSTERS_GUI_BIN`, `CLAUSTERS_BIN`,
-`CLAUSTERS_LIB`, `CLAUSTERS_FFI_LIB`) at the workspace build.
+visual test launched through Python, refresh the bundled copy — one command:
+`scripts/refresh-bin.sh` (wraps `clients/python/build_native.py`: rebuilds
+server + FFI + GUI host in release and stages everything into `_bin`/`_libs`;
+`scripts/refresh-bin.sh gui_shell` also runs that example with the `.venv`
+Python, `--skip` skips the rebuild) — or point the override env vars
+(`CLAUSTERS_GUI_BIN`, `CLAUSTERS_BIN`, `CLAUSTERS_LIB`, `CLAUSTERS_FFI_LIB`)
+at the workspace build.
 
 ## E2E testing rule
 
