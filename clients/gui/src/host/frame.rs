@@ -32,7 +32,8 @@ use super::spectrum::SpectrumState;
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::{
-    BusSource, bpf, controls, graph, live, meters, phasescope, pianoroll, plot, spectrum, track,
+    BusSource, bpf, controls, graph, live, meters, phasescope, piano, pianoroll, plot, spectrum,
+    track,
 };
 
 /// The window's clear color (the dark chrome backdrop).
@@ -784,6 +785,26 @@ pub(crate) fn render(
                     phase_rects.push((id, p.rect, label.clone()));
                 }
             }
+            WidgetKind::Piano {
+                min,
+                max,
+                active_min,
+                active_max,
+                overview,
+                pressed,
+                label,
+                ..
+            } => piano::draw_widget(
+                &mut mesh,
+                p.rect,
+                *min,
+                *max,
+                *overview,
+                *active_min,
+                *active_max,
+                pressed,
+                label.as_deref(),
+            ),
             WidgetKind::Spectrum {
                 fft_size,
                 db_floor,

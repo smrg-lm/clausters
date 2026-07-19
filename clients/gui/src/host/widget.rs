@@ -568,6 +568,40 @@ pub enum WidgetKind {
         label: Option<String>,
         editor: EditorProps,
     },
+    /// The playable virtual piano keyboard, laid out with real piano
+    /// proportions ([`super::piano`]) so it resizes freely. `min`/`max` are
+    /// the visible MIDI range (min snapped down to a white key); the
+    /// `overview` strip — a miniature of the full `0..=127` range with the
+    /// visible window marked — is the keyboard's zoom/pan "ruler", and `pan`
+    /// gates all range navigation (drag/wheel) when off. Keys outside
+    /// `active_min..=active_max` draw grayed and are inert — the visual of
+    /// the mapped range. Pressing a key emits the MIDI-shaped
+    /// `"note" pitch velocity state channel` event (state 1 on press, 0 on
+    /// release; dragging across keys glissandos), with `velocity` fixed by
+    /// prop or mapped from the press height (front of the key = louder).
+    /// With `voice` set, the **host** additionally manages one server voice
+    /// per held key: `/s_new <voice> … freq amp gate 1 <voice_args…>` on
+    /// press, `gate 0` on release (the def frees itself).
+    Piano {
+        min: i32,
+        max: i32,
+        active_min: i32,
+        active_max: i32,
+        pan: bool,
+        overview: bool,
+        /// A fixed press velocity; `None` maps velocity from the press height.
+        velocity: Option<i32>,
+        /// The MIDI channel carried in the `"note"` event (0..15).
+        channel: i32,
+        /// Host-voice mode: the server def one voice per held key plays.
+        voice: Option<String>,
+        /// Extra `/s_new` control pairs appended after `freq`/`amp`/`gate`.
+        voice_args: Vec<(String, f32)>,
+        /// The held keys — native view state, never parsed from the wire: the
+        /// press/glissando/release gestures build it, the drawing reads it.
+        pressed: Vec<i32>,
+        label: Option<String>,
+    },
     /// One clip on a `track`: a placed rectangle spanning `[offset, offset +
     /// dur]` in timeline sample units (the graphic unit — length = duration),
     /// with a `label`. Its body is one of two: a **waveform**, or — when `notes`
@@ -1011,6 +1045,35 @@ impl Widget {
                     midi_in: node.props.get("midi_in").and_then(truthy).unwrap_or(false),
                     label: label(&node.props),
                     editor: EditorProps::parse(&node.props, RulerY::Off),
+                }
+            }
+            "piano" => {
+                let min = number(&node.props, "min", 36.0) as i32;
+                let max = number(&node.props, "max", 96.0) as i32;
+                WidgetKind::Piano {
+                    min: super::piano::snap_white_down(min.min(max).clamp(0, 127)),
+                    max: max.max(min).clamp(0, 127),
+                    active_min: number(&node.props, "active_min", 0.0) as i32,
+                    active_max: number(&node.props, "active_max", 127.0) as i32,
+                    pan: node.props.get("pan").and_then(truthy).unwrap_or(true),
+                    overview: node.props.get("overview").and_then(truthy).unwrap_or(true),
+                    // Absent or negative = dynamic (mapped from the press height).
+                    velocity: node
+                        .props
+                        .get("velocity")
+                        .and_then(Value::as_i64)
+                        .filter(|&v| v >= 0)
+                        .map(|v| (v as i32).clamp(1, 127)),
+                    channel: (number(&node.props, "channel", 0.0) as i32).clamp(0, 15),
+                    voice: node
+                        .props
+                        .get("voice")
+                        .and_then(Value::as_str)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string),
+                    voice_args: parse_voice_args(&node.props),
+                    pressed: Vec::new(),
+                    label: label(&node.props),
                 }
             }
             "clip" => WidgetKind::Clip {
@@ -1647,6 +1710,62 @@ impl WidgetKind {
                 // group model by the host `on_set` for the timeline keys.
                 _ => editor.apply(key, v),
             },
+            WidgetKind::Piano {
+                min,
+                max,
+                active_min,
+                active_max,
+                pan,
+                overview,
+                velocity,
+                channel,
+                voice,
+                voice_args,
+                pressed,
+                label,
+            } => match key {
+                // A range change re-normalizes (min white-snapped) and drops
+                // held keys that left the visible window (their rects are gone;
+                // the release gesture tolerates the miss).
+                "min" => v
+                    .as_i64()
+                    .map(|n| {
+                        *min = super::piano::snap_white_down((n as i32).clamp(0, 127).min(*max));
+                        pressed.retain(|p| *p >= *min);
+                    })
+                    .is_some(),
+                "max" => v
+                    .as_i64()
+                    .map(|n| {
+                        *max = (n as i32).clamp(0, 127).max(*min);
+                        pressed.retain(|p| *p <= *max);
+                    })
+                    .is_some(),
+                "active_min" => v.as_i64().map(|n| *active_min = n as i32).is_some(),
+                "active_max" => v.as_i64().map(|n| *active_max = n as i32).is_some(),
+                "pan" => truthy(v).map(|b| *pan = b).is_some(),
+                "overview" => truthy(v).map(|b| *overview = b).is_some(),
+                // A negative velocity restores the dynamic (press-height) map.
+                "velocity" => v
+                    .as_i64()
+                    .map(|n| *velocity = (n >= 0).then(|| (n as i32).clamp(1, 127)))
+                    .is_some(),
+                "channel" => v
+                    .as_i64()
+                    .map(|n| *channel = (n as i32).clamp(0, 15))
+                    .is_some(),
+                // An empty string leaves voice mode (events only).
+                "voice" => v
+                    .as_str()
+                    .map(|s| *voice = (!s.is_empty()).then(|| s.to_string()))
+                    .is_some(),
+                "voice_args" => {
+                    *voice_args = parse_voice_args(&as_array_props("voice_args", v));
+                    true
+                }
+                "label" => set_label(label, v),
+                _ => false,
+            },
             WidgetKind::Button { label } => key == "label" && set_label(label, v),
             WidgetKind::Label { text } => {
                 key == "text" && v.as_str().map(|s| *text = s.to_string()).is_some()
@@ -1713,6 +1832,19 @@ fn parse_osc(props: &serde_json::Map<String, Value>) -> Vec<super::pianoroll::Os
             let label = c[1].as_str().filter(|s| !s.is_empty()).map(str::to_string);
             Some(super::pianoroll::OscMark { time, label })
         })
+        .collect()
+}
+
+/// Parse a `piano`'s `voice_args` — a flat `[name, value, name, value, …]`
+/// list of extra `/s_new` control pairs (the `bind`-prefix posture: names are
+/// strings, values numbers). A trailing partial pair is dropped.
+fn parse_voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)> {
+    let Some(Value::Array(items)) = props.get("voice_args") else {
+        return Vec::new();
+    };
+    items
+        .chunks_exact(2)
+        .filter_map(|c| Some((c[0].as_str()?.to_string(), c[1].as_f64()? as f32)))
         .collect()
 }
 
@@ -3065,5 +3197,107 @@ mod tests {
         assert_eq!(knob.kind.event_value(), Some(OscType::Float(4.0)));
         // An unknown key is a no-op.
         assert!(!knob.kind.apply("nonesuch", &Value::from(1.0)));
+    }
+
+    #[test]
+    fn piano_parses_defaults_and_normalizes_the_range() {
+        let n = node(r#"{"type":"window","children":[{"id":6,"type":"piano"}]}"#);
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Piano {
+                min,
+                max,
+                active_min,
+                active_max,
+                pan,
+                overview,
+                velocity,
+                channel,
+                voice,
+                voice_args,
+                pressed,
+                ..
+            } => {
+                assert_eq!((*min, *max), (36, 96));
+                assert_eq!((*active_min, *active_max), (0, 127));
+                assert!(*pan && *overview);
+                assert_eq!(*velocity, None); // dynamic (press-height) velocity
+                assert_eq!(*channel, 0);
+                assert!(voice.is_none() && voice_args.is_empty());
+                assert!(pressed.is_empty());
+            }
+            other => panic!("expected piano, got {other:?}"),
+        }
+        // A black-key min snaps down to its white key; voice props parse.
+        let n = node(
+            r#"{"type":"window","children":[{"id":6,"type":"piano","min":61,"max":85,
+                "velocity":90,"channel":3,"voice":"pv","voice_args":["pan",0.5]}]}"#,
+        );
+        let w = Widget::from_node(9, &n, &[]).unwrap();
+        match &w.children[0].kind {
+            WidgetKind::Piano {
+                min,
+                velocity,
+                channel,
+                voice,
+                voice_args,
+                ..
+            } => {
+                assert_eq!(*min, 60);
+                assert_eq!(*velocity, Some(90));
+                assert_eq!(*channel, 3);
+                assert_eq!(voice.as_deref(), Some("pv"));
+                assert_eq!(voice_args, &[("pan".to_string(), 0.5f32)]);
+            }
+            other => panic!("expected piano, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn piano_apply_round_trips_and_prunes_held_keys() {
+        let n = node(r#"{"type":"window","children":[{"id":6,"type":"piano","min":48,"max":84}]}"#);
+        let mut w = Widget::from_node(9, &n, &[]).unwrap();
+        let p = w.find_mut(6).unwrap();
+        if let WidgetKind::Piano { pressed, .. } = &mut p.kind {
+            pressed.extend([50, 80]);
+        }
+        // A narrowed range white-snaps its min and drops held keys outside it.
+        assert!(p.kind.apply("min", &Value::from(61)));
+        assert!(p.kind.apply("max", &Value::from(72)));
+        match &p.kind {
+            WidgetKind::Piano {
+                min, max, pressed, ..
+            } => {
+                assert_eq!((*min, *max), (60, 72));
+                assert!(pressed.is_empty());
+            }
+            other => panic!("expected piano, got {other:?}"),
+        }
+        // A negative velocity restores the dynamic map; an empty voice unsets.
+        assert!(p.kind.apply("velocity", &Value::from(100)));
+        assert!(p.kind.apply("velocity", &Value::from(-1)));
+        assert!(p.kind.apply("voice", &Value::from("pv")));
+        assert!(p.kind.apply("voice", &Value::from("")));
+        assert!(p.kind.apply("pan", &Value::from(0)));
+        assert!(p.kind.apply("active_min", &Value::from(40)));
+        // `voice_args` rides as the JSON-string scalar carrier, like `notes`.
+        assert!(p.kind.apply("voice_args", &Value::from("[\"pan\",0.25]")));
+        match &p.kind {
+            WidgetKind::Piano {
+                velocity,
+                voice,
+                voice_args,
+                pan,
+                active_min,
+                ..
+            } => {
+                assert_eq!(*velocity, None);
+                assert!(voice.is_none());
+                assert_eq!(voice_args, &[("pan".to_string(), 0.25f32)]);
+                assert!(!*pan);
+                assert_eq!(*active_min, 40);
+            }
+            other => panic!("expected piano, got {other:?}"),
+        }
     }
 }

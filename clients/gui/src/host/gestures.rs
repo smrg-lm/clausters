@@ -22,7 +22,7 @@ use clausters_core::osc::OscType;
 use super::interact::{self, slider_t, value_of};
 use super::layout::Rect;
 use super::widget::{Ruler, RulerY, Widget, WidgetKind};
-use super::{Host, bpf, controls, frame, graph, pianoroll, track};
+use super::{Host, bpf, controls, frame, graph, piano, pianoroll, track};
 use crate::viewport::View;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
@@ -260,6 +260,26 @@ enum Drag {
         press_velocity: i32,
         orig: Vec<(usize, i32)>,
     },
+    /// A held `piano` key: crossing into another key glissandos (note-off of
+    /// the old, note-on of the new); release sends the note-off. The layout is
+    /// snapshotted at press time (the range cannot change under a key drag).
+    PianoKey {
+        id: i32,
+        layout: piano::Layout,
+        pitch: i32,
+        /// The widget's fixed velocity, or `None` for the press-height map.
+        fixed_vel: Option<i32>,
+        channel: i32,
+    },
+    /// Dragging the `piano`'s overview strip pans the visible range relative to
+    /// the press snapshot (`min0`/`max0`, the key under the press as `anchor`).
+    PianoView {
+        id: i32,
+        strip: Rect,
+        min0: i32,
+        max0: i32,
+        anchor: i32,
+    },
 }
 
 /// One window's gesture state: the in-progress drag, if any. The front holds
@@ -486,6 +506,53 @@ impl Gestures {
                     });
                 }
             }
+            WidgetKind::Piano {
+                min,
+                max,
+                active_min,
+                active_max,
+                pan,
+                overview,
+                velocity,
+                channel,
+                ref label,
+                ..
+            } => {
+                let l = piano::layout(rect, min, max, overview, label.is_some());
+                // A press on the overview strip grabs the visible window: the
+                // drag pans it (relative, from the press snapshot). Gated by
+                // `pan` — a fixed-range piano ignores the strip.
+                if let Some(strip) = l.overview
+                    && strip.contains(cx, cy)
+                {
+                    if pan {
+                        self.drag = Some(Drag::PianoView {
+                            id,
+                            strip,
+                            min0: l.min,
+                            max0: l.max,
+                            anchor: piano::overview_hit(strip, cx as f32),
+                        });
+                    }
+                    return out;
+                }
+                // A press on a key plays it — inert outside the active range.
+                if let Some(p) = piano::hit(&l, cx as f32, cy as f32) {
+                    if !(active_min..=active_max).contains(&p) {
+                        return out;
+                    }
+                    let vel = velocity.unwrap_or_else(|| piano::velocity_at(&l, p, cy as f32));
+                    piano_note(host, &mut out, def_id, id, p, vel, 1, channel);
+                    self.drag = Some(Drag::PianoKey {
+                        id,
+                        layout: l,
+                        pitch: p,
+                        fixed_vel: velocity,
+                        channel,
+                    });
+                    out.push(GestureEffect::Redraw(def_id));
+                }
+            }
             WidgetKind::PianoRoll { .. } => {
                 let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy)
                 else {
@@ -634,6 +701,41 @@ impl Gestures {
                     .map_or(1.0, |e| e.y_view().1);
                 let start = y_start + (cy - origin_y) / lane_h * y_len;
                 set_y_view(host, &mut out, def_id, id, start, y_len);
+            }
+            Drag::PianoKey {
+                id,
+                layout,
+                pitch,
+                fixed_vel,
+                channel,
+            } => {
+                // Glissando: crossing into another (active) key releases the
+                // held one and presses the new; leaving the keyboard keeps the
+                // note held until release.
+                if let Some(p) = piano::hit(&layout, cx as f32, cy as f32)
+                    && p != pitch
+                    && interact::piano_key_active(host, def_id, id, p)
+                {
+                    let vel =
+                        fixed_vel.unwrap_or_else(|| piano::velocity_at(&layout, p, cy as f32));
+                    piano_note(host, &mut out, def_id, id, pitch, 0, 0, channel);
+                    piano_note(host, &mut out, def_id, id, p, vel, 1, channel);
+                    if let Some(Drag::PianoKey { pitch, .. }) = self.drag.as_mut() {
+                        *pitch = p;
+                    }
+                    out.push(GestureEffect::Redraw(def_id));
+                }
+            }
+            Drag::PianoView {
+                id,
+                strip,
+                min0,
+                max0,
+                anchor,
+            } => {
+                let cur = piano::overview_hit(strip, cx as f32);
+                let (nmin, nmax) = piano::pan_range(min0, max0, cur - anchor);
+                set_piano_range(host, &mut out, def_id, id, nmin, nmax);
             }
             Drag::BpfPoint { id, index, body } => {
                 interact::bpf_edit(host, def_id, id, |p, duration, lo, hi, exp| {
@@ -883,6 +985,12 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
             }
             Some(Drag::Vertical { .. }) => out.push(GestureEffect::ReleasePointer(def_id)),
+            Some(Drag::PianoKey {
+                id, pitch, channel, ..
+            }) => {
+                piano_note(host, &mut out, def_id, id, pitch, 0, 0, channel);
+                out.push(GestureEffect::Redraw(def_id));
+            }
             Some(Drag::Wire { id, port, area }) => {
                 // Released over a bus: the control is rewired to it. Over empty
                 // space: unwired (the bus is reported empty). Either way the tree
@@ -950,6 +1058,35 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
+        // The piano navigates its own MIDI range, not a timeline group: wheel
+        // over the overview strip zooms the range (anchored at the cursor's
+        // key), over the keys it pans by whole white keys. Both gated by `pan`.
+        if let Some((
+            id,
+            rect,
+            WidgetKind::Piano {
+                min,
+                max,
+                pan,
+                overview,
+                ref label,
+                ..
+            },
+        )) = hit(host, ctx, cx, cy)
+        {
+            if pan {
+                let l = piano::layout(rect, min, max, overview, label.is_some());
+                let (nmin, nmax) = match l.overview.filter(|s| s.contains(cx, cy)) {
+                    Some(strip) => {
+                        let anchor = piano::overview_hit(strip, cx as f32) as f64;
+                        piano::zoom_range(l.min, l.max, 0.85f64.powf(steps), anchor)
+                    }
+                    None => piano::pan_white(l.min, l.max, steps.round() as i32),
+                };
+                set_piano_range(host, &mut out, def_id, id, nmin, nmax);
+            }
+            return out;
+        }
         if let Some((id, rect, kind)) = hit(host, ctx, cx, cy)
             && let Some(editor) = kind.editor()
         {
@@ -1521,6 +1658,65 @@ fn emit_clip(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: 
     deliver_args(host, out, def_id, widget_id, args);
 }
 
+/// Plays or releases one `piano` key: updates the held-key view state, drives
+/// the host-managed voice when the widget is in voice mode, and delivers the
+/// MIDI-shaped `"note" pitch velocity state channel` payload — to the audio
+/// server when the piano is bound, to the script as a `/gui_event` otherwise.
+#[allow(clippy::too_many_arguments)] // one note event, all scalars
+fn piano_note(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    widget_id: i32,
+    pitch: i32,
+    velocity: i32,
+    state: i32,
+    channel: i32,
+) {
+    if state != 0 {
+        interact::piano_press_key(host, def_id, widget_id, pitch);
+        host.piano_voice_on(def_id, widget_id, pitch, velocity);
+    } else {
+        interact::piano_release_key(host, def_id, widget_id, pitch);
+        host.piano_voice_off(widget_id, pitch);
+    }
+    deliver_args(
+        host,
+        out,
+        def_id,
+        widget_id,
+        Some(interact::piano_note_args(pitch, velocity, state, channel)),
+    );
+}
+
+/// Applies a `piano` range change (pan/zoom) and, when it actually moved,
+/// emits the `"range" min max` event and repaints — the `"view"` posture on
+/// the keyboard's own MIDI axis.
+fn set_piano_range(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    id: i32,
+    min: i32,
+    max: i32,
+) {
+    if let Some((min, max)) = interact::piano_set_range(host, def_id, id, min, max) {
+        // Always an event, never a bound forward: a binding carries the note
+        // payload, the range is view state (the timeline views' "view" posture).
+        emit(
+            out,
+            def_id,
+            id,
+            vec![
+                OscType::String("range".into()),
+                OscType::Int(min),
+                OscType::Int(max),
+            ],
+        );
+        out.push(GestureEffect::Redraw(def_id));
+    }
+}
+
 /// Delivers a piano-roll's edited notes (`"notes" start dur pitch vel ch …`).
 fn emit_notes(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, widget_id: i32) {
     let args = host
@@ -1868,5 +2064,218 @@ mod tests {
         let after = host.timeline_nav(60).unwrap().0.len;
         assert!(after < before, "wheel-in shrinks the visible window");
         assert!(has_emit_tag(&effects, 60, "view"));
+    }
+
+    // --- piano ---
+
+    /// A one-piano window (no overview, no label: the keys fill the widget
+    /// rect), plus the layout the gestures see. The window is 712x132 so the
+    /// child rect is (6,6,700,120): one octave C4..C5 = 8 white keys.
+    fn piano_host(extra: &str) -> (Host, piano::Layout) {
+        let json = format!(
+            r#"{{"type":"window","children":[
+                {{"id":70,"type":"piano","min":60,"max":72,"overview":0{extra}}}]}}"#
+        );
+        let host = host_from(&json);
+        let l = piano::layout(Rect::new(6.0, 6.0, 700.0, 120.0), 60, 72, false, false);
+        (host, l)
+    }
+
+    fn note_emits(effects: &[GestureEffect]) -> Vec<(i32, i32, i32, i32)> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                GestureEffect::Emit { args, .. }
+                    if args.first() == Some(&OscType::String("note".into())) =>
+                {
+                    match args[1..] {
+                        [
+                            OscType::Int(p),
+                            OscType::Int(v),
+                            OscType::Int(s),
+                            OscType::Int(c),
+                        ] => Some((p, v, s, c)),
+                        _ => panic!("malformed note payload: {args:?}"),
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn piano_pressed(host: &Host) -> Vec<i32> {
+        match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Piano { pressed, .. } => pressed.clone(),
+            other => panic!("not a piano: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn piano_press_glissando_and_release_emit_midi_shaped_notes() {
+        let (mut host, l) = piano_host(r#","channel":2"#);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 712, 132);
+        // Press the front of C4: note-on, high velocity, channel carried.
+        let c = piano::key_rect(&l, 60).unwrap();
+        let effects = g.press(
+            &mut host,
+            &ctx,
+            (c.x + c.w * 0.5) as f64,
+            (c.y + c.h - 1.0) as f64,
+            &mut || false,
+        );
+        let notes = note_emits(&effects);
+        assert_eq!(notes.len(), 1);
+        let (p, v, s, ch) = notes[0];
+        assert_eq!((p, s, ch), (60, 1, 2));
+        assert!(v > 120, "front-of-key press is loud, got {v}");
+        assert_eq!(piano_pressed(&host), vec![60]);
+        // Glissando onto D4: off 60, on 62 (the new key's own velocity).
+        let d = piano::key_rect(&l, 62).unwrap();
+        let effects = g.drag_to(
+            &mut host,
+            &ctx,
+            (d.x + d.w * 0.5) as f64,
+            (d.y + d.h * 0.5) as f64,
+        );
+        let notes = note_emits(&effects);
+        assert_eq!(notes.len(), 2);
+        assert_eq!((notes[0].0, notes[0].2), (60, 0));
+        assert_eq!((notes[1].0, notes[1].2), (62, 1));
+        assert_eq!(piano_pressed(&host), vec![62]);
+        // Release: note-off of the held key.
+        let effects = g.release(&mut host, &ctx, d.x as f64, d.y as f64);
+        let notes = note_emits(&effects);
+        assert_eq!(notes.len(), 1);
+        assert_eq!((notes[0].0, notes[0].2), (62, 0));
+        assert!(piano_pressed(&host).is_empty());
+    }
+
+    #[test]
+    fn piano_fixed_velocity_and_grayed_keys() {
+        // A fixed velocity overrides the press-height map.
+        let (mut host, l) = piano_host(r#","velocity":90"#);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 712, 132);
+        let c = piano::key_rect(&l, 60).unwrap();
+        let effects = g.press(
+            &mut host,
+            &ctx,
+            (c.x + 2.0) as f64,
+            (c.y + c.h - 1.0) as f64,
+            &mut || false,
+        );
+        assert_eq!(note_emits(&effects)[0].1, 90);
+        g.release(&mut host, &ctx, c.x as f64, c.y as f64);
+        // A press outside the active range is inert: no event, no held key.
+        let (mut host, _) = piano_host(r#","active_min":64,"active_max":72"#);
+        let mut g = Gestures::default();
+        let effects = g.press(
+            &mut host,
+            &ctx,
+            (c.x + 2.0) as f64,
+            (c.y + c.h - 1.0) as f64,
+            &mut || false,
+        );
+        assert!(note_emits(&effects).is_empty());
+        assert!(!g.dragging());
+        assert!(piano_pressed(&host).is_empty());
+    }
+
+    #[test]
+    fn piano_wheel_pans_the_range_and_pan_zero_freezes_it() {
+        let (mut host, l) = piano_host("");
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 712, 132);
+        let c = piano::key_rect(&l, 60).unwrap();
+        let (cx, cy) = ((c.x + c.w * 0.5) as f64, (c.y + c.h - 1.0) as f64);
+        let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
+        assert!(has_emit_tag(&effects, 70, "range"));
+        match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Piano { min, max, .. } => assert_eq!((*min, *max), (62, 74)),
+            other => panic!("not a piano: {other:?}"),
+        }
+        // `pan: 0` silences every range gesture.
+        let (mut host, _) = piano_host(r#","pan":0"#);
+        let effects = g.wheel(&mut host, &ctx, cx, cy, 1.0);
+        assert!(effects.is_empty());
+        match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Piano { min, max, .. } => assert_eq!((*min, *max), (60, 72)),
+            other => panic!("not a piano: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn piano_overview_drag_pans_and_wheel_zooms() {
+        // With the overview on, the strip sits at the top of the widget rect.
+        let host_json = r#"{"type":"window","children":[
+            {"id":70,"type":"piano","min":60,"max":72}]}"#;
+        let mut host = host_from(host_json);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 712, 132);
+        let l = piano::layout(Rect::new(6.0, 6.0, 700.0, 120.0), 60, 72, true, false);
+        let strip = l.overview.unwrap();
+        let sy = (strip.y + strip.h * 0.5) as f64;
+        // Drag along the strip: the window pans with the cursor.
+        let x0 = piano::overview_key_x(strip, 66) as f64;
+        let x1 = piano::overview_key_x(strip, 78) as f64;
+        let effects = g.press(&mut host, &ctx, x0, sy, &mut || false);
+        assert!(note_emits(&effects).is_empty(), "the strip plays no note");
+        let effects = g.drag_to(&mut host, &ctx, x1, sy);
+        assert!(has_emit_tag(&effects, 70, "range"));
+        match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Piano { min, max, .. } => {
+                assert_eq!(max - min, 12, "pan keeps the span");
+                assert!(*min > 60, "the window moved right");
+            }
+            other => panic!("not a piano: {other:?}"),
+        }
+        g.release(&mut host, &ctx, x1, sy);
+        // Wheel over the strip zooms out (steps < 0 widens the span).
+        let effects = g.wheel(&mut host, &ctx, x1, sy, -2.0);
+        assert!(has_emit_tag(&effects, 70, "range"));
+        match &host.window_def(1).unwrap().find(70).unwrap().kind {
+            WidgetKind::Piano { min, max, .. } => assert!(max - min > 12),
+            other => panic!("not a piano: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn piano_voice_mode_tracks_one_node_per_held_pitch() {
+        let (mut host, l) = piano_host(r#","voice":"pv","voice_args":["pan",0.5]"#);
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 712, 132);
+        let c = piano::key_rect(&l, 60).unwrap();
+        let (cx, cy) = ((c.x + 2.0) as f64, (c.y + c.h - 1.0) as f64);
+        g.press(&mut host, &ctx, cx, cy, &mut || false);
+        let voices = host.piano_voices(70).to_vec();
+        assert_eq!(voices.len(), 1);
+        assert_eq!(voices[0].0, 60);
+        // Glissando: the old voice is released, a new node sounds the new key.
+        let d = piano::key_rect(&l, 62).unwrap();
+        g.drag_to(
+            &mut host,
+            &ctx,
+            (d.x + d.w * 0.5) as f64,
+            (d.y + 1.0) as f64,
+        );
+        let after = host.piano_voices(70).to_vec();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].0, 62);
+        assert_ne!(after[0].1, voices[0].1, "a fresh node id per voice");
+        // Release clears the bookkeeping.
+        g.release(&mut host, &ctx, cx, cy);
+        assert!(host.piano_voices(70).is_empty());
+        // A freed widget releases whatever is still held.
+        g.press(&mut host, &ctx, cx, cy, &mut || false);
+        assert!(!host.piano_voices(70).is_empty());
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: super::super::GUI_FREE.into(),
+                args: vec![OscType::Int(1)],
+            }),
+            from(),
+        );
+        assert!(host.piano_voices(70).is_empty());
     }
 }

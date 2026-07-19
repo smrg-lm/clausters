@@ -748,6 +748,64 @@ def pianoroll(id: int | None = None, *, notes=None, osc=None, min: float | None 
     return node("pianoroll", id=id, **extra, **props)
 
 
+def piano(id: int | None = None, *, min: int | None = None, max: int | None = None,
+          active_min: int | None = None, active_max: int | None = None,
+          pan: bool | None = None, overview: bool | None = None,
+          velocity: int | None = None, channel: int | None = None,
+          voice: str | None = None, voice_args=None,
+          label: str | None = None, **props) -> dict:
+    """The playable ``piano`` virtual keyboard: keys laid out with real piano
+    proportions (equal white keys, narrower/shorter black keys distributed as on
+    the physical instrument), resizing freely with the widget.
+
+    Range and navigation:
+
+    - ``min``/``max`` — the visible MIDI range (default 36–96; ``min`` snaps
+      down to a white key so the keyboard starts on a full key).
+    - ``overview`` — the strip above the keys showing the full 0–127 range with
+      the visible window marked: drag it to pan, wheel over it to zoom (wheel
+      over the keys pans by white keys). On by default.
+    - ``pan`` — set ``False`` to disable all range navigation (the keyboard
+      stays fixed on ``min``/``max``). Range changes flow back as a
+      ``"range" min max`` event and are settable via ``set`` (the browser's
+      path).
+    - ``active_min``/``active_max`` — the mapped range: keys outside it draw
+      grayed and are inert, visualizing what the instrument answers to.
+
+    Playing emits **MIDI-shaped** note events — ``"note" pitch velocity state
+    channel`` (ints; ``state`` 1 on press, 0 on release), so a consumer can
+    translate them 1:1 to MIDI note-on/note-off. Dragging across keys
+    glissandos (off + on). ``velocity`` fixes the press velocity; unset, it
+    maps from the press height (striking nearer the front edge plays louder).
+    ``channel`` (0–15, default 0) rides in every event.
+
+    Mapping to server instruments, two ways:
+
+    - **Programmed (events)** — leave the widget unbound and map ``"note"``
+      events to voices in the script: ``state 1`` spawns a synth (`Server.synth`
+      with ``freq``/``amp`` from pitch/velocity), ``state 0`` sends its
+      ``gate=0``. Fully programmable, like driving any GuiDef.
+    - **Host voices** — set ``voice`` to a SynthDef name and the *host* manages
+      one server voice per held key: ``/s_new <voice> … freq <hz> amp <vel/127>
+      gate 1`` on press, ``gate 0`` on release. The def must have
+      ``freq``/``amp``/``gate`` controls and free itself on release (an
+      ``Env.adsr`` with ``FREE_SELF``). ``voice_args`` is an iterable of extra
+      ``(name, value)`` control pairs for the ``/s_new``. This path needs no
+      script in the loop — a saved GuiDef bundle plays standalone."""
+    extra = _drop_none(min=min, max=max, active_min=active_min,
+                       active_max=active_max, velocity=velocity,
+                       channel=channel, voice=voice,
+                       voice_args=[x for kv in voice_args
+                                   for x in (str(kv[0]), float(kv[1]))]
+                       if voice_args is not None else None,
+                       label=label)
+    if pan is not None:
+        extra["pan"] = 1 if pan else 0
+    if overview is not None:
+        extra["overview"] = 1 if overview else 0
+    return node("piano", id=id, **extra, **props)
+
+
 def graph(id: int | None = None, *, members=None, buses=None, wires=None,
           label: str | None = None, **props) -> dict:
     """A ``graph`` **patcher**: a bus-wired node graph (a `clausters.defs.GraphDef`)

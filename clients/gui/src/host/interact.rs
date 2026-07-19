@@ -654,6 +654,102 @@ pub(crate) fn osc_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     Some(args)
 }
 
+/// Mark a piano key held (the press/glissando write path). `true` when the key
+/// was not already held.
+pub(crate) fn piano_press_key(host: &mut Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
+    piano_state(host, def_id, widget_id, |pressed| {
+        if pressed.contains(&pitch) {
+            false
+        } else {
+            pressed.push(pitch);
+            true
+        }
+    })
+    .unwrap_or(false)
+}
+
+/// Mark a piano key released. `true` when it was held.
+pub(crate) fn piano_release_key(host: &mut Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
+    piano_state(host, def_id, widget_id, |pressed| {
+        let before = pressed.len();
+        pressed.retain(|&p| p != pitch);
+        pressed.len() != before
+    })
+    .unwrap_or(false)
+}
+
+/// Run `f` over a piano's held-key set in the host tree.
+fn piano_state<R>(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    f: impl FnOnce(&mut Vec<i32>) -> R,
+) -> Option<R> {
+    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+        WidgetKind::Piano { pressed, .. } => Some(f(pressed)),
+        _ => None,
+    }
+}
+
+/// Write a piano's visible range (the pan/zoom write path): the min white-snaps,
+/// held keys that left the window drop. Returns the applied range when it
+/// actually changed (`None` for a no-op or a non-piano widget).
+pub(crate) fn piano_set_range(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    new_min: i32,
+    new_max: i32,
+) -> Option<(i32, i32)> {
+    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
+    let WidgetKind::Piano {
+        min, max, pressed, ..
+    } = &mut w.kind
+    else {
+        return None;
+    };
+    let nm = super::piano::snap_white_down(new_min.clamp(0, 127).min(new_max));
+    let nx = new_max.clamp(0, 127).max(nm);
+    if (nm, nx) == (*min, *max) {
+        return None;
+    }
+    *min = nm;
+    *max = nx;
+    pressed.retain(|p| (nm..=nx).contains(p));
+    Some((nm, nx))
+}
+
+/// Whether a piano key is inside the widget's active (non-grayed) range — a
+/// press outside it is inert.
+pub(crate) fn piano_key_active(host: &Host, def_id: i32, widget_id: i32, pitch: i32) -> bool {
+    match host.window_def(def_id).and_then(|t| t.find(widget_id)) {
+        Some(w) => match &w.kind {
+            WidgetKind::Piano {
+                active_min,
+                active_max,
+                ..
+            } => (*active_min..=*active_max).contains(&pitch),
+            _ => false,
+        },
+        None => false,
+    }
+}
+
+/// A piano note event's payload — the MIDI-shaped
+/// `"note" pitch velocity state channel` flat list (state 1 = on, 0 = off): a
+/// `/gui_event` carries it to the script; a bound piano forwards it (minus the
+/// tag) to the audio server; a future MIDI consumer translates it 1:1 to
+/// note-on/note-off.
+pub(crate) fn piano_note_args(pitch: i32, velocity: i32, state: i32, channel: i32) -> Vec<OscType> {
+    vec![
+        OscType::String("note".into()),
+        OscType::Int(pitch),
+        OscType::Int(velocity),
+        OscType::Int(state),
+        OscType::Int(channel),
+    ]
+}
+
 /// Snaps a timeline sample value to a drag grid: to the nearest multiple of
 /// `grid` when it is positive, else to a whole sample.
 pub(crate) fn snap(v: f64, grid: f64) -> f64 {

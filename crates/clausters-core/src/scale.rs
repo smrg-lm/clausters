@@ -18,7 +18,10 @@
 //! notation, `C4` = middle C = note 60), the pitch-axis analogue of the
 //! frequency scales: the piano-roll's pitch ruler and keyboard labels read it,
 //! and a client authoring notes can reuse the same names. Kept here so the
-//! musical spelling lives once alongside the perceptual scales.
+//! musical spelling lives once alongside the perceptual scales — as is the
+//! **MIDI note ↔ hertz** equal-temperament pair ([`midi_to_hz`]/[`hz_to_midi`],
+//! A440), which the GUI host's piano voices and any client converting pitches
+//! share.
 
 /// Hertz → mel (O'Shaughnessy). Negative input is treated as 0.
 #[inline]
@@ -48,6 +51,24 @@ pub fn hz_to_bark(hz: f64) -> f64 {
 pub fn bark_to_hz(bark: f64) -> f64 {
     let z = bark.clamp(-0.53, 26.28 - 1e-9);
     1960.0 * (z + 0.53) / (26.28 - z)
+}
+
+/// MIDI note number → hertz, equal temperament over A440 (`69` → 440 Hz).
+/// Takes a fractional note number so detuned pitches map too.
+#[inline]
+pub fn midi_to_hz(midi: f64) -> f64 {
+    440.0 * 2f64.powf((midi - 69.0) / 12.0)
+}
+
+/// Hertz → (fractional) MIDI note number, the exact inverse of
+/// [`midi_to_hz`]. Non-positive input maps to `f64::NEG_INFINITY`'s clamp at
+/// note 0 rather than a NaN — a display floor, like the bark form's.
+#[inline]
+pub fn hz_to_midi(hz: f64) -> f64 {
+    if hz <= 0.0 {
+        return 0.0;
+    }
+    69.0 + 12.0 * (hz / 440.0).log2()
 }
 
 /// The twelve pitch-class names, sharp spelling, index 0 = C.
@@ -101,6 +122,18 @@ mod tests {
         assert!(is_black_key(61)); // C#
         assert!(is_black_key(66)); // F#
         assert!(!is_black_key(65)); // F
+    }
+
+    #[test]
+    fn midi_hz_landmarks_and_round_trip() {
+        assert_eq!(midi_to_hz(69.0), 440.0); // A4
+        assert_eq!(midi_to_hz(81.0), 880.0); // one octave up doubles
+        assert!((midi_to_hz(60.0) - 261.6256).abs() < 1e-3); // middle C
+        for m in [0.0, 21.0, 60.0, 69.5, 108.0, 127.0] {
+            assert!((hz_to_midi(midi_to_hz(m)) - m).abs() < 1e-9, "at {m}");
+        }
+        assert_eq!(hz_to_midi(0.0), 0.0); // the display floor, not NaN
+        assert_eq!(hz_to_midi(-5.0), 0.0);
     }
 
     #[test]

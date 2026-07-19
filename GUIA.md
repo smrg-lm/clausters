@@ -84,6 +84,20 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   composición: suena donde lo soltaste. El carril **sweep** es una
   automatización: su cuerpo es la **curva**, y se edita ahí mismo (arrastrar un
   punto, Ctrl+click agrega/quita) → se **oye** el filtro seguir la curva dibujada.
+- **Piano virtual (GUI).** `examples/gui_piano.py` abre una ventana con el
+  widget `piano` → se ve un **teclado ejecutable** con las proporciones de un
+  piano real (blancas iguales; negras más angostas y cortas, no centradas en
+  los límites), que se **redimensiona** con la ventana sin deformarse, con la
+  **franja overview** arriba (las 128 notas MIDI con la ventana visible
+  marcada) y las teclas fuera del rango 21–108 **grisadas** (inertes al click).
+  Click en una tecla → se **oye** una voz del servidor (más fuerte cuanto más
+  cerca del borde frontal se toca); arrastrar por varias teclas hace
+  **glissando** (la consola imprime los eventos `"note" pitch vel state ch`).
+  **Arrastrar la franja** panea el rango visible, la **rueda sobre la franja**
+  hace zoom (anclado al cursor), la **rueda sobre las teclas** panea de a
+  blancas — la consola imprime `"range" min max`. Con `voice=` en el builder
+  (la alternativa comentada) el host toca las voces solo, sin script en el
+  medio — lo mismo que el bundle web `clients/web/examples/piano`.
 - **Piano-roll editor (GUI).** `examples/gui_pianoroll.py` abre una ventana con
   la vista `pianoroll` dedicada → se ve el **teclado** a la izquierda (blancas/
   negras, la nota en cada C), la **grilla de notas** MIDI (coloreadas por

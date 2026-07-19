@@ -49,6 +49,7 @@ pub mod nodetree;
 pub mod oscil;
 pub mod paint;
 pub mod phasescope;
+pub mod piano;
 pub mod pianoroll;
 pub mod plot;
 pub mod registry;
@@ -404,7 +405,21 @@ pub struct Host {
     /// horizontal view + selection + playhead per group, referenced by member
     /// widgets (see [`timeline`]).
     timelines: timeline::TimelineGroups,
+    /// The live host-managed piano voices, per widget id: one `(pitch, node)`
+    /// entry per held key of a `piano` in voice mode. The press sends the
+    /// `/s_new`, the release the `gate 0`; the def frees the node itself, so
+    /// no `/n_end` tracking is needed.
+    voices: HashMap<i32, Vec<(i32, i32)>>,
+    /// The next voice node-id offset over [`VOICE_ID_BASE`] (wrapping).
+    voice_counter: i32,
 }
+
+/// The base of the node-id window the host's piano voices allocate from —
+/// far above the Python client's ids (1000..) and the server's own auto
+/// range, so an explicit voice id can never collide (see `docs/decisions.md`).
+const VOICE_ID_BASE: i32 = 0x1000_0000;
+/// The wrapping window of voice ids over the base.
+const VOICE_ID_SPAN: i32 = 1 << 16;
 
 impl Default for Host {
     fn default() -> Self {
@@ -422,6 +437,8 @@ impl Host {
             def_json: HashMap::new(),
             store: None,
             timelines: timeline::TimelineGroups::default(),
+            voices: HashMap::new(),
+            voice_counter: 0,
         }
     }
 
@@ -572,9 +589,10 @@ impl Host {
             }
         }
         // A redefine frees the old subtree first; drop any binding whose widget
-        // did not survive into the new tree.
+        // did not survive into the new tree, and release its live voices.
         if outcome.replaced {
             self.prune_bindings();
+            self.prune_voices();
         }
         // Inline `bind` props register a binding declaratively, so a saved GuiDef
         // carries its own bindings (the standalone path) and a live script may
@@ -676,9 +694,10 @@ impl Host {
         if self.window_defs.remove(&id).is_some() {
             effects.push(HostEffect::CloseWindow(id));
         }
-        // A freed widget can no longer forward (its subtree is gone), and its
-        // timeline group state goes with it.
+        // A freed widget can no longer forward (its subtree is gone), its
+        // timeline group state goes with it, and its live voices are released.
         self.prune_bindings();
+        self.prune_voices();
         self.prune_timeline_groups();
         if removed > 0 {
             info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
@@ -788,6 +807,93 @@ impl Host {
     /// redefining `/gui_def`), so a freed id cannot keep forwarding.
     fn prune_bindings(&mut self) {
         self.bindings.retain(|id, _| self.registry.contains(*id));
+    }
+
+    /// Starts a host-managed voice for a held piano key, when widget
+    /// `widget_id` is a `piano` in voice mode (`voice` set): allocates an
+    /// explicit node id, sends the `/s_new` and records the `(pitch, node)`
+    /// pair so the release can gate it. A re-press of an already-sounding
+    /// pitch releases the old voice first. Bookkeeping happens even with no
+    /// server attached, so the logic is testable without a transport.
+    pub fn piano_voice_on(&mut self, def_id: i32, widget_id: i32, pitch: i32, velocity: i32) {
+        let Some(widget::WidgetKind::Piano {
+            voice: Some(name),
+            voice_args,
+            ..
+        }) = self
+            .window_def(def_id)
+            .and_then(|t| t.find(widget_id))
+            .map(|w| &w.kind)
+        else {
+            return;
+        };
+        let (name, extra) = (name.clone(), voice_args.clone());
+        self.piano_voice_off(widget_id, pitch);
+        let node = VOICE_ID_BASE + self.voice_counter;
+        self.voice_counter = (self.voice_counter + 1) % VOICE_ID_SPAN;
+        self.send_to_server(piano::voice_on_msg(&name, node, pitch, velocity, &extra));
+        self.voices
+            .entry(widget_id)
+            .or_default()
+            .push((pitch, node));
+    }
+
+    /// Releases the host-managed voice of a piano key (`gate 0`; the def frees
+    /// the node itself). A no-op when no voice is sounding for the pitch —
+    /// including when `voice` was unset mid-hold, so a recorded voice always
+    /// gets its release.
+    pub fn piano_voice_off(&mut self, widget_id: i32, pitch: i32) {
+        let Some(list) = self.voices.get_mut(&widget_id) else {
+            return;
+        };
+        let mut nodes = Vec::new();
+        list.retain(|&(p, node)| {
+            if p == pitch {
+                nodes.push(node);
+                false
+            } else {
+                true
+            }
+        });
+        if list.is_empty() {
+            self.voices.remove(&widget_id);
+        }
+        for node in nodes {
+            self.send_to_server(piano::voice_off_msg(node));
+        }
+    }
+
+    /// The live voice nodes of widget `widget_id` (for tests/introspection).
+    pub fn piano_voices(&self, widget_id: i32) -> &[(i32, i32)] {
+        self.voices.get(&widget_id).map_or(&[], Vec::as_slice)
+    }
+
+    /// Releases every live voice of widgets that no longer exist (after a
+    /// `/gui_free` or a redefining `/gui_def`) — a freed piano must not leave
+    /// keys sounding.
+    fn prune_voices(&mut self) {
+        let stale: Vec<i32> = self
+            .voices
+            .keys()
+            .filter(|id| !self.registry.contains(**id))
+            .copied()
+            .collect();
+        for id in stale {
+            if let Some(list) = self.voices.remove(&id) {
+                for (_, node) in list {
+                    self.send_to_server(piano::voice_off_msg(node));
+                }
+            }
+        }
+    }
+
+    /// Sends one message out the audio-server leg, if one is attached.
+    fn send_to_server(&self, msg: OscMessage) {
+        if let Some(server) = self.server.as_ref()
+            && let Err(e) = server.send(msg)
+        {
+            warn!("cannot send to the audio server: {e}");
+        }
     }
 
     /// Registers a [`Binding`] for every widget that declares an inline `bind`

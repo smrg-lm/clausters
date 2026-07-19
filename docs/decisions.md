@@ -1179,3 +1179,28 @@ core-backed one replaced it. Unmaintainable as the client track grows.
   WebSocket carrier, headless scripting) is a **separate future feature**
   ("Node target" in `clients/web/PLAN.md`), deliberately not folded into the
   consolidation.
+
+## The piano's host voices use explicit node ids from a dedicated high window
+
+Context (the `piano` widget's voice mode): a key press must spawn a server
+voice the key *release* can later reach — `/s_new` on press, `/n_set <id> gate
+0` on release. The server-assigned id form (`/s_new … -1`) was rejected for
+exactly that reason: the host would never learn the id it needs to gate, and
+adding a reply round-trip for it would put a network latency inside a played
+note. So the host sends **explicit positive ids**, which the server accepts
+from any client, and allocates them from a dedicated window:
+
+- **Base `0x1000_0000`, wrapping over a `1 << 16` span.** Far above the Python
+  client's counter (`1000..`) and the server's own auto-assign range
+  (`1000 + 4·max_nodes ..`), so a host voice can never collide with a node a
+  script created — the three allocators partition the id space by
+  construction, with no coordination protocol.
+- **No `/n_end` tracking.** A voice def is required to free itself on release
+  (`FREE_SELF` on the gate envelope), so the host's bookkeeping is just the
+  live `(pitch, node)` pairs per widget: the release (or a glissando, a
+  re-press, a widget free/redefine — all of which gate the old voice) removes
+  the entry. A 65536-id window wraps long before any voice from the previous
+  lap can still be sounding.
+
+The same reasoning will apply to any future host-managed spawner (an XY pad
+playing voices, a drum grid): reuse this window, not a new one per widget.

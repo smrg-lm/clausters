@@ -13,6 +13,8 @@ containers, the standard controls, the heavy editor-grade ``waveform`` and
 selection, a playhead tracking the engine clock), the
 shared-memory-backed ``meter``/``scope``, the audio-tap ``scope``
 (oscilloscope), ``phasescope`` (goniometer) and ``spectrum`` (spectroscope), a
+playable ``piano`` virtual keyboard (real key proportions, MIDI-shaped note
+events, optionally host-managed server voices), a
 live ``nodetree`` of the server's node graph, a static ``plot`` of a signal and
 a drawable ``bpf`` envelope editor (the server's own ``EnvGen`` segment shapes;
 edits flow back as flat ``"points"`` events — see `env_to_points` /
@@ -64,6 +66,7 @@ from .guidef import (
     panel,
     peaks_cache_file,
     phasescope,
+    piano,
     pianoroll,
     plot,
     points_to_env,
@@ -98,6 +101,7 @@ __all__ = [
     "menu",
     "waveform",
     "spectrogram",
+    "piano",
     "pianoroll",
     "meter",
     "scope",

@@ -10,9 +10,10 @@ node_modules/
 /src/engine/clausters_web.d.ts
 
 # The demo bundle the smokes write (tools/demo-bundle.sh), and the bundle
-# examples/graph-controls/make_bundle.py generates.
+# examples the make_bundle.py scripts generate.
 /bundle-demo/
 /examples/graph-controls/bundle/
+/examples/piano/bundle/
 
 # Fixtures the parity/bulk harnesses generate next to the test pages.
 /tests/score.bin
