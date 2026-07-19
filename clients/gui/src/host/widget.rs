@@ -42,11 +42,20 @@ pub enum Layout {
 impl Layout {
     /// Parses the `layout` property; defaults to `Col`.
     fn parse(props: &serde_json::Map<String, Value>) -> Layout {
-        match props.get("layout").and_then(Value::as_str) {
-            Some("row") => Layout::Row,
-            Some("grid") => Layout::Grid,
-            Some("free") => Layout::Free,
-            _ => Layout::Col,
+        props
+            .get("layout")
+            .and_then(Value::as_str)
+            .and_then(Layout::from_str)
+            .unwrap_or(Layout::Col)
+    }
+
+    fn from_str(s: &str) -> Option<Layout> {
+        match s {
+            "row" => Some(Layout::Row),
+            "col" => Some(Layout::Col),
+            "grid" => Some(Layout::Grid),
+            "free" => Some(Layout::Free),
+            _ => None,
         }
     }
 }
@@ -284,6 +293,94 @@ impl EditorProps {
     }
 }
 
+/// A container's flow tuning: the inner `margin`, the `gap` between children,
+/// and a fixed `cols` count for the `grid` layout. Absent values keep the
+/// defaults the layout engine always used (margin 6, gap 6, near-square grid).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Flow {
+    pub margin: Option<f32>,
+    pub gap: Option<f32>,
+    pub cols: Option<u32>,
+}
+
+impl Flow {
+    fn parse(props: &serde_json::Map<String, Value>) -> Flow {
+        let f = |k: &str| props.get(k).and_then(Value::as_f64).map(|v| v as f32);
+        Flow {
+            margin: f("margin"),
+            gap: f("gap"),
+            cols: props
+                .get("cols")
+                .and_then(Value::as_u64)
+                .map(|n| (n as u32).max(1)),
+        }
+    }
+
+    /// Applies one `/gui_set` key. `true` if the key is a flow prop.
+    pub fn apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "margin" => {
+                self.margin = v.as_f64().map(|n| n as f32);
+                true
+            }
+            "gap" => {
+                self.gap = v.as_f64().map(|n| n as f32);
+                true
+            }
+            "cols" => {
+                self.cols = v.as_u64().map(|n| (n as u32).max(1));
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+/// The generic layout props **any** widget may carry, applied by the layout
+/// engine: a fixed main-axis size in a `row`/`col` (`w`/`h`, device pixels), a
+/// `weight` for the shared remainder (absent = 1), and a `free`-layout
+/// position (`x`/`y`, with `w`/`h` as the size). All optional; a widget with
+/// none of them lays out exactly as before (an even share, or the full free
+/// overlay).
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Place {
+    pub w: Option<f32>,
+    pub h: Option<f32>,
+    pub weight: Option<f32>,
+    pub x: Option<f32>,
+    pub y: Option<f32>,
+}
+
+impl Place {
+    fn parse(props: &serde_json::Map<String, Value>) -> Place {
+        let f = |k: &str| props.get(k).and_then(Value::as_f64).map(|v| v as f32);
+        Place {
+            w: f("w"),
+            h: f("h"),
+            weight: f("weight"),
+            x: f("x"),
+            y: f("y"),
+        }
+    }
+
+    /// Applies one `/gui_set` key. `true` if the key is a place prop.
+    pub fn apply(&mut self, key: &str, v: &Value) -> bool {
+        let slot = match key {
+            "w" => &mut self.w,
+            "h" => &mut self.h,
+            "weight" => &mut self.weight,
+            "x" => &mut self.x,
+            "y" => &mut self.y,
+            _ => return false,
+        };
+        match v.as_f64() {
+            Some(n) => *slot = Some(n as f32),
+            None => *slot = None, // a non-number (e.g. "auto") releases the prop
+        }
+        true
+    }
+}
+
 /// The typed kind of a widget, with the fields the renderer needs.
 #[derive(Debug, Clone)]
 pub enum WidgetKind {
@@ -293,9 +390,10 @@ pub enum WidgetKind {
         width: u32,
         height: u32,
         layout: Layout,
+        flow: Flow,
     },
     /// A nestable container.
-    Panel { layout: Layout },
+    Panel { layout: Layout, flow: Flow },
     /// Static text.
     Label { text: String },
     /// The heavy waveform view: its samples and the peak-pyramid bucket size.
@@ -719,6 +817,8 @@ const DEFAULT_BASE_BUCKET: usize = 256;
 pub struct Widget {
     pub id: Option<i32>,
     pub kind: WidgetKind,
+    /// The generic layout props (`w`/`h`/`weight`/`x`/`y`) this widget carries.
+    pub place: Place,
     pub children: Vec<Widget>,
 }
 
@@ -760,9 +860,11 @@ impl Widget {
                 width: dimension(&node.props, "w", DEFAULT_WINDOW.0),
                 height: dimension(&node.props, "h", DEFAULT_WINDOW.1),
                 layout: Layout::parse(&node.props),
+                flow: Flow::parse(&node.props),
             },
             "panel" | "box" => WidgetKind::Panel {
                 layout: Layout::parse(&node.props),
+                flow: Flow::parse(&node.props),
             },
             "label" => WidgetKind::Label {
                 text: node
@@ -1146,7 +1248,12 @@ impl Widget {
                 .collect::<Result<Vec<_>, _>>()?,
             _ => Vec::new(),
         };
-        Ok(Widget { id, kind, children })
+        Ok(Widget {
+            id,
+            kind,
+            place: Place::parse(&node.props),
+            children,
+        })
     }
 
     /// Whether this is the heavy waveform view (a convenience for the renderer).
@@ -1329,6 +1436,16 @@ impl WidgetKind {
 
     pub fn apply(&mut self, key: &str, v: &Value) -> bool {
         match self {
+            WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow } => {
+                match key {
+                    "layout" => v
+                        .as_str()
+                        .and_then(Layout::from_str)
+                        .map(|l| *layout = l)
+                        .is_some(),
+                    _ => flow.apply(key, v),
+                }
+            }
             WidgetKind::Waveform {
                 overlay, editor, ..
             } => match key {
@@ -2209,6 +2326,7 @@ mod tests {
                 width,
                 height,
                 layout,
+                ..
             } => {
                 assert_eq!(title.as_deref(), Some("W"));
                 assert_eq!((width, height), (480, 240));
@@ -3109,6 +3227,59 @@ mod tests {
             }
             _ => unreachable!(),
         }
+    }
+
+    #[test]
+    fn place_props_parse_and_apply() {
+        let n = node(
+            r#"{"type":"window","layout":"row","children":[
+            {"id":7,"type":"label","text":"a","w":100.5,"weight":2,"x":4,"y":8}]}"#,
+        );
+        let w = Widget::from_node(1, &n, &[]).unwrap();
+        let child = &w.children[0];
+        assert_eq!(child.place.w, Some(100.5));
+        assert_eq!(child.place.h, None);
+        assert_eq!(child.place.weight, Some(2.0));
+        assert_eq!((child.place.x, child.place.y), (Some(4.0), Some(8.0)));
+        // Live /gui_set: numbers set, a non-number releases the prop.
+        let mut place = child.place;
+        assert!(place.apply("h", &serde_json::json!(20)));
+        assert_eq!(place.h, Some(20.0));
+        assert!(place.apply("w", &serde_json::json!("auto")));
+        assert_eq!(place.w, None, "a non-number releases a place prop");
+        assert!(
+            !place.apply("min", &serde_json::json!(1)),
+            "not a place key"
+        );
+    }
+
+    #[test]
+    fn flow_props_parse_and_apply() {
+        let n = node(r#"{"type":"window","layout":"grid","margin":0,"gap":2,"cols":3}"#);
+        let w = Widget::from_node(1, &n, &[]).unwrap();
+        let WidgetKind::Window { mut flow, .. } = w.kind else {
+            unreachable!()
+        };
+        assert_eq!(
+            (flow.margin, flow.gap, flow.cols),
+            (Some(0.0), Some(2.0), Some(3))
+        );
+        assert!(flow.apply("cols", &serde_json::json!(0)));
+        assert_eq!(flow.cols, Some(1), "cols clamps to at least 1");
+        // The container arm of the kind apply routes layout and flow keys.
+        let mut kind = WidgetKind::Panel {
+            layout: Layout::Col,
+            flow: Flow::default(),
+        };
+        assert!(kind.apply("layout", &serde_json::json!("row")));
+        assert!(kind.apply("gap", &serde_json::json!(10)));
+        assert!(matches!(
+            kind,
+            WidgetKind::Panel {
+                layout: Layout::Row,
+                flow: Flow { gap: Some(g), .. }
+            } if g == 10.0
+        ));
     }
 
     #[test]

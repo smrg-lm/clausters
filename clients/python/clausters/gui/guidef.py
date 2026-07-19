@@ -25,6 +25,23 @@ The int/float distinction is the user's to make and is preserved end to end:
 write ``480`` for an integer property and ``480.0`` for a float — ``json.dumps``
 keeps them apart in the JSON text and the host's serde parse keeps them apart on
 the wire (ids stay integers, control values stay floats).
+
+**Every widget takes the generic place props**, applied by the container's
+layout (all in device pixels, all optional, all live via ``set``):
+
+- ``w``/``h`` — a fixed main-axis size in a ``row``/``col`` (``w`` in a row,
+  ``h`` in a col); in ``free``, the widget's size.
+- ``weight`` — the share of the leftover a non-fixed child takes in a
+  ``row``/``col`` (default 1, so siblings without props split evenly).
+- ``x``/``y`` — the position inside a ``free`` container; a free child with
+  none of these props overlays the whole container area.
+
+Containers (``window``/``panel``) additionally take ``margin`` (the inset
+before their children, default 6), ``gap`` (between children, default 6) and
+``cols`` (a fixed ``grid`` column count; default near-square). A fixed-height
+menu bar over a weighted content area over a fixed status bar — the
+application shell — is just ``window(bar(h=28), content(), status(h=20),
+layout="col")``.
 """
 
 import array
@@ -87,15 +104,28 @@ def node(type: str, *, id: int | None = None, children=None, **props) -> dict:
 
 
 def window(*children, title: str | None = None, w: int | None = None, h: int | None = None,
-           layout: str | None = None, **props) -> dict:
-    """A top-level ``window`` container (a GuiDef root). It takes no id."""
-    extra = _drop_none(title=title, w=w, h=h, layout=layout)
+           layout: str | None = None, margin: float | None = None, gap: float | None = None,
+           cols: int | None = None, **props) -> dict:
+    """A top-level ``window`` container (a GuiDef root). It takes no id.
+
+    ``w``/``h`` size the OS window; ``layout`` (``row``/``col``/``grid``/
+    ``free``) places the children, tuned by ``margin``/``gap``/``cols`` (see
+    the module docstring for the per-child place props).
+    """
+    extra = _drop_none(title=title, w=w, h=h, layout=layout, margin=margin, gap=gap, cols=cols)
     return node("window", children=children, **extra, **props)
 
 
-def panel(id: int | None = None, *children, layout: str | None = None, **props) -> dict:
-    """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``."""
-    extra = _drop_none(layout=layout)
+def panel(id: int | None = None, *children, layout: str | None = None,
+          margin: float | None = None, gap: float | None = None, cols: int | None = None,
+          **props) -> dict:
+    """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
+
+    ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
+    ``grid`` column count. As a child, a panel takes the same place props as
+    any widget (``w``/``h``/``weight``, or ``x``/``y`` in a ``free`` parent).
+    """
+    extra = _drop_none(layout=layout, margin=margin, gap=gap, cols=cols)
     return node("panel", id=id, children=children, **extra, **props)
 
 

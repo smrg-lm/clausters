@@ -55,6 +55,17 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   window), from one counter starting at 1000, so hand-picked ids below 1000 and
   assigned ids never collide.
 - **`children`** nests (containers only: `window`, `panel`, `track`).
+- **The place props** — every widget, whatever its type, may carry `w`, `h`,
+  `weight`, `x`, `y` (all numbers, device pixels, all live via `/gui_set`):
+  in a `row`/`col` a child with a fixed main-axis size (`w` in a row, `h` in a
+  col) takes exactly that and the rest share the leftover by `weight`
+  (default 1 — no props means the even split); in a `free` container `x`/`y`
+  (+ `w`/`h`) position the child absolutely, and a child with none of the four
+  overlays the whole area. A container additionally takes `margin` (inset
+  before its children, default 6), `gap` (between children, default 6) and
+  `cols` (a fixed `grid` column count; default near-square). One pass, no
+  constraint solver: when a layout needs negotiation, the answer is explicit
+  sizes.
 - **`bind`** as an inline prop registers a binding declaratively, so a saved
   GuiDef carries its own (no separate `/gui_bind` at boot).
 
@@ -104,8 +115,8 @@ script actually names these. The catalog itself:
 
 | Type | What it is | Notable properties |
 |---|---|---|
-| `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout` |
-| `panel` | A nestable container | `layout` |
+| `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols` |
+| `panel` | A nestable container | `layout`, `margin`, `gap`, `cols` |
 | `label` | Static text | `text` |
 | `knob`, `slider`, `number` | Continuous controls | `min`, `max`, `value`, `label` (`vertical` on a slider) |
 | `button`, `toggle` | Momentary / latching | `label`, `value` |

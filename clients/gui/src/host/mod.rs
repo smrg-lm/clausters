@@ -671,7 +671,9 @@ impl Host {
             let mut changed = false;
             for (k, v) in &props {
                 if !(is_timeline && timeline::is_timeline_key(k)) {
-                    changed |= widget.kind.apply(k, v);
+                    // The generic place props (`w`/`h`/`weight`/`x`/`y`) apply
+                    // to any widget; everything else is the kind's own.
+                    changed |= widget.place.apply(k, v) || widget.kind.apply(k, v);
                 }
             }
             if changed {
