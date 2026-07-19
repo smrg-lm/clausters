@@ -774,8 +774,13 @@ pub(crate) fn render(
         mesh.set_clip(p.clip);
         match &p.widget.kind {
             WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } => mesh.rect(p.rect, theme.panel),
-            WidgetKind::Label { text } => {
-                font_left(&mut mesh, text, p.rect, theme);
+            WidgetKind::Label {
+                text,
+                text_size,
+                wrap,
+                align,
+            } => {
+                controls::draw_label(&mut mesh, text, p.rect, *text_size, *wrap, *align, theme);
             }
             WidgetKind::Waveform {
                 overlay, editor, ..
@@ -1573,19 +1578,6 @@ pub(crate) fn render(
     // an unfocused or covered window until the compositor repaints it anyway.
     gpu.window.pre_present_notify();
     frame.present();
-}
-
-/// Draws `text` vertically centered at the left of `rect` (a label).
-fn font_left(mesh: &mut Mesh, text: &str, rect: Rect, theme: &Theme) {
-    let y = rect.y + (rect.h - super::font::height(LABEL_SCALE)) * 0.5;
-    super::font::text(
-        mesh,
-        text,
-        rect.x + 4.0,
-        y.max(rect.y),
-        LABEL_SCALE,
-        theme.text,
-    );
 }
 
 /// Applies a placed widget's clip as the pass scissor (the full framebuffer

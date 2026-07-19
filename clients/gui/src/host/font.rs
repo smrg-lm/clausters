@@ -17,6 +17,10 @@ pub const GLYPH_W: usize = 5;
 pub const GLYPH_H: usize = 7;
 const ADVANCE: usize = GLYPH_W + 1;
 
+/// The default glyph scale (the `text_size` prop's default): font-pixels per
+/// cell pixel, the size every widget drew at before the prop existed.
+pub const DEFAULT_SIZE: f32 = 2.0;
+
 /// Each glyph is 7 row bytes; bit 4 (`0x10`) is the leftmost of 5 columns.
 fn glyph(c: char) -> [u8; 7] {
     let c = c.to_ascii_uppercase();
@@ -67,6 +71,8 @@ fn glyph(c: char) -> [u8; 7] {
         '(' => [0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02],
         ')' => [0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08],
         '%' => [0x19, 0x1A, 0x04, 0x08, 0x0B, 0x13, 0x00],
+        // The single-cell ellipsis clipped text ends in.
+        '\u{2026}' => [0, 0, 0, 0, 0, 0, 0x15],
         _ => [0x1F, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1F], // fallback box
     }
 }
@@ -106,13 +112,85 @@ pub fn text(mesh: &mut Mesh, s: &str, x: f32, y: f32, scale: f32, color: Color) 
     }
 }
 
-/// Appends `s` centered horizontally in `area` and vertically, clipped to it.
+/// The number of glyph cells that fit in `max_w` pixels at `scale`.
+pub fn fit_chars(max_w: f32, scale: f32) -> usize {
+    if scale <= 0.0 || max_w <= 0.0 {
+        return 0;
+    }
+    (max_w / (ADVANCE as f32 * scale)) as usize
+}
+
+/// Appends `s` clipped to `max_w`: text that fits draws whole; longer text
+/// draws one cell short and ends in an ellipsis instead of bleeding past the
+/// edge into a neighbor.
+pub fn text_ellipsis(
+    mesh: &mut Mesh,
+    s: &str,
+    x: f32,
+    y: f32,
+    max_w: f32,
+    scale: f32,
+    color: Color,
+) {
+    let fit = fit_chars(max_w, scale);
+    if s.chars().count() <= fit {
+        text(mesh, s, x, y, scale, color);
+    } else if fit > 0 {
+        let cut: String = s.chars().take(fit - 1).collect();
+        text(mesh, &format!("{cut}\u{2026}"), x, y, scale, color);
+    }
+}
+
+/// Greedy word wrap on the font's fixed advance: `s` split into lines of at
+/// most `max_cols` cells, breaking at whitespace (a single word longer than a
+/// line hard-breaks mid-word). Cheap width math, no shaping.
+pub fn wrap(s: &str, max_cols: usize) -> Vec<String> {
+    let max_cols = max_cols.max(1);
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let mut cols = 0usize;
+    for word in s.split_whitespace() {
+        let mut chars: Vec<char> = word.chars().collect();
+        while !chars.is_empty() {
+            let sep = if cols > 0 { 1 } else { 0 };
+            let room = max_cols.saturating_sub(cols + sep);
+            if chars.len() <= room {
+                if sep == 1 {
+                    line.push(' ');
+                }
+                line.extend(chars.drain(..));
+                cols = line.chars().count();
+            } else if cols == 0 {
+                // A word longer than a whole line: hard-break it.
+                line.extend(chars.drain(..max_cols));
+                lines.push(std::mem::take(&mut line));
+                cols = 0;
+            } else {
+                lines.push(std::mem::take(&mut line));
+                cols = 0;
+            }
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// The vertical advance from one wrapped line's top to the next (one blank
+/// font row between lines).
+pub fn line_advance(scale: f32) -> f32 {
+    (GLYPH_H + 1) as f32 * scale
+}
+
+/// Appends `s` centered horizontally in `area` and vertically, clipped to it
+/// (overflow ends in an ellipsis).
 pub fn text_centered(mesh: &mut Mesh, s: &str, area: Rect, scale: f32, color: Color) {
-    let tw = width(s, scale);
+    let tw = width(s, scale).min(area.w);
     let th = height(scale);
     let x = area.x + (area.w - tw) * 0.5;
     let y = area.y + (area.h - th) * 0.5;
-    text(mesh, s, x.max(area.x), y.max(area.y), scale, color);
+    text_ellipsis(mesh, s, x.max(area.x), y.max(area.y), area.w, scale, color);
 }
 
 #[cfg(test)]
@@ -145,5 +223,51 @@ mod tests {
     #[test]
     fn lowercase_maps_to_uppercase() {
         assert_eq!(glyph('a'), glyph('A'));
+    }
+
+    #[test]
+    fn fit_chars_counts_whole_cells() {
+        // One cell is ADVANCE * scale pixels wide.
+        assert_eq!(fit_chars((3 * ADVANCE) as f32 * 2.0, 2.0), 3);
+        assert_eq!(fit_chars((3 * ADVANCE) as f32 * 2.0 - 1.0, 2.0), 2);
+        assert_eq!(fit_chars(0.0, 2.0), 0);
+        assert_eq!(fit_chars(100.0, 0.0), 0);
+    }
+
+    #[test]
+    fn text_ellipsis_clips_to_its_width() {
+        // Text that fits draws whole; text that overflows never emits a pixel
+        // past `x + max_w`, and ends in the ellipsis cell.
+        let max_w = (4 * ADVANCE) as f32 * 2.0;
+        let mut m = Mesh::new();
+        text_ellipsis(&mut m, "ABCDEFGH", 0.0, 0.0, max_w, 2.0, [1.0; 4]);
+        let max_x = m.positions().map(|(x, _)| x).fold(f32::MIN, f32::max);
+        assert!(max_x <= max_w, "clipped text bleeds past its width");
+        // A fitting string is untouched: same mesh as a plain text() call.
+        let mut clipped = Mesh::new();
+        text_ellipsis(&mut clipped, "ABC", 0.0, 0.0, max_w, 2.0, [1.0; 4]);
+        let mut plain = Mesh::new();
+        text(&mut plain, "ABC", 0.0, 0.0, 2.0, [1.0; 4]);
+        assert_eq!(clipped.vertex_count(), plain.vertex_count());
+    }
+
+    #[test]
+    fn wrap_breaks_at_spaces() {
+        assert_eq!(wrap("one two three", 7), ["one two", "three"]);
+        assert_eq!(wrap("one two three", 13), ["one two three"]);
+        assert_eq!(wrap("a b", 1), ["a", "b"]);
+    }
+
+    #[test]
+    fn wrap_hard_breaks_a_long_word() {
+        assert_eq!(wrap("abcdefgh", 3), ["abc", "def", "gh"]);
+        // A long word after a short one starts on its own line.
+        assert_eq!(wrap("hi abcdef", 5), ["hi", "abcde", "f"]);
+    }
+
+    #[test]
+    fn wrap_collapses_whitespace_and_empty() {
+        assert_eq!(wrap("  a   b  ", 10), ["a b"]);
+        assert!(wrap("", 10).is_empty());
     }
 }

@@ -118,10 +118,10 @@ script actually names these. The catalog itself:
 | `window` | A top-level window (a GuiDef root) | `title`, `w`, `h`, `layout`, `margin`, `gap`, `cols` |
 | `panel` | A nestable container | `layout`, `margin`, `gap`, `cols` |
 | `scroll` | The **2D workspace**: a container whose children live in a virtual content area seen through a panning, zooming window. General first — the default is the free plane; the constrained scroll views degenerate from it by configuration | `axis` (`both`/`x`/`y`), `zoom` (0 disables the wheel zoom), `content_w`/`content_h`, `view_x`/`view_y`/`view_zoom`, plus `layout` (default `free` here), `margin`, `gap`, `cols` |
-| `label` | Static text | `text` |
-| `knob`, `slider`, `number` | Continuous controls | `min`, `max`, `value`, `label` (`vertical` on a slider) |
-| `button`, `toggle` | Momentary / latching | `label`, `value` |
-| `text`, `menu` | A string field, a choice | `value` / `options`, `index` |
+| `label` | Static text | `text`, `text_size`, `wrap`, `align` (`start`/`center`/`end`) |
+| `knob`, `slider`, `number` | Continuous controls | `min`, `max`, `value`, `label`, `text_size` (`vertical` on a slider) |
+| `button`, `toggle` | Momentary / latching | `label`, `value`, `text_size` |
+| `text`, `menu` | A string field, a choice | `value` / `options`, `index`, `text_size` |
 | `meter` | A control-bus level, read from the server's shared segment | `bus`, `min`, `max` |
 | `scope` | An oscilloscope: a control bus, or `channels` adjacent audio **taps** (trigger searched in the first channel; a lock/free read-out) | `bus` / `tap`, `channels`, `overlay`, `window_ms`, `trigger`, `hold`, `min`/`max`, `ruler` (ms) / `ruler_y` (value; `"off"` hides) |
 | `phasescope` | A goniometer (stereo field) over two taps | `tap`, `tap2`, `hold` |
@@ -137,6 +137,8 @@ script actually names these. The catalog itself:
 | `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |
 | `graph` | A **patcher** of a bus-wired node graph: member boxes, bus nodes, a wire per connection | `members`, `buses`, `wires`, `label` |
 | `canvas` | A script-supplied WGSL shader over the widget area | `shader`, `params`, `buses` |
+
+**Text on the light widgets.** Every text-bearing light widget — `label`, `button`, `toggle`, `text`, `number`, `menu` and the control labels on `slider`/`knob` — takes a `text_size`: a glyph scale over the host's embedded 5x7 bitmap font (default `2.0`, the size everything drew at before the prop existed; clamped to `[1, 16]`). Single-line text that overflows its rect clips with an ellipsis instead of bleeding into the neighbor. `label` additionally takes `wrap` (word wrap on the font's fixed advance, the lines past the label's bottom edge dropped) and `align` (`start`, the default left edge / `center` / `end`, applied per line). All of them are live via `/gui_set`.
 
 The `scroll` container is **one widget with one gesture path**, and the familiar constrained scroll views are configurations of it rather than separate types: `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view, `axis: "x"` a horizontal strip, and the default is the full 2D plane — drag the empty background to pan both axes, wheel to zoom anchored at the cursor. Its children's place props (`x`/`y`/`w`/`h`) are read in **content units**, not device pixels: the content area sizes itself from their extents unless `content_w`/`content_h` name it. `view_x`/`view_y` are the content coordinates at the widget's top-left corner and `view_zoom` is device pixels per content unit; all three are live via `/gui_set` and travel back as the `"view"` payload when a gesture moves them. A widget scrolled outside its container is clipped away — it is neither drawn nor hit.
 

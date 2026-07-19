@@ -170,60 +170,84 @@ def scroll(id: int | None = None, *children, axis: str | None = None,
     return node("scroll", id=id, children=children, **extra, **props)
 
 
-def label(id: int | None, text: str, **props) -> dict:
-    """Static ``label`` text."""
-    return node("label", id=id, text=text, **props)
+def label(id: int | None, text: str, *, text_size: float | None = None,
+          wrap: bool | None = None, align: str | None = None, **props) -> dict:
+    """Static ``label`` text.
+
+    ``text_size`` is the glyph scale over the host's embedded 5x7 font
+    (default 2.0 — every text-bearing widget takes it). ``wrap=True``
+    word-wraps the text to the label's width; off, a single line that
+    overflows clips with an ellipsis. ``align`` places each line in the rect:
+    ``"start"`` (the default left edge), ``"center"`` or ``"end"``.
+    """
+    extra = _drop_none(text_size=text_size, align=align)
+    if wrap is not None:
+        extra["wrap"] = 1 if wrap else 0
+    return node("label", id=id, text=text, **extra, **props)
 
 
 def knob(id: int | None = None, *, label: str | None = None, min: float | None = None,
-         max: float | None = None, value: float | None = None, **props) -> dict:
-    """A rotary ``knob`` over a continuous range."""
-    extra = _drop_none(label=label, min=min, max=max, value=value)
+         max: float | None = None, value: float | None = None,
+         text_size: float | None = None, **props) -> dict:
+    """A rotary ``knob`` over a continuous range. ``text_size`` scales its
+    label and value read-out."""
+    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size)
     return node("knob", id=id, **extra, **props)
 
 
 def slider(id: int | None = None, *, label: str | None = None, min: float | None = None,
            max: float | None = None, value: float | None = None,
-           vertical: bool = False, **props) -> dict:
+           vertical: bool = False, text_size: float | None = None, **props) -> dict:
     """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
-    the y axis (min at the bottom, max at the top) instead of horizontally."""
-    extra = _drop_none(label=label, min=min, max=max, value=value)
+    the y axis (min at the bottom, max at the top) instead of horizontally.
+    ``text_size`` scales its label and value read-out."""
+    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size)
     if vertical:
         extra["vertical"] = True
     return node("slider", id=id, **extra, **props)
 
 
 def number(id: int | None = None, *, label: str | None = None, min: float | None = None,
-           max: float | None = None, value: float | None = None, **props) -> dict:
-    """A draggable numeric read-out over a range."""
-    extra = _drop_none(label=label, min=min, max=max, value=value)
+           max: float | None = None, value: float | None = None,
+           text_size: float | None = None, **props) -> dict:
+    """A draggable numeric read-out over a range. ``text_size`` scales its
+    label and value."""
+    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size)
     return node("number", id=id, **extra, **props)
 
 
-def button(id: int | None = None, *, label: str | None = None, **props) -> dict:
-    """A momentary push ``button`` (emits ``1`` on press, ``0`` on release)."""
-    extra = _drop_none(label=label)
+def button(id: int | None = None, *, label: str | None = None,
+           text_size: float | None = None, **props) -> dict:
+    """A momentary push ``button`` (emits ``1`` on press, ``0`` on release).
+    ``text_size`` scales its face label."""
+    extra = _drop_none(label=label, text_size=text_size)
     return node("button", id=id, **extra, **props)
 
 
-def toggle(id: int | None = None, *, label: str | None = None, value: bool | None = None, **props) -> dict:
-    """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool)."""
-    extra = _drop_none(label=label)
+def toggle(id: int | None = None, *, label: str | None = None, value: bool | None = None,
+           text_size: float | None = None, **props) -> dict:
+    """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool).
+    ``text_size`` scales its label."""
+    extra = _drop_none(label=label, text_size=text_size)
     if value is not None:
         extra["value"] = 1 if value else 0
     return node("toggle", id=id, **extra, **props)
 
 
-def text(id: int | None = None, *, value: str | None = None, label: str | None = None, **props) -> dict:
-    """A ``text`` field showing ``value`` (script-driven via ``/gui_set``)."""
-    extra = _drop_none(value=value, label=label)
+def text(id: int | None = None, *, value: str | None = None, label: str | None = None,
+         text_size: float | None = None, **props) -> dict:
+    """A ``text`` field showing ``value`` (script-driven via ``/gui_set``).
+    ``text_size`` scales the field text and its label."""
+    extra = _drop_none(value=value, label=label, text_size=text_size)
     return node("text", id=id, **extra, **props)
 
 
-def menu(id: int | None, options, *, index: int | None = None, label: str | None = None, **props) -> dict:
+def menu(id: int | None, options, *, index: int | None = None, label: str | None = None,
+         text_size: float | None = None, **props) -> dict:
     """A ``menu`` selector over ``options`` (a list of strings); a click cycles
-    to the next and emits the chosen ``index``."""
-    extra = _drop_none(index=index, label=label)
+    to the next and emits the chosen ``index``. ``text_size`` scales the shown
+    choice and the label."""
+    extra = _drop_none(index=index, label=label, text_size=text_size)
     return node("menu", id=id, options=list(options), **extra, **props)
 
 

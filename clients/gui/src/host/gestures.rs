@@ -349,7 +349,7 @@ impl Gestures {
         let def_id = ctx.def_id;
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
-                let body = controls::body_rect(rect, r.label.is_some());
+                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size);
                 let t = slider_t(body, cx, cy, vertical);
                 interact::set_fraction(host, def_id, id, t);
                 emit_value(host, &mut out, def_id, id);
@@ -357,7 +357,7 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                let body = controls::body_rect(rect, r.label.is_some());
+                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size);
                 let locked = grab();
                 self.drag = Some(Drag::Vertical {
                     id,

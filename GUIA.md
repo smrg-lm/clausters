@@ -197,6 +197,14 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   segundos el script recentra el plano por `/gui_set` (salta a la posición
   nueva). Girar una perilla dentro de una caja del plano sigue funcionando
   (el widget gana el press; el plano solo toma el fondo vacío).
+- **Texto: tamaño, wrap y alineación.** `examples/gui_text.py` abre una
+  ventana con el mismo label a `text_size` crecientes (1.0 a 4.0 — el 2.0 es
+  idéntico a como se veía todo antes), un párrafo envuelto (`wrap`) tres veces
+  con `align` `start`/`center`/`end`, y una fila de controles con etiquetas
+  demasiado largas → las etiquetas que no entran terminan en `…` (una elipsis)
+  en vez de pisar al vecino, y la perilla/toggle/menu a `text_size=3.0` se
+  leen al triple. A los ~3 s el título crece en vivo por `/gui_set` y el
+  párrafo del medio cambia de alineación dos veces.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

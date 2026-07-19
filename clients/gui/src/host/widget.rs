@@ -60,6 +60,34 @@ impl Layout {
     }
 }
 
+/// Horizontal alignment of a `label`'s text inside its rect.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Align {
+    Start,
+    Center,
+    End,
+}
+
+impl Align {
+    /// Parses the `align` property; defaults to `Start` (today's left edge).
+    fn parse(props: &serde_json::Map<String, Value>) -> Align {
+        props
+            .get("align")
+            .and_then(Value::as_str)
+            .and_then(Align::from_str)
+            .unwrap_or(Align::Start)
+    }
+
+    fn from_str(s: &str) -> Option<Align> {
+        match s {
+            "start" => Some(Align::Start),
+            "center" => Some(Align::Center),
+            "end" => Some(Align::End),
+            _ => None,
+        }
+    }
+}
+
 /// How an editor-grade view labels its time (x) ruler.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ruler {
@@ -512,8 +540,15 @@ pub enum WidgetKind {
         flow: Flow,
         view: ScrollView,
     },
-    /// Static text.
-    Label { text: String },
+    /// Static text. `wrap` word-wraps it on the font's fixed advance (off, a
+    /// single line clipped with an ellipsis); `align` places each line in the
+    /// rect (`start`, the default left edge / `center` / `end`).
+    Label {
+        text: String,
+        text_size: f32,
+        wrap: bool,
+        align: Align,
+    },
     /// The heavy waveform view: its samples and the peak-pyramid bucket size.
     /// The samples reach the view one of several ways, in precedence order:
     /// `cache` (a prebuilt peak-pyramid file the host maps — the most compact
@@ -719,19 +754,28 @@ pub enum WidgetKind {
     /// A draggable numeric read-out over `[min, max]`.
     Number(Range),
     /// A momentary push button.
-    Button { label: Option<String> },
+    Button {
+        label: Option<String>,
+        text_size: f32,
+    },
     /// A boolean on/off control.
-    Toggle { value: bool, label: Option<String> },
+    Toggle {
+        value: bool,
+        label: Option<String>,
+        text_size: f32,
+    },
     /// A free-text field showing its value (script-driven at this milestone).
     Text {
         value: String,
         label: Option<String>,
+        text_size: f32,
     },
     /// A drop/cycle selector over `options`, holding the chosen index.
     Menu {
         index: usize,
         options: Vec<String>,
         label: Option<String>,
+        text_size: f32,
     },
     /// A multitrack lane: a horizontal strip of the shared timeline holding
     /// `clip` children placed by their `offset`/`dur`. A container (its clips
@@ -894,6 +938,8 @@ pub struct Range {
     pub min: f32,
     pub max: f32,
     pub label: Option<String>,
+    /// The glyph scale the control's label and value read-out draw at.
+    pub text_size: f32,
 }
 
 impl Range {
@@ -906,6 +952,7 @@ impl Range {
             min,
             max,
             label: label(props),
+            text_size: text_size(props),
         }
     }
 
@@ -1004,6 +1051,9 @@ impl Widget {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string(),
+                text_size: text_size(&node.props),
+                wrap: node.props.get("wrap").and_then(truthy).unwrap_or(false),
+                align: Align::parse(&node.props),
             },
             "waveform" => WidgetKind::Waveform {
                 samples: inline_samples("waveform", id, &node.props, blobs)?,
@@ -1228,10 +1278,12 @@ impl Widget {
             "number" => WidgetKind::Number(Range::parse(&node.props)),
             "button" => WidgetKind::Button {
                 label: label(&node.props),
+                text_size: text_size(&node.props),
             },
             "toggle" => WidgetKind::Toggle {
                 value: node.props.get("value").and_then(truthy).unwrap_or(false),
                 label: label(&node.props),
+                text_size: text_size(&node.props),
             },
             "text" => WidgetKind::Text {
                 value: node
@@ -1241,6 +1293,7 @@ impl Widget {
                     .unwrap_or_default()
                     .to_string(),
                 label: label(&node.props),
+                text_size: text_size(&node.props),
             },
             "menu" => {
                 let options = options(&node.props);
@@ -1249,6 +1302,7 @@ impl Widget {
                     index: index.min(options.len().saturating_sub(1)),
                     options,
                     label: label(&node.props),
+                    text_size: text_size(&node.props),
                 }
             }
             "track" => WidgetKind::Track {
@@ -1832,29 +1886,42 @@ impl WidgetKind {
                     "min" => set_f(&mut r.min, v),
                     "max" => set_f(&mut r.max, v),
                     "label" => set_label(&mut r.label, v),
+                    "text_size" => set_size(&mut r.text_size, v),
                     _ => false,
                 }
             }
-            WidgetKind::Toggle { value, label } => match key {
+            WidgetKind::Toggle {
+                value,
+                label,
+                text_size,
+            } => match key {
                 "value" => truthy(v).map(|b| *value = b).is_some(),
                 "label" => set_label(label, v),
+                "text_size" => set_size(text_size, v),
                 _ => false,
             },
-            WidgetKind::Text { value, label } => match key {
+            WidgetKind::Text {
+                value,
+                label,
+                text_size,
+            } => match key {
                 "value" => v.as_str().map(|s| *value = s.to_string()).is_some(),
                 "label" => set_label(label, v),
+                "text_size" => set_size(text_size, v),
                 _ => false,
             },
             WidgetKind::Menu {
                 index,
                 options,
                 label,
+                text_size,
             } => match key {
                 "index" => v
                     .as_u64()
                     .map(|n| *index = (n as usize).min(options.len().saturating_sub(1)))
                     .is_some(),
                 "label" => set_label(label, v),
+                "text_size" => set_size(text_size, v),
                 _ => false,
             },
             WidgetKind::Graph { graph, label } => match key {
@@ -2025,10 +2092,27 @@ impl WidgetKind {
                 "label" => set_label(label, v),
                 _ => false,
             },
-            WidgetKind::Button { label } => key == "label" && set_label(label, v),
-            WidgetKind::Label { text } => {
-                key == "text" && v.as_str().map(|s| *text = s.to_string()).is_some()
-            }
+            WidgetKind::Button { label, text_size } => match key {
+                "label" => set_label(label, v),
+                "text_size" => set_size(text_size, v),
+                _ => false,
+            },
+            WidgetKind::Label {
+                text,
+                text_size,
+                wrap,
+                align,
+            } => match key {
+                "text" => v.as_str().map(|s| *text = s.to_string()).is_some(),
+                "text_size" => set_size(text_size, v),
+                "wrap" => truthy(v).map(|b| *wrap = b).is_some(),
+                "align" => v
+                    .as_str()
+                    .and_then(Align::from_str)
+                    .map(|a| *align = a)
+                    .is_some(),
+                _ => false,
+            },
             _ => false,
         }
     }
@@ -2309,6 +2393,27 @@ fn index_suffix(key: &str, prefix: &str) -> Option<usize> {
     key.strip_prefix(prefix).and_then(|s| s.parse().ok())
 }
 
+/// The `text_size` property: the glyph scale text draws at (font-pixels per
+/// cell pixel over the embedded 5x7 font), clamped to a legible range.
+fn text_size(props: &serde_json::Map<String, Value>) -> f32 {
+    clamp_text_size(number(props, "text_size", super::font::DEFAULT_SIZE))
+}
+
+fn clamp_text_size(s: f32) -> f32 {
+    s.clamp(1.0, 16.0)
+}
+
+/// Sets a `text_size` slot from a numeric JSON value, clamped.
+fn set_size(slot: &mut f32, v: &Value) -> bool {
+    match v.as_f64() {
+        Some(x) => {
+            *slot = clamp_text_size(x as f32);
+            true
+        }
+        None => false,
+    }
+}
+
 /// The `label` property as an owned string, if present.
 fn label(props: &serde_json::Map<String, Value>) -> Option<String> {
     props
@@ -2452,6 +2557,61 @@ mod tests {
 
     fn node(json: &str) -> GuiNode {
         GuiNode::parse(json.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn label_text_props_parse_and_default() {
+        let n = node(r#"{"type":"label","text":"hi","text_size":3.5,"wrap":1,"align":"center"}"#);
+        match Widget::from_node(1, &n, &[]).unwrap().kind {
+            WidgetKind::Label {
+                text_size,
+                wrap,
+                align,
+                ..
+            } => {
+                assert_eq!(text_size, 3.5);
+                assert!(wrap);
+                assert_eq!(align, Align::Center);
+            }
+            other => panic!("expected label, got {other:?}"),
+        }
+        let n = node(r#"{"type":"label","text":"hi"}"#);
+        match Widget::from_node(1, &n, &[]).unwrap().kind {
+            WidgetKind::Label {
+                text_size,
+                wrap,
+                align,
+                ..
+            } => {
+                assert_eq!(text_size, super::super::font::DEFAULT_SIZE);
+                assert!(!wrap);
+                assert_eq!(align, Align::Start);
+            }
+            other => panic!("expected label, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn text_size_sets_live_and_clamps() {
+        let n = node(r#"{"type":"slider","label":"amp"}"#);
+        let mut w = Widget::from_node(1, &n, &[]).unwrap();
+        assert!(w.kind.apply("text_size", &Value::from(4.0)));
+        match &w.kind {
+            WidgetKind::Slider { range, .. } => assert_eq!(range.text_size, 4.0),
+            other => panic!("expected slider, got {other:?}"),
+        }
+        // Out-of-range sizes clamp instead of degenerating the strip math.
+        assert!(w.kind.apply("text_size", &Value::from(0.0)));
+        match &w.kind {
+            WidgetKind::Slider { range, .. } => assert_eq!(range.text_size, 1.0),
+            other => panic!("expected slider, got {other:?}"),
+        }
+        // A bad align value is rejected, the good ones apply.
+        let n = node(r#"{"type":"label","text":"hi"}"#);
+        let mut w = Widget::from_node(2, &n, &[]).unwrap();
+        assert!(!w.kind.apply("align", &Value::from("sideways")));
+        assert!(w.kind.apply("align", &Value::from("end")));
+        assert!(w.kind.apply("wrap", &Value::from(1)));
     }
 
     #[test]
