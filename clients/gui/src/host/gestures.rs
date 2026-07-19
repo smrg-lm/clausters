@@ -2114,6 +2114,30 @@ mod tests {
     }
 
     #[test]
+    fn the_plane_pans_every_direction_from_its_origin() {
+        // The regression this fixes: a plane sitting at the content's top-left
+        // corner (its default) used to be clamped dead against down/right
+        // drags — half the gestures did nothing and it read as broken. The
+        // free plane overscrolls, so every direction moves it.
+        let mut host = workspace("");
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        assert_eq!(
+            (view_of(&host, 20).view_x, view_of(&host, 20).view_y),
+            (0.0, 0.0)
+        );
+        g.press(&mut host, &ctx, 500.0, 350.0, &mut || false);
+        let effects = g.drag_to(&mut host, &ctx, 560.0, 390.0);
+        let v = view_of(&host, 20);
+        assert_eq!((v.view_x, v.view_y), (-60.0, -40.0), "down/right moves it");
+        assert!(has_emit_tag(&effects, 20, "view"));
+        // And it stops at half a viewport out, so the content is never lost.
+        g.drag_to(&mut host, &ctx, 5000.0, 5000.0);
+        let v = view_of(&host, 20);
+        assert_eq!((v.view_x, v.view_y), (-300.0, -200.0));
+    }
+
+    #[test]
     fn a_vertical_scroll_view_is_the_workspace_constrained_by_configuration() {
         // `axis: "y"` with `zoom: 0` *is* a plain vertical scroll view: the
         // wheel scrolls, x never moves, the zoom stays put.

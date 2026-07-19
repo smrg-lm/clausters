@@ -95,9 +95,10 @@ pub(crate) fn scroll_set_view(
         return None;
     };
     let zoom = super::scroll::clamp_zoom(zoom);
+    let slack = view.axis.slack();
     let next = (
-        super::scroll::clamp_pan(vx, area.w, zoom, content.0),
-        super::scroll::clamp_pan(vy, area.h, zoom, content.1),
+        super::scroll::clamp_pan(vx, area.w, zoom, content.0, slack),
+        super::scroll::clamp_pan(vy, area.h, zoom, content.1, slack),
         zoom,
     );
     if next == (view.view_x, view.view_y, view.view_zoom) {

@@ -1266,3 +1266,17 @@ The **heavy views keep a real scissor** (`host/frame.rs::apply_scissor`) —
 they own their own pipelines and draw through `set_viewport`, which positions
 but does not cut, so there is no batch to protect there and nothing else can
 do the job.
+
+**A third, found by using it: the plane and the scroll view want different
+bounds.** The first cut clamped every axis to `[0, content - visible]` — the
+window stays on the content. That is right for a *document*: a scroll view must
+not scroll above its first row. Applied to the free plane it is wrong, and
+visibly so: a plane sits at its content's top-left corner by default, so half
+the drag directions were clamped dead and the whole gesture read as broken. The
+bound now follows what the axis *means* — a constrained axis (`axis: "x"`/`"y"`)
+keeps the strict clamp, the free plane overscrolls by half a viewport past each
+edge (`host/scroll.rs::SLACK`), enough that every direction always moves it and
+little enough that the contents can never be lost off-screen. This is the same
+general-first rule the milestone states, applied to the bounds themselves: the
+strict clamp is the *constrained* behavior, and letting the general case
+inherit it gave the plane a restriction only the special case means.

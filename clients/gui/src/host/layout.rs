@@ -132,8 +132,9 @@ fn place_scrolled<'a>(
     };
     let (content_w, content_h) = scroll_content(widget, area);
     let zoom = scroll::clamp_zoom(view.view_zoom);
-    let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w);
-    let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h);
+    let slack = view.axis.slack();
+    let vx = scroll::clamp_pan(view.view_x, area.w, zoom, content_w, slack);
+    let vy = scroll::clamp_pan(view.view_y, area.h, zoom, content_h, slack);
     let inner =
         Rect::new(0.0, 0.0, content_w, content_h).inset(flow.margin.unwrap_or(MARGIN).max(0.0));
     let clip = Some(clip.map_or(area, |c| c.intersect(area)));
@@ -527,9 +528,29 @@ mod tests {
     }
 
     #[test]
-    fn the_pan_clamps_to_the_content_on_each_axis() {
-        // A workspace whose content is only as tall as the viewport: the y axis
-        // pins to 0 however far the view is pushed, while x still pans.
+    fn a_bounded_axis_pans_no_further_than_its_content() {
+        // A constrained scroll view (`axis: "x"`, so no slack) whose content is
+        // only as tall as the viewport: x clamps at content - visible =
+        // 2000 - 600 = 1400, and y — not a pannable axis here — stays put.
+        let w = tree(
+            r#"{"type":"window","margin":0,"children":[
+            {"id":9,"type":"scroll","margin":0,"axis":"x","zoom":0,
+             "content_w":2000,"content_h":100,
+             "view_x":9999,"view_y":9999,"children":[
+              {"id":1,"type":"label","text":"a","x":0,"y":0,"w":10,"h":10}]}]}"#,
+        );
+        let (area, children) = scrolled(&w);
+        let (rect, _) = children[0];
+        assert_eq!(rect.x, area.x - 1400.0);
+        assert_eq!(rect.y, area.y);
+    }
+
+    #[test]
+    fn the_free_plane_pans_half_a_viewport_past_its_content() {
+        // The same content on the *free* plane: it is unbounded, so it
+        // overscrolls by half the visible size on each axis — 1400 + 300 in x,
+        // and in y (where the content is shorter than the pane) it can still
+        // be pushed by half a viewport instead of pinning at the corner.
         let w = tree(
             r#"{"type":"window","margin":0,"children":[
             {"id":9,"type":"scroll","margin":0,"content_w":2000,"content_h":100,
@@ -538,9 +559,8 @@ mod tests {
         );
         let (area, children) = scrolled(&w);
         let (rect, _) = children[0];
-        // x clamped to content - visible = 2000 - 600 = 1400; y pinned to 0.
-        assert_eq!(rect.x, area.x - 1400.0);
-        assert_eq!(rect.y, area.y);
+        assert_eq!(rect.x, area.x - (1400.0 + area.w * 0.5));
+        assert_eq!(rect.y, area.y - area.h * 0.5);
     }
 
     #[test]

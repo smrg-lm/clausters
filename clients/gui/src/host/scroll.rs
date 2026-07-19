@@ -29,6 +29,13 @@ pub const MAX_ZOOM: f64 = 8.0;
 /// view's wheel), before the zoom divides it back into content units.
 pub const WHEEL_PAN_PX: f64 = 48.0;
 
+/// How far past its content edges the **free plane** may pan, as a fraction of
+/// the visible size — see [`clamp_pan`]. Half a viewport all around: enough
+/// that every drag direction does something wherever you are (a plane pinned
+/// exactly at its content corner reads as broken), and little enough that the
+/// content can never be lost off-screen.
+pub const SLACK: f64 = 0.5;
+
 /// Clamps a zoom factor into the workspace's bounds (and away from 0/NaN).
 pub fn clamp_zoom(zoom: f64) -> f64 {
     if zoom.is_finite() {
@@ -38,12 +45,28 @@ pub fn clamp_zoom(zoom: f64) -> f64 {
     }
 }
 
-/// Clamps one axis' pan offset so the window stays on the content:
-/// `[0, content - visible]`, pinned to `0` when the window already shows more
-/// than the content.
-pub fn clamp_pan(start: f64, viewport_px: f32, zoom: f64, content: f32) -> f64 {
+/// Clamps one axis' pan offset against the content, with `slack` content units
+/// of overscroll allowed past each edge: the window may start anywhere in
+/// `[-slack, content - visible + slack]`.
+///
+/// **The two `scroll` shapes want different bounds, and that is the point.** A
+/// *scroll view* is a bounded document — you cannot scroll above its first row
+/// — so the constrained axes pass `slack = 0` and get the strict
+/// `[0, content - visible]`. The *free plane* is conceptually unbounded and
+/// `content_w`/`content_h` merely say where its contents happen to sit, so it
+/// passes [`SLACK`] and can always be dragged in any direction. That split is
+/// the milestone's "general first, constrained by configuration" rule applied
+/// to the bounds themselves: the strict clamp is the *constrained* behavior,
+/// and applying it to the plane too (as this first did) makes the general case
+/// inherit a restriction that only the special case means.
+///
+/// When the window already shows more than the content, the axis pins to `0`
+/// (plus its slack) and the leftover stays empty.
+pub fn clamp_pan(start: f64, viewport_px: f32, zoom: f64, content: f32, slack: f64) -> f64 {
     let visible = viewport_px.max(0.0) as f64 / clamp_zoom(zoom);
-    start.clamp(0.0, (content as f64 - visible).max(0.0))
+    let slack = (visible * slack).max(0.0);
+    let far = (content as f64 - visible).max(0.0);
+    start.clamp(-slack, far + slack)
 }
 
 /// Zooms by `factor` (>1 zooms in) keeping the content point under the cursor
@@ -97,11 +120,27 @@ mod tests {
     }
 
     #[test]
-    fn pan_clamps_to_the_content() {
-        // 400 px at zoom 2 shows 200 content units of 1000: start in [0, 800].
-        assert_eq!(clamp_pan(1e6, 400.0, 2.0, 1000.0), 800.0);
-        assert_eq!(clamp_pan(-5.0, 400.0, 2.0, 1000.0), 0.0);
-        // The window shows more than the content: pinned to 0 (empty slack).
-        assert_eq!(clamp_pan(50.0, 400.0, 0.25, 1000.0), 0.0);
+    fn a_bounded_axis_clamps_hard_to_the_content() {
+        // A scroll view (slack 0): 400 px at zoom 2 shows 200 content units of
+        // 1000, so the start lives in [0, 800] — no scrolling above the first
+        // row, none past the last.
+        assert_eq!(clamp_pan(1e6, 400.0, 2.0, 1000.0, 0.0), 800.0);
+        assert_eq!(clamp_pan(-5.0, 400.0, 2.0, 1000.0, 0.0), 0.0);
+        // The window shows more than the content: pinned to 0, leftover empty.
+        assert_eq!(clamp_pan(50.0, 400.0, 0.25, 1000.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn the_free_plane_may_overscroll_by_its_slack() {
+        // The plane: 400 px at zoom 1 = 400 visible of 1000, slack half a
+        // viewport, so the window lives in [-200, 800]. The point is that at
+        // the content's origin the plane still moves *every* way — pinning it
+        // exactly at the corner is what reads as a broken drag.
+        assert_eq!(clamp_pan(-1e6, 400.0, 1.0, 1000.0, SLACK), -200.0);
+        assert_eq!(clamp_pan(1e6, 400.0, 1.0, 1000.0, SLACK), 800.0);
+        assert_eq!(clamp_pan(-50.0, 400.0, 1.0, 1000.0, SLACK), -50.0);
+        // Slack scales with the *visible* size, so it survives a zoom: at
+        // zoom 2 only 200 units are visible and the slack is 100.
+        assert_eq!(clamp_pan(-1e6, 400.0, 2.0, 1000.0, SLACK), -100.0);
     }
 }

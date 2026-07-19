@@ -349,6 +349,17 @@ pub enum Axis {
 }
 
 impl Axis {
+    /// The overscroll this axis configuration allows past the content edges
+    /// (a fraction of the visible size, for [`super::scroll::clamp_pan`]). The
+    /// free plane is unbounded and gets slack; a constrained scroll view is a
+    /// bounded document and gets none.
+    pub fn slack(self) -> f64 {
+        match self {
+            Axis::Both => super::scroll::SLACK,
+            Axis::X | Axis::Y => 0.0,
+        }
+    }
+
     fn parse(props: &serde_json::Map<String, Value>) -> Axis {
         props
             .get("axis")
