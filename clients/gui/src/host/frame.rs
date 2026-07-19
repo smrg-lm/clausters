@@ -153,6 +153,7 @@ pub(crate) fn timeline_body(rect: Rect, editor: &EditorProps) -> Rect {
 struct PlotItem {
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     samples: Arc<[f32]>,
     channels: usize,
     view: plot::PlotView,
@@ -195,6 +196,7 @@ impl PlotItem {
 struct BpfItem {
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     points: Vec<bpf::BpfPoint>,
     min: f32,
     max: f32,
@@ -210,6 +212,7 @@ struct TrackItem {
     id: i32,
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     label: Option<String>,
     clips: Vec<track::ClipDraw>,
     /// The lane's chrome: its time ruler (off by default), its playhead anchor
@@ -227,6 +230,7 @@ struct PianoRollItem {
     id: i32,
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     notes: Vec<pianoroll::Note>,
     osc: Vec<pianoroll::OscMark>,
     /// The multi-note selection (note indices), drawn highlighted.
@@ -244,6 +248,7 @@ struct PianoRollItem {
 struct MeterItem {
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     bus: i32,
     min: f32,
     max: f32,
@@ -256,6 +261,7 @@ struct ScopeItem {
     id: i32,
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     min: f32,
     max: f32,
     label: Option<String>,
@@ -266,6 +272,7 @@ struct ScopeItem {
 struct NodeTreeItem {
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     group: i32,
     controls: bool,
     label: Option<String>,
@@ -277,6 +284,7 @@ struct WaveItem {
     id: i32,
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     min: f32,
     max: f32,
     window_ms: f32,
@@ -293,6 +301,7 @@ struct SpectrumItem {
     id: i32,
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     fft_size: usize,
     db_floor: f32,
     db_ceil: f32,
@@ -300,6 +309,16 @@ struct SpectrumItem {
     peak_hold: bool,
     ruler: bool,
     ruler_y: bool,
+    label: Option<String>,
+}
+
+/// A placed `phasescope`, copied out of the host tree (drawn from the
+/// interleaved L/R window the tick stored in `tap_windows`).
+struct PhaseItem {
+    id: i32,
+    rect: Rect,
+    clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     label: Option<String>,
 }
 
@@ -321,6 +340,7 @@ struct TimelineItem {
     id: i32,
     rect: Rect,
     clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
     kind: TimelineKind,
     editor: EditorProps,
 }
@@ -757,7 +777,7 @@ pub(crate) fn render(
     let mut wave_rects: Vec<WaveItem> = Vec::new();
     // Phasescope rects (drawn from the interleaved L/R window in `tap_windows`)
     // and spectrum rects (drawn from the persistent `spectra` analysis states).
-    let mut phase_rects: Vec<(i32, Rect, Option<String>, Option<Rect>)> = Vec::new();
+    let mut phase_rects: Vec<PhaseItem> = Vec::new();
     let mut spectrum_rects: Vec<SpectrumItem> = Vec::new();
     // Plot items (with a cheap Arc clone of the samples) and node-tree rects,
     // likewise copied out so the host-tree borrow can be released before the
@@ -772,8 +792,11 @@ pub(crate) fn render(
     for p in &placed {
         // Everything a scrolled widget paints clips to its container's area.
         mesh.set_clip(p.clip);
+        // The widget's resolved theme (a theme group's overlay, a `color`
+        // accent), resolved at mutation points -- one reference per widget.
+        let th = p.widget.theme.as_deref().unwrap_or(theme);
         match &p.widget.kind {
-            WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } => mesh.rect(p.rect, theme.panel),
+            WidgetKind::Panel { .. } | WidgetKind::Scroll { .. } => mesh.rect(p.rect, th.panel),
             WidgetKind::Label {
                 text,
                 text_size,
@@ -787,7 +810,7 @@ pub(crate) fn render(
                     *text_size * p.scale,
                     *wrap,
                     *align,
-                    theme,
+                    th,
                 );
             }
             WidgetKind::Waveform {
@@ -798,6 +821,7 @@ pub(crate) fn render(
                         id,
                         rect: p.rect,
                         clip: p.clip,
+                        theme: p.widget.theme.clone(),
                         kind: TimelineKind::Waveform { overlay: *overlay },
                         editor: editor.clone(),
                     });
@@ -816,6 +840,7 @@ pub(crate) fn render(
                         id,
                         rect: p.rect,
                         clip: p.clip,
+                        theme: p.widget.theme.clone(),
                         kind: TimelineKind::Spectrogram {
                             db_floor: *db_floor,
                             db_ceil: *db_ceil,
@@ -834,6 +859,7 @@ pub(crate) fn render(
             } => meter_rects.push(MeterItem {
                 rect: p.rect,
                 clip: p.clip,
+                theme: p.widget.theme.clone(),
                 bus: *bus,
                 min: *min,
                 max: *max,
@@ -857,6 +883,7 @@ pub(crate) fn render(
                             id,
                             rect: p.rect,
                             clip: p.clip,
+                            theme: p.widget.theme.clone(),
                             min: *min,
                             max: *max,
                             window_ms: *window_ms,
@@ -871,6 +898,7 @@ pub(crate) fn render(
                             id,
                             rect: p.rect,
                             clip: p.clip,
+                            theme: p.widget.theme.clone(),
                             min: *min,
                             max: *max,
                             label: label.clone(),
@@ -880,7 +908,13 @@ pub(crate) fn render(
             }
             WidgetKind::Phasescope { label, .. } => {
                 if let Some(id) = p.widget.id {
-                    phase_rects.push((id, p.rect, label.clone(), p.clip));
+                    phase_rects.push(PhaseItem {
+                        id,
+                        rect: p.rect,
+                        clip: p.clip,
+                        theme: p.widget.theme.clone(),
+                        label: label.clone(),
+                    });
                 }
             }
             WidgetKind::Piano {
@@ -902,7 +936,7 @@ pub(crate) fn render(
                 *active_max,
                 pressed,
                 label.as_deref(),
-                theme,
+                th,
             ),
             WidgetKind::Spectrum {
                 fft_size,
@@ -920,6 +954,7 @@ pub(crate) fn render(
                         id,
                         rect: p.rect,
                         clip: p.clip,
+                        theme: p.widget.theme.clone(),
                         fft_size: *fft_size,
                         db_floor: *db_floor,
                         db_ceil: *db_ceil,
@@ -950,6 +985,7 @@ pub(crate) fn render(
             } => plot_rects.push(PlotItem {
                 rect: p.rect,
                 clip: p.clip,
+                theme: p.widget.theme.clone(),
                 samples: Arc::clone(samples),
                 channels: *channels,
                 view: *view,
@@ -975,6 +1011,7 @@ pub(crate) fn render(
             } => bpf_rects.push(BpfItem {
                 rect: p.rect,
                 clip: p.clip,
+                theme: p.widget.theme.clone(),
                 points: points.clone(),
                 min: *min,
                 max: *max,
@@ -996,6 +1033,7 @@ pub(crate) fn render(
                     id: p.widget.id.unwrap_or(-1),
                     rect: p.rect,
                     clip: p.clip,
+                    theme: p.widget.theme.clone(),
                     label: label.clone(),
                     clips,
                     editor: editor.clone(),
@@ -1018,6 +1056,7 @@ pub(crate) fn render(
                         id,
                         rect: p.rect,
                         clip: p.clip,
+                        theme: p.widget.theme.clone(),
                         notes: notes.clone(),
                         osc: osc.clone(),
                         selected: selected.clone(),
@@ -1037,7 +1076,7 @@ pub(crate) fn render(
                     .wiring
                     .filter(|(id, _, _)| Some(*id) == p.widget.id)
                     .map(|(_, port, cursor)| (port, cursor));
-                graph::draw(&mut mesh, p.rect, graph, label.as_deref(), live, theme);
+                graph::draw(&mut mesh, p.rect, graph, label.as_deref(), live, th);
             }
             WidgetKind::NodeTree {
                 group,
@@ -1046,6 +1085,7 @@ pub(crate) fn render(
             } => nodetree_rects.push(NodeTreeItem {
                 rect: p.rect,
                 clip: p.clip,
+                theme: p.widget.theme.clone(),
                 group: *group,
                 controls: *controls,
                 label: label.clone(),
@@ -1064,7 +1104,7 @@ pub(crate) fn render(
                             p.rect.x + 4.0,
                             p.rect.y + 4.0,
                             LABEL_SCALE,
-                            theme.text,
+                            th.text,
                         );
                     }
                     // Resolve the param vector: a `-1` slot keeps its script-set
@@ -1092,7 +1132,7 @@ pub(crate) fn render(
                 p.rect,
                 p.widget.id == active_button,
                 p.scale,
-                theme,
+                th,
             ),
         }
     }
@@ -1102,21 +1142,16 @@ pub(crate) fn render(
     // window's state.
     for item in &meter_rects {
         mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let value = read_bus(inputs.bus, item.bus);
         let frac = meters::fraction(value, item.min, item.max);
-        meters::draw_meter(
-            &mut mesh,
-            item.rect,
-            value,
-            frac,
-            item.label.as_deref(),
-            theme,
-        );
+        meters::draw_meter(&mut mesh, item.rect, value, frac, item.label.as_deref(), th);
     }
     // The history is advanced on the frame tick (`advance_scopes`), not here, so a
     // repaint only ever *draws* the current samples — never adds one.
     for item in &scope_rects {
         mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let samples: Vec<f32> = scopes
             .get(&item.id)
             .map(|h| h.iter().copied().collect())
@@ -1128,7 +1163,7 @@ pub(crate) fn render(
             item.min,
             item.max,
             item.label.as_deref(),
-            theme,
+            th,
         );
     }
     // Audio-rate scopes likewise draw the triggered multichannel window stored
@@ -1137,6 +1172,7 @@ pub(crate) fn render(
     let empty_window = live::TapWindow::default();
     for item in &wave_rects {
         mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let window = tap_windows.get(&item.id).unwrap_or(&empty_window);
         meters::draw_wave(
             &mut mesh,
@@ -1152,22 +1188,24 @@ pub(crate) fn render(
                 ruler_y: item.ruler_y,
                 label: item.label.as_deref(),
             },
-            theme,
+            th,
         );
     }
     // Phasescopes draw the interleaved L/R window the tick stored (the same
     // `tap_windows` map, keyed by their own ids); spectra draw the per-bin
     // curves the tick folded into their per-channel analysis states.
-    for (id, rect, label, clip) in &phase_rects {
-        mesh.set_clip(*clip);
+    for item in &phase_rects {
+        mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let inter = tap_windows
-            .get(id)
+            .get(&item.id)
             .map(|w| w.samples.as_slice())
             .unwrap_or(&[]);
-        phasescope::draw_phasescope(&mut mesh, *rect, inter, label.as_deref(), theme);
+        phasescope::draw_phasescope(&mut mesh, item.rect, inter, item.label.as_deref(), th);
     }
     for item in &spectrum_rects {
         mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         if let Some(states) = spectra.get(&item.id) {
             spectrum::draw_spectrum(
                 &mut mesh,
@@ -1184,7 +1222,7 @@ pub(crate) fn render(
                     ruler_y: item.ruler_y,
                     label: item.label.as_deref(),
                 },
-                theme,
+                th,
             );
         }
     }
@@ -1196,12 +1234,13 @@ pub(crate) fn render(
     for item in &timeline_items {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let body = timeline_body(item.rect, &item.editor);
-        mesh.rect(body, theme.view_field);
+        mesh.rect(body, th.view_field);
         match &item.kind {
             TimelineKind::Waveform { overlay: overlaid } => {
                 let Some(slot) = waveforms.get(&item.id) else {
-                    over.border(body, 1.0, theme.view_frame);
+                    over.border(body, 1.0, th.view_frame);
                     continue;
                 };
                 let nav = nav_for(inputs, item, slot.view.total_samples());
@@ -1210,7 +1249,7 @@ pub(crate) fn render(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, theme);
+                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, th);
                 let lanes = slot.view.num_channels();
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
@@ -1225,20 +1264,20 @@ pub(crate) fn render(
                             y0,
                             y_len,
                         );
-                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks, theme);
+                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks, th);
                     }
                 }
                 for ch in 1..draw_lanes {
                     let lane = lane_rect(body, draw_lanes, ch);
-                    over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), theme.lane_divider);
+                    over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
                 }
                 draw_editor_overlay(
-                    &mut over, item, body, &nav, rate, draw_lanes, inputs, None, theme,
+                    &mut over, item, body, &nav, rate, draw_lanes, inputs, None, th,
                 );
             }
             TimelineKind::Spectrogram { freq_scale, .. } => {
                 let Some(slot) = spectrograms.get(&item.id) else {
-                    over.border(body, 1.0, theme.view_frame);
+                    over.border(body, 1.0, th.view_frame);
                     continue;
                 };
                 let nav = nav_for(inputs, item, slot.total_samples());
@@ -1252,12 +1291,12 @@ pub(crate) fn render(
                 } else {
                     nyquist * 2.0
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, theme);
+                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, th);
                 let lanes = slot.views.len();
                 for ch in 0..lanes {
                     let lane = lane_rect(body, lanes, ch);
                     if ch > 0 {
-                        over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), theme.lane_divider);
+                        over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
                     }
                     if item.editor.ruler_y != RulerY::Off {
                         let ticks = ruler::hz_ticks(
@@ -1268,13 +1307,13 @@ pub(crate) fn render(
                             item.editor.y_view().0,
                             item.editor.y_view().1,
                         );
-                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks, theme);
+                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks, th);
                     }
                 }
                 // The active scale, named over the view (the live views'
                 // corner slot) — log/mel/bark are not tellable apart from
                 // the tick spacing at a glance.
-                meters::value_text(&mut over, ruler::scale_tag(*freq_scale), body, theme);
+                meters::value_text(&mut over, ruler::scale_tag(*freq_scale), body, th);
                 draw_editor_overlay(
                     &mut over,
                     item,
@@ -1284,7 +1323,7 @@ pub(crate) fn render(
                     lanes,
                     inputs,
                     Some((nyquist, *freq_scale, f_lo)),
-                    theme,
+                    th,
                 );
             }
         }
@@ -1296,18 +1335,20 @@ pub(crate) fn render(
     for item in &plot_rects {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let params = item.params();
-        plot::draw(&mut mesh, item.rect, &params, theme);
+        plot::draw(&mut mesh, item.rect, &params, th);
         // The hover readout (hairline + the value under the cursor) rides the
         // overlay mesh, like the editor views' chrome.
         if let Some(cursor) = inputs.cursor {
-            plot::draw_readout(&mut over, item.rect, &params, cursor, theme);
+            plot::draw_readout(&mut over, item.rect, &params, cursor, th);
         }
     }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
     // column through the shared shape math, discs for the breakpoints.
     for item in &bpf_rects {
         mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         bpf::draw(
             &mut mesh,
             item.rect,
@@ -1317,11 +1358,12 @@ pub(crate) fn render(
             item.duration,
             item.exp,
             item.label.as_deref(),
-            theme,
+            th,
         );
     }
     for item in &nodetree_rects {
         mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         nodetree::draw(
             &mut mesh,
             item.rect,
@@ -1329,7 +1371,7 @@ pub(crate) fn render(
             item.controls,
             item.label.as_deref(),
             inputs.server_attached,
-            theme,
+            th,
         );
     }
     // Multitrack lanes: the window's tracks share one time axis (aligned
@@ -1344,6 +1386,7 @@ pub(crate) fn render(
         for item in &track_items {
             mesh.set_clip(item.clip);
             over.set_clip(item.clip);
+            let th = item.theme.as_deref().unwrap_or(theme);
             let nav = inputs
                 .timelines
                 .nav(group_key(item.id, item.editor.link))
@@ -1356,7 +1399,7 @@ pub(crate) fn render(
                 item.label.as_deref(),
                 &item.clips,
                 ruler_on,
-                theme,
+                th,
             );
             let body = track::lane_body(item.rect, ruler_on);
             // The lane's own time ruler, in the strip the lane body reserved —
@@ -1367,7 +1410,7 @@ pub(crate) fn render(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, theme);
+                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, th);
             }
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
@@ -1384,7 +1427,7 @@ pub(crate) fn render(
             if let Some(pos) = pos
                 && let Some(x) = track::playhead_x(body, &nav, pos)
             {
-                over.rect(Rect::new(x, body.y, 1.5, body.h), theme.playhead);
+                over.rect(Rect::new(x, body.y, 1.5, body.h), th.playhead);
             }
         }
     }
@@ -1395,6 +1438,7 @@ pub(crate) fn render(
     for item in &pianoroll_items {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
         let nav = inputs
             .timelines
             .nav(group_key(item.id, item.editor.link))
@@ -1421,7 +1465,7 @@ pub(crate) fn render(
             rate,
             inputs.sample_clock,
             inputs.cursor,
-            theme,
+            th,
         );
     }
 
@@ -1438,12 +1482,9 @@ pub(crate) fn render(
                     let nav = placed_nav(&nav, item.editor.offset);
                     slot.view
                         .set_amp_window(item.editor.y_view().0, item.editor.y_view().1);
-                    slot.view.set_palette([
-                        theme.series_1,
-                        theme.series_2,
-                        theme.series_3,
-                        theme.series_4,
-                    ]);
+                    let th = item.theme.as_deref().unwrap_or(theme);
+                    slot.view
+                        .set_palette([th.series_1, th.series_2, th.series_3, th.series_4]);
                     slot.view
                         .upload(&gpu.device, &gpu.queue, &nav, body.w.max(1.0) as u32);
                 }

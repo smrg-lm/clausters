@@ -124,6 +124,7 @@ pub mod web;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 
 use clausters_core::osc::{OscMessage, OscPacket, OscType};
 use serde_json::Value;
@@ -584,7 +585,10 @@ impl Host {
         if node.kind == "window" {
             let blobs = blob_args(&args[2.min(args.len())..]);
             match Widget::from_node(id, &node, &blobs) {
-                Ok(tree) => {
+                Ok(mut tree) => {
+                    // Theme groups and per-widget accents resolve here — at
+                    // the mutation point, never per frame.
+                    widget::resolve_themes(&mut tree, &Arc::new(self.theme.clone()));
                     self.window_defs.insert(id, tree);
                     // The def's timeline views (re)join their navigation
                     // groups; rebuild semantics for state confined to this def.
@@ -665,17 +669,27 @@ impl Host {
         let mut is_clip = false;
         if let Some(root) = self.registry.root_of(id)
             && let Some(tree) = self.window_defs.get_mut(&root)
-            && let Some(widget) = tree.find_mut(id)
         {
-            is_timeline = widget.is_timeline();
-            is_clip = matches!(widget.kind, widget::WidgetKind::Clip { .. });
             let mut changed = false;
-            for (k, v) in &props {
-                if !(is_timeline && timeline::is_timeline_key(k)) {
-                    // The generic place props (`w`/`h`/`weight`/`x`/`y`) apply
-                    // to any widget; everything else is the kind's own.
-                    changed |= widget.place.apply(k, v) || widget.kind.apply(k, v);
+            let mut styled = false;
+            if let Some(widget) = tree.find_mut(id) {
+                is_timeline = widget.is_timeline();
+                is_clip = matches!(widget.kind, widget::WidgetKind::Clip { .. });
+                for (k, v) in &props {
+                    if !(is_timeline && timeline::is_timeline_key(k)) {
+                        // The generic place props (`w`/`h`/`weight`/`x`/`y`)
+                        // and the style props (`theme`/`color`) apply to any
+                        // widget; everything else is the kind's own.
+                        let style = widget.style_apply(k, v);
+                        styled |= style;
+                        changed |= style || widget.place.apply(k, v) || widget.kind.apply(k, v);
+                    }
                 }
+            }
+            // A style change re-resolves the window's theme references — the
+            // mutation point where a theme group cascades to its subtree.
+            if styled {
+                widget::resolve_themes(tree, &Arc::new(self.theme.clone()));
             }
             if changed {
                 effects.push(HostEffect::Redraw(root));

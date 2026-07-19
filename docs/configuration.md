@@ -132,7 +132,11 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
   section supplies the standalone launch. The `[gui.theme]` table restyles the
   host's color roles; `--theme <path>` lays a free-standing theme file — the
   same flat `role = "#rrggbb[aa]"` table — over it, so a look can be shared as
-  one file. Both are partial overlays over the built-in dark theme. `clausters-gui --standalone` with no
+  one file. Both are partial overlays over the built-in dark theme, and the
+  same table goes on cascading over the wire: a GuiDef container may scope a
+  further overlay to its subtree (a **theme group**, the `theme` prop) and any
+  widget may re-seed its accent with the `color` prop — see [the GUI
+  protocol](gui-protocol.md). `clausters-gui --standalone` with no
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.
 - **Python client** — the `[client]` section provides the defaults for

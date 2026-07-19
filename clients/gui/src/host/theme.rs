@@ -233,6 +233,57 @@ impl Theme {
     }
 }
 
+impl Theme {
+    /// Overlays a JSON object of `role: "#rrggbb[aa]"` pairs — the `theme`
+    /// prop's shape, the same table the TOML file carries. Non-string values
+    /// are reported like bad colors.
+    pub fn overlay_json(
+        &mut self,
+        table: &serde_json::Map<String, serde_json::Value>,
+    ) -> Vec<String> {
+        self.overlay(
+            table
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str().unwrap_or(""))),
+        )
+    }
+
+    /// The single `color` prop's theme: `base` with the roles that carry a
+    /// widget's function re-seeded from one color — the accent family
+    /// (`accent`, its dim and lit forms), the trace pair, the first series
+    /// color (so a multichannel view's cycle starts at the given color) and
+    /// the placed-object pair (a clip's body). The quiet/lit forms derive by
+    /// the same ratio the default theme uses, so one hex behaves like the
+    /// default green does.
+    pub fn accent_seeded(base: &Theme, color: Color) -> Theme {
+        let mut t = base.clone();
+        t.accent = color;
+        t.accent_dim = scale_rgb(color, 0.65);
+        t.hilite = toward_white(color, 0.18);
+        t.trace = color;
+        t.trace_bright = toward_white(color, 0.10);
+        t.series_1 = color;
+        t.object_fill = scale_rgb(color, 0.45);
+        t.object_edge = color;
+        t
+    }
+}
+
+/// `color` with its rgb scaled by `k` (alpha kept) — the dim derivation.
+fn scale_rgb(c: Color, k: f32) -> Color {
+    [c[0] * k, c[1] * k, c[2] * k, c[3]]
+}
+
+/// `color` mixed `k` of the way toward white (alpha kept) — the lit derivation.
+fn toward_white(c: Color, k: f32) -> Color {
+    [
+        c[0] + (1.0 - c[0]) * k,
+        c[1] + (1.0 - c[1]) * k,
+        c[2] + (1.0 - c[2]) * k,
+        c[3],
+    ]
+}
+
 /// Parses `"#rrggbb"` / `"#rrggbbaa"` (the `#` optional) into a [`Color`].
 pub fn parse_hex(s: &str) -> Option<Color> {
     let hex = s.strip_prefix('#').unwrap_or(s);
@@ -338,5 +389,37 @@ mod tests {
     #[test]
     fn with_alpha_multiplies() {
         assert_eq!(with_alpha([0.2, 0.4, 0.6, 0.5], 0.5), [0.2, 0.4, 0.6, 0.25]);
+    }
+
+    #[test]
+    fn accent_seeded_recolors_the_function_roles_only() {
+        let base = Theme::default();
+        let red = [1.0, 0.0, 0.0, 1.0];
+        let t = Theme::accent_seeded(&base, red);
+        assert_eq!(t.accent, red);
+        assert_eq!(t.trace, red);
+        assert_eq!(t.series_1, red, "the series cycle re-seeds at the color");
+        assert_eq!(t.object_edge, red);
+        assert!(
+            t.accent_dim[0] < 1.0 && t.accent_dim[0] > 0.0,
+            "dim derives"
+        );
+        assert!(t.hilite[1] > 0.0, "lit derives toward white");
+        assert_eq!(t.text, base.text, "non-function roles keep the base");
+        assert_eq!(t.series_2, base.series_2, "the rest of the cycle stands");
+    }
+
+    #[test]
+    fn overlay_json_reads_the_prop_shape() {
+        let mut t = Theme::default();
+        let table: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(r##"{"accent": "#ff0000", "panel": 3}"##).unwrap();
+        let warnings = t.overlay_json(&table);
+        assert_eq!(t.accent, [1.0, 0.0, 0.0, 1.0]);
+        assert_eq!(
+            warnings.len(),
+            1,
+            "a non-string value warns like a bad color"
+        );
     }
 }

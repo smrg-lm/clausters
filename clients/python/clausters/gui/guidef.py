@@ -47,6 +47,18 @@ When the content does not fit its container, `scroll` is the container that
 pans and zooms: its children live in a **virtual content area** seen through a
 2D window, and the constrained forms (a vertical scroll view, a horizontal
 strip) are that same widget configured down.
+
+**Every widget also takes the style props**, both live via ``set``:
+
+- ``color`` — one ``"#rrggbb[aa]"`` that re-seeds the roles carrying the
+  widget's function: the accent family (a slider's handle and fill, a button
+  face, a meter's bar), the trace, the first series color of a multichannel
+  view, a clip's body. An empty string clears it.
+- ``theme`` — on a container (`window`/`panel`/`scroll`/`track`), a partial
+  color-role table (``{"role": "#rrggbb[aa]"}``, the same shape as the host's
+  TOML style file) overlaying the parent's theme for the whole subtree — a
+  **theme group**, recursive by construction. On a window root it persists
+  with a named def. An empty table clears the group.
 """
 
 import array
@@ -111,27 +123,38 @@ def node(type: str, *, id: int | None = None, children=None, **props) -> dict:
 
 def window(*children, title: str | None = None, w: int | None = None, h: int | None = None,
            layout: str | None = None, margin: float | None = None, gap: float | None = None,
-           cols: int | None = None, **props) -> dict:
+           cols: int | None = None, theme: dict | None = None, **props) -> dict:
     """A top-level ``window`` container (a GuiDef root). It takes no id.
 
     ``w``/``h`` size the OS window; ``layout`` (``row``/``col``/``grid``/
     ``free``) places the children, tuned by ``margin``/``gap``/``cols`` (see
     the module docstring for the per-child place props).
+
+    ``theme`` is a partial color-role table (``{"role": "#rrggbb[aa]"}``, the
+    same shape as the host's TOML style file) overlaying the host theme for
+    the whole window — a **theme group**. On the root it persists with a named
+    def, so a standalone bundle ships its look.
     """
-    extra = _drop_none(title=title, w=w, h=h, layout=layout, margin=margin, gap=gap, cols=cols)
+    extra = _drop_none(title=title, w=w, h=h, layout=layout, margin=margin, gap=gap, cols=cols,
+                       theme=theme)
     return node("window", children=children, **extra, **props)
 
 
 def panel(id: int | None = None, *children, layout: str | None = None,
           margin: float | None = None, gap: float | None = None, cols: int | None = None,
-          **props) -> dict:
+          theme: dict | None = None, color: str | None = None, **props) -> dict:
     """A nestable ``panel`` container; ``layout`` is ``row``/``col``/``grid``/``free``.
 
     ``margin`` insets the children, ``gap`` separates them, ``cols`` fixes the
     ``grid`` column count. As a child, a panel takes the same place props as
     any widget (``w``/``h``/``weight``, or ``x``/``y`` in a ``free`` parent).
+
+    ``theme`` (a partial ``{"role": "#rrggbb[aa]"}`` table) makes the panel a
+    **theme group**: the overlay styles its whole subtree — a transport bar
+    dimmed, a recording strip warm — recursively over the parent's theme.
+    ``color`` re-seeds just the accent family for the panel itself.
     """
-    extra = _drop_none(layout=layout, margin=margin, gap=gap, cols=cols)
+    extra = _drop_none(layout=layout, margin=margin, gap=gap, cols=cols, theme=theme, color=color)
     return node("panel", id=id, children=children, **extra, **props)
 
 
@@ -140,7 +163,7 @@ def scroll(id: int | None = None, *children, axis: str | None = None,
            content_h: float | None = None, view_x: float | None = None,
            view_y: float | None = None, view_zoom: float | None = None,
            layout: str | None = None, margin: float | None = None,
-           gap: float | None = None, cols: int | None = None, **props) -> dict:
+           gap: float | None = None, cols: int | None = None, theme: dict | None = None, color: str | None = None, **props) -> dict:
     """A ``scroll`` container: a 2D workspace onto a virtual content area.
 
     The children lay out into a content area larger than the widget, seen
@@ -164,14 +187,14 @@ def scroll(id: int | None = None, *children, axis: str | None = None,
     """
     extra = _drop_none(axis=axis, content_w=content_w, content_h=content_h,
                        view_x=view_x, view_y=view_y, view_zoom=view_zoom,
-                       layout=layout, margin=margin, gap=gap, cols=cols)
+                       layout=layout, margin=margin, gap=gap, cols=cols, theme=theme, color=color)
     if zoom is not None:
         extra["zoom"] = 1 if zoom else 0
     return node("scroll", id=id, children=children, **extra, **props)
 
 
 def label(id: int | None, text: str, *, text_size: float | None = None,
-          wrap: bool | None = None, align: str | None = None, **props) -> dict:
+          wrap: bool | None = None, align: str | None = None, color: str | None = None, **props) -> dict:
     """Static ``label`` text.
 
     ``text_size`` is the glyph scale over the host's embedded 5x7 font
@@ -180,7 +203,7 @@ def label(id: int | None, text: str, *, text_size: float | None = None,
     overflows clips with an ellipsis. ``align`` places each line in the rect:
     ``"start"`` (the default left edge), ``"center"`` or ``"end"``.
     """
-    extra = _drop_none(text_size=text_size, align=align)
+    extra = _drop_none(text_size=text_size, align=align, color=color)
     if wrap is not None:
         extra["wrap"] = 1 if wrap else 0
     return node("label", id=id, text=text, **extra, **props)
@@ -188,20 +211,20 @@ def label(id: int | None, text: str, *, text_size: float | None = None,
 
 def knob(id: int | None = None, *, label: str | None = None, min: float | None = None,
          max: float | None = None, value: float | None = None,
-         text_size: float | None = None, **props) -> dict:
+         text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A rotary ``knob`` over a continuous range. ``text_size`` scales its
     label and value read-out."""
-    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size)
+    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
     return node("knob", id=id, **extra, **props)
 
 
 def slider(id: int | None = None, *, label: str | None = None, min: float | None = None,
            max: float | None = None, value: float | None = None,
-           vertical: bool = False, text_size: float | None = None, **props) -> dict:
+           vertical: bool = False, text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A continuous ``slider`` over a range. ``vertical=True`` lays it out along
     the y axis (min at the bottom, max at the top) instead of horizontally.
     ``text_size`` scales its label and value read-out."""
-    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size)
+    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
     if vertical:
         extra["vertical"] = True
     return node("slider", id=id, **extra, **props)
@@ -209,45 +232,45 @@ def slider(id: int | None = None, *, label: str | None = None, min: float | None
 
 def number(id: int | None = None, *, label: str | None = None, min: float | None = None,
            max: float | None = None, value: float | None = None,
-           text_size: float | None = None, **props) -> dict:
+           text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A draggable numeric read-out over a range. ``text_size`` scales its
     label and value."""
-    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size)
+    extra = _drop_none(label=label, min=min, max=max, value=value, text_size=text_size, color=color)
     return node("number", id=id, **extra, **props)
 
 
 def button(id: int | None = None, *, label: str | None = None,
-           text_size: float | None = None, **props) -> dict:
+           text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A momentary push ``button`` (emits ``1`` on press, ``0`` on release).
     ``text_size`` scales its face label."""
-    extra = _drop_none(label=label, text_size=text_size)
+    extra = _drop_none(label=label, text_size=text_size, color=color)
     return node("button", id=id, **extra, **props)
 
 
 def toggle(id: int | None = None, *, label: str | None = None, value: bool | None = None,
-           text_size: float | None = None, **props) -> dict:
+           text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A boolean ``toggle``. ``value`` is sent as ``1``/``0`` (OSC has no bool).
     ``text_size`` scales its label."""
-    extra = _drop_none(label=label, text_size=text_size)
+    extra = _drop_none(label=label, text_size=text_size, color=color)
     if value is not None:
         extra["value"] = 1 if value else 0
     return node("toggle", id=id, **extra, **props)
 
 
 def text(id: int | None = None, *, value: str | None = None, label: str | None = None,
-         text_size: float | None = None, **props) -> dict:
+         text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A ``text`` field showing ``value`` (script-driven via ``/gui_set``).
     ``text_size`` scales the field text and its label."""
-    extra = _drop_none(value=value, label=label, text_size=text_size)
+    extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
     return node("text", id=id, **extra, **props)
 
 
 def menu(id: int | None, options, *, index: int | None = None, label: str | None = None,
-         text_size: float | None = None, **props) -> dict:
+         text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A ``menu`` selector over ``options`` (a list of strings); a click cycles
     to the next and emits the chosen ``index``. ``text_size`` scales the shown
     choice and the label."""
-    extra = _drop_none(index=index, label=label, text_size=text_size)
+    extra = _drop_none(index=index, label=label, text_size=text_size, color=color)
     return node("menu", id=id, options=list(options), **extra, **props)
 
 
@@ -260,7 +283,7 @@ def waveform(id: int | None = None, *, data=None, blob: int | None = None, buffe
              quant: float | None = None, sel_start: float | None = None,
              sel_len: float | None = None, playhead_at: float | None = None,
              y_start: float | None = None, y_len: float | None = None,
-             link: int | None = None, **props) -> dict:
+             link: int | None = None, color: str | None = None, **props) -> dict:
     """The heavy ``waveform`` view, fed its samples one of several ways (in the
     host's precedence order):
 
@@ -326,7 +349,7 @@ def waveform(id: int | None = None, *, data=None, blob: int | None = None, buffe
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
                        quant=quant, sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, y_start=y_start, y_len=y_len,
-                       link=link)
+                       link=link, color=color)
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
     return node("waveform", id=id, **extra, **props)
@@ -344,7 +367,7 @@ def spectrogram(id: int | None = None, *, data=None, blob: int | None = None, bu
                 sel_start: float | None = None, sel_len: float | None = None,
                 playhead_at: float | None = None, y_start: float | None = None,
                 y_len: float | None = None, link: int | None = None,
-                **props) -> dict:
+                color: str | None = None, **props) -> dict:
     """The heavy ``spectrogram`` (STFT time-frequency) view, fed like the
     `waveform`: a mapped ``path`` of raw little-endian ``f32``, a server
     ``buffer``, inline ``data``/``blob``, or a prebuilt single-channel STFT
@@ -386,19 +409,19 @@ def spectrogram(id: int | None = None, *, data=None, blob: int | None = None, bu
                        tempo=tempo, beat_at=beat_at, quant=quant,
                        sel_start=sel_start, sel_len=sel_len,
                        playhead_at=playhead_at, y_start=y_start, y_len=y_len,
-                       link=link)
+                       link=link, color=color)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
     return node("spectrogram", id=id, **extra, **props)
 
 
 def meter(id: int | None, bus: int, *, min: float | None = None, max: float | None = None,
-          label: str | None = None, **props) -> dict:
+          label: str | None = None, color: str | None = None, **props) -> dict:
     """A level ``meter`` reading control ``bus`` straight from the audio server's
     shared-memory segment each frame (zero OSC messages). The host must be started
     with ``--shm`` pointing at the server's segment. ``min``/``max`` scale the bar
     (default ``0``/``1``)."""
-    extra = _drop_none(min=min, max=max, label=label)
+    extra = _drop_none(min=min, max=max, label=label, color=color)
     return node("meter", id=id, bus=bus, **extra, **props)
 
 
@@ -408,7 +431,7 @@ def scope(id: int | None = None, bus: int = 0, *, tap: int | None = None,
           hold: bool | None = None, min: float | None = None,
           max: float | None = None, ruler: "bool | str | None" = None,
           ruler_y: "bool | str | None" = None, label: str | None = None,
-          **props) -> dict:
+          color: str | None = None, **props) -> dict:
     """A time-domain ``scope``, in one of two rates. By default (control rate)
     it plots the recent history of control ``bus``, read from shared memory
     each frame (needs ``--shm`` like `meter`). Passing ``tap`` makes it an
@@ -429,7 +452,7 @@ def scope(id: int | None = None, bus: int = 0, *, tap: int | None = None,
     server leg. ``min``/``max`` set the vertical range (default the bipolar
     ``-1``/``1``)."""
     extra = _drop_none(tap=tap, channels=channels, window_ms=window_ms,
-                       trigger=trigger, min=min, max=max, label=label)
+                       trigger=trigger, min=min, max=max, label=label, color=color)
     for key, flag in (("hold", hold), ("overlay", overlay)):
         if flag is not None:
             extra[key] = 1 if flag else 0
@@ -441,7 +464,7 @@ def scope(id: int | None = None, bus: int = 0, *, tap: int | None = None,
 
 def phasescope(id: int | None, tap: int, tap2: int | None = None, *,
                window_ms: float | None = None, hold: bool | None = None,
-               label: str | None = None, **props) -> dict:
+               label: str | None = None, color: str | None = None, **props) -> dict:
     """A ``phasescope`` (goniometer): the two audio taps ``tap`` (left) and
     ``tap2`` (right, default ``tap + 1``) drawn as the 45°-rotated Lissajous
     figure — vertical is the mid ``(L + R)/√2``, horizontal the side
@@ -452,7 +475,7 @@ def phasescope(id: int | None, tap: int, tap2: int | None = None, *,
     under the field. Route each channel's bus into its tap first with
     ``Server.tap``; ``hold`` freezes the trace. Reads the segment natively
     (zero messages) and ``/tap_stream`` in the browser, like the oscilloscope."""
-    extra = _drop_none(window_ms=window_ms, label=label)
+    extra = _drop_none(window_ms=window_ms, label=label, color=color)
     if tap2 is not None:
         extra["tap2"] = tap2
     if hold is not None:
@@ -467,7 +490,7 @@ def spectrum(id: int | None, tap: int, *, channels: int | None = None,
              averaging: float | None = None, peak_hold: bool | None = None,
              ruler: "bool | str | None" = None,
              ruler_y: "bool | str | None" = None,
-             label: str | None = None, **props) -> dict:
+             label: str | None = None, color: str | None = None, **props) -> dict:
     """A live ``spectrum`` (spectroscope): one forward FFT per frame over the
     newest window of each of ``channels`` (default 1) **adjacent** audio taps
     starting at ``tap``, drawn as one magnitude curve per channel (color-coded
@@ -486,7 +509,7 @@ def spectrum(id: int | None, tap: int, *, channels: int | None = None,
     subscribes ``/tap_stream``."""
     extra = _drop_none(channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil,
-                       freq_scale=freq_scale, averaging=averaging, label=label)
+                       freq_scale=freq_scale, averaging=averaging, label=label, color=color)
     if log_freq is not None:
         extra["log_freq"] = 1 if log_freq else 0
     if peak_hold is not None:
@@ -498,14 +521,14 @@ def spectrum(id: int | None, tap: int, *, channels: int | None = None,
 
 
 def nodetree(id: int | None = None, *, group: int = 0, controls: bool | None = None,
-             label: str | None = None, **props) -> dict:
+             label: str | None = None, color: str | None = None, **props) -> dict:
     """A live ``nodetree`` view of the audio server's node tree rooted at ``group``
     (default the root group ``0``). The host mirrors the server's tree over its
     client leg (it must be started with ``--server``), refreshing on node
     creation/removal and a low-rate poll, so group/synth changes and ``/n_set``
     edits show live. ``controls`` (default true) shows each synth's control
     name/value pairs. A read-only view."""
-    extra = _drop_none(label=label)
+    extra = _drop_none(label=label, color=color)
     if controls is not None:
         extra["controls"] = 1 if controls else 0
     return node("nodetree", id=id, group=group, **extra, **props)
@@ -513,7 +536,7 @@ def nodetree(id: int | None = None, *, group: int = 0, controls: bool | None = N
 
 def bpf(id: int | None = None, *, points=None, min: float | None = None, max: float | None = None,
         duration: float | None = None, exp: bool | None = None,
-        label: str | None = None, **props) -> dict:
+        label: str | None = None, color: str | None = None, **props) -> dict:
     """A drawable ``bpf`` break-point function — the envelope editor.
 
     Breakpoints ``(time, value)`` plus a per-segment shape using the server's
@@ -547,7 +570,7 @@ def bpf(id: int | None = None, *, points=None, min: float | None = None, max: fl
     the whole list (a ``/gui_set`` value is a scalar, so the array rides as its
     JSON string)."""
     extra = _drop_none(points=_flat_points(points) if points is not None else None,
-                       min=min, max=max, duration=duration, label=label)
+                       min=min, max=max, duration=duration, label=label, color=color)
     if exp is not None:
         extra["exp"] = 1 if exp else 0
     return node("bpf", id=id, **extra, **props)
@@ -615,7 +638,7 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
          ruler: str | None = None, ruler_y: str | None = None,
          fft_size: int | None = None, db_floor: float | None = None,
          db_ceil: float | None = None, freq_scale: str | None = None,
-         label: str | None = None, **props) -> dict:
+         label: str | None = None, color: str | None = None, **props) -> dict:
     """A static ``plot`` of a signal — measurement without navigation. Unlike
     the heavy `waveform`, it does not zoom, pan or edit; it is the catalog's
     "plot of an NRT-generated signal/file", grown x/y rulers, multichannel
@@ -659,7 +682,7 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
                        sample_rate=sample_rate, min=min, max=max,
                        ruler=ruler, ruler_y=ruler_y, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil, freq_scale=freq_scale,
-                       label=label)
+                       label=label, color=color)
     if overlay is not None:
         extra["overlay"] = 1 if overlay else 0
     return node("plot", id=id, **extra, **props)
@@ -669,7 +692,7 @@ def track(id: int | None = None, *clips, label: str | None = None, height: float
           snap: float | None = None, ruler: str | None = None,
           sample_rate: float | None = None, tempo: float | None = None,
           beat_at: float | None = None, quant: float | None = None,
-          playhead_at: float | None = None, **props) -> dict:
+          playhead_at: float | None = None, theme: dict | None = None, color: str | None = None, **props) -> dict:
     """A multitrack ``track`` lane holding `clip` children placed on a shared
     time axis — the DAW-style track editor's lane. ``label`` names it in a left
     header; ``height`` is its lane weight when several tracks stack under one
@@ -705,7 +728,7 @@ def track(id: int | None = None, *clips, label: str | None = None, height: float
     """
     extra = _drop_none(label=label, height=height, snap=snap, ruler=ruler,
                        sample_rate=sample_rate, tempo=tempo, beat_at=beat_at,
-                       quant=quant, playhead_at=playhead_at)
+                       quant=quant, playhead_at=playhead_at, theme=theme, color=color)
     return node("track", id=id, children=clips, **extra, **props)
 
 
@@ -714,7 +737,7 @@ def clip(id: int | None = None, *, offset: float = 0.0, dur: float, data=None, b
          channels: int | None = None, base_bucket: int | None = None,
          notes=None, points=None, exp: bool | None = None,
          min: float | None = None, max: float | None = None,
-         label: str | None = None, **props) -> dict:
+         label: str | None = None, color: str | None = None, **props) -> dict:
     """One ``clip`` on a `track`: a placed rectangle spanning ``[offset, offset +
     dur]`` in timeline sample units (the graphic unit — length = duration). Its
     body is one of three:
@@ -768,7 +791,7 @@ def clip(id: int | None = None, *, offset: float = 0.0, dur: float, data=None, b
                        channels=channels, base_bucket=base_bucket,
                        notes=_flat_notes(notes) if notes is not None else None,
                        points=_flat_points(points) if points is not None else None,
-                       min=min, max=max, label=label)
+                       min=min, max=max, label=label, color=color)
     if exp is not None:
         extra["exp"] = 1 if exp else 0
     return node("clip", id=id, dur=dur, **extra, **props)
@@ -784,7 +807,7 @@ def pianoroll(id: int | None = None, *, notes=None, osc=None, min: float | None 
               sel_start: float | None = None, sel_len: float | None = None,
               playhead_at: float | None = None, playhead: float | None = None,
               y_start: float | None = None, y_len: float | None = None,
-              label: str | None = None, **props) -> dict:
+              label: str | None = None, color: str | None = None, **props) -> dict:
     """The dedicated editor-grade ``pianoroll`` view: a piano keyboard gutter, a
     note grid, an optional velocity lane and an OSC-event lane — the timeline
     sibling of the compact `clip` piano-roll body, drawing the **same notes** with
@@ -833,7 +856,7 @@ def pianoroll(id: int | None = None, *, notes=None, osc=None, min: float | None 
         min=min, max=max, snap=snap, link=link, ruler=ruler,
         sample_rate=sample_rate, tempo=tempo, beat_at=beat_at, quant=quant,
         sel_start=sel_start, sel_len=sel_len, playhead_at=playhead_at,
-        playhead=playhead, y_start=y_start, y_len=y_len, label=label)
+        playhead=playhead, y_start=y_start, y_len=y_len, label=label, color=color)
     if velocity is not None:
         extra["velocity"] = 1 if velocity else 0
     if osc_lane is not None:
@@ -848,7 +871,7 @@ def piano(id: int | None = None, *, min: int | None = None, max: int | None = No
           pan: bool | None = None, overview: bool | None = None,
           velocity: int | None = None, channel: int | None = None,
           voice: str | None = None, voice_args=None,
-          label: str | None = None, **props) -> dict:
+          label: str | None = None, color: str | None = None, **props) -> dict:
     """The playable ``piano`` virtual keyboard: keys laid out with real piano
     proportions (equal white keys, narrower/shorter black keys distributed as on
     the physical instrument), resizing freely with the widget.
@@ -893,7 +916,7 @@ def piano(id: int | None = None, *, min: int | None = None, max: int | None = No
                        voice_args=[x for kv in voice_args
                                    for x in (str(kv[0]), float(kv[1]))]
                        if voice_args is not None else None,
-                       label=label)
+                       label=label, color=color)
     if pan is not None:
         extra["pan"] = 1 if pan else 0
     if overview is not None:
@@ -902,7 +925,7 @@ def piano(id: int | None = None, *, min: int | None = None, max: int | None = No
 
 
 def graph(id: int | None = None, *, members=None, buses=None, wires=None,
-          label: str | None = None, **props) -> dict:
+          label: str | None = None, color: str | None = None, **props) -> dict:
     """A ``graph`` **patcher**: a bus-wired node graph (a `clausters.defs.GraphDef`)
     drawn as member boxes, bus nodes, and a wire per connection — the *logical*
     side of a composition, where materials relate by processing rather than by
@@ -929,12 +952,12 @@ def graph(id: int | None = None, *, members=None, buses=None, wires=None,
         buses=[str(b) for b in buses] if buses is not None else None,
         wires=[x for w in wires for x in (int(w[0]), str(w[1]), str(w[2]))]
         if wires is not None else None,
-        label=label)
+        label=label, color=color)
     return node("graph", id=id, **extra, **props)
 
 
 def canvas(id: int | None = None, shader: str | None = None, *, params=None, buses=None,
-           label: str | None = None, **props) -> dict:
+           label: str | None = None, color: str | None = None, **props) -> dict:
     """A ``canvas`` running a script-supplied WGSL shader over the widget area --
     custom visuals (ShaderToy-style).
 
@@ -958,7 +981,7 @@ def canvas(id: int | None = None, shader: str | None = None, *, params=None, bus
     optional initial list of floats."""
     extra = _drop_none(shader=shader, label=label,
                        params=[float(x) for x in params] if params is not None else None,
-                       buses=[int(b) for b in buses] if buses is not None else None)
+                       buses=[int(b) for b in buses] if buses is not None else None, color=color)
     return node("canvas", id=id, **extra, **props)
 
 

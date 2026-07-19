@@ -984,7 +984,45 @@ pub struct Widget {
     pub kind: WidgetKind,
     /// The generic layout props (`w`/`h`/`weight`/`x`/`y`) this widget carries.
     pub place: Place,
+    /// The `theme` prop: a partial role table (`role -> "#rrggbb[aa]"`, the
+    /// same shape as the TOML style file) overlaying the parent's theme for
+    /// this widget's whole subtree — a **theme group**.
+    pub theme_over: Option<serde_json::Map<String, Value>>,
+    /// The `color` prop: the single-color shorthand — an overlay of just the
+    /// roles that carry this widget's function (see
+    /// [`Theme::accent_seeded`](super::theme::Theme::accent_seeded)).
+    pub color: Option<super::paint::Color>,
+    /// The resolved theme this widget draws with, produced at mutation points
+    /// by [`resolve_themes`] (an [`Arc`] clone per widget, so the per-frame
+    /// path reads exactly one theme and pays nothing). `None` until the first
+    /// resolve — the renderer falls back to the host theme.
+    pub theme: Option<Arc<super::theme::Theme>>,
     pub children: Vec<Widget>,
+}
+
+/// Resolves every widget's theme reference: walking from `base` (the host
+/// theme), a `theme` prop overlays the inherited table for its subtree and a
+/// `color` prop re-seeds the function roles for its one widget — both at this
+/// **mutation point**, never per frame. Recursive and cheap by construction:
+/// a widget with neither prop shares its parent's `Arc`.
+pub fn resolve_themes(widget: &mut Widget, base: &Arc<super::theme::Theme>) {
+    let group = match &widget.theme_over {
+        Some(table) => {
+            let mut t = (**base).clone();
+            for warning in t.overlay_json(table) {
+                tracing::warn!("widget {:?}: {warning}", widget.id);
+            }
+            Arc::new(t)
+        }
+        None => base.clone(),
+    };
+    widget.theme = Some(match widget.color {
+        Some(c) => Arc::new(super::theme::Theme::accent_seeded(&group, c)),
+        None => group.clone(),
+    });
+    for child in &mut widget.children {
+        resolve_themes(child, &group);
+    }
 }
 
 impl Widget {
@@ -1440,8 +1478,62 @@ impl Widget {
             id,
             kind,
             place: Place::parse(&node.props),
+            theme_over: node.props.get("theme").and_then(Value::as_object).cloned(),
+            color: node
+                .props
+                .get("color")
+                .and_then(Value::as_str)
+                .and_then(super::theme::parse_hex),
+            theme: None,
             children,
         })
+    }
+
+    /// Applies a `/gui_set` of the style props (`theme`, `color`) to this
+    /// widget. A `theme` value rides as a JSON object or its string carrier
+    /// (the scalar wire, like `points`); an empty string (or empty object)
+    /// clears the group, an empty `color` clears the accent. Returns whether
+    /// the key was a style key that applied — the caller re-resolves the
+    /// window's themes.
+    pub fn style_apply(&mut self, key: &str, v: &Value) -> bool {
+        match key {
+            "color" => match v.as_str() {
+                Some("") => {
+                    self.color = None;
+                    true
+                }
+                Some(hex) => match super::theme::parse_hex(hex) {
+                    Some(c) => {
+                        self.color = Some(c);
+                        true
+                    }
+                    None => false,
+                },
+                None => false,
+            },
+            "theme" => {
+                let value = match v {
+                    Value::String(s) if s.is_empty() => Value::Object(Default::default()),
+                    Value::String(s) => match serde_json::from_str::<Value>(s) {
+                        Ok(parsed) => parsed,
+                        Err(_) => return false,
+                    },
+                    other => other.clone(),
+                };
+                match value.as_object() {
+                    Some(table) if table.is_empty() => {
+                        self.theme_over = None;
+                        true
+                    }
+                    Some(table) => {
+                        self.theme_over = Some(table.clone());
+                        true
+                    }
+                    None => false,
+                }
+            }
+            _ => false,
+        }
     }
 
     /// Whether this is the heavy waveform view (a convenience for the renderer).
@@ -2589,6 +2681,68 @@ mod tests {
             }
             other => panic!("expected label, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn themes_resolve_recursively_at_the_mutation_point() {
+        // A theme group on a container overlays its whole subtree; a nested
+        // group overlays the *inherited* table; a `color` re-seeds one widget;
+        // a widget with neither shares its parent's Arc.
+        let n = node(
+            r##"{"type":"window","children":[
+              {"id":11,"type":"panel","theme":{"accent":"#ff0000"},"children":[
+                {"id":12,"type":"label","text":"in the group"},
+                {"id":13,"type":"slider","color":"#0000ff"},
+                {"id":14,"type":"panel","theme":{"text":"#00ff00"},"children":[
+                  {"id":15,"type":"label","text":"nested"}]}]},
+              {"id":16,"type":"label","text":"outside"}]}"##,
+        );
+        let mut w = Widget::from_node(1, &n, &[]).unwrap();
+        let base = Arc::new(super::super::theme::Theme::default());
+        resolve_themes(&mut w, &base);
+        let theme_of = |id: i32| w.find(id).unwrap().theme.clone().unwrap();
+        let red = [1.0, 0.0, 0.0, 1.0];
+        assert_eq!(theme_of(12).accent, red, "the group reaches the subtree");
+        assert_eq!(
+            theme_of(13).accent,
+            [0.0, 0.0, 1.0, 1.0],
+            "color wins on its widget"
+        );
+        assert_eq!(
+            theme_of(13).text,
+            base.text,
+            "color leaves the group's other roles"
+        );
+        let nested = theme_of(15);
+        assert_eq!(
+            nested.accent, red,
+            "a nested group inherits the outer overlay"
+        );
+        assert_eq!(nested.text, [0.0, 1.0, 0.0, 1.0], "and adds its own");
+        assert!(
+            Arc::ptr_eq(&theme_of(16), &base),
+            "outside any group the host theme is shared, not cloned"
+        );
+    }
+
+    #[test]
+    fn style_props_set_live_and_clear() {
+        let n = node(r#"{"type":"panel"}"#);
+        let mut w = Widget::from_node(1, &n, &[]).unwrap();
+        assert!(w.style_apply("color", &Value::from("#112233")));
+        assert!(w.color.is_some());
+        assert!(w.style_apply("color", &Value::from("")), "empty clears");
+        assert!(w.color.is_none());
+        // `theme` rides as a JSON object or its string carrier.
+        assert!(w.style_apply("theme", &Value::from(r##"{"accent":"#ff0000"}"##)));
+        assert!(w.theme_over.is_some());
+        assert!(
+            w.style_apply("theme", &Value::from("")),
+            "empty clears the group"
+        );
+        assert!(w.theme_over.is_none());
+        assert!(!w.style_apply("color", &Value::from("nonsense")));
+        assert!(!w.style_apply("value", &Value::from(1)), "not a style key");
     }
 
     #[test]

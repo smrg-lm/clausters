@@ -206,6 +206,15 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   en vez de pisar al vecino, y la perilla/toggle/menu a `text_size=3.0` se
   leen al triple. A los ~3 s el título crece en vivo por `/gui_set` y el
   párrafo del medio cambia de alineación dos veces.
+- **Grupos de tema y acentos por widget.** `examples/gui_style.py` arranca el
+  host con un archivo de tema cálido (naranja) y abre una ventana con cuatro
+  filas: la primera toma el tema del host, la segunda es un **grupo de tema**
+  frío (azul, prop `theme` del panel), la tercera un grupo anidado más oscuro
+  *dentro* del frío (hereda el azul y oscurece el panel y el texto), y la
+  cuarta tres sliders con acentos propios (`color`: rojo, verde, amarillo) →
+  a los ~4 s el grupo frío vira a violeta en vivo, a los ~8 s el slider "a"
+  vira a cian, y a los ~12 s el grupo se limpia (`theme=""`) y vuelve al
+  naranja del host. Todo por `/gui_set`, sin redefinir la ventana.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

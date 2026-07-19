@@ -1196,6 +1196,14 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 {
                     log(&w);
                 }
+                // The base changed under the resolved references: re-resolve
+                // every window's theme groups over the new host theme.
+                let base = std::sync::Arc::new(self.host.theme.clone());
+                for id in self.host.window_def_ids() {
+                    if let Some(tree) = self.host.window_def_mut(id) {
+                        super::widget::resolve_themes(tree, &base);
+                    }
+                }
                 self.draw();
             }
         }
