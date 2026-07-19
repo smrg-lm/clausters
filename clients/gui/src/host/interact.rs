@@ -20,11 +20,15 @@ use super::{Host, controls};
 use crate::viewport::View;
 
 /// The deepest interactive widget under `(x, y)` in window `def_id`: its id, its
-/// laid-out rect and a clone of its kind. Containers (`window`/`panel`) are not
-/// hit targets — except `scroll`, whose empty area is the pan gesture's surface
-/// (its children, laid out through its view transform, still win over it). A
-/// widget scrolled out of its container's window (outside its clip) is not hit.
-/// `fb_w`/`fb_h` is the window's framebuffer size in device pixels.
+/// laid-out rect, its accumulated workspace zoom ([`Placed::scale`], which the
+/// control hit-math shares with the drawing) and a clone of its kind. Containers
+/// (`window`/`panel`) are not hit targets — except `scroll`, whose empty area is
+/// the pan gesture's surface (its children, laid out through its view transform,
+/// still win over it). A widget scrolled out of its container's window (outside
+/// its clip) is not hit. `fb_w`/`fb_h` is the window's framebuffer size in
+/// device pixels.
+///
+/// [`Placed::scale`]: super::layout::Placed::scale
 pub(crate) fn hit(
     host: &Host,
     def_id: i32,
@@ -32,7 +36,7 @@ pub(crate) fn hit(
     fb_h: u32,
     x: f64,
     y: f64,
-) -> Option<(i32, Rect, WidgetKind)> {
+) -> Option<(i32, Rect, f32, WidgetKind)> {
     let tree = host.window_def(def_id)?;
     let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
     let mut found = None;
@@ -45,7 +49,7 @@ pub(crate) fn hit(
                 WidgetKind::Window { .. } | WidgetKind::Panel { .. }
             )
         {
-            found = Some((id, p.rect, p.widget.kind.clone()));
+            found = Some((id, p.rect, p.scale, p.widget.kind.clone()));
         }
     }
     found

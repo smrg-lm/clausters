@@ -343,13 +343,13 @@ impl Gestures {
         grab: &mut dyn FnMut() -> bool,
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
-        let Some((id, rect, kind)) = hit(host, ctx, cx, cy) else {
+        let Some((id, rect, scale, kind)) = hit(host, ctx, cx, cy) else {
             return out;
         };
         let def_id = ctx.def_id;
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
-                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size);
+                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size * scale);
                 let t = slider_t(body, cx, cy, vertical);
                 interact::set_fraction(host, def_id, id, t);
                 emit_value(host, &mut out, def_id, id);
@@ -357,7 +357,7 @@ impl Gestures {
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Knob(r) | WidgetKind::Number(r) => {
-                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size);
+                let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size * scale);
                 let locked = grab();
                 self.drag = Some(Drag::Vertical {
                     id,
@@ -1118,6 +1118,7 @@ impl Gestures {
         if let Some((
             id,
             rect,
+            _,
             WidgetKind::Piano {
                 min,
                 max,
@@ -1141,7 +1142,7 @@ impl Gestures {
             }
             return out;
         }
-        if let Some((id, rect, kind)) = hit(host, ctx, cx, cy)
+        if let Some((id, rect, _, kind)) = hit(host, ctx, cx, cy)
             && let Some(editor) = kind.editor()
         {
             let factor = 0.85f64.powf(steps);
@@ -1475,7 +1476,8 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some((id, _rect, WidgetKind::PianoRoll { snap, .. })) = hit(host, ctx, cx, cy) else {
+        let Some((id, _rect, _, WidgetKind::PianoRoll { snap, .. })) = hit(host, ctx, cx, cy)
+        else {
             return out;
         };
         let moved = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
@@ -1505,7 +1507,7 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some((id, _rect, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
+        let Some((id, _rect, _, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
             return out;
         };
         let copied = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
@@ -1549,7 +1551,7 @@ impl Gestures {
         let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy) else {
             return out;
         };
-        let Some((id, _rect, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
+        let Some((id, _rect, _, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
             return out;
         };
         let nav = View {
@@ -1578,7 +1580,7 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let def_id = ctx.def_id;
-        let Some((id, _rect, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
+        let Some((id, _rect, _, WidgetKind::PianoRoll { .. })) = hit(host, ctx, cx, cy) else {
             return out;
         };
         let removed = interact::pianoroll_state_edit(host, def_id, id, |notes, sel| {
@@ -1624,8 +1626,9 @@ impl Gestures {
 
 // ---- shared helpers (tree queries, delivery, timeline navigation) ----
 
-/// The deepest widget under `(x, y)`: its id, rect and a clone of its kind.
-fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect, WidgetKind)> {
+/// The deepest widget under `(x, y)`: its id, rect, workspace zoom and a
+/// clone of its kind.
+fn hit(host: &Host, ctx: &GestureCtx, x: f64, y: f64) -> Option<(i32, Rect, f32, WidgetKind)> {
     interact::hit(host, ctx.def_id, ctx.fb_w, ctx.fb_h, x, y)
 }
 

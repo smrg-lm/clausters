@@ -74,6 +74,12 @@ impl Rect {
 pub struct Placed<'a> {
     pub rect: Rect,
     pub clip: Option<Rect>,
+    /// The accumulated `scroll` zoom this widget is seen through (`1.0`
+    /// outside any workspace; nested workspaces compose). Text draws at
+    /// `text_size * scale`, so a zoomed box keeps its proportions; the rest
+    /// of the chrome (track/handle thickness, margins) deliberately keeps its
+    /// device-pixel metrics, the patcher posture.
+    pub scale: f32,
     pub widget: &'a Widget,
 }
 
@@ -85,21 +91,28 @@ const GAP: f32 = 6.0;
 /// Lays out `root` into `area`, returning every widget with its rectangle.
 pub fn layout(area: Rect, root: &Widget) -> Vec<Placed<'_>> {
     let mut out = Vec::new();
-    place(area, root, None, &mut out);
+    place(area, root, None, 1.0, &mut out);
     out
 }
 
-fn place<'a>(area: Rect, widget: &'a Widget, clip: Option<Rect>, out: &mut Vec<Placed<'a>>) {
+fn place<'a>(
+    area: Rect,
+    widget: &'a Widget,
+    clip: Option<Rect>,
+    scale: f32,
+    out: &mut Vec<Placed<'a>>,
+) {
     out.push(Placed {
         rect: area,
         clip,
+        scale,
         widget,
     });
     let (layout, flow) = match widget.kind {
         WidgetKind::Window { layout, flow, .. } | WidgetKind::Panel { layout, flow } => {
             (layout, flow)
         }
-        WidgetKind::Scroll { .. } => return place_scrolled(area, widget, clip, out),
+        WidgetKind::Scroll { .. } => return place_scrolled(area, widget, clip, scale, out),
         _ => return, // leaves have no children to place
     };
     let inner = area.inset(flow.margin.unwrap_or(MARGIN).max(0.0));
@@ -109,7 +122,7 @@ fn place<'a>(area: Rect, widget: &'a Widget, clip: Option<Rect>, out: &mut Vec<P
             .iter()
             .zip(child_rects(inner, widget.children.as_slice(), layout, flow))
     {
-        place(rect, child, clip, out);
+        place(rect, child, clip, scale, out);
     }
 }
 
@@ -119,12 +132,14 @@ fn place<'a>(area: Rect, widget: &'a Widget, clip: Option<Rect>, out: &mut Vec<P
 /// view — offset by the pan, scaled by the zoom — into device pixels, and the
 /// whole subtree is clipped to the container's area. The transform applies to
 /// the direct children's rectangles; their own subtrees lay out normally
-/// inside the transformed rects (so a zoom scales the placed boxes, and the
-/// chrome inside them keeps its ordinary metrics, like the fixed-size text).
+/// inside the transformed rects (so a zoom scales the placed boxes), and the
+/// subtree's [`Placed::scale`] picks up the zoom so its **text** scales with
+/// the boxes — the rest of the chrome keeps its device-pixel metrics.
 fn place_scrolled<'a>(
     area: Rect,
     widget: &'a Widget,
     clip: Option<Rect>,
+    scale: f32,
     out: &mut Vec<Placed<'a>>,
 ) {
     let WidgetKind::Scroll { layout, flow, view } = widget.kind else {
@@ -150,7 +165,7 @@ fn place_scrolled<'a>(
             (r.w as f64 * zoom) as f32,
             (r.h as f64 * zoom) as f32,
         );
-        place(rect, child, clip, out);
+        place(rect, child, clip, scale * zoom as f32, out);
     }
 }
 
@@ -525,6 +540,34 @@ mod tests {
         assert_eq!((rect.x, rect.y), (area.x, area.y));
         assert_eq!((rect.w, rect.h), (160.0, 80.0));
         assert_eq!(clip, Some(area), "the subtree clips to the container");
+    }
+
+    #[test]
+    fn the_workspace_zoom_reaches_the_placement_scale() {
+        // A scrolled subtree carries the zoom in `Placed::scale` (so its text
+        // draws proportionally); nested workspaces compose, and everything
+        // outside a workspace stays at 1.0.
+        let w = tree(
+            r#"{"type":"window","margin":0,"children":[
+            {"id":15,"type":"label","text":"outside"},
+            {"id":19,"type":"scroll","margin":0,"view_zoom":2,"content_w":1000,"content_h":1000,
+             "children":[
+              {"id":11,"type":"label","text":"a","x":0,"y":0,"w":80,"h":40},
+              {"id":12,"type":"scroll","margin":0,"view_zoom":0.5,"x":100,"y":0,"w":200,"h":200,
+               "content_w":400,"content_h":400,"children":[
+                {"id":13,"type":"label","text":"b","x":0,"y":0,"w":80,"h":40}]}]}]}"#,
+        );
+        let placed = layout(area(), &w);
+        let scale_of = |id: i32| {
+            placed
+                .iter()
+                .find(|p| p.widget.id == Some(id))
+                .unwrap()
+                .scale
+        };
+        assert_eq!(scale_of(15), 1.0, "outside any workspace");
+        assert_eq!(scale_of(11), 2.0, "the workspace zoom");
+        assert_eq!(scale_of(13), 1.0, "nested zooms compose (2 * 0.5)");
     }
 
     #[test]

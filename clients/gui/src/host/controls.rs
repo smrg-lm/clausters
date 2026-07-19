@@ -70,25 +70,57 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
     (-(dy as f32)) / span
 }
 
-/// Draws a control into `mesh`. `active` highlights a pressed/dragged control.
-pub fn draw(mesh: &mut Mesh, kind: &WidgetKind, rect: Rect, active: bool, theme: &Theme) {
+/// Draws a control into `mesh`. `active` highlights a pressed/dragged control;
+/// `scale` is the placement's accumulated workspace zoom ([`Placed::scale`]),
+/// which the text sizes pick up so a zoomed box keeps its proportions.
+///
+/// [`Placed::scale`]: super::layout::Placed::scale
+pub fn draw(
+    mesh: &mut Mesh,
+    kind: &WidgetKind,
+    rect: Rect,
+    active: bool,
+    scale: f32,
+    theme: &Theme,
+) {
     match kind {
-        WidgetKind::Slider { range, vertical } => slider(mesh, range, rect, *vertical, theme),
-        WidgetKind::Knob(r) => knob(mesh, r, rect, theme),
-        WidgetKind::Number(r) => number(mesh, r, rect, theme),
-        WidgetKind::Button { label, text_size } => {
-            button(mesh, label.as_deref(), rect, active, *text_size, theme)
+        WidgetKind::Slider { range, vertical } => {
+            slider(mesh, range, rect, *vertical, range.text_size * scale, theme)
         }
+        WidgetKind::Knob(r) => knob(mesh, r, rect, r.text_size * scale, theme),
+        WidgetKind::Number(r) => number(mesh, r, rect, r.text_size * scale, theme),
+        WidgetKind::Button { label, text_size } => button(
+            mesh,
+            label.as_deref(),
+            rect,
+            active,
+            *text_size * scale,
+            theme,
+        ),
         WidgetKind::Toggle {
             value,
             label,
             text_size,
-        } => toggle(mesh, *value, label.as_deref(), rect, *text_size, theme),
+        } => toggle(
+            mesh,
+            *value,
+            label.as_deref(),
+            rect,
+            *text_size * scale,
+            theme,
+        ),
         WidgetKind::Text {
             value,
             label,
             text_size,
-        } => field(mesh, value, label.as_deref(), rect, *text_size, theme),
+        } => field(
+            mesh,
+            value,
+            label.as_deref(),
+            rect,
+            *text_size * scale,
+            theme,
+        ),
         WidgetKind::Menu {
             index,
             options,
@@ -96,7 +128,14 @@ pub fn draw(mesh: &mut Mesh, kind: &WidgetKind, rect: Rect, active: bool, theme:
             text_size,
         } => {
             let current = options.get(*index).map(String::as_str).unwrap_or("");
-            field(mesh, current, label.as_deref(), rect, *text_size, theme);
+            field(
+                mesh,
+                current,
+                label.as_deref(),
+                rect,
+                *text_size * scale,
+                theme,
+            );
         }
         _ => {}
     }
@@ -124,9 +163,9 @@ const TRACK_THICK: f32 = 4.0;
 const HANDLE_THICK: f32 = 8.0;
 const HANDLE_GRIP: f32 = 18.0;
 
-fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool, theme: &Theme) {
-    label_strip(mesh, r.label.as_deref(), rect, r.text_size, theme);
-    let body = body_rect_at(rect, r.label.is_some(), r.text_size);
+fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool, size: f32, theme: &Theme) {
+    label_strip(mesh, r.label.as_deref(), rect, size, theme);
+    let body = body_rect_at(rect, r.label.is_some(), size);
     let f = r.fraction();
     if vertical {
         // Track down the centre; min at the bottom, max at the top.
@@ -177,16 +216,16 @@ fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool, theme: &Theme)
             theme.accent,
         );
     }
-    value_text(mesh, &fmt(r.value), body, r.text_size, theme);
+    value_text(mesh, &fmt(r.value), body, size, theme);
 }
 
-fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, theme: &Theme) {
-    label_strip(mesh, r.label.as_deref(), rect, r.text_size, theme);
-    let body = body_rect_at(rect, r.label.is_some(), r.text_size);
+fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, theme: &Theme) {
+    label_strip(mesh, r.label.as_deref(), rect, size, theme);
+    let body = body_rect_at(rect, r.label.is_some(), size);
     // Reserve a strip at the bottom of the body for the value read-out and size
     // the disc in the area above it, so the number stays inside the body — it
     // never overlaps the disc nor spills past the cell into the row below.
-    let text_h = font::height(r.text_size) + PAD;
+    let text_h = font::height(size) + PAD;
     let disc_h = (body.h - text_h).max(0.0);
     let radius = (body.w.min(disc_h) * 0.5 - 2.0).max(2.0);
     let cx = body.x + body.w * 0.5;
@@ -201,14 +240,14 @@ fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, theme: &Theme) {
         mesh,
         &fmt(r.value),
         Rect::new(body.x, body.y + body.h - text_h, body.w, text_h),
-        r.text_size,
+        size,
         theme,
     );
 }
 
-fn number(mesh: &mut Mesh, r: &Range, rect: Rect, theme: &Theme) {
-    label_strip(mesh, r.label.as_deref(), rect, r.text_size, theme);
-    let body = body_rect_at(rect, r.label.is_some(), r.text_size);
+fn number(mesh: &mut Mesh, r: &Range, rect: Rect, size: f32, theme: &Theme) {
+    label_strip(mesh, r.label.as_deref(), rect, size, theme);
+    let body = body_rect_at(rect, r.label.is_some(), size);
     mesh.rect(body, theme.field);
     // A vertical fill rising from the bottom shows the value in range, so
     // dragging up raises the green level; a border frames the field.
@@ -218,7 +257,7 @@ fn number(mesh: &mut Mesh, r: &Range, rect: Rect, theme: &Theme) {
         theme.accent_dim,
     );
     border(mesh, body, 1.0, theme.accent);
-    font::text_centered(mesh, &fmt(r.value), body, r.text_size, theme.text);
+    font::text_centered(mesh, &fmt(r.value), body, size, theme.text);
 }
 
 /// Draws a `label` into its rect: the line block vertically centered, each
@@ -471,7 +510,7 @@ mod tests {
             text_size: TEXT_SCALE,
         };
         let mut mesh = Mesh::new();
-        knob(&mut mesh, &r, cell, &Theme::default());
+        knob(&mut mesh, &r, cell, r.text_size, &Theme::default());
         let bottom = cell.y + cell.h;
         let max_y = mesh.positions().map(|(_, y)| y).fold(f32::MIN, f32::max);
         assert!(

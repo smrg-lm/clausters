@@ -780,7 +780,15 @@ pub(crate) fn render(
                 wrap,
                 align,
             } => {
-                controls::draw_label(&mut mesh, text, p.rect, *text_size, *wrap, *align, theme);
+                controls::draw_label(
+                    &mut mesh,
+                    text,
+                    p.rect,
+                    *text_size * p.scale,
+                    *wrap,
+                    *align,
+                    theme,
+                );
             }
             WidgetKind::Waveform {
                 overlay, editor, ..
@@ -1078,7 +1086,14 @@ pub(crate) fn render(
                 }
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
-            kind => controls::draw(&mut mesh, kind, p.rect, p.widget.id == active_button, theme),
+            kind => controls::draw(
+                &mut mesh,
+                kind,
+                p.rect,
+                p.widget.id == active_button,
+                p.scale,
+                theme,
+            ),
         }
     }
 
