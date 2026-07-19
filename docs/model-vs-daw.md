@@ -17,7 +17,7 @@ Why Clausters keeps SuperCollider's node-tree model, what that model buys and co
 | Unit | Voice / synth, ephemeral | Channel, persistent |
 | Structure | Order tree + orthogonal buses | Fixed routing graph |
 | Arbitrary routing | Total: any synth to any bus | Bounded to inserts + N sends |
-| Dynamic voices | Native (spawn/kill a synth per note) | Outside the model (handled inside a plugin) |
+| Dynamic voices | Native (spawn/free a synth per note) | Outside the model (handled inside a plugin) |
 
 The tree's strength is that **order is orthogonal to routing**. The signal graph is not wired into the structure; it is emergent from which buses each node reads and writes, and it can be reconfigured live without rebuilding anything. The granularity is the *voice*, not the channel — which is why the model expresses granular synthesis, massive polyphony and structures that appear and vanish, all of which a DAW only does *inside* a plugin (a black box).
 

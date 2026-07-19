@@ -72,6 +72,14 @@ with this modularity in mind.
   `docs/decisions.md` and the frozen `docs/history/build-log.md` are in English.
   `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation with the user
   are in Spanish.
+- **Prose uses the API's own verbs for API actions.** When the protocol or
+  API has a verb for an action, the documentation (books, docstrings,
+  comments) names the action with *that* verb: a node or widget is **freed**
+  (`/n_free`, `/gui_free`, `node.free()`) — never "destroyed", "deleted" or
+  "killed"; a def is **sent** and **loaded**; a server is **booted**; an
+  element is **rendered** (never "realized" — see the arrangement vocabulary
+  below). Everyday synonyms make the prose drift from the surface the reader
+  actually types against.
 - **Type and class names** are CamelCase, with an acronym inside a name
   taking only its first letter in uppercase — `OscFunc`, `MidiFunc`,
   `OscUdpInterface`, `OscTcpInterface`, `NodeIdAllocator` — never all-caps

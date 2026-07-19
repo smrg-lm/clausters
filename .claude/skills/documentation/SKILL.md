@@ -44,13 +44,20 @@ writing. Then place the page.
   `clients/python/GUIA.md`) is a Spanish smoke checklist, **not** part of the
   books.
 
-Two rules hold across *all* of the above (repeat them to yourself):
+Three rules hold across *all* of the above (repeat them to yourself):
 
 1. **Plain Markdown only.** No Sphinx/RST directives in docstrings — use
    backticks and Google-style sections, never `:param:` field lists or `:role:`
    cross-refs.
 2. **No milestone labels** (`Mx`/`Cx`/`Fx`) in any published doc or docstring.
    Those live only in the `PLAN.md` roadmaps.
+3. **Prose names API actions by the API's own verbs.** When the protocol or API
+   has a verb for an action, use *that* verb: a node or widget is **freed**
+   (`/n_free`, `/gui_free`), never "destroyed"/"deleted"/"killed"; a def is
+   **sent**/**loaded**; a server is **booted**; an element is **rendered**,
+   never "realized". Verbs from *other* domains keep their own APIs' words
+   (shell `kill`, `subprocess.terminate()`, POSIX "the kernel kills the
+   process", upstream symbols cited verbatim).
 
 The two books cross-link each other by their ReadTheDocs URLs.
 

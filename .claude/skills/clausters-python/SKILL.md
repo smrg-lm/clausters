@@ -63,8 +63,9 @@ fdef = FaustDef.from_signals("sine", S.sin(phasor * 6.2831853) * 0.2, ...)  # >1
   UGen graphs with the full unary/binary maths (the generic op UGens), and the
   only way to reach bus I/O, buffer playback, `send_reply`/`poll` and the FFT
   chain. Combine them freely (a FaustDef voice routed by a SynthDef).
-- `/d_faust` needs a server built with the **`faust` feature** (off by default);
-  `/d_recv` works on any build (`synth` is on by default).
+- `/d_faust` needs a server built with the **`faust` feature** and `/d_recv`
+  the **`synth`** feature — **both are on by default**; only a custom
+  `--no-default-features` build can lack one (the server then replies `/fail`).
 - Reserved controls `in`/`out` (bus selectors) are added by the server.
 
 ## Sending defs is asynchronous — use the /sync barrier
@@ -186,3 +187,9 @@ non-obvious choice, and a `clients/python/GUIA.md` smoke step only for new
 human-audible/visual behavior. The record of what shipped is the commit message,
 not a per-milestone log. Keep code, the `PLAN.md` roadmaps and `docs/decisions.md`
 English; `GUIA.md` and the conversation Spanish; commit messages English/ASCII.
+In docstrings and docs, name API actions by the API's own verbs — a node or
+widget is **freed** (`/n_free`, `/gui_free`, `node.free()`), a def is
+**sent**/**loaded**, a server is **booted**, an element is **rendered** — never
+everyday synonyms ("destroyed", "deleted", "killed", "realized"); verbs from
+other domains keep their own APIs' words (`subprocess.terminate()`, shell
+`kill`).
