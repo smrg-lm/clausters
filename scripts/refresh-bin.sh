@@ -53,4 +53,12 @@ if [ ! -e "$target" ]; then
     candidate="$root/clients/python/examples/${target%.py}.py"
     [ -e "$candidate" ] && target="$candidate"
 fi
+case "$target" in
+    *.py) ;;
+    *)
+        echo "refresh-bin.sh: '$target' is not a Python script (expected a" >&2
+        echo "  .py path or an example name, e.g. 'gui_shell')" >&2
+        exit 2
+        ;;
+esac
 exec "$python" "$target" "$@"
