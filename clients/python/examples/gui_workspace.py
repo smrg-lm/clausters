@@ -17,14 +17,16 @@ state is settable back with `set` (the round trip that lets a script own the
 navigation), which the script demonstrates by recentring the plane after a few
 seconds.
 
-Needs a display and a Vulkan/Metal/DX12/GL adapter (the host opens a window).
+The example **launches its own GUI host** (`GuiHost.boot`) and needs no audio
+server at all: a workspace is pure layout and navigation. Needs a display and a
+Vulkan/Metal/DX12/GL adapter (the host opens a window).
 
-Start the windowed host in one terminal (built from ``clients/gui``)::
+Install once, from the repo root::
 
-    cd clients/gui && cargo run --bin clausters-gui -- -v
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python   # bundles the server + GUI binaries
 
-then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
+then::
 
     python clients/python/examples/gui_workspace.py
 
@@ -97,18 +99,22 @@ def workspace() -> dict:
 
 
 def main():
-    with GuiHost() as gui:  # 127.0.0.1:57210 by default
+    # No audio server: `boot` starts a host with no client leg and owns it,
+    # stopping the process on exit.
+    with GuiHost.boot() as gui:
         gui.define(1, workspace())
         print("drag and wheel over each pane; navigation events print here")
+        print("(close the window to end, or wait ~45 s)")
 
         # The view is state a script can own: after a few seconds, put the
         # plane at its centre, zoomed out a little. The same three keys the
         # gestures emit.
         recentre_at = time.monotonic() + 5.0
+        deadline = time.monotonic() + 45.0
         recentred = False
         closed = False
 
-        while not closed:
+        while not closed and time.monotonic() < deadline:
             msg = gui.poll(timeout=0.1)
             if msg is not None:
                 addr, args = msg
