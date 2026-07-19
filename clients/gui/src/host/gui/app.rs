@@ -397,6 +397,7 @@ impl App {
             &ws.spectra,
             tree,
             &inputs,
+            &self.host.theme,
         );
     }
 }

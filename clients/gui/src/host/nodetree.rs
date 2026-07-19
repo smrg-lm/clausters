@@ -20,12 +20,9 @@ use clausters_core::osc::OscType;
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::theme::Theme;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const DIM: Color = [0.55, 0.60, 0.66, 1.0];
-const FIELD: Color = [0.10, 0.11, 0.14, 1.0];
-const FRAME: Color = [0.30, 0.45, 0.60, 1.0];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 /// Pixels a child is indented past its parent.
@@ -163,20 +160,33 @@ pub fn draw(
     controls: bool,
     label: Option<&str>,
     server: bool,
+    theme: &Theme,
 ) {
     if let Some(text) = label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
     let body = body_rect(rect, label.is_some());
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, FIELD);
-    mesh.border(body, 1.0, FRAME);
+    mesh.rect(body, theme.track);
+    mesh.border(body, 1.0, theme.frame_info);
 
     let line_h = font::height(TEXT_SCALE) + 3.0;
     match tree {
-        None => placeholder(mesh, body, if server { "querying..." } else { "no server" }),
+        None => placeholder(
+            mesh,
+            body,
+            if server { "querying..." } else { "no server" },
+            theme,
+        ),
         Some(tree) => {
             let lines = tree.lines(controls);
             let mut y = body.y + PAD;
@@ -185,7 +195,7 @@ pub fn draw(
                     break; // out of vertical room; scrolling is future work
                 }
                 let x = body.x + PAD + line.depth as f32 * INDENT;
-                font::text(mesh, &line.text, x, y, TEXT_SCALE, TEXT);
+                font::text(mesh, &line.text, x, y, TEXT_SCALE, theme.text);
                 y += line_h;
             }
         }
@@ -193,8 +203,8 @@ pub fn draw(
 }
 
 /// A dim centered note for the empty states.
-fn placeholder(mesh: &mut Mesh, body: Rect, text: &str) {
-    font::text_centered(mesh, text, body, TEXT_SCALE, DIM);
+fn placeholder(mesh: &mut Mesh, body: Rect, text: &str, theme: &Theme) {
+    font::text_centered(mesh, text, body, TEXT_SCALE, theme.text_dim);
 }
 
 fn next_int<'a>(it: &mut impl Iterator<Item = &'a OscType>) -> Option<i32> {
@@ -352,6 +362,7 @@ mod tests {
             true,
             Some("tree"),
             true,
+            &Theme::default(),
         );
         assert!(!m.is_empty(), "a populated node tree draws geometry");
     }

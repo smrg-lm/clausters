@@ -19,15 +19,9 @@ use clausters_core::measure::{correlation, lissajous_point};
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::theme::Theme;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
-const FRAME: Color = [0.30, 0.78, 0.55, 1.0];
-const GRID: Color = [0.30, 0.34, 0.40, 0.6];
-const TRACE: Color = [0.45, 0.90, 0.66, 1.0];
-const POS: Color = [0.30, 0.78, 0.55, 1.0];
-const NEG: Color = [0.85, 0.42, 0.42, 1.0];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 
@@ -45,9 +39,22 @@ const MAX_SEGMENTS: usize = 2000;
 /// goniometer field with an age-faded Lissajous trail (oldest faint, newest
 /// bright), a faint mid/side center cross, and a correlation bar beneath. An
 /// empty or odd-length window draws just the field and an empty readout.
-pub fn draw_phasescope(mesh: &mut Mesh, rect: Rect, interleaved: &[f32], label: Option<&str>) {
+pub fn draw_phasescope(
+    mesh: &mut Mesh,
+    rect: Rect,
+    interleaved: &[f32],
+    label: Option<&str>,
+    theme: &Theme,
+) {
     if let Some(text) = label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
     let outer = body_rect(rect, label.is_some());
     if outer.w <= 0.0 || outer.h <= 0.0 {
@@ -64,13 +71,13 @@ pub fn draw_phasescope(mesh: &mut Mesh, rect: Rect, interleaved: &[f32], label: 
         side,
         side,
     );
-    mesh.rect(field, FIELD);
-    mesh.border(field, 1.0, FRAME);
+    mesh.rect(field, theme.field);
+    mesh.border(field, 1.0, theme.accent);
 
     let (cx, cy) = (field.x + side * 0.5, field.y + side * 0.5);
     // Mid is vertical, side horizontal: a faint center cross reads the axes.
-    mesh.line([cx, field.y], [cx, field.y + side], 1.0, GRID);
-    mesh.line([field.x, cy], [field.x + side, cy], 1.0, GRID);
+    mesh.line([cx, field.y], [cx, field.y + side], 1.0, theme.grid);
+    mesh.line([field.x, cy], [field.x + side, cy], 1.0, theme.grid);
 
     let scale = (side * 0.5 / MAX_EXTENT) * 0.95;
     let n = interleaved.len() / 2;
@@ -86,7 +93,12 @@ pub fn draw_phasescope(mesh: &mut Mesh, rect: Rect, interleaved: &[f32], label: 
             let p = point(i);
             // Age fade: newest segments brightest.
             let age = i as f32 / n as f32;
-            let color = [TRACE[0], TRACE[1], TRACE[2], (0.15 + 0.85 * age) * TRACE[3]];
+            let color = [
+                theme.trace_bright[0],
+                theme.trace_bright[1],
+                theme.trace_bright[2],
+                (0.15 + 0.85 * age) * theme.trace_bright[3],
+            ];
             mesh.line(prev, p, 1.2, color);
             prev = p;
             i += step;
@@ -95,13 +107,13 @@ pub fn draw_phasescope(mesh: &mut Mesh, rect: Rect, interleaved: &[f32], label: 
 
     // Correlation readout under the field.
     let strip = Rect::new(outer.x, field_area.y + field_area.h, outer.w, corr_h);
-    draw_correlation(mesh, strip, interleaved);
+    draw_correlation(mesh, strip, interleaved, theme);
 }
 
 /// Draws the correlation strip: a `[-1, +1]` bar filled from center toward the
 /// measured coefficient (green toward mono/+1, red toward anti-phase/−1), with a
 /// numeric readout. A silent/DC window (undefined correlation) shows a dash.
-fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32]) {
+fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32], theme: &Theme) {
     if strip.w <= 0.0 || strip.h <= 0.0 {
         return;
     }
@@ -117,17 +129,17 @@ fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32]) {
     // The bar track, centered vertically with a small inset.
     let bar_h = (strip.h - 8.0).max(2.0);
     let bar = Rect::new(strip.x, strip.y + (strip.h - bar_h) * 0.5, strip.w, bar_h);
-    mesh.rect(bar, FIELD);
+    mesh.rect(bar, theme.field);
     let cx = bar.x + bar.w * 0.5;
-    mesh.line([cx, bar.y], [cx, bar.y + bar.h], 1.0, GRID); // the zero tick
+    mesh.line([cx, bar.y], [cx, bar.y + bar.h], 1.0, theme.grid); // the zero tick
     if let Some(r) = r {
         let half = bar.w * 0.5;
         let fill = half * r.abs().clamp(0.0, 1.0);
-        let color = if r >= 0.0 { POS } else { NEG };
+        let color = if r >= 0.0 { theme.accent } else { theme.warn };
         let x = if r >= 0.0 { cx } else { cx - fill };
         mesh.rect(Rect::new(x, bar.y, fill, bar.h), color);
     }
-    mesh.border(bar, 1.0, GRID);
+    mesh.border(bar, 1.0, theme.grid);
     let text = match r {
         Some(r) => format!("r {r:+.2}"),
         None => "r  --".to_string(),
@@ -139,7 +151,7 @@ fn draw_correlation(mesh: &mut Mesh, strip: Rect, interleaved: &[f32]) {
         (cx - w * 0.5).max(bar.x),
         bar.y + (bar.h - font::height(TEXT_SCALE)) * 0.5,
         TEXT_SCALE,
-        TEXT,
+        theme.text,
     );
 }
 
@@ -165,6 +177,7 @@ mod tests {
             Rect::new(0.0, 0.0, 200.0, 240.0),
             &w,
             Some("phase"),
+            &Theme::default(),
         );
         assert!(!mesh.is_empty(), "a stereo window draws geometry");
     }
@@ -172,7 +185,13 @@ mod tests {
     #[test]
     fn an_empty_window_draws_only_chrome() {
         let mut mesh = Mesh::new();
-        draw_phasescope(&mut mesh, Rect::new(0.0, 0.0, 200.0, 240.0), &[], None);
+        draw_phasescope(
+            &mut mesh,
+            Rect::new(0.0, 0.0, 200.0, 240.0),
+            &[],
+            None,
+            &Theme::default(),
+        );
         // The field, cross and correlation track still draw; it does not panic
         // and produces some geometry (the frame), just no trail.
         assert!(!mesh.is_empty());
@@ -187,6 +206,7 @@ mod tests {
             Rect::new(0.0, 0.0, 120.0, 160.0),
             &[0.1, 0.2, 0.3],
             None,
+            &Theme::default(),
         );
     }
 }

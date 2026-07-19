@@ -23,6 +23,7 @@
 //! native targets, like the rest of the platform seam.
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 /// The whole configuration tree: one section per audience. Unknown keys are
 /// ignored (forward compatibility), and every field is optional.
@@ -135,6 +136,12 @@ pub struct GuiConfig {
     pub data_dir: Option<String>,
     /// Run with no display (`--headless`).
     pub headless: Option<bool>,
+    /// `[gui.theme]` — color-role overrides for the host's look, each entry
+    /// `role = "#rrggbb[aa]"`. A partial table: unlisted roles keep the
+    /// default theme. The role names are the GUI host's `Theme` fields
+    /// (`accent`, `text`, `field`, ...); unknown names are warned about and
+    /// skipped by the host, never fatal.
+    pub theme: Option<BTreeMap<String, String>>,
 }
 
 /// `[standalone]` — the self-contained app launch (GUI + embedded server).
@@ -265,6 +272,15 @@ impl GuiConfig {
             shm: pick(self.shm, h.shm),
             data_dir: pick(self.data_dir, h.data_dir),
             headless: pick(self.headless, h.headless),
+            // The theme table merges per key (the overlay semantics): the
+            // higher layer's roles win, its unlisted roles fall through.
+            theme: match (self.theme, h.theme) {
+                (Some(mut lower), Some(higher)) => {
+                    lower.extend(higher);
+                    Some(lower)
+                }
+                (lower, higher) => higher.or(lower),
+            },
         }
     }
 }
@@ -378,14 +394,51 @@ mod load {
             toml::from_str(&text).map_err(|e| format!("invalid config {}: {e}", path.display()))
         }
     }
+
+    /// Reads a free-standing theme file (`--theme <path>`): a flat TOML table
+    /// of `role = "#rrggbb[aa]"` entries, the same shape as `[gui.theme]`.
+    /// The error is the file/parse failure verbatim.
+    pub fn read_theme_file(path: &Path) -> Result<super::BTreeMap<String, String>, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read theme {}: {e}", path.display()))?;
+        toml::from_str(&text).map_err(|e| format!("invalid theme {}: {e}", path.display()))
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub use load::{find_project_config, read_config_file, user_config_path};
+pub use load::{find_project_config, read_config_file, read_theme_file, user_config_path};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gui_theme_table_parses_and_merges_per_key() {
+        let user: Config = toml::from_str(
+            r##"
+            [gui.theme]
+            accent = "#ff0000"
+            text = "#eeeeee"
+            "##,
+        )
+        .unwrap();
+        let project: Config = toml::from_str(
+            r##"
+            [gui.theme]
+            accent = "#00ff00"
+            field = "#101010"
+            "##,
+        )
+        .unwrap();
+        let merged = user.merge(project).gui.theme.unwrap();
+        assert_eq!(merged.get("accent").unwrap(), "#00ff00", "higher wins");
+        assert_eq!(
+            merged.get("text").unwrap(),
+            "#eeeeee",
+            "lower falls through"
+        );
+        assert_eq!(merged.get("field").unwrap(), "#101010");
+    }
 
     #[test]
     fn parses_a_full_config() {

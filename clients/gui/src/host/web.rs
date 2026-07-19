@@ -190,6 +190,9 @@ enum WebEvent {
     /// A `fetch` of a waveform/plot URL completed and decoded (the browser's
     /// bulk path: `path`/`cache` resolve against the page origin).
     BulkReady { widget_id: i32, data: BulkData },
+    /// A theme overlay from the page: role -> "#rrggbb[aa]" pairs (the same
+    /// table `[gui.theme]` and a `--theme` file carry natively).
+    Theme(Vec<(String, String)>),
 }
 
 /// A fetched-and-decoded bulk resource, ready to place. The decode (pyramid
@@ -953,6 +956,7 @@ impl WebApp {
             &self.spectra,
             tree,
             &inputs,
+            &self.host.theme,
         );
     }
 
@@ -1184,6 +1188,16 @@ impl ApplicationHandler<WebEvent> for WebApp {
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::Tick => self.on_tick(),
             WebEvent::BulkReady { widget_id, data } => self.on_bulk_ready(widget_id, data),
+            WebEvent::Theme(entries) => {
+                for w in self
+                    .host
+                    .theme
+                    .overlay(entries.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+                {
+                    log(&w);
+                }
+                self.draw();
+            }
         }
     }
 
@@ -1577,6 +1591,21 @@ impl GuiBridge {
     /// replies back through [`server_reply`](Self::server_reply).
     pub fn connect_page(&self, send: js_sys::Function) {
         let _ = self.proxy.send_event(WebEvent::ConnectPage(send));
+    }
+
+    /// Overlays the host's color theme from a JSON object of
+    /// `{"role": "#rrggbb[aa]"}` entries — the browser form of the native
+    /// `[gui.theme]` config table. A partial object is fine; unknown roles or
+    /// bad colors are logged and skipped.
+    pub fn theme(&self, json: &str) {
+        match serde_json::from_str::<std::collections::BTreeMap<String, String>>(json) {
+            Ok(table) => {
+                let _ = self
+                    .proxy
+                    .send_event(WebEvent::Theme(table.into_iter().collect()));
+            }
+            Err(e) => log(&format!("cannot parse theme JSON: {e}")),
+        }
     }
 
     /// Feeds one reply packet from the in-page engine (a streamed `/c_set`, a

@@ -32,7 +32,8 @@ use crate::waveform::AMP_MARGIN;
 
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::theme::Theme;
 use super::widget::RulerY;
 
 /// One ruler tick: its position as a fraction of the visible axis span
@@ -906,11 +907,6 @@ pub(crate) fn hz_ticks_h(
     out
 }
 
-/// The color of a ruler strip's labels.
-pub(crate) const RULER_TEXT: Color = [0.65, 0.68, 0.72, 1.0];
-/// The color of a ruler strip's tick marks.
-pub(crate) const RULER_LINE: Color = [0.45, 0.48, 0.52, 1.0];
-
 /// The display name of a frequency scale, as the spectral views' corner
 /// read-out tags it — three letters each, so the tag's footprint is constant
 /// across scales.
@@ -927,15 +923,22 @@ pub(crate) fn scale_tag(scale: FreqScale) -> &'static str {
 /// a mark up against the body's bottom edge (taller when labeled), the label
 /// centered under it and edge-clamped into the strip. The one drawing of the
 /// x-ruler strip — the editor frames and the plot both call it.
-pub(crate) fn draw_ticks_h(mesh: &mut Mesh, strip: Rect, ticks: &[Tick]) {
+pub(crate) fn draw_ticks_h(mesh: &mut Mesh, strip: Rect, ticks: &[Tick], theme: &Theme) {
     for tick in ticks {
         let x = strip.x + strip.w * tick.frac as f32;
         let h = if tick.label.is_some() { 6.0 } else { 3.0 };
-        mesh.rect(Rect::new(x, strip.y, 1.0, h), RULER_LINE);
+        mesh.rect(Rect::new(x, strip.y, 1.0, h), theme.ruler_line);
         if let Some(label) = &tick.label {
             let w = font::width(label, RULER_SCALE);
             let lx = (x - w * 0.5).clamp(strip.x, (strip.x + strip.w - w).max(strip.x));
-            font::text(mesh, label, lx, strip.y + 7.0, RULER_SCALE, RULER_TEXT);
+            font::text(
+                mesh,
+                label,
+                lx,
+                strip.y + 7.0,
+                RULER_SCALE,
+                theme.ruler_text,
+            );
         }
     }
 }
@@ -945,19 +948,26 @@ pub(crate) fn draw_ticks_h(mesh: &mut Mesh, strip: Rect, ticks: &[Tick]) {
 /// labeled), labels right-aligned beside them and kept inside the strip
 /// starting at `strip_x`. `frac` 0 is the lane's bottom. The one drawing of
 /// the y-ruler strip, whatever the unit (amplitude, frequency, plain value).
-pub(crate) fn draw_ticks_v(mesh: &mut Mesh, body_x: f32, strip_x: f32, lane: Rect, ticks: &[Tick]) {
+pub(crate) fn draw_ticks_v(
+    mesh: &mut Mesh,
+    body_x: f32,
+    strip_x: f32,
+    lane: Rect,
+    ticks: &[Tick],
+    theme: &Theme,
+) {
     if lane.h <= 4.0 {
         return;
     }
     for tick in ticks {
         let y = lane.y + lane.h * (1.0 - tick.frac as f32);
         let w = if tick.label.is_some() { 8.0 } else { 4.0 };
-        mesh.rect(Rect::new(body_x - w, y, w, 1.0), RULER_LINE);
+        mesh.rect(Rect::new(body_x - w, y, w, 1.0), theme.ruler_line);
         if let Some(label) = &tick.label {
             let lw = font::width(label, RULER_SCALE);
             let lx = (body_x - 10.0 - lw).max(strip_x);
             let ty = (y - 3.0).clamp(lane.y, lane.y + lane.h - font::height(RULER_SCALE));
-            font::text(mesh, label, lx, ty, RULER_SCALE, RULER_TEXT);
+            font::text(mesh, label, lx, ty, RULER_SCALE, theme.ruler_text);
         }
     }
 }

@@ -18,7 +18,6 @@
 use clausters_core::fft;
 
 use crate::spectrogram::FreqScale;
-use crate::waveform::CHANNEL_COLORS;
 
 use super::controls::body_rect;
 use super::font;
@@ -27,11 +26,8 @@ use super::layout::Rect;
 use super::meters::fraction;
 use super::paint::{Color, Mesh};
 use super::ruler;
+use super::theme::Theme;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
-const FRAME: Color = [0.30, 0.78, 0.55, 1.0];
-const TRACE: Color = [0.40, 0.85, 0.62, 1.0];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 
@@ -151,9 +147,17 @@ pub(crate) fn draw_spectrum(
     rect: Rect,
     states: &[SpectrumState],
     p: &SpectrumParams,
+    theme: &Theme,
 ) {
     if let Some(text) = p.label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
     let mut body = body_rect(rect, p.label.is_some());
     let strip_x = (p.ruler_y && body.w > RULER_W * 2.0).then(|| {
@@ -169,13 +173,13 @@ pub(crate) fn draw_spectrum(
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, FIELD);
-    mesh.border(body, 1.0, FRAME);
+    mesh.rect(body, theme.field);
+    mesh.border(body, 1.0, theme.accent);
     // The FFT size and active scale, named over the view (the scope's
     // lock/free corner): log/mel/bark are not tellable apart from the tick
     // spacing at a glance. The size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", p.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(mesh, &tag, body);
+    super::meters::value_text(mesh, &tag, body, theme);
 
     let sr = if p.sample_rate > 0.0 {
         p.sample_rate as f32
@@ -187,11 +191,11 @@ pub(crate) fn draw_spectrum(
     let f_lo_norm = (f_lo as f64 / nyquist as f64).clamp(1e-5, 0.5);
     if let Some(strip) = x_strip {
         let ticks = ruler::hz_ticks_h(nyquist as f64, p.freq_scale, f_lo_norm, strip.w as f64);
-        ruler::draw_ticks_h(mesh, strip, &ticks);
+        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
     }
     if let Some(strip_x) = strip_x {
         let ticks = ruler::value_ticks(p.db_floor as f64, p.db_ceil as f64, body.h as f64);
-        ruler::draw_ticks_v(mesh, body.x, strip_x, body, &ticks);
+        ruler::draw_ticks_v(mesh, body.x, strip_x, body, &ticks, theme);
     }
     let columns = body.w.max(1.0) as usize;
     let db_ceil = p.db_ceil.max(p.db_floor + 1.0);
@@ -213,9 +217,9 @@ pub(crate) fn draw_spectrum(
             (hz * state.fft_size as f32 / sr).clamp(0.0, (n_bins - 1) as f32)
         };
         let color = if states.len() > 1 {
-            CHANNEL_COLORS[ch % CHANNEL_COLORS.len()]
+            theme.series(ch)
         } else {
-            TRACE
+            theme.trace
         };
         if p.peak_hold {
             let faint = [color[0], color[1], color[2], 0.55];

@@ -10,7 +10,6 @@
 //! shm-free makes it unit-testable without a window.
 
 use crate::spectrogram::FreqScale;
-use crate::waveform::CHANNEL_COLORS;
 
 use super::controls::body_rect;
 use super::font;
@@ -19,14 +18,8 @@ use super::layout::Rect;
 use super::live::TapWindow;
 use super::paint::{Color, Mesh};
 use super::ruler;
+use super::theme::Theme;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
-const ACCENT: Color = [0.30, 0.78, 0.55, 1.0];
-const FRAME: Color = [0.30, 0.78, 0.55, 1.0];
-const TRACE: Color = [0.40, 0.85, 0.62, 1.0];
-const LANE_DIVIDER: Color = [0.30, 0.33, 0.38, 0.8];
-const TRIGGER_LINE: Color = [0.85, 0.80, 0.40, 0.4];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 
@@ -42,20 +35,27 @@ pub fn fraction(value: f32, min: f32, max: f32) -> f32 {
 
 /// Draws a vertical level meter: a framed field with a green column rising from
 /// the bottom to `fraction` of the body height, plus the raw value as text.
-pub fn draw_meter(mesh: &mut Mesh, rect: Rect, value: f32, fraction: f32, label: Option<&str>) {
-    label_strip(mesh, label, rect);
+pub fn draw_meter(
+    mesh: &mut Mesh,
+    rect: Rect,
+    value: f32,
+    fraction: f32,
+    label: Option<&str>,
+    theme: &Theme,
+) {
+    label_strip(mesh, label, rect, theme);
     let body = body_rect(rect, label.is_some());
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, FIELD);
+    mesh.rect(body, theme.field);
     let fill_h = body.h * fraction.clamp(0.0, 1.0);
     mesh.rect(
         Rect::new(body.x, body.y + body.h - fill_h, body.w, fill_h),
-        ACCENT,
+        theme.accent,
     );
-    mesh.border(body, 1.0, FRAME);
-    value_text(mesh, &fmt(value), body);
+    mesh.border(body, 1.0, theme.accent);
+    value_text(mesh, &fmt(value), body, theme);
 }
 
 /// Draws a time-domain scope: a framed field with a polyline through `history`
@@ -68,21 +68,22 @@ pub fn draw_scope(
     min: f32,
     max: f32,
     label: Option<&str>,
+    theme: &Theme,
 ) {
-    label_strip(mesh, label, rect);
+    label_strip(mesh, label, rect, theme);
     let body = body_rect(rect, label.is_some());
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, FIELD);
-    mesh.border(body, 1.0, FRAME);
+    mesh.rect(body, theme.field);
+    mesh.border(body, 1.0, theme.accent);
     if history.len() >= 2 {
         let dx = body.w / (history.len() - 1) as f32;
         let y_at = |v: &f32| body.y + body.h * (1.0 - fraction(*v, min, max));
         let mut prev = [body.x, y_at(&history[0])];
         for (i, v) in history.iter().enumerate().skip(1) {
             let p = [body.x + i as f32 * dx, y_at(v)];
-            mesh.line(prev, p, 1.5, TRACE);
+            mesh.line(prev, p, 1.5, theme.trace);
             prev = p;
         }
     }
@@ -113,8 +114,8 @@ pub(crate) struct WaveParams<'a> {
 /// read-out says whether it fired. `ruler` is the x strip in milliseconds of
 /// the window, `ruler_y` the per-lane value strip. An empty window draws just
 /// the framed field.
-pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams) {
-    label_strip(mesh, p.label, rect);
+pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams, theme: &Theme) {
+    label_strip(mesh, p.label, rect, theme);
     let mut body = body_rect(rect, p.label.is_some());
     let strip_x = (p.ruler_y && body.w > RULER_W * 2.0).then(|| {
         let x = body.x;
@@ -129,8 +130,8 @@ pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams) {
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, FIELD);
-    mesh.border(body, 1.0, FRAME);
+    mesh.rect(body, theme.field);
+    mesh.border(body, 1.0, theme.accent);
     if let Some(strip) = x_strip {
         let ticks = ruler::hz_ticks_h(
             p.window_ms.max(0.1) as f64,
@@ -138,7 +139,7 @@ pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams) {
             1e-4,
             strip.w as f64,
         );
-        ruler::draw_ticks_h(mesh, strip, &ticks);
+        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
     }
     let channels = p.window.channels.max(1);
     let frames = p.window.frames();
@@ -146,29 +147,34 @@ pub(crate) fn draw_wave(mesh: &mut Mesh, rect: Rect, p: &WaveParams) {
     for ch in 0..channels {
         let lane = lane_rect(body, lanes, if p.overlay { 0 } else { ch });
         if ch > 0 && !p.overlay {
-            mesh.rect(Rect::new(body.x, lane.y, body.w, 1.0), LANE_DIVIDER);
+            mesh.rect(Rect::new(body.x, lane.y, body.w, 1.0), theme.lane_divider);
         }
         if (ch == 0 || !p.overlay)
             && let Some(strip_x) = strip_x
         {
             let ticks = ruler::value_ticks(p.min as f64, p.max as f64, lane.h as f64);
-            ruler::draw_ticks_v(mesh, body.x, strip_x, lane, &ticks);
+            ruler::draw_ticks_v(mesh, body.x, strip_x, lane, &ticks, theme);
         }
         if ch == 0 && frames > 0 {
             // The trigger level, in the channel the alignment is searched in.
             let y = lane.y + lane.h * (1.0 - fraction(p.trigger, p.min, p.max));
-            mesh.rect(Rect::new(body.x, y, body.w, 1.0), TRIGGER_LINE);
+            mesh.rect(Rect::new(body.x, y, body.w, 1.0), theme.trigger);
         }
         let color = if channels > 1 {
-            CHANNEL_COLORS[ch % CHANNEL_COLORS.len()]
+            theme.series(ch)
         } else {
-            TRACE
+            theme.trace
         };
         let at = |f: usize| p.window.samples[f * channels + ch];
         trace_lane(mesh, lane, frames, &at, p.min, p.max, color);
     }
     if frames > 0 {
-        value_text(mesh, if p.window.locked { "lock" } else { "free" }, body);
+        value_text(
+            mesh,
+            if p.window.locked { "lock" } else { "free" },
+            body,
+            theme,
+        );
     }
 }
 
@@ -211,18 +217,25 @@ fn trace_lane(
 }
 
 /// Draws the label strip above a view body, if it has a label.
-fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect) {
+fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect, theme: &Theme) {
     if let Some(text) = label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
 }
 
 /// A value read-out at the top-right of a body — the corner slot the scope's
 /// `lock`/`free` state and the spectral views' scale tag share.
-pub(crate) fn value_text(mesh: &mut Mesh, s: &str, body: Rect) {
+pub(crate) fn value_text(mesh: &mut Mesh, s: &str, body: Rect, theme: &Theme) {
     let w = font::width(s, TEXT_SCALE);
     let x = (body.x + body.w - w - PAD).max(body.x);
-    font::text(mesh, s, x, body.y + PAD, TEXT_SCALE, TEXT);
+    font::text(mesh, s, x, body.y + PAD, TEXT_SCALE, theme.text);
 }
 
 /// Formats a value compactly (drops trailing zeros within 2 decimals).
@@ -256,6 +269,7 @@ mod tests {
             0.5,
             0.5,
             Some("out"),
+            &Theme::default(),
         );
         assert!(!m.is_empty(), "a meter with a positive fill draws geometry");
     }
@@ -270,6 +284,7 @@ mod tests {
             -1.0,
             1.0,
             None,
+            &Theme::default(),
         );
         let with_one = empty.vertex_count();
 
@@ -281,6 +296,7 @@ mod tests {
             -1.0,
             1.0,
             None,
+            &Theme::default(),
         );
         assert!(
             many.vertex_count() > with_one,

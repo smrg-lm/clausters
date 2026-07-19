@@ -55,6 +55,7 @@ pub mod plot;
 pub mod registry;
 pub mod ruler;
 pub mod spectrum;
+pub mod theme;
 pub mod timeline;
 pub mod track;
 pub mod widget;
@@ -412,6 +413,9 @@ pub struct Host {
     voices: HashMap<i32, Vec<(i32, i32)>>,
     /// The next voice node-id offset over [`VOICE_ID_BASE`] (wrapping).
     voice_counter: i32,
+    /// The host's color roles — one look per host, every paint site reads it
+    /// (see [`theme`]).
+    pub theme: theme::Theme,
 }
 
 /// The base of the node-id window the host's piano voices allocate from —
@@ -439,6 +443,7 @@ impl Host {
             timelines: timeline::TimelineGroups::default(),
             voices: HashMap::new(),
             voice_counter: 0,
+            theme: theme::Theme::default(),
         }
     }
 

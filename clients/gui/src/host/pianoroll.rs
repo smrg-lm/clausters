@@ -23,7 +23,8 @@ use clausters_core::scale;
 
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::theme::Theme;
 use super::track::RULER_H;
 use crate::viewport::View;
 
@@ -74,24 +75,6 @@ pub const OSC_H: f32 = 16.0;
 /// The smallest note bar height (a note never collapses below this even when a
 /// semitone row is sub-pixel).
 const NOTE_MIN_H: f32 = 2.0;
-
-const GRID_BG: Color = [0.09, 0.10, 0.13, 1.0];
-const ROW_BLACK: Color = [0.07, 0.08, 0.10, 1.0];
-const ROW_LINE: Color = [0.16, 0.18, 0.22, 1.0];
-const OCTAVE_LINE: Color = [0.30, 0.34, 0.42, 1.0];
-const KEY_WHITE: Color = [0.82, 0.84, 0.88, 1.0];
-const KEY_BLACK: Color = [0.10, 0.11, 0.14, 1.0];
-const KEY_LABEL: Color = [0.30, 0.32, 0.38, 1.0];
-const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
-const NOTE_FILL: Color = [0.55, 0.80, 0.62, 1.0];
-const NOTE_EDGE: Color = [0.78, 0.95, 0.82, 1.0];
-const SELECTED_FILL: Color = [0.80, 0.90, 0.98, 1.0];
-const SELECTED_EDGE: Color = [1.00, 1.00, 1.00, 1.0];
-const VEL_BAR: Color = [0.70, 0.55, 0.90, 1.0];
-const VEL_BG: Color = [0.07, 0.08, 0.10, 1.0];
-const OSC_BG: Color = [0.10, 0.09, 0.13, 1.0];
-const OSC_FLAG: Color = [0.95, 0.75, 0.45, 1.0];
-const LABEL: Color = [0.60, 0.63, 0.70, 1.0];
 
 const KEY_SCALE: f32 = 1.0;
 
@@ -164,11 +147,11 @@ pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
 
 /// The grid background: black-key rows shaded, semitone lines, and a brighter
 /// line at each octave (every C). `lo`/`hi` are the visible MIDI pitch window.
-pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
+pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme: &Theme) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
-    mesh.rect(grid, GRID_BG);
+    mesh.rect(grid, theme.lane);
     let rh = row_height(lo, hi, grid);
     // One shaded band per black-key semitone, plus a divider at each row and a
     // brighter one at each octave boundary (C). Iterate integer pitches in view.
@@ -178,21 +161,21 @@ pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
         // The row band spans [p-0.5, p+0.5]; its top is the y of p+0.5.
         let top = pitch_to_y(p as f32 + 0.5, lo, hi, grid);
         if scale::is_black_key(p) && rh >= 1.0 {
-            mesh.rect(Rect::new(grid.x, top, grid.w, rh), ROW_BLACK);
+            mesh.rect(Rect::new(grid.x, top, grid.w, rh), theme.lane_alt);
         }
         // A divider under each row when the rows are tall enough to read, a
         // brighter one at each octave boundary (below C).
         if rh >= 4.0 {
             let line = if scale::pitch_class(p) == 0 {
-                OCTAVE_LINE
+                theme.frame
             } else {
-                ROW_LINE
+                theme.grid_line
             };
             let ly = pitch_to_y(p as f32 - 0.5, lo, hi, grid);
             mesh.rect(Rect::new(grid.x, ly, grid.w, 1.0), line);
         }
     }
-    mesh.border(grid, 1.0, FRAME);
+    mesh.border(grid, 1.0, theme.frame);
 }
 
 /// Draw a set of notes into `grid`, placed on the shared `nav` time axis
@@ -212,6 +195,7 @@ pub fn draw_notes(
     hi: f32,
     color_velocity: bool,
     selected: &[usize],
+    theme: &Theme,
 ) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
@@ -231,19 +215,24 @@ pub fn draw_notes(
         let y = (yc - h * 0.5).clamp(grid.y, grid.y + grid.h - h);
         let is_selected = selected.contains(&i);
         let fill = if is_selected {
-            SELECTED_FILL
+            theme.selected_fill
         } else if color_velocity {
             let v = (n.velocity as f32 / 127.0).clamp(0.15, 1.0);
-            [NOTE_FILL[0] * v, NOTE_FILL[1] * v, NOTE_FILL[2] * v, 1.0]
+            [
+                theme.note_fill[0] * v,
+                theme.note_fill[1] * v,
+                theme.note_fill[2] * v,
+                1.0,
+            ]
         } else {
-            NOTE_FILL
+            theme.note_fill
         };
         mesh.rect(Rect::new(nx0, y, nx1 - nx0, h), fill);
         if nx1 - nx0 > 3.0 && h > 3.0 {
             let edge = if is_selected {
-                SELECTED_EDGE
+                theme.selected_edge
             } else {
-                NOTE_EDGE
+                theme.note_edge
             };
             mesh.border(Rect::new(nx0, y, nx1 - nx0, h), 1.0, edge);
         }
@@ -254,7 +243,7 @@ pub fn draw_notes(
 /// for a roll drawn **without** a keyboard gutter (the multitrack `clip`'s
 /// body; the dedicated widget names its Cs on the keyboard instead). Draws
 /// only when a semitone row is tall enough to read a label.
-pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
+pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme: &Theme) {
     if grid.w <= 0.0 || grid.h <= 0.0 {
         return;
     }
@@ -273,7 +262,7 @@ pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
                 grid.x + 2.0,
                 top + 1.0,
                 KEY_SCALE,
-                KEY_LABEL,
+                theme.key_label_dim,
             );
         }
     }
@@ -281,7 +270,7 @@ pub fn draw_pitch_labels(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32) {
 
 /// Draw the keyboard gutter: a white/black key per semitone row, with a note
 /// name on each C. `lo`/`hi` are the same pitch window as the grid.
-pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32) {
+pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32, theme: &Theme) {
     if gutter.w <= 0.0 || gutter.h <= 0.0 {
         return;
     }
@@ -291,9 +280,9 @@ pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32) {
     for p in p0..=p1 {
         let top = pitch_to_y(p as f32 + 0.5, lo, hi, gutter);
         let color = if scale::is_black_key(p) {
-            KEY_BLACK
+            theme.key_black
         } else {
-            KEY_WHITE
+            theme.key_white_dim
         };
         let h = rh.max(1.0).min(gutter.h);
         mesh.rect(Rect::new(gutter.x, top, gutter.w, h), color);
@@ -305,20 +294,27 @@ pub fn draw_keyboard(mesh: &mut Mesh, gutter: Rect, lo: f32, hi: f32) {
                 gutter.x + 2.0,
                 top + 1.0,
                 KEY_SCALE,
-                KEY_LABEL,
+                theme.key_label_dim,
             );
         }
     }
-    mesh.border(gutter, 1.0, FRAME);
+    mesh.border(gutter, 1.0, theme.frame);
 }
 
 /// Draw the velocity lane: one bar per note at the note's start, its height the
 /// velocity fraction. Shares the grid's time axis so a bar sits under its note.
-pub fn draw_velocity_lane(mesh: &mut Mesh, lane: Rect, nav: &View, offset: f64, notes: &[Note]) {
+pub fn draw_velocity_lane(
+    mesh: &mut Mesh,
+    lane: Rect,
+    nav: &View,
+    offset: f64,
+    notes: &[Note],
+    theme: &Theme,
+) {
     if lane.w <= 0.0 || lane.h <= 0.0 {
         return;
     }
-    mesh.rect(lane, VEL_BG);
+    mesh.rect(lane, theme.lane_alt);
     let (x_lo, x_hi) = (lane.x, lane.x + lane.w);
     for n in notes {
         let x = to_x(offset + n.start, nav, lane) as f32;
@@ -327,30 +323,37 @@ pub fn draw_velocity_lane(mesh: &mut Mesh, lane: Rect, nav: &View, offset: f64, 
         }
         let frac = (n.velocity as f32 / 127.0).clamp(0.0, 1.0);
         let bh = lane.h * frac;
-        mesh.rect(Rect::new(x, lane.y + lane.h - bh, 2.0, bh), VEL_BAR);
+        mesh.rect(Rect::new(x, lane.y + lane.h - bh, 2.0, bh), theme.velocity);
     }
-    mesh.border(lane, 1.0, FRAME);
+    mesh.border(lane, 1.0, theme.frame);
 }
 
 /// Draw the OSC event lane: a flag at each marker's time, with its label.
-pub fn draw_osc_lane(mesh: &mut Mesh, lane: Rect, nav: &View, offset: f64, marks: &[OscMark]) {
+pub fn draw_osc_lane(
+    mesh: &mut Mesh,
+    lane: Rect,
+    nav: &View,
+    offset: f64,
+    marks: &[OscMark],
+    theme: &Theme,
+) {
     if lane.w <= 0.0 || lane.h <= 0.0 {
         return;
     }
-    mesh.rect(lane, OSC_BG);
+    mesh.rect(lane, theme.event_lane);
     let (x_lo, x_hi) = (lane.x, lane.x + lane.w);
     for m in marks {
         let x = to_x(offset + m.time, nav, lane) as f32;
         if x < x_lo || x > x_hi {
             continue;
         }
-        mesh.rect(Rect::new(x, lane.y, 2.0, lane.h), OSC_FLAG);
-        mesh.disc(x, lane.y + 3.0, 3.0, OSC_FLAG);
+        mesh.rect(Rect::new(x, lane.y, 2.0, lane.h), theme.flag);
+        mesh.disc(x, lane.y + 3.0, 3.0, theme.flag);
         if let Some(t) = &m.label {
-            font::text(mesh, t, x + 4.0, lane.y + 1.0, KEY_SCALE, LABEL);
+            font::text(mesh, t, x + 4.0, lane.y + 1.0, KEY_SCALE, theme.label_dim);
         }
     }
-    mesh.border(lane, 1.0, FRAME);
+    mesh.border(lane, 1.0, theme.frame);
 }
 
 // --- Hit-testing ----------------------------------------------------------
@@ -843,11 +846,11 @@ mod tests {
     fn pitch_labels_draw_only_when_the_rows_can_be_read() {
         // One octave over 240px: ~20px rows — the C label fits.
         let mut mesh = Mesh::new();
-        draw_pitch_labels(&mut mesh, grid(), 55.0, 67.0);
+        draw_pitch_labels(&mut mesh, grid(), 55.0, 67.0, &Theme::default());
         assert!(mesh.vertex_count() > 0, "a readable C row gets its name");
         // Eight octaves over the same height: sub-3px rows — nothing draws.
         let mut mesh = Mesh::new();
-        draw_pitch_labels(&mut mesh, grid(), 12.0, 108.0);
+        draw_pitch_labels(&mut mesh, grid(), 12.0, 108.0, &Theme::default());
         assert_eq!(mesh.vertex_count(), 0);
     }
 

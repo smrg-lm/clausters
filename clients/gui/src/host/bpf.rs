@@ -32,13 +32,9 @@ use serde_json::Value;
 use super::controls::body_rect;
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::theme::Theme;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
-const FRAME: Color = [0.30, 0.78, 0.55, 1.0];
-const CURVE_TRACE: Color = [0.40, 0.85, 0.62, 1.0];
-const POINT: Color = [0.90, 0.93, 0.95, 1.0];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 /// Breakpoint disc radius, device pixels (also the hit-test radius floor).
@@ -386,16 +382,24 @@ pub fn draw(
     duration: f64,
     exp: bool,
     label: Option<&str>,
+    theme: &Theme,
 ) {
     if let Some(text) = label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
     let body = body_rect(rect, label.is_some());
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, FIELD);
-    mesh.border(body, 1.0, FRAME);
+    mesh.rect(body, theme.field);
+    mesh.border(body, 1.0, theme.accent);
     if points.is_empty() {
         return;
     }
@@ -406,7 +410,7 @@ pub fn draw(
     for c in 1..=columns {
         let t = c as f64 / columns as f64 * dom;
         let p = [body.x + c as f32, y_at(value_at(points, t))];
-        mesh.line(prev, p, 1.5, CURVE_TRACE);
+        mesh.line(prev, p, 1.5, theme.trace);
         prev = p;
     }
     for (t, v_lo, v_hi) in discontinuities(points, duration) {
@@ -414,12 +418,12 @@ pub fn draw(
         let (y0, y1) = (y_at(v_hi), y_at(v_lo));
         mesh.rect(
             Rect::new(x - 0.75, y0, 1.5, (y1 - y0).max(1.0)),
-            CURVE_TRACE,
+            theme.trace,
         );
     }
     for p in points {
         let x = body.x + (p.time / dom) as f32 * body.w;
-        mesh.disc(x, y_at(p.value), POINT_RADIUS, POINT);
+        mesh.disc(x, y_at(p.value), POINT_RADIUS, theme.point);
     }
 }
 
@@ -629,6 +633,7 @@ mod tests {
             0.0,
             false,
             Some("env"),
+            &Theme::default(),
         );
         assert!(!mesh.is_empty());
     }

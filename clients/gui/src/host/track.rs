@@ -21,20 +21,13 @@ use super::bpf::{self, BpfPoint};
 use super::font;
 use super::layout::Rect;
 use super::meters::fraction;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
 use super::pianoroll;
+use super::theme::Theme;
 use super::widget::{Widget, WidgetKind};
 use crate::viewport::View;
 use crate::waveform::WaveformData;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const HEADER_FILL: Color = [0.14, 0.16, 0.20, 1.0];
-const LANE_FILL: Color = [0.09, 0.10, 0.13, 1.0];
-const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
-const CLIP_FILL: Color = [0.16, 0.22, 0.32, 1.0];
-const CLIP_EDGE: Color = [0.45, 0.60, 0.85, 1.0];
-const CLIP_BODY: Color = [0.55, 0.75, 0.95, 1.0];
-const BASELINE: Color = [0.28, 0.32, 0.38, 1.0];
 /// The left header strip width, device pixels — shared by every lane so the
 /// clip bodies of aligned tracks line up.
 pub const HEADER_W: f32 = 96.0;
@@ -205,26 +198,34 @@ pub fn draw(
     label: Option<&str>,
     clips: &[ClipDraw],
     ruler: bool,
+    theme: &Theme,
 ) {
     // Header strip on the left, naming the track.
     let header = Rect::new(rect.x, rect.y, HEADER_W.min(rect.w), rect.h);
-    mesh.rect(header, HEADER_FILL);
+    mesh.rect(header, theme.header);
     if let Some(t) = label {
-        font::text(mesh, t, header.x + PAD, rect.y + PAD, HEADER_SCALE, TEXT);
+        font::text(
+            mesh,
+            t,
+            header.x + PAD,
+            rect.y + PAD,
+            HEADER_SCALE,
+            theme.text,
+        );
     }
     let body = lane_body(rect, ruler);
     if body.w <= 0.0 || body.h <= 0.0 {
         return;
     }
-    mesh.rect(body, LANE_FILL);
-    mesh.border(body, 1.0, FRAME);
+    mesh.rect(body, theme.lane);
+    mesh.border(body, 1.0, theme.frame);
     for clip in clips {
         let Some((x0, x1)) = clip_x_range(body, nav, clip.offset, clip.dur) else {
             continue;
         };
         let cr = clip_rect(body, x0, x1);
-        mesh.rect(cr, CLIP_FILL);
-        mesh.border(cr, 1.0, CLIP_EDGE);
+        mesh.rect(cr, theme.object_fill);
+        mesh.border(cr, 1.0, theme.object_edge);
         // The bodies **layer**, back to front: the take, the events over it, the
         // envelope over both — an automation drawn on top of the material it
         // shapes is one clip, not two, and each body keeps its own value axis.
@@ -232,26 +233,24 @@ pub fn draw(
             // A loaded take (mapped file, peak cache or fetched buffer): decimated
             // through its pyramid, so a minutes-long clip costs the same as a
             // short one.
-            Some(data) => draw_take_body(mesh, cr, body, nav, clip, data),
-            None => draw_clip_body(mesh, cr, body, nav, clip),
+            Some(data) => draw_take_body(mesh, cr, body, nav, clip, data, theme),
+            None => draw_clip_body(mesh, cr, body, nav, clip, theme),
         }
         if !clip.notes.is_empty() {
             // Notes placed on the same shared axis (so the whole roll moves when
             // the clip does), pitch mapped over [min, max].
-            draw_piano_roll(mesh, cr, body, nav, clip);
+            draw_piano_roll(mesh, cr, body, nav, clip, theme);
         }
         if !clip.points.is_empty() {
-            draw_curve(mesh, cr, body, nav, clip);
+            draw_curve(mesh, cr, body, nav, clip, theme);
         }
         if let Some(t) = &clip.label {
-            font::text(mesh, t, cr.x + PAD, cr.y + PAD, CLIP_SCALE, TEXT);
+            font::text(mesh, t, cr.x + PAD, cr.y + PAD, CLIP_SCALE, theme.text);
         }
     }
 }
 
 /// The automation curve's trace and its breakpoint discs.
-const CURVE_TRACE: Color = [0.40, 0.85, 0.62, 1.0];
-const CURVE_POINT: Color = [0.90, 0.93, 0.95, 1.0];
 /// Breakpoint disc radius, device pixels (also the hit-test radius floor) —
 /// the `bpf` view's, so a point is grabbed the same way wherever it is drawn.
 pub const POINT_RADIUS: f32 = 4.0;
@@ -306,7 +305,7 @@ fn curve_y(cr: Rect, value: f32, min: f32, max: f32, exp: bool) -> f32 {
 /// is what is heard — plus a disc per breakpoint. Times map through the shared
 /// `nav`, exactly as the piano-roll's notes do, so the whole curve moves with
 /// the clip and stays put under zoom.
-fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw) {
+fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw, theme: &Theme) {
     if cr.w < 1.0 || cr.h <= 0.0 {
         return;
     }
@@ -317,13 +316,13 @@ fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw
     for c in 1..=columns {
         let x = cr.x + c as f32;
         let p = [x, y_at(bpf::value_at(&clip.points, time_at(x)))];
-        mesh.line(prev, p, 1.5, CURVE_TRACE);
+        mesh.line(prev, p, 1.5, theme.trace);
         prev = p;
     }
     for p in &clip.points {
         let x = to_x(clip.offset + p.time, nav, body) as f32;
         if x >= cr.x && x <= cr.x + cr.w {
-            mesh.disc(x, y_at(p.value), POINT_RADIUS, CURVE_POINT);
+            mesh.disc(x, y_at(p.value), POINT_RADIUS, theme.point);
         }
     }
 }
@@ -334,10 +333,17 @@ fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw
 /// the shared [`super::pianoroll::draw_notes`] primitive — the same one the
 /// dedicated `pianoroll` view draws with, so a clip's roll and the editor never
 /// disagree. The clip body uses only that one layer (no keyboard/lanes).
-fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, _body: Rect, nav: &View, clip: &ClipDraw) {
+fn draw_piano_roll(
+    mesh: &mut Mesh,
+    cr: Rect,
+    _body: Rect,
+    nav: &View,
+    clip: &ClipDraw,
+    theme: &Theme,
+) {
     // The compact pitch ruler: each C named at the clip's left edge (there is
     // no keyboard gutter here), only when the rows are tall enough to read.
-    pianoroll::draw_pitch_labels(mesh, cr, clip.min, clip.max);
+    pianoroll::draw_pitch_labels(mesh, cr, clip.min, clip.max, theme);
     pianoroll::draw_notes(
         mesh,
         cr,
@@ -348,6 +354,7 @@ fn draw_piano_roll(mesh: &mut Mesh, cr: Rect, _body: Rect, nav: &View, clip: &Cl
         clip.max,
         false,
         &[],
+        theme,
     );
 }
 
@@ -384,6 +391,7 @@ fn draw_wave_body(
     total: f64,
     column: impl Fn(f64, f64, f64) -> (f32, f32),
     at: impl Fn(f64) -> f32,
+    theme: &Theme,
 ) {
     if total < 2.0 || cr.w < 1.0 || cr.h <= 0.0 {
         return;
@@ -391,7 +399,7 @@ fn draw_wave_body(
     let y_at = |v: f32| cr.y + cr.h * (1.0 - fraction(v, clip.min, clip.max));
     if clip.min < 0.0 && clip.max > 0.0 {
         let y = y_at(0.0);
-        mesh.line([cr.x, y], [cr.x + cr.w, y], 1.0, BASELINE);
+        mesh.line([cr.x, y], [cr.x + cr.w, y], 1.0, theme.baseline);
     }
     let src = |x: f32| clip_source_at(body, nav, clip, total, x);
     let cols = cr.w.max(1.0) as usize;
@@ -403,7 +411,12 @@ fn draw_wave_body(
             let x = cr.x + c as f32;
             let (s0, s1) = (src(x), src(x + 1.0));
             let (lo, hi) = column(s0, s1, per_px);
-            mesh.line([x + 0.5, y_at(hi)], [x + 0.5, y_at(lo)], BODY_W, CLIP_BODY);
+            mesh.line(
+                [x + 0.5, y_at(hi)],
+                [x + 0.5, y_at(lo)],
+                BODY_W,
+                theme.selection,
+            );
         }
     } else {
         // Zoomed in: fewer than a couple of samples per pixel — draw the trace.
@@ -411,7 +424,7 @@ fn draw_wave_body(
         for c in 1..=cols {
             let x = cr.x + c as f32;
             let p = [x, y_at(at(src(x)))];
-            mesh.line(prev, p, BODY_W, CLIP_BODY);
+            mesh.line(prev, p, BODY_W, theme.selection);
             prev = p;
         }
     }
@@ -428,6 +441,7 @@ fn draw_take_body(
     nav: &View,
     clip: &ClipDraw,
     data: &WaveformData,
+    theme: &Theme,
 ) {
     let total = data.total_samples() as f64;
     draw_wave_body(
@@ -439,12 +453,20 @@ fn draw_take_body(
         total,
         |s0, s1, per_px| data.column(0, per_px, s0, s1),
         |s| data.column(0, 1.0, s, s + 1.0).0,
+        theme,
     );
 }
 
 /// A clip's **inline** body (a short sketch sent with the def), read straight off
 /// the sample slice — the same drawing, a cheaper source.
-fn draw_clip_body(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw) {
+fn draw_clip_body(
+    mesh: &mut Mesh,
+    cr: Rect,
+    body: Rect,
+    nav: &View,
+    clip: &ClipDraw,
+    theme: &Theme,
+) {
     let samples = &clip.samples;
     let n = samples.len();
     draw_wave_body(
@@ -467,6 +489,7 @@ fn draw_clip_body(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &Clip
             (lo, hi)
         },
         |s| samples[(s.round().max(0.0) as usize).min(n.saturating_sub(1))],
+        theme,
     );
 }
 
@@ -578,6 +601,7 @@ mod tests {
             Some("drums"),
             &clips,
             false,
+            &Theme::default(),
         );
         assert!(!m.is_empty(), "the header, lane and clips draw");
     }
@@ -613,6 +637,7 @@ mod tests {
             None,
             std::slice::from_ref(&clip),
             false,
+            &Theme::default(),
         );
         assert!(!m.is_empty(), "the take draws a body");
         // One min/max column per pixel of the clip rect, not one per sample: the
@@ -631,6 +656,7 @@ mod tests {
                 ..clip.clone()
             }],
             false,
+            &Theme::default(),
         );
         let per_line = 6u32; // two triangles per column line
         let added = m.vertex_count() - bare.vertex_count();
@@ -678,6 +704,7 @@ mod tests {
             None,
             std::slice::from_ref(&clip),
             false,
+            &Theme::default(),
         );
         let mut bare = Mesh::new();
         draw(
@@ -690,6 +717,7 @@ mod tests {
                 ..clip.clone()
             }],
             false,
+            &Theme::default(),
         );
         assert!(
             with.vertex_count() > bare.vertex_count(),
@@ -779,6 +807,7 @@ mod tests {
             None,
             std::slice::from_ref(&layered),
             false,
+            &Theme::default(),
         );
         let mut roll_only = Mesh::new();
         draw(
@@ -791,6 +820,7 @@ mod tests {
                 ..layered.clone()
             }],
             false,
+            &Theme::default(),
         );
         assert!(
             both.vertex_count() > roll_only.vertex_count(),
@@ -833,6 +863,7 @@ mod tests {
             None,
             std::slice::from_ref(&clip),
             false,
+            &Theme::default(),
         );
         // The same clip with no notes and no samples: only the clip frame.
         let mut without = Mesh::new();
@@ -847,6 +878,7 @@ mod tests {
             None,
             std::slice::from_ref(&bare),
             false,
+            &Theme::default(),
         );
         assert!(
             with.vertex_count() > without.vertex_count(),

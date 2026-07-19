@@ -30,24 +30,17 @@
 //! mutation points (parse, bulk load, a live `/gui_set`), never per frame.
 
 use crate::spectrogram::{FreqScale, Stft};
-use crate::waveform::CHANNEL_COLORS;
 
 use super::controls::body_rect;
 use super::font;
 use super::frame::{RULER_H, RULER_W, lane_at, lane_rect};
 use super::layout::Rect;
 use super::meters::fraction;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
 use super::ruler::{self, RULER_SCALE, TimeUnit};
+use super::theme::{Theme, with_alpha};
 use super::widget::Ruler;
 
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const FIELD: Color = [0.10, 0.11, 0.14, 1.0];
-const FRAME: Color = [0.45, 0.55, 0.70, 1.0];
-const BASELINE: Color = [0.28, 0.32, 0.38, 1.0];
-const LANE_DIVIDER: Color = [0.30, 0.33, 0.38, 0.8];
-const READOUT: Color = [0.85, 0.87, 0.90, 0.9];
-const HAIRLINE: Color = [0.85, 0.87, 0.90, 0.35];
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 const TRACE_W: f32 = 1.5;
@@ -246,51 +239,58 @@ fn x_unit(p: &PlotParams) -> TimeUnit {
 
 /// Draws a plot into `mesh`: the label strip, the framed field, the rulers and
 /// the view's traces (stacked per-channel lanes, or overlaid when asked).
-pub fn draw(mesh: &mut Mesh, rect: Rect, p: &PlotParams) {
+pub fn draw(mesh: &mut Mesh, rect: Rect, p: &PlotParams, theme: &Theme) {
     if let Some(text) = p.label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
     let g = geometry(rect, p);
     if g.body.w <= 0.0 || g.body.h <= 0.0 {
         return;
     }
-    mesh.rect(g.body, FIELD);
-    mesh.border(g.body, 1.0, FRAME);
+    mesh.rect(g.body, theme.track);
+    mesh.border(g.body, 1.0, theme.frame_plot);
     for lane in 1..g.lanes {
         let r = lane_rect(g.body, g.lanes, lane);
-        mesh.rect(Rect::new(r.x, r.y, r.w, 1.0), LANE_DIVIDER);
+        mesh.rect(Rect::new(r.x, r.y, r.w, 1.0), theme.lane_divider);
     }
     match p.view {
-        PlotView::Signal => draw_signal(mesh, &g, p),
-        PlotView::Spectrum => draw_spectrum(mesh, &g, p),
+        PlotView::Signal => draw_signal(mesh, &g, p, theme),
+        PlotView::Spectrum => draw_spectrum(mesh, &g, p, theme),
     }
 }
 
-fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
+fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
     let channels = p.channels.max(1);
     let n = frames_of(p);
     let (lo, hi) = value_range(p);
     if let Some(strip) = g.x_strip {
         let ticks = ruler::time_ticks(0.0, n as f64, strip.w as f64, p.sample_rate, x_unit(p));
-        ruler::draw_ticks_h(mesh, strip, &ticks);
+        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
     }
     for ch in 0..channels {
         let lane = lane_rect(g.body, g.lanes, if p.overlay { 0 } else { ch });
         if ch == 0 || !p.overlay {
             if let Some(strip_x) = g.strip_x {
                 let ticks = ruler::value_ticks(lo as f64, hi as f64, lane.h as f64);
-                ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks);
+                ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks, theme);
             }
             // A zero baseline, when 0 is within the displayed range.
             if lo < 0.0 && hi > 0.0 {
                 let y = lane.y + lane.h * (1.0 - fraction(0.0, lo, hi));
-                mesh.line([lane.x, y], [lane.x + lane.w, y], 1.0, BASELINE);
+                mesh.line([lane.x, y], [lane.x + lane.w, y], 1.0, theme.baseline);
             }
         }
         if n < 2 {
             continue;
         }
-        let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+        let color = theme.series(ch);
         let y_at = |v: f32| lane.y + lane.h * (1.0 - fraction(v, lo, hi));
         let at = |i: usize| p.samples[i * channels + ch];
         let cols = lane.w.max(1.0) as usize;
@@ -328,19 +328,19 @@ fn draw_signal(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
     }
 }
 
-fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
+fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams, theme: &Theme) {
     let Some(spec) = p.spectrum else {
         return;
     };
     // The FFT size and active scale, named over the view (the live views'
     // corner slot); the size pads to 4 digits so the text never moves.
     let tag = format!("{:>4} {}", spec.fft_size, ruler::scale_tag(p.freq_scale));
-    super::meters::value_text(mesh, &tag, g.body);
+    super::meters::value_text(mesh, &tag, g.body, theme);
     let nyquist = spec.nyquist.max(1.0);
     let f_lo = (F_LO_HZ / nyquist).clamp(1e-5, 0.5);
     if let Some(strip) = g.x_strip {
         let ticks = ruler::hz_ticks_h(nyquist, p.freq_scale, f_lo, strip.w as f64);
-        ruler::draw_ticks_h(mesh, strip, &ticks);
+        ruler::draw_ticks_h(mesh, strip, &ticks, theme);
     }
     let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
     for (ch, curve) in spec.curves.iter().enumerate() {
@@ -352,9 +352,9 @@ fn draw_spectrum(mesh: &mut Mesh, g: &Geom, p: &PlotParams) {
             && let Some(strip_x) = g.strip_x
         {
             let ticks = ruler::value_ticks(dlo as f64, dhi as f64, lane.h as f64);
-            ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks);
+            ruler::draw_ticks_v(mesh, g.body.x, strip_x, lane, &ticks, theme);
         }
-        let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+        let color = theme.series(ch);
         let columns = lane.w.max(1.0) as usize;
         let bin_at = |c: usize| bin_at_column(c, columns, spec, p.freq_scale, f_lo);
         let y_at = |db: f32| lane.y + lane.h * (1.0 - fraction(db, dlo, dhi));
@@ -385,7 +385,13 @@ fn bin_at_column(
 /// marker dot on the trace under it, and the x/y values named in the body's
 /// bottom-right corner — the exact sample (index/time and value) on the signal
 /// view, the bin (frequency per the scale, level in dB) on the spectrum view.
-pub fn draw_readout(over: &mut Mesh, rect: Rect, p: &PlotParams, cursor: (f64, f64)) {
+pub fn draw_readout(
+    over: &mut Mesh,
+    rect: Rect,
+    p: &PlotParams,
+    cursor: (f64, f64),
+    theme: &Theme,
+) {
     let g = geometry(rect, p);
     let (cx, cy) = cursor;
     if g.body.w <= 0.0 || g.body.h <= 0.0 || !g.body.contains(cx, cy) {
@@ -407,7 +413,7 @@ pub fn draw_readout(over: &mut Mesh, rect: Rect, p: &PlotParams, cursor: (f64, f
             let (lo, hi) = value_range(p);
             let x = lane.x + lane.w * (i as f64 / (n - 1).max(1) as f64) as f32;
             let y = lane.y + lane.h * (1.0 - fraction(v, lo, hi));
-            hairline_and_dot(over, lane, x, y);
+            hairline_and_dot(over, lane, x, y, theme);
             let pos = match x_unit(p) {
                 TimeUnit::Seconds => {
                     let secs_per_px = (n - 1) as f64 / p.sample_rate / g.body.w.max(1.0) as f64;
@@ -443,7 +449,7 @@ pub fn draw_readout(over: &mut Mesh, rect: Rect, p: &PlotParams, cursor: (f64, f
             let db = curve[bin];
             let (dlo, dhi) = (p.db_floor, p.db_ceil.max(p.db_floor + 1.0));
             let y = lane.y + lane.h * (1.0 - fraction(db, dlo, dhi));
-            hairline_and_dot(over, lane, cx as f32, y);
+            hairline_and_dot(over, lane, cx as f32, y, theme);
             let tag = if spec.curves.len() > 1 {
                 format!("CH{ch} ")
             } else {
@@ -455,7 +461,14 @@ pub fn draw_readout(over: &mut Mesh, rect: Rect, p: &PlotParams, cursor: (f64, f
     let w = font::width(&text, RULER_SCALE);
     let x = (g.body.x + g.body.w - w - 4.0).max(g.body.x);
     let y = g.body.y + g.body.h - font::height(RULER_SCALE) - 3.0;
-    font::text(over, &text, x, y.max(g.body.y), RULER_SCALE, READOUT);
+    font::text(
+        over,
+        &text,
+        x,
+        y.max(g.body.y),
+        RULER_SCALE,
+        with_alpha(theme.text, 0.9),
+    );
 }
 
 /// The channel the readout names: the lane's own channel when stacked; with
@@ -481,9 +494,15 @@ fn channel_under_cursor(p: &PlotParams, g: &Geom, lane_i: usize, i: usize, cy: f
 }
 
 /// The cursor hairline spanning the lane, plus a marker dot on the trace.
-fn hairline_and_dot(over: &mut Mesh, lane: Rect, x: f32, y: f32) {
-    over.rect(Rect::new(x, lane.y, 1.0, lane.h), HAIRLINE);
-    over.rect(Rect::new(x - 2.0, y - 2.0, 5.0, 5.0), READOUT);
+fn hairline_and_dot(over: &mut Mesh, lane: Rect, x: f32, y: f32, theme: &Theme) {
+    over.rect(
+        Rect::new(x, lane.y, 1.0, lane.h),
+        with_alpha(theme.text, 0.35),
+    );
+    over.rect(
+        Rect::new(x - 2.0, y - 2.0, 5.0, 5.0),
+        with_alpha(theme.text, 0.9),
+    );
 }
 
 #[cfg(test)]
@@ -517,7 +536,12 @@ mod tests {
         p.min = Some(-1.0);
         p.max = Some(1.0);
         p.label = Some("sig");
-        draw(&mut m, Rect::new(0.0, 0.0, 300.0, 150.0), &p);
+        draw(
+            &mut m,
+            Rect::new(0.0, 0.0, 300.0, 150.0),
+            &p,
+            &Theme::default(),
+        );
         assert!(!m.is_empty(), "a short signal draws a polyline");
     }
 
@@ -529,7 +553,12 @@ mod tests {
         let mut p = params(&big, 1);
         p.ruler = Ruler::Off;
         p.ruler_y = false;
-        draw(&mut m, Rect::new(0.0, 0.0, 100.0, 80.0), &p);
+        draw(
+            &mut m,
+            Rect::new(0.0, 0.0, 100.0, 80.0),
+            &p,
+            &Theme::default(),
+        );
         // One bar per column (<= width), each a quad (6 verts): far below the
         // 100k-sample count — proof we never resolve finer than the screen.
         assert!(m.vertex_count() > 0);
@@ -549,7 +578,12 @@ mod tests {
         p.max = Some(1.0);
         p.ruler = Ruler::Off;
         p.ruler_y = false;
-        draw(&mut m, Rect::new(0.0, 0.0, 100.0, 80.0), &p);
+        draw(
+            &mut m,
+            Rect::new(0.0, 0.0, 100.0, 80.0),
+            &p,
+            &Theme::default(),
+        );
         let chrome = m.vertex_count();
         let mut m2 = Mesh::new();
         let mut p2 = params(&none, 1);
@@ -557,7 +591,12 @@ mod tests {
         p2.max = Some(1.0);
         p2.ruler = Ruler::Off;
         p2.ruler_y = false;
-        draw(&mut m2, Rect::new(0.0, 0.0, 100.0, 80.0), &p2);
+        draw(
+            &mut m2,
+            Rect::new(0.0, 0.0, 100.0, 80.0),
+            &p2,
+            &Theme::default(),
+        );
         assert_eq!(chrome, m2.vertex_count(), "one sample adds no trace");
     }
 
@@ -571,19 +610,26 @@ mod tests {
             &mut stacked,
             Rect::new(0.0, 0.0, 200.0, 160.0),
             &params(&two, 2),
+            &Theme::default(),
         );
         let mut mono = Mesh::new();
         draw(
             &mut mono,
             Rect::new(0.0, 0.0, 200.0, 160.0),
             &params(&two, 1),
+            &Theme::default(),
         );
         assert!(stacked.vertex_count() > mono.vertex_count());
         // Overlay folds both traces into one lane, still drawing both.
         let mut over = Mesh::new();
         let mut p = params(&two, 2);
         p.overlay = true;
-        draw(&mut over, Rect::new(0.0, 0.0, 200.0, 160.0), &p);
+        draw(
+            &mut over,
+            Rect::new(0.0, 0.0, 200.0, 160.0),
+            &p,
+            &Theme::default(),
+        );
         assert!(over.vertex_count() > 0);
     }
 
@@ -654,13 +700,23 @@ mod tests {
         p.spectrum = Some(&spec);
         p.sample_rate = sr;
         let mut m = Mesh::new();
-        draw(&mut m, Rect::new(0.0, 0.0, 400.0, 200.0), &p);
+        draw(
+            &mut m,
+            Rect::new(0.0, 0.0, 400.0, 200.0),
+            &p,
+            &Theme::default(),
+        );
         assert!(!m.is_empty(), "the spectrum view draws");
         // Without the analysis, only the chrome draws.
         let mut p2 = params(&sig, 1);
         p2.view = PlotView::Spectrum;
         let mut m2 = Mesh::new();
-        draw(&mut m2, Rect::new(0.0, 0.0, 400.0, 200.0), &p2);
+        draw(
+            &mut m2,
+            Rect::new(0.0, 0.0, 400.0, 200.0),
+            &p2,
+            &Theme::default(),
+        );
         assert!(m2.vertex_count() < m.vertex_count());
     }
 
@@ -680,7 +736,12 @@ mod tests {
             p.sample_rate = sr;
             p.freq_scale = scale;
             let mut m = Mesh::new();
-            draw(&mut m, Rect::new(0.0, 0.0, 400.0, 200.0), &p);
+            draw(
+                &mut m,
+                Rect::new(0.0, 0.0, 400.0, 200.0),
+                &p,
+                &Theme::default(),
+            );
             m.positions().collect::<Vec<_>>()
         };
         let lin = mesh_for(FreqScale::Linear);
@@ -698,11 +759,17 @@ mod tests {
         let rect = Rect::new(0.0, 0.0, 400.0, 200.0);
         let mut over = Mesh::new();
         // Outside the widget: nothing.
-        draw_readout(&mut over, rect, &p, (1000.0, 1000.0));
+        draw_readout(&mut over, rect, &p, (1000.0, 1000.0), &Theme::default());
         assert!(over.is_empty());
         // Inside the body: hairline + dot + text.
         let g_probe = Rect::new(200.0, 100.0, 0.0, 0.0);
-        draw_readout(&mut over, rect, &p, (g_probe.x as f64, g_probe.y as f64));
+        draw_readout(
+            &mut over,
+            rect,
+            &p,
+            (g_probe.x as f64, g_probe.y as f64),
+            &Theme::default(),
+        );
         assert!(!over.is_empty(), "hover inside the body draws the readout");
     }
 

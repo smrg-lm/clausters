@@ -99,6 +99,13 @@ host_port = 57210        # port for the host's script-facing front (UDP + TCP)
 # shm = "/clausters"          # map this segment for meters/scopes
 # data_dir = "/path"          # GuiDef store location
 
+[gui.theme]              # color-role overrides for the host's look (optional)
+# accent = "#ff8c40"     # each entry is role = "#rrggbb" or "#rrggbbaa"; the
+# text = "#e8e8ec"       # table is partial — unlisted roles keep the default
+# field = "#20222a"      # theme. Role names are the host's Theme fields
+#                        # (accent, text, field, background, selection, ...);
+#                        # an unknown role warns and is skipped, never fatal
+
 [standalone]             # the self-contained app (GUI + embedded server)
 gui = "drone"            # the saved GuiDef to open when --standalone has no name
 boot = true              # run the GuiDef's boot messages and boot.json preset
@@ -122,7 +129,10 @@ port, alongside UDP), so its `true` is the implicit state and `false` (or
 - **GUI host** — the `[gui]` section supplies the defaults for `clausters-gui`
   (`--port`, `--tcp`/`--no-tcp`, `--max-frame`, `--server`, `--shm`,
   `--data-dir`, `--headless`); the `[standalone]`
-  section supplies the standalone launch. `clausters-gui --standalone` with no
+  section supplies the standalone launch. The `[gui.theme]` table restyles the
+  host's color roles; `--theme <path>` lays a free-standing theme file — the
+  same flat `role = "#rrggbb[aa]"` table — over it, so a look can be shared as
+  one file. Both are partial overlays over the built-in dark theme. `clausters-gui --standalone` with no
   name opens `[standalone].gui`. A `--config <path>` flag reads one specific file
   instead of the user+project chain.
 - **Python client** — the `[client]` section provides the defaults for

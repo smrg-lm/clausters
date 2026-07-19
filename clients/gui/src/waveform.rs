@@ -253,6 +253,9 @@ pub struct WaveformRenderer {
     ranges: Vec<(u32, u32)>,
     mode: Mode,
     scratch: Vec<f32>,
+    /// Per-channel trace colors, cycled — [`CHANNEL_COLORS`] until a theme
+    /// replaces them ([`Self::set_palette`]).
+    palette: [[f32; 4]; 4],
 }
 
 impl WaveformRenderer {
@@ -335,7 +338,13 @@ impl WaveformRenderer {
             ranges: Vec::new(),
             mode: Mode::Columns,
             scratch: Vec::new(),
+            palette: CHANNEL_COLORS,
         }
+    }
+
+    /// Replaces the per-channel trace palette (the theme's series colors).
+    pub fn set_palette(&mut self, palette: [[f32; 4]; 4]) {
+        self.palette = palette;
     }
 
     fn push_vertex(&mut self, x: f32, y: f32, color: [f32; 4]) {
@@ -370,7 +379,7 @@ impl WaveformRenderer {
             Mode::Columns
         };
         for ch in 0..data.num_channels() {
-            let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+            let color = self.palette[ch % self.palette.len()];
             let first = (self.scratch.len() / FLOATS_PER_VERTEX) as u32;
             match self.mode {
                 Mode::Line => {
@@ -494,6 +503,11 @@ impl WaveformView {
     /// Record one channel's draw (see [`WaveformRenderer::draw_channel`]).
     pub fn draw_channel(&self, pass: &mut wgpu::RenderPass<'_>, ch: usize) {
         self.renderer.draw_channel(pass, ch);
+    }
+
+    /// Replaces the per-channel trace palette (the theme's series colors).
+    pub fn set_palette(&mut self, palette: [[f32; 4]; 4]) {
+        self.renderer.set_palette(palette);
     }
 }
 

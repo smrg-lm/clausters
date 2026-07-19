@@ -23,7 +23,8 @@ use clausters_core::scale;
 
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
+use super::paint::Mesh;
+use super::theme::{Theme, with_alpha};
 
 // --- Proportions (white-key units) -----------------------------------------
 
@@ -64,24 +65,6 @@ pub fn black_offset(pc: usize) -> Option<f32> {
 }
 
 // --- Layout -----------------------------------------------------------------
-
-/// The colors of the keyboard and its overview strip.
-const WHITE_KEY: Color = [0.86, 0.87, 0.90, 1.0];
-const WHITE_PRESSED: Color = [0.45, 0.80, 0.60, 1.0];
-const WHITE_INACTIVE: Color = [0.42, 0.43, 0.46, 1.0];
-const BLACK_KEY: Color = [0.10, 0.11, 0.14, 1.0];
-const BLACK_PRESSED: Color = [0.25, 0.60, 0.42, 1.0];
-const BLACK_INACTIVE: Color = [0.24, 0.25, 0.28, 1.0];
-const KEY_GAP: Color = [0.05, 0.06, 0.08, 1.0];
-const KEY_LABEL: Color = [0.35, 0.37, 0.42, 1.0];
-const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
-const OV_BG: Color = [0.07, 0.08, 0.10, 1.0];
-const OV_ACTIVE: Color = [0.16, 0.18, 0.22, 1.0];
-const OV_BLACK: Color = [0.04, 0.05, 0.06, 1.0];
-const OV_WINDOW: Color = [0.30, 0.78, 0.55, 0.35];
-const OV_WINDOW_EDGE: Color = [0.40, 0.85, 0.62, 1.0];
-const OV_PRESSED: Color = [0.95, 0.75, 0.45, 1.0];
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
 
 const LABEL_SCALE: f32 = 2.0;
 const KEY_LABEL_SCALE: f32 = 1.0;
@@ -309,11 +292,11 @@ pub struct PianoDraw<'a> {
 /// Draw the keyboard: white keys with a hairline gap, black keys on top,
 /// pressed keys highlighted, keys outside the active range grayed, and a note
 /// name on each C when the white keys are wide enough to carry it.
-pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw) {
+pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw, theme: &Theme) {
     if l.keys.w <= 0.0 || l.keys.h <= 0.0 {
         return;
     }
-    mesh.rect(l.keys, KEY_GAP);
+    mesh.rect(l.keys, theme.key_gap);
     let active = |p: i32| p >= state.active_min && p <= state.active_max;
     // White keys first (with a 1px gap between them), then the C labels, then
     // the black keys on top.
@@ -323,11 +306,11 @@ pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw) {
         }
         let Some(r) = key_rect(l, p) else { continue };
         let color = if state.pressed.contains(&p) {
-            WHITE_PRESSED
+            theme.key_pressed
         } else if active(p) {
-            WHITE_KEY
+            theme.key_white
         } else {
-            WHITE_INACTIVE
+            theme.key_inactive
         };
         mesh.rect(Rect::new(r.x + 0.5, r.y, (r.w - 1.0).max(1.0), r.h), color);
         if scale::pitch_class(p) == 0 {
@@ -339,7 +322,7 @@ pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw) {
                     r.x + 2.0,
                     r.y + r.h - font::height(KEY_LABEL_SCALE) - 2.0,
                     KEY_LABEL_SCALE,
-                    KEY_LABEL,
+                    theme.key_label,
                 );
             }
         }
@@ -350,15 +333,15 @@ pub fn draw(mesh: &mut Mesh, l: &Layout, state: &PianoDraw) {
         }
         let Some(r) = key_rect(l, p) else { continue };
         let color = if state.pressed.contains(&p) {
-            BLACK_PRESSED
+            theme.key_pressed_black
         } else if active(p) {
-            BLACK_KEY
+            theme.key_black
         } else {
-            BLACK_INACTIVE
+            theme.key_inactive_black
         };
         mesh.rect(r, color);
     }
-    mesh.border(l.keys, 1.0, FRAME);
+    mesh.border(l.keys, 1.0, theme.frame);
 }
 
 /// Draw the overview strip: the full MIDI range compressed, the active range
@@ -372,17 +355,21 @@ pub fn draw_overview(
     max: i32,
     active: (i32, i32),
     pressed: &[i32],
+    theme: &Theme,
 ) {
     if strip.w <= 0.0 || strip.h <= 0.0 {
         return;
     }
-    mesh.rect(strip, OV_BG);
+    mesh.rect(strip, theme.key_overview);
     // The active range reads as the lit band.
     let (a0, a1) = (active.0.clamp(0, MIDI_MAX), active.1.clamp(0, MIDI_MAX));
     if a1 >= a0 {
         let x0 = overview_key_x(strip, a0);
         let x1 = overview_key_x(strip, a1 + 1);
-        mesh.rect(Rect::new(x0, strip.y, x1 - x0, strip.h), OV_ACTIVE);
+        mesh.rect(
+            Rect::new(x0, strip.y, x1 - x0, strip.h),
+            theme.key_overview_active,
+        );
     }
     // Black-key shading in the strip's lower half sketches the octaves.
     let key_w = strip.w / (MIDI_MAX + 1) as f32;
@@ -391,7 +378,7 @@ pub fn draw_overview(
             let x = overview_key_x(strip, p);
             mesh.rect(
                 Rect::new(x, strip.y, key_w.max(1.0), strip.h * 0.5),
-                OV_BLACK,
+                theme.key_overview_black,
             );
         }
     }
@@ -400,7 +387,7 @@ pub fn draw_overview(
             let x = overview_key_x(strip, p);
             mesh.rect(
                 Rect::new(x, strip.y + strip.h * 0.6, key_w.max(1.5), strip.h * 0.4),
-                OV_PRESSED,
+                theme.flag,
             );
         }
     }
@@ -408,9 +395,9 @@ pub fn draw_overview(
     let wx0 = overview_key_x(strip, min);
     let wx1 = overview_key_x(strip, max + 1);
     let window = Rect::new(wx0, strip.y, (wx1 - wx0).max(2.0), strip.h);
-    mesh.rect(window, OV_WINDOW);
-    mesh.border(window, 1.0, OV_WINDOW_EDGE);
-    mesh.border(strip, 1.0, FRAME);
+    mesh.rect(window, with_alpha(theme.accent, 0.35));
+    mesh.border(window, 1.0, theme.hilite);
+    mesh.border(strip, 1.0, theme.frame);
 }
 
 /// Draw the whole widget: the label strip (when labelled), the overview and
@@ -426,13 +413,29 @@ pub fn draw_widget(
     active_max: i32,
     pressed: &[i32],
     label: Option<&str>,
+    theme: &Theme,
 ) {
     if let Some(text) = label {
-        font::text(mesh, text, rect.x + PAD, rect.y + 2.0, LABEL_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + 2.0,
+            LABEL_SCALE,
+            theme.text,
+        );
     }
     let l = layout(rect, min, max, overview, label.is_some());
     if let Some(strip) = l.overview {
-        draw_overview(mesh, strip, l.min, l.max, (active_min, active_max), pressed);
+        draw_overview(
+            mesh,
+            strip,
+            l.min,
+            l.max,
+            (active_min, active_max),
+            pressed,
+            theme,
+        );
     }
     draw(
         mesh,
@@ -443,6 +446,7 @@ pub fn draw_widget(
             active_max,
             label,
         },
+        theme,
     );
 }
 
@@ -704,6 +708,7 @@ mod tests {
             127,
             &[60, 61],
             Some("piano"),
+            &Theme::default(),
         );
         assert!(mesh.vertex_count() > 0);
         // Grayed keys still draw (they are visible, just inactive).
@@ -718,6 +723,7 @@ mod tests {
             67,
             &[],
             None,
+            &Theme::default(),
         );
         assert!(gray.vertex_count() > 0);
     }

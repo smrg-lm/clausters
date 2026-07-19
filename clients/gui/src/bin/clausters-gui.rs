@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use clausters_core::config::Config;
 use clausters_gui::host::store::{self, GuiStore};
+use clausters_gui::host::theme::Theme;
 use clausters_gui::host::transport::{self, DEFAULT_PORT};
 use clausters_gui::host::{Host, ServerLeg, gui};
 
@@ -34,6 +35,7 @@ usage:
   clausters-gui [--port <n>] [--server <host:port>] [--shm <path>] [--headless]
                 [--tcp [port] | --no-tcp] [--ws [port]] [--max-frame <bytes>]
                 [--data-dir <dir>] [--standalone [name]] [--config <path>]
+                [--theme <path>]
       --port <n>            port for the GUI host's server front
                             (script -> host, UDP and TCP); default 57210
       --tcp [port]          length-prefixed OSC over TCP — on by default at the
@@ -67,6 +69,10 @@ usage:
                             from the config is used.
       --config <path>       read configuration from this TOML file instead of
                             the user+project chain (see below).
+      --theme <path>        read the host's color theme from this TOML file: a
+                            flat table of role = \"#rrggbb[aa]\" entries, laid
+                            over [gui.theme] from the config. A partial table
+                            is fine — unlisted roles keep the default look.
       --headless            run the protocol with no display (tests / no GPU);
                             the default opens windows (winit + wgpu)
   -v, -vv, -vvv             log verbosity: warn (default) -> info -> debug ->
@@ -118,6 +124,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let mut standalone_flag = false;
     let mut cli_standalone_name: Option<String> = None;
     let mut config_path: Option<String> = None;
+    let mut theme_path: Option<String> = None;
     let mut it = args.iter().peekable();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -175,6 +182,13 @@ fn run(args: &[String]) -> Result<(), String> {
                     .ok_or_else(|| format!("--data-dir needs a path\n{USAGE}"))?;
                 cli_data_dir = Some(v.clone());
             }
+            "--theme" => {
+                theme_path = Some(
+                    it.next()
+                        .ok_or_else(|| format!("--theme needs a path\n{USAGE}"))?
+                        .clone(),
+                );
+            }
             "--config" => {
                 let v = it
                     .next()
@@ -229,6 +243,21 @@ fn run(args: &[String]) -> Result<(), String> {
     let server = cli_server.or_else(|| cfg.gui.server.clone());
     let shm = cli_shm.or_else(|| cfg.gui.shm.clone());
     let headless = cli_headless || cfg.gui.headless == Some(true);
+    // The host's look: the default theme, overlaid by [gui.theme] from the
+    // config, then by a --theme file. Unknown roles or bad colors warn and
+    // fall through, so a stale style file degrades to the default look.
+    let mut theme = Theme::default();
+    if let Some(table) = &cfg.gui.theme {
+        for w in theme.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_str()))) {
+            tracing::warn!("{w} (config [gui.theme])");
+        }
+    }
+    if let Some(path) = &theme_path {
+        let table = clausters_core::config::read_theme_file(Path::new(path))?;
+        for w in theme.overlay(table.iter().map(|(k, v)| (k.as_str(), v.as_str()))) {
+            tracing::warn!("{w} ({path})");
+        }
+    }
     // The data directory: an explicit flag wins; otherwise the standalone
     // section (when booting one) then the gui section provide it; finally the
     // XDG fallback resolves a default.
@@ -267,7 +296,7 @@ fn run(args: &[String]) -> Result<(), String> {
                     dir.display()
                 )
             })?;
-            return run_standalone(&name, store, &dir, port, run_boot);
+            return run_standalone(&name, store, &dir, port, run_boot, theme);
         }
         #[cfg(not(feature = "standalone"))]
         {
@@ -285,6 +314,7 @@ fn run(args: &[String]) -> Result<(), String> {
     let local = socket.local_addr().map_err(|e| e.to_string())?;
 
     let mut host = Host::new();
+    host.theme = theme;
     if let Some(store) = store {
         host = host.with_store(store);
     }
@@ -362,6 +392,7 @@ fn run_standalone(
     data_dir: &Path,
     port: u16,
     run_boot: bool,
+    theme: Theme,
 ) -> Result<(), String> {
     let (id, json) = store
         .load(name)
@@ -392,6 +423,7 @@ fn run_standalone(
     let mut host = Host::new()
         .with_server_link(ServerLink::Embed(embed))
         .with_store(store);
+    host.theme = theme;
     let origin = ClientId::Udp(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)));
     host.handle_packet(
         OscPacket::Message(OscMessage {

@@ -176,6 +176,12 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   mueven con el LFO por `/c_stream` sobre el engine in-page, y la perilla
   `freq` (bindeada `/n_set`) cambia el tono al arrastrarla. Sin ningún proceso
   servidor.
+- **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
+  `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
+  `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,
+  knobs, meters y marcos pasan del verde al naranja en todas las ventanas (un
+  tema por host); un rol desconocido en el archivo solo deja un warning en el
+  log y el resto aplica. Lo mismo por config con la tabla `[gui.theme]`.
 
 ### Con la feature `faust`
 

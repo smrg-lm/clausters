@@ -12,14 +12,8 @@
 use super::font;
 use super::layout::Rect;
 use super::paint::{Color, Mesh};
+use super::theme::Theme;
 use super::widget::{Range, WidgetKind};
-
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const TRACK: Color = [0.10, 0.11, 0.14, 1.0];
-const ACCENT: Color = [0.30, 0.78, 0.55, 1.0];
-const ACCENT_DIM: Color = [0.22, 0.50, 0.40, 1.0];
-const FIELD: Color = [0.14, 0.15, 0.19, 1.0];
-const HILITE: Color = [0.40, 0.85, 0.62, 1.0];
 
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
@@ -71,30 +65,37 @@ pub fn drag_fraction_delta(dy: f64, body_h: f32) -> f32 {
 }
 
 /// Draws a control into `mesh`. `active` highlights a pressed/dragged control.
-pub fn draw(mesh: &mut Mesh, kind: &WidgetKind, rect: Rect, active: bool) {
+pub fn draw(mesh: &mut Mesh, kind: &WidgetKind, rect: Rect, active: bool, theme: &Theme) {
     match kind {
-        WidgetKind::Slider { range, vertical } => slider(mesh, range, rect, *vertical),
-        WidgetKind::Knob(r) => knob(mesh, r, rect),
-        WidgetKind::Number(r) => number(mesh, r, rect),
-        WidgetKind::Button { label } => button(mesh, label.as_deref(), rect, active),
-        WidgetKind::Toggle { value, label } => toggle(mesh, *value, label.as_deref(), rect),
-        WidgetKind::Text { value, label } => field(mesh, value, label.as_deref(), rect),
+        WidgetKind::Slider { range, vertical } => slider(mesh, range, rect, *vertical, theme),
+        WidgetKind::Knob(r) => knob(mesh, r, rect, theme),
+        WidgetKind::Number(r) => number(mesh, r, rect, theme),
+        WidgetKind::Button { label } => button(mesh, label.as_deref(), rect, active, theme),
+        WidgetKind::Toggle { value, label } => toggle(mesh, *value, label.as_deref(), rect, theme),
+        WidgetKind::Text { value, label } => field(mesh, value, label.as_deref(), rect, theme),
         WidgetKind::Menu {
             index,
             options,
             label,
         } => {
             let current = options.get(*index).map(String::as_str).unwrap_or("");
-            field(mesh, current, label.as_deref(), rect);
+            field(mesh, current, label.as_deref(), rect, theme);
         }
         _ => {}
     }
 }
 
 /// Draws the label strip above a control body, if it has a label.
-fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect) {
+fn label_strip(mesh: &mut Mesh, label: Option<&str>, rect: Rect, theme: &Theme) {
     if let Some(text) = label {
-        font::text(mesh, text, rect.x + PAD, rect.y + PAD, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            rect.x + PAD,
+            rect.y + PAD,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
 }
 
@@ -104,8 +105,8 @@ const TRACK_THICK: f32 = 4.0;
 const HANDLE_THICK: f32 = 8.0;
 const HANDLE_GRIP: f32 = 18.0;
 
-fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool) {
-    label_strip(mesh, r.label.as_deref(), rect);
+fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool, theme: &Theme) {
+    label_strip(mesh, r.label.as_deref(), rect, theme);
     let body = body_rect(rect, r.label.is_some());
     let f = r.fraction();
     if vertical {
@@ -113,7 +114,7 @@ fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool) {
         let cx = body.x + body.w * 0.5;
         mesh.rect(
             Rect::new(cx - TRACK_THICK * 0.5, body.y, TRACK_THICK, body.h),
-            TRACK,
+            theme.track,
         );
         let hy = body.y + body.h * (1.0 - f);
         mesh.rect(
@@ -123,18 +124,18 @@ fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool) {
                 TRACK_THICK,
                 (body.y + body.h - hy).max(0.0),
             ),
-            ACCENT_DIM,
+            theme.accent_dim,
         );
         let grip = HANDLE_GRIP.min(body.w);
         mesh.rect(
             Rect::new(cx - grip * 0.5, hy - HANDLE_THICK * 0.5, grip, HANDLE_THICK),
-            ACCENT,
+            theme.accent,
         );
     } else {
         let mid = body.y + body.h * 0.5;
         mesh.rect(
             Rect::new(body.x, mid - TRACK_THICK * 0.5, body.w, TRACK_THICK),
-            TRACK,
+            theme.track,
         );
         let hx = body.x + body.w * f;
         mesh.rect(
@@ -144,7 +145,7 @@ fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool) {
                 (hx - body.x).max(0.0),
                 TRACK_THICK,
             ),
-            ACCENT_DIM,
+            theme.accent_dim,
         );
         let grip = HANDLE_GRIP.min(body.h);
         mesh.rect(
@@ -154,14 +155,14 @@ fn slider(mesh: &mut Mesh, r: &Range, rect: Rect, vertical: bool) {
                 HANDLE_THICK,
                 grip,
             ),
-            ACCENT,
+            theme.accent,
         );
     }
-    value_text(mesh, &fmt(r.value), body);
+    value_text(mesh, &fmt(r.value), body, theme);
 }
 
-fn knob(mesh: &mut Mesh, r: &Range, rect: Rect) {
-    label_strip(mesh, r.label.as_deref(), rect);
+fn knob(mesh: &mut Mesh, r: &Range, rect: Rect, theme: &Theme) {
+    label_strip(mesh, r.label.as_deref(), rect, theme);
     let body = body_rect(rect, r.label.is_some());
     // Reserve a strip at the bottom of the body for the value read-out and size
     // the disc in the area above it, so the number stays inside the body — it
@@ -171,32 +172,33 @@ fn knob(mesh: &mut Mesh, r: &Range, rect: Rect) {
     let radius = (body.w.min(disc_h) * 0.5 - 2.0).max(2.0);
     let cx = body.x + body.w * 0.5;
     let cy = body.y + disc_h * 0.5;
-    mesh.disc(cx, cy, radius, TRACK);
-    mesh.disc(cx, cy, radius - 3.0, FIELD);
+    mesh.disc(cx, cy, radius, theme.track);
+    mesh.disc(cx, cy, radius - 3.0, theme.field);
     // Pointer: 270-degree sweep, min at lower-left, max at lower-right.
     let angle = (135.0 + 270.0 * r.fraction()).to_radians();
     let tip = [cx + radius * angle.cos(), cy + radius * angle.sin()];
-    mesh.line([cx, cy], tip, 3.0, ACCENT);
+    mesh.line([cx, cy], tip, 3.0, theme.accent);
     value_text(
         mesh,
         &fmt(r.value),
         Rect::new(body.x, body.y + body.h - text_h, body.w, text_h),
+        theme,
     );
 }
 
-fn number(mesh: &mut Mesh, r: &Range, rect: Rect) {
-    label_strip(mesh, r.label.as_deref(), rect);
+fn number(mesh: &mut Mesh, r: &Range, rect: Rect, theme: &Theme) {
+    label_strip(mesh, r.label.as_deref(), rect, theme);
     let body = body_rect(rect, r.label.is_some());
-    mesh.rect(body, FIELD);
+    mesh.rect(body, theme.field);
     // A vertical fill rising from the bottom shows the value in range, so
     // dragging up raises the green level; a border frames the field.
     let fill_h = body.h * r.fraction();
     mesh.rect(
         Rect::new(body.x, body.y + body.h - fill_h, body.w, fill_h),
-        ACCENT_DIM,
+        theme.accent_dim,
     );
-    border(mesh, body, 1.0, ACCENT);
-    font::text_centered(mesh, &fmt(r.value), body, TEXT_SCALE, TEXT);
+    border(mesh, body, 1.0, theme.accent);
+    font::text_centered(mesh, &fmt(r.value), body, TEXT_SCALE, theme.text);
 }
 
 /// A 1-color outline of `rect`, `w` pixels thick (four thin rects).
@@ -207,13 +209,26 @@ fn border(mesh: &mut Mesh, rect: Rect, w: f32, color: Color) {
     mesh.rect(Rect::new(rect.x + rect.w - w, rect.y, w, rect.h), color);
 }
 
-fn button(mesh: &mut Mesh, label: Option<&str>, rect: Rect, active: bool) {
+fn button(mesh: &mut Mesh, label: Option<&str>, rect: Rect, active: bool, theme: &Theme) {
     let body = body_rect(rect, false);
-    mesh.rect(body, if active { HILITE } else { ACCENT_DIM });
-    font::text_centered(mesh, label.unwrap_or("BUTTON"), body, TEXT_SCALE, TEXT);
+    mesh.rect(
+        body,
+        if active {
+            theme.hilite
+        } else {
+            theme.accent_dim
+        },
+    );
+    font::text_centered(
+        mesh,
+        label.unwrap_or("BUTTON"),
+        body,
+        TEXT_SCALE,
+        theme.text,
+    );
 }
 
-fn toggle(mesh: &mut Mesh, on: bool, label: Option<&str>, rect: Rect) {
+fn toggle(mesh: &mut Mesh, on: bool, label: Option<&str>, rect: Rect, theme: &Theme) {
     let body = body_rect(rect, false);
     let box_side = body.h.min(body.w).min(24.0);
     let box_rect = Rect::new(
@@ -222,7 +237,7 @@ fn toggle(mesh: &mut Mesh, on: bool, label: Option<&str>, rect: Rect) {
         box_side,
         box_side,
     );
-    mesh.rect(box_rect, TRACK);
+    mesh.rect(box_rect, theme.track);
     if on {
         let inset = box_side * 0.22;
         mesh.rect(
@@ -232,30 +247,37 @@ fn toggle(mesh: &mut Mesh, on: bool, label: Option<&str>, rect: Rect) {
                 box_side - 2.0 * inset,
                 box_side - 2.0 * inset,
             ),
-            ACCENT,
+            theme.accent,
         );
     }
     if let Some(text) = label {
         let tx = box_rect.x + box_side + PAD;
         let ty = body.y + (body.h - font::height(TEXT_SCALE)) * 0.5;
-        font::text(mesh, text, tx, ty, TEXT_SCALE, TEXT);
+        font::text(mesh, text, tx, ty, TEXT_SCALE, theme.text);
     }
 }
 
-fn field(mesh: &mut Mesh, value: &str, label: Option<&str>, rect: Rect) {
-    label_strip(mesh, label, rect);
+fn field(mesh: &mut Mesh, value: &str, label: Option<&str>, rect: Rect, theme: &Theme) {
+    label_strip(mesh, label, rect, theme);
     let body = body_rect(rect, label.is_some());
-    mesh.rect(body, FIELD);
+    mesh.rect(body, theme.field);
     let ty = body.y + (body.h - font::height(TEXT_SCALE)) * 0.5;
-    font::text(mesh, value, body.x + PAD, ty.max(body.y), TEXT_SCALE, TEXT);
+    font::text(
+        mesh,
+        value,
+        body.x + PAD,
+        ty.max(body.y),
+        TEXT_SCALE,
+        theme.text,
+    );
 }
 
 /// A value read-out at the bottom-right of a body.
-fn value_text(mesh: &mut Mesh, s: &str, body: Rect) {
+fn value_text(mesh: &mut Mesh, s: &str, body: Rect, theme: &Theme) {
     let w = font::width(s, TEXT_SCALE);
     let x = (body.x + body.w - w - PAD).max(body.x);
     let y = (body.y + body.h - font::height(TEXT_SCALE)).max(body.y);
-    font::text(mesh, s, x, y, TEXT_SCALE, TEXT);
+    font::text(mesh, s, x, y, TEXT_SCALE, theme.text);
 }
 
 /// Formats a control value compactly (drops trailing zeros within 2 decimals).
@@ -318,7 +340,7 @@ mod tests {
             label: Some("cutoff".into()),
         };
         let mut mesh = Mesh::new();
-        knob(&mut mesh, &r, cell);
+        knob(&mut mesh, &r, cell, &Theme::default());
         let bottom = cell.y + cell.h;
         let max_y = mesh.positions().map(|(_, y)| y).fold(f32::MIN, f32::max);
         assert!(

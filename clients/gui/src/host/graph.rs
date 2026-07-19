@@ -20,18 +20,8 @@
 
 use super::font;
 use super::layout::Rect;
-use super::paint::{Color, Mesh};
-
-const TEXT: Color = [0.85, 0.87, 0.90, 1.0];
-const FIELD: Color = [0.08, 0.09, 0.11, 1.0];
-const FRAME: Color = [0.30, 0.34, 0.42, 1.0];
-const NODE_FILL: Color = [0.16, 0.22, 0.32, 1.0];
-const NODE_EDGE: Color = [0.45, 0.60, 0.85, 1.0];
-const BUS_FILL: Color = [0.18, 0.28, 0.24, 1.0];
-const BUS_EDGE: Color = [0.40, 0.85, 0.62, 1.0];
-const PORT: Color = [0.75, 0.82, 0.92, 1.0];
-const WIRE: Color = [0.55, 0.75, 0.95, 0.9];
-const WIRE_LIVE: Color = [0.95, 0.72, 0.25, 1.0];
+use super::paint::Mesh;
+use super::theme::{Theme, with_alpha};
 
 const PAD: f32 = 8.0;
 const NODE_W: f32 = 150.0;
@@ -134,32 +124,54 @@ pub fn draw(
     graph: &GraphDraw,
     label: Option<&str>,
     live: Option<((usize, usize), (f32, f32))>,
+    theme: &Theme,
 ) {
-    mesh.rect(area, FIELD);
-    mesh.border(area, 1.0, FRAME);
+    mesh.rect(area, theme.view_field);
+    mesh.border(area, 1.0, theme.frame);
     if let Some(text) = label {
-        font::text(mesh, text, area.x + PAD, area.y + 2.0, TEXT_SCALE, TEXT);
+        font::text(
+            mesh,
+            text,
+            area.x + PAD,
+            area.y + 2.0,
+            TEXT_SCALE,
+            theme.text,
+        );
     }
 
     // The buses (right column): a node per bus, `OUT` among them.
     for (b, bus) in graph.buses.iter().enumerate() {
         let r = bus_rect(area, graph, b);
-        mesh.rect(r, BUS_FILL);
-        mesh.border(r, 1.0, BUS_EDGE);
-        font::text(mesh, bus, r.x + PAD * 0.5, r.y + 4.0, TEXT_SCALE, TEXT);
+        mesh.rect(r, theme.bus_fill);
+        mesh.border(r, 1.0, theme.hilite);
+        font::text(
+            mesh,
+            bus,
+            r.x + PAD * 0.5,
+            r.y + 4.0,
+            TEXT_SCALE,
+            theme.text,
+        );
         let (px, py) = bus_pin(area, graph, b);
         mesh.rect(
             Rect::new(px - PORT_R, py - PORT_R, PORT_R * 2.0, PORT_R * 2.0),
-            PORT,
+            theme.port,
         );
     }
 
     // The members (left column): the def name, then a row per wired control.
     for (i, m) in graph.members.iter().enumerate() {
         let r = member_rect(area, graph, i);
-        mesh.rect(r, NODE_FILL);
-        mesh.border(r, 1.0, NODE_EDGE);
-        font::text(mesh, &m.name, r.x + PAD * 0.5, r.y + 4.0, TEXT_SCALE, TEXT);
+        mesh.rect(r, theme.object_fill);
+        mesh.border(r, 1.0, theme.object_edge);
+        font::text(
+            mesh,
+            &m.name,
+            r.x + PAD * 0.5,
+            r.y + 4.0,
+            TEXT_SCALE,
+            theme.text,
+        );
         for (p, port) in m.ports.iter().enumerate() {
             let (px, py) = port_pin(area, graph, i, p);
             font::text(
@@ -168,11 +180,11 @@ pub fn draw(
                 r.x + PAD * 0.5,
                 py - font::height(TEXT_SCALE) * 0.5,
                 TEXT_SCALE,
-                TEXT,
+                theme.text,
             );
             mesh.rect(
                 Rect::new(px - PORT_R, py - PORT_R, PORT_R * 2.0, PORT_R * 2.0),
-                PORT,
+                theme.port,
             );
         }
     }
@@ -191,13 +203,13 @@ pub fn draw(
         };
         let (x0, y0) = port_pin(area, graph, wire.member, p);
         let (x1, y1) = bus_pin(area, graph, b);
-        mesh.line([x0, y0], [x1, y1], 1.5, WIRE);
+        mesh.line([x0, y0], [x1, y1], 1.5, with_alpha(theme.selection, 0.9));
     }
 
     // The wire being dragged, from its port to the cursor.
     if let Some(((i, p), (cx, cy))) = live {
         let (x0, y0) = port_pin(area, graph, i, p);
-        mesh.line([x0, y0], [cx, cy], 1.5, WIRE_LIVE);
+        mesh.line([x0, y0], [cx, cy], 1.5, theme.live);
     }
 }
 
@@ -290,7 +302,14 @@ mod tests {
     #[test]
     fn the_patch_draws_its_members_buses_and_wires() {
         let mut m = Mesh::new();
-        draw(&mut m, area(), &chain(), Some("chain"), None);
+        draw(
+            &mut m,
+            area(),
+            &chain(),
+            Some("chain"),
+            None,
+            &Theme::default(),
+        );
         assert!(!m.is_empty());
 
         // A wire in flight adds the line to the cursor.
@@ -301,6 +320,7 @@ mod tests {
             &chain(),
             Some("chain"),
             Some(((0, 0), (400.0, 200.0))),
+            &Theme::default(),
         );
         assert!(with_live.vertex_count() > m.vertex_count());
     }
