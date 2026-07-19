@@ -19,6 +19,7 @@ Adding a widget is **never a protocol change** — the generic GuiDef node (`{id
 4. **Interaction** — hit-test + mutation in `src/host/interact.rs` (shared by both fronts); a value-bearing interaction goes through the one `deliver` path: binding `forward` first, `/gui_event` when unbound.
 5. **Python builder** — one function in `clients/python/clausters/gui/guidef.py` (mirror the existing ones: keyword props, `_drop_none`), plus a commented example in `examples/`.
 6. **Tests** — GPU-free logic (models, math, parse) in `cargo test` from `clients/gui/`; window binaries and E2E follow the single-Bash-invocation rule.
+7. **The two tables** — a new/moved widget (or a change to what feeds one) updates, in the same change: the **widget map** in `docs/architecture.md` §"The widget map" (widget → module(s) → fed by, the development index) and the **widget catalog** in `docs/gui-protocol.md` (widget → props, the wire reference). Review both whenever GUI functionality changes shape, not only on a brand-new widget.
 
 ## Data sources (what can feed a widget)
 

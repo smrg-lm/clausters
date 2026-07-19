@@ -364,6 +364,34 @@ looks for:
   placement, `"wire"` for a connection. The widget tree stays the source of truth
   on the host side; the script's model remains the source of truth on the other.
 
+### The widget map
+
+Where each widget of the [catalog](gui-protocol.md#the-widget-catalog) lives —
+one row per widget: the module(s) that implement it and what feeds it. What a
+widget *does* and its props are the catalog's job; this table is the
+development-side index into the module split above. **Adding or moving a widget
+updates this table in the same change** (step 7 of the recipe below).
+
+| Widget | Implementation | Fed by |
+|---|---|---|
+| `window`, `panel` | parse/layout only: `host/widget.rs`, `host/layout.rs` | the GuiDef |
+| `label`, `text` | `host/controls.rs` over `host/paint.rs` + `host/font.rs` | the GuiDef, `/gui_set` |
+| `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
+| `button`, `toggle`, `menu` | `host/controls.rs` | idem |
+| `meter` | `host/meters.rs`; bus plumbing in `host/live.rs` | a control bus — the shm segment (native) / `/c_stream` snapshots (browser) |
+| `scope` | signal logic (window sizing, trigger) in `host/oscil.rs`, pure; history in `host/live.rs` | a control bus's rolling history, or audio **tap** rings (shm / `/tap_data`) |
+| `phasescope` | `host/phasescope.rs` (Lissajous geometry + correlation, pure) | two audio taps |
+| `spectrum` | `host/spectrum.rs`; the FFT + Hann window are `clausters-core`'s | `channels` adjacent audio taps |
+| `nodetree` | `host/nodetree.rs` | `/g_queryTree` over the client leg + node notifications |
+| `canvas` | `host/canvas.rs` (a GPU slot: the user's WGSL over the widget area) | `/gui_set` params and/or control buses |
+| `waveform` | data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |
+| `spectrogram` | `src/spectrogram.rs` (the STFT cache + texture renderer), same navigation | the same sources |
+| `plot` | `host/plot.rs` (pure; the spectrum view analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
+| `bpf` | `host/bpf.rs`; the shape math is `clausters-core`'s (what `EnvGen` plays) | the script's `points`; edits emit `"points"` |
+| `track`, `clip` | `host/track.rs`; a clip's roll body reuses `host/pianoroll.rs`, its curve body `host/bpf.rs`; group navigation in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"` |
+| `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
+| `graph` | `host/graph.rs` | the GraphDef's members/buses/wires; rewiring emits `"wire"` |
+
 ### Adding a widget
 
 Take a hypothetical `meterbar`. The steps are always the same:
@@ -388,6 +416,8 @@ Take a hypothetical `meterbar`. The steps are always the same:
    reference (the API page is generated from it).
 6. **Tests and an example** — pure tests for the layout/hit-test/edit, and a
    `clients/python/examples/gui_*.py` when the widget is user-facing.
+7. **The maps** — a row in [the widget map](#the-widget-map) above and one in
+   the [widget catalog](gui-protocol.md#the-widget-catalog), in the same change.
 
 A **new element kind** (a new primitive of the arrangement) is the client's
 business, not the host's: it lands in `clients/python/clausters/form/`, and it
