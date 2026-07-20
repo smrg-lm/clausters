@@ -22,7 +22,7 @@ FAUST_ORIGIN=https://github.com/smrg-lm/faust
 # stays off it so the upstream-bug canaries in tests/faust_box.rs and
 # tests/faust_signal.rs remain valid. Full 40-char SHA: fetching an arbitrary
 # commit by SHA only resolves unabbreviated.
-FAUST_SHA=566ba2bbbbc1e679804276ffffd6351f69d3fda8
+FAUST_SHA=9f685488554b77323374f1fa7d492c3626e6e83b
 
 # The LLVM the shipped libLLVM is built against. Pinned to 18: it is Ubuntu
 # 24.04's default (so CI installs it from the distro repos, no apt.llvm.org),
