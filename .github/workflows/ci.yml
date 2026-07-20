@@ -152,9 +152,18 @@ jobs:
       - name: Build and stage the native artifacts
         run: python clients/python/build_native.py --debug
       - run: pip install pytest
+      # Diagnostic for the intermittent Faust SIGILL (see docs/decisions.md):
+      # capture the trapping instruction the next time it fires, so the cause
+      # stops being guessed at.
+      - uses: ./.github/actions/coredump
       - name: pytest
         working-directory: clients/python
-        run: python -m pytest -q
+        run: ulimit -c unlimited && python -m pytest -q
+      - uses: ./.github/actions/coredump
+        if: failure()
+        with:
+          analyze: "true"
+          name: python
 
   docs:
     name: mdBooks (server + python client)
@@ -205,5 +214,13 @@ jobs:
       # kept here as the authoritative default-set check. The default feature
       # set already includes faust, so a plain `cargo test --workspace` covers
       # the synth+faust combo; `--features embed` adds the embed layer on top.
-      - run: cargo test --workspace -- --test-threads=1
-      - run: cargo test --workspace --features embed -- --test-threads=1
+      # Same SIGILL diagnostic as the python job (see docs/decisions.md): this
+      # job is where the `auto_order` occurrence landed.
+      - uses: ./.github/actions/coredump
+      - run: ulimit -c unlimited && cargo test --workspace -- --test-threads=1
+      - run: ulimit -c unlimited && cargo test --workspace --features embed -- --test-threads=1
+      - uses: ./.github/actions/coredump
+        if: failure()
+        with:
+          analyze: "true"
+          name: test-default
