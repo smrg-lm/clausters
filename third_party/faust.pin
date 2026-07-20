@@ -4,13 +4,25 @@
 # phase, the CI composite and the release build). Shell-sourceable: KEY=VALUE,
 # no spaces, no quoting needed.
 
+# Where the pinned commit is fetched from. Our fork, because the pin below
+# carries one patch that is not upstream yet (see FAUST_SHA). Point this back
+# at https://github.com/grame-cncm/faust once the patch lands there.
+FAUST_ORIGIN=https://github.com/smrg-lm/faust
+
 # The commit the bundled libfaust is built from: the master-dev base "Set
-# version to 2.86.0" (short 56c9e678d). Deliberately the UNPATCHED base -- the
-# clone may carry a local fix-boxcos-boxfmod branch for development, but the
-# shipped artifact stays on the base so the boxcos/boxfmod upstream-bug canaries
-# in tests/faust_box.rs and tests/faust_signal.rs remain valid. Full 40-char
-# SHA: fetching an arbitrary commit by SHA only resolves unabbreviated.
-FAUST_SHA=56c9e678ddff8688bf113db145033ac8a10c4795
+# version to 2.86.0" (56c9e678d) plus exactly ONE patch, on the fork's
+# fix-jit-target-order branch -- "Set the JIT target before initJIT(), not
+# after". Without it `setTarget()` runs after the JIT has already compiled, so
+# the target argument is silently ignored and every factory comes out
+# host-tuned; that is what made CLAUSTERS_FAUST_TARGET a no-op and let CI
+# runners SIGILL on JIT code their VM could not run (see docs/decisions.md).
+#
+# Still deliberately WITHOUT the boxcos/boxfmod fix -- the clone may carry a
+# local fix-boxcos-boxfmod branch for development, but the shipped artifact
+# stays off it so the upstream-bug canaries in tests/faust_box.rs and
+# tests/faust_signal.rs remain valid. Full 40-char SHA: fetching an arbitrary
+# commit by SHA only resolves unabbreviated.
+FAUST_SHA=566ba2bbbbc1e679804276ffffd6351f69d3fda8
 
 # The LLVM the shipped libLLVM is built against. Pinned to 18: it is Ubuntu
 # 24.04's default (so CI installs it from the distro repos, no apt.llvm.org),

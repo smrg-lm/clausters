@@ -172,10 +172,26 @@ in the signal type checker — the reason `CsigLRightShift` is not bound in
 branch**, the canaries `upstream_boxcos_still_computes_abs`
 (`tests/faust_box.rs`) and `upstream_lrsh_still_fails_the_type_checker`
 (`tests/faust_signal.rs`) fail *by design* — that is the signal to retire
-the workaround and bind `lrsh`. The verified install below is from the
-unpatched `master-dev` base (`56c9e678d`, "Set version to 2.86.0").
+the workaround and bind `lrsh`. That branch is **not** what gets built: see
+the pinned branch below.
 
 [faust#1264]: https://github.com/grame-cncm/faust/issues/1264
+
+## The `fix-jit-target-order` branch (this is what `faust.pin` builds)
+
+`third_party/faust.pin` points `FAUST_ORIGIN` at our fork and pins a commit on
+`fix-jit-target-order`: the `master-dev` base (`56c9e678d`, "Set version to
+2.86.0") plus exactly one patch, hoisting `setTarget()` above `initJIT()` in
+`createDSPFactoryFromString`/`FromSignals`. Without it the `target` argument of
+the C API is silently ignored — `initJIT()` reads `fTarget` before anything
+sets it, so the factory is JIT-compiled for the host CPU regardless — which is
+what made `CLAUSTERS_FAUST_TARGET` a no-op and let CI runners hit SIGILL on JIT
+code their VM could not execute. Rationale and the measurements are in
+`docs/decisions.md`; the patch has **not** been submitted upstream yet.
+
+It deliberately does *not* include the `fix-boxcos-boxfmod` work above, so the
+canaries named there keep passing. When the patch lands upstream, point
+`FAUST_ORIGIN` back at `grame-cncm/faust` and pin the commit that carries it.
 
 ## Building clausters against it
 

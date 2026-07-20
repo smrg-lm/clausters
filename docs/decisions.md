@@ -184,64 +184,59 @@ keep that cheap and green:
   But virtualized CI runners can report CPU features the hypervisor then traps,
   so host-tuned JIT code hits an illegal instruction at run time on some Azure
   SKUs (seen intermittently, VM-dependent). The override forces a baseline
-  x86-64 target. It must be a **full triple** (`x86_64-unknown-linux-gnu:x86-64`):
-  faust sets `mcpu` from the string, but with an *empty* triple newer LLVM still
-  host-detects the CPU *features* and re-introduces the crash — only a concrete
-  triple pins it down. The override is a plain env var read by
-  `faust::compiler::host_target`, so only CI opts in.
-  - *Note (2026-07-16, revised 2026-07-20):* SIGILL recurred **with the
-    override active** — twice, in unrelated jobs:
-    `auto_order::faust_synths_sort_by_their_reserved_buses` (run 29492474371)
-    and `test_defs::test_faustdef_renders_through_the_seam` in the Python job
-    (run 29711088891). The 2026-07-20 investigation **ruled out the JIT target
-    as the cause entirely**; do not spend more time there:
-    - **Ruled out: host-tuned code in the cached libfaust build.** Faust's
-      CMake does not pass `-march=native`, the bundled libLLVM is the distro's
-      baseline build, and nothing in our Rust uses `target-cpu` or feature
-      detection — the shared cache cannot ship instructions a restoring runner
-      lacks.
-    - **Ruled out: feature autodetection in `EngineBuilder::selectTarget()`**
-      (the former leading suspect). In LLVM's `TargetSelect.cpp` — identical in
-      18 and 21 — `FeaturesStr` is populated *only* from `MAttrs`, and Faust
-      never sets it, so it reaches `createTargetMachine` empty. The one host
-      probe on the path is `sys::getHostCPUName()`, and
-      `llvm_dynamic_dsp_aux.cpp` calls it only when the mcpu half of the target
-      string is empty — which the override makes non-empty. The triple never
-      enters a host comparison, so respelling it (`x86_64-pc-linux-gnu`) would
-      change nothing.
-    - **Ruled out empirically: non-baseline instruction selection.** The
-      bitcode of all 64 defs the Rust suite compiles, run through `llc` at the
-      CI target, emits only scalar SSE2 (`addss`/`mulss`/`divss`/`movaps`/
-      `cvtsi2ss`) — no AVX, FMA or AVX512 anywhere. The pin does what it claims.
-    - **Ruled out: `ud2` from fast-math UB.** Faust sets `NoNaNsFPMath`/
-      `NoInfsFPMath`, so a real NaN/Inf would be UB the optimizer could fold
-      into an `unreachable` (which LLVM lowers to `ud2`, itself a #UD). It does
-      not: 0 of those 64 defs emit `ud2`, and their IR contains no
-      `unreachable`.
-    - **Open lead: a use-after-free at process exit, inside libfaust.**
-      Valgrind on `auto_order` reports one genuine error — `llvm::MCJIT::~MCJIT`
-      reading a block already freed by an earlier exit handler, reached from
-      libfaust's global `dsp_factory_table` destructor during `_dl_fini`. A
-      static-destruction-order fiasco between libfaust and libLLVM, entirely in
-      their code; our own `Arc<FaustDef>` refcounting audits clean (a
-      `FaustSynth` holds a clone, and `Drop` frees the instance before the field
-      drops the factory). Destroying an already-freed `MCJIT` calls through a
-      vtable in freed memory, which lands on whatever reoccupied the block —
-      a #UD is one plausible outcome, and the dependence on heap contents
-      explains the intermittency. This fits the `auto_order` failure (a test
-      binary crashing *after* its tests pass) but **not** the Python one, whose
-      traceback is inside `render`, so it may not be the whole story.
-    Next step is a core dump, not another hypothesis: capture the trapping
-    instruction and its stack. A trap in `_dl_fini`/`__cxa_finalize` confirms
-    the exit-time UAF, whose fix is to destroy the factories before the exit
-    handlers run rather than to touch the target.
-    (Two unrelated libfaust defects surfaced in the same valgrind run, both
-    harmless here: uninitialised reads in `global::initDirectories`, where
-    `char s[1024]` is read by `fileDirname` when `getFaustPathname` leaves it
-    unwritten. Also note libfaust prepends its own `"faust"` `argv[0]` and
-    NULL-terminates its copy (`libcode.cpp`), so our `FaustArgs` passing
-    `-ftz` first and without a terminator is correct — it looks like a bug and
-    is not.)
+  x86-64 target. The string is a Faust `triple:mcpu` pair
+  (`x86_64-unknown-linux-gnu:x86-64`); what actually pins the CPU is the **mcpu
+  half**, since an empty mcpu is what sends Faust to `sys::getHostCPUName()`.
+  (An earlier revision credited the *triple* for this, on the theory that an
+  empty one let LLVM re-detect host features. That was wrong, and it hid the
+  real defect for longer than it should have — see the resolution below.) The
+  override is a plain env var read by `faust::compiler::host_target`, so only CI
+  opts in — and it only works against a libfaust carrying the `setTarget()`
+  ordering fix.
+  - *Resolved (2026-07-20): the override never took effect — it is a Faust
+    bug.* In `llvm_dynamic_dsp_aux.cpp`, both source-based entry points
+    (`createCDSPFactoryFromString`, `...FromSignals`) call
+    `factory_aux->setTarget(target)` **after** `factory_aux->initJIT()`. But
+    `initJIT()` is what reads `fTarget` to pick the triple and mcpu, and with an
+    empty mcpu it falls back to `builder.setMCPU(sys::getHostCPUName())` — so
+    every factory was JITed host-tuned no matter what target we passed. The
+    bitcode/IR entry points on the same file pass the target through the factory
+    *constructor*, i.e. before `initJIT()`, which is the intended order and makes
+    the source paths an oversight rather than a design choice.
+    Measured on the emitted JIT pages (not the input bitcode — see the caution
+    below), same DSP and same LLVM, counting VEX/EVEX instructions:
+    unpatched with the override, 139 (including `vfnmsub231ss`, FMA, absent from
+    baseline x86-64); patched with the override, 0 — only scalar SSE; patched
+    without the override, 139 again, so production keeps its host tuning.
+    The fix is to hoist `setTarget()` above `initJIT()` in both paths. It has not
+    been sent upstream.
+    Two SIGILLs are on record, both with the override nominally active:
+    `auto_order::faust_synths_sort_by_their_reserved_buses` (run 29492474371) and
+    `test_defs::test_faustdef_renders_through_the_seam` (run 29711088891). The
+    core captured for the third (run 29714651299) traps on `kmovd %ecx,%k1` —
+    AVX-512 — in anonymous executable memory, i.e. JIT pages, with masked
+    `vmovss` and `vroundss` around it. Host-tuned code on a runner that cannot
+    run it, exactly as the original entry supposed.
+    - **Caution, learned the hard way.** This bug was briefly "ruled out" on
+      three separate arguments, all wrong in the same way: they measured a stage
+      the bug does not live in. Running the *input bitcode* through `llc` at the
+      pinned target shows clean SSE2 — but that tests whether `llc` honours
+      `--mcpu`, not whether MCJIT ever received the target. Reading
+      `EngineBuilder::selectTarget()` shows no feature autodetection — true, and
+      irrelevant, because the host tuning entered one level up through an empty
+      `fTarget`. A tell was visible and misread: bitcode written by a supposedly
+      pinned factory carried `target triple = "x86_64-pc-linux-gnu"`, LLVM's host
+      default, not the triple we passed. When a pin appears not to work, verify
+      the stage that actually fails — here, disassemble the JIT pages.
+    - **Also found, unrelated and open:** valgrind on `auto_order` reports a
+      use-after-free at process exit — `llvm::MCJIT::~MCJIT` reading a block
+      already freed by an earlier exit handler, reached from libfaust's global
+      `dsp_factory_table` destructor during `_dl_fini` — plus uninitialised reads
+      in `global::initDirectories`. Our own `Arc<FaustDef>` refcounting audits
+      clean. Neither is the SIGILL, but the first can still crash a run at exit.
+    - **Not a bug, do not "fix" it:** `FaustArgs` passes `-ftz` as `argv[0]` and
+      does not NULL-terminate. libfaust prepends its own `"faust"` `argv[0]` and
+      NULL-terminates its copy (`libcode.cpp`), so the arguments arrive correctly.
 
 ## Def persistence: transparent JSON + a non-authoritative bitcode cache
 

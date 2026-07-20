@@ -21,8 +21,9 @@
 # Environment (all optional):
 #   FAUST_PREFIX          install prefix (default: $HOME/.local); --prefix wins
 #   FAUST_SRC             source tree (default: third_party/faust)
-#   FAUST_ORIGIN          git remote to fetch from
-#                         (default: https://github.com/grame-cncm/faust)
+#   FAUST_ORIGIN          git remote to fetch from (default: whatever
+#                         faust.pin sets, currently our fork -- it carries one
+#                         patch not yet upstream; an env value still wins)
 #   LLVM_CONFIG           llvm-config binary
 #                         (default: llvm-config-<FAUST_LLVM_VERSION> from the pin)
 #   FAUST_SKIP_FETCH=1    build FAUST_SRC as-is, skipping the fetch/checkout of
@@ -36,12 +37,15 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# faust.pin now carries FAUST_ORIGIN too, and sourcing it would clobber an
+# override from the environment -- so remember that one first and let it win.
+env_origin="${FAUST_ORIGIN:-}"
 # shellcheck source=/dev/null
 . "$here/faust.pin"
 
 prefix="${FAUST_PREFIX:-$HOME/.local}"
 src="${FAUST_SRC:-$here/faust}"
-origin="${FAUST_ORIGIN:-https://github.com/grame-cncm/faust}"
+origin="${env_origin:-${FAUST_ORIGIN:-https://github.com/grame-cncm/faust}}"
 llvm_config="${LLVM_CONFIG:-llvm-config-$FAUST_LLVM_VERSION}"
 
 while [ $# -gt 0 ]; do
