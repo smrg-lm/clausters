@@ -374,6 +374,44 @@ pub fn wt_interp(table: &[f32], k: usize, frac: f32) -> f32 {
     x0 + (1.0 + frac) * x1
 }
 
+/// `prepare_partconv`: the impulse response in `src` (channel 0) partitioned
+/// and forward-transformed into the [`crate::dsp::conv::layout`] a `Conv`
+/// UGen reads: `[L, P, P × fft_size packed spectra]`, `L = fft_size / 2`.
+/// The partition count is what fits both the source and the target capacity
+/// (`len` samples); a target too small for even one partition yields an
+/// all-zero (invalid) kernel, which `Conv` plays as silence.
+fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
+    use crate::dsp::conv::layout;
+
+    let mut data = vec![0.0f32; len];
+    let part = fft_size / 2;
+    let channels = src.channels().max(1);
+    let ir_len = src.data().len() / channels;
+    let parts_src = ir_len.div_ceil(part.max(1));
+    let parts_cap = len.saturating_sub(layout::HEADER) / fft_size;
+    let parts = parts_src.min(parts_cap);
+    if part == 0 || parts == 0 {
+        return data;
+    }
+    data[0] = part as f32;
+    data[1] = parts as f32;
+    let mut scratch = vec![0.0f32; fft_size];
+    for p in 0..parts {
+        scratch.fill(0.0);
+        for (k, slot) in scratch.iter_mut().enumerate().take(part) {
+            let frame = p * part + k;
+            if frame >= ir_len {
+                break;
+            }
+            // Channel 0 of an interleaved buffer.
+            *slot = src.data()[frame * channels];
+        }
+        let out = &mut data[layout::HEADER + p * fft_size..layout::HEADER + (p + 1) * fft_size];
+        clausters_core::fft::rfft_into(&scratch, out);
+    }
+    data
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,42 +455,4 @@ mod tests {
             assert!((v - 0.7).abs() < 1e-6);
         }
     }
-}
-
-/// `prepare_partconv`: the impulse response in `src` (channel 0) partitioned
-/// and forward-transformed into the [`crate::dsp::conv::layout`] a `Conv`
-/// UGen reads: `[L, P, P × fft_size packed spectra]`, `L = fft_size / 2`.
-/// The partition count is what fits both the source and the target capacity
-/// (`len` samples); a target too small for even one partition yields an
-/// all-zero (invalid) kernel, which `Conv` plays as silence.
-fn prepare_partconv(src: &Buffer, fft_size: usize, len: usize) -> Vec<f32> {
-    use crate::dsp::conv::layout;
-
-    let mut data = vec![0.0f32; len];
-    let part = fft_size / 2;
-    let channels = src.channels().max(1);
-    let ir_len = src.data().len() / channels;
-    let parts_src = ir_len.div_ceil(part.max(1));
-    let parts_cap = len.saturating_sub(layout::HEADER) / fft_size;
-    let parts = parts_src.min(parts_cap);
-    if part == 0 || parts == 0 {
-        return data;
-    }
-    data[0] = part as f32;
-    data[1] = parts as f32;
-    let mut scratch = vec![0.0f32; fft_size];
-    for p in 0..parts {
-        scratch.fill(0.0);
-        for k in 0..part {
-            let frame = p * part + k;
-            if frame >= ir_len {
-                break;
-            }
-            // Channel 0 of an interleaved buffer.
-            scratch[k] = src.data()[frame * channels];
-        }
-        let out = &mut data[layout::HEADER + p * fft_size..layout::HEADER + (p + 1) * fft_size];
-        clausters_core::fft::rfft_into(&scratch, out);
-    }
-    data
 }

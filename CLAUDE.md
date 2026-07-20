@@ -144,6 +144,39 @@ the source of truth. (Likewise keep the build green: the core must compile and
 test with any combination of the def-family features `synth`/`faust` — both,
 either alone, or neither — and without the `embed` feature.)
 
+**Clippy must come back clean, always — zero warnings, not "no new ones".**
+Run `cargo clippy --all-targets` before committing Rust and fix whatever it
+reports, **including warnings the commit did not introduce**. A warning that is
+genuinely wrong gets a scoped `#[allow(...)]` **with a comment saying why** —
+never a silent pass.
+
+Why this is a standing rule rather than a one-off cleanup: CI pins nothing
+(`dtolnay/rust-toolchain@stable`, no `rust-toolchain.toml`), so **every rustc
+release can turn a green tree red with no code change** — a new lint, or an
+existing one widened, lands on code nobody touched. So a clean tree is not a
+state you reach once; expect to find warnings you did not cause, and treat that
+as normal rather than as a sign something is wrong. Left alone they compound:
+one stale warning becomes background noise, the next hides behind it, and the
+output stops being read.
+
+Clearing warnings that predate the work at hand goes in its **own commit**,
+separate from the feature, so the feature's diff stays readable.
+
+Note CI lints `--workspace --all-targets` and the GUI crate, but **not** the
+def-family feature matrix — a warning that only appears under
+`--no-default-features` (or under one family alone) will not be caught there.
+Run the matrix locally when the change touches feature-gated code:
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets                                  # default features
+cargo clippy --all-targets --no-default-features            # neither family
+cargo clippy --all-targets --no-default-features --features synth
+cargo clippy --all-targets --no-default-features --features faust
+cargo clippy --workspace --all-targets                      # core, ffi, midi
+(cd clients/gui && cargo clippy --all-targets)              # the GUI host
+```
+
 ## Versioning: SemVer of the package vs. the binary ABI counters
 
 Three version numbers exist and answer **different** questions — keep them
