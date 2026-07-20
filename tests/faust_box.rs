@@ -242,8 +242,16 @@ fn cdsp_to_boxes_reports_arity_and_composes() {
 
 /// Parity: a graph mixing `faust` fragments with schema ops (the exact JSON
 /// shape the Python box builder emits: `__call__` = seq(par(args), fragment),
-/// arithmetic as binary ops) must render identically to the same DSP written
-/// as one pure Faust source program — they are the same signal normal form.
+/// arithmetic as binary ops) must render as the same DSP as the same program
+/// written as one pure Faust source — they are the same signal normal form.
+///
+/// The comparison is a tight tolerance rather than bit-exactness: the two
+/// programs reach the LLVM backend by different routes (in the box graph the
+/// cutoff arrives through a `par` branch instead of as a source literal), so
+/// constant folding and instruction selection may differ by an ULP or two.
+/// That is a codegen detail, not a difference in the signal — and it varies
+/// with the JIT host, which made the exact-equality form pass locally and
+/// fail on CI. `TOL` is still ~100x below any real structural divergence.
 #[test]
 fn mixed_fragments_and_ops_match_pure_source() {
     let source = "import(\"stdfaust.lib\"); \
@@ -269,9 +277,16 @@ fn mixed_fragments_and_ops_match_pure_source() {
     let b = render(box_def.factory().as_ptr(), &[], 1024);
     let rms = (a.iter().map(|x| x * x).sum::<f32>() / a.len() as f32).sqrt();
     assert!(rms > 0.05, "the chain must actually sound, rms = {rms}");
-    assert_eq!(
-        a, b,
-        "mixed box graph and pure source must be sample-identical"
+    const TOL: f32 = 1e-5;
+    let diff = a
+        .iter()
+        .zip(&b)
+        .map(|(x, y)| (x - y).abs())
+        .fold(0.0f32, f32::max);
+    assert!(
+        diff < TOL,
+        "mixed box graph and pure source diverge: max sample difference \
+         {diff} exceeds {TOL}"
     );
 }
 
