@@ -739,6 +739,22 @@ mod osc {
             ]
         );
 
+        // M30: with no argument, /b_query lists the allocated buffers in the
+        // same four-arg shape — how a patcher discovers buffers it never
+        // allocated itself (the pool outlives any one client).
+        send("/b_query", vec![]);
+        let listed = recv_until("/b_info");
+        assert_eq!(
+            listed.args,
+            vec![
+                OscType::Int(0),
+                OscType::Int(50),
+                OscType::Int(1),
+                OscType::Float(SR),
+            ],
+            "only the allocated slot is listed"
+        );
+
         // Play it through a /d_recv'd PlayBuf def, looping; the engine is
         // ticked from here, so the output is deterministic.
         let def = json!({
@@ -798,6 +814,12 @@ mod osc {
         send("/b_query", vec![OscType::Int(0)]);
         let infos = recv_until("/b_info");
         assert_eq!(infos.args[1], OscType::Int(0));
+        // ...and the freed slot drops out of the listing form entirely.
+        send("/b_query", vec![]);
+        assert!(
+            recv_until("/b_info").args.is_empty(),
+            "a freed buffer is not listed"
+        );
 
         // Errors come back as /fail: unallocated read, bad index.
         send(

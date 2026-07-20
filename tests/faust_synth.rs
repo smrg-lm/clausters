@@ -430,6 +430,24 @@ mod osc {
         let done = recv_until("/done");
         assert_eq!(done.args[1], OscType::String("fsine".into()));
 
+        // M30: /d_query reports the compiled def's parameter surface, which for
+        // a FaustDef carries its declared range (init/min/max/step) after the
+        // shared (name, default, rate) triple. The reserved out/in bus controls
+        // are engine plumbing and stay out of it.
+        send("/d_query", vec![OscType::String("fsine".into())]);
+        let info = recv_until("/d_info");
+        assert_eq!(info.args[0], OscType::String("fsine".into()));
+        assert_eq!(info.args[1], OscType::String("faust".into()));
+        assert_eq!(info.args[2], OscType::Int(2), "freq and amp, not out/in");
+        assert_eq!(info.args[3], OscType::String("amp".into()));
+        assert_eq!(info.args[4], OscType::Float(0.2), "its init");
+        assert_eq!(info.args[5], OscType::String("kr".into()));
+        assert_eq!(info.args[6], OscType::Float(0.0), "min");
+        assert_eq!(info.args[7], OscType::Float(1.0), "max");
+        assert_eq!(info.args[9], OscType::String("freq".into()));
+        assert_eq!(info.args[10], OscType::Float(440.0));
+        recv_until("/done");
+
         // Instantiate with a named control, tick the engine, listen.
         send(
             "/s_new",

@@ -1280,3 +1280,42 @@ little enough that the contents can never be lost off-screen. This is the same
 general-first rule the milestone states, applied to the bounds themselves: the
 strict clamp is the *constrained* behavior, and letting the general case
 inherit it gave the plane a restriction only the special case means.
+
+## The UGen registry owns its input names; the client tables become mirrors
+
+`/u_query` needed the catalog to report each UGen's inputs, and the descriptors
+in `src/dsp/registry.rs` carried only an *arity* — a count. The names existed,
+but in two places that no client can consult: the catalog table in
+`docs/schemas.md` (prose) and the parameter names of the lowercase callables in
+`clients/python/clausters/defs/ugens.py` (one language's source). A second
+client — the planned JS/TS one, the wasm host — would have had to copy them a
+third time, which is exactly the drift the introspection verbs exist to stop.
+
+So the descriptor grew `inputs: &'static [UGenInput]` and the sixty rows were
+filled by reconciling the two existing sources. **The wire is unchanged**: a def
+still lists input *values* positionally and no input is ever addressed by name,
+the compiler still validates by arity, and no existing def behaves differently.
+The names are descriptive metadata — what a palette labels an inlet with, what
+an error message can say instead of "input 2" — published through a typed verb
+rather than transcribed.
+
+Two consequences worth recording:
+
+**The Python signatures are not the wire order, and could not simply be
+harvested.** Nine kinds order their parameters for ergonomics instead: what is
+required comes first and the static (non-signal) fields are keyword-only, so
+`send_reply(trig, *values, cmd, reply_id)` fronts a wire order of
+`[trig, reply_id, *values]`, and `disk_in(path, chan, loop)` has two parameters
+that are not inputs at all. The registry names the **wire** order, and the
+contrast test (`clients/python/tests/test_session.py`) carries those nine in an
+explicit exception list with a reason each, asserting the list is exact — so a
+tenth divergence has to be declared deliberately rather than quietly weakening
+the check.
+
+**`ugens.py` stays hand-written.** Generating it from the catalog would end the
+drift by construction, but the callables carry hand-written docstrings that are
+the client's real teaching surface, and generation would add a build step to a
+pure-Python package. The contrast test buys the same guarantee at the cost of
+one test: for every kind whose signature maps 1:1 onto the wire, names and
+defaults must agree with what the server reports (compared at `f32` precision,
+since the server's defaults arrive widened to `f64`).

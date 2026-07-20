@@ -349,3 +349,97 @@ def test_parse_n_info_synth_and_group():
     group = [1000, 0, -1, -1, 1, 1001, 1001]
     g = _parse_n_info(group)
     assert g["is_group"] and g["head"] == 1001 and g["tail"] == 1001
+
+
+# ---- server introspection (/d_query, /b_query, /u_query) ----
+
+def test_defs_query_collects_until_done():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    # Two /d_info replies then the /done terminator that closes the batch.
+    iface.queue_reply("/d_info", "one", "synth", 1, "freq", 440.0, "kr")
+    iface.queue_reply("/d_info", "two", "graph", 0)
+    iface.queue_reply("/done", "/d_query")
+
+    infos = srv.query_defs()
+    assert iface.sent[-1] == ("/d_query", [])
+    assert [d.name for d in infos] == ["one", "two"]
+    assert [d.family for d in infos] == ["synth", "graph"]
+    assert infos[0].controls[0].name == "freq"
+    assert infos[0].controls[0].default == 440.0
+    assert infos[0].controls[0].rate == "kr"
+
+
+def test_defs_query_passes_names_and_flags_unknown():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/d_info", "nope", "", 0)
+    iface.queue_reply("/done", "/d_query")
+
+    infos = srv.query_defs("nope")
+    assert iface.sent[-1] == ("/d_query", ["nope"])
+    # An unknown def is reported, not raised: one bad name never fails a batch.
+    assert infos[0].exists is False
+    assert infos[0].controls == []
+
+
+def test_parse_def_info_faust_ranges_and_graph_targets():
+    from clausters.defs.server import _parse_def_info
+
+    # A faust param appends (min, max, step) after the shared triple...
+    faust = _parse_def_info(["f", "faust", 1, "amp", 0.2, "kr", 0.0, 1.0, 0.001])
+    assert faust.controls[0].min == 0.0 and faust.controls[0].max == 1.0
+    assert faust.controls[0].step == 0.001
+
+    # ...and a graph port appends its target count and the tuples it drives.
+    graph = _parse_def_info(
+        ["g", "graph", 1, "gain", 0.5, "kr", 2,
+         0, "level", 1.0, 0.0,
+         1, "amp", 0.5, 0.25]
+    )
+    port = graph.controls[0]
+    assert port.default == 0.5
+    assert port.targets == ((0, "level", 1.0, 0.0), (1, "amp", 0.5, 0.25))
+    # The other families declare no range.
+    assert port.min is None
+
+
+def test_ugens_query_parses_signatures():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/u_info", "Sine", 1, "ar", "kr,ar", "normal", "", 0, "", "",
+                      1, "freq", 440.0)
+    iface.queue_reply("/u_info", "EnvGen", -1, "ar", "ar", "normal", "", 0, "", "",
+                      2, "gate", 1.0, "level_scale", 1.0)
+    iface.queue_reply("/done", "/u_query")
+
+    ugens = srv.query_ugens()
+    assert iface.sent[-1] == ("/u_query", [])
+    sine, env = ugens
+    assert sine.arity == 1 and sine.variadic is False
+    assert sine.rates == ("kr", "ar") and sine.default_rate == "ar"
+    assert [(i.name, i.default) for i in sine.inputs] == [("freq", 440.0)]
+    # A variadic kind names only its fixed head.
+    assert env.variadic is True and env.arity == -1
+    assert [i.name for i in env.inputs] == ["gate", "level_scale"]
+
+
+def test_buffers_query_lists_allocated_slots():
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/b_info", 0, 50, 1, 48000.0, 3, 100, 2, 44100.0)
+
+    bufs = srv.query_buffers()
+    assert iface.sent[-1] == ("/b_query", [])
+    assert [(b.bufnum, b.frames, b.channels) for b in bufs] == [(0, 50, 1), (3, 100, 2)]
+    assert bufs[1].sample_rate == 44100.0
+
+
+def test_introspection_batch_raises_on_fail():
+    from clausters.errors import CommandError
+
+    iface = _FakeInterface()
+    srv = Server(interface=iface)
+    iface.queue_reply("/fail", "/d_query", "expected string def names")
+    with pytest.raises(CommandError):
+        srv.query_defs()

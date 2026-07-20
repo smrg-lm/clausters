@@ -1999,6 +1999,133 @@ impl CmdTranslator {
         }
     }
 
+    /// `/d_info` arguments for `/d_query` (M30), one vector per def — the
+    /// loaded defs and their control surface, which is what a patcher wires.
+    ///
+    /// With `names`, details exactly those (an unknown one comes back with an
+    /// empty family and no controls, the way `/b_query` reports an unallocated
+    /// buffer as zeros rather than failing the whole batch); with `None`, every
+    /// loaded def, ordered by family then name so the reply is deterministic.
+    ///
+    /// Layout per def: `name, family, numControls`, then per control
+    /// `name, default, rate` — `rate` naming the same `kr`/`tr`/`ir` control
+    /// types a `/d_recv` spec declares. A **faust** def appends `min, max,
+    /// step` (its params carry a range; the reserved `out`/`in` bus controls
+    /// are engine plumbing and stay out of the reported surface). A **graph**
+    /// def reports its surface **ports** instead, each followed by
+    /// `numTargets` and per target `member, control, mul, add` — the scaling
+    /// the port applies inside, so a level-1 patch can draw the port's real
+    /// connections.
+    pub fn def_info(&self, names: Option<&[String]>) -> Vec<Vec<OscType>> {
+        match names {
+            Some(names) => names.iter().map(|n| self.one_def_info(n)).collect(),
+            None => {
+                let mut all: Vec<String> = Vec::new();
+                #[cfg(feature = "synth")]
+                all.extend(self.synth_defs.keys().cloned());
+                #[cfg(feature = "faust")]
+                all.extend(self.faust_defs.keys().cloned());
+                all.extend(self.graph_defs.keys().cloned());
+                all.sort();
+                all.iter().map(|n| self.one_def_info(n)).collect()
+            }
+        }
+    }
+
+    fn one_def_info(&self, name: &str) -> Vec<OscType> {
+        #[cfg(feature = "synth")]
+        if let Some(def) = self.synth_defs.get(name) {
+            let mut args = vec![
+                OscType::String(name.into()),
+                OscType::String("synth".into()),
+                OscType::Int(def.control_names.len() as i32),
+            ];
+            for (i, cname) in def.control_names.iter().enumerate() {
+                args.push(OscType::String(cname.clone()));
+                args.push(OscType::Float(
+                    def.control_defaults.get(i).copied().unwrap_or(0.0),
+                ));
+                args.push(OscType::String(
+                    match def.control_types.get(i).copied().unwrap_or_default() {
+                        crate::synthdef::ControlType::Control => "kr",
+                        crate::synthdef::ControlType::Trigger => "tr",
+                        crate::synthdef::ControlType::Scalar => "ir",
+                    }
+                    .into(),
+                ));
+            }
+            return args;
+        }
+        #[cfg(feature = "faust")]
+        if let Some(def) = self.faust_defs.get(name) {
+            // The reserved `out`/`in` bus controls are engine plumbing, not a
+            // parameter anyone patches, so the reported surface is the UI
+            // params only. A Faust param carries its own range, appended after
+            // the shared triple.
+            let mut args = vec![
+                OscType::String(name.into()),
+                OscType::String("faust".into()),
+                OscType::Int(def.params.len() as i32),
+            ];
+            for p in &def.params {
+                args.push(OscType::String(p.name.clone()));
+                args.push(OscType::Float(p.init));
+                args.push(OscType::String("kr".into()));
+                args.push(OscType::Float(p.min));
+                args.push(OscType::Float(p.max));
+                args.push(OscType::Float(p.step));
+            }
+            return args;
+        }
+        if let Some(spec) = self.graph_defs.get(name) {
+            let mut ports: Vec<&String> = spec.surface.keys().collect();
+            ports.sort();
+            let mut args = vec![
+                OscType::String(name.into()),
+                OscType::String("graph".into()),
+                OscType::Int(ports.len() as i32),
+            ];
+            for port in ports {
+                let targets = &spec.surface[port];
+                args.push(OscType::String(port.clone()));
+                args.push(OscType::Float(
+                    spec.defaults.get(port).copied().unwrap_or(0.0),
+                ));
+                args.push(OscType::String("kr".into()));
+                args.push(OscType::Int(targets.len() as i32));
+                for t in targets {
+                    args.push(OscType::Int(t.member as i32));
+                    args.push(OscType::String(t.control.clone()));
+                    args.push(OscType::Float(t.mul));
+                    args.push(OscType::Float(t.add));
+                }
+            }
+            return args;
+        }
+        vec![
+            OscType::String(name.into()),
+            OscType::String(String::new()),
+            OscType::Int(0),
+        ]
+    }
+
+    /// `/b_info` arguments for an argument-less `/b_query` (M30): every
+    /// **allocated** buffer, four args each (`bufnum, frames, channels,
+    /// sampleRate`) — the same shape the per-index form replies with, so one
+    /// parser reads both.
+    pub fn buffer_list(&self) -> Vec<OscType> {
+        let mut args = Vec::new();
+        for (index, slot) in self.buffers.iter().enumerate() {
+            if let Some(buf) = slot {
+                args.push(OscType::Int(index as i32));
+                args.push(OscType::Int(buf.frames() as i32));
+                args.push(OscType::Int(buf.channels() as i32));
+                args.push(OscType::Float(buf.sample_rate() as f32));
+            }
+        }
+        args
+    }
+
     /// `/g_queryTree.reply` arguments, scsynth-compatible: `flag`, the
     /// queried group and its child count, then depth-first per node: ID and
     /// child count (`-1` for synths), the def name for synths, and — with

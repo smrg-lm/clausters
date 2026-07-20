@@ -32,7 +32,16 @@ from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .graphdef import GraphDef
 from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
-from .server import Server, ServerInfo, ServerOptions
+from .server import (
+    BufferInfo,
+    ControlInfo,
+    DefInfo,
+    Server,
+    ServerInfo,
+    ServerOptions,
+    UgenInfo,
+    UgenInput,
+)
 from .signals import Signal
 from .synthdef import SynthDef
 from . import pv_expr
@@ -189,6 +198,11 @@ __all__ = [
     "Server",
     "ServerOptions",
     "ServerInfo",
+    "DefInfo",
+    "ControlInfo",
+    "BufferInfo",
+    "UgenInfo",
+    "UgenInput",
     "UdpSampleClock",
     "SampleClockModel",
 ]

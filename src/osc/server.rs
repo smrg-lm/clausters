@@ -1117,6 +1117,8 @@ impl OscServer {
             "/b_gen" => self.handle_b_gen(&msg, from),
             "/b_free" => self.handle_b_cmd(&msg, from, "/b_free"),
             "/b_query" => self.handle_b_query(&msg, from),
+            "/d_query" => self.handle_d_query(&msg, from),
+            "/u_query" => self.handle_u_query(&msg, from),
             "/b_get" => self.handle_b_get(&msg, from),
             "/b_getn" => self.handle_b_getn(&msg, from),
             "/b_export" => self.handle_b_export(&msg, from),
@@ -2322,6 +2324,13 @@ impl OscServer {
     /// sampleRate) per buffer; zeros for unallocated indices. Synchronous,
     /// answered from the mirror (= state as of the last completed command).
     fn handle_b_query(&mut self, msg: &OscMessage, from: ClientId) {
+        // No argument lists every allocated buffer (M30): the patcher shows
+        // real buffers as objects, and a client that never allocated them (the
+        // pool outlives a session) has no other way to learn they exist.
+        if msg.args.is_empty() {
+            let args = self.translator.buffer_list();
+            return self.reply(from, "/b_info", args);
+        }
         let mut args = Vec::with_capacity(msg.args.len() * 4);
         for arg in &msg.args {
             let OscType::Int(index) = arg else {
@@ -2338,6 +2347,54 @@ impl OscServer {
             ));
         }
         self.reply(from, "/b_info", args);
+    }
+
+    /// `/d_query [name...]` → one `/d_info` per def, then `/done "/d_query"`
+    /// (M30). No argument lists every loaded def. The reply is one message per
+    /// def because the control surface is variable-length: an aggregate would
+    /// nest, and a large catalog would outgrow a UDP datagram.
+    ///
+    /// Retrieval only — the def store persists across sessions, so this is how
+    /// a client learns what a running server actually holds.
+    fn handle_d_query(&mut self, msg: &OscMessage, from: ClientId) {
+        let mut names = Vec::with_capacity(msg.args.len());
+        for arg in &msg.args {
+            let OscType::String(name) = arg else {
+                return self.fail(from, "/d_query", "expected string def names");
+            };
+            names.push(name.clone());
+        }
+        let requested = (!names.is_empty()).then_some(names.as_slice());
+        for args in self.translator.def_info(requested) {
+            self.reply(from, "/d_info", args);
+        }
+        self.reply(from, "/done", vec![OscType::String("/d_query".into())]);
+    }
+
+    /// `/u_query [kind...]` → one `/u_info` per UGen, then `/done "/u_query"`
+    /// (M30): the catalog straight from the `dsp::registry` descriptors, so a
+    /// palette derives from the server's truth instead of a client-side copy.
+    /// An unknown kind replies with an empty rate set and no inputs.
+    ///
+    /// Faust primitives are deliberately absent: that vocabulary is Faust's
+    /// own and already lives in the client builders.
+    ///
+    /// Built without the `synth` feature there is no UGen catalog at all, and
+    /// the honest reply is an **empty** listing rather than a `/fail` — the
+    /// same way `/d_query` on such a build simply lists no synth defs.
+    fn handle_u_query(&mut self, msg: &OscMessage, from: ClientId) {
+        let mut names = Vec::with_capacity(msg.args.len());
+        for arg in &msg.args {
+            let OscType::String(name) = arg else {
+                return self.fail(from, "/u_query", "expected string UGen kinds");
+            };
+            names.push(name.clone());
+        }
+        #[cfg(feature = "synth")]
+        for args in ugen_infos(&names) {
+            self.reply(from, "/u_info", args);
+        }
+        self.reply(from, "/done", vec![OscType::String("/u_query".into())]);
     }
 
     /// `/b_get bufnum index...` → `/b_set bufnum index value...`: read single
@@ -2531,6 +2588,100 @@ impl OscServer {
 /// The raw `SynthDefSpec` JSON of a `/d_recv` message (blob or string form),
 /// for persisting it verbatim. Mirrors the argument parsing in
 /// [`CmdTranslator::d_recv`].
+/// The `/u_info` argument vectors for a `/u_query` (M30): the whole catalog
+/// when `names` is empty, otherwise one per requested kind — an unknown one
+/// coming back with an empty rate set and no inputs, so a batch never fails
+/// wholesale (the `/b_query` convention).
+#[cfg(feature = "synth")]
+fn ugen_infos(names: &[String]) -> Vec<Vec<OscType>> {
+    if names.is_empty() {
+        return crate::dsp::registry::all().iter().map(ugen_info).collect();
+    }
+    names
+        .iter()
+        .map(|name| match crate::dsp::registry::lookup(name) {
+            Some(d) => ugen_info(d),
+            None => vec![
+                OscType::String(name.clone()),
+                OscType::Int(0),
+                OscType::String(String::new()),
+                OscType::String(String::new()),
+                OscType::String(String::new()),
+                OscType::String(String::new()),
+                OscType::Int(0),
+                OscType::String(String::new()),
+                OscType::String(String::new()),
+                OscType::Int(0),
+            ],
+        })
+        .collect()
+}
+
+/// One `/u_info` argument vector from a catalog descriptor (M30).
+///
+/// Layout: `name, arity, defaultRate, rates, exec, bus, needsPath, opFamily,
+/// spectral, numInputs` then per input `name, default`. `arity` is `-1` for a
+/// variadic kind, whose named inputs are its fixed head only. The enum-valued
+/// fields are lowercase names, `""` for the "not applicable" variant.
+#[cfg(feature = "synth")]
+fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
+    use crate::dsp::registry::{Arity, BusRole, ExecMode, OpFamily, SpectralRole};
+    let rates: Vec<&str> = d.rates.iter().map(|r| r.as_str()).collect();
+    let mut args = vec![
+        OscType::String(d.name.into()),
+        OscType::Int(match d.arity {
+            Arity::Fixed(n) => n as i32,
+            Arity::Variadic => -1,
+        }),
+        OscType::String(d.default_rate.as_str().into()),
+        OscType::String(rates.join(",")),
+        OscType::String(
+            match d.exec {
+                ExecMode::Normal => "normal",
+                ExecMode::LocalIn => "local_in",
+                ExecMode::LocalOut => "local_out",
+                ExecMode::DemandDriver => "demand_driver",
+                ExecMode::Spectral => "spectral",
+            }
+            .into(),
+        ),
+        OscType::String(
+            match d.bus {
+                BusRole::None => "",
+                BusRole::Read => "read",
+                BusRole::Write => "write",
+                BusRole::ReadWrite => "read_write",
+            }
+            .into(),
+        ),
+        OscType::Int(d.needs_path as i32),
+        OscType::String(
+            match d.op_family {
+                None => "",
+                Some(OpFamily::Unary) => "unary",
+                Some(OpFamily::Binary) => "binary",
+            }
+            .into(),
+        ),
+        OscType::String(
+            match d.spectral {
+                SpectralRole::None => "",
+                SpectralRole::Source => "source",
+                SpectralRole::Filter => "filter",
+                SpectralRole::Filter2 => "filter2",
+                SpectralRole::Sink => "sink",
+            }
+            .into(),
+        ),
+        OscType::Int(d.inputs.len() as i32),
+    ];
+    for i in d.inputs {
+        args.push(OscType::String(i.name.into()));
+        args.push(OscType::Float(i.default));
+    }
+    args
+}
+
 fn synthdef_spec_bytes(args: &[OscType]) -> Option<&[u8]> {
     match args.first() {
         Some(OscType::Blob(b)) => Some(b),

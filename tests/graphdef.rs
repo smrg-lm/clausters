@@ -561,3 +561,50 @@ fn midi_bind_to_a_graphdef_plays_voices() {
         .unwrap();
     assert!(t.graph_instances.is_empty());
 }
+
+/// M30: `/d_query` reports a GraphDef's **ports** — the named surface, which
+/// is what a level-1 patch wires — each with its default and the inner targets
+/// it drives, scaling included. Built at the translator, where the def tables
+/// live; the server handler is a thin dispatch over this.
+#[test]
+fn def_info_reports_graph_ports_with_their_targets() {
+    let mut t = CmdTranslator::new(SR);
+    load_defs(&mut t);
+
+    let infos = t.def_info(Some(&["chain".to_string()]));
+    assert_eq!(infos.len(), 1);
+    let a = &infos[0];
+    assert_eq!(a[0], OscType::String("chain".into()));
+    assert_eq!(a[1], OscType::String("graph".into()));
+    assert_eq!(a[2], OscType::Int(1), "one surface port");
+    // port name, default, rate, numTargets, then (member, control, mul, add).
+    assert_eq!(a[3], OscType::String("gain".into()));
+    assert_eq!(a[4], OscType::Float(0.5), "the def's declared default");
+    assert_eq!(a[5], OscType::String("kr".into()));
+    assert_eq!(a[6], OscType::Int(1), "one target");
+    assert_eq!(a[7], OscType::Int(0), "member 0 (gsrc)");
+    assert_eq!(a[8], OscType::String("level".into()));
+    assert_eq!(a[9], OscType::Float(1.0), "identity mul");
+    assert_eq!(a[10], OscType::Float(0.0), "identity add");
+}
+
+/// The listing form spans all three families at once: the member UGen defs and
+/// the GraphDef built over them come back from one query, each tagged.
+#[test]
+fn def_info_lists_every_family_together() {
+    let mut t = CmdTranslator::new(SR);
+    load_defs(&mut t);
+
+    let by_name: std::collections::HashMap<String, String> = t
+        .def_info(None)
+        .iter()
+        .map(|a| match (&a[0], &a[1]) {
+            (OscType::String(n), OscType::String(f)) => (n.clone(), f.clone()),
+            other => panic!("expected (name, family), got {other:?}"),
+        })
+        .collect();
+
+    assert_eq!(by_name.get("gsrc").map(String::as_str), Some("synth"));
+    assert_eq!(by_name.get("gsink").map(String::as_str), Some("synth"));
+    assert_eq!(by_name.get("chain").map(String::as_str), Some("graph"));
+}

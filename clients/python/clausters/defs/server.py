@@ -322,6 +322,156 @@ class ServerInfo:
     max_frame: int = 65536
 
 
+@dataclass
+class ControlInfo:
+    """One entry of a def's control surface, as `Server.defs` reports it.
+
+    ``rate`` is the control type the def declared: ``"kr"`` (a plain control),
+    ``"tr"`` (a one-block trigger) or ``"ir"`` (a scalar frozen at init) — a
+    different vocabulary from the calculation rates `UgenInfo` reports, which
+    also include ``"ar"`` and ``"dr"``. Neither of those can be a control: an
+    audio-rate value is mapped in from a bus, and a demand value is pulled by a
+    driver rather than set. A
+    FaustDef's params also carry ``min``/``max``/``step``; they are ``None`` for
+    the other families, which declare no range. On a GraphDef this describes a
+    surface **port**, and ``targets`` lists the ``(member, control, mul, add)``
+    it drives inside — the scaling included, so a patch can draw the port's
+    real connections."""
+
+    name: str
+    default: float
+    rate: str = "kr"
+    min: "float | None" = None
+    max: "float | None" = None
+    step: "float | None" = None
+    targets: tuple = ()
+
+
+@dataclass
+class DefInfo:
+    """A loaded def as `Server.defs` reports it: its name, its ``family``
+    (``"synth"``, ``"faust"`` or ``"graph"``) and its control surface.
+
+    A def the server does not hold comes back with an empty ``family`` and no
+    controls, rather than raising — one unknown name never fails a batch."""
+
+    name: str
+    family: str
+    controls: "list[ControlInfo]"
+
+    @property
+    def exists(self) -> bool:
+        """Whether the server actually holds this def."""
+        return bool(self.family)
+
+
+@dataclass
+class BufferInfo:
+    """An allocated buffer as `Server.buffers` reports it."""
+
+    bufnum: int
+    frames: int
+    channels: int
+    sample_rate: float
+
+
+@dataclass
+class UgenInput:
+    """One named input slot of a UGen, in **wire order**.
+
+    The wire is positional — a def lists input values, it never names them — so
+    this is what a palette labels an inlet with, and ``default`` is what to
+    offer when the user leaves the slot alone."""
+
+    name: str
+    default: float
+
+
+@dataclass
+class UgenInfo:
+    """A UGen kind as `Server.ugens` reports it, straight from the server's
+    catalog.
+
+    ``arity`` is the input count, or ``-1`` for a variadic kind — whose
+    ``inputs`` then name only the fixed head (``EnvGen``'s five before the
+    envelope array). ``rates`` are the rates the kind may be instantiated at
+    and ``default_rate`` the one a def gets by omitting ``rate``. ``exec``,
+    ``bus``, ``op_family`` and ``spectral`` expose the compiler's own
+    classification; the ones that do not apply are empty strings."""
+
+    name: str
+    arity: int
+    default_rate: str
+    rates: "tuple[str, ...]"
+    exec: str
+    bus: str
+    needs_path: bool
+    op_family: str
+    spectral: str
+    inputs: "list[UgenInput]"
+
+    @property
+    def variadic(self) -> bool:
+        return self.arity < 0
+
+
+def _parse_def_info(args) -> DefInfo:
+    """One ``/d_info`` reply: ``name, family, numControls`` then per control
+    ``name, default, rate`` — plus ``min, max, step`` for a faust param, or
+    ``numTargets`` and the target tuples for a graph port."""
+    name, family, count = str(args[0]), str(args[1]), int(args[2])
+    controls, i = [], 3
+    for _ in range(count):
+        c = ControlInfo(name=str(args[i]), default=float(args[i + 1]),
+                        rate=str(args[i + 2]))
+        i += 3
+        if family == "faust":
+            c.min, c.max, c.step = (float(args[i]), float(args[i + 1]),
+                                    float(args[i + 2]))
+            i += 3
+        elif family == "graph":
+            n_targets = int(args[i])
+            i += 1
+            targets = []
+            for _ in range(n_targets):
+                targets.append((int(args[i]), str(args[i + 1]),
+                                float(args[i + 2]), float(args[i + 3])))
+                i += 4
+            c.targets = tuple(targets)
+        controls.append(c)
+    return DefInfo(name=name, family=family, controls=controls)
+
+
+def _parse_ugen_info(args) -> UgenInfo:
+    """One ``/u_info`` reply: ten fixed fields then ``(name, default)`` per
+    named input."""
+    count = int(args[9])
+    inputs = [UgenInput(name=str(args[10 + 2 * k]), default=float(args[11 + 2 * k]))
+              for k in range(count)]
+    rates = str(args[3])
+    return UgenInfo(
+        name=str(args[0]),
+        arity=int(args[1]),
+        default_rate=str(args[2]),
+        rates=tuple(r for r in rates.split(",") if r),
+        exec=str(args[4]),
+        bus=str(args[5]),
+        needs_path=bool(int(args[6])),
+        op_family=str(args[7]),
+        spectral=str(args[8]),
+        inputs=inputs,
+    )
+
+
+def _parse_buffer_list(args) -> "list[BufferInfo]":
+    """A ``/b_info`` reply, four args per buffer."""
+    return [
+        BufferInfo(bufnum=int(args[i]), frames=int(args[i + 1]),
+                   channels=int(args[i + 2]), sample_rate=float(args[i + 3]))
+        for i in range(0, len(args) - 3, 4)
+    ]
+
+
 class TapAllocator:
     """The server's audio-tap rings as a client-side registry.
 
@@ -617,6 +767,64 @@ class Server:
             if expect is None or raddr in expect:
                 return raddr, rargs
         raise ReplyTimeout(f"no reply to {addr}")
+
+    def _request_batch(self, addr, *args, reply: str, timeout: float = 5.0):
+        """Sends `addr` and collects every `reply` message until the batch's
+        ``/done`` terminator (the shape the introspection queries use, whose
+        result is a variable number of messages). Returns a list of arg lists.
+
+        Blocking, RT only — like every query here, never call it from a
+        routine."""
+        self.send_msg(addr, *args)
+        out = []
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            packet = self.interface.recv(timeout)
+            if packet is None:
+                continue
+            raddr, rargs = _osclib.decode(packet)
+            if raddr == "/done" and rargs and str(rargs[0]) == addr:
+                return out
+            if raddr == "/fail" and rargs and str(rargs[0]) == addr:
+                raise CommandError(f"{addr} failed: {rargs}")
+            if raddr == reply:
+                out.append(rargs)
+        raise ReplyTimeout(f"no reply to {addr}")
+
+    # ---- server introspection: what a running server actually holds ----
+
+    def query_defs(self, *names, timeout: float = 5.0) -> "list[DefInfo]":
+        """The defs the server holds, each with its control surface
+        (``/d_query``). With `names`, details exactly those — an unknown one
+        comes back with an empty ``family`` (see `DefInfo.exists`) rather than
+        raising; with no argument, every loaded def of every family.
+
+        The def store persists across restarts, so a server may well hold defs
+        this client never sent: this is how you find out. Blocking, RT only —
+        never call it from a routine."""
+        rows = self._request_batch("/d_query", *[str(n) for n in names],
+                                   reply="/d_info", timeout=timeout)
+        return [_parse_def_info(r) for r in rows]
+
+    def query_buffers(self, timeout: float = 5.0) -> "list[BufferInfo]":
+        """Every **allocated** buffer with its shape (an argument-less
+        ``/b_query``). Like `query_defs`, this reports what the server holds rather
+        than what this client allocated. Blocking, RT only."""
+        _, args = self.request("/b_query", timeout=timeout, expect=("/b_info",))
+        return _parse_buffer_list(args)
+
+    def query_ugens(self, *kinds, timeout: float = 5.0) -> "list[UgenInfo]":
+        """The server's UGen catalog (``/u_query``): every kind with its named
+        inputs, defaults and rate rules, or just `kinds` if given.
+
+        This is the catalog **this** server was built with, which is why it is
+        worth asking instead of assuming: a build without the ``synth`` feature
+        has no UGens at all and returns an empty list (its defs would all be
+        FaustDefs, whose box vocabulary is Faust's own and lives client-side).
+        Blocking, RT only."""
+        rows = self._request_batch("/u_query", *[str(k) for k in kinds],
+                                   reply="/u_info", timeout=timeout)
+        return [_parse_ugen_info(r) for r in rows]
 
     def query_info(self, timeout: float = 5.0) -> ServerInfo:
         """Asks the running server for its static configuration (RT only): bus

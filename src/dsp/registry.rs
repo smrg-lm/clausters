@@ -91,6 +91,27 @@ pub enum Arity {
     Variadic,
 }
 
+/// One named input slot of a UGen, in **wire order** — the position it occupies
+/// in the def's `inputs` array.
+///
+/// The wire itself stays positional (a def names a `kind` and lists values; no
+/// input is ever addressed by name), so this is descriptive metadata, not a new
+/// contract: it exists so `/u_query` can report a UGen's signature and a client
+/// palette can label an inlet instead of copying the names into its own table.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UGenInput {
+    pub name: &'static str,
+    /// The value a client should offer when the user leaves the slot alone.
+    /// Advisory: the server applies no default of its own — a def that omits an
+    /// input is simply short, and the compiler rejects it by arity.
+    pub default: f32,
+}
+
+/// A named input slot (keeps the `UGENS` rows readable).
+const fn inp(name: &'static str, default: f32) -> UGenInput {
+    UGenInput { name, default }
+}
+
 /// How the synth runs a UGen that needs coordination the plain `process` path
 /// cannot express — state shared across the whole ugen vector. Everything else
 /// is [`ExecMode::Normal`] and runs through [`UGen::process`]. This is
@@ -166,6 +187,11 @@ pub struct UGenDescriptor {
     /// Wire name (the def's `"kind"`).
     pub name: &'static str,
     pub arity: Arity,
+    /// The named input slots, in wire order. For a [`Arity::Fixed`] kind this
+    /// covers every slot; for a [`Arity::Variadic`] one it names only the
+    /// **fixed head** (`EnvGen`'s five before the envelope array, `Dseq`'s
+    /// `repeats`), the tail being an unbounded run of like-typed values.
+    pub inputs: &'static [UGenInput],
     /// Rate when the def omits `"rate"`.
     pub default_rate: Rate,
     /// Rates this UGen may be instantiated at (the compiler rejects the rest).
@@ -209,6 +235,7 @@ const R_DR: &[Rate] = &[Rate::Dr];
 const fn desc_full(
     name: &'static str,
     arity: Arity,
+    inputs: &'static [UGenInput],
     default_rate: Rate,
     rates: &'static [Rate],
     exec: ExecMode,
@@ -221,6 +248,7 @@ const fn desc_full(
     UGenDescriptor {
         name,
         arity,
+        inputs,
         default_rate,
         rates,
         exec,
@@ -238,6 +266,7 @@ const fn desc_full(
 const fn desc(
     name: &'static str,
     arity: Arity,
+    inputs: &'static [UGenInput],
     default_rate: Rate,
     rates: &'static [Rate],
     exec: ExecMode,
@@ -248,6 +277,7 @@ const fn desc(
     desc_full(
         name,
         arity,
+        inputs,
         default_rate,
         rates,
         exec,
@@ -266,6 +296,7 @@ const fn desc(
 const fn desc_spectral(
     name: &'static str,
     arity: Arity,
+    inputs: &'static [UGenInput],
     default_rate: Rate,
     rates: &'static [Rate],
     role: SpectralRole,
@@ -274,6 +305,7 @@ const fn desc_spectral(
     desc_full(
         name,
         arity,
+        inputs,
         default_rate,
         rates,
         ExecMode::Spectral,
@@ -290,12 +322,14 @@ const fn desc_spectral(
 const fn desc_op(
     name: &'static str,
     arity: Arity,
+    inputs: &'static [UGenInput],
     family: OpFamily,
     build: fn(&UGenConfig) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
     desc_full(
         name,
         arity,
+        inputs,
         Ar,
         R_KR_AR,
         Normal,
@@ -312,6 +346,23 @@ use BusRole::{Read, ReadWrite, Write};
 use ExecMode::{DemandDriver, LocalIn as ExecLocalIn, LocalOut as ExecLocalOut, Normal};
 use Rate::{Ar, Dr, Ir, Kr};
 
+// Input signatures shared by several rows. Named in **wire order** and in
+// `snake_case`, the one style the whole surface uses (the Python callables, the
+// catalog table in `docs/schemas.md` and these rows must agree — a client test
+// contrasts them, see the M30 note in docs/decisions.md).
+const I_NONE: &[UGenInput] = &[];
+const I_A: &[UGenInput] = &[inp("a", 0.0)];
+const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
+const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
+const I_BUS: &[UGenInput] = &[inp("bus", 0.0)];
+const I_BUS_SIGNAL: &[UGenInput] = &[inp("bus", 0.0), inp("signal", 0.0)];
+const I_BUFNUM: &[UGenInput] = &[inp("bufnum", 0.0)];
+const I_TABLE_OSC: &[UGenInput] = &[inp("bufnum", 0.0), inp("freq", 440.0), inp("phase", 0.0)];
+const I_CHAIN: &[UGenInput] = &[inp("chain", 0.0)];
+const I_CHAIN_AB: &[UGenInput] = &[inp("chain_a", 0.0), inp("chain_b", 0.0)];
+const I_CHAIN_THRESHOLD: &[UGenInput] = &[inp("chain", 0.0), inp("threshold", 0.0)];
+const I_CHAIN_SHIFT: &[UGenInput] = &[inp("chain", 0.0), inp("stretch", 1.0), inp("shift", 0.0)];
+
 /// The UGen catalog. **To add a UGen, add one row here** (plus its `dsp`
 /// module) — the compiler and bus analysis pick it up with no other change.
 static UGENS: &[UGenDescriptor] = &[
@@ -319,6 +370,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Sine",
         Fixed(1),
+        &[inp("freq", 440.0)],
         Ar,
         R_KR_AR,
         Normal,
@@ -329,6 +381,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Impulse",
         Fixed(1),
+        &[inp("freq", 1.0)],
         Ar,
         R_KR_AR,
         Normal,
@@ -339,6 +392,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "WhiteNoise",
         Fixed(0),
+        I_NONE,
         Ar,
         R_KR_AR,
         Normal,
@@ -350,16 +404,17 @@ static UGENS: &[UGenDescriptor] = &[
     //     index; every math need is one more `clausters_core::builtins` entry,
     //     not a new kind. `Add`/`Sub`/`Mul`/`Div` stay as thin aliases below
     //     for back-compat with existing defs. ---
-    desc_op("BinaryOpUGen", Fixed(2), OpFamily::Binary, |c| {
+    desc_op("BinaryOpUGen", Fixed(2), I_AB, OpFamily::Binary, |c| {
         Box::new(BinaryOp::from_index(c.op.unwrap_or(0)))
     }),
-    desc_op("UnaryOpUGen", Fixed(1), OpFamily::Unary, |c| {
+    desc_op("UnaryOpUGen", Fixed(1), I_A, OpFamily::Unary, |c| {
         Box::new(UnaryOp::from_index(c.op.unwrap_or(0)))
     }),
     // Fused forms scsynth optimizes (fixed kinds, not op-table entries).
     desc(
         "MulAdd",
         Fixed(3),
+        I_ABC,
         Ar,
         R_KR_AR,
         Normal,
@@ -370,6 +425,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Sum3",
         Fixed(3),
+        I_ABC,
         Ar,
         R_KR_AR,
         Normal,
@@ -380,6 +436,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Sum4",
         Fixed(4),
+        &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0), inp("d", 0.0)],
         Ar,
         R_KR_AR,
         Normal,
@@ -391,6 +448,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Add",
         Fixed(2),
+        I_AB,
         Ar,
         R_KR_AR,
         Normal,
@@ -401,6 +459,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Sub",
         Fixed(2),
+        I_AB,
         Ar,
         R_KR_AR,
         Normal,
@@ -411,6 +470,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Mul",
         Fixed(2),
+        I_AB,
         Ar,
         R_KR_AR,
         Normal,
@@ -421,6 +481,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Div",
         Fixed(2),
+        I_AB,
         Ar,
         R_KR_AR,
         Normal,
@@ -429,12 +490,13 @@ static UGENS: &[UGenDescriptor] = &[
         |_| Box::new(BinaryOp::new(BinOp::Div)),
     ),
     // --- audio-bus I/O (audio rate only; carries a bus role) ---
-    desc("In", Fixed(1), Ar, R_AR, Normal, Read, false, |_| {
+    desc("In", Fixed(1), I_BUS, Ar, R_AR, Normal, Read, false, |_| {
         Box::new(In)
     }),
     desc(
         "InCtl",
         Fixed(1),
+        I_BUS,
         Ar,
         R_AR,
         Normal,
@@ -445,6 +507,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "OutCtl",
         Fixed(2),
+        I_BUS_SIGNAL,
         Ar,
         R_AR,
         Normal,
@@ -452,12 +515,21 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_| Box::new(OutCtl),
     ),
-    desc("Out", Fixed(2), Ar, R_AR, Normal, Write, false, |_| {
-        Box::new(Out)
-    }),
+    desc(
+        "Out",
+        Fixed(2),
+        I_BUS_SIGNAL,
+        Ar,
+        R_AR,
+        Normal,
+        Write,
+        false,
+        |_| Box::new(Out),
+    ),
     desc(
         "ReplaceOut",
         Fixed(2),
+        I_BUS_SIGNAL,
         Ar,
         R_AR,
         Normal,
@@ -469,6 +541,12 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "PlayBuf",
         Fixed(4),
+        &[
+            inp("bufnum", 0.0),
+            inp("chan", 0.0),
+            inp("rate", 1.0),
+            inp("loop", 0.0),
+        ],
         Ar,
         R_AR,
         Normal,
@@ -479,6 +557,12 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "BufRd",
         Fixed(4),
+        &[
+            inp("bufnum", 0.0),
+            inp("chan", 0.0),
+            inp("phase", 0.0),
+            inp("loop", 0.0),
+        ],
         Ar,
         R_AR,
         Normal,
@@ -490,6 +574,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Osc",
         Fixed(3),
+        I_TABLE_OSC,
         Ar,
         R_AR,
         Normal,
@@ -500,6 +585,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "OscN",
         Fixed(3),
+        I_TABLE_OSC,
         Ar,
         R_AR,
         Normal,
@@ -510,6 +596,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "VOsc",
         Fixed(3),
+        &[inp("bufpos", 0.0), inp("freq", 440.0), inp("phase", 0.0)],
         Ar,
         R_AR,
         Normal,
@@ -520,6 +607,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Shaper",
         Fixed(2),
+        &[inp("bufnum", 0.0), inp("signal", 0.0)],
         Ar,
         R_KR_AR,
         Normal,
@@ -530,6 +618,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "BufSampleRate",
         Fixed(1),
+        I_BUFNUM,
         Ar,
         R_IR_KR_AR,
         Normal,
@@ -540,6 +629,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "BufRateScale",
         Fixed(1),
+        I_BUFNUM,
         Ar,
         R_IR_KR_AR,
         Normal,
@@ -550,6 +640,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "BufFrames",
         Fixed(1),
+        I_BUFNUM,
         Ar,
         R_IR_KR_AR,
         Normal,
@@ -560,6 +651,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "BufChannels",
         Fixed(1),
+        I_BUFNUM,
         Ar,
         R_IR_KR_AR,
         Normal,
@@ -570,6 +662,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "BufDur",
         Fixed(1),
+        I_BUFNUM,
         Ar,
         R_IR_KR_AR,
         Normal,
@@ -582,6 +675,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "DiskIn",
         Fixed(1),
+        &[inp("chan", 0.0)],
         Ar,
         R_AR,
         Normal,
@@ -593,6 +687,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "DiskOut",
         Fixed(1),
+        &[inp("signal", 0.0)],
         Ar,
         R_AR,
         Normal,
@@ -604,6 +699,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "LocalIn",
         Fixed(1),
+        &[inp("channel", 0.0)],
         Ar,
         R_AR,
         ExecLocalIn,
@@ -614,6 +710,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "LocalOut",
         Fixed(2),
+        &[inp("channel", 0.0), inp("signal", 0.0)],
         Ar,
         R_AR,
         ExecLocalOut,
@@ -625,6 +722,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Lag",
         Fixed(2),
+        &[inp("signal", 0.0), inp("time", 0.1)],
         Ar,
         R_KR_AR,
         Normal,
@@ -635,6 +733,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "VarLag",
         Fixed(3),
+        &[inp("signal", 0.0), inp("up", 0.1), inp("down", 0.1)],
         Ar,
         R_KR_AR,
         Normal,
@@ -643,9 +742,18 @@ static UGENS: &[UGenDescriptor] = &[
         |_| Box::new(VarLag::new()),
     ),
     // --- envelope ---
+    // Variadic: the five named slots are the fixed head; the envelope's own
+    // breakpoint array follows and is unnamed by nature.
     desc(
         "EnvGen",
         Variadic,
+        &[
+            inp("gate", 1.0),
+            inp("level_scale", 1.0),
+            inp("level_bias", 0.0),
+            inp("time_scale", 1.0),
+            inp("done_action", 0.0),
+        ],
         Ar,
         R_AR,
         Normal,
@@ -657,6 +765,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "SampleRate",
         Fixed(0),
+        I_NONE,
         Ir,
         R_IR_KR,
         Normal,
@@ -667,6 +776,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Rand",
         Fixed(2),
+        &[inp("lo", 0.0), inp("hi", 1.0)],
         Ir,
         R_IR,
         Normal,
@@ -678,6 +788,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Demand",
         Fixed(3),
+        &[inp("trig", 0.0), inp("reset", 0.0), inp("source", 0.0)],
         Ar,
         R_KR_AR,
         DemandDriver,
@@ -688,6 +799,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Dseq",
         Variadic,
+        &[inp("repeats", 0.0)],
         Dr,
         R_DR,
         Normal,
@@ -701,6 +813,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "SendTrig",
         Fixed(3),
+        &[inp("trig", 0.0), inp("id", 0.0), inp("value", 0.0)],
         Kr,
         R_KR_AR,
         Normal,
@@ -708,9 +821,11 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_| Box::new(SendTrig::new()),
     ),
+    // Variadic: `trig`/`reply_id` are the head, the reported values follow.
     desc(
         "SendReply",
         Variadic,
+        &[inp("trig", 0.0), inp("reply_id", -1.0)],
         Kr,
         R_KR_AR,
         Normal,
@@ -721,6 +836,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Poll",
         Fixed(3),
+        &[inp("trig", 0.0), inp("signal", 0.0), inp("trig_id", -1.0)],
         Kr,
         R_KR_AR,
         Normal,
@@ -732,15 +848,28 @@ static UGENS: &[UGenDescriptor] = &[
     //     spectral chain, PV_* transform it in place, IFFT resynthesises audio.
     //     FFT/PV carry the chain at control rate (a per-block ready marker);
     //     IFFT produces audio. See `dsp::spectral`. ---
-    desc_spectral("FFT", Fixed(2), Kr, R_KR, SpectralRole::Source, |c| {
-        Box::new(Fft::new(c))
-    }),
-    desc_spectral("IFFT", Fixed(1), Ar, R_AR, SpectralRole::Sink, |c| {
-        Box::new(Ifft::new(c))
-    }),
+    desc_spectral(
+        "FFT",
+        Fixed(2),
+        &[inp("source", 0.0), inp("active", 1.0)],
+        Kr,
+        R_KR,
+        SpectralRole::Source,
+        |c| Box::new(Fft::new(c)),
+    ),
+    desc_spectral(
+        "IFFT",
+        Fixed(1),
+        I_CHAIN,
+        Ar,
+        R_AR,
+        SpectralRole::Sink,
+        |c| Box::new(Ifft::new(c)),
+    ),
     desc_spectral(
         "PV_MagAbove",
         Fixed(2),
+        I_CHAIN_THRESHOLD,
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -749,6 +878,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagBelow",
         Fixed(2),
+        I_CHAIN_THRESHOLD,
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -757,6 +887,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_BrickWall",
         Fixed(2),
+        &[inp("chain", 0.0), inp("wipe", 0.0)],
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -770,26 +901,52 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagClip",
         Fixed(2),
+        I_CHAIN_THRESHOLD,
         Kr,
         R_KR,
         SpectralRole::Filter,
         |_| Box::new(PvMag::new(MagMode::Clip)),
     ),
-    desc_spectral("PV_Add", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
-        Box::new(PvCombine::new(CombineOp::Add))
-    }),
-    desc_spectral("PV_Mul", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
-        Box::new(PvCombine::new(CombineOp::Mul))
-    }),
-    desc_spectral("PV_Min", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
-        Box::new(PvCombine::new(CombineOp::Min))
-    }),
-    desc_spectral("PV_Max", Fixed(2), Kr, R_KR, SpectralRole::Filter2, |_| {
-        Box::new(PvCombine::new(CombineOp::Max))
-    }),
+    desc_spectral(
+        "PV_Add",
+        Fixed(2),
+        I_CHAIN_AB,
+        Kr,
+        R_KR,
+        SpectralRole::Filter2,
+        |_| Box::new(PvCombine::new(CombineOp::Add)),
+    ),
+    desc_spectral(
+        "PV_Mul",
+        Fixed(2),
+        I_CHAIN_AB,
+        Kr,
+        R_KR,
+        SpectralRole::Filter2,
+        |_| Box::new(PvCombine::new(CombineOp::Mul)),
+    ),
+    desc_spectral(
+        "PV_Min",
+        Fixed(2),
+        I_CHAIN_AB,
+        Kr,
+        R_KR,
+        SpectralRole::Filter2,
+        |_| Box::new(PvCombine::new(CombineOp::Min)),
+    ),
+    desc_spectral(
+        "PV_Max",
+        Fixed(2),
+        I_CHAIN_AB,
+        Kr,
+        R_KR,
+        SpectralRole::Filter2,
+        |_| Box::new(PvCombine::new(CombineOp::Max)),
+    ),
     desc_spectral(
         "PV_MagMul",
         Fixed(2),
+        I_CHAIN_AB,
         Kr,
         R_KR,
         SpectralRole::Filter2,
@@ -798,6 +955,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_CopyPhase",
         Fixed(2),
+        I_CHAIN_AB,
         Kr,
         R_KR,
         SpectralRole::Filter2,
@@ -806,6 +964,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagFreeze",
         Fixed(2),
+        &[inp("chain", 0.0), inp("freeze", 0.0)],
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -814,6 +973,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagSmear",
         Fixed(2),
+        &[inp("chain", 0.0), inp("bins", 0.0)],
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -822,6 +982,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_BinShift",
         Fixed(3),
+        I_CHAIN_SHIFT,
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -830,6 +991,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc_spectral(
         "PV_MagShift",
         Fixed(3),
+        I_CHAIN_SHIFT,
         Kr,
         R_KR,
         SpectralRole::Filter,
@@ -840,9 +1002,16 @@ static UGENS: &[UGenDescriptor] = &[
     // every bin of each fresh frame. Inputs: `[chain, p0, p1, …]` (variadic
     // parameters, sampled at the hop). An op outside the curated set is a
     // program here, never a new registry row (see docs/decisions.md).
-    desc_spectral("PV_Kernel", Variadic, Kr, R_KR, SpectralRole::Filter, |c| {
-        Box::new(PvKernel::new(c))
-    }),
+    // Variadic: only `chain` is fixed; `p0…` are the program's parameters.
+    desc_spectral(
+        "PV_Kernel",
+        Variadic,
+        I_CHAIN,
+        Kr,
+        R_KR,
+        SpectralRole::Filter,
+        |c| Box::new(PvKernel::new(c)),
+    ),
     // --- partitioned convolution (M28): one UGen, kernel spectra prepared
     //     off the RT thread by `/b_gen prepare_partconv`, MACs spread across
     //     the hop's blocks for flat load. Not a PV_*: fast convolution's
@@ -851,6 +1020,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Conv",
         Fixed(2),
+        &[inp("source", 0.0), inp("kernel", 0.0)],
         Ar,
         R_AR,
         Normal,
@@ -864,4 +1034,63 @@ static UGENS: &[UGenDescriptor] = &[
 /// of truth for that kind) or `None` for an unknown name.
 pub fn lookup(name: &str) -> Option<&'static UGenDescriptor> {
     UGENS.iter().find(|d| d.name == name)
+}
+
+/// The whole catalog, in table order — what `/u_query` reports (M30). The
+/// contents depend on the build (`DiskIn`/`DiskOut` are native-only), which is
+/// exactly why a client asks the server instead of carrying its own copy.
+pub fn all() -> &'static [UGenDescriptor] {
+    UGENS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The catalog is data, and `/u_query` publishes it: a row whose names do
+    /// not line up with its arity would ship a wrong signature to every client
+    /// palette. Not feature-gated — the table exists in every build.
+    #[test]
+    fn every_descriptor_names_its_inputs() {
+        for d in all() {
+            match d.arity {
+                Arity::Fixed(n) => assert_eq!(
+                    d.inputs.len(),
+                    n,
+                    "{} declares arity {n} but names {} inputs",
+                    d.name,
+                    d.inputs.len()
+                ),
+                // The named slots are the fixed head, so they can only be
+                // fewer than what an instance ends up with -- never a count.
+                Arity::Variadic => assert!(
+                    !d.inputs.is_empty(),
+                    "{} is variadic but names no fixed head",
+                    d.name
+                ),
+            }
+            for i in d.inputs {
+                assert!(!i.name.is_empty(), "{} has an unnamed input", d.name);
+            }
+            for (i, a) in d.inputs.iter().enumerate() {
+                assert!(
+                    !d.inputs[..i].iter().any(|b| b.name == a.name),
+                    "{} repeats the input name {:?}",
+                    d.name,
+                    a.name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn catalog_names_are_unique() {
+        for (i, d) in all().iter().enumerate() {
+            assert!(
+                !all()[..i].iter().any(|o| o.name == d.name),
+                "duplicate catalog entry {:?}",
+                d.name
+            );
+        }
+    }
 }

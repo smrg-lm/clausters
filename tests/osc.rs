@@ -85,6 +85,22 @@ impl TestServer {
         panic!("never received {addr}");
     }
 
+    /// Collects the `addr` replies of a multi-reply query (M30's `/d_query`,
+    /// `/u_query`) until the batch's `/done` terminator arrives.
+    fn recv_batch(&self, addr: &str, cmd: &str) -> Vec<OscMessage> {
+        let mut out = Vec::new();
+        for _ in 0..500 {
+            let msg = self.recv();
+            if msg.addr == "/done" && msg.args.first() == Some(&OscType::String(cmd.into())) {
+                return out;
+            }
+            if msg.addr == addr {
+                out.push(msg);
+            }
+        }
+        panic!("never received the /done terminating {cmd}");
+    }
+
     /// Ticks the engine and polls /status until the given reply argument
     /// matches or the deadline passes. Covers the network→FIFO→audio round
     /// trip. Argument 2 is the synth count, 3 the group count.
@@ -2082,5 +2098,167 @@ fn d_recv_rejects_over_max_ugen_inputs() {
     .to_string();
     server.send("/d_recv", vec![OscType::String(def)]);
     assert_eq!(server.recv_until("/fail").addr, "/fail");
+    server.quit();
+}
+
+// --- M30: the introspection verbs (/d_query, /u_query; /b_query's listing
+//     form lives in tests/buffers.rs beside the other buffer coverage) ---
+
+/// `/d_query` with no argument lists every loaded def with its control
+/// surface, terminated by `/done`. The built-in "default" is always there, so
+/// a fresh server already answers something.
+#[test]
+fn d_query_lists_loaded_defs_with_their_controls() {
+    let server = TestServer::spawn();
+    let def = serde_json::json!({
+        "name": "introspected",
+        "controls": [
+            {"name": "freq", "default": 440.0},
+            {"name": "gate", "default": 1.0, "rate": "tr"},
+            {"name": "seed", "default": 7.0, "rate": "ir"}
+        ],
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"control": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+    .to_string();
+    server.send("/d_recv", vec![OscType::String(def)]);
+    server.recv_until("/done");
+
+    server.send("/d_query", vec![]);
+    let infos = server.recv_batch("/d_info", "/d_query");
+    let names: Vec<String> = infos
+        .iter()
+        .map(|m| match &m.args[0] {
+            OscType::String(s) => s.clone(),
+            other => panic!("expected a def name, got {other:?}"),
+        })
+        .collect();
+    assert!(names.contains(&"default".to_string()), "{names:?}");
+    assert!(names.contains(&"introspected".to_string()), "{names:?}");
+
+    let one = infos
+        .iter()
+        .find(|m| m.args[0] == OscType::String("introspected".into()))
+        .unwrap();
+    assert_eq!(one.args[1], OscType::String("synth".into()));
+    assert_eq!(one.args[2], OscType::Int(3), "three controls");
+    // Then (name, default, type) per control, in declaration order.
+    assert_eq!(one.args[3], OscType::String("freq".into()));
+    assert_eq!(one.args[4], OscType::Float(440.0));
+    assert_eq!(one.args[5], OscType::String("kr".into()));
+    assert_eq!(one.args[6], OscType::String("gate".into()));
+    assert_eq!(one.args[8], OscType::String("tr".into()));
+    assert_eq!(one.args[9], OscType::String("seed".into()));
+    assert_eq!(one.args[10], OscType::Float(7.0));
+    assert_eq!(one.args[11], OscType::String("ir".into()));
+    server.quit();
+}
+
+/// Named form: only the asked-for defs come back, and an unknown name reports
+/// an empty family instead of failing the batch (the `/b_query` convention).
+#[test]
+fn d_query_details_named_defs_and_reports_unknown_as_empty() {
+    let server = TestServer::spawn();
+    server.send(
+        "/d_query",
+        vec![
+            OscType::String("default".into()),
+            OscType::String("nonexistent".into()),
+        ],
+    );
+    let infos = server.recv_batch("/d_info", "/d_query");
+    assert_eq!(infos.len(), 2, "one reply per requested name");
+    assert_eq!(infos[0].args[0], OscType::String("default".into()));
+    assert_eq!(infos[0].args[1], OscType::String("synth".into()));
+    assert_eq!(infos[1].args[0], OscType::String("nonexistent".into()));
+    assert_eq!(infos[1].args[1], OscType::String(String::new()));
+    assert_eq!(infos[1].args[2], OscType::Int(0));
+    server.quit();
+}
+
+/// `/u_query <kind>` reports the descriptor a client palette needs: the named
+/// inputs in wire order with their defaults, plus the rate rules.
+#[test]
+fn u_query_reports_a_ugen_signature() {
+    let server = TestServer::spawn();
+    server.send("/u_query", vec![OscType::String("Sine".into())]);
+    let infos = server.recv_batch("/u_info", "/u_query");
+    assert_eq!(infos.len(), 1);
+    let a = &infos[0].args;
+    // name, arity, defaultRate, rates, exec, bus, needsPath, opFamily,
+    // spectral, numInputs, then (name, default) per input.
+    assert_eq!(a[0], OscType::String("Sine".into()));
+    assert_eq!(a[1], OscType::Int(1), "arity");
+    assert_eq!(a[2], OscType::String("ar".into()), "default rate");
+    assert_eq!(a[3], OscType::String("kr,ar".into()), "allowed rates");
+    assert_eq!(a[4], OscType::String("normal".into()));
+    assert_eq!(a[5], OscType::String(String::new()), "no bus role");
+    assert_eq!(a[6], OscType::Int(0), "needs no path");
+    assert_eq!(a[9], OscType::Int(1), "one named input");
+    assert_eq!(a[10], OscType::String("freq".into()));
+    assert_eq!(a[11], OscType::Float(440.0));
+    server.quit();
+}
+
+/// A variadic kind reports `-1` for its arity and names only its fixed head;
+/// a bus-role kind reports the role the graph analysis reads.
+#[test]
+fn u_query_reports_variadic_arity_and_bus_roles() {
+    let server = TestServer::spawn();
+    server.send(
+        "/u_query",
+        vec![
+            OscType::String("EnvGen".into()),
+            OscType::String("Out".into()),
+            OscType::String("NoSuchUGen".into()),
+        ],
+    );
+    let infos = server.recv_batch("/u_info", "/u_query");
+    assert_eq!(infos.len(), 3);
+
+    let env = &infos[0].args;
+    assert_eq!(env[1], OscType::Int(-1), "variadic");
+    assert_eq!(env[9], OscType::Int(5), "the five named head slots");
+    assert_eq!(env[10], OscType::String("gate".into()));
+    assert_eq!(env[11], OscType::Float(1.0));
+
+    let out = &infos[1].args;
+    assert_eq!(out[5], OscType::String("write".into()), "bus role");
+    assert_eq!(out[10], OscType::String("bus".into()));
+    assert_eq!(out[12], OscType::String("signal".into()));
+
+    // Unknown kinds report empty rather than failing the batch.
+    assert_eq!(infos[2].args[0], OscType::String("NoSuchUGen".into()));
+    assert_eq!(infos[2].args[3], OscType::String(String::new()));
+    assert_eq!(infos[2].args[9], OscType::Int(0));
+    server.quit();
+}
+
+/// No argument returns the whole catalog — the palette's source. Every entry
+/// must be well-formed (the arity/name agreement the registry unit test
+/// guards, checked here across the wire).
+#[test]
+fn u_query_lists_the_whole_catalog() {
+    let server = TestServer::spawn();
+    server.send("/u_query", vec![]);
+    let infos = server.recv_batch("/u_info", "/u_query");
+    assert!(infos.len() > 40, "got {} entries", infos.len());
+    for m in &infos {
+        let OscType::Int(num_inputs) = m.args[9] else {
+            panic!("numInputs must be an int");
+        };
+        assert_eq!(
+            m.args.len(),
+            10 + 2 * num_inputs as usize,
+            "{:?} declares {num_inputs} inputs but carries {} args",
+            m.args[0],
+            m.args.len()
+        );
+    }
+    let names: Vec<&OscType> = infos.iter().map(|m| &m.args[0]).collect();
+    assert!(names.contains(&&OscType::String("PlayBuf".into())));
+    assert!(names.contains(&&OscType::String("FFT".into())));
     server.quit();
 }

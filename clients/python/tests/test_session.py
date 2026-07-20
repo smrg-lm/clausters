@@ -249,3 +249,112 @@ if __name__ == "__main__":
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
                 if not skip:
                     traceback.print_exc()
+
+
+# ---- the catalog contrast: ugens.py against the server's own /u_query ----
+
+# The kinds whose Python signature does not line up with the wire order, so the
+# positional contrast below cannot apply to them. They are split by *why*,
+# because the two halves have very different standing — and the test asserts the
+# union is exact, so a new divergence has to be declared here on purpose rather
+# than silently dropping a kind from the check.
+
+# Forced by the wire putting a variadic run last: Python cannot have a plain
+# positional parameter after `*args`, so the ergonomic order is the only one
+# available. These will not change.
+_WIRE_ORDER_FORCED = {
+    "EnvGen": "the Env comes first in Python, its array last on the wire",
+    "SendReply": "reply_id follows trig on the wire, but must be keyword-only here",
+    "Dseq": "repeats leads on the wire; the value list is the leading argument here",
+}
+
+# Not forced: these take their **static** (non-signal) fields as ordinary
+# positional parameters, interleaved with real inputs — where `fft` and `conv`
+# put theirs behind a `*` and line up with the wire exactly. Moving them behind
+# a `*` would fix the divergence and shrink this list, but it breaks the client
+# API (`poll(t, s, "label")` and friends stop working), so it is deliberately
+# deferred rather than done as a side effect of M30. `Poll` is the worst: its
+# static `label` sits *between* two genuine inputs.
+_WIRE_ORDER_STATIC_FIELDS_POSITIONAL = {
+    "Poll": "label is a static field sitting between the wire inputs",
+    "DiskIn": "path/loop are static fields, only chan is an input",
+    "DiskOut": "path/format are static fields, only signal is an input",
+    "PV_Kernel": "mag/phase are static fields, the wire takes chain + params",
+}
+
+_WIRE_ORDER_DIFFERS = {**_WIRE_ORDER_FORCED, **_WIRE_ORDER_STATIC_FIELDS_POSITIONAL}
+
+
+def _python_callables_by_kind():
+    """Maps each wire kind to the `clausters.defs.ugens` callable that builds
+    it, read from the ``Ugen("Kind", ...)`` literal in the source rather than
+    guessed from the function name (``in_`` -> ``In``, ``oscn`` -> ``OscN``)."""
+    import ast
+    import inspect
+
+    from clausters.defs import ugens as U
+
+    out = {}
+    for name, fn in vars(U).items():
+        if name.startswith("_") or not inspect.isfunction(fn):
+            continue
+        try:
+            tree = ast.parse(inspect.getsource(fn).lstrip())
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name) and node.func.id == "Ugen"
+                    and node.args and isinstance(node.args[0], ast.Constant)):
+                out.setdefault(node.args[0].value, fn)
+    return out
+
+
+def test_ugen_catalog_matches_the_python_callables():
+    """`/u_query` is the server's own catalog; `clausters.defs.ugens` is the
+    client's hand-written mirror of it. This is what keeps the two from
+    drifting: for every kind whose Python signature maps 1:1 onto the wire, the
+    input names and defaults must agree exactly."""
+    import inspect
+    import struct
+
+    s = _embed_session_or_skip()
+    try:
+        catalog = s.server.query_ugens()
+        assert catalog, "a synth-enabled server must report a catalog"
+        by_kind = _python_callables_by_kind()
+
+        checked = 0
+        for u in catalog:
+            fn = by_kind.get(u.name)
+            if fn is None or u.name in _WIRE_ORDER_DIFFERS:
+                continue
+            params = [p for p in inspect.signature(fn).parameters.values()
+                      if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
+            assert [p.name for p in params] == [i.name for i in u.inputs], (
+                f"{u.name}: Python names {[p.name for p in params]} but the "
+                f"server names {[i.name for i in u.inputs]}"
+            )
+            for p, i in zip(params, u.inputs):
+                if p.default is inspect.Parameter.empty:
+                    continue
+                # The server's defaults are f32 and arrive widened, so 0.1
+                # comes back as 0.10000000149...: compare at f32 precision.
+                as_f32 = struct.unpack("f", struct.pack("f", float(p.default)))[0]
+                assert as_f32 == i.default, (
+                    f"{u.name}.{i.name}: Python default {p.default} != "
+                    f"server default {i.default}"
+                )
+            checked += 1
+
+        assert checked > 25, f"only contrasted {checked} kinds"
+
+        # The exception list must be exact: every entry still exists in both
+        # catalogs, so a renamed or removed kind cannot leave a stale excuse
+        # behind that silently drops a UGen from the contrast.
+        kinds = {u.name for u in catalog}
+        for name in _WIRE_ORDER_DIFFERS:
+            assert name in kinds, f"{name} is no longer in the server catalog"
+            assert name in by_kind, f"{name} has no Python callable any more"
+    finally:
+        s.close()
