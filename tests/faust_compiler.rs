@@ -168,16 +168,19 @@ mod osc {
         assert_eq!(done.args[0], OscType::String("/d_faust".into()));
         assert_eq!(done.args[1], OscType::String("fsine".into()));
 
-        // /status def count includes the Faust table (1 built-in + 1 faust)
+        // /status def count includes the Faust table. The baseline is the
+        // built-in "default" SynthDef, which only exists when the `synth`
+        // feature is compiled in — a faust-only build starts from zero.
+        let builtin = if cfg!(feature = "synth") { 1 } else { 0 };
         server.send("/status", vec![]);
         let status = server.recv_until("/status.reply");
-        assert_eq!(status.args[4], OscType::Int(2));
+        assert_eq!(status.args[4], OscType::Int(builtin + 1));
 
         // /d_free clears it
         server.send("/d_free", vec![OscType::String("fsine".into())]);
         server.send("/status", vec![]);
         let status = server.recv_until("/status.reply");
-        assert_eq!(status.args[4], OscType::Int(1));
+        assert_eq!(status.args[4], OscType::Int(builtin));
 
         server.quit();
     }
