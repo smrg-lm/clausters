@@ -489,6 +489,61 @@ wire per control, which is exactly the mutation the group and the GraphDef both
 accept. A directed rendering could be layered on later — but only from
 information the server surfaces, not from a name.
 
+## The two patch levels: a bus is a node, a signal is a cord
+
+The patcher (the P track) edits at two abstraction levels that share one widget
+and one gesture machine but **not** one connection logic. Keeping them apart is a
+vocabulary rule with teeth: the **server patch** (level 1) and the **def patch**
+(level 2) are named apart everywhere, and bare "patch" is reserved for what is
+common to both. They cannot be one model because each draws a *different server
+abstraction*, and the honesty argument of the previous decision ("The patcher
+shows a connection, not a direction") points the opposite way in each.
+
+**Context — the same picture means two different things.** A box wired to another
+box reads, to the eye, as "signal flows here → there". Inside a SynthDef/FaustDef
+(level 2) that reading is *true*: a UGen's inputs and outputs are declared by its
+descriptor, a Faust box expression is directed by construction, so the direction
+and rate of every connection are the schema, not a guess. Assembling server nodes
+(level 1) that same reading is a *lie*: the data (a GraphDef) says only that a
+member's control *names* a bus (`{"out": "mix"}`, `{"in": "mix"}`); which end
+writes and which reads is the server's topological sort, decided at
+instantiation, and a def is free to name its controls anything.
+
+**Decision — the bus is where the two levels diverge.**
+
+- **Level 1 (server patch): a bus is a first-class node.** The canvas is
+  bipartite — member boxes on one side, **bus nodes** on the other (`OUT` and the
+  hardware among them) — and a wire is one `(member, control) ↔ bus` pair. There
+  is no box→box edge. This is not a drawing convenience: a bus in clausters *is* a
+  shared, numbered slot that signals sum into, and the node on the canvas is that
+  slot. Drawing it box-to-box would erase from the picture the one object the
+  server actually allocates and orders, and would resurrect the question every
+  summing patcher answers badly (Max: spatial order; Pd: last-wins) — "what
+  happens when several outputs meet one inlet". With the bus as a node the
+  question dissolves: there is no inlet receiving many cords, there is a bus node
+  that **sums**, and the execution order that makes the sum well-defined is the
+  auto-sorted group's topological order, not anything the picture asserts.
+- **Level 2 (def patch): a bus is not a node, a signal is a cord.** Here `In`/
+  `Out` are ordinary boxes and the connection is a **directed, typed cord**
+  (inlet↔outlet, rate-weighted: `ar` signal vs `kr`/`ir` control). The direction
+  is honest because the descriptor declares it; a rate-mismatched cord is refused
+  at the gesture, since the hit-test knows the types.
+
+**Consequence.** The two levels are visually unmistakable (level 1 left/right
+bipartite with bus nodes; level 2 top/bottom inlets/outlets with directed cords),
+and neither can lie about signal flow — level 1 by refusing to draw a direction
+the data does not carry, level 2 by drawing only the direction the schema does. It
+also settles the practical questions the design kept raising: **who owns the bus
+number** — the bus node does, allocated by the driver at render from the reserved
+graph-bus range; **who reads and who writes** — undecided by the picture, resolved
+by the engine's sort; **what a directed level-1 view would need** — information the
+server surfaces (an instance's actual sort), never a name-based guess, which is
+exactly the door the previous decision left open. The cost, named honestly: the
+level-1 bipartite view cannot depict a feedback connection (a reader ordered
+before its writer, one block of latency) as distinct from a forward one — the flip
+side of not drawing direction — and that, if ever wanted, is the directed
+rendering to layer on from server-surfaced order, not from the patch data.
+
 ## The arrangement model: five primitives, one recursive group
 
 A sequencing layer (a timeline of items, a playhead) is enough to *play* music
