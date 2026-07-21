@@ -366,6 +366,9 @@ pub(crate) struct FrameInputs<'a> {
     pub(crate) node_trees: &'a HashMap<i32, NodeTree>,
     /// The id of a momentary button currently held down (drawn pressed).
     pub(crate) active_button: Option<i32>,
+    /// The id of the focused editable `text` field in this window (drawn with a
+    /// caret and its selection), if any.
+    pub(crate) focused_text: Option<i32>,
     /// Whether an audio server is attached (the `nodetree` placeholder text).
     pub(crate) server_attached: bool,
     /// The server's sample rate, placing the `spectrum` frequency axis and the
@@ -400,6 +403,7 @@ impl Default for FrameInputs<'_> {
             bus: None,
             node_trees: EMPTY.get_or_init(HashMap::new),
             active_button: None,
+            focused_text: None,
             server_attached: false,
             sample_rate: 0.0,
             sample_clock: 0.0,
@@ -1157,6 +1161,7 @@ pub(crate) fn render(
                 kind,
                 p.rect,
                 p.widget.id == active_button,
+                p.widget.id.is_some() && p.widget.id == inputs.focused_text,
                 p.scale,
                 th,
             ),

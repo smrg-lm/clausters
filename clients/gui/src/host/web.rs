@@ -44,7 +44,7 @@ use crate::waveform::WaveformData;
 
 use super::fetch::{BufferFetches, FetchStep};
 use super::frame::{self, SpectrogramSlot, WaveformSlot};
-use super::gestures::{GestureCtx, GestureEffect, Gestures};
+use super::gestures::{GestureCtx, GestureEffect, Gestures, TextKey};
 use super::live::{self, StreamedBuses, StreamedTaps};
 use super::paint::Painter;
 use super::pianoroll;
@@ -266,6 +266,10 @@ struct WebApp {
     alt: bool,
     /// The piano-roll note clipboard (Ctrl+C/X/V), page-wide.
     clipboard: Vec<pianoroll::Note>,
+    /// The `text` field clipboard (Ctrl+C/X/V), page-wide. An in-page clipboard
+    /// like the native front's; binding it to the browser's OS clipboard (a
+    /// `writeText` out plus a `paste`-event listener in) is a later refinement.
+    text_clipboard: String,
     /// Live control-bus values streamed from the audio server (`/c_stream` →
     /// `/c_set`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
@@ -325,6 +329,7 @@ impl WebApp {
             ctrl: false,
             alt: false,
             clipboard: Vec::new(),
+            text_clipboard: String::new(),
             buses: Arc::new(StreamedBuses::default()),
             scopes: HashMap::new(),
             streamed: Vec::new(),
@@ -928,6 +933,11 @@ impl WebApp {
         let inputs = frame::FrameInputs {
             bus: Some(self.buses.as_ref() as &dyn BusSource),
             active_button,
+            focused_text: self
+                .host
+                .focused_text()
+                .filter(|(d, _)| *d == def)
+                .map(|(_, id)| id),
             server_attached,
             sample_rate: self.server_rate,
             sample_clock: self.server_clock,
@@ -1067,6 +1077,18 @@ impl WebApp {
     /// window there but has no window to close here.
     fn on_key(&mut self, key: &Key) {
         let Some(def) = self.current_def else { return };
+        // A focused text field consumes the key first (typing, caret motion,
+        // cut/copy/paste); only otherwise do the global shortcuts run.
+        if let Some(tk) = to_text_key(key) {
+            let ctx = self.gesture_ctx(def);
+            if let Some(effects) =
+                self.gestures
+                    .text_key(&mut self.host, &ctx, tk, &mut self.text_clipboard)
+            {
+                self.apply_gesture_effects(effects);
+                return;
+            }
+        }
         let (cx, cy) = self.cursor;
         let ctx = self.gesture_ctx(def);
         let effects = match key {
@@ -1091,6 +1113,30 @@ impl WebApp {
             _ => return,
         };
         self.apply_gesture_effects(effects);
+    }
+}
+
+/// Translates a winit key into the platform-neutral [`TextKey`] a focused
+/// `text` field edits with (the browser front's twin of the native
+/// `to_text_key`), or `None` for a key it does not handle.
+fn to_text_key(key: &Key) -> Option<TextKey> {
+    match key {
+        Key::Named(NamedKey::Backspace) => Some(TextKey::Backspace),
+        Key::Named(NamedKey::Delete) => Some(TextKey::Delete),
+        Key::Named(NamedKey::ArrowLeft) => Some(TextKey::Left),
+        Key::Named(NamedKey::ArrowRight) => Some(TextKey::Right),
+        Key::Named(NamedKey::ArrowUp) => Some(TextKey::Up),
+        Key::Named(NamedKey::ArrowDown) => Some(TextKey::Down),
+        Key::Named(NamedKey::Home) => Some(TextKey::Home),
+        Key::Named(NamedKey::End) => Some(TextKey::End),
+        Key::Named(NamedKey::Enter) => Some(TextKey::Enter),
+        Key::Named(NamedKey::Space) => Some(TextKey::Char(' ')),
+        Key::Character(s) => s
+            .chars()
+            .next()
+            .filter(|c| !c.is_control())
+            .map(TextKey::Char),
+        _ => None,
     }
 }
 

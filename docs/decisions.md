@@ -1339,3 +1339,24 @@ pure-Python package. The contrast test buys the same guarantee at the cost of
 one test: for every kind whose signature maps 1:1 onto the wire, names and
 defaults must agree with what the server reports (compared at `f32` precision,
 since the server's defaults arrive widened to `f64`).
+
+## The editable text field carries an internal clipboard, not an OS-clipboard dependency
+
+The editable `text` widget needs cut/copy/paste, and that is the one editing
+facility a GUI toolkit normally reaches the operating system for. We do not: the
+native front (winit) exposes no clipboard, so real OS-clipboard interop would
+mean a new crate (`arboard`/`copypasta`) — and libwgpu, the only heavy
+dependency the host already carries, covers none of it. Against that, the host
+already had the precedent from the piano-roll (G24h): a **host-wide in-process
+clipboard**, a plain buffer that a copied block travels through between widgets
+and windows. The text field reuses exactly that shape — a host-wide `String` —
+so cut/copy/paste work with **zero new dependency**, at the one cost that the
+native clipboard does not interoperate with other applications.
+
+The browser is the asymmetric case: a page reaches the real OS clipboard through
+the DOM (`navigator.clipboard`, the `paste` event) with **no Rust dependency at
+all**, so the web front is where OS-clipboard interop is actually free. The first
+cut ships the in-page clipboard on both fronts (functional parity within the
+host); wiring the web front's copy to `writeText` and its paste to a DOM
+`paste`-event listener is the recorded follow-up — an enhancement of one front,
+not a dependency the whole workspace takes on.

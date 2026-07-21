@@ -764,11 +764,18 @@ pub enum WidgetKind {
         label: Option<String>,
         text_size: f32,
     },
-    /// A free-text field showing its value (script-driven at this milestone).
+    /// An editable text-entry field. `value` is the string (the event value it
+    /// emits on every edit, exactly as a numeric control emits on every drag —
+    /// never gated on a key); `multiline` allows embedded newlines (Enter
+    /// inserts one) and a growing field. `caret` is **native view state** — the
+    /// insertion point and selection while the field is focused, never parsed
+    /// from or sent over the wire (the `PianoRoll::selected` precedent).
     Text {
         value: String,
         label: Option<String>,
         text_size: f32,
+        multiline: bool,
+        caret: super::textedit::Caret,
     },
     /// A drop/cycle selector over `options`, holding the chosen index.
     Menu {
@@ -1337,6 +1344,12 @@ impl Widget {
                     .to_string(),
                 label: label(&node.props),
                 text_size: text_size(&node.props),
+                multiline: node
+                    .props
+                    .get("multiline")
+                    .and_then(truthy)
+                    .unwrap_or(false),
+                caret: super::textedit::Caret::default(),
             },
             "menu" => {
                 let options = options(&node.props);
@@ -2002,10 +2015,21 @@ impl WidgetKind {
                 value,
                 label,
                 text_size,
+                multiline,
+                caret,
             } => match key {
-                "value" => v.as_str().map(|s| *value = s.to_string()).is_some(),
+                "value" => v
+                    .as_str()
+                    .map(|s| {
+                        *value = s.to_string();
+                        // The caret/selection may now point past the new string
+                        // or off a char boundary — re-land it.
+                        super::textedit::clamp(value, caret);
+                    })
+                    .is_some(),
                 "label" => set_label(label, v),
                 "text_size" => set_size(text_size, v),
+                "multiline" => truthy(v).map(|b| *multiline = b).is_some(),
                 _ => false,
             },
             WidgetKind::Menu {

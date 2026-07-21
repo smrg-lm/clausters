@@ -315,6 +315,37 @@ enum Drag {
         x0: f64,
         y0: f64,
     },
+    /// Selecting text in an editable `text` field: `anchor` is the caret byte
+    /// offset the press landed on; dragging extends the selection from it to the
+    /// caret under the cursor. `rect`/`scale` reconstruct the field's layout so
+    /// the cursor maps to a caret exactly as the renderer drew it.
+    TextSelect {
+        id: i32,
+        rect: Rect,
+        scale: f32,
+        anchor: usize,
+    },
+}
+
+/// A platform-neutral key for editing a focused `text` field — the fronts
+/// (winit native, winit-on-wasm web) translate their key events into this so
+/// the editing behavior lives once in the machine. Modifier state rides in the
+/// [`GestureCtx`] (`shift` extends a selection, `ctrl` word-jumps and drives
+/// cut/copy/paste/select-all on the letter keys).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TextKey {
+    /// A printable character to insert (already resolved from the layout).
+    Char(char),
+    Backspace,
+    Delete,
+    Left,
+    Right,
+    Up,
+    Down,
+    Home,
+    End,
+    /// Enter: a newline in a multiline field, ignored in a single-line one.
+    Enter,
 }
 
 /// One window's gesture state: the in-progress drag, if any. The front holds
@@ -379,9 +410,19 @@ impl Gestures {
     ) -> Vec<GestureEffect> {
         let mut out = Vec::new();
         let Some((id, rect, scale, kind)) = hit(host, ctx, cx, cy) else {
+            // A press on empty space drops the text focus (the caret disappears).
+            if let Some(old) = host.clear_text_focus() {
+                out.push(GestureEffect::Redraw(old));
+            }
             return out;
         };
         let def_id = ctx.def_id;
+        // A press on anything other than the focused text field defocuses it.
+        if !matches!(kind, WidgetKind::Text { .. })
+            && let Some(old) = host.clear_text_focus()
+        {
+            out.push(GestureEffect::Redraw(old));
+        }
         match kind {
             WidgetKind::Slider { range: r, vertical } => {
                 let body = controls::body_rect_at(rect, r.label.is_some(), r.text_size * scale);
@@ -414,6 +455,25 @@ impl Gestures {
             WidgetKind::Menu { .. } => {
                 interact::cycle_menu(host, def_id, id);
                 emit_value(host, &mut out, def_id, id);
+                out.push(GestureEffect::Redraw(def_id));
+            }
+            WidgetKind::Text { .. } => {
+                // Focus the field and drop the caret where the press landed; a
+                // drag from here extends a selection.
+                host.focus_text(def_id, id);
+                let pos =
+                    interact::text_caret_at(host, def_id, id, rect, scale, cx, cy).unwrap_or(0);
+                interact::text_edit(host, def_id, id, |value, caret, _| {
+                    super::textedit::clamp(value, caret); // guard a stale caret
+                    caret.pos = pos;
+                    caret.anchor = None;
+                });
+                self.drag = Some(Drag::TextSelect {
+                    id,
+                    rect,
+                    scale,
+                    anchor: pos,
+                });
                 out.push(GestureEffect::Redraw(def_id));
             }
             WidgetKind::Bpf {
@@ -759,6 +819,23 @@ impl Gestures {
             // knob drag is driven by relative motion (`relative_motion`), not by
             // these cursor positions.
             Drag::Button { .. } | Drag::Wire { .. } => {}
+            Drag::TextSelect {
+                id,
+                rect,
+                scale,
+                anchor,
+            } => {
+                // Extend the selection from the press anchor to the caret under
+                // the cursor. No emit: the string did not change, only the view
+                // state (the selection).
+                if let Some(pos) = interact::text_caret_at(host, def_id, id, rect, scale, cx, cy) {
+                    interact::text_edit(host, def_id, id, |_, caret, _| {
+                        caret.pos = pos;
+                        caret.anchor = Some(anchor);
+                    });
+                    out.push(GestureEffect::Redraw(def_id));
+                }
+            }
             Drag::Box {
                 id,
                 scale,
@@ -1609,6 +1686,161 @@ impl Gestures {
     }
 
     // ---- keyboard block operations ----
+
+    /// A key while a `text` field is focused: edit it and, on any content
+    /// change, deliver its new string exactly as a numeric control delivers on a
+    /// drag — bound → straight to the audio server, else a `/gui_event`, on
+    /// **every** keystroke (never gated on Enter). Modifiers ride in `ctx`
+    /// (`shift` extends a selection, `ctrl` word-jumps and drives
+    /// cut/copy/paste/select-all). Clipboard cut/copy/paste use the host-wide
+    /// `clipboard` (the native internal clipboard; the browser front swaps in the
+    /// OS clipboard around this call).
+    ///
+    /// Returns `Some(effects)` when the key was consumed by the focused field
+    /// (the front then skips its global editor shortcuts), or `None` when no
+    /// text field is focused in this window (the front runs its shortcuts).
+    pub fn text_key(
+        &self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        key: TextKey,
+        clipboard: &mut String,
+    ) -> Option<Vec<GestureEffect>> {
+        let def_id = ctx.def_id;
+        // Only when a field in *this* window holds the focus.
+        let (fdef, id) = host.focused_text()?;
+        if fdef != def_id {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut changed = false;
+        let edit = |host: &mut Host, f: &mut dyn FnMut(&mut String, &mut super::textedit::Caret, bool) -> bool| {
+            interact::text_edit(host, def_id, id, |v, c, ml| f(v, c, ml)).unwrap_or(false)
+        };
+
+        match key {
+            TextKey::Char(c) if ctx.ctrl => match c.to_ascii_lowercase() {
+                'c' => {
+                    if let Some(Some(s)) = interact::text_edit(host, def_id, id, |v, c, _| {
+                        super::textedit::selected(v, c).map(str::to_string)
+                    }) {
+                        *clipboard = s;
+                    }
+                }
+                'x' => {
+                    let cut = &mut *clipboard;
+                    changed = edit(host, &mut |v, c, _| {
+                        if let Some(s) = super::textedit::selected(v, c) {
+                            *cut = s.to_string();
+                            super::textedit::delete_selection(v, c)
+                        } else {
+                            false
+                        }
+                    });
+                }
+                'v' => {
+                    let paste = clipboard.clone();
+                    if !paste.is_empty() {
+                        changed = edit(host, &mut |v, c, ml| {
+                            let text = if ml {
+                                paste.clone()
+                            } else {
+                                paste.replace('\n', " ")
+                            };
+                            super::textedit::insert(v, c, &text)
+                        });
+                    }
+                }
+                'a' => {
+                    edit(host, &mut |v, c, _| {
+                        super::textedit::select_all(v, c);
+                        false
+                    });
+                }
+                _ => {} // another Ctrl combo: consumed but inert
+            },
+            // A plain (or Alt-less) printable char inserts; Alt combos are inert.
+            TextKey::Char(c) if !ctx.alt => {
+                changed = edit(host, &mut |v, cc, _| {
+                    super::textedit::insert(v, cc, c.encode_utf8(&mut [0; 4]))
+                });
+            }
+            TextKey::Char(_) => {}
+            TextKey::Backspace => {
+                changed = edit(host, &mut |v, c, _| super::textedit::backspace(v, c))
+            }
+            TextKey::Delete => changed = edit(host, &mut |v, c, _| super::textedit::delete(v, c)),
+            TextKey::Left => {
+                let word = ctx.ctrl;
+                let sel = ctx.shift;
+                edit(host, &mut |v, c, _| {
+                    if word {
+                        super::textedit::move_word_left(v, c, sel);
+                    } else {
+                        super::textedit::move_left(v, c, sel);
+                    }
+                    false
+                });
+            }
+            TextKey::Right => {
+                let word = ctx.ctrl;
+                let sel = ctx.shift;
+                edit(host, &mut |v, c, _| {
+                    if word {
+                        super::textedit::move_word_right(v, c, sel);
+                    } else {
+                        super::textedit::move_right(v, c, sel);
+                    }
+                    false
+                });
+            }
+            TextKey::Up => {
+                let sel = ctx.shift;
+                edit(host, &mut |v, c, _| {
+                    super::textedit::move_up(v, c, sel);
+                    false
+                });
+            }
+            TextKey::Down => {
+                let sel = ctx.shift;
+                edit(host, &mut |v, c, _| {
+                    super::textedit::move_down(v, c, sel);
+                    false
+                });
+            }
+            TextKey::Home => {
+                let sel = ctx.shift;
+                edit(host, &mut |v, c, _| {
+                    super::textedit::move_home(v, c, sel);
+                    false
+                });
+            }
+            TextKey::End => {
+                let sel = ctx.shift;
+                edit(host, &mut |v, c, _| {
+                    super::textedit::move_end(v, c, sel);
+                    false
+                });
+            }
+            TextKey::Enter => {
+                changed = edit(host, &mut |v, c, ml| {
+                    if ml {
+                        super::textedit::insert(v, c, "\n")
+                    } else {
+                        false // a single-line field ignores Enter (no send-on-Enter)
+                    }
+                });
+            }
+        }
+
+        // The focused field always repaints (the caret/selection moved); a
+        // content change also delivers the new value, ungated.
+        out.push(GestureEffect::Redraw(def_id));
+        if changed {
+            emit_value(host, &mut out, def_id, id);
+        }
+        Some(out)
+    }
 
     /// `q` over a piano-roll: quantize the selected notes' onsets (all of them
     /// when nothing is selected) to the widget's `snap` grid — the same grid a
@@ -2843,5 +3075,130 @@ mod tests {
             from(),
         );
         assert!(host.piano_voices(70).is_empty());
+    }
+
+    // --- editable text field ------------------------------------------------
+
+    /// A window with one editable `text` field (id 5) filling it.
+    fn text_host() -> Host {
+        host_from(r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text"}]}"#)
+    }
+
+    fn text_value(host: &Host, id: i32) -> String {
+        match &host.window_def(1).unwrap().find(id).unwrap().kind {
+            WidgetKind::Text { value, .. } => value.clone(),
+            other => panic!("not a text field: {other:?}"),
+        }
+    }
+
+    /// The string of the single `Emit` in `effects`, if any.
+    fn emitted_string(effects: &[GestureEffect]) -> Option<String> {
+        effects.iter().find_map(|e| match e {
+            GestureEffect::Emit { args, .. } => match args.first() {
+                Some(OscType::String(s)) => Some(s.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn a_press_focuses_the_field_and_typing_emits_on_every_keystroke() {
+        let mut host = text_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        // A press focuses the field (no emit yet — a click is not an edit).
+        let e = g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        assert_eq!(host.focused_text(), Some((1, 5)));
+        assert!(emitted_string(&e).is_none());
+        // Each character is delivered as the field's whole string, ungated.
+        for (ch, expect) in [('h', "h"), ('i', "hi")] {
+            let e = g
+                .text_key(&mut host, &ctx, TextKey::Char(ch), &mut String::new())
+                .expect("the focused field consumes the key");
+            assert_eq!(emitted_string(&e).as_deref(), Some(expect));
+            assert_eq!(text_value(&host, 5), expect);
+        }
+        // Backspace edits and re-emits.
+        let e = g
+            .text_key(&mut host, &ctx, TextKey::Backspace, &mut String::new())
+            .unwrap();
+        assert_eq!(emitted_string(&e).as_deref(), Some("h"));
+    }
+
+    #[test]
+    fn keys_are_ignored_when_no_field_is_focused() {
+        let mut host = text_host();
+        let g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        // Nothing focused: the machine declines the key (the front runs its
+        // global shortcuts instead).
+        assert!(
+            g.text_key(&mut host, &ctx, TextKey::Char('x'), &mut String::new())
+                .is_none()
+        );
+        assert_eq!(text_value(&host, 5), "");
+    }
+
+    #[test]
+    fn a_press_elsewhere_defocuses_the_field() {
+        // Two fields; focusing one then pressing the other moves the focus.
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"layout":"row","children":[
+                {"id":5,"type":"text"},{"id":6,"type":"text"}]}"#,
+        );
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 600, 400);
+        g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        assert_eq!(host.focused_text(), Some((1, 5)));
+        g.press(&mut host, &ctx, 330.0, 30.0, &mut || false);
+        assert_eq!(host.focused_text(), Some((1, 6)));
+    }
+
+    #[test]
+    fn enter_inserts_a_newline_only_in_a_multiline_field() {
+        let ctx = GestureCtx::new(1, 600, 400);
+        // Single-line: Enter is inert (no send-on-Enter).
+        let mut host = text_host();
+        let mut g = Gestures::default();
+        g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        let e = g
+            .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
+            .unwrap();
+        assert!(emitted_string(&e).is_none());
+        assert_eq!(text_value(&host, 5), "");
+        // Multiline: Enter inserts a newline and emits.
+        let mut host = host_from(
+            r#"{"type":"window","margin":0,"children":[{"id":5,"type":"text","multiline":true}]}"#,
+        );
+        let mut g = Gestures::default();
+        g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        g.text_key(&mut host, &ctx, TextKey::Char('a'), &mut String::new());
+        let e = g
+            .text_key(&mut host, &ctx, TextKey::Enter, &mut String::new())
+            .unwrap();
+        assert_eq!(emitted_string(&e).as_deref(), Some("a\n"));
+    }
+
+    #[test]
+    fn cut_and_paste_move_text_through_the_clipboard() {
+        let mut host = text_host();
+        let mut g = Gestures::default();
+        let mut ctx = GestureCtx::new(1, 600, 400);
+        let mut clip = String::new();
+        g.press(&mut host, &ctx, 30.0, 30.0, &mut || false);
+        for ch in "abc".chars() {
+            g.text_key(&mut host, &ctx, TextKey::Char(ch), &mut clip);
+        }
+        // Select all, then cut to the clipboard.
+        ctx.ctrl = true;
+        g.text_key(&mut host, &ctx, TextKey::Char('a'), &mut clip);
+        g.text_key(&mut host, &ctx, TextKey::Char('x'), &mut clip);
+        assert_eq!(clip, "abc");
+        assert_eq!(text_value(&host, 5), "");
+        // Paste it back twice.
+        g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
+        g.text_key(&mut host, &ctx, TextKey::Char('v'), &mut clip);
+        assert_eq!(text_value(&host, 5), "abcabc");
     }
 }

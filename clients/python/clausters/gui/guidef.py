@@ -258,10 +258,17 @@ def toggle(id: int | None = None, *, label: str | None = None, value: bool | Non
 
 
 def text(id: int | None = None, *, value: str | None = None, label: str | None = None,
-         text_size: float | None = None, color: str | None = None, **props) -> dict:
-    """A ``text`` field showing ``value`` (script-driven via ``/gui_set``).
-    ``text_size`` scales the field text and its label."""
+         text_size: float | None = None, multiline: bool | None = None,
+         color: str | None = None, **props) -> dict:
+    """An editable ``text`` field. The user types into it and the entered string
+    is emitted as a ``/gui_event`` (or forwarded to the server when bound) on
+    **every** edit — like a slider's value, never gated on Enter. ``multiline``
+    allows embedded newlines (Enter inserts one) and a growing field; ``value``
+    seeds the initial contents (and ``/gui_set value`` sets it live). ``text_size``
+    scales the field text and its label."""
     extra = _drop_none(value=value, label=label, text_size=text_size, color=color)
+    if multiline is not None:
+        extra["multiline"] = bool(multiline)
     return node("text", id=id, **extra, **props)
 
 

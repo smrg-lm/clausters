@@ -8,7 +8,7 @@
 use tracing::debug;
 use winit::window::{CursorGrabMode, Window};
 
-use crate::host::gestures::{GestureCtx, GestureEffect};
+use crate::host::gestures::{GestureCtx, GestureEffect, TextKey};
 
 use super::app::App;
 
@@ -124,6 +124,26 @@ impl App {
     }
 
     // ---- keyboard operations (dispatched from `window_event`) ----
+
+    /// Routes a key to the focused `text` field, if one is focused in this
+    /// window. Returns whether the field consumed it (so the caller skips the
+    /// global editor shortcuts).
+    pub(super) fn text_input(&mut self, def_id: i32, key: TextKey) -> bool {
+        let ctx = self.gesture_ctx(def_id);
+        let Some(ws) = self.windows.get_mut(&def_id) else {
+            return false;
+        };
+        let effects =
+            match ws
+                .gestures
+                .text_key(&mut self.host, &ctx, key, &mut self.text_clipboard)
+            {
+                Some(effects) => effects,
+                None => return false,
+            };
+        self.apply_gesture_effects(effects);
+        true
+    }
 
     pub(super) fn quantize_roll(&mut self, def_id: i32) {
         let Some((cx, cy)) = self.windows.get(&def_id).map(|w| w.cursor) else {

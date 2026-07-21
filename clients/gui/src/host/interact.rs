@@ -143,6 +143,63 @@ pub(crate) fn set_fraction(host: &mut Host, def_id: i32, widget_id: i32, t: f32)
     }
 }
 
+/// Runs `f` over a `text` field's `(value, caret)` in the host tree — the one
+/// door every keystroke and click goes through, so the fronts never unpack the
+/// variant themselves (the sibling of [`set_fraction`]/[`bpf_edit`]). `f`'s
+/// return value is passed through (`None` when the widget is gone or not a
+/// `text` field).
+pub(crate) fn text_edit<R>(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    f: impl FnOnce(&mut String, &mut super::textedit::Caret, bool) -> R,
+) -> Option<R> {
+    let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
+    match &mut w.kind {
+        WidgetKind::Text {
+            value,
+            caret,
+            multiline,
+            ..
+        } => Some(f(value, caret, *multiline)),
+        _ => None,
+    }
+}
+
+/// The caret byte offset a click at `(cx, cy)` lands on in the `text` field
+/// `widget_id` (its `rect` and workspace `scale` as the front hit-tested them).
+/// `None` when the widget is gone or not a text field.
+pub(crate) fn text_caret_at(
+    host: &Host,
+    def_id: i32,
+    widget_id: i32,
+    rect: Rect,
+    scale: f32,
+    cx: f64,
+    cy: f64,
+) -> Option<usize> {
+    let w = host.window_def(def_id)?.find(widget_id)?;
+    match &w.kind {
+        WidgetKind::Text {
+            value,
+            label,
+            text_size,
+            multiline,
+            caret,
+        } => Some(controls::caret_at(
+            rect,
+            value,
+            label.is_some(),
+            *text_size * scale,
+            *multiline,
+            *caret,
+            cx,
+            cy,
+        )),
+        _ => None,
+    }
+}
+
 /// Flips a `toggle`'s boolean state in the host tree.
 pub(crate) fn flip_toggle(host: &mut Host, def_id: i32, id: i32) {
     if let Some(tree) = host.window_def_mut(def_id)

@@ -56,6 +56,7 @@ pub mod registry;
 pub mod ruler;
 pub mod scroll;
 pub mod spectrum;
+pub mod textedit;
 pub mod theme;
 pub mod timeline;
 pub mod track;
@@ -418,6 +419,11 @@ pub struct Host {
     /// The host's color roles — one look per host, every paint site reads it
     /// (see [`theme`]).
     pub theme: theme::Theme,
+    /// The `text` field currently receiving keystrokes, as `(def_id, widget_id)`.
+    /// A press on a text field focuses it; a press elsewhere (or freeing the
+    /// widget) clears it. While set, key input edits that field instead of
+    /// running the global editor shortcuts (see [`textedit`]/[`gestures`]).
+    focused_text: Option<(i32, i32)>,
 }
 
 /// The base of the node-id window the host's piano voices allocate from —
@@ -446,7 +452,25 @@ impl Host {
             voices: HashMap::new(),
             voice_counter: 0,
             theme: theme::Theme::default(),
+            focused_text: None,
         }
+    }
+
+    /// The text field currently focused, as `(def_id, widget_id)`.
+    pub fn focused_text(&self) -> Option<(i32, i32)> {
+        self.focused_text
+    }
+
+    /// Focuses a text field for keyboard input (a press on it), replacing any
+    /// previous focus.
+    pub fn focus_text(&mut self, def_id: i32, widget_id: i32) {
+        self.focused_text = Some((def_id, widget_id));
+    }
+
+    /// Clears the text focus, returning the def id that held it (so the front
+    /// can repaint it to drop the caret) when it changed.
+    pub fn clear_text_focus(&mut self) -> Option<i32> {
+        self.focused_text.take().map(|(def_id, _)| def_id)
     }
 
     /// Attaches the audio-server client leg (host -> audio server) over UDP.
@@ -603,6 +627,7 @@ impl Host {
         if outcome.replaced {
             self.prune_bindings();
             self.prune_voices();
+            self.prune_text_focus();
         }
         // Inline `bind` props register a binding declaratively, so a saved GuiDef
         // carries its own bindings (the standalone path) and a live script may
@@ -721,6 +746,7 @@ impl Host {
         self.prune_bindings();
         self.prune_voices();
         self.prune_timeline_groups();
+        self.prune_text_focus();
         if removed > 0 {
             info!("{from}: {GUI_FREE} {id}: freed {removed} widget(s)");
         } else {
@@ -829,6 +855,16 @@ impl Host {
     /// redefining `/gui_def`), so a freed id cannot keep forwarding.
     fn prune_bindings(&mut self) {
         self.bindings.retain(|id, _| self.registry.contains(*id));
+    }
+
+    /// Clears the text focus if the focused widget was freed or redefined away,
+    /// so keystrokes never edit a widget that no longer exists.
+    fn prune_text_focus(&mut self) {
+        if let Some((_, id)) = self.focused_text
+            && !self.registry.contains(id)
+        {
+            self.focused_text = None;
+        }
     }
 
     /// Starts a host-managed voice for a held piano key, when widget

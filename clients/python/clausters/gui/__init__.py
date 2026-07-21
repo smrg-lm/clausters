@@ -43,7 +43,8 @@ for an NRT render plotted, ``gui_canvas`` for a shader, ``gui_scope`` for the
 oscilloscope, ``gui_analyzer`` for the phasescope and live spectrum,
 ``gui_editor`` for the editor-grade waveform + spectrogram,
 ``gui_bpf`` for the drawable envelope editor,
-``gui_multitrack`` for the DAW-style track timeline).
+``gui_multitrack`` for the DAW-style track timeline,
+``gui_oscsend`` for the editable ``text`` field typing an OSC message live).
 """
 
 from .editor import Editor

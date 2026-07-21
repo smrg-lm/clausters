@@ -87,6 +87,11 @@ ventana **dibuje y responda**:
   una ventana; los controles responden a `/gui_set` en vivo y emiten eventos.
 - **Bindings.** `examples/gui_bind.py` → mover una perilla cambia la `freq` de un
   synth sin pasar por el script.
+- **Campo de texto editable.** `examples/gui_oscsend.py` → hacer clic en el campo
+  y escribir/borrar/mover el cursor/seleccionar (y Ctrl+C/X/V); editar el número
+  de `/n_set <id> freq <valor>` cambia el tono del synth **al tiptear, sin Enter**
+  (envío continuo como una perilla); el segundo campo `multiline` mete saltos de
+  línea con Enter y mueve el cursor entre líneas.
 - **Meters y scope por memoria compartida.** `examples/gui_meters.py` /
   `gui_scope.py` → el meter/osciloscopio sigue el bus/tap en vivo (~30 fps), con
   trigger estable.

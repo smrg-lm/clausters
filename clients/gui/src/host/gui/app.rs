@@ -22,7 +22,7 @@ use crate::gpu::Gpu;
 use crate::host::canvas::CanvasView;
 use crate::host::fetch::BufferFetches;
 use crate::host::frame::{self, SpectrogramSlot, WaveformSlot};
-use crate::host::gestures::Gestures;
+use crate::host::gestures::{Gestures, TextKey};
 #[cfg(feature = "midi")]
 use crate::host::interact;
 use crate::host::live::TapWindow;
@@ -127,6 +127,10 @@ pub(super) struct App {
     /// The piano-roll note clipboard (Ctrl+C/X/V), normalized to the block's
     /// first onset — host-wide, so notes travel between rolls and windows.
     pub(super) clipboard: Vec<crate::host::pianoroll::Note>,
+    /// The `text` field clipboard (Ctrl+C/X/V) — the native front's internal
+    /// clipboard (no OS-clipboard dependency); host-wide so text travels between
+    /// fields and windows.
+    pub(super) text_clipboard: String,
 }
 
 impl App {
@@ -156,6 +160,7 @@ impl App {
             #[cfg(feature = "midi")]
             step: HashMap::new(),
             clipboard: Vec::new(),
+            text_clipboard: String::new(),
         }
     }
 
@@ -370,6 +375,11 @@ impl App {
             bus: self.shm.as_deref(),
             node_trees: &self.node_trees,
             active_button,
+            focused_text: self
+                .host
+                .focused_text()
+                .filter(|(d, _)| *d == def_id)
+                .map(|(_, id)| id),
             server_attached,
             sample_rate: self.shm.as_ref().map_or(0.0, |s| s.sample_rate()),
             sample_clock: self.shm.as_ref().map_or(0.0, |s| s.sample_clock()),
@@ -630,6 +640,14 @@ impl ApplicationHandler<UserEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 let ctrl = self.windows.get(&def_id).is_some_and(|w| w.ctrl);
+                // A focused text field consumes the key first (typing, caret
+                // motion, cut/copy/paste). Only when nothing is focused here do
+                // the global editor shortcuts below run.
+                if let Some(tk) = to_text_key(&event.logical_key)
+                    && self.text_input(def_id, tk)
+                {
+                    return;
+                }
                 match event.logical_key {
                     Key::Named(NamedKey::Escape) => self.user_close(def_id, event_loop),
                     Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
@@ -700,5 +718,30 @@ impl App {
             Some(WidgetKind::PianoRoll { snap, .. }) => *snap,
             _ => 0.0,
         }
+    }
+}
+
+/// Translates a winit key into the platform-neutral [`TextKey`] a focused
+/// `text` field edits with, or `None` for a key the field does not handle (the
+/// global shortcuts then run). A printable character (including Space) inserts;
+/// the named editing keys map one-to-one.
+pub(super) fn to_text_key(key: &Key) -> Option<TextKey> {
+    match key {
+        Key::Named(NamedKey::Backspace) => Some(TextKey::Backspace),
+        Key::Named(NamedKey::Delete) => Some(TextKey::Delete),
+        Key::Named(NamedKey::ArrowLeft) => Some(TextKey::Left),
+        Key::Named(NamedKey::ArrowRight) => Some(TextKey::Right),
+        Key::Named(NamedKey::ArrowUp) => Some(TextKey::Up),
+        Key::Named(NamedKey::ArrowDown) => Some(TextKey::Down),
+        Key::Named(NamedKey::Home) => Some(TextKey::Home),
+        Key::Named(NamedKey::End) => Some(TextKey::End),
+        Key::Named(NamedKey::Enter) => Some(TextKey::Enter),
+        Key::Named(NamedKey::Space) => Some(TextKey::Char(' ')),
+        Key::Character(s) => s
+            .chars()
+            .next()
+            .filter(|c| !c.is_control())
+            .map(TextKey::Char),
+        _ => None,
     }
 }

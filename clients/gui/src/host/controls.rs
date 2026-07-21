@@ -12,6 +12,7 @@
 use super::font;
 use super::layout::Rect;
 use super::paint::{Color, Mesh};
+use super::textedit;
 use super::theme::Theme;
 use super::widget::{Align, Range, WidgetKind};
 
@@ -80,6 +81,7 @@ pub fn draw(
     kind: &WidgetKind,
     rect: Rect,
     active: bool,
+    focused: bool,
     scale: f32,
     theme: &Theme,
 ) {
@@ -113,12 +115,16 @@ pub fn draw(
             value,
             label,
             text_size,
+            multiline,
+            caret,
         } => field(
             mesh,
             value,
             label.as_deref(),
             rect,
             *text_size * scale,
+            *multiline,
+            focused.then_some(*caret),
             theme,
         ),
         WidgetKind::Menu {
@@ -134,6 +140,8 @@ pub fn draw(
                 label.as_deref(),
                 rect,
                 *text_size * scale,
+                false,
+                None, // a menu's read-out is never an editable focus target
                 theme,
             );
         }
@@ -365,20 +373,179 @@ fn toggle(mesh: &mut Mesh, on: bool, label: Option<&str>, rect: Rect, size: f32,
     }
 }
 
-fn field(mesh: &mut Mesh, value: &str, label: Option<&str>, rect: Rect, size: f32, theme: &Theme) {
+/// The editable text field. `caret` is `Some` only while the field is focused
+/// (it then draws the selection and the blinking-less caret). The **layout does
+/// not depend on focus**: a multiline field always lays its lines top-aligned
+/// like a text editor (not a centered label), and a single-line field always
+/// sits on one vertically-centered row — an unfocused field uses a caret at the
+/// start (scroll offset 0), so the pre-written text reads exactly as it will
+/// once clicked into. A single-line field clips overflow with an ellipsis when
+/// unfocused, and scrolls to the caret when focused. (A `menu`'s read-out reuses
+/// this as an unfocused single-line field.)
+#[allow(clippy::too_many_arguments)] // a widget's draw: its content plus its box
+fn field(
+    mesh: &mut Mesh,
+    value: &str,
+    label: Option<&str>,
+    rect: Rect,
+    size: f32,
+    multiline: bool,
+    caret: Option<textedit::Caret>,
+    theme: &Theme,
+) {
     label_strip(mesh, label, rect, size, theme);
     let body = body_rect_at(rect, label.is_some(), size);
     mesh.rect(body, theme.field);
-    let ty = body.y + (body.h - font::height(size)) * 0.5;
-    font::text_ellipsis(
-        mesh,
-        value,
-        body.x + PAD,
-        ty.max(body.y),
-        (body.w - 2.0 * PAD).max(0.0),
-        size,
-        theme.text,
-    );
+
+    let text_x = body.x + PAD;
+    let text_w = (body.w - 2.0 * PAD).max(0.0);
+    let cols = font::fit_chars(text_w, size);
+    let cell = font::width(" ", size); // one glyph cell advance in device px
+    // Unfocused: lay out around a caret at the start (no scroll, no caret drawn).
+    let lay = caret.unwrap_or_default();
+
+    if !multiline {
+        // One row, vertically centered. Unfocused text that overflows clips with
+        // an ellipsis (the label/menu look); focused, it scrolls to the caret.
+        let ty = (body.y + (body.h - font::height(size)) * 0.5).max(body.y);
+        let first = value.split('\n').next().unwrap_or("");
+        if caret.is_none() {
+            font::text_ellipsis(mesh, first, text_x, ty, text_w, size, theme.text);
+            return;
+        }
+        let hstart = textedit::h_scroll(textedit::line_col(value, lay.pos).1, cols);
+        draw_line(
+            mesh, value, 0, text_x, ty, hstart, cols, cell, size, caret, theme,
+        );
+        return;
+    }
+
+    // Multiline: a top-aligned block of rows, scrolled (when focused) to the
+    // caret's line/column so it stays visible; from the top-left otherwise.
+    let hstart = textedit::h_scroll(textedit::line_col(value, lay.pos).1, cols);
+    let row_h = font::line_advance(size);
+    let rows = (((body.h - 2.0 * PAD) / row_h) as usize).max(1);
+    let row_start = textedit::h_scroll(textedit::line_col(value, lay.pos).0, rows);
+    let mut byte = 0usize; // running byte offset of each line's start
+    for (i, line) in value.split('\n').enumerate() {
+        if i >= row_start && i < row_start + rows {
+            let ty = body.y + PAD + (i - row_start) as f32 * row_h;
+            draw_line(
+                mesh, value, byte, text_x, ty, hstart, cols, cell, size, caret, theme,
+            );
+        }
+        byte += line.len() + 1; // + the '\n'
+    }
+}
+
+/// Draws one line of a field: its visible glyphs (scrolled by `hstart` columns,
+/// clipped to `cols`), and — only when `caret` is `Some` (focused) — the
+/// selection highlight over its selected span and the caret when it falls on
+/// this line. `line_byte` is the byte offset of the line's start in `value`.
+#[allow(clippy::too_many_arguments)] // the line, its window, the caret, the look
+fn draw_line(
+    mesh: &mut Mesh,
+    value: &str,
+    line_byte: usize,
+    x: f32,
+    y: f32,
+    hstart: usize,
+    cols: usize,
+    cell: f32,
+    size: f32,
+    caret: Option<textedit::Caret>,
+    theme: &Theme,
+) {
+    let end_byte = value[line_byte..]
+        .find('\n')
+        .map_or(value.len(), |i| line_byte + i);
+    let line = &value[line_byte..end_byte];
+
+    // Selection highlight (drawn under the text): the part of this line inside
+    // the selection, mapped to visible columns.
+    if let Some((s, e)) = caret.and_then(|c| c.selection()) {
+        let a = s.clamp(line_byte, end_byte);
+        let b = e.clamp(line_byte, end_byte);
+        if b > a || (s <= line_byte && e > end_byte) {
+            let ca = value[line_byte..a].chars().count();
+            let cb = value[line_byte..b].chars().count();
+            let va = ca.max(hstart).saturating_sub(hstart);
+            let vb = cb.min(hstart + cols).saturating_sub(hstart);
+            if vb > va {
+                mesh.rect(
+                    Rect::new(
+                        x + va as f32 * cell,
+                        y,
+                        (vb - va) as f32 * cell,
+                        font::height(size),
+                    ),
+                    theme.selection,
+                );
+            }
+        }
+    }
+
+    // The visible glyphs.
+    let visible: String = line.chars().skip(hstart).take(cols).collect();
+    font::text(mesh, &visible, x, y, size, theme.text);
+
+    // The caret, when focused and sitting on this line within the visible window.
+    if let Some(caret) = caret {
+        let cl = textedit::line_col(value, caret.pos).0;
+        let this_line = value[..line_byte].bytes().filter(|&b| b == b'\n').count();
+        if cl == this_line {
+            let col = value[line_byte..caret.pos.clamp(line_byte, end_byte)]
+                .chars()
+                .count();
+            if col >= hstart && col <= hstart + cols {
+                let cx = x + (col - hstart) as f32 * cell;
+                mesh.rect(
+                    Rect::new(cx, y, size.max(1.0), font::height(size)),
+                    theme.accent,
+                );
+            }
+        }
+    }
+}
+
+/// The caret byte offset a click at `(x, y)` lands on in a text `field`,
+/// reconstructing the same layout [`field`] draws (label strip, body inset,
+/// horizontal/vertical scroll from `current`) so a click lands on the glyph it
+/// points at. `has_label` and `size` are the widget's; `current` is the caret
+/// before the click (its scroll offset is what the field is showing).
+#[allow(clippy::too_many_arguments)] // a hit-test needs the field's full layout
+pub fn caret_at(
+    rect: Rect,
+    value: &str,
+    has_label: bool,
+    size: f32,
+    multiline: bool,
+    current: textedit::Caret,
+    x: f64,
+    y: f64,
+) -> usize {
+    let body = body_rect_at(rect, has_label, size);
+    let text_x = body.x + PAD;
+    let text_w = (body.w - 2.0 * PAD).max(0.0);
+    let cols = font::fit_chars(text_w, size);
+    let cell = font::width(" ", size).max(1.0);
+    let col_at = |lx: f64| (((lx as f32 - text_x) / cell).round().max(0.0)) as usize;
+    let caret_col = textedit::line_col(value, current.pos).1;
+
+    if !multiline {
+        let hstart = textedit::h_scroll(caret_col, cols);
+        return textedit::offset_of(value, 0, hstart + col_at(x));
+    }
+
+    let caret_line = textedit::line_col(value, current.pos).0;
+    let row_h = font::line_advance(size);
+    let rows = (((body.h - 2.0 * PAD) / row_h) as usize).max(1);
+    let row_start = textedit::h_scroll(caret_line, rows);
+    let hstart = textedit::h_scroll(caret_col, cols);
+    let n_lines = value.split('\n').count();
+    let rel = ((y as f32 - (body.y + PAD)) / row_h).max(0.0) as usize;
+    let line = (row_start + rel).min(n_lines.saturating_sub(1));
+    textedit::offset_of(value, line, hstart + col_at(x))
 }
 
 /// A value read-out at the bottom-right of a body (clipped with an ellipsis
