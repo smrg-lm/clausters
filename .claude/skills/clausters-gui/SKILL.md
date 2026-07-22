@@ -88,6 +88,15 @@ Every host feature is exercised (and lands implemented) through `clients/python/
 - **Examples are the acceptance surface:** `examples/gui_*.py` (skeleton, window, panel, meters, bind, nodetree, plot, canvas, standalone) each demonstrate one protocol capability end to end.
 - **E2E sandbox rule (non-negotiable):** the Bash sandbox isolates the network between invocations - run the gui host and the Python client in the **same** invocation (host in background with `&`, then the client, then kill). GPU-free assertions (navigation math, peaks vs brute force, FFT/STFT localization, cache round-trips, parse/layout/fetch/nodetree models) stay in the gui crate's `cargo test`; window binaries need a display and a Vulkan/Metal/DX12/GL adapter; `--headless` runs the protocol with no display.
 
+## Layout & basic design criteria (a GuiDef is an app shell, not a pile of widgets)
+
+Composing a window is a design act, not just listing widgets - a few rules keep it usable, and skipping them is how a transport bar ends up eating half the screen:
+
+- **Size on the main axis is `h`/`w` (fixed px) or `weight` (share of the leftover, default 1) - there is no `height`/`width` prop.** An unknown prop is *silently ignored*, so a control strip written `panel(..., height=48)` keeps `weight=1` and splits the window evenly with the main view. **Chrome is a fixed strip; the main view fills.** A transport/toolbar/status bar takes a fixed `h` (≈28-56 px); the canvas/editor/plot beside it takes the default weight and dominates. The shell pattern is `window(bar(h=28), content(), status(h=20), layout="col")` (see the module doc in `guidef.py`).
+- **A view bigger than its area goes in a `scroll`** (drag empty space to pan, wheel to zoom, anchor-preserving) - a patch, a timeline, a large plane. Give the `scroll` `content_w`/`content_h` (the virtual area) and size the child to it; never place boxes at fixed positions that fall off a fixed window with no way to reach them. The `graph`/patch canvas in particular is meant to live in a `scroll`.
+- **Keep chrome thin and the work surface large;** group related controls in a `panel` with its own `layout`; use `weight` to divide two work surfaces (e.g. a 3:1 split), `h`/`w` only for chrome. Match the surrounding examples' proportions rather than inventing new ones.
+- When you touch an example or build a demo window, **check the proportions render sensibly** (the main view dominant, chrome thin, nothing off-screen) - the layout math is testable without a GPU (`layout` -> rects), but the *judgement* is on you.
+
 ## Conventions (carry over from the rest of the project)
 
 - Build/test the crate from `clients/gui/`; keep it `cargo fmt --check`-clean and clippy-clean, native **and** `wasm32` (`check-wasm.sh`). Code, comments, strings and tests are English.

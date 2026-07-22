@@ -20,15 +20,20 @@ use super::theme::{Theme, with_alpha};
 
 const PAD: f32 = 8.0;
 const OBJ_W: f32 = 96.0;
-const HEAD_H: f32 = 20.0;
-const BODY_H: f32 = 16.0;
+/// The middle band of a box, holding the def name.
+const HEAD_H: f32 = 18.0;
+/// A port-name row: the inlet names sit under the top edge, the outlet names
+/// over the bottom edge (so a box reads inlets / def / outlets, top to bottom).
+const LABEL_H: f32 = 13.0;
 /// The vertical gap the auto-stack leaves between boxes — wider than a port's
 /// hit diameter, so an outlet on one box and the inlet on the box below it stay
 /// separately hittable (and there is room for the cord between them).
-const ROW_GAP: f32 = 44.0;
+const ROW_GAP: f32 = 40.0;
 /// Minimum horizontal room per port pin, so a busy edge stays hittable.
-const PORT_GAP: f32 = 18.0;
+const PORT_GAP: f32 = 24.0;
 const TEXT_SCALE: f32 = 1.5;
+/// The port names are drawn a little smaller than the def name.
+const LABEL_SCALE: f32 = 1.1;
 /// The port square's half-size (also its hit radius floor), device pixels.
 pub const PORT_R: f32 = 4.0;
 
@@ -111,24 +116,34 @@ pub struct GraphDraw {
     pub cords: Vec<Cord>,
 }
 
-/// The width a box needs: room for the widest edge's pins, floored at [`OBJ_W`].
+/// The width one edge needs: each port slot holds the widest label on that edge
+/// (or a pin's minimum), so the names never overlap.
+fn edge_w(ports: &[Port]) -> f32 {
+    let widest = ports
+        .iter()
+        .map(|p| font::width(&p.name, LABEL_SCALE))
+        .fold(0.0, f32::max);
+    ports.len() as f32 * (widest.max(PORT_GAP) + PAD)
+}
+
+/// The width a box needs: room for the busier edge's labelled pins, floored at
+/// [`OBJ_W`].
 fn obj_w(o: &Obj) -> f32 {
-    let ports = o.inlets.len().max(o.outlets.len()) as f32;
-    OBJ_W.max(ports * PORT_GAP + PAD)
+    OBJ_W.max(edge_w(&o.inlets)).max(edge_w(&o.outlets))
 }
 
 /// The box of `i`, at `scale` (the enclosing workspace's zoom, `1.0` bare):
 /// placed at its explicit `x`/`y` when it has them, else auto-stacked down the
 /// left column.
 pub fn obj_rect(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> Rect {
-    let h = (HEAD_H + BODY_H) * scale;
+    let h = (HEAD_H + 2.0 * LABEL_H) * scale;
     let w = graph.boxes.get(i).map_or(OBJ_W, obj_w) * scale;
     if let Some(o) = graph.boxes.get(i)
         && let (Some(x), Some(y)) = (o.x, o.y)
     {
         return Rect::new(area.x + x * scale, area.y + y * scale, w, h);
     }
-    let y = area.y + (PAD + i as f32 * (HEAD_H + BODY_H + ROW_GAP)) * scale;
+    let y = area.y + (PAD + i as f32 * (HEAD_H + 2.0 * LABEL_H + ROW_GAP)) * scale;
     Rect::new(area.x + PAD * scale, y, w, h)
 }
 
@@ -266,7 +281,10 @@ pub fn draw(
         );
     }
 
-    // The boxes: the def name in the header, inlet pins on top, outlets below.
+    // The boxes: three bands top to bottom — inlet names under the top pins, the
+    // def name in the middle, outlet names over the bottom pins — so a box reads
+    // like its signal flow (in on top, out on the bottom).
+    let lts = LABEL_SCALE * scale;
     for (i, o) in graph.boxes.iter().enumerate() {
         let r = obj_rect(area, graph, i, scale);
         mesh.rect(r, theme.object_fill);
@@ -277,27 +295,37 @@ pub fn draw(
             theme.object_edge
         };
         mesh.border(r, if sel { 2.0 } else { 1.0 }, edge);
+        // The def name, centred in the middle band.
+        let def_w = font::width(&o.def, ts);
         font::text(
             mesh,
             &o.def,
-            r.x + PAD * 0.5 * scale,
-            r.y + 4.0 * scale,
+            r.x + (r.w - def_w) * 0.5,
+            r.y + (LABEL_H + (HEAD_H - font::height(ts)) * 0.5) * scale,
             ts,
             theme.text,
         );
-        for (p, _) in o.inlets.iter().enumerate() {
+        let pin_rect =
+            |px: f32, py: f32| Rect::new(px - port_r, py - port_r, port_r * 2.0, port_r * 2.0);
+        for (p, port) in o.inlets.iter().enumerate() {
             let (px, py) = port_pin(area, graph, i, Side::In, p, scale);
-            mesh.rect(
-                Rect::new(px - port_r, py - port_r, port_r * 2.0, port_r * 2.0),
-                theme.port,
+            mesh.rect(pin_rect(px, py), theme.port);
+            let w = font::width(&port.name, lts);
+            font::text(
+                mesh,
+                &port.name,
+                px - w * 0.5,
+                r.y + 2.0 * scale,
+                lts,
+                theme.text,
             );
         }
-        for (p, _) in o.outlets.iter().enumerate() {
+        for (p, port) in o.outlets.iter().enumerate() {
             let (px, py) = port_pin(area, graph, i, Side::Out, p, scale);
-            mesh.rect(
-                Rect::new(px - port_r, py - port_r, port_r * 2.0, port_r * 2.0),
-                theme.port,
-            );
+            mesh.rect(pin_rect(px, py), theme.port);
+            let w = font::width(&port.name, lts);
+            let ly = r.y + r.h - (LABEL_H - 1.0) * scale;
+            font::text(mesh, &port.name, px - w * 0.5, ly, lts, theme.text);
         }
     }
 

@@ -37,7 +37,7 @@ import sys
 
 from clausters import Session
 from clausters.defs import GraphPatch, SynthDef, control, in_, out, sine
-from clausters.gui import button, graph, panel, window
+from clausters.gui import button, graph, panel, scroll, window
 
 TEMPO = 2.0
 SILENT = 64  # a spare audio bus (0..127) nothing reads: the "unconnected" default.
@@ -96,24 +96,30 @@ print("compiled:", patch.compile())
 
 # A place for each box, so the patch reads top-to-bottom (the GUI persists moves
 # from here). Box index -> (x, y) in canvas units.
-geometry = {b_tone: (200.0, 30.0), b_dac: (200.0, 190.0), b_out: (200.0, 320.0)}
+geometry = {b_tone: (200.0, 40.0), b_dac: (200.0, 230.0), b_out: (200.0, 420.0)}
 
 
 # %% [markdown]
 # ## The GUI: a view of the patch
-# `graph` draws the boxes and cords; `to_widget` renders the model into it. A
-# transport panel rides beside it. Nothing sounds until **render** compiles the
-# patch and instances it.
+# `graph` draws the boxes and cords; `to_widget` renders the model into it. The
+# patch sits in a `scroll` workspace — **drag the empty space to pan, wheel to
+# zoom** — so a patch bigger than the window stays reachable. A thin transport
+# strip (a fixed ``h``, so it does not eat the canvas) rides below. Nothing sounds
+# until **render** compiles the patch and instances it.
 
 # %%
-PATCH, RENDER, STOP = 7, 1, 2
+PATCH, WORKSPACE, RENDER, STOP = 7, 6, 1, 2
+CONTENT = (900.0, 760.0)
 transport = panel(5, button(RENDER, label="render"), button(STOP, label="stop"),
-                  layout="row", height=0.18)
+                  layout="row", h=48)
 
 gui = session.gui()
 win = gui.open(window(
-    graph(PATCH, **patch.to_widget(geometry), label="patch"),
-    transport, title="Patcher", w=520, h=520, layout="col"))
+    scroll(WORKSPACE,
+           graph(PATCH, **patch.to_widget(geometry), label="patch",
+                 x=0.0, y=0.0, w=CONTENT[0], h=CONTENT[1]),
+           content_w=CONTENT[0], content_h=CONTENT[1]),
+    transport, title="Patcher", w=560, h=620, layout="col"))
 session.start()
 
 instance = None
@@ -136,8 +142,8 @@ def render() -> None:
 
 
 print(f"opened window {win}")
-print("drag tone.out's pin down onto dac.in to (re)connect; press render to hear.")
-print("insert trem: create it, wire tone->trem and trem->dac, render.")
+print("drag the empty canvas to pan, wheel to zoom; drag a box to move it.")
+print("drag an outlet pin onto an inlet to cord them; press render to hear.")
 
 
 # %% [markdown]
