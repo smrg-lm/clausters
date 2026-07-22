@@ -39,7 +39,7 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import clip, pianoroll, track, window
+from .guidef import clip, graph, pianoroll, scroll, track, window
 
 __all__ = ["Editor"]
 
@@ -134,6 +134,9 @@ class Editor:
         #: is a `Track`), and widget id -> that element for the edit-back route.
         self._roll_element = None
         self._rolls: dict = {}
+        #: graph widget id -> (logical `Group`, its box-order member handles) —
+        #: the directed-patch view of a logical group, for its edit-back route.
+        self._graphs: dict = {}
         self._host = None
         self._window = None
         #: The rendering in flight: where it went, on what clock, and the
@@ -194,36 +197,54 @@ class Editor:
         time axis. Pure — it builds the tree and the id registry, and sends
         nothing.
 
-        A **logical** group draws as a directed `graph` patch, which needs each
-        member's port directions from its def — the directed patcher's Python
-        driver (the P3 milestone). Until then a logical group is skipped here;
-        build one directly with `clausters.defs.GraphPatch` + `guidef.graph`
-        (see ``examples/gui_patcher.py``)."""
+        A **logical** group draws as a directed `graph` patch (a server patch, not
+        a timeline lane): a box per member, its typed ports derived from the
+        `SynthDef` the member wraps, cords from the members' shared internal-bus
+        controls (`_logical_patch`). A member wrapping a bare def *name* draws
+        port-less (its directions need the def object)."""
         if self._mode == "pianoroll":
             return self._draw_pianoroll()
         self._ids = itertools.count(self._base_id)
         self._clips = {}
         self._lanes = {}
         self._rolls = {}
+        self._graphs = {}
 
         lanes: list = []
         root = self.element
         if isinstance(root, Group) and root.kind == CONCRETE:
             for member in root.handles:
                 if isinstance(member.element, Group) and member.element.kind == LOGICAL:
-                    continue  # deferred: the directed patcher driver (see above)
-                lanes += self._lanes_for(member.element, member.offset, root, member)
+                    lanes.append(self._graph_lane(member.element))
+                else:
+                    lanes += self._lanes_for(member.element, member.offset, root, member)
         elif isinstance(root, Group) and root.kind == LOGICAL:
-            pass  # deferred: the directed patcher driver (see above)
+            lanes.append(self._graph_lane(root))
         else:
             lanes += self._lanes_for(root, float(root.onset or 0.0), None, None)
 
-        # The bottom lane rules the shared axis (one ruler under the stack is the
-        # DAW convention); every lane carries the tempo/rate its ticks read.
-        if lanes:
-            lanes[-1]["ruler"] = "beats"
+        # The bottom **track** lane rules the shared axis (one ruler under the
+        # stack is the DAW convention); a graph lane has no time axis, so it is
+        # skipped when picking the ruler.
+        for lane in reversed(lanes):
+            if lane.get("type") == "track":
+                lane["ruler"] = "beats"
+                break
         return window(*lanes, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
+
+    def _graph_lane(self, group) -> dict:
+        """A logical group drawn as a directed `graph` inside a pan/zoom `scroll`
+        workspace — a server patch among the timeline lanes. Registers the graph
+        widget id so an edit-back resolves to the group it draws."""
+        patch, handles = _logical_patch(group)
+        wid = next(self._ids)
+        self._graphs[wid] = (group, handles)
+        content = (900.0, 700.0)
+        view = graph(wid, **patch.to_widget(), label=_name(group),
+                     x=0.0, y=0.0, w=content[0], h=content[1])
+        return scroll(next(self._ids), view,
+                      content_w=content[0], content_h=content[1])
 
     def open(self, host, id: int | None = None) -> int:
         """`draw` the composition and open it on ``host`` (a
@@ -758,6 +779,56 @@ class Editor:
         except (NotImplementedError, TypeError):
             return 0.0
         return max((beat + _event_dur(item) for beat, item in events), default=0.0)
+
+
+def _logical_patch(group):
+    """A logical `Group` as a `clausters.defs.GraphPatch`: one box per member (its
+    typed ports **derived from the SynthDef it wraps**), one cord per shared
+    internal bus name — a writer's outlet to a reader's inlet. The members'
+    bus-valued controls carry the wiring, the same controls `Group.to_graphdef`
+    reads, so the drawn patch and the rendered GraphDef agree on the connections.
+
+    A member wrapping a bare def *name* (not a `SynthDef` object) draws as a
+    port-less box — its port directions are unknowable without the def. A control
+    valued ``"OUT"`` (hardware) is not a cord: that member reaches hardware itself.
+    Returns the patch and the member handles in box order (so an edit-back can map
+    a box index back to the member whose controls it rewrites)."""
+    from ..defs import GraphPatch, synthdef_ports
+    from ..defs.synthdef import SynthDef
+
+    patch = GraphPatch()
+    handles = list(group.handles)
+    writers: dict = {}   # bus name -> [(box, outlet control name)]
+    readers: dict = {}   # bus name -> [(box, inlet control name)]
+    for member in handles:
+        child = member.element
+        wraps = getattr(child, "wraps", None)
+        if isinstance(wraps, SynthDef):
+            inlets, outlets = synthdef_ports(wraps)
+            box = patch.add(wraps)
+        else:
+            inlets, outlets = [], []
+            box = patch.add(child.def_name)
+        in_names = {_port_name(p) for p in inlets}
+        out_names = {_port_name(p) for p in outlets}
+        for ctl, value in (getattr(child, "controls", None) or {}).items():
+            if not isinstance(value, str) or value == "OUT":
+                continue  # a number is a value; "OUT" reaches hardware, not a cord
+            if ctl in out_names:
+                writers.setdefault(value, []).append((box, ctl))
+            elif ctl in in_names:
+                readers.setdefault(value, []).append((box, ctl))
+    for bus, sources in writers.items():
+        for src_box, outlet in sources:
+            for dst_box, inlet in readers.get(bus, []):
+                patch.connect(src_box, outlet, dst_box, inlet)
+    return patch, handles
+
+
+def _port_name(port) -> str:
+    """A port spec's name, whether audio (a bare string) or control (``(name,
+    rate)``)."""
+    return port if isinstance(port, str) else port[0]
 
 
 def _name(element) -> str:

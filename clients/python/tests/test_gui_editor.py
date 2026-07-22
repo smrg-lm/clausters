@@ -7,9 +7,11 @@ samples unit bridge, and the id registry that the edit-back path writes through.
 
 import pytest
 
+from clausters.defs import SynthDef, control, in_, out, sine
 from clausters.defs.buffer import Buffer as ServerBuffer
-from clausters.gui.editor import Editor
-from clausters.form import Buffer, Event, Group, Sequence, Track
+from clausters.gui.editor import Editor, _logical_patch
+from clausters.form import Buffer, Event, Generator, Group, Sequence, Track
+from clausters.form.group import LOGICAL
 from clausters.seq.event import Event as SeqEvent
 from clausters.seq.timeline import Timeline
 
@@ -32,6 +34,18 @@ def song() -> Group:
 
 def editor(element=None, **kwargs) -> Editor:
     return Editor(element or song(), sample_rate=SR, tempo=TEMPO, **kwargs)
+
+
+def fx_chain() -> Group:
+    """A logical group: a source writing bus ``mix``, a terminal sink reading it
+    (and writing hardware bus 0 itself). The members carry SynthDefs, so their
+    ports derive from the def; the shared bus name is the cord."""
+    src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
+    sink = SynthDef("gsink", out(0, in_(control("in")) * control("amp", 0.3)))
+    g = Group(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g.add(Generator(src, controls={"out": "mix"}))
+    g.add(Generator(sink, controls={"in": "mix"}))
+    return g
 
 
 def lanes(tree: dict) -> list:
@@ -535,3 +549,42 @@ def test_the_edited_composition_renders_where_it_was_dropped():
     # The score is in seconds: beat 3 at 2 beats/sec sounds at 1.5 s — the unit
     # bridge closing on the far side.
     assert starts(edited) == [3.0 / TEMPO]
+
+
+# ---- logical groups: a directed graph patch, not a timeline lane ----
+
+def test_logical_patch_derives_boxes_and_cords_from_the_defs():
+    patch, handles = _logical_patch(fx_chain())
+    w = patch.to_widget()
+    # Ports read off each SynthDef: gsrc has one outlet, gsink one inlet (terminal).
+    assert w["boxes"][0] == {"def": "gsrc", "inlets": [], "outlets": ["out"]}
+    assert w["boxes"][1] == {"def": "gsink", "inlets": ["in"], "outlets": []}
+    # The shared bus "mix" is the cord: gsrc.out -> gsink.in.
+    assert w["cords"] == [0, 0, 1, 0]
+    assert len(handles) == 2
+
+
+def test_editor_draws_a_root_logical_group_as_a_graph():
+    ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
+    tree = ed.draw()
+    scrolls = [c for c in tree["children"] if c["type"] == "scroll"]
+    assert len(scrolls) == 1, "the logical group is a pan/zoom graph workspace"
+    view = scrolls[0]["children"][0]
+    assert view["type"] == "graph"
+    assert view["cords"] == [0, 0, 1, 0]
+    # Registered so an edit-back resolves to the group it draws.
+    assert view["id"] in ed._graphs
+    assert ed._graphs[view["id"]][0] is ed.element
+
+
+def test_a_logical_group_among_concrete_lanes_draws_as_a_graph_lane():
+    # A concrete root with a track lane and a logical group beside it.
+    melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))]))
+    root = Group([(0.0, Group([(0.0, melody)], name="lead")),
+                  (0.0, fx_chain())], name="song")
+    tree = Editor(root, sample_rate=SR, tempo=TEMPO).draw()
+    kinds = [c["type"] for c in tree["children"]]
+    assert "track" in kinds and "scroll" in kinds
+    # The ruler rides the bottom *track* lane, never the graph.
+    tracks = [c for c in tree["children"] if c["type"] == "track"]
+    assert tracks[-1].get("ruler") == "beats"
