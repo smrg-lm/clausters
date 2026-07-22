@@ -10,9 +10,8 @@ bus per connected net — its writers **sum** — and `to_graphdef` hands back a
 
     p = GraphPatch()
     tone = p.add("tone", outlets=["out"])
-    dac = p.add("dac", inlets=["in"], outlets=["out"])
-    out = p.sink()
-    p.connect(tone, "out", dac, "in"); p.connect(dac, "out", out, "in")
+    dac = p.add("dac", inlets=["in"])    # a terminal sink: reaches hardware itself
+    p.connect(tone, "out", dac, "in")    # tone -> dac -> speakers
     server.add_graphdef(p.to_graphdef("patch")); server.graph("patch")   # sounds
 
 The GUI is a **view** of that same model. The `graph` widget draws the boxes and
@@ -24,7 +23,9 @@ hear it; the direction reads top-to-bottom, and the buses are never on screen.
 
 An unwired outlet keeps its def's default, so these defs default their bus
 controls to ``SILENT`` (a spare bus nobody reads): a box is silent until a cord
-reaches it, and the only path to the speakers is a cord into the ``OUT`` box.
+reaches it. A bus is never drawn, so neither is the hardware output: a signal
+reaches the speakers through a **terminal def** — a ``dac`` with an inlet and no
+outlet, its ``Out.ar(0, …)`` baked in — a box like any other, not an ``OUT`` node.
 
 Run it as a script (``python gui_patcher.py``) or cell by cell (``# %%``). Needs
 a live audio server (it starts its own) and a display with a GPU adapter; the
@@ -47,8 +48,9 @@ SILENT = 64  # a spare audio bus (0..127) nothing reads: the "unconnected" defau
 # ## The member defs (the boxes' building blocks)
 # Three SynthDefs. A control that feeds an ``Out`` is an **outlet**, one that
 # feeds an ``In`` an **inlet** — that is where the box's ports come from, and it
-# is structural (not a guess). `tone` is a source, `trem` a tremolo, `dac` the
-# output stage a cord to ``OUT`` sends to the speakers.
+# is structural (not a guess). `tone` is a source, `trem` a tremolo, and `dac`
+# the **terminal** stage: it reads ``in`` and writes hardware bus 0 itself, so it
+# has an inlet and no outlet — the speakers are reached by a cord *into* it.
 
 # %%
 def tone(name: str = "tone") -> SynthDef:
@@ -65,10 +67,10 @@ def trem(name: str = "trem") -> SynthDef:
 
 
 def dac(name: str = "dac") -> SynthDef:
-    """The output stage: reads ``in``, scales it, writes ``out`` — a cord to the
-    ``OUT`` box reaches the speakers (hardware bus 0, so this sounds on the left)."""
-    return SynthDef(name, out(control("out", SILENT),
-                              in_(control("in", SILENT)) * control("amp", 0.4)))
+    """The terminal stage: reads ``in``, scales it, and writes **hardware bus 0**
+    itself (baked ``Out.ar(0, …)``, so this sounds on the left). It has an inlet
+    and no outlet — a cord into it is the only path to the speakers."""
+    return SynthDef(name, out(0, in_(control("in", SILENT)) * control("amp", 0.4)))
 
 
 session = Session.live(tempo=TEMPO, latency=0.1)
@@ -79,24 +81,23 @@ for sdef in (tone(), trem(), dac()):
 
 # %% [markdown]
 # ## The patch, built in code
-# The seed: `tone` -> `dac` -> the hardware. Each box declares its typed ports;
-# a cord connects an outlet to an inlet. This is already a complete, sendable
-# program — the GUI below only edits the same object.
+# The seed: `tone` -> `dac` (the terminal sink that reaches the speakers itself).
+# Each box declares its typed ports; a cord connects an outlet to an inlet. This
+# is already a complete, sendable program — the GUI below only edits the same
+# object.
 
 # %%
 patch = GraphPatch()
 b_tone = patch.add("tone", outlets=["out"])
-b_dac = patch.add("dac", inlets=["in"], outlets=["out"])
-b_out = patch.sink()                        # the hardware output box
-patch.connect(b_tone, "out", b_dac, "in")   # tone -> dac
-patch.connect(b_dac, "out", b_out, "in")    # dac -> speakers
+b_dac = patch.add("dac", inlets=["in"])     # terminal: an inlet, no outlet
+patch.connect(b_tone, "out", b_dac, "in")   # tone -> dac -> speakers
 
 # The cord->bus pass names one bus per net; print what the server will get.
 print("compiled:", patch.compile())
 
 # A place for each box, so the patch reads top-to-bottom (the GUI persists moves
 # from here). Box index -> (x, y) in canvas units.
-geometry = {b_tone: (200.0, 40.0), b_dac: (200.0, 230.0), b_out: (200.0, 420.0)}
+geometry = {b_tone: (200.0, 40.0), b_dac: (200.0, 300.0)}
 
 
 # %% [markdown]

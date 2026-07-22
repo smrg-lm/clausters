@@ -22,12 +22,15 @@ inlet, and audio and control cords never connect.
 
     p = GraphPatch()
     tone = p.add("tone", outlets=["out"])
-    dac = p.add("dac", inlets=["in"], outlets=["out"])
-    out = p.sink()                       # the hardware output box
-    p.connect(tone, "out", dac, "in")    # tone -> dac
-    p.connect(dac, "out", out, "in")     # dac -> speakers
+    dac = p.add("dac", inlets=["in"])    # a terminal sink: reaches hardware itself
+    p.connect(tone, "out", dac, "in")    # tone -> dac -> speakers
     server.add_graphdef(p.to_graphdef("chain"))
     server.graph("chain")                # sounds
+
+The buses are never drawn or named by you, so **the hardware output is not one
+either**: a signal reaches the speakers through a **terminal def** — a ``dac``
+with an inlet and no outlet, its ``Out.ar(0, …)`` baked in — a box like any other,
+not a special ``OUT`` node.
 
 The **rate** of a port is its cord type: an audio port is a plain name, a control
 port the pair ``(name, "control")``. Audio and control cords never connect, and
@@ -52,8 +55,8 @@ class GraphPatch:
     `GraphDef`. Its boxes and the cords between their ports."""
 
     def __init__(self):
-        #: Each box a flat ``{def, hardware, ports: [{name, dir, rate}, ...]}`` —
-        #: the schema the cord->bus pass reads.
+        #: Each box a flat ``{def, ports: [{name, dir, rate}, ...]}`` — the schema
+        #: the cord->bus pass reads.
         self.boxes: list[dict] = []
         #: Each cord a ``{from_box, from_port, to_box, to_port}`` (ports are flat
         #: indices into the box's ``ports``).
@@ -61,18 +64,14 @@ class GraphPatch:
 
     # ---- building ----
 
-    def add(self, defname: str, inlets=(), outlets=(), *, hardware: bool = False) -> int:
+    def add(self, defname: str, inlets=(), outlets=()) -> int:
         """Add a box for def ``defname`` with its typed ``inlets``/``outlets``
-        (each a name, or ``(name, "control")``). Returns the box index."""
+        (each a name, or ``(name, "control")``). A **terminal** def (a sink that
+        reaches hardware itself) is simply one with inlets and no outlets. Returns
+        the box index."""
         ports = [_port(p, "in") for p in inlets] + [_port(p, "out") for p in outlets]
-        self.boxes.append({"def": str(defname), "hardware": bool(hardware), "ports": ports})
+        self.boxes.append({"def": str(defname), "ports": ports})
         return len(self.boxes) - 1
-
-    def sink(self, name: str = "OUT") -> int:
-        """The **hardware output** box (one audio inlet): a cord into it reaches
-        the speakers. Its net compiles to the reserved ``OUT`` bus, and it is not
-        itself a member. Returns its box index."""
-        return self.add(name, inlets=["in"], hardware=True)
 
     def connect(self, src: int, outlet, dst: int, inlet) -> "GraphPatch":
         """Draw a directed cord: box ``src``'s ``outlet`` -> box ``dst``'s
@@ -106,20 +105,20 @@ class GraphPatch:
         return {"boxes": self.boxes, "cords": self.cords}
 
     def compile(self) -> dict:
-        """Run the shared cord->bus pass. Returns ``{buses, members}`` — one bus
-        per connected net (writers summing), the hardware net named ``OUT``, each
-        member its def and its wired controls. Raises `ValueError` on a bad cord
-        (reversed, rate-mismatched, out of range)."""
+        """Run the shared cord->bus pass. Returns ``{buses, members}`` — one
+        private bus per connected net (writers summing), each member its def and
+        its wired controls. Raises `ValueError` on a bad cord (reversed,
+        rate-mismatched, out of range)."""
         return _native.compile_patch(self.to_json())
 
     def to_graphdef(self, name: str) -> GraphDef:
-        """Compile to a ready-to-send `GraphDef`: the named buses declared and
-        each member wired to them (a control on the hardware net set to ``OUT``)."""
+        """Compile to a ready-to-send `GraphDef`: the private buses declared and
+        each member wired to them."""
         compiled = self.compile()
         gdef = GraphDef(name)
         refs = {b["name"]: gdef.bus(b["name"], rate=b["rate"]) for b in compiled["buses"]}
         for member in compiled["members"]:
-            controls = {w["control"]: refs.get(w["bus"], w["bus"]) for w in member["controls"]}
+            controls = {w["control"]: refs[w["bus"]] for w in member["controls"]}
             gdef.add(member["def"], controls)
         return gdef
 

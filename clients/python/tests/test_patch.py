@@ -20,26 +20,22 @@ def _pass_or_skip():
 
 
 def chain() -> GraphPatch:
-    """tone -> dac -> speakers: the seed the example starts from."""
+    """tone -> dac (a terminal sink): the seed the example starts from."""
     p = GraphPatch()
     tone = p.add("tone", outlets=["out"])
-    dac = p.add("dac", inlets=["in"], outlets=["out"])
-    out = p.sink()
+    dac = p.add("dac", inlets=["in"])   # terminal: reaches hardware itself
     p.connect(tone, "out", dac, "in")
-    p.connect(dac, "out", out, "in")
     return p
 
 
-def test_compile_names_one_bus_per_net_and_reaches_out():
+def test_compile_names_one_private_bus_per_net():
     _pass_or_skip()
     c = chain().compile()
-    # One private bus for tone->dac; the dac->OUT net is the hardware, not a bus.
-    assert [b["name"] for b in c["buses"]] == ["b0"]
-    # Two members (the hardware OUT box is not one).
+    assert [b["name"] for b in c["buses"]] == ["b0"]   # the one link; no OUT bus
     assert [m["def"] for m in c["members"]] == ["tone", "dac"]
     tone, dac = c["members"]
     assert tone["controls"] == [{"control": "out", "bus": "b0"}]
-    assert {w["control"]: w["bus"] for w in dac["controls"]} == {"in": "b0", "out": "OUT"}
+    assert dac["controls"] == [{"control": "in", "bus": "b0"}]
 
 
 def test_fan_in_sums_onto_one_bus():
@@ -47,11 +43,9 @@ def test_fan_in_sums_onto_one_bus():
     p = GraphPatch()
     a = p.add("tone", outlets=["out"])
     b = p.add("tone", outlets=["out"])
-    dac = p.add("dac", inlets=["in"], outlets=["out"])
-    out = p.sink()
+    dac = p.add("dac", inlets=["in"])
     p.connect(a, "out", dac, "in")
     p.connect(b, "out", dac, "in")   # both into dac.in -> they sum on one bus
-    p.connect(dac, "out", out, "in")
     c = p.compile()
     assert len(c["buses"]) == 1
     # Both sources write the same bus.
@@ -66,7 +60,7 @@ def test_to_graphdef_builds_a_sendable_spec():
     assert [b["name"] for b in spec["buses"]] == ["b0"]
     members = {m["def"]: m.get("controls", {}) for m in spec["members"]}
     assert members["tone"] == {"out": "b0"}
-    assert members["dac"] == {"in": "b0", "out": "OUT"}
+    assert members["dac"] == {"in": "b0"}
 
 
 def test_a_control_rate_cord_makes_a_control_bus():
@@ -92,12 +86,11 @@ def test_a_reversed_cord_is_reported():
 def test_to_widget_splits_ports_and_indexes_cords():
     # No native needed: to_widget is pure structure.
     w = chain().to_widget(geometry={1: (120.0, 40.0)})
-    # tone: no inlets, one outlet; dac: one inlet, one outlet; OUT: one inlet.
+    # tone: no inlets, one outlet; dac (terminal): one inlet, no outlet.
     assert w["boxes"][0] == {"def": "tone", "inlets": [], "outlets": ["out"]}
-    assert w["boxes"][1] == {"def": "dac", "inlets": ["in"], "outlets": ["out"], "x": 120.0, "y": 40.0}
-    assert w["boxes"][2] == {"def": "OUT", "inlets": ["in"], "outlets": []}
-    # Cords as [from_box, outlet_idx, to_box, inlet_idx] quadruples.
-    assert w["cords"] == [0, 0, 1, 0, 1, 0, 2, 0]
+    assert w["boxes"][1] == {"def": "dac", "inlets": ["in"], "outlets": [], "x": 120.0, "y": 40.0}
+    # One cord as [from_box, outlet_idx, to_box, inlet_idx].
+    assert w["cords"] == [0, 0, 1, 0]
 
 
 def test_connect_is_idempotent_and_disconnect_removes():

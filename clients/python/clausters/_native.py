@@ -327,11 +327,12 @@ def compile_patch(patch: dict) -> dict:
     patch translates identically everywhere.
 
     ``patch`` is ``{"boxes": [...], "cords": [...]}``: each box a
-    ``{"def": name, "hardware"?: bool, "ports": [{"name", "dir": "in"|"out",
-    "rate": "audio"|"control"}, ...]}``, each cord a ``{"from_box", "from_port",
+    ``{"def": name, "ports": [{"name", "dir": "in"|"out", "rate":
+    "audio"|"control"}, ...]}``, each cord a ``{"from_box", "from_port",
     "to_box", "to_port"}``. Returns ``{"buses": [{"name", "rate"}, ...],
     "members": [{"box_index", "def", "controls": [{"control", "bus"}, ...]}, ...]}``
-    — one bus per connected net (writers summing), the hardware net named ``OUT``.
+    — one private bus per connected net (writers summing), named ``b0``, ``b1``, …
+    A signal reaches hardware through a terminal def (a ``dac``), never a drawn bus.
 
     Raises `ValueError` on a malformed cord (reversed, rate-mismatched, out of
     range) or unserializable input.

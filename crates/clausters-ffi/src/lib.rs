@@ -1240,14 +1240,12 @@ mod tests {
 
     #[test]
     fn patch_compile_wires_a_chain() {
+        // tone -> dac (dac is a terminal sink: an inlet, no outlet).
         let (need, v) = compile_json(
             r#"{"boxes":[
                 {"def":"tone","ports":[{"name":"out","dir":"out","rate":"audio"}]},
-                {"def":"dac","ports":[{"name":"in","dir":"in","rate":"audio"},
-                                      {"name":"out","dir":"out","rate":"audio"}]},
-                {"def":"OUT","hardware":true,"ports":[{"name":"in","dir":"in","rate":"audio"}]}],
-              "cords":[{"from_box":0,"from_port":0,"to_box":1,"to_port":0},
-                       {"from_box":1,"from_port":1,"to_box":2,"to_port":0}]}"#,
+                {"def":"dac","ports":[{"name":"in","dir":"in","rate":"audio"}]}],
+              "cords":[{"from_box":0,"from_port":0,"to_box":1,"to_port":0}]}"#,
         );
         assert!(need > 0);
         assert_eq!(
@@ -1256,17 +1254,9 @@ mod tests {
             "one private bus (tone->dac)"
         );
         let members = v["members"].as_array().unwrap();
-        assert_eq!(members.len(), 2, "the hardware OUT is not a member");
-        let dac = &members[1];
-        assert_eq!(dac["def"], "dac");
-        assert!(
-            dac["controls"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|w| w["bus"] == "OUT"),
-            "dac's out is wired to the hardware OUT"
-        );
+        assert_eq!(members.len(), 2);
+        assert_eq!(members[0]["controls"][0]["bus"], "b0"); // tone.out
+        assert_eq!(members[1]["controls"][0]["bus"], "b0"); // dac.in
     }
 
     #[test]

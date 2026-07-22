@@ -18,9 +18,12 @@
 //! the writers). That single rule is the whole model:
 //!
 //! - **fan-in** (many outlets → one inlet) → one bus the writers **sum** onto;
-//! - **fan-out** (one outlet → many inlets) → the readers share the outlet's bus;
-//! - a component touching the **hardware** box is the reserved [`HARDWARE_BUS`]
-//!   (`"OUT"`), not a private bus.
+//! - **fan-out** (one outlet → many inlets) → the readers share the outlet's bus.
+//!
+//! Every net is a private bus (`b0`, `b1`, …). There is **no hardware node**:
+//! the buses are never drawn, so the hardware output is not one either — a signal
+//! reaches the speakers through a **terminal def** (a `dac`: an inlet, and an
+//! `Out.ar(0, …)` baked in, so no outlet), a member like any other.
 //!
 //! # What it does *not* do
 //!
@@ -35,11 +38,6 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-
-/// The reserved bus name for the hardware output (hardware bus 0). A component
-/// that reaches the hardware box is named this instead of a private bus, and it
-/// is *not* listed among [`Compiled::buses`] — the server treats it specially.
-pub const HARDWARE_BUS: &str = "OUT";
 
 /// A port's signal rate — the cord type. Audio (`ar`) and control (`kr`) cords
 /// never connect: the rate is checked at the gesture and again here.
@@ -89,36 +87,22 @@ impl Port {
     }
 }
 
-/// One box on the canvas: a member def with its typed ports, or the **hardware**
-/// sink. A hardware box is excluded from the members (it is the speakers, not a
-/// node) and the component it belongs to is named [`HARDWARE_BUS`].
+/// One box on the canvas: a def with its typed ports. Every box is a member; a
+/// **terminal** def (a `dac`, reaching hardware via a baked `Out.ar(0, …)`) is
+/// one with inlets and no outlets — there is no special hardware box.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PatchBox {
-    /// The member def name (a SynthDef/FaustDef the server has). Ignored when
-    /// [`hardware`](PatchBox::hardware) is set.
+    /// The member def name (a SynthDef/FaustDef the server has).
     pub def: String,
-    /// `true` = the hardware output box (not a member; its bus is `OUT`).
-    #[serde(default)]
-    pub hardware: bool,
     pub ports: Vec<Port>,
 }
 
 impl PatchBox {
-    /// A member box: a def with its ports.
+    /// A box: a def with its ports.
     pub fn member(def: impl Into<String>, ports: Vec<Port>) -> PatchBox {
         PatchBox {
             def: def.into(),
-            hardware: false,
             ports,
-        }
-    }
-
-    /// The hardware output box: one audio inlet, no member.
-    pub fn hardware() -> PatchBox {
-        PatchBox {
-            def: HARDWARE_BUS.to_string(),
-            hardware: true,
-            ports: vec![Port::audio_in("in")],
         }
     }
 }
@@ -152,8 +136,7 @@ pub struct Patch {
     pub cords: Vec<Cord>,
 }
 
-/// A private internal bus of the compiled graph (the hardware `OUT` is *not*
-/// one of these — see [`HARDWARE_BUS`]).
+/// A private internal bus of the compiled graph — one per connected net of cords.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Bus {
     pub name: String,
@@ -184,16 +167,15 @@ pub struct Member {
 /// driver's, not the cord graph's).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Compiled {
-    /// Private internal buses (excludes the hardware `OUT`).
+    /// Private internal buses — one per connected net.
     pub buses: Vec<Bus>,
-    /// One per non-hardware box, in box order.
+    /// One per box, in box order.
     pub members: Vec<Member>,
 }
 
 /// Compiles a directed [`Patch`] into its [`Compiled`] bus wiring: one bus per
-/// connected net of cords, its writers summing, named `b0`, `b1`, … (or `OUT`
-/// for the net that reaches the hardware). Deterministic — the output does not
-/// depend on cord order.
+/// connected net of cords, its writers summing, named `b0`, `b1`, …
+/// Deterministic — the output does not depend on cord order.
 ///
 /// Returns an error, naming the offending cord, when a cord references a missing
 /// box/port, runs the wrong way (not `outlet → inlet`), or joins mismatched
@@ -208,7 +190,7 @@ pub fn compile(patch: &Patch) -> Result<Compiled, String> {
     }
     offsets.push(total);
 
-    // Reverse map: global port → (box, local port), for rate/hardware lookups.
+    // Reverse map: global port → (box, local port), for the rate lookup.
     let mut port_box = vec![0usize; total];
     let mut port_local = vec![0usize; total];
     for (bi, b) in patch.boxes.iter().enumerate() {
@@ -274,32 +256,21 @@ pub fn compile(patch: &Patch) -> Result<Compiled, String> {
 
     let mut bus_name: HashMap<usize, String> = HashMap::new();
     let mut buses: Vec<Bus> = Vec::new();
-    let mut next = 0u32;
-    for (_first, root) in nets {
+    for (n, (_first, root)) in nets.into_iter().enumerate() {
         let ports = &groups[&root];
-        let hardware = ports.iter().any(|&g| patch.boxes[port_box[g]].hardware);
         // Rate is consistent across a net: every cord that merged it checked it.
         let rate = patch.boxes[port_box[ports[0]]].ports[port_local[ports[0]]].rate;
-        let name = if hardware {
-            HARDWARE_BUS.to_string()
-        } else {
-            let n = format!("b{next}");
-            next += 1;
-            buses.push(Bus {
-                name: n.clone(),
-                rate,
-            });
-            n
-        };
+        let name = format!("b{n}");
+        buses.push(Bus {
+            name: name.clone(),
+            rate,
+        });
         bus_name.insert(root, name);
     }
 
-    // Emit one member per non-hardware box, wiring each connected control.
+    // Emit one member per box, wiring each connected control.
     let mut members = Vec::new();
     for (bi, b) in patch.boxes.iter().enumerate() {
-        if b.hardware {
-            continue;
-        }
         let mut controls: Vec<Wiring> = Vec::new();
         for (pi, port) in b.ports.iter().enumerate() {
             if let Some(name) = bus_name.get(&uf.find(offsets[bi] + pi)) {
@@ -366,7 +337,8 @@ impl UnionFind {
 mod tests {
     use super::*;
 
-    /// `tone` (a source), `trem` (in → out), `dac` (in → out), and the hardware.
+    /// `tone` (a source: outlet only), `trem` (in → out), `dac` (a terminal sink:
+    /// an inlet, no outlet — it reaches hardware via a baked `Out.ar(0, …)`).
     fn tone() -> PatchBox {
         PatchBox::member("tone", vec![Port::audio_out("out")])
     }
@@ -374,7 +346,7 @@ mod tests {
         PatchBox::member("trem", vec![Port::audio_in("in"), Port::audio_out("out")])
     }
     fn dac() -> PatchBox {
-        PatchBox::member("dac", vec![Port::audio_in("in"), Port::audio_out("out")])
+        PatchBox::member("dac", vec![Port::audio_in("in")])
     }
 
     /// The wired controls of the member on box `bi`, as `(control, bus)` pairs.
@@ -388,17 +360,17 @@ mod tests {
 
     #[test]
     fn a_chain_wires_through_with_a_bus_per_link() {
-        // tone[0].out -> trem[1].in ; trem[1].out -> dac[2].in ; dac[2].out -> OUT[3]
+        // tone[0].out -> trem[1].in ; trem[1].out -> dac[2].in (dac is terminal).
         let patch = Patch {
-            boxes: vec![tone(), trem(), dac(), PatchBox::hardware()],
+            boxes: vec![tone(), trem(), dac()],
             cords: vec![
                 Cord::new(0, 0, 1, 0), // tone.out -> trem.in
                 Cord::new(1, 1, 2, 0), // trem.out -> dac.in
-                Cord::new(2, 1, 3, 0), // dac.out  -> OUT
             ],
         };
         let c = compile(&patch).unwrap();
-        // Two private buses (the two internal links); the hardware net is OUT.
+        // Two private buses, one per link. There is no hardware bus — dac reaches
+        // the speakers on its own.
         assert_eq!(
             c.buses,
             vec![
@@ -417,12 +389,7 @@ mod tests {
             wiring(&c, 1),
             vec![("in".into(), "b0".into()), ("out".into(), "b1".into())]
         );
-        assert_eq!(
-            wiring(&c, 2),
-            vec![("in".into(), "b1".into()), ("out".into(), "OUT".into())]
-        );
-        // The hardware box is not a member.
-        assert!(c.members.iter().all(|m| m.box_index != 3));
+        assert_eq!(wiring(&c, 2), vec![("in".into(), "b1".into())]);
         assert_eq!(c.members.len(), 3);
     }
 
@@ -430,20 +397,16 @@ mod tests {
     fn fan_in_sums_onto_one_bus() {
         // two tones into one dac inlet: both write the same bus, dac reads it.
         let patch = Patch {
-            boxes: vec![tone(), tone(), dac(), PatchBox::hardware()],
+            boxes: vec![tone(), tone(), dac()],
             cords: vec![
                 Cord::new(0, 0, 2, 0), // tone0.out -> dac.in
                 Cord::new(1, 0, 2, 0), // tone1.out -> dac.in
-                Cord::new(2, 1, 3, 0), // dac.out   -> OUT
             ],
         };
         let c = compile(&patch).unwrap();
         assert_eq!(wiring(&c, 0), vec![("out".into(), "b0".into())]);
         assert_eq!(wiring(&c, 1), vec![("out".into(), "b0".into())]); // same bus -> sum
-        assert_eq!(
-            wiring(&c, 2),
-            vec![("in".into(), "b0".into()), ("out".into(), "OUT".into())]
-        );
+        assert_eq!(wiring(&c, 2), vec![("in".into(), "b0".into())]);
         assert_eq!(c.buses.len(), 1);
     }
 
@@ -519,36 +482,29 @@ mod tests {
 
     #[test]
     fn an_unconnected_port_keeps_its_default_and_a_bare_box_is_still_a_member() {
-        // dac wired to OUT but its `in` left open; a lone tone wired to nothing.
+        // trem -> dac; a lone tone wired to nothing, and trem's `in` left open.
         let patch = Patch {
-            boxes: vec![tone(), dac(), PatchBox::hardware()],
-            cords: vec![Cord::new(1, 1, 2, 0)], // dac.out -> OUT only
+            boxes: vec![tone(), trem(), dac()],
+            cords: vec![Cord::new(1, 1, 2, 0)], // trem.out -> dac.in only
         };
         let c = compile(&patch).unwrap();
         assert_eq!(wiring(&c, 0), Vec::<(String, String)>::new()); // tone: all default
-        assert_eq!(wiring(&c, 1), vec![("out".into(), "OUT".into())]); // in omitted
-        assert!(c.buses.is_empty()); // OUT is not a private bus
-        assert_eq!(c.members.len(), 2);
+        assert_eq!(wiring(&c, 1), vec![("out".into(), "b0".into())]); // trem.in omitted
+        assert_eq!(wiring(&c, 2), vec![("in".into(), "b0".into())]);
+        assert_eq!(c.buses.len(), 1);
+        assert_eq!(c.members.len(), 3);
     }
 
     #[test]
     fn bus_names_are_deterministic_regardless_of_cord_order() {
-        let boxes = vec![tone(), trem(), dac(), PatchBox::hardware()];
+        let boxes = vec![tone(), trem(), dac()];
         let forward = Patch {
             boxes: boxes.clone(),
-            cords: vec![
-                Cord::new(0, 0, 1, 0),
-                Cord::new(1, 1, 2, 0),
-                Cord::new(2, 1, 3, 0),
-            ],
+            cords: vec![Cord::new(0, 0, 1, 0), Cord::new(1, 1, 2, 0)],
         };
         let shuffled = Patch {
             boxes,
-            cords: vec![
-                Cord::new(2, 1, 3, 0),
-                Cord::new(1, 1, 2, 0),
-                Cord::new(0, 0, 1, 0),
-            ],
+            cords: vec![Cord::new(1, 1, 2, 0), Cord::new(0, 0, 1, 0)],
         };
         assert_eq!(compile(&forward).unwrap(), compile(&shuffled).unwrap());
     }

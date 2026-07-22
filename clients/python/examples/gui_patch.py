@@ -43,17 +43,18 @@ PATCH = 30
 
 
 def patch_window() -> dict:
-    # A directed chain: osc -> filter -> verb -> the hardware. Built as a model,
-    # then drawn — the same GraphPatch you would compile and send with audio.
+    # A directed chain: osc -> filter -> verb -> dac (the terminal sink that
+    # reaches the speakers itself — no OUT box, since a bus is never drawn). Built
+    # as a model, then drawn — the same GraphPatch you would compile and send.
     p = GraphPatch()
     osc = p.add("osc", outlets=["out"])
     filt = p.add("filter", inlets=["in"], outlets=["out"])
     verb = p.add("verb", inlets=["in"], outlets=["out"])
-    out = p.sink()
+    dac = p.add("dac", inlets=["in"])   # terminal: an inlet, no outlet
     p.connect(osc, "out", filt, "in")
     p.connect(filt, "out", verb, "in")
-    p.connect(verb, "out", out, "in")
-    # Some boxes placed, the rest (verb, OUT) left to the auto layout.
+    p.connect(verb, "out", dac, "in")
+    # Some boxes placed, the rest (verb, dac) left to the auto layout.
     geometry = {osc: (60.0, 40.0), filt: (60.0, 200.0)}
 
     the_patch = graph(
