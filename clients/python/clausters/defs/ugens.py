@@ -1065,3 +1065,69 @@ def points_to_env(points, *, time_at: float = 0.0, **env_kwargs):
         times.insert(0, delay)
         curve.insert(0, "hold")
     return Env(levels, times, curve, **env_kwargs)
+
+
+# ---- introspecting a UGen kind's input names (the client's own signature) ----
+#
+# The level-2 Def-view labels a UGen box's inlets from the client's own
+# vocabulary: the parameter names of the callable that builds the kind. That
+# callable *is* the client's mirror of the server registry (the /u_query
+# contrast test keeps the two in line, see `tests/test_session.py`), so reusing
+# it here means the patcher and the builder never disagree on an input's name.
+
+#: Kinds whose builder's positional parameters do **not** line up with the wire
+#: input order (variadic runs, static fields sitting between inputs) — the
+#: divergences the /u_query contrast test declares. For these the names would
+#: mislabel the inlets, so the Def-view falls back to positional labels.
+_INPUT_NAMES_MISALIGNED = frozenset(
+    {"EnvGen", "SendReply", "Dseq", "Poll", "DiskIn", "DiskOut", "PV_Kernel"}
+)
+
+#: Lazily built {kind: [param name, ...]} — see `ugen_input_names`.
+_INPUT_NAMES: "dict[str, list[str]] | None" = None
+
+
+def _build_input_names() -> dict:
+    """Map each server UGen kind to its builder callable's positional parameter
+    names, read from the ``Ugen("Kind", ...)`` literal in this module's source
+    (the function name does not equal the kind: ``in_`` builds ``In``,
+    ``oscn`` builds ``OscN``)."""
+    import ast
+    import inspect
+
+    names: dict[str, list[str]] = {}
+    for fname, fn in list(globals().items()):
+        if fname.startswith("_") or not inspect.isfunction(fn):
+            continue
+        try:
+            tree = ast.parse(inspect.getsource(fn).lstrip())
+        except (OSError, SyntaxError):
+            continue
+        kind = None
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "Ugen" and node.args
+                    and isinstance(node.args[0], ast.Constant)):
+                kind = node.args[0].value
+                break
+        if kind is None or kind in names:
+            continue
+        names[kind] = [
+            p.name for p in inspect.signature(fn).parameters.values()
+            if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+        ]
+    return names
+
+
+def ugen_input_names(kind: str) -> "list[str] | None":
+    """The positional input names of the callable that builds UGen ``kind``, or
+    ``None`` when no single callable maps to it cleanly — the generic op UGens
+    (``BinaryOpUGen``/``UnaryOpUGen``, built inline) and the kinds whose builder
+    parameters do not line up with the wire order (`_INPUT_NAMES_MISALIGNED`).
+    A ``None`` result means the caller labels the inlets positionally."""
+    global _INPUT_NAMES
+    if kind in _INPUT_NAMES_MISALIGNED:
+        return None
+    if _INPUT_NAMES is None:
+        _INPUT_NAMES = _build_input_names()
+    return _INPUT_NAMES.get(kind)

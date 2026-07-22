@@ -206,17 +206,33 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   en vez de pisar al vecino, y la perilla/toggle/menu a `text_size=3.0` se
   leen al triple. A los ~3 s el título crece en vivo por `/gui_set` y el
   párrafo del medio cambia de alineación dos veces.
-- **El patch canvas: colocación libre, selección y navegación.**
-  `examples/gui_patch.py` abre un patcher (osc → filter → verb → OUT) dentro
-  de un workspace: dos cajas y dos buses están **colocados** con `x`/`y` y el
-  resto cae en las columnas clásicas → arrastrar una caja la mueve (la
-  terminal imprime `moved member 0 to (x, y)`; los cables la siguen);
-  arrastrar sobre el canvas vacío barre una **marquesina** que selecciona
-  varias (borde resaltado) y arrastrar una caja seleccionada mueve todo el
-  conjunto; click en el vacío deselecciona; arrastrar un **puerto** hasta un
-  bus recablea (imprime `wired ...`), sobre el vacío descablea; arrastrar el
-  espacio *fuera* del patch panea el plano y la rueda hace zoom anclado al
-  cursor — cajas, cables y texto escalan juntos.
+- **El patcher, nivel 1 (defs enteras cableadas por buses).**
+  `examples/gui_patch1.py` construye un `GraphPatch` en código (`tone → dac`, la
+  terminal que llega a los parlantes sola) y abre su **vista dirigida**: cajas
+  con **inlets** arriba y **outlets** abajo, un **cable** por `outlet → inlet`.
+  Arrastrar una caja la mueve (los cables la siguen); arrastrar un pin de outlet
+  hasta un inlet los **cablea** (una mezcla de rate se rechaza en el gesto, la
+  terminal imprime `wired ...`); arrastrar el canvas vacío barre una marquesina;
+  **Shift+arrastre** panea y la rueda hace zoom anclado al cursor. **render**
+  compila el patch dibujado y lo suena; **stop** lo libera. Un cable *es* un bus
+  que nunca numerás, y ningún bus se dibuja.
+- **El patcher, nivel 2 (el grafo interno de una def).**
+  `examples/gui_patch2.py` no necesita servidor de audio: abre la **estructura**
+  de una def como su grafo de UGens (`some_def.plot_def()`), una ventana por
+  llamada. Primero un `SynthDef` (`voice`): el panel se titula **`synthdef`** (el
+  tipo, no el nombre) y **contiene** todas las cajas; el host las acomoda con un
+  **layout por niveles tipo Sugiyama** (cada caja rankeada por su camino más largo
+  hasta un sink, así las entradas caen justo encima de donde se usan y los `Out`
+  quedan abajo; la señal baja de arriba hacia abajo y los nodos del mismo nivel se
+  alinean bajo sus padres). Cada UGen una caja (inlets nombrados por la firma del
+  constructor: `out` → `bus`/`signal`), cada constante su propia **caja de valor**
+  (con relleno distinto), y los cables **coloreados por tipo**: audio verde,
+  control azul, e **init `ir`** ámbar y **punteado** (el `detune` escalar). Paneá
+  con arrastre en el vacío, zoom con la rueda. Cerrá la ventana y abre la segunda:
+  un `FaustDef` de árbol de señal (panel **`faustdef`**), decodificado nodo por
+  nodo. Es de **solo lectura**: la vista de la def, fiel a lo que la def es. La
+  terminal imprime el decode (con el rol de cada caja) y confirma que el round
+  trip reproduce el spec.
 - **Grupos de tema y acentos por widget.** `examples/gui_style.py` arranca el
   host con un archivo de tema cálido (naranja) y abre una ventana con cuatro
   filas: la primera toma el tema del host, la segunda es un **grupo de tema**

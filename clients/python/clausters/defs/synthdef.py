@@ -144,5 +144,25 @@ class SynthDef:
         `FaustDef.control_names`)."""
         return [c["name"] for c in self.spec()["controls"]]
 
+    def plot_def(self, *, label: str | None = None, w: int = 1000, h: int = 700,
+                 title: str | None = None, host=None):
+        """Open this SynthDef's **structure** as a directed `patch` view in its
+        own window on the ambient GUI host — the level-2 patcher drawn from the
+        def's internal UGen graph (every UGen a box, every input a cord, the host
+        laying them out as an inverted tree). One window per call, the
+        `clausters.plot` posture; this shows the def's *structure*, where
+        `clausters.plot(self)` renders its *sound*.
+
+        ``label`` captions the patch panel (defaults to ``"synthdef"`` — the
+        panel names *what* is drawn, not the def's name); ``host`` is an explicit
+        `clausters.gui.GuiHost`, ``None`` resolves the ambient one. Returns a
+        `clausters.plot.PatchWindow` (``.close()``)."""
+        from ..plot import _open_patch_view
+        from .patch import DefPatch
+
+        model = DefPatch.from_synthdef(self)
+        return _open_patch_view(model, label=label if label is not None else "synthdef",
+                                w=w, h=h, title=title or self.name, host=host)
+
     def __repr__(self):
         return f"SynthDef({self.name!r}, {len(self.outputs)} outputs)"

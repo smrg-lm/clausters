@@ -940,12 +940,14 @@ pub enum WidgetKind {
         max: f32,
         label: Option<String>,
     },
-    /// A **directed, typed** patcher (a level-1 GraphDef): boxes with inlets on
-    /// their top edge and outlets on their bottom, and a cord per `outlet → inlet`
-    /// connection, weighted by rate (audio heavy, control thin). Dragging an
-    /// outlet to an inlet (either grab order) draws a cord, refusing a rate
-    /// mismatch; the edit leaves as a flat directed `"wire"` event. The buses are
-    /// not drawn — a cord *is* a bus (the client names them). A leaf.
+    /// A **directed, typed** patcher (a GraphDef at level 1, a SynthDef/FaustDef
+    /// at level 2): boxes with inlets on their top edge and outlets on their
+    /// bottom, and a cord per `outlet → inlet` connection, weighted by rate (audio
+    /// heavy, control thin, init dashed). Dragging an outlet to an inlet (either
+    /// grab order) draws a cord, refusing a rate mismatch; the edit leaves as a
+    /// flat directed `"wire"` event. At level 1 the buses are not drawn — a cord
+    /// *is* a bus (the client names them); at level 2 a cord is an internal wire.
+    /// A leaf.
     Patch {
         patch: super::patch::PatchDraw,
         /// The multi-box selection (box indices) — native view state, never
@@ -1420,7 +1422,7 @@ fn parse_voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)
 /// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
 /// still draws.
 fn parse_patch(props: &serde_json::Map<String, Value>) -> super::patch::PatchDraw {
-    use super::patch::{Cord, Obj, PatchDraw};
+    use super::patch::{BoxRole, Cord, Obj, PatchDraw};
 
     let boxes = props
         .get("boxes")
@@ -1429,12 +1431,18 @@ fn parse_patch(props: &serde_json::Map<String, Value>) -> super::patch::PatchDra
             items
                 .iter()
                 .filter_map(|b| {
+                    let role = match b.get("role").and_then(Value::as_str) {
+                        Some("source") => BoxRole::Source,
+                        Some("const") => BoxRole::Const,
+                        _ => BoxRole::Object,
+                    };
                     Some(Obj {
                         def: b.get("def")?.as_str()?.to_string(),
                         inlets: parse_ports(b.get("inlets")),
                         outlets: parse_ports(b.get("outlets")),
                         x: b.get("x").and_then(Value::as_f64).map(|n| n as f32),
                         y: b.get("y").and_then(Value::as_f64).map(|n| n as f32),
+                        role,
                     })
                 })
                 .collect()
@@ -1462,7 +1470,7 @@ fn parse_patch(props: &serde_json::Map<String, Value>) -> super::patch::PatchDra
 }
 
 /// Parses a box's port array: each entry a plain name string (audio, the
-/// default) or an object `{"name": …, "rate": "audio"|"control"}`.
+/// default) or an object `{"name": …, "rate": "audio"|"control"|"init"}`.
 fn parse_ports(v: Option<&Value>) -> Vec<super::patch::Port> {
     use super::patch::Port;
     v.and_then(Value::as_array)
@@ -1472,13 +1480,11 @@ fn parse_ports(v: Option<&Value>) -> Vec<super::patch::Port> {
                     Value::String(name) => Some(Port::audio(name.clone())),
                     Value::Object(o) => {
                         let name = o.get("name")?.as_str()?.to_string();
-                        Some(
-                            if o.get("rate").and_then(Value::as_str) == Some("control") {
-                                Port::control(name)
-                            } else {
-                                Port::audio(name)
-                            },
-                        )
+                        Some(match o.get("rate").and_then(Value::as_str) {
+                            Some("control") => Port::control(name),
+                            Some("init") => Port::init(name),
+                            _ => Port::audio(name),
+                        })
                     }
                     _ => None,
                 })

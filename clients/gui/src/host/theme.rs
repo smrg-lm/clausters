@@ -139,15 +139,32 @@ theme_roles! {
     object_fill = [0.16, 0.22, 0.32, 1.0];
     /// A placed object's edge.
     object_edge = [0.45, 0.60, 0.85, 1.0];
-    /// A patch bus node's fill.
-    bus_fill = [0.18, 0.28, 0.24, 1.0];
+    /// A patch box's central band (the def-name band): **white**, so the name
+    /// reads as black text on white ([`box_text`]) and the box stands out on the
+    /// dark canvas. Distinct from [`object_fill`] (a clip's body) — a patch box
+    /// is its own thing.
+    box_fill = [0.95, 0.96, 0.97, 1.0];
+    /// A patch box's central-band text (the def name) — near-black, for the
+    /// white [`box_fill`] band.
+    box_text = [0.09, 0.10, 0.12, 1.0];
+    /// A patch **value** box's central band (a `const` literal / parameter box,
+    /// set apart from the white UGen boxes so a data box reads as data): a pale
+    /// cream, still black-text ([`box_text`]).
+    value_fill = [0.98, 0.94, 0.80, 1.0];
     /// A patch box's port strips (top inlets and bottom outlets, one color) —
-    /// green, to contrast with the blue middle band ([`object_fill`]).
-    port_strip = [0.16, 0.31, 0.24, 1.0];
+    /// dark grey, framing the white middle band ([`box_fill`]).
+    port_strip = [0.15, 0.16, 0.18, 1.0];
     /// A patch box's wiring port (the cell a cord connects to: its edge and pin).
     port = [0.75, 0.82, 0.92, 1.0];
-    /// A patch cord (a connection between ports).
-    cord = [0.32, 0.80, 0.56, 1.0];
+    /// A patch **audio** (`ar`) cord — the signal path. The rate reads by
+    /// **colour** (all cords share one weight): the three are contrasting
+    /// primaries — audio **red**, control **blue**, init **yellow** — legible
+    /// against each other and the dark field.
+    cord = [0.95, 0.34, 0.32, 1.0];
+    /// A patch **control** (`kr`) cord (blue).
+    cord_control = [0.28, 0.56, 0.98, 1.0];
+    /// A patch **init** (`ir`) cord — a scalar wire, also drawn dashed (yellow).
+    cord_init = [0.98, 0.78, 0.20, 1.0];
     /// The live/rendered marker (a sounding patch wire).
     live = [0.95, 0.72, 0.25, 1.0];
 

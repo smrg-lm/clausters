@@ -340,10 +340,47 @@ split, and every rule below falls out of it:
 | `src/host/theme.rs` | The color roles: every chrome color as a named function (`accent`, `field`, `selection`, ...) in one `Theme` per host — no paint site names an RGBA literal. Overlaid from `[gui.theme]` / `--theme` (native) or `GuiBridge.theme` (browser) |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
 | `src/host/gestures.rs` | The one press → drag → release → wheel state machine **both fronts drive**: it mutates the `Host` through the `interact` doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks, so every editing gesture behaves identically on either platform by construction |
-| `src/host/{track,pianoroll,bpf,plot,graph,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
+| `src/host/{track,pianoroll,bpf,plot,patch,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
 | `src/host/{bulk,fetch,shm,mapfile}.rs` | The data seams: a local resource is mapped (native) or fetched (browser), a server buffer is pulled over the client leg, control buses are read from the shared segment |
+
+**The patcher draws two levels through one widget.** `src/host/patch.rs` is one
+geometry — boxes with inlets on top, outlets on the bottom, a cord per `outlet →
+inlet` — that serves both a **level-1** `GraphDef` (whole-node boxes wired by
+server buses) and a **level-2** `SynthDef`/`FaustDef` (UGen boxes wired by internal
+cords); they differ only in the cord *rate*, so level 2 adds `Rate::Init` (`ir`,
+drawn dashed) to `clausters_core::patch::Rate`. The patch *models* are client-side
+Python, matching the "value math in the core, but only what a headless client
+shares" rule: `defs/patch.py`'s `GraphPatch` (level 1) compiles through the shared
+`clausters_core::patch` cord→bus pass, while its `DefPatch` (level 2) is a
+**read-only decode** of a def's in-memory graph (`from_synthdef` walks the UGen
+graph one step deeper than `synthdef_ports`; `from_faustdef` walks the signal
+tree) — it has no cord→bus pass, so the core carries nothing for it beyond the
+rate. The **positioning lives host-side**: because a def is a DAG (fan-in/out,
+shared sub-graphs, several `Out` sinks) rather than a single-root tree,
+`host::patch::solve` is a small **layered (Sugiyama-style)** layout — layer each
+box by its longest path down to a sink (so inputs land just above where they are
+used, sinks at the bottom), insert a **dummy node** on every rank a long edge
+skips (so each edge spans one rank and the wire *bends through the gap* rather
+than cutting across the boxes between its rows), **order** each layer by
+alternating barycenter sweeps (up and down, so crossings are cut at every level,
+not just near the sinks), then **place** on the x axis by iterated barycenter
+relaxation separated with an isotonic (pool-adjacent-violators) fit — which
+spreads overlapping boxes around their shared centre instead of piling them
+against one margin. The scroll workspace sizes its content to the graph's natural
+extent but never below the viewport (`host::layout::scroll_content` reads
+`patch::natural_size`), and the layout **centres** the block in that area — so a
+small graph sits centred in the window and a large one fills the content and
+pans. Run on every box without an explicit `x`/`y`, so a client ships no
+coordinates and the picture reads as signal flow; the panel frame hugs the boxes
+and their bent wires. Every cord is drawn at **one width**; the rate is carried
+by **colour** — contrasting primaries, audio red, control blue, init yellow (and
+dashed) — a fat-vs-thin pair read badly. The white box band is framed by dark
+port strips. The decode
+still tags each box with a **role** used only for *drawing* (a `const` literal
+gets the distinct `value_fill`). `some_def.plot_def()` opens either level in its
+own window; the decode is faithful (`DefPatch.to_synthdef` reproduces the spec).
 
 Four rules hold the design together, and breaking any of them is what a review
 looks for:

@@ -7,6 +7,8 @@ The GUI is only a view of this: everything here is buildable and sendable in cod
 import pytest
 
 from clausters.defs import (
+    DefPatch,
+    FaustDef,
     GraphPatch,
     SynthDef,
     control,
@@ -17,6 +19,7 @@ from clausters.defs import (
     sine,
     synthdef_ports,
 )
+from clausters.defs.ugens import ugen_input_names
 
 
 def _pass_or_skip():
@@ -222,7 +225,7 @@ def test_graphdef_plot_def_opens_the_structure_as_a_patch_view():
     tree = host.opened[0]
     assert tree["type"] == "window"
     view = _find(tree, "patch")
-    assert view is not None and view["label"] == "chain"
+    assert view is not None and view["label"] == "graphdef"
     assert [b["def"] for b in view["boxes"]] == ["tone", "dac"]
     assert view["cords"] == [0, 0, 1, 0]   # tone.out -> dac.in, typed from the defs
     # It rode no audio server and no bulk file — pure structure.
@@ -249,3 +252,117 @@ def test_connect_is_idempotent_and_disconnect_removes():
     assert len(p.cords) == n
     p.disconnect(0, "out", 1, "in")
     assert len(p.cords) == n - 1
+
+
+# ---- level 2: the DefPatch (a SynthDef/FaustDef as its internal graph) ----
+
+
+def test_ugen_input_names_mirror_the_builder_signatures():
+    # A UGen box's inlets are named from the callable that builds the kind (the
+    # client's own vocabulary): `out(bus, signal)` -> ["bus", "signal"].
+    assert ugen_input_names("Out") == ["bus", "signal"]
+    # The generic op UGens have no single callable, so they label positionally.
+    assert ugen_input_names("BinaryOpUGen") is None
+    # A misaligned kind (variadic on the wire) falls back to positional too.
+    assert ugen_input_names("EnvGen") is None
+
+
+def _beep() -> SynthDef:
+    """A stereo beep: a control-driven sine, scaled, out to two hardware buses."""
+    sig = sine(control("freq", 440.0)) * control("amp", 0.2)
+    return SynthDef("beep", out(0.0, sig), out(1.0, sig))
+
+
+def test_defpatch_decodes_a_synthdef_into_ugen_boxes_and_cords():
+    p = DefPatch.from_synthdef(_beep())
+    by_role: dict = {}
+    for b in p.boxes:
+        by_role.setdefault(b.get("role"), []).append(b["def"])
+    # Controls are pinned sources, UGens are objects, literals are value boxes.
+    assert by_role["source"] == ["freq", "amp"]
+    assert "Sine" in by_role["object"] and by_role["object"].count("Out") == 2
+    assert by_role["const"] == ["0", "1"]   # the two Out bus literals (0.0, 1.0)
+    # The shared `sine*amp` subgraph feeds both Outs (a fan-out): two roots.
+    assert len(p.roots) == 2
+    # Every UGen inlet is corded now — a value box feeds each former constant.
+    corded = {(c["to_box"], c["to_port"]) for c in p.cords}
+    for bi, box in enumerate(p.boxes):
+        if box["kind"] == "ugen":
+            for pos in range(sum(1 for pp in box["ports"] if pp["dir"] == "in")):
+                assert (bi, pos) in corded
+
+
+def test_defpatch_round_trips_a_synthdef_spec():
+    # from_synthdef -> to_synthdef reproduces the spec exactly (the decode loses
+    # nothing), and DefPatch -> SynthDef -> DefPatch draws identically.
+    sdef = _beep()
+    p = DefPatch.from_synthdef(sdef)
+    assert p.to_synthdef("beep").spec() == sdef.spec()
+    back = DefPatch.from_synthdef(p.to_synthdef("beep"))
+    assert back.to_widget() == p.to_widget()
+
+
+def test_defpatch_typed_cords_carry_the_init_rate():
+    # A scalar (`ir`) control is an init-rate source: its cord draws dashed, so
+    # the widget marks its outlet rate "init" (audio ports stay bare names).
+    sig = sine(control("freq", 440.0)) * control("amp", 1.0, rate="ir")
+    p = DefPatch.from_synthdef(SynthDef("s", out(0.0, sig)))
+    w = p.to_widget()
+    amp_box = next(b for b in w["boxes"] if b["def"] == "amp")
+    assert amp_box["outlets"] == [{"name": "", "rate": "init"}]
+    freq_box = next(b for b in w["boxes"] if b["def"] == "freq")
+    assert freq_box["outlets"] == [{"name": "", "rate": "control"}]  # a kr control
+
+
+def test_defpatch_decodes_a_faust_signal_tree():
+    from clausters.defs.signals import hslider, sin
+    freq = hslider("freq", 440.0, 20.0, 2000.0, 0.1)
+    fd = FaustDef.from_signals("fsig", sin(freq * 6.283) * 0.2)
+    p = DefPatch.from_faustdef(fd)
+    defs = [b["def"] for b in p.boxes]
+    assert "sin" in defs and defs.count("mul") == 2
+    assert len(p.roots) == 1
+    # The slider is a pinned source; the literal operands (6.283, 0.2) are value
+    # boxes, one each, so every op inlet is corded.
+    roles = [b.get("role") for b in p.boxes]
+    assert roles.count("source") == 1 and roles.count("const") == 2
+
+
+def test_defpatch_to_widget_emits_layout_roles():
+    # The Def-view boxes carry a layout role (the host's inverted tree reads it);
+    # a level-1 GraphPatch box carries none (defaulting to a plain object).
+    w = DefPatch.from_synthdef(_beep()).to_widget()
+    roles = [b.get("role") for b in w["boxes"]]
+    assert "source" in roles and "const" in roles
+    assert all("role" not in b for b in chain().to_widget()["boxes"])
+
+
+def test_defpatch_faust_box_or_source_is_a_single_opaque_box():
+    fd = FaustDef.from_source("fsrc", "process = os.osc(440);")
+    p = DefPatch.from_faustdef(fd)
+    assert len(p.boxes) == 1 and p.boxes[0]["def"] == "fsrc"
+    assert p.boxes[0]["kind"] == "faust-opaque" and p.roots == [0]
+
+
+def test_synthdef_plot_def_opens_the_ugen_structure():
+    # plot_def opens the level-2 patcher (the internal UGen graph), one window per
+    # call — distinct from clausters.plot(def), which renders its sound.
+    host = _FakeHost()
+    win = _beep().plot_def(host=host)
+    assert win.id == 42
+    tree = host.opened[0]
+    assert tree["type"] == "window"
+    view = _find(tree, "patch")
+    assert view is not None and view["label"] == "synthdef"
+    assert "Sine" in [b["def"] for b in view["boxes"]]
+    assert _find(tree, "scroll") is not None   # the patch sits in a pan/zoom workspace
+
+
+def test_faustdef_plot_def_opens_the_signal_structure():
+    from clausters.defs.signals import hslider, sin
+    fd = FaustDef.from_signals("fsig", sin(hslider("f", 440.0, 20.0, 2000.0, 0.1)))
+    host = _FakeHost()
+    fd.plot_def(host=host)
+    view = _find(host.opened[0], "patch")
+    assert view is not None and view["label"] == "faustdef"
+    assert "sin" in [b["def"] for b in view["boxes"]]

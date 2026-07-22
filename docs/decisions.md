@@ -1514,3 +1514,48 @@ free-standing opener is a **`plot_def()` method on the def classes**
 (`graphdef.plot_def()`, `synthdef.plot_def()`, `faustdef.plot_def()`),
 deliberately not a global verb and kept distinct from `clausters.plot(def)`, which
 renders the def's *sound* rather than its structure.
+
+**What level 2 added, concretely (P4), and what it did *not* add to the core.**
+Because the level-2 Def-view is a *read-only decode*, it has **no cord→bus pass** —
+a cord is an internal UGen wire, never an allocated bus, so there is nothing to
+compile and nothing language-agnostic to place in `clausters-core` beyond the
+shared drawing vocabulary. So the core gained exactly one thing: **`Rate::Init`**
+(`ir`), the third cord weight (drawn dashed) the level-1 audio/control pair lacked;
+the `DefPatch` *model* stays client-side Python, the peer of the client-side
+`GraphPatch` (level 1's model is Python too — only its *pass* is core). This
+refines the P-track's earlier phrasing that "the patch document schema and the
+pass land in `clausters-core`": that holds for the level-1 pass; level 2, having no
+pass, keeps its model where `GraphPatch` already lives. Two smaller decisions fell
+out of decoding a def **headless** (`plot_def` runs no server): a UGen box's inlet
+names come from **the client's own builder signatures** (`ugen_input_names`, the
+same callables the `/u_query` contrast test pins to the server registry — no new
+verb), falling back to positional for the generic op UGens and the wire-misaligned
+kinds; and an **unset UGen output rate defaults to audio** — the exact per-kind
+default is the server compiler's, not the client's, so the view takes the honest
+common-case guess rather than mirroring the rate table. The decode stays faithful
+where it must: `DefPatch.to_synthdef` reconstructs the def and reproduces its spec.
+Faust decodes the tractable **signal-tree** form node for node; a **box-tree or
+source** def is opaque (its internals are the compiler's) and draws as a single
+box. Several refinements followed the on-screen reviews. **The node-positioning
+is host-side, not client-side:** the decode ships no coordinates — positioning
+belongs with the widget that draws, so every client rebinding it gets the layout
+for free — and the panel frame hugs whatever boxes it holds rather than clipping a
+fixed rect. **The layout is a small layered (Sugiyama-style) graph drawing, not a
+tree algorithm:** a def is a **DAG** (fan-in, fan-out, shared sub-graphs, several
+`Out` sinks), so a single-root tree layout (Reingold–Tilford) does not fit — it
+would have to duplicate shared nodes. `host::patch::auto_layout` instead layers
+each box by its **longest path down to a sink** (so an input lands just above
+where it is used rather than piling into one top row — the mistake a first
+attempt made by pinning all inputs to the top), then orders and places by iterated
+**barycenter** relaxation (each box pulled to the mean x of its neighbours, layers
+re-sorted and packed) so children line up under their parents; dummy nodes for
+long edges are a noted future refinement. **Constants are value boxes, not inline
+defaults:** each literal input becomes a small `const` box captioned with the
+number and corded into its inlet (so every inlet is wired and the round trip is
+uniform), drawn with a distinct `value_fill` so a data box reads as data. **Rate
+reads by colour, not weight:** a cord is coloured audio-green / control-blue /
+init-amber (init also dashed) — stroke weight alone was too subtle to tell apart.
+And the panel **caption is the def *kind*** (`synthdef` / `faustdef` /
+`graphdef`), not the def's name — the view names *what* it draws; the window title
+carries the name. The per-box **role** the decode still ships (`source` / `const`
+/ `object`) is now only a *drawing* tag (the `const` fill), not a layout input.

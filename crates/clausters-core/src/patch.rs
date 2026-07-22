@@ -39,13 +39,20 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-/// A port's signal rate — the cord type. Audio (`ar`) and control (`kr`) cords
-/// never connect: the rate is checked at the gesture and again here.
+/// A port's signal rate — the cord type. Cords of different rates never connect:
+/// the rate is checked at the gesture and again here.
+///
+/// `Audio` (`ar`) and `Control` (`kr`) are the two the **level-1** patcher wires,
+/// because a server bus is one of those two rates; `Init` (`ir`) is the third the
+/// **level-2** Def-view adds, where a cord is an internal UGen wire (never an
+/// allocated bus) and a scalar/init-rate output is a legitimate connection. The
+/// level-1 cord→bus pass ([`compile`]) is only ever handed audio/control ports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Rate {
     Audio,
     Control,
+    Init,
 }
 
 /// A port's direction. An outlet writes its bus; an inlet reads it. A cord runs

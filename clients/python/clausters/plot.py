@@ -221,21 +221,22 @@ class PatchWindow:
         return f"PatchWindow(id={self.id})"
 
 
-def _open_patch_view(model, *, label=None, w: int = 900, h: int = 640,
+def _open_patch_view(model, *, label=None, w: int = 1000, h: int = 700,
                      title=None, host=None) -> PatchWindow:
-    """Open a `clausters.defs.GraphPatch` as a directed `patch` view in its own
-    window on the ambient GUI host — the structure opener behind
-    `clausters.defs.GraphDef.plot_def`. One window per call, the `plot` posture:
-    the patch sits in a `scroll` workspace (pan/zoom), no audio server involved."""
+    """Open a `clausters.defs.GraphPatch` or `clausters.defs.DefPatch` as a
+    directed `patch` view in its own window on the ambient GUI host — the
+    structure opener behind the `plot_def` methods. One window per call, the
+    `plot` posture: the patch sits in a `scroll` workspace (pan/zoom), no audio
+    server involved. The **host lays the boxes out** and sizes the scrollable
+    canvas from the graph's own extent (never below the window), so the model
+    carries no geometry: a small graph centres in the window, a large one fills
+    the content and pans."""
     host = host if host is not None else _ambient_host()
     from .gui import guidef
 
-    content = (900.0, 700.0)
     widget_id = host.alloc_id()
-    view = guidef.patch(widget_id, **model.to_widget(), label=label,
-                        x=0.0, y=0.0, w=content[0], h=content[1])
-    workspace = guidef.scroll(host.alloc_id(), view,
-                              content_w=content[0], content_h=content[1])
+    view = guidef.patch(widget_id, **model.to_widget(), label=label)
+    workspace = guidef.scroll(host.alloc_id(), view)
     tree = guidef.window(workspace, title=title or label or "patch", w=w, h=h)
     window_id = host.open(tree)
     return PatchWindow(host, window_id, widget_id)

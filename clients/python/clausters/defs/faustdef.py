@@ -74,6 +74,29 @@ class FaustDef:
     #: bus-selecting controls every Faust synth also accepts.
     reserved = ("out", "in")
 
+    def plot_def(self, *, label: str | None = None, w: int = 1000, h: int = 700,
+                 title: str | None = None, host=None):
+        """Open this FaustDef's **structure** as a directed `patch` view in its
+        own window on the ambient GUI host — the level-2 patcher drawn from the
+        def's signal graph (every signal op a box, every operand a cord, the host
+        laying them out as an inverted tree). One window per call, the
+        `clausters.plot` posture; this shows the def's *structure*, where
+        `clausters.plot(self)` renders its *sound*.
+
+        A **signal-tree** def (`from_signals`) decodes node for node; a
+        **box-tree** or **source** def is opaque and draws as a single box (its
+        internals are the Faust compiler's, not reconstructable client-side).
+        ``label`` captions the patch panel (defaults to ``"faustdef"`` — the
+        panel names *what* is drawn, not the def's name); ``host`` is an explicit
+        `clausters.gui.GuiHost`, ``None`` resolves the ambient one. Returns a
+        `clausters.plot.PatchWindow` (``.close()``)."""
+        from ..plot import _open_patch_view
+        from .patch import DefPatch
+
+        model = DefPatch.from_faustdef(self)
+        return _open_patch_view(model, label=label if label is not None else "faustdef",
+                                w=w, h=h, title=title or self.name, host=host)
+
     def __repr__(self):
         return f"FaustDef({self.name!r}, kind={self.kind!r})"
 

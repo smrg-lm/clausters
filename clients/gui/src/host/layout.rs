@@ -192,6 +192,16 @@ pub fn scroll_content(widget: &Widget, area: Rect) -> (f32, f32) {
             })
             .map(|e| e + 2.0 * margin)
     };
+    // A child with an **intrinsic size** (a `patch`, whose graph the host lays
+    // out) drives the content: the workspace sizes to the graph but never below
+    // the viewport, so a small graph centres in the window and a large one fills
+    // the content and pans. An explicit `content_w`/`content_h` still overrides.
+    if let Some((nw, nh)) = widget.children.iter().find_map(child_intrinsic_size) {
+        return (
+            view.content_w.unwrap_or(nw.max(area.w)).max(1.0),
+            view.content_h.unwrap_or(nh.max(area.h)).max(1.0),
+        );
+    }
     let free = layout == Layout::Free;
     (
         view.content_w
@@ -203,6 +213,16 @@ pub fn scroll_content(widget: &Widget, area: Rect) -> (f32, f32) {
             .unwrap_or(area.h)
             .max(1.0),
     )
+}
+
+/// A child's intrinsic content size, if it has one the host computes rather than
+/// the wire declaring — today a `patch`, whose graph the host lays out
+/// ([`super::patch::natural_size`]). Drives a scroll workspace's content extent.
+fn child_intrinsic_size(widget: &Widget) -> Option<(f32, f32)> {
+    match &widget.kind {
+        WidgetKind::Patch { patch, .. } => Some(super::patch::natural_size(patch)),
+        _ => None,
+    }
 }
 
 /// The child rectangles for `children` laid out in `inner` by `layout`.

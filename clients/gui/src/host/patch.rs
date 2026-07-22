@@ -1,12 +1,16 @@
-//! The `patch` widget: a **directed, typed** patcher (a level-1 GraphDef).
+//! The `patch` widget: a **directed, typed** patcher, drawing both levels.
 //!
 //! A box has **inlets on its top edge** and **outlets on its bottom edge**, each
-//! typed (audio or control), and a **cord** runs `outlet → inlet`. That is the
-//! whole surface: the picture reads as signal flow, top to bottom, and the buses
-//! are not drawn — a cord *is* a bus (the client's cord→bus pass,
-//! `clausters_core::patch`, names them; the user never does). Direction is not a
-//! guess: it comes from the def (a control feeding an `In` is an inlet, one
-//! feeding an `Out` an outlet), so drawing it directed is honest.
+//! typed (audio `ar`, control `kr`, or — the Def-view's third — init `ir`), and a
+//! **cord** runs `outlet → inlet`. That is the whole surface: the picture reads
+//! as signal flow, top to bottom. Direction is not a guess: it comes from the def
+//! (a control feeding an `In` is an inlet, one feeding an `Out` an outlet), so
+//! drawing it directed is honest. The same widget draws **level 1** — a GraphDef,
+//! whole-node boxes wired by server buses (a cord *is* a bus the client's
+//! cord→bus pass names, `clausters_core::patch`; audio/control only) — and
+//! **level 2** — a SynthDef/FaustDef, UGen boxes wired by internal cords (never a
+//! bus; `ir` joins the cord types). The rate is the only thing that differs; the
+//! geometry, hit-testing and cords are one implementation.
 //!
 //! Pure over a [`Mesh`], like the rest of the flat views: layout, hit-test and
 //! drawing are unit-testable without a window.
@@ -67,11 +71,33 @@ impl Port {
             rate: Rate::Control,
         }
     }
+    /// An init-rate (`ir`) port named `name` — a level-2 (Def-view) cord type.
+    pub fn init(name: impl Into<String>) -> Port {
+        Port {
+            name: name.into(),
+            rate: Rate::Init,
+        }
+    }
+}
+
+/// A box's **kind**, tagged by the Def-view decode: a `Source` is a parameter
+/// input (a control), a `Const` is a literal **value box**, everything else is an
+/// `Object` (a UGen / member def). It classifies a box for *drawing* — a value
+/// box takes the distinct `value_fill` — while the layout ranks every box purely
+/// by its cords ([`solve`]). Absent on the wire, a box is an `Object`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BoxRole {
+    #[default]
+    Object,
+    /// A parameter/input source (a control box).
+    Source,
+    /// A literal **value box** (a `const`), drawn with `value_fill`.
+    Const,
 }
 
 /// One box: a member def with its typed inlets and outlets. `x`/`y` place it
 /// freely on the canvas (canvas units, relative to the widget origin); absent,
-/// the box auto-stacks down the left column (the default).
+/// the box takes its place in the solved layout (see [`solve`]).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Obj {
     pub def: String,
@@ -79,10 +105,11 @@ pub struct Obj {
     pub outlets: Vec<Port>,
     pub x: Option<f32>,
     pub y: Option<f32>,
+    pub role: BoxRole,
 }
 
 impl Obj {
-    /// A box with the given def name and typed ports, auto-placed.
+    /// A box with the given def name and typed ports, auto-placed as an `Object`.
     pub fn new(def: impl Into<String>, inlets: Vec<Port>, outlets: Vec<Port>) -> Obj {
         Obj {
             def: def.into(),
@@ -90,7 +117,14 @@ impl Obj {
             outlets,
             x: None,
             y: None,
+            role: BoxRole::Object,
         }
+    }
+
+    /// This box with its layout role set (chaining after [`Obj::new`]).
+    pub fn with_role(mut self, role: BoxRole) -> Obj {
+        self.role = role;
+        self
     }
 
     fn ports(&self, side: Side) -> &[Port] {
@@ -159,9 +193,358 @@ fn obj_w(o: &Obj) -> f32 {
         .max(def)
 }
 
+/// The height of one layout row: a box plus the gap that leaves room for a cord.
+const ROW_H: f32 = HEAD_H + 2.0 * STRIP_H + ROW_GAP;
+/// The horizontal gap between adjacent boxes in a layout row.
+const COL_GAP: f32 = 26.0;
+/// Barycenter sweeps for the **ordering** phase (crossing reduction).
+const ORDER_PASSES: usize = 8;
+/// Barycenter relaxation passes for the x-coordinate assignment.
+const LAYOUT_PASSES: usize = 16;
+/// The width a **dummy node** reserves in its rank — a thin lane a long edge
+/// bends through, so the wire clears the boxes without a wide gutter.
+const DUMMY_W: f32 = 6.0;
+
+/// The longest directed path from box `i` **down to a sink** (a box with no
+/// outgoing cord), memoized in `depth`. Ranking by this distance is what
+/// distributes the inputs: a box sits as far above the bottom as its deepest
+/// downstream use, so a control feeding a late stage lands just above it rather
+/// than piling into one top row. `active` guards the (nominally impossible)
+/// feedback cycle so the layout cannot loop.
+fn depth_to_sink(
+    i: usize,
+    consumers: &[Vec<usize>],
+    depth: &mut [Option<usize>],
+    active: &mut [bool],
+) -> usize {
+    if let Some(d) = depth[i] {
+        return d;
+    }
+    if active[i] {
+        return 0;
+    }
+    active[i] = true;
+    let mut m = 0;
+    for c in 0..consumers[i].len() {
+        let w = consumers[i][c];
+        m = m.max(depth_to_sink(w, consumers, depth, active) + 1);
+    }
+    active[i] = false;
+    depth[i] = Some(m);
+    m
+}
+
+/// The barycenter of node `i` over `nbrs` (their **order positions** within
+/// their layers), or `None` when it has none in that direction.
+fn barycenter(nbrs: &[usize], pos: &[usize]) -> Option<f32> {
+    if nbrs.is_empty() {
+        return None;
+    }
+    Some(nbrs.iter().map(|&u| pos[u] as f32).sum::<f32>() / nbrs.len() as f32)
+}
+
+/// Records each box's index **within its layer** into `pos`.
+fn record_positions(layers: &[Vec<usize>], pos: &mut [usize]) {
+    for layer in layers {
+        for (k, &i) in layer.iter().enumerate() {
+            pos[i] = k;
+        }
+    }
+}
+
+/// **Order** the boxes within each layer to reduce cord crossings, by the
+/// classic Sugiyama **barycenter sweep**: alternately sweep down (order a layer
+/// by the mean position of its *producers*, the layers above) and up (by its
+/// *consumers*, below), re-recording positions after each layer so the next one
+/// sees the fresh order. Alternating the direction is what propagates a sensible
+/// order through *every* level — a single downward pass only settles the rows
+/// near the sinks. A box with no neighbour on the swept side keeps its slot.
+fn order_layers(layers: &mut [Vec<usize>], producers: &[Vec<usize>], consumers: &[Vec<usize>]) {
+    let n = producers.len();
+    let mut pos = vec![0usize; n];
+    record_positions(layers, &mut pos);
+    for pass in 0..ORDER_PASSES {
+        let downward = pass % 2 == 0;
+        let order: Vec<usize> = if downward {
+            (0..layers.len()).collect()
+        } else {
+            (0..layers.len()).rev().collect()
+        };
+        for l in order {
+            let keys: Vec<f32> = layers[l]
+                .iter()
+                .enumerate()
+                .map(|(k, &i)| {
+                    let side = if downward {
+                        &producers[i]
+                    } else {
+                        &consumers[i]
+                    };
+                    barycenter(side, &pos).unwrap_or(k as f32)
+                })
+                .collect();
+            let mut idx: Vec<usize> = (0..layers[l].len()).collect();
+            idx.sort_by(|&a, &b| {
+                keys[a]
+                    .partial_cmp(&keys[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then(a.cmp(&b))
+            });
+            layers[l] = idx.into_iter().map(|k| layers[l][k]).collect();
+            record_positions(layers, &mut pos);
+        }
+    }
+}
+
+/// The least-squares **non-decreasing** fit of `v` (Pool Adjacent Violators):
+/// the closest sequence to `v` that never decreases. It is the exact,
+/// bias-free way to separate a layer — each box is pulled to its target and
+/// only the boxes that would overlap are pooled to their shared mean, so a
+/// group centres on its neighbours instead of piling against one margin.
+fn isotonic(v: &[f32]) -> Vec<f32> {
+    // Each block is a pooled run: (mean, length). A new value that would break
+    // monotonicity is merged left until the means are non-decreasing again.
+    let mut blocks: Vec<(f32, usize)> = Vec::with_capacity(v.len());
+    for &x in v {
+        let (mut mean, mut len) = (x, 1usize);
+        while let Some(&(m, c)) = blocks.last() {
+            if m <= mean {
+                break;
+            }
+            blocks.pop();
+            mean = (m * c as f32 + mean * len as f32) / (c + len) as f32;
+            len += c;
+        }
+        blocks.push((mean, len));
+    }
+    let mut out = Vec::with_capacity(v.len());
+    for (mean, len) in blocks {
+        out.extend(std::iter::repeat_n(mean, len));
+    }
+    out
+}
+
+/// **Place** the boxes on the x axis with the layer order now fixed: iterated
+/// **barycenter** relaxation, aligning each box's *centre* to the mean centre of
+/// its neighbours, then separating each layer with an [`isotonic`] fit so
+/// overlapping boxes spread around their shared centre — keeping the layout
+/// centred (no left/right pile-up) and, unlike a re-sorting pack, never changing
+/// the order [`order_layers`] fixed.
+fn assign_x(
+    layers: &[Vec<usize>],
+    producers: &[Vec<usize>],
+    consumers: &[Vec<usize>],
+    width: &impl Fn(usize) -> f32,
+    n: usize,
+) -> Vec<f32> {
+    let mut x = vec![0.0f32; n];
+    for layer in layers {
+        let mut cursor = 0.0;
+        for &i in layer {
+            x[i] = cursor;
+            cursor += width(i) + COL_GAP;
+        }
+    }
+    for _ in 0..LAYOUT_PASSES {
+        let mut target = x.clone();
+        for i in 0..n {
+            let deg = producers[i].len() + consumers[i].len();
+            if deg > 0 {
+                // Align centres: aim box i's centre at the mean centre of its
+                // neighbours, then convert back to a left edge.
+                let sum: f32 = producers[i]
+                    .iter()
+                    .chain(&consumers[i])
+                    .map(|&u| x[u] + width(u) * 0.5)
+                    .sum();
+                target[i] = sum / deg as f32 - width(i) * 0.5;
+            }
+        }
+        // Separate each layer: subtract the cumulative left offset so the minimum
+        // spacing becomes plain monotonicity, isotonic-fit the residual, then add
+        // the offset back. The result is the closest non-overlapping placement to
+        // the targets, centred by construction.
+        for layer in layers {
+            let mut offset = 0.0;
+            let residual: Vec<f32> = layer
+                .iter()
+                .map(|&i| {
+                    let v = target[i] - offset;
+                    offset += width(i) + COL_GAP;
+                    v
+                })
+                .collect();
+            let fit = isotonic(&residual);
+            let mut offset = 0.0;
+            for (&i, &y) in layer.iter().zip(&fit) {
+                x[i] = y + offset;
+                offset += width(i) + COL_GAP;
+            }
+        }
+    }
+    x
+}
+
+/// A solved layout in canvas units (before any centring offset): each real
+/// box's top-left, the per-cord routing waypoints, and the boxes' bounding box.
+struct Solved {
+    /// Real box top-left positions, indexed by box.
+    boxes: Vec<(f32, f32)>,
+    /// The intermediate routing points of each cord (indexed by cord), one per
+    /// **dummy node** the cord threads through — empty for a cord between
+    /// adjacent rows.
+    waypoints: Vec<Vec<(f32, f32)>>,
+    /// The boxes' bounding box `(x0, y0, x1, y1)`, before centring.
+    bounds: (f32, f32, f32, f32),
+}
+
+/// Solve the **layered (Sugiyama-style)** layout of the graph in canvas units —
+/// a def is a DAG (fan-in, fan-out, shared sub-graphs, several `Out` sinks), not
+/// a single-root tree. Phases: **(1) layer** each box by its longest path down to
+/// a sink (signal flows top to bottom, inputs just above their use); **(1.5)** add
+/// a **dummy node** on every rank a long edge skips, so each edge spans exactly
+/// one rank and the wire can bend through the gap instead of cutting across boxes;
+/// **(2) order** every node (real and dummy) within its rank to cut crossings
+/// ([`order_layers`]); **(3) place** them on the x axis with that order fixed
+/// ([`assign_x`]). The real boxes give [`Solved::boxes`]; the dummies give the
+/// cords' [`Solved::waypoints`]. Centring against the view happens later
+/// ([`center_offset`]); boxes with an explicit `x`/`y` bypass all of this (in
+/// [`obj_rect`]).
+fn solve(patch: &PatchDraw) -> Solved {
+    let n = patch.boxes.len();
+    if n == 0 {
+        return Solved {
+            boxes: Vec::new(),
+            waypoints: Vec::new(),
+            bounds: (0.0, 0.0, 0.0, 0.0),
+        };
+    }
+    // (1) Layer: rank = maxDepth - (longest path to a sink), so sinks sit at the
+    // bottom row and every box is strictly below the boxes that feed it.
+    let mut consumers = vec![Vec::new(); n];
+    for c in &patch.cords {
+        if c.from < n && c.to < n && c.from != c.to {
+            consumers[c.from].push(c.to);
+        }
+    }
+    let mut depth = vec![None; n];
+    let mut active = vec![false; n];
+    for i in 0..n {
+        depth_to_sink(i, &consumers, &mut depth, &mut active);
+    }
+    let depth: Vec<usize> = depth.into_iter().map(|d| d.unwrap_or(0)).collect();
+    let max_depth = depth.iter().copied().max().unwrap_or(0);
+    let mut rank: Vec<usize> = (0..n).map(|i| max_depth - depth[i]).collect();
+    // (1.5) Build the extended node set: the `n` real boxes, then a dummy node per
+    // rank each long edge skips. Every edge in `prod`/`cons` now spans one rank.
+    let mut width: Vec<f32> = (0..n).map(|i| obj_w(&patch.boxes[i])).collect();
+    let mut prod: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut cons: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut chains: Vec<Vec<usize>> = vec![Vec::new(); patch.cords.len()];
+    for (ci, c) in patch.cords.iter().enumerate() {
+        if !(c.from < n && c.to < n && c.from != c.to) {
+            continue;
+        }
+        let (a, b) = (c.from, c.to);
+        if rank[b] <= rank[a] {
+            // Not a strict downward edge (the cycle guard); wire it straight.
+            cons[a].push(b);
+            prod[b].push(a);
+            continue;
+        }
+        let mut prev = a;
+        for r in (rank[a] + 1)..rank[b] {
+            let d = rank.len();
+            rank.push(r);
+            width.push(DUMMY_W);
+            prod.push(Vec::new());
+            cons.push(Vec::new());
+            cons[prev].push(d);
+            prod[d].push(prev);
+            chains[ci].push(d);
+            prev = d;
+        }
+        cons[prev].push(b);
+        prod[b].push(prev);
+    }
+    let total = rank.len();
+    let mut layers: Vec<Vec<usize>> = vec![Vec::new(); max_depth + 1];
+    for v in 0..total {
+        layers[rank[v]].push(v);
+    }
+    // (2) order to reduce crossings, then (3) assign the x coordinate.
+    order_layers(&mut layers, &prod, &cons);
+    let w = |v: usize| width[v];
+    let x = assign_x(&layers, &prod, &cons, &w, total);
+    let min_x = x.iter().copied().fold(f32::MAX, f32::min);
+    let node_x: Vec<f32> = (0..total).map(|v| PAD + x[v] - min_x).collect();
+    // Rank 0 sits a label-height below the top so the frame (which reserves that
+    // room above the first row) still anchors at the content origin, not above it.
+    let row_top = |r: usize| (HEAD_H + PAD) + r as f32 * ROW_H;
+    let band = HEAD_H + 2.0 * STRIP_H;
+    let boxes: Vec<(f32, f32)> = (0..n).map(|i| (node_x[i], row_top(rank[i]))).collect();
+    // A dummy's waypoint is its cell centre — the wire bends through the lane the
+    // dummy reserved in its rank, at the row's vertical middle.
+    let waypoints: Vec<Vec<(f32, f32)>> = chains
+        .iter()
+        .map(|chain| {
+            chain
+                .iter()
+                .map(|&d| (node_x[d] + width[d] * 0.5, row_top(rank[d]) + band * 0.5))
+                .collect()
+        })
+        .collect();
+    // The bounding box hugs the real boxes and the routing waypoints, so the frame
+    // contains the bent wires too.
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for (i, &(px, py)) in boxes.iter().enumerate() {
+        x0 = x0.min(px);
+        y0 = y0.min(py);
+        x1 = x1.max(px + width[i]);
+        y1 = y1.max(py + band);
+    }
+    for pts in &waypoints {
+        for &(wx, wy) in pts {
+            x0 = x0.min(wx);
+            y0 = y0.min(wy);
+            x1 = x1.max(wx);
+            y1 = y1.max(wy);
+        }
+    }
+    Solved {
+        boxes,
+        waypoints,
+        // Grow by a pad all round, plus label room above the top row.
+        bounds: (x0 - PAD, y0 - (HEAD_H + PAD), x1 + PAD, y1 + PAD),
+    }
+}
+
+/// The graph's **intrinsic size** in canvas units — the panel frame that hugs its
+/// boxes and wires. The scroll workspace sizes its content from this (see
+/// `host::layout::scroll_content`), so a small graph centres in the window and a
+/// large one fills the content and pans.
+pub fn natural_size(patch: &PatchDraw) -> (f32, f32) {
+    if patch.boxes.is_empty() {
+        return (OBJ_W, HEAD_H + 2.0 * STRIP_H);
+    }
+    let (x0, y0, x1, y1) = solve(patch).bounds;
+    (x1 - x0, y1 - y0)
+}
+
+/// The offset (canvas units) that centres the frame `bounds` inside `area`:
+/// the frame's centre lands on the area's centre. Never negative, so a graph as
+/// large as the area (its content, sized to `max(view, natural)`) sits flush at
+/// the origin and pans rather than drifting off-screen.
+fn center_offset(area: Rect, bounds: (f32, f32, f32, f32), scale: f32) -> (f32, f32) {
+    let (x0, y0, x1, y1) = bounds;
+    let dx = (area.w / scale * 0.5 - (x0 + x1) * 0.5).max(0.0);
+    let dy = (area.h / scale * 0.5 - (y0 + y1) * 0.5).max(0.0);
+    (dx, dy)
+}
+
 /// The box of `i`, at `scale` (the enclosing workspace's zoom, `1.0` bare):
-/// placed at its explicit `x`/`y` when it has them, else auto-stacked down the
-/// left column.
+/// placed at its explicit `x`/`y` when it has them, else at its solved,
+/// view-centred slot.
 pub fn obj_rect(area: Rect, patch: &PatchDraw, i: usize, scale: f32) -> Rect {
     let h = (HEAD_H + 2.0 * STRIP_H) * scale;
     let w = patch.boxes.get(i).map_or(OBJ_W, obj_w) * scale;
@@ -170,8 +553,10 @@ pub fn obj_rect(area: Rect, patch: &PatchDraw, i: usize, scale: f32) -> Rect {
     {
         return Rect::new(area.x + x * scale, area.y + y * scale, w, h);
     }
-    let y = area.y + (PAD + i as f32 * (HEAD_H + 2.0 * STRIP_H + ROW_GAP)) * scale;
-    Rect::new(area.x + PAD * scale, y, w, h)
+    let solved = solve(patch);
+    let (dx, dy) = center_offset(area, solved.bounds, scale);
+    let (ax, ay) = solved.boxes.get(i).copied().unwrap_or((PAD, PAD));
+    Rect::new(area.x + (ax + dx) * scale, area.y + (ay + dy) * scale, w, h)
 }
 
 /// The pin of box `i`'s port `p` on `side`: ports are laid out left-justified in
@@ -283,13 +668,73 @@ pub struct CanvasState<'a> {
     pub scale: f32,
 }
 
-/// The stroke width a cord of `rate` is drawn with: audio heavy, control thin.
-fn cord_weight(rate: Rate, scale: f32) -> f32 {
-    let base = match rate {
-        Rate::Audio => 2.5,
-        Rate::Control => 1.2,
-    };
-    base * scale
+/// The stroke width every cord is drawn with — **one** weight for all rates (the
+/// average of the old audio/control weights): a fat-vs-thin pair read badly, so
+/// the rate is carried by **colour** alone (and, for init, a dash).
+fn cord_weight(scale: f32) -> f32 {
+    2.25 * scale
+}
+
+/// The colour a cord of `rate` is drawn in — the rate reads by **colour** first
+/// (weight alone is hard to tell apart): audio red, control blue, init yellow
+/// (pastel primaries, for good mutual contrast on the dark field).
+fn cord_color(rate: Rate, theme: &Theme) -> super::paint::Color {
+    match rate {
+        Rate::Audio => theme.cord,
+        Rate::Control => theme.cord_control,
+        Rate::Init => theme.cord_init,
+    }
+}
+
+/// Draws a cord of `rate` along the polyline `pts` (outlet pin, any routing
+/// waypoints, inlet pin): coloured by rate, and **dashed** for init (`ir`) so a
+/// scalar wire also reads apart by its line style.
+fn draw_cord(mesh: &mut Mesh, pts: &[[f32; 2]], rate: Rate, theme: &Theme, scale: f32) {
+    let w = cord_weight(scale);
+    let color = cord_color(rate, theme);
+    for seg in pts.windows(2) {
+        let (a, b) = (seg[0], seg[1]);
+        if rate != Rate::Init {
+            mesh.line(a, b, w, color);
+            continue;
+        }
+        // A dash pattern in device pixels, scaled with the zoom: on/off segments
+        // stepped along each leg so the count follows its length.
+        let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+        let len = (dx * dx + dy * dy).sqrt().max(f32::MIN_POSITIVE);
+        let (ux, uy) = (dx / len, dy / len);
+        let dash = 6.0 * scale;
+        let gap = 4.0 * scale;
+        let mut t = 0.0;
+        while t < len {
+            let e = (t + dash).min(len);
+            mesh.line(
+                [a[0] + ux * t, a[1] + uy * t],
+                [a[0] + ux * e, a[1] + uy * e],
+                w,
+                color,
+            );
+            t += dash + gap;
+        }
+    }
+}
+
+/// The panel rectangle that **contains** every box and wire: the solved bounding
+/// box (already grown for the margin and the label room), placed at its centred,
+/// scaled position. Falls back to `area` for an empty patch.
+fn content_rect(area: Rect, patch: &PatchDraw, scale: f32) -> Rect {
+    if patch.boxes.is_empty() {
+        return area;
+    }
+    let solved = solve(patch);
+    let (dx, dy) = center_offset(area, solved.bounds, scale);
+    let (x0, y0, x1, y1) = solved.bounds;
+    Rect::new(
+        area.x + (x0 + dx) * scale,
+        area.y + (y0 + dy) * scale,
+        (x1 - x0) * scale,
+        (y1 - y0) * scale,
+    )
 }
 
 /// Draws the patch: the boxes with their inlet/outlet pins, the directed cords
@@ -309,21 +754,30 @@ pub fn draw(
         scale,
     } = *state;
     let ts = TEXT_SCALE * scale;
-    mesh.rect(area, theme.view_field);
-    mesh.border(area, 1.0, theme.frame);
+    // The frame hugs the laid-out boxes (plus room for the label above them), so
+    // the labelled panel always *contains* every box rather than clipping the
+    // ones the fixed widget rect could not hold.
+    let frame = content_rect(area, patch, scale);
+    mesh.rect(frame, theme.view_field);
+    mesh.border(frame, 1.0, theme.frame);
     if let Some(text) = label {
         font::text(
             mesh,
             text,
-            area.x + PAD * scale,
-            area.y + 2.0,
+            frame.x + PAD * scale,
+            frame.y + 2.0,
             ts,
             theme.text,
         );
     }
 
-    // The cords, first, so the boxes and pins sit over them.
-    for cord in &patch.cords {
+    // The cords, first, so the boxes and pins sit over them. Each runs from its
+    // outlet pin through its routing waypoints (the dummy nodes the layout threaded
+    // it past, offset into place) to its inlet pin, so a long edge bends around the
+    // boxes between its rows instead of cutting across them.
+    let solved = solve(patch);
+    let (dx, dy) = center_offset(area, solved.bounds, scale);
+    for (ci, cord) in patch.cords.iter().enumerate() {
         let (Some(src), Some(dst)) = (patch.boxes.get(cord.from), patch.boxes.get(cord.to)) else {
             continue;
         };
@@ -335,20 +789,24 @@ pub fn draw(
         }
         let (x0, y0) = port_pin(area, patch, cord.from, Side::Out, cord.from_out, scale);
         let (x1, y1) = port_pin(area, patch, cord.to, Side::In, cord.to_in, scale);
-        mesh.line(
-            [x0, y0],
-            [x1, y1],
-            cord_weight(port.rate, scale),
-            theme.cord,
-        );
+        let mut pts = vec![[x0, y0]];
+        if let Some(waypoints) = solved.waypoints.get(ci) {
+            pts.extend(
+                waypoints
+                    .iter()
+                    .map(|&(wx, wy)| [area.x + (wx + dx) * scale, area.y + (wy + dy) * scale]),
+            );
+        }
+        pts.push([x1, y1]);
+        draw_cord(mesh, &pts, port.rate, theme, scale);
     }
 
     // The boxes: three bands top to bottom — the inlet strip on top and the
     // outlet strip on the bottom (one color, `port_strip`), the def name in the
-    // (widest) middle band (`object_fill`), the strips contrasting with it — so a
-    // box reads like its signal flow (in on top, out on the bottom). An edge with
-    // no ports keeps its strip, empty. Everything is sized from the box rect times
-    // `scale`, so it stays anchored under zoom.
+    // (widest) middle band (white `box_fill`, black `box_text`), the dark strips
+    // framing it — so a box reads like its signal flow (in on top, out on the
+    // bottom). An edge with no ports keeps its strip, empty. Everything is sized
+    // from the box rect times `scale`, so it stays anchored under zoom.
     let lts = LABEL_SCALE * scale;
     let fh = font::height(ts); // device heights, to centre text in a band
     let lh = font::height(lts);
@@ -359,8 +817,15 @@ pub fn draw(
         let top = Rect::new(r.x, r.y, r.w, strip_h);
         let mid = Rect::new(r.x, r.y + strip_h, r.w, head_h);
         let bot = Rect::new(r.x, r.y + strip_h + head_h, r.w, strip_h);
+        // A value box (a `const` literal) reads as data, not a UGen: it takes the
+        // distinct cream `value_fill` instead of the white `box_fill`.
+        let mid_fill = if o.role == BoxRole::Const {
+            theme.value_fill
+        } else {
+            theme.box_fill
+        };
         mesh.rect(top, theme.port_strip);
-        mesh.rect(mid, theme.object_fill);
+        mesh.rect(mid, mid_fill);
         mesh.rect(bot, theme.port_strip);
         let sel = selected.contains(&i);
         let edge = if sel {
@@ -369,14 +834,15 @@ pub fn draw(
             theme.object_edge
         };
         mesh.border(r, if sel { 2.0 } else { 1.0 }, edge);
-        // The def name, left-justified and centred in the middle band.
+        // The def name, left-justified and centred in the white middle band,
+        // drawn in black (`box_text`).
         font::text(
             mesh,
             &o.def,
             mid.x + PAD * scale,
             mid.y + (head_h - fh) * 0.5,
             ts,
-            theme.text,
+            theme.box_text,
         );
         // Each port a labelled cell in its strip: the square a cord connects to,
         // its name written inside.
@@ -481,10 +947,53 @@ mod tests {
         let b0 = obj_rect(a, &g, 0, 1.0);
         let b1 = obj_rect(a, &g, 1, 1.0);
         assert!(b1.y > b0.y + b0.h, "the second box sits below the first");
-        // Under a 2x workspace zoom everything doubles from the area origin.
+        // Under a 2x workspace zoom a box doubles in size (its position is
+        // re-centred against the same area, so it is not a fixed 2x of the
+        // origin — the box *size* is what scales rigidly).
         let b0z = obj_rect(a, &g, 0, 2.0);
-        assert_eq!(b0z.x - a.x, (b0.x - a.x) * 2.0);
+        assert_eq!(b0z.w, b0.w * 2.0);
         assert_eq!(b0z.h, b0.h * 2.0);
+        let b1z = obj_rect(a, &g, 1, 2.0);
+        assert!(b1z.y > b0z.y + b0z.h, "the stack holds under zoom");
+    }
+
+    #[test]
+    fn the_ordering_uncrosses_edges_at_every_level() {
+        // Two sources feeding two sinks with swapped indices (s0 -> k1, s1 -> k0):
+        // laid out by box index alone the two cords cross. The barycenter ordering
+        // must reorder a layer so they do not — the left source's target ends up on
+        // the same side as the source.
+        let patch = PatchDraw {
+            boxes: vec![
+                Obj::new("s0", vec![], vec![Port::audio("")]),
+                Obj::new("s1", vec![], vec![Port::audio("")]),
+                Obj::new("k0", vec![Port::audio("in")], vec![]),
+                Obj::new("k1", vec![Port::audio("in")], vec![]),
+            ],
+            cords: vec![
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 3,
+                    to_in: 0,
+                }, // s0 -> k1
+                Cord {
+                    from: 1,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 0,
+                }, // s1 -> k0
+            ],
+        };
+        let a = area();
+        let x = |i| obj_rect(a, &patch, i, 1.0).x;
+        // The two edges do not cross: the order of the sources agrees with the
+        // order of the sinks they feed (s0->k1, s1->k0), so (x[s0]-x[s1]) and
+        // (x[k1]-x[k0]) share their sign.
+        assert!(
+            (x(0) - x(1)) * (x(3) - x(2)) > 0.0,
+            "s0/s1 and their sinks k1/k0 stay on the same side (no crossing)"
+        );
     }
 
     #[test]
@@ -547,6 +1056,205 @@ mod tests {
     }
 
     #[test]
+    fn the_auto_layout_ranks_sources_top_and_sinks_bottom() {
+        // freq (a source) -> Sine -> Out (a sink): ranked by longest path to the
+        // sink, so rows increase downward and the picture reads top to bottom.
+        let patch = PatchDraw {
+            boxes: vec![
+                Obj::new("freq", vec![], vec![Port::control("")]).with_role(BoxRole::Source),
+                Obj::new("Sine", vec![Port::control("freq")], vec![Port::audio("")]),
+                Obj::new("Out", vec![Port::audio("sig")], vec![]),
+            ],
+            cords: vec![
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 1,
+                    to_in: 0,
+                },
+                Cord {
+                    from: 1,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 0,
+                },
+            ],
+        };
+        let a = area();
+        let (y0, y1, y2) = (
+            obj_rect(a, &patch, 0, 1.0).y,
+            obj_rect(a, &patch, 1, 1.0).y,
+            obj_rect(a, &patch, 2, 1.0).y,
+        );
+        assert!(
+            y0 < y1 && y1 < y2,
+            "source over ugen over sink: {y0} {y1} {y2}"
+        );
+    }
+
+    #[test]
+    fn a_value_box_ranks_one_row_above_the_box_it_feeds() {
+        // A const value box feeding a sink ranks one row above it (its longest
+        // path to the sink is 1), and the frame contains both.
+        let patch = PatchDraw {
+            boxes: vec![
+                Obj::new("Out", vec![Port::audio("bus"), Port::audio("sig")], vec![]),
+                Obj::new("0.0", vec![], vec![Port::init("")]).with_role(BoxRole::Const),
+            ],
+            cords: vec![Cord {
+                from: 1,
+                from_out: 0,
+                to: 0,
+                to_in: 0,
+            }],
+        };
+        let a = area();
+        let out = obj_rect(a, &patch, 0, 1.0);
+        let konst = obj_rect(a, &patch, 1, 1.0);
+        assert!(konst.y < out.y, "the value box sits above its consumer");
+        let frame = content_rect(a, &patch, 1.0);
+        assert!(frame.y <= konst.y && frame.x <= konst.x);
+    }
+
+    #[test]
+    fn same_layer_boxes_are_separated_and_barycentered() {
+        // A diamond: src fans out to a, b (same layer), which fan in to sink. The
+        // two middle boxes share a row (equal y) without overlapping, and sink
+        // centers under them.
+        let patch = PatchDraw {
+            boxes: vec![
+                Obj::new("src", vec![], vec![Port::audio("")]),
+                Obj::new("a", vec![Port::audio("in")], vec![Port::audio("")]),
+                Obj::new("b", vec![Port::audio("in")], vec![Port::audio("")]),
+                Obj::new("sink", vec![Port::audio("x"), Port::audio("y")], vec![]),
+            ],
+            cords: vec![
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 1,
+                    to_in: 0,
+                },
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 0,
+                },
+                Cord {
+                    from: 1,
+                    from_out: 0,
+                    to: 3,
+                    to_in: 0,
+                },
+                Cord {
+                    from: 2,
+                    from_out: 0,
+                    to: 3,
+                    to_in: 1,
+                },
+            ],
+        };
+        let a = area();
+        let (ra, rb) = (obj_rect(a, &patch, 1, 1.0), obj_rect(a, &patch, 2, 1.0));
+        assert!((ra.y - rb.y).abs() < 0.5, "a and b share a row");
+        let (left, right) = if ra.x <= rb.x { (ra, rb) } else { (rb, ra) };
+        assert!(
+            right.x >= left.x + left.w,
+            "the two middle boxes do not overlap"
+        );
+        // src (above) and sink (below) sit between a and b horizontally — the
+        // barycenter pulls the shared endpoints to the middle of the pair.
+        for shared in [obj_rect(a, &patch, 0, 1.0), obj_rect(a, &patch, 3, 1.0)] {
+            let c = shared.x + shared.w * 0.5;
+            assert!(
+                left.x < c && c < right.x + right.w,
+                "shared box centered: {c} vs [{}, {}]",
+                left.x,
+                right.x + right.w
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_edge_routes_through_a_dummy_waypoint() {
+        // s -> a -> k and s -> k: the direct s->k edge skips the middle rank, so
+        // the layout threads it through one dummy node (a routing waypoint), while
+        // the two adjacent-rank edges route straight (no waypoint).
+        let patch = PatchDraw {
+            boxes: vec![
+                Obj::new("s", vec![], vec![Port::audio("")]),
+                Obj::new("a", vec![Port::audio("in")], vec![Port::audio("")]),
+                Obj::new("k", vec![Port::audio("x"), Port::audio("y")], vec![]),
+            ],
+            cords: vec![
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 1,
+                    to_in: 0,
+                }, // s -> a (adjacent)
+                Cord {
+                    from: 1,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 0,
+                }, // a -> k (adjacent)
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 1,
+                }, // s -> k (skips a rank)
+            ],
+        };
+        let solved = solve(&patch);
+        assert!(
+            solved.waypoints[0].is_empty(),
+            "the short s->a edge has no waypoint"
+        );
+        assert!(
+            solved.waypoints[1].is_empty(),
+            "the short a->k edge has no waypoint"
+        );
+        assert_eq!(
+            solved.waypoints[2].len(),
+            1,
+            "the long s->k edge threads one dummy"
+        );
+        // The waypoint sits on the skipped middle rank (between the two rows).
+        let (_, wy) = solved.waypoints[2][0];
+        assert!(
+            wy > PAD && wy < PAD + 2.0 * ROW_H,
+            "waypoint on the middle row: {wy}"
+        );
+    }
+
+    #[test]
+    fn a_small_graph_centres_in_the_view_but_a_large_one_anchors() {
+        let g = chain();
+        // In an area larger than the graph, the frame's centre sits at the area's.
+        let big = Rect::new(0.0, 0.0, 1200.0, 900.0);
+        let frame = content_rect(big, &g, 1.0);
+        assert!(
+            (frame.x + frame.w * 0.5 - 600.0).abs() < 1.0,
+            "centred in x"
+        );
+        assert!(
+            (frame.y + frame.h * 0.5 - 450.0).abs() < 1.0,
+            "centred in y"
+        );
+        // In an area smaller than the graph, it anchors at the origin (top-left)
+        // and pans — never pushed off-screen toward the centre.
+        let small = Rect::new(0.0, 0.0, 40.0, 40.0);
+        let frame = content_rect(small, &g, 1.0);
+        assert!(
+            frame.x >= small.x - 0.01 && frame.y >= small.y - 0.01,
+            "anchored"
+        );
+    }
+
+    #[test]
     fn a_box_is_hit_and_reports_its_position() {
         let mut g = chain();
         g.boxes[0].x = Some(200.0);
@@ -603,6 +1311,73 @@ mod tests {
             cords: vec![],
         };
         assert_eq!(cord_between(&g, (0, Side::Out, 0), (1, Side::In, 0)), None);
+    }
+
+    #[test]
+    fn an_init_cord_pairs_when_both_ends_are_init() {
+        // The level-2 (Def-view) third rate: two `ir` ports connect, but an
+        // `ir`-to-`ar` pair is a mismatch like any other.
+        let g = PatchDraw {
+            boxes: vec![
+                Obj::new("BufFrames", vec![], vec![Port::init("out")]),
+                Obj::new(
+                    "PlayBuf",
+                    vec![Port::init("frames")],
+                    vec![Port::audio("out")],
+                ),
+            ],
+            cords: vec![],
+        };
+        assert_eq!(
+            cord_between(&g, (0, Side::Out, 0), (1, Side::In, 0)),
+            Some(Cord {
+                from: 0,
+                from_out: 0,
+                to: 1,
+                to_in: 0
+            })
+        );
+    }
+
+    #[test]
+    fn an_init_cord_is_drawn_dashed() {
+        // A dashed cord is several short segments where a solid one is a single
+        // line, so the same geometry draws more vertices at init rate.
+        let boxes = vec![
+            Obj::new("a", vec![], vec![Port::audio("out")]),
+            Obj::new("b", vec![Port::audio("in")], vec![]),
+        ];
+        let cords = vec![Cord {
+            from: 0,
+            from_out: 0,
+            to: 1,
+            to_in: 0,
+        }];
+        let solid = PatchDraw {
+            boxes: boxes.clone(),
+            cords: cords.clone(),
+        };
+        let dashed = PatchDraw {
+            boxes: vec![
+                Obj::new("a", vec![], vec![Port::init("out")]),
+                Obj::new("b", vec![Port::init("in")], vec![]),
+            ],
+            cords,
+        };
+        let state = || CanvasState {
+            live: None,
+            selected: &[],
+            marquee: None,
+            scale: 1.0,
+        };
+        let mut ms = Mesh::new();
+        draw(&mut ms, area(), &solid, None, &state(), &Theme::default());
+        let mut md = Mesh::new();
+        draw(&mut md, area(), &dashed, None, &state(), &Theme::default());
+        assert!(
+            md.vertex_count() > ms.vertex_count(),
+            "the dashed init cord adds segments over the solid audio one"
+        );
     }
 
     #[test]
