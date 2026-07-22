@@ -528,11 +528,10 @@ impl Gestures {
             } => {
                 // A port wins: the cord drag. Then a box: select it and start a
                 // move (a press on an already-selected box keeps the set, so the
-                // drag moves the whole selection). The empty canvas is a **pan
-                // surface** — the patch is a zoom/pan workspace — so a plain drag
-                // there falls through to the enclosing `scroll` (pan); the
-                // marquee selection is **Shift+drag**, the modifier the pannable
-                // view needs.
+                // drag moves the whole selection). On the empty canvas a plain
+                // drag sweeps the **marquee** selection; **Shift+drag pans** the
+                // enclosing `scroll` workspace — the same convention the heavy
+                // views use (Shift pans where a plain drag does the local thing).
                 if let Some(port) = graph::port_hit(rect, graph, cx, cy, scale) {
                     self.drag = Some(Drag::Wire {
                         id,
@@ -562,7 +561,7 @@ impl Gestures {
                         moved: false,
                     });
                     out.push(GestureEffect::Redraw(def_id));
-                } else if ctx.shift {
+                } else if !ctx.shift {
                     interact::graph_select(host, def_id, id, Vec::new());
                     self.drag = Some(Drag::Marquee {
                         id,
@@ -573,8 +572,8 @@ impl Gestures {
                     });
                     out.push(GestureEffect::Redraw(def_id));
                 }
-                // else: plain empty drag — leave it unconsumed so the `scroll`
-                // pan fallback below grabs the workspace.
+                // else (Shift+empty): leave it unconsumed so the `scroll` pan
+                // fallback below grabs the workspace.
             }
             WidgetKind::Track {
                 snap, ref editor, ..
@@ -2524,40 +2523,36 @@ mod tests {
     }
 
     #[test]
-    fn shift_marquees_and_a_plain_empty_drag_leaves_the_selection_to_pan() {
+    fn a_plain_drag_marquees_and_shift_pans_leaving_the_selection() {
         let mut host = patch_host();
         let mut g = Gestures::default();
+        let plain = GestureCtx::new(1, 600, 400);
         let mut shift = GestureCtx::new(1, 600, 400);
         shift.shift = true;
-        let plain = GestureCtx::new(1, 600, 400);
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let before = patch_of(&host);
-        // Shift+drag from the empty middle-bottom over the two stacked boxes.
+        // A plain drag from the empty middle-bottom over the two stacked boxes.
         let b1 = graph::obj_rect(area, &before, 1, 1.0);
-        g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
-        g.drag_to(&mut host, &shift, (b1.x - 2.0) as f64, 2.0);
+        g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+        g.drag_to(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
         assert_eq!(
             selection_of(&host),
             vec![0, 1],
             "the marquee spans both boxes"
         );
         assert!(g.marquee().is_some(), "the rectangle draws while dragging");
-        g.release(&mut host, &shift, (b1.x - 2.0) as f64, 2.0);
+        g.release(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
         assert!(g.marquee().is_none());
-        // A *plain* drag on empty canvas is a pan (a select needs Shift): it
-        // starts no marquee and leaves the selection untouched.
-        g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
-        g.drag_to(&mut host, &plain, 330.0, 360.0);
-        assert!(g.marquee().is_none(), "no marquee without Shift");
-        g.release(&mut host, &plain, 330.0, 360.0);
-        assert_eq!(
-            selection_of(&host),
-            vec![0, 1],
-            "a plain drag does not clear"
-        );
-        // Shift+click on empty (a zero-size marquee) clears the set.
+        // Shift+drag on empty canvas pans (the heavy-view convention): it starts
+        // no marquee and leaves the selection untouched.
         g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
-        g.release(&mut host, &shift, 300.0, 390.0);
+        g.drag_to(&mut host, &shift, 330.0, 360.0);
+        assert!(g.marquee().is_none(), "Shift pans, it does not marquee");
+        g.release(&mut host, &shift, 330.0, 360.0);
+        assert_eq!(selection_of(&host), vec![0, 1], "Shift+drag does not clear");
+        // A plain click on empty canvas (a zero-size marquee) clears the set.
+        g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+        g.release(&mut host, &plain, 300.0, 390.0);
         assert!(selection_of(&host).is_empty());
     }
 

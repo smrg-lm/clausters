@@ -11,14 +11,14 @@ into the widget). This example shows its **canvas** behavior — no audio:
 - **Dragging** — grab a box and move it; the edit flows back as
   ``/gui_event <id> "move" <index> <x> <y>`` and prints here. Moving a selected
   box moves the whole selection.
-- **Selection** — click a box to select it; **Shift+drag** the empty canvas to
-  sweep a marquee over several (a plain drag pans instead — see Navigation).
+- **Selection** — click a box to select it; drag the empty canvas to sweep a
+  marquee over several; click empty canvas to clear.
 - **Cording** — drag an outlet's pin onto an inlet (either grab order) to draw a
   cord; a rate mismatch is refused at the gesture. The edit flows back as
   ``/gui_event <id> "wire" <src> <outlet> <dst> <inlet>`` and prints here.
-- **Navigation** — the patch is a pan/zoom canvas inside a `scroll` workspace: a
-  plain drag on empty canvas pans it, wheel zooms anchored at the cursor. Boxes,
-  cords and text scale together.
+- **Navigation** — the patch is a pan/zoom canvas inside a `scroll` workspace:
+  **Shift+drag** the empty canvas to pan it, wheel zooms anchored at the cursor.
+  Boxes, cords and text scale together.
 
 The example **launches its own GUI host** and needs no audio server. Needs a
 display and a Vulkan/Metal/DX12/GL adapter.

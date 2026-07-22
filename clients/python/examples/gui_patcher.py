@@ -102,8 +102,9 @@ geometry = {b_tone: (200.0, 40.0), b_dac: (200.0, 230.0), b_out: (200.0, 420.0)}
 # %% [markdown]
 # ## The GUI: a view of the patch
 # `graph` draws the boxes and cords; `to_widget` renders the model into it. The
-# patch sits in a `scroll` workspace — **drag the empty space to pan, wheel to
-# zoom** — so a patch bigger than the window stays reachable. A thin transport
+# patch sits in a `scroll` workspace — **Shift+drag to pan, wheel to zoom** (a
+# plain drag marquee-selects) — so a patch bigger than the window stays
+# reachable. A thin transport
 # strip (a fixed ``h``, so it does not eat the canvas) rides below. Nothing sounds
 # until **render** compiles the patch and instances it.
 
@@ -142,7 +143,7 @@ def render() -> None:
 
 
 print(f"opened window {win}")
-print("drag empty canvas to pan, wheel to zoom; drag a box to move it (Shift+drag selects).")
+print("drag empty canvas to marquee-select; Shift+drag to pan, wheel to zoom; drag a box to move it.")
 print("drag an outlet pin onto an inlet to cord them; press render to hear.")
 
 
