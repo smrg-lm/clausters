@@ -532,6 +532,44 @@ drawn hardware bus, which contradicted "a bus is never drawn." Level 2 is
 different: there a def genuinely contains `In`/`Out` UGens, so they *are* edge
 boxes of the patch.)
 
+## A buffer in the patcher is a data value, not a box that is a def
+
+The level-1 patcher draws **generators that are defs**: a box is a whole
+SynthDef/FaustDef, a cord is a signal bus between two of them. A **buffer** is not
+one of those. It is *data a def reads* — a `Buffer` control on a playback synth —
+exactly as a number is data (a `freq`) or an envelope is (an `env`). So a buffer
+in the patch is a **value fed to a box's parameter**, of the general family of
+**parameter/value boxes** (a constant, an envelope, a buffer) that feed a def's
+parameter inlets. That family is **not built yet**: the level-1 patcher so far
+wires def-to-def buses only, and a def's own parameters-as-values are the level-2
+parameter surface (P5). Buffers-as-boxes therefore wait for the value-box work,
+rather than bolting a "buffer rate" onto the cord→bus pass now — the coherent
+order is to introduce parameter boxes first, of which a buffer is one kind.
+
+**Context — why not a third cord type now.** The tempting shortcut is a `buffer`
+rate beside `ar`/`kr`, a "buffer outlet" feeding a `buf` inlet, compiled by the
+cord→bus pass into a scalar the server resolves. But that pass is about **signal
+buses** — connected components summing onto a numbered bus — and a buffer
+reference is neither a signal nor a bus; overloading it would make the one clear
+rule ("a cord is a bus") lie for one case. A buffer is a *value*, and values are a
+different box family than signal-carrying defs.
+
+**Decision.** A buffer in the patch is the arrangement's own `Buffer` (a reference
+to a server buffer), kept in the model for **parity**: the patch is a visual
+representation of a *part of the arrangement model*, so what it shows a buffer to
+be is what the model holds, not a patch-only artifact. Two facilities follow, both
+**deferrable and both off the server buffer the model already points at** — no new
+model state:
+
+- **Visualize** — to *see* a buffer, fetch its samples from the server and draw
+  them the way the audio editor's waveform view already does.
+- **Play** — to *hear* a buffer, build a **temporary synthdef** that reads it, the
+  same move the editor makes to audition a take.
+
+So P3 ships the def-generator patcher and defers buffers to the parameter/value
+box work; recording the shape now keeps that later implementation coherent with
+the model instead of a patcher-only bolt-on.
+
 ## The arrangement model: five primitives, one recursive group
 
 A sequencing layer (a timeline of items, a playhead) is enough to *play* music
