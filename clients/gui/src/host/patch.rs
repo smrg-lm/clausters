@@ -234,15 +234,6 @@ fn depth_to_sink(
     m
 }
 
-/// The barycenter of node `i` over `nbrs` (their **order positions** within
-/// their layers), or `None` when it has none in that direction.
-fn barycenter(nbrs: &[usize], pos: &[usize]) -> Option<f32> {
-    if nbrs.is_empty() {
-        return None;
-    }
-    Some(nbrs.iter().map(|&u| pos[u] as f32).sum::<f32>() / nbrs.len() as f32)
-}
-
 /// Records each box's index **within its layer** into `pos`.
 fn record_positions(layers: &[Vec<usize>], pos: &mut [usize]) {
     for layer in layers {
@@ -259,8 +250,14 @@ fn record_positions(layers: &[Vec<usize>], pos: &mut [usize]) {
 /// sees the fresh order. Alternating the direction is what propagates a sensible
 /// order through *every* level — a single downward pass only settles the rows
 /// near the sinks. A box with no neighbour on the swept side keeps its slot.
-fn order_layers(layers: &mut [Vec<usize>], producers: &[Vec<usize>], consumers: &[Vec<usize>]) {
-    let n = producers.len();
+///
+/// The barycenter is **port-aware**: a neighbour contributes its order position
+/// plus the *fraction* of its width where the connecting pin sits (`up`/`down`
+/// carry that fraction). So two boxes feeding the two inlets of one box below are
+/// ordered left-to-right the way those inlets are — the placement then only has
+/// to align pins that are already on the correct sides.
+fn order_layers(layers: &mut [Vec<usize>], up: &[Vec<(usize, f32)>], down: &[Vec<(usize, f32)>]) {
+    let n = up.len();
     let mut pos = vec![0usize; n];
     record_positions(layers, &mut pos);
     for pass in 0..ORDER_PASSES {
@@ -275,12 +272,13 @@ fn order_layers(layers: &mut [Vec<usize>], producers: &[Vec<usize>], consumers: 
                 .iter()
                 .enumerate()
                 .map(|(k, &i)| {
-                    let side = if downward {
-                        &producers[i]
+                    let nbrs = if downward { &up[i] } else { &down[i] };
+                    if nbrs.is_empty() {
+                        k as f32
                     } else {
-                        &consumers[i]
-                    };
-                    barycenter(side, &pos).unwrap_or(k as f32)
+                        nbrs.iter().map(|&(u, f)| pos[u] as f32 + f).sum::<f32>()
+                            / nbrs.len() as f32
+                    }
                 })
                 .collect();
             let mut idx: Vec<usize> = (0..layers[l].len()).collect();
@@ -325,15 +323,19 @@ fn isotonic(v: &[f32]) -> Vec<f32> {
 }
 
 /// **Place** the boxes on the x axis with the layer order now fixed: iterated
-/// **barycenter** relaxation, aligning each box's *centre* to the mean centre of
-/// its neighbours, then separating each layer with an [`isotonic`] fit so
-/// overlapping boxes spread around their shared centre — keeping the layout
+/// **barycenter** relaxation, then separating each layer with an [`isotonic`] fit
+/// so overlapping boxes spread around their shared centre — keeping the layout
 /// centred (no left/right pile-up) and, unlike a re-sorting pack, never changing
 /// the order [`order_layers`] fixed.
+///
+/// The relaxation is **port-aware**: `pnbr[i]` holds, per incident cord, the
+/// neighbour node and the pixel `delta` that would land box `i`'s *pin* exactly
+/// under the neighbour's *pin* (`x[neighbour] + delta`). Aligning pin-to-pin
+/// rather than centre-to-centre is what pulls a source straight down onto the
+/// specific inlet it feeds, so cords into a multi-inlet box stop crossing.
 fn assign_x(
     layers: &[Vec<usize>],
-    producers: &[Vec<usize>],
-    consumers: &[Vec<usize>],
+    pnbr: &[Vec<(usize, f32)>],
     width: &impl Fn(usize) -> f32,
     n: usize,
 ) -> Vec<f32> {
@@ -348,16 +350,12 @@ fn assign_x(
     for _ in 0..LAYOUT_PASSES {
         let mut target = x.clone();
         for i in 0..n {
-            let deg = producers[i].len() + consumers[i].len();
-            if deg > 0 {
-                // Align centres: aim box i's centre at the mean centre of its
-                // neighbours, then convert back to a left edge.
-                let sum: f32 = producers[i]
-                    .iter()
-                    .chain(&consumers[i])
-                    .map(|&u| x[u] + width(u) * 0.5)
-                    .sum();
-                target[i] = sum / deg as f32 - width(i) * 0.5;
+            if !pnbr[i].is_empty() {
+                // Aim box i's left edge so its pin lands under each neighbour's
+                // pin (the delta already folds in both port offsets); average the
+                // targets of all its cords.
+                let sum: f32 = pnbr[i].iter().map(|&(u, d)| x[u] + d).sum();
+                target[i] = sum / pnbr[i].len() as f32;
             }
         }
         // Separate each layer: subtract the cumulative left offset so the minimum
@@ -436,36 +434,57 @@ fn solve(patch: &PatchDraw) -> Solved {
     let max_depth = depth.iter().copied().max().unwrap_or(0);
     let mut rank: Vec<usize> = (0..n).map(|i| max_depth - depth[i]).collect();
     // (1.5) Build the extended node set: the `n` real boxes, then a dummy node per
-    // rank each long edge skips. Every edge in `prod`/`cons` now spans one rank.
+    // rank each long edge skips, so every segment spans exactly one rank. Each
+    // segment records, for the ordering (`up`/`down`), the neighbour's order slot
+    // plus the *fraction* of its width where the pin sits, and, for the placement
+    // (`pnbr`), the pixel `delta` that lands this node's pin under the neighbour's.
     let mut width: Vec<f32> = (0..n).map(|i| obj_w(&patch.boxes[i])).collect();
-    let mut prod: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut cons: Vec<Vec<usize>> = vec![Vec::new(); n];
+    let mut up: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n];
+    let mut down: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n];
+    let mut pnbr: Vec<Vec<(usize, f32)>> = vec![Vec::new(); n];
     let mut chains: Vec<Vec<usize>> = vec![Vec::new(); patch.cords.len()];
     for (ci, c) in patch.cords.iter().enumerate() {
         if !(c.from < n && c.to < n && c.from != c.to) {
             continue;
         }
         let (a, b) = (c.from, c.to);
-        if rank[b] <= rank[a] {
-            // Not a strict downward edge (the cycle guard); wire it straight.
-            cons[a].push(b);
-            prod[b].push(a);
-            continue;
+        // The chain of nodes this cord runs through: the two real boxes, with a
+        // dummy inserted on every rank strictly between them (none for an adjacent
+        // pair, or when b is not strictly below a — the cycle guard).
+        let mut nodes = vec![a];
+        if rank[b] > rank[a] {
+            for r in (rank[a] + 1)..rank[b] {
+                let d = rank.len();
+                rank.push(r);
+                width.push(DUMMY_W);
+                up.push(Vec::new());
+                down.push(Vec::new());
+                pnbr.push(Vec::new());
+                chains[ci].push(d);
+                nodes.push(d);
+            }
         }
-        let mut prev = a;
-        for r in (rank[a] + 1)..rank[b] {
-            let d = rank.len();
-            rank.push(r);
-            width.push(DUMMY_W);
-            prod.push(Vec::new());
-            cons.push(Vec::new());
-            cons[prev].push(d);
-            prod[d].push(prev);
-            chains[ci].push(d);
-            prev = d;
+        nodes.push(b);
+        // The pin offset (canvas units from the node's left edge) at each end of a
+        // segment: a real box's port pin at its terminal end, else a dummy centre.
+        let last = nodes.len() - 1;
+        for j in 0..last {
+            let (p, cc) = (nodes[j], nodes[j + 1]);
+            let off_p = if j == 0 {
+                port_offset(&patch.boxes[a], Side::Out, c.from_out)
+            } else {
+                width[p] * 0.5
+            };
+            let off_c = if j + 1 == last {
+                port_offset(&patch.boxes[b], Side::In, c.to_in)
+            } else {
+                width[cc] * 0.5
+            };
+            down[p].push((cc, off_c / width[cc]));
+            up[cc].push((p, off_p / width[p]));
+            pnbr[p].push((cc, off_c - off_p));
+            pnbr[cc].push((p, off_p - off_c));
         }
-        cons[prev].push(b);
-        prod[b].push(prev);
     }
     let total = rank.len();
     let mut layers: Vec<Vec<usize>> = vec![Vec::new(); max_depth + 1];
@@ -473,9 +492,9 @@ fn solve(patch: &PatchDraw) -> Solved {
         layers[rank[v]].push(v);
     }
     // (2) order to reduce crossings, then (3) assign the x coordinate.
-    order_layers(&mut layers, &prod, &cons);
+    order_layers(&mut layers, &up, &down);
     let w = |v: usize| width[v];
-    let x = assign_x(&layers, &prod, &cons, &w, total);
+    let x = assign_x(&layers, &pnbr, &w, total);
     let min_x = x.iter().copied().fold(f32::MAX, f32::min);
     let node_x: Vec<f32> = (0..total).map(|v| PAD + x[v] - min_x).collect();
     // Rank 0 sits a label-height below the top so the frame (which reserves that
@@ -540,6 +559,21 @@ fn center_offset(area: Rect, bounds: (f32, f32, f32, f32), scale: f32) -> (f32, 
     let dx = (area.w / scale * 0.5 - (x0 + x1) * 0.5).max(0.0);
     let dy = (area.h / scale * 0.5 - (y0 + y1) * 0.5).max(0.0);
     (dx, dy)
+}
+
+/// Whether **every** box takes the auto layout (none carries an explicit
+/// `x`/`y`). Both Def-views and a freshly opened patcher are fully auto; a patch
+/// becomes mixed only once a box is dragged to a persisted position. The
+/// distinction gates only the **frame** and the cord routing (a mixed patch's
+/// frame hugs the real boxes and its cords route straight) — **not** the
+/// centring [`center_offset`], which is a view transform over the [`solve`]d
+/// bounds. Those bounds ignore any explicit `x`/`y`, so the offset is steady
+/// across a drag and applies to the auto boxes in either mode: zeroing it the
+/// instant a box turned explicit is what made the rest jump; keeping it holds
+/// them still while the dragged box (whose stored coordinate already carries the
+/// offset) follows the cursor.
+fn fully_auto(patch: &PatchDraw) -> bool {
+    patch.boxes.iter().all(|o| o.x.is_none() || o.y.is_none())
 }
 
 /// The box of `i`, at `scale` (the enclosing workspace's zoom, `1.0` bare):
@@ -719,21 +753,42 @@ fn draw_cord(mesh: &mut Mesh, pts: &[[f32; 2]], rate: Rate, theme: &Theme, scale
     }
 }
 
-/// The panel rectangle that **contains** every box and wire: the solved bounding
-/// box (already grown for the margin and the label room), placed at its centred,
-/// scaled position. Falls back to `area` for an empty patch.
+/// The panel rectangle that **contains** every box and wire. Fully auto: the
+/// solved bounding box (already grown for the margin and the label room), placed
+/// at its centred, scaled position. Mixed (some box placed by hand): the union of
+/// the real box rects, grown by the margin and the label room — so the frame hugs
+/// where the boxes actually are, not a phantom auto layout. Falls back to `area`
+/// for an empty patch.
 fn content_rect(area: Rect, patch: &PatchDraw, scale: f32) -> Rect {
     if patch.boxes.is_empty() {
         return area;
     }
-    let solved = solve(patch);
-    let (dx, dy) = center_offset(area, solved.bounds, scale);
-    let (x0, y0, x1, y1) = solved.bounds;
+    if fully_auto(patch) {
+        let solved = solve(patch);
+        let (dx, dy) = center_offset(area, solved.bounds, scale);
+        let (x0, y0, x1, y1) = solved.bounds;
+        return Rect::new(
+            area.x + (x0 + dx) * scale,
+            area.y + (y0 + dy) * scale,
+            (x1 - x0) * scale,
+            (y1 - y0) * scale,
+        );
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for i in 0..patch.boxes.len() {
+        let r = obj_rect(area, patch, i, scale);
+        x0 = x0.min(r.x);
+        y0 = y0.min(r.y);
+        x1 = x1.max(r.x + r.w);
+        y1 = y1.max(r.y + r.h);
+    }
+    let pad = PAD * scale;
+    let label = (HEAD_H + PAD) * scale;
     Rect::new(
-        area.x + (x0 + dx) * scale,
-        area.y + (y0 + dy) * scale,
-        (x1 - x0) * scale,
-        (y1 - y0) * scale,
+        x0 - pad,
+        y0 - label,
+        (x1 - x0) + 2.0 * pad,
+        (y1 - y0) + label + pad,
     )
 }
 
@@ -790,7 +845,11 @@ pub fn draw(
         let (x0, y0) = port_pin(area, patch, cord.from, Side::Out, cord.from_out, scale);
         let (x1, y1) = port_pin(area, patch, cord.to, Side::In, cord.to_in, scale);
         let mut pts = vec![[x0, y0]];
-        if let Some(waypoints) = solved.waypoints.get(ci) {
+        // The dummy waypoints belong to the auto layout; a mixed patch anchors on
+        // the hand-placed boxes, so its cords route straight instead.
+        if fully_auto(patch)
+            && let Some(waypoints) = solved.waypoints.get(ci)
+        {
             pts.extend(
                 waypoints
                     .iter()
@@ -997,6 +1056,51 @@ mod tests {
     }
 
     #[test]
+    fn the_placement_aligns_each_source_over_the_inlet_it_feeds() {
+        // Two sources feed the two inlets of one sink in *swapped* order: s0 ->
+        // sink.in1 (the right pin), s1 -> sink.in0 (the left pin). Centre-to-centre
+        // placement would put s0 and s1 both over the sink's middle and leave them
+        // ordered by index, so the cords cross. Port-aware ordering + placement must
+        // instead put s1 (feeding the left inlet) left of s0 (the right inlet), each
+        // source's outlet pin landing under the inlet pin it feeds.
+        let patch = PatchDraw {
+            boxes: vec![
+                Obj::new("s0", vec![], vec![Port::audio("")]),
+                Obj::new("s1", vec![], vec![Port::audio("")]),
+                Obj::new("sink", vec![Port::audio("a"), Port::audio("b")], vec![]),
+            ],
+            cords: vec![
+                Cord {
+                    from: 0,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 1,
+                }, // s0 -> sink.in1 (right)
+                Cord {
+                    from: 1,
+                    from_out: 0,
+                    to: 2,
+                    to_in: 0,
+                }, // s1 -> sink.in0 (left)
+            ],
+        };
+        let a = area();
+        let s0 = port_pin(a, &patch, 0, Side::Out, 0, 1.0).0; // feeds in1 (right)
+        let s1 = port_pin(a, &patch, 1, Side::Out, 0, 1.0).0; // feeds in0 (left)
+        let in0 = port_pin(a, &patch, 2, Side::In, 0, 1.0).0;
+        let in1 = port_pin(a, &patch, 2, Side::In, 1, 1.0).0;
+        // The two cords do not cross: s0->in1 and s1->in0 keep the same sign, i.e.
+        // the source feeding the right inlet stays right of the one feeding the
+        // left. Centre-to-centre placement would have left them ordered by index
+        // and crossing; port-aware ordering swaps them.
+        assert!(in1 > in0, "the sink's inlets read left to right");
+        assert!(
+            (s0 - s1) * (in1 - in0) > 0.0,
+            "no crossing: each source sits on the side of the inlet it feeds ({s1} {s0})"
+        );
+    }
+
+    #[test]
     fn explicit_positions_win() {
         let mut g = chain();
         g.boxes[1].x = Some(300.0);
@@ -1004,6 +1108,42 @@ mod tests {
         let a = area();
         let b1 = obj_rect(a, &g, 1, 1.0);
         assert_eq!((b1.x, b1.y), (a.x + 300.0, a.y + 40.0));
+    }
+
+    #[test]
+    fn dragging_one_box_leaves_the_others_put() {
+        // The move round trip: latch a box's on-screen position, add the drag
+        // delta, and write it back as an explicit x/y (which is how the host emits
+        // a "move"). The dragged box must land exactly there, and — the bug this
+        // guards — the still-auto boxes must not shift: the centring offset is a
+        // stable view transform over the solved bounds, so making one box explicit
+        // does not move the rest.
+        let a = area();
+        let g = chain();
+        let (before0, before2) = (obj_rect(a, &g, 0, 1.0), obj_rect(a, &g, 2, 1.0));
+        // Grab box 1 at its current canvas position and drag it by (40, 30).
+        let (x0, y0) = box_pos(a, &g, 1, 1.0);
+        let (dx, dy) = (40.0, 30.0);
+        let mut moved = g.clone();
+        moved.boxes[1].x = Some(x0 + dx);
+        moved.boxes[1].y = Some(y0 + dy);
+        // The dragged box sits at its old spot shifted by the delta...
+        let was1 = obj_rect(a, &g, 1, 1.0);
+        let now1 = obj_rect(a, &moved, 1, 1.0);
+        assert!(
+            (now1.x - (was1.x + dx)).abs() < 0.01 && (now1.y - (was1.y + dy)).abs() < 0.01,
+            "the dragged box follows the delta: {was1:?} -> {now1:?}"
+        );
+        // ...and the untouched boxes have not moved at all.
+        let (after0, after2) = (obj_rect(a, &moved, 0, 1.0), obj_rect(a, &moved, 2, 1.0));
+        assert!(
+            (after0.x - before0.x).abs() < 0.01 && (after0.y - before0.y).abs() < 0.01,
+            "box 0 stays put: {before0:?} -> {after0:?}"
+        );
+        assert!(
+            (after2.x - before2.x).abs() < 0.01 && (after2.y - before2.y).abs() < 0.01,
+            "box 2 stays put: {before2:?} -> {after2:?}"
+        );
     }
 
     #[test]

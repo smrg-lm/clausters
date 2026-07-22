@@ -22,9 +22,10 @@ bus per connected net — its writers **sum** — and `to_graphdef` hands back a
 The GUI is a **view** of that same model. The `patch` widget draws the boxes and
 cords and is a full **canvas**:
 
-- **Free placement** — ``geometry`` places a box (canvas units); a box left out
-  takes its slot in the host's **inverted-tree** auto-layout (sources on top,
-  sinks at the bottom). Here `osc`/`filt` are placed, `trem`/`dac` are not.
+- **Auto-layout** — the host lays every box out on its own: a layered graph
+  drawing (sources on top, sinks at the bottom, signal flowing downward), the
+  cords ordered to cross as little as possible and the whole graph centred in the
+  window. No box is placed by hand — the same layout the Def-view (level 2) uses.
 - **Dragging** — grab a box and move it; the edit flows back as
   ``/gui_event <id> "move" <index> <x> <y>`` and prints here. Moving a box in the
   selection moves the whole selection.
@@ -124,9 +125,9 @@ p.connect(b["trem"], "out", b["dac"], "in")
 # The cord->bus pass names one bus per net; print what the server will get.
 print("compiled:", p.compile())
 
-# Place two boxes explicitly; leave `trem`/`dac` to the host's inverted-tree
-# auto-layout. Box index -> (x, y) in canvas units.
-geometry = {b["osc"]: (80.0, 40.0), b["filt"]: (80.0, 180.0)}
+# Where a dragged box last landed (index -> (x, y)), for the printout only: the
+# layout is fully automatic, so nothing here is placed by hand.
+placed: dict[int, tuple[float, float]] = {}
 
 
 # %% [markdown]
@@ -138,16 +139,12 @@ geometry = {b["osc"]: (80.0, 40.0), b["filt"]: (80.0, 180.0)}
 
 # %%
 PATCH, WORKSPACE, RENDER, STOP = 7, 6, 1, 2
-CONTENT = (1100.0, 820.0)
 transport = panel(5, button(RENDER, label="render"), button(STOP, label="stop"),
                   layout="row", h=48)
 
 gui = session.gui()
 win = gui.open(window(
-    scroll(WORKSPACE,
-           patch(PATCH, **p.to_widget(geometry), label="patch",
-                 x=0.0, y=0.0, w=CONTENT[0], h=CONTENT[1]),
-           content_w=CONTENT[0], content_h=CONTENT[1]),
+    scroll(WORKSPACE, patch(PATCH, **p.to_widget(), label="patch")),
     transport, title="Patch — level 1", w=720, h=680, layout="col"))
 session.start()
 
@@ -203,7 +200,7 @@ def step(addr, args) -> None:
         print(f"  wired {src}.{outlet} -> {dst}.{inlet} — press render to hear it")
     elif tag == "move":
         index, x, y = int(args[2]), float(args[3]), float(args[4])
-        geometry[index] = (x, y)
+        placed[index] = (x, y)
         print(f"  moved box {index} to ({x:.0f}, {y:.0f})")
     elif tag == "view":
         print(f"  view x={args[2]:.0f} y={args[3]:.0f} zoom={args[4]:.2f}")
