@@ -189,6 +189,26 @@ class Group(Element):
 
         return MIXED
 
+    # ---- the internal buses (a logical group's private wires) ----
+
+    @property
+    def bus_names(self) -> list:
+        """The names of the internal buses this (logical) group declares."""
+        return [spec["name"] for spec in self._bus_specs]
+
+    def declare_bus(self, name, rate: str = "audio", channels: int = 1):
+        """Declare an internal bus — a logical group's private wire between
+        members. Idempotent by name: re-declaring an existing bus updates its
+        ``rate``/``channels``. This is what a patcher edit (a cord drawn between
+        two members) calls to name the bus the connection implies."""
+        spec = _bus_spec((str(name), rate, int(channels)))
+        for i, existing in enumerate(self._bus_specs):
+            if existing["name"] == spec["name"]:
+                self._bus_specs[i] = spec
+                return self
+        self._bus_specs.append(spec)
+        return self
+
     # ---- the logical rendering: a GraphDef ----
 
     def to_graphdef(self, name=None):

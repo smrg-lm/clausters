@@ -588,3 +588,53 @@ def test_a_logical_group_among_concrete_lanes_draws_as_a_graph_lane():
     # The ruler rides the bottom *track* lane, never the graph.
     tracks = [c for c in tree["children"] if c["type"] == "track"]
     assert tracks[-1].get("ruler") == "beats"
+
+
+def test_a_wire_edit_rewrites_the_members_controls_onto_a_shared_bus():
+    # Two unconnected members (no controls): wire src.out -> sink.in.
+    src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
+    sink = SynthDef("gsink", out(0, in_(control("in")) * control("amp", 0.3)))
+    g = Group(kind=LOGICAL, name="chain")
+    hs = g.add(Generator(src))
+    hk = g.add(Generator(sink))
+    ed = Editor(g, sample_rate=SR, tempo=TEMPO)
+    tree = ed.draw()
+    wid = [c for c in tree["children"] if c["type"] == "scroll"][0]["children"][0]["id"]
+
+    assert ed.apply("/gui_event", [wid, "wire", 0, "out", 1, "in"]) is True
+    # Both members now name one internal bus; the group declares it (audio).
+    bus = hs.element.controls["out"]
+    assert bus and hk.element.controls["in"] == bus
+    assert bus in g.bus_names
+    # And it compiles: the GraphDef wires both members to that bus.
+    spec = g.to_graphdef("chain").spec()
+    wired = {m["def"]: m.get("controls", {}) for m in spec["members"]}
+    assert wired["gsrc"]["out"] == wired["gsink"]["in"]
+    assert ed.dirty is True
+
+
+def test_a_wire_reuses_an_existing_bus_for_fan_out():
+    src = SynthDef("gsrc", out(control("out"), sine(control("freq", 220.0))))
+    sink = SynthDef("gsink", out(0, in_(control("in"))))
+    g = Group(kind=LOGICAL, name="chain", buses=[("mix", "audio")])
+    g.add(Generator(src, controls={"out": "mix"}))   # already writes "mix"
+    hk = g.add(Generator(sink))                       # unwired sink
+    ed = Editor(g, sample_rate=SR, tempo=TEMPO)
+    tree = ed.draw()
+    wid = [c for c in tree["children"] if c["type"] == "scroll"][0]["children"][0]["id"]
+    ed.apply("/gui_event", [wid, "wire", 0, "out", 1, "in"])
+    # The sink joins the source's existing bus, not a fresh one.
+    assert hk.element.controls["in"] == "mix"
+    assert g.bus_names == ["mix"]
+
+
+def test_a_graph_box_move_persists_its_position_across_a_redraw():
+    ed = Editor(fx_chain(), sample_rate=SR, tempo=TEMPO)
+    tree = ed.draw()
+    wid = [c for c in tree["children"] if c["type"] == "scroll"][0]["children"][0]["id"]
+    # A move is presentation only: the composition did not change.
+    assert ed.apply("/gui_event", [wid, "move", 1, 300.0, 120.0]) is False
+    # It survives a redraw (keyed by the group, not the widget id).
+    view = [c for c in ed.draw()["children"] if c["type"] == "scroll"][0]["children"][0]
+    assert view["boxes"][1]["x"] == pytest.approx(300.0)
+    assert view["boxes"][1]["y"] == pytest.approx(120.0)

@@ -397,6 +397,17 @@ def test_to_graphdef_requires_a_name():
         Group(kind=LOGICAL).to_graphdef()
 
 
+def test_declare_bus_adds_and_is_idempotent_by_name():
+    g = Group(kind=LOGICAL, name="x", buses=[("mix", "audio")])
+    assert g.bus_names == ["mix"]
+    g.declare_bus("w0", rate="control")           # a new bus
+    assert g.bus_names == ["mix", "w0"]
+    g.declare_bus("mix", rate="control", channels=2)   # re-declare updates
+    assert g.bus_names == ["mix", "w0"]
+    spec = next(s for s in g._bus_specs if s["name"] == "mix")
+    assert spec == {"name": "mix", "rate": "control", "channels": 2}
+
+
 def test_logical_member_must_be_a_generator():
     g = Group(kind=LOGICAL, name="x")
     g.add(Event({"dur": 1.0}))

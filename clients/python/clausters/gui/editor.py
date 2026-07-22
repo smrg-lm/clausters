@@ -137,6 +137,10 @@ class Editor:
         #: graph widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
         self._graphs: dict = {}
+        #: id(group) -> {box index: (x, y)} — a graph's box placements, presentation
+        #: only (a logical group is a signal graph, so positions live here, not in
+        #: the arrangement). Keyed by group identity, so they survive a redraw.
+        self._graph_geometry: dict = {}
         self._host = None
         self._window = None
         #: The rendering in flight: where it went, on what clock, and the
@@ -240,8 +244,9 @@ class Editor:
         patch, handles = _logical_patch(group)
         wid = next(self._ids)
         self._graphs[wid] = (group, handles)
+        geometry = self._graph_geometry.get(id(group), {})
         content = (900.0, 700.0)
-        view = graph(wid, **patch.to_widget(), label=_name(group),
+        view = graph(wid, **patch.to_widget(geometry), label=_name(group),
                      x=0.0, y=0.0, w=content[0], h=content[1])
         return scroll(next(self._ids), view,
                       content_w=content[0], content_h=content[1])
@@ -350,6 +355,10 @@ class Editor:
         (a dedicated piano-roll beside the multitrack, say): every route resolves
         through this editor's own registries, so another window's events fall
         through untouched.
+
+        A logical group's directed patch routes here too: a ``"wire"`` rewrites the
+        two members' controls onto a shared bus (`_apply_graph`), a ``"move"``
+        persists a box's canvas position.
         """
         if addr == "/gui_closed":
             if not args or self._window is None or int(args[0]) == self._window:
@@ -369,6 +378,10 @@ class Editor:
             # timeline (a generator is read-only, so it is ignored).
             element = self._rolls.get(int(args[0]))
             return element is not None and self._apply_notes(element, args[2:])
+        if int(args[0]) in self._graphs:
+            # A logical group's directed patch: a cord drawn (rewire) or a box
+            # moved (presentation).
+            return self._apply_graph(int(args[0]), args[1], args[2:])
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -436,6 +449,69 @@ class Editor:
         _rewrite_timeline(timeline, lambda it: _pitch(it) is None, new)
         self._changed()
         return True
+
+    def _apply_graph(self, wid: int, tag, values) -> bool:
+        """One edit on a logical group's directed patch. A ``"wire"`` (``src_box
+        outlet dst_box inlet``) rewrites the two members' controls so they share a
+        bus — the connection *is* a bus, the same fact `Group.to_graphdef` reads,
+        so the next render wires the GraphDef the way the cord is drawn. A ``"move"``
+        (``box x y``) only persists the box's canvas position (a signal graph has
+        no timeline, so positions are the editor's, not the arrangement's)."""
+        group, handles = self._graphs[wid]
+        if tag == "wire" and len(values) >= 4:
+            return self._apply_wire(group, handles, values[:4])
+        if tag == "move" and len(values) >= 3:
+            self._graph_geometry.setdefault(id(group), {})[int(values[0])] = (
+                float(values[1]), float(values[2]))
+            return False
+        return False
+
+    def _apply_wire(self, group, handles, values) -> bool:
+        """Draw a cord ``src.outlet -> dst.inlet`` onto the arrangement: name the
+        bus the connection implies (reusing one either end already writes/reads,
+        else a fresh name declared on the group) and point both members' controls
+        at it. The bus rate comes from the source outlet's def."""
+        src_box, outlet, dst_box, inlet = int(values[0]), str(values[1]), int(values[2]), str(values[3])
+        if not (0 <= src_box < len(handles) and 0 <= dst_box < len(handles)):
+            return False
+        src, dst = handles[src_box].element, handles[dst_box].element
+        rate = self._outlet_rate(src, outlet)
+        if rate is None:
+            return False  # a port-less (bare-name) member, or an unknown outlet
+        src_ctls = dict(src.controls or {})
+        dst_ctls = dict(dst.controls or {})
+        bus = _named_bus(src_ctls.get(outlet)) or _named_bus(dst_ctls.get(inlet)) \
+            or self._fresh_bus(group)
+        src_ctls[outlet], dst_ctls[inlet] = bus, bus
+        src.controls, dst.controls = src_ctls, dst_ctls
+        group.declare_bus(bus, rate=rate)
+        self._changed()
+        return True
+
+    def _outlet_rate(self, member, name: str):
+        """The rate (``"audio"``/``"control"``) of ``member``'s outlet ``name``,
+        derived from the `SynthDef` it wraps — or ``None`` when the member wraps a
+        bare def name or has no such outlet."""
+        from ..defs import synthdef_ports
+        from ..defs.synthdef import SynthDef
+
+        wraps = getattr(member, "wraps", None)
+        if not isinstance(wraps, SynthDef):
+            return None
+        _inlets, outlets = synthdef_ports(wraps)
+        for port in outlets:
+            if _port_name(port) == name:
+                return port[1] if isinstance(port, tuple) else "audio"
+        return None
+
+    def _fresh_bus(self, group) -> str:
+        """A bus name not yet declared on ``group`` (``w0``, ``w1``, …) — the
+        private wire a brand-new cord introduces."""
+        taken = set(group.bus_names)
+        i = 0
+        while f"w{i}" in taken:
+            i += 1
+        return f"w{i}"
 
     def _osc(self, element) -> list:
         """The OSC (and raw MIDI) events of an element as ``(time_units, label)``
@@ -829,6 +905,12 @@ def _port_name(port) -> str:
     """A port spec's name, whether audio (a bare string) or control (``(name,
     rate)``)."""
     return port if isinstance(port, str) else port[0]
+
+
+def _named_bus(value):
+    """A control value that is an internal-bus **name** — a non-empty string that
+    is not the hardware sentinel ``"OUT"`` — or ``None`` (a number, or ``"OUT"``)."""
+    return value if (isinstance(value, str) and value and value != "OUT") else None
 
 
 def _name(element) -> str:
