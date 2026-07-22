@@ -541,8 +541,8 @@ exactly as a number is data (a `freq`) or an envelope is (an `env`). So a buffer
 in the patch is a **value fed to a box's parameter**, of the general family of
 **parameter/value boxes** (a constant, an envelope, a buffer) that feed a def's
 parameter inlets. That family is **not built yet**: the level-1 patcher so far
-wires def-to-def buses only, and a def's own parameters-as-values are the level-2
-parameter surface (P5). Buffers-as-boxes therefore wait for the value-box work,
+wires def-to-def buses only, and a def's own parameters-as-values are the
+value-box work (P5, the consolidated editing surface). Buffers-as-boxes therefore wait for the value-box work,
 rather than bolting a "buffer rate" onto the cord→bus pass now — the coherent
 order is to introduce parameter boxes first, of which a buffer is one kind.
 
@@ -1447,8 +1447,8 @@ not a dependency the whole workspace takes on.
 
 The patcher track (P) first grew view and editing together, per level: P3
 delivered the level-1 `GraphDef` view *and* its edit-back in one arc, driven from
-the editor, and P5 was scoped as "UGen boxes that compile to a def" — a level-2
-surface that was editable from the start. Two frictions surfaced. First, the
+the editor, and the level-2 milestone was scoped as "UGen boxes that compile to a
+def" — a surface editable from the start. Two frictions surfaced. First, the
 edit-back reached into the arrangement model early (`Group.declare_bus`, the
 `Group → GraphPatch` mapping living inside `editor.py`), coupling a still-moving
 view to the model before the drawing itself was settled. Second, nothing yet drew
@@ -1504,8 +1504,10 @@ either. It stays an explicit later decision, never a prerequisite of this track.
 
 **Consequence.** Phase A is `GraphDef → GraphPatch` (level 1, lifting the mapping
 out of the editor) then `SynthDef → DefPatch` (level 2), plus a free-standing
-opener; phase B is the editing that P3d already began, then P3e/P3f/P3g, the live
-patch, the level-2 compile driver, and persistence. The directed/typed grammar,
+opener; phase B is the editing — **consolidated into one milestone to plan**
+(structural creation, parameter/value/buffer boxes, the live patch, and the
+level-2 compile) that the shipped P3d edit-back seeds — followed by persistence as
+its own milestone. The directed/typed grammar,
 the cord→bus pass and the `clausters-core` patch document are unchanged — this is
 a re-sequencing and a placement discipline, not a redesign of the model. The
 free-standing opener is a **`plot_def()` method on the def classes**
