@@ -152,7 +152,7 @@ not flatten; it renders to a [GraphDef](#graphdef), and it draws as a
 [patch](#patch--patcher). ([The logical side](logical.md))
 
 **multitrack editor** — the arrangement's DAW-style view and driver:
-`clausters.gui.Editor` plus the `track`/`clip`/`graph` widgets. Draws the
+`clausters.gui.Editor` plus the `track`/`clip`/`patch` widgets. Draws the
 tree, applies edits back onto it, owns the transport, and is the *only*
 converter between [beats](#beats) and [timeline samples](#timeline-samples).
 ([The editor](editor.md))
@@ -161,10 +161,11 @@ converter between [beats](#beats) and [timeline samples](#timeline-samples).
 optional. Usually supplied by a [placement](#placement) rather than the
 element itself. ([Elements](elements.md))
 
-**patch / patcher** — the view of a [logical group](#group): member boxes,
-bus nodes, one wire per `(member, control) ↔ bus` connection. Deliberately
-*undirected* — the data knows the connection; the direction is the server's
-analysis. ([The logical side](logical.md))
+**patch / patcher** — the view of a [logical group](#group): a box per member,
+**directed and typed** — inlets on top, outlets on the bottom, a cord per
+`outlet -> inlet` connection (the buses are not drawn — a cord *is* a bus).
+Direction is read from the def (an `In` control is an inlet, an `Out` an outlet),
+so the picture reads as signal flow. ([The logical side](logical.md))
 
 **piano-roll** — the clip body an element of events draws: one bar per note,
 high pitches up. A pattern's roll is *bounced to be drawn* — a generator lane

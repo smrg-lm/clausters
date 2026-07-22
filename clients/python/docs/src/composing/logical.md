@@ -85,21 +85,22 @@ patcher = Editor(chain, sample_rate=SR, tempo=TEMPO, title="chain")
 pwin = patcher.open(gui)
 ```
 
-A **patch**: the member boxes down one side (each with its wirable controls as
-ports), the bus nodes down the other (`mix`, and `OUT` if a member names it),
-and one wire per `(member, control) ↔ bus` connection.
+A **patch**: a box per member, drawn **directed and typed** — inlets on the box's
+top edge, outlets on the bottom (each a wirable control of the def), and a **cord**
+per `outlet -> inlet` connection. The buses are not drawn: a cord *is* a bus (the
+client names one per net of cords).
 
-Notice the patch is **undirected** — no arrows. That is deliberate honesty: a
-`GraphDef` records that a control *names* a bus; which end writes and which
-reads is the server's own analysis of the running graph, not something the
-data knows. The view shows the connection and leaves the direction to the
-engine, so it can never lie about signal flow.
+Notice the patch is **directed and typed** — a cord runs `outlet -> inlet`, and its
+weight shows the rate (audio heavy, control thin). The direction is not guessed: it
+is structural, read from each def — a control feeding an `In` is an inlet, one
+feeding an `Out` an outlet — so the picture reads as signal flow, top to bottom,
+and cannot lie about it.
 
 ## Rewire it
 
 The wires are live, and the rhythm is the one you know:
 
-- **drag a port onto a bus** — that control now names that bus;
+- **drag an outlet onto an inlet** — draws a cord (a rate mismatch is refused);
 - **drag a port onto empty space** — unwired.
 
 Re-instance the chain so you can hear the difference, then unplug the gain

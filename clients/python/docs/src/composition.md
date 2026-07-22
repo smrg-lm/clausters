@@ -186,13 +186,13 @@ lands on the automation's `Env`, which is what the next render plays, so the
 curve you draw is the curve you hear.
 
 A **logical** group is not a timeline at all: its members relate by processing, so
-it draws as a `graph` **patch** — a box per member, a node per bus, and a wire per
-connection. The patch is deliberately undirected: a GraphDef knows that a control
-*touches* a bus, and which end writes is the server's own analysis, so the view
-shows the connection and leaves the direction to the engine. Dragging a port onto
-a bus rewires that control (onto empty space, unwires it), and the edit rewrites
-the group — so the next render sends a GraphDef wired the way the patch is
-drawn.
+it draws as a `patch` **patcher** — a box per member, with **inlets on top and
+outlets on the bottom**, and a **cord** per `outlet -> inlet` connection. The buses
+are not drawn: a cord *is* a bus. Direction is not a guess — it is read from the
+def (a control feeding an `In` is an inlet, one feeding an `Out` an outlet), so the
+picture reads as signal flow. Dragging an outlet onto an inlet draws a cord (a rate
+mismatch is refused; onto empty space unwires it), and the edit rewrites the
+group — so the next render sends a GraphDef wired the way the patch is drawn.
 
 `clients/python/examples/gui_composer.py` is the whole loop in one script: a take
 bounced offline and loaded from disk, a melody, a pattern, all three composed,
