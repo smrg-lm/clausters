@@ -31,6 +31,7 @@ from .clocksync import SampleClockModel, UdpSampleClock
 from .buffer import Buffer, BufferAllocator
 from .faustdef import FaustDef
 from .graphdef import GraphDef
+from .patch import GraphPatch
 from .node import AddAction, Group, NodeIdAllocator, ROOT_NODE_ID, Synth
 from .server import (
     BufferInfo,
@@ -121,6 +122,7 @@ __all__ = [
     "FaustDef",
     "SynthDef",
     "GraphDef",
+    "GraphPatch",
     "Ugen",
     "Control",
     "ChannelList",

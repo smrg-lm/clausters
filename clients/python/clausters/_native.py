@@ -16,6 +16,7 @@ package) never fails just because the cdylib has not been built yet.
 """
 
 import ctypes
+import json
 import os
 import threading as _threading
 from array import array
@@ -23,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 10
+CORE_ABI_VERSION = 11
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -262,6 +263,10 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_core_correlation.argtypes = [f32p, f32p, ctypes.c_size_t, f32p]
     lib.clausters_core_lissajous.restype = ctypes.c_int32
     lib.clausters_core_lissajous.argtypes = [f32p, f32p, ctypes.c_size_t, f32p]
+    # The patcher cord->bus pass (ABI v11): a directed patch JSON in, its
+    # GraphDef wiring JSON out (size-query then fill, the peaks pattern).
+    lib.clausters_core_patch_compile.restype = ctypes.c_size_t
+    lib.clausters_core_patch_compile.argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
     # Finite-resource registry (ABI v10): the one id-allocator model — node
     # ids, buses, buffers — shared with the server's reserved ranges.
     lib.clausters_registry_new.restype = ctypes.c_void_p
@@ -314,6 +319,36 @@ def lib(path: str | None = None) -> ctypes.CDLL:
 
 def abi_version() -> int:
     return lib().clausters_core_abi_version()
+
+
+def compile_patch(patch: dict) -> dict:
+    """Compile a **directed patch** into its GraphDef bus wiring via the shared
+    `clausters_core::patch` pass — the one door every client's patcher uses, so a
+    patch translates identically everywhere.
+
+    ``patch`` is ``{"boxes": [...], "cords": [...]}``: each box a
+    ``{"def": name, "hardware"?: bool, "ports": [{"name", "dir": "in"|"out",
+    "rate": "audio"|"control"}, ...]}``, each cord a ``{"from_box", "from_port",
+    "to_box", "to_port"}``. Returns ``{"buses": [{"name", "rate"}, ...],
+    "members": [{"box_index", "def", "controls": [{"control", "bus"}, ...]}, ...]}``
+    — one bus per connected net (writers summing), the hardware net named ``OUT``.
+
+    Raises `ValueError` on a malformed cord (reversed, rate-mismatched, out of
+    range) or unserializable input.
+    """
+    data = json.dumps(patch).encode("utf-8")
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    inp = (ctypes.c_ubyte * len(data)).from_buffer_copy(data) if data else (ctypes.c_ubyte * 0)()
+    fn = lib().clausters_core_patch_compile
+    need = fn(ctypes.cast(inp, u8p), len(data), None, 0)
+    if need == 0:
+        raise ValueError("patch is not valid JSON for the compiler")
+    out = (ctypes.c_ubyte * need)()
+    n = fn(ctypes.cast(inp, u8p), len(data), out, need)
+    result = json.loads(bytes(out[:n]).decode("utf-8"))
+    if "error" in result:
+        raise ValueError(result["error"])
+    return result
 
 
 # ---- flat-data helpers ----

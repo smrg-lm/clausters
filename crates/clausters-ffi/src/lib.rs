@@ -46,8 +46,11 @@ mod ws;
 /// read of a quant grid, the display complement of `quant_delay`); v10 the
 /// `clausters_registry_*` finite-resource id registry (node ids, buses,
 /// buffers — every client's allocator and the server's reserved ranges share
-/// the one occupancy-map model, internally locked per handle).
-pub const CORE_ABI_VERSION: u32 = 10;
+/// the one occupancy-map model, internally locked per handle); v11 the
+/// `clausters_core_patch_compile` cord→bus pass (a directed patch JSON in, its
+/// GraphDef wiring JSON out — the GUI patcher's translation, shared so every
+/// client compiles a patch identically).
+pub const CORE_ABI_VERSION: u32 = 11;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]
@@ -869,6 +872,50 @@ pub extern "C" fn clausters_registry_graph_control_reserved() -> u64 {
     registry::GRAPH_CONTROL_BUS_RESERVED as u64
 }
 
+/// The GUI patcher's **cord → bus pass**: a directed
+/// [`Patch`](clausters_core::patch::Patch) as JSON in (`patch`/`patch_len`), its
+/// [`Compiled`](clausters_core::patch::Compiled) bus wiring as JSON written to
+/// `out` (capacity `out_cap`). Returns the number of bytes the output JSON needs
+/// — written iff it fit, so a caller sizes with a first call (a null/small `out`)
+/// then fills — or `0` when the input is not readable JSON for a `Patch`.
+///
+/// A **compile** error (a malformed cord: reversed, mismatched rate, out of
+/// range) is not a `0`: it comes back *as* the output JSON, the object
+/// `{"error": "<message>"}`, so the caller reads one channel. Success is the
+/// `Compiled` object (`{"buses": …, "members": …}`).
+///
+/// # Safety
+/// `patch` must be readable for `patch_len` bytes and `out` writable for
+/// `out_cap` bytes (or null, to size only).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn clausters_core_patch_compile(
+    patch: *const u8,
+    patch_len: usize,
+    out: *mut u8,
+    out_cap: usize,
+) -> usize {
+    use clausters_core::patch::{Patch, compile};
+
+    if patch.is_null() {
+        return 0;
+    }
+    // SAFETY: caller guarantees `patch` is readable for `patch_len` bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(patch, patch_len) };
+    let Ok(p) = serde_json::from_slice::<Patch>(bytes) else {
+        return 0;
+    };
+    let json = match compile(&p) {
+        Ok(c) => serde_json::to_vec(&c).unwrap_or_default(),
+        Err(e) => serde_json::to_vec(&serde_json::json!({ "error": e })).unwrap_or_default(),
+    };
+    let n = json.len();
+    if !out.is_null() && out_cap >= n {
+        // SAFETY: out is writable for out_cap >= n bytes.
+        unsafe { std::ptr::copy_nonoverlapping(json.as_ptr(), out, n) };
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1173,5 +1220,73 @@ mod tests {
         // Mono pair (1,1): side 0, mid √2. Anti pair (0.7,-0.7): side √2·0.7, mid 0.
         assert!(out[0].abs() < 1e-6 && (out[1] - std::f32::consts::SQRT_2).abs() < 1e-6);
         assert!((out[2] - std::f32::consts::SQRT_2 * 0.7).abs() < 1e-6 && out[3].abs() < 1e-6);
+    }
+
+    fn compile_json(patch: &str) -> (usize, serde_json::Value) {
+        let b = patch.as_bytes();
+        // Size query first (null out), then fill.
+        let need =
+            unsafe { clausters_core_patch_compile(b.as_ptr(), b.len(), std::ptr::null_mut(), 0) };
+        if need == 0 {
+            return (0, serde_json::Value::Null);
+        }
+        let mut buf = vec![0u8; need];
+        let n = unsafe {
+            clausters_core_patch_compile(b.as_ptr(), b.len(), buf.as_mut_ptr(), buf.len())
+        };
+        assert_eq!(n, need, "the fill matches the size query");
+        (need, serde_json::from_slice(&buf).unwrap())
+    }
+
+    #[test]
+    fn patch_compile_wires_a_chain() {
+        let (need, v) = compile_json(
+            r#"{"boxes":[
+                {"def":"tone","ports":[{"name":"out","dir":"out","rate":"audio"}]},
+                {"def":"dac","ports":[{"name":"in","dir":"in","rate":"audio"},
+                                      {"name":"out","dir":"out","rate":"audio"}]},
+                {"def":"OUT","hardware":true,"ports":[{"name":"in","dir":"in","rate":"audio"}]}],
+              "cords":[{"from_box":0,"from_port":0,"to_box":1,"to_port":0},
+                       {"from_box":1,"from_port":1,"to_box":2,"to_port":0}]}"#,
+        );
+        assert!(need > 0);
+        assert_eq!(
+            v["buses"].as_array().unwrap().len(),
+            1,
+            "one private bus (tone->dac)"
+        );
+        let members = v["members"].as_array().unwrap();
+        assert_eq!(members.len(), 2, "the hardware OUT is not a member");
+        let dac = &members[1];
+        assert_eq!(dac["def"], "dac");
+        assert!(
+            dac["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|w| w["bus"] == "OUT"),
+            "dac's out is wired to the hardware OUT"
+        );
+    }
+
+    #[test]
+    fn patch_compile_reports_a_bad_cord_as_an_error_object() {
+        // A reversed cord (inlet -> outlet) comes back as an error channel, not 0.
+        let (_need, v) = compile_json(
+            r#"{"boxes":[
+                {"def":"tone","ports":[{"name":"out","dir":"out","rate":"audio"}]},
+                {"def":"dac","ports":[{"name":"in","dir":"in","rate":"audio"}]}],
+              "cords":[{"from_box":1,"from_port":0,"to_box":0,"to_port":0}]}"#,
+        );
+        assert!(v["error"].is_string());
+    }
+
+    #[test]
+    fn patch_compile_rejects_malformed_input_with_zero() {
+        let bad = b"not a patch";
+        let n = unsafe {
+            clausters_core_patch_compile(bad.as_ptr(), bad.len(), std::ptr::null_mut(), 0)
+        };
+        assert_eq!(n, 0);
     }
 }

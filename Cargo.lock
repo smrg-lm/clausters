@@ -260,6 +260,7 @@ name = "clausters-ffi"
 version = "0.3.0"
 dependencies = [
  "clausters-core",
+ "serde_json",
  "tungstenite",
 ]
 

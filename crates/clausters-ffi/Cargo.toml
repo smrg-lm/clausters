@@ -12,6 +12,9 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 clausters-core = { path = "../clausters-core" }
+# The patcher cord->bus pass crosses as JSON (the flat-data boundary): a Patch
+# in, its Compiled wiring out.
+serde_json = "1"
 # WebSocket *client* transport (`clausters_ws_*`): the same crate the server's
 # `osc::ws` listener uses, here for the client side, so the protocol has one
 # implementation. Non-optional: every binding can reach a `--ws` server without
