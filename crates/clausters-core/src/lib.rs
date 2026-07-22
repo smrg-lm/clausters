@@ -52,6 +52,10 @@
 //!   cache.
 //! - [`bytes`] — little-endian cache (de)serialization the analysis caches
 //!   share.
+//! - [`patch`] — the GUI patcher's cord → bus pass: a directed patch (typed
+//!   inlets/outlets, cords) compiled to a GraphDef's bus wiring (one bus per
+//!   connected net, its writers summing), shared so every client that draws a
+//!   patch translates it identically.
 
 pub mod builtins;
 pub mod bytes;
@@ -61,6 +65,7 @@ pub mod envshape;
 pub mod fft;
 pub mod measure;
 pub mod osc;
+pub mod patch;
 pub mod peaks;
 pub mod pvprog;
 pub mod registry;
