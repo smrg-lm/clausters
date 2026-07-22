@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """The patch canvas: free placement, navigation and selection on a `graph`.
 
-The `graph` widget is the patcher view of a bus-wired node graph — member
-boxes, bus nodes, a wire per connection. This example shows its **canvas**
-behavior:
+The `graph` widget is the **directed** patcher view: boxes with inlets on the
+top edge and outlets on the bottom, a cord per ``outlet -> inlet`` connection.
+It is built from a `clausters.defs.GraphPatch` (`to_widget` renders the model
+into the widget). This example shows its **canvas** behavior — no audio:
 
-- **Free placement** — a member or bus may carry ``x``/``y`` (canvas units);
-  without them it auto-places in the classic stacked columns. Here half the
-  patch is placed, half is left to the auto layout.
+- **Free placement** — ``geometry`` places a box (canvas units); without a place
+  a box auto-stacks down the left column. Here some boxes are placed, some not.
 - **Dragging** — grab a box and move it; the edit flows back as
-  ``/gui_event <id> "move" <kind> <index> <x> <y>`` and prints here. Moving a
-  selected box moves the whole selection.
+  ``/gui_event <id> "move" <index> <x> <y>`` and prints here. Moving a selected
+  box moves the whole selection.
 - **Selection** — click a box to select it; drag the empty canvas to sweep a
   marquee over several; click empty canvas to clear.
-- **Rewiring** — drag a port (the square on a box's right edge) onto a bus to
-  rewire that control, onto empty space to unwire (``"wire"`` prints here).
+- **Cording** — drag an outlet's pin onto an inlet (either grab order) to draw a
+  cord; a rate mismatch is refused at the gesture. The edit flows back as
+  ``/gui_event <id> "wire" <src> <outlet> <dst> <inlet>`` and prints here.
 - **Navigation** — the patch sits inside a `scroll` workspace: drag the space
-  around it to pan, wheel to zoom anchored at the cursor. Boxes, wires and
-  text scale together.
+  around it to pan, wheel to zoom anchored at the cursor. Boxes, cords and text
+  scale together.
 
 The example **launches its own GUI host** and needs no audio server. Needs a
 display and a Vulkan/Metal/DX12/GL adapter.
@@ -35,23 +36,28 @@ then::
 import sys
 import time
 
+from clausters.defs import GraphPatch
 from clausters.gui import GuiHost, graph, label, scroll, window
 
 PATCH = 30
 
 
 def patch_window() -> dict:
+    # A directed chain: osc -> filter -> verb -> the hardware. Built as a model,
+    # then drawn — the same GraphPatch you would compile and send with audio.
+    p = GraphPatch()
+    osc = p.add("osc", outlets=["out"])
+    filt = p.add("filter", inlets=["in"], outlets=["out"])
+    verb = p.add("verb", inlets=["in"], outlets=["out"])
+    out = p.sink()
+    p.connect(osc, "out", filt, "in")
+    p.connect(filt, "out", verb, "in")
+    p.connect(verb, "out", out, "in")
+    # Some boxes placed, the rest (verb, OUT) left to the auto layout.
+    geometry = {osc: (60.0, 40.0), filt: (60.0, 200.0)}
+
     the_patch = graph(
-        PATCH,
-        members=[
-            ("osc", ["out"], 60.0, 60.0),        # placed
-            ("filter", ["in", "out"], 60.0, 220.0),
-            ("verb", ["in", "out"]),             # auto-placed (left column)
-        ],
-        buses=[("raw", 340.0, 90.0), ("wet", 340.0, 250.0), "OUT"],
-        wires=[(0, "out", "raw"), (1, "in", "raw"), (1, "out", "wet"),
-               (2, "in", "wet"), (2, "out", "OUT")],
-        label="patch",
+        PATCH, **p.to_widget(geometry), label="patch",
         x=0.0, y=0.0, w=700.0, h=500.0,
     )
     return window(
@@ -76,11 +82,11 @@ def main():
                 print(f"window {args[0]} closed")
                 break
             if len(args) >= 2 and args[1] == "move":
-                kind, index, x, y = args[2], args[3], args[4], args[5]
-                print(f"moved {kind} {index} to ({x:.0f}, {y:.0f})")
+                index, x, y = args[2], args[3], args[4]
+                print(f"moved box {index} to ({x:.0f}, {y:.0f})")
             elif len(args) >= 2 and args[1] == "wire":
-                member, control, bus = args[2], args[3], args[4]
-                print(f"wired member {member} '{control}' -> '{bus or '(unwired)'}'")
+                src, outlet, dst, inlet = args[2], args[3], args[4], args[5]
+                print(f"corded {src}.{outlet} -> {dst}.{inlet}")
             elif len(args) >= 2 and args[1] == "view":
                 print(f"view x={args[2]:.0f} y={args[3]:.0f} zoom={args[4]:.2f}")
 

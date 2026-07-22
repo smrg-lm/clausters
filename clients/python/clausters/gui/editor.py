@@ -39,7 +39,7 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import clip, graph, pianoroll, track, window
+from .guidef import clip, pianoroll, track, window
 
 __all__ = ["Editor"]
 
@@ -127,17 +127,6 @@ class Editor:
         #: widget id -> element, for every lane (a `/gui_set` of the lane chrome
         #: — the playhead — addresses these).
         self._lanes: dict = {}
-        #: widget id -> the logical `Group` a `graph` patch draws, which a
-        #: rewiring edit writes through.
-        self._patches: dict = {}
-        #: id(group) -> the patch's **canvas geometry** (``("member", i)`` /
-        #: ``("bus", name)`` -> ``(x, y)``), persisted beside the logical group
-        #: so a patch reopens as it was left. Presentation only — the render
-        #: never reads it (a box's position means nothing to the sound).
-        self._patch_geometry: dict = {}
-        #: widget id -> the drawn bus-name order, so a ``"move"`` event's bus
-        #: index resolves to its stable name.
-        self._patch_buses: dict = {}
         #: The view: the multitrack (`open`) or a dedicated piano-roll of one
         #: events element (`open_pianoroll`). `render` dispatches on it.
         self._mode = "multitrack"
@@ -202,29 +191,30 @@ class Editor:
     def draw(self) -> dict:
         """The composition as a ``window``-rooted GuiDef: one `track` lane per
         member of the root group, each holding its members as clips on the shared
-        time axis — and a `graph` **patch** for every *logical* group, whose
-        members relate by processing rather than by time (so a lane would be the
-        wrong shape for it). Pure — it builds the tree and the id registry, and
-        sends nothing."""
+        time axis. Pure — it builds the tree and the id registry, and sends
+        nothing.
+
+        A **logical** group draws as a directed `graph` patch, which needs each
+        member's port directions from its def — the directed patcher's Python
+        driver (the P3 milestone). Until then a logical group is skipped here;
+        build one directly with `clausters.defs.GraphPatch` + `guidef.graph`
+        (see ``examples/gui_patcher.py``)."""
         if self._mode == "pianoroll":
             return self._draw_pianoroll()
         self._ids = itertools.count(self._base_id)
         self._clips = {}
         self._lanes = {}
-        self._patches = {}
         self._rolls = {}
 
         lanes: list = []
-        patches: list = []
         root = self.element
         if isinstance(root, Group) and root.kind == CONCRETE:
             for member in root.handles:
                 if isinstance(member.element, Group) and member.element.kind == LOGICAL:
-                    patches.append(self._patch_for(member.element))
-                else:
-                    lanes += self._lanes_for(member.element, member.offset, root, member)
+                    continue  # deferred: the directed patcher driver (see above)
+                lanes += self._lanes_for(member.element, member.offset, root, member)
         elif isinstance(root, Group) and root.kind == LOGICAL:
-            patches.append(self._patch_for(root))
+            pass  # deferred: the directed patcher driver (see above)
         else:
             lanes += self._lanes_for(root, float(root.onset or 0.0), None, None)
 
@@ -232,44 +222,8 @@ class Editor:
         # DAW convention); every lane carries the tempo/rate its ticks read.
         if lanes:
             lanes[-1]["ruler"] = "beats"
-        return window(*lanes, *patches, *self.extra, title=self.title,
+        return window(*lanes, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
-
-    def _patch_for(self, group) -> dict:
-        """A **logical** group as a `graph` patch: its members are the boxes (a def
-        name plus the controls that name a bus — its ports), the group's buses the
-        bus nodes (``OUT``, the hardware, among them), and a wire per
-        ``(member, control) ↔ bus`` pair. The same 1:1 mapping onto a `GraphDef`
-        that rendering uses, drawn instead of sent."""
-        wid = next(self._ids)
-        geometry = self._patch_geometry.get(id(group), {})
-        members, wires, buses = [], [], []
-        for i, (_offset, _dur, child) in enumerate(group.members):
-            controls = dict(getattr(child, "controls", None) or {})
-            maps = dict(getattr(child, "maps", None) or {})
-            ports = [c for c, v in controls.items() if isinstance(v, str)]
-            ports += [c for c in maps if c not in ports]
-            # A member whose box was moved carries its persisted canvas
-            # position; the rest keep the auto layout.
-            pos = geometry.get(("member", i))
-            members.append((child.def_name, ports, *pos) if pos
-                           else (child.def_name, ports))
-            for control in ports:
-                bus = controls.get(control) or maps.get(control)
-                if isinstance(bus, str):
-                    wires.append((i, control, bus))
-                    if bus not in buses:
-                        buses.append(bus)
-        # The group's declared buses first (its own vocabulary), then anything a
-        # member names that the group did not declare (like the hardware `OUT`).
-        declared = [spec["name"] for spec in group._bus_specs]
-        buses = declared + [b for b in buses if b not in declared]
-        self._patches[wid] = group
-        self._patch_buses[wid] = list(buses)
-        placed_buses = [(name, *geometry[("bus", name)])
-                        if ("bus", name) in geometry else name for name in buses]
-        return graph(wid, members=members, buses=placed_buses, wires=wires,
-                     label=group.name or "patch")
 
     def open(self, host, id: int | None = None) -> int:
         """`draw` the composition and open it on ``host`` (a
@@ -288,7 +242,6 @@ class Editor:
         self._ids = itertools.count(self._base_id)
         self._clips = {}
         self._lanes = {}
-        self._patches = {}
         self._rolls = {}
         element = self._roll_element
         wid = next(self._ids)
@@ -383,14 +336,6 @@ class Editor:
             return False
         if addr != "/gui_event" or len(args) < 2:
             return False
-        if args[1] == "wire":
-            return self._apply_wire(int(args[0]), args[2:])
-        if args[1] == "move":
-            # A box moved on a patch canvas: geometry is presentation, owned
-            # here and persisted beside the group — the composition itself did
-            # not change (y and x mean nothing to the render).
-            self._apply_move(int(args[0]), args[2:])
-            return False
         if args[1] == "locate":
             # A click on a lane's ruler (or its empty space): seek. A transport
             # action, not an edit — the composition did not change (and another
@@ -429,46 +374,6 @@ class Editor:
         # The clip was drawn where it now is: keep the registry truthful, or the
         # next edit would measure its move against a stale placement.
         placed.offset, placed.dur = offset, dur
-        self._changed()
-        return True
-
-    def _apply_move(self, wid: int, values) -> None:
-        """A box moved on a `graph` patch (``"move" <kind> <index> <x> <y>``):
-        the canvas position is persisted beside the logical group (a member by
-        its index, a bus by its stable name), so the next `draw` — and any
-        later reopening of the patch — places the box where it was left."""
-        group = self._patches.get(wid)
-        if group is None or len(values) < 4:
-            return
-        kind, index = str(values[0]), int(values[1])
-        pos = (float(values[2]), float(values[3]))
-        geometry = self._patch_geometry.setdefault(id(group), {})
-        if kind == "member":
-            geometry[("member", index)] = pos
-        elif kind == "bus":
-            names = self._patch_buses.get(wid, [])
-            if 0 <= index < len(names):
-                geometry[("bus", names[index])] = pos
-
-    def _apply_wire(self, wid: int, values) -> bool:
-        """A control rewired on a `graph` patch (``"wire" <member> <control>
-        <bus>``, an empty bus = unwired): the **logical group** is rewritten — the
-        member `Generator`'s control now names that bus — so the next render
-        sends a `GraphDef` wired the way the patch is drawn."""
-        group = self._patches.get(wid)
-        if group is None or len(values) < 3:
-            return False
-        index, control, bus = int(values[0]), str(values[1]), str(values[2])
-        members = group.members
-        if not 0 <= index < len(members):
-            return False
-        generator = members[index][2]
-        controls = dict(generator.controls or {})
-        if bus:
-            controls[control] = bus
-        else:
-            controls.pop(control, None)
-        generator.controls = controls
         self._changed()
         return True
 

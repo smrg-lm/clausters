@@ -931,64 +931,40 @@ def piano(id: int | None = None, *, min: int | None = None, max: int | None = No
     return node("piano", id=id, **extra, **props)
 
 
-def graph(id: int | None = None, *, members=None, buses=None, wires=None,
+def graph(id: int | None = None, *, boxes=None, cords=None,
           label: str | None = None, color: str | None = None, **props) -> dict:
-    """A ``graph`` **patcher**: a bus-wired node graph (a `clausters.defs.GraphDef`)
-    drawn as member boxes, bus nodes, and a wire per connection — the *logical*
-    side of a composition, where materials relate by processing rather than by
-    time.
+    """A ``graph`` **patcher**: a directed, typed signal graph (a level-1
+    `clausters.defs.GraphPatch`, compiling to a `clausters.defs.GraphDef`), drawn
+    as boxes with **inlets on top and outlets on the bottom** and a **cord** per
+    ``outlet -> inlet`` connection. The buses are not drawn — a cord *is* a bus.
 
-    The view is deliberately **bipartite**, because that is what a GraphDef knows:
-    a member's control *touches* a bus. Which end writes and which reads is the
-    server's own analysis (it sorts the graph), so the patch shows the connection
-    and leaves the direction to the engine.
+    ``boxes`` and ``cords`` are the widget's split schema, exactly what
+    `GraphPatch.to_widget` produces — pass it straight through:
 
-    - ``members`` — the nodes, each ``(def_name, [control, …])``: the def and
-      the controls that are wired (each drawn as a port on its box). A member
-      may carry its **canvas position** as ``(def_name, [controls], x, y)``;
-      without one it auto-places in the classic stacked left column.
-    - ``buses`` — the internal bus names, plus ``"OUT"`` (the hardware) when
-      used. A bus likewise takes a position as ``(name, x, y)``; a plain
-      string auto-places in the right column.
-    - ``wires`` — the connections, each ``(member_index, control, bus)``.
+        graph(wid, **patch.to_widget(geometry))
+
+    - ``boxes`` — each ``{"def": name, "inlets": [...], "outlets": [...],
+      "x"?, "y"?}``; a port is a bare name (audio) or ``{"name", "rate"}``
+      (control), and ``x``/``y`` place the box (absent, it auto-stacks).
+    - ``cords`` — a flat ``[from_box, outlet, to_box, inlet, ...]`` list, the
+      indices within each box's inlet/outlet lists.
 
     The patch is a **canvas**: a box drags freely (moving a selected box moves
-    the whole selection; a drag on empty canvas sweeps a box selection), and
-    each move flows back as ``/gui_event <id> "move" <kind> <index> <x> <y>``
-    (``kind`` is ``"member"`` or ``"bus"``; positions in canvas units), so the
-    driver owns the geometry — re-send ``members``/``buses`` with the
-    positions to place them. Inside a `scroll` workspace the whole canvas
-    pans and zooms (boxes, wires and text together).
+    the whole selection; a drag on empty canvas sweeps a box selection), each
+    move flowing back as ``/gui_event <id> "move" <index> <x> <y>`` (canvas
+    units) so the driver owns the geometry. Inside a `scroll` workspace the whole
+    canvas pans and zooms.
 
-    Dragging a port onto a bus **rewires** that control; dropping it on empty
-    space unwires it. Either way the edit flows back as ``/gui_event <id> "wire"
-    <member> <control> <bus>`` (an empty bus = unwired), so a driver updates the
-    logical group and re-renders it — the same edit-back pattern the clips use.
+    Dragging an outlet onto an inlet (either grab order) **draws a cord**,
+    refusing a rate mismatch; the edit flows back as ``/gui_event <id> "wire"
+    <src_box> <outlet> <dst_box> <inlet>`` (the ports by name), so a driver adds
+    the cord to its `GraphPatch` and re-renders — the clips' edit-back pattern.
     """
     extra = _drop_none(
-        members=[_graph_member(m) for m in members] if members is not None else None,
-        buses=[_graph_bus(b) for b in buses] if buses is not None else None,
-        wires=[x for w in wires for x in (int(w[0]), str(w[1]), str(w[2]))]
-        if wires is not None else None,
+        boxes=list(boxes) if boxes is not None else None,
+        cords=[int(x) for x in cords] if cords is not None else None,
         label=label, color=color)
     return node("graph", id=id, **extra, **props)
-
-
-def _graph_member(m) -> dict:
-    """A `graph` member spec: ``(name, ports)`` or ``(name, ports, x, y)``."""
-    spec = {"name": str(m[0]), "ports": [str(c) for c in m[1]]}
-    if len(m) >= 4:
-        spec["x"], spec["y"] = float(m[2]), float(m[3])
-    return spec
-
-
-def _graph_bus(b):
-    """A `graph` bus spec: a plain name, or ``(name, x, y)`` placed."""
-    if isinstance(b, str):
-        return b
-    if len(b) >= 3:
-        return {"name": str(b[0]), "x": float(b[1]), "y": float(b[2])}
-    return str(b[0])
 
 
 def canvas(id: int | None = None, shader: str | None = None, *, params=None, buses=None,

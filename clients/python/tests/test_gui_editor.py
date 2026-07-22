@@ -465,83 +465,24 @@ def test_an_envelope_attached_to_its_event_is_one_clip_that_moves_as_one():
     assert min(b for b, _ in flatten(ed.element)) == pytest.approx(6.0)
 
 
-# ---- the logical group: a patch, not a lane ----
+# ---- the logical group: deferred to the directed patcher driver ----
 
-def patch_song() -> tuple:
-    """A composition with a logical group: source -> sink through a private bus."""
+def test_a_logical_group_is_skipped_until_the_directed_driver():
+    """A logical group draws as a directed `graph` patch, which needs the members'
+    port directions from their defs — the directed patcher's Python driver (P3).
+    Until then the Editor skips it rather than draw the old bus-as-node view; a
+    directed patch is built directly with `clausters.defs.GraphPatch` (see
+    `examples/gui_patcher.py`)."""
     from clausters.form import Generator
     from clausters.form.group import LOGICAL
 
-    src = Generator("gsrc", controls={"out": "mix", "level": 1.0})
-    sink = Generator("gsink", controls={"in": "mix", "out": "OUT"})
-    chain = Group([src, sink], kind=LOGICAL, name="chain", buses=["mix"])
-    return Group([(0.0, chain)], name="song"), chain, src
-
-
-def patches(tree: dict) -> list:
-    return [c for c in tree["children"] if c["type"] == "graph"]
-
-
-def test_a_logical_group_draws_as_a_patch_not_a_lane():
-    song, _chain, _src = patch_song()
-    tree = editor(song).draw()
-    assert lanes(tree) == [], "processing is not a timeline: no lane for it"
-    (patch,) = patches(tree)
-
-    assert patch["label"] == "chain"
-    assert [m["name"] for m in patch["members"]] == ["gsrc", "gsink"]
-    # A port per control that names a bus (a plain number is a value, not a wire).
-    assert patch["members"][0]["ports"] == ["out"]
-    assert patch["buses"] == ["mix", "OUT"]      # the group's own, then the hardware
-    # The wires, flat: (member, control, bus).
-    assert patch["wires"] == [0, "out", "mix", 1, "in", "mix", 1, "out", "OUT"]
-
-
-def test_a_moved_box_persists_beside_the_group_and_redraws_placed():
-    """The "move" edit-back: a member box dragged on the patch canvas keeps its
-    position across redraws (the Editor owns the geometry, beside the logical
-    group), a moved bus is keyed by its stable name, and the composition itself
-    is reported unchanged — geometry is presentation, not sound."""
-    song, _chain, _src = patch_song()
-    ed = editor(song)
-    (patch,) = patches(ed.draw())
-
-    # Geometry is presentation: apply() reports no composition change.
-    assert not ed.apply("/gui_event", [patch["id"], "move", "member", 1, 260.0, 40.0])
-    assert not ed.apply("/gui_event", [patch["id"], "move", "bus", 1, 420.0, 180.0])
-
-    (again,) = patches(ed.draw())
-    assert again["members"][0] == {"name": "gsrc", "ports": ["out"]}, \
-        "an unmoved box keeps the auto layout"
-    assert again["members"][1]["x"] == 260.0 and again["members"][1]["y"] == 40.0
-    # Bus 1 was "OUT": placed by name, the other stays a plain string.
-    assert again["buses"][0] == "mix"
-    assert again["buses"][1] == {"name": "OUT", "x": 420.0, "y": 180.0}
-
-
-def test_rewiring_a_port_rewrites_the_logical_group():
-    song, _chain, src = patch_song()
-    ed = editor(song)
-    (patch,) = patches(ed.draw())
-
-    # Dropped on the hardware bus: the source now writes straight to OUT.
-    assert ed.apply("/gui_event", [patch["id"], "wire", 0, "out", "OUT"])
-    assert src.controls["out"] == "OUT"
-    assert src.controls["level"] == 1.0, "the untouched controls stay"
-
-    # The GraphDef the next rendering sends follows the patch: the source's
-    # `out` now names the hardware, not the private bus.
-    _song, chain, _src = patch_song()
-    Editor(Group([(0.0, chain)], name="song"), sample_rate=SR, tempo=TEMPO)
-    ed2 = editor(Group([(0.0, chain)], name="song"))
-    (patch2,) = patches(ed2.draw())
-    ed2.apply("/gui_event", [patch2["id"], "wire", 0, "out", "OUT"])
-    spec = chain.to_graphdef().spec()
-    assert spec["members"][0]["controls"]["out"] == "OUT"
-
-    # Dropped on empty space: unwired (the control names no bus at all).
-    assert ed.apply("/gui_event", [patch["id"], "wire", 0, "out", ""])
-    assert "out" not in src.controls
+    chain = Group([Generator("gsrc", controls={"out": "mix"})], kind=LOGICAL,
+                  name="chain", buses=["mix"])
+    tree = editor(Group([(0.0, chain)], name="song")).draw()
+    children = tree.get("children", [])
+    assert [c for c in children if c["type"] == "graph"] == []
+    assert [c for c in children if c["type"] == "track"] == [], \
+        "a logical member is neither a lane nor (yet) a patch"
 
 
 # ---- rendering: the edited composition plays what the screen shows ----
