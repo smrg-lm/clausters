@@ -21,11 +21,16 @@ inlet, and audio and control cords never connect.
     from clausters.defs import GraphPatch
 
     p = GraphPatch()
-    tone = p.add("tone", outlets=["out"])
-    dac = p.add("dac", inlets=["in"])    # a terminal sink: reaches hardware itself
+    tone = p.add(tone_def)               # ports derived from the SynthDef's graph
+    dac = p.add(dac_def)                 # a terminal sink: an inlet, no outlet
     p.connect(tone, "out", dac, "in")    # tone -> dac -> speakers
     server.add_graphdef(p.to_graphdef("chain"))
     server.graph("chain")                # sounds
+
+Pass a `clausters.defs.SynthDef` to `add` and its typed ports are read off the
+def itself — a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
+outlet (the same structural fact the server uses to order a graph). Or pass a def
+**name** and list the ports yourself.
 
 The buses are never drawn or named by you, so **the hardware output is not one
 either**: a signal reaches the speakers through a **terminal def** — a ``dac``
@@ -39,6 +44,55 @@ port the pair ``(name, "control")``. Audio and control cords never connect, and
 
 from .. import _native
 from .graphdef import GraphDef
+from .synthdef import SynthDef
+from .ugens import Control, Ugen
+
+#: A UGen that **reads** a bus (an inlet when its bus is a control), and the port
+#: rate it implies.
+_READERS = {"In": "audio", "InCtl": "control"}
+#: A UGen that **writes** a bus (an outlet when its bus is a control), and its
+#: rate. ``ReplaceOut`` overwrites rather than sums, but it is still an outlet.
+_WRITERS = {"Out": "audio", "ReplaceOut": "audio", "OutCtl": "control"}
+
+
+def synthdef_ports(sdef: SynthDef) -> tuple[list, list]:
+    """Derive a `SynthDef`'s patcher ports ``(inlets, outlets)`` from its graph,
+    the way the directed patcher wants them — **structural, not a guess**: a
+    control that feeds an ``In``/``InCtl`` is an inlet, one that feeds an
+    ``Out``/``OutCtl``/``ReplaceOut`` is an outlet, and the reading/writing UGen's
+    family fixes the rate (audio for ``In``/``Out``, control for the ``Ctl``
+    pair). A control that feeds neither is a plain value, not a port.
+
+    Each port is returned in the form `GraphPatch.add` consumes: a bare name for
+    an audio port, ``(name, "control")`` for a control one. Names are de-duplicated
+    keeping first-seen order (a stereo ``Out`` writing one bus control is one
+    outlet)."""
+    inlets: dict[str, str] = {}
+    outlets: dict[str, str] = {}
+    for ugen in _walk(sdef.outputs):
+        bus = ugen.inputs[0] if ugen.inputs else None
+        if not isinstance(bus, Control):
+            continue
+        if ugen.kind in _READERS:
+            inlets.setdefault(bus.name, _READERS[ugen.kind])
+        elif ugen.kind in _WRITERS:
+            outlets.setdefault(bus.name, _WRITERS[ugen.kind])
+    spec = lambda name, rate: name if rate == "audio" else (name, rate)  # noqa: E731
+    return ([spec(n, r) for n, r in inlets.items()],
+            [spec(n, r) for n, r in outlets.items()])
+
+
+def _walk(roots):
+    """Every `Ugen` reachable from ``roots``, each once (a DFS over ``inputs``).
+    Controls and constants are inputs, not walked as nodes."""
+    seen: set[int] = set()
+    stack = list(roots)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, Ugen) and id(node) not in seen:
+            seen.add(id(node))
+            yield node
+            stack.extend(node.inputs)
 
 
 def _port(spec, direction: str) -> dict:
@@ -64,13 +118,23 @@ class GraphPatch:
 
     # ---- building ----
 
-    def add(self, defname: str, inlets=(), outlets=()) -> int:
-        """Add a box for def ``defname`` with its typed ``inlets``/``outlets``
-        (each a name, or ``(name, "control")``). A **terminal** def (a sink that
-        reaches hardware itself) is simply one with inlets and no outlets. Returns
-        the box index."""
+    def add(self, defname, inlets=(), outlets=()) -> int:
+        """Add a box for a def and return its index. ``defname`` is either a
+        `clausters.defs.SynthDef` — whose typed ports are then **derived from its
+        graph** (a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
+        outlet; see `synthdef_ports`) — or a def **name** (a string), for which you
+        list the ``inlets``/``outlets`` yourself (each a name, or ``(name,
+        "control")``). Passing explicit ports with a `SynthDef` overrides the
+        derived ones. A **terminal** def (a sink that reaches hardware itself) is
+        simply one with inlets and no outlets."""
+        if isinstance(defname, SynthDef):
+            name = defname.name
+            if not inlets and not outlets:
+                inlets, outlets = synthdef_ports(defname)
+        else:
+            name = str(defname)
         ports = [_port(p, "in") for p in inlets] + [_port(p, "out") for p in outlets]
-        self.boxes.append({"def": str(defname), "ports": ports})
+        self.boxes.append({"def": name, "ports": ports})
         return len(self.boxes) - 1
 
     def connect(self, src: int, outlet, dst: int, inlet) -> "GraphPatch":

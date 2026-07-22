@@ -9,8 +9,8 @@ bus per connected net — its writers **sum** — and `to_graphdef` hands back a
 `GraphDef` ready to send. That is the whole model, and it needs no GUI:
 
     p = GraphPatch()
-    tone = p.add("tone", outlets=["out"])
-    dac = p.add("dac", inlets=["in"])    # a terminal sink: reaches hardware itself
+    tone = p.add(tone_def)               # ports derived from the SynthDef's graph
+    dac = p.add(dac_def)                 # a terminal sink: an inlet, no outlet
     p.connect(tone, "out", dac, "in")    # tone -> dac -> speakers
     server.add_graphdef(p.to_graphdef("patch")); server.graph("patch")   # sounds
 
@@ -75,21 +75,23 @@ def dac(name: str = "dac") -> SynthDef:
 
 session = Session.live(tempo=TEMPO, latency=0.1)
 server = session.server
-for sdef in (tone(), trem(), dac()):
+tone_def, trem_def, dac_def = tone(), trem(), dac()
+for sdef in (tone_def, trem_def, dac_def):
     server.add_synthdef(sdef)
 
 
 # %% [markdown]
 # ## The patch, built in code
 # The seed: `tone` -> `dac` (the terminal sink that reaches the speakers itself).
-# Each box declares its typed ports; a cord connects an outlet to an inlet. This
-# is already a complete, sendable program — the GUI below only edits the same
-# object.
+# Passing the `SynthDef` to `add` **derives its ports from the def's graph** — the
+# `out`/`in_` controls become outlets/inlets, no second list to keep in sync. A
+# cord connects an outlet to an inlet. This is already a complete, sendable
+# program — the GUI below only edits the same object.
 
 # %%
 patch = GraphPatch()
-b_tone = patch.add("tone", outlets=["out"])
-b_dac = patch.add("dac", inlets=["in"])     # terminal: an inlet, no outlet
+b_tone = patch.add(tone_def)                # ports read off the def
+b_dac = patch.add(dac_def)                  # terminal: an inlet, no outlet
 patch.connect(b_tone, "out", b_dac, "in")   # tone -> dac -> speakers
 
 # The cord->bus pass names one bus per net; print what the server will get.

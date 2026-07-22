@@ -6,7 +6,17 @@ The GUI is only a view of this: everything here is buildable and sendable in cod
 
 import pytest
 
-from clausters.defs import GraphPatch
+from clausters.defs import (
+    GraphPatch,
+    SynthDef,
+    control,
+    in_,
+    in_ctl,
+    out,
+    out_ctl,
+    sine,
+    synthdef_ports,
+)
 
 
 def _pass_or_skip():
@@ -91,6 +101,43 @@ def test_to_widget_splits_ports_and_indexes_cords():
     assert w["boxes"][1] == {"def": "dac", "inlets": ["in"], "outlets": [], "x": 120.0, "y": 40.0}
     # One cord as [from_box, outlet_idx, to_box, inlet_idx].
     assert w["cords"] == [0, 0, 1, 0]
+
+
+def test_synthdef_ports_are_derived_from_the_graph():
+    # A control feeding an In is an inlet; one feeding an Out is an outlet; the
+    # UGen family fixes the rate. `freq`/`amp` feed neither -> not ports.
+    trem = SynthDef("trem", out(control("out"),
+                               in_(control("in")) * sine(control("rate", 4.0))))
+    inlets, outlets = synthdef_ports(trem)
+    assert inlets == ["in"]
+    assert outlets == ["out"]
+
+    # A control-rate reader/writer yields control ports (name, "control").
+    ctl = SynthDef("ctl", out_ctl(control("kout"), in_ctl(control("kin")) * 2.0))
+    kin, kout = synthdef_ports(ctl)
+    assert kin == [("kin", "control")]
+    assert kout == [("kout", "control")]
+
+    # A terminal def: writes hardware bus 0 (a constant, not a control) -> no
+    # outlet, just the inlet a cord reaches.
+    dac = SynthDef("dac", out(0, in_(control("in")) * control("amp", 0.4)))
+    assert synthdef_ports(dac) == (["in"], [])
+
+
+def test_add_derives_ports_from_a_passed_synthdef():
+    tone = SynthDef("tone", out(control("out"), sine(control("freq", 220.0))))
+    dac = SynthDef("dac", out(0, in_(control("in"))))
+    p = GraphPatch()
+    t = p.add(tone)                 # ports read off the def, no manual list
+    d = p.add(dac)
+    p.connect(t, "out", d, "in")
+    w = p.to_widget()
+    assert w["boxes"][0] == {"def": "tone", "inlets": [], "outlets": ["out"]}
+    assert w["boxes"][1] == {"def": "dac", "inlets": ["in"], "outlets": []}
+    # Explicit ports still override a def's derived ones (the escape hatch).
+    p2 = GraphPatch()
+    p2.add(tone, outlets=["custom"])
+    assert p2.boxes[0]["ports"] == [{"name": "custom", "dir": "out", "rate": "audio"}]
 
 
 def test_connect_is_idempotent_and_disconnect_removes():
