@@ -53,7 +53,7 @@ import itertools
 import os
 import tempfile
 
-__all__ = ["plot", "PlotWindow"]
+__all__ = ["plot", "PlotWindow", "PatchWindow"]
 
 #: Inline `data` ceiling: at most this many floats ride the GuiDef JSON; more
 #: go through a temp raw-f32 file the host maps (the bulk path).
@@ -192,6 +192,53 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
     tree = guidef.window(widget, title=title or label or "plot", w=w, h=h)
     window_id = host.open(tree)
     return PlotWindow(host, window_id, widget_id)
+
+
+class PatchWindow:
+    """One open patcher window — a def's **structure** (not its sound): its GUI
+    ``host``, the window ``id`` and the `patch` widget's id::
+
+        win = my_graphdef.plot_def()
+        win.close()
+    """
+
+    def __init__(self, host, window_id: int, widget_id: int):
+        self.host = host
+        self.id = window_id
+        self.widget_id = widget_id
+
+    def set(self, **props):
+        """Live-set the patch widget's props (``label``, ``boxes``, ``cords``…)
+        via ``/gui_set``."""
+        self.host.set(self.widget_id, **props)
+        return self
+
+    def close(self):
+        """Close the window (``/gui_free``)."""
+        self.host.close(self.id)
+
+    def __repr__(self):
+        return f"PatchWindow(id={self.id})"
+
+
+def _open_patch_view(model, *, label=None, w: int = 900, h: int = 640,
+                     title=None, host=None) -> PatchWindow:
+    """Open a `clausters.defs.GraphPatch` as a directed `patch` view in its own
+    window on the ambient GUI host — the structure opener behind
+    `clausters.defs.GraphDef.plot_def`. One window per call, the `plot` posture:
+    the patch sits in a `scroll` workspace (pan/zoom), no audio server involved."""
+    host = host if host is not None else _ambient_host()
+    from .gui import guidef
+
+    content = (900.0, 700.0)
+    widget_id = host.alloc_id()
+    view = guidef.patch(widget_id, **model.to_widget(), label=label,
+                        x=0.0, y=0.0, w=content[0], h=content[1])
+    workspace = guidef.scroll(host.alloc_id(), view,
+                              content_w=content[0], content_h=content[1])
+    tree = guidef.window(workspace, title=title or label or "patch", w=w, h=h)
+    window_id = host.open(tree)
+    return PatchWindow(host, window_id, widget_id)
 
 
 # ---- dispatch: turning the object into interleaved samples ----

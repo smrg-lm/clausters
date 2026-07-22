@@ -175,6 +175,73 @@ def test_from_graphdef_without_defs_draws_port_less_and_grows_no_cords():
     assert w["cords"] == []
 
 
+class _FakeHost:
+    """Captures the tree GraphDef.plot_def would open on a real GuiHost."""
+
+    def __init__(self):
+        self.opened = []
+        self._ids = iter(range(1000, 2000))
+
+    def alloc_id(self):
+        return next(self._ids)
+
+    def open(self, tree, *blobs, id=None):
+        self.opened.append(tree)
+        return 42
+
+    def set(self, i, **props):
+        pass
+
+    def close(self, i):
+        pass
+
+
+def _find(node, kind):
+    if node.get("type") == kind:
+        return node
+    for child in node.get("children", []):
+        hit = _find(child, kind)
+        if hit is not None:
+            return hit
+    return None
+
+
+def test_graphdef_plot_def_opens_the_structure_as_a_patch_view():
+    # plot_def decodes the GraphDef and opens a `patch` view (its structure), one
+    # window per call — distinct from clausters.plot(def), which renders its sound.
+    _pass_or_skip()
+    tone = SynthDef("tone", out(control("out"), sine(control("freq", 220.0))))
+    dac = SynthDef("dac", out(0, in_(control("in"))))
+    p = GraphPatch()
+    p.connect(p.add(tone), "out", p.add(dac), "in")
+    gdef = p.to_graphdef("chain")
+
+    host = _FakeHost()
+    win = gdef.plot_def({"tone": tone, "dac": dac}, host=host)
+    assert win.id == 42
+    tree = host.opened[0]
+    assert tree["type"] == "window"
+    view = _find(tree, "patch")
+    assert view is not None and view["label"] == "chain"
+    assert [b["def"] for b in view["boxes"]] == ["tone", "dac"]
+    assert view["cords"] == [0, 0, 1, 0]   # tone.out -> dac.in, typed from the defs
+    # It rode no audio server and no bulk file — pure structure.
+    assert _find(tree, "scroll") is not None   # the patch sits in a pan/zoom workspace
+
+
+def test_graphdef_plot_def_without_defs_is_port_less():
+    _pass_or_skip()
+    tone = SynthDef("tone", out(control("out"), sine(control("freq", 220.0))))
+    dac = SynthDef("dac", out(0, in_(control("in"))))
+    p = GraphPatch()
+    p.connect(p.add(tone), "out", p.add(dac), "in")
+    host = _FakeHost()
+    p.to_graphdef("chain").plot_def(host=host)   # no defs -> no typed ports
+    view = _find(host.opened[0], "patch")
+    assert [b["outlets"] for b in view["boxes"]] == [[], []]
+    assert view["cords"] == []
+
+
 def test_connect_is_idempotent_and_disconnect_removes():
     p = chain()
     n = len(p.cords)

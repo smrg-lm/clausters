@@ -128,6 +128,16 @@ ventana **dibuje y responda**:
   `win.set`, sin re-render) y se cierra antes de la siguiente. Pasar el mouse
   muestra el hairline con el valor exacto de la muestra (o del bin en Hz/dB en
   la vista `spectrum`).
+- **Estructura de un GraphDef (`plot_def`).** Con host ambiente (una REPL, sin
+  servidor de audio): construir dos `SynthDef` (`tone` con un `Out` a un control
+  `out`, y `dac` con un `In` desde `in` hacia `Out.ar(0)`), armar un `GraphDef`
+  que los wiree por un bus interno, y `gdef.plot_def({"tone": tone, "dac": dac})`.
+  Abre **una ventana** con el patcher **dirigido**: cajas con inlets arriba /
+  outlets abajo y un cord `out -> in` (grueso = audio), dentro de un `scroll`
+  (Shift+arrastrar panea, rueda hace zoom). Es la *estructura* de la def, no su
+  sonido — `clausters.plot(gdef)` mostraría la onda. Sin el argumento `defs` las
+  cajas salen **sin puertos** (no se puede tipar la dirección) y no hay cords.
+  `win.close()` cierra la ventana.
 - **Scopes en vivo.** `examples/scoping.py` → recorrido visual **secuencial**
   sobre un dron estéreo suave que suena todo el tiempo (se lanza solo:
   servidor + host GUI): 1) el osciloscopio disparado sobre los buses 0/1

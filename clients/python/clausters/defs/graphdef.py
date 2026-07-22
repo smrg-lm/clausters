@@ -176,3 +176,24 @@ class GraphDef:
         ``GraphDefSpec`` (see `spec`). Useful to inspect the composition before
         sending it."""
         return json.dumps(self.spec())
+
+    def plot_def(self, defs: dict | None = None, *, w: int = 900, h: int = 640,
+                 title: str | None = None, host=None):
+        """Open this GraphDef's **structure** as a directed `patch` view in its
+        own window on the ambient GUI host — the level-1 patcher drawn from the
+        def itself (the inverse of building it). One window per call, the
+        `clausters.plot` posture; this shows the def's *structure*, where
+        `clausters.plot(self)` renders its *sound*.
+
+        ``defs`` maps a member's def name to the `clausters.defs.SynthDef` it was
+        built from, so a box's ports are typed (a control feeding an ``In`` is an
+        inlet, one feeding an ``Out`` an outlet); a member whose def is not
+        resolvable draws port-less (no cords). ``host`` is an explicit
+        `clausters.gui.GuiHost`; ``None`` resolves the ambient one. Returns a
+        `clausters.plot.PatchWindow` (``.close()``)."""
+        from ..plot import _open_patch_view
+        from .patch import GraphPatch
+
+        model = GraphPatch.from_graphdef(self, defs)
+        return _open_patch_view(model, label=self.name, w=w, h=h,
+                                title=title, host=host)
