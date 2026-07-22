@@ -27,7 +27,7 @@
 //! arm per widget type; both are descendants, so they share the helpers without
 //! exposing them. Per-widget *behavior* (drawing, hit-testing, editing) is not
 //! here at all — it lives in each widget's own module (`bpf`, `pianoroll`,
-//! `track`, `graph`, `textedit`, …); this module owns only the typed data and
+//! `track`, `patch`, `textedit`, …); this module owns only the typed data and
 //! its wire mapping.
 
 use std::path::PathBuf;
@@ -946,8 +946,8 @@ pub enum WidgetKind {
     /// outlet to an inlet (either grab order) draws a cord, refusing a rate
     /// mismatch; the edit leaves as a flat directed `"wire"` event. The buses are
     /// not drawn — a cord *is* a bus (the client names them). A leaf.
-    Graph {
-        graph: super::graph::GraphDraw,
+    Patch {
+        patch: super::patch::PatchDraw,
         /// The multi-box selection (box indices) — native view state, never
         /// parsed from the wire: the click/marquee gestures build it, the move
         /// drag consumes it, and it clears when the script replaces `boxes`
@@ -1415,12 +1415,12 @@ fn parse_voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)
         .collect()
 }
 
-/// Parses a `graph` widget's patch: `members` (each a `name` plus its wired
+/// Parses a `patch` widget's patch: `members` (each a `name` plus its wired
 /// control `ports`), `buses` (names, `OUT` among them) and `wires` (flat triples
 /// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
 /// still draws.
-fn parse_graph(props: &serde_json::Map<String, Value>) -> super::graph::GraphDraw {
-    use super::graph::{Cord, GraphDraw, Obj};
+fn parse_patch(props: &serde_json::Map<String, Value>) -> super::patch::PatchDraw {
+    use super::patch::{Cord, Obj, PatchDraw};
 
     let boxes = props
         .get("boxes")
@@ -1458,13 +1458,13 @@ fn parse_graph(props: &serde_json::Map<String, Value>) -> super::graph::GraphDra
                 .collect()
         })
         .unwrap_or_default();
-    GraphDraw { boxes, cords }
+    PatchDraw { boxes, cords }
 }
 
 /// Parses a box's port array: each entry a plain name string (audio, the
 /// default) or an object `{"name": …, "rate": "audio"|"control"}`.
-fn parse_ports(v: Option<&Value>) -> Vec<super::graph::Port> {
-    use super::graph::Port;
+fn parse_ports(v: Option<&Value>) -> Vec<super::patch::Port> {
+    use super::patch::Port;
     v.and_then(Value::as_array)
         .map(|ps| {
             ps.iter()

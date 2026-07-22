@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""The patch canvas: free placement, navigation and selection on a `graph`.
+"""The patch canvas: free placement, navigation and selection on a `patch`.
 
-The `graph` widget is the **directed** patcher view: boxes with inlets on the
+The `patch` widget is the **directed** patcher view: boxes with inlets on the
 top edge and outlets on the bottom, a cord per ``outlet -> inlet`` connection.
 It is built from a `clausters.defs.GraphPatch` (`to_widget` renders the model
 into the widget). This example shows its **canvas** behavior — no audio:
@@ -37,7 +37,7 @@ import sys
 import time
 
 from clausters.defs import GraphPatch
-from clausters.gui import GuiHost, graph, label, scroll, window
+from clausters.gui import GuiHost, label, patch, scroll, window
 
 PATCH = 30
 
@@ -57,7 +57,7 @@ def patch_window() -> dict:
     # Some boxes placed, the rest (verb, dac) left to the auto layout.
     geometry = {osc: (60.0, 40.0), filt: (60.0, 200.0)}
 
-    the_patch = graph(
+    the_patch = patch(
         PATCH, **p.to_widget(geometry), label="patch",
         x=0.0, y=0.0, w=700.0, h=500.0,
     )

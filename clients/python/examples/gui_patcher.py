@@ -38,7 +38,7 @@ import sys
 
 from clausters import Session
 from clausters.defs import GraphPatch, SynthDef, control, in_, out, sine
-from clausters.gui import button, graph, panel, scroll, window
+from clausters.gui import button, panel, patch, scroll, window
 
 TEMPO = 2.0
 SILENT = 64  # a spare audio bus (0..127) nothing reads: the "unconnected" default.
@@ -89,13 +89,13 @@ for sdef in (tone_def, trem_def, dac_def):
 # program — the GUI below only edits the same object.
 
 # %%
-patch = GraphPatch()
-b_tone = patch.add(tone_def)                # ports read off the def
-b_dac = patch.add(dac_def)                  # terminal: an inlet, no outlet
-patch.connect(b_tone, "out", b_dac, "in")   # tone -> dac -> speakers
+p = GraphPatch()
+b_tone = p.add(tone_def)                # ports read off the def
+b_dac = p.add(dac_def)                  # terminal: an inlet, no outlet
+p.connect(b_tone, "out", b_dac, "in")   # tone -> dac -> speakers
 
 # The cord->bus pass names one bus per net; print what the server will get.
-print("compiled:", patch.compile())
+print("compiled:", p.compile())
 
 # A place for each box, so the patch reads top-to-bottom (the GUI persists moves
 # from here). Box index -> (x, y) in canvas units.
@@ -120,7 +120,7 @@ transport = panel(5, button(RENDER, label="render"), button(STOP, label="stop"),
 gui = session.gui()
 win = gui.open(window(
     scroll(WORKSPACE,
-           graph(PATCH, **patch.to_widget(geometry), label="patch",
+           patch(PATCH, **p.to_widget(geometry), label="patch",
                  x=0.0, y=0.0, w=CONTENT[0], h=CONTENT[1]),
            content_w=CONTENT[0], content_h=CONTENT[1]),
     transport, title="Patcher", w=560, h=620, layout="col"))
@@ -134,7 +134,7 @@ def render() -> None:
     so a re-render replaces rather than stacks. A bad cord is reported, not fatal."""
     global instance
     try:
-        gdef = patch.to_graphdef("patch")
+        gdef = p.to_graphdef("patch")
     except ValueError as exc:              # a malformed cord from the pass
         print(f"  cannot compile: {exc}")
         return
@@ -173,7 +173,7 @@ def step(addr, args) -> None:
             print("  stopped")
     elif tag == "wire":
         src, outlet, dst, inlet = int(args[2]), args[3], int(args[4]), args[5]
-        patch.connect(src, outlet, dst, inlet)
+        p.connect(src, outlet, dst, inlet)
         print(f"  wired {src}.{outlet} -> {dst}.{inlet} — press render to hear it")
     elif tag == "move":
         geometry[int(args[2])] = (float(args[3]), float(args[4]))

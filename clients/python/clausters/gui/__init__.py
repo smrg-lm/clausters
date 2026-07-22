@@ -21,8 +21,8 @@ edits flow back as flat ``"points"`` events — see `env_to_points` /
 `points_to_env` for the `clausters.defs.Env` round trip), a multitrack
 ``track``/``clip`` timeline (clips placed by ``offset``/``dur`` on one shared
 time axis — the DAW-style track editor, whose clip bodies are a take, a
-piano-roll or an editable automation curve) and a ``graph`` **patcher** of a
-bus-wired node graph (drag a port onto a bus to rewire it);
+piano-roll or an editable automation curve) and a ``patch`` **patcher** of a
+directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.editor.Editor` drives that
 multitrack view from a `clausters.form` composition — drawing the arrangement
@@ -55,7 +55,6 @@ from .guidef import (
     clip,
     correlation,
     env_to_points,
-    graph,
     knob,
     label,
     lissajous,
@@ -65,6 +64,7 @@ from .guidef import (
     nodetree,
     number,
     panel,
+    patch,
     peaks_cache_file,
     phasescope,
     piano,
@@ -117,7 +117,7 @@ __all__ = [
     "plot",
     "track",
     "clip",
-    "graph",
+    "patch",
     "canvas",
     "samples_to_blob",
     "samples_to_file",

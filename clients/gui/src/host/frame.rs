@@ -33,7 +33,7 @@ use super::theme::{Theme, with_alpha};
 use super::timeline::{TimelineGroups, group_key};
 use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
 use super::{
-    BusSource, bpf, controls, graph, live, meters, phasescope, piano, pianoroll, plot, spectrum,
+    BusSource, bpf, controls, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum,
     track,
 };
 
@@ -385,13 +385,13 @@ pub(crate) struct FrameInputs<'a> {
     /// The host's timeline navigation groups: each waveform/spectrogram draws
     /// its group's shared window (linked views navigate as one).
     pub(crate) timelines: &'a TimelineGroups,
-    /// A selection marquee in flight on a `graph` patch: the widget and the
+    /// A selection marquee in flight on a patch: the widget and the
     /// rectangle (device pixels), drawn over the canvas.
     pub(crate) marquee: Option<(i32, Rect)>,
-    /// A cord drag in flight on a `graph` patch: the widget, the grabbed port
+    /// A cord drag in flight on a patch: the widget, the grabbed port
     /// (box, side, index) and the cursor — drawn as a cord following the pointer.
     #[allow(clippy::type_complexity)] // node id, (port), (cursor) — documented above
-    pub(crate) wiring: Option<(i32, (usize, super::graph::Side, usize), (f32, f32))>,
+    pub(crate) wiring: Option<(i32, (usize, super::patch::Side, usize), (f32, f32))>,
 }
 
 impl Default for FrameInputs<'_> {
@@ -1077,8 +1077,8 @@ pub(crate) fn render(
                     });
                 }
             }
-            WidgetKind::Graph {
-                graph,
+            WidgetKind::Patch {
+                patch,
                 selected,
                 label,
             } => {
@@ -1094,12 +1094,12 @@ pub(crate) fn render(
                     .marquee
                     .filter(|(id, _)| Some(*id) == p.widget.id)
                     .map(|(_, r)| r);
-                graph::draw(
+                patch::draw(
                     &mut mesh,
                     p.rect,
-                    graph,
+                    patch,
                     label.as_deref(),
-                    &graph::CanvasState {
+                    &patch::CanvasState {
                         live,
                         selected,
                         marquee,

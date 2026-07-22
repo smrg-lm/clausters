@@ -931,17 +931,18 @@ def piano(id: int | None = None, *, min: int | None = None, max: int | None = No
     return node("piano", id=id, **extra, **props)
 
 
-def graph(id: int | None = None, *, boxes=None, cords=None,
+def patch(id: int | None = None, *, boxes=None, cords=None,
           label: str | None = None, color: str | None = None, **props) -> dict:
-    """A ``graph`` **patcher**: a directed, typed signal graph (a level-1
+    """A ``patch`` **patcher**: a directed, typed signal graph (a level-1
     `clausters.defs.GraphPatch`, compiling to a `clausters.defs.GraphDef`), drawn
     as boxes with **inlets on top and outlets on the bottom** and a **cord** per
     ``outlet -> inlet`` connection. The buses are not drawn — a cord *is* a bus.
 
     ``boxes`` and ``cords`` are the widget's split schema, exactly what
-    `GraphPatch.to_widget` produces — pass it straight through:
+    `GraphPatch.to_widget` produces — pass it straight through (the model is
+    conventionally ``p`` so it does not shadow this ``patch`` builder):
 
-        graph(wid, **patch.to_widget(geometry))
+        patch(wid, **p.to_widget(geometry))
 
     - ``boxes`` — each ``{"def": name, "inlets": [...], "outlets": [...],
       "x"?, "y"?}``; a port is a bare name (audio) or ``{"name", "rate"}``
@@ -973,7 +974,7 @@ def graph(id: int | None = None, *, boxes=None, cords=None,
         boxes=list(boxes) if boxes is not None else None,
         cords=[int(x) for x in cords] if cords is not None else None,
         label=label, color=color)
-    return node("graph", id=id, **extra, **props)
+    return node("patch", id=id, **extra, **props)
 
 
 def canvas(id: int | None = None, shader: str | None = None, *, params=None, buses=None,

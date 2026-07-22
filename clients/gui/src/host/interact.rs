@@ -276,7 +276,7 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     Some(args)
 }
 
-/// Completes a cord drag on a `graph` patch: the grabbed `port` is paired with
+/// Completes a cord drag on a patch: the grabbed `port` is paired with
 /// the port under the cursor into a directed cord (`outlet → inlet`, matching
 /// rate, either grab order), added to the patch (deduped). Returns the edit as
 /// `(from_box, outlet, to_box, inlet)` with the port *names* — the payload of the
@@ -287,50 +287,50 @@ pub(crate) fn graph_cord(
     host: &mut Host,
     def_id: i32,
     widget_id: i32,
-    port: (usize, super::graph::Side, usize),
+    port: (usize, super::patch::Side, usize),
     area: Rect,
     cx: f64,
     cy: f64,
     scale: f32,
 ) -> Option<(usize, String, usize, String)> {
     let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
-    let WidgetKind::Graph { graph, .. } = &mut w.kind else {
+    let WidgetKind::Patch { patch, .. } = &mut w.kind else {
         return None;
     };
-    let drop = super::graph::port_hit(area, graph, cx, cy, scale)?;
-    let cord = super::graph::cord_between(graph, port, drop)?;
-    let outlet = graph
+    let drop = super::patch::port_hit(area, patch, cx, cy, scale)?;
+    let cord = super::patch::cord_between(patch, port, drop)?;
+    let outlet = patch
         .boxes
         .get(cord.from)?
         .outlets
         .get(cord.from_out)?
         .name
         .clone();
-    let inlet = graph
+    let inlet = patch
         .boxes
         .get(cord.to)?
         .inlets
         .get(cord.to_in)?
         .name
         .clone();
-    if !graph.cords.contains(&cord) {
-        graph.cords.push(cord);
+    if !patch.cords.contains(&cord) {
+        patch.cords.push(cord);
     }
     Some((cord.from, outlet, cord.to, inlet))
 }
 
-/// Sets a `graph` patch's selected set (the click/marquee gestures' write).
+/// Sets a patch's selected set (the click/marquee gestures' write).
 pub(crate) fn graph_select(host: &mut Host, def_id: i32, widget_id: i32, set: Vec<usize>) {
     if let Some(w) = host
         .window_def_mut(def_id)
         .and_then(|t| t.find_mut(widget_id))
-        && let WidgetKind::Graph { selected, .. } = &mut w.kind
+        && let WidgetKind::Patch { selected, .. } = &mut w.kind
     {
         *selected = set;
     }
 }
 
-/// Moves `graph` boxes to explicit canvas positions (the move drag's write):
+/// Moves `patch` boxes to explicit canvas positions (the move drag's write):
 /// each `(index, x, y)` lands on the box's `x`/`y`, making an auto-placed box's
 /// position explicit from its first drag.
 pub(crate) fn graph_move(
@@ -345,17 +345,17 @@ pub(crate) fn graph_move(
     else {
         return;
     };
-    let WidgetKind::Graph { graph, .. } = &mut w.kind else {
+    let WidgetKind::Patch { patch, .. } = &mut w.kind else {
         return;
     };
     for &(i, x, y) in moves {
-        if let Some(o) = graph.boxes.get_mut(i) {
+        if let Some(o) = patch.boxes.get_mut(i) {
             (o.x, o.y) = (Some(x), Some(y));
         }
     }
 }
 
-/// Sets a `graph`'s selection to the boxes intersecting the marquee between
+/// Sets a `patch`'s selection to the boxes intersecting the marquee between
 /// `a` and `b` (device pixels) — the box-selection drag, live on every move.
 pub(crate) fn graph_marquee(
     host: &mut Host,
@@ -372,8 +372,8 @@ pub(crate) fn graph_marquee(
     else {
         return;
     };
-    let WidgetKind::Graph {
-        graph, selected, ..
+    let WidgetKind::Patch {
+        patch, selected, ..
     } = &mut w.kind
     else {
         return;
@@ -382,8 +382,8 @@ pub(crate) fn graph_marquee(
     let overlaps = |r: Rect| {
         r.x < sel.x + sel.w && sel.x < r.x + r.w && r.y < sel.y + sel.h && sel.y < r.y + r.h
     };
-    *selected = (0..graph.boxes.len())
-        .filter(|&i| overlaps(super::graph::obj_rect(area, graph, i, scale)))
+    *selected = (0..patch.boxes.len())
+        .filter(|&i| overlaps(super::patch::obj_rect(area, patch, i, scale)))
         .collect();
 }
 
@@ -1205,11 +1205,11 @@ mod tests {
         assert_eq!(args[2], OscType::String("/cue".into()));
     }
 
-    /// A window (id 1) with a directed `graph` patch (id 7): a source and a sink,
+    /// A window (id 1) with a directed patch (id 7): a source and a sink,
     /// no cords yet — the drag under test draws one.
     fn graph_host() -> Host {
         let json = r#"{"type":"window","children":[
-            {"id":7,"type":"graph","label":"chain",
+            {"id":7,"type":"patch","label":"chain",
              "boxes":[{"def":"gsrc","outlets":["out"]},
                       {"def":"gsink","inlets":["in"],"outlets":["out"]}]}
         ]}"#;
@@ -1224,21 +1224,21 @@ mod tests {
         host
     }
 
-    fn patch(host: &Host) -> super::super::graph::GraphDraw {
+    fn patch(host: &Host) -> super::super::patch::PatchDraw {
         match &host.window_def(1).unwrap().find(7).unwrap().kind {
-            WidgetKind::Graph { graph, .. } => graph.clone(),
-            other => panic!("expected a graph, got {other:?}"),
+            WidgetKind::Patch { patch, .. } => patch.clone(),
+            other => panic!("expected a patch, got {other:?}"),
         }
     }
 
     #[test]
     fn a_cord_from_an_outlet_dropped_on_an_inlet_wires_it_and_reports_it() {
-        use super::super::graph::Side;
+        use super::super::patch::Side;
         let mut host = graph_host();
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let g = patch(&host);
         // Grab gsrc's outlet (box 0), drop on gsink's inlet (box 1).
-        let (ix, iy) = super::super::graph::port_pin(area, &g, 1, Side::In, 0, 1.0);
+        let (ix, iy) = super::super::patch::port_pin(area, &g, 1, Side::In, 0, 1.0);
         let edit = graph_cord(
             &mut host,
             1,
@@ -1255,7 +1255,7 @@ mod tests {
         let g = patch(&host);
         assert_eq!(
             g.cords,
-            vec![super::super::graph::Cord {
+            vec![super::super::patch::Cord {
                 from: 0,
                 from_out: 0,
                 to: 1,
@@ -1274,7 +1274,7 @@ mod tests {
             &mut host,
             1,
             7,
-            (0, super::super::graph::Side::Out, 0),
+            (0, super::super::patch::Side::Out, 0),
             area,
             300.0,
             380.0,

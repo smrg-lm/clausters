@@ -133,10 +133,11 @@ Everything is editable back: dragging a clip or its edge emits `"clip"`, draggin
 a break-point emits `"points"`, and the script's model — not the widget tree — is
 what those events change. A **logical** group (members wired to each other through
 buses, the shape a `GraphDef` expresses) is not a timeline at all, so it draws as
-a `graph` **patch** instead: member boxes, bus nodes, and a wire per connection,
-where dragging a port onto a bus rewires that control. The patch is deliberately
-undirected — a GraphDef knows that a control *touches* a bus, and which end writes
-is the server's own analysis (see [Design decisions](decisions.md)).
+a `patch` **patcher** instead: directed, typed boxes with inlets on top and
+outlets on the bottom, and a cord per `outlet -> inlet` connection (the buses are
+not drawn — a cord *is* a bus). Direction is structural, read from the def (a
+control feeding an `In` is an inlet, one feeding an `Out` an outlet), so dragging
+an outlet onto an inlet draws the cord (see [Design decisions](decisions.md)).
 
 The Python side of all this is `clausters.gui.Editor`: it draws a composition
 into that window, applies the edit-backs onto the arrangement, and re-renders it — so
@@ -246,6 +247,6 @@ it sits on the same C ABI and the same OSC.
 | Client-side OSC/MIDI responders (`OscFunc`/`MidiFunc`) | done |
 | Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
-| Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `graph`) and the driver that binds them to the arrangement | done |
+| Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
 | Reproducible `third_party` Faust build (pin + script; native/CI/release) | done |
 | JavaScript client + npm (incl. its Faust build) | planned |

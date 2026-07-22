@@ -494,7 +494,7 @@ def test_a_logical_group_is_skipped_until_the_directed_driver():
                   name="chain", buses=["mix"])
     tree = editor(Group([(0.0, chain)], name="song")).draw()
     children = tree.get("children", [])
-    assert [c for c in children if c["type"] == "graph"] == []
+    assert [c for c in children if c["type"] == "patch"] == []
     assert [c for c in children if c["type"] == "track"] == [], \
         "a logical member is neither a lane nor (yet) a patch"
 
@@ -570,7 +570,7 @@ def test_editor_draws_a_root_logical_group_as_a_graph():
     scrolls = [c for c in tree["children"] if c["type"] == "scroll"]
     assert len(scrolls) == 1, "the logical group is a pan/zoom graph workspace"
     view = scrolls[0]["children"][0]
-    assert view["type"] == "graph"
+    assert view["type"] == "patch"
     assert view["cords"] == [0, 0, 1, 0]
     # Registered so an edit-back resolves to the group it draws.
     assert view["id"] in ed._graphs

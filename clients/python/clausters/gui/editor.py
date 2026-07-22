@@ -39,7 +39,7 @@ from ..form.render import flatten
 from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
-from .guidef import clip, graph, pianoroll, scroll, track, window
+from .guidef import clip, patch, pianoroll, scroll, track, window
 
 __all__ = ["Editor"]
 
@@ -238,15 +238,15 @@ class Editor:
                       w=self.size[0], h=self.size[1], layout="col")
 
     def _graph_lane(self, group) -> dict:
-        """A logical group drawn as a directed `graph` inside a pan/zoom `scroll`
-        workspace — a server patch among the timeline lanes. Registers the graph
+        """A logical group drawn as a directed `patch` inside a pan/zoom `scroll`
+        workspace — a server patch among the timeline lanes. Registers the patch
         widget id so an edit-back resolves to the group it draws."""
-        patch, handles = _logical_patch(group)
+        p, handles = _logical_patch(group)
         wid = next(self._ids)
         self._graphs[wid] = (group, handles)
         geometry = self._graph_geometry.get(id(group), {})
         content = (900.0, 700.0)
-        view = graph(wid, **patch.to_widget(geometry), label=_name(group),
+        view = patch(wid, **p.to_widget(geometry), label=_name(group),
                      x=0.0, y=0.0, w=content[0], h=content[1])
         return scroll(next(self._ids), view,
                       content_w=content[0], content_h=content[1])

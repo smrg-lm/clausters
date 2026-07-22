@@ -424,9 +424,9 @@ pub(super) fn build_kind(
             max: number(&node.props, "max", 1.0),
             label: label(&node.props),
         },
-        "graph" => WidgetKind::Graph {
+        "patch" => WidgetKind::Patch {
             selected: Vec::new(),
-            graph: parse_graph(&node.props),
+            patch: parse_patch(&node.props),
             label: label(&node.props),
         },
         other => WidgetKind::Unknown(other.to_string()),

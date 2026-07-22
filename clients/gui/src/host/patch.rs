@@ -1,4 +1,4 @@
-//! The `graph` widget: a **directed, typed** patcher (a level-1 GraphDef).
+//! The `patch` widget: a **directed, typed** patcher (a level-1 GraphDef).
 //!
 //! A box has **inlets on its top edge** and **outlets on its bottom edge**, each
 //! typed (audio or control), and a **cord** runs `outlet → inlet`. That is the
@@ -112,7 +112,7 @@ pub struct Cord {
 
 /// A patch to draw: the boxes and the directed cords between their ports.
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct GraphDraw {
+pub struct PatchDraw {
     pub boxes: Vec<Obj>,
     pub cords: Vec<Cord>,
 }
@@ -162,10 +162,10 @@ fn obj_w(o: &Obj) -> f32 {
 /// The box of `i`, at `scale` (the enclosing workspace's zoom, `1.0` bare):
 /// placed at its explicit `x`/`y` when it has them, else auto-stacked down the
 /// left column.
-pub fn obj_rect(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> Rect {
+pub fn obj_rect(area: Rect, patch: &PatchDraw, i: usize, scale: f32) -> Rect {
     let h = (HEAD_H + 2.0 * STRIP_H) * scale;
-    let w = graph.boxes.get(i).map_or(OBJ_W, obj_w) * scale;
-    if let Some(o) = graph.boxes.get(i)
+    let w = patch.boxes.get(i).map_or(OBJ_W, obj_w) * scale;
+    if let Some(o) = patch.boxes.get(i)
         && let (Some(x), Some(y)) = (o.x, o.y)
     {
         return Rect::new(area.x + x * scale, area.y + y * scale, w, h);
@@ -179,17 +179,14 @@ pub fn obj_rect(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> Rect {
 /// the pin's centre.
 pub fn port_pin(
     area: Rect,
-    graph: &GraphDraw,
+    patch: &PatchDraw,
     i: usize,
     side: Side,
     p: usize,
     scale: f32,
 ) -> (f32, f32) {
-    let r = obj_rect(area, graph, i, scale);
-    let off = graph
-        .boxes
-        .get(i)
-        .map_or(PAD, |o| port_offset(o, side, p));
+    let r = obj_rect(area, patch, i, scale);
+    let off = patch.boxes.get(i).map_or(PAD, |o| port_offset(o, side, p));
     let x = r.x + off * scale;
     let y = match side {
         Side::In => r.y,
@@ -201,9 +198,16 @@ pub fn port_pin(
 /// The cell of box `i`'s port `p` on `side`: the square (in the top strip for an
 /// inlet, the bottom strip for an outlet) that holds the port name and is the
 /// target a cord connects to.
-pub fn port_cell(area: Rect, graph: &GraphDraw, i: usize, side: Side, p: usize, scale: f32) -> Rect {
-    let r = obj_rect(area, graph, i, scale);
-    let (left, w) = graph.boxes.get(i).map_or((PAD, STRIP_H), |o| {
+pub fn port_cell(
+    area: Rect,
+    patch: &PatchDraw,
+    i: usize,
+    side: Side,
+    p: usize,
+    scale: f32,
+) -> Rect {
+    let r = obj_rect(area, patch, i, scale);
+    let (left, w) = patch.boxes.get(i).map_or((PAD, STRIP_H), |o| {
         (
             cell_left(o, side, p),
             o.ports(side).get(p).map_or(STRIP_H, cell_w),
@@ -220,7 +224,7 @@ pub fn port_cell(area: Rect, graph: &GraphDraw, i: usize, side: Side, p: usize, 
 /// drag. Inlets and outlets both hit; the caller pairs an outlet with an inlet.
 pub fn port_hit(
     area: Rect,
-    graph: &GraphDraw,
+    patch: &PatchDraw,
     x: f64,
     y: f64,
     scale: f32,
@@ -231,11 +235,16 @@ pub fn port_hit(
     // little grab tolerance around the square.
     let m = (3.0 * scale) as f64;
     let over = |i: usize, side: Side, p: usize| {
-        let c = port_cell(area, graph, i, side, p, scale);
-        Rect::new(c.x - m as f32, c.y - m as f32, c.w + 2.0 * m as f32, c.h + 2.0 * m as f32)
-            .contains(x, y)
+        let c = port_cell(area, patch, i, side, p, scale);
+        Rect::new(
+            c.x - m as f32,
+            c.y - m as f32,
+            c.w + 2.0 * m as f32,
+            c.h + 2.0 * m as f32,
+        )
+        .contains(x, y)
     };
-    for (i, o) in graph.boxes.iter().enumerate() {
+    for (i, o) in patch.boxes.iter().enumerate() {
         for p in 0..o.inlets.len() {
             if over(i, Side::In, p) {
                 return Some((i, Side::In, p));
@@ -252,14 +261,14 @@ pub fn port_hit(
 
 /// The box under `(x, y)` — the grab point of a move drag and the click target
 /// of the selection. A port hit is the caller's business and wins over this.
-pub fn box_hit(area: Rect, graph: &GraphDraw, x: f64, y: f64, scale: f32) -> Option<usize> {
-    (0..graph.boxes.len()).find(|&i| obj_rect(area, graph, i, scale).contains(x, y))
+pub fn box_hit(area: Rect, patch: &PatchDraw, x: f64, y: f64, scale: f32) -> Option<usize> {
+    (0..patch.boxes.len()).find(|&i| obj_rect(area, patch, i, scale).contains(x, y))
 }
 
 /// The current position of box `i` in canvas units (its explicit `x`/`y`, or
 /// where the auto layout put it) — the value a starting move drag latches.
-pub fn box_pos(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> (f32, f32) {
-    let r = obj_rect(area, graph, i, scale);
+pub fn box_pos(area: Rect, patch: &PatchDraw, i: usize, scale: f32) -> (f32, f32) {
+    let r = obj_rect(area, patch, i, scale);
     ((r.x - area.x) / scale, (r.y - area.y) / scale)
 }
 
@@ -288,7 +297,7 @@ fn cord_weight(rate: Rate, scale: f32) -> f32 {
 pub fn draw(
     mesh: &mut Mesh,
     area: Rect,
-    graph: &GraphDraw,
+    patch: &PatchDraw,
     label: Option<&str>,
     state: &CanvasState<'_>,
     theme: &Theme,
@@ -314,8 +323,8 @@ pub fn draw(
     }
 
     // The cords, first, so the boxes and pins sit over them.
-    for cord in &graph.cords {
-        let (Some(src), Some(dst)) = (graph.boxes.get(cord.from), graph.boxes.get(cord.to)) else {
+    for cord in &patch.cords {
+        let (Some(src), Some(dst)) = (patch.boxes.get(cord.from), patch.boxes.get(cord.to)) else {
             continue;
         };
         let Some(port) = src.outlets.get(cord.from_out) else {
@@ -324,8 +333,8 @@ pub fn draw(
         if dst.inlets.get(cord.to_in).is_none() {
             continue;
         }
-        let (x0, y0) = port_pin(area, graph, cord.from, Side::Out, cord.from_out, scale);
-        let (x1, y1) = port_pin(area, graph, cord.to, Side::In, cord.to_in, scale);
+        let (x0, y0) = port_pin(area, patch, cord.from, Side::Out, cord.from_out, scale);
+        let (x1, y1) = port_pin(area, patch, cord.to, Side::In, cord.to_in, scale);
         mesh.line(
             [x0, y0],
             [x1, y1],
@@ -345,8 +354,8 @@ pub fn draw(
     let lh = font::height(lts);
     let strip_h = STRIP_H * scale;
     let head_h = HEAD_H * scale;
-    for (i, o) in graph.boxes.iter().enumerate() {
-        let r = obj_rect(area, graph, i, scale);
+    for (i, o) in patch.boxes.iter().enumerate() {
+        let r = obj_rect(area, patch, i, scale);
         let top = Rect::new(r.x, r.y, r.w, strip_h);
         let mid = Rect::new(r.x, r.y + strip_h, r.w, head_h);
         let bot = Rect::new(r.x, r.y + strip_h + head_h, r.w, strip_h);
@@ -373,7 +382,7 @@ pub fn draw(
         // its name written inside.
         for side in [Side::In, Side::Out] {
             for (p, port) in o.ports(side).iter().enumerate() {
-                let cell = port_cell(area, graph, i, side, p, scale);
+                let cell = port_cell(area, patch, i, side, p, scale);
                 mesh.rect(cell, with_alpha(theme.port, 0.16));
                 mesh.border(cell, 1.0, theme.port);
                 font::text(
@@ -390,7 +399,7 @@ pub fn draw(
 
     // The cord being dragged, from its grabbed port to the cursor.
     if let Some(((i, side, p), (cx, cy))) = live {
-        let (x0, y0) = port_pin(area, graph, i, side, p, scale);
+        let (x0, y0) = port_pin(area, patch, i, side, p, scale);
         mesh.line([x0, y0], [cx, cy], 1.5 * scale, theme.live);
     }
 
@@ -406,7 +415,7 @@ pub fn draw(
 /// `(from_box, outlet, to_box, inlet)` — regardless of which end was grabbed —
 /// or `None` when the pair is illegal (same side, or a rate mismatch).
 pub fn cord_between(
-    graph: &GraphDraw,
+    patch: &PatchDraw,
     a: (usize, Side, usize),
     b: (usize, Side, usize),
 ) -> Option<Cord> {
@@ -415,8 +424,8 @@ pub fn cord_between(
         (Side::In, Side::Out) => (b, a),
         _ => return None, // both inlets or both outlets
     };
-    let out_rate = graph.boxes.get(out.0)?.outlets.get(out.2)?.rate;
-    let in_rate = graph.boxes.get(inl.0)?.inlets.get(inl.2)?.rate;
+    let out_rate = patch.boxes.get(out.0)?.outlets.get(out.2)?.rate;
+    let in_rate = patch.boxes.get(inl.0)?.inlets.get(inl.2)?.rate;
     if out_rate != in_rate {
         return None;
     }
@@ -441,8 +450,8 @@ mod tests {
         ]
     }
 
-    fn chain() -> GraphDraw {
-        GraphDraw {
+    fn chain() -> PatchDraw {
+        PatchDraw {
             boxes: boxes(),
             cords: vec![
                 Cord {
@@ -507,19 +516,34 @@ mod tests {
         // hits it; likewise the inlet's cell on the box below.
         let oc = port_cell(a, &g, 0, Side::Out, 0, 1.0); // tone's outlet cell
         assert_eq!(
-            port_hit(a, &g, (oc.x + oc.w * 0.5) as f64, (oc.y + oc.h * 0.5) as f64, 1.0),
+            port_hit(
+                a,
+                &g,
+                (oc.x + oc.w * 0.5) as f64,
+                (oc.y + oc.h * 0.5) as f64,
+                1.0
+            ),
             Some((0, Side::Out, 0))
         );
         let ic = port_cell(a, &g, 2, Side::In, 0, 1.0); // dac's inlet cell
         assert_eq!(
-            port_hit(a, &g, (ic.x + ic.w * 0.5) as f64, (ic.y + ic.h * 0.5) as f64, 1.0),
+            port_hit(
+                a,
+                &g,
+                (ic.x + ic.w * 0.5) as f64,
+                (ic.y + ic.h * 0.5) as f64,
+                1.0
+            ),
             Some((2, Side::In, 0))
         );
         // The pin (the cord attach point on the outer edge) sits over its cell.
         let (ox, oy) = port_pin(a, &g, 0, Side::Out, 0, 1.0);
         assert!(oc.contains(ox as f64, (oy - 0.5) as f64));
         // Away from any cell: nothing (a cord drag starts only on a port).
-        assert_eq!(port_hit(a, &g, (oc.x + 60.0) as f64, oc.y as f64, 1.0), None);
+        assert_eq!(
+            port_hit(a, &g, (oc.x + 60.0) as f64, oc.y as f64, 1.0),
+            None
+        );
     }
 
     #[test]
@@ -571,7 +595,7 @@ mod tests {
 
     #[test]
     fn a_rate_mismatch_makes_no_cord() {
-        let g = GraphDraw {
+        let g = PatchDraw {
             boxes: vec![
                 Obj::new("lfo", vec![], vec![Port::control("out")]),
                 Obj::new("dac", vec![Port::audio("in")], vec![]),

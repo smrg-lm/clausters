@@ -320,8 +320,8 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             "text_size" => set_size(text_size, v),
             _ => false,
         },
-        WidgetKind::Graph {
-            graph,
+        WidgetKind::Patch {
+            patch,
             selected,
             label,
         } => match key {
@@ -338,10 +338,10 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                     other => other.clone(),
                 };
                 let props = std::iter::once((key.to_string(), value)).collect();
-                let parsed = parse_graph(&props);
+                let parsed = parse_patch(&props);
                 match key {
-                    "boxes" if !parsed.boxes.is_empty() => graph.boxes = parsed.boxes,
-                    "cords" => graph.cords = parsed.cords,
+                    "boxes" if !parsed.boxes.is_empty() => patch.boxes = parsed.boxes,
+                    "cords" => patch.cords = parsed.cords,
                     _ => return false,
                 }
                 // The box selection would dangle over a replaced `boxes` list.
@@ -415,7 +415,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             editor,
         } => match key {
             // Arrays ride a `/gui_set` as their JSON (a scalar wire value),
-            // exactly like the clip's `notes`/`points` and the graph's parts.
+            // exactly like the clip's `notes`/`points` and the patch's parts.
             "notes" => {
                 *notes = parse_notes(&as_array_props("notes", v));
                 // The indices would dangle over the new list.

@@ -22,7 +22,7 @@ use clausters_core::osc::OscType;
 use super::interact::{self, slider_t, value_of};
 use super::layout::Rect;
 use super::widget::{Axis, Ruler, RulerY, ScrollView, Widget, WidgetKind};
-use super::{Host, bpf, controls, frame, graph, piano, pianoroll, scroll, track};
+use super::{Host, bpf, controls, frame, patch, piano, pianoroll, scroll, track};
 use crate::viewport::View;
 
 /// What a gesture asks of the front: everything the machine cannot do itself
@@ -166,18 +166,18 @@ enum Drag {
         orig_dur: f64,
         grid: f64,
     },
-    /// A cord being pulled from a `graph` patch's port: the widget, the grabbed
+    /// A cord being pulled from a patch's port: the widget, the grabbed
     /// port `(box, side, index)` and the widget's area — released over a
     /// compatible port (an outlet↔inlet of matching rate) to draw a cord, over
     /// anything else to cancel. `scale` is the workspace zoom the patch is seen
     /// through, so the pin geometry matches the drawing.
     Wire {
         id: i32,
-        port: (usize, super::graph::Side, usize),
+        port: (usize, super::patch::Side, usize),
         area: Rect,
         scale: f32,
     },
-    /// A `graph` box (or the whole selection) being moved on the patch
+    /// A `patch` box (or the whole selection) being moved on the patch
     /// canvas: the grabbed boxes with their positions at press time (canvas
     /// units), moved together by the cursor delta and emitted as one
     /// `"move"` event per box on release.
@@ -188,7 +188,7 @@ enum Drag {
         grabbed: Vec<(usize, f32, f32)>,
         moved: bool,
     },
-    /// The selection marquee on a `graph` patch's empty canvas: the selected
+    /// The selection marquee on a patch's empty canvas: the selected
     /// set follows the rectangle live; the rectangle itself draws through
     /// [`Gestures::marquee`].
     Marquee {
@@ -371,7 +371,7 @@ impl Gestures {
         }
     }
 
-    /// The selection marquee in flight, if any: the `graph` widget and the
+    /// The selection marquee in flight, if any: the `patch` widget and the
     /// rectangle between the press and the cursor (device pixels), for the
     /// renderer to draw over the patch.
     pub fn marquee(&self) -> Option<(i32, Rect)> {
@@ -383,9 +383,9 @@ impl Gestures {
         }
     }
 
-    /// The cord drag in flight, if any: the `graph` widget and the grabbed port
+    /// The cord drag in flight, if any: the `patch` widget and the grabbed port
     /// `(box, side, index)` (the renderer draws the cord to the pointer).
-    pub fn wiring(&self) -> Option<(i32, (usize, super::graph::Side, usize))> {
+    pub fn wiring(&self) -> Option<(i32, (usize, super::patch::Side, usize))> {
         match &self.drag {
             Some(Drag::Wire { id, port, .. }) => Some((*id, *port)),
             _ => None,
@@ -521,8 +521,8 @@ impl Gestures {
                     });
                 }
             }
-            WidgetKind::Graph {
-                ref graph,
+            WidgetKind::Patch {
+                ref patch,
                 ref selected,
                 ..
             } => {
@@ -532,14 +532,14 @@ impl Gestures {
                 // drag sweeps the **marquee** selection; **Shift+drag pans** the
                 // enclosing `scroll` workspace — the same convention the heavy
                 // views use (Shift pans where a plain drag does the local thing).
-                if let Some(port) = graph::port_hit(rect, graph, cx, cy, scale) {
+                if let Some(port) = patch::port_hit(rect, patch, cx, cy, scale) {
                     self.drag = Some(Drag::Wire {
                         id,
                         port,
                         area: rect,
                         scale,
                     });
-                } else if let Some(hit_box) = graph::box_hit(rect, graph, cx, cy, scale) {
+                } else if let Some(hit_box) = patch::box_hit(rect, patch, cx, cy, scale) {
                     let set = if selected.contains(&hit_box) {
                         selected.clone()
                     } else {
@@ -548,7 +548,7 @@ impl Gestures {
                     let grabbed = set
                         .iter()
                         .map(|&i| {
-                            let (x, y) = graph::box_pos(rect, graph, i, scale);
+                            let (x, y) = patch::box_pos(rect, patch, i, scale);
                             (i, x, y)
                         })
                         .collect();
@@ -2471,29 +2471,29 @@ mod tests {
         ))
     }
 
-    /// A window holding one full-area directed `graph` patch: `tone` (an outlet)
+    /// A window holding one full-area directed patch: `tone` (an outlet)
     /// and `dac` (an inlet and an outlet), a cord tone.out → dac.in.
     fn patch_host() -> Host {
         host_from(
             r#"{"type":"window","margin":0,"children":[
-                {"id":7,"type":"graph",
+                {"id":7,"type":"patch",
                  "boxes":[{"def":"tone","outlets":["out"]},
                           {"def":"dac","inlets":["in"],"outlets":["out"]}],
                  "cords":[0,0,1,0]}]}"#,
         )
     }
 
-    fn patch_of(host: &Host) -> super::super::graph::GraphDraw {
+    fn patch_of(host: &Host) -> super::super::patch::PatchDraw {
         match &host.window_def(1).unwrap().find(7).unwrap().kind {
-            WidgetKind::Graph { graph, .. } => graph.clone(),
-            other => panic!("not a graph: {other:?}"),
+            WidgetKind::Patch { patch, .. } => patch.clone(),
+            other => panic!("not a patch: {other:?}"),
         }
     }
 
     fn selection_of(host: &Host) -> Vec<usize> {
         match &host.window_def(1).unwrap().find(7).unwrap().kind {
-            WidgetKind::Graph { selected, .. } => selected.clone(),
-            other => panic!("not a graph: {other:?}"),
+            WidgetKind::Patch { selected, .. } => selected.clone(),
+            other => panic!("not a patch: {other:?}"),
         }
     }
 
@@ -2504,7 +2504,7 @@ mod tests {
         let ctx = GestureCtx::new(1, 600, 400);
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let before = patch_of(&host);
-        let b0 = graph::obj_rect(area, &before, 0, 1.0);
+        let b0 = patch::obj_rect(area, &before, 0, 1.0);
         // Grab the box body, clear of the outlet pin at the bottom-centre.
         let (px, py) = ((b0.x + 12.0) as f64, (b0.y + 8.0) as f64);
         let mut grab = || false;
@@ -2532,7 +2532,7 @@ mod tests {
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let before = patch_of(&host);
         // A plain drag from the empty middle-bottom over the two stacked boxes.
-        let b1 = graph::obj_rect(area, &before, 1, 1.0);
+        let b1 = patch::obj_rect(area, &before, 1, 1.0);
         g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
         g.drag_to(&mut host, &plain, (b1.x - 2.0) as f64, 2.0);
         assert_eq!(
@@ -2564,11 +2564,11 @@ mod tests {
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let before = patch_of(&host);
         // Grab dac's outlet, drop on... first detach: grab tone's outlet.
-        let (px, py) = graph::port_pin(area, &before, 0, graph::Side::Out, 0, 1.0);
+        let (px, py) = patch::port_pin(area, &before, 0, patch::Side::Out, 0, 1.0);
         g.press(&mut host, &ctx, px as f64, py as f64, &mut || false);
         assert!(g.wiring().is_some(), "a press on a port starts the cord");
         // Released over dac's inlet: the cord lands, no move is emitted.
-        let (ix, iy) = graph::port_pin(area, &before, 1, graph::Side::In, 0, 1.0);
+        let (ix, iy) = patch::port_pin(area, &before, 1, patch::Side::In, 0, 1.0);
         let effects = g.release(&mut host, &ctx, ix as f64, iy as f64);
         assert!(has_emit_tag(&effects, 7, "wire"));
         assert!(!has_emit_tag(&effects, 7, "move"));

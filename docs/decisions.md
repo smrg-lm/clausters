@@ -467,7 +467,7 @@ where a note's default would cut it short.
 ## The patcher is a directed, typed graph
 
 The logical side of a composition — members wired to each other — is drawn by the
-`graph` widget (the P track). The first design drew it **undirected**: a bus as a
+`patch` widget (the P track). The first design drew it **undirected**: a bus as a
 first-class node, a wire as an untyped `(control ↔ bus)` touch, on the argument
 that a GraphDef says only that a control *names* a bus and the writing/reading
 direction is the server's own topological sort — so a directed view would be a
@@ -511,7 +511,7 @@ no new verb (the port directions come from the def the client already has). The
 named per net, summing fan-in — which lives in `clausters-core` beside the patch
 document, so every client shares it. The Python arrangement model (`Group`/
 `Generator` → `GraphDef`) is unchanged; the new work is GUI-side (the directed
-`graph` widget).
+`patch` widget).
 
 **Consequence.** The picture reads as the program: outlet → inlet, typed, flowing
 one way, no bus nodes cluttering the canvas. The honesty *inversion* from the first
