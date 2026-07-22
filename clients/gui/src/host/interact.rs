@@ -276,54 +276,51 @@ pub(crate) fn bpf_event_args(tree: &Widget, id: i32) -> Option<Vec<OscType>> {
     Some(args)
 }
 
-/// Completes a rewiring drag on a `graph` patch: the dragged port (`member` and
-/// its control) is pointed at the bus under the cursor — or at **none**, when the
-/// release lands on empty space, which unwires it. Writes the patch in the host
-/// tree and returns the edit as `(member, control, bus)` (an empty bus = unwired)
-/// — the payload of the flat `"wire"` event a script re-renders from. `None`
-/// when there was nothing to rewire.
+/// Completes a cord drag on a `graph` patch: the grabbed `port` is paired with
+/// the port under the cursor into a directed cord (`outlet → inlet`, matching
+/// rate, either grab order), added to the patch (deduped). Returns the edit as
+/// `(from_box, outlet, to_box, inlet)` with the port *names* — the payload of the
+/// directed `"wire"` event a script mirrors. `None` when the release is not on a
+/// compatible port (empty space, the same side, or a rate mismatch).
 #[allow(clippy::too_many_arguments)] // one drop: the widget, the port, the place
-pub(crate) fn wire_set(
+pub(crate) fn graph_cord(
     host: &mut Host,
     def_id: i32,
     widget_id: i32,
-    port: (usize, usize),
+    port: (usize, super::graph::Side, usize),
     area: Rect,
     cx: f64,
     cy: f64,
     scale: f32,
-) -> Option<(usize, String, String)> {
+) -> Option<(usize, String, usize, String)> {
     let w = host.window_def_mut(def_id)?.find_mut(widget_id)?;
     let WidgetKind::Graph { graph, .. } = &mut w.kind else {
         return None;
     };
-    let (member, index) = port;
-    let control = graph.members.get(member)?.ports.get(index)?.clone();
-    let bus = super::graph::bus_hit(area, graph, cx, cy, scale)
-        .and_then(|b| graph.buses.get(b).map(|bus| bus.name.clone()))
-        .unwrap_or_default();
-
-    // One wire per (member, control): a control touches one bus, or none.
-    graph
-        .wires
-        .retain(|wire| !(wire.member == member && wire.control == control));
-    if !bus.is_empty() {
-        graph.wires.push(super::graph::Wire {
-            member,
-            control: control.clone(),
-            bus: bus.clone(),
-        });
+    let drop = super::graph::port_hit(area, graph, cx, cy, scale)?;
+    let cord = super::graph::cord_between(graph, port, drop)?;
+    let outlet = graph
+        .boxes
+        .get(cord.from)?
+        .outlets
+        .get(cord.from_out)?
+        .name
+        .clone();
+    let inlet = graph
+        .boxes
+        .get(cord.to)?
+        .inlets
+        .get(cord.to_in)?
+        .name
+        .clone();
+    if !graph.cords.contains(&cord) {
+        graph.cords.push(cord);
     }
-    Some((member, control, bus))
+    Some((cord.from, outlet, cord.to, inlet))
 }
 
 /// Sets a `graph` patch's selected set (the click/marquee gestures' write).
-pub(crate) fn graph_select(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    set: Vec<(super::graph::BoxKind, usize)>,
-) {
+pub(crate) fn graph_select(host: &mut Host, def_id: i32, widget_id: i32, set: Vec<usize>) {
     if let Some(w) = host
         .window_def_mut(def_id)
         .and_then(|t| t.find_mut(widget_id))
@@ -334,13 +331,13 @@ pub(crate) fn graph_select(
 }
 
 /// Moves `graph` boxes to explicit canvas positions (the move drag's write):
-/// each `(kind, index, x, y)` lands on the member's/bus's `x`/`y`, making an
-/// auto-placed box's position explicit from its first drag.
+/// each `(index, x, y)` lands on the box's `x`/`y`, making an auto-placed box's
+/// position explicit from its first drag.
 pub(crate) fn graph_move(
     host: &mut Host,
     def_id: i32,
     widget_id: i32,
-    moves: &[(super::graph::BoxKind, usize, f32, f32)],
+    moves: &[(usize, f32, f32)],
 ) {
     let Some(w) = host
         .window_def_mut(def_id)
@@ -351,18 +348,9 @@ pub(crate) fn graph_move(
     let WidgetKind::Graph { graph, .. } = &mut w.kind else {
         return;
     };
-    for &(kind, i, x, y) in moves {
-        match kind {
-            super::graph::BoxKind::Member => {
-                if let Some(m) = graph.members.get_mut(i) {
-                    (m.x, m.y) = (Some(x), Some(y));
-                }
-            }
-            super::graph::BoxKind::Bus => {
-                if let Some(b) = graph.buses.get_mut(i) {
-                    (b.x, b.y) = (Some(x), Some(y));
-                }
-            }
+    for &(i, x, y) in moves {
+        if let Some(o) = graph.boxes.get_mut(i) {
+            (o.x, o.y) = (Some(x), Some(y));
         }
     }
 }
@@ -394,18 +382,9 @@ pub(crate) fn graph_marquee(
     let overlaps = |r: Rect| {
         r.x < sel.x + sel.w && sel.x < r.x + r.w && r.y < sel.y + sel.h && sel.y < r.y + r.h
     };
-    let mut set = Vec::new();
-    for i in 0..graph.members.len() {
-        if overlaps(super::graph::member_rect(area, graph, i, scale)) {
-            set.push((super::graph::BoxKind::Member, i));
-        }
-    }
-    for bidx in 0..graph.buses.len() {
-        if overlaps(super::graph::bus_rect(area, graph, bidx, scale)) {
-            set.push((super::graph::BoxKind::Bus, bidx));
-        }
-    }
-    *selected = set;
+    *selected = (0..graph.boxes.len())
+        .filter(|&i| overlaps(super::graph::obj_rect(area, graph, i, scale)))
+        .collect();
 }
 
 /// Runs `f` over an automation clip's break-points in the host tree — the one
@@ -1226,15 +1205,13 @@ mod tests {
         assert_eq!(args[2], OscType::String("/cue".into()));
     }
 
-    /// A window (id 1) with a `graph` patch (id 7): a source and a sink wired
-    /// through the internal bus `mix`, the sink's output on `OUT`.
+    /// A window (id 1) with a directed `graph` patch (id 7): a source and a sink,
+    /// no cords yet — the drag under test draws one.
     fn graph_host() -> Host {
         let json = r#"{"type":"window","children":[
             {"id":7,"type":"graph","label":"chain",
-             "members":[{"name":"gsrc","ports":["out"]},
-                        {"name":"gsink","ports":["in","out"]}],
-             "buses":["mix","OUT"],
-             "wires":[0,"out","mix", 1,"in","mix", 1,"out","OUT"]}
+             "boxes":[{"def":"gsrc","outlets":["out"]},
+                      {"def":"gsink","inlets":["in"],"outlets":["out"]}]}
         ]}"#;
         let mut host = Host::new();
         host.handle_packet(
@@ -1255,48 +1232,55 @@ mod tests {
     }
 
     #[test]
-    fn a_wire_dropped_on_a_bus_rewires_the_control_and_reports_it() {
+    fn a_cord_from_an_outlet_dropped_on_an_inlet_wires_it_and_reports_it() {
+        use super::super::graph::Side;
         let mut host = graph_host();
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let g = patch(&host);
-        // Drag the source's `out` (member 0, port 0) onto the `OUT` bus (index 1).
-        let bus = super::super::graph::bus_rect(area, &g, 1, 1.0);
-        let edit = wire_set(
+        // Grab gsrc's outlet (box 0), drop on gsink's inlet (box 1).
+        let (ix, iy) = super::super::graph::port_pin(area, &g, 1, Side::In, 0, 1.0);
+        let edit = graph_cord(
             &mut host,
             1,
             7,
-            (0, 0),
+            (0, Side::Out, 0),
             area,
-            bus.x as f64 + 4.0,
-            bus.y as f64 + 4.0,
+            ix as f64,
+            iy as f64,
             1.0,
         )
         .unwrap();
-        assert_eq!(edit, (0, "out".to_string(), "OUT".to_string()));
+        assert_eq!(edit, (0, "out".to_string(), 1, "in".to_string()));
 
         let g = patch(&host);
-        let src: Vec<_> = g.wires.iter().filter(|w| w.member == 0).collect();
-        assert_eq!(src.len(), 1, "a control touches one bus at a time");
-        assert_eq!(src[0].bus, "OUT", "and it is the one it was dropped on");
+        assert_eq!(
+            g.cords,
+            vec![super::super::graph::Cord {
+                from: 0,
+                from_out: 0,
+                to: 1,
+                to_in: 0
+            }],
+            "the directed cord landed in the patch"
+        );
     }
 
     #[test]
-    fn a_wire_dropped_on_empty_space_unwires_it() {
+    fn a_cord_dropped_on_empty_space_draws_nothing() {
         let mut host = graph_host();
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
-        // Released over the middle of the patch: no bus there.
-        let edit = wire_set(&mut host, 1, 7, (1, 0), area, 300.0, 380.0, 1.0).unwrap();
-        assert_eq!(
-            edit,
-            (1, "in".to_string(), String::new()),
-            "an empty bus = unwired"
+        // Released over the middle of the patch: no port there.
+        let edit = graph_cord(
+            &mut host,
+            1,
+            7,
+            (0, super::super::graph::Side::Out, 0),
+            area,
+            300.0,
+            380.0,
+            1.0,
         );
-        assert!(
-            !patch(&host)
-                .wires
-                .iter()
-                .any(|w| w.member == 1 && w.control == "in"),
-            "the wire is gone from the patch"
-        );
+        assert!(edit.is_none(), "a release off any port makes no cord");
+        assert!(patch(&host).cords.is_empty(), "the patch gained no cord");
     }
 }

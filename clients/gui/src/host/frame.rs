@@ -388,10 +388,10 @@ pub(crate) struct FrameInputs<'a> {
     /// A selection marquee in flight on a `graph` patch: the widget and the
     /// rectangle (device pixels), drawn over the canvas.
     pub(crate) marquee: Option<(i32, Rect)>,
-    /// A rewiring drag in flight on a `graph` patch: the widget, the port being
-    /// dragged and the cursor — drawn as a wire following the pointer.
+    /// A cord drag in flight on a `graph` patch: the widget, the grabbed port
+    /// (box, side, index) and the cursor — drawn as a cord following the pointer.
     #[allow(clippy::type_complexity)] // node id, (port), (cursor) — documented above
-    pub(crate) wiring: Option<(i32, (usize, usize), (f32, f32))>,
+    pub(crate) wiring: Option<(i32, (usize, super::graph::Side, usize), (f32, f32))>,
 }
 
 impl Default for FrameInputs<'_> {

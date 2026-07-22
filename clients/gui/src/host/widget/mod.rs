@@ -940,20 +940,19 @@ pub enum WidgetKind {
         max: f32,
         label: Option<String>,
     },
-    /// A **patcher** view of a bus-wired node graph (a GraphDef): member boxes
-    /// with a port per wired control, bus nodes, and a wire per
-    /// `(member, control) ↔ bus` connection. Bipartite on purpose — a GraphDef
-    /// knows that a control *touches* a bus, and which end writes is the server's
-    /// analysis, not a guess from a control's name. Dragging a port onto a bus
-    /// rewires it (onto empty space, unwires); the edit leaves as a flat
-    /// `"wire"` event. The model's *logical grouping*, on screen. A leaf.
+    /// A **directed, typed** patcher (a level-1 GraphDef): boxes with inlets on
+    /// their top edge and outlets on their bottom, and a cord per `outlet → inlet`
+    /// connection, weighted by rate (audio heavy, control thin). Dragging an
+    /// outlet to an inlet (either grab order) draws a cord, refusing a rate
+    /// mismatch; the edit leaves as a flat directed `"wire"` event. The buses are
+    /// not drawn — a cord *is* a bus (the client names them). A leaf.
     Graph {
         graph: super::graph::GraphDraw,
-        /// The multi-box selection (`(kind, index)` pairs) — native view
-        /// state, never parsed from the wire: the click/marquee gestures
-        /// build it, the move drag consumes it, and it clears when the
-        /// script replaces `members`/`buses` (the indices would dangle).
-        selected: Vec<(super::graph::BoxKind, usize)>,
+        /// The multi-box selection (box indices) — native view state, never
+        /// parsed from the wire: the click/marquee gestures build it, the move
+        /// drag consumes it, and it clears when the script replaces `boxes`
+        /// (the indices would dangle).
+        selected: Vec<usize>,
         label: Option<String>,
     },
     /// A type this build does not render yet. Laid out so it reserves space, but
@@ -1421,74 +1420,71 @@ fn parse_voice_args(props: &serde_json::Map<String, Value>) -> Vec<(String, f32)
 /// `[member, control, bus]`). A malformed entry is skipped, so a partial patch
 /// still draws.
 fn parse_graph(props: &serde_json::Map<String, Value>) -> super::graph::GraphDraw {
-    use super::graph::{GraphDraw, Member, Wire};
+    use super::graph::{Cord, GraphDraw, Obj};
 
-    let members = props
-        .get("members")
+    let boxes = props
+        .get("boxes")
         .and_then(Value::as_array)
         .map(|items| {
             items
                 .iter()
-                .filter_map(|m| {
-                    Some(Member {
-                        name: m.get("name")?.as_str()?.to_string(),
-                        ports: m
-                            .get("ports")
-                            .and_then(Value::as_array)
-                            .map(|ps| {
-                                ps.iter()
-                                    .filter_map(|p| p.as_str().map(str::to_string))
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                        x: m.get("x").and_then(Value::as_f64).map(|n| n as f32),
-                        y: m.get("y").and_then(Value::as_f64).map(|n| n as f32),
+                .filter_map(|b| {
+                    Some(Obj {
+                        def: b.get("def")?.as_str()?.to_string(),
+                        inlets: parse_ports(b.get("inlets")),
+                        outlets: parse_ports(b.get("outlets")),
+                        x: b.get("x").and_then(Value::as_f64).map(|n| n as f32),
+                        y: b.get("y").and_then(Value::as_f64).map(|n| n as f32),
                     })
                 })
                 .collect()
         })
         .unwrap_or_default();
-    // A bus is a plain name string (the classic form, auto-placed), or an
-    // object `{"name": …, "x": …, "y": …}` carrying its free placement.
-    let buses: Vec<super::graph::Bus> = props
-        .get("buses")
+    // A cord is a flat `from_box from_outlet to_box to_inlet` quadruple.
+    let cords = props
+        .get("cords")
         .and_then(Value::as_array)
         .map(|items| {
             items
-                .iter()
-                .filter_map(|b| match b {
-                    Value::String(name) => Some(super::graph::Bus::named(name.clone())),
-                    Value::Object(o) => Some(super::graph::Bus {
-                        name: o.get("name")?.as_str()?.to_string(),
-                        x: o.get("x").and_then(Value::as_f64).map(|n| n as f32),
-                        y: o.get("y").and_then(Value::as_f64).map(|n| n as f32),
-                    }),
+                .chunks_exact(4)
+                .filter_map(|c| {
+                    Some(Cord {
+                        from: c[0].as_u64()? as usize,
+                        from_out: c[1].as_u64()? as usize,
+                        to: c[2].as_u64()? as usize,
+                        to_in: c[3].as_u64()? as usize,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    GraphDraw { boxes, cords }
+}
+
+/// Parses a box's port array: each entry a plain name string (audio, the
+/// default) or an object `{"name": …, "rate": "audio"|"control"}`.
+fn parse_ports(v: Option<&Value>) -> Vec<super::graph::Port> {
+    use super::graph::Port;
+    v.and_then(Value::as_array)
+        .map(|ps| {
+            ps.iter()
+                .filter_map(|p| match p {
+                    Value::String(name) => Some(Port::audio(name.clone())),
+                    Value::Object(o) => {
+                        let name = o.get("name")?.as_str()?.to_string();
+                        Some(
+                            if o.get("rate").and_then(Value::as_str) == Some("control") {
+                                Port::control(name)
+                            } else {
+                                Port::audio(name)
+                            },
+                        )
+                    }
                     _ => None,
                 })
                 .collect()
         })
-        .unwrap_or_default();
-    let wires = props
-        .get("wires")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .chunks_exact(3)
-                .filter_map(|w| {
-                    Some(Wire {
-                        member: w[0].as_u64()? as usize,
-                        control: w[1].as_str()?.to_string(),
-                        bus: w[2].as_str()?.to_string(),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    GraphDraw {
-        members,
-        buses,
-        wires,
-    }
+        .unwrap_or_default()
 }
 
 /// A ruler-strip toggle property: shown by default, hidden with the string

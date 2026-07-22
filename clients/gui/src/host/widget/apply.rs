@@ -327,7 +327,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         } => match key {
             // The whole patch at once (its parts are arrays, and a `/gui_set`
             // value is a scalar — so they ride as their JSON, like `points`).
-            "members" | "buses" | "wires" => {
+            "boxes" | "cords" => {
                 // A `/gui_set` value is a scalar, so an array rides as its
                 // JSON string (the `points` carrier, again).
                 let value = match v {
@@ -340,13 +340,12 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 let props = std::iter::once((key.to_string(), value)).collect();
                 let parsed = parse_graph(&props);
                 match key {
-                    "members" if !parsed.members.is_empty() => graph.members = parsed.members,
-                    "buses" if !parsed.buses.is_empty() => graph.buses = parsed.buses,
-                    "wires" => graph.wires = parsed.wires,
+                    "boxes" if !parsed.boxes.is_empty() => graph.boxes = parsed.boxes,
+                    "cords" => graph.cords = parsed.cords,
                     _ => return false,
                 }
-                // The indices would dangle over the replaced lists.
-                if key != "wires" {
+                // The box selection would dangle over a replaced `boxes` list.
+                if key == "boxes" {
                     selected.clear();
                 }
                 true
