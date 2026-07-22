@@ -464,85 +464,62 @@ layer is built on holds at its most tempting exception. The one concession is
 practical: such an event sets `legato = 1` so a take sounds its whole length,
 where a note's default would cut it short.
 
-## The patcher shows a connection, not a direction
+## The patcher is a directed, typed graph
 
-The logical side of a composition — members wired to each other through buses —
-is drawn by the `graph` widget. The obvious design is a directed patch: outputs on
-one side, inputs on the other, arrows between them. It cannot be built honestly.
+The logical side of a composition — members wired to each other — is drawn by the
+`graph` widget (the P track). The first design drew it **undirected**: a bus as a
+first-class node, a wire as an untyped `(control ↔ bus)` touch, on the argument
+that a GraphDef says only that a control *names* a bus and the writing/reading
+direction is the server's own topological sort — so a directed view would be a
+guess. That was built, tested, and rejected; it lives on the `patcher-bus-as-node`
+branch.
 
-**Context:** a GraphDef says only that a member's *control* names a bus
-(`{"out": "mix"}`, `{"in": "mix"}`). Which end of that bus writes and which reads
-is not in the data — it is the **server's** analysis, which sorts the graph
-topologically before it runs. A view could guess the direction from a control's
-name ("out" writes, "in" reads), but that is a convention, not a contract: a def
-is free to name its controls anything, and the renderer would then draw arrows
-that are simply wrong.
+**Context — the undirected view could not be read.** On real patches a
+bus-as-node, single-edge canvas fails at a patcher's one job, showing signal flow:
+ports land on one side and zigzag to bus nodes, an inlet and an outlet meet the
+same bus with no visible order, and the picture does not match the running
+program. And the premise was wrong. Direction is **not** a guess from a control's
+*name* — it is **structural**: a control that feeds an `In` UGen is an input (an
+inlet), one that feeds an `Out` is an output (an outlet), one that feeds neither is
+a value, not a port. The client that built the def (or reads a UGen descriptor)
+knows this exactly — it is the same analysis the server does to order the graph,
+not a naming convention.
 
-**Decision:** the patch is **bipartite** — member boxes on one side, bus nodes on
-the other, and a wire per `(member, control) ↔ bus` pair. It shows the
-*connection*, which is what the data knows, and leaves the *direction* to the
-engine, which is what decides it.
+**Decision — one directed, typed cord patcher, at two scales.** A box has
+**inlets** (top) and **outlets** (bottom), each **typed** (`ar` audio, `kr`
+control; level 2 adds `ir`), and a cord runs outlet → inlet, a rate mismatch
+refused at the gesture. A **cord *is* a bus the user never numbers**: the inlet
+defines the bus (its type, and the summing point for the cords into it — several
+cords into one inlet *sum*), and the **client names one bus per connected net** and
+writes it into the def. The two levels are the same grammar over different objects:
 
-**Consequence:** the view can never lie about signal flow, and the edit stays
-well-defined: rewiring means pointing a control at another bus (or at none), one
-wire per control, which is exactly the mutation the group and the GraphDef both
-accept. A directed rendering could be layered on later — but only from
-information the server surfaces, not from a name.
+- **Level 1 — visual programming of a `GraphDef`.** Boxes are whole synthesis
+  nodes (defs of all families, synths, groups) and buffers; a cord is a **server
+  bus**. The graphic is **explicit and restricted** — a signal goes exactly where a
+  cord connects it. The power to route arbitrarily is a property of the *server's*
+  node/bus architecture (nodes and groups inside a control cycle), built in code,
+  never drawn on this canvas.
+- **Level 2 — visual programming of a `SynthDef`/`FaustDef`.** Boxes are UGens with
+  `In`/`Out`/control edge boxes; a cord is an **internal wire** of the single def
+  the patch compiles to.
 
-## The two patch levels: a bus is a node, a signal is a cord
+**Who does what — the server and the client barely change.** The **server already**
+allocates a GraphDef's bus numbers and **auto-orders** its members topologically,
+considering the buses; the directed patcher adds no server ordering logic and needs
+no new verb (the port directions come from the def the client already has). The
+**client** contributes one small, language-agnostic pass — directed cords → one bus
+named per net, summing fan-in — which lives in `clausters-core` beside the patch
+document, so every client shares it. The Python arrangement model (`Group`/
+`Generator` → `GraphDef`) is unchanged; the new work is GUI-side (the directed
+`graph` widget).
 
-The patcher (the P track) edits at two abstraction levels that share one widget
-and one gesture machine but **not** one connection logic. Keeping them apart is a
-vocabulary rule with teeth: the **server patch** (level 1) and the **def patch**
-(level 2) are named apart everywhere, and bare "patch" is reserved for what is
-common to both. They cannot be one model because each draws a *different server
-abstraction*, and the honesty argument of the previous decision ("The patcher
-shows a connection, not a direction") points the opposite way in each.
-
-**Context — the same picture means two different things.** A box wired to another
-box reads, to the eye, as "signal flows here → there". Inside a SynthDef/FaustDef
-(level 2) that reading is *true*: a UGen's inputs and outputs are declared by its
-descriptor, a Faust box expression is directed by construction, so the direction
-and rate of every connection are the schema, not a guess. Assembling server nodes
-(level 1) that same reading is a *lie*: the data (a GraphDef) says only that a
-member's control *names* a bus (`{"out": "mix"}`, `{"in": "mix"}`); which end
-writes and which reads is the server's topological sort, decided at
-instantiation, and a def is free to name its controls anything.
-
-**Decision — the bus is where the two levels diverge.**
-
-- **Level 1 (server patch): a bus is a first-class node.** The canvas is
-  bipartite — member boxes on one side, **bus nodes** on the other (`OUT` and the
-  hardware among them) — and a wire is one `(member, control) ↔ bus` pair. There
-  is no box→box edge. This is not a drawing convenience: a bus in clausters *is* a
-  shared, numbered slot that signals sum into, and the node on the canvas is that
-  slot. Drawing it box-to-box would erase from the picture the one object the
-  server actually allocates and orders, and would resurrect the question every
-  summing patcher answers badly (Max: spatial order; Pd: last-wins) — "what
-  happens when several outputs meet one inlet". With the bus as a node the
-  question dissolves: there is no inlet receiving many cords, there is a bus node
-  that **sums**, and the execution order that makes the sum well-defined is the
-  auto-sorted group's topological order, not anything the picture asserts.
-- **Level 2 (def patch): a bus is not a node, a signal is a cord.** Here `In`/
-  `Out` are ordinary boxes and the connection is a **directed, typed cord**
-  (inlet↔outlet, rate-weighted: `ar` signal vs `kr`/`ir` control). The direction
-  is honest because the descriptor declares it; a rate-mismatched cord is refused
-  at the gesture, since the hit-test knows the types.
-
-**Consequence.** The two levels are visually unmistakable (level 1 left/right
-bipartite with bus nodes; level 2 top/bottom inlets/outlets with directed cords),
-and neither can lie about signal flow — level 1 by refusing to draw a direction
-the data does not carry, level 2 by drawing only the direction the schema does. It
-also settles the practical questions the design kept raising: **who owns the bus
-number** — the bus node does, allocated by the driver at render from the reserved
-graph-bus range; **who reads and who writes** — undecided by the picture, resolved
-by the engine's sort; **what a directed level-1 view would need** — information the
-server surfaces (an instance's actual sort), never a name-based guess, which is
-exactly the door the previous decision left open. The cost, named honestly: the
-level-1 bipartite view cannot depict a feedback connection (a reader ordered
-before its writer, one block of latency) as distinct from a forward one — the flip
-side of not drawing direction — and that, if ever wanted, is the directed
-rendering to layer on from server-surfaced order, not from the patch data.
+**Consequence.** The picture reads as the program: outlet → inlet, typed, flowing
+one way, no bus nodes cluttering the canvas. The honesty *inversion* from the first
+design is deliberate — direction and type are **shown** because they are
+structural; bus numbering is **hidden** because it is bookkeeping. The one thing the
+drawing does not express is **feedback** (a reader ordered before its writer, a
+block of latency): the patch graphic is a **DAG**, and a genuine cycle stays a code
+construction, not a cord.
 
 ## The arrangement model: five primitives, one recursive group
 
