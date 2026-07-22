@@ -521,6 +521,17 @@ drawing does not express is **feedback** (a reader ordered before its writer, a
 block of latency): the patch graphic is a **DAG**, and a genuine cycle stays a code
 construction, not a cord.
 
+**The hardware output is not a box.** A cord *is* a bus, and buses are never
+drawn or numbered — so the hardware output, being a bus, cannot be a box either.
+There is no `OUT`/hardware node on the canvas and no drawn hardware net; every net
+is a private bus (`b0`, `b1`, …). A signal reaches the speakers through a
+**terminal def** — a `dac` with an inlet and no outlet, its `Out.ar(0, …)` baked
+in — a member like any other, distinguished only by having no outlet to cord
+onward. (This corrected an earlier design that kept a special `OUT` box wired to a
+drawn hardware bus, which contradicted "a bus is never drawn." Level 2 is
+different: there a def genuinely contains `In`/`Out` UGens, so they *are* edge
+boxes of the patch.)
+
 ## The arrangement model: five primitives, one recursive group
 
 A sequencing layer (a timeline of items, a playhead) is enough to *play* music
