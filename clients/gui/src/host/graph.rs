@@ -20,22 +20,23 @@ use super::theme::{Theme, with_alpha};
 
 const PAD: f32 = 8.0;
 const OBJ_W: f32 = 96.0;
-/// The middle band of a box, holding the def name.
-const HEAD_H: f32 = 18.0;
-/// A port-name row: the inlet names sit under the top edge, the outlet names
-/// over the bottom edge (so a box reads inlets / def / outlets, top to bottom).
-const LABEL_H: f32 = 13.0;
-/// The vertical gap the auto-stack leaves between boxes — wider than a port's
-/// hit diameter, so an outlet on one box and the inlet on the box below it stay
-/// separately hittable (and there is room for the cord between them).
+/// The middle band of a box, holding the def name (the widest band).
+const HEAD_H: f32 = 20.0;
+/// A port strip: the inlet cells sit in the top strip, the outlet cells in the
+/// bottom strip (so a box reads inlets / def / outlets, top to bottom). The
+/// strip is a distinct band color, empty when the edge has no ports.
+const STRIP_H: f32 = 15.0;
+/// The vertical gap the auto-stack leaves between boxes — room for the cord
+/// between an outlet strip and the inlet strip of the box below it.
 const ROW_GAP: f32 = 40.0;
-/// The gap between a port's pin and its label.
-const PORT_TEXT_GAP: f32 = 3.0;
+/// Horizontal padding inside a port cell (the square a cord connects to, its
+/// name written inside).
+const PORT_PAD: f32 = 5.0;
+/// The gap between adjacent port cells along a strip.
+const PORT_GAP: f32 = 4.0;
 const TEXT_SCALE: f32 = 1.5;
 /// The port names are drawn a little smaller than the def name.
 const LABEL_SCALE: f32 = 1.1;
-/// The port square's half-size (also its hit radius floor), device pixels.
-pub const PORT_R: f32 = 4.0;
 
 /// Which edge a port sits on: an inlet (top) reads, an outlet (bottom) writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -116,23 +117,36 @@ pub struct GraphDraw {
     pub cords: Vec<Cord>,
 }
 
-/// One port's slot: the pin, a gap, then its left-justified label. Ports flow
-/// left to right, so the slot width is what the next port starts after.
-fn slot_w(port: &Port) -> f32 {
-    2.0 * PORT_R + PORT_TEXT_GAP + font::width(&port.name, LABEL_SCALE) + PAD
+/// One port cell's width: its name plus padding, floored so an unnamed port is
+/// still a legible square. The cell is the square a cord connects to.
+fn cell_w(port: &Port) -> f32 {
+    (font::width(&port.name, LABEL_SCALE) + 2.0 * PORT_PAD).max(STRIP_H)
 }
 
-/// The width one edge needs: the left inset plus every port's slot.
+/// The width one edge needs: both margins, every cell, and the gaps between.
 fn edge_w(ports: &[Port]) -> f32 {
-    PAD + ports.iter().map(slot_w).sum::<f32>()
+    if ports.is_empty() {
+        return 0.0;
+    }
+    2.0 * PAD + ports.iter().map(cell_w).sum::<f32>() + PORT_GAP * (ports.len() as f32 - 1.0)
 }
 
-/// The x of port `p`'s pin **centre**, canvas units from the box's left edge:
-/// ports are laid out left-justified in flow order.
-fn port_offset(o: &Obj, side: Side, p: usize) -> f32 {
+/// The x of port `p`'s cell **left**, canvas units from the box's left edge:
+/// cells flow left to right from the left margin.
+fn cell_left(o: &Obj, side: Side, p: usize) -> f32 {
     let ports = o.ports(side);
-    let before: f32 = ports[..p.min(ports.len())].iter().map(slot_w).sum();
-    PAD + before + PORT_R
+    let before: f32 = ports[..p.min(ports.len())]
+        .iter()
+        .map(|q| cell_w(q) + PORT_GAP)
+        .sum();
+    PAD + before
+}
+
+/// The x of port `p`'s pin **centre** (a cord attaches at the cell's outer-edge
+/// midpoint), canvas units from the box's left edge.
+fn port_offset(o: &Obj, side: Side, p: usize) -> f32 {
+    let w = o.ports(side).get(p).map_or(0.0, cell_w);
+    cell_left(o, side, p) + w * 0.5
 }
 
 /// The width a box needs: the busier labelled edge (or the def name), floored at
@@ -149,14 +163,14 @@ fn obj_w(o: &Obj) -> f32 {
 /// placed at its explicit `x`/`y` when it has them, else auto-stacked down the
 /// left column.
 pub fn obj_rect(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> Rect {
-    let h = (HEAD_H + 2.0 * LABEL_H) * scale;
+    let h = (HEAD_H + 2.0 * STRIP_H) * scale;
     let w = graph.boxes.get(i).map_or(OBJ_W, obj_w) * scale;
     if let Some(o) = graph.boxes.get(i)
         && let (Some(x), Some(y)) = (o.x, o.y)
     {
         return Rect::new(area.x + x * scale, area.y + y * scale, w, h);
     }
-    let y = area.y + (PAD + i as f32 * (HEAD_H + 2.0 * LABEL_H + ROW_GAP)) * scale;
+    let y = area.y + (PAD + i as f32 * (HEAD_H + 2.0 * STRIP_H + ROW_GAP)) * scale;
     Rect::new(area.x + PAD * scale, y, w, h)
 }
 
@@ -175,13 +189,31 @@ pub fn port_pin(
     let off = graph
         .boxes
         .get(i)
-        .map_or(PAD + PORT_R, |o| port_offset(o, side, p));
+        .map_or(PAD, |o| port_offset(o, side, p));
     let x = r.x + off * scale;
     let y = match side {
         Side::In => r.y,
         Side::Out => r.y + r.h,
     };
     (x, y)
+}
+
+/// The cell of box `i`'s port `p` on `side`: the square (in the top strip for an
+/// inlet, the bottom strip for an outlet) that holds the port name and is the
+/// target a cord connects to.
+pub fn port_cell(area: Rect, graph: &GraphDraw, i: usize, side: Side, p: usize, scale: f32) -> Rect {
+    let r = obj_rect(area, graph, i, scale);
+    let (left, w) = graph.boxes.get(i).map_or((PAD, STRIP_H), |o| {
+        (
+            cell_left(o, side, p),
+            o.ports(side).get(p).map_or(STRIP_H, cell_w),
+        )
+    });
+    let y = match side {
+        Side::In => r.y,
+        Side::Out => r.y + r.h - STRIP_H * scale,
+    };
+    Rect::new(r.x + left * scale, y, w * scale, STRIP_H * scale)
 }
 
 /// The port under `(x, y)`, as `(box, side, port)` — the grab point of a cord
@@ -193,19 +225,24 @@ pub fn port_hit(
     y: f64,
     scale: f32,
 ) -> Option<(usize, Side, usize)> {
-    let radius = ((PORT_R * scale) * 2.0).max(6.0) as f64;
-    let hit = |i: usize, side: Side, p: usize| {
-        let (px, py) = port_pin(area, graph, i, side, p, scale);
-        ((x - px as f64).powi(2) + (y - py as f64).powi(2)).sqrt() <= radius
+    // The pin sits on the cell's outer edge (the box's top/bottom border), so the
+    // hit region is the cell grown by a small margin: it covers the edge itself
+    // (half-open `contains` would drop the exclusive bottom) and gives a click a
+    // little grab tolerance around the square.
+    let m = (3.0 * scale) as f64;
+    let over = |i: usize, side: Side, p: usize| {
+        let c = port_cell(area, graph, i, side, p, scale);
+        Rect::new(c.x - m as f32, c.y - m as f32, c.w + 2.0 * m as f32, c.h + 2.0 * m as f32)
+            .contains(x, y)
     };
     for (i, o) in graph.boxes.iter().enumerate() {
         for p in 0..o.inlets.len() {
-            if hit(i, Side::In, p) {
+            if over(i, Side::In, p) {
                 return Some((i, Side::In, p));
             }
         }
         for p in 0..o.outlets.len() {
-            if hit(i, Side::Out, p) {
+            if over(i, Side::Out, p) {
                 return Some((i, Side::Out, p));
             }
         }
@@ -263,7 +300,6 @@ pub fn draw(
         scale,
     } = *state;
     let ts = TEXT_SCALE * scale;
-    let port_r = PORT_R * scale;
     mesh.rect(area, theme.view_field);
     mesh.border(area, 1.0, theme.frame);
     if let Some(text) = label {
@@ -298,22 +334,24 @@ pub fn draw(
         );
     }
 
-    // The boxes: three bands top to bottom — inlet names in the top strip, the
-    // def name in the middle, outlet names in the bottom strip — so a box reads
-    // like its signal flow (in on top, out on the bottom). Everything is placed
-    // and sized in canvas (scale-1) units, multiplied by `scale` once, so it
-    // stays anchored to the box under zoom. All text is left-justified, and a
-    // port's name sits just right of its pin, ports flowing left to right.
+    // The boxes: three bands top to bottom, each a distinct color — the inlet
+    // strip on top, the def name in the (widest) middle band, the outlet strip
+    // on the bottom — so a box reads like its signal flow (in on top, out on the
+    // bottom). An edge with no ports keeps its strip, empty. Everything is sized
+    // from the box rect times `scale`, so it stays anchored under zoom.
     let lts = LABEL_SCALE * scale;
-    let fh = font::height(TEXT_SCALE); // scale-1 heights, to centre in a band
-    let lh = font::height(LABEL_SCALE);
-    let def_y = LABEL_H + (HEAD_H - fh) * 0.5; // the def name's band
-    let in_y = (LABEL_H - lh) * 0.5; // the inlet strip
-    let out_y = LABEL_H + HEAD_H + (LABEL_H - lh) * 0.5; // the outlet strip
-    let label_dx = PORT_R + PORT_TEXT_GAP; // a label starts just right of its pin
+    let fh = font::height(ts); // device heights, to centre text in a band
+    let lh = font::height(lts);
+    let strip_h = STRIP_H * scale;
+    let head_h = HEAD_H * scale;
     for (i, o) in graph.boxes.iter().enumerate() {
         let r = obj_rect(area, graph, i, scale);
-        mesh.rect(r, theme.object_fill);
+        let top = Rect::new(r.x, r.y, r.w, strip_h);
+        let mid = Rect::new(r.x, r.y + strip_h, r.w, head_h);
+        let bot = Rect::new(r.x, r.y + strip_h + head_h, r.w, strip_h);
+        mesh.rect(top, theme.inlet_strip);
+        mesh.rect(mid, theme.object_fill);
+        mesh.rect(bot, theme.outlet_strip);
         let sel = selected.contains(&i);
         let edge = if sel {
             theme.selected_edge
@@ -321,39 +359,31 @@ pub fn draw(
             theme.object_edge
         };
         mesh.border(r, if sel { 2.0 } else { 1.0 }, edge);
+        // The def name, left-justified and centred in the middle band.
         font::text(
             mesh,
             &o.def,
-            r.x + PAD * scale,
-            r.y + def_y * scale,
+            mid.x + PAD * scale,
+            mid.y + (head_h - fh) * 0.5,
             ts,
             theme.text,
         );
-        let pin_rect =
-            |px: f32, py: f32| Rect::new(px - port_r, py - port_r, port_r * 2.0, port_r * 2.0);
-        for (p, port) in o.inlets.iter().enumerate() {
-            let (px, py) = port_pin(area, graph, i, Side::In, p, scale);
-            mesh.rect(pin_rect(px, py), theme.port);
-            font::text(
-                mesh,
-                &port.name,
-                px + label_dx * scale,
-                r.y + in_y * scale,
-                lts,
-                theme.text,
-            );
-        }
-        for (p, port) in o.outlets.iter().enumerate() {
-            let (px, py) = port_pin(area, graph, i, Side::Out, p, scale);
-            mesh.rect(pin_rect(px, py), theme.port);
-            font::text(
-                mesh,
-                &port.name,
-                px + label_dx * scale,
-                r.y + out_y * scale,
-                lts,
-                theme.text,
-            );
+        // Each port a labelled cell in its strip: the square a cord connects to,
+        // its name written inside.
+        for side in [Side::In, Side::Out] {
+            for (p, port) in o.ports(side).iter().enumerate() {
+                let cell = port_cell(area, graph, i, side, p, scale);
+                mesh.rect(cell, with_alpha(theme.port, 0.16));
+                mesh.border(cell, 1.0, theme.port);
+                font::text(
+                    mesh,
+                    &port.name,
+                    cell.x + PORT_PAD * scale,
+                    cell.y + (strip_h - lh) * 0.5,
+                    lts,
+                    theme.text,
+                );
+            }
         }
     }
 
@@ -469,21 +499,26 @@ mod tests {
     }
 
     #[test]
-    fn a_port_is_hit_where_its_pin_is_drawn_with_its_side() {
+    fn a_port_is_hit_over_its_cell_with_its_side() {
         let g = chain();
         let a = area();
-        let (ox, oy) = port_pin(a, &g, 0, Side::Out, 0, 1.0); // tone's outlet
+        // A click anywhere over the outlet's cell (the square a cord connects to)
+        // hits it; likewise the inlet's cell on the box below.
+        let oc = port_cell(a, &g, 0, Side::Out, 0, 1.0); // tone's outlet cell
         assert_eq!(
-            port_hit(a, &g, ox as f64, oy as f64, 1.0),
+            port_hit(a, &g, (oc.x + oc.w * 0.5) as f64, (oc.y + oc.h * 0.5) as f64, 1.0),
             Some((0, Side::Out, 0))
         );
-        let (ix, iy) = port_pin(a, &g, 2, Side::In, 0, 1.0); // dac's inlet
+        let ic = port_cell(a, &g, 2, Side::In, 0, 1.0); // dac's inlet cell
         assert_eq!(
-            port_hit(a, &g, ix as f64, iy as f64, 1.0),
+            port_hit(a, &g, (ic.x + ic.w * 0.5) as f64, (ic.y + ic.h * 0.5) as f64, 1.0),
             Some((2, Side::In, 0))
         );
-        // Away from any pin: nothing (a cord drag starts only on a port).
-        assert_eq!(port_hit(a, &g, ox as f64 + 40.0, oy as f64, 1.0), None);
+        // The pin (the cord attach point on the outer edge) sits over its cell.
+        let (ox, oy) = port_pin(a, &g, 0, Side::Out, 0, 1.0);
+        assert!(oc.contains(ox as f64, (oy - 0.5) as f64));
+        // Away from any cell: nothing (a cord drag starts only on a port).
+        assert_eq!(port_hit(a, &g, (oc.x + 60.0) as f64, oc.y as f64, 1.0), None);
     }
 
     #[test]

@@ -949,9 +949,10 @@ def graph(id: int | None = None, *, boxes=None, cords=None,
     - ``cords`` — a flat ``[from_box, outlet, to_box, inlet, ...]`` list, the
       indices within each box's inlet/outlet lists.
 
-    Each box shows its ports as named pins — inlet names in a strip under the top
-    edge, the def name in the middle, outlet names over the bottom edge, all
-    left-justified — so a box reads like its signal flow.
+    A box is drawn as three color-coded bands: a top strip of **inlet cells**, the
+    def name in the wider middle, a bottom strip of **outlet cells**. Each port is
+    a labelled square holding its name — the square a cord connects to — so a box
+    reads like its signal flow (an edge with no ports keeps its strip, empty).
 
     The patch is a **pan/zoom canvas**, so put it in a `scroll` workspace: a plain
     drag on empty canvas sweeps the marquee box-selection, and **Shift+drag pans**

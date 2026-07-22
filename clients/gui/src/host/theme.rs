@@ -141,7 +141,11 @@ theme_roles! {
     object_edge = [0.45, 0.60, 0.85, 1.0];
     /// A patch bus node's fill.
     bus_fill = [0.18, 0.28, 0.24, 1.0];
-    /// A patch box's wiring port.
+    /// The inlet strip along a patch box's top edge (its distinct band color).
+    inlet_strip = [0.13, 0.19, 0.31, 1.0];
+    /// The outlet strip along a patch box's bottom edge (its distinct band color).
+    outlet_strip = [0.16, 0.26, 0.22, 1.0];
+    /// A patch box's wiring port (the cell a cord connects to: its edge and pin).
     port = [0.75, 0.82, 0.92, 1.0];
     /// The live/rendered marker (a sounding patch wire).
     live = [0.95, 0.72, 0.25, 1.0];
