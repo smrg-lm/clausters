@@ -858,47 +858,28 @@ class Editor:
 
 
 def _logical_patch(group):
-    """A logical `Group` as a `clausters.defs.GraphPatch`: one box per member (its
-    typed ports **derived from the SynthDef it wraps**), one cord per shared
-    internal bus name — a writer's outlet to a reader's inlet. The members'
-    bus-valued controls carry the wiring, the same controls `Group.to_graphdef`
-    reads, so the drawn patch and the rendered GraphDef agree on the connections.
+    """A logical `Group` as a `clausters.defs.GraphPatch`, through the headless
+    decode `GraphPatch.from_graphdef`: the group renders to a `GraphDef` (its
+    members and their shared-bus controls — the arrangement's 1:1 logical mapping),
+    and the decode reads that back into a directed patch, typing each box's ports
+    from the `SynthDef` the member wraps. The `Group -> patch` mapping itself lives
+    in `clausters.defs`, not here — the editor is only a consumer of it.
 
-    A member wrapping a bare def *name* (not a `SynthDef` object) draws as a
-    port-less box — its port directions are unknowable without the def. A control
-    valued ``"OUT"`` (hardware) is not a cord: that member reaches hardware itself.
-    Returns the patch and the member handles in box order (so an edit-back can map
-    a box index back to the member whose controls it rewrites)."""
-    from ..defs import GraphPatch, synthdef_ports
+    A member wrapping a bare def *name* (not a `SynthDef` object) draws port-less —
+    its directions are unknowable without the def. Returns the patch and the member
+    handles in box order (box index == member order), so an edit-back maps a box
+    index back to the member whose controls it rewrites."""
+    from ..defs import GraphPatch
     from ..defs.synthdef import SynthDef
 
-    patch = GraphPatch()
     handles = list(group.handles)
-    writers: dict = {}   # bus name -> [(box, outlet control name)]
-    readers: dict = {}   # bus name -> [(box, inlet control name)]
-    for member in handles:
-        child = member.element
-        wraps = getattr(child, "wraps", None)
-        if isinstance(wraps, SynthDef):
-            inlets, outlets = synthdef_ports(wraps)
-            box = patch.add(wraps)
-        else:
-            inlets, outlets = [], []
-            box = patch.add(child.def_name)
-        in_names = {_port_name(p) for p in inlets}
-        out_names = {_port_name(p) for p in outlets}
-        for ctl, value in (getattr(child, "controls", None) or {}).items():
-            if not isinstance(value, str) or value == "OUT":
-                continue  # a number is a value; "OUT" reaches hardware, not a cord
-            if ctl in out_names:
-                writers.setdefault(value, []).append((box, ctl))
-            elif ctl in in_names:
-                readers.setdefault(value, []).append((box, ctl))
-    for bus, sources in writers.items():
-        for src_box, outlet in sources:
-            for dst_box, inlet in readers.get(bus, []):
-                patch.connect(src_box, outlet, dst_box, inlet)
-    return patch, handles
+    gdef = group.to_graphdef(name=getattr(group, "name", None) or "_patch")
+    defs = {
+        h.element.def_name: h.element.wraps
+        for h in handles
+        if isinstance(getattr(h.element, "wraps", None), SynthDef)
+    }
+    return GraphPatch.from_graphdef(gdef, defs), handles
 
 
 def _port_name(port) -> str:

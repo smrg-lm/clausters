@@ -162,6 +162,50 @@ class GraphPatch:
         self.cords = [c for c in self.cords if c != cord]
         return self
 
+    # ---- decoding a stored graph back into a patch (the inverse of to_graphdef) ----
+
+    @classmethod
+    def from_graphdef(cls, gdef: GraphDef, defs: dict | None = None) -> "GraphPatch":
+        """Decode a `GraphDef` into a directed patch — the inverse of
+        `to_graphdef`. Each member becomes a box; a member control valued an
+        internal-bus **name** (a string other than the hardware sentinel ``"OUT"``)
+        becomes a cord from the writing outlet to every reading inlet on that bus.
+
+        Direction and rate are **not guessed**: a box's typed ports come from its
+        def, so ``defs`` maps a member's def name to the `SynthDef` it was built
+        from (a control feeding an ``In`` is an inlet, one feeding an ``Out`` an
+        outlet; see `synthdef_ports`). A member whose def is not resolvable through
+        ``defs`` draws **port-less** — its wiring cannot be typed, so it grows no
+        cords. The box order is the member order, so a caller maps a box index
+        straight back to the member it came from."""
+        defs = defs or {}
+        patch = cls()
+        members = gdef.members()
+        for member in members:
+            sdef = defs.get(member["def"])
+            patch.add(sdef if isinstance(sdef, SynthDef) else member["def"])
+        # A cord is a bus: group each box's bus-valued controls into writers and
+        # readers by port direction, then wire every writer to every reader sharing
+        # a bus name (fan-in and fan-out fall out of the shared name).
+        writers: dict = {}
+        readers: dict = {}
+        for box, member in enumerate(members):
+            ports = patch.boxes[box]["ports"]
+            out_names = {p["name"] for p in ports if p["dir"] == "out"}
+            in_names = {p["name"] for p in ports if p["dir"] == "in"}
+            for ctl, value in (member.get("controls") or {}).items():
+                if not isinstance(value, str) or value == "OUT":
+                    continue  # a number is a value; "OUT" reaches hardware, not a cord
+                if ctl in out_names:
+                    writers.setdefault(value, []).append((box, ctl))
+                elif ctl in in_names:
+                    readers.setdefault(value, []).append((box, ctl))
+        for bus, sources in writers.items():
+            for src_box, outlet in sources:
+                for dst_box, inlet in readers.get(bus, []):
+                    patch.connect(src_box, outlet, dst_box, inlet)
+        return patch
+
     # ---- compiling ----
 
     def to_json(self) -> dict:

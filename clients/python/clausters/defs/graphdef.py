@@ -142,6 +142,12 @@ class GraphDef:
         self._members.append(member)
         return MemberRef(index)
 
+    def members(self) -> list[dict]:
+        """The member specs in add order (read-only copies): each a def name and
+        its control wiring. This is what reads a stored graph back into a patch
+        view -- `clausters.defs.GraphPatch.from_graphdef`."""
+        return [dict(m) for m in self._members]
+
     def port(self, name: str, *targets: _Target, default: float | None = None):
         """Defines a surface port mapping ``name`` to one or more member
         controls (each a `_Target`, optionally ``.scaled(...)``).

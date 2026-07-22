@@ -140,6 +140,41 @@ def test_add_derives_ports_from_a_passed_synthdef():
     assert p2.boxes[0]["ports"] == [{"name": "custom", "dir": "out", "rate": "audio"}]
 
 
+def test_from_graphdef_round_trips_a_typed_chain():
+    # A patch -> its GraphDef -> the patch decoded back: same boxes, same cords.
+    # The decode types each box's ports from the SynthDef (passed via `defs`), so
+    # the drawn connections survive the round trip through the bus wiring.
+    _pass_or_skip()
+    tone = SynthDef("tone", out(control("out"), sine(control("freq", 220.0))))
+    trem = SynthDef("trem", out(control("out"),
+                                in_(control("in")) * sine(control("rate", 4.0))))
+    dac = SynthDef("dac", out(0, in_(control("in"))))
+    p = GraphPatch()
+    t, tr, d = p.add(tone), p.add(trem), p.add(dac)
+    p.connect(t, "out", tr, "in")
+    p.connect(tr, "out", d, "in")
+    gdef = p.to_graphdef("chain")
+    back = GraphPatch.from_graphdef(gdef, {"tone": tone, "trem": trem, "dac": dac})
+    assert back.to_widget() == p.to_widget()
+
+
+def test_from_graphdef_without_defs_draws_port_less_and_grows_no_cords():
+    # No `defs` -> a member's ports cannot be typed, so it draws port-less and the
+    # wiring cannot become cords (direction is never guessed).
+    _pass_or_skip()
+    tone = SynthDef("tone", out(control("out"), sine(control("freq", 220.0))))
+    dac = SynthDef("dac", out(0, in_(control("in"))))
+    p = GraphPatch()
+    p.connect(p.add(tone), "out", p.add(dac), "in")
+    back = GraphPatch.from_graphdef(p.to_graphdef("chain"))
+    w = back.to_widget()
+    assert w["boxes"] == [
+        {"def": "tone", "inlets": [], "outlets": []},
+        {"def": "dac", "inlets": [], "outlets": []},
+    ]
+    assert w["cords"] == []
+
+
 def test_connect_is_idempotent_and_disconnect_removes():
     p = chain()
     n = len(p.cords)
