@@ -949,11 +949,16 @@ def graph(id: int | None = None, *, boxes=None, cords=None,
     - ``cords`` — a flat ``[from_box, outlet, to_box, inlet, ...]`` list, the
       indices within each box's inlet/outlet lists.
 
-    The patch is a **canvas**: a box drags freely (moving a selected box moves
-    the whole selection; a drag on empty canvas sweeps a box selection), each
-    move flowing back as ``/gui_event <id> "move" <index> <x> <y>`` (canvas
-    units) so the driver owns the geometry. Inside a `scroll` workspace the whole
-    canvas pans and zooms.
+    Each box shows its ports as named pins — inlet names in a strip under the top
+    edge, the def name in the middle, outlet names over the bottom edge, all
+    left-justified — so a box reads like its signal flow.
+
+    The patch is a **pan/zoom canvas**, so put it in a `scroll` workspace: a plain
+    drag on empty canvas **pans** it (wheel zooms, anchored at the cursor), and
+    the marquee box-selection is **Shift+drag**. A box drags freely (moving a
+    selected box moves the whole selection), each move flowing back as
+    ``/gui_event <id> "move" <index> <x> <y>`` (canvas units) so the driver owns
+    the geometry.
 
     Dragging an outlet onto an inlet (either grab order) **draws a cord**,
     refusing a rate mismatch; the edit flows back as ``/gui_event <id> "wire"

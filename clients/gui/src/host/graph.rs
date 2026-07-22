@@ -29,8 +29,8 @@ const LABEL_H: f32 = 13.0;
 /// hit diameter, so an outlet on one box and the inlet on the box below it stay
 /// separately hittable (and there is room for the cord between them).
 const ROW_GAP: f32 = 40.0;
-/// Minimum horizontal room per port pin, so a busy edge stays hittable.
-const PORT_GAP: f32 = 24.0;
+/// The gap between a port's pin and its label.
+const PORT_TEXT_GAP: f32 = 3.0;
 const TEXT_SCALE: f32 = 1.5;
 /// The port names are drawn a little smaller than the def name.
 const LABEL_SCALE: f32 = 1.1;
@@ -116,20 +116,33 @@ pub struct GraphDraw {
     pub cords: Vec<Cord>,
 }
 
-/// The width one edge needs: each port slot holds the widest label on that edge
-/// (or a pin's minimum), so the names never overlap.
-fn edge_w(ports: &[Port]) -> f32 {
-    let widest = ports
-        .iter()
-        .map(|p| font::width(&p.name, LABEL_SCALE))
-        .fold(0.0, f32::max);
-    ports.len() as f32 * (widest.max(PORT_GAP) + PAD)
+/// One port's slot: the pin, a gap, then its left-justified label. Ports flow
+/// left to right, so the slot width is what the next port starts after.
+fn slot_w(port: &Port) -> f32 {
+    2.0 * PORT_R + PORT_TEXT_GAP + font::width(&port.name, LABEL_SCALE) + PAD
 }
 
-/// The width a box needs: room for the busier edge's labelled pins, floored at
+/// The width one edge needs: the left inset plus every port's slot.
+fn edge_w(ports: &[Port]) -> f32 {
+    PAD + ports.iter().map(slot_w).sum::<f32>()
+}
+
+/// The x of port `p`'s pin **centre**, canvas units from the box's left edge:
+/// ports are laid out left-justified in flow order.
+fn port_offset(o: &Obj, side: Side, p: usize) -> f32 {
+    let ports = o.ports(side);
+    let before: f32 = ports[..p.min(ports.len())].iter().map(slot_w).sum();
+    PAD + before + PORT_R
+}
+
+/// The width a box needs: the busier labelled edge (or the def name), floored at
 /// [`OBJ_W`].
 fn obj_w(o: &Obj) -> f32 {
-    OBJ_W.max(edge_w(&o.inlets)).max(edge_w(&o.outlets))
+    let def = 2.0 * PAD + font::width(&o.def, TEXT_SCALE);
+    OBJ_W
+        .max(edge_w(&o.inlets))
+        .max(edge_w(&o.outlets))
+        .max(def)
 }
 
 /// The box of `i`, at `scale` (the enclosing workspace's zoom, `1.0` bare):
@@ -147,8 +160,9 @@ pub fn obj_rect(area: Rect, graph: &GraphDraw, i: usize, scale: f32) -> Rect {
     Rect::new(area.x + PAD * scale, y, w, h)
 }
 
-/// The pin of box `i`'s port `p` on `side`: inlets are spread across the top
-/// edge, outlets across the bottom. `(x, y)` is the pin's centre.
+/// The pin of box `i`'s port `p` on `side`: ports are laid out left-justified in
+/// flow order along the top edge (inlets) / bottom edge (outlets). `(x, y)` is
+/// the pin's centre.
 pub fn port_pin(
     area: Rect,
     graph: &GraphDraw,
@@ -158,8 +172,11 @@ pub fn port_pin(
     scale: f32,
 ) -> (f32, f32) {
     let r = obj_rect(area, graph, i, scale);
-    let n = graph.boxes.get(i).map_or(1, |o| o.ports(side).len().max(1));
-    let x = r.x + (p as f32 + 0.5) / n as f32 * r.w;
+    let off = graph
+        .boxes
+        .get(i)
+        .map_or(PAD + PORT_R, |o| port_offset(o, side, p));
+    let x = r.x + off * scale;
     let y = match side {
         Side::In => r.y,
         Side::Out => r.y + r.h,
@@ -281,10 +298,19 @@ pub fn draw(
         );
     }
 
-    // The boxes: three bands top to bottom — inlet names under the top pins, the
-    // def name in the middle, outlet names over the bottom pins — so a box reads
-    // like its signal flow (in on top, out on the bottom).
+    // The boxes: three bands top to bottom — inlet names in the top strip, the
+    // def name in the middle, outlet names in the bottom strip — so a box reads
+    // like its signal flow (in on top, out on the bottom). Everything is placed
+    // and sized in canvas (scale-1) units, multiplied by `scale` once, so it
+    // stays anchored to the box under zoom. All text is left-justified, and a
+    // port's name sits just right of its pin, ports flowing left to right.
     let lts = LABEL_SCALE * scale;
+    let fh = font::height(TEXT_SCALE); // scale-1 heights, to centre in a band
+    let lh = font::height(LABEL_SCALE);
+    let def_y = LABEL_H + (HEAD_H - fh) * 0.5; // the def name's band
+    let in_y = (LABEL_H - lh) * 0.5; // the inlet strip
+    let out_y = LABEL_H + HEAD_H + (LABEL_H - lh) * 0.5; // the outlet strip
+    let label_dx = PORT_R + PORT_TEXT_GAP; // a label starts just right of its pin
     for (i, o) in graph.boxes.iter().enumerate() {
         let r = obj_rect(area, graph, i, scale);
         mesh.rect(r, theme.object_fill);
@@ -295,13 +321,11 @@ pub fn draw(
             theme.object_edge
         };
         mesh.border(r, if sel { 2.0 } else { 1.0 }, edge);
-        // The def name, centred in the middle band.
-        let def_w = font::width(&o.def, ts);
         font::text(
             mesh,
             &o.def,
-            r.x + (r.w - def_w) * 0.5,
-            r.y + (LABEL_H + (HEAD_H - font::height(ts)) * 0.5) * scale,
+            r.x + PAD * scale,
+            r.y + def_y * scale,
             ts,
             theme.text,
         );
@@ -310,12 +334,11 @@ pub fn draw(
         for (p, port) in o.inlets.iter().enumerate() {
             let (px, py) = port_pin(area, graph, i, Side::In, p, scale);
             mesh.rect(pin_rect(px, py), theme.port);
-            let w = font::width(&port.name, lts);
             font::text(
                 mesh,
                 &port.name,
-                px - w * 0.5,
-                r.y + 2.0 * scale,
+                px + label_dx * scale,
+                r.y + in_y * scale,
                 lts,
                 theme.text,
             );
@@ -323,9 +346,14 @@ pub fn draw(
         for (p, port) in o.outlets.iter().enumerate() {
             let (px, py) = port_pin(area, graph, i, Side::Out, p, scale);
             mesh.rect(pin_rect(px, py), theme.port);
-            let w = font::width(&port.name, lts);
-            let ly = r.y + r.h - (LABEL_H - 1.0) * scale;
-            font::text(mesh, &port.name, px - w * 0.5, ly, lts, theme.text);
+            font::text(
+                mesh,
+                &port.name,
+                px + label_dx * scale,
+                r.y + out_y * scale,
+                lts,
+                theme.text,
+            );
         }
     }
 

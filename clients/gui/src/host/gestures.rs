@@ -526,10 +526,13 @@ impl Gestures {
                 ref selected,
                 ..
             } => {
-                // A port wins: the rewiring drag. Then a box: select it and
-                // start a move (a press on an already-selected box keeps the
-                // set, so the drag moves the whole selection). Then the empty
-                // canvas: the selection marquee.
+                // A port wins: the cord drag. Then a box: select it and start a
+                // move (a press on an already-selected box keeps the set, so the
+                // drag moves the whole selection). The empty canvas is a **pan
+                // surface** — the patch is a zoom/pan workspace — so a plain drag
+                // there falls through to the enclosing `scroll` (pan); the
+                // marquee selection is **Shift+drag**, the modifier the pannable
+                // view needs.
                 if let Some(port) = graph::port_hit(rect, graph, cx, cy, scale) {
                     self.drag = Some(Drag::Wire {
                         id,
@@ -559,7 +562,7 @@ impl Gestures {
                         moved: false,
                     });
                     out.push(GestureEffect::Redraw(def_id));
-                } else {
+                } else if ctx.shift {
                     interact::graph_select(host, def_id, id, Vec::new());
                     self.drag = Some(Drag::Marquee {
                         id,
@@ -570,6 +573,8 @@ impl Gestures {
                     });
                     out.push(GestureEffect::Redraw(def_id));
                 }
+                // else: plain empty drag — leave it unconsumed so the `scroll`
+                // pan fallback below grabs the workspace.
             }
             WidgetKind::Track {
                 snap, ref editor, ..
@@ -2519,28 +2524,40 @@ mod tests {
     }
 
     #[test]
-    fn the_marquee_selects_the_boxes_it_spans_and_empty_click_clears() {
+    fn shift_marquees_and_a_plain_empty_drag_leaves_the_selection_to_pan() {
         let mut host = patch_host();
         let mut g = Gestures::default();
-        let ctx = GestureCtx::new(1, 600, 400);
+        let mut shift = GestureCtx::new(1, 600, 400);
+        shift.shift = true;
+        let plain = GestureCtx::new(1, 600, 400);
         let area = Rect::new(0.0, 0.0, 600.0, 400.0);
         let before = patch_of(&host);
-        // Sweep a marquee from the canvas middle-bottom (empty) over the two
-        // boxes stacked down the left column.
+        // Shift+drag from the empty middle-bottom over the two stacked boxes.
         let b1 = graph::obj_rect(area, &before, 1, 1.0);
-        g.press(&mut host, &ctx, 300.0, 390.0, &mut || false);
-        g.drag_to(&mut host, &ctx, (b1.x - 2.0) as f64, 2.0);
+        g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
+        g.drag_to(&mut host, &shift, (b1.x - 2.0) as f64, 2.0);
         assert_eq!(
             selection_of(&host),
             vec![0, 1],
             "the marquee spans both boxes"
         );
         assert!(g.marquee().is_some(), "the rectangle draws while dragging");
-        g.release(&mut host, &ctx, (b1.x - 2.0) as f64, 2.0);
+        g.release(&mut host, &shift, (b1.x - 2.0) as f64, 2.0);
         assert!(g.marquee().is_none());
-        // A plain click on empty canvas clears the set.
-        g.press(&mut host, &ctx, 300.0, 390.0, &mut || false);
-        g.release(&mut host, &ctx, 300.0, 390.0);
+        // A *plain* drag on empty canvas is a pan (a select needs Shift): it
+        // starts no marquee and leaves the selection untouched.
+        g.press(&mut host, &plain, 300.0, 390.0, &mut || false);
+        g.drag_to(&mut host, &plain, 330.0, 360.0);
+        assert!(g.marquee().is_none(), "no marquee without Shift");
+        g.release(&mut host, &plain, 330.0, 360.0);
+        assert_eq!(
+            selection_of(&host),
+            vec![0, 1],
+            "a plain drag does not clear"
+        );
+        // Shift+click on empty (a zero-size marquee) clears the set.
+        g.press(&mut host, &shift, 300.0, 390.0, &mut || false);
+        g.release(&mut host, &shift, 300.0, 390.0);
         assert!(selection_of(&host).is_empty());
     }
 

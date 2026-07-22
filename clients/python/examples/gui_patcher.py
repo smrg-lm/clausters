@@ -142,7 +142,7 @@ def render() -> None:
 
 
 print(f"opened window {win}")
-print("drag the empty canvas to pan, wheel to zoom; drag a box to move it.")
+print("drag empty canvas to pan, wheel to zoom; drag a box to move it (Shift+drag selects).")
 print("drag an outlet pin onto an inlet to cord them; press render to hear.")
 
 
