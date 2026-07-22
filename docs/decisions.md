@@ -1442,3 +1442,73 @@ cut ships the in-page clipboard on both fronts (functional parity within the
 host); wiring the web front's copy to `writeText` and its paste to a DOM
 `paste`-event listener is the recorded follow-up — an enhancement of one front,
 not a dependency the whole workspace takes on.
+
+## Representation before editing: the patcher's Def-views are autonomous, decoded client-side
+
+The patcher track (P) first grew view and editing together, per level: P3
+delivered the level-1 `GraphDef` view *and* its edit-back in one arc, driven from
+the editor, and P5 was scoped as "UGen boxes that compile to a def" — a level-2
+surface that was editable from the start. Two frictions surfaced. First, the
+edit-back reached into the arrangement model early (`Group.declare_bus`, the
+`Group → GraphPatch` mapping living inside `editor.py`), coupling a still-moving
+view to the model before the drawing itself was settled. Second, nothing yet drew
+a def's *internal* structure at all — level 2 was planned as an authoring surface
+without first being a faithful picture of an existing `SynthDef`/`FaustDef`.
+
+**Context — a patcher is easier to edit once it can be read.** A patch's one job
+is to show a structure truthfully (the same finding that turned it directed and
+typed — see "The patcher is a directed, typed graph"). Editing affordances —
+creating boxes, drawing cords, rewiring — are far easier to get right when they
+sit on a faithful, closed drawing of a structure that already exists (the def)
+than when the view and the editing grow in the same step and destabilize each
+other. And the structure is *already in hand*: a def the client built holds its
+whole graph in memory — the DFS that `synthdef_ports` already walks to find the
+`In`/`Out` controls is, one step deeper, every UGen and every wire — so a view can
+be *decoded* from the def rather than authored from scratch.
+
+**Decision — split the track into representation (phase A) then editing (phase
+B), and make each Def-view autonomous.** Level 1 (`GraphDef`) and level 2
+(`SynthDef`/`FaustDef`) are both delivered **as read-only views first**, decoded
+from the def's own structure by an inverse pass (`GraphPatch.from_graphdef`,
+`DefPatch.from_synthdef` — the reverse of the compile that renders them), before a
+box can be created or a cord rewired. A Def-view is an **autonomous
+visualization**, a peer of the heavy views (waveform, spectrogram, oscilloscope,
+timeline, bpf, env): a host widget pure over its data, fed by a headless
+decomposition (`defs`/`clausters-core`), openable on its own — one window per def,
+the `clausters.plot` posture. The **editor does not own it**: the editor is the
+gui-side *representation of the arrangement model* (`clausters.form` is pure and
+never imports the GUI, so the dependency runs editor → form, never the reverse),
+and it merely *orchestrates* — embedding an autonomous Def-view as a lane when a
+composition holds a logical group, the way it embeds the piano-roll. The already
+shipped level-1 edit-back (P3d) is reclassified into phase B, ahead of its
+representation work, and its `Group → patch` mapping is lifted out of `editor.py`
+into `defs`.
+
+This is sharpened by a plain fact about the **current state of development** (not
+a premise): no editing is realized yet. The level-1 edit-back (P3d) shipped as
+code but is unproven in the window, and nothing else is built, so every surface
+the track has today is, in practice, a representation. This is not a claim that
+views cannot edit — editing is exactly what phase B adds, driver-side over the
+edit-back seam (the widget emits gestures, the driver applies them).
+Representation-first is therefore not only the better sequence; it is the honest
+description of where the track already is.
+
+**Decision — the internal graph is read client-side; the server is not
+extended.** Level-2 representation reads the def object **in memory**, which
+covers the authoring case (a def you built or loaded through the client).
+Inspecting a def the server holds but no client in this process built would
+require the server to report each def's internal UGen graph over `/d_query` —
+**deliberately not done**: it would add per-def storage and processing to the
+server for something the arrangement model does not do for its other abstractions
+either. It stays an explicit later decision, never a prerequisite of this track.
+
+**Consequence.** Phase A is `GraphDef → GraphPatch` (level 1, lifting the mapping
+out of the editor) then `SynthDef → DefPatch` (level 2), plus a free-standing
+opener; phase B is the editing that P3d already began, then P3e/P3f/P3g, the live
+patch, the level-2 compile driver, and persistence. The directed/typed grammar,
+the cord→bus pass and the `clausters-core` patch document are unchanged — this is
+a re-sequencing and a placement discipline, not a redesign of the model. The
+free-standing opener is a **`plot_def()` method on the def classes**
+(`graphdef.plot_def()`, `synthdef.plot_def()`, `faustdef.plot_def()`),
+deliberately not a global verb and kept distinct from `clausters.plot(def)`, which
+renders the def's *sound* rather than its structure.
