@@ -134,13 +134,13 @@ class Editor:
         #: is a `Track`), and widget id -> that element for the edit-back route.
         self._roll_element = None
         self._rolls: dict = {}
-        #: graph widget id -> (logical `Group`, its box-order member handles) —
+        #: patch widget id -> (logical `Group`, its box-order member handles) —
         #: the directed-patch view of a logical group, for its edit-back route.
-        self._graphs: dict = {}
-        #: id(group) -> {box index: (x, y)} — a graph's box placements, presentation
+        self._patches: dict = {}
+        #: id(group) -> {box index: (x, y)} — a patch's box placements, presentation
         #: only (a logical group is a signal graph, so positions live here, not in
         #: the arrangement). Keyed by group identity, so they survive a redraw.
-        self._graph_geometry: dict = {}
+        self._patch_geometry: dict = {}
         self._host = None
         self._window = None
         #: The rendering in flight: where it went, on what clock, and the
@@ -201,7 +201,7 @@ class Editor:
         time axis. Pure — it builds the tree and the id registry, and sends
         nothing.
 
-        A **logical** group draws as a directed `graph` patch (a server patch, not
+        A **logical** group draws as a directed `patch` (a server patch, not
         a timeline lane): a box per member, its typed ports derived from the
         `SynthDef` the member wraps, cords from the members' shared internal-bus
         controls (`_logical_patch`). A member wrapping a bare def *name* draws
@@ -212,23 +212,23 @@ class Editor:
         self._clips = {}
         self._lanes = {}
         self._rolls = {}
-        self._graphs = {}
+        self._patches = {}
 
         lanes: list = []
         root = self.element
         if isinstance(root, Group) and root.kind == CONCRETE:
             for member in root.handles:
                 if isinstance(member.element, Group) and member.element.kind == LOGICAL:
-                    lanes.append(self._graph_lane(member.element))
+                    lanes.append(self._patch_lane(member.element))
                 else:
                     lanes += self._lanes_for(member.element, member.offset, root, member)
         elif isinstance(root, Group) and root.kind == LOGICAL:
-            lanes.append(self._graph_lane(root))
+            lanes.append(self._patch_lane(root))
         else:
             lanes += self._lanes_for(root, float(root.onset or 0.0), None, None)
 
         # The bottom **track** lane rules the shared axis (one ruler under the
-        # stack is the DAW convention); a graph lane has no time axis, so it is
+        # stack is the DAW convention); a patch lane has no time axis, so it is
         # skipped when picking the ruler.
         for lane in reversed(lanes):
             if lane.get("type") == "track":
@@ -237,14 +237,14 @@ class Editor:
         return window(*lanes, *self.extra, title=self.title,
                       w=self.size[0], h=self.size[1], layout="col")
 
-    def _graph_lane(self, group) -> dict:
+    def _patch_lane(self, group) -> dict:
         """A logical group drawn as a directed `patch` inside a pan/zoom `scroll`
         workspace — a server patch among the timeline lanes. Registers the patch
         widget id so an edit-back resolves to the group it draws."""
         p, handles = _logical_patch(group)
         wid = next(self._ids)
-        self._graphs[wid] = (group, handles)
-        geometry = self._graph_geometry.get(id(group), {})
+        self._patches[wid] = (group, handles)
+        geometry = self._patch_geometry.get(id(group), {})
         content = (900.0, 700.0)
         view = patch(wid, **p.to_widget(geometry), label=_name(group),
                      x=0.0, y=0.0, w=content[0], h=content[1])
@@ -357,7 +357,7 @@ class Editor:
         through untouched.
 
         A logical group's directed patch routes here too: a ``"wire"`` rewrites the
-        two members' controls onto a shared bus (`_apply_graph`), a ``"move"``
+        two members' controls onto a shared bus (`_apply_patch`), a ``"move"``
         persists a box's canvas position.
         """
         if addr == "/gui_closed":
@@ -378,10 +378,10 @@ class Editor:
             # timeline (a generator is read-only, so it is ignored).
             element = self._rolls.get(int(args[0]))
             return element is not None and self._apply_notes(element, args[2:])
-        if int(args[0]) in self._graphs:
+        if int(args[0]) in self._patches:
             # A logical group's directed patch: a cord drawn (rewire) or a box
             # moved (presentation).
-            return self._apply_graph(int(args[0]), args[1], args[2:])
+            return self._apply_patch(int(args[0]), args[1], args[2:])
         placed = self._clips.get(int(args[0]))
         if placed is None:
             return False
@@ -450,18 +450,18 @@ class Editor:
         self._changed()
         return True
 
-    def _apply_graph(self, wid: int, tag, values) -> bool:
+    def _apply_patch(self, wid: int, tag, values) -> bool:
         """One edit on a logical group's directed patch. A ``"wire"`` (``src_box
         outlet dst_box inlet``) rewrites the two members' controls so they share a
         bus — the connection *is* a bus, the same fact `Group.to_graphdef` reads,
         so the next render wires the GraphDef the way the cord is drawn. A ``"move"``
         (``box x y``) only persists the box's canvas position (a signal graph has
         no timeline, so positions are the editor's, not the arrangement's)."""
-        group, handles = self._graphs[wid]
+        group, handles = self._patches[wid]
         if tag == "wire" and len(values) >= 4:
             return self._apply_wire(group, handles, values[:4])
         if tag == "move" and len(values) >= 3:
-            self._graph_geometry.setdefault(id(group), {})[int(values[0])] = (
+            self._patch_geometry.setdefault(id(group), {})[int(values[0])] = (
                 float(values[1]), float(values[2]))
             return False
         return False

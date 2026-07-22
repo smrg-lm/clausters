@@ -573,11 +573,11 @@ def test_editor_draws_a_root_logical_group_as_a_graph():
     assert view["type"] == "patch"
     assert view["cords"] == [0, 0, 1, 0]
     # Registered so an edit-back resolves to the group it draws.
-    assert view["id"] in ed._graphs
-    assert ed._graphs[view["id"]][0] is ed.element
+    assert view["id"] in ed._patches
+    assert ed._patches[view["id"]][0] is ed.element
 
 
-def test_a_logical_group_among_concrete_lanes_draws_as_a_graph_lane():
+def test_a_logical_group_among_concrete_lanes_draws_as_a_patch_lane():
     # A concrete root with a track lane and a logical group beside it.
     melody = Track(Timeline([(0.0, SeqEvent(midinote=60, dur=1.0))]))
     root = Group([(0.0, Group([(0.0, melody)], name="lead")),
