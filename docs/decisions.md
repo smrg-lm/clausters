@@ -566,9 +566,10 @@ model state:
 - **Play** — to *hear* a buffer, build a **temporary synthdef** that reads it, the
   same move the editor makes to audition a take.
 
-So P3 ships the def-generator patcher and defers buffers to the parameter/value
-box work; recording the shape now keeps that later implementation coherent with
-the model instead of a patcher-only bolt-on.
+So P3 ships the def-generator patcher and leaves buffers to follow the
+parameter/value box work — both parts of the plan, in their natural order;
+recording the shape now keeps that later implementation coherent with the model
+instead of a patcher-only bolt-on.
 
 ## The arrangement model: five primitives, one recursive group
 
