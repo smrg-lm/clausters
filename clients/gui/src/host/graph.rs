@@ -330,15 +330,16 @@ pub fn draw(
             [x0, y0],
             [x1, y1],
             cord_weight(port.rate, scale),
-            with_alpha(theme.selection, 0.9),
+            theme.cord,
         );
     }
 
-    // The boxes: three bands top to bottom, each a distinct color — the inlet
-    // strip on top, the def name in the (widest) middle band, the outlet strip
-    // on the bottom — so a box reads like its signal flow (in on top, out on the
-    // bottom). An edge with no ports keeps its strip, empty. Everything is sized
-    // from the box rect times `scale`, so it stays anchored under zoom.
+    // The boxes: three bands top to bottom — the inlet strip on top and the
+    // outlet strip on the bottom (one color, `port_strip`), the def name in the
+    // (widest) middle band (`object_fill`), the strips contrasting with it — so a
+    // box reads like its signal flow (in on top, out on the bottom). An edge with
+    // no ports keeps its strip, empty. Everything is sized from the box rect times
+    // `scale`, so it stays anchored under zoom.
     let lts = LABEL_SCALE * scale;
     let fh = font::height(ts); // device heights, to centre text in a band
     let lh = font::height(lts);
@@ -349,9 +350,9 @@ pub fn draw(
         let top = Rect::new(r.x, r.y, r.w, strip_h);
         let mid = Rect::new(r.x, r.y + strip_h, r.w, head_h);
         let bot = Rect::new(r.x, r.y + strip_h + head_h, r.w, strip_h);
-        mesh.rect(top, theme.inlet_strip);
+        mesh.rect(top, theme.port_strip);
         mesh.rect(mid, theme.object_fill);
-        mesh.rect(bot, theme.outlet_strip);
+        mesh.rect(bot, theme.port_strip);
         let sel = selected.contains(&i);
         let edge = if sel {
             theme.selected_edge

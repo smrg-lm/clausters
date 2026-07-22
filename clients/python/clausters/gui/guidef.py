@@ -949,10 +949,13 @@ def graph(id: int | None = None, *, boxes=None, cords=None,
     - ``cords`` — a flat ``[from_box, outlet, to_box, inlet, ...]`` list, the
       indices within each box's inlet/outlet lists.
 
-    A box is drawn as three color-coded bands: a top strip of **inlet cells**, the
-    def name in the wider middle, a bottom strip of **outlet cells**. Each port is
-    a labelled square holding its name — the square a cord connects to — so a box
-    reads like its signal flow (an edge with no ports keeps its strip, empty).
+    A box is drawn as three bands: a top strip of **inlet cells** and a bottom
+    strip of **outlet cells** (both green, ``port_strip``), the def name in the
+    wider middle (blue, ``object_fill``). Each port is a labelled square holding
+    its name — the square a cord connects to — so a box reads like its signal flow
+    (an edge with no ports keeps its strip, empty). The band, port, and cord colors
+    are theme roles (``port_strip``, ``port``, ``object_fill``, ``cord``),
+    configurable per widget through the ``theme`` prop like any other color.
 
     The patch is a **pan/zoom canvas**, so put it in a `scroll` workspace: a plain
     drag on empty canvas sweeps the marquee box-selection, and **Shift+drag pans**
