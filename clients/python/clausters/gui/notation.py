@@ -29,10 +29,151 @@ _TRANSFORM = re.compile(rf"(translate|scale)\(\s*({_NUM})\s*[, ]?\s*({_NUM})?\s*
 _LINE = re.compile(rf"^M\s*({_NUM})\s+({_NUM})\s+L\s*({_NUM})\s+({_NUM})\s*$")
 
 
+_KEY_UP, _KEY_DOWN = 38, 40  # verovio's keyDown codes (vrvdef.h)
+_UNDO_LIMIT = 64  # snapshots kept; an MEI page is small, but not free
+
+
+class Score:
+    """A loaded score, kept alive so it can be **edited** and re-engraved.
+
+    `engrave` is the one-shot form — load, draw, discard. This is the stateful
+    one: it holds the verovio toolkit open, so an edit can be applied to the
+    same document the display list was drawn from and the page re-engraved
+    against it. The MEI ``xml:id``s survive editing, which is what lets the host
+    keep its selection across the round trip: the id the user clicked still
+    names the same note afterwards.
+
+    Every edit runs the same three steps, because verovio needs all of them:
+    the editor action, then ``commit`` (which is what re-runs the layout — an
+    action alone changes the document but leaves the drawing stale), then a
+    reload of the edited MEI. That last step looks redundant and is not: the
+    MIDI/timemap cache is *not* invalidated by an edit, so without it a
+    transposed note keeps sounding at its old pitch. It costs ~2 ms.
+
+    Undo is ours, not verovio's — a stack of MEI snapshots. Reloading the
+    document to refresh those caches resets the editor's own undo stack, so its
+    stack could not survive the cycle anyway; and its `canUndo`/`canRedo` are
+    unreliable (a successful edit can leave `canUndo` false) while `undo` on an
+    empty stack crashes the process. Owning the stack sidesteps all three.
+    """
+
+    def __init__(self, data: str, *, scale: int = 40, page_width: int = 2100,
+                 options: dict | None = None):
+        self._tk = _toolkit(data, scale=scale, page_width=page_width,
+                            options=options)
+        self._undo: list[str] = []
+        self._redo: list[str] = []
+        self._drawn = False
+
+    def display_list(self, page: int = 1) -> dict:
+        """This score engraved into a ``score`` display list — the same three
+        layers `engrave` returns, but from the live document, so it reflects
+        every edit applied so far."""
+        dl = _display_list(self._tk, page)
+        self._drawn = True
+        return dl
+
+    def mei(self) -> str:
+        """The score as MEI, ids and all — the format to persist, and what the
+        undo stack is made of."""
+        return self._tk.getMEI({})
+
+    @property
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    @property
+    def can_redo(self) -> bool:
+        return bool(self._redo)
+
+    def undo(self) -> bool:
+        """Step back one edit. False (never a crash) when there is nothing to
+        undo."""
+        if not self._undo:
+            return False
+        self._redo.append(self.mei())
+        return self._load(self._undo.pop())
+
+    def redo(self) -> bool:
+        """Step forward again after `undo`; False when there is nothing to redo."""
+        if not self._redo:
+            return False
+        self._undo.append(self.mei())
+        return self._load(self._redo.pop())
+
+    def transpose(self, element_id: str, steps: int) -> bool:
+        """Move a note by ``steps`` **diatonic** steps along the staff — up when
+        positive — as one undo step.
+
+        This is the pitch edit, and it is deliberately expressed in steps rather
+        than in a position: verovio's coordinate-taking `drag` reads an absolute
+        page y in a frame that does not line up with the display list's (passing
+        a note its own drawn y moves it six steps), so a caller would have to
+        carry an unexplained offset. Steps are exact, and the host already knows
+        the staff geometry needed to turn a gesture into them.
+        """
+        if not steps:
+            return False
+        key = _KEY_UP if steps > 0 else _KEY_DOWN
+        return self._apply([("keyDown", {"elementId": element_id, "key": key})]
+                           * abs(steps))
+
+    def edit(self, action: str, **param) -> bool:
+        """Apply one raw verovio editor action (``set``, ``insert``, ``delete``,
+        ...) as a single undo step — the escape hatch for what `transpose` does
+        not cover. Returns whether verovio accepted it; a rejected action leaves
+        the score untouched."""
+        return self._apply([(action, param)])
+
+    # -- internals ----------------------------------------------------------
+
+    def _apply(self, actions: list[tuple[str, dict]]) -> bool:
+        """Run ``actions`` as one undo step, then make every derived structure
+        agree with the result. Rolls back if verovio rejects any of them, so a
+        failed edit is not a half-edited score."""
+        self._ensure_drawn()
+        before = self.mei()
+        ok = True
+        for action, param in actions:
+            ok = self._tk.edit({"action": action, "param": param}) and ok
+        self._tk.edit({"action": "commit"})  # re-runs the layout
+        if not ok:
+            self._load(before)
+            return False
+        self._undo.append(before)
+        del self._undo[:-_UNDO_LIMIT]
+        self._redo.clear()
+        # Reload our own edited MEI: the layout is fresh after `commit`, but the
+        # MIDI/timemap cache is not, and `notes` is read from it.
+        return self._load(self.mei())
+
+    def _load(self, mei: str) -> bool:
+        self._drawn = False
+        return bool(self._tk.loadData(mei))
+
+    def _ensure_drawn(self) -> None:
+        """Draw the page if it has not been drawn since the last load.
+
+        Editing a document that has been loaded but never rendered **segfaults**
+        — the editor reaches through drawing state the load does not build.
+        Neither ``redoLayout()`` nor ``renderToTimemap()`` builds it; only
+        rendering the page does. Since every edit reloads (see `_apply`), two
+        edits in a row would hit exactly that, as would editing a `Score` nobody
+        has drawn yet. The flag keeps it to one render either way: the common
+        path draws the page anyway, to send it.
+        """
+        if not self._drawn:
+            self._tk.renderToSVG(1)
+            self._drawn = True
+
+
 def engrave(data: str, *, page: int = 1, scale: int = 40,
             page_width: int = 2100, options: dict | None = None) -> dict:
     """Engrave ``data`` (a score in any format verovio auto-detects) into a
     ``score`` display list.
+
+    One-shot: the score is loaded, drawn and discarded. Use `Score` instead when
+    the page has to be **edited** and redrawn.
 
     The result holds one engraving, in three layers:
 
@@ -58,8 +199,12 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     is not installed.
     """
     tk = _toolkit(data, scale=scale, page_width=page_width, options=options)
-    svg = tk.renderToSVG(page)
-    dl = svg_to_display_list(svg)
+    return _display_list(tk, page)
+
+
+def _display_list(tk, page: int) -> dict:
+    """The three layers, from a toolkit that already holds a laid-out score."""
+    dl = svg_to_display_list(tk.renderToSVG(page))
     timemap = _timemap(tk)
     dl["cursors"] = _cursor_track(dl, timemap)
     dl["notes"] = _note_events(tk, timemap)

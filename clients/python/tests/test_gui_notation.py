@@ -61,6 +61,79 @@ def test_score_view_places_the_rate_on_the_inner_score():
     assert inner["sample_rate"] == 48000.0
 
 
+def _edited_score():
+    """A live score to edit, and the id of its first (sounding) note."""
+    pytest.importorskip("verovio")
+    s = notation.Score(PHRASE)
+    return s, s.display_list()["notes"][0]["id"]
+
+
+def _pitches(score):
+    return [n["pitch"] for n in score.display_list()["notes"]]
+
+
+def test_transposing_moves_the_pitch_by_diatonic_steps():
+    s, nid = _edited_score()
+    assert _pitches(s)[0] == 60           # middle C
+    assert s.transpose(nid, -2) is True
+    assert _pitches(s)[0] == 57           # two steps down the staff: A3
+    assert s.transpose(nid, 3) is True
+    assert _pitches(s)[0] == 62           # three back up: D4
+    assert s.transpose(nid, 0) is False   # nothing to do, and no undo step
+
+
+def test_editing_keeps_the_ids_the_host_selects_by():
+    s, nid = _edited_score()
+    before = [n["id"] for n in s.display_list()["notes"]]
+    s.transpose(nid, -1)
+    dl = s.display_list()
+    assert [n["id"] for n in dl["notes"]] == before
+    # the edited note is still drawn, under the same id
+    assert nid in {p.get("id") for p in dl["prims"]}
+
+
+def test_undo_and_redo_walk_the_edits():
+    s, nid = _edited_score()
+    s.transpose(nid, -2)
+    s.transpose(nid, -1)
+    assert (s.can_undo, s.can_redo) == (True, False)
+    assert s.undo() is True
+    assert _pitches(s)[0] == 57
+    assert s.undo() is True
+    assert _pitches(s)[0] == 60
+    assert s.can_undo is False
+    assert s.redo() is True
+    assert _pitches(s)[0] == 57
+    assert s.can_redo is True
+
+
+def test_undo_on_a_fresh_score_answers_instead_of_crashing():
+    # verovio's own undo dereferences an empty stack and takes the process
+    # down, so the stack is ours -- this test is the guard for that.
+    s, _ = _edited_score()
+    assert s.can_undo is False
+    assert s.undo() is False
+    assert s.redo() is False
+    assert _pitches(s)[0] == 60
+
+
+def test_a_rejected_edit_leaves_the_score_untouched():
+    s, nid = _edited_score()
+    before = _pitches(s)
+    assert s.edit("nonsense", elementId=nid) is False
+    assert _pitches(s) == before
+    assert s.can_undo is False
+
+
+def test_the_score_round_trips_through_mei():
+    s, nid = _edited_score()
+    s.transpose(nid, -2)
+    mei = s.mei()
+    assert "<note" in mei and nid in mei
+    # re-engraving the exported MEI reproduces the edited score, ids included
+    assert [n["pitch"] for n in notation.engrave(mei)["notes"]] == _pitches(s)
+
+
 def test_engraving_shares_ids_and_time_between_cursors_and_notes():
     pytest.importorskip("verovio")
     dl = notation.engrave(PHRASE)
