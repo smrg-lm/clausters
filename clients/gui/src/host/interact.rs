@@ -944,6 +944,41 @@ pub(crate) fn piano_note_args(pitch: i32, velocity: i32, state: i32, channel: i3
     ]
 }
 
+/// Select an engraved element on a `score` by its MEI `xml:id` (`None` clears
+/// the selection). Returns `true` when the selection actually changed, so a
+/// re-click on the element already selected costs no repaint and no event.
+pub(crate) fn score_select(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    id: Option<&str>,
+) -> bool {
+    let Some(w) = host
+        .window_def_mut(def_id)
+        .and_then(|t| t.find_mut(widget_id))
+    else {
+        return false;
+    };
+    let WidgetKind::Score(data) = &mut w.kind else {
+        return false;
+    };
+    if data.selected.as_deref() == id {
+        return false;
+    }
+    data.selected = id.map(str::to_string);
+    true
+}
+
+/// A score selection event's payload — `"element" <xml:id>`, the empty string
+/// meaning the selection was cleared. The id is the MEI one the client engraved
+/// from, so a driver looks the element straight up in its own score.
+pub(crate) fn score_element_args(id: Option<&str>) -> Vec<OscType> {
+    vec![
+        OscType::String("element".into()),
+        OscType::String(id.unwrap_or_default().into()),
+    ]
+}
+
 /// Snaps a timeline sample value to a drag grid: to the nearest multiple of
 /// `grid` when it is positive, else to a whole sample.
 pub(crate) fn snap(v: f64, grid: f64) -> f64 {

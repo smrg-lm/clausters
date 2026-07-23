@@ -67,6 +67,70 @@ impl Affine {
     pub fn apply(self, x: f32, y: f32) -> [f32; 2] {
         [self.tx + self.sx * x, self.ty + self.sy * y]
     }
+
+    /// The inverse map, or `None` when a scale collapsed to zero (a degenerate
+    /// transform has no point to map back to).
+    pub fn invert(self) -> Option<Affine> {
+        if self.sx == 0.0 || self.sy == 0.0 {
+            return None;
+        }
+        Some(Affine {
+            tx: -self.tx / self.sx,
+            ty: -self.ty / self.sy,
+            sx: 1.0 / self.sx,
+            sy: 1.0 / self.sy,
+        })
+    }
+}
+
+/// An axis-aligned page-unit box, with `x0 <= x1` and `y0 <= y1`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bounds {
+    pub x0: f32,
+    pub y0: f32,
+    pub x1: f32,
+    pub y1: f32,
+}
+
+impl Bounds {
+    /// The box `xf` maps this one onto — still axis-aligned, since `xf` only
+    /// translates and scales; a negative scale flips it, so the corners are
+    /// re-ordered.
+    fn transformed(self, xf: Affine) -> Bounds {
+        let [ax, ay] = xf.apply(self.x0, self.y0);
+        let [bx, by] = xf.apply(self.x1, self.y1);
+        Bounds {
+            x0: ax.min(bx),
+            y0: ay.min(by),
+            x1: ax.max(bx),
+            y1: ay.max(by),
+        }
+    }
+
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x0 && x <= self.x1 && y >= self.y0 && y <= self.y1
+    }
+
+    fn area(&self) -> f32 {
+        (self.x1 - self.x0) * (self.y1 - self.y0)
+    }
+
+    fn grown(self, m: f32) -> Bounds {
+        Bounds {
+            x0: self.x0 - m,
+            y0: self.y0 - m,
+            x1: self.x1 + m,
+            y1: self.y1 + m,
+        }
+    }
+}
+
+/// One entry of the hit-testing index: the page-unit extent of an identified
+/// primitive, paired with the MEI `xml:id` it was engraved from.
+#[derive(Clone, Debug)]
+pub struct HitBox {
+    pub id: String,
+    pub bounds: Bounds,
 }
 
 /// One placed element of the engraved page, in verovio page units.
@@ -158,6 +222,13 @@ pub struct ScoreData {
     /// The sample rate converting the clock to musical ms (0 = unknown, use the
     /// server's own rate).
     pub sample_rate: f64,
+    /// The hit-testing index: the page-unit extent of every identified
+    /// primitive, derived from `prims` and `glyphs` when the display list is
+    /// parsed (see [`ScoreData::index`]).
+    pub hits: Vec<HitBox>,
+    /// The selected element's MEI `xml:id`, drawn highlighted; `None` = nothing
+    /// selected. Set by a click on the page and by `/gui_set selected`.
+    pub selected: Option<String>,
 }
 
 impl Default for ScoreData {
@@ -171,8 +242,19 @@ impl Default for ScoreData {
             playhead: -1.0,
             playhead_at: -1.0,
             sample_rate: 0.0,
+            hits: Vec::new(),
+            selected: None,
         }
     }
+}
+
+/// The three roles a score paints in: the engraving ink, the playback cursor
+/// and the selection highlight — bundled so the theme travels as one argument.
+#[derive(Clone, Copy, Debug)]
+pub struct ScoreColors {
+    pub ink: Color,
+    pub playhead: Color,
+    pub selection: Color,
 }
 
 impl ScoreData {
@@ -227,7 +309,85 @@ impl ScoreData {
             .get("sample_rate")
             .and_then(Value::as_f64)
             .unwrap_or(0.0);
+        data.selected = props
+            .get("selected")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        data.index();
         data
+    }
+
+    /// Rebuild the hit-testing index from the placed primitives: one page-unit
+    /// box per identified primitive, so a click can name the element under it.
+    /// Done once when the display list arrives — the geometry never moves
+    /// afterwards, and re-deriving it per click would mean re-parsing every
+    /// glyph outline on every press.
+    pub fn index(&mut self) {
+        // glyph outlines repeat all over a page (one notehead shape, hundreds of
+        // notes), so each codepoint's local extent is measured once.
+        let mut local: HashMap<u32, Option<Bounds>> = HashMap::new();
+        self.hits.clear();
+        for prim in &self.prims {
+            let Some(id) = prim.id() else { continue };
+            let bounds = match prim {
+                Prim::Glyph { cp, xf, .. } => {
+                    let b = *local
+                        .entry(*cp)
+                        .or_insert_with(|| self.glyphs.get(cp).and_then(|d| path_bounds(d)));
+                    b.map(|b| b.transformed(*xf))
+                }
+                Prim::Fill { d, xf, .. } => path_bounds(d).map(|b| b.transformed(*xf)),
+                Prim::Line { pts, width, .. } => {
+                    let mut b = Bounds {
+                        x0: f32::MAX,
+                        y0: f32::MAX,
+                        x1: f32::MIN,
+                        y1: f32::MIN,
+                    };
+                    for p in pts {
+                        b.x0 = b.x0.min(p[0]);
+                        b.y0 = b.y0.min(p[1]);
+                        b.x1 = b.x1.max(p[0]);
+                        b.y1 = b.y1.max(p[1]);
+                    }
+                    // a stroke is a hairline in one axis: give it its width.
+                    Some(b.grown(width * 0.5))
+                }
+                Prim::Text { s, x, y, size, .. } => Some(Bounds {
+                    x0: *x,
+                    // the host font is roughly 0.6 em wide per character
+                    x1: x + 0.6 * size * s.chars().count() as f32,
+                    y0: y - size,
+                    y1: *y,
+                }),
+            };
+            if let Some(bounds) = bounds {
+                self.hits.push(HitBox {
+                    id: id.to_string(),
+                    bounds,
+                });
+            }
+        }
+    }
+
+    /// The MEI `xml:id` of the element under the screen point `(x, y)`, with the
+    /// page fitted into `rect` — the smallest box containing it, so a notehead
+    /// wins over the staff line it sits on. `None` when the click lands on blank
+    /// paper.
+    pub fn hit(&self, rect: Rect, x: f32, y: f32) -> Option<&str> {
+        let inv = self.fit(rect).invert()?;
+        let [px, py] = inv.apply(x, y);
+        self.hits
+            .iter()
+            .filter(|h| h.bounds.contains(px, py))
+            .min_by(|a, b| {
+                a.bounds
+                    .area()
+                    .partial_cmp(&b.bounds.area())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|h| h.id.as_str())
     }
 
     /// The musical time (ms) the cursor sits at this frame: the engine clock
@@ -266,11 +426,12 @@ impl ScoreData {
     }
 
     /// Tessellate the whole page into `mesh`, mapped into `rect` by [`fit`] and
-    /// painted in `color`; the playback cursor draws over it in
-    /// `playhead_color` at musical time `head` ms (negative = none, as returned
-    /// by [`head_ms`]). Geometry is clipped to `rect` intersected with the
-    /// caller's `clip` (the enclosing scroll area, if any); the caller's clip is
-    /// restored on return so the surrounding frame pass is unaffected.
+    /// painted in `colors`: the engraving in the ink, the selected element
+    /// highlighted under it, and the playback cursor over it at musical time
+    /// `head` ms (negative = none, as returned by [`head_ms`]). Geometry is
+    /// clipped to `rect` intersected with the caller's `clip` (the enclosing
+    /// scroll area, if any); the caller's clip is restored on return so the
+    /// surrounding frame pass is unaffected.
     ///
     /// [`fit`]: ScoreData::fit
     /// [`head_ms`]: ScoreData::head_ms
@@ -280,15 +441,17 @@ impl ScoreData {
         rect: Rect,
         clip: Option<Rect>,
         head: f32,
-        color: Color,
-        playhead_color: Color,
+        colors: ScoreColors,
     ) {
+        let color = colors.ink;
         let fit = self.fit(rect);
         mesh.set_clip(Some(intersect(rect, clip)));
         // Curve-flattening tolerance in page units so it lands ~1/3 device
         // pixel after fitting — fine enough to read smooth, coarse enough to
         // keep the triangle count bounded by the screen, not the notation.
         let tol_page = 0.33 / fit.sx.max(f32::MIN_POSITIVE);
+        // under the ink, so the engraving still reads through the highlight
+        self.draw_selection(mesh, fit, colors.selection);
         let mut tess = FillTessellator::new();
         for prim in &self.prims {
             match prim {
@@ -335,8 +498,25 @@ impl ScoreData {
                 }
             }
         }
-        self.draw_playhead(mesh, fit, head, playhead_color);
+        self.draw_playhead(mesh, fit, head, colors.playhead);
         mesh.set_clip(clip);
+    }
+
+    /// Highlight every primitive of the selected element — one MEI id can own
+    /// several (a note is a notehead plus its stem), so the whole gesture of it
+    /// lights up rather than one glyph of it.
+    fn draw_selection(&self, mesh: &mut Mesh, fit: Affine, color: Color) {
+        let Some(sel) = self.selected.as_deref() else {
+            return;
+        };
+        for h in self.hits.iter().filter(|h| h.id == sel) {
+            // a hair of page-unit padding so a hairline stem still shows a band
+            let b = h.bounds.grown(20.0).transformed(fit);
+            mesh.rect(
+                Rect::new(b.x0, b.y0, b.x1 - b.x0, b.y1 - b.y0),
+                super::theme::with_alpha(color, 0.30),
+            );
+        }
     }
 
     /// Draw the playback cursor at musical time `head` (ms): the vertical
@@ -434,6 +614,20 @@ fn parse_prim(v: &Value) -> Option<Prim> {
         }),
         _ => None,
     }
+}
+
+/// The extent of an SVG path `d` in its own coordinates, from the bezier control
+/// hull — a slight over-estimate of the true curve extent, which is what a hit
+/// target wants anyway (a click just off a notehead's edge still names it).
+fn path_bounds(d: &str) -> Option<Bounds> {
+    let path = build_path(d)?;
+    let b = lyon::algorithms::aabb::fast_bounding_box(&path);
+    Some(Bounds {
+        x0: b.min.x,
+        y0: b.min.y,
+        x1: b.max.x,
+        y1: b.max.y,
+    })
 }
 
 /// How much a glyph's own transform shrinks page units, so the tolerance passed
@@ -702,6 +896,14 @@ impl<'a> Tokens<'a> {
 mod tests {
     use super::*;
 
+    /// One opaque palette for the render tests: they assert that geometry
+    /// lands, not which role painted it.
+    const INK: ScoreColors = ScoreColors {
+        ink: [1.0; 4],
+        playhead: [1.0; 4],
+        selection: [1.0; 4],
+    };
+
     #[test]
     fn affine_composition_matches_manual() {
         let a = Affine {
@@ -812,8 +1014,7 @@ mod tests {
             Rect::new(0.0, 0.0, 500.0, 200.0),
             None,
             -1.0,
-            [1.0; 4],
-            [1.0; 4],
+            INK,
         );
         assert!(
             !mesh.is_empty(),
@@ -837,8 +1038,7 @@ mod tests {
             Rect::new(0.0, 0.0, 500.0, 200.0),
             None,
             -1.0,
-            [1.0; 4],
-            [1.0; 4],
+            INK,
         );
         assert!(
             !mesh.is_empty(),
@@ -872,8 +1072,7 @@ mod tests {
             Rect::new(0.0, 0.0, 1000.0, 400.0),
             None,
             data.head_ms(0.0, 0.0),
-            [1.0; 4],
-            [1.0; 4],
+            INK,
         );
         assert!(!mesh.is_empty(), "the playhead line should paint");
         let _ = fit;
@@ -899,8 +1098,7 @@ mod tests {
             Rect::new(0.0, 0.0, 1000.0, 400.0),
             None,
             data.head_ms(0.0, 0.0),
-            [1.0; 4],
-            [1.0; 4],
+            INK,
         );
         assert!(mesh.is_empty(), "no playhead when time is negative");
     }
@@ -938,6 +1136,71 @@ mod tests {
         assert_eq!(no_rate.head_ms(96_000.0, 0.0), 250.0);
     }
 
+    /// A page with a notehead glyph at (500, 200) sitting on a full-width staff
+    /// line — the two overlapping hit targets a click has to choose between.
+    fn indexed_page() -> ScoreData {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{
+                "vb": [1000, 400],
+                "glyphs": {"E0A4": "M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+                "prims": [
+                    {"k": "line", "pts": [[0, 200], [1000, 200]], "w": 13, "id": "staff"},
+                    {"k": "glyph", "cp": "E0A4", "xf": [500, 200, 0.72, -0.72], "id": "n1"}
+                ]
+            }"#,
+        )
+        .unwrap();
+        ScoreData::parse(&props)
+    }
+
+    #[test]
+    fn a_click_names_the_smallest_element_under_it() {
+        let data = indexed_page();
+        assert_eq!(data.hits.len(), 2);
+        // fitted 1:1 (a 1000x400 page into a 1000x400 rect), so page == screen
+        let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+        assert_eq!(data.fit(rect).sx, 1.0);
+        // over the notehead, where both boxes overlap: the note wins
+        assert_eq!(data.hit(rect, 550.0, 190.0), Some("n1"));
+        // on the staff line away from the note: only the line is there
+        assert_eq!(data.hit(rect, 100.0, 200.0), Some("staff"));
+        // blank paper names nothing
+        assert_eq!(data.hit(rect, 100.0, 380.0), None);
+    }
+
+    #[test]
+    fn hit_testing_follows_the_page_fit() {
+        let data = indexed_page();
+        // half scale, so the notehead's page x=500 lands at screen x=250
+        let rect = Rect::new(0.0, 0.0, 500.0, 200.0);
+        assert_eq!(data.fit(rect).sx, 0.5);
+        assert_eq!(data.hit(rect, 275.0, 95.0), Some("n1"));
+        // the same screen point on the unscaled page is blank paper
+        assert_eq!(data.hit(Rect::new(0.0, 0.0, 1000.0, 400.0), 275.0, 95.0), None);
+    }
+
+    #[test]
+    fn a_selected_element_is_highlighted() {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,400],"glyphs":{},
+                "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"}],
+                "selected":"staff"}"#,
+        )
+        .unwrap();
+        let mut data = ScoreData::parse(&props);
+        assert_eq!(data.selected.as_deref(), Some("staff"));
+        let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+        let mut with = Mesh::new();
+        data.render(&mut with, rect, None, -1.0, INK);
+        data.selected = None;
+        let mut without = Mesh::new();
+        data.render(&mut without, rect, None, -1.0, INK);
+        assert!(
+            with.positions().count() > without.positions().count(),
+            "the highlight should add geometry over the engraving"
+        );
+    }
+
     #[test]
     fn line_prim_renders_within_clip() {
         let mut data = ScoreData {
@@ -956,8 +1219,7 @@ mod tests {
             Rect::new(0.0, 0.0, 200.0, 200.0),
             None,
             -1.0,
-            [1.0; 4],
-            [1.0; 4],
+            INK,
         );
         assert!(!mesh.is_empty(), "a staff line should paint");
     }

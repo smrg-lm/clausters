@@ -697,7 +697,8 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
 
 def score(id: int | None = None, *, display_list: dict | None = None,
           playhead: float | None = None, playhead_at: float | None = None,
-          sample_rate: float | None = None, color: str | None = None, **props) -> dict:
+          sample_rate: float | None = None, selected: str | None = None,
+          color: str | None = None, **props) -> dict:
     """An engraved music-notation ``score`` page.
 
     The host is only the renderer: it fits the engraved page into the widget
@@ -710,8 +711,16 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     ``vb`` (the ``[width, height]`` page-unit viewBox), ``glyphs`` (a SMuFL
     codepoint-to-outline table) and ``prims`` (the placed glyphs, lines and
     fills). Build it from a score with `clausters.gui.notation.engrave`, which
-    drives verovio — an optional dependency the host never needs. Read-only for
-    now; each primitive still carries its MEI ``id`` for a later editing pass.
+    drives verovio — an optional dependency the host never needs.
+
+    Every primitive carries the MEI ``xml:id`` it was engraved from, and that id
+    is what a **click** reports: pressing the page emits an ``"element"`` event
+    carrying the id under the cursor (the smallest one, so a notehead wins over
+    the staff line it sits on), and an empty id when the press lands on blank
+    paper. The clicked element is highlighted; ``selected`` sets or clears that
+    highlight from the script (``GuiHost.set(score_id, selected="")`` clears
+    it). Since the id is the client's own, a driver resolves it straight back to
+    the note in its score — the seam an editing pass builds on.
 
     The **playback cursor** rides the display list's ``cursors`` track (the
     engraved timemap: musical time in ms to the placed x of the event sounding
@@ -730,7 +739,7 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     """
     dl = dict(display_list or {})
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
-                       sample_rate=sample_rate,
+                       sample_rate=sample_rate, selected=selected,
                        vb=dl.get("vb"), glyphs=dl.get("glyphs"),
                        prims=dl.get("prims"), cursors=dl.get("cursors"))
     return node("score", id=id, **extra, **props)

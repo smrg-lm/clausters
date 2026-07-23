@@ -704,6 +704,20 @@ impl Gestures {
                     out.push(GestureEffect::Redraw(def_id));
                 }
             }
+            WidgetKind::Score(ref data) => {
+                // A press names the engraved element under it by its MEI id —
+                // the same id the client engraved from, so a driver resolves it
+                // in its own score. Pressing blank paper clears the selection.
+                let picked = data.hit(rect, cx as f32, cy as f32).map(str::to_string);
+                if interact::score_select(host, def_id, id, picked.as_deref()) {
+                    out.push(GestureEffect::Emit {
+                        def_id,
+                        widget_id: id,
+                        args: interact::score_element_args(picked.as_deref()),
+                    });
+                    out.push(GestureEffect::Redraw(def_id));
+                }
+            }
             WidgetKind::PianoRoll { .. } => {
                 let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy)
                 else {
@@ -2829,6 +2843,62 @@ mod tests {
         let after = host.timeline_nav(60).unwrap().0.len;
         assert!(after < before, "wheel-in shrinks the visible window");
         assert!(has_emit_tag(&effects, 60, "view"));
+    }
+
+    // --- score ---
+
+    /// A one-score window, the page fitted 1:1 into the child rect: a window of
+    /// 1012x412 gives the child (6,6,1000,400), matching the 1000x400 viewBox.
+    fn score_host() -> Host {
+        host_from(
+            r#"{"type":"window","children":[
+                {"id":80,"type":"score","vb":[1000,400],
+                 "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+                 "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
+                          {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
+        )
+    }
+
+    fn score_selected(host: &Host) -> Option<String> {
+        match &host.window_def(1).unwrap().find(80).unwrap().kind {
+            WidgetKind::Score(data) => data.selected.clone(),
+            other => panic!("not a score: {other:?}"),
+        }
+    }
+
+    fn element_emits(effects: &[GestureEffect]) -> Vec<String> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                GestureEffect::Emit { args, .. }
+                    if args.first() == Some(&OscType::String("element".into())) =>
+                {
+                    match &args[1..] {
+                        [OscType::String(s)] => Some(s.clone()),
+                        _ => panic!("malformed element payload: {args:?}"),
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_press_on_the_score_selects_the_element_and_emits_its_id() {
+        let mut host = score_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 1012, 412);
+        // the notehead sits at page (500, 200) -> child rect origin (6, 6)
+        let effects = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+        assert_eq!(element_emits(&effects), vec!["n1".to_string()]);
+        assert_eq!(score_selected(&host).as_deref(), Some("n1"));
+        // pressing the same element again changes nothing: no event, no repaint
+        let again = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+        assert!(again.is_empty(), "a re-press on the selection is inert");
+        // blank paper clears it, reported as an empty id
+        let cleared = g.press(&mut host, &ctx, 106.0, 386.0, &mut || false);
+        assert_eq!(element_emits(&cleared), vec![String::new()]);
+        assert_eq!(score_selected(&host), None);
     }
 
     // --- piano ---

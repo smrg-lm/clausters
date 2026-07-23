@@ -22,6 +22,15 @@ def test_score_carries_the_playhead_anchor_and_rate():
     assert "color" not in node
 
 
+def test_score_carries_the_selected_element():
+    node = score(11, display_list={"vb": [100, 50], "glyphs": {}, "prims": []},
+                 selected="note-1")
+    assert node["selected"] == "note-1"
+    # the empty string is the clear, and must survive `_drop_none`
+    assert score(11, selected="")["selected"] == ""
+    assert "selected" not in score(11)
+
+
 def test_score_sends_the_drawing_layers_but_not_the_notes():
     node = score(11, display_list={"vb": [100, 50], "glyphs": {}, "prims": [],
                                    "cursors": [{"t": 0, "x": 1, "y0": 0, "y1": 2}],

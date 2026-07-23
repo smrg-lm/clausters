@@ -272,6 +272,11 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             // sweeps on its own, one message per pass instead of per frame.
             "playhead_at" => v.as_f64().map(|t| data.playhead_at = t).is_some(),
             "sample_rate" => v.as_f64().map(|r| data.sample_rate = r).is_some(),
+            // Select an element by its MEI id; the empty string clears it.
+            "selected" => v
+                .as_str()
+                .map(|s| data.selected = (!s.is_empty()).then(|| s.to_string()))
+                .is_some(),
             _ => false,
         },
         WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {

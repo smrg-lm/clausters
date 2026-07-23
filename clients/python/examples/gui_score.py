@@ -15,6 +15,12 @@ sample clock -- so the score follows the audio with **one message per pass**
 (``playhead_at``), the host reading the clock every frame from there, exactly
 as the timeline views do.
 
+The page is also **clickable**: every primitive carries the MEI ``xml:id`` it
+was engraved from, so a press reports the element under the cursor as an
+``"element"`` event and the host highlights it. Because that id is the client's
+own, this script looks the note up in its own engraving and sounds it -- the
+round trip an editing pass builds on.
+
 Install the optional engraver::
 
     pip install verovio
@@ -25,13 +31,13 @@ Then, with the client importable (``pip install ./clients/python`` or
     python clients/python/examples/gui_score.py
 
 A window opens showing the engraved phrase; it sounds once through and the
-cursor follows it. Close the window to stop. Needs an audio device, a display
-and a GPU adapter.
+cursor follows it. Click a note to hear it again. Close the window to stop.
+Needs an audio device, a display and a GPU adapter.
 """
 
 import sys
 
-from clausters import Event, Session
+from clausters import Event, Session, play
 from clausters.gui import notation, window
 from clausters.seq.timeline import Playhead, Timeline
 
@@ -72,29 +78,46 @@ def main():
           f"{len(dl['prims'])} primitives, {len(dl['cursors'])} cursor stops, "
           f"{len(dl['notes'])} notes, page {dl['vb']}")
 
-    session = Session.live(tempo=1.0)
-    server = session.server
-    sr = float(server.options.sample_rate)
-    gui = session.gui()
-    gui.define(1, scene(dl, sr))
+    # the session is the ambient one for the whole block, so a bare `play` below
+    # resolves to its server and clock
+    with Session.live(tempo=1.0) as session:
+        server = session.server
+        sr = float(server.options.sample_rate)
+        gui = session.gui()
+        gui.define(1, scene(dl, sr))
 
-    session.start()
-    Playhead(phrase_timeline(dl["notes"]), session.clock, server).play()
-    # Anchor the cursor: `playhead_at` is the sample-clock value that score time
-    # 0 maps to, so the host draws the cursor at (clock - playhead_at) every
-    # frame with nothing more sent. The events sound `latency` ahead of their
-    # play time, so the anchor is the clock now plus that same latency.
-    _, args = server.request("/clock", expect=("/clock.reply",))
-    gui.set(11, playhead_at=float(args[0]) + server.latency * sr)
-    print("the phrase plays and the cursor follows the engine clock; "
-          "close the window to stop")
+        session.start()
+        Playhead(phrase_timeline(dl["notes"]), session.clock, server).play()
+        # Anchor the cursor: `playhead_at` is the sample-clock value that score
+        # time 0 maps to, so the host draws the cursor at (clock - playhead_at)
+        # every frame with nothing more sent. The events sound `latency` ahead of
+        # their play time, so the anchor is the clock now plus that same latency.
+        _, args = server.request("/clock", expect=("/clock.reply",))
+        gui.set(11, playhead_at=float(args[0]) + server.latency * sr)
+        print("the phrase plays and the cursor follows the engine clock; "
+              "click a note to hear it, close the window to stop")
 
-    while True:
-        msg = gui.poll(timeout=0.1)
-        if msg is not None and msg[0] == "/gui_closed":
-            print("window closed")
-            break
-    session.close()
+        # The click round trip: the widget reports the MEI id under the cursor,
+        # and that id indexes this script's own engraving -- so the clicked
+        # notehead sounds, with nothing shared but the id.
+        by_id = {note["id"]: note for note in dl["notes"]}
+        while True:
+            msg = gui.poll(timeout=0.1)
+            if msg is None:
+                continue
+            addr, args = msg
+            if addr == "/gui_closed":
+                print("window closed")
+                break
+            if addr == "/gui_event" and len(args) >= 3 and args[1] == "element":
+                note = by_id.get(args[2])
+                if note is None:
+                    print(f"  clicked {args[2] or '(blank paper)'}")
+                    continue
+                print(f"  clicked note {args[2]}: MIDI {note['pitch']} "
+                      f"at {note['t']:.0f} ms")
+                play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
+                           amp=0.15))
 
 
 if __name__ == "__main__":

@@ -1163,7 +1163,17 @@ pub(crate) fn render(
                 // The cursor sweeps off the engine clock while a pass plays
                 // (`playhead_at`), so playback costs no messages per frame.
                 let head = data.head_ms(inputs.sample_clock, inputs.sample_rate);
-                data.render(&mut mesh, p.rect, p.clip, head, th.text, th.playhead);
+                data.render(
+                    &mut mesh,
+                    p.rect,
+                    p.clip,
+                    head,
+                    super::score::ScoreColors {
+                        ink: th.text,
+                        playhead: th.playhead,
+                        selection: th.selection,
+                    },
+                );
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => controls::draw(
