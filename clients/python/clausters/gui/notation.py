@@ -32,16 +32,63 @@ _LINE = re.compile(rf"^M\s*({_NUM})\s+({_NUM})\s+L\s*({_NUM})\s+({_NUM})\s*$")
 def engrave(data: str, *, page: int = 1, scale: int = 40,
             page_width: int = 2100, options: dict | None = None) -> dict:
     """Engrave ``data`` (a score in any format verovio auto-detects) into a
-    ``score`` display list: ``{"vb": [w, h], "glyphs": {...}, "prims": [...]}``.
+    ``score`` display list.
+
+    The result holds one engraving, in three layers:
+
+    - what the host **draws** — ``vb`` (the ``[w, h]`` page-unit viewBox),
+      ``glyphs`` (a SMuFL codepoint-to-outline table) and ``prims`` (the placed
+      glyphs, lines, fills and texts);
+    - where the **cursor** goes — ``cursors``, the timemap folded into geometry
+      (``{"t", "x", "y0", "y1"}`` per onset, ``t`` in ms);
+    - what **sounds** — ``notes``, one ``{"t", "dur", "pitch", "id"}`` per note
+      (ms and MIDI pitch). This layer stays on the client: it is what a driver
+      plays, and playing it while anchoring the widget's ``playhead_at`` to the
+      sample clock of that instant puts the cursor on the sounding note. verovio
+      mints fresh ids per load, so all three layers must come from one engraving
+      — which is why one call produces them all.
 
     Pass the result to `clausters.gui.guidef.score` as its ``display_list``, or
-    to `score_view` to get a scrollable page. The score **wraps into systems**
-    at ``page_width`` (verovio page units), and the page grows as tall as the
-    music needs (all systems on one page), so a long score reads at ``scale``
-    instead of being squeezed onto one line. ``scale`` sets the staff size;
-    extra verovio ``options`` are merged over the defaults. Raises
-    ``RuntimeError`` if verovio is not installed.
+    to `score_view` to get a scrollable page; the builder sends only the drawing
+    and cursor layers. The score **wraps into systems** at ``page_width``
+    (verovio page units), and the page grows as tall as the music needs (all
+    systems on one page), so a long score reads at ``scale`` instead of being
+    squeezed onto one line. ``scale`` sets the staff size; extra verovio
+    ``options`` are merged over the defaults. Raises ``RuntimeError`` if verovio
+    is not installed.
     """
+    tk = _toolkit(data, scale=scale, page_width=page_width, options=options)
+    svg = tk.renderToSVG(page)
+    dl = svg_to_display_list(svg)
+    timemap = _timemap(tk)
+    dl["cursors"] = _cursor_track(dl, timemap)
+    dl["notes"] = _note_events(tk, timemap)
+    return dl
+
+
+def _note_events(tk, timemap: list) -> list:
+    """The score's **sounding events**, from the same layout the page was drawn
+    from: one dict per note with ``t``/``dur`` in ms, the MIDI ``pitch`` and the
+    MEI ``id``. verovio mints fresh xml:ids on every load, so these only line up
+    with the drawn primitives (and with `_cursor_track`) because they come out of
+    one toolkit — which is why this is folded into `engrave` rather than offered
+    as a second entry point."""
+    events = []
+    for entry in timemap:
+        for mei_id in entry.get("on", []):
+            midi = tk.getMIDIValuesForElement(mei_id)
+            if not midi or not midi.get("pitch"):
+                continue
+            events.append({"t": float(midi.get("time", entry.get("tstamp", 0.0))),
+                           "dur": float(midi.get("duration", 0.0)),
+                           "pitch": int(midi["pitch"]), "id": mei_id})
+    events.sort(key=lambda e: e["t"])
+    return events
+
+
+def _toolkit(data: str, *, scale: int, page_width: int, options: dict | None):
+    """A verovio toolkit with the score loaded and laid out — the single place
+    the optional dependency is imported and the layout options are set."""
     try:
         import verovio
     except ImportError as exc:  # pragma: no cover - exercised only without verovio
@@ -58,12 +105,14 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     tk.setOptions(opts)
     if not tk.loadData(data):
         raise ValueError("verovio could not load the score data")
-    svg = tk.renderToSVG(page)
-    dl = svg_to_display_list(svg)
+    return tk
+
+
+def _timemap(tk) -> list:
+    """The score's timemap: onset ms -> the MEI ids starting and stopping then.
+    verovio returns it as a list or as JSON depending on the binding version."""
     tm = tk.renderToTimemap({"includeMeasures": False})
-    timemap = json.loads(tm) if isinstance(tm, (str, bytes, bytearray)) else tm
-    dl["cursors"] = _cursor_track(dl, timemap)
-    return dl
+    return json.loads(tm) if isinstance(tm, (str, bytes, bytearray)) else tm
 
 
 def _cursor_track(display_list: dict, timemap: list) -> list:
@@ -136,13 +185,15 @@ def _system_bounds(systems, y):
 
 
 def score_view(display_list: dict, *, scroll_id: int, score_id: int,
-               width: float = 1000.0, zoom: bool = True) -> dict:
+               width: float = 1000.0, zoom: bool = True,
+               sample_rate: float | None = None) -> dict:
     """Wrap an engraved ``display_list`` in a vertical `scroll` sized to the
     page, ready to drop into a window. The content area is ``width`` wide and as
     tall as the page's aspect needs, so a multi-system score scrolls vertically
     (the wheel scrolls; ``zoom`` enables cursor-anchored zoom to read a dense
-    passage). Returns the `scroll` node; give it and the inner `score` distinct
-    ids (``scroll_id``/``score_id``)."""
+    passage). ``sample_rate`` is the rate the playback cursor reads the engine
+    clock through (omitted = the server's own). Returns the `scroll` node; give
+    it and the inner `score` distinct ids (``scroll_id``/``score_id``)."""
     from .guidef import score, scroll
 
     vb = display_list.get("vb") or [1.0, 1.0]
@@ -150,7 +201,8 @@ def score_view(display_list: dict, *, scroll_id: int, score_id: int,
     height = round(width * aspect, 1)
     return scroll(
         scroll_id,
-        score(score_id, display_list=display_list, x=0.0, y=0.0, w=width, h=height),
+        score(score_id, display_list=display_list, sample_rate=sample_rate,
+              x=0.0, y=0.0, w=width, h=height),
         axis="y", zoom=zoom, content_w=width, content_h=height,
     )
 

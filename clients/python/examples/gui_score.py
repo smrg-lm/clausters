@@ -8,31 +8,32 @@ placed glyphs, staff lines, stems and beams in page units -- and the host
 tessellates it into the same triangle mesh the rest of the chrome uses. verovio
 lives entirely on the client side; the host never depends on it.
 
-Only **two** processes are involved -- the **GUI host** and this **script**; no
-audio server is needed (nothing sounds yet -- this is the notation view).
+One engraving carries three layers: what is **drawn**, where the **playback
+cursor** sits at each onset, and the **notes** that sound. This example places
+the notes on a timeline, plays them, and anchors the cursor to the engine's
+sample clock -- so the score follows the audio with **one message per pass**
+(``playhead_at``), the host reading the clock every frame from there, exactly
+as the timeline views do.
 
 Install the optional engraver::
 
     pip install verovio
-
-Start the windowed GUI host (from ``clients/gui``)::
-
-    cargo run --bin clausters-gui -- -v
 
 Then, with the client importable (``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::
 
     python clients/python/examples/gui_score.py
 
-A window opens showing the engraved phrase. Close it to stop. Needs a display
+A window opens showing the engraved phrase; it sounds once through and the
+cursor follows it. Close the window to stop. Needs an audio device, a display
 and a GPU adapter.
 """
 
 import sys
-import time
 
-from clausters.gui import GuiHost, window
-from clausters.gui import notation
+from clausters import Event, Session
+from clausters.gui import notation, window
+from clausters.seq.timeline import Playhead, Timeline
 
 # A multi-bar phrase in Plaine & Easie -- the most compact way to type a score;
 # verovio also reads MEI, MusicXML, ABC and Humdrum through the same loader. Long
@@ -42,12 +43,26 @@ PHRASE = ("@clef:G-2\n@keysig:xF\n@timesig:4/4\n@data:"
           "4c'c'BB AAGG/ 4FFEE DDC2/ (4CEG) (4c'GE) 4C2/")
 
 
-def scene(display_list: dict) -> dict:
+def scene(display_list: dict, sample_rate: float) -> dict:
     """A window filled by a scrollable, zoomable view of the engraved score."""
     return window(
-        notation.score_view(display_list, scroll_id=10, score_id=11, width=880.0),
+        notation.score_view(display_list, scroll_id=10, score_id=11,
+                            width=880.0, sample_rate=sample_rate),
         title="Engraved score (verovio -> GPU)", w=920, h=380,
     )
+
+
+def phrase_timeline(notes: list) -> Timeline:
+    """Place the engraved notes on a `Timeline`. The session's clock runs at one
+    beat per second, so the engraving's milliseconds are beats/1000 -- score time
+    and clock time are the same axis, which is what lets one anchor tie the
+    cursor to the sound."""
+    timeline = Timeline()
+    for note in notes:
+        timeline.add(note["t"] / 1000.0,
+                     Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
+                           amp=0.12))
+    return timeline
 
 
 def main():
@@ -55,20 +70,31 @@ def main():
     dl = notation.engrave(PHRASE, page_width=1500)
     print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
           f"{len(dl['prims'])} primitives, {len(dl['cursors'])} cursor stops, "
-          f"page {dl['vb']}")
-    total = (dl["cursors"][-1]["t"] + 600.0) if dl["cursors"] else 0.0
-    with GuiHost() as gui:  # 127.0.0.1:57210 by default
-        gui.define(1, scene(dl))
-        print("the playback cursor sweeps the score on a loop; close to stop")
-        start = time.monotonic()
-        while True:
-            # advance the playhead over the score's own duration, looping
-            t = ((time.monotonic() - start) * 1000.0) % total if total else -1.0
-            gui.set(11, playhead=float(t))
-            msg = gui.poll(timeout=0.03)  # ~30 fps
-            if msg is not None and msg[0] == "/gui_closed":
-                print("window closed")
-                break
+          f"{len(dl['notes'])} notes, page {dl['vb']}")
+
+    session = Session.live(tempo=1.0)
+    server = session.server
+    sr = float(server.options.sample_rate)
+    gui = session.gui()
+    gui.define(1, scene(dl, sr))
+
+    session.start()
+    Playhead(phrase_timeline(dl["notes"]), session.clock, server).play()
+    # Anchor the cursor: `playhead_at` is the sample-clock value that score time
+    # 0 maps to, so the host draws the cursor at (clock - playhead_at) every
+    # frame with nothing more sent. The events sound `latency` ahead of their
+    # play time, so the anchor is the clock now plus that same latency.
+    _, args = server.request("/clock", expect=("/clock.reply",))
+    gui.set(11, playhead_at=float(args[0]) + server.latency * sr)
+    print("the phrase plays and the cursor follows the engine clock; "
+          "close the window to stop")
+
+    while True:
+        msg = gui.poll(timeout=0.1)
+        if msg is not None and msg[0] == "/gui_closed":
+            print("window closed")
+            break
+    session.close()
 
 
 if __name__ == "__main__":

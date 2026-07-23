@@ -135,7 +135,7 @@ pub struct Cursor {
 /// A fully engraved page ready to render: the definition viewBox (for fitting),
 /// the glyph-outline table (deduplicated by codepoint), and the placed
 /// primitives.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct ScoreData {
     /// The verovio `definition-scale` viewBox, `(width, height)` in page units.
     pub vb_w: f32,
@@ -146,9 +146,33 @@ pub struct ScoreData {
     /// The playback-cursor track (sorted by `t`), empty when the client sent no
     /// timemap.
     pub cursors: Vec<Cursor>,
-    /// Current playback time in ms, advanced live via `/gui_set playhead`;
-    /// negative means no playhead is shown.
+    /// A **static** playback time in ms, set with `/gui_set playhead`; negative
+    /// means none. It stands still — a stopped transport located on a note keeps
+    /// its cursor there, and it must not drift with the engine clock.
     pub playhead: f32,
+    /// The playhead origin: the engine sample-clock value at score time 0
+    /// (negative = not playing, fall back to the static `playhead`). Set once at
+    /// the start of a pass and the cursor then *sweeps* on its own — the host
+    /// reads the clock every frame, so playback needs zero messages.
+    pub playhead_at: f64,
+    /// The sample rate converting the clock to musical ms (0 = unknown, use the
+    /// server's own rate).
+    pub sample_rate: f64,
+}
+
+impl Default for ScoreData {
+    fn default() -> ScoreData {
+        ScoreData {
+            vb_w: 0.0,
+            vb_h: 0.0,
+            glyphs: HashMap::new(),
+            prims: Vec::new(),
+            cursors: Vec::new(),
+            playhead: -1.0,
+            playhead_at: -1.0,
+            sample_rate: 0.0,
+        }
+    }
 }
 
 impl ScoreData {
@@ -188,13 +212,39 @@ impl ScoreData {
             data.cursors
                 .sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
         }
-        // A playhead is off unless the client sets a non-negative time.
+        // A playhead is off unless the client sets a non-negative time (static)
+        // or anchors one to the engine clock (sweeping).
         data.playhead = props
             .get("playhead")
             .and_then(Value::as_f64)
             .map(|f| f as f32)
             .unwrap_or(-1.0);
+        data.playhead_at = props
+            .get("playhead_at")
+            .and_then(Value::as_f64)
+            .unwrap_or(-1.0);
+        data.sample_rate = props
+            .get("sample_rate")
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0);
         data
+    }
+
+    /// The musical time (ms) the cursor sits at this frame: the engine clock
+    /// mapped through the `playhead_at` origin while a pass is playing, else the
+    /// static `playhead`. `sample_clock` is the engine's sample count and
+    /// `host_rate` the server's sample rate, used when the widget names none.
+    pub fn head_ms(&self, sample_clock: f64, host_rate: f64) -> f32 {
+        let rate = if self.sample_rate > 0.0 {
+            self.sample_rate
+        } else {
+            host_rate
+        };
+        if self.playhead_at >= 0.0 && sample_clock > 0.0 && rate > 0.0 {
+            (((sample_clock - self.playhead_at) / rate) * 1000.0) as f32
+        } else {
+            self.playhead
+        }
     }
 
     /// The transform fitting the whole page into `rect`, preserving aspect and
@@ -216,18 +266,20 @@ impl ScoreData {
     }
 
     /// Tessellate the whole page into `mesh`, mapped into `rect` by [`fit`] and
-    /// painted in `color`; the playback cursor (if a `playhead` time is set)
-    /// draws over it in `playhead_color`. Geometry is clipped to `rect`
-    /// intersected with the caller's `clip` (the enclosing scroll area, if any);
-    /// the caller's clip is restored on return so the surrounding frame pass is
-    /// unaffected.
+    /// painted in `color`; the playback cursor draws over it in
+    /// `playhead_color` at musical time `head` ms (negative = none, as returned
+    /// by [`head_ms`]). Geometry is clipped to `rect` intersected with the
+    /// caller's `clip` (the enclosing scroll area, if any); the caller's clip is
+    /// restored on return so the surrounding frame pass is unaffected.
     ///
     /// [`fit`]: ScoreData::fit
+    /// [`head_ms`]: ScoreData::head_ms
     pub fn render(
         &self,
         mesh: &mut Mesh,
         rect: Rect,
         clip: Option<Rect>,
+        head: f32,
         color: Color,
         playhead_color: Color,
     ) {
@@ -283,21 +335,21 @@ impl ScoreData {
                 }
             }
         }
-        self.draw_playhead(mesh, fit, playhead_color);
+        self.draw_playhead(mesh, fit, head, playhead_color);
         mesh.set_clip(clip);
     }
 
-    /// Draw the playback cursor for the current `playhead` time: the vertical
+    /// Draw the playback cursor at musical time `head` (ms): the vertical
     /// staff-spanning line of the latest cursor at or before it. A no-op when no
     /// playhead is set or no timemap was sent.
-    fn draw_playhead(&self, mesh: &mut Mesh, fit: Affine, color: Color) {
-        if self.playhead < 0.0 || self.cursors.is_empty() {
+    fn draw_playhead(&self, mesh: &mut Mesh, fit: Affine, head: f32, color: Color) {
+        if head < 0.0 || self.cursors.is_empty() {
             return;
         }
-        // the cursor active at `playhead`: the last one whose time is <= it.
+        // the cursor active at `head`: the last one whose time is <= it.
         let idx = self
             .cursors
-            .partition_point(|c| c.t <= self.playhead)
+            .partition_point(|c| c.t <= head)
             .saturating_sub(1);
         let c = self.cursors[idx.min(self.cursors.len() - 1)];
         // points are already in screen pixels after `fit`, so width is px.
@@ -759,6 +811,7 @@ mod tests {
             &mut mesh,
             Rect::new(0.0, 0.0, 500.0, 200.0),
             None,
+            -1.0,
             [1.0; 4],
             [1.0; 4],
         );
@@ -783,6 +836,7 @@ mod tests {
             &mut mesh,
             Rect::new(0.0, 0.0, 500.0, 200.0),
             None,
+            -1.0,
             [1.0; 4],
             [1.0; 4],
         );
@@ -817,6 +871,7 @@ mod tests {
             &mut mesh,
             Rect::new(0.0, 0.0, 1000.0, 400.0),
             None,
+            data.head_ms(0.0, 0.0),
             [1.0; 4],
             [1.0; 4],
         );
@@ -843,10 +898,44 @@ mod tests {
             &mut mesh,
             Rect::new(0.0, 0.0, 1000.0, 400.0),
             None,
+            data.head_ms(0.0, 0.0),
             [1.0; 4],
             [1.0; 4],
         );
         assert!(mesh.is_empty(), "no playhead when time is negative");
+    }
+
+    #[test]
+    fn playhead_at_sweeps_off_the_engine_clock() {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,400],"glyphs":{},"prims":[],
+                "cursors":[{"t":0,"x":100,"y0":50,"y1":150},
+                           {"t":500,"x":300,"y0":50,"y1":150}],
+                "playhead":250,"playhead_at":48000,"sample_rate":48000}"#,
+        )
+        .unwrap();
+        let data = ScoreData::parse(&props);
+        // one second of clock past the origin is one second of musical time
+        assert_eq!(data.head_ms(96_000.0, 44_100.0), 1000.0);
+        // the widget's own rate wins over the server's; without one, the
+        // server's places the time
+        let host_rate = ScoreData {
+            sample_rate: 0.0,
+            ..data.clone()
+        };
+        assert_eq!(host_rate.head_ms(96_000.0, 24_000.0), 2000.0);
+        // not playing: the static time stands still whatever the clock says
+        let stopped = ScoreData {
+            playhead_at: -1.0,
+            ..data.clone()
+        };
+        assert_eq!(stopped.head_ms(96_000.0, 48_000.0), 250.0);
+        // a rate nobody knows leaves the static time in place too
+        let no_rate = ScoreData {
+            sample_rate: 0.0,
+            ..data
+        };
+        assert_eq!(no_rate.head_ms(96_000.0, 0.0), 250.0);
     }
 
     #[test]
@@ -866,6 +955,7 @@ mod tests {
             &mut mesh,
             Rect::new(0.0, 0.0, 200.0, 200.0),
             None,
+            -1.0,
             [1.0; 4],
             [1.0; 4],
         );

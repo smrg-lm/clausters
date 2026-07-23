@@ -773,8 +773,11 @@ pub enum WidgetKind {
     /// into the shared triangle mesh (glyph outlines and engraving fills through
     /// lyon; staff lines/stems/ledger lines as thick-line quads), so notation
     /// draws through the same one-upload/one-draw pipeline as the rest of the
-    /// chrome, natively and in the browser. Read-only for now: the MEI xml:id
-    /// travels on each primitive for a later interactive/edit-back pass.
+    /// chrome, natively and in the browser. The playback cursor follows the
+    /// display list's own timemap, either located statically (`playhead`, in
+    /// ms) or sweeping off the engine sample clock (`playhead_at`), exactly as
+    /// the timeline views do. Read-only for now: the MEI xml:id travels on each
+    /// primitive for a later interactive/edit-back pass.
     Score(super::score::ScoreData),
     /// A continuous slider over `[min, max]`. `vertical` lays it out along the
     /// y axis (min at the bottom, max at the top) instead of the x axis.

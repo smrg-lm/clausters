@@ -696,7 +696,8 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
 
 
 def score(id: int | None = None, *, display_list: dict | None = None,
-          playhead: float | None = None, color: str | None = None, **props) -> dict:
+          playhead: float | None = None, playhead_at: float | None = None,
+          sample_rate: float | None = None, color: str | None = None, **props) -> dict:
     """An engraved music-notation ``score`` page.
 
     The host is only the renderer: it fits the engraved page into the widget
@@ -711,9 +712,25 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     fills). Build it from a score with `clausters.gui.notation.engrave`, which
     drives verovio — an optional dependency the host never needs. Read-only for
     now; each primitive still carries its MEI ``id`` for a later editing pass.
+
+    The **playback cursor** rides the display list's ``cursors`` track (the
+    engraved timemap: musical time in ms to the placed x of the event sounding
+    then), and it is driven exactly like the timeline views':
+
+    - ``playhead_at`` — the engine sample-clock value at score time 0. Set it
+      once when a pass starts (``server.request("/clock", …)``) and the cursor
+      *sweeps* on its own, since the host reads the clock every frame; a
+      negative value stops it. ``sample_rate`` converts clock to musical time
+      (omitted / ``0`` = the server's own rate).
+    - ``playhead`` — a **static** time in ms, for a stopped transport located on
+      a note (negative = no cursor). It stands still while ``playhead_at`` is
+      off, so a paused cursor does not drift with the clock.
+
+    Both are settable live with ``GuiHost.set(score_id, playhead_at=…)``.
     """
     dl = dict(display_list or {})
-    extra = _drop_none(color=color, playhead=playhead,
+    extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
+                       sample_rate=sample_rate,
                        vb=dl.get("vb"), glyphs=dl.get("glyphs"),
                        prims=dl.get("prims"), cursors=dl.get("cursors"))
     return node("score", id=id, **extra, **props)

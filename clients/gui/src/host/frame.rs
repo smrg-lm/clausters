@@ -1160,7 +1160,10 @@ pub(crate) fn render(
                 // a paper panel under the engraving, glyphs and fills in ink,
                 // the playback cursor over it in the playhead accent.
                 mesh.rect(p.rect, th.panel);
-                data.render(&mut mesh, p.rect, p.clip, th.text, th.playhead);
+                // The cursor sweeps off the engine clock while a pass plays
+                // (`playhead_at`), so playback costs no messages per frame.
+                let head = data.head_ms(inputs.sample_clock, inputs.sample_rate);
+                data.render(&mut mesh, p.rect, p.clip, head, th.text, th.playhead);
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => controls::draw(

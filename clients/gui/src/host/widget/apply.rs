@@ -266,8 +266,12 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             }
         },
         WidgetKind::Score(data) => match key {
-            // Advance the playback cursor; a negative time hides it.
+            // Locate the static playback cursor; a negative time hides it.
             "playhead" => v.as_f64().map(|t| data.playhead = t as f32).is_some(),
+            // Anchor score time 0 to a sample-clock value: the cursor then
+            // sweeps on its own, one message per pass instead of per frame.
+            "playhead_at" => v.as_f64().map(|t| data.playhead_at = t).is_some(),
+            "sample_rate" => v.as_f64().map(|r| data.sample_rate = r).is_some(),
             _ => false,
         },
         WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
