@@ -31,24 +31,28 @@ and a GPU adapter.
 import sys
 import time
 
-from clausters.gui import GuiHost, score, window
+from clausters.gui import GuiHost, window
 from clausters.gui import notation
 
-# A two-bar phrase in Plaine & Easie -- the most compact way to type a score;
-# verovio also reads MEI, MusicXML, ABC and Humdrum through the same loader.
-PHRASE = "@clef:G-2\n@timesig:4/4\n@data:4CDEF gABc'/ 4{FE}D2 4G8AB gAB4/"
+# A multi-bar phrase in Plaine & Easie -- the most compact way to type a score;
+# verovio also reads MEI, MusicXML, ABC and Humdrum through the same loader. Long
+# enough to wrap into several systems, so the page scrolls.
+PHRASE = ("@clef:G-2\n@keysig:xF\n@timesig:4/4\n@data:"
+          "4CDEF GABc'/ 4c'BAG FEDC/ 4{DE}F2 4G8AB c'4/ "
+          "4c'c'BB AAGG/ 4FFEE DDC2/ (4CEG) (4c'GE) 4C2/")
 
 
 def scene(display_list: dict) -> dict:
-    """A window filled by a single score view of the engraved phrase."""
+    """A window filled by a scrollable, zoomable view of the engraved score."""
     return window(
-        score(10, display_list=display_list),
-        title="Engraved score (verovio -> GPU)", w=900, h=320,
+        notation.score_view(display_list, scroll_id=10, score_id=11, width=880.0),
+        title="Engraved score (verovio -> GPU)", w=920, h=380,
     )
 
 
 def main():
-    dl = notation.engrave(PHRASE)
+    # a narrow page so the phrase wraps into a few systems and the view scrolls
+    dl = notation.engrave(PHRASE, page_width=1500)
     print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
           f"{len(dl['prims'])} primitives, page {dl['vb']}")
     with GuiHost() as gui:  # 127.0.0.1:57210 by default
