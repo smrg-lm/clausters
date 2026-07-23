@@ -54,6 +54,7 @@ pub mod pianoroll;
 pub mod plot;
 pub mod registry;
 pub mod ruler;
+pub mod score;
 pub mod scroll;
 pub mod spectrum;
 pub mod textedit;

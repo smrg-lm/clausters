@@ -1155,6 +1155,12 @@ pub(crate) fn render(
                     });
                 }
             }
+            WidgetKind::Score(data) => {
+                // Notation tessellates straight into the shared triangle mesh:
+                // a paper panel under the engraving, glyphs and fills in ink.
+                mesh.rect(p.rect, th.panel);
+                data.render(&mut mesh, p.rect, p.clip, th.text);
+            }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => controls::draw(
                 &mut mesh,

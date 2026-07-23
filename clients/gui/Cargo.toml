@@ -59,6 +59,11 @@ serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 bytemuck = { version = "1.25.0", features = ["derive"] }
+# Fill tessellation for the `score` widget: turns SMuFL glyph outlines and
+# engraving fills (beams, slurs, ties) — bezier paths — into the triangle mesh
+# the existing painter already draws. Pure Rust, wasm-safe (no compute/storage),
+# so the score renderer runs natively and in the browser through one pipeline.
+lyon = "1.0"
 pollster = "0.4.0"
 wgpu = "29.0.3"
 winit = "0.30.13"

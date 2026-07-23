@@ -271,6 +271,7 @@ pub(super) fn build_kind(
             kind.refresh_plot_analysis();
             kind
         }
+        "score" => WidgetKind::Score(super::score::ScoreData::parse(&node.props)),
         "slider" => WidgetKind::Slider {
             range: Range::parse(&node.props),
             vertical: node.props.get("vertical").and_then(truthy).unwrap_or(false),

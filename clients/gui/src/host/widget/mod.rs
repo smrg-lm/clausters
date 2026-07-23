@@ -44,7 +44,7 @@ use super::guidef::GuiNode;
 // Sibling widget modules the wire matches reach via `super::` — re-imported here
 // so the `build`/`apply` child modules resolve the same paths (a descendant sees
 // the parent's private `use` items).
-use super::{bpf, piano, plot, textedit};
+use super::{bpf, piano, plot, score, textedit};
 
 mod apply;
 mod build;
@@ -765,6 +765,17 @@ pub enum WidgetKind {
         spectrum: Option<Arc<super::plot::PlotSpectrum>>,
         label: Option<String>,
     },
+    /// An engraved music-notation page. The rendering client (verovio, in the
+    /// Python `clausters.gui` submodule) engraves a score and sends a semantic
+    /// display list — a glyph-outline table keyed by SMuFL codepoint plus placed
+    /// primitives in verovio page units (see [`super::score::ScoreData`]). The
+    /// host fits the page into the widget rect and tessellates every primitive
+    /// into the shared triangle mesh (glyph outlines and engraving fills through
+    /// lyon; staff lines/stems/ledger lines as thick-line quads), so notation
+    /// draws through the same one-upload/one-draw pipeline as the rest of the
+    /// chrome, natively and in the browser. Read-only for now: the MEI xml:id
+    /// travels on each primitive for a later interactive/edit-back pass.
+    Score(super::score::ScoreData),
     /// A continuous slider over `[min, max]`. `vertical` lays it out along the
     /// y axis (min at the bottom, max at the top) instead of the x axis.
     Slider { range: Range, vertical: bool },
@@ -2887,8 +2898,9 @@ mod tests {
 
     #[test]
     fn defaults_and_unknown_type() {
-        // `score` is in the catalog but not yet a rendered WidgetKind variant.
-        let n = node(r#"{"type":"window","children":[{"id":7,"type":"score"}]}"#);
+        // An unrecognized type is laid out but kept as `Unknown`, never
+        // rejected (the protocol's forward-compatibility rule).
+        let n = node(r#"{"type":"window","children":[{"id":7,"type":"no_such_widget"}]}"#);
         let w = Widget::from_node(1, &n, &[]).unwrap();
         // Window size defaults when w/h are omitted.
         match w.kind {
@@ -2903,9 +2915,8 @@ mod tests {
             }
             _ => unreachable!(),
         }
-        // An unrecognized type is kept (laid out), not rejected.
         match &w.children[0].kind {
-            WidgetKind::Unknown(t) => assert_eq!(t, "score"),
+            WidgetKind::Unknown(t) => assert_eq!(t, "no_such_widget"),
             other => panic!("expected unknown, got {other:?}"),
         }
     }

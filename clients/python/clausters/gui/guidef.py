@@ -695,6 +695,29 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
     return node("plot", id=id, **extra, **props)
 
 
+def score(id: int | None = None, *, display_list: dict | None = None,
+          color: str | None = None, **props) -> dict:
+    """An engraved music-notation ``score`` page.
+
+    The host is only the renderer: it fits the engraved page into the widget
+    and tessellates every primitive into the same triangle mesh the rest of the
+    chrome uses (glyph outlines and engraving fills through a fill tessellator,
+    staff lines and stems as thick-line quads), so notation draws through one
+    pipeline natively and in the browser.
+
+    ``display_list`` is the semantic engraving the host consumes, a dict with
+    ``vb`` (the ``[width, height]`` page-unit viewBox), ``glyphs`` (a SMuFL
+    codepoint-to-outline table) and ``prims`` (the placed glyphs, lines and
+    fills). Build it from a score with `clausters.gui.notation.engrave`, which
+    drives verovio — an optional dependency the host never needs. Read-only for
+    now; each primitive still carries its MEI ``id`` for a later editing pass.
+    """
+    dl = dict(display_list or {})
+    extra = _drop_none(color=color,
+                       vb=dl.get("vb"), glyphs=dl.get("glyphs"), prims=dl.get("prims"))
+    return node("score", id=id, **extra, **props)
+
+
 def track(id: int | None = None, *clips, label: str | None = None, height: float | None = None,
           snap: float | None = None, ruler: str | None = None,
           sample_rate: float | None = None, tempo: float | None = None,
