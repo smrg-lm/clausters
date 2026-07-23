@@ -148,15 +148,38 @@ def _walk(node, xf, mei_id, glyph_defs, glyphs, prims):
                                   [round(p2[0], 1), round(p2[1], 1)]],
                           "w": _stroke_width(node, xf), "id": nid})
         else:
-            prims.append({"k": "fill", "d": _bake_path(d, xf), "id": nid})
+            # a filled outline (slur, tie): keep `d` verbatim in its own units
+            # and let the host apply the transform, so comma/space coordinate
+            # separators are never rewritten.
+            prims.append({"k": "fill", "d": d, "xf": _xf_list(xf), "id": nid})
         return
     if tag == "polygon" and node.get("points"):
-        prims.append({"k": "fill", "d": _points_to_path(node.get("points"), xf),
-                      "id": nid})
+        prims.append({"k": "fill", "d": _points_to_path(node.get("points")),
+                      "xf": _xf_list(xf), "id": nid})
+        return
+    if tag == "polyline" and node.get("points"):
+        # a stroked open path (hairpin, some brackets): a thick polyline, not a
+        # fill — filling its endpoints would paint a solid wedge.
+        pts = _points(node.get("points"))
+        if len(pts) >= 2:
+            prims.append({"k": "line",
+                          "pts": [[round(a, 1), round(b, 1)]
+                                  for a, b in (_apply(xf, x, y) for x, y in pts)],
+                          "w": _stroke_width(node, xf), "id": nid})
         return
     if tag == "rect":
-        prims.append({"k": "fill", "d": _rect_to_path(node, xf), "id": nid})
+        prims.append({"k": "fill", "d": _rect_to_path(node), "xf": _xf_list(xf),
+                      "id": nid})
         return
+    if tag == "ellipse":
+        prims.append({"k": "fill", "d": _ellipse_to_path(node), "xf": _xf_list(xf),
+                      "id": nid})
+        return
+    if tag == "text":
+        prim = _text_prim(node, xf, nid)
+        if prim:
+            prims.append(prim)
+        return  # its tspans are consumed here, not walked as elements
 
     for child in node:
         _walk(child, xf, nid, glyph_defs, glyphs, prims)
@@ -168,40 +191,79 @@ def _stroke_width(node, xf):
     return round(float(w) * sx, 1) if w else 1.0
 
 
-def _bake_path(d, xf):
-    """Rewrite an absolute-coordinate fill path into page units by mapping its
-    numeric pairs through ``xf``. verovio's fill paths (slurs, ties) are
-    absolute cubics, so a coordinate-pair remap is exact; relative segments are
-    left untouched (rare here) and the host applies its fit transform on top."""
-    # Bake only when the whole path is absolute (uppercase commands); otherwise
-    # pass the raw path plus its transform is not expressible in the current
-    # schema, so fall back to emitting it in local units under identity fit.
-    if re.search(r"[a-z]", d):
-        return d
+def _xf_list(xf):
     tx, ty, sx, sy = xf
-
-    def remap(match):
-        x, y = float(match.group(1)), float(match.group(2))
-        return f"{tx + sx * x:.1f} {ty + sy * y:.1f}"
-
-    return re.sub(rf"({_NUM})\s+({_NUM})", remap, d)
+    return [round(tx, 2), round(ty, 2), round(sx, 4), round(sy, 4)]
 
 
-def _points_to_path(points, xf):
+def _points(points):
+    """Parse an SVG ``points`` list into ``[(x, y), ...]`` (local coordinates)."""
     coords = [float(v) for v in re.split(r"[ ,]+", points.strip()) if v]
-    parts = []
-    for i in range(0, len(coords) - 1, 2):
-        x, y = _apply(xf, coords[i], coords[i + 1])
-        parts.append(f"{'M' if i == 0 else 'L'}{x:.1f} {y:.1f}")
+    return [(coords[i], coords[i + 1]) for i in range(0, len(coords) - 1, 2)]
+
+
+def _points_to_path(points):
+    parts = [f"{'M' if i == 0 else 'L'}{x:.1f} {y:.1f}"
+             for i, (x, y) in enumerate(_points(points))]
     return " ".join(parts) + " Z"
 
 
-def _rect_to_path(node, xf):
+def _text_prim(node, xf, nid):
+    """A verovio ``<text>`` node: the string lives in nested ``<tspan>``s (with
+    the pixel ``font-size`` on the innermost one), the baseline ``x, y`` on the
+    outer ``<text>``. Emit one ``text`` primitive with the page-mapped baseline
+    and em size — the host draws it in its own font (verbatim text, not SMuFL:
+    volta numbers, tempo, lyrics, titles)."""
+    s = "".join(node.itertext()).strip()
+    if not s:
+        return None
+    x = float(node.get("x", 0.0))
+    y = float(node.get("y", 0.0))
+    px, py = _apply(xf, x, y)
+    _, _, sx, _ = xf
+    size = _text_font_size(node) * sx
+    return {"k": "text", "s": s, "x": round(px, 1), "y": round(py, 1),
+            "size": round(size, 1), "id": nid}
+
+
+def _text_font_size(node):
+    """The deepest ``font-size`` in ``px`` under ``node`` (verovio puts a real
+    size on the innermost tspan and ``0px`` on the wrapper), defaulting to a
+    readable size when none is stated."""
+    best = 0.0
+    for el in node.iter():
+        fs = el.get("font-size", "")
+        m = re.match(rf"({_NUM})px", fs)
+        if m:
+            best = max(best, float(m.group(1)))
+    return best or 400.0
+
+
+def _ellipse_to_path(node):
+    """An ``<ellipse>`` (augmentation dots, etc.) as a closed path of four cubic
+    beziers — the standard circle/ellipse approximation — in local coordinates,
+    so it fills through the same tessellator as every other region (the host
+    applies the transform)."""
+    cx = float(node.get("cx", 0.0)); cy = float(node.get("cy", 0.0))
+    rx = float(node.get("rx", 0.0)); ry = float(node.get("ry", 0.0))
+    k = 0.5522847498  # 4/3 * (sqrt(2)-1): control-point offset for a quarter arc
+    def pt(x, y):
+        return f"{x:.1f} {y:.1f}"
+    return (
+        f"M{pt(cx + rx, cy)} "
+        f"C{pt(cx + rx, cy + ry * k)} {pt(cx + rx * k, cy + ry)} {pt(cx, cy + ry)} "
+        f"C{pt(cx - rx * k, cy + ry)} {pt(cx - rx, cy + ry * k)} {pt(cx - rx, cy)} "
+        f"C{pt(cx - rx, cy - ry * k)} {pt(cx - rx * k, cy - ry)} {pt(cx, cy - ry)} "
+        f"C{pt(cx + rx * k, cy - ry)} {pt(cx + rx, cy - ry * k)} {pt(cx + rx, cy)} Z"
+    )
+
+
+def _rect_to_path(node):
     x = float(node.get("x", 0)); y = float(node.get("y", 0))
     w = float(node.get("width", 0)); h = float(node.get("height", 0))
     pts = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
-    parts = [f"{'M' if i == 0 else 'L'}{_apply(xf, px, py)[0]:.1f} "
-             f"{_apply(xf, px, py)[1]:.1f}" for i, (px, py) in enumerate(pts)]
+    parts = [f"{'M' if i == 0 else 'L'}{px:.1f} {py:.1f}"
+             for i, (px, py) in enumerate(pts)]
     return " ".join(parts) + " Z"
 
 

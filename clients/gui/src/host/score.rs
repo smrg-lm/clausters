@@ -85,9 +85,26 @@ pub enum Prim {
         width: f32,
         id: Option<String>,
     },
-    /// A filled region already in page units: beams (polygons), slurs and ties
-    /// (filled cubic outlines). Stored as an SVG path `d`.
-    Fill { d: String, id: Option<String> },
+    /// A filled region: beams (polygons), slurs and ties (filled cubic
+    /// outlines), augmentation dots (ellipses). `d` is the outline in the
+    /// element's **local** coordinates; `xf` maps it to page units — mapped in
+    /// the host (not baked into `d` on the client) so comma/space coordinate
+    /// separators never confuse a numeric rewrite.
+    Fill {
+        d: String,
+        xf: Affine,
+        id: Option<String>,
+    },
+    /// Verbatim text (not SMuFL): volta numbers, tempo, lyrics, titles. `x, y`
+    /// is the baseline and `size` the em height, both in page units; the host
+    /// draws it in its own font.
+    Text {
+        s: String,
+        x: f32,
+        y: f32,
+        size: f32,
+        id: Option<String>,
+    },
 }
 
 impl Prim {
@@ -95,7 +112,10 @@ impl Prim {
     /// hit-testing and edit-back once the score view becomes interactive).
     pub fn id(&self) -> Option<&str> {
         match self {
-            Prim::Glyph { id, .. } | Prim::Line { id, .. } | Prim::Fill { id, .. } => id.as_deref(),
+            Prim::Glyph { id, .. }
+            | Prim::Line { id, .. }
+            | Prim::Fill { id, .. }
+            | Prim::Text { id, .. } => id.as_deref(),
         }
     }
 }
@@ -202,8 +222,22 @@ impl ScoreData {
                         );
                     }
                 }
-                Prim::Fill { d, .. } => {
-                    fill_path(mesh, &mut tess, d, fit, tol_page, color);
+                Prim::Fill { d, xf, .. } => {
+                    fill_path(
+                        mesh,
+                        &mut tess,
+                        d,
+                        fit.then(*xf),
+                        tol_page * xf_shrink(*xf),
+                        color,
+                    );
+                }
+                Prim::Text { s, x, y, size, .. } => {
+                    // baseline -> top-left for the host font; em height in px.
+                    let em = (size * fit.sy).abs();
+                    let scale = (em / super::font::GLYPH_H as f32).max(0.5);
+                    let [sx, sy] = fit.apply(*x, *y);
+                    super::font::text(mesh, s, sx, sy - em, scale, color);
                 }
             }
         }
@@ -221,22 +255,27 @@ fn intersect(rect: Rect, clip: Option<Rect>) -> Rect {
     Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
 }
 
+/// Read a `[tx, ty, sx, sy]` transform array into an [`Affine`].
+fn parse_xf(v: Option<&Value>) -> Option<Affine> {
+    let a = v?.as_array()?;
+    let n = |i: usize| a.get(i).and_then(Value::as_f64).map(|f| f as f32);
+    Some(Affine {
+        tx: n(0)?,
+        ty: n(1)?,
+        sx: n(2)?,
+        sy: n(3)?,
+    })
+}
+
 fn parse_prim(v: &Value) -> Option<Prim> {
     let obj = v.as_object()?;
     let id = obj.get("id").and_then(Value::as_str).map(str::to_string);
     match obj.get("k").and_then(Value::as_str)? {
         "glyph" => {
             let cp = u32::from_str_radix(obj.get("cp")?.as_str()?, 16).ok()?;
-            let xf = obj.get("xf").and_then(Value::as_array)?;
-            let n = |i: usize| xf.get(i).and_then(Value::as_f64).map(|f| f as f32);
             Some(Prim::Glyph {
                 cp,
-                xf: Affine {
-                    tx: n(0)?,
-                    ty: n(1)?,
-                    sx: n(2)?,
-                    sy: n(3)?,
-                },
+                xf: parse_xf(obj.get("xf"))?,
                 id,
             })
         }
@@ -260,6 +299,14 @@ fn parse_prim(v: &Value) -> Option<Prim> {
         }
         "fill" => Some(Prim::Fill {
             d: obj.get("d")?.as_str()?.to_string(),
+            xf: parse_xf(obj.get("xf")).unwrap_or(Affine::IDENTITY),
+            id,
+        }),
+        "text" => Some(Prim::Text {
+            s: obj.get("s")?.as_str()?.to_string(),
+            x: obj.get("x")?.as_f64()? as f32,
+            y: obj.get("y")?.as_f64()? as f32,
+            size: obj.get("size").and_then(Value::as_f64).unwrap_or(0.0) as f32,
             id,
         }),
         _ => None,
@@ -641,6 +688,24 @@ mod tests {
         assert!(
             !mesh.is_empty(),
             "a parsed score should tessellate to geometry"
+        );
+    }
+
+    #[test]
+    fn parses_and_renders_text_prim() {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,400],"glyphs":{},
+                "prims":[{"k":"text","s":"mf","x":500,"y":200,"size":80,"id":"d1"}]}"#,
+        )
+        .unwrap();
+        let data = ScoreData::parse(&props);
+        assert_eq!(data.prims.len(), 1);
+        assert_eq!(data.prims[0].id(), Some("d1"));
+        let mut mesh = Mesh::new();
+        data.render(&mut mesh, Rect::new(0.0, 0.0, 500.0, 200.0), None, [1.0; 4]);
+        assert!(
+            !mesh.is_empty(),
+            "score text should paint through the host font"
         );
     }
 
