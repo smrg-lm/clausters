@@ -1559,3 +1559,53 @@ And the panel **caption is the def *kind*** (`synthdef` / `faustdef` /
 `graphdef`), not the def's name — the view names *what* it draws; the window title
 carries the name. The per-box **role** the decode still ships (`source` / `const`
 / `object`) is now only a *drawing* tag (the `const` fill), not a layout input.
+
+## Music notation: the client engraves a display list; verovio's DeviceContext is a proven-viable path kept in reserve
+
+*Exploratory finding, recorded from the `notation-verovio` branch — not yet on
+`main`.*
+
+Notation is engraved by [verovio](https://verovio.org), which lays out a digital
+score (MEI, MusicXML, ABC, Humdrum, Plaine & Easie) into resolution-independent
+geometry: SMuFL glyph outlines placed by transform, plus engraving strokes and
+fills (staff lines, stems, beams, slurs). Two ways exist to get that geometry
+onto the GPU, because verovio renders through an **abstract `DeviceContext`** —
+SVG is only one backend (`SvgDeviceContext`), and `Toolkit::RenderToDeviceContext`
+is public. Either parse verovio's rendered **SVG** into a display list, or
+subclass the `DeviceContext` in-process and receive the draw stream directly.
+
+**Context — no GPU API consumes notation directly.** Neither WebGPU nor WebGL2
+draws paths or SVG; they draw triangles and textures. So regardless of source,
+notation must become a **display list of primitives** the host tessellates: a
+glyph-outline table keyed by SMuFL codepoint plus placed glyph/line/fill
+primitives in page units, each carrying the MEI `xml:id` it was engraved from.
+That display list is the stable seam, and the host `score` widget is its *only*
+renderer (glyph outlines and fills through a fill tessellator, staff/stems as the
+painter's thick-line quads — one upload, one draw, WebGL2-safe). The open question
+was only which **producer** feeds it.
+
+**Decision — ship the SVG-parse producer first (client-side, Python-only), keep
+the native `DeviceContext` documented as viable and deferred.** The client drives
+verovio, walks the rendered SVG into the display list, and sends it; verovio stays
+an **optional client dependency the host never links**, so any later client (JS,
+wasm) reuses the same host renderer by sending the same display list. No C++ build
+enters the picture. The alternative — a native `GpuDeviceContext : DeviceContext`
+compiled into the workspace — is real and was **empirically proven viable**, not
+assumed: verovio builds from source as a standalone library (C++20, no external
+dependencies — pugixml, the tuning library and the rest are embedded; no LLVM, no
+Qt), a `DeviceContext` subclass overriding its ~35 primitives compiles against the
+public headers, and rendering the sample score through `RenderToDeviceContext`
+yields geometry **identical** to the SVG walk (22 glyphs, 29 lines, 1 beam; the
+only difference is the page-margin transform the probe did not accumulate). The
+licence is compatible either way — the workspace is GPL-3.0-or-later and verovio
+is LGPL-3, so linking it in is clean, no separate process required.
+
+**Consequence.** The two producers are interchangeable behind the display list, so
+the native path is a drop-in replacement for the *producer alone*, never a rewrite
+of the renderer. It buys three things the SVG walk cannot: no parsing round-trip,
+in-process incremental relayout, and direct **edit-back** (mutate a note, re-engrave
+in memory, no re-serialize). None of those pays off until the score view becomes
+interactive — the SVG walk delivers identical read-only geometry today for free —
+so the native `DeviceContext` is scheduled with the editing work, not before. The
+verovio clone under `third_party/` is kept only as the reference for that later
+build; nothing in the shipping path depends on it.
