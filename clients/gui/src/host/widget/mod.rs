@@ -1309,9 +1309,14 @@ impl WidgetKind {
     }
 
     /// Whether this widget shows a live playhead (so its window must animate:
-    /// the line tracks the engine sample clock every frame).
+    /// the line tracks the engine sample clock every frame). The timeline views
+    /// carry theirs on the shared editor chrome; a `score` carries its own, and
+    /// must be asked separately or its cursor freezes where it was anchored.
     pub fn has_playhead(&self) -> bool {
-        self.editor().is_some_and(|e| e.playhead_at >= 0.0)
+        match self {
+            WidgetKind::Score(data) => data.playhead_at >= 0.0,
+            _ => self.editor().is_some_and(|e| e.playhead_at >= 0.0),
+        }
     }
 
     /// The server group a `nodetree` widget mirrors, if this is one. The windowed

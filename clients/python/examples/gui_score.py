@@ -41,12 +41,13 @@ from clausters import Event, Session, play
 from clausters.gui import notation, window
 from clausters.seq.timeline import Playhead, Timeline
 
-# A multi-bar phrase in Plaine & Easie -- the most compact way to type a score;
-# verovio also reads MEI, MusicXML, ABC and Humdrum through the same loader. Long
-# enough to wrap into several systems, so the page scrolls.
+# Six bars in Plaine & Easie -- the most compact way to type a score; verovio
+# also reads MEI, MusicXML, ABC and Humdrum through the same loader. Quarters,
+# eighths, a chord (``^``), a half and a whole, each bar filling its 4/4 exactly
+# (verovio drops what overflows a measure, so an over-full bar would be drawn
+# short and sound short).
 PHRASE = ("@clef:G-2\n@keysig:xF\n@timesig:4/4\n@data:"
-          "4CDEF GABc'/ 4c'BAG FEDC/ 4{DE}F2 4G8AB c'4/ "
-          "4c'c'BB AAGG/ 4FFEE DDC2/ (4CEG) (4c'GE) 4C2/")
+          "4CDEF/ 8GAGF 4ED/ 4C8DEFG4A/ 2G4FE/ 4C^E^G4G2C/ 1C/")
 
 
 def scene(display_list: dict, sample_rate: float) -> dict:
@@ -73,7 +74,7 @@ def phrase_timeline(notes: list) -> Timeline:
 
 def main():
     # a narrow page so the phrase wraps into a few systems and the view scrolls
-    dl = notation.engrave(PHRASE, page_width=1500)
+    dl = notation.engrave(PHRASE, page_width=1100)
     print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
           f"{len(dl['prims'])} primitives, {len(dl['cursors'])} cursor stops, "
           f"{len(dl['notes'])} notes, page {dl['vb']}")

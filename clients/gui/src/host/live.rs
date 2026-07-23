@@ -128,7 +128,8 @@ pub(crate) fn tree_has_live_widget(widget: &Widget) -> bool {
         || widget.children.iter().any(tree_has_live_widget)
 }
 
-/// Whether a widget tree contains a timeline view with an active playhead.
+/// Whether a widget tree contains a view with an active playhead (a timeline
+/// view or a `score`).
 /// The browser front polls the server clock (`/clock`) each tick only then;
 /// the native front reads the shm header, which needs no message at all.
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
@@ -499,6 +500,26 @@ mod tests {
         collect_live_buses(&w, &mut buses);
         // Deduplicated, sorted, and the canvas's unset (-1) slots are skipped.
         assert_eq!(buses, vec![3, 7, 9]);
+    }
+
+    #[test]
+    fn an_anchored_score_makes_its_window_animate() {
+        // A score whose cursor is anchored to the engine clock has to be a live
+        // widget, or the window repaints only on messages and the cursor freezes
+        // where the anchor left it.
+        let anchored = tree(
+            r#"{"type":"window","children":[{"type":"scroll","id":1,"children":[
+                {"id":2,"type":"score","vb":[100,50],"playhead_at":48000.0}]}]}"#,
+        );
+        assert!(tree_has_live_widget(&anchored));
+        assert!(tree_has_playhead(&anchored));
+        // A static cursor (or none) needs no animation: it does not move.
+        let still = tree(
+            r#"{"type":"window","children":[
+                {"id":2,"type":"score","vb":[100,50],"playhead":250.0}]}"#,
+        );
+        assert!(!tree_has_live_widget(&still));
+        assert!(!tree_has_playhead(&still));
     }
 
     #[test]
