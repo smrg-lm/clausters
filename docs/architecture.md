@@ -340,7 +340,7 @@ split, and every rule below falls out of it:
 | `src/host/theme.rs` | The color roles: every chrome color as a named function (`accent`, `field`, `selection`, ...) in one `Theme` per host — no paint site names an RGBA literal. Overlaid from `[gui.theme]` / `--theme` (native) or `GuiBridge.theme` (browser) |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
 | `src/host/gestures.rs` | The one press → drag → release → wheel state machine **both fronts drive**: it mutates the `Host` through the `interact` doors and returns `GestureEffect`s (emit/redraw/release-pointer) for the front's own sinks, so every editing gesture behaves identically on either platform by construction |
-| `src/host/{track,pianoroll,bpf,plot,patch,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
+| `src/host/{track,pianoroll,bpf,plot,patch,score,nodetree,meters,…}.rs` | One module per flat view: pure over a `Mesh`, unit-tested without a window. `pianoroll` is the note core (the notes, their mapping, drawing, hit-test, editing) **shared** by the dedicated `pianoroll` widget and the multitrack `clip`'s roll body, so the two never disagree — the `bpf::place_point` reuse move again |
 | `src/{waveform,spectrogram,viewport}.rs` | The heavy GPU views and the navigation window (`View`) |
 | `src/host/timeline.rs` | The navigation **groups**: the shared window/selection/playhead of linked views and of the multitrack's aligned lanes |
 | `src/host/{bulk,fetch,shm,mapfile}.rs` | The data seams: a local resource is mapped (native) or fetched (browser), a server buffer is pulled over the client leg, control buses are read from the shared segment |
@@ -381,6 +381,28 @@ port strips. The decode
 still tags each box with a **role** used only for *drawing* (a `const` literal
 gets the distinct `value_fill`). `some_def.plot_def()` opens either level in its
 own window; the decode is faithful (`DefPatch.to_synthdef` reproduces the spec).
+
+**The score widget draws notation the host cannot read.** `src/host/score.rs`
+takes a **display list** — a SMuFL glyph-outline table keyed by codepoint plus
+placed glyphs, strokes, fills and text in page units, each carrying the MEI
+`xml:id` it came from — and tessellates it into the ordinary `Mesh` (outlines
+and fills through `lyon`'s fill tessellator, strokes as the painter's own
+thick-line quads), so notation costs no new pipeline and stays WebGL2-safe. The
+engraving itself is the **client's**: `clients/python/clausters/gui/notation.py`
+drives verovio (an optional dependency) and walks its SVG into that list. The
+host never links verovio, and a second client in another language reuses this
+renderer by sending the same list — the same "no engraving logic duplicated per
+language" split the value-math rule makes elsewhere. Two derived structures ride
+along, both computed where the knowledge is: the client folds the score's
+timemap into a **cursor track** (musical time → page-x and the system's y-span),
+because only it knows the music; the host builds the **hit index** (one page-unit
+box per identified primitive, glyph shapes measured once per codepoint) when the
+list is parsed, because only it knows the geometry. A press picks the smallest
+box under it and reports the id, which is how a click on a notehead becomes an
+element the driver can resolve in its own score. Native `DeviceContext`
+rendering — feeding the same display list straight from verovio's C++ drawing
+backend, skipping SVG — is a proven-viable alternative producer behind that same
+seam; see [Decisions](decisions.md).
 
 Four rules hold the design together, and breaking any of them is what a review
 looks for:
@@ -430,6 +452,7 @@ updates this table in the same change** (step 7 of the recipe below).
 | `track`, `clip` | `host/track.rs`; a clip's roll body reuses `host/pianoroll.rs`, its curve body `host/bpf.rs`; group navigation in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"` |
 | `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `piano` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/s_new`/`gate 0` per held key over the server leg |
+| `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py` over verovio); the cursor follows `playhead_at` on the engine clock; a click emits `"element"` |
 | `graph` | `host/graph.rs` | the GraphDef's members/buses/wires; rewiring emits `"wire"` |
 
 ### Adding a widget
