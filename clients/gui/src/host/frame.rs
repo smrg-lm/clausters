@@ -1157,9 +1157,10 @@ pub(crate) fn render(
             }
             WidgetKind::Score(data) => {
                 // Notation tessellates straight into the shared triangle mesh:
-                // a paper panel under the engraving, glyphs and fills in ink.
+                // a paper panel under the engraving, glyphs and fills in ink,
+                // the playback cursor over it in the playhead accent.
                 mesh.rect(p.rect, th.panel);
-                data.render(&mut mesh, p.rect, p.clip, th.text);
+                data.render(&mut mesh, p.rect, p.clip, th.text, th.playhead);
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => controls::draw(

@@ -265,6 +265,11 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 }
             }
         },
+        WidgetKind::Score(data) => match key {
+            // Advance the playback cursor; a negative time hides it.
+            "playhead" => v.as_f64().map(|t| data.playhead = t as f32).is_some(),
+            _ => false,
+        },
         WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
             match key {
                 "value" => set_f(&mut r.value, v),

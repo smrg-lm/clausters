@@ -54,13 +54,18 @@ def main():
     # a narrow page so the phrase wraps into a few systems and the view scrolls
     dl = notation.engrave(PHRASE, page_width=1500)
     print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
-          f"{len(dl['prims'])} primitives, page {dl['vb']}")
+          f"{len(dl['prims'])} primitives, {len(dl['cursors'])} cursor stops, "
+          f"page {dl['vb']}")
+    total = (dl["cursors"][-1]["t"] + 600.0) if dl["cursors"] else 0.0
     with GuiHost() as gui:  # 127.0.0.1:57210 by default
         gui.define(1, scene(dl))
-        print("a window shows the engraved score; close it to stop")
+        print("the playback cursor sweeps the score on a loop; close to stop")
         start = time.monotonic()
-        while time.monotonic() - start < 60.0:
-            msg = gui.poll(timeout=0.1)
+        while True:
+            # advance the playhead over the score's own duration, looping
+            t = ((time.monotonic() - start) * 1000.0) % total if total else -1.0
+            gui.set(11, playhead=float(t))
+            msg = gui.poll(timeout=0.03)  # ~30 fps
             if msg is not None and msg[0] == "/gui_closed":
                 print("window closed")
                 break

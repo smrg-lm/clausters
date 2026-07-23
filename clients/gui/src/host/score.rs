@@ -120,6 +120,18 @@ impl Prim {
     }
 }
 
+/// One position of the playback cursor: at musical time `t` (ms) the sounding
+/// event sits at page-x `x`, spanning its system's staff from `y0` to `y1`. The
+/// track is the bridge from the timemap (onset ms per MEI id, from the client)
+/// to geometry (the id's placed x) — precomputed on the client, sorted by `t`.
+#[derive(Clone, Copy, Debug)]
+pub struct Cursor {
+    pub t: f32,
+    pub x: f32,
+    pub y0: f32,
+    pub y1: f32,
+}
+
 /// A fully engraved page ready to render: the definition viewBox (for fitting),
 /// the glyph-outline table (deduplicated by codepoint), and the placed
 /// primitives.
@@ -131,6 +143,12 @@ pub struct ScoreData {
     /// SMuFL codepoint -> outline path `d` (font units, y-up before the flip).
     pub glyphs: HashMap<u32, String>,
     pub prims: Vec<Prim>,
+    /// The playback-cursor track (sorted by `t`), empty when the client sent no
+    /// timemap.
+    pub cursors: Vec<Cursor>,
+    /// Current playback time in ms, advanced live via `/gui_set playhead`;
+    /// negative means no playhead is shown.
+    pub playhead: f32,
 }
 
 impl ScoreData {
@@ -161,6 +179,21 @@ impl ScoreData {
                 }
             }
         }
+        if let Some(cursors) = props.get("cursors").and_then(Value::as_array) {
+            for c in cursors {
+                if let Some(cur) = parse_cursor(c) {
+                    data.cursors.push(cur);
+                }
+            }
+            data.cursors
+                .sort_by(|a, b| a.t.partial_cmp(&b.t).unwrap_or(std::cmp::Ordering::Equal));
+        }
+        // A playhead is off unless the client sets a non-negative time.
+        data.playhead = props
+            .get("playhead")
+            .and_then(Value::as_f64)
+            .map(|f| f as f32)
+            .unwrap_or(-1.0);
         data
     }
 
@@ -183,12 +216,21 @@ impl ScoreData {
     }
 
     /// Tessellate the whole page into `mesh`, mapped into `rect` by [`fit`] and
-    /// painted in `color`. Geometry is clipped to `rect` intersected with the
-    /// caller's `clip` (the enclosing scroll area, if any); the caller's clip is
-    /// restored on return so the surrounding frame pass is unaffected.
+    /// painted in `color`; the playback cursor (if a `playhead` time is set)
+    /// draws over it in `playhead_color`. Geometry is clipped to `rect`
+    /// intersected with the caller's `clip` (the enclosing scroll area, if any);
+    /// the caller's clip is restored on return so the surrounding frame pass is
+    /// unaffected.
     ///
     /// [`fit`]: ScoreData::fit
-    pub fn render(&self, mesh: &mut Mesh, rect: Rect, clip: Option<Rect>, color: Color) {
+    pub fn render(
+        &self,
+        mesh: &mut Mesh,
+        rect: Rect,
+        clip: Option<Rect>,
+        color: Color,
+        playhead_color: Color,
+    ) {
         let fit = self.fit(rect);
         mesh.set_clip(Some(intersect(rect, clip)));
         // Curve-flattening tolerance in page units so it lands ~1/3 device
@@ -241,7 +283,25 @@ impl ScoreData {
                 }
             }
         }
+        self.draw_playhead(mesh, fit, playhead_color);
         mesh.set_clip(clip);
+    }
+
+    /// Draw the playback cursor for the current `playhead` time: the vertical
+    /// staff-spanning line of the latest cursor at or before it. A no-op when no
+    /// playhead is set or no timemap was sent.
+    fn draw_playhead(&self, mesh: &mut Mesh, fit: Affine, color: Color) {
+        if self.playhead < 0.0 || self.cursors.is_empty() {
+            return;
+        }
+        // the cursor active at `playhead`: the last one whose time is <= it.
+        let idx = self
+            .cursors
+            .partition_point(|c| c.t <= self.playhead)
+            .saturating_sub(1);
+        let c = self.cursors[idx.min(self.cursors.len() - 1)];
+        // points are already in screen pixels after `fit`, so width is px.
+        mesh.line(fit.apply(c.x, c.y0), fit.apply(c.x, c.y1), 2.0, color);
     }
 }
 
@@ -264,6 +324,17 @@ fn parse_xf(v: Option<&Value>) -> Option<Affine> {
         ty: n(1)?,
         sx: n(2)?,
         sy: n(3)?,
+    })
+}
+
+fn parse_cursor(v: &Value) -> Option<Cursor> {
+    let o = v.as_object()?;
+    let f = |k: &str| o.get(k).and_then(Value::as_f64).map(|x| x as f32);
+    Some(Cursor {
+        t: f("t")?,
+        x: f("x")?,
+        y0: f("y0")?,
+        y1: f("y1")?,
     })
 }
 
@@ -684,7 +755,13 @@ mod tests {
         assert_eq!(data.prims.len(), 2);
         assert_eq!(data.prims[0].id(), Some("n1"));
         let mut mesh = Mesh::new();
-        data.render(&mut mesh, Rect::new(0.0, 0.0, 500.0, 200.0), None, [1.0; 4]);
+        data.render(
+            &mut mesh,
+            Rect::new(0.0, 0.0, 500.0, 200.0),
+            None,
+            [1.0; 4],
+            [1.0; 4],
+        );
         assert!(
             !mesh.is_empty(),
             "a parsed score should tessellate to geometry"
@@ -702,11 +779,74 @@ mod tests {
         assert_eq!(data.prims.len(), 1);
         assert_eq!(data.prims[0].id(), Some("d1"));
         let mut mesh = Mesh::new();
-        data.render(&mut mesh, Rect::new(0.0, 0.0, 500.0, 200.0), None, [1.0; 4]);
+        data.render(
+            &mut mesh,
+            Rect::new(0.0, 0.0, 500.0, 200.0),
+            None,
+            [1.0; 4],
+            [1.0; 4],
+        );
         assert!(
             !mesh.is_empty(),
             "score text should paint through the host font"
         );
+    }
+
+    #[test]
+    fn playhead_selects_the_active_cursor_and_draws() {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{"vb":[1000,400],"glyphs":{},"prims":[],
+                "cursors":[{"t":0,"x":100,"y0":50,"y1":150},
+                           {"t":500,"x":300,"y0":50,"y1":150},
+                           {"t":1000,"x":500,"y0":50,"y1":150}],
+                "playhead":600}"#,
+        )
+        .unwrap();
+        let data = ScoreData::parse(&props);
+        assert_eq!(data.cursors.len(), 3);
+        assert_eq!(data.playhead, 600.0);
+        // active cursor at t=600 is the one at t=500 (x=300)
+        let fit = data.fit(Rect::new(0.0, 0.0, 1000.0, 400.0));
+        let idx = data
+            .cursors
+            .partition_point(|c| c.t <= data.playhead)
+            .saturating_sub(1);
+        assert_eq!(data.cursors[idx].x, 300.0);
+        let mut mesh = Mesh::new();
+        data.render(
+            &mut mesh,
+            Rect::new(0.0, 0.0, 1000.0, 400.0),
+            None,
+            [1.0; 4],
+            [1.0; 4],
+        );
+        assert!(!mesh.is_empty(), "the playhead line should paint");
+        let _ = fit;
+    }
+
+    #[test]
+    fn playhead_off_when_negative() {
+        let mut data = ScoreData {
+            vb_w: 1000.0,
+            vb_h: 400.0,
+            ..Default::default()
+        };
+        data.cursors.push(Cursor {
+            t: 0.0,
+            x: 100.0,
+            y0: 50.0,
+            y1: 150.0,
+        });
+        data.playhead = -1.0;
+        let mut mesh = Mesh::new();
+        data.render(
+            &mut mesh,
+            Rect::new(0.0, 0.0, 1000.0, 400.0),
+            None,
+            [1.0; 4],
+            [1.0; 4],
+        );
+        assert!(mesh.is_empty(), "no playhead when time is negative");
     }
 
     #[test]
@@ -722,7 +862,13 @@ mod tests {
             id: None,
         });
         let mut mesh = Mesh::new();
-        data.render(&mut mesh, Rect::new(0.0, 0.0, 200.0, 200.0), None, [1.0; 4]);
+        data.render(
+            &mut mesh,
+            Rect::new(0.0, 0.0, 200.0, 200.0),
+            None,
+            [1.0; 4],
+            [1.0; 4],
+        );
         assert!(!mesh.is_empty(), "a staff line should paint");
     }
 }

@@ -16,6 +16,7 @@ this module is only the SVG-to-display-list adapter.
 
 from __future__ import annotations
 
+import json
 import re
 import xml.etree.ElementTree as ET
 
@@ -58,7 +59,80 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     if not tk.loadData(data):
         raise ValueError("verovio could not load the score data")
     svg = tk.renderToSVG(page)
-    return svg_to_display_list(svg)
+    dl = svg_to_display_list(svg)
+    tm = tk.renderToTimemap({"includeMeasures": False})
+    timemap = json.loads(tm) if isinstance(tm, (str, bytes, bytearray)) else tm
+    dl["cursors"] = _cursor_track(dl, timemap)
+    return dl
+
+
+def _cursor_track(display_list: dict, timemap: list) -> list:
+    """Fold the timemap (onset ms -> the MEI ids sounding then) together with
+    the placed geometry into a playback-cursor track: for each onset, the page-x
+    of its leftmost note and the y-span of that note's system. This is the
+    bridge from musical time to score geometry — the same id that carries the
+    onset carries the glyph position (see the Phase-1 finding). Sorted by time,
+    ready for the host's ``playhead``."""
+    id_x, id_y = _id_positions(display_list["prims"])
+    systems = _staff_systems(display_list["prims"])
+    track = []
+    for entry in timemap:
+        t = entry.get("tstamp")
+        ons = [i for i in entry.get("on", []) if i in id_x]
+        if t is None or not ons:
+            continue
+        lead = min(ons, key=lambda i: id_x[i])  # the leftmost onset note
+        y0, y1 = _system_bounds(systems, id_y[lead])
+        track.append({"t": round(float(t), 1), "x": round(id_x[lead], 1),
+                      "y0": round(y0, 1), "y1": round(y1, 1)})
+    track.sort(key=lambda c: c["t"])
+    return track
+
+
+def _id_positions(prims):
+    """Map each MEI id to a page position, preferring the glyph (notehead)
+    placement — its transform origin ``(tx, ty)``."""
+    id_x, id_y = {}, {}
+    for p in prims:
+        pid = p.get("id")
+        if not pid or pid in id_x:
+            continue
+        if p["k"] == "glyph":
+            id_x[pid], id_y[pid] = p["xf"][0], p["xf"][1]
+        elif p["k"] == "line" and p["pts"]:
+            id_x[pid], id_y[pid] = p["pts"][0][0], p["pts"][0][1]
+    return id_x, id_y
+
+
+def _staff_systems(prims):
+    """Cluster the horizontal staff lines into systems, each a ``(y_top,
+    y_bottom)`` pair. Staff lines are wide horizontal ``line`` prims; a large
+    vertical gap between them starts a new system."""
+    ys = sorted({round(p["pts"][0][1], 1) for p in prims
+                 if p["k"] == "line" and len(p["pts"]) == 2
+                 and abs(p["pts"][0][1] - p["pts"][1][1]) < 1.0
+                 and abs(p["pts"][0][0] - p["pts"][1][0]) > 500.0})
+    if not ys:
+        return []
+    systems, group = [], [ys[0]]
+    for y in ys[1:]:
+        if y - group[-1] > 500.0:  # gap between systems >> gap between lines
+            systems.append((group[0], group[-1]))
+            group = [y]
+        else:
+            group.append(y)
+    systems.append((group[0], group[-1]))
+    return systems
+
+
+def _system_bounds(systems, y):
+    """The ``(y0, y1)`` cursor span for a note at page-y ``y``: its system's
+    staff extent, padded for stems above and below."""
+    if not systems:
+        return (y - 400.0, y + 400.0)
+    top, bot = min(systems, key=lambda s: min(abs(y - s[0]), abs(y - s[1])))
+    pad = (bot - top) * 0.6 + 100.0
+    return (top - pad, bot + pad)
 
 
 def score_view(display_list: dict, *, scroll_id: int, score_id: int,

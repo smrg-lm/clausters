@@ -696,7 +696,7 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
 
 
 def score(id: int | None = None, *, display_list: dict | None = None,
-          color: str | None = None, **props) -> dict:
+          playhead: float | None = None, color: str | None = None, **props) -> dict:
     """An engraved music-notation ``score`` page.
 
     The host is only the renderer: it fits the engraved page into the widget
@@ -713,8 +713,9 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     now; each primitive still carries its MEI ``id`` for a later editing pass.
     """
     dl = dict(display_list or {})
-    extra = _drop_none(color=color,
-                       vb=dl.get("vb"), glyphs=dl.get("glyphs"), prims=dl.get("prims"))
+    extra = _drop_none(color=color, playhead=playhead,
+                       vb=dl.get("vb"), glyphs=dl.get("glyphs"),
+                       prims=dl.get("prims"), cursors=dl.get("cursors"))
     return node("score", id=id, **extra, **props)
 
 
