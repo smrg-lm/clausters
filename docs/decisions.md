@@ -1650,3 +1650,40 @@ SVG into the display list — is **~17 ms**, from MEI or from Plaine & Easie ali
 That is inside a frame budget for a page of this size, so "incremental relayout"
 buys nothing yet; it starts to matter at a page count a rehearsal score reaches,
 not at the sizes the editing work will first be shaped against.
+
+**Resolved: route 2 — vendor and build verovio ourselves.** It is the only route
+that does not either wait on an upstream release or reimplement the editing
+semantics, and the build turned out cheap: verovio vendors all its dependencies,
+has no submodules, and needs nothing but cmake and a C++20 compiler. The
+arrangement follows the one already proven for libfaust — the source is *not*
+committed (a clone is ~140 MB, git-ignored under `third_party/verovio`) and
+reproducibility comes from two committed files, `third_party/verovio.pin` (the
+remote and the exact commit) and `third_party/build-verovio.sh` (one recipe).
+`third_party/BUILD-VEROVIO.md` documents it.
+
+The pin is a `develop` commit past the `#define` fix rather than a tag, because
+no released tag contains it; **repin to 6.3.0 when it ships**, at which point the
+published wheel is usable again and building stops being mandatory for the Python
+client. It stays required for the native producer.
+
+Two things about that build are not obvious. First, it has **two targets**, not
+one, because two consumers need different artifacts from the same tree: a shared
+`libverovio.so` plus headers and resources (`--library`, what a native producer
+links) and the SWIG Python module (`--python`, what the client engraves with).
+Second, `--python` builds and installs with **two different interpreters** on
+purpose. Compiling needs development headers, which Ubuntu's `python3.14` does
+not ship and which would be the one step wanting sudo; but the extension targets
+the stable ABI (`Py_LIMITED_API` 3.10 → a `cp310-abi3` wheel), so a wheel built
+by any CPython ≥ 3.10 installs into any other. Building with a uv-managed 3.12
+and installing into the 3.14 `.venv` keeps the whole thing in user space.
+
+**A second upstream bug, found once the editor was alive:** `undo` and `redo` on
+an *empty* undo stack dereference it and **SIGSEGV** (reproducible, exit 139).
+The irony is operational, not academic — parameterless `undo` is precisely the
+probe that proves the released wheel's editor is null, and that same probe
+crashes the build where it works. So our editing layer must **gate `undo`/`redo`
+on `editInfo()`'s `canUndo`/`canRedo`** and never issue them blind. Note those
+flags are looser than they appear: a successful `drag` leaves `canUndo` false,
+yet a following `undo` succeeds and sets `canRedo`. They are a crash guard, not a
+model of the stack — which means the client, not verovio, will have to track
+whether there is anything to undo.

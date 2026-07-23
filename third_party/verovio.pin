@@ -1,0 +1,30 @@
+# Pinned verovio for the vendored, reproducible build.
+#
+# Single source of truth for `third_party/build-verovio.sh` (and, in a later
+# phase, the CI composite). Shell-sourceable: KEY=VALUE, no spaces, no quoting
+# needed.
+
+# Where the pinned commit is fetched from. Upstream: unlike Faust, our pin
+# carries no patch of our own -- everything we need is already in the tree.
+VEROVIO_ORIGIN=https://github.com/rism-digital/verovio
+
+# The commit verovio is built from: the `develop` tip of 2026-07-10, which the
+# source itself versions 6.3.0-dev (VERSION_DEV true in include/vrv/vrvdef.h) --
+# i.e. after the 6.2.1 release.
+#
+# It is a commit and not a release tag *because* of that gap. In 6.2.1 the score
+# editor is dead in any build that keeps Humdrum support -- the PyPI wheel
+# included: Toolkit::SetViewAndEditor() guards the construction of
+# m_editorToolkit with `#if defined NO_HUMDRUM_SUPPORT` where it meant
+# `#ifndef NO_EDIT_SUPPORT`, so the guard never opens, the pointer stays null,
+# and every Toolkit::Edit() returns false (parameterless `undo` included, which
+# is what makes the diagnosis certain -- the symbols are in the shipped .so, so
+# it is not a NO_EDIT_SUPPORT build). Upstream inverted the guard in 8100cb396
+# ("Invert #define fix", 2026-05-27), which is an ancestor of the SHA below;
+# building from this pin is what gives us a working editor at all.
+#
+# Repin to the 6.3.0 tag once it is released -- that is the point where the
+# published wheel becomes usable again and this build stops being mandatory for
+# the Python client (it stays required for the native producer). Full 40-char
+# SHA: fetching an arbitrary commit by SHA only resolves unabbreviated.
+VEROVIO_SHA=46a4df5256c8326d9d2d6783ff6e4048312dea34
