@@ -1609,3 +1609,44 @@ interactive — the SVG walk delivers identical read-only geometry today for fre
 so the native `DeviceContext` is scheduled with the editing work, not before. The
 verovio clone under `third_party/` is kept only as the reference for that later
 build; nothing in the shipping path depends on it.
+
+## Score editing: verovio's editor is dead in the released wheel (upstream `#define` bug), so the producer decides the route
+
+*Exploratory finding, recorded from the `notation-verovio` branch — not yet on
+`main`.*
+
+verovio carries a complete editing surface of its own: `EditorToolkitShared`
+implements `drag`, `set`, `insert`, `insertControl`, `delete`, `keyDown`,
+`navigate`, `chain`, `commit` and **undo/redo**, reached through
+`Toolkit::Edit(json)` and surfaced by the Python binding as `tk.edit(dict)` /
+`tk.editInfo()`. On paper that is the whole first editing pass for the `score`
+widget, client-side, with no C++ build.
+
+**It does not work in the released wheel.** In 6.2.1 the editor instance is
+created by `Toolkit::SetViewAndEditor()` inside `#if defined NO_HUMDRUM_SUPPORT`
+— the wrong macro (the editor has nothing to do with Humdrum; the intent was
+`#ifndef NO_EDIT_SUPPORT`). The PyPI wheel is built *with* Humdrum support, so
+the guard never opens, `m_editorToolkit` stays null, and **every** `edit()`
+returns `false` with an empty `editInfo()` — including parameterless actions like
+`undo`, which the parser would otherwise accept unconditionally. That last detail
+is what makes the diagnosis certain rather than a guess about action payloads.
+The symbols are all present in the shipped `.so`, so it is not a
+`NO_EDIT_SUPPORT` build; it is the guard. Upstream fixed it on 2026-05-27
+(`8100cb396`, "Invert #define fix"), after 6.2.1 — the clone under `third_party/`
+carries the corrected `#ifndef NO_EDIT_SUPPORT`.
+
+**Consequence — three routes to editing, and they differ in cost, not in
+capability.** (1) Ship verovio ≥ 6.3 once released: editing arrives in the Python
+client for free, no build. (2) Build verovio ourselves — the deferred native
+producer — which unblocks the editor *now* and additionally buys the in-process
+relayout and edit-back the previous entry describes. (3) Mutate the MEI in
+Python and re-engrave: `getMEI()` out, edit the XML (we own the `xml:id`s),
+`loadData` back. It needs no editor toolkit and no C++ at all, at the price of a
+full relayout per edit and of implementing the semantics ourselves.
+
+Route 3's price is smaller than it sounds and should be measured before it is
+assumed away: a full engrave of a six-bar page — load, lay out, render, walk the
+SVG into the display list — is **~17 ms**, from MEI or from Plaine & Easie alike.
+That is inside a frame budget for a page of this size, so "incremental relayout"
+buys nothing yet; it starts to matter at a page count a rehearsal score reaches,
+not at the sizes the editing work will first be shaped against.
