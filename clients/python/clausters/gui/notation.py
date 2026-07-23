@@ -187,13 +187,18 @@ def _system_bounds(systems, y):
 def score_view(display_list: dict, *, scroll_id: int, score_id: int,
                width: float = 1000.0, zoom: bool = True,
                sample_rate: float | None = None) -> dict:
-    """Wrap an engraved ``display_list`` in a vertical `scroll` sized to the
-    page, ready to drop into a window. The content area is ``width`` wide and as
-    tall as the page's aspect needs, so a multi-system score scrolls vertically
-    (the wheel scrolls; ``zoom`` enables cursor-anchored zoom to read a dense
-    passage). ``sample_rate`` is the rate the playback cursor reads the engine
-    clock through (omitted = the server's own). Returns the `scroll` node; give
-    it and the inner `score` distinct ids (``scroll_id``/``score_id``)."""
+    """Wrap an engraved ``display_list`` in a `scroll` sized to the page, ready
+    to drop into a window. The content area is ``width`` wide and as tall as the
+    page's aspect needs, so a multi-system score scrolls down the systems.
+
+    ``zoom`` enables cursor-anchored zoom to read a dense passage, and it also
+    decides the pan axes: **zoomed in, the page is wider than the view**, so x
+    has to pan too (``axis="both"``); without zoom the page always fits the
+    width and only y can move (``axis="y"``, a plain vertical scroll view).
+
+    ``sample_rate`` is the rate the playback cursor reads the engine clock
+    through (omitted = the server's own). Returns the `scroll` node; give it and
+    the inner `score` distinct ids (``scroll_id``/``score_id``)."""
     from .guidef import score, scroll
 
     vb = display_list.get("vb") or [1.0, 1.0]
@@ -203,7 +208,8 @@ def score_view(display_list: dict, *, scroll_id: int, score_id: int,
         scroll_id,
         score(score_id, display_list=display_list, sample_rate=sample_rate,
               x=0.0, y=0.0, w=width, h=height),
-        axis="y", zoom=zoom, content_w=width, content_h=height,
+        axis="both" if zoom else "y", zoom=zoom,
+        content_w=width, content_h=height,
     )
 
 

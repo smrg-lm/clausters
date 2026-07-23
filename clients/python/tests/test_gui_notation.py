@@ -39,6 +39,18 @@ def test_score_sends_the_drawing_layers_but_not_the_notes():
     assert "notes" not in node
 
 
+def test_score_view_pans_both_axes_only_when_it_can_zoom():
+    page = {"vb": [1000, 500], "glyphs": {}, "prims": []}
+    # zoomed in the page outgrows the view's width, so x has to pan too
+    zoomable = notation.score_view(page, scroll_id=10, score_id=11)
+    assert zoomable["axis"] == "both"
+    assert zoomable["zoom"] == 1
+    # without zoom the page always fits the width: a plain vertical scroll view
+    fixed = notation.score_view(page, scroll_id=10, score_id=11, zoom=False)
+    assert fixed["axis"] == "y"
+    assert fixed["zoom"] == 0
+
+
 def test_score_view_places_the_rate_on_the_inner_score():
     view = notation.score_view({"vb": [1000, 500], "glyphs": {}, "prims": []},
                                scroll_id=10, score_id=11, width=800.0,
