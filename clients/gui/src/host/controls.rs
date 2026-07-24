@@ -331,20 +331,27 @@ fn button(
     size: f32,
     theme: &Theme,
 ) {
-    let body = body_rect_at(rect, false, size);
+    // A button *is* its box, so it fills its whole cell rather than insetting a
+    // `body_rect` the way a slider/field does (whose track must not touch the
+    // cell edge). The layout `gap` already separates it from its neighbours, and
+    // the full cell is also its hit area, so drawing and click now agree. Without
+    // this the box shrank to the text height inside a control bar and floated in
+    // dead space.
     mesh.rect(
-        body,
+        rect,
         if active {
             theme.hilite
         } else {
             theme.accent_dim
         },
     );
-    font::text_centered(mesh, label.unwrap_or("BUTTON"), body, size, theme.text);
+    font::text_centered(mesh, label.unwrap_or("BUTTON"), rect, size, theme.text);
 }
 
 fn toggle(mesh: &mut Mesh, on: bool, label: Option<&str>, rect: Rect, size: f32, theme: &Theme) {
-    let body = body_rect_at(rect, false, size);
+    // Like `button`, the toggle owns its whole cell (its box and label fill it);
+    // the layout gap does the separating.
+    let body = rect;
     let box_side = body.h.min(body.w).min(24.0);
     let box_rect = Rect::new(
         body.x,
