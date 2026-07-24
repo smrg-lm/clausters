@@ -51,6 +51,14 @@ def test_score_carries_the_playhead_anchor_and_rate():
     assert "color" not in node
 
 
+def test_score_editing_is_opt_in():
+    # editing is off unless asked for: a plain view sends no `editable`, so the
+    # host's read-only default holds; an editor sends editable=True.
+    assert "editable" not in score(11, display_list={"vb": [1, 1]})
+    assert score(11, editable=True)["editable"] is True
+    assert score(11, editable=False)["editable"] is False   # survives _drop_none
+
+
 def test_score_carries_the_selected_element():
     node = score(11, display_list={"vb": [100, 50], "glyphs": {}, "prims": []},
                  selected="note-1")

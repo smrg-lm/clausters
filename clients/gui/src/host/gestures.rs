@@ -731,10 +731,15 @@ impl Gestures {
                     });
                     out.push(GestureEffect::Redraw(def_id));
                 }
-                // ...and holding it drags the element's pitch. A press that
-                // does not move stays a plain selection: the release emits
-                // nothing more.
-                if let Some(element) = picked {
+                // ...and, on an editable score, holding it drags the element's
+                // pitch. A press that does not move stays a plain selection: the
+                // release emits nothing more. A read-only page (the default)
+                // still selects and reports the element above, but a drag does
+                // nothing — the host holds no score, so an edit the client will
+                // not apply is a gesture it cannot fulfil.
+                if data.editable
+                    && let Some(element) = picked
+                {
                     self.drag = Some(Drag::ScoreStep {
                         id,
                         element,
@@ -2933,9 +2938,11 @@ mod tests {
     /// A one-score window, the page fitted 1:1 into the child rect: a window of
     /// 1012x412 gives the child (6,6,1000,400), matching the 1000x400 viewBox.
     fn score_host() -> Host {
+        // Editable, so the drag tests exercise the transpose gesture; the
+        // read-only default is covered by its own test below.
         host_from(
             r#"{"type":"window","children":[
-                {"id":80,"type":"score","vb":[1000,400],
+                {"id":80,"type":"score","vb":[1000,400],"editable":true,
                  "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
                  "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
                           {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
@@ -3043,6 +3050,30 @@ mod tests {
         assert!(transpose_emits(&effects).is_empty(), "no step, no edit");
         assert_eq!(score_drag_preview(&host), None);
         assert_eq!(score_selected(&host).as_deref(), Some("n1"));
+    }
+
+    #[test]
+    fn a_read_only_score_selects_but_a_drag_does_not_transpose() {
+        // The same host without `editable`: a press still selects and reports
+        // the element (inspecting a page is not editing it), but dragging it a
+        // full step neither previews nor emits a transpose.
+        let mut host = host_from(
+            r#"{"type":"window","children":[
+                {"id":80,"type":"score","vb":[1000,400],
+                 "glyphs":{"E0A4":"M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+                 "prims":[{"k":"line","pts":[[0,200],[1000,200]],"w":13,"id":"staff"},
+                          {"k":"glyph","cp":"E0A4","xf":[500,200,0.72,-0.72],"id":"n1"}]}]}"#,
+        );
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 1012, 412);
+        let picked = g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+        assert_eq!(element_emits(&picked), vec!["n1".to_string()]);
+        assert_eq!(score_selected(&host).as_deref(), Some("n1"));
+        // two full steps up: no preview while dragging, no transpose on release
+        g.drag_to(&mut host, &ctx, 556.0, 16.0);
+        assert_eq!(score_drag_preview(&host), None);
+        let effects = g.release(&mut host, &ctx, 556.0, 16.0);
+        assert!(transpose_emits(&effects).is_empty(), "read-only: no edit");
     }
 
     // --- piano ---

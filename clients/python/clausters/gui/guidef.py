@@ -698,7 +698,7 @@ def plot(id: int | None = None, *, data=None, blob: int | None = None, path: str
 def score(id: int | None = None, *, display_list: dict | None = None,
           playhead: float | None = None, playhead_at: float | None = None,
           sample_rate: float | None = None, selected: str | None = None,
-          color: str | None = None, **props) -> dict:
+          editable: bool | None = None, color: str | None = None, **props) -> dict:
     """An engraved music-notation ``score`` page.
 
     The host is only the renderer: it fits the engraved page into the widget
@@ -722,16 +722,21 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     it). Since the id is the client's own, a driver resolves it straight back to
     the note in its score — the seam the editing round trip is built on.
 
-    **Editing** is a drag on an element: it moves the element up or down the
-    staff in whole diatonic steps, drawn as it goes, and the release emits
-    ``"transpose" <xml:id> <steps>``. The host owns no score, so that event is a
-    request, not a result — the driver applies it
+    **Editing is opt-in** with ``editable=True``. On an editable score a drag on
+    an element moves it up or down the staff in whole diatonic steps, drawn as it
+    goes, and the release emits ``"transpose" <xml:id> <steps>``. The host owns
+    no score, so that event is a request, not a result — the driver applies it
     (`clausters.gui.notation.Score.transpose` takes exactly those two arguments)
     and sends the re-engraved page back with
     ``GuiHost.set(score_id, display_list=notation.page_json(dl))``, which
     replaces the drawing in place. The displacement stays drawn until that page
     arrives, so the note never flicks back to its old pitch; the playhead and
-    the selection survive it, so the edited note stays selected.
+    the selection survive it, so the edited note stays selected. **Default (a
+    plain view): a drag does nothing** — the host cannot fulfil an edit the
+    driver will not apply, so a read-only page must not offer the gesture.
+    Selection and the ``"element"`` click are *not* gated by ``editable``:
+    inspecting a page (clicking a note to hear it) is not editing it. Toggle it
+    live with ``GuiHost.set(score_id, editable=True)``.
 
     The **playback cursor** rides the display list's ``cursors`` track (the
     engraved timemap: musical time in ms to the placed x of the event sounding
@@ -751,7 +756,7 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     dl = dict(display_list or {})
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
                        sample_rate=sample_rate, selected=selected,
-                       vb=dl.get("vb"), glyphs=dl.get("glyphs"),
+                       editable=editable, vb=dl.get("vb"), glyphs=dl.get("glyphs"),
                        prims=dl.get("prims"), cursors=dl.get("cursors"),
                        step=dl.get("step"))
     return node("score", id=id, **extra, **props)

@@ -15,6 +15,12 @@ carries its own tempo, so anchoring the playback cursor to the sound means
 playing what the timemap timed, exactly as ``gui_score.py`` does. The piece you
 hear is the piece you see, cursor locked to it.
 
+The page here is a **read-only view** -- the default: a drag on a note does
+nothing, because this script does not apply edits. ``gui_score.py`` is the other
+half, an *editor* that passes ``editable=True`` and handles the ``"transpose"``
+round trip. Editing is opt-in precisely so a plain plot like this one never
+offers a gesture it cannot fulfil.
+
 The engraver ships inside the package (``third_party/BUILD-VEROVIO.md``); in a
 source checkout build and stage it once::
 

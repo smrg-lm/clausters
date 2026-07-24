@@ -269,6 +269,12 @@ pub struct ScoreData {
     /// the answer is one message away, and snapping back first would show the
     /// old pitch for a frame.
     pub drag: Option<ScoreDrag>,
+    /// Whether a drag on an element **edits** it (a pitch drag → `"transpose"`).
+    /// Off by default: a score is a view, and the host holds no score, so an
+    /// edit the client will not apply is a gesture that cannot be fulfilled — an
+    /// editor opts in (`editable: true`). Selection and the `"element"` click are
+    /// not gated by this: inspecting a read-only page is not editing it.
+    pub editable: bool,
 }
 
 impl Default for ScoreData {
@@ -287,6 +293,7 @@ impl Default for ScoreData {
             selected: None,
             step: STEP,
             drag: None,
+            editable: false,
         }
     }
 }
@@ -363,6 +370,10 @@ impl ScoreData {
             .map(|s| s as f32)
             .filter(|s| *s > 0.0)
             .unwrap_or(STEP);
+        data.editable = props
+            .get("editable")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         data.index();
         data
     }

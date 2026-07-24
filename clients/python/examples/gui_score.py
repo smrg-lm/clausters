@@ -40,8 +40,13 @@ Then, with the client importable (``pip install ./clients/python`` or
 
 A window opens showing the engraved phrase, stopped at the top -- press **play**
 and the cursor follows the sound. Click a note to hear it and select it, drag one
-up or down to transpose it, and **from note** plays from the one selected. Close
-the window to stop. Needs an audio device, a display and a GPU adapter.
+up or down to transpose it, and **from note** plays from the one selected;
+**undo**/**redo** walk the edits. Close the window to stop. Needs an audio
+device, a display and a GPU adapter.
+
+The undo stack is the client's, not the host's: the host holds no score, so
+every edit -- and every step back through it -- happens on this side, against
+`clausters.gui.notation.Score`. The host only draws the page it is sent.
 """
 
 import sys
@@ -75,6 +80,7 @@ TEMPO = 1.0
 # is the def's own id, which the window root takes, and a widget claiming it
 # would be dropped as a duplicate.
 BAR, REWIND, PLAY, PAUSE, STOP, FROM_NOTE = 2, 3, 4, 5, 6, 7
+UNDO, REDO = 8, 9
 SCROLL, SCORE = 10, 11
 
 
@@ -90,9 +96,11 @@ def scene(display_list: dict, sample_rate: float) -> dict:
               button(PAUSE, label="pause"),
               button(STOP, label="stop"),
               button(FROM_NOTE, label="from note"),
+              button(UNDO, label="undo"),
+              button(REDO, label="redo"),
               layout="row", h=34.0),
         notation.score_view(display_list, scroll_id=SCROLL, score_id=SCORE,
-                            width=880.0, sample_rate=sample_rate),
+                            width=880.0, sample_rate=sample_rate, editable=True),
         layout="col", title="Engraved score (verovio -> GPU)", w=920, h=420,
     )
 
@@ -192,7 +200,7 @@ def main():
         transport.locate(0.0)               # the cursor waits at the top
         print("press play -- click a note to hear it and to select it, drag one "
               "up or down to transpose it, 'from note' plays from the selected "
-              "one; close the window to stop")
+              "one, undo/redo walk the edits; close the window to stop")
 
         # Both round trips run off the same id: the widget reports the MEI id
         # under the cursor, and that id indexes this script's own engraving.
@@ -214,11 +222,39 @@ def main():
                 return
             transport.play(dl["notes"], at=by_id[selected]["t"] / 1000.0)
 
+        def refresh_page():
+            """Re-engrave the score and replace the drawn page in place, rebuilding
+            the id index. Every edit ends here -- a drag, an undo, a redo -- since
+            all the host needs is the new display list; the host keeps the playhead
+            and selection across the swap."""
+            nonlocal dl, by_id
+            dl = score.display_list()
+            gui.set(SCORE, display_list=notation.page_json(dl))
+            by_id = {note["id"]: note for note in dl["notes"]}
+
+        def undo():
+            """Step back one edit. `Score` owns the undo stack (a stack of MEI
+            snapshots) -- the host holds no score, so undo is the client's, and it
+            answers False rather than crashing when there is nothing to undo."""
+            if score.undo():
+                refresh_page()
+                print("  undo")
+            else:
+                print("  nothing to undo")
+
+        def redo():
+            if score.redo():
+                refresh_page()
+                print("  redo")
+            else:
+                print("  nothing to redo")
+
         # The handlers read `dl` and `by_id` when they run, so an edit made
         # meanwhile is simply played.
         buttons = {PLAY: lambda: transport.play(dl["notes"]),
                    PAUSE: transport.pause, STOP: transport.stop,
-                   REWIND: rewind, FROM_NOTE: from_note}
+                   REWIND: rewind, FROM_NOTE: from_note,
+                   UNDO: undo, REDO: redo}
 
         while True:
             msg = gui.poll(timeout=0.1)
@@ -264,9 +300,7 @@ def main():
                     print(f"  refused to transpose {element}: this verovio has "
                           "no working editor")
                     continue
-                dl = score.display_list()
-                gui.set(SCORE, display_list=notation.page_json(dl))
-                by_id = {note["id"]: note for note in dl["notes"]}
+                refresh_page()
                 note = by_id.get(element)
                 print(f"  transposed {element} by {steps:+d} steps"
                       + (f" -> MIDI {note['pitch']}" if note else ""))

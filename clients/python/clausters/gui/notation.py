@@ -842,7 +842,8 @@ def _system_bounds(systems, y):
 
 def score_view(display_list: dict, *, scroll_id: int, score_id: int,
                width: float = 1000.0, zoom: bool = True,
-               sample_rate: float | None = None) -> dict:
+               sample_rate: float | None = None,
+               editable: bool | None = None) -> dict:
     """Wrap an engraved ``display_list`` in a `scroll` sized to the page, ready
     to drop into a window. The content area is ``width`` wide and as tall as the
     page's aspect needs, so a multi-system score scrolls down the systems.
@@ -853,8 +854,12 @@ def score_view(display_list: dict, *, scroll_id: int, score_id: int,
     width and only y can move (``axis="y"``, a plain vertical scroll view).
 
     ``sample_rate`` is the rate the playback cursor reads the engine clock
-    through (omitted = the server's own). Returns the `scroll` node; give it and
-    the inner `score` distinct ids (``scroll_id``/``score_id``)."""
+    through (omitted = the server's own). ``editable`` opts the page into pitch
+    editing (`clausters.gui.guidef.score`): left off, a drag does nothing and the
+    view is read-only, which is what a plain plot of a score wants; a driver that
+    applies the ``"transpose"`` round trip passes ``editable=True``. Returns the
+    `scroll` node; give it and the inner `score` distinct ids
+    (``scroll_id``/``score_id``)."""
     from .guidef import score, scroll
 
     vb = display_list.get("vb") or [1.0, 1.0]
@@ -863,7 +868,7 @@ def score_view(display_list: dict, *, scroll_id: int, score_id: int,
     return scroll(
         scroll_id,
         score(score_id, display_list=display_list, sample_rate=sample_rate,
-              x=0.0, y=0.0, w=width, h=height),
+              editable=editable, x=0.0, y=0.0, w=width, h=height),
         axis="both" if zoom else "y", zoom=zoom,
         content_w=width, content_h=height,
     )

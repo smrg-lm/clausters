@@ -280,6 +280,10 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                     data.playhead_at = keep.playhead_at;
                     data.sample_rate = keep.sample_rate;
                     data.selected = keep.selected;
+                    // A re-engraved page carries only the drawing; whether the
+                    // widget edits is the host's own state, like the chrome, so
+                    // an editor stays an editor across the round trip.
+                    data.editable = keep.editable;
                     true
                 }
                 None => false,
@@ -295,6 +299,9 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
                 .as_str()
                 .map(|s| data.selected = (!s.is_empty()).then(|| s.to_string()))
                 .is_some(),
+            // Turn editing on or off live (a view that becomes an editor, or the
+            // reverse). A drag only transposes while this is true.
+            "editable" => v.as_bool().map(|b| data.editable = b).is_some(),
             _ => false,
         },
         WidgetKind::Slider { range: r, .. } | WidgetKind::Knob(r) | WidgetKind::Number(r) => {
