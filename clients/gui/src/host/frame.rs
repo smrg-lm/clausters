@@ -749,31 +749,35 @@ pub(crate) fn lane_at(body: Rect, lanes: usize, cy: f64) -> usize {
     ((rel * lanes as f64) as usize).min(lanes.saturating_sub(1))
 }
 
-/// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
-/// (chrome under and over the heavy views), the `waveforms`/`spectrograms`/
-/// `canvases` GPU resources and (read-only) `scopes` histories, plus `inputs`
-/// for the live values. One immutable mesh-building pass over the placed
-/// widgets, then the GPU uploads and the single render pass.
-#[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
-pub(crate) fn render(
-    gpu: &mut Gpu,
-    painter: &mut Painter,
-    overlay: &mut Painter,
-    waveforms: &mut HashMap<i32, WaveformSlot>,
-    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
-    canvases: &mut HashMap<i32, CanvasView>,
-    scopes: &HashMap<i32, VecDeque<f32>>,
-    tap_windows: &HashMap<i32, live::TapWindow>,
-    spectra: &HashMap<i32, Vec<SpectrumState>>,
-    tree: &Widget,
+/// The data-driven widgets copied out of the host tree by [`collect_widgets`],
+/// grouped by kind. Each group is drawn in its own pass once the tree borrow is
+/// released, so the meshes and GPU uploads never touch the host tree.
+struct Collected {
+    timeline_items: Vec<TimelineItem>,
+    meter_rects: Vec<MeterItem>,
+    scope_rects: Vec<ScopeItem>,
+    wave_rects: Vec<WaveItem>,
+    phase_rects: Vec<PhaseItem>,
+    spectrum_rects: Vec<SpectrumItem>,
+    plot_rects: Vec<PlotItem>,
+    bpf_rects: Vec<BpfItem>,
+    track_items: Vec<TrackItem>,
+    pianoroll_items: Vec<PianoRollItem>,
+    nodetree_rects: Vec<NodeTreeItem>,
+    canvas_frames: Vec<CanvasFrame>,
+}
+
+/// One immutable pass over the placed widgets: the flat widgets (labels,
+/// controls, panels, the patcher, the score, the piano) draw straight into
+/// `mesh`; every data-driven widget is copied out of the host tree into the
+/// returned [`Collected`], so the heavier meshes and the GPU uploads are built
+/// after the tree borrow is released.
+fn collect_widgets(
+    placed: &[layout::Placed],
+    mesh: &mut Mesh,
     inputs: &FrameInputs,
     theme: &Theme,
-) {
-    let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
-    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
-    let placed = layout::layout(area, tree);
-    let mut mesh = Mesh::new();
-    let mut over = Mesh::new();
+) -> Collected {
     let mut timeline_items: Vec<TimelineItem> = Vec::new();
     // Meter/scope rects, copied out so their shared-memory values and the scope
     // history can be read after the host-tree borrow is released.
@@ -797,7 +801,7 @@ pub(crate) fn render(
     let mut nodetree_rects: Vec<NodeTreeItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
     let active_button = inputs.active_button;
-    for p in &placed {
+    for p in placed {
         // Everything a scrolled widget paints clips to its container's area.
         mesh.set_clip(p.clip);
         // The widget's resolved theme (a theme group's overlay, a `color`
@@ -812,7 +816,7 @@ pub(crate) fn render(
                 align,
             } => {
                 controls::draw_label(
-                    &mut mesh,
+                    &mut *mesh,
                     text,
                     p.rect,
                     *text_size * p.scale,
@@ -935,7 +939,7 @@ pub(crate) fn render(
                 label,
                 ..
             } => piano::draw_widget(
-                &mut mesh,
+                &mut *mesh,
                 p.rect,
                 *min,
                 *max,
@@ -1095,7 +1099,7 @@ pub(crate) fn render(
                     .filter(|(id, _)| Some(*id) == p.widget.id)
                     .map(|(_, r)| r);
                 patch::draw(
-                    &mut mesh,
+                    &mut *mesh,
                     p.rect,
                     patch,
                     label.as_deref(),
@@ -1129,7 +1133,7 @@ pub(crate) fn render(
                 if let Some(id) = p.widget.id {
                     if let Some(text) = label {
                         super::font::text(
-                            &mut mesh,
+                            &mut *mesh,
                             text,
                             p.rect.x + 4.0,
                             p.rect.y + 4.0,
@@ -1164,7 +1168,7 @@ pub(crate) fn render(
                 // (`playhead_at`), so playback costs no messages per frame.
                 let head = data.head_ms(inputs.sample_clock, inputs.sample_rate);
                 data.render(
-                    &mut mesh,
+                    &mut *mesh,
                     p.rect,
                     p.clip,
                     head,
@@ -1177,7 +1181,7 @@ pub(crate) fn render(
             }
             WidgetKind::Window { .. } | WidgetKind::Unknown(_) => {}
             kind => controls::draw(
-                &mut mesh,
+                &mut *mesh,
                 kind,
                 p.rect,
                 p.widget.id == active_button,
@@ -1188,19 +1192,55 @@ pub(crate) fn render(
         }
     }
 
+    Collected {
+        timeline_items,
+        meter_rects,
+        scope_rects,
+        wave_rects,
+        phase_rects,
+        spectrum_rects,
+        plot_rects,
+        bpf_rects,
+        track_items,
+        pianoroll_items,
+        nodetree_rects,
+        canvas_frames,
+    }
+}
+
+/// Draws the live widgets (meters, control- and audio-rate scopes, phasescopes
+/// and spectra) into the base mesh: each reads its source (shared-memory bus,
+/// the tick's rolling history, the stored tap window, the analysis states) and
+/// draws the current value — the tick advances the state, a repaint only draws.
+fn draw_live_meshes(
+    mesh: &mut Mesh,
+    collected: &Collected,
+    scopes: &HashMap<i32, VecDeque<f32>>,
+    tap_windows: &HashMap<i32, live::TapWindow>,
+    spectra: &HashMap<i32, Vec<SpectrumState>>,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
     // Meters and scopes read their control bus straight from shared memory each
     // frame (zero messages); the scope keeps a per-widget rolling history in this
     // window's state.
-    for item in &meter_rects {
+    for item in &collected.meter_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let value = read_bus(inputs.bus, item.bus);
         let frac = meters::fraction(value, item.min, item.max);
-        meters::draw_meter(&mut mesh, item.rect, value, frac, item.label.as_deref(), th);
+        meters::draw_meter(
+            &mut *mesh,
+            item.rect,
+            value,
+            frac,
+            item.label.as_deref(),
+            th,
+        );
     }
     // The history is advanced on the frame tick (`advance_scopes`), not here, so a
     // repaint only ever *draws* the current samples — never adds one.
-    for item in &scope_rects {
+    for item in &collected.scope_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let samples: Vec<f32> = scopes
@@ -1208,7 +1248,7 @@ pub(crate) fn render(
             .map(|h| h.iter().copied().collect())
             .unwrap_or_default();
         meters::draw_scope(
-            &mut mesh,
+            &mut *mesh,
             item.rect,
             &samples,
             item.min,
@@ -1221,12 +1261,12 @@ pub(crate) fn render(
     // on the tick (`live::update_tap_windows`); an empty one draws just the
     // framed field.
     let empty_window = live::TapWindow::default();
-    for item in &wave_rects {
+    for item in &collected.wave_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let window = tap_windows.get(&item.id).unwrap_or(&empty_window);
         meters::draw_wave(
-            &mut mesh,
+            &mut *mesh,
             item.rect,
             &meters::WaveParams {
                 window,
@@ -1245,21 +1285,21 @@ pub(crate) fn render(
     // Phasescopes draw the interleaved L/R window the tick stored (the same
     // `tap_windows` map, keyed by their own ids); spectra draw the per-bin
     // curves the tick folded into their per-channel analysis states.
-    for item in &phase_rects {
+    for item in &collected.phase_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let inter = tap_windows
             .get(&item.id)
             .map(|w| w.samples.as_slice())
             .unwrap_or(&[]);
-        phasescope::draw_phasescope(&mut mesh, item.rect, inter, item.label.as_deref(), th);
+        phasescope::draw_phasescope(&mut *mesh, item.rect, inter, item.label.as_deref(), th);
     }
-    for item in &spectrum_rects {
+    for item in &collected.spectrum_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         if let Some(states) = spectra.get(&item.id) {
             spectrum::draw_spectrum(
-                &mut mesh,
+                &mut *mesh,
                 item.rect,
                 states,
                 &spectrum::SpectrumParams {
@@ -1277,12 +1317,26 @@ pub(crate) fn render(
             );
         }
     }
+}
 
+/// Draws the timeline views (waveform/spectrogram): the field, time ruler and
+/// the vertical-ruler strip go into the base `mesh` (under the GPU view); the
+/// border, lane dividers, selection, playhead and cursor readout into `over`
+/// (drawn over it).
+fn draw_timeline_meshes(
+    mesh: &mut Mesh,
+    over: &mut Mesh,
+    timeline_items: &[TimelineItem],
+    waveforms: &HashMap<i32, WaveformSlot>,
+    spectrograms: &HashMap<i32, SpectrogramSlot>,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
     // Timeline views (waveform/spectrogram): the field, time ruler and the
     // vertical-ruler strip go into the base mesh (under the GPU view); the
     // border, lane dividers, selection, playhead and cursor readout into the
     // overlay mesh (over it).
-    for item in &timeline_items {
+    for item in timeline_items {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
@@ -1300,7 +1354,7 @@ pub(crate) fn render(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, th);
+                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
                 let lanes = slot.view.num_channels();
                 // Overlaid traces share one lane (and one amplitude axis).
                 let draw_lanes = if *overlaid { 1 } else { lanes };
@@ -1315,7 +1369,7 @@ pub(crate) fn render(
                             y0,
                             y_len,
                         );
-                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks, th);
+                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, th);
                     }
                 }
                 for ch in 1..draw_lanes {
@@ -1323,7 +1377,7 @@ pub(crate) fn render(
                     over.rect(Rect::new(lane.x, lane.y, lane.w, 1.0), th.lane_divider);
                 }
                 draw_editor_overlay(
-                    &mut over, item, body, &nav, rate, draw_lanes, inputs, None, th,
+                    &mut *over, item, body, &nav, rate, draw_lanes, inputs, None, th,
                 );
             }
             TimelineKind::Spectrogram { freq_scale, .. } => {
@@ -1342,7 +1396,7 @@ pub(crate) fn render(
                 } else {
                     nyquist * 2.0
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, th);
+                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
                 let lanes = slot.views.len();
                 for ch in 0..lanes {
                     let lane = lane_rect(body, lanes, ch);
@@ -1358,15 +1412,15 @@ pub(crate) fn render(
                             item.editor.y_view().0,
                             item.editor.y_view().1,
                         );
-                        ruler::draw_ticks_v(&mut mesh, body.x, item.rect.x, lane, &ticks, th);
+                        ruler::draw_ticks_v(&mut *mesh, body.x, item.rect.x, lane, &ticks, th);
                     }
                 }
                 // The active scale, named over the view (the live views'
                 // corner slot) — log/mel/bark are not tellable apart from
                 // the tick spacing at a glance.
-                meters::value_text(&mut over, ruler::scale_tag(*freq_scale), body, th);
+                meters::value_text(&mut *over, ruler::scale_tag(*freq_scale), body, th);
                 draw_editor_overlay(
-                    &mut over,
+                    &mut *over,
                     item,
                     body,
                     &nav,
@@ -1379,29 +1433,42 @@ pub(crate) fn render(
             }
         }
     }
+}
 
+/// Draws the remaining static views (plots, envelope editors, node trees,
+/// multitrack lanes and piano rolls): pure mesh work with the host-tree borrow
+/// already released. The flat geometry goes into `mesh`, the hover/selection/
+/// playhead chrome into `over`.
+fn draw_static_meshes(
+    mesh: &mut Mesh,
+    over: &mut Mesh,
+    collected: &Collected,
+    inputs: &FrameInputs,
+    theme: &Theme,
+    tree: &Widget,
+) {
     // Static plots draw from their (already mapped) samples; node trees draw from
     // the model last read off the client leg. Both are pure mesh work with the
     // host-tree borrow already released.
-    for item in &plot_rects {
+    for item in &collected.plot_rects {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         let params = item.params();
-        plot::draw(&mut mesh, item.rect, &params, th);
+        plot::draw(&mut *mesh, item.rect, &params, th);
         // The hover readout (hairline + the value under the cursor) rides the
         // overlay mesh, like the editor views' chrome.
         if let Some(cursor) = inputs.cursor {
-            plot::draw_readout(&mut over, item.rect, &params, cursor, th);
+            plot::draw_readout(&mut *over, item.rect, &params, cursor, th);
         }
     }
     // Envelope editors are pure mesh work: the curve evaluated per pixel
     // column through the shared shape math, discs for the breakpoints.
-    for item in &bpf_rects {
+    for item in &collected.bpf_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         bpf::draw(
-            &mut mesh,
+            &mut *mesh,
             item.rect,
             &item.points,
             item.min,
@@ -1412,11 +1479,11 @@ pub(crate) fn render(
             th,
         );
     }
-    for item in &nodetree_rects {
+    for item in &collected.nodetree_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
         nodetree::draw(
-            &mut mesh,
+            &mut *mesh,
             item.rect,
             inputs.node_trees.get(&item.group),
             item.controls,
@@ -1429,12 +1496,12 @@ pub(crate) fn render(
     // lanes), spanning the longest clip end; each lane's clips are placed on it.
     // The hit-test (`interact::clip_hit`) reads the same `window_nav`, so a clip
     // maps to the same pixels for drawing and dragging.
-    if !track_items.is_empty() {
+    if !collected.track_items.is_empty() {
         // The lanes navigate as a group (linked by default across a window), so
         // the axis zooms and pans as one; the full span is the fallback for a
         // lane not yet in a group.
         let full = track::window_nav(tree);
-        for item in &track_items {
+        for item in &collected.track_items {
             mesh.set_clip(item.clip);
             over.set_clip(item.clip);
             let th = item.theme.as_deref().unwrap_or(theme);
@@ -1444,7 +1511,7 @@ pub(crate) fn render(
                 .unwrap_or(full);
             let ruler_on = item.editor.ruler != Ruler::Off;
             track::draw(
-                &mut mesh,
+                &mut *mesh,
                 item.rect,
                 &nav,
                 item.label.as_deref(),
@@ -1461,7 +1528,7 @@ pub(crate) fn render(
                 } else {
                     inputs.sample_rate
                 };
-                draw_time_ruler(&mut mesh, item.rect, body, &nav, rate, &item.editor, th);
+                draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
             }
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
@@ -1486,7 +1553,7 @@ pub(crate) fn render(
     // mesh, selection/playhead into the overlay. Each draws through its
     // navigation group's shared window (a linked pianoroll zooms/pans with its
     // siblings), falling back to its own content extent when in no group.
-    for item in &pianoroll_items {
+    for item in &collected.pianoroll_items {
         mesh.set_clip(item.clip);
         over.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
@@ -1509,8 +1576,8 @@ pub(crate) fn render(
             inputs.sample_rate
         };
         draw_pianoroll_item(
-            &mut mesh,
-            &mut over,
+            &mut *mesh,
+            &mut *over,
             item,
             &nav,
             rate,
@@ -1519,12 +1586,60 @@ pub(crate) fn render(
             th,
         );
     }
+}
+
+/// Renders `tree` into `gpu`'s surface, using the window's `painter`/`overlay`
+/// (chrome under and over the heavy views), the `waveforms`/`spectrograms`/
+/// `canvases` GPU resources and (read-only) `scopes` histories, plus `inputs`
+/// for the live values. One immutable mesh-building pass over the placed
+/// widgets, then the GPU uploads and the single render pass.
+#[allow(clippy::too_many_arguments)] // the per-window resource set, both fronts
+pub(crate) fn render(
+    gpu: &mut Gpu,
+    painter: &mut Painter,
+    overlay: &mut Painter,
+    waveforms: &mut HashMap<i32, WaveformSlot>,
+    spectrograms: &mut HashMap<i32, SpectrogramSlot>,
+    canvases: &mut HashMap<i32, CanvasView>,
+    scopes: &HashMap<i32, VecDeque<f32>>,
+    tap_windows: &HashMap<i32, live::TapWindow>,
+    spectra: &HashMap<i32, Vec<SpectrumState>>,
+    tree: &Widget,
+    inputs: &FrameInputs,
+    theme: &Theme,
+) {
+    let (fb_w, fb_h) = (gpu.config.width.max(1), gpu.config.height.max(1));
+    let area = Rect::new(0.0, 0.0, fb_w as f32, fb_h as f32);
+    let placed = layout::layout(area, tree);
+    let mut mesh = Mesh::new();
+    let mut over = Mesh::new();
+    let collected = collect_widgets(&placed, &mut mesh, inputs, theme);
+
+    draw_live_meshes(
+        &mut mesh,
+        &collected,
+        scopes,
+        tap_windows,
+        spectra,
+        inputs,
+        theme,
+    );
+    draw_timeline_meshes(
+        &mut mesh,
+        &mut over,
+        &collected.timeline_items,
+        waveforms,
+        spectrograms,
+        inputs,
+        theme,
+    );
+    draw_static_meshes(&mut mesh, &mut over, &collected, inputs, theme, tree);
 
     mesh.set_clip(None);
     over.set_clip(None);
     painter.upload(&gpu.device, &gpu.queue, &mesh, fb_w, fb_h);
     overlay.upload(&gpu.device, &gpu.queue, &over, fb_w, fb_h);
-    for item in &timeline_items {
+    for item in &collected.timeline_items {
         let body = timeline_body(item.rect, &item.editor);
         match &item.kind {
             TimelineKind::Waveform { .. } => {
@@ -1565,7 +1680,7 @@ pub(crate) fn render(
     }
     // Recompile any canvas whose shader changed, then push its per-frame uniforms
     // (viewport size, elapsed time, resolved params).
-    for frame in &canvas_frames {
+    for frame in &collected.canvas_frames {
         if let Some(view) = canvases.get_mut(&frame.id) {
             view.set_shader(&gpu.device, &frame.shader);
             let time = view.elapsed();
@@ -1613,7 +1728,7 @@ pub(crate) fn render(
             multiview_mask: None,
         });
         painter.draw(&mut pass);
-        for item in &timeline_items {
+        for item in &collected.timeline_items {
             let body = timeline_body(item.rect, &item.editor);
             if body.w < 1.0 || body.h < 1.0 {
                 continue;
@@ -1660,7 +1775,7 @@ pub(crate) fn render(
                 }
             }
         }
-        for frame in &canvas_frames {
+        for frame in &collected.canvas_frames {
             if frame.body.w >= 1.0
                 && frame.body.h >= 1.0
                 && let Some(view) = canvases.get(&frame.id)
