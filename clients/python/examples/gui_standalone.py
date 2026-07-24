@@ -127,8 +127,11 @@ def main(argv):
     synth_path, gui_path = write_bundle(data_dir)
     print(f"wrote {synth_path}")
     print(f"wrote {gui_path}")
-    print("\nlaunch the bundle as a self-contained instrument (from clients/gui):\n")
-    print(f"    cargo run --features standalone --bin clausters-gui -- "
+    print("\nlaunch the bundle as a self-contained instrument (the GUI host is "
+          "its own workspace, so point cargo at its manifest -- run this from the "
+          "repo root):\n")
+    print(f"    cargo run --manifest-path clients/gui/Cargo.toml "
+          f"--features standalone --bin clausters-gui -- "
           f"--standalone {GUI_NAME} --data-dir {data_dir}\n")
     print("a window opens; turning the knob drives the drone's freq on the "
           "embedded server (no other process).")

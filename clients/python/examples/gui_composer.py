@@ -224,23 +224,6 @@ win = editor.open(gui)
 print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 
 # %% [markdown]
-# ## The melody, as a dedicated piano-roll
-# The same `Track`, opened in the **editor-grade note view**: a second `Editor`
-# in its dedicated mode (`open_pianoroll`). Both editors draw their widget ids
-# from the host's one recycling pool, so their windows never collide without any
-# hand-partitioned range. The two windows share the melody's timeline — drag a
-# note here and the next play renders it; the multitrack's clip is another view
-# of the same material. A note edit needs **random-access** material (a `Track`):
-# open a *generator* this way (the bass `Pbind`, say) and its bounced notes show
-# read-only — bounce it to a `Track` to edit it.
-
-# %%
-roll = Editor(melody, sample_rate=SR, tempo=TEMPO, quant=QUANT,
-              title="Lead — piano-roll")
-roll_win = roll.open_pianoroll(gui)
-print(f"opened window {roll_win} — drag a note; play re-reads the melody")
-
-# %% [markdown]
 # ## The transport
 # The editor owns it: `play` from where the cursor is (a fresh render, so it
 # plays the composition as it now stands), `pause` where we are, `stop` back to the
@@ -297,10 +280,10 @@ if __name__ == "__main__":
             # `editor.apply`, which nulls the window and stops the loop.
             if gui.dispatch(addr, args):
                 continue
-            # Both editors read the one event stream: each applies only what
-            # resolves through its own widgets, so the other's events fall
-            # through untouched.
-            if editor.apply(addr, args) or roll.apply(addr, args):
+            # A clip edit-back onto the arrangement (a move/resize, or a note or
+            # break-point dragged in a clip body). Anything the editor does not
+            # recognize falls through untouched.
+            if editor.apply(addr, args):
                 # An edit does not interrupt what is sounding: it changes the
                 # *model*, and the next play (or a resume, or a rewind) plays it —
                 # `render` always re-flattens the composition, so it picks up the

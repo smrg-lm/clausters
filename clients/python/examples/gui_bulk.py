@@ -35,6 +35,7 @@ up on 57110, so the session boots its own. Needs a display and a GPU adapter.
 # %%
 import math
 import os
+import shutil
 import struct
 import sys
 import tempfile
@@ -141,10 +142,10 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
         run(30.0)
     finally:
         session.close()
+        # Sweep the whole temp dir: besides the files written here, the host
+        # leaves a sibling peaks cache next to each mapped resource. The one-off
+        # source WAV lives in the system temp dir, so it goes on its own.
         os.remove(wav)
-        for p in (raw_path, cache_path, exported_path):
-            if os.path.exists(p):
-                os.remove(p)
-        os.rmdir(tmp)
+        shutil.rmtree(tmp, ignore_errors=True)
 else:
     print("bulk up - run(10) to keep it open, session.close() to end")

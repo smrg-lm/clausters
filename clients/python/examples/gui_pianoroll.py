@@ -115,6 +115,10 @@ win = gui.open(window(
     title="Piano-roll -> Pbind", w=800, h=520, layout="col"))
 print(f"opened window {win} -- draw the notes, then press play")
 
+# The clock has to run for `session.play` to fire the pattern in real time
+# (without it the Pbind is scheduled on a stopped clock and never sounds).
+session.start()
+
 # %% [markdown]
 # ## Hear the drawn notes
 # `play()` turns the current note list into a monophonic `Pbind` (notes sorted by

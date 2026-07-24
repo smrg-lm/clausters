@@ -165,3 +165,34 @@ y abrirlo en un navegador con WebGPU (fallback WebGL2 donde esté deshabilitado)
 - Con un servidor `--ws` y `?server=ws://127.0.0.1:57120`, los bindings y los
   meters/scopes siguen los buses en vivo; `parity.html` loguea la paridad
   nativo/browser por consola.
+
+## Ejemplos con problemas conocidos (pendientes)
+
+Constancia del estado real tras las pruebas a mano (2026-07-24). No dar por
+bueno lo de abajo hasta arreglarlo:
+
+- **`gui_pianoroll.py`** — el botón *play* ahora dispara sonido (faltaba
+  `session.start()` para que el clock corra), pero **reproduce mal**: las notas
+  que suenan no son las esperadas. Pendiente revisar el armado del `Pbind`
+  (unidades beats/samples, mapeo de pitch/dur).
+- **`gui_standalone.py`** — el comando de lanzamiento ya apunta al workspace
+  correcto (`cargo run --manifest-path clients/gui/Cargo.toml --features
+  standalone …`, desde la raíz). El bundle **abre pero no suena**: el servidor
+  embebido no produce audio (o el `boot`/`bind` no llega). Pendiente.
+- **`gui_composer.py`** — el aplastamiento de las notas de los clips piano-roll
+  quedó arreglado (fix del host). Se le **quitó la segunda ventana** (Lead
+  piano-roll) porque el sync visual composer↔Lead no funciona: el dato del
+  `Track` se comparte y se oye bien, pero el dibujo del clip del composer no se
+  refresca al editar en Lead. A resolver más adelante (necesita redibujo seguro
+  del `Editor`). Además, **el área de trabajo no se extiende al arrastrar** un
+  clip hacia el final — en investigación (es el path de `clips_span`/
+  `sync_track_totals`/`NAV_HEADROOM` del host, ajeno al fix de dibujo de notas).
+- **`gui_multitrack.py`** — **no reproduce audio**: es por diseño (solo dibuja
+  los clips y rueda el cabezal anclado al clock; no agenda ningún synth). Si se
+  quiere sonoro hay que agregarle playback.
+
+Pendientes del host (no de un ejemplo puntual): el teclado del `piano`/
+`pianoroll` no dibuja líneas divisorias entre teclas del mismo color; el eje
+vertical del `pianoroll` no permite alejar el zoom más allá de `[min, max]`; y
+el zoom del strip del `piano` se percibe asimétrico respecto del cursor
+(unidades lineales del strip vs. unidades de tecla blanca del teclado).
