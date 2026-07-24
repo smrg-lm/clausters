@@ -6,6 +6,7 @@ members = [
     "crates/clausters-core-web",
     "crates/clausters-ffi",
     "crates/clausters-midi",
+    "crates/clausters-notation",
     "crates/clausters-web",
 ]
 resolver = "3"

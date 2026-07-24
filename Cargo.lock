@@ -274,6 +274,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "clausters-notation"
+version = "0.3.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "clausters-web"
 version = "0.3.0"
 dependencies = [

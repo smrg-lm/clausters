@@ -1,0 +1,20 @@
+[package]
+name = "clausters-notation"
+version = "0.3.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "libverovio binding for Clausters: engrave a score into resolution-independent geometry (verovio SVG), the native half of the notation layer, behind the optional `verovio` feature."
+
+[dependencies]
+# Only the `verovio` path needs it (the toolkit options JSON); kept optional so a
+# plain build pulls nothing. The format-agnostic walk/encoder live in
+# clausters-core, not here.
+serde_json = { version = "1", optional = true }
+
+[features]
+# Off by default: notation is an optional GUI producer, and a plain build must
+# link no libverovio (mirrors how the server keeps a SynthDef-only build free of
+# libfaust). The Python reference wheel turns it on (clients/python/build_native.py);
+# with the feature off this crate is empty.
+default = []
+verovio = ["dep:serde_json"]
