@@ -255,9 +255,8 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   vuelta y **suena en la altura nueva** — la nota queda seleccionada y la
   página no parpadea. El grabador viaja dentro del paquete
   (`clausters/_libs/verovio`), así que no hace falta instalar nada aparte; en
-  un checkout hay que construirlo una vez con
-  `third_party/build-verovio.sh --python` y stagearlo
-  (`scripts/refresh-bin.sh`), o el script avisa que no hay grabador.
+  un checkout hay que construirlo una vez con `third_party/build-verovio.sh` y
+  stagearlo (`scripts/refresh-bin.sh`), o el script avisa que no hay grabador.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

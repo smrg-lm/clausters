@@ -63,7 +63,6 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --prefix) prefix="$2"; shift 2 ;;
     --prefix=*) prefix="${1#*=}"; shift ;;
-    --library) shift ;;  # accepted and ignored: it is the only target
     -h|--help) sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
