@@ -19,38 +19,31 @@ parity):
 - **Ctrl+click the OSC lane** adds/removes an event; **drag one** to move it;
 - **wheel over the grid** zooms the shared time axis, **Shift+drag** pans it;
 - **drag empty grid** also marquee-selects the notes inside the time x pitch
-  rectangle (it is the same time-selection gesture, restricted in pitch);
-  **Alt+click** toggles a note in/out of the selection;
+  rectangle; **Alt+click** toggles a note in/out of the selection;
 - **drag a selected note** moves the whole selection (rigid, snapped);
-  **Delete/Backspace** removes it; **drag the velocity lane over a selected
-  note** nudges all the selected velocities relatively;
-- **q** quantizes the selected notes' onsets (or all of them) to the snap
-  grid (model-side, ``seq.Timeline.quantize(grid)`` does the same in beats);
-- **Ctrl+C / Ctrl+X / Ctrl+V** copy / cut / paste the selection -- the paste
-  lands with its first note at the cursor's time (snapped), selected and
-  ready to drag; the clipboard travels between rolls and windows.
+  **Delete/Backspace** removes it;
+- **q** quantizes the selected notes' onsets (or all) to the snap grid;
+- **Ctrl+C / Ctrl+X / Ctrl+V** copy / cut / paste the selection.
 
-Every edit flows back per the **edit-back pattern**: the host emits
-``/gui_event <id> "notes" <start dur pitch velocity channel ...>`` (the note
-list as flat OSC primitives — times/pitch floats, velocity/channel ints) and
-``/gui_event <id> "osc" <time label ...>``. This script keeps the two lists in
-sync from those events, and the **play** button turns the current notes into a
-`Pbind` and plays them on the session clock, so the melody you draw is the
-melody you hear.
+Every edit flows back per the **edit-back pattern**: the host emits a ``"notes"``
+event (``start dur pitch velocity channel ...``) and an ``"osc"`` event
+(``time label ...``). Here the roll is *named*, so the script wires one
+``on_event`` that keeps the two lists in sync, and the **play** button turns the
+current notes into a `Pbind` -- the melody you draw is the melody you hear.
 
-This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
-Install once, from the repo root::
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
     python -m venv .venv
     .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
 Run it cell by cell (Shift+Enter) and keep drawing/playing from the live
-handles, or as a plain script -- ``python clients/python/examples/gui_pianoroll.py``
--- which plays the drawn notes a few times, then tears everything down. Needs a
-display and a GPU adapter, plus an audio device.
+handles, or as a plain script -- ``python clients/python/examples/gui_pianoroll.py``.
+Needs a display and a GPU adapter, plus an audio device.
 """
 
 # %%
+import json
 import sys
 import time
 
@@ -82,7 +75,7 @@ def beats(b: float) -> float:
 
 # %% [markdown]
 # ## The voice the notes play
-# A short sine with a percussive envelope that frees its synth — one note per
+# A short sine with a percussive envelope that frees its synth -- one note per
 # `Pbind` event.
 
 # %%
@@ -99,8 +92,8 @@ server.add_synthdef(voice())
 # %% [markdown]
 # ## Open the piano-roll window
 # A two-bar melody (beats -> samples) with per-note velocity, plus two OSC event
-# markers. The pitch window frames an octave around middle C; the beats ruler
-# reads the same tempo grid.
+# markers. The widgets are *named*, so the script drives and listens to the roll
+# by name. The pitch window frames an octave around middle C.
 
 # %%
 # (start_beat, dur_beat, midi_pitch, velocity)
@@ -114,25 +107,19 @@ MELODY = [
 NOTES = [(beats(s), beats(d), p, v) for (s, d, p, v) in MELODY]
 OSC = [(beats(0.0), "/bar"), (beats(2.0), "/bar")]
 
-
-def scene() -> dict:
-    return window(
-        label(1, "drag notes; Ctrl+click adds/removes; velocity lane; play sends it"),
-        pianoroll(10, notes=NOTES, osc=OSC, min=48, max=84, snap=beats(0.25),
-                  ruler="beats", tempo=BPM / 60.0, sample_rate=SR, label="lead"),
-        button(20, label="play"),
-        title="Piano-roll -> Pbind", w=800, h=520, layout="col",
-    )
-
-
-win = gui.open(scene())
+win = gui.open(window(
+    label(name="hint", text="drag notes; Ctrl+click adds/removes; velocity lane; play sends it"),
+    pianoroll(name="roll", notes=NOTES, osc=OSC, min=48, max=84, snap=beats(0.25),
+              ruler="beats", tempo=BPM / 60.0, sample_rate=SR, label="lead"),
+    button(name="play", label="play"),
+    title="Piano-roll -> Pbind", w=800, h=520, layout="col"))
 print(f"opened window {win} -- draw the notes, then press play")
 
 # %% [markdown]
 # ## Hear the drawn notes
-# `play()` turns the current note list into a monophonic `Pbind` (notes sorted
-# by onset; each event's ``dur`` is the beats to the next onset) and plays it on
-# the session clock. The pitches are the MIDI note numbers straight off the roll.
+# `play()` turns the current note list into a monophonic `Pbind` (notes sorted by
+# onset; each event's ``dur`` is the beats to the next onset) and plays it on the
+# session clock.
 
 # %%
 _notes = list(NOTES)  # kept in sync from the "notes" edit-back
@@ -140,7 +127,7 @@ _osc = list(OSC)
 _closed = False
 
 
-def play():
+def play(*_):
     """Play the currently-drawn notes as a monophonic sequence."""
     if not _notes:
         print("no notes to play")
@@ -149,70 +136,50 @@ def play():
     pitches, durs, amps = [], [], []
     for i, (start, dur, pitch, vel) in enumerate(seq):
         pitches.append(int(pitch))
-        # The beats to the next onset (the last note holds its own duration).
         nxt = seq[i + 1][0] if i + 1 < len(seq) else start + dur
         durs.append(max((nxt - start) / SAMPLES_PER_BEAT, 0.05))
         amps.append(vel / 127.0)
-    session.play(Pbind(
-        instrument="gui_pr_voice",
-        midinote=Pseq(pitches, 1),
-        dur=Pseq(durs, 1),
-        amp=Pseq(amps, 1),
-        legato=0.9,
-    ))
+    session.play(Pbind(instrument="gui_pr_voice", midinote=Pseq(pitches, 1),
+                       dur=Pseq(durs, 1), amp=Pseq(amps, 1), legato=0.9))
     print(f"played {len(seq)} notes")
 
 
-def drain_events():
-    """Reads pending events: note/OSC edits update the local lists (silently, so
-    they print as they arrive), the play button triggers the sequence."""
-    global _notes, _osc, _closed
-    while (msg := gui.poll(0.0)) is not None:
-        addr, args = msg
-        if addr == "/gui_closed":
-            _closed = True
-        elif addr == "/gui_event" and len(args) >= 2 and args[1] == "notes":
-            # id, "notes", then start dur pitch velocity channel quintuples.
-            flat = list(args[2:])
-            _notes = [
-                (flat[i], flat[i + 1], int(flat[i + 2]), int(flat[i + 3]))
-                for i in range(0, len(flat) - 4, 5)
-            ]
-            print(f"notes edited: {len(_notes)} notes")
-        elif addr == "/gui_event" and len(args) >= 2 and args[1] == "osc":
-            flat = list(args[2:])
-            _osc = [(flat[i], flat[i + 1]) for i in range(0, len(flat) - 1, 2)]
-            print(f"osc edited: {len(_osc)} events")
-        elif addr == "/gui_event" and args[0] == 20 and args[1] == 1:
-            play()
+def on_roll(tag, *vals):
+    """The roll's edit-backs: ``"notes"`` quintuples or ``"osc"`` pairs, kept in
+    the local lists (silently) so `play` hears what is drawn."""
+    global _notes, _osc
+    flat = list(vals)
+    if tag == "notes":
+        _notes = [(flat[i], flat[i + 1], int(flat[i + 2]), int(flat[i + 3]))
+                  for i in range(0, len(flat) - 4, 5)]
+        print(f"notes edited: {len(_notes)} notes")
+    elif tag == "osc":
+        _osc = [(flat[i], flat[i + 1]) for i in range(0, len(flat) - 1, 2)]
+        print(f"osc edited: {len(_osc)} events")
 
 
-play()
+win["roll"].on_event(on_roll)
+win["play"].on_event(lambda value: play() if value == 1 else None)  # 1 = press
+win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
-# ## Set the notes from the script
-# The note list is settable live -- a ``/gui_set`` value is a scalar, so the
-# array rides as its JSON string (the same carrier ``points`` uses). Here: a
-# rising scale replaces the melody, and the window redraws it.
+# ## Hear it now, and set the notes from the script
+# Play the seed once, then replace the melody live -- a ``/gui_set`` value is a
+# scalar, so the array rides as its JSON string (the carrier ``points`` uses).
 
 # %%
-import json
-
+play()
 _scale = [(beats(i * 0.5), beats(0.5), 60 + i * 2, 100) for i in range(8)]
-_flat = [x for n in _scale for x in (n[0], n[1], float(n[2]), n[3], 0)]
-gui.set(10, notes=json.dumps(_flat))
+win["roll"].set(notes=json.dumps([x for n in _scale for x in (n[0], n[1], float(n[2]), n[3], 0)]))
 _notes = _scale
 
 # %% [markdown]
 # ## Paint notes from a MIDI keyboard (optional cell)
 # The client-side live input: a `MidiFunc` pair catches note-on/off from the
 # client's virtual MIDI port (route a keyboard into **"clausters-in"**) and
-# paints each note into the roll via ``/gui_set``, timed by the session clock
-# from the first key down. The host has the same feature natively: open the
-# roll with ``midi_in=True`` (a `pianoroll` prop) and route a device into the
-# host's **"clausters-gui"** port -- notes paint at the running playhead, or
-# step-enter on the snap grid when the transport is stopped. That native path
-# is the standalone story: no language client required.
+# paints each note into the roll via ``set``, timed by the session clock from the
+# first key down. The host has the same feature natively: open the roll with
+# ``midi_in=True`` and route a device into the host's **"clausters-gui"** port.
 
 # %%
 def record_midi():
@@ -222,8 +189,8 @@ def record_midi():
     held, t0 = {}, None
 
     def paint():
-        flat = [x for n in _notes for x in (n[0], n[1], float(n[2]), n[3], 0)]
-        gui.set(10, notes=json.dumps(flat))
+        win["roll"].set(notes=json.dumps(
+            [x for n in _notes for x in (n[0], n[1], float(n[2]), n[3], 0)]))
 
     def on(msg, _src):
         nonlocal t0
@@ -248,23 +215,28 @@ def record_midi():
 # funcs = record_midi()   # arm it, play, then: [f.free() for f in funcs]
 
 # %% [markdown]
-# ## Plain-script run
-# Cell-run: keep drawing and call `play()` / `drain_events()` between cells.
-# Script-run: draw for a while -- edits print as they arrive, the **play**
-# button sends the sequence -- then everything is torn down.
+# ## Drive it
+# Cell-run: keep drawing and call `play()` between cells. Script-run: pump events
+# for a while -- edits print as they arrive, the **play** button and a timer send
+# the sequence -- then everything is torn down.
 
 # %%
-if __name__ == "__main__":
+def run(seconds: float) -> None:
+    """Dispatches roll events for ``seconds``, replaying every 8 s."""
+    start = time.monotonic()
+    next_play = start + 8.0
+    while time.monotonic() - start < seconds and not _closed:
+        gui.pump(timeout=0.05)
+        if time.monotonic() >= next_play:
+            play()
+            next_play += 8.0
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        deadline = time.monotonic() + 45.0
-        next_play = time.monotonic() + 8.0
-        while time.monotonic() < deadline and not _closed:
-            drain_events()
-            if time.monotonic() >= next_play:
-                play()
-                next_play += 8.0
-            time.sleep(0.05)
-        gui.close(win)
+        run(45.0)
+    finally:
         session.close()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+else:
+    print("pianoroll up - run(10) to dispatch events, session.close() to end")
