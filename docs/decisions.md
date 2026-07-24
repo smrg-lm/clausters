@@ -1562,11 +1562,8 @@ carries the name. The per-box **role** the decode still ships (`source` / `const
 
 ## Music notation: the client engraves a display list; verovio's DeviceContext is a proven-viable path kept in reserve
 
-*Exploratory finding, recorded from the `notation-verovio` branch — not yet on
-`main`.*
-
 Notation is engraved by [verovio](https://verovio.org), which lays out a digital
-score (MEI, MusicXML, ABC, Humdrum, Plaine & Easie) into resolution-independent
+score (MEI, MusicXML, ABC or Plaine & Easie) into resolution-independent
 geometry: SMuFL glyph outlines placed by transform, plus engraving strokes and
 fills (staff lines, stems, beams, slurs). Two ways exist to get that geometry
 onto the GPU, because verovio renders through an **abstract `DeviceContext`** —
@@ -1611,9 +1608,6 @@ verovio clone under `third_party/` is kept only as the reference for that later
 build; nothing in the shipping path depends on it.
 
 ## Score editing: verovio's editor is dead in the released wheel (upstream `#define` bug), so the producer decides the route
-
-*Exploratory finding, recorded from the `notation-verovio` branch — not yet on
-`main`.*
 
 verovio carries a complete editing surface of its own: `EditorToolkitShared`
 implements `drag`, `set`, `insert`, `insertControl`, `delete`, `keyDown`,
@@ -1676,6 +1670,23 @@ not ship and which would be the one step wanting sudo; but the extension targets
 the stable ABI (`Py_LIMITED_API` 3.10 → a `cp310-abi3` wheel), so a wheel built
 by any CPython ≥ 3.10 installs into any other. Building with a uv-managed 3.12
 and installing into the 3.14 `.venv` keeps the whole thing in user space.
+
+**Building it ourselves also means choosing what is in it,** and the importers
+are independent cmake options. The build keeps MEI (the canonical format the
+edit cycle round-trips through), MusicXML and `.mxl`, and the two compact
+hand-typed formats, ABC and Plaine & Easie; it drops Humdrum, GABC and DARMS.
+Only Humdrum is a size argument, and a real one — it vendors humlib, ~148k
+lines, and dropping it takes the built wheel from 8.2 MB to 5.2 MB. The other
+two are noise (ABC and PAE measure ~10 KB apart) and are out because nothing
+reads them. The tempting inference — that the fonts are the weight — is wrong in
+the direction that matters: SMuFL *is* 12 of the 30 MB **installed**, across
+2656 one-glyph XML files in five music fonts, but those compress to ~600 KB in a
+wheel, so they cost disk, not download.
+
+A last twist on the `#define` bug: in 6.2.1 the editor and Humdrum were
+entangled, so this very trim would have revived the editor there. Past the pin
+they are independent — which is why the build can be both small and editable
+without trading one for the other.
 
 **A second upstream bug, found once the editor was alive:** `undo` and `redo` on
 an *empty* undo stack dereference it and **SIGSEGV** (reproducible, exit 139).

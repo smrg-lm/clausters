@@ -86,6 +86,28 @@ fi
 
 build="${VEROVIO_BUILD:-$src/build-clausters}"
 
+# --- What we build out of verovio, and what we leave out ---------------------
+# The importers are independent cmake options, so the build carries only the
+# input formats the client actually offers. Kept: MEI (the canonical format --
+# the edit cycle round-trips through it), MusicXML and its compressed form (what
+# a user brings from a notation editor), and Plaine & Easie plus ABC (the two
+# compact ones a score is typed in by hand). Dropped: Humdrum, GABC and DARMS.
+#
+# Only Humdrum is worth a size argument -- it vendors humlib, 148k lines of it,
+# and dropping it takes the built wheel from 8.2 MB to 5.2 MB. The other three
+# are noise either way (PAE and ABC measure ~10 KB apart), so they are out
+# because nothing here reads them, not to save anything.
+#
+# NO_EDIT_SUPPORT stays off, obviously: the editor is why this build exists. It
+# is worth knowing that in 6.2.1 the two were entangled -- the editor was guarded
+# by Humdrum being *off*, so this trim alone would have revived it. Past the pin
+# they are independent, so we get small and editable without the coupling.
+vrv_options=(
+  -DNO_HUMDRUM_SUPPORT=ON
+  -DNO_GABC_SUPPORT=ON
+  -DNO_DARMS_SUPPORT=ON
+)
+
 # --- Fetch the pinned commit (unless told to build the tree as-is) -----------
 # No submodules to update: verovio vendors its dependencies in-tree.
 if [ "${VEROVIO_SKIP_FETCH:-0}" != 1 ]; then
@@ -124,7 +146,8 @@ if [ "$build_library" = 1 ]; then
   cmake -S "$src/cmake" -B "$build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_AS_LIBRARY=ON \
-    -DCMAKE_INSTALL_PREFIX="$prefix"
+    -DCMAKE_INSTALL_PREFIX="$prefix" \
+    "${vrv_options[@]}"
   cmake --build "$build" --parallel "$(nproc)"
   echo ">> installing into $prefix"
   cmake --install "$build"
@@ -165,7 +188,11 @@ sys.exit(0 if os.path.exists(os.path.join(sysconfig.get_paths()["include"], "Pyt
   fi
 
   echo ">> building the verovio Python module from $src with $("$builder" -V)"
-  "$builder" -m pip wheel --no-deps --wheel-dir "$wheeldir" "$src"
+  # scikit-build-core forwards SKBUILD_CMAKE_DEFINE to the same cmake project
+  # the --library target configures directly, so one option list drives both.
+  defines="$(IFS=';'; printf '%s' "${vrv_options[*]#-D}")"
+  SKBUILD_CMAKE_DEFINE="$defines" \
+    "$builder" -m pip wheel --no-deps --wheel-dir "$wheeldir" "$src"
   wheel="$(ls -t "$wheeldir"/verovio-*.whl | head -1)"
   echo ">> installing $(basename "$wheel") into $("$python" -V)"
   "$python" -m pip install --force-reinstall "$wheel"

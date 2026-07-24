@@ -1,8 +1,8 @@
 # Building verovio from `third_party/verovio`
 
-How to build [verovio](https://www.verovio.org) — the MEI/MusicXML/ABC/Humdrum/
-Plaine & Easie engraving library behind the notation track — from the source
-vendored in `third_party/verovio`, entirely in user space (no sudo).
+How to build [verovio](https://www.verovio.org) — the engraving library behind
+the notation track — from the source vendored in `third_party/verovio`, entirely
+in user space (no sudo).
 
 This mirrors `BUILD-FAUST.md` next to it: same pin-plus-script arrangement, same
 prefix layout, same protections. What differs is *why* we build it at all, and
@@ -76,6 +76,28 @@ SWIG does not have to be installed — `pyproject.toml` lists it in
 environment. The headers are the one thing a distro splits into a `-dev` package
 you would need sudo for, and the script routes around that; see below.
 
+## What the build carries (and what it leaves out)
+
+verovio's importers are independent cmake options, so the build ships only the
+input formats the client offers. **Kept:** MEI — the canonical one, and what the
+edit cycle round-trips through — MusicXML and its compressed `.mxl` form, and
+the two compact hand-typed formats, **ABC** and **Plaine & Easie**. **Dropped:**
+Humdrum, GABC and DARMS.
+
+Only Humdrum is a size argument, and a real one: it vendors humlib, ~148k lines,
+and dropping it takes the built Python wheel from **8.2 MB to 5.2 MB**. The
+other two are noise — ABC and PAE measure about 10 KB apart — and are out
+because nothing reads them, not to save anything.
+
+Worth knowing if you ever change these flags: in 6.2.1 the editor and Humdrum
+were *entangled* (the editor was guarded by Humdrum being off — the bug below),
+so this same trim would have revived it. Past the pin they are independent, so
+the build is small **and** editable with no coupling between the two.
+
+Both targets take the flags from one list in the script (`vrv_options`), the
+`--python` one via scikit-build-core's `SKBUILD_CMAKE_DEFINE`, so the library
+and the Python module can never drift apart in what they can read.
+
 ## The two targets
 
 They are separate compiles of the same sources, so asking for both costs two
@@ -86,7 +108,8 @@ builds.
 ```sh
 cmake -S third_party/verovio/cmake -B <build> \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_AS_LIBRARY=ON \
-      -DCMAKE_INSTALL_PREFIX=<prefix>
+      -DCMAKE_INSTALL_PREFIX=<prefix> \
+      -DNO_HUMDRUM_SUPPORT=ON -DNO_GABC_SUPPORT=ON -DNO_DARMS_SUPPORT=ON
 cmake --build <build> --parallel $(nproc)
 cmake --install <build>
 ```

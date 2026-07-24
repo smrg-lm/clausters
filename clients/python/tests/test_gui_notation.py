@@ -13,8 +13,16 @@ import pytest
 
 from clausters.gui import notation, score
 
-# A two-bar phrase in Plaine & Easie, small enough to engrave in milliseconds.
-PHRASE = "@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/"
+# A two-bar phrase in ABC, small enough to engrave in milliseconds. `L:1/4`
+# makes a bare letter a quarter note, and octaves read as they do in Helmholtz:
+# `C` is middle C, `c` the one above.
+PHRASE = """X:1
+T:Two bars
+M:4/4
+L:1/4
+K:C
+CDEF|GABc|
+"""
 
 
 def test_score_carries_the_playhead_anchor_and_rate():
@@ -71,14 +79,15 @@ def test_a_note_owns_everything_drawn_inside_it():
     pytest.importorskip("verovio")
     # eighths, so every note has a notehead, a stem and a flag -- three
     # primitives verovio gives ids of their own, which would otherwise scatter
-    # one note across three elements to select and drag
-    dl = notation.engrave("@clef:G-2\n@timesig:4/4\n@data:8CDEF8GABc'/")
+    # one note across three elements to select and drag. The spaces matter:
+    # adjacent eighths beam in ABC, and a beamed one has no flag to test.
+    dl = notation.engrave("X:1\nT:Eighths\nM:4/4\nL:1/8\nK:C\nC D E F G A B c|\n")
     first = dl["notes"][0]["id"]
     parts = [p["k"] for p in dl["prims"] if p.get("id") == first]
     assert parts == ["glyph", "line", "glyph"]  # notehead, stem, flag
     # a chord is not an element in that sense: its notes nest inside it and
     # each keeps its own id, or one of them could not be transposed alone
-    chord = notation.engrave("@clef:G-2\n@timesig:4/4\n@data:4C^E^G4G2C/")
+    chord = notation.engrave("X:1\nT:Chord\nM:4/4\nL:1/4\nK:C\n[CEG] G z2|\n")
     heads = [n["id"] for n in chord["notes"][:3]]
     assert len(set(heads)) == 3
     assert all(len([p for p in chord["prims"] if p.get("id") == i]) == 1

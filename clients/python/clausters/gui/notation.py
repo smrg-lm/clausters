@@ -1,7 +1,7 @@
 """Engrave a score into the host's ``score`` display list, driving verovio.
 
 This is the client-side rendering step: verovio lays out a digital score (MEI,
-MusicXML, ABC, Humdrum, PAE, ...) into SVG, and this module walks that SVG into
+MusicXML, ABC or Plaine & Easie) into SVG, and this module walks that SVG into
 the flat, resolution-independent display list the GUI host's ``score`` widget
 consumes — a SMuFL glyph-outline table plus placed primitives (glyphs, staff
 lines, stems, beams, slurs) in verovio page units, each carrying the MEI

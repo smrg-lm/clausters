@@ -26,9 +26,12 @@ steps. Because the id is the client's own, this script resolves both against its
 own score: a click sounds the note, a drag transposes it, re-engraves the page
 and sends it back -- the whole edit round trip, with nothing shared but the id.
 
-Install the optional engraver::
+The engraver is verovio, and this needs **our** build of it, not the published
+wheel: in 6.2.1 the score editor is unreachable and every edit is refused, so
+``pip install verovio`` would engrave the page and then silently decline to
+change it. Build the pinned one (``third_party/BUILD-VEROVIO.md``)::
 
-    pip install verovio
+    third_party/build-verovio.sh --python
 
 Then, with the client importable (``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::
@@ -38,10 +41,7 @@ Then, with the client importable (``pip install ./clients/python`` or
 A window opens showing the engraved phrase, stopped at the top -- press **play**
 and the cursor follows the sound. Click a note to hear it and select it, drag one
 up or down to transpose it, and **from note** plays from the one selected. Close
-the window to stop. Needs an audio device, a display and a GPU adapter -- and,
-for the editing half, a verovio whose editor works (see
-``third_party/BUILD-VEROVIO.md``; on the published 6.2.1 wheel every edit is
-refused).
+the window to stop. Needs an audio device, a display and a GPU adapter.
 """
 
 import sys
@@ -50,13 +50,21 @@ from clausters import Event, Session, play
 from clausters.gui import button, notation, panel, window
 from clausters.seq.timeline import Playhead, Timeline
 
-# Six bars in Plaine & Easie -- the most compact way to type a score; verovio
-# also reads MEI, MusicXML, ABC and Humdrum through the same loader. Quarters,
-# eighths, a chord (``^``), a half and a whole, each bar filling its 4/4 exactly
-# (verovio drops what overflows a measure, so an over-full bar would be drawn
-# short and sound short).
-PHRASE = ("@clef:G-2\n@keysig:xF\n@timesig:4/4\n@data:"
-          "4CDEF/ 8GAGF 4ED/ 4C8DEFG4A/ 2G4FE/ 4C^E^G4G2C/ 1C/")
+# Six bars in ABC -- the readable way to type a score by hand; verovio reads MEI
+# and MusicXML through the same loader, which is what a score usually arrives as.
+# The header is the whole grammar you need here: `M:` the meter, `L:` the length
+# a bare letter means (a quarter), `K:` the key (G, so every F is sharp). Then a
+# letter is a note (`C` is middle C, `c` the one above), `/` halves it and a
+# digit multiplies it, `[CEG]` is a chord, and `|` bars it. Each bar fills its
+# 4/4 exactly -- verovio drops what overflows a measure, so an over-full bar
+# would be drawn short and sound short.
+PHRASE = """X:1
+T:Six bars
+M:4/4
+L:1/4
+K:G
+C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
+"""
 
 # One beat per second, so the engraving's milliseconds are beats/1000: score time
 # and clock time become the same axis, which is what lets one anchor tie the
