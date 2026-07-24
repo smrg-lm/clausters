@@ -45,10 +45,6 @@ from clausters.seq.timeline import Playhead, Timeline
 # and clock time are the same axis, which is what ties the cursor to the sound.
 TEMPO = 1.0
 
-# Widget ids (none is 1: that is the def's own id, taken by the window root).
-BAR, PLAY, STOP = 2, 3, 4
-SCROLL, SCORE = 10, 11
-
 
 def build_timeline() -> Timeline:
     """A four-bar timeline built in code: a triad on each downbeat with a melody
@@ -84,13 +80,14 @@ def playback_timeline(notes: list) -> Timeline:
 
 
 def scene(display_list: dict, sample_rate: float) -> dict:
-    """A minimal transport over the engraved page."""
+    """A minimal transport over the engraved page. Every widget is *named*, so
+    the script drives it by name and never picks an id."""
     return window(
-        panel(BAR,
-              button(PLAY, label="play"),
-              button(STOP, label="stop"),
+        panel(None,
+              button(name="play", label="play"),
+              button(name="stop", label="stop"),
               layout="row", h=34.0),
-        notation.score_view(display_list, scroll_id=SCROLL, score_id=SCORE,
+        notation.score_view(display_list, name="score",
                             width=880.0, sample_rate=sample_rate),
         layout="col", title="Engraved from a Timeline (data -> score)",
         w=920, h=420,
@@ -113,7 +110,7 @@ def main():
         server = session.server
         sr = float(server.options.sample_rate)
         gui = session.gui()
-        gui.define(1, scene(dl, sr))
+        win = gui.open(scene(dl, sr))
         session.start()
 
         # Play the engraved score, not the source timeline: the cursor rides the
@@ -125,25 +122,21 @@ def main():
             # anchor the cursor: the clock now, plus the play latency, is score 0
             _, args = server.request("/clock", expect=("/clock.reply",))
             now = float(args[0]) + server.latency * sr
-            gui.set(SCORE, playhead_at=now)
+            win["score"].set(playhead_at=now)
 
         def stop():
             playhead.stop()
-            gui.set(SCORE, playhead_at=-1.0, playhead=0.0)
+            win["score"].set(playhead_at=-1.0, playhead=0.0)
+
+        # Wire the two buttons by name: act on the press (1), ignore the release.
+        win["play"].on_event(lambda value: play() if value == 1 else None)
+        win["stop"].on_event(lambda value: stop() if value == 1 else None)
+        closed = [False]
+        win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
 
         print("press play -- the cursor follows the sound; close the window to stop")
-        buttons = {PLAY: play, STOP: stop}
-        while True:
-            msg = gui.poll(timeout=0.1)
-            if msg is None:
-                continue
-            addr, args = msg
-            if addr == "/gui_closed":
-                print("window closed")
-                break
-            if addr == "/gui_event" and len(args) >= 2 and args[0] in buttons:
-                if args[1] == 1:
-                    buttons[args[0]]()
+        while not closed[0]:
+            gui.pump(timeout=0.1)
 
 
 if __name__ == "__main__":

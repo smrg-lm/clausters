@@ -79,30 +79,24 @@ C D E F | G/A/G/F/ E D | C D/E/F/G/ A | G2 F E | [CEG] G C2 | C4 |
 # cursor to the sound.
 TEMPO = 1.0
 
-# Widget ids: the transport bar, then the score view. None of them is 1 -- that
-# is the def's own id, which the window root takes, and a widget claiming it
-# would be dropped as a duplicate.
-BAR, REWIND, PLAY, PAUSE, STOP, FROM_NOTE = 2, 3, 4, 5, 6, 7
-UNDO, REDO = 8, 9
-SCROLL, SCORE = 10, 11
-
-
 def scene(display_list: dict, sample_rate: float) -> dict:
     """A transport bar over a scrollable, zoomable view of the engraved score.
 
-    The bar is chrome: a fixed height, so the page takes all the rest however the
-    window is resized."""
+    Every widget is *named* — the seven transport buttons and the ``score`` page
+    — so the script drives each by name and never picks an id. The bar is chrome:
+    a fixed height, so the page takes all the rest however the window is
+    resized."""
     return window(
-        panel(BAR,
-              button(REWIND, label="|<"),
-              button(PLAY, label="play"),
-              button(PAUSE, label="pause"),
-              button(STOP, label="stop"),
-              button(FROM_NOTE, label="from note"),
-              button(UNDO, label="undo"),
-              button(REDO, label="redo"),
+        panel(None,
+              button(name="rewind", label="|<"),
+              button(name="play", label="play"),
+              button(name="pause", label="pause"),
+              button(name="stop", label="stop"),
+              button(name="from_note", label="from note"),
+              button(name="undo", label="undo"),
+              button(name="redo", label="redo"),
               layout="row", h=34.0),
-        notation.score_view(display_list, scroll_id=SCROLL, score_id=SCORE,
+        notation.score_view(display_list, name="score",
                             width=880.0, sample_rate=sample_rate, editable=True),
         layout="col", title="Engraved score (verovio -> GPU)", w=920, h=420,
     )
@@ -136,7 +130,7 @@ def main():
         server = session.server
         sr = float(server.options.sample_rate)
         gui = session.gui()
-        gui.define(1, scene(dl, sr))
+        win = gui.open(scene(dl, sr))
 
         session.start()                     # the clock runs the routines
 
@@ -162,8 +156,8 @@ def main():
         # object the multitrack editor drives its lanes with; `notation.transport`
         # only fills in the page's unit -- a score cursor is placed in score
         # milliseconds, not samples.
-        transport = notation.transport(gui, SCORE, source=pass_from, tempo=TEMPO,
-                                       sample_rate=sr, extent=phrase_end)
+        transport = notation.transport(gui, win["score"].id, source=pass_from,
+                                       tempo=TEMPO, sample_rate=sr, extent=phrase_end)
         transport.locate(0.0)               # the cursor waits at the top
         print("press play -- click a note to hear it and to select it, drag one "
               "up or down to transpose it, 'from note' plays from the selected "
@@ -184,7 +178,7 @@ def main():
             and selection across the swap."""
             nonlocal dl, by_id
             dl = score.display_list()
-            gui.set(SCORE, display_list=notation.page_json(dl))
+            win["score"].set(display_list=notation.page_json(dl))
             by_id = {note["id"]: note for note in dl["notes"]}
 
         def undo():
@@ -204,57 +198,35 @@ def main():
             else:
                 print("  nothing to redo")
 
-        # The handlers read `dl` and `by_id` when they run, so an edit made
-        # meanwhile is simply played. `locate` doubles as rewind: playing, it
-        # starts a fresh pass from the top instead of merely moving the cursor.
-        buttons = {PLAY: lambda: transport.play(server),
-                   PAUSE: transport.pause, STOP: transport.stop,
-                   REWIND: lambda: transport.locate(0.0), FROM_NOTE: from_note,
-                   UNDO: undo, REDO: redo}
-
-        while True:
-            # The pass ends by itself: the playhead reports its scan ran out and
-            # the transport parks the cursor at `phrase_end`, rather than letting
-            # it sweep off the page (rewind goes back to the top).
-            transport.update()
-            msg = gui.poll(timeout=0.1)
-            if msg is None:
-                continue
-            addr, args = msg
-            if addr == "/gui_closed":
-                print("window closed")
-                break
-            if addr != "/gui_event" or len(args) < 2:
-                continue
-            # A button reports its press (1) and its release (0): act on the
-            # press, or every click would fire the transport twice.
-            if args[0] in buttons:
-                if args[1] == 1:
-                    buttons[args[0]]()
-                continue
-            if len(args) < 3:
-                continue
-            if args[1] == "element":
-                selected = args[2] or None
-                note = by_id.get(args[2])
+        def on_score(tag, *rest):
+            """The page's two edit-backs, wired to the ``score`` handle. A click
+            reports the MEI id under the cursor (``"element"``) — this side
+            selects it and sounds it; a drag reports a ``"transpose"`` by whole
+            diatonic steps — this side makes it true, re-engraves and sends the
+            page back. The handlers read `dl`/`by_id` when they run, so an edit
+            made meanwhile is simply played."""
+            nonlocal selected
+            if tag == "element" and rest:
+                selected = rest[0] or None
+                note = by_id.get(rest[0])
                 if note is None:
-                    print(f"  clicked {args[2] or '(blank paper)'}")
-                    continue
-                print(f"  clicked note {args[2]}: MIDI {note['pitch']} "
+                    print(f"  clicked {rest[0] or '(blank paper)'}")
+                    return
+                print(f"  clicked note {rest[0]}: MIDI {note['pitch']} "
                       f"at {note['t']:.0f} ms")
                 play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
                            amp=0.15))
-            elif args[1] == "transpose":
-                # The edit round trip. The host drew the drag; this side makes
-                # it true -- transpose by those diatonic steps, re-engrave, and
-                # send the page back, which is what retires the preview. The
-                # ids survive the edit, so `by_id` keeps indexing the same
-                # notes (at their new pitches) and the note stays selected.
-                element, steps = args[2], int(args[3])
+            elif tag == "transpose" and len(rest) >= 2:
+                # The host drew the drag; this side makes it true -- transpose by
+                # those diatonic steps, re-engrave, and send the page back, which
+                # is what retires the preview. The ids survive the edit, so
+                # `by_id` keeps indexing the same notes (at their new pitches) and
+                # the note stays selected.
+                element, steps = rest[0], int(rest[1])
                 if not score.transpose(element, steps):
                     print(f"  refused to transpose {element}: this verovio has "
                           "no working editor")
-                    continue
+                    return
                 refresh_page()
                 note = by_id.get(element)
                 print(f"  transposed {element} by {steps:+d} steps"
@@ -262,6 +234,28 @@ def main():
                 if note is not None:
                     play(Event(midinote=note["pitch"],
                                dur=note["dur"] / 1000.0, amp=0.15))
+
+        # Wire every widget by name: each button acts on its press (1) — `locate`
+        # doubles as rewind, so playing it starts a fresh pass from the top — and
+        # the score page answers its own edit-backs.
+        press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
+        win["play"].on_event(press(lambda: transport.play(server)))
+        win["pause"].on_event(press(transport.pause))
+        win["stop"].on_event(press(transport.stop))
+        win["rewind"].on_event(press(lambda: transport.locate(0.0)))
+        win["from_note"].on_event(press(from_note))
+        win["undo"].on_event(press(undo))
+        win["redo"].on_event(press(redo))
+        win["score"].on_event(on_score)
+        closed = [False]
+        win.on_closed(lambda: (closed.__setitem__(0, True), print("window closed")))
+
+        while not closed[0]:
+            # The pass ends by itself: the playhead reports its scan ran out and
+            # the transport parks the cursor at `phrase_end`, rather than letting
+            # it sweep off the page (rewind goes back to the top).
+            transport.update()
+            gui.pump(timeout=0.1)
 
 
 if __name__ == "__main__":

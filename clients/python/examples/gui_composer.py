@@ -34,9 +34,7 @@ Needs a display and a GPU adapter; the install bundles the GUI binary (see
 
 # %%
 import struct
-import sys
 import tempfile
-import time
 import wave
 from pathlib import Path
 
@@ -206,17 +204,17 @@ song = Group([
 # ## Open the editor, with a transport
 # The model tree becomes a multitrack window: a lane per member, its materials as
 # clips on one shared axis. ``extra`` places widgets of the script's own under the
-# lanes — here the transport. Their ids are the script's (the editor allocates
-# from 10000 up, so small ids never collide) and their events are the script's
-# too: `Editor.apply` ignores them.
+# lanes — here the transport, whose buttons are *named*. `Editor.open` hands back
+# a window handle (like `GuiHost.open`), so the script resolves each button with
+# ``win["play"]`` and never picks an id; their events are the script's too
+# (`Editor.apply` ignores them).
 
 # %%
-PLAY, PAUSE, STOP, REWIND, BAR = 1, 2, 3, 4, 5
-transport = panel(BAR,
-                  button(PLAY, label="play"),
-                  button(PAUSE, label="pause"),
-                  button(STOP, label="stop"),
-                  button(REWIND, label="rewind"),
+transport = panel(None,
+                  button(name="play", label="play"),
+                  button(name="pause", label="pause"),
+                  button(name="stop", label="stop"),
+                  button(name="rewind", label="rewind"),
                   layout="row", height=0.25)
 
 gui = session.gui()
@@ -228,16 +226,17 @@ print(f"opened window {win} — drag a clip to move it, an edge to resize it")
 # %% [markdown]
 # ## The melody, as a dedicated piano-roll
 # The same `Track`, opened in the **editor-grade note view**: a second `Editor`
-# in its dedicated mode (`open_pianoroll`), its widget ids moved clear of the
-# multitrack's. The two windows share the melody's timeline — drag a note here
-# and the next play renders it; the multitrack's clip is another view of the
-# same material. A note edit needs **random-access** material (a `Track`): open
-# a *generator* this way (the bass `Pbind`, say) and its bounced notes show
+# in its dedicated mode (`open_pianoroll`). Both editors draw their widget ids
+# from the host's one recycling pool, so their windows never collide without any
+# hand-partitioned range. The two windows share the melody's timeline — drag a
+# note here and the next play renders it; the multitrack's clip is another view
+# of the same material. A note edit needs **random-access** material (a `Track`):
+# open a *generator* this way (the bass `Pbind`, say) and its bounced notes show
 # read-only — bounce it to a `Track` to edit it.
 
 # %%
 roll = Editor(melody, sample_rate=SR, tempo=TEMPO, quant=QUANT,
-              title="Lead — piano-roll", base_id=20_000)
+              title="Lead — piano-roll")
 roll_win = roll.open_pianoroll(gui)
 print(f"opened window {roll_win} — drag a note; play re-reads the melody")
 
@@ -256,10 +255,13 @@ session.start()                       # the clock runs the routines
 
 # `play` is where the destination and the clock come from — rendering is *playing*,
 # so nothing is rendered until the button is pressed (a window that sounds before
-# you press play is a window that plays itself).
-TRANSPORT = {PLAY: lambda: editor.play(server, session.clock),
-             PAUSE: editor.pause, STOP: editor.stop,
-             REWIND: lambda: editor.locate(0.0)}
+# you press play is a window that plays itself). Each button acts on its press
+# (1), ignoring the release, and is wired by name onto the editor's transport.
+press = lambda fn: (lambda value: fn() if value == 1 else None)  # noqa: E731
+win["play"].on_event(press(lambda: editor.play(server, session.clock)))
+win["pause"].on_event(press(editor.pause))
+win["stop"].on_event(press(editor.stop))
+win["rewind"].on_event(press(lambda: editor.locate(0.0)))
 editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
@@ -289,16 +291,16 @@ if __name__ == "__main__":
             if msg is None:
                 continue
             addr, args = msg
-            # A button reports its press (1) *and* its release (0): act on the
-            # press, or every click would fire the transport twice.
-            pressed = (addr == "/gui_event" and len(args) >= 2 and args[1] == 1)
-            action = TRANSPORT.get(args[0]) if pressed else None
-            if action is not None:
-                action()
+            # The transport buttons are handles: `dispatch` routes their press/
+            # release to the `on_event` callbacks above (the `press` guard drops
+            # the release). A `/gui_closed` has no handler, so it falls through to
+            # `editor.apply`, which nulls the window and stops the loop.
+            if gui.dispatch(addr, args):
+                continue
             # Both editors read the one event stream: each applies only what
             # resolves through its own widgets, so the other's events fall
             # through untouched.
-            elif editor.apply(addr, args) or roll.apply(addr, args):
+            if editor.apply(addr, args) or roll.apply(addr, args):
                 # An edit does not interrupt what is sounding: it changes the
                 # *model*, and the next play (or a resume, or a rewind) plays it —
                 # `render` always re-flattens the composition, so it picks up the
