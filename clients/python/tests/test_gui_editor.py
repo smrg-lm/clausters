@@ -5,6 +5,8 @@ tree, so these check the mapping rule (lanes, clips, bodies), the beats↔timeli
 samples unit bridge, and the id registry that the edit-back path writes through.
 """
 
+import itertools
+
 import pytest
 
 from clausters.defs import SynthDef, control, in_, out, sine
@@ -332,10 +334,15 @@ def test_the_composition_grows_when_a_clip_is_dragged_past_the_end():
 # ---- the transport: a cursor, and seeking to it ----
 
 class _FakeHost:
-    """Records the `/gui_set`s the editor sends (the lanes' playhead chrome)."""
+    """Records the `/gui_set`s the editor sends (the lanes' playhead chrome), and
+    hands out widget ids like the real host's recycling pool."""
 
     def __init__(self):
         self.sets = []
+        self._ids = itertools.count(10_000)
+
+    def alloc_id(self):
+        return next(self._ids)
 
     def open(self, tree, id=None):
         return 1

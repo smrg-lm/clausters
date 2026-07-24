@@ -50,10 +50,18 @@ One tree, one document — mirroring `SynthDef`/`GraphDef`. Every node is:
   and events. The root's id is the one given to `/gui_def`. Ids live in **one
   namespace per host**, across all windows (exactly like the audio server's node
   ids): a duplicate id is skipped at define time with a warning, so a client must
-  keep ids unique host-wide. It is the **client's** job to allocate them — the
-  Python client assigns a fresh id to any widget built without one (and to every
-  window), from one counter starting at 1000, so hand-picked ids below 1000 and
-  assigned ids never collide.
+  keep ids unique host-wide. It is the **client's** job to allocate them — and,
+  like node ids, from a **recycling** pool: the Python client assigns a fresh id
+  to any widget built without one (and to every window) from a bounded window
+  starting at 1000, and a freed subtree returns its ids to the pool (a redraw
+  re-defining a window frees the old subtree first), so a long live session
+  reuses ids instead of climbing. Hand-picked ids below 1000 never collide with
+  assigned ones.
+- **`name`** (Python client only) is a **client-side** convenience, never on the
+  wire: a widget built with a `name` is bound in the window handle `open` returns,
+  so a script addresses it by name (`win["cutoff"].set(…)`) and never writes or
+  matches an integer. The name is stripped from the JSON — the host only ever
+  sees ids.
 - **`children`** nests (containers only: `window`, `panel`, `scroll`, `track`).
 - **The place props** — every widget, whatever its type, may carry `w`, `h`,
   `weight`, `x`, `y` (all numbers, device pixels, all live via `/gui_set`):

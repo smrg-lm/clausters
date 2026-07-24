@@ -18,11 +18,11 @@ flow through the responder model (`clausters.responders.OscFunc`) and are wired
 up as the interactive widgets land.
 """
 
-import itertools
-
 from ..base import _osclib
 from ..base._oscinterface import OscTcpInterface, OscUdpInterface
 from .guidef import to_json
+from .handle import WindowHandle
+from .ids import GuiIdAllocator
 
 __all__ = ["GuiHost", "DEFAULT_PORT"]
 
@@ -50,10 +50,19 @@ class GuiHost:
             self._osc = OscUdpInterface()
         else:
             raise ValueError(f"unknown transport {transport!r} (tcp or udp)")
-        #: window ids opened through `open` and not yet `close`d (auto-assigned
-        #: ids start here, so they never clash with explicit small ids you pass).
+        #: window ids opened through `open` and not yet `close`d.
         self._open: set[int] = set()
-        self._ids = itertools.count(1000)
+        #: the one widget-id namespace for this host client — recycling, so a
+        #: freed subtree's ids return to the pool (the GUI sibling of the audio
+        #: server's `NodeIdAllocator`). Windows and widgets share it.
+        self._alloc = GuiIdAllocator()
+        #: id -> its child ids, for every widget this client defined — the
+        #: subtree `free` walks to return the whole branch's ids to the pool.
+        self._children: dict[int, list[int]] = {}
+        #: id -> event handler (a `WidgetHandle.on_event`) and window id ->
+        #: closed handler (a `WindowHandle.on_closed`), dispatched by `pump`.
+        self._on_event: dict = {}
+        self._on_closed: dict = {}
         #: the ``clausters-gui`` process this host started and owns (`boot`), if
         #: any; stopped by `stop`. ``None`` when connected to a host it did not
         #: start.
@@ -117,33 +126,35 @@ class GuiHost:
 
     def alloc_id(self) -> int:
         """A fresh id, unique across everything this host client names —
-        windows and widgets share the host's one id namespace, so a widget id
-        must not repeat across windows (`open` draws its window ids from the
-        same counter)."""
-        return next(self._ids)
+        windows and widgets share the host's one recycling id namespace, so a
+        widget id must not repeat across windows (`open` draws its window ids
+        from the same pool). A freed subtree's ids return to the pool."""
+        return self._alloc.alloc()
 
-    def open(self, tree: dict, *blobs: bytes, id: "int | None" = None) -> int:
-        """Open a window from a ``window``-rooted GuiDef and return its id.
+    def open(self, tree: dict, *blobs: bytes, id: "int | None" = None) -> WindowHandle:
+        """Open a window from a ``window``-rooted GuiDef and return its handle.
 
         A thin, id-managing wrapper over `define`: with ``id=None`` an id is
         assigned for you (and remembered so `close` / `close_all` can free it);
-        pass an explicit ``id`` to name the root yourself (e.g. to `set` its
-        children by their own ids later). Id-less **widgets** inside ``tree``
-        are assigned too, in place — see `define`. Editing the open window is
-        `set`; closing it is `close`. Any trailing ``blobs`` ride along exactly
-        as in `define`."""
+        pass an explicit ``id`` to name the root yourself. Id-less **widgets**
+        inside ``tree`` are assigned too, in place — see `define`. The returned
+        `clausters.gui.handle.WindowHandle` **is** the window id (an ``int``) and
+        also resolves the tree's ``name``d widgets: ``win["cutoff"].set(…)``.
+        Editing the open window is `set`; closing it is `close`. Any trailing
+        ``blobs`` ride along exactly as in `define`."""
         if id is None:
-            id = next(self._ids)
-        self.define(id, tree, *blobs)
-        self._open.add(id)
-        return id
+            id = self.alloc_id()
+        handle = self.define(id, tree, *blobs)
+        self._open.add(int(id))
+        return handle
 
     def close(self, id: int):
         """Close a window opened with `open` (or any widget subtree): ``/gui_free``
-        frees the subtree and, for a ``window`` root, its OS window. The
-        counterpart to `open`; `set` edits a window in between."""
+        frees the subtree and, for a ``window`` root, its OS window, and its ids
+        return to the pool. The counterpart to `open`; `set` edits a window in
+        between."""
         self.free(id)
-        self._open.discard(id)
+        self._open.discard(int(id))
 
     def close_all(self):
         """Close every window still open through `open`. Handy at the end of a
@@ -157,9 +168,10 @@ class GuiHost:
     def __exit__(self, *exc):
         self.stop()
 
-    def define(self, id: int, tree: dict, *blobs: bytes):
+    def define(self, id: int, tree: dict, *blobs: bytes) -> WindowHandle:
         """``/gui_def <id> <json> [blob…]`` — build a whole widget tree in one
-        message. Any trailing ``blobs`` (e.g. waveform samples from
+        message, returning its `clausters.gui.handle.WindowHandle`. Any trailing
+        ``blobs`` (e.g. waveform samples from
         `clausters.gui.guidef.samples_to_blob`) ride alongside the JSON and are
         referenced by index from a widget's ``blob`` property.
 
@@ -167,19 +179,52 @@ class GuiHost:
         ``id=None``) get a fresh host-unique one here, **written into the
         caller's dict in place** — so after ``define``/`open` the widget you
         kept a reference to reads back as ``widget["id"]``, ready for `set` /
-        `bind`. Ids you did pick are kept verbatim; they share one namespace
-        across every window on this host (allocation starts at 1000, so hand
-        ids below 1000 never collide with assigned ones)."""
-        self._fill_ids(tree)
-        self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
+        `bind`. Ids you did pick are kept verbatim; they share one recycling
+        namespace across every window on this host (allocation starts at 1000,
+        so hand ids below 1000 never collide with assigned ones).
 
-    def _fill_ids(self, node: dict):
-        """Assigns a fresh id to every id-less widget under ``node``, in place
-        (the root itself carries no id — it is the ``/gui_def`` argument)."""
+        Any widget given a ``name`` is bound in the returned handle:
+        ``define``/`open` walk the tree once, and ``win["cutoff"]`` resolves to
+        that widget's `clausters.gui.handle.WidgetHandle`. Re-defining an
+        existing id **redefines** it (the old subtree's ids return to the pool
+        first, mirroring the host freeing the old subtree)."""
+        id = int(id)
+        if id in self._children:
+            self._recycle_subtree(id, keep_root=True)
+        names: dict = {}
+        self._register(tree, id, names)
+        self._osc.send_msg(self.target, "/gui_def", id, to_json(tree), *blobs)
+        return WindowHandle(self, id, names)
+
+    def _register(self, node: dict, node_id: int, names: dict):
+        """Walk ``node`` (whose id is ``node_id``): assign a fresh id to every
+        id-less descendant **in place**, record each id's children (the subtree
+        `free` recycles), and collect ``name -> id``. The root carries no id in
+        the tree — it is the ``/gui_def`` argument — so its id is passed in."""
+        name = node.get("name")
+        if isinstance(name, str) and name:
+            names[name] = node_id
+        child_ids: list[int] = []
         for child in node.get("children", ()):
             if "id" not in child:
                 child["id"] = self.alloc_id()
-            self._fill_ids(child)
+            cid = child["id"]
+            child_ids.append(cid)
+            self._register(child, cid, names)
+        self._children[node_id] = child_ids
+
+    def _recycle_subtree(self, id: int, *, keep_root: bool):
+        """Return ``id``'s subtree ids to the pool and forget its child map and
+        event handlers. With ``keep_root`` the root id stays allocated (a
+        redefine reuses it); a hand-picked id below the base was never allocated,
+        so the pool ignores it."""
+        for cid in self._children.pop(id, ()):
+            self._recycle_subtree(cid, keep_root=False)
+        self._on_event.pop(id, None)
+        if keep_root:
+            return
+        self._on_closed.pop(id, None)
+        self._alloc.free(id)
 
     def set(self, id: int, **props):
         """``/gui_set <id> <k> <v> ...`` — update one live widget. Property types
@@ -191,8 +236,10 @@ class GuiHost:
         self._osc.send_msg(self.target, "/gui_set", id, *args)
 
     def free(self, id: int):
-        """``/gui_free <id>`` — free a widget and its subtree."""
+        """``/gui_free <id>`` — free a widget and its subtree, returning its ids
+        to the pool (the client-side mirror of the host freeing the subtree)."""
         self._osc.send_msg(self.target, "/gui_free", id)
+        self._recycle_subtree(int(id), keep_root=False)
 
     def bind(self, id: int, address: str, *prefix):
         """``/gui_bind <id> "server" <address> <prefix…>`` — forward this widget's
@@ -233,13 +280,65 @@ class GuiHost:
         props = {args[i]: args[i + 1] for i in range(2, len(args) - 1, 2)}
         return kind, props
 
+    # ---- event routing to the handle callbacks ----
+
+    def _set_event_handler(self, id: int, func):
+        """Register (or, with ``func=None``, clear) a `clausters.gui.handle.
+        WidgetHandle.on_event` callback for widget ``id``."""
+        if func is None:
+            self._on_event.pop(id, None)
+        else:
+            self._on_event[id] = func
+
+    def _set_closed_handler(self, id: int, func):
+        """Register (or clear) a `clausters.gui.handle.WindowHandle.on_closed`
+        callback for window ``id``."""
+        if func is None:
+            self._on_closed.pop(id, None)
+        else:
+            self._on_closed[id] = func
+
+    def dispatch(self, addr, args) -> bool:
+        """Route one inbound message to the handle callback registered for its id
+        (`clausters.gui.handle.WidgetHandle.on_event` for ``/gui_event``,
+        `WindowHandle.on_closed` for ``/gui_closed``). A ``/gui_closed`` also
+        drops the window from the open set. Returns whether a callback ran."""
+        if addr == "/gui_event" and args:
+            func = self._on_event.get(int(args[0]))
+            if func is not None:
+                func(*args[1:])
+                return True
+        elif addr == "/gui_closed" and args:
+            wid = int(args[0])
+            self._open.discard(wid)
+            func = self._on_closed.get(wid)
+            if func is not None:
+                func()
+                return True
+        return False
+
+    def pump(self, timeout: float = 0.0) -> int:
+        """Drain the host's pending messages, routing each to the handle
+        callbacks registered with `clausters.gui.handle.WidgetHandle.on_event` /
+        `WindowHandle.on_closed`. Returns how many were dispatched. The
+        event-driven counterpart to `poll` (the raw primitive): call it from the
+        script's loop — **never** the clock thread, which a routine must not
+        block."""
+        n = 0
+        while (msg := self.poll(timeout)) is not None:
+            if self.dispatch(*msg):
+                n += 1
+            timeout = 0.0  # only the first wait blocks
+        return n
+
     def poll(self, timeout: float = 0.0):
         """One inbound message as ``(addr, args)``, or ``None`` within ``timeout``.
 
         The receive side of the protocol: the host pushes ``/gui_event`` (a widget
         was interacted with) and ``/gui_closed`` (a window was closed) back to the
         script that built the window. Drive an interactive panel by polling this
-        in a loop, or wrap it with a `clausters.responders.OscFunc`-style dispatch.
+        in a loop, wrap it with a `clausters.responders.OscFunc`-style dispatch,
+        or — for the handle callbacks — `pump` it.
         """
         data = self._osc.recv(timeout)
         if data is None:

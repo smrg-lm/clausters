@@ -89,6 +89,7 @@ from .guidef import (
     waveform,
     window,
 )
+from .handle import WidgetHandle, WindowHandle
 from .host import DEFAULT_PORT, GuiHost
 from .transport import Transport
 
@@ -97,6 +98,8 @@ __all__ = [
     "DEFAULT_PORT",
     "Editor",
     "Transport",
+    "WidgetHandle",
+    "WindowHandle",
     "node",
     "window",
     "panel",

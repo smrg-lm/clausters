@@ -87,9 +87,10 @@ class Editor:
             say). Their events are not the editor's: `apply` ignores them, so a
             script can handle them itself.
         title: the window title.
-        base_id: the first widget id the editor allocates. The default sits well
-            above the ids `clausters.gui.host.GuiHost` assigns to windows it opens
-            (from 1000), so the two never collide.
+        base_id: the first widget id a **host-less** draw counts from (tests and
+            tree inspection). Once `open`ed, the editor draws ids from the host's
+            own recycling pool instead, so the two never collide and a redraw's
+            ids return to the pool.
 
     Usage::
 
@@ -118,7 +119,10 @@ class Editor:
         self.extra = list(extra)
         self.title = title
         self.size = (int(width), int(height))
+        #: The base a host-less draw counts ids from; once `open`ed the ids come
+        #: from the host's recycling pool instead (`_new_id`).
         self._base_id = int(base_id)
+        self._fallback_ids = itertools.count(self._base_id)
         #: The elements shown as lanes of their own instead of a summary clip
         #: (the base level: a group resolved rather than collapsed).
         self._expanded: set[int] = set()
@@ -197,6 +201,22 @@ class Editor:
     def is_expanded(self, element) -> bool:
         return id(element) in self._expanded
 
+    # ---- widget ids: the host's recycling pool, or a host-less fallback ----
+
+    def _new_id(self) -> int:
+        """A widget id for the tree being drawn. Once `open`ed, it comes from the
+        host's recycling pool (`clausters.gui.host.GuiHost.alloc_id`); host-less
+        (a test, or inspecting `draw`), it counts from ``base_id``."""
+        return self._host.alloc_id() if self._host is not None else next(self._fallback_ids)
+
+    def _reset_ids(self):
+        """Start a fresh draw's id numbering. Host-less, the fallback counter
+        restarts at ``base_id``; on a host nothing resets — the ids come from its
+        pool, and re-defining the window returns the previous tree's ids there
+        (`GuiHost.define`), so the churn recycles instead of climbing."""
+        if self._host is None:
+            self._fallback_ids = itertools.count(self._base_id)
+
     # ---- the forward draw: the arrangement -> GuiDef ----
 
     def draw(self) -> dict:
@@ -212,7 +232,7 @@ class Editor:
         port-less (its directions need the def object)."""
         if self._mode == "pianoroll":
             return self._draw_pianoroll()
-        self._ids = itertools.count(self._base_id)
+        self._reset_ids()
         self._clips = {}
         self._lanes = {}
         self._rolls = {}
@@ -246,13 +266,13 @@ class Editor:
         workspace — a server patch among the timeline lanes. Registers the patch
         widget id so an edit-back resolves to the group it draws."""
         p, handles = _logical_patch(group)
-        wid = next(self._ids)
+        wid = self._new_id()
         self._patches[wid] = (group, handles)
         geometry = self._patch_geometry.get(id(group), {})
         content = (900.0, 700.0)
         view = patch(wid, **p.to_widget(geometry), label=_name(group),
                      x=0.0, y=0.0, w=content[0], h=content[1])
-        return scroll(next(self._ids), view,
+        return scroll(self._new_id(), view,
                       content_w=content[0], content_h=content[1])
 
     def open(self, host, id: int | None = None) -> int:
@@ -269,12 +289,12 @@ class Editor:
         multitrack of clips. The notes ride the shared beats grid; the pitch
         window frames them (falling back to `DEFAULT_PITCH`). Pure — it builds the
         tree and the edit-back registry."""
-        self._ids = itertools.count(self._base_id)
+        self._reset_ids()
         self._clips = {}
         self._lanes = {}
         self._rolls = {}
         element = self._roll_element
-        wid = next(self._ids)
+        wid = self._new_id()
         notes = self._notes(element)
         osc = self._osc(element)
         body: dict = {}
@@ -692,7 +712,7 @@ class Editor:
 
     def _lane(self, clips: list, label: str) -> dict:
         """One `track` lane holding ``clips``, with the shared time chrome."""
-        wid = next(self._ids)
+        wid = self._new_id()
         lane = track(wid, *clips, label=label, sample_rate=self.sample_rate,
                      tempo=self.tempo,
                      snap=self.beats_to_units(self.quant) if self.quant > 0 else None)
@@ -703,7 +723,7 @@ class Editor:
         """One `clip`: the element placed at ``base`` beats (absolute on the shared
         axis), with the body (or **bodies**) its kind calls for. Registers what it
         drew, which is what the edit-back path resolves against."""
-        wid = next(self._ids)
+        wid = self._new_id()
         offset = self.beats_to_units(base)
         # The length shown, in beats: the placement's when it overrides, else the
         # element's own.

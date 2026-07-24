@@ -1810,3 +1810,45 @@ that disagree about the end of a piece — which is precisely what was found:
 one of the two copies corrected the anchor for the server's latency and the
 other did not, so its line ran early by exactly that much. A port keeps the
 shape: the arithmetic is small, but its being in one place is the point.
+
+## GUI widget ids are allocated client-side and recycled; a name is the stable handle
+
+Context (the client's GUI ergonomics): a high-level client should not make the
+user pick and thread integer widget ids — the audio-server side never does (a
+script writes `server.synth("beep", freq=440)`, and the client's
+`NodeIdAllocator` names the node). The GUI's id handling grew crudely in the
+opposite direction: two disjoint monotonic counters (the host client from 1000,
+the multitrack editor from 10 000, partitioned only by convention), neither
+recycling, and examples that hand-pick ids (`knob(10, …)`) purely so they can
+match the `/gui_event` back. Two questions had to be settled: **where** ids are
+allocated, and **how** a script refers to a widget without naming an integer.
+
+**Allocation stays client-side, mirroring `NodeIdAllocator`.** The tempting
+alternative — the host assigns ids the way `/s_new … -1` lets the audio server
+assign a node id — was rejected for the GUI for the same reason the piano's host
+voices reject it (see above): the client needs the id *immediately* (to `set`,
+`bind`, wire an edit-back), so a host-assigned id would force a reply round-trip
+into the build path, and an async id-resolution step into every `open`. The
+audio server's own primary path is client-side too; the `-1` convention is a
+secondary path for cases where the *server* generates the node (a GraphDef's
+members). The GUI has no such server-generated widgets, so it needs no `-1` path
+at all. So a single `GuiIdAllocator` — the GUI sibling of `NodeIdAllocator`, over
+the same core `Registry` — owns the one namespace, and the editor draws from it
+instead of a second counter. It is **bounded and recycling** (unlike a bare
+counter): a freed subtree returns its ids to the pool, and re-defining a window
+frees the old subtree first, so the editor's redraw churn reuses ids within a
+fixed window instead of climbing forever.
+
+**A widget is named, not numbered.** `open`/`define` return a window handle that
+is the window id *and* resolves the tree's `name`d widgets, so a script writes
+`win["cutoff"].set(value=800.0)` / `.bind(…)` / `.on_event(fn)` and never touches
+an integer — the `WidgetHandle` delegates to the host with the resolved id, the
+way `Node.free()` delegates to its `Server`. The `name` is a **client-only** key:
+it is stripped from the JSON, so the host still sees only ids and the wire is
+unchanged. The deeper reason to prefer a name over a hand-picked id is that the
+name is the *stable* identity: an assigned id recycles across redraws, so it is
+the wrong thing to hold, whereas the name a script drew a widget with is what an
+edit-back or a live `set` should address against. This keeps the wire protocol
+and the host untouched — the whole change is the client growing an allocator and
+a handle layer, no `ABI` counter moves — which is the "when a feature could live
+in the client or the wire, keep it where the system already keeps it" rule.

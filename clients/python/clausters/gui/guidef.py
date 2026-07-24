@@ -21,6 +21,14 @@ manage that, freely mixed:
   1000 up, so hand ids below 1000 never collide with assigned ones), keeping
   them distinct across every window you open on that host.
 
+Better still, **do not touch ids at all**: pass ``name="cutoff"`` to any builder
+and `GuiHost.open` hands back a window handle you index by that name —
+``win["cutoff"].set(value=…)``, ``win["cutoff"].on_event(fn)`` — so a script
+never writes or matches an integer. The name is a **client-only** key: it labels
+the widget for the ``name -> handle`` map and is stripped from the JSON, so it
+never rides the wire. Unlike the assigned id (which recycles across redraws), a
+name is stable, which is what an edit-back or a live `set` addresses against.
+
 The int/float distinction is the user's to make and is preserved end to end:
 write ``480`` for an integer property and ``480.0`` for a float — ``json.dumps``
 keeps them apart in the JSON text and the host's serde parse keeps them apart on
@@ -193,9 +201,9 @@ def scroll(id: int | None = None, *children, axis: str | None = None,
     return node("scroll", id=id, children=children, **extra, **props)
 
 
-def label(id: int | None, text: str, *, text_size: float | None = None,
+def label(id: int | None = None, text: str = "", *, text_size: float | None = None,
           wrap: bool | None = None, align: str | None = None, color: str | None = None, **props) -> dict:
-    """Static ``label`` text.
+    """Static ``label`` text. ``id`` may be omitted (assigned, or use ``name``).
 
     ``text_size`` is the glyph scale over the host's embedded 5x7 font
     (default 2.0 — every text-bearing widget takes it). ``wrap=True``
@@ -272,11 +280,11 @@ def text(id: int | None = None, *, value: str | None = None, label: str | None =
     return node("text", id=id, **extra, **props)
 
 
-def menu(id: int | None, options, *, index: int | None = None, label: str | None = None,
+def menu(id: int | None = None, options=(), *, index: int | None = None, label: str | None = None,
          text_size: float | None = None, color: str | None = None, **props) -> dict:
     """A ``menu`` selector over ``options`` (a list of strings); a click cycles
     to the next and emits the chosen ``index``. ``text_size`` scales the shown
-    choice and the label."""
+    choice and the label. ``id`` may be omitted (assigned, or use ``name``)."""
     extra = _drop_none(index=index, label=label, text_size=text_size, color=color)
     return node("menu", id=id, options=list(options), **extra, **props)
 
@@ -422,7 +430,7 @@ def spectrogram(id: int | None = None, *, data=None, blob: int | None = None, bu
     return node("spectrogram", id=id, **extra, **props)
 
 
-def meter(id: int | None, bus: int, *, min: float | None = None, max: float | None = None,
+def meter(id: int | None = None, bus: int = 0, *, min: float | None = None, max: float | None = None,
           label: str | None = None, color: str | None = None, **props) -> dict:
     """A level ``meter`` reading control ``bus`` straight from the audio server's
     shared-memory segment each frame (zero OSC messages). The host must be started
@@ -469,7 +477,7 @@ def scope(id: int | None = None, bus: int = 0, *, tap: int | None = None,
     return node("scope", id=id, bus=bus, **extra, **props)
 
 
-def phasescope(id: int | None, tap: int, tap2: int | None = None, *,
+def phasescope(id: int | None = None, tap: int = 0, tap2: int | None = None, *,
                window_ms: float | None = None, hold: bool | None = None,
                label: str | None = None, color: str | None = None, **props) -> dict:
     """A ``phasescope`` (goniometer): the two audio taps ``tap`` (left) and
@@ -490,7 +498,7 @@ def phasescope(id: int | None, tap: int, tap2: int | None = None, *,
     return node("phasescope", id=id, tap=tap, **extra, **props)
 
 
-def spectrum(id: int | None, tap: int, *, channels: int | None = None,
+def spectrum(id: int | None = None, tap: int = 0, *, channels: int | None = None,
              fft_size: int | None = None,
              db_floor: float | None = None, db_ceil: float | None = None,
              freq_scale: str | None = None, log_freq: bool | None = None,
@@ -1074,8 +1082,24 @@ def canvas(id: int | None = None, shader: str | None = None, *, params=None, bus
 
 
 def to_json(tree: dict) -> str:
-    """Serializes a GuiDef tree to the JSON string carried in ``/gui_def``."""
-    return json.dumps(tree)
+    """Serializes a GuiDef tree to the JSON string carried in ``/gui_def``.
+
+    The client-only ``name`` key (a stable handle name — see
+    `clausters.gui.host.GuiHost.open`) is stripped from every node: it labels
+    the widget for the host client's ``name -> handle`` map and never rides the
+    wire."""
+    return json.dumps(_strip_names(tree))
+
+
+def _strip_names(node: dict) -> dict:
+    """A shallow copy of ``node`` (and its subtree) without the client-only
+    ``name`` key — so serialization never leaks it to the host, whether or not
+    the tree went through `clausters.gui.host.GuiHost`'s id/name walk."""
+    out = {k: v for k, v in node.items() if k != "name"}
+    children = node.get("children")
+    if children:
+        out["children"] = [_strip_names(c) for c in children]
+    return out
 
 
 def samples_to_blob(samples) -> bytes:
