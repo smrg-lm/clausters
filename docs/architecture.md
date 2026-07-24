@@ -389,7 +389,7 @@ placed glyphs, strokes, fills and text in page units, each carrying the MEI
 and fills through `lyon`'s fill tessellator, strokes as the painter's own
 thick-line quads), so notation costs no new pipeline and stays WebGL2-safe. The
 engraving itself is the **client's**: `clients/python/clausters/gui/notation.py`
-drives verovio (an optional dependency) and walks its SVG into that list. The
+drives verovio (bundled in the Python wheel) and walks its SVG into that list. The
 host never links verovio, and a second client in another language reuses this
 renderer by sending the same list — the same "no engraving logic duplicated per
 language" split the value-math rule makes elsewhere. Two derived structures ride

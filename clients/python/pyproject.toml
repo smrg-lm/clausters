@@ -53,8 +53,16 @@ packages = ["clausters", "clausters.base", "clausters.seq", "clausters.defs", "c
 # `Session.gui`). Bundled in the wheel so an installed package is self-contained:
 # server, Faust and GUI, no separate install. The `.so*` glob is deliberate:
 # versioned sonames (libfaust.so.2, libLLVM.so.21.1) are what the loader asks for.
+#
+# `_libs/verovio/**` is the engraver behind the `score` widget, staged whole
+# because it is a Python package rather than a bare library (an extension module
+# plus its SMuFL resource data, thousands of small files — hence the recursive
+# glob). Same reason as libfaust/libLLVM: notation works from an installed wheel
+# with nothing else present. Here it is also the only way to get a *working*
+# editor, the published verovio's being unreachable (third_party/verovio.pin).
 [tool.setuptools.package-data]
-clausters = ["_libs/*.so", "_libs/*.so.*", "_libs/*.dylib", "_libs/*.dll", "_bin/*"]
+clausters = ["_libs/*.so", "_libs/*.so.*", "_libs/*.dylib", "_libs/*.dll", "_bin/*",
+             "_libs/verovio/**"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

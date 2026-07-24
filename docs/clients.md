@@ -115,7 +115,7 @@ script names them.
 
 The `score` is worth a note, because it is the one widget whose material the
 host cannot read. A client engraves music notation (the Python client does it
-with [verovio](https://www.verovio.org/), an optional dependency) and sends a
+with [verovio](https://www.verovio.org/), which ships inside the wheel) and sends a
 **display list**: glyph outlines keyed by SMuFL codepoint, plus the placed
 glyphs, staff lines, stems, beams, slurs and text, in page units. The host fits
 that into the widget and tessellates it into the same triangle mesh as the rest

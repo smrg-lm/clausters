@@ -253,9 +253,11 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   **líneas adicionales aparecen y desaparecen** según salga o vuelva al
   pentagrama), y al soltar el script la transpone, la re-graba, la manda de
   vuelta y **suena en la altura nueva** — la nota queda seleccionada y la
-  página no parpadea. Necesita un verovio con el editor vivo
-  (`third_party/BUILD-VEROVIO.md`); con el wheel publicado el arrastre se
-  dibuja pero el script avisa que la edición fue rechazada.
+  página no parpadea. El grabador viaja dentro del paquete
+  (`clausters/_libs/verovio`), así que no hace falta instalar nada aparte; en
+  un checkout hay que construirlo una vez con
+  `third_party/build-verovio.sh --python` y stagearlo
+  (`scripts/refresh-bin.sh`), o el script avisa que no hay grabador.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

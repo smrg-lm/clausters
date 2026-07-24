@@ -168,8 +168,8 @@ group-wide.
 **The `score` page carries geometry, not a score.** The host does not read MEI,
 MusicXML or any notation format, and never will: the *client* engraves the score
 and sends the result as a flat display list, and the host is only the renderer
-that fits and tessellates it. That keeps the engraver an optional client-side
-dependency (verovio, in the Python client) and lets a second client in another
+that fits and tessellates it. That keeps the engraver a purely client-side
+dependency (verovio, bundled in the Python wheel) and lets a second client in another
 language reuse the same renderer by sending the same display list. `vb` is the
 page's own coordinate system — every primitive is expressed in those units, and
 the host scales the page into the widget rect, so the page is

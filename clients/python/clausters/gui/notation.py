@@ -9,15 +9,26 @@ lines, stems, beams, slurs) in verovio page units, each carrying the MEI
 never in the host**, so any language client can reuse the same host renderer by
 sending the same display list.
 
-verovio is an *optional* dependency — install it with ``pip install verovio``.
-`engrave` raises a clear error if it is missing. The heavy lifting is verovio's;
-this module is only the SVG-to-display-list adapter.
+verovio **ships inside this package** (``clausters/_libs/verovio``), the way the
+Faust compiler and its LLVM do: an installed wheel engraves with nothing else on
+the machine, and the copy bundled here is preferred over any installed one. That
+is deliberate rather than merely tidy — the *published* verovio's score editor is
+unreachable (see ``third_party/verovio.pin``), so a client that resolved the
+PyPI one would engrave pages and then refuse every edit in silence. In a source
+checkout, build it with ``third_party/build-verovio.sh --python``, or point
+``CLAUSTERS_VEROVIO`` at a directory containing a ``verovio`` package.
+
+The heavy lifting is verovio's; this module is only the SVG-to-display-list
+adapter.
 """
 
 from __future__ import annotations
 
+import importlib
 import json
+import os
 import re
+import sys
 import xml.etree.ElementTree as ET
 
 _SVG = "{http://www.w3.org/2000/svg}"
@@ -250,16 +261,53 @@ def _note_events(tk, timemap: list) -> list:
     return events
 
 
-def _toolkit(data: str, *, scale: int, page_width: int, options: dict | None):
-    """A verovio toolkit with the score loaded and laid out — the single place
-    the optional dependency is imported and the layout options are set."""
+def _verovio():
+    """Import the engraver, preferring the copy bundled with this package.
+
+    The precedence is the one every native artifact here follows — environment
+    override, then the bundled copy, then whatever the environment has:
+
+    - ``CLAUSTERS_VEROVIO`` names a directory *containing* a ``verovio``
+      package, for pointing at a local build;
+    - ``clausters/_libs/verovio`` is what the wheel ships;
+    - an installed ``verovio`` is the last resort.
+
+    The bundled copy deliberately wins over an installed one, and not only for
+    self-containment: the *published* verovio (6.2.1) has an unreachable score
+    editor, so a stray ``pip install verovio`` would leave the page engraving
+    fine and every edit silently refused. Ours is built from the pin past the
+    fix (``third_party/verovio.pin``).
+    """
+    if "verovio" in sys.modules:
+        return sys.modules["verovio"]
+    roots = [os.environ.get("CLAUSTERS_VEROVIO"),
+             os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                          "_libs")]
+    for root in roots:
+        if root and os.path.isdir(os.path.join(root, "verovio")):
+            sys.path.insert(0, root)
+            try:
+                return importlib.import_module("verovio")
+            finally:
+                # Leave sys.path as we found it: the module is imported and
+                # cached, and its resource path is resolved from its own
+                # location, so the entry has done its whole job.
+                sys.path.remove(root)
     try:
-        import verovio
+        return importlib.import_module("verovio")
     except ImportError as exc:  # pragma: no cover - exercised only without verovio
         raise RuntimeError(
-            "engraving a score needs the optional 'verovio' package "
-            "(pip install verovio)"
+            "engraving a score needs verovio, which ships inside this package. "
+            "This install has no bundled copy and none is importable -- build "
+            "it with third_party/build-verovio.sh --python, or point "
+            "CLAUSTERS_VEROVIO at a directory containing one"
         ) from exc
+
+
+def _toolkit(data: str, *, scale: int, page_width: int, options: dict | None):
+    """A verovio toolkit with the score loaded and laid out — the single place
+    the engraver is reached and the layout options are set."""
+    verovio = _verovio()
 
     tk = verovio.toolkit()
     opts = {"scale": scale, "adjustPageHeight": True, "svgViewBox": True,

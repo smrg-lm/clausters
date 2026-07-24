@@ -1,9 +1,13 @@
 """The notation client: the engraved layers and the score widget's props.
 
-`engrave` needs the optional ``verovio`` package, so those tests skip without
-it; the `guidef.score` builder is pure and always runs. The editing tests skip
-one step further — on a verovio whose editor is dead, which the released wheel's
-is.
+`engrave` needs the engraver, which normally ships inside the package; a source
+checkout that has not built it yet skips those tests, while the `guidef.score`
+builder is pure and always runs. The editing tests skip one step further — on a
+verovio whose editor is dead, which the released wheel's is.
+
+Both guards ask `notation` itself rather than importing ``verovio`` at top
+level: the engraver is resolved from ``clausters/_libs`` before anything
+installed, so a plain import is not what these tests depend on.
 """
 
 import functools
@@ -12,6 +16,22 @@ import json
 import pytest
 
 from clausters.gui import notation, score
+
+
+@functools.cache
+def _engraver() -> bool:
+    """Whether this checkout can engrave at all."""
+    try:
+        notation._verovio()
+        return True
+    except RuntimeError:
+        return False
+
+
+def requires_engraver():
+    if not _engraver():
+        pytest.skip("no engraver: build it with third_party/build-verovio.sh --python")
+
 
 # A two-bar phrase in ABC, small enough to engrave in milliseconds. `L:1/4`
 # makes a bare letter a quarter note, and octaves read as they do in Helmholtz:
@@ -53,7 +73,7 @@ def test_score_sends_the_drawing_layers_but_not_the_notes():
 
 
 def test_score_sends_the_pitch_quantum_the_page_was_engraved_with():
-    pytest.importorskip("verovio")
+    requires_engraver()
     dl = notation.engrave(PHRASE)
     # half the staff-line spacing: a line-to-space move is one diatonic step
     assert dl["step"] == 90.0
@@ -65,7 +85,7 @@ def test_score_sends_the_pitch_quantum_the_page_was_engraved_with():
 
 
 def test_the_page_json_carries_the_drawing_layers_only():
-    pytest.importorskip("verovio")
+    requires_engraver()
     dl = notation.engrave(PHRASE)
     page = json.loads(notation.page_json(dl))
     assert sorted(page) == ["cursors", "glyphs", "prims", "step", "vb"]
@@ -76,7 +96,7 @@ def test_the_page_json_carries_the_drawing_layers_only():
 
 
 def test_a_note_owns_everything_drawn_inside_it():
-    pytest.importorskip("verovio")
+    requires_engraver()
     # eighths, so every note has a notehead, a stem and a flag -- three
     # primitives verovio gives ids of their own, which would otherwise scatter
     # one note across three elements to select and drag. The spaces matter:
@@ -130,7 +150,7 @@ def _editor_alive() -> bool:
 
 def _edited_score():
     """A live score to edit, and the id of its first (sounding) note."""
-    pytest.importorskip("verovio")
+    requires_engraver()
     if not _editor_alive():
         pytest.skip("this verovio's editor refuses every action; build one past "
                     "the fixed guard (see third_party/BUILD-VEROVIO.md)")
@@ -205,7 +225,7 @@ def test_the_score_round_trips_through_mei():
 
 
 def test_engraving_shares_ids_and_time_between_cursors_and_notes():
-    pytest.importorskip("verovio")
+    requires_engraver()
     dl = notation.engrave(PHRASE)
     assert dl["prims"] and dl["cursors"] and dl["notes"]
     # both layers come out of one engraving, so their onsets line up
