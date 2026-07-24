@@ -1,8 +1,8 @@
 //! Constructing a typed [`WidgetKind`] from a generic GuiDef node — the
 //! wire-to-schema pass, one arm per widget type. Split out of the schema
 //! ([`super`]) so the enum and the (long) construction match read separately;
-//! the shared prop-reading helpers stay private in the parent module, visible
-//! here as a descendant.
+//! the shared prop-reading helpers live in [`super::parse`], visible here as a
+//! sibling of the `widget` module tree.
 
 use serde_json::Value;
 

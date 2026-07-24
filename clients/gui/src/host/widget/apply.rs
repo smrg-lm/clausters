@@ -1,7 +1,7 @@
 //! Applying a `/gui_set` key/value to a live [`WidgetKind`] — the incremental
 //! wire-to-schema update, one arm per widget type. Split out of the schema
 //! ([`super`]) alongside [`super::build`] so the enum reads separately from the
-//! two long wire matches; the shared setter helpers stay in the parent module.
+//! two long wire matches; the shared setter helpers live in [`super::parse`].
 
 use serde_json::Value;
 
