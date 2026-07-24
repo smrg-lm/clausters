@@ -9,12 +9,18 @@
 # through that rpath — no LLVM runtime has to be installed on the consuming
 # machine. This is the same self-contained arrangement the Python wheel ships.
 #
-# The pinned commit and LLVM version come from third_party/faust.pin (the single
-# source of truth, read here into the cache key too), so there is nothing to
-# keep in sync in the callers. Used by ci.yml (a `libfaust` job populates the
-# cache; every faust-linking job restores it) and release.yml. Bump the cache
-# `-vN` suffix if the staged layout changes; edit faust.pin to upgrade the
-# commit or the LLVM version (either changes the key and rebuilds).
+# The cache key covers every real input: the pinned commit and LLVM version
+# (third_party/faust.pin, the single source of truth, read here) and a hash of
+# the recipe itself (build-faust.sh), since the cmake flags it passes are as
+# much a part of the artifact as the sources are. Without the hash, editing a
+# build flag would leave the key unchanged and CI would keep serving the
+# previously built library -- a stale artifact that surfaces much later, as a
+# test failing only in CI. So there is nothing to keep in sync in the callers:
+# edit either file and the key moves on its own. The `-vN` suffix is only for
+# what cannot be hashed -- a change in the staged layout (the `path:` list).
+#
+# Used by ci.yml (a `libfaust` job populates the cache; every faust-linking job
+# restores it) and release.yml.
 name: Set up libfaust
 description: Restore, or build and cache, libfaust with the LLVM backend and its libLLVM staged beside it.
 
@@ -43,7 +49,7 @@ runs:
           ${{ inputs.prefix }}/lib/libLLVM*
           ${{ inputs.prefix }}/include/faust
           ${{ inputs.prefix }}/share/faust
-        key: libfaust-${{ env.FAUST_SHA }}-llvm${{ env.FAUST_LLVM_VERSION }}-${{ runner.os }}-v3
+        key: libfaust-${{ env.FAUST_SHA }}-llvm${{ env.FAUST_LLVM_VERSION }}-${{ hashFiles('third_party/build-faust.sh') }}-${{ runner.os }}-v3
 
     - name: Build libfaust from source (vendored recipe) and stage its libLLVM
       if: steps.cache.outputs.cache-hit != 'true'
