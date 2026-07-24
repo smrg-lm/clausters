@@ -56,6 +56,11 @@
 //!   inlets/outlets, cords) compiled to a GraphDef's bus wiring (one bus per
 //!   connected net, its writers summing), shared so every client that draws a
 //!   patch translates it identically.
+//! - [`notation`] (feature `notation`, off by default) — the pure half of the
+//!   notation layer: the verovio-SVG -> display-list walk and the voice -> MEI
+//!   encoder, the format-agnostic parts every client shares (the native
+//!   libverovio binding is the separate `clausters-notation` crate). Behind a
+//!   feature so a default core carries no XML/regex weight; compiles to wasm.
 
 pub mod builtins;
 pub mod bytes;
@@ -64,6 +69,8 @@ pub mod config;
 pub mod envshape;
 pub mod fft;
 pub mod measure;
+#[cfg(feature = "notation")]
+pub mod notation;
 pub mod osc;
 pub mod patch;
 pub mod peaks;
