@@ -1,6 +1,13 @@
 //! The voice -> MEI encoder: lay a monophonic-per-slot voice out into barred,
 //! tied measures and wrap it in a minimal MEI document.
 //!
+//! A **voice** is one monophonic line — a note or chord at a time, back to back
+//! — which is exactly one MEI `<layer>`. It is deliberately a **composable
+//! primitive**, not a ceiling: full polyphony is *several* voices (and staves),
+//! so the refinement pass composes voices above this encoder rather than
+//! redefining the voice. This function is the single-voice case of that; a
+//! polyphonic entry point would sit over it, not replace it.
+//!
 //! MEI is the target because it is explicit — every note spells its pitch
 //! (pname/oct/accid) and value (dur/dots), with none of ABC's contextual traps
 //! (accidentals persisting through a bar, spacing-driven beaming). No `xml:id`s
@@ -85,7 +92,8 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 /// One slot of a monophonic-per-slot voice: a note or chord (one or more MIDI
 /// pitches) or a rest, lasting `ticks` 32nd-notes. This is the flat, agnostic
 /// stream a client reduces its own sequencing data to; [`voice_to_mei`] lays it
-/// out into barred, tied measures.
+/// out into barred, tied measures. A voice (a `&[Slot]`) is the composable
+/// per-layer primitive — polyphony stacks several, it never widens the slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Slot {
     /// A note (one pitch) or chord (several), lasting `ticks`.
