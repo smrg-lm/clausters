@@ -80,24 +80,20 @@ TIME_UNITS = ["time", "samples", "beats"]
 AMP_UNITS = ["norm", "db", "bits", "percent"]
 FREQ_SCALES = ["log", "linear", "mel", "bark"]
 
-WAVE, SPECT = 10, 11
-TIME_MENU, AMP_MENU, FREQ_MENU, Y_TOGGLE = 20, 21, 22, 23
-
-
 def scene(path: str) -> dict:
     # The two heavy views take a full row each; the unit controls share one
     # compact row underneath (a nested `row` panel), so the views keep most of
-    # the window.
+    # the window. Every widget is *named*, so the script drives it by name.
     return window(
-        waveform(WAVE, path=path, channels=2, sample_rate=SR,
+        waveform(name="wave", path=path, channels=2, sample_rate=SR,
                  tempo=TEMPO, quant=QUANT, bit_depth=16),
-        spectrogram(SPECT, path=path, channels=2, sample_rate=SR,
+        spectrogram(name="spect", path=path, channels=2, sample_rate=SR,
                     window_size=1024, tempo=TEMPO, quant=QUANT),
-        panel(30,
-              menu(TIME_MENU, TIME_UNITS, label="time axis"),
-              menu(AMP_MENU, AMP_UNITS, label="amplitude axis"),
-              menu(FREQ_MENU, FREQ_SCALES, label="frequency scale"),
-              toggle(Y_TOGGLE, label="vertical rulers", value=True),
+        panel(None,
+              menu(name="time", options=TIME_UNITS, label="time axis"),
+              menu(name="amp", options=AMP_UNITS, label="amplitude axis"),
+              menu(name="freq", options=FREQ_SCALES, label="frequency scale"),
+              toggle(name="yaxis", label="vertical rulers", value=True),
               layout="row"),
         title="Rulers: units per axis", w=960, h=720, layout="col",
     )
@@ -109,55 +105,57 @@ win = gui.open(scene(raw_path))
 print(f"opened window {win} — click the menus to cycle each axis' unit")
 
 # %% [markdown]
-# ## Wire the widgets to the rulers
-# The host reports every menu pick as ``/gui_event id index`` (and the toggle
-# as ``/gui_event id 0|1``); the script answers with the ``gui.set`` that
-# retunes the matching axis. This is script glue by design: the same events
-# could equally drive a synth, and the same ``gui.set`` calls could come from
-# anywhere.
+# ## Wire the widgets to the rulers, by name
+# The host reports every menu pick as an index (and the toggle as 0|1); each
+# handle callback answers with the ``set`` that retunes the matching axis. This
+# is script glue by design: the same events could equally drive a synth, and the
+# same ``set`` calls could come from anywhere. The views themselves report their
+# vertical window as a ``"view_y"`` edit-back when the wheel/strip zooms them.
 
 # %%
 _amp_unit = "norm"  # remembered so the toggle can restore it
 _closed = False
 
 
-def on_event(wid: int, value) -> None:
+def on_time(index):
+    unit = TIME_UNITS[int(index)]
+    win["wave"].set(ruler=unit)
+    win["spect"].set(ruler=unit)
+    print(f"time axis -> {unit}")
+
+
+def on_amp(index):
     global _amp_unit
-    if wid == TIME_MENU:
-        unit = TIME_UNITS[int(value)]
-        gui.set(WAVE, ruler=unit)
-        gui.set(SPECT, ruler=unit)
-        print(f"time axis -> {unit}")
-    elif wid == AMP_MENU:
-        _amp_unit = AMP_UNITS[int(value)]
-        gui.set(WAVE, ruler_y=_amp_unit)
-        print(f"amplitude axis -> {_amp_unit}")
-    elif wid == FREQ_MENU:
-        scale = FREQ_SCALES[int(value)]
-        gui.set(SPECT, freq_scale=scale)
-        print(f"frequency scale -> {scale}")
-    elif wid == Y_TOGGLE:
-        on = bool(int(value))
-        gui.set(WAVE, ruler_y=_amp_unit if on else "off")
-        gui.set(SPECT, ruler_y="hz" if on else "off")
-        print(f"vertical rulers -> {'on' if on else 'off'}")
+    _amp_unit = AMP_UNITS[int(index)]
+    win["wave"].set(ruler_y=_amp_unit)
+    print(f"amplitude axis -> {_amp_unit}")
 
 
-def drain_events() -> None:
-    global _closed
-    while (msg := gui.poll(0.0)) is not None:
-        addr, args = msg  # poll returns (addr, [args...])
-        if addr == "/gui_closed":
-            _closed = True
-            print("window closed")
-        elif addr == "/gui_event" and len(args) >= 2 and isinstance(args[1], (int, float)):
-            on_event(int(args[0]), args[1])
-        elif addr == "/gui_event" and len(args) >= 4 and args[1] == "view_y":
-            # Vertical zoom/pan on either view (wheel/drag on the y strip).
-            print(f"widget {args[0]} vertical window: start={args[2]:.3f} len={args[3]:.3f}")
+def on_freq(index):
+    scale = FREQ_SCALES[int(index)]
+    win["spect"].set(freq_scale=scale)
+    print(f"frequency scale -> {scale}")
 
 
-drain_events()
+def on_yaxis(value):
+    on = bool(int(value))
+    win["wave"].set(ruler_y=_amp_unit if on else "off")
+    win["spect"].set(ruler_y="hz" if on else "off")
+    print(f"vertical rulers -> {'on' if on else 'off'}")
+
+
+def on_view_y(tag, *vals):
+    if tag == "view_y" and len(vals) >= 2:
+        print(f"vertical window: start={vals[0]:.3f} len={vals[1]:.3f}")
+
+
+win["time"].on_event(on_time)
+win["amp"].on_event(on_amp)
+win["freq"].on_event(on_freq)
+win["yaxis"].on_event(on_yaxis)
+win["wave"].on_event(on_view_y)
+win["spect"].on_event(on_view_y)
+win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
 # ## The same math from the client
@@ -182,11 +180,11 @@ print(f"1 kHz is {_native.hz_to_mel(1000.0):.0f} mel, "
 
 # %%
 print("demo: spectrogram -> mel, waveform -> beats + dBFS (3 s) ...")
-gui.set(SPECT, freq_scale="mel")
-gui.set(WAVE, ruler="beats", ruler_y="db")
+win["spect"].set(freq_scale="mel")
+win["wave"].set(ruler="beats", ruler_y="db")
 time.sleep(3.0)
-gui.set(SPECT, freq_scale="log")
-gui.set(WAVE, ruler="time", ruler_y="norm")
+win["spect"].set(freq_scale="log")
+win["wave"].set(ruler="time", ruler_y="norm")
 
 # %% [markdown]
 # ## Vertical navigation from the script
@@ -196,11 +194,11 @@ gui.set(WAVE, ruler="time", ruler_y="norm")
 
 # %%
 print("demo: vertical zoom on both views (3 s), then back to the full axes ...")
-gui.set(WAVE, y_start=0.5, y_len=0.5)     # amplitude axis: the upper half
-gui.set(SPECT, y_start=0.2, y_len=0.35)   # frequency axis: a low-mid band
+win["wave"].set(y_start=0.5, y_len=0.5)     # amplitude axis: the upper half
+win["spect"].set(y_start=0.2, y_len=0.35)   # frequency axis: a low-mid band
 time.sleep(3.0)
-gui.set(WAVE, y_len=0.0)                  # <= 0 resets to the full axis
-gui.set(SPECT, y_len=0.0)
+win["wave"].set(y_len=0.0)                  # <= 0 resets to the full axis
+win["spect"].set(y_len=0.0)
 
 # %% [markdown]
 # ## Plain-script run
@@ -222,8 +220,7 @@ if __name__ == "__main__":
     try:
         deadline = time.monotonic() + 90.0
         while time.monotonic() < deadline and not _closed:
-            drain_events()
-            time.sleep(0.05)
+            gui.pump(timeout=0.05)
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))

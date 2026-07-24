@@ -83,79 +83,85 @@ for k in range(2):
 # bar. Only the containers reintroduce margins for their own contents.
 
 # %%
-wave_menu = menu(None, ["sine"], w=120)
-play_btn = button(label="play", w=80)
-stop_btn = button(label="stop", w=80)
-menu_bar = panel(None, wave_menu, play_btn, stop_btn,
+menu_bar = panel(None, menu(None, ["sine"], w=120),
+                 button(name="play", label="play", w=80),
+                 button(name="stop", label="stop", w=80),
                  label(None, "gui_shell - the application shell", weight=1.0),
                  layout="row", h=40, gap=4)
 
-freq_knob = knob(label="freq", min=55.0, max=880.0, value=220.0)
-amp_slider = slider(label="amp", min=0.0, max=0.15, value=0.08)
-sidebar = panel(None, freq_knob, amp_slider, layout="col", w=190)
+sidebar = panel(None,
+                knob(name="freq", label="freq", min=55.0, max=880.0, value=220.0),
+                slider(name="amp", label="amp", min=0.0, max=0.15, value=0.08),
+                layout="col", w=190)
 
 out_scope = scope(tap=tap0, channels=2, window_ms=25.0, label="output")
 work_area = panel(None, sidebar, out_scope, layout="row", weight=1.0, gap=4)
 
-status = label(None, "ready", h=24)
-
-win = gui.open(window(menu_bar, work_area, status,
+win = gui.open(window(menu_bar, work_area, label(name="status", text="ready", h=24),
                       title="gui_shell", w=760, h=420, layout="col",
                       margin=0, gap=0))
 print(f"opened window {win}")
 
 # %% [markdown]
-# ## Drive it
-# The script is the application logic: button presses start/stop the voice,
-# the knob and slider retune it, and every action rewrites the status label —
-# `set(status, text=...)` is the whole status-bar API. The oscilloscope needs
-# nothing from this loop — the host reads the taps from the segment on its own.
+# ## Drive it, wired by name
+# The script is the application logic: each button/control has its own handle
+# callback, and every action rewrites the status label -- `win["status"].set(
+# text=...)` is the whole status-bar API. The oscilloscope needs nothing from
+# this loop -- the host reads the taps from the segment on its own.
 
 # %%
 _voice = None
+_freq, _amp = 220.0, 0.08   # the last values seen, seeded from the widget defaults
 _closed = False
 
 
 def set_status(text: str) -> None:
-    gui.set(status["id"], text=text)
+    win["status"].set(text=text)
 
 
-def on_event(widget_id: int, value) -> None:
+def start(value):
     global _voice
-    if widget_id == play_btn["id"] and _voice is None:
-        _voice = server.synth("gui_shell_voice", {
-            "freq": float(freq_knob["value"]), "amp": float(amp_slider["value"]),
-        })
+    if value == 1 and _voice is None:   # 1 = press
+        _voice = server.synth("gui_shell_voice", {"freq": _freq, "amp": _amp})
         set_status("playing")
-    elif widget_id == stop_btn["id"] and _voice is not None:
+
+
+def stop(value):
+    global _voice
+    if value == 1 and _voice is not None:
         server.set(_voice, {"gate": 0.0})
         _voice = None
         set_status("stopped")
-    elif widget_id == freq_knob["id"]:
-        freq_knob["value"] = value
-        if _voice is not None:
-            server.set(_voice, {"freq": float(value)})
-        set_status(f"freq {value:.1f} Hz")
-    elif widget_id == amp_slider["id"]:
-        amp_slider["value"] = value
-        if _voice is not None:
-            server.set(_voice, {"amp": float(value)})
-        set_status(f"amp {value:.3f}")
+
+
+def on_freq(value):
+    global _freq
+    _freq = float(value)
+    if _voice is not None:
+        server.set(_voice, {"freq": _freq})
+    set_status(f"freq {_freq:.1f} Hz")
+
+
+def on_amp(value):
+    global _amp
+    _amp = float(value)
+    if _voice is not None:
+        server.set(_voice, {"amp": _amp})
+    set_status(f"amp {_amp:.3f}")
+
+
+win["play"].on_event(start)
+win["stop"].on_event(stop)
+win["freq"].on_event(on_freq)
+win["amp"].on_event(on_amp)
+win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 
 def run(seconds: float) -> None:
     """Dispatches shell events for ``seconds``."""
-    global _closed
-    start = time.monotonic()
-    while time.monotonic() - start < seconds and not _closed:
-        msg = gui.poll(timeout=0.03)
-        if msg is None:
-            continue
-        addr, args = msg
-        if addr == "/gui_closed":
-            _closed = True
-        elif addr == "/gui_event" and len(args) >= 2:
-            on_event(int(args[0]), args[1])
+    start_t = time.monotonic()
+    while time.monotonic() - start_t < seconds and not _closed:
+        gui.pump(timeout=0.03)
 
 
 # %%
