@@ -1,63 +1,68 @@
 #!/usr/bin/env python3
-"""Drive the headless ``clausters-gui`` host: build a GuiDef, read a widget back.
+"""Drive a headless ``clausters-gui`` host: build a GuiDef, read a widget back.
 
 The smallest round trip over the widget protocol, the GUI counterpart of
-``live_udp.py``. A GuiDef is built exactly the way a ``SynthDef``/``GraphDef``
-is — a tree of ``{id, type, ...props, children}`` nodes serialized to JSON — and
+``live_udp.py``. A GuiDef is built exactly the way a ``SynthDef``/``GraphDef`` is
+-- a tree of ``{id, type, ...props, children}`` nodes serialized to JSON -- and
 sent in one ``/gui_def`` message; the host registers the tree and answers
 ``/gui_query`` with ``/gui_info``. This exercises the protocol and the dual-role
-host with no display (see ``gui_window.py`` for the windowed version).
+host with **no display** (see ``gui_window.py`` for the windowed version).
 
-Start the host **headless** in one terminal (built from ``clients/gui``)::
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
-    cd clients/gui && cargo run --bin clausters-gui -- --headless -v
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python      # bundles the GUI binary
 
-then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
-
-    python clients/python/examples/gui_skeleton.py
-
-The host logs the parsed widget tree; this script prints the widget it reads
-back over ``/gui_info``.
+Run it cell by cell (Shift+Enter), or as a plain script --
+``python clients/python/examples/gui_skeleton.py``. It self-launches the host
+**headless** (`GuiHost.boot(extra_args=("--headless",))`); by hand that is
+``clausters-gui --headless``. No display or GPU needed.
 """
 
+# %%
 import sys
 
 from clausters.gui import GuiHost, knob, slider, waveform, window
 
+# %% [markdown]
+# ## Launch a headless host
+# `GuiHost.boot` starts a `clausters-gui` process; `--headless` runs it with no
+# window, so this exercises the pure protocol path.
 
-def filter_panel() -> dict:
-    """A small instrument panel: two controls and a waveform view. The root
-    ``window`` carries no id (the id comes from the ``/gui_def`` argument); each
-    child carries its own client-allocated integer id."""
-    return window(
-        knob(10, label="cutoff", min=20.0, max=20000.0, value=800.0),
-        slider(11, label="res", min=0.0, max=1.0, value=0.2),
-        waveform(12, buffer=0),
-        title="Filter", w=480, h=240, layout="col",
-    )
+# %%
+gui = GuiHost.boot(extra_args=("--headless",))
 
+# %% [markdown]
+# ## Build a small panel and open it
+# Two controls and a waveform view. The root `window` carries no id (the id comes
+# from the `/gui_def` argument), and the children are *named*, not numbered --
+# `open` assigns each a fresh id and hands back a handle that resolves the names.
 
-def main():
-    with GuiHost() as gui:  # 127.0.0.1:57210 by default
-        # One declarative message builds the whole tree under def id 1.
-        gui.define(1, filter_panel())
+# %%
+win = gui.open(window(
+    knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
+    slider(name="res", label="res", min=0.0, max=1.0, value=0.2),
+    waveform(name="wave", buffer=0),
+    title="Filter", w=480, h=240, layout="col"))
 
-        # Read a widget back: /gui_query 10 -> /gui_info. The float `value`
-        # comes back as a float and the int `buffer` as an int -- the wire keeps
-        # them apart.
-        info = gui.query(10)
-        if info is None:
-            sys.exit("no /gui_info reply -- is the clausters-gui host running on 57210?")
-        kind, props = info
-        print(f"widget 10 is a {kind!r} with {props}")
+# %% [markdown]
+# ## Read a widget back
+# `/gui_query` -> `/gui_info`, through the handle. The float `value` comes back as
+# a float and the int `buffer` as an int -- the wire keeps them apart.
 
-        root = gui.query(1)
-        print(f"root (def 1) is a {root[0]!r}")
+# %%
+info = win["cutoff"].query()
+if info is None:
+    sys.exit("no /gui_info reply -- did the headless host boot?")
+kind, props = info
+print(f'the "cutoff" widget (id {win["cutoff"].id}) is a {kind!r} with {props}')
 
+root = gui.query(win)
+print(f"root (def {int(win)}) is a {root[0]!r}")
 
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    gui.stop()
+else:
+    print("skeleton up - gui.stop() to end")

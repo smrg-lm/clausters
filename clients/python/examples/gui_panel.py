@@ -1,83 +1,90 @@
 #!/usr/bin/env python3
 """A scripted instrument panel: controls that round-trip values and events.
 
-The G4 example. It builds a `window` of standard controls — knobs, sliders, a
-number, a toggle, a button and a menu — sends it as one GuiDef, then both *drives*
-a widget live with `/gui_set` and *listens* for the `/gui_event`s your
-interactions emit (turn a knob, click the button) and the `/gui_closed` the host
-sends when you close the window.
+It builds a ``window`` of standard controls -- knobs, sliders, a number, a
+toggle, a button and a menu -- opens it as one GuiDef, then both *drives* a
+widget live with ``set`` and *listens* for the events your interactions emit
+(turn a knob, click the button) and the close the host sends when you close the
+window. No audio server is involved, so this boots only the GUI host.
 
-Needs a display and a Vulkan/Metal/DX12/GL adapter (the host opens a window).
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
-Start the windowed host in one terminal (built from ``clients/gui``)::
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python      # bundles the GUI binary
 
-    cd clients/gui && cargo run --bin clausters-gui -- -v
-
-then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
-
-    python clients/python/examples/gui_panel.py
-
-Interact with the window for a few seconds: every change prints here. Closing the
-window prints a close event and ends the script early.
+Run it cell by cell (Shift+Enter), or as a plain script --
+``python clients/python/examples/gui_panel.py``. It self-launches the windowed
+host with `GuiHost.boot()`; by hand that is ``clausters-gui``. Needs a display
+and a GPU adapter.
 """
 
+# %%
 import sys
+import time
 
 from clausters.gui import GuiHost, button, knob, menu, number, panel, slider, toggle, window
 
+#: The named controls, so the script drives and listens to them by name.
+CONTROLS = ("cutoff", "res", "gain", "mix", "bypass", "reset", "wave")
 
-def instrument() -> dict:
-    """A filter panel: a row of knobs over a row of mixed controls."""
-    return window(
-        panel(2,
-              knob(10, label="cutoff", min=20.0, max=20000.0, value=800.0),
-              knob(11, label="res", min=0.0, max=1.0, value=0.3),
-              number(12, label="gain", min=-24.0, max=24.0, value=0.0),
-              layout="row"),
-        panel(3,
-              slider(20, label="mix", min=0.0, max=1.0, value=0.5),
-              toggle(21, label="bypass", value=False),
-              button(22, label="reset"),
-              menu(23, ["sine", "saw", "square"], index=1, label="wave"),
-              layout="row"),
-        title="Filter", w=560, h=300, layout="col",
-    )
+# %% [markdown]
+# ## Launch the GUI host
+# `GuiHost.boot()` starts a windowed `clausters-gui` process and returns a host
+# connected to it (stopped by `stop`, or on interpreter exit).
 
+# %%
+gui = GuiHost.boot()
 
-def main():
-    with GuiHost() as gui:  # 127.0.0.1:57210 by default
-        gui.define(1, instrument())
+# %% [markdown]
+# ## The panel
+# A row of knobs over a row of mixed controls. Every widget is *named*, not
+# numbered -- the script never picks an id.
 
-        # Drive a widget live from the script (the /gui_set path): nudge the
-        # cutoff knob a moment after the window opens.
-        import time
-        time.sleep(0.5)
-        gui.set(10, value=2000.0)
-        print("set cutoff to 2000; now interact with the window...")
+# %%
+win = gui.open(window(
+    panel(None,
+          knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
+          knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
+          number(name="gain", label="gain", min=-24.0, max=24.0, value=0.0),
+          layout="row"),
+    panel(None,
+          slider(name="mix", label="mix", min=0.0, max=1.0, value=0.5),
+          toggle(name="bypass", label="bypass", value=False),
+          button(name="reset", label="reset"),
+          menu(name="wave", options=["sine", "saw", "square"], index=1, label="wave"),
+          layout="row"),
+    title="Filter", w=560, h=300, layout="col"))
 
-        # Listen for interaction events for a while. /gui_event carries the
-        # widget id and its new value; /gui_closed carries the window id.
-        closed = False
+# %% [markdown]
+# ## Drive and listen
+# Nudge the cutoff live (the `set` path), then register a per-widget `on_event`:
+# each handle fires with the new value(s) when the host's messages are pumped. No
+# ids, no manual matching.
 
-        def on_event(addr, args):
-            nonlocal closed
-            if addr == "/gui_closed":
-                print(f"window {args[0]} closed")
-                closed = True
-            else:
-                print(f"event from widget {args[0]}: {args[1:]}")
+# %%
+time.sleep(0.5)
+win["cutoff"].set(value=2000.0)
+print("set cutoff to 2000; now interact with the window...")
 
-        for _ in range(80):  # ~8 seconds, or until the window closes
-            msg = gui.poll(timeout=0.1)
-            if msg is not None:
-                on_event(*msg)
-            if closed:
-                break
+for name in CONTROLS:
+    win[name].on_event(lambda *value, name=name: print(f"{name}: {value}"))
+_closed = False
+win.on_closed(lambda: (print("window closed"), globals().__setitem__("_closed", True)))
 
 
-if __name__ == "__main__":
+def run(seconds: float) -> None:
+    """Dispatches panel events for ``seconds``."""
+    start = time.monotonic()
+    while time.monotonic() - start < seconds and not _closed:
+        gui.pump(timeout=0.1)
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+        run(8.0)
+    finally:
+        gui.stop()
+else:
+    print("panel up - run(10) to dispatch events, gui.stop() to end")

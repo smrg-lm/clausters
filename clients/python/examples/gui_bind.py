@@ -1,105 +1,101 @@
 #!/usr/bin/env python3
 """A bound knob drives a synth directly: the value bypasses the script.
 
-The G6 example. It shows the low-latency interactive path: a knob *bound* to a
-running synth's control (`GuiHost.bind`) sends its value **straight to the audio
+The low-latency interactive path: a knob *bound* to a running synth's control
+(`clausters.gui.host.GuiHost.bind`) sends its value **straight to the audio
 server** on every turn, with no round-trip through this Python process. An
 unbound knob would instead emit a ``/gui_event`` back here; binding swaps that
 for a direct ``/n_set`` to the server.
 
 The point of the binding is that it lives **in the GUI host, not in this
-script**: ``/gui_bind`` registers ``knob 10 -> /n_set <node> freq`` inside the
-host, and the host forwards every change to the audio server on its own. So the
-control keeps working **after this script exits** — the binding (and the synth)
-outlive the Python process, which is exactly the bypass-the-script promise. This
-script only sets the scene; it deliberately leaves the knob bound and the synth
-running when it returns, so you can keep turning the knob with no client at all.
+script**: ``/gui_bind`` registers ``knob "freq" -> /n_set <node> freq`` inside
+the host, and the host forwards every change to the audio server on its own. So
+while the host runs, the knob drives the pitch with nothing going through Python
+-- turn it and nothing prints here. (A binding baked into a *saved standalone*
+bundle keeps working with no client at all, even after every script exits --
+that is ``gui_standalone.py``.)
 
-Three processes cooperate, as in ``gui_meters.py``: the **audio server**, the
-**GUI host** (which needs ``--server`` to reach the audio server), and this
-**script**.
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
-Start the audio server (built from the repo root)::
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
-    cargo run
-
-Start the windowed GUI host, attached to that server (from ``clients/gui``)::
-
-    cargo run --bin clausters-gui -- --server 127.0.0.1:57110 -v
-
-Then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
-
-    python clients/python/examples/gui_bind.py
-
-A window opens with one knob over the audible range. Turn it: the pitch follows
-directly and nothing prints here (proof the value never came back through
-Python). After a short demo the script exits **without unbinding or freeing the
-synth** — keep turning the knob and the pitch still follows, because the binding
-runs in the host. Close the window when you are done; to silence the synth,
-free it from another client or stop the audio server (``/quit``).
-
-Needs a display and a Vulkan/Metal/DX12/GL adapter (the host opens a window).
+Run it cell by cell (Shift+Enter), or as a plain script --
+``python clients/python/examples/gui_bind.py``. It self-launches the audio
+server and the GUI host (`Session.live` + `Session.gui`); by hand that is
+``clausters`` and ``clausters-gui --server 127.0.0.1:57110``. Run this with no
+server already up on 57110, so the session boots its own. Needs a display and a
+GPU adapter.
 """
 
+# %%
 import sys
 import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import GuiHost, knob, window
+from clausters.gui import knob, window
+
+# %% [markdown]
+# ## Launch the server and the GUI, and a synth to drive
+# `Session.live()` boots the audio server; `session.gui()` boots the GUI host
+# with its client leg pointed at that server, which is what lets `/gui_bind`
+# forward straight to it.
+
+# %%
+session = Session.live()
+server = session.server
+gui = session.gui()
 
 
-def scene() -> dict:
-    """A window with a single big knob over a musical frequency range."""
-    return window(
-        knob(10, label="freq", min=110.0, max=880.0, value=220.0),
-        title="Bound knob -> synth freq", w=420, h=260, layout="col",
-    )
-
-
-def beep() -> SynthDef:
-    """A quiet stereo sine whose frequency is the ``freq`` control (default
-    220 Hz) — the binding target ``/n_set <node> freq <value>`` drives."""
+def beep(name: str = "gui_bind_beep") -> SynthDef:
+    """A quiet stereo sine whose frequency is the `freq` control (default
+    220 Hz) -- the binding target `/n_set <node> freq <value>` drives."""
     sig = sine(freq=control("freq", 220.0)) * 0.2
-    return SynthDef("gui_bind_beep", out(0.0, sig), out(1.0, sig))
+    return SynthDef(name, out(0.0, sig), out(1.0, sig))
 
 
-def main():
-    with Session.live() as session:  # UDP to 127.0.0.1:57110
-        server = session.server
-        server.add_synthdef(beep())  # blocks until /done
-        synth = server.synth("gui_bind_beep", {"freq": 220.0})
+server.add_synthdef(beep())
+synth = server.synth("gui_bind_beep", {"freq": 220.0})
 
-        with GuiHost() as gui:  # 127.0.0.1:57210 by default
-            gui.define(1, scene())
-            # Bind knob 10 to the synth's freq: turning it sends
-            # /n_set <synth.id> freq <value> straight to the audio server. The
-            # binding now lives in the host, independent of this script.
-            gui.bind(10, "/n_set", synth.id, "freq")
-            print(f"knob bound to synth {synth.id} freq; turn it — the pitch "
-                  "follows directly and nothing prints here (no script round-trip)")
+# %% [markdown]
+# ## A named knob, bound to the synth's freq
+# The knob is *named*, not numbered -- the script addresses it by that name and
+# never picks an id. `bind` registers the forward in the host.
 
-            # Demo window: drain events just to show the bound knob sends none
-            # back here, and bail out early if the window is closed.
-            start = time.monotonic()
-            while time.monotonic() - start < 12.0:
-                msg = gui.poll(timeout=0.1)
-                if msg is not None and msg[0] == "/gui_closed":
-                    print("window closed — freeing the synth")
-                    server.free(synth)
-                    return
+# %%
+win = gui.open(window(
+    knob(name="freq", label="freq", min=110.0, max=880.0, value=220.0),
+    title="Bound knob -> synth freq", w=420, h=260, layout="col"))
+win["freq"].bind("/n_set", synth.id, "freq")
+win.on_closed(lambda: globals().__setitem__("_closed", True))
+print(f"knob bound to synth {synth.id} freq; turn it -- the pitch follows "
+      "directly and nothing prints here (no script round-trip)")
 
-        # The script exits here, but it does NOT unbind or free the synth: the
-        # binding keeps running in the host, so the knob still drives the pitch
-        # on the server with no client at all. That is the whole point of
-        # /gui_bind. Close the window or /quit the server to stop the sound.
-        print(f"script exiting; knob 10 stays bound to synth {synth.id} freq — "
-              "keep turning it, the host forwards the value to the server")
+# %% [markdown]
+# ## Drive it
+# Nothing to do but wait: the bound knob sends its value to the server, not here,
+# so this loop only pumps events to notice the window closing. Turn the knob and
+# hear the pitch follow with no Python in the path.
+
+# %%
+_closed = False
 
 
-if __name__ == "__main__":
+def run(seconds: float) -> None:
+    """Pumps events for ``seconds`` (a bound knob sends none back)."""
+    start = time.monotonic()
+    while time.monotonic() - start < seconds and not _closed:
+        gui.pump(timeout=0.1)
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+        run(20.0)
+    finally:
+        server.free(synth)
+        session.close()
+else:
+    print("bind up - run(10) to pump events, session.close() to end")

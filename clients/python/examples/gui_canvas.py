@@ -1,48 +1,41 @@
 #!/usr/bin/env python3
 """A shader canvas: custom visuals driven by an OSC param and a control bus.
 
-The G9 example. A ``canvas`` widget runs a script-supplied WGSL shader over its
-area, ShaderToy-style. The host gives the shader three uniforms -- ``u.time``,
+A ``canvas`` widget runs a script-supplied WGSL shader over its area,
+ShaderToy-style. The host gives the shader three uniforms -- ``u.time``,
 ``u.resolution`` and a ``u.params`` vec4 -- and the params are driven **two
 ways**, which is the whole point of the widget:
 
-- ``u.params.x`` from the **script**: ``gui.set(id, param0=...)`` sends an OSC
+- ``u.params.x`` from the **script**: ``handle.set(param0=...)`` sends an OSC
   value the host writes into the uniform;
 - ``u.params.y`` from a **control bus**, read straight out of the audio server's
   **shared-memory segment** every frame (zero OSC), exactly the path the meters
   use. The ``buses=[..]`` argument maps a control bus onto a param slot.
 
 So the same shader animates from an OSC parameter and from live server audio at
-once. Three processes cooperate, as in ``gui_meters.py``: the **audio server**
-(holding the shared segment), the **GUI host** (which maps it with ``--shm``),
-and this **script**.
+once -- which needs the host to map the server's segment, wired by `Session.gui`.
 
-Start the audio server with a shared segment (from the repo root)::
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
-    cargo run -- --shm /dev/shm/clausters_g9
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
-Start the windowed GUI host attached to that server and segment (from
-``clients/gui``)::
-
-    cargo run --bin clausters-gui -- --server 127.0.0.1:57110 --shm /dev/shm/clausters_g9 -v
-
-Then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
-
-    python clients/python/examples/gui_canvas.py
-
-A window opens with an animated shader: its ring pulse follows the OSC ``param0``
-this script sweeps, and its green channel follows the control bus this script
-writes (read by the host from shared memory). Close the window, or wait, to end.
-Needs a display and a GPU adapter.
+Run it cell by cell (Shift+Enter), or as a plain script --
+``python clients/python/examples/gui_canvas.py``. It self-launches the audio
+server (with a shared-memory segment) and the GUI host mapping it; by hand that
+is ``clausters --shm <path>`` and ``clausters-gui --server 127.0.0.1:57110 --shm
+<path>``. Run this with no server already up on 57110, so the session boots its
+own. Needs a display and a GPU adapter.
 """
 
+# %%
 import math
 import sys
 import time
 
 from clausters import Session
-from clausters.gui import GuiHost, canvas, window
+from clausters.gui import canvas, window
 
 SHADER = """
 fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
@@ -59,40 +52,54 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
 }
 """
 
+# %% [markdown]
+# ## Launch the server and the GUI, and a bus for the shader
+# `session.gui()` maps the server's shared-memory segment, so the canvas can read
+# the control bus into `u.params.y` with no per-frame messages.
 
-def scene(bus_index: int) -> dict:
-    """A window with one shader canvas: param0 from the script, param1 from a bus."""
-    return window(
-        canvas(10, SHADER, buses=[-1, bus_index], label="shader"),
-        title="Canvas (shader)", w=560, h=560,
-    )
+# %%
+session = Session.live()
+server = session.server
+gui = session.gui()
+bus = server.control_bus()  # the bus the shader's green channel follows
+
+# %% [markdown]
+# ## The canvas
+# One shader canvas: `param0` from the script, `param1` from the bus (the `-1`
+# slot stays script-driven). Named, so `open` resolves it.
+
+# %%
+win = gui.open(window(
+    canvas(name="shader", shader=SHADER, buses=[-1, bus.index], label="shader"),
+    title="Canvas (shader)", w=560, h=560))
+win.on_closed(lambda: globals().__setitem__("_closed", True))
+print("an animated shader: its ring follows the OSC param, its green "
+      "channel the control bus; close the window to stop")
+
+# %% [markdown]
+# ## Drive it
+# Sweep the OSC param straight to the shader and write the control bus (which the
+# host reads from shared memory into `params.y`).
+
+# %%
+_closed = False
 
 
-def main():
-    with Session.live() as session:  # UDP to 127.0.0.1:57110
-        server = session.server
-        bus = server.control_bus()  # the bus the shader's green channel follows
-
-        with GuiHost() as gui:  # 127.0.0.1:57210 by default
-            gui.define(1, scene(bus.index))
-            print("an animated shader: its ring follows the OSC param, its green "
-                  "channel the control bus; close the window to stop")
-
-            start = time.monotonic()
-            while time.monotonic() - start < 30.0:
-                t = time.monotonic() - start
-                # An OSC param straight to the shader (no audio server involved).
-                gui.set(10, param0=0.5 + 0.5 * math.sin(t * 0.7))
-                # A control bus the host reads from shared memory into params.y.
-                server.set_bus(bus, 0.5 + 0.5 * math.cos(t * 1.3))
-                msg = gui.poll(timeout=0.03)
-                if msg is not None and msg[0] == "/gui_closed":
-                    print("window closed")
-                    break
+def run(seconds: float) -> None:
+    """Sweeps the OSC param and the control bus for ``seconds``."""
+    start = time.monotonic()
+    while time.monotonic() - start < seconds and not _closed:
+        t = time.monotonic() - start
+        win["shader"].set(param0=0.5 + 0.5 * math.sin(t * 0.7))
+        server.set_bus(bus, 0.5 + 0.5 * math.cos(t * 1.3))
+        gui.pump(timeout=0.03)
 
 
-if __name__ == "__main__":
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+        run(30.0)
+    finally:
+        session.close()
+else:
+    print("canvas up - run(10) to sweep the params, session.close() to end")

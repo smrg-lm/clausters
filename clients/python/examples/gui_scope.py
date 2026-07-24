@@ -11,92 +11,91 @@ the shared-memory segment. ``Server.tap(tap, bus)`` routes an audio bus into a
 ring; from then on the engine appends that bus's samples every block, and the
 GUI host reads the newest window straight out of shared memory each frame --
 zero per-frame OSC. (A browser host cannot map the segment; it subscribes
-``/tap_stream`` instead and receives the same windows as ``/tap_data``
-messages. ``Server.stream_taps`` exposes that path to Python too, for headless
-capture of a live signal.)
+``/tap_stream`` instead. ``Server.stream_taps`` exposes that path to Python too,
+for headless capture of a live signal.)
 
-Start the audio server with a shared segment (from the repo root)::
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
-    cargo run -- --shm /dev/shm/clausters_tap
+    python -m venv .venv
+    .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
-Start the windowed GUI host on the same segment (from ``clients/gui``)::
-
-    cargo run --bin clausters-gui -- --shm /dev/shm/clausters_tap -v
-
-Then, with the client importable (``pip install ./clients/python`` or
-``PYTHONPATH=clients/python``)::
-
-    python clients/python/examples/gui_scope.py
-
-A window opens with two oscilloscopes on the same tap: a **triggered** one,
-whose sine stays locked in place while its frequency sweeps (each redraw
-aligns to a rising zero crossing), and a **free-running** one (trigger far
-above the signal, so the alignment never fires) that shows why triggering
-exists -- the same signal drifting through the window. Close the window, or
-wait, to end.
+Run it cell by cell (Shift+Enter), or as a plain script --
+``python clients/python/examples/gui_scope.py``. It self-launches the audio
+server (with a shared-memory segment and audio taps) and the GUI host mapping
+that segment; by hand that is ``clausters --shm <path>`` and ``clausters-gui
+--shm <path>``. Run this with no server already up on 57110, so the session
+boots its own. Needs a display and a GPU adapter.
 """
 
+# %%
 import math
 import sys
 import time
 
 from clausters import Session
 from clausters.defs import SynthDef, control, out, sine
-from clausters.gui import GuiHost, panel, scope, window
+from clausters.gui import panel, scope, window
+
+# %% [markdown]
+# ## Launch the server and the GUI, and a tone routed into a tap
+# `Session.live()` boots the server with a shared-memory segment and taps;
+# `session.gui()` maps the same segment, so the scopes read tap 0 from it.
+
+# %%
+session = Session.live()
+server = session.server
+gui = session.gui()
+
+server.add_synthdef(SynthDef(
+    "tone", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.2))))
+synth = server.synth("tone", {"freq": 220.0})
+server.tap(0, 0)  # audio bus 0 (the hardware out) -> audio tap 0
+
+# %% [markdown]
+# ## Two scopes on the same tap: triggered vs free-running
+# The triggered one aligns each redraw to a rising crossing of level 0.0, so the
+# sine stays locked; the free-running one has a trigger the signal never reaches,
+# so it shows the same signal drifting -- why triggering exists. Both named.
+
+# %%
+win = gui.open(window(
+    panel(None,
+          scope(name="triggered", tap=0, window_ms=15.0, trigger=0.0,
+                label="triggered (level 0.0)"),
+          scope(name="free", tap=0, window_ms=15.0, trigger=9.0,
+                label="free-running"),
+          layout="col"),
+    title="Audio-rate oscilloscope", w=560, h=420))
+win.on_closed(lambda: globals().__setitem__("_closed", True))
+print("the top trace stays locked while the pitch sweeps; "
+      "the bottom one drifts; close the window to stop")
+
+# %% [markdown]
+# ## Drive it
+# Sweep the frequency 220..440 Hz and back so the triggered trace visibly
+# re-locks. The scopes read the tap from shared memory on their own.
+
+# %%
+_closed = False
 
 
-def scene() -> dict:
-    """Two audio-rate scopes reading tap 0: triggered vs free-running."""
-    return window(
-        panel(2,
-              scope(10, tap=0, window_ms=15.0, trigger=0.0,
-                    label="triggered (level 0.0)"),
-              # A trigger level the signal never reaches: no rising crossing is
-              # ever found, so the scope free-runs on the newest window.
-              scope(11, tap=0, window_ms=15.0, trigger=9.0,
-                    label="free-running"),
-              layout="col"),
-        title="Audio-rate oscilloscope", w=560, h=420,
-    )
+def run(seconds: float) -> None:
+    """Sweeps the tone's frequency for ``seconds``."""
+    start = time.monotonic()
+    while time.monotonic() - start < seconds and not _closed:
+        phase = (time.monotonic() - start) / 8.0
+        server.set(synth, {"freq": 330.0 + 110.0 * math.sin(2 * math.pi * phase)})
+        gui.pump(timeout=0.03)
 
 
-def main():
-    with Session.live() as session:  # UDP to 127.0.0.1:57110
-        server = session.server
-        info = server.query_info()
-        if info.taps == 0:
-            sys.exit("this server has no tap region (started with --taps 0?)")
-
-        # A sine on audio bus 0 (the hardware out), and bus 0 routed into
-        # audio tap 0. The tap is what the oscilloscopes read.
-        server.add_synthdef(SynthDef(
-            "tone", out(0.0, sine(control("freq", 220.0)) * control("amp", 0.2))))
-        synth = server.synth("tone", {"freq": 220.0})
-        server.tap(0, 0)
-
-        with GuiHost() as gui:  # 127.0.0.1:57210 by default
-            gui.define(1, scene())
-            print("the top trace stays locked while the pitch sweeps; "
-                  "the bottom one drifts; close the window to stop")
-
-            start = time.monotonic()
-            while time.monotonic() - start < 20.0:
-                # Sweep the frequency so the triggered trace visibly re-locks:
-                # 220..440 Hz and back, once per 8 s.
-                phase = (time.monotonic() - start) / 8.0
-                freq = 330.0 + 110.0 * math.sin(2 * math.pi * phase)
-                server.set(synth, {"freq": freq})
-                msg = gui.poll(timeout=0.03)
-                if msg is not None and msg[0] == "/gui_closed":
-                    print("window closed")
-                    break
-
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
+    try:
+        run(20.0)
+    finally:
         server.tap(0, -1)  # stop the tap; the ring goes quiet
         server.free(synth)
-
-
-if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+        session.close()
+else:
+    print("scope up - run(10) to sweep the tone, session.close() to end")
