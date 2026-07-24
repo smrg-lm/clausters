@@ -72,7 +72,10 @@ BIN_DIR = os.path.join(PKG_DIR, "_bin")
 
 # The cdylib stems cargo builds and the crate that produces each.
 _CRATES = {
-    "clausters_ffi": ("clausters-ffi", None),  # no extra features
+    # `verovio` pulls `notation` with it: the whole notation layer, which is
+    # native and shared, so the wheel's ABI carries it and the Python client is
+    # a shell over it rather than a second implementation.
+    "clausters_ffi": ("clausters-ffi", "verovio"),
     "clausters": ("clausters", "embed,realtime"),  # overridable below
 }
 

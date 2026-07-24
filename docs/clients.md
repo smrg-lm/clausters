@@ -114,9 +114,9 @@ Their reference is the Python builders' documentation, since that is how a
 script names them.
 
 The `score` is worth a note, because it is the one widget whose material the
-host cannot read. A client engraves music notation (the Python client does it
-with [verovio](https://www.verovio.org/), which ships inside the wheel) and sends a
-**display list**: glyph outlines keyed by SMuFL codepoint, plus the placed
+host cannot read. A client engraves music notation (through
+[verovio](https://www.verovio.org/) and the shared notation layer, both shipped
+inside the wheel) and sends a **display list**: glyph outlines keyed by SMuFL codepoint, plus the placed
 glyphs, staff lines, stems, beams, slurs and text, in page units. The host fits
 that into the widget and tessellates it into the same triangle mesh as the rest
 of the chrome — it never parses MEI, MusicXML or any notation format. Every
@@ -264,5 +264,6 @@ it sits on the same C ABI and the same OSC.
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
+| Notation layer in the shared core (`clausters-notation` + `clausters_core::notation`, over the C ABI; every client a shell) | done |
 | Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
 | JavaScript client + npm (incl. its Faust build) | planned |

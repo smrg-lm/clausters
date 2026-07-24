@@ -157,25 +157,30 @@ against the system `libLLVM.so`; a full build from source takes ~10 min on 8
 cores. See [the design record](docs/decisions.md#faust-embedding-decisions-and-upstream-bugs)
 for why the distro package cannot be used.
 
-### libverovio (the notation engraver, Python-side only)
+### libverovio (the notation engraver, behind the `verovio` feature)
 
 The `score` widget engraves through **libverovio**, which the Python package
 bundles the same way it bundles libfaust: built from a pinned source into a
-prefix, then staged into `clausters/_libs/` by `build_native.py` and bound with
-`ctypes` at run time.
+prefix, then staged into `clausters/_libs/` by `build_native.py`.
 
 ```sh
 third_party/build-verovio.sh          # into ~/.local; needs only cmake, make, a C++20 compiler
 python clients/python/build_native.py # stages it (and everything else) into the package
 ```
 
-Three things separate it from libfaust. **Nothing in the Rust workspace links
-it** — no feature flag, no `build.rs` probe — because the notation track is
-strictly client-side: the GUI host draws a display list and knows nothing about
-MEI. It needs no LLVM and no submodules; verovio vendors its dependencies
-in-tree. And it is **built from a `develop` commit rather than a release**,
-because the score editor is dead in 6.2.1 (a guard typo upstream fixed after
-it) — which is also why the published PyPI module is not an option.
+`clausters-notation` links it, behind the **`verovio` feature, off by default**
+— a plain `cargo build --workspace` links no libverovio and that crate is empty,
+exactly as a SynthDef-only server carries no libfaust. `clausters-ffi` re-exports
+the C surface behind the same feature (which pulls `notation`, the pure half in
+`clausters-core`), and the wheel turns it on; `build.rs` finds the library
+through `VEROVIO_PREFIX`, falling back to `~/.local` then `/usr/local`. The GUI
+host still links nothing: it draws a display list and knows nothing about MEI.
+
+Two things separate it from libfaust. It needs no LLVM and no submodules —
+verovio vendors its dependencies in-tree. And it is **built from a `develop`
+commit rather than a release**, because the score editor is dead in 6.2.1 (a
+guard typo upstream fixed after it) — which is also why the published PyPI
+module is not an option.
 
 The full recipe, the importer trim and the upstream bug are in
 [`third_party/BUILD-VEROVIO.md`](third_party/BUILD-VEROVIO.md).

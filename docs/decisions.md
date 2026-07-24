@@ -1581,12 +1581,16 @@ renderer (glyph outlines and fills through a fill tessellator, staff/stems as th
 painter's thick-line quads — one upload, one draw, WebGL2-safe). The open question
 was only which **producer** feeds it.
 
-**Decision — ship the SVG-parse producer first (client-side, Python-only), keep
-the native `DeviceContext` documented as viable and deferred.** The client drives
-verovio, walks the rendered SVG into the display list, and sends it; verovio stays
-an **optional client dependency the host never links**, so any later client (JS,
-wasm) reuses the same host renderer by sending the same display list. No C++ build
-enters the picture. The alternative — a native `GpuDeviceContext : DeviceContext`
+**Decision — ship the SVG-parse producer, keep the native `DeviceContext`
+documented as viable and deferred.** The engraver is driven client-side, its
+rendered SVG walked into the display list and sent; verovio stays an **optional
+client dependency the host never links**, so any later client (JS, wasm) reuses
+the same host renderer by sending the same display list. It began as Python-only
+and has since moved down into the workspace (`clausters-notation` for the
+binding, `clausters_core::notation` for the pure walk/encoder/cursor fold,
+`clausters-ffi` for the C ABI), which changes where the producer *lives*, not
+what it is: still SVG in, display list out, still optional and still absent from
+the host. The alternative — a native `GpuDeviceContext : DeviceContext`
 compiled into the workspace — is real and was **empirically proven viable**, not
 assumed: verovio builds from source as a standalone library (C++20, no external
 dependencies — pugixml, the tuning library and the rest are embedded; no LLVM, no
@@ -1608,11 +1612,11 @@ and re-engraves rather than mutating in place. What actually pins the producer i
 `DeviceContext` would leave a wasm client on a *different* producer that would have
 to agree with it bit-for-bit, whereas the SVG walk is one producer every client
 shares (native libverovio→SVG and verovio-wasm→SVG both feed the same walk). So
-the notation layer's move into `clausters-notation`/`core`/`ffi` (G31h) keeps the
-SVG walk, and the native `DeviceContext` becomes a **deferred, optional
-producer-swap** — decoupled from editing, not scheduled with it. The verovio clone
-under `third_party/` is kept as the reference for that later build and for the
-G31h libverovio binding; nothing in the shipping path depends on it.
+the notation layer's move into `clausters-notation`/`core`/`ffi` kept the SVG
+walk, and the native `DeviceContext` is a **deferred, optional producer-swap** —
+decoupled from editing, not scheduled with it. The verovio clone under
+`third_party/` is kept as the reference for that later build and for the
+libverovio binding; nothing in the shipping path depends on it.
 
 ## Score editing: verovio's editor is dead in the released wheel (upstream `#define` bug), so the producer decides the route
 

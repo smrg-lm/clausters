@@ -24,7 +24,7 @@ from enum import IntEnum
 
 from . import _libpath
 
-CORE_ABI_VERSION = 11
+CORE_ABI_VERSION = 12
 
 # cdylib file names across platforms (Linux / macOS / Windows).
 _FFI_NAMES = ("libclausters_ffi.so", "libclausters_ffi.dylib", "clausters_ffi.dll")
@@ -127,6 +127,8 @@ class Window(IntEnum):
 # ---- library loading (lazy, versioned) ----
 
 _LIB = None
+_HAS_NOTATION = False
+_HAS_ENGRAVER = False
 
 
 def _find_library() -> str:
@@ -306,7 +308,57 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.clausters_ws_close.argtypes = [ctypes.c_void_p]
     lib.clausters_ws_last_error.restype = ctypes.c_char_p
     lib.clausters_ws_last_error.argtypes = []
+    _configure_notation(lib)
     return lib
+
+
+def _configure_notation(lib: ctypes.CDLL) -> None:
+    """The notation surface (ABI v12), bound only when the library carries it.
+
+    Both of its features are off by default in the crate, and the wheel turns
+    them on, so a hand-built cdylib may legitimately lack these symbols. Missing
+    ones leave `has_notation`/`has_engraver` false and `clausters.gui.notation`
+    raises a readable error; nothing else in the binding is affected.
+    """
+    global _HAS_NOTATION, _HAS_ENGRAVER
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    size = ctypes.c_size_t
+    try:
+        # The pure half: the SVG walk and the voice -> MEI encoder.
+        lib.clausters_core_svg_to_display_list.restype = size
+        lib.clausters_core_svg_to_display_list.argtypes = [u8p, size, u8p, size]
+        lib.clausters_core_voice_to_mei.restype = size
+        lib.clausters_core_voice_to_mei.argtypes = [u8p, size] * 4 + [u8p, size]
+    except AttributeError:
+        return
+    _HAS_NOTATION = True
+    try:
+        # The engraver: an opaque score handle, every text return size-then-fill.
+        lib.clausters_score_open.restype = ctypes.c_void_p
+        lib.clausters_score_open.argtypes = [
+            u8p, size, ctypes.c_int32, ctypes.c_int32, u8p, size,
+        ]
+        lib.clausters_score_free.restype = None
+        lib.clausters_score_free.argtypes = [ctypes.c_void_p]
+        lib.clausters_score_display_list.restype = size
+        lib.clausters_score_display_list.argtypes = [
+            ctypes.c_void_p, ctypes.c_int32, u8p, size,
+        ]
+        lib.clausters_score_mei.restype = size
+        lib.clausters_score_mei.argtypes = [ctypes.c_void_p, u8p, size]
+        lib.clausters_score_transpose.restype = ctypes.c_int32
+        lib.clausters_score_transpose.argtypes = [
+            ctypes.c_void_p, u8p, size, ctypes.c_int32,
+        ]
+        lib.clausters_score_edit.restype = ctypes.c_int32
+        lib.clausters_score_edit.argtypes = [ctypes.c_void_p, u8p, size, u8p, size]
+        for name in ("undo", "redo", "can_undo", "can_redo"):
+            fn = getattr(lib, f"clausters_score_{name}")
+            fn.restype = ctypes.c_int32
+            fn.argtypes = [ctypes.c_void_p]
+    except AttributeError:
+        return
+    _HAS_ENGRAVER = True
 
 
 def lib(path: str | None = None) -> ctypes.CDLL:
@@ -319,6 +371,42 @@ def lib(path: str | None = None) -> ctypes.CDLL:
 
 def abi_version() -> int:
     return lib().clausters_core_abi_version()
+
+
+def has_notation() -> bool:
+    """Whether the loaded library carries the notation layer's pure half (the
+    SVG walk and the MEI encoder) -- the crate's `notation` feature."""
+    lib()
+    return _HAS_NOTATION
+
+
+def has_engraver() -> bool:
+    """Whether it also carries the engraver and the editable score -- the
+    crate's `verovio` feature, which links libverovio."""
+    lib()
+    return _HAS_ENGRAVER
+
+
+def size_then_fill(fn, *args) -> bytes:
+    """Call a size-then-fill entry point the way the ABI expects: once with a
+    null buffer to learn the byte count, once to fill it. ``args`` are the
+    leading arguments; the ``out``/``out_cap`` pair is appended. Returns the
+    bytes, empty when the call reports nothing (its own way of saying no)."""
+    need = fn(*args, None, 0)
+    if need == 0:
+        return b""
+    out = (ctypes.c_ubyte * need)()
+    n = fn(*args, out, need)
+    return bytes(out[:n])
+
+
+def as_u8(data: bytes):
+    """A ``bytes`` as the ``u8*`` pointer the ABI takes, null when empty. The
+    cast keeps the copied buffer alive, so the pointer stands on its own."""
+    if not data:
+        return None
+    buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
+    return ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte))
 
 
 def compile_patch(patch: dict) -> dict:

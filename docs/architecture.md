@@ -388,16 +388,22 @@ placed glyphs, strokes, fills and text in page units, each carrying the MEI
 `xml:id` it came from — and tessellates it into the ordinary `Mesh` (outlines
 and fills through `lyon`'s fill tessellator, strokes as the painter's own
 thick-line quads), so notation costs no new pipeline and stays WebGL2-safe. The
-engraving itself is the **client's**: `clients/python/clausters/gui/notation.py`
-drives verovio (bundled in the Python wheel) and walks its SVG into that list. The
-host never links verovio, and a second client in another language reuses this
-renderer by sending the same list — the same "no engraving logic duplicated per
-language" split the value-math rule makes elsewhere. Two derived structures ride
-along, both computed where the knowledge is: the client folds the score's
-timemap into a **cursor track** (musical time → page-x and the system's y-span),
-because only it knows the music; the host builds the **hit index** (one page-unit
-box per identified primitive, glyph shapes measured once per codepoint) when the
-list is parsed, because only it knows the geometry. A press picks the smallest
+engraving itself is the **client's**, but not any one client's: the whole layer
+is native and shared. `clausters-notation` binds libverovio and owns the editable
+`Score`; the format-agnostic half — the SVG→display-list walk, the MEI writer,
+the timemap→cursor fold — is `clausters_core::notation` (feature `notation`, so
+it compiles to wasm); `clausters-ffi` exposes both over the C ABI, and each
+client is a thin shell over that (`clients/python/clausters/gui/notation.py` is
+`ctypes` plus the reduction of its own `Event`/`Timeline` into a voice — the one
+step that reads client-native types). The host never links verovio, and a second
+client in another language rebinds the same ABI rather than reimplementing a
+line — the same "no engraving logic duplicated per language" split the value-math
+rule makes elsewhere. Two derived structures ride along, both computed where the
+knowledge is: the score layer folds the timemap into a **cursor track** (musical
+time → page-x and the system's y-span), because only it knows the music; the host
+builds the **hit index** (one page-unit box per identified primitive, glyph shapes
+measured once per codepoint) when the list is parsed, because only it knows the
+geometry. A press picks the smallest
 box under it and reports the id, which is how a click on a notehead becomes an
 element the driver can resolve in its own score.
 
@@ -406,7 +412,8 @@ edit, and the host expresses it in **diatonic steps** rather than a position: it
 quantizes the gesture with the page's own `step` (page units per step, sent with
 the display list because it follows the engraver's unit size), draws the element
 displaced, and on release emits `"transpose" <id> <steps>` — a request. The
-client applies it (`notation.Score`, which holds the verovio toolkit open),
+client applies it (`notation.Score`, a handle on the shared
+`clausters_notation::Score`, which holds the verovio toolkit open),
 re-engraves and replaces the drawing with one `/gui_set display_list`; the
 widget's chrome and selection survive that, and MEI ids survive the edit, so the
 same id keeps naming the same note. The host still reads no notation: it counts
@@ -465,7 +472,7 @@ updates this table in the same change** (step 7 of the recipe below).
 | `track`, `clip` | `host/track.rs`; a clip's roll body reuses `host/pianoroll.rs`, its curve body `host/bpf.rs`; group navigation in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"` |
 | `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `piano` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/s_new`/`gate 0` per held key over the server leg |
-| `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py` over verovio); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
+| `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py`, a shell over `clausters-notation`/`core` through the C ABI); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
 | `graph` | `host/graph.rs` | the GraphDef's members/buses/wires; rewiring emits `"wire"` |
 
 ### Adding a widget

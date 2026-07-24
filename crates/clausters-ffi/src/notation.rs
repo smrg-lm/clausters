@@ -126,13 +126,14 @@ pub unsafe extern "C" fn clausters_core_voice_to_mei(
 #[cfg(feature = "verovio")]
 use clausters_notation::{EngraveOptions, Score};
 
-/// The engraver's layout options for a scale/width pair; everything else takes
-/// the defaults the whole layer shares.
+/// The engraver's layout options: the scale/width pair, plus any `extra` verovio
+/// options as a JSON object merged over the defaults the whole layer shares.
 #[cfg(feature = "verovio")]
-fn options(scale: i32, page_width: i32) -> EngraveOptions {
+fn options(scale: i32, page_width: i32, extra: Option<String>) -> EngraveOptions {
     EngraveOptions {
         scale,
         page_width,
+        extra,
         ..Default::default()
     }
 }
@@ -142,8 +143,13 @@ fn options(scale: i32, page_width: i32) -> EngraveOptions {
 /// null when `data` is null or could not be loaded. Free with
 /// [`clausters_score_free`].
 ///
+/// `options` is a JSON object of extra engraver options (`{"unit": 6}`) merged
+/// over the defaults, or null for none — the seam a caller reaches the engraver's
+/// own vocabulary through without this ABI growing a parameter per knob.
+///
 /// # Safety
-/// `data` must be readable for `data_len` bytes.
+/// `data` must be readable for `data_len` bytes and `options` for
+/// `options_len` (or be null).
 #[cfg(feature = "verovio")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_score_open(
@@ -151,12 +157,16 @@ pub unsafe extern "C" fn clausters_score_open(
     data_len: usize,
     scale: i32,
     page_width: i32,
+    options: *const u8,
+    options_len: usize,
 ) -> *mut Score {
-    // SAFETY: caller guarantees the range.
-    let Some(data) = (unsafe { text(data, data_len) }) else {
+    // SAFETY: caller guarantees the ranges.
+    let (Some(data), extra) = (unsafe { (text(data, data_len), text(options, options_len)) })
+    else {
         return std::ptr::null_mut();
     };
-    match Score::open(&data, &options(scale, page_width)) {
+    let opts = self::options(scale, page_width, extra.map(|e| e.into_owned()));
+    match Score::open(&data, &opts) {
         Ok(score) => Box::into_raw(Box::new(score)),
         Err(_) => std::ptr::null_mut(),
     }
@@ -421,7 +431,9 @@ mod tests {
         #[test]
         fn a_handle_edits_undoes_and_frees() {
             let data = mei();
-            let h = unsafe { clausters_score_open(data.as_ptr(), data.len(), 40, 2100) };
+            let h = unsafe {
+                clausters_score_open(data.as_ptr(), data.len(), 40, 2100, std::ptr::null(), 0)
+            };
             assert!(!h.is_null(), "the score opened");
 
             let json =
@@ -448,7 +460,9 @@ mod tests {
         #[test]
         fn the_raw_edit_hatch_crosses() {
             let data = mei();
-            let h = unsafe { clausters_score_open(data.as_ptr(), data.len(), 40, 2100) };
+            let h = unsafe {
+                clausters_score_open(data.as_ptr(), data.len(), 40, 2100, std::ptr::null(), 0)
+            };
             let json =
                 round_trip(|out, cap| unsafe { clausters_score_display_list(h, 1, out, cap) });
             let page: serde_json::Value = serde_json::from_str(&json).expect("JSON");
@@ -494,7 +508,9 @@ mod tests {
         #[test]
         fn unloadable_data_opens_to_a_null_handle() {
             let data = "this is not a score";
-            let h = unsafe { clausters_score_open(data.as_ptr(), data.len(), 40, 2100) };
+            let h = unsafe {
+                clausters_score_open(data.as_ptr(), data.len(), 40, 2100, std::ptr::null(), 0)
+            };
             assert!(h.is_null());
         }
     }
