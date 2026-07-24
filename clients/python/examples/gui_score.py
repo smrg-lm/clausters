@@ -10,10 +10,13 @@ lives entirely on the client side; the host never depends on it.
 
 One engraving carries three layers: what is **drawn**, where the **playback
 cursor** sits at each onset, and the **notes** that sound. This example places
-the notes on a timeline, plays them, and anchors the cursor to the engine's
-sample clock -- so the score follows the audio with **one message per pass**
-(``playhead_at``), the host reading the clock every frame from there, exactly
-as the timeline views do.
+the notes on a timeline and drives them from a **transport bar** -- play, pause,
+stop, rewind and play-from-the-selected-note -- anchoring the cursor to the
+engine's sample clock, so the score follows the audio with **one message per
+pass** (``playhead_at``), the host reading the clock every frame from there,
+exactly as the timeline views do. A stopped transport is the other half of that
+one number: it goes negative and the static ``playhead`` holds the cursor where
+the music was left.
 
 The page is also **clickable and editable**: every primitive carries the MEI
 ``xml:id`` it was engraved from, so a press reports the element under the cursor
@@ -32,10 +35,11 @@ Then, with the client importable (``pip install ./clients/python`` or
 
     python clients/python/examples/gui_score.py
 
-A window opens showing the engraved phrase; it sounds once through and the
-cursor follows it. Click a note to hear it again, or drag one up or down to
-transpose it. Close the window to stop. Needs an audio device, a display and a
-GPU adapter -- and, for the editing half, a verovio whose editor works (see
+A window opens showing the engraved phrase, stopped at the top -- press **play**
+and the cursor follows the sound. Click a note to hear it and select it, drag one
+up or down to transpose it, and **from note** plays from the one selected. Close
+the window to stop. Needs an audio device, a display and a GPU adapter -- and,
+for the editing half, a verovio whose editor works (see
 ``third_party/BUILD-VEROVIO.md``; on the published 6.2.1 wheel every edit is
 refused).
 """
@@ -43,7 +47,7 @@ refused).
 import sys
 
 from clausters import Event, Session, play
-from clausters.gui import notation, window
+from clausters.gui import button, notation, panel, window
 from clausters.seq.timeline import Playhead, Timeline
 
 # Six bars in Plaine & Easie -- the most compact way to type a score; verovio
@@ -54,27 +58,107 @@ from clausters.seq.timeline import Playhead, Timeline
 PHRASE = ("@clef:G-2\n@keysig:xF\n@timesig:4/4\n@data:"
           "4CDEF/ 8GAGF 4ED/ 4C8DEFG4A/ 2G4FE/ 4C^E^G4G2C/ 1C/")
 
+# One beat per second, so the engraving's milliseconds are beats/1000: score time
+# and clock time become the same axis, which is what lets one anchor tie the
+# cursor to the sound.
+TEMPO = 1.0
+
+# Widget ids: the transport bar, then the score view. None of them is 1 -- that
+# is the def's own id, which the window root takes, and a widget claiming it
+# would be dropped as a duplicate.
+BAR, REWIND, PLAY, PAUSE, STOP, FROM_NOTE = 2, 3, 4, 5, 6, 7
+SCROLL, SCORE = 10, 11
+
 
 def scene(display_list: dict, sample_rate: float) -> dict:
-    """A window filled by a scrollable, zoomable view of the engraved score."""
+    """A transport bar over a scrollable, zoomable view of the engraved score.
+
+    The bar is chrome: a fixed height, so the page takes all the rest however the
+    window is resized."""
     return window(
-        notation.score_view(display_list, scroll_id=10, score_id=11,
+        panel(BAR,
+              button(REWIND, label="|<"),
+              button(PLAY, label="play"),
+              button(PAUSE, label="pause"),
+              button(STOP, label="stop"),
+              button(FROM_NOTE, label="from note"),
+              layout="row", h=34.0),
+        notation.score_view(display_list, scroll_id=SCROLL, score_id=SCORE,
                             width=880.0, sample_rate=sample_rate),
-        title="Engraved score (verovio -> GPU)", w=920, h=380,
+        layout="col", title="Engraved score (verovio -> GPU)", w=920, h=420,
     )
 
 
 def phrase_timeline(notes: list) -> Timeline:
-    """Place the engraved notes on a `Timeline`. The session's clock runs at one
-    beat per second, so the engraving's milliseconds are beats/1000 -- score time
-    and clock time are the same axis, which is what lets one anchor tie the
-    cursor to the sound."""
+    """Place the engraved notes on a `Timeline` (see `TEMPO`: score ms are
+    beats/1000). Built per play, so a transposed note is played at the pitch it
+    now has."""
     timeline = Timeline()
     for note in notes:
         timeline.add(note["t"] / 1000.0,
                      Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
                            amp=0.12))
     return timeline
+
+
+class Transport:
+    """Play, pause, stop and locate the phrase, keeping the widget's cursor in
+    step with what sounds.
+
+    The two are tied by one number: `playhead_at`, the sample-clock value score
+    time 0 maps to. Set it when a pass starts and the host sweeps the cursor on
+    its own, reading the clock every frame -- so playing costs one message, not
+    one per frame. A stopped transport is the other case: `playhead_at` goes
+    negative and the static `playhead` holds the cursor where the music was left,
+    which is what makes pause look like pause.
+    """
+
+    def __init__(self, gui, server, clock, sample_rate):
+        self.gui, self.server, self.clock = gui, server, clock
+        self.rate = sample_rate
+        self.playhead = None
+        self.at = 0.0            # beat the cursor waits at while stopped
+
+    def play(self, notes, at=None):
+        """Play from beat ``at`` (where the cursor is, by default). Every pass
+        builds its timeline afresh, so an edit made meanwhile is simply played."""
+        at = self.at if at is None else float(at)
+        self.stop_scan()
+        self.playhead = Playhead(phrase_timeline(notes), self.clock, self.server)
+        self.playhead.play(at=at)
+        self.at = at
+        # The events sound `latency` ahead of their play time, so the anchor is
+        # the clock now plus that same latency, minus where the music starts.
+        _, args = self.server.request("/clock", expect=("/clock.reply",))
+        now = float(args[0]) + self.server.latency * self.rate
+        self.gui.set(SCORE, playhead_at=now - at / TEMPO * self.rate)
+
+    def pause(self):
+        """Halt where we are: the cursor stays on the note the music stopped on,
+        and `play` resumes from there."""
+        if self.playhead is not None:
+            self.at = self.playhead.position()
+        self.stop_scan()
+        self.gui.set(SCORE, playhead_at=-1.0, playhead=self.at * 1000.0 / TEMPO)
+
+    def stop(self):
+        """Halt and go back to the top."""
+        self.stop_scan()
+        self.locate(0.0)
+
+    def locate(self, beat):
+        """Move the stopped cursor (and where the next `play` begins)."""
+        self.at = float(beat)
+        self.gui.set(SCORE, playhead_at=-1.0, playhead=self.at * 1000.0 / TEMPO)
+
+    def stop_scan(self):
+        if self.playhead is not None:
+            self.playhead.stop()
+            self.playhead = None
+
+    @property
+    def playing(self) -> bool:
+        return self.playhead is not None and self.playhead.playing
 
 
 def main():
@@ -89,38 +173,70 @@ def main():
 
     # the session is the ambient one for the whole block, so a bare `play` below
     # resolves to its server and clock
-    with Session.live(tempo=1.0) as session:
+    with Session.live(tempo=TEMPO) as session:
         server = session.server
         sr = float(server.options.sample_rate)
         gui = session.gui()
         gui.define(1, scene(dl, sr))
 
-        session.start()
-        Playhead(phrase_timeline(dl["notes"]), session.clock, server).play()
-        # Anchor the cursor: `playhead_at` is the sample-clock value that score
-        # time 0 maps to, so the host draws the cursor at (clock - playhead_at)
-        # every frame with nothing more sent. The events sound `latency` ahead of
-        # their play time, so the anchor is the clock now plus that same latency.
-        _, args = server.request("/clock", expect=("/clock.reply",))
-        gui.set(11, playhead_at=float(args[0]) + server.latency * sr)
-        print("the phrase plays and the cursor follows the engine clock; "
-              "click a note to hear it, drag one up or down to transpose it, "
-              "close the window to stop")
+        session.start()                     # the clock runs the routines
+        transport = Transport(gui, server, session.clock, sr)
+        transport.locate(0.0)               # the cursor waits at the top
+        print("press play -- click a note to hear it and to select it, drag one "
+              "up or down to transpose it, 'from note' plays from the selected "
+              "one; close the window to stop")
 
         # Both round trips run off the same id: the widget reports the MEI id
         # under the cursor, and that id indexes this script's own engraving.
         by_id = {note["id"]: note for note in dl["notes"]}
+        selected = None
+
+        def rewind():
+            """Back to the top -- without stopping, if it is playing."""
+            if transport.playing:
+                transport.play(dl["notes"], at=0.0)
+            else:
+                transport.locate(0.0)
+
+        def from_note():
+            """Play from the selected note: the click round trip put its id in
+            `selected`, and this script's own engraving says when it sounds."""
+            if selected not in by_id:
+                print("  no note selected: click one first")
+                return
+            transport.play(dl["notes"], at=by_id[selected]["t"] / 1000.0)
+
+        # The handlers read `dl` and `by_id` when they run, so an edit made
+        # meanwhile is simply played.
+        buttons = {PLAY: lambda: transport.play(dl["notes"]),
+                   PAUSE: transport.pause, STOP: transport.stop,
+                   REWIND: rewind, FROM_NOTE: from_note}
+
         while True:
             msg = gui.poll(timeout=0.1)
             if msg is None:
+                # The pass is over: leave the cursor on the last note rather
+                # than sweeping off the page (rewind goes back to the top).
+                if transport.playing and transport.playhead.position() > (
+                        dl["notes"][-1]["t"] + dl["notes"][-1]["dur"]) / 1000.0:
+                    transport.pause()
                 continue
             addr, args = msg
             if addr == "/gui_closed":
                 print("window closed")
                 break
-            if addr != "/gui_event" or len(args) < 3:
+            if addr != "/gui_event" or len(args) < 2:
+                continue
+            # A button reports its press (1) and its release (0): act on the
+            # press, or every click would fire the transport twice.
+            if args[0] in buttons:
+                if args[1] == 1:
+                    buttons[args[0]]()
+                continue
+            if len(args) < 3:
                 continue
             if args[1] == "element":
+                selected = args[2] or None
                 note = by_id.get(args[2])
                 if note is None:
                     print(f"  clicked {args[2] or '(blank paper)'}")
@@ -141,7 +257,7 @@ def main():
                           "no working editor")
                     continue
                 dl = score.display_list()
-                gui.set(11, display_list=notation.page_json(dl))
+                gui.set(SCORE, display_list=notation.page_json(dl))
                 by_id = {note["id"]: note for note in dl["notes"]}
                 note = by_id.get(element)
                 print(f"  transposed {element} by {steps:+d} steps"

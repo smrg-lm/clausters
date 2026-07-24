@@ -243,14 +243,17 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   vira a cian, y a los ~12 s el grupo se limpia (`theme=""`) y vuelve al
   naranja del host. Todo por `/gui_set`, sin redefinir la ventana.
 - **Partitura grabada y editable (GUI).** `examples/gui_score.py` abre una
-  ventana con la frase grabada por verovio; suena una vez y el cursor la sigue
-  → hacer clic en una nota la vuelve a sonar y la resalta; **arrastrarla hacia
-  arriba o abajo** la mueve por grados de la escala (la cabeza **con su plica y
-  su corchete**, encastrando en cada grado; las líneas adicionales no siguen al
-  arrastre — cuántas lleva una nota lo decide el grabado), y al soltar el
-  script la transpone, la re-graba, la manda de vuelta y **suena en la altura
-  nueva** — la nota queda
-  seleccionada y la página no parpadea. Necesita un verovio con el editor vivo
+  ventana con una barra de transporte fina arriba y la frase grabada por
+  verovio abajo, detenida en el comienzo → **play** y el cursor sigue al
+  sonido; **pause** lo deja en la nota donde iba y play retoma desde ahí,
+  **stop** y **|<** vuelven al principio, y **from note** arranca desde la nota
+  seleccionada. Hacer clic en una nota la suena y la selecciona;
+  **arrastrarla hacia arriba o abajo** la mueve por grados de la escala (la
+  cabeza **con su plica y su corchete**, encastrando en cada grado, y las
+  **líneas adicionales aparecen y desaparecen** según salga o vuelva al
+  pentagrama), y al soltar el script la transpone, la re-graba, la manda de
+  vuelta y **suena en la altura nueva** — la nota queda seleccionada y la
+  página no parpadea. Necesita un verovio con el editor vivo
   (`third_party/BUILD-VEROVIO.md`); con el wheel publicado el arrastre se
   dibuja pero el script avisa que la edición fue rechazada.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
