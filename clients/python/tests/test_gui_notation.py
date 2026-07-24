@@ -64,6 +64,24 @@ def test_the_page_json_carries_the_drawing_layers_only():
     assert all(built[k] == page[k] for k in page)
 
 
+def test_a_note_owns_everything_drawn_inside_it():
+    pytest.importorskip("verovio")
+    # eighths, so every note has a notehead, a stem and a flag -- three
+    # primitives verovio gives ids of their own, which would otherwise scatter
+    # one note across three elements to select and drag
+    dl = notation.engrave("@clef:G-2\n@timesig:4/4\n@data:8CDEF8GABc'/")
+    first = dl["notes"][0]["id"]
+    parts = [p["k"] for p in dl["prims"] if p.get("id") == first]
+    assert parts == ["glyph", "line", "glyph"]  # notehead, stem, flag
+    # a chord is not an element in that sense: its notes nest inside it and
+    # each keeps its own id, or one of them could not be transposed alone
+    chord = notation.engrave("@clef:G-2\n@timesig:4/4\n@data:4C^E^G4G2C/")
+    heads = [n["id"] for n in chord["notes"][:3]]
+    assert len(set(heads)) == 3
+    assert all(len([p for p in chord["prims"] if p.get("id") == i]) == 1
+               for i in heads)
+
+
 def test_score_view_pans_both_axes_only_when_it_can_zoom():
     page = {"vb": [1000, 500], "glyphs": {}, "prims": []}
     # zoomed in the page outgrows the view's width, so x has to pan too

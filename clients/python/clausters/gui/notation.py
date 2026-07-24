@@ -402,7 +402,14 @@ def score_view(display_list: dict, *, scroll_id: int, score_id: int,
 
 def svg_to_display_list(svg: str) -> dict:
     """Walk a verovio SVG string into a ``score`` display list. Split out of
-    `engrave` so it is testable on a captured SVG without verovio installed."""
+    `engrave` so it is testable on a captured SVG without verovio installed.
+
+    Each primitive carries the id of the element it belongs to, and a **sounding
+    element owns everything drawn inside it**: verovio identifies a note's stem
+    and flag separately, and collapsing them onto the note's id is what makes
+    one note one thing to select and drag. A chord keeps its notes distinct, so
+    one of them can still be transposed alone.
+    """
     root = ET.fromstring(svg)
     glyph_defs = _collect_glyph_defs(root)
     # the drawing lives inside the inner <svg class="definition-scale">.
@@ -420,6 +427,10 @@ def svg_to_display_list(svg: str) -> dict:
 # verovio only emits translate()/scale() transforms; an (offset, scale) pair
 # composes them exactly, so we carry that instead of a full matrix.
 _IDENTITY = (0.0, 0.0, 1.0, 1.0)  # (tx, ty, sx, sy)
+# The classes that name a *sounding element* rather than a piece of one: a
+# chord is absent on purpose, since its notes nest inside it and each one has
+# to stay addressable on its own.
+_ELEMENT = frozenset({"note", "rest", "mRest"})
 
 
 def _compose(parent, child):
@@ -460,10 +471,22 @@ def _collect_glyph_defs(root) -> dict[str, str]:
     return out
 
 
-def _walk(node, xf, mei_id, glyph_defs, glyphs, prims):
+def _walk(node, xf, mei_id, glyph_defs, glyphs, prims, owned=False):
     xf = _compose(xf, _parse_transform(node.get("transform")))
-    nid = node.get("id") or mei_id
-    cls = (node.get("class") or "").split()
+    # Which element a primitive belongs to. Verovio gives its *parts* ids of
+    # their own -- a note is a notehead plus a `stem` group holding the stem
+    # and its `flag`, each with an id -- and taking the innermost would scatter
+    # one note across three ids: the host would then select and drag a stem
+    # apart from the notehead it grows out of. So a sounding element claims
+    # everything drawn inside it (`owned`), and the ids of its parts are
+    # dropped. Everything above it still takes its own id, or the layer and
+    # staff would swallow the clefs and bar lines.
+    own = node.get("id")
+    if own and not owned:
+        nid = own
+        owned = bool(_ELEMENT.intersection((node.get("class") or "").split()))
+    else:
+        nid = mei_id
     tag = node.tag.replace(_SVG, "")
 
     if tag == "use":
@@ -526,7 +549,7 @@ def _walk(node, xf, mei_id, glyph_defs, glyphs, prims):
         return  # its tspans are consumed here, not walked as elements
 
     for child in node:
-        _walk(child, xf, nid, glyph_defs, glyphs, prims)
+        _walk(child, xf, nid, glyph_defs, glyphs, prims, owned)
 
 
 def _stroke_width(node, xf):

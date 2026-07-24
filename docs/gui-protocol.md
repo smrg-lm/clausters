@@ -187,7 +187,11 @@ nothing about music.
 
 Clicking the page emits `"element"` with the MEI `xml:id` of the smallest
 primitive under the cursor — a notehead wins over the staff line it sits on — or
-an empty id when the press lands on blank paper. The clicked element is
+an empty id when the press lands on blank paper. A **sounding element owns
+everything drawn inside it**: the engraver identifies a note's stem and flag
+separately, and the client collapses them onto the note's id, so one note is one
+thing to select and drag rather than three. A chord is not collapsed — its notes
+nest inside it and each keeps its own id, since one of them can be edited alone. The clicked element is
 highlighted, and `selected` sets or clears that highlight from the script.
 Because the id is the *client's* own (it engraved it), a driver resolves it
 straight back to the note in its own score: nothing but the string crosses the
@@ -204,8 +208,11 @@ re-engraves, and replaces the drawing with a single
 `/gui_set <id> display_list <json>` — the drawing layers only (`vb`, `glyphs`,
 `prims`, `cursors`, `step`), the same ones the widget was defined with.
 
-The host draws the drag as it happens, displacing the element by whole steps,
-and that displacement **stands after the release until the new page arrives** —
+The host draws the drag as it happens, displacing the element and everything it
+owns by whole steps. What it cannot displace is the **staff furniture** a pitch
+implies — ledger lines are drawn per staff, and how many a note needs is an
+engraving decision — so those follow only when the re-engraved page arrives.
+That displacement **stands after the release until the new page arrives** —
 the answer is one message away, and retiring it first would show the old pitch
 for a frame. Replacing the page keeps the widget's own chrome (`playhead`,
 `playhead_at`, `sample_rate`, `selected`), so the edited note stays selected
