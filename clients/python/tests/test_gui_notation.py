@@ -1,9 +1,12 @@
 """The notation client: the engraved layers and the score widget's props.
 
 `engrave` needs the optional ``verovio`` package, so those tests skip without
-it; the `guidef.score` builder is pure and always runs.
+it; the `guidef.score` builder is pure and always runs. The editing tests skip
+one step further — on a verovio whose editor is dead, which the released wheel's
+is.
 """
 
+import functools
 import json
 
 import pytest
@@ -104,9 +107,24 @@ def test_score_view_places_the_rate_on_the_inner_score():
     assert inner["sample_rate"] == 48000.0
 
 
+@functools.cache
+def _editor_alive() -> bool:
+    """Whether this verovio can edit at all.
+
+    In 6.2.1 — the released wheel — a guard typo leaves the editor unreachable
+    and every action returns False (see ``third_party/BUILD-VEROVIO.md``), so
+    the editing tests below would fail for a reason that is not ours.
+    """
+    probe = notation.Score(PHRASE)
+    return probe.transpose(probe.display_list()["notes"][0]["id"], 1)
+
+
 def _edited_score():
     """A live score to edit, and the id of its first (sounding) note."""
     pytest.importorskip("verovio")
+    if not _editor_alive():
+        pytest.skip("this verovio's editor refuses every action; build one past "
+                    "the fixed guard (see third_party/BUILD-VEROVIO.md)")
     s = notation.Score(PHRASE)
     return s, s.display_list()["notes"][0]["id"]
 
