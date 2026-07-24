@@ -1702,3 +1702,34 @@ flags are looser than they appear: a successful `drag` leaves `canUndo` false,
 yet a following `undo` succeeds and sets `canRedo`. They are a crash guard, not a
 model of the stack — which means the client, not verovio, will have to track
 whether there is anything to undo.
+
+## Engraving sequencing data: target MEI, and a starting-point rhythm policy
+
+`from_notes`/`from_timeline` turn the client's own `Event`/`Timeline` into a
+score — the inverse of the score→sound flow. Two choices shape it, and the
+second is a **starting point, not a fixed rule**.
+
+**Target MEI, not ABC, even though the examples are typed in ABC.** For a human
+typing, ABC's compactness wins; for a *generator*, its context-dependence is
+exactly the hazard — an accidental persists through the bar, beaming is driven
+by whitespace, octaves are marks. MEI spells every note's pitch (`pname`/`oct`/
+`accid`) and value (`dur`/`dots`) explicitly, with no state to track, so the
+encoder is a straight map from data. It is also the format the edit cycle
+already round-trips through, and it needs **no `xml:id`s** — verovio mints them
+on load exactly as on the ABC path, so id stability across editing is unchanged.
+The generator is therefore a thin MEI writer feeding the existing `engrave`/
+`Score`, not a new path.
+
+**Written duration is `dur`, and off-grid durations tie rather than tuplet.**
+The initial version engraves each note as its written `dur` (the delta), not its
+sounding `sustain` — notation shows the written value, and legato/stretch are
+performance nuances a score does not draw. Durations that are not a single note
+value decompose into **tied** notes (a dotted value when exact), and a note
+overrunning a barline splits and ties across it; anything finer than the 32nd
+grid snaps to it. Both are deliberately the *simple correct* policy, not a
+ceiling: reading `sustain`/`legato` for staccato and short-of-slot notes, and
+detecting tuplets instead of snapping, are the undated engraving-refinements
+milestone (`clients/gui/PLAN.md`, G31g). The implementation keeps the two seams
+that milestone needs — the `dur`→value step (`_pieces`) and the pitch spelling
+(`_spell`) — each isolated in one helper, so the refinement extends them rather
+than rewriting the encoder.

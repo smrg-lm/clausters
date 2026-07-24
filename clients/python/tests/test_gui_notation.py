@@ -15,7 +15,10 @@ import json
 
 import pytest
 
+from clausters import Event
 from clausters.gui import notation, score
+from clausters.seq.event import rest
+from clausters.seq.timeline import Timeline
 
 
 @functools.cache
@@ -229,3 +232,79 @@ def test_engraving_shares_ids_and_time_between_cursors_and_notes():
     # every note is placed on the page it was engraved from
     placed = {p.get("id") for p in dl["prims"]}
     assert all(n["id"] in placed for n in dl["notes"])
+
+
+# -- MEI generation from sequencing data (pure; no engraver needed) ---------
+
+def test_midi_spells_to_scientific_pitch_with_the_accidental_world():
+    assert notation._spell(60, flats=False) == ("c", 4, "")     # middle C
+    assert notation._spell(61, flats=False) == ("c", 4, "s")    # C#
+    assert notation._spell(66, flats=False) == ("f", 4, "s")    # F#
+    assert notation._spell(61, flats=True) == ("d", 4, "f")     # spelled Db
+    assert notation._spell(72, flats=False) == ("c", 5, "")     # an octave up
+
+
+def test_a_duration_decomposes_into_tied_note_values():
+    # ticks: whole=32, half=16, quarter=8, eighth=4 (32nd-note resolution)
+    assert notation._pieces(8) == [(4, 0)]        # a quarter (one beat)
+    assert notation._pieces(4) == [(8, 0)]        # an eighth
+    assert notation._pieces(16) == [(2, 0)]       # a half
+    assert notation._pieces(12) == [(4, 1)]       # 1.5 beats -> a dotted quarter
+    assert notation._pieces(20) == [(2, 0), (8, 0)]  # 2.5 beats -> half + eighth
+
+
+def test_from_notes_writes_a_monophonic_melody():
+    notes = [Event(midinote=60, dur=1.0), Event(midinote=62, dur=0.5),
+             Event(midinote=64, dur=1.5), rest(1.0), Event(midinote=65, dur=1.0)]
+    mei = notation.from_notes(notes, meter="4/4", key="C")
+    assert "<rest" in mei and 'dots="1"' in mei     # the rest and the dotted 1.5
+    requires_engraver()
+    dl = notation.engrave(mei)
+    assert [n["pitch"] for n in dl["notes"]] == [60, 62, 64, 65]
+
+
+def test_a_note_crossing_a_barline_splits_and_ties():
+    # 2 beats, then 3 beats starting on beat 2 of 4/4 -> the 3-beat note spans
+    # the barline and is written as two tied notes at the same pitch.
+    notes = [Event(midinote=60, dur=2.0), Event(midinote=67, dur=3.0)]
+    mei = notation.from_notes(notes, meter="4/4")
+    assert 'tie="i"' in mei and 'tie="t"' in mei
+    requires_engraver()
+    assert [n["pitch"] for n in notation.engrave(mei)["notes"]] == [60, 67, 67]
+
+
+def test_from_timeline_puts_a_downbeat_onset_on_the_bar_start():
+    # a beat-0 onset is tick 0, not tick 1: a spurious leading rest would knock
+    # the whole bar off the metric grid and verovio would re-split every note.
+    tl = Timeline()
+    for i, pitch in enumerate((60, 62, 64, 65)):
+        tl.add(i, Event(midinote=pitch, dur=1.0))
+    mei = notation.from_timeline(tl, meter="4/4")
+    layer = mei[mei.index("<layer"):mei.index("</layer>")]
+    assert "<rest" not in layer.split("<note")[0]     # nothing before the first note
+    assert layer.count("tie=") == 0                    # four clean quarters, no ties
+    requires_engraver()
+    assert notation.engrave(mei)["notes"][0]["t"] == 0.0
+
+
+def test_from_timeline_makes_chords_and_rests():
+    tl = Timeline()
+    for pitch in (60, 64, 67):                      # a C-major triad at beat 0
+        tl.add(0, Event(midinote=pitch, dur=1.0))
+    tl.add(2, Event(midinote=72, dur=1.0))          # a gap at beat 1..2 -> rest
+    mei = notation.from_timeline(tl, meter="4/4")
+    assert "<chord" in mei and "<rest" in mei
+    requires_engraver()
+    dl = notation.engrave(mei)
+    assert [n["pitch"] for n in dl["notes"]] == [60, 64, 67, 72]
+
+
+def test_a_generated_score_is_editable():
+    requires_engraver()
+    if not _editor_alive():
+        pytest.skip("this verovio's editor refuses every action")
+    s = notation.Score.from_notes([Event(midinote=60, dur=1.0),
+                                   Event(midinote=62, dur=1.0)])
+    nid = s.display_list()["notes"][0]["id"]
+    assert s.transpose(nid, 2) is True
+    assert s.display_list()["notes"][0]["pitch"] == 64   # two steps up: E4

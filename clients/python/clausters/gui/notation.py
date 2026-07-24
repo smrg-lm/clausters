@@ -20,8 +20,13 @@ a source checkout, build it with ``third_party/build-verovio.sh`` and stage it
 with ``build_native.py``, or point ``CLAUSTERS_VEROVIO`` at a library or a build
 prefix.
 
+There are three ways into the engraver: typed score text (ABC/PAE/MEI/MusicXML)
+handed to `engrave`/`Score`; `from_notes`/`from_timeline`, which turn the
+client's own `clausters.seq` data into MEI (the inverse direction, data->score);
+and `svg_to_display_list`, the adapter the first two both flow through.
+
 The heavy lifting is verovio's; this module is only the SVG-to-display-list
-adapter.
+adapter and a thin MEI writer over it.
 """
 
 from __future__ import annotations
@@ -141,6 +146,24 @@ class Score:
         the score untouched."""
         return self._apply([(action, param)])
 
+    @classmethod
+    def from_notes(cls, notes, *, meter: str = "4/4", clef: str = "G2",
+                   key: str = "C", beat_unit: int = 4, **kw) -> "Score":
+        """An editable `Score` built from a **monophonic** run of events — the
+        `from_notes` encoder handed straight to the constructor. ``kw`` passes
+        ``scale``/``page_width`` through. See `from_notes` for the mapping."""
+        return cls(from_notes(notes, meter=meter, clef=clef, key=key,
+                              beat_unit=beat_unit), **kw)
+
+    @classmethod
+    def from_timeline(cls, timeline, *, meter: str = "4/4", clef: str = "G2",
+                      key: str = "C", beat_unit: int = 4, **kw) -> "Score":
+        """An editable `Score` built from a `Timeline` (chords from simultaneous
+        events, rests from gaps) — the `from_timeline` encoder handed to the
+        constructor. ``kw`` passes ``scale``/``page_width`` through."""
+        return cls(from_timeline(timeline, meter=meter, clef=clef, key=key,
+                                 beat_unit=beat_unit), **kw)
+
     # -- internals ----------------------------------------------------------
 
     def _apply(self, actions: list[tuple[str, dict]]) -> bool:
@@ -232,6 +255,284 @@ def page_json(display_list: dict) -> str:
     """
     return json.dumps({k: display_list[k] for k in _PAGE_LAYERS
                        if k in display_list})
+
+
+# ===========================================================================
+# Score generation: sequencing data -> MEI
+# ===========================================================================
+# The third way into the engraver, beside typed score text and the SVG adapter:
+# turn the client's own `clausters.seq` data (Event, Timeline) into MEI — the
+# format `engrave`/`Score` already read — so a melody or a bounced timeline is
+# *seen* and edited as notation, the inverse of the score->sound flow.
+#
+# MEI is the target because it is explicit: every note spells its pitch
+# (pname/oct/accid) and value (dur/dots), with none of ABC's contextual traps
+# (accidentals persisting through a bar, spacing-driven beaming). No xml:ids are
+# emitted — verovio mints them on load, exactly as on the ABC path, so id
+# stability across editing is unchanged.
+#
+# Two seams are kept deliberately narrow so the undated engraving-refinements
+# milestone (see clients/PLAN.md) can extend rather than rewrite them: the
+# pitch spelling (`_spell`) and the beats->written-value step (`_pieces`). v1
+# reads only the written `dur`; performance nuance (sustain/legato -> staccato,
+# a note drawn shorter than its slot) is that milestone, as are tuplets, full
+# polyphony and tonal spelling.
+
+# 32nd-note resolution: every duration snaps to an integer number of these, so
+# barline splitting and tie decomposition are exact integer arithmetic.
+_TPW = 32  # ticks per whole note
+# (MEI @dur value, ticks it lasts), longest first — whole(1)..32nd(32).
+_VALUES = [(v, _TPW // v) for v in (1, 2, 4, 8, 16, 32)]
+
+# Chromatic spelling: pitch-class -> (pname, accid), one table per accidental
+# world. `accid` is "" (natural, no <accid> child), "s" (sharp) or "f" (flat).
+_SHARP = [("c", ""), ("c", "s"), ("d", ""), ("d", "s"), ("e", ""), ("f", ""),
+          ("f", "s"), ("g", ""), ("g", "s"), ("a", ""), ("a", "s"), ("b", "")]
+_FLAT = [("c", ""), ("d", "f"), ("d", ""), ("e", "f"), ("e", ""), ("f", ""),
+         ("g", "f"), ("g", ""), ("a", "f"), ("a", ""), ("b", "f"), ("b", "")]
+
+# key name -> (MEI key.sig, prefer flats when spelling chromatic notes).
+_KEYS = {
+    "C": ("0", False), "G": ("1s", False), "D": ("2s", False),
+    "A": ("3s", False), "E": ("4s", False), "B": ("5s", False),
+    "F#": ("6s", False), "C#": ("7s", False),
+    "F": ("1f", True), "Bb": ("2f", True), "Eb": ("3f", True),
+    "Ab": ("4f", True), "Db": ("5f", True), "Gb": ("6f", True),
+    "Cb": ("7f", True),
+}
+
+
+def from_notes(notes, *, meter: str = "4/4", clef: str = "G2", key: str = "C",
+               beat_unit: int = 4) -> str:
+    """Engrave a **monophonic** run of events into an MEI string.
+
+    ``notes`` is any iterable of `clausters.seq.event.Event` (a
+    `clausters.seq.event.rest` becomes a rest); each occupies its written
+    ``dur`` beats back to back, so this is the notation of a melody the way a
+    ``Pbind``/``Routine`` sequence reads it. The pitch is the event's
+    `Event.midinote` (rounded to the nearest semitone), the value is ``dur``.
+
+    Returns the MEI to hand to `engrave` (a one-shot display list), `Score` (to
+    edit and redraw) or `Score.from_notes` (the two in one). ``meter`` (``"4/4"``)
+    sets the barring, ``clef`` (``"G2"``/``"F4"``/``"C3"``) the staff, ``key``
+    the key signature and sharp-vs-flat spelling, and ``beat_unit`` what one beat
+    is worth (``4`` = a quarter, matching ``TEMPO``/``L:1/4``).
+
+    A duration that is not a single note value is written as **tied** notes (a
+    dotted value when exact, e.g. ``1.5`` beats -> a dotted quarter), and a note
+    that overruns a barline is split and tied across it. Off-grid durations
+    (finer than a 32nd, e.g. a triplet) snap to the grid — tuplets are the
+    engraving-refinements milestone.
+    """
+    return _mei_document(_voice_from_notes(notes, beat_unit),
+                         meter=meter, clef=clef, key=key)
+
+
+def from_timeline(timeline, *, meter: str = "4/4", clef: str = "G2",
+                  key: str = "C", beat_unit: int = 4) -> str:
+    """Engrave a `clausters.seq.timeline.Timeline` into an MEI string.
+
+    The timeline's placements become the score's rhythm: events **sharing a
+    beat** are written as one chord, a gap between a group's written end and the
+    next onset becomes a rest, and a gap before the first onset is a leading
+    rest. Non-`Event` items (`OscEvent`/`MidiEvent`, which carry no pitch) are
+    skipped, as are rest events (they read as silence, i.e. a gap).
+
+    Each group is written for its **shortest** ``dur`` (one layer, so it is
+    clamped never to overrun the next onset — mixed-duration polyphony is the
+    engraving-refinements milestone). Options and the tie/barline behaviour are
+    as `from_notes`; returns the MEI for `engrave`/`Score`/`Score.from_timeline`.
+    """
+    return _mei_document(_voice_from_timeline(timeline, beat_unit),
+                         meter=meter, clef=clef, key=key)
+
+
+# -- the intermediate voice: back-to-back (kind, ticks, [midi, ...]) ---------
+# One flat, monophonic-per-slot stream both entry points reduce to; a note slot
+# carries one midi, a chord slot several, a rest none. `_mei_document` lays it
+# out into barred, tied measures and emits the XML.
+
+def _dur_ticks(beats: float, beat_unit: int) -> int:
+    """A *duration* in beats -> 32nd-note ticks (a whole note is ``beat_unit``
+    beats). At least one tick — a sounding note never has zero length."""
+    return max(1, round(float(beats) * _TPW / beat_unit))
+
+
+def _pos_ticks(beat: float, beat_unit: int) -> int:
+    """A *position* on the beat axis -> 32nd-note ticks. Unlike a duration this
+    may be zero: beat 0 is tick 0, not tick 1, or a downbeat onset would push a
+    spurious rest before the first note and knock the whole bar off the grid."""
+    return round(float(beat) * _TPW / beat_unit)
+
+
+def _voice_from_notes(notes, beat_unit: int) -> list:
+    voice = []
+    for ev in notes:
+        ticks = _dur_ticks(ev["dur"], beat_unit)
+        if ev.get("type") == "rest":
+            voice.append(("rest", ticks, []))
+        else:
+            voice.append(("note", ticks, [round(ev.midinote())]))
+    return voice
+
+
+def _voice_from_timeline(timeline, beat_unit: int) -> list:
+    """Group the timeline by onset beat into chord/note slots, filling the gaps
+    between them with rests."""
+    groups: dict[float, list] = {}
+    for beat, item in timeline:
+        # skip what has no pitch (raw OSC/MIDI items) or is silence (a rest)
+        if not hasattr(item, "midinote") or item.get("type") == "rest":
+            continue
+        groups.setdefault(float(beat), []).append(item)
+
+    beats = sorted(groups)
+    voice = []
+    end = 0  # ticks consumed so far
+    for i, beat in enumerate(beats):
+        onset = _pos_ticks(beat, beat_unit)
+        if onset > end:  # a leading gap or a gap after a short note -> rest
+            voice.append(("rest", onset - end, []))
+        ticks = _dur_ticks(min(ev["dur"] for ev in groups[beat]), beat_unit)
+        if i + 1 < len(beats):  # one layer: never overrun the next onset
+            nxt = _pos_ticks(beats[i + 1], beat_unit)
+            if nxt > onset:
+                ticks = min(ticks, nxt - onset)
+        midis = [round(ev.midinote()) for ev in groups[beat]]
+        voice.append(("note", ticks, midis))
+        end = onset + ticks
+    return voice
+
+
+# -- laying the voice into barred, tied MEI ---------------------------------
+
+def _pieces(ticks: int) -> list:
+    """Decompose a tick count (within one bar) into ``(mei_dur, dots)`` note
+    values, largest-first, to be tied. A count that is one plain or dotted value
+    is that single value; otherwise the largest value that fits is split off and
+    the remainder decomposed on."""
+    single = _single_value(ticks)
+    if single is not None:
+        return [single]
+    out = []
+    while ticks > 0:
+        single = _single_value(ticks)
+        if single is not None:
+            out.append(single)
+            break
+        for value, vt in _VALUES:
+            if vt <= ticks:
+                out.append((value, 0))
+                ticks -= vt
+                break
+    return out
+
+
+def _single_value(ticks: int):
+    """``(mei_dur, dots)`` if ``ticks`` is exactly one plain or single-dotted
+    note value, else None."""
+    for value, vt in _VALUES:
+        if ticks == vt:
+            return (value, 0)
+        if vt % 2 == 0 and ticks == vt + vt // 2:  # dotted: 1.5x, and dottable
+            return (value, 1)
+    return None
+
+
+def _mei_document(voice: list, *, meter: str, clef: str, key: str) -> str:
+    """Lay a voice stream out into measures (splitting and tying across
+    barlines) and wrap it in a minimal MEI document."""
+    num, den = _parse_meter(meter)
+    bar = num * _TPW // den  # ticks per measure
+    keysig, flats = _KEYS.get(key, ("0", False))
+    shape, line = _parse_clef(clef)
+
+    measures: list[list[str]] = [[]]
+    pos = 0  # ticks into the current (last) measure
+    for kind, total, midis in voice:
+        specs = []  # (mei_dur, dots, measure_index) across the whole slot
+        remaining = total
+        while remaining > 0:
+            if pos == bar:
+                measures.append([])
+                pos = 0
+            take = min(remaining, bar - pos)
+            for value, dots in _pieces(take):
+                specs.append((value, dots, len(measures) - 1))
+            pos += take
+            remaining -= take
+        n = len(specs)
+        for idx, (value, dots, mi) in enumerate(specs):
+            tie = None
+            if kind == "note" and n > 1:  # a split note ties its pieces
+                tie = "i" if idx == 0 else ("t" if idx == n - 1 else "m")
+            measures[mi].append(_element(kind, value, dots, midis, tie, flats))
+
+    if not any(measures):  # an empty voice still needs a drawable bar
+        measures[0] = [_element("rest", value, dots, [], None, flats)
+                       for value, dots in _pieces(bar)]
+
+    body = "\n".join(_measure_xml(i, cells, i == len(measures) - 1)
+                     for i, cells in enumerate(measures))
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<mei xmlns="http://www.music-encoding.org/ns/mei" meiversion="5.0">\n'
+        ' <meiHead><fileDesc><titleStmt><title/></titleStmt>'
+        '<pubStmt/></fileDesc></meiHead>\n'
+        ' <music><body><mdiv><score>\n'
+        f'  <scoreDef meter.count="{num}" meter.unit="{den}" key.sig="{keysig}">\n'
+        f'   <staffGrp><staffDef n="1" lines="5" clef.shape="{shape}"'
+        f' clef.line="{line}"/></staffGrp>\n'
+        '  </scoreDef>\n'
+        f'  <section>\n{body}\n  </section>\n'
+        ' </score></mdiv></body></music>\n'
+        '</mei>\n'
+    )
+
+
+def _measure_xml(index: int, cells: list, last: bool) -> str:
+    right = ' right="end"' if last else ""
+    inner = "".join(cells)
+    return (f'   <measure n="{index + 1}"{right}><staff n="1"><layer n="1">'
+            f'{inner}</layer></staff></measure>')
+
+
+def _element(kind: str, value: int, dots: int, midis: list, tie, flats: bool) -> str:
+    d = ' dots="1"' if dots else ""
+    if kind == "rest":
+        return f'<rest dur="{value}"{d}/>'
+    if len(midis) == 1:
+        return _note_xml(midis[0], value, dots, tie, flats)
+    inner = "".join(_note_xml(m, None, 0, tie, flats) for m in midis)
+    return f'<chord dur="{value}"{d}>{inner}</chord>'
+
+
+def _note_xml(midi: int, value, dots: int, tie, flats: bool) -> str:
+    pname, octave, accid = _spell(midi, flats)
+    head = f'<note dur="{value}"' if value is not None else "<note"
+    if dots:
+        head += ' dots="1"'
+    head += f' oct="{octave}" pname="{pname}"'
+    if tie:
+        head += f' tie="{tie}"'
+    if accid:
+        return f'{head}><accid accid="{accid}"/></note>'
+    return f'{head}/>'
+
+
+def _spell(midi: int, flats: bool):
+    """MIDI note -> ``(pname, octave, accid)`` in scientific pitch (60 -> c4)."""
+    pname, accid = (_FLAT if flats else _SHARP)[midi % 12]
+    return pname, midi // 12 - 1, accid
+
+
+def _parse_meter(meter: str) -> tuple[int, int]:
+    num, den = meter.split("/")
+    return int(num), int(den)
+
+
+def _parse_clef(clef: str) -> tuple[str, int]:
+    return clef[0].upper(), int(clef[1:])
 
 
 def _display_list(tk, page: int) -> dict:
