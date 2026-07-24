@@ -58,6 +58,9 @@ specified in the [widget catalog](../../docs/gui-protocol.md#the-widget-catalog)
   break-point envelope, played by the server's own shape math).
 - **Multitrack & graph** — `track` / `clip` (the multitrack editor's lanes),
   `pianoroll`, `graph` (a patcher of a bus-wired node graph).
+- **Notation** — `score`, an engraved page the client sends as a display list of
+  glyph outlines and primitives (the host reads no notation format), clickable
+  and editable by the `xml:id` each primitive carries.
 
 How the host is structured module by module — and the recipe for adding a
 widget — is in the developer guide (below), not here.

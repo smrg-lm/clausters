@@ -109,8 +109,23 @@ numbers, buttons, toggles, text, menus) through the live meters and scopes
 views: the heavy `waveform` and `spectrogram` (multichannel lanes, adaptive
 rulers, a draggable selection, a playhead tracking the engine clock, linked
 navigation groups), the drawable `bpf` envelope editor, a static `plot`, a
-shader `canvas` — and the **composition** views below. Their reference is the
-Python builders' documentation, since that is how a script names them.
+shader `canvas`, an engraved `score` page — and the **composition** views below.
+Their reference is the Python builders' documentation, since that is how a
+script names them.
+
+The `score` is worth a note, because it is the one widget whose material the
+host cannot read. A client engraves music notation (the Python client does it
+with [verovio](https://www.verovio.org/), an optional dependency) and sends a
+**display list**: glyph outlines keyed by SMuFL codepoint, plus the placed
+glyphs, staff lines, stems, beams, slurs and text, in page units. The host fits
+that into the widget and tessellates it into the same triangle mesh as the rest
+of the chrome — it never parses MEI, MusicXML or any notation format. Every
+primitive carries the `xml:id` it was engraved from, so the page is interactive
+without the host understanding it: a click reports the element under the cursor,
+a drag reports a pitch edit in diatonic steps, and the client — which does own
+the score — applies it, re-engraves and sends the page back. A cursor track
+engraved beside the drawing lets the page follow playback off the engine clock,
+like the timeline views.
 
 ### The composition views: a multitrack editor and a patcher
 
@@ -248,5 +263,6 @@ it sits on the same C ABI and the same OSC.
 | Browser GUI host (wasm bundle; meters over `/c_stream`, bulk over fetch/`/b_getn`) | done |
 | Arrangement model in the Python client (elements, recursive groups, rendering) | done |
 | Multitrack editor + patcher (tracks/clips, piano-roll, automation curves, `patch`) and the driver that binds them to the arrangement | done |
-| Reproducible `third_party` Faust build (pin + script; native/CI/release) | done |
+| Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
+| Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
 | JavaScript client + npm (incl. its Faust build) | planned |
