@@ -207,6 +207,17 @@ pub struct ScoreDrag {
     pub steps: i32,
 }
 
+/// One engraved staff: the page-y of its top and bottom lines and the width
+/// they are stroked with. Derived from the drawing (the wide horizontal lines,
+/// clustered by system), because a pitch dragged off the staff needs ledger
+/// lines and only the staff says where they go.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Staff {
+    pub y0: f32,
+    pub y1: f32,
+    pub width: f32,
+}
+
 /// The default page units per diatonic step: verovio's default `unit` (9) times
 /// its definition factor (10). Used when a display list names no `step` — every
 /// display list `clausters.gui.notation` builds does.
@@ -242,6 +253,9 @@ pub struct ScoreData {
     /// primitive, derived from `prims` and `glyphs` when the display list is
     /// parsed (see [`ScoreData::index`]).
     pub hits: Vec<HitBox>,
+    /// The engraved staves, top to bottom — derived with the hit index, and
+    /// what tells a dragged pitch when it has left the staff.
+    pub staves: Vec<Staff>,
     /// The selected element's MEI `xml:id`, drawn highlighted; `None` = nothing
     /// selected. Set by a click on the page and by `/gui_set selected`.
     pub selected: Option<String>,
@@ -269,6 +283,7 @@ impl Default for ScoreData {
             playhead_at: -1.0,
             sample_rate: 0.0,
             hits: Vec::new(),
+            staves: Vec::new(),
             selected: None,
             step: STEP,
             drag: None,
@@ -403,6 +418,79 @@ impl ScoreData {
                 });
             }
         }
+        self.index_staves();
+    }
+
+    /// Cluster the staff lines into staves. A staff line is the one primitive
+    /// every system draws the same way — a horizontal stroke running most of
+    /// the page — and within a staff they sit exactly one space (two diatonic
+    /// steps) apart, so a wider gap starts the next system.
+    fn index_staves(&mut self) {
+        let mut lines: Vec<(f32, f32)> = self
+            .prims
+            .iter()
+            .filter_map(|p| match p {
+                Prim::Line { pts, width, .. }
+                    if pts.len() == 2
+                        && (pts[0][1] - pts[1][1]).abs() < 1.0
+                        && (pts[0][0] - pts[1][0]).abs() > 0.3 * self.vb_w =>
+                {
+                    Some((pts[0][1], *width))
+                }
+                _ => None,
+            })
+            .collect();
+        lines.sort_by(|a, b| a.0.total_cmp(&b.0));
+        lines.dedup_by(|a, b| (a.0 - b.0).abs() < 0.5);
+        self.staves.clear();
+        let gap = 2.5 * self.step;
+        let mut group: Option<Staff> = None;
+        for (y, width) in lines {
+            match &mut group {
+                Some(s) if y - s.y1 <= gap => s.y1 = y,
+                other => {
+                    if let Some(s) = other.take() {
+                        self.staves.push(s);
+                    }
+                    *other = Some(Staff {
+                        y0: y,
+                        y1: y,
+                        width,
+                    });
+                }
+            }
+        }
+        self.staves.extend(group);
+    }
+
+    /// The staff a page-y belongs to: the nearest one, since a note off the
+    /// staff still belongs to it (that is what ledger lines are for).
+    pub fn staff_at(&self, y: f32) -> Option<Staff> {
+        self.staves
+            .iter()
+            .copied()
+            .min_by(|a, b| staff_distance(a, y).total_cmp(&staff_distance(b, y)))
+    }
+
+    /// The ledger lines a notehead centred on page-y `y` needs on `staff`,
+    /// outward from it — empty while the note is on the staff. One line per
+    /// whole line position past the staff's own, and a note in the space
+    /// *beyond* the last one gains no further line: the engraving rule, and the
+    /// reason this is not simply "one line per step".
+    pub fn ledger_ys(&self, staff: Staff, y: f32) -> Vec<f32> {
+        let space = 2.0 * self.step;
+        let (mut ly, dir) = if y < staff.y0 {
+            (staff.y0 - space, -1.0)
+        } else {
+            (staff.y1 + space, 1.0)
+        };
+        let mut out = Vec::new();
+        // the cap keeps a degenerate page (or a drag off into nowhere) finite
+        while (y - ly) * dir >= -0.01 && out.len() < 32 {
+            out.push(ly);
+            ly += dir * space;
+        }
+        out
     }
 
     /// The MEI `xml:id` of the element under the screen point `(x, y)`, with the
@@ -471,6 +559,28 @@ impl ScoreData {
         (-dy / px).round() as i32
     }
 
+    /// The ledger lines the drag preview owes the page: where the displaced
+    /// notehead needs them, how wide, and the box whose engraved ones it
+    /// replaces. `None` when nothing is being dragged, the element is not on a
+    /// staff, or it left no measurable mark.
+    fn drag_ledgers(&self) -> Option<Ledgers> {
+        let drag = self.drag.as_ref()?;
+        // the element's first primitive is its notehead (verovio draws it
+        // before the stem), which is what a ledger line is centred on and sized
+        // from — the stem and flag would stretch the box out of shape.
+        let head = self.hits.iter().find(|h| h.id == drag.id)?.bounds;
+        let y = 0.5 * (head.y0 + head.y1);
+        let staff = self.staff_at(y)?;
+        let pad = LEDGER_OVERHANG * (head.x1 - head.x0);
+        Some(Ledgers {
+            ys: self.ledger_ys(staff, y - drag.steps as f32 * self.step),
+            x0: head.x0 - pad,
+            x1: head.x1 + pad,
+            width: staff.width * LEDGER_WEIGHT,
+            staff,
+        })
+    }
+
     /// `fit`, shifted by the drag preview when `id` is the element being
     /// dragged — the one place the displacement enters the drawing, so every
     /// primitive of a note (notehead, stem, dots) travels with it.
@@ -512,8 +622,22 @@ impl ScoreData {
         let tol_page = 0.33 / fit.sx.max(f32::MIN_POSITIVE);
         // under the ink, so the engraving still reads through the highlight
         self.draw_selection(mesh, fit, colors.selection);
+        // A dragged notehead takes its ledger lines with it: the engraved ones
+        // stay where the staff put them, so they are dropped and re-derived at
+        // the displaced pitch — which is also how they disappear when the note
+        // comes back onto the staff.
+        let ledgers = self.drag_ledgers();
+        if let Some(l) = &ledgers {
+            let w = (l.width * fit.sx).max(1.0);
+            for y in &l.ys {
+                mesh.line(fit.apply(l.x0, *y), fit.apply(l.x1, *y), w, color);
+            }
+        }
         let mut tess = FillTessellator::new();
         for prim in &self.prims {
+            if ledgers.as_ref().is_some_and(|l| l.covers(prim, self.vb_w)) {
+                continue;
+            }
             // the page fit, displaced while this element is being dragged
             let fit = self.prim_fit(fit, prim.id());
             match prim {
@@ -598,6 +722,50 @@ impl ScoreData {
         // points are already in screen pixels after `fit`, so width is px.
         mesh.line(fit.apply(c.x, c.y0), fit.apply(c.x, c.y1), 2.0, color);
     }
+}
+
+/// A ledger line reaches past the notehead by about a fifth of its width on
+/// each side, and is stroked heavier than a staff line — verovio's proportions,
+/// so a previewed ledger sits among the engraved ones without looking foreign.
+const LEDGER_OVERHANG: f32 = 0.22;
+const LEDGER_WEIGHT: f32 = 1.7;
+
+/// What the drag preview owes the page in ledger lines: `ys` to draw across
+/// `x0..x1`, and the `staff` they belong to — which is also what identifies the
+/// engraved ledger lines the dragged notehead is leaving behind.
+struct Ledgers {
+    ys: Vec<f32>,
+    x0: f32,
+    x1: f32,
+    width: f32,
+    staff: Staff,
+}
+
+impl Ledgers {
+    /// Whether this primitive is a ledger line of the dragged notehead — a
+    /// short horizontal stroke off the staff, over the notehead's own column.
+    /// The engraver draws them per staff, not inside the note, so they carry
+    /// the staff's id and cannot travel with it: they are dropped from the
+    /// drawing and re-derived at the displaced position instead.
+    fn covers(&self, prim: &Prim, vb_w: f32) -> bool {
+        let Prim::Line { pts, .. } = prim else {
+            return false;
+        };
+        if pts.len() != 2 || (pts[0][1] - pts[1][1]).abs() > 1.0 {
+            return false;
+        }
+        let (x0, x1) = (pts[0][0].min(pts[1][0]), pts[0][0].max(pts[1][0]));
+        let y = pts[0][1];
+        (x1 - x0) < 0.15 * vb_w
+            && staff_distance(&self.staff, y) > 0.0
+            && x0 < self.x1
+            && x1 > self.x0
+    }
+}
+
+/// How far a page-y sits outside a staff (zero anywhere between its lines).
+fn staff_distance(staff: &Staff, y: f32) -> f32 {
+    (staff.y0 - y).max(y - staff.y1).max(0.0)
 }
 
 /// `rect` clamped to `clip` (or `rect` itself when there is no outer clip).
@@ -1326,6 +1494,97 @@ mod tests {
             steps: -2,
         });
         assert!((top(&data) - (before + 2.0 * STEP)).abs() < 0.01);
+    }
+
+    /// A treble staff with a middle C below it, in verovio's own numbers (the
+    /// engraved page of `4CDEF/` at scale 40): five lines 180 apart, the
+    /// notehead a whole line position below the last, and the ledger line the
+    /// engraver drew for it — tagged with the staff, as verovio tags it.
+    fn staffed_page() -> ScoreData {
+        let props: Map<String, Value> = serde_json::from_str(
+            r#"{
+                "vb": [11000, 3000], "step": 90,
+                "glyphs": {"E0A4": "M0 -39c0 68 73 172 200 172c66 0 114 -37 114 -95c0 -84 -106 -171 -218 -171c-58 0 -96 34 -96 93Z"},
+                "prims": [
+                    {"k": "line", "pts": [[600, 1040], [10400, 1040]], "w": 13, "id": "staff"},
+                    {"k": "line", "pts": [[600, 1220], [10400, 1220]], "w": 13, "id": "staff"},
+                    {"k": "line", "pts": [[600, 1400], [10400, 1400]], "w": 13, "id": "staff"},
+                    {"k": "line", "pts": [[600, 1580], [10400, 1580]], "w": 13, "id": "staff"},
+                    {"k": "line", "pts": [[600, 1760], [10400, 1760]], "w": 13, "id": "staff"},
+                    {"k": "glyph", "cp": "E0A4", "xf": [1783, 1940, 0.72, -0.72], "id": "n1"},
+                    {"k": "line", "pts": [[1735, 1940], [2057, 1940]], "w": 22, "id": "staff"}
+                ]
+            }"#,
+        )
+        .unwrap();
+        ScoreData::parse(&props)
+    }
+
+    #[test]
+    fn the_staves_are_read_back_out_of_the_engraving() {
+        let data = staffed_page();
+        assert_eq!(
+            data.staves,
+            vec![Staff {
+                y0: 1040.0,
+                y1: 1760.0,
+                width: 13.0
+            }]
+        );
+        // the ledger line is too short to be a staff line, and the notehead is
+        // not a line at all
+        assert_eq!(data.staff_at(1940.0), data.staves.first().copied());
+    }
+
+    #[test]
+    fn ledger_lines_follow_the_engraving_rule() {
+        let data = staffed_page();
+        let staff = data.staves[0];
+        let ys = |y: f32| data.ledger_ys(staff, y);
+        // on the staff, and in the space just outside it: nothing to draw
+        assert!(ys(1400.0).is_empty());
+        assert!(ys(1850.0).is_empty()); // one step below the last line
+        assert!(ys(950.0).is_empty()); // one step above the first
+        // on the first ledger position, and in the space beyond it: one line
+        assert_eq!(ys(1940.0), vec![1940.0]);
+        assert_eq!(ys(2030.0), vec![1940.0]);
+        // two positions out: two lines, and upward is symmetrical
+        assert_eq!(ys(2120.0), vec![1940.0, 2120.0]);
+        assert_eq!(ys(860.0), vec![860.0]);
+        assert_eq!(ys(680.0), vec![860.0, 680.0]);
+    }
+
+    #[test]
+    fn dragging_off_the_staff_draws_ledger_lines_and_back_on_drops_them() {
+        let mut data = staffed_page();
+        let rect = Rect::new(0.0, 0.0, 1100.0, 300.0);
+        let verts = |data: &ScoreData| {
+            let mut mesh = Mesh::new();
+            data.render(&mut mesh, rect, None, -1.0, INK);
+            mesh.positions().count()
+        };
+        let engraved = verts(&data); // one ledger line, the engraved one
+        // dragged up onto the staff: its ledger line goes with it, which means
+        // it stops being drawn
+        data.drag = Some(ScoreDrag {
+            id: "n1".into(),
+            steps: 2,
+        });
+        let on_staff = verts(&data);
+        // dragged two positions below: the engraved one plus a second
+        data.drag = Some(ScoreDrag {
+            id: "n1".into(),
+            steps: -2,
+        });
+        let below = verts(&data);
+        assert!(on_staff < engraved && engraved < below);
+        assert_eq!(engraved - on_staff, below - engraved);
+        // and the drag that moves nothing redraws exactly what was engraved
+        data.drag = Some(ScoreDrag {
+            id: "n1".into(),
+            steps: 0,
+        });
+        assert_eq!(verts(&data), engraved);
     }
 
     #[test]

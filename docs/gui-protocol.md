@@ -209,9 +209,11 @@ re-engraves, and replaces the drawing with a single
 `prims`, `cursors`, `step`), the same ones the widget was defined with.
 
 The host draws the drag as it happens, displacing the element and everything it
-owns by whole steps. What it cannot displace is the **staff furniture** a pitch
-implies — ledger lines are drawn per staff, and how many a note needs is an
-engraving decision — so those follow only when the re-engraved page arrives.
+owns by whole steps, and **re-deriving its ledger lines** at the new pitch: they
+are drawn per staff rather than inside the note, so they cannot travel with it —
+the host reads the staves back out of the engraving (the wide horizontal strokes,
+clustered a space apart) and draws what the displaced notehead needs, which is
+also how they disappear when a note comes back onto the staff.
 That displacement **stands after the release until the new page arrives** —
 the answer is one message away, and retiring it first would show the old pitch
 for a frame. Replacing the page keeps the widget's own chrome (`playhead`,
