@@ -4,7 +4,7 @@
 The first widget that **writes data back**: a drawable break-point function
 whose segments use the server's own envelope shape numbers, evaluated in the
 host through the same shared math (``clausters-core``) the server's ``EnvGen``
-plays — what the editor draws is exactly what you hear.
+plays -- what the editor draws is exactly what you hear.
 
 Editing gestures, all live:
 
@@ -14,36 +14,28 @@ Editing gestures, all live:
 - **Ctrl+click** on empty curve area adds a point there; **Ctrl+click on a
   point** removes it;
 - the **curve menu** applies a standard transition shape (or a numeric
-  curvature) to every segment at once — the script rewrites the shapes through
-  the `Env` round trip and pushes the list back with ``gui.set``, so the same
+  curvature) to every segment at once -- the script rewrites the shapes through
+  the `Env` round trip and pushes the list back with ``set``, so the same
   points redraw under the chosen curve.
 
 Every edit flows back per the **edit-back pattern**: the host emits
-``/gui_event <id> "points" <t v shape curve ...>`` — the breakpoint list as
-flat OSC primitives, shapes as ints, everything else floats. This script maps
-that list to a `clausters.defs.Env` (`points_to_env`) and, on the **play**
-button, sends a fresh SynthDef built from it and spawns a note: the drawn
-envelope shapes the tone you hear. (The reverse mapping, `env_to_points`,
-seeds the editor with a familiar ADSR to start from.) A *bound* editor
-(``GuiHost.bind``) would instead forward the same flat list straight to the
-audio server after the binding's fixed prefix, bypassing the script — the
-widget-value bypass generalized to a list.
+``"points" <t v shape curve ...>`` -- the breakpoint list as flat OSC
+primitives, shapes as ints, everything else floats. This script maps that list
+to a `clausters.defs.Env` (`points_to_env`) and, on the **play** button, sends a
+fresh SynthDef built from it and spawns a note: the drawn envelope shapes the
+tone you hear. (The reverse mapping, `env_to_points`, seeds the editor with a
+familiar ADSR to start from.)
 
-The widget is deliberately more general than an amplitude envelope — the
-future automation-lane shape: ``min``/``max`` give any parameter range
-(bipolar, unipolar, arbitrary), ``exp=True`` a geometric display scale for
-frequency-like values, and the ``"step"`` shape an on/off lane.
-
-This file is organized as ``# %%`` cells (the VS Code / Jupyter convention).
-Install once, from the repo root::
+This file is organized as ``# %%`` cells (the VS Code / Jupyter convention) and
+**runs out of the box**. Install once, from the repo root::
 
     python -m venv .venv
     .venv/bin/pip install -e ./clients/python      # bundles the server + GUI binaries
 
 Run it cell by cell (Shift+Enter) and keep drawing/playing from the live
-handles, or as a plain script — ``python clients/python/examples/gui_bpf.py``
-— which plays a note on every edit for a while, then tears everything down.
-Needs a display and a GPU adapter, plus an audio device.
+handles, or as a plain script -- ``python clients/python/examples/gui_bpf.py``.
+It self-launches the audio server and the GUI host (`Session.live` +
+`Session.gui`). Needs a display and a GPU adapter, plus an audio device.
 """
 
 # %%
@@ -68,49 +60,38 @@ gui = session.gui()
 
 # %% [markdown]
 # ## Open the editor window
-# The editor is seeded from a familiar `Env` (an ADSR played through, no
-# sustain) via `env_to_points` — the same helper a live ``points`` set uses.
-# Times are seconds over a fixed 2-second domain; values are the unipolar
-# amplitude range.
+# Seeded from a familiar `Env` (an ADSR played through) via `env_to_points`.
+# Every widget is *named*, not numbered -- the script drives them by name.
 
 # %%
 START_ENV = Env([0.0, 1.0, 0.4, 0.0], [0.05, 0.3, 1.2], ["exp", -4.0, "sin"])
 
-# The curve menu's options: `Env`-style curve specs — shape names plus two
-# custom curvatures (positive builds slowly then fast, negative the reverse).
-# "hold" is the constant lane: each point's value held until the next point.
-# (The wire format also has SC's "step" — jump to the *target* at segment
-# start, so a point's level shows one segment early; it expresses nothing
-# hold cannot, so the menu leaves it out. `Env.step` builds step sequences.)
+# `Env`-style curve specs the menu offers: shape names plus two custom
+# curvatures. "hold" is the constant lane (each point's value held until the
+# next). `Env.step` builds SC's "step" sequences separately.
 CURVES = ["lin", "exp", "sin", "welch", "sqr", "cub", "hold", -4.0, 4.0]
 
-
-def scene() -> dict:
-    return window(
-        label(1, "drag points/segments; Ctrl+click adds/removes; play sends it"),
-        bpf(10, points=env_to_points(START_ENV), min=0.0, max=1.0,
-            duration=2.0, label="amp env"),
-        menu(30, [str(c) for c in CURVES], label="curve (all segments)"),
-        button(20, label="play"),
-        title="BPF envelope -> EnvGen", w=640, h=460, layout="col",
-    )
-
-
-win = gui.open(scene())
-print(f"opened window {win} — draw the envelope, then press play")
+win = gui.open(window(
+    label(name="hint", text="drag points/segments; Ctrl+click adds/removes; play sends it"),
+    bpf(name="env", points=env_to_points(START_ENV), min=0.0, max=1.0,
+        duration=2.0, label="amp env"),
+    menu(name="curve", options=[str(c) for c in CURVES], label="curve (all segments)"),
+    button(name="play", label="play"),
+    title="BPF envelope -> EnvGen", w=640, h=460, layout="col"))
+print(f"opened window {win} -- draw the envelope, then press play")
 
 # %% [markdown]
-# ## Hear the drawn envelope
-# The latest breakpoint list arrives as ``"points"`` events; `play()` turns it
-# into an `Env`, builds a one-shot SynthDef around ``env_gen`` (the envelope
-# frees the synth when it finishes) and plays a note through it.
+# ## The handlers, wired by name
+# The `env` view reports its breakpoints as they are edited; the `curve` menu
+# reshapes every segment; the `play` button spawns a note through the drawn
+# envelope. Each is a handle callback -- no ids, no manual event matching.
 
 # %%
 _points = env_to_points(START_ENV)
 _closed = False
 
 
-def play():
+def play(*_):
     """One note shaped by the envelope as currently drawn."""
     env = points_to_env(_points)
     sig = sine(330.0) * env_gen(env, done_action=DoneAction.FREE_SELF) * 0.4
@@ -120,59 +101,57 @@ def play():
 
 
 def set_curve(spec):
-    """Applies one `Env`-style curve spec to every segment of the drawn
-    envelope — through the public round trip (`points_to_env` with the new
-    curve, back via `env_to_points`) — and pushes it to the window, which
-    redraws the same points with the new shapes."""
+    """Applies one `Env`-style curve spec to every segment (through the public
+    `points_to_env` / `env_to_points` round trip) and pushes it back, so the same
+    points redraw under the new shapes."""
     global _points
     env = points_to_env(_points)
     _points = env_to_points(Env(env.levels, env.times, spec))
-    gui.set(10, points=json.dumps(_points))
+    win["env"].set(points=json.dumps(_points))
     print(f"curve -> {spec}")
 
 
-def drain_events():
-    """Reads pending events: envelope edits update ``_points`` (silently), the
-    curve menu reshapes every segment, and the play button triggers the note."""
-    global _points, _closed
-    while (msg := gui.poll(0.0)) is not None:
-        addr, args = msg
-        if addr == "/gui_closed":
-            _closed = True
-        elif addr == "/gui_event" and len(args) >= 2 and args[1] == "points":
-            # The edit-back payload: id, "points", then t v shape curve quads.
-            _points = list(args[2:])
-        elif addr == "/gui_event" and args[0] == 30:
-            set_curve(CURVES[int(args[1])])
-        elif addr == "/gui_event" and args[0] == 20 and args[1] == 1:
-            play()
+def on_points(_tag, *values):
+    """The edit-back payload (`"points"` then t v shape curve quads): keep the
+    latest breakpoints so `play` hears what is drawn."""
+    global _points
+    _points = list(values)
 
 
-play()
+win["env"].on_event(on_points)
+win["curve"].on_event(lambda index: set_curve(CURVES[int(index)]))
+win["play"].on_event(lambda value: play() if value == 1 else None)  # 1 = press
+win.on_closed(lambda: globals().__setitem__("_closed", True))
 
 # %% [markdown]
-# ## Set the envelope from the script
-# The same flat list is settable live — a ``/gui_set`` value is a scalar, so
-# the array rides as its JSON string. Here: a percussive two-segment envelope.
+# ## Hear it now, and set it from the script
+# Play the seed once, then set a percussive two-segment envelope live -- a
+# `/gui_set` value is a scalar, so the array rides as its JSON string.
 
 # %%
-gui.set(10, points=json.dumps(env_to_points(Env.perc(0.01, 1.2))))
+play()
+win["env"].set(points=json.dumps(env_to_points(Env.perc(0.01, 1.2))))
 _points = env_to_points(Env.perc(0.01, 1.2))
 
 # %% [markdown]
-# ## Plain-script run
-# Cell-run: keep drawing and call `play()` / `drain_events()` between cells.
-# Script-run: draw for a while — editing is silent, the **play** button sends
-# the note — then everything is torn down.
+# ## Drive it
+# Cell-run: keep drawing and call `play()` between cells. Script-run: pump events
+# for a while -- editing is silent, the **play** button sends the note -- then
+# tear everything down.
 
 # %%
-if __name__ == "__main__":
+def run(seconds: float) -> None:
+    """Dispatches editor events for ``seconds``."""
+    start = time.monotonic()
+    while time.monotonic() - start < seconds and not _closed:
+        gui.pump(timeout=0.05)
+
+
+# %%
+if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
-        deadline = time.monotonic() + 45.0
-        while time.monotonic() < deadline and not _closed:
-            drain_events()
-            time.sleep(0.05)
-        gui.close(win)
+        run(45.0)
+    finally:
         session.close()
-    except (OSError, RuntimeError, ConnectionError) as e:
-        sys.exit(str(e))
+else:
+    print("bpf up - run(10) to dispatch events, session.close() to end")
