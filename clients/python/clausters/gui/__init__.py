@@ -26,7 +26,11 @@ directed, typed signal graph (drag an outlet onto an inlet to wire it);
 live updates flow through ``/gui_set`` and interactions come back as
 ``/gui_event``/``/gui_closed``. `clausters.gui.editor.Editor` drives that
 multitrack view from a `clausters.form` composition — drawing the arrangement
-tree as a GuiDef, applying the clip edit-backs onto it, and re-rendering it. A ``waveform`` can also name a server buffer, a
+tree as a GuiDef, applying the clip edit-backs onto it, and re-rendering it.
+`clausters.gui.transport.Transport` is the play/pause/stop/locate machinery
+every time view shares: it drives a `clausters.seq.Playhead` and the view's
+playhead line together, whatever the view is — a lane, a piano-roll, an engraved
+page. A ``waveform`` can also name a server buffer, a
 ``meter``/``scope`` reads a control bus from the audio server's shared-memory
 segment, and the audio-rate views read its audio taps (route a bus into a tap
 with ``Server.tap``). A widget can also be *bound*
@@ -86,11 +90,13 @@ from .guidef import (
     window,
 )
 from .host import DEFAULT_PORT, GuiHost
+from .transport import Transport
 
 __all__ = [
     "GuiHost",
     "DEFAULT_PORT",
     "Editor",
+    "Transport",
     "node",
     "window",
     "panel",

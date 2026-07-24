@@ -264,13 +264,6 @@ editor.locate(0.0)                              # the cursor waits at the top
 print("press play — click a lane's ruler (or its empty space) to move the cursor")
 
 
-def ended() -> bool:
-    """Whether the playhead ran past the end of the *current* composition (its
-    length is read from the arrangement, so dragging a clip out lengthens the piece)."""
-    ph = editor.playhead
-    return ph is not None and ph.playing and ph.position() >= editor.extent()
-
-
 # %% [markdown]
 # ## Edit it
 # `Editor.apply` takes the host's events into the **model**: a dragged clip becomes
@@ -287,9 +280,11 @@ def ended() -> bool:
 if __name__ == "__main__":
     try:
         while editor.window is not None:
-            if ended():
-                editor.pause()         # the piece is over: the cursor stays at
-                                       # the end (rewind goes back to the top)
+            # The playhead reports the end of its own scan, so the piece ends by
+            # itself: the cursor parks at the composition's `extent` -- read from
+            # the arrangement, so a clip dragged out lengthens the piece -- rather
+            # than sweeping past it (rewind goes back to the top).
+            editor.transport.update()
             msg = gui.poll(0.05)
             if msg is None:
                 continue

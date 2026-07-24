@@ -40,6 +40,7 @@ from ..seq.automation import Automation
 from ..seq.event import Event as SeqEvent
 from ..seq.timeline import MidiEvent, OscEvent, Timeline
 from .guidef import clip, patch, pianoroll, scroll, track, window
+from .transport import Transport
 
 __all__ = ["Editor"]
 
@@ -143,14 +144,17 @@ class Editor:
         self._patch_geometry: dict = {}
         self._host = None
         self._window = None
-        #: The rendering in flight: where it went, on what clock, and the
-        #: playhead playing it — what `rerender` re-schedules after an edit.
+        #: The rendering in flight: where it went and on what clock — what
+        #: `rerender` re-schedules after an edit.
         self._destination = None
         self._clock = None
-        self._playhead = None
-        #: The transport's position in beats (where the next `play` starts). A
-        #: `locate` moves it — the multitrack has a cursor, playing or not.
-        self._at = 0.0
+        #: The transport driving the lanes' playhead: play / pause / stop /
+        #: locate, and the position the next play starts from. The editor's own
+        #: transport methods delegate to it; a script's loop calls its `update`.
+        #: Its lanes are read on each use, so a redraw's new widgets get the line.
+        self.transport = Transport(
+            None, lambda: self._lanes, source=self._render_pass,
+            tempo=self.tempo, sample_rate=self.sample_rate, extent=self.extent)
         #: Whether the arrangement changed since the last render — an edit does not
         #: interrupt what is playing, so a transport (play, a resume after pause, a
         #: seek) reads this to know it must re-read the composition.
@@ -254,7 +258,7 @@ class Editor:
     def open(self, host, id: int | None = None) -> int:
         """`draw` the composition and open it on ``host`` (a
         `clausters.gui.host.GuiHost`). Returns the window id."""
-        self._host = host
+        self._host = self.transport.host = host
         self._mode = "multitrack"
         self._window = host.open(self.draw(), id=id)
         return self._window
@@ -302,7 +306,7 @@ class Editor:
         bounced notes are shown *read-only* (bounce it to a `Track` to edit). OSC
         events are shown but not edited back yet (a marker carries only its time
         and address, not the full message). Returns the window id."""
-        self._host = host
+        self._host = self.transport.host = host
         self._mode = "pianoroll"
         self._roll_element = self.element if element is None else element
         self._window = host.open(self.draw(), id=id)
@@ -318,8 +322,8 @@ class Editor:
     @property
     def playhead(self):
         """The `clausters.seq.Playhead` playing the composition, or ``None`` before
-        the first `render` — what a transport (play/pause/stop/locate) drives."""
-        return self._playhead
+        the first `render` — what the `transport` (play/pause/stop/locate) drives."""
+        return self.transport.playhead
 
     @property
     def window(self):
@@ -574,21 +578,19 @@ class Editor:
         through a playhead): the editor adds no rendering path of its own, it only
         remembers the destination so `rerender` can re-schedule after an edit.
         """
+        self._destination, self._clock = destination, clock
+        playhead = self.transport.play(destination, at=at, quant=quant)
+        self.dirty = False            # what plays now *is* the arrangement
+        return playhead
+
+    def _render_pass(self, at: float, quant=None):
+        """One pass for the `transport`: the arrangement, flattened and played
+        from beat ``at``. Called afresh on every play, which is what makes a
+        play — or a resume, or a seek — read the composition as it now stands."""
         from ..form.render import render as render_element
 
-        # Rendering again replaces the render in flight: stop the playhead first,
-        # or the old one keeps feeding the same composition and the piece plays
-        # over itself.
-        if self._playhead is not None:
-            self._playhead.stop()
-        self._destination, self._clock = destination, clock
-        self._at = float(at)
-        self._playhead = render_element(self.element, destination, clock,
-                                       at=at, quant=quant)
-        self.dirty = False            # what plays now *is* the arrangement
-        self._cursor(None)            # the clock's line takes over from the cursor
-        self.anchor(destination, at=at)
-        return self._playhead
+        return render_element(self.element, self._destination, self._clock,
+                              at=at, quant=quant)
 
     def rerender(self, *, at: float | None = None):
         """Re-schedule the (edited) composition from the playhead's current
@@ -601,18 +603,21 @@ class Editor:
         """
         if self._destination is None:
             raise RuntimeError("render(destination, clock) the editor first")
-        if at is None:
-            at = self._playhead.position() if self._playhead is not None else 0.0
-        return self.render(self._destination, self._clock, at=at)
+        return self.render(self._destination, self._clock,
+                           at=self.position if at is None else at)
 
     # ---- the transport: play, pause, stop, locate ----
+    #
+    # The machinery is `clausters.gui.transport.Transport`, shared with every
+    # other view that shows a playhead; what the editor adds is that a pass is a
+    # *render* of the arrangement (`_render_pass`), so play, resume and seek all
+    # read the composition as it now stands.
 
     @property
     def position(self) -> float:
         """The transport's position in beats: where the playhead is while it plays,
         and where the next `play` starts when it does not."""
-        ph = self._playhead
-        return ph.position() if (ph is not None and ph.playing) else self._at
+        return self.transport.position
 
     def play(self, destination=None, clock=None, *, at: float | None = None):
         """Play (or resume) from the transport's position — a fresh render, so
@@ -624,81 +629,37 @@ class Editor:
         if destination is None:
             raise RuntimeError("nothing to play onto: render(destination, clock) first")
         return self.render(destination, clock,
-                            at=self._at if at is None else float(at))
+                           at=self.transport.at if at is None else float(at))
 
     def pause(self):
         """Halt where we are: the playhead stops scheduling and the position stays,
         so a `play` resumes from here. What is already sounding keeps sounding —
         stopping a playhead is not a panic button (the script owns its voices)."""
-        ph = self._playhead
-        if ph is not None and ph.playing:
-            self._at = ph.position()
-            ph.stop()
-        self._cursor(self._at)
-        return self._at
+        return self.transport.pause()
 
     def stop(self):
         """Halt and return to the top."""
-        self.pause()
-        self.locate(0.0)
+        self.transport.stop()
         return self
 
     def locate(self, beat: float):
         """Seek: put the transport at ``beat``. Playing, it re-renders from there
         (so a seek also picks up any edit); stopped, it just moves the cursor the
         lanes draw. This is what a click on a lane's ruler does."""
-        beat = max(float(beat), 0.0)
-        if self._playhead is not None and self._playhead.playing:
-            self.render(self._destination, self._clock, at=beat)
-        else:
-            self._at = beat
-            self._cursor(beat)
+        self.transport.locate(beat)
         return self
-
-    def _cursor(self, beat):
-        """Draw (or clear) the lanes' static cursor — the located position of a
-        transport that is not playing. ``None`` clears it, which is what the clock
-        anchor does when playback takes the line over."""
-        if self._host is None:
-            return
-        pos = -1.0 if beat is None else self.beats_to_units(beat)
-        for lane in self._lanes:
-            self._host.set(lane, playhead_at=-1.0, playhead=pos)
 
     def anchor(self, server, *, at: float = 0.0) -> bool:
         """Anchor every lane's playhead to the engine clock, so the line starts at
         beat ``at`` of the timeline and sweeps on with the audio. Returns whether
-        it could (a destination with no clock — an NRT score — has no playhead).
-
-        ``playhead_at`` is the sample-clock value at timeline position 0, which is
-        *now* minus the beats already played. The anchor is a **query**: it asks
-        the server for its clock, and a server that does not answer leaves the
-        lanes without a line — so the failure is reported, not swallowed (a
-        playhead that silently never appears is the worst of both).
-        """
-        from ..errors import ReplyTimeout
-
-        if self._host is None or not hasattr(server, "request"):
-            return False
-        if getattr(server.interface, "time_mode", "unix") == "score":
-            return False  # NRT: there is no engine clock to anchor to
-        try:
-            _addr, args = server.request("/clock", expect=("/clock.reply",))
-        except ReplyTimeout:
-            return False  # a live server that did not answer: no line, and it shows
-        if not args:
-            return False
-        now = float(args[0])
-        origin = now - self.beats_to_units(at)
-        for lane in self._lanes:
-            self._host.set(lane, playhead_at=origin)
-        return True
+        it could (a destination with no clock — an NRT score — has no playhead)."""
+        return self.transport.anchor(server, at=at)
 
     def unanchor(self):
         """Take the sweeping playhead line off the lanes (the transport's cursor,
         if any, stays). The host's anchored playhead *tracks the engine clock*, so
         a line left anchored keeps sweeping after the music stopped."""
-        self._cursor(self._at)
+        self.transport.unanchor()
 
     # ---- the tree walk ----
 

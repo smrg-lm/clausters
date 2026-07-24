@@ -1773,3 +1773,40 @@ determinism never enters into it.
 
 The general rule this leaves behind: **anything nondeterministic gets a handle,
 not a size-then-fill pair.**
+
+## A pass ends in the playhead's data, and every view drives one transport
+
+Two facts kept being re-derived by every script that plays into a view.
+
+**When does a pass end?** `Playhead`'s feeder returned when the timeline drained
+but left the playhead marked as running, so `playing` kept answering yes forever
+after the last item and `position` kept interpolating off the end. Each caller
+timed the end itself, differently: the score view compared against the last
+note's onset plus its length, the multitrack against the composition's extent,
+both polling every frame or two. The fix belongs where the fact already is — the
+feeder knows it drained — so the drain records it: `playing` goes False and
+`finished` says the end is why, as against a `stop` by hand.
+
+It **records** rather than announces. A callback would fire on the clock thread,
+which is the one thread a client must never do work on, and the work a transport
+does at the end is exactly the wrong kind (a widget update, a socket write). A
+flag read from the script's own loop keeps the clock thread free and costs a
+comparison. It is also the scan that ends, not the sound: a loop never finishes,
+and the last item keeps sounding for its own length — a playhead schedules
+items, it does not wait for them.
+
+**What plays a view?** The transport — play, pause, stop, locate, plus the two
+numbers the line is made of — is not about what a view draws. `playhead_at` is
+one anchor on the engine's sample clock that the host sweeps from; the static
+`playhead` is where a stopped transport sits. Both are the same for a lane, a
+piano-roll and an engraved page. So there is **one** `Transport`, and a view
+contributes exactly one thing to it: the unit its static cursor is placed in
+(timeline samples for a lane, score milliseconds for a page). What each view
+still owns is what a pass *is* — a render of the arrangement, a timeline built
+from the engraved notes — which enters as a callable, not as a subclass.
+
+The alternative, a transport per view, is how a client ends up with three of them
+that disagree about the end of a piece — which is precisely what was found:
+one of the two copies corrected the anchor for the server's latency and the
+other did not, so its line ran early by exactly that much. A port keeps the
+shape: the arithmetic is small, but its being in one place is the point.

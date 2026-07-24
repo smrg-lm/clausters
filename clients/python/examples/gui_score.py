@@ -16,7 +16,10 @@ engine's sample clock, so the score follows the audio with **one message per
 pass** (``playhead_at``), the host reading the clock every frame from there,
 exactly as the timeline views do. A stopped transport is the other half of that
 one number: it goes negative and the static ``playhead`` holds the cursor where
-the music was left.
+the music was left. It is the **shared** transport (`clausters.gui.Transport`),
+the same object the multitrack editor drives its lanes with: a page differs only
+in the unit its static cursor is placed in, and that is all
+`notation.transport` fills in.
 
 The page is also **clickable and editable**: every primitive carries the MEI
 ``xml:id`` it was engraved from, so a press reports the element under the cursor
@@ -117,66 +120,6 @@ def phrase_timeline(notes: list) -> Timeline:
     return timeline
 
 
-class Transport:
-    """Play, pause, stop and locate the phrase, keeping the widget's cursor in
-    step with what sounds.
-
-    The two are tied by one number: `playhead_at`, the sample-clock value score
-    time 0 maps to. Set it when a pass starts and the host sweeps the cursor on
-    its own, reading the clock every frame -- so playing costs one message, not
-    one per frame. A stopped transport is the other case: `playhead_at` goes
-    negative and the static `playhead` holds the cursor where the music was left,
-    which is what makes pause look like pause.
-    """
-
-    def __init__(self, gui, server, clock, sample_rate):
-        self.gui, self.server, self.clock = gui, server, clock
-        self.rate = sample_rate
-        self.playhead = None
-        self.at = 0.0            # beat the cursor waits at while stopped
-
-    def play(self, notes, at=None):
-        """Play from beat ``at`` (where the cursor is, by default). Every pass
-        builds its timeline afresh, so an edit made meanwhile is simply played."""
-        at = self.at if at is None else float(at)
-        self.stop_scan()
-        self.playhead = Playhead(phrase_timeline(notes), self.clock, self.server)
-        self.playhead.play(at=at)
-        self.at = at
-        # The events sound `latency` ahead of their play time, so the anchor is
-        # the clock now plus that same latency, minus where the music starts.
-        _, args = self.server.request("/clock", expect=("/clock.reply",))
-        now = float(args[0]) + self.server.latency * self.rate
-        self.gui.set(SCORE, playhead_at=now - at / TEMPO * self.rate)
-
-    def pause(self):
-        """Halt where we are: the cursor stays on the note the music stopped on,
-        and `play` resumes from there."""
-        if self.playhead is not None:
-            self.at = self.playhead.position()
-        self.stop_scan()
-        self.gui.set(SCORE, playhead_at=-1.0, playhead=self.at * 1000.0 / TEMPO)
-
-    def stop(self):
-        """Halt and go back to the top."""
-        self.stop_scan()
-        self.locate(0.0)
-
-    def locate(self, beat):
-        """Move the stopped cursor (and where the next `play` begins)."""
-        self.at = float(beat)
-        self.gui.set(SCORE, playhead_at=-1.0, playhead=self.at * 1000.0 / TEMPO)
-
-    def stop_scan(self):
-        if self.playhead is not None:
-            self.playhead.stop()
-            self.playhead = None
-
-    @property
-    def playing(self) -> bool:
-        return self.playhead is not None and self.playhead.playing
-
-
 def main():
     # `Score` rather than `engrave`: it keeps the document open, so the page the
     # window shows can be edited and re-engraved against it (a narrow page, so
@@ -196,23 +139,35 @@ def main():
         gui.define(1, scene(dl, sr))
 
         session.start()                     # the clock runs the routines
-        transport = Transport(gui, server, session.clock, sr)
-        transport.locate(0.0)               # the cursor waits at the top
-        print("press play -- click a note to hear it and to select it, drag one "
-              "up or down to transpose it, 'from note' plays from the selected "
-              "one, undo/redo walk the edits; close the window to stop")
 
         # Both round trips run off the same id: the widget reports the MEI id
         # under the cursor, and that id indexes this script's own engraving.
         by_id = {note["id"]: note for note in dl["notes"]}
         selected = None
 
-        def rewind():
-            """Back to the top -- without stopping, if it is playing."""
-            if transport.playing:
-                transport.play(dl["notes"], at=0.0)
-            else:
-                transport.locate(0.0)
+        def pass_from(at):
+            """One playback pass: the engraved notes on a fresh `Timeline`, played
+            from beat `at`. The transport calls this on every play, so a note
+            transposed meanwhile simply sounds at the pitch it now has."""
+            return Playhead(phrase_timeline(dl["notes"]), session.clock,
+                            server).play(at=at)
+
+        def phrase_end():
+            """Where the piece ends, in beats: the last note's onset plus its
+            length. The transport parks the cursor there when a pass runs out."""
+            last = dl["notes"][-1]
+            return (last["t"] + last["dur"]) / 1000.0
+
+        # The transport is the shared one (`clausters.gui.Transport`), the same
+        # object the multitrack editor drives its lanes with; `notation.transport`
+        # only fills in the page's unit -- a score cursor is placed in score
+        # milliseconds, not samples.
+        transport = notation.transport(gui, SCORE, source=pass_from, tempo=TEMPO,
+                                       sample_rate=sr, extent=phrase_end)
+        transport.locate(0.0)               # the cursor waits at the top
+        print("press play -- click a note to hear it and to select it, drag one "
+              "up or down to transpose it, 'from note' plays from the selected "
+              "one, undo/redo walk the edits; close the window to stop")
 
         def from_note():
             """Play from the selected note: the click round trip put its id in
@@ -220,7 +175,7 @@ def main():
             if selected not in by_id:
                 print("  no note selected: click one first")
                 return
-            transport.play(dl["notes"], at=by_id[selected]["t"] / 1000.0)
+            transport.play(server, at=by_id[selected]["t"] / 1000.0)
 
         def refresh_page():
             """Re-engrave the score and replace the drawn page in place, rebuilding
@@ -250,20 +205,20 @@ def main():
                 print("  nothing to redo")
 
         # The handlers read `dl` and `by_id` when they run, so an edit made
-        # meanwhile is simply played.
-        buttons = {PLAY: lambda: transport.play(dl["notes"]),
+        # meanwhile is simply played. `locate` doubles as rewind: playing, it
+        # starts a fresh pass from the top instead of merely moving the cursor.
+        buttons = {PLAY: lambda: transport.play(server),
                    PAUSE: transport.pause, STOP: transport.stop,
-                   REWIND: rewind, FROM_NOTE: from_note,
+                   REWIND: lambda: transport.locate(0.0), FROM_NOTE: from_note,
                    UNDO: undo, REDO: redo}
 
         while True:
+            # The pass ends by itself: the playhead reports its scan ran out and
+            # the transport parks the cursor at `phrase_end`, rather than letting
+            # it sweep off the page (rewind goes back to the top).
+            transport.update()
             msg = gui.poll(timeout=0.1)
             if msg is None:
-                # The pass is over: leave the cursor on the last note rather
-                # than sweeping off the page (rewind goes back to the top).
-                if transport.playing and transport.playhead.position() > (
-                        dl["notes"][-1]["t"] + dl["notes"][-1]["dur"]) / 1000.0:
-                    transport.pause()
                 continue
             addr, args = msg
             if addr == "/gui_closed":

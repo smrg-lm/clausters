@@ -27,6 +27,11 @@ There are three ways into the engraver: typed score text (ABC/PAE/MEI/MusicXML)
 handed to `engrave`/`Score`; `from_notes`/`from_timeline`, which turn the
 client's own `clausters.seq` data into MEI (the inverse direction, data->score);
 and `svg_to_display_list`, the adapter the first two both flow through.
+
+`score_view` and `transport` are the two helpers for putting a page on screen
+and *playing* it: the first wraps the display list in a scrollable view, the
+second hands back the shared `clausters.gui.transport.Transport` with the page's
+own unit filled in.
 """
 
 from __future__ import annotations
@@ -34,6 +39,7 @@ from __future__ import annotations
 import json
 
 from .. import _native
+from .transport import Transport
 
 # 32nd-note resolution: every duration snaps to an integer number of these, so
 # the encoder's barline splitting and tie decomposition are exact integer
@@ -414,3 +420,24 @@ def score_view(display_list: dict, *, scroll_id: int, score_id: int,
         axis="both" if zoom else "y", zoom=zoom,
         content_w=width, content_h=height,
     )
+
+
+def transport(host, score_id: int, *, source, tempo: float, sample_rate: float,
+              extent=None):
+    """A `clausters.gui.transport.Transport` driving a ``score`` widget's
+    playback cursor — play, pause, stop and locate, with the cursor following
+    the sound.
+
+    The same transport the timeline views use; what a page needs on top is only
+    its unit: a ``score`` widget places its static cursor in **score
+    milliseconds**, not samples, so this fills in that conversion (a beat is
+    ``1000 / tempo`` ms) and leaves the rest of the arguments as they are —
+    ``source(at)`` starts a pass at beat ``at`` and returns the playing
+    `clausters.seq.Playhead`, ``extent()`` gives the piece's length in beats.
+
+    The engraving is what makes both easy to write: `Score.display_list` hands
+    back the notes with their onsets and lengths, so the timeline a pass plays
+    and the end it stops at are read off the page itself."""
+    return Transport(host, score_id, source=source, tempo=tempo,
+                     sample_rate=sample_rate, extent=extent,
+                     to_units=lambda beats: beats * 1000.0 / float(tempo))

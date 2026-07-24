@@ -57,6 +57,7 @@ loaders:
       - clausters.gui.editor
       - clausters.gui.host
       - clausters.gui.notation
+      - clausters.gui.transport
 processors:
   - type: filter
     documented_only: true

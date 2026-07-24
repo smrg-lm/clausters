@@ -50,6 +50,27 @@ line* is anchored to the engine clock and moves with the audio; the *cursor*
 is where a stopped transport sits (where the next `play` starts). You never
 set either directly — the transport calls do.
 
+A pass also **ends by itself**. The playhead reports when its scan ran out, so
+one call per pass of a script's loop parks the cursor at the composition's end
+rather than letting the line sweep off past it:
+
+```python
+while editor.window is not None:
+    editor.transport.update()          # the piece ended: park the cursor
+    editor.poll()
+```
+
+The end it parks at is `editor.extent()`, read from the arrangement each time —
+drag a clip past the end and the piece is longer, so that is where it now stops.
+
+`editor.transport` is a `clausters.gui.Transport` (the [API
+reference](../api.md)), the shared machinery behind play/pause/stop/locate; the
+editor's own calls
+delegate to it. Every view that shows a playhead drives the same object — the
+multitrack's lanes, a piano-roll, an engraved page — because none of it is about
+what the view draws: it is one anchor number for the host to sweep from, plus
+the position the next play starts at.
+
 ## The rhythm: gesture → `poll()` → `play()`
 
 The window accumulates your gestures as events; nothing touches the

@@ -360,6 +360,17 @@ def test_a_locate_moves_the_transport_and_the_lanes_cursor():
         assert props["playhead_at"] == -1.0
 
 
+def test_the_transport_reads_the_composition_extent_on_each_use():
+    """The transport parks its cursor at the piece's end when a pass runs out, and
+    a clip dragged past the end makes the piece longer — so the end it parks at is
+    read from the arrangement each time, never snapshotted."""
+    ed = editor(quant=1.0)
+    tree = ed.draw()
+    lead = clips(lanes(tree)[1])[0]
+    ed.apply(*clip_event(lead["id"], 12 * BEAT, lead["dur"]))
+    assert ed.transport.extent() == ed.extent() > 12.0
+
+
 def test_stop_returns_to_the_top_and_pause_keeps_the_position():
     ed = editor()
     ed.open(_FakeHost())

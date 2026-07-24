@@ -159,6 +159,15 @@ into that window, applies the edit-backs onto the arrangement, and re-renders it
 the graphic is not a picture of the music, it *is* the music. Its user
 documentation is the composition chapter of the Python client's book.
 
+**Playing any of these views is one shared object**, not a per-view transport:
+`clausters.gui.Transport` drives a playhead over the material and the view's line
+together, and every view — a lane, a piano-roll, an engraved page — uses that one.
+What a view contributes is a single conversion (its cursor's unit: timeline
+samples for a lane, score milliseconds for a page); everything else is the same
+two numbers the host already understands. A port keeps that shape: the anchor
+arithmetic is small, but splitting it per view is how a client ends up with three
+transports that disagree about the end of a piece.
+
 ## The GUI host in the browser
 
 The GUI host (`clients/gui`) also compiles to **WebAssembly** and runs in a browser tab: the same widget protocol, layout, renderers and interaction as the desktop host, over a `<canvas>`. It renders through **WebGPU where the browser truly supports it and WebGL2 otherwise** (~99% browser reach), and it talks to an audio server over one of two legs: a **separate server over WebSocket** (start it with `--ws`, default port 57120), or the **in-page engine** — the audio server itself compiled to wasm, running inside an AudioWorklet on the same page (`GuiBridge.connect_page`; see the standalone quick start below). No server process is required in the second case.
