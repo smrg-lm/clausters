@@ -32,7 +32,7 @@ use clausters_core::window::Window;
 
 #[cfg(feature = "notation")]
 pub mod notation;
-mod ws;
+pub mod ws;
 
 /// The C ABI version of this surface. Bump on any incompatible change. v2 added
 /// the `clausters_ws_*` WebSocket client transport; v3 the `clausters_core_peaks_*`
