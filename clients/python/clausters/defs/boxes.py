@@ -259,8 +259,8 @@ def rec(a, b) -> Box:
 
 # ---- the escape hatch: Faust source fragments ----
 
-def faust(src: str, *eval_args, defs: str = "", ins: int = None,
-          outs: int = None) -> Box:
+def faust(src: str, *eval_args, defs: str = "", ins: int | None = None,
+          outs: int | None = None) -> Box:
     """A Faust **expression** compiled into a box — the door to the Faust
     libraries (``stdfaust.lib`` is imported for you). The resulting box is
     indistinguishable from a primitive: compose it, call it, do arithmetic
