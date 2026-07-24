@@ -50,6 +50,13 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_CARGO_FEATURES``   features for the embed library
                                  (default ``embed,realtime``).
 - ``CLAUSTERS_CARGO_PROFILE``    ``release`` (default) or ``debug``.
+- ``VEROVIO_PREFIX``             where ``third_party/build-verovio.sh`` installed
+                                 libverovio (default: ``~/.local``, then
+                                 ``/usr/local``).
+- ``CLAUSTERS_REQUIRE_VEROVIO``  if set, a missing libverovio is an error rather
+                                 than a warning. CI and the release set it: there
+                                 a silent skip ships a `score` widget that cannot
+                                 engrave, and nothing downstream fails.
 """
 
 import os
@@ -355,12 +362,22 @@ def stage_verovio() -> list[str]:
     library as ``_libs/verovio/``, it is found by `clausters.gui.notation`, which
     passes it to each toolkit explicitly — a toolkit that cannot find its SMuFL
     data engraves nothing.
+
+    Missing, this normally only warns: a checkout that has not built verovio yet
+    still gets a working package, minus the `score` widget. Set
+    ``CLAUSTERS_REQUIRE_VEROVIO=1`` to make it an error instead — CI and the
+    release do, because there the skip is invisible. A published wheel without
+    the engraver raises at *the user's* run time, and the notation tests skip
+    themselves rather than failing, so nothing downstream would report it.
     """
     prefix = _verovio_prefix()
     if prefix is None:
-        print("clausters: no libverovio found (looked in VEROVIO_PREFIX, "
-              "~/.local, /usr/local); skipping -- build it with "
-              "third_party/build-verovio.sh")
+        message = ("no libverovio found (looked in VEROVIO_PREFIX, ~/.local, "
+                   "/usr/local); build it with third_party/build-verovio.sh")
+        if os.environ.get("CLAUSTERS_REQUIRE_VEROVIO"):
+            raise SystemExit(f"clausters: {message}")
+        print(f"clausters: {message} -- skipping (the `score` widget will "
+              "not engrave)")
         return []
     name = _verovio_name()
     os.makedirs(LIBS_DIR, exist_ok=True)

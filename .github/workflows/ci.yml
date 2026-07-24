@@ -11,6 +11,11 @@
 # cache through the `.github/actions/libfaust` composite (a cache hit makes it
 # free, and no LLVM runtime has to be installed to consume it). Edit faust.pin
 # to upgrade the commit or LLVM version (either changes the cache key).
+#
+# libverovio works the same way (`.github/actions/verovio`, pinned by
+# third_party/verovio.pin) but is needed by the `python` job alone: nothing in
+# the Rust workspace links it -- the notation track is client-side, and the
+# library is staged into the Python package and bound with ctypes.
 
 name: CI
 
@@ -131,6 +136,14 @@ jobs:
     name: python client (pytest)
     needs: libfaust
     runs-on: ubuntu-latest
+    # Scoped to this job: it is the only one that stages the Python package, and
+    # nothing in the Rust workspace links verovio. The pinned commit lives in
+    # third_party/verovio.pin, read by the .github/actions/verovio composite.
+    env:
+      VEROVIO_PREFIX: /home/runner/.local
+      # A missing engraver must fail the staging step, not skip it: the notation
+      # tests would otherwise skip and the run would still come back green.
+      CLAUSTERS_REQUIRE_VEROVIO: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -143,6 +156,12 @@ jobs:
       - uses: ./.github/actions/libfaust
         with:
           prefix: ${{ env.FAUST_PREFIX }}
+      # libverovio, staged into the package by build_native too. Without it the
+      # notation tests skip themselves, so a `score` widget that cannot engrave
+      # would look exactly like a green run -- hence required, not optional.
+      - uses: ./.github/actions/verovio
+        with:
+          prefix: ${{ env.VEROVIO_PREFIX }}
       - name: System deps
         run: |
           sudo apt-get update

@@ -1,8 +1,8 @@
 # Pinned verovio for the vendored, reproducible build.
 #
-# Single source of truth for `third_party/build-verovio.sh` (and, in a later
-# phase, the CI composite). Shell-sourceable: KEY=VALUE, no spaces, no quoting
-# needed.
+# Single source of truth for `third_party/build-verovio.sh` and for the CI
+# composite `.github/actions/verovio`, which reads VEROVIO_SHA into its cache
+# key. Shell-sourceable: KEY=VALUE, no spaces, no quoting needed.
 
 # Where the pinned commit is fetched from. Upstream: unlike Faust, our pin
 # carries no patch of our own -- everything we need is already in the tree.

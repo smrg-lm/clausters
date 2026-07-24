@@ -23,6 +23,15 @@ env:
   # link libfaust and the wheel bundles it (+ its libLLVM). The pinned commit
   # and LLVM version live in third_party/faust.pin, read by the libfaust composite.
   FAUST_PREFIX: /home/runner/.local
+  # The engraver behind the `score` widget, bundled for the same reason: an
+  # installed wheel must engrave and edit notation with nothing else on the
+  # machine. Nothing links it (the client binds it with ctypes), but it has to
+  # exist here to be staged. Pinned in third_party/verovio.pin.
+  VEROVIO_PREFIX: /home/runner/.local
+  # Fail the wheel build if libverovio is missing rather than shipping a package
+  # whose `score` widget raises at run time. Publishing is one-way -- a silent
+  # skip here is a broken release on PyPI.
+  CLAUSTERS_REQUIRE_VEROVIO: "1"
 
 jobs:
   build:
@@ -42,6 +51,11 @@ jobs:
       - uses: ./.github/actions/libfaust
         with:
           prefix: ${{ env.FAUST_PREFIX }}
+      # libverovio, staged into the wheel the same way. Cheap on a cache hit and
+      # independent of the Rust build -- nothing in the workspace links it.
+      - uses: ./.github/actions/verovio
+        with:
+          prefix: ${{ env.VEROVIO_PREFIX }}
       - name: System deps
         run: |
           sudo apt-get update

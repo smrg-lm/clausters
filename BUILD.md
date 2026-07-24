@@ -157,6 +157,29 @@ against the system `libLLVM.so`; a full build from source takes ~10 min on 8
 cores. See [the design record](docs/decisions.md#faust-embedding-decisions-and-upstream-bugs)
 for why the distro package cannot be used.
 
+### libverovio (the notation engraver, Python-side only)
+
+The `score` widget engraves through **libverovio**, which the Python package
+bundles the same way it bundles libfaust: built from a pinned source into a
+prefix, then staged into `clausters/_libs/` by `build_native.py` and bound with
+`ctypes` at run time.
+
+```sh
+third_party/build-verovio.sh          # into ~/.local; needs only cmake, make, a C++20 compiler
+python clients/python/build_native.py # stages it (and everything else) into the package
+```
+
+Three things separate it from libfaust. **Nothing in the Rust workspace links
+it** — no feature flag, no `build.rs` probe — because the notation track is
+strictly client-side: the GUI host draws a display list and knows nothing about
+MEI. It needs no LLVM and no submodules; verovio vendors its dependencies
+in-tree. And it is **built from a `develop` commit rather than a release**,
+because the score editor is dead in 6.2.1 (a guard typo upstream fixed after
+it) — which is also why the published PyPI module is not an option.
+
+The full recipe, the importer trim and the upstream bug are in
+[`third_party/BUILD-VEROVIO.md`](third_party/BUILD-VEROVIO.md).
+
 ### PipeWire-native MIDI (`midi-jack`)
 
 The default `--midi` build opens an ALSA-seq port (routable with `aconnect`).
@@ -193,9 +216,13 @@ Docs. Steps:
 5. **Tag and push**: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag triggers
    `release.yml`, whose three jobs:
    - **build** — the self-contained wheel (client + embedded server + standalone
-     binary + bundled libfaust/libLLVM) and a server-binary tarball (Linux
-     x86_64); the tarball version comes from the tag, the wheel version from
-     `pyproject.toml` (hence step 2).
+     binary + bundled libfaust/libLLVM + libverovio) and a server-binary tarball
+     (Linux x86_64); the tarball version comes from the tag, the wheel version
+     from `pyproject.toml` (hence step 2). Both third-party libraries are
+     restored or built by their composite actions
+     (`.github/actions/{libfaust,verovio}`), and the job sets
+     `CLAUSTERS_REQUIRE_VEROVIO=1` so a missing engraver fails the build rather
+     than publishing a wheel whose `score` widget raises on the user's machine.
    - **publish-pypi** — publishes the wheel to PyPI via Trusted Publishing (OIDC,
      the `pypi` environment, no stored token).
    - **github-release** — creates the GitHub release with generated notes and
@@ -252,7 +279,9 @@ artifacts, each with the features its mode needs:
 The crate defaults (`synth, faust, realtime, midi, pipewire, rtprio`) carry
 **both def families**, live audio, ALSA-seq MIDI and RT scheduling into every
 artifact, and `libfaust` + `libLLVM` are bundled alongside (the ~50 MB noted
-above) so a FaustDef JIT-compiles on a clean install. `--features embed,realtime`
+above) so a FaustDef JIT-compiles on a clean install. `libverovio` and its SMuFL
+resource data ride along for the same reason — the `score` widget engraves and
+edits notation on that clean install, and the client keeps `dependencies = []`. `--features embed,realtime`
 *adds* to the defaults (only `--no-default-features` replaces them), so the embed
 cdylib keeps `faust`, `synth`, `midi`, … too.
 

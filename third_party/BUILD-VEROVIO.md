@@ -214,33 +214,38 @@ nothing about MEI; a future JS/wasm client reuses that same renderer against the
 same seam. So:
 
 - `cargo build` / `cargo test` need **none** of this. There is no feature flag
-  to set, no `build.rs` probing for a prefix, and CI does not build verovio.
+  to set and no `build.rs` probing for a prefix, so no Rust job in CI touches
+  verovio.
 - The Python client needs the **library**, built here and staged into its
   package by `build_native.py`. Nothing is installed into an interpreter.
 
-When the native producer lands, it will link the `--library` prefix from its own
-crate (**not** the GUI host — that would break the seam), and only then does a
-verovio prefix become a build dependency of anything in the workspace.
+CI builds it for exactly the two jobs that stage the package — the `python` job
+and the release — through `.github/actions/verovio`, the composite that mirrors
+the libfaust one (restore from cache, build from this pin on a miss). Both set
+`CLAUSTERS_REQUIRE_VEROVIO=1`, so a missing engraver fails the build instead of
+staging silently: the notation tests skip themselves when there is none, which
+would otherwise make a green run and a wheel whose `score` widget raises at the
+user's run time look identical.
 
-## Verified 2026-07-23 (this build)
+When the native producer lands, it will link this prefix from its own crate
+(**not** the GUI host — that would break the seam), and only then does a verovio
+prefix become a build dependency of anything in the workspace.
+
+## Verified 2026-07-24 (this build)
 
 verovio 6.3.0-dev (`46a4df525`, `develop` of 2026-07-10) on Ubuntu, cmake 4.2.3
-+ g++ 15.2.0. No submodules to fetch; no system package had to be installed for
-either target.
++ g++ 15.2.0. No submodules to fetch; no system package had to be installed.
 
-- **`--library`** into a temporary prefix: 298 objects, **4 min 32 s** on 12
-  cores. Produces `lib/libverovio.so` (21 MB), 311 headers flattened into
-  `include/verovio` (3.8 MB), `share/verovio` (12 MB) and a `verovio.pc`
-  reporting **6.3.0**. Confirmed the resource path is baked into the `.so` as
+- **The library** into a temporary prefix: 298 objects, **4 min 32 s** on 12
+  cores. Produces `lib/libverovio.so` (21 MB before the importer trim, 13 MB
+  after, 11 MB stripped as staged), 311 headers flattened into `include/verovio`
+  (3.8 MB), `share/verovio` (12 MB) and a `verovio.pc` reporting **6.3.0**.
+  Confirmed the resource path is baked into the `.so` as
   `<prefix>/share/verovio`.
-- **`--python`**, built by a uv-managed CPython 3.12 and installed into the
-  root `.venv` (Ubuntu's Python 3.14, no headers): produces
-  `verovio-6.3.0.dev102-cp310-abi3-linux_x86_64.whl` (8.6 MB), which replaces
-  the PyPI `verovio` 6.2.1 and imports cleanly on 3.14 — the stable ABI
-  carrying across four minor versions as intended.
+- **Bound with `ctypes` and staged into the package**, the engraver works with
+  no `verovio` module installed in the interpreter at all: the client's suite
+  runs **373 passed, 3 skipped** resolving the library out of `_libs/`.
 - **The editor works.** `drag` on a note returns `True` and a following `undo`
   returns `True` with `canRedo` set. On the 6.2.1 wheel the same session returns
   `False` for every `edit()`, `undo` included.
-- The Python client's suite is unaffected by the version move: **364 passed, 3
-  skipped**, same as on 6.2.1.
 - Also found: `undo`/`redo` on an empty stack segfault (see above).

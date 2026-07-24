@@ -1,0 +1,72 @@
+# Make libverovio available under a prefix, cheaply and shared.
+#
+# Restores it from the Actions cache; on a miss it builds it from source with
+# the vendored, reproducible recipe (third_party/build-verovio.sh, pinned by
+# third_party/verovio.pin). The same arrangement as the libfaust composite next
+# to it, and simpler: verovio vendors its dependencies in-tree and has no
+# submodules, so there is no second library to stage beside it and no runtime to
+# install on the consuming machine.
+#
+# Nothing in the Rust workspace links verovio -- the notation track keeps it
+# strictly client-side -- so unlike libfaust this is *not* needed to build or
+# test the server. It is needed wherever the Python package is staged:
+# build_native.py copies libverovio.so and its SMuFL resource data out of
+# <prefix> into the wheel, and the client binds the library with ctypes at run
+# time. Used by ci.yml (the `python` job, so the notation tests exercise a real
+# engraver instead of skipping) and by release.yml (so the published wheel
+# actually carries one).
+#
+# The cache key covers both real inputs: the pinned commit (third_party/
+# verovio.pin, the single source of truth, read here) and a hash of the recipe
+# itself (build-verovio.sh), because half of what the artifact *is* -- which
+# importers are compiled in -- lives in that script's flags, not in the pin.
+# Without the hash, trimming or restoring a format would leave the key
+# unchanged, the cache would hit, and CI would keep serving a library built
+# with the old flags; the symptom would surface much later, as a test that
+# fails only in CI. So there is nothing to keep in sync in the callers: edit
+# either file and the key moves on its own. The `-vN` suffix is only for what
+# cannot be hashed -- a change in the staged layout (the `path:` list below).
+name: Set up libverovio
+description: Restore, or build and cache, libverovio with its headers and SMuFL resource data.
+
+inputs:
+  prefix:
+    description: Install prefix; libverovio lands in <prefix>/lib, its resource data in <prefix>/share/verovio.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Read the verovio pin
+      shell: bash
+      run: |
+        set -euo pipefail
+        . "$GITHUB_WORKSPACE/third_party/verovio.pin"
+        echo "VEROVIO_SHA=$VEROVIO_SHA" >> "$GITHUB_ENV"
+
+    - name: Restore the libverovio install
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: |
+          ${{ inputs.prefix }}/lib/libverovio*
+          ${{ inputs.prefix }}/lib/pkgconfig/verovio.pc
+          ${{ inputs.prefix }}/include/verovio
+          ${{ inputs.prefix }}/share/verovio
+        key: verovio-${{ env.VEROVIO_SHA }}-${{ hashFiles('third_party/build-verovio.sh') }}-${{ runner.os }}-v1
+
+    - name: Build libverovio from source (vendored recipe)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The whole requirement list: cmake, make and a C++20 compiler. No LLVM,
+        # no zlib, no SWIG -- verovio vendors its dependencies in-tree.
+        sudo apt-get update
+        sudo apt-get install -y cmake make g++
+        # One recipe, shared with local dev and release: fetch the pin, build the
+        # shared library, install into the prefix (which is where the resource
+        # path is baked in from -- see build-verovio.sh). A throwaway source tree
+        # keeps the repo checkout clean.
+        VEROVIO_PREFIX="${{ inputs.prefix }}" VEROVIO_SRC="$RUNNER_TEMP/verovio-src" \
+          "$GITHUB_WORKSPACE/third_party/build-verovio.sh"
