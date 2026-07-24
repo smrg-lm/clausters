@@ -720,7 +720,18 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     paper. The clicked element is highlighted; ``selected`` sets or clears that
     highlight from the script (``GuiHost.set(score_id, selected="")`` clears
     it). Since the id is the client's own, a driver resolves it straight back to
-    the note in its score — the seam an editing pass builds on.
+    the note in its score — the seam the editing round trip is built on.
+
+    **Editing** is a drag on an element: it moves the element up or down the
+    staff in whole diatonic steps, drawn as it goes, and the release emits
+    ``"transpose" <xml:id> <steps>``. The host owns no score, so that event is a
+    request, not a result — the driver applies it
+    (`clausters.gui.notation.Score.transpose` takes exactly those two arguments)
+    and sends the re-engraved page back with
+    ``GuiHost.set(score_id, display_list=notation.page_json(dl))``, which
+    replaces the drawing in place. The displacement stays drawn until that page
+    arrives, so the note never flicks back to its old pitch; the playhead and
+    the selection survive it, so the edited note stays selected.
 
     The **playback cursor** rides the display list's ``cursors`` track (the
     engraved timemap: musical time in ms to the placed x of the event sounding
@@ -741,7 +752,8 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,
                        sample_rate=sample_rate, selected=selected,
                        vb=dl.get("vb"), glyphs=dl.get("glyphs"),
-                       prims=dl.get("prims"), cursors=dl.get("cursors"))
+                       prims=dl.get("prims"), cursors=dl.get("cursors"),
+                       step=dl.get("step"))
     return node("score", id=id, **extra, **props)
 
 

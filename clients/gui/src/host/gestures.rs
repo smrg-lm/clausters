@@ -316,6 +316,20 @@ enum Drag {
         x0: f64,
         y0: f64,
     },
+    /// Dragging an engraved element up or down a `score`: the vertical
+    /// displacement quantizes to whole **diatonic steps** (the page's `step`),
+    /// which the widget draws as it moves and the release emits as a
+    /// `"transpose"` edit-back. `rect` is the page's laid-out area at press time
+    /// (the page→screen fit, which cannot change under a drag) and `origin_y`
+    /// the press, so the count is absolute from the snapshot rather than
+    /// accumulated.
+    ScoreStep {
+        id: i32,
+        element: String,
+        rect: Rect,
+        origin_y: f64,
+        steps: i32,
+    },
     /// Selecting text in an editable `text` field: `anchor` is the caret byte
     /// offset the press landed on; dragging extends the selection from it to the
     /// caret under the cursor. `rect`/`scale` reconstruct the field's layout so
@@ -717,6 +731,18 @@ impl Gestures {
                     });
                     out.push(GestureEffect::Redraw(def_id));
                 }
+                // ...and holding it drags the element's pitch. A press that
+                // does not move stays a plain selection: the release emits
+                // nothing more.
+                if let Some(element) = picked {
+                    self.drag = Some(Drag::ScoreStep {
+                        id,
+                        element,
+                        rect,
+                        origin_y: cy,
+                        steps: 0,
+                    });
+                }
             }
             WidgetKind::PianoRoll { .. } => {
                 let Some(h) = interact::pianoroll_hit(host, def_id, ctx.fb_w, ctx.fb_h, cx, cy)
@@ -955,6 +981,26 @@ impl Gestures {
                     piano_note(host, &mut out, def_id, id, p, vel, 1, channel);
                     if let Some(Drag::PianoKey { pitch, .. }) = self.drag.as_mut() {
                         *pitch = p;
+                    }
+                    out.push(GestureEffect::Redraw(def_id));
+                }
+            }
+            Drag::ScoreStep {
+                id,
+                ref element,
+                rect,
+                origin_y,
+                steps,
+            } => {
+                // Absolute from the press, quantized to whole steps: the page
+                // is redrawn only when the drag crosses one, so the pixels
+                // between two pitches cost nothing.
+                let Some(n) = score_steps(host, def_id, id, rect, cy - origin_y) else {
+                    return out;
+                };
+                if n != steps && interact::score_drag(host, def_id, id, element, n) {
+                    if let Some(Drag::ScoreStep { steps, .. }) = self.drag.as_mut() {
+                        *steps = n;
                     }
                     out.push(GestureEffect::Redraw(def_id));
                 }
@@ -1308,6 +1354,19 @@ impl Gestures {
             Some(Drag::Marquee { .. }) => {
                 // The selection followed the rectangle live; the release just
                 // drops the marquee chrome.
+                out.push(GestureEffect::Redraw(def_id));
+            }
+            Some(Drag::ScoreStep { id, element, .. }) => {
+                // The element was displaced live; the release asks the client
+                // to make it true — the host holds no score, so the pitch edit
+                // is the driver's to apply and re-engrave (the clip pattern).
+                if let Some(steps) = interact::score_drag_end(host, def_id, id) {
+                    out.push(GestureEffect::Emit {
+                        def_id,
+                        widget_id: id,
+                        args: interact::score_transpose_args(&element, steps),
+                    });
+                }
                 out.push(GestureEffect::Redraw(def_id));
             }
             _ => {}
@@ -2099,6 +2158,15 @@ fn note_at(host: &Host, def_id: i32, id: i32, index: usize) -> Option<(f64, f64)
     }
 }
 
+/// The diatonic steps a vertical drag of `dy` pixels means on score `id`, whose
+/// page is fitted into `rect`.
+fn score_steps(host: &Host, def_id: i32, id: i32, rect: Rect, dy: f64) -> Option<i32> {
+    match &host.window_def(def_id)?.find(id)?.kind {
+        WidgetKind::Score(data) => Some(data.steps_for(rect, dy as f32)),
+        _ => None,
+    }
+}
+
 /// Whether clip `id` carries a break-point curve (an automation clip).
 fn clip_has_curve(host: &Host, def_id: i32, id: i32) -> bool {
     host.window_def(def_id)
@@ -2428,7 +2496,7 @@ fn zoom_timeline(
 mod tests {
     use clausters_core::osc::{OscMessage, OscPacket};
 
-    use super::super::{ClientId, GUI_DEF};
+    use super::super::{ClientId, GUI_DEF, GUI_SET};
     use super::*;
 
     fn from() -> ClientId {
@@ -2448,6 +2516,21 @@ mod tests {
             from(),
         );
         host
+    }
+
+    /// A live `/gui_set` of one string-valued prop, as a script would send it.
+    fn set_prop(host: &mut Host, id: i32, key: &str, value: &str) {
+        host.handle_packet(
+            OscPacket::Message(OscMessage {
+                addr: GUI_SET.into(),
+                args: vec![
+                    OscType::Int(id),
+                    OscType::String(key.into()),
+                    OscType::String(value.into()),
+                ],
+            }),
+            from(),
+        );
     }
 
     fn has_emit_tag(effects: &[GestureEffect], id: i32, tag: &str) -> bool {
@@ -2899,6 +2982,67 @@ mod tests {
         let cleared = g.press(&mut host, &ctx, 106.0, 386.0, &mut || false);
         assert_eq!(element_emits(&cleared), vec![String::new()]);
         assert_eq!(score_selected(&host), None);
+    }
+
+    fn score_drag_preview(host: &Host) -> Option<(String, i32)> {
+        match &host.window_def(1).unwrap().find(80).unwrap().kind {
+            WidgetKind::Score(data) => data.drag.as_ref().map(|d| (d.id.clone(), d.steps)),
+            other => panic!("not a score: {other:?}"),
+        }
+    }
+
+    fn transpose_emits(effects: &[GestureEffect]) -> Vec<(String, i32)> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                GestureEffect::Emit { args, .. }
+                    if args.first() == Some(&OscType::String("transpose".into())) =>
+                {
+                    match &args[1..] {
+                        [OscType::String(s), OscType::Int(n)] => Some((s.clone(), *n)),
+                        _ => panic!("malformed transpose payload: {args:?}"),
+                    }
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn dragging_a_note_up_the_staff_transposes_it_in_diatonic_steps() {
+        let mut host = score_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 1012, 412);
+        // grab the notehead at page (500, 200); the page is fitted 1:1, so a
+        // diatonic step is the default 90 page units = 90 px
+        g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+        // short of a step the page does not move
+        g.drag_to(&mut host, &ctx, 556.0, 156.0);
+        assert_eq!(score_drag_preview(&host), None);
+        // two steps up: drawn displaced while the drag lasts
+        g.drag_to(&mut host, &ctx, 556.0, 16.0);
+        assert_eq!(score_drag_preview(&host), Some(("n1".into(), 2)));
+        // the release asks the client for the edit, in steps
+        let effects = g.release(&mut host, &ctx, 556.0, 16.0);
+        assert_eq!(transpose_emits(&effects), vec![("n1".to_string(), 2)]);
+        // and the displacement stands until the re-engraved page arrives
+        assert_eq!(score_drag_preview(&host), Some(("n1".into(), 2)));
+        set_prop(&mut host, 80, "display_list", r#"{"vb":[1000,400]}"#);
+        assert_eq!(score_drag_preview(&host), None);
+    }
+
+    #[test]
+    fn a_press_that_does_not_move_the_note_stays_a_selection() {
+        let mut host = score_host();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 1012, 412);
+        g.press(&mut host, &ctx, 556.0, 196.0, &mut || false);
+        // wandering back and forth within one step is not an edit
+        g.drag_to(&mut host, &ctx, 556.0, 240.0);
+        let effects = g.release(&mut host, &ctx, 556.0, 240.0);
+        assert!(transpose_emits(&effects).is_empty(), "no step, no edit");
+        assert_eq!(score_drag_preview(&host), None);
+        assert_eq!(score_selected(&host).as_deref(), Some("n1"));
     }
 
     // --- piano ---

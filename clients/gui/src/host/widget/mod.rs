@@ -1375,6 +1375,19 @@ fn as_array_props(key: &str, v: &Value) -> serde_json::Map<String, Value> {
     std::iter::once((key.to_string(), value)).collect()
 }
 
+/// Coerce a `/gui_set` value that carries a whole **props object** (the score's
+/// `display_list`) into the map the widget's `parse` reads: an object as it
+/// stands, or a JSON string parsed into one — OSC carries no objects, so the
+/// wire form of a structural value is always a string. `None` for anything
+/// else, so a malformed set is refused rather than applied as an empty page.
+fn as_props(v: &Value) -> Option<serde_json::Map<String, Value>> {
+    match v {
+        Value::String(s) => serde_json::from_str(s).ok(),
+        Value::Object(o) => Some(o.clone()),
+        _ => None,
+    }
+}
+
 /// Parses a piano-roll clip's `notes`: a flat `[start, dur, pitch, …]` array
 /// (three numbers per note, the flat convention the `bpf` points use), each a
 /// [`super::track::Note`]. A short/absent/malformed array yields no notes (the

@@ -399,7 +399,20 @@ because only it knows the music; the host builds the **hit index** (one page-uni
 box per identified primitive, glyph shapes measured once per codepoint) when the
 list is parsed, because only it knows the geometry. A press picks the smallest
 box under it and reports the id, which is how a click on a notehead becomes an
-element the driver can resolve in its own score. Native `DeviceContext`
+element the driver can resolve in its own score.
+
+**Editing keeps that split intact.** Dragging an element vertically is a pitch
+edit, and the host expresses it in **diatonic steps** rather than a position: it
+quantizes the gesture with the page's own `step` (page units per step, sent with
+the display list because it follows the engraver's unit size), draws the element
+displaced, and on release emits `"transpose" <id> <steps>` — a request. The
+client applies it (`notation.Score`, which holds the verovio toolkit open),
+re-engraves and replaces the drawing with one `/gui_set display_list`; the
+widget's chrome and selection survive that, and MEI ids survive the edit, so the
+same id keeps naming the same note. The host still reads no notation: it counts
+steps of a quantum it was handed. The displacement it drew stands until the new
+page arrives — the host cannot re-engrave, so retiring it earlier would show the
+old pitch for a frame. Native `DeviceContext`
 rendering — feeding the same display list straight from verovio's C++ drawing
 backend, skipping SVG — is a proven-viable alternative producer behind that same
 seam; see [Decisions](decisions.md).
@@ -452,7 +465,7 @@ updates this table in the same change** (step 7 of the recipe below).
 | `track`, `clip` | `host/track.rs`; a clip's roll body reuses `host/pianoroll.rs`, its curve body `host/bpf.rs`; group navigation in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"` |
 | `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `piano` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/s_new`/`gate 0` per held key over the server leg |
-| `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py` over verovio); the cursor follows `playhead_at` on the engine clock; a click emits `"element"` |
+| `score` | `host/score.rs` (page fit, the path tessellation, the hit index, the cursor — pure); the outline fills go through `lyon` | a display list engraved **client-side** (`clausters/gui/notation.py` over verovio); the cursor follows `playhead_at` on the engine clock; a click emits `"element"`, a vertical drag `"transpose"` (diatonic steps), and `display_list` replaces the page after the client re-engraves |
 | `graph` | `host/graph.rs` | the GraphDef's members/buses/wires; rewiring emits `"wire"` |
 
 ### Adding a widget

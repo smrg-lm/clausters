@@ -242,6 +242,15 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   a los ~4 s el grupo frío vira a violeta en vivo, a los ~8 s el slider "a"
   vira a cian, y a los ~12 s el grupo se limpia (`theme=""`) y vuelve al
   naranja del host. Todo por `/gui_set`, sin redefinir la ventana.
+- **Partitura grabada y editable (GUI).** `examples/gui_score.py` abre una
+  ventana con la frase grabada por verovio; suena una vez y el cursor la sigue
+  → hacer clic en una nota la vuelve a sonar y la resalta; **arrastrarla hacia
+  arriba o abajo** la mueve por grados de la escala (se ve desplazarse mientras
+  se arrastra, encastrando en cada grado), y al soltar el script la transpone,
+  la re-graba, la manda de vuelta y **suena en la altura nueva** — la nota queda
+  seleccionada y la página no parpadea. Necesita un verovio con el editor vivo
+  (`third_party/BUILD-VEROVIO.md`); con el wheel publicado el arrastre se
+  dibuja pero el script avisa que la edición fue rechazada.
 - **Un archivo de tema recolorea el host entero.** Escribir un `tema.toml` con
   `accent = "#ff8c40"` y `text = "#f0e8dc"`, lanzar
   `clausters-gui --theme tema.toml` y abrir cualquier ejemplo GUI → sliders,

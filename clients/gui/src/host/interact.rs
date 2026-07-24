@@ -947,19 +947,8 @@ pub(crate) fn piano_note_args(pitch: i32, velocity: i32, state: i32, channel: i3
 /// Select an engraved element on a `score` by its MEI `xml:id` (`None` clears
 /// the selection). Returns `true` when the selection actually changed, so a
 /// re-click on the element already selected costs no repaint and no event.
-pub(crate) fn score_select(
-    host: &mut Host,
-    def_id: i32,
-    widget_id: i32,
-    id: Option<&str>,
-) -> bool {
-    let Some(w) = host
-        .window_def_mut(def_id)
-        .and_then(|t| t.find_mut(widget_id))
-    else {
-        return false;
-    };
-    let WidgetKind::Score(data) = &mut w.kind else {
+pub(crate) fn score_select(host: &mut Host, def_id: i32, widget_id: i32, id: Option<&str>) -> bool {
+    let Some(data) = score_data(host, def_id, widget_id) else {
         return false;
     };
     if data.selected.as_deref() == id {
@@ -976,6 +965,73 @@ pub(crate) fn score_element_args(id: Option<&str>) -> Vec<OscType> {
     vec![
         OscType::String("element".into()),
         OscType::String(id.unwrap_or_default().into()),
+    ]
+}
+
+/// Draw `element` displaced by `steps` diatonic steps — the pitch drag in
+/// flight. Returns whether the displacement changed, so the crossing of each
+/// step repaints and the pixels between them cost nothing.
+pub(crate) fn score_drag(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+    element: &str,
+    steps: i32,
+) -> bool {
+    let Some(data) = score_data(host, def_id, widget_id) else {
+        return false;
+    };
+    let drag = super::score::ScoreDrag {
+        id: element.to_string(),
+        steps,
+    };
+    if data.drag.as_ref() == Some(&drag) {
+        return false;
+    }
+    data.drag = Some(drag);
+    true
+}
+
+/// End a pitch drag, returning the steps to report when it moved the element.
+///
+/// A drag that ended where it started retires here — there is nothing to ask
+/// the client for. One that moved **keeps its displacement drawn**: the host
+/// owns no notation, so it cannot re-engrave the page itself, and dropping the
+/// preview now would show the old pitch until the client's answer arrives. The
+/// page it sends back retires the preview (see the `display_list` prop).
+pub(crate) fn score_drag_end(host: &mut Host, def_id: i32, widget_id: i32) -> Option<i32> {
+    let data = score_data(host, def_id, widget_id)?;
+    let steps = data.drag.as_ref()?.steps;
+    if steps == 0 {
+        data.drag = None;
+        return None;
+    }
+    Some(steps)
+}
+
+/// The `score` widget `widget_id` in def `def_id`, if that is what it is — the
+/// one lookup the score's doors share.
+fn score_data(
+    host: &mut Host,
+    def_id: i32,
+    widget_id: i32,
+) -> Option<&mut super::score::ScoreData> {
+    match &mut host.window_def_mut(def_id)?.find_mut(widget_id)?.kind {
+        WidgetKind::Score(data) => Some(data),
+        _ => None,
+    }
+}
+
+/// A score pitch edit's payload — `"transpose" <xml:id> <steps>`, the element
+/// moved that many **diatonic** steps up the staff (negative = down). Steps,
+/// not a position: the client transposes by steps
+/// (`clausters.gui.notation.Score.transpose`), and a step is exact where a
+/// page coordinate would need the engraver's frame.
+pub(crate) fn score_transpose_args(id: &str, steps: i32) -> Vec<OscType> {
+    vec![
+        OscType::String("transpose".into()),
+        OscType::String(id.into()),
+        OscType::Int(steps),
     ]
 }
 

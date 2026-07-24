@@ -4,6 +4,8 @@
 it; the `guidef.score` builder is pure and always runs.
 """
 
+import json
+
 import pytest
 
 from clausters.gui import notation, score
@@ -37,6 +39,29 @@ def test_score_sends_the_drawing_layers_but_not_the_notes():
                                    "notes": [{"t": 0, "dur": 1, "pitch": 60, "id": "n"}]})
     assert node["cursors"][0]["x"] == 1
     assert "notes" not in node
+
+
+def test_score_sends_the_pitch_quantum_the_page_was_engraved_with():
+    pytest.importorskip("verovio")
+    dl = notation.engrave(PHRASE)
+    # half the staff-line spacing: a line-to-space move is one diatonic step
+    assert dl["step"] == 90.0
+    assert score(11, display_list=dl)["step"] == 90.0
+    # it follows verovio's `unit`, not the staff scale — which is why the host
+    # is told rather than left to assume it
+    assert notation.engrave(PHRASE, scale=100)["step"] == 90.0
+    assert notation.engrave(PHRASE, options={"unit": 6})["step"] == 60.0
+
+
+def test_the_page_json_carries_the_drawing_layers_only():
+    pytest.importorskip("verovio")
+    dl = notation.engrave(PHRASE)
+    page = json.loads(notation.page_json(dl))
+    assert sorted(page) == ["cursors", "glyphs", "prims", "step", "vb"]
+    # what the builder sends when it defines the widget, so a re-engraved page
+    # replaces it exactly
+    built = score(11, display_list=dl)
+    assert all(built[k] == page[k] for k in page)
 
 
 def test_score_view_pans_both_axes_only_when_it_can_zoom():

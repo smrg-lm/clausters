@@ -30,6 +30,9 @@ _LINE = re.compile(rf"^M\s*({_NUM})\s+({_NUM})\s+L\s*({_NUM})\s+({_NUM})\s*$")
 
 
 _KEY_UP, _KEY_DOWN = 38, 40  # verovio's keyDown codes (vrvdef.h)
+# The display-list keys the host draws from — everything but `notes`, which is
+# the client's own layer. `page_json` and `guidef.score` send exactly these.
+_PAGE_LAYERS = ("vb", "glyphs", "prims", "cursors", "step")
 _UNDO_LIMIT = 64  # snapshots kept; an MEI page is small, but not free
 
 
@@ -178,8 +181,9 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     The result holds one engraving, in three layers:
 
     - what the host **draws** — ``vb`` (the ``[w, h]`` page-unit viewBox),
-      ``glyphs`` (a SMuFL codepoint-to-outline table) and ``prims`` (the placed
-      glyphs, lines, fills and texts);
+      ``glyphs`` (a SMuFL codepoint-to-outline table), ``prims`` (the placed
+      glyphs, lines, fills and texts) and ``step`` (page units per diatonic
+      step, the quantum a pitch drag on the page counts in);
     - where the **cursor** goes — ``cursors``, the timemap folded into geometry
       (``{"t", "x", "y0", "y1"}`` per onset, ``t`` in ms);
     - what **sounds** — ``notes``, one ``{"t", "dur", "pitch", "id"}`` per note
@@ -200,6 +204,21 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     """
     tk = _toolkit(data, scale=scale, page_width=page_width, options=options)
     return _display_list(tk, page)
+
+
+def page_json(display_list: dict) -> str:
+    """The **drawing** layers of ``display_list`` as the JSON string a live
+    ``GuiHost.set(score_id, display_list=…)`` takes — how a re-engraved page
+    replaces the one on screen after an edit, without redefining the window.
+
+    The same layers `clausters.gui.guidef.score` sends when it builds the
+    widget, so the widget looks the same either way: the client-side ``notes``
+    stay here, and so does the host's own chrome (the playhead and the
+    selection survive the replacement, which is what keeps the edited note
+    selected across the round trip).
+    """
+    return json.dumps({k: display_list[k] for k in _PAGE_LAYERS
+                       if k in display_list})
 
 
 def _display_list(tk, page: int) -> dict:
@@ -298,14 +317,37 @@ def _id_positions(prims):
     return id_x, id_y
 
 
+def _staff_line_ys(prims):
+    """The page-y of every staff line, ascending. A staff line is a wide
+    horizontal ``line`` prim — the one geometry that is the same on every
+    system, which makes it the ruler both the system clustering and the
+    diatonic step are measured against."""
+    return sorted({round(p["pts"][0][1], 1) for p in prims
+                   if p["k"] == "line" and len(p["pts"]) == 2
+                   and abs(p["pts"][0][1] - p["pts"][1][1]) < 1.0
+                   and abs(p["pts"][0][0] - p["pts"][1][0]) > 500.0})
+
+
+def _staff_step(prims) -> float:
+    """Page units per **diatonic step**: half the staff-line spacing, since one
+    step is a line-to-space move. It goes in the display list because it is what
+    turns a vertical drag on the page into a pitch — the host quantizes the
+    gesture with it, and it depends on verovio's ``unit`` option rather than on
+    the staff ``scale``, so it cannot be assumed. Measured from the drawing
+    itself (the median gap within a system) rather than read back from the
+    options, so any producer of a display list gets it right; falls back to
+    verovio's default when the page has no staff to measure."""
+    ys = _staff_line_ys(prims)
+    gaps = sorted(b - a for a, b in zip(ys, ys[1:]) if b - a < 500.0)
+    if not gaps:
+        return 90.0  # the default unit (9) times verovio's definition factor
+    return round(gaps[len(gaps) // 2] / 2.0, 3)
+
+
 def _staff_systems(prims):
     """Cluster the horizontal staff lines into systems, each a ``(y_top,
-    y_bottom)`` pair. Staff lines are wide horizontal ``line`` prims; a large
-    vertical gap between them starts a new system."""
-    ys = sorted({round(p["pts"][0][1], 1) for p in prims
-                 if p["k"] == "line" and len(p["pts"]) == 2
-                 and abs(p["pts"][0][1] - p["pts"][1][1]) < 1.0
-                 and abs(p["pts"][0][0] - p["pts"][1][0]) > 500.0})
+    y_bottom)`` pair. A large vertical gap between lines starts a new system."""
+    ys = _staff_line_ys(prims)
     if not ys:
         return []
     systems, group = [], [ys[0]]
@@ -370,7 +412,8 @@ def svg_to_display_list(svg: str) -> dict:
     glyphs: dict[str, str] = {}
     prims: list[dict] = []
     _walk(target, _IDENTITY, None, glyph_defs, glyphs, prims)
-    return {"vb": vb, "glyphs": glyphs, "prims": prims}
+    return {"vb": vb, "glyphs": glyphs, "prims": prims,
+            "step": _staff_step(prims)}
 
 
 # -- the SVG walk -----------------------------------------------------------

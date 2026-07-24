@@ -15,11 +15,13 @@ sample clock -- so the score follows the audio with **one message per pass**
 (``playhead_at``), the host reading the clock every frame from there, exactly
 as the timeline views do.
 
-The page is also **clickable**: every primitive carries the MEI ``xml:id`` it
-was engraved from, so a press reports the element under the cursor as an
-``"element"`` event and the host highlights it. Because that id is the client's
-own, this script looks the note up in its own engraving and sounds it -- the
-round trip an editing pass builds on.
+The page is also **clickable and editable**: every primitive carries the MEI
+``xml:id`` it was engraved from, so a press reports the element under the cursor
+as an ``"element"`` event and the host highlights it, and dragging one up or
+down the staff reports a ``"transpose"`` of that element by whole diatonic
+steps. Because the id is the client's own, this script resolves both against its
+own score: a click sounds the note, a drag transposes it, re-engraves the page
+and sends it back -- the whole edit round trip, with nothing shared but the id.
 
 Install the optional engraver::
 
@@ -31,8 +33,11 @@ Then, with the client importable (``pip install ./clients/python`` or
     python clients/python/examples/gui_score.py
 
 A window opens showing the engraved phrase; it sounds once through and the
-cursor follows it. Click a note to hear it again. Close the window to stop.
-Needs an audio device, a display and a GPU adapter.
+cursor follows it. Click a note to hear it again, or drag one up or down to
+transpose it. Close the window to stop. Needs an audio device, a display and a
+GPU adapter -- and, for the editing half, a verovio whose editor works (see
+``third_party/BUILD-VEROVIO.md``; on the published 6.2.1 wheel every edit is
+refused).
 """
 
 import sys
@@ -73,8 +78,11 @@ def phrase_timeline(notes: list) -> Timeline:
 
 
 def main():
-    # a narrow page so the phrase wraps into a few systems and the view scrolls
-    dl = notation.engrave(PHRASE, page_width=1100)
+    # `Score` rather than `engrave`: it keeps the document open, so the page the
+    # window shows can be edited and re-engraved against it (a narrow page, so
+    # the phrase wraps into a few systems and the view scrolls).
+    score = notation.Score(PHRASE, page_width=1100)
+    dl = score.display_list()
     print(f"engraved: {len(dl['glyphs'])} glyph outlines, "
           f"{len(dl['prims'])} primitives, {len(dl['cursors'])} cursor stops, "
           f"{len(dl['notes'])} notes, page {dl['vb']}")
@@ -96,11 +104,11 @@ def main():
         _, args = server.request("/clock", expect=("/clock.reply",))
         gui.set(11, playhead_at=float(args[0]) + server.latency * sr)
         print("the phrase plays and the cursor follows the engine clock; "
-              "click a note to hear it, close the window to stop")
+              "click a note to hear it, drag one up or down to transpose it, "
+              "close the window to stop")
 
-        # The click round trip: the widget reports the MEI id under the cursor,
-        # and that id indexes this script's own engraving -- so the clicked
-        # notehead sounds, with nothing shared but the id.
+        # Both round trips run off the same id: the widget reports the MEI id
+        # under the cursor, and that id indexes this script's own engraving.
         by_id = {note["id"]: note for note in dl["notes"]}
         while True:
             msg = gui.poll(timeout=0.1)
@@ -110,7 +118,9 @@ def main():
             if addr == "/gui_closed":
                 print("window closed")
                 break
-            if addr == "/gui_event" and len(args) >= 3 and args[1] == "element":
+            if addr != "/gui_event" or len(args) < 3:
+                continue
+            if args[1] == "element":
                 note = by_id.get(args[2])
                 if note is None:
                     print(f"  clicked {args[2] or '(blank paper)'}")
@@ -119,6 +129,26 @@ def main():
                       f"at {note['t']:.0f} ms")
                 play(Event(midinote=note["pitch"], dur=note["dur"] / 1000.0,
                            amp=0.15))
+            elif args[1] == "transpose":
+                # The edit round trip. The host drew the drag; this side makes
+                # it true -- transpose by those diatonic steps, re-engrave, and
+                # send the page back, which is what retires the preview. The
+                # ids survive the edit, so `by_id` keeps indexing the same
+                # notes (at their new pitches) and the note stays selected.
+                element, steps = args[2], int(args[3])
+                if not score.transpose(element, steps):
+                    print(f"  refused to transpose {element}: this verovio has "
+                          "no working editor")
+                    continue
+                dl = score.display_list()
+                gui.set(11, display_list=notation.page_json(dl))
+                by_id = {note["id"]: note for note in dl["notes"]}
+                note = by_id.get(element)
+                print(f"  transposed {element} by {steps:+d} steps"
+                      + (f" -> MIDI {note['pitch']}" if note else ""))
+                if note is not None:
+                    play(Event(midinote=note["pitch"],
+                               dur=note["dur"] / 1000.0, amp=0.15))
 
 
 if __name__ == "__main__":

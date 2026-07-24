@@ -98,6 +98,7 @@ The **edit-back payloads**:
 | `"range"` | `min max` (MIDI notes) | the `piano`'s visible range panned or zoomed |
 | `"clip"` | `offset dur` (timeline units) | a `clip` moved or resized |
 | `"element"` | `id` (a string: the MEI `xml:id`; empty = the selection was cleared) | a `score` page clicked — the engraved element under the cursor |
+| `"transpose"` | `id steps` (the MEI `xml:id`; whole diatonic steps, positive = up the staff) | a `score` element dragged up or down — a pitch edit *requested*, since the host holds no score |
 | `"wire"` | `src_box outlet dst_box inlet` (ports by name; a rate mismatch is refused at the gesture) | a `patch` cord drawn `outlet -> inlet` |
 | `"move"` | `index x y` (box index; canvas units) | a `patch` box dragged — one payload per moved box, so the driver owns the geometry |
 | `"locate"` | `position` (timeline units) | a lane's time ruler (or its empty space) clicked — the transport is being seeked there |
@@ -138,7 +139,7 @@ script actually names these. The catalog itself:
 | `track` | A multitrack **lane**, holding `clip` children on the window's shared time axis | `label`, `height`, `snap`, `ruler`, `tempo`, `sample_rate`, `playhead_at`, `playhead`, `link`, `theme` |
 | `clip` | A placed rectangle spanning `[offset, offset + dur]` — the graphic unit. Its bodies **layer**: a take, a piano-roll of events, and an automation curve over them | `offset`, `dur`, the take (`buffer`/`path`/`cache`/`data`/`blob`), `notes`, `points` (+ `points_min`/`points_max`, the curve's own value axis), `min`, `max`, `label` |
 | `patch` | A **directed, typed patcher**, drawing both levels: boxes with **inlets on top, outlets on the bottom**, a **cord** per `outlet -> inlet` connection, **coloured by rate** — contrasting primaries at one width — audio (`ar`) red, control (`kr`) blue, init (`ir`) yellow and dashed — colour carries the rate. At **level 1** (a `GraphDef`) a cord *is* a server bus (not drawn — the client names it); at **level 2** (a `SynthDef`/`FaustDef`) a cord is an internal UGen wire. A **canvas**: a box with `x`/`y` places freely; a box **without** `x`/`y` takes its slot in the host's **layered (Sugiyama-style) auto-layout** (ranked by longest path to a sink, so inputs sit above their use and sinks at the bottom). Boxes drag (`"move"` flows back), a click or a marquee on empty canvas selects, and inside a `scroll` workspace the whole patch pans and zooms; the labelled panel frames whatever boxes it holds | `boxes` (each `{def, inlets, outlets[, x, y, role]}`; a port is a bare name (audio) or `{name, rate}` with `rate` `"control"`/`"init"`; `role` `"source"`/`"const"` only tags a box for drawing — a `const` value box gets a distinct fill — the layout ranks every box by its cords), `cords` (a flat `[from_box, outlet, to_box, inlet, ...]` list, indices within each box's inlet/outlet lists), `label` |
-| `score` | An **engraved music-notation page**. The client engraves a score and sends a *display list* — a glyph-outline table keyed by SMuFL codepoint plus placed glyphs, staff lines, stems, beams, slurs and text in page units — which the host fits into the widget and tessellates into the same triangle mesh as the rest of the chrome. Every primitive carries the MEI `xml:id` it was engraved from, so a click names an element (`"element"`) and the page shows a playback cursor over its own timemap | `vb` (the `[width, height]` page-unit viewBox), `glyphs` (hex SMuFL codepoint → outline path `d`), `prims` (the placed primitives, each with its `id`), `cursors` (the cursor track: `t` in ms → `x`, `y0`, `y1`), `playhead`, `playhead_at`, `sample_rate`, `selected` |
+| `score` | An **engraved music-notation page**. The client engraves a score and sends a *display list* — a glyph-outline table keyed by SMuFL codepoint plus placed glyphs, staff lines, stems, beams, slurs and text in page units — which the host fits into the widget and tessellates into the same triangle mesh as the rest of the chrome. Every primitive carries the MEI `xml:id` it was engraved from, so a click names an element (`"element"`), a drag transposes it (`"transpose"`) and the page shows a playback cursor over its own timemap | `vb` (the `[width, height]` page-unit viewBox), `glyphs` (hex SMuFL codepoint → outline path `d`), `prims` (the placed primitives, each with its `id`), `cursors` (the cursor track: `t` in ms → `x`, `y0`, `y1`), `step` (page units per diatonic step), `display_list` (the whole drawing replaced live, as a JSON string), `playhead`, `playhead_at`, `sample_rate`, `selected` |
 | `canvas` | A script-supplied WGSL shader over the widget area | `shader`, `params`, `buses` |
 
 **Theme groups and the `color` prop.** The host draws every chrome color from one theme — a table of named roles, loaded from `[gui.theme]` or `--theme` (see the configuration chapter) — and the wire customizes it with the same partial table, recursively. A **container** (`window`, `panel`, `scroll`, `track`) may carry a `theme` prop: a JSON object of `"role": "#rrggbb[aa]"` entries overlaying its parent's theme for its whole subtree — a **theme group**, a style scoped to the function of a set of widgets (the transport bar dimmed, the recording strip warm) rather than to any individual part. Groups nest: an inner table overlays the *inherited* one. The leaf case is the single `color` prop on **any** widget — one hex that re-seeds just the roles carrying that widget's function: the accent family (a slider's handle and fill, a button face, a meter's bar), the trace, the first color of the multichannel series cycle, a clip's body. Both are live via `/gui_set` (`theme` rides as its JSON string; an empty value clears), and a `theme` on a GuiDef root persists with the named def, so a standalone bundle ships its look with zero host configuration. Overlays resolve when a def arrives or a set changes them — each widget ends up holding one resolved theme — so the per-frame path pays nothing; there are no selectors and no per-part rules, deliberately.
@@ -191,3 +192,21 @@ highlighted, and `selected` sets or clears that highlight from the script.
 Because the id is the *client's* own (it engraved it), a driver resolves it
 straight back to the note in its own score: nothing but the string crosses the
 wire.
+
+**Editing a page is a request, not a result.** Dragging an element up or down
+the staff emits `"transpose" <id> <steps>` on release — whole **diatonic steps**,
+counted through the page's own `step` (page units per step, which the engraver
+sends because it depends on its unit size, not on the staff scale). Steps rather
+than a coordinate: the client's editor moves a note by steps, and a step is
+exact where a page position would have to be read back through the engraver's
+frame. The host owns no notation, so it cannot apply the edit; the driver does,
+re-engraves, and replaces the drawing with a single
+`/gui_set <id> display_list <json>` — the drawing layers only (`vb`, `glyphs`,
+`prims`, `cursors`, `step`), the same ones the widget was defined with.
+
+The host draws the drag as it happens, displacing the element by whole steps,
+and that displacement **stands after the release until the new page arrives** —
+the answer is one message away, and retiring it first would show the old pitch
+for a frame. Replacing the page keeps the widget's own chrome (`playhead`,
+`playhead_at`, `sample_rate`, `selected`), so the edited note stays selected
+across the round trip; MEI ids survive an edit, so it is still the same id.

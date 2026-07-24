@@ -266,6 +266,24 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             }
         },
         WidgetKind::Score(data) => match key {
+            // Replace the engraved page in place — the answer to an edit, and
+            // the reason a score does not have to be redefined to change. Only
+            // the drawing travels: the chrome (playhead, selection) is the
+            // host's own state and survives, so the note the user is editing
+            // stays selected across the round trip. The drag preview is what
+            // this page *is* now, so it retires here.
+            "display_list" => match as_props(v) {
+                Some(props) => {
+                    let page = super::score::ScoreData::parse(&props);
+                    let keep = std::mem::replace(data, page);
+                    data.playhead = keep.playhead;
+                    data.playhead_at = keep.playhead_at;
+                    data.sample_rate = keep.sample_rate;
+                    data.selected = keep.selected;
+                    true
+                }
+                None => false,
+            },
             // Locate the static playback cursor; a negative time hides it.
             "playhead" => v.as_f64().map(|t| data.playhead = t as f32).is_some(),
             // Anchor score time 0 to a sample-clock value: the cursor then

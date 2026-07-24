@@ -196,6 +196,22 @@ pub struct Cursor {
     pub y1: f32,
 }
 
+/// The pitch drag in flight: the element being dragged and how many diatonic
+/// steps **up** the gesture has moved it so far (negative = down). The page is
+/// drawn with that element displaced, so the drag reads as notation while it
+/// happens; the release sends the steps to the client, which owns the score and
+/// answers with a re-engraved page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScoreDrag {
+    pub id: String,
+    pub steps: i32,
+}
+
+/// The default page units per diatonic step: verovio's default `unit` (9) times
+/// its definition factor (10). Used when a display list names no `step` — every
+/// display list `clausters.gui.notation` builds does.
+pub const STEP: f32 = 90.0;
+
 /// A fully engraved page ready to render: the definition viewBox (for fitting),
 /// the glyph-outline table (deduplicated by codepoint), and the placed
 /// primitives.
@@ -229,6 +245,16 @@ pub struct ScoreData {
     /// The selected element's MEI `xml:id`, drawn highlighted; `None` = nothing
     /// selected. Set by a click on the page and by `/gui_set selected`.
     pub selected: Option<String>,
+    /// Page units per **diatonic step** — half the staff-line spacing, the
+    /// quantum a pitch drag counts in. It comes from the client with the page
+    /// (it depends on verovio's `unit` option, not on the staff scale), so the
+    /// host quantizes exactly what the engraver drew.
+    pub step: f32,
+    /// The pitch drag in flight, drawn as a displacement of its element. It
+    /// stands after the release until the client sends the re-engraved page:
+    /// the answer is one message away, and snapping back first would show the
+    /// old pitch for a frame.
+    pub drag: Option<ScoreDrag>,
 }
 
 impl Default for ScoreData {
@@ -244,6 +270,8 @@ impl Default for ScoreData {
             sample_rate: 0.0,
             hits: Vec::new(),
             selected: None,
+            step: STEP,
+            drag: None,
         }
     }
 }
@@ -314,6 +342,12 @@ impl ScoreData {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
             .map(str::to_string);
+        data.step = props
+            .get("step")
+            .and_then(Value::as_f64)
+            .map(|s| s as f32)
+            .filter(|s| *s > 0.0)
+            .unwrap_or(STEP);
         data.index();
         data
     }
@@ -425,6 +459,32 @@ impl ScoreData {
         }
     }
 
+    /// How many **diatonic steps** a vertical drag of `dy` screen pixels
+    /// amounts to, with the page fitted into `rect`: dragging up (a negative
+    /// `dy`) is positive, and the result is whole steps — a pitch has no
+    /// in-between position, so the gesture quantizes rather than the client.
+    pub fn steps_for(&self, rect: Rect, dy: f32) -> i32 {
+        let px = self.step * self.fit(rect).sy;
+        if px <= 0.0 {
+            return 0;
+        }
+        (-dy / px).round() as i32
+    }
+
+    /// `fit`, shifted by the drag preview when `id` is the element being
+    /// dragged — the one place the displacement enters the drawing, so every
+    /// primitive of a note (notehead, stem, dots) travels with it.
+    fn prim_fit(&self, fit: Affine, id: Option<&str>) -> Affine {
+        match &self.drag {
+            // page y grows downward, so a step up is a negative offset
+            Some(d) if id == Some(d.id.as_str()) => Affine {
+                ty: fit.ty - fit.sy * d.steps as f32 * self.step,
+                ..fit
+            },
+            _ => fit,
+        }
+    }
+
     /// Tessellate the whole page into `mesh`, mapped into `rect` by [`fit`] and
     /// painted in `colors`: the engraving in the ink, the selected element
     /// highlighted under it, and the playback cursor over it at musical time
@@ -454,6 +514,8 @@ impl ScoreData {
         self.draw_selection(mesh, fit, colors.selection);
         let mut tess = FillTessellator::new();
         for prim in &self.prims {
+            // the page fit, displaced while this element is being dragged
+            let fit = self.prim_fit(fit, prim.id());
             match prim {
                 Prim::Line { pts, width, .. } => {
                     let w = (width * fit.sx).max(1.0);
@@ -509,6 +571,7 @@ impl ScoreData {
         let Some(sel) = self.selected.as_deref() else {
             return;
         };
+        let fit = self.prim_fit(fit, Some(sel));
         for h in self.hits.iter().filter(|h| h.id == sel) {
             // a hair of page-unit padding so a hairline stem still shows a band
             let b = h.bounds.grown(20.0).transformed(fit);
@@ -1176,7 +1239,10 @@ mod tests {
         assert_eq!(data.fit(rect).sx, 0.5);
         assert_eq!(data.hit(rect, 275.0, 95.0), Some("n1"));
         // the same screen point on the unscaled page is blank paper
-        assert_eq!(data.hit(Rect::new(0.0, 0.0, 1000.0, 400.0), 275.0, 95.0), None);
+        assert_eq!(
+            data.hit(Rect::new(0.0, 0.0, 1000.0, 400.0), 275.0, 95.0),
+            None
+        );
     }
 
     #[test]
@@ -1199,6 +1265,79 @@ mod tests {
             with.positions().count() > without.positions().count(),
             "the highlight should add geometry over the engraving"
         );
+    }
+
+    #[test]
+    fn a_vertical_drag_counts_whole_diatonic_steps() {
+        let data = indexed_page();
+        // fitted 1:1, so a step is the page's own 90 units
+        let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+        assert_eq!(data.step, STEP);
+        // up the staff is up in pitch, and the count rounds to whole steps
+        assert_eq!(data.steps_for(rect, -90.0), 1);
+        assert_eq!(data.steps_for(rect, -44.0), 0);
+        assert_eq!(data.steps_for(rect, -46.0), 1);
+        assert_eq!(data.steps_for(rect, 270.0), -3);
+        // half the scale halves the pixels a step takes
+        assert_eq!(data.steps_for(Rect::new(0.0, 0.0, 500.0, 200.0), -90.0), 2);
+    }
+
+    #[test]
+    fn a_dragged_element_is_drawn_displaced() {
+        let mut data = indexed_page();
+        let rect = Rect::new(0.0, 0.0, 1000.0, 400.0);
+        let fit = data.fit(rect);
+        // the note travels a step up; the staff line it sat on does not move
+        data.drag = Some(ScoreDrag {
+            id: "n1".into(),
+            steps: 1,
+        });
+        assert_eq!(data.prim_fit(fit, Some("n1")).ty, fit.ty - STEP);
+        assert_eq!(data.prim_fit(fit, Some("staff")).ty, fit.ty);
+        assert_eq!(data.prim_fit(fit, None).ty, fit.ty);
+        // and down again the other way
+        data.drag = Some(ScoreDrag {
+            id: "n1".into(),
+            steps: -2,
+        });
+        assert_eq!(data.prim_fit(fit, Some("n1")).ty, fit.ty + 2.0 * STEP);
+    }
+
+    #[test]
+    fn the_drag_moves_the_drawn_geometry_by_whole_steps() {
+        // one notehead alone on the page, so every triangle drawn is its own
+        let mut data = ScoreData {
+            vb_w: 1000.0,
+            vb_h: 400.0,
+            ..indexed_page()
+        };
+        data.prims.retain(|p| p.id() == Some("n1"));
+        let rect = Rect::new(0.0, 0.0, 1000.0, 400.0); // fitted 1:1
+        let top = |data: &ScoreData| {
+            let mut mesh = Mesh::new();
+            data.render(&mut mesh, rect, None, -1.0, INK);
+            mesh.positions().map(|p| p.1).fold(f32::MAX, f32::min)
+        };
+        let before = top(&data);
+        // down the staff, which on the page is down in y (and keeps the whole
+        // notehead inside the page, where the render clips)
+        data.drag = Some(ScoreDrag {
+            id: "n1".into(),
+            steps: -2,
+        });
+        assert!((top(&data) - (before + 2.0 * STEP)).abs() < 0.01);
+    }
+
+    #[test]
+    fn the_page_carries_its_own_step() {
+        // the step follows verovio's `unit`, not the staff scale, so the client
+        // sends it with the page; a nonsensical one falls back to the default.
+        let props: Map<String, Value> =
+            serde_json::from_str(r#"{"vb":[1000,400],"step":120}"#).unwrap();
+        assert_eq!(ScoreData::parse(&props).step, 120.0);
+        let props: Map<String, Value> =
+            serde_json::from_str(r#"{"vb":[1000,400],"step":0}"#).unwrap();
+        assert_eq!(ScoreData::parse(&props).step, STEP);
     }
 
     #[test]
