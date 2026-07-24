@@ -1602,10 +1602,17 @@ the native path is a drop-in replacement for the *producer alone*, never a rewri
 of the renderer. It buys three things the SVG walk cannot: no parsing round-trip,
 in-process incremental relayout, and direct **edit-back** (mutate a note, re-engrave
 in memory, no re-serialize). None of those pays off until the score view becomes
-interactive — the SVG walk delivers identical read-only geometry today for free —
-so the native `DeviceContext` is scheduled with the editing work, not before. The
-verovio clone under `third_party/` is kept only as the reference for that later
-build; nothing in the shipping path depends on it.
+interactive — and editing shipped on the SVG walk after all (G31d), which reloads
+and re-engraves rather than mutating in place. What actually pins the producer is
+**cross-client parity**: verovio's wasm build only emits SVG, so a native
+`DeviceContext` would leave a wasm client on a *different* producer that would have
+to agree with it bit-for-bit, whereas the SVG walk is one producer every client
+shares (native libverovio→SVG and verovio-wasm→SVG both feed the same walk). So
+the notation layer's move into `clausters-notation`/`core`/`ffi` (G31h) keeps the
+SVG walk, and the native `DeviceContext` becomes a **deferred, optional
+producer-swap** — decoupled from editing, not scheduled with it. The verovio clone
+under `third_party/` is kept as the reference for that later build and for the
+G31h libverovio binding; nothing in the shipping path depends on it.
 
 ## Score editing: verovio's editor is dead in the released wheel (upstream `#define` bug), so the producer decides the route
 
