@@ -20,11 +20,11 @@ core through artifacts built by cargo, not pip:
   is what keeps the two def families *equally* usable from an installed wheel.
   It is also what makes the wheel heavy (~55 MB packed): the Faust compiler is
   LLVM.
-- ``verovio``, the engraver behind the `score` widget, unpacked whole into
-  ``_libs/verovio/`` -> notation engraves and edits from an installed wheel with
-  nothing else present. Same bundling reason as libLLVM, plus a stronger one:
-  the *published* verovio cannot edit at all (see ``third_party/verovio.pin``),
-  so this copy is preferred over any installed one. ~4.8 MB packed.
+- ``libverovio`` and its SMuFL resource data, copied out of the prefix
+  ``third_party/build-verovio.sh`` installed into (they are ours to build, but
+  not ours to link) -> the `score` widget's notation engraves and edits from an
+  installed wheel with nothing else present, and the client keeps
+  ``dependencies = []``. Bound with ctypes at runtime, so nothing links it.
 
 This module builds them and copies the cdylibs into ``clausters/_libs/`` and the
 binaries into ``clausters/_bin/`` so they ship with the wheel (and are picked up
@@ -52,13 +52,11 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_CARGO_PROFILE``    ``release`` (default) or ``debug``.
 """
 
-import glob
 import os
 import platform
 import shutil
 import subprocess
 import sys
-import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PKG_DIR = os.path.join(HERE, "clausters")
@@ -322,52 +320,61 @@ def stage_faust_libs(profile: str) -> list[str]:
     return copied
 
 
-def _verovio_wheel() -> str | None:
-    """The verovio wheel our own recipe built, if it is there."""
-    workspace = find_workspace()
-    if workspace is None:
-        return None
-    dist = os.path.join(workspace, "third_party", "verovio", "dist-clausters")
-    wheels = sorted(glob.glob(os.path.join(dist, "verovio-*.whl")),
-                    key=os.path.getmtime, reverse=True)
-    return wheels[0] if wheels else None
+def _verovio_prefix() -> str | None:
+    """The prefix ``build-verovio.sh`` installed into: ``VEROVIO_PREFIX``, then
+    the same defaults ``build.rs`` uses for libfaust."""
+    candidates = [os.environ.get("VEROVIO_PREFIX"),
+                  os.path.expanduser("~/.local"), "/usr/local"]
+    for prefix in candidates:
+        if prefix and os.path.exists(os.path.join(prefix, "lib", _verovio_name())):
+            return prefix
+    return None
+
+
+def _verovio_name() -> str:
+    system = platform.system()
+    if system == "Darwin":
+        return "libverovio.dylib"
+    if system == "Windows":
+        return "verovio.dll"
+    return "libverovio.so"
 
 
 def stage_verovio() -> list[str]:
-    """Unpack the engraver into ``_libs/verovio/`` so notation ships with the
-    wheel.
+    """Copy libverovio and its SMuFL resource data into ``_libs/``.
 
-    Same reasoning as libLLVM next to it: a third-party artifact we do not build
-    into our own binaries, bundled so an installed wheel needs nothing else on
-    the machine. Here it matters more than convenience, because the *published*
-    verovio cannot do the job — 6.2.1's score editor is unreachable, so a client
-    resolving `import verovio` from PyPI would engrave pages and then silently
-    refuse every edit (`third_party/verovio.pin` has the diagnosis). Bundling our
-    pinned build is what makes the editing round trip work at all, and
-    `clausters.gui.notation` prefers this copy over anything installed.
+    Same arrangement as libfaust beside it — a third-party library we build from
+    a pinned source (``third_party/build-verovio.sh``) into a prefix, then bundle
+    so an installed wheel needs nothing else on the machine. The client binds it
+    with ctypes at runtime, so unlike libfaust nothing links it at build time;
+    that is also why there is no transitive closure to vendor (its only shared
+    dependencies are the C++/C runtime) and no run path to rewrite.
 
-    It is upstream's own Python package (an extension module plus its SMuFL
-    resource data), so it is staged whole rather than file by file, and its
-    ``__init__`` locates the data relative to wherever the package is found —
-    which is what lets it live here instead of in site-packages. Its only shared
-    dependencies are the C++/C runtime, so unlike libfaust there is no transitive
-    closure to vendor and no run path to rewrite.
+    The resource data comes along because verovio bakes its resource path in at
+    *configure* time, pointing at the prefix it was built for. Staged beside the
+    library as ``_libs/verovio/``, it is found by `clausters.gui.notation`, which
+    passes it to each toolkit explicitly — a toolkit that cannot find its SMuFL
+    data engraves nothing.
     """
-    wheel = _verovio_wheel()
-    if wheel is None:
-        print("clausters: no verovio wheel in third_party/verovio/dist-clausters/; "
-              "skipping (build it with third_party/build-verovio.sh --python)")
+    prefix = _verovio_prefix()
+    if prefix is None:
+        print("clausters: no libverovio found (looked in VEROVIO_PREFIX, "
+              "~/.local, /usr/local); skipping -- build it with "
+              "third_party/build-verovio.sh")
         return []
-    dst = os.path.join(LIBS_DIR, "verovio")
-    shutil.rmtree(dst, ignore_errors=True)
-    with zipfile.ZipFile(wheel) as zf:
-        members = [n for n in zf.namelist() if n.startswith("verovio/")
-                   and "__pycache__/" not in n]
-        zf.extractall(LIBS_DIR, members)
-    for name in os.listdir(dst):
-        if name.endswith(".so"):
-            _strip(os.path.join(dst, name))
-    return [f"verovio/ (from {os.path.basename(wheel)})"]
+    name = _verovio_name()
+    os.makedirs(LIBS_DIR, exist_ok=True)
+    dst = os.path.join(LIBS_DIR, name)
+    shutil.copy2(os.path.join(prefix, "lib", name), dst)
+    _strip(dst)
+    data_src = os.path.join(prefix, "share", "verovio")
+    staged = [name]
+    if os.path.isdir(data_src):
+        data_dst = os.path.join(LIBS_DIR, "verovio")
+        shutil.rmtree(data_dst, ignore_errors=True)
+        shutil.copytree(data_src, data_dst)
+        staged.append("verovio/ (SMuFL resources)")
+    return staged
 
 
 def _strip(path: str):

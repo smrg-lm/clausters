@@ -5,8 +5,8 @@ the notation track — from the source vendored in `third_party/verovio`, entire
 in user space (no sudo).
 
 This mirrors `BUILD-FAUST.md` next to it: same pin-plus-script arrangement, same
-prefix layout, same protections. What differs is *why* we build it at all, and
-that there are two artifacts rather than one.
+prefix layout, same protections, same one shared library staged into the Python
+wheel afterwards. What differs is *why* we build it at all.
 
 ## The vendored, reproducible build (`build-verovio.sh`)
 
@@ -23,8 +23,6 @@ two committed files:
 ```sh
 third_party/build-verovio.sh                    # libverovio into ~/.local
 third_party/build-verovio.sh --prefix /some/where
-third_party/build-verovio.sh --python           # the Python module instead
-third_party/build-verovio.sh --library --python # both
 ```
 
 It **protects an existing working clone** exactly as the Faust script does: if
@@ -34,10 +32,9 @@ move it — pass `VEROVIO_ALLOW_CHECKOUT=1` to check out the pin, or
 
 ## Why we build it at all: the released editor is dead
 
-The Python client engraves through the **published PyPI wheel**, and for
-*drawing* that wheel is fine. It is the **score editor** that is not: in verovio
-6.2.1, `Toolkit::SetViewAndEditor()` guards the construction of the editor
-toolkit with
+There is a published verovio, and for *drawing* it is fine. It is the **score
+editor** that is not: in verovio 6.2.1, `Toolkit::SetViewAndEditor()` guards the
+construction of the editor toolkit with
 
 ```cpp
 #if defined NO_HUMDRUM_SUPPORT     // ... where it meant #ifndef NO_EDIT_SUPPORT
@@ -53,9 +50,8 @@ not a `NO_EDIT_SUPPORT` build — it is the guard.
 Upstream inverted it in [`8100cb396`][fix] ("Invert #define fix", 2026-05-27),
 after 6.2.1. The pin is a `develop` commit past that fix — the source tree
 versions itself 6.3.0-dev — which is why the pin is a commit and not a release
-tag. **Repin to the 6.3.0 tag once it is released**: that is the point where the
-published wheel becomes usable again and this build stops being mandatory for
-the Python client. It stays required for the native producer.
+tag. **Repin to the 6.3.0 tag once it is released** — the pin moves, the recipe
+does not: we build the library either way, because that is what gets bundled.
 
 The rationale for choosing this route over the alternatives (waiting for 6.3, or
 mutating the MEI in Python and re-engraving) is in
@@ -70,11 +66,8 @@ list: verovio vendors its dependencies in-tree (pugixml, jsonxx, the MIDI and
 Humdrum sources, libmei) and has **no submodules**, so unlike the Faust build
 there is no LLVM, no zlib and nothing to pin a version of.
 
-The `--python` target also needs **SWIG** and the **Python development headers**.
-SWIG does not have to be installed — `pyproject.toml` lists it in
-`build-system.requires`, so pip pulls it from PyPI into the isolated build
-environment. The headers are the one thing a distro splits into a `-dev` package
-you would need sudo for, and the script routes around that; see below.
+Nothing else: there is no language-specific build here, so no SWIG and no
+Python development headers to hunt for.
 
 ## What the build carries (and what it leaves out)
 
@@ -85,7 +78,7 @@ the two compact hand-typed formats, **ABC** and **Plaine & Easie**. **Dropped:**
 Humdrum, GABC and DARMS.
 
 Only Humdrum is a size argument, and a real one: it vendors humlib, ~148k lines,
-and dropping it takes the built Python wheel from **8.2 MB to 5.2 MB**. The
+and dropping it takes `libverovio.so` from **21 MB to 13 MB**. The
 other two are noise — ABC and PAE measure about 10 KB apart — and are out
 because nothing reads them, not to save anything.
 
@@ -94,16 +87,9 @@ were *entangled* (the editor was guarded by Humdrum being off — the bug below)
 so this same trim would have revived it. Past the pin they are independent, so
 the build is small **and** editable with no coupling between the two.
 
-Both targets take the flags from one list in the script (`vrv_options`), the
-`--python` one via scikit-build-core's `SKBUILD_CMAKE_DEFINE`, so the library
-and the Python module can never drift apart in what they can read.
+The flags live in one list in the script (`vrv_options`).
 
-## The two targets
-
-They are separate compiles of the same sources, so asking for both costs two
-builds.
-
-### `--library` (the default) — `libverovio.so` + headers + resources
+## The artifact: `libverovio.so` + headers + resources
 
 ```sh
 cmake -S third_party/verovio/cmake -B <build> \
@@ -129,54 +115,64 @@ headers **flattened** into `<prefix>/include/verovio` (so the include is
 `<verovio/toolkit.h>`, not a nested path), and the SMuFL/CSS resource data in
 `<prefix>/share/verovio`. Like the Faust prefix, that makes it self-contained.
 
-This is the artifact a **native producer** links against — the C++
-`DeviceContext` implementation that would emit the display list directly instead
-of walking generated SVG. `Toolkit::RenderToDeviceContext` is public and
-`DeviceContext` is an abstract base of ~35 pure virtuals; see
-`docs/decisions.md` for the viability finding.
+`BUILD_AS_LIBRARY` also adds `tools/c_wrapper.cpp`, a flat C API over the
+toolkit (`vrvToolkit_loadData`, `_renderToSVG`, `_renderToTimemap`, `_getMEI`,
+`_edit`, `_editInfo`, …). That is the surface **every** consumer uses: the
+Python client binds it with `ctypes` (`clausters/gui/notation.py`), and a wasm
+build would expose the same functions.
 
-### `--python` — the `verovio` module
+It is also what a future **native producer** would link — a C++ `DeviceContext`
+emitting the display list directly instead of walking generated SVG.
+`Toolkit::RenderToDeviceContext` is public and `DeviceContext` is an abstract
+base of ~35 pure virtuals; see `docs/decisions.md` for the viability finding.
 
-pip drives the *same* cmake project through scikit-build-core (the root
-`pyproject.toml` sets `BUILD_AS_PYTHON`), which builds a static library plus the
-SWIG extension module. It installs into whatever interpreter `$PYTHON` is —
-**activate the virtualenv first**, or point `PYTHON` at it — and
-`--force-reinstall` is what makes it replace an already-installed PyPI wheel of
-the same version.
+### Why there is no Python-module target
 
-The script builds and installs in **two steps** rather than one
-`pip install <src>`, because the two can need different interpreters:
+verovio also ships a SWIG Python module, built from the same sources through
+scikit-build-core. We deliberately do **not** build it. It would be a second
+compile of the same code, a second copy of the engine and its 12 MB of SMuFL
+data in `site-packages`, and — worst — a distribution literally named `verovio`,
+which pip can replace at any moment with the published one, whose editor is dead
+(above). That is not hypothetical: it happened in this checkout, and the editing
+tests started failing for an upstream reason.
 
-```sh
-<builder> -m pip wheel --no-deps --wheel-dir <dir> third_party/verovio
-<target>  -m pip install --force-reinstall <dir>/verovio-*.whl
-```
+The library has none of that ambiguity. It is ours, it is bundled where we put
+it, and `clausters.gui.notation` loads it by path.
 
-Compiling needs the **development headers**, which a distro Python often ships
-in a separate `-dev` package. But the extension is built against the **stable
-ABI** (`Py_LIMITED_API` 3.10, so the wheel is tagged `cp310-abi3`), which means
-the wheel *any* CPython ≥ 3.10 builds is installable into *any* other. So when
-the interpreter you actually use has no headers, build with one that does:
+### The engraver in the Python wheel
 
-```sh
-uv python install 3.12
-PYTHON=.venv/bin/python VEROVIO_BUILD_PYTHON="$(uv python find 3.12)" \
-  third_party/build-verovio.sh --python
-```
+`clients/python/build_native.py` copies `libverovio.so` and
+`share/verovio` out of the prefix into `clausters/_libs/`, exactly as it already
+does for libfaust and its libLLVM, so an installed wheel engraves and edits with
+nothing else on the machine and the client keeps `dependencies = []`.
 
-That is not a corner case here: this repo's root `.venv` runs on Ubuntu's
-`/usr/bin/python3.14`, which has no headers installed, so the plain form fails
-in cmake's `FindPython`. The script checks for `Python.h` up front and prints
-exactly the two commands above instead of letting the build fail 200 lines deep.
+The resource data has to travel with the library: verovio bakes its resource
+path in at *configure* time (`RESOURCE_DIR`), pointing at the prefix it was
+built for, and a staged copy is somewhere else entirely. `notation` finds the
+data beside the library and passes it to each toolkit explicitly — a toolkit
+that cannot find its SMuFL data engraves nothing.
 
-The script's sanity check is the point of the whole exercise — it performs a
-real edit and confirms the toolkit accepted it:
+Resolution order is the one every native artifact here follows:
+`CLAUSTERS_VEROVIO` (a library file or a build prefix) → the bundled copy →
+a system-wide install.
+
+### Checking a build
+
+The sanity check is the point of the whole exercise — perform a real edit and
+confirm the toolkit accepted it. Through the C API, with no module installed:
 
 ```python
-tk.loadData("@clef:G-2\n@timesig:4/4\n@data:4CDEF/")
-note = re.search(r'<g id="([^"]+)" class="note"', tk.renderToSVG(1)).group(1)
-tk.edit({"action": "drag", "param": {"elementId": note, "x": 0, "y": 20}})
-# False on the published wheel (null editor), True on this build
+import ctypes, json, re
+lib = ctypes.CDLL("libverovio.so")
+lib.vrvToolkit_constructorResourcePath.restype = ctypes.c_void_p
+lib.vrvToolkit_renderToSVG.restype = ctypes.c_char_p   # or the pointer truncates
+tk = lib.vrvToolkit_constructorResourcePath(b"<prefix>/share/verovio")
+lib.vrvToolkit_loadData(ctypes.c_void_p(tk), b"@clef:G-2\n@timesig:4/4\n@data:4CDEF/")
+svg = lib.vrvToolkit_renderToSVG(ctypes.c_void_p(tk), 1, False).decode()
+note = re.search(r'<g id="([^"]+)" class="note"', svg).group(1)
+lib.vrvToolkit_edit(ctypes.c_void_p(tk), json.dumps(
+    {"action": "drag", "param": {"elementId": note, "x": 0, "y": 20}}).encode())
+# 0 with a null editor (the published build), 1 on this one
 ```
 
 ### `undo`/`redo` on an empty stack segfaults
@@ -185,8 +181,8 @@ Worth knowing before writing anything against the editor, and the reason the
 check above drags a note rather than doing the obvious thing:
 
 ```python
-tk = verovio.toolkit(); tk.loadData(...)
-tk.edit({"action": "undo"})     # SIGSEGV — reproducible, and so does "redo"
+# a loaded toolkit, then:
+lib.vrvToolkit_edit(tk, b'{"action": "undo"}')  # SIGSEGV — and so does "redo"
 ```
 
 On the *published* wheel that same call is the cleanest possible proof the
@@ -219,8 +215,8 @@ same seam. So:
 
 - `cargo build` / `cargo test` need **none** of this. There is no feature flag
   to set, no `build.rs` probing for a prefix, and CI does not build verovio.
-- The Python client needs the module — from PyPI for drawing, from
-  `--python` here for editing.
+- The Python client needs the **library**, built here and staged into its
+  package by `build_native.py`. Nothing is installed into an interpreter.
 
 When the native producer lands, it will link the `--library` prefix from its own
 crate (**not** the GUI host — that would break the seam), and only then does a

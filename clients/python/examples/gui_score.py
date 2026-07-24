@@ -2,8 +2,8 @@
 """Engraving music notation into the GUI host: the ``score`` widget.
 
 A read-only view like ``plot`` and the node tree, but of a **musical score**
-rather than a signal. The client engraves a score with verovio (an optional
-dependency) into a semantic display list -- a SMuFL glyph-outline table plus
+rather than a signal. The client engraves a score with verovio (bundled in the
+package) into a semantic display list -- a SMuFL glyph-outline table plus
 placed glyphs, staff lines, stems and beams in page units -- and the host
 tessellates it into the same triangle mesh the rest of the chrome uses. verovio
 lives entirely on the client side; the host never depends on it.
@@ -26,12 +26,12 @@ steps. Because the id is the client's own, this script resolves both against its
 own score: a click sounds the note, a drag transposes it, re-engraves the page
 and sends it back -- the whole edit round trip, with nothing shared but the id.
 
-The engraver is verovio, and this needs **our** build of it, not the published
-wheel: in 6.2.1 the score editor is unreachable and every edit is refused, so
-``pip install verovio`` would engrave the page and then silently decline to
-change it. Build the pinned one (``third_party/BUILD-VEROVIO.md``)::
+The engraver is **libverovio**, which ships inside the installed package -- like
+the Faust compiler, nothing to install separately. In a source checkout, build
+and stage it once (``third_party/BUILD-VEROVIO.md``)::
 
-    third_party/build-verovio.sh --python
+    third_party/build-verovio.sh
+    python clients/python/build_native.py
 
 Then, with the client importable (``pip install ./clients/python`` or
 ``PYTHONPATH=clients/python``)::

@@ -9,14 +9,16 @@ lines, stems, beams, slurs) in verovio page units, each carrying the MEI
 never in the host**, so any language client can reuse the same host renderer by
 sending the same display list.
 
-verovio **ships inside this package** (``clausters/_libs/verovio``), the way the
-Faust compiler and its LLVM do: an installed wheel engraves with nothing else on
-the machine, and the copy bundled here is preferred over any installed one. That
-is deliberate rather than merely tidy — the *published* verovio's score editor is
-unreachable (see ``third_party/verovio.pin``), so a client that resolved the
-PyPI one would engrave pages and then refuse every edit in silence. In a source
-checkout, build it with ``third_party/build-verovio.sh --python``, or point
-``CLAUSTERS_VEROVIO`` at a directory containing a ``verovio`` package.
+The engraver is **libverovio**, bound here through its C API with `ctypes` and
+**bundled in the wheel** (``clausters/_libs``) exactly as the Faust compiler and
+its LLVM are: an installed package engraves with nothing else on the machine,
+and the client keeps no external dependencies. Reaching the vendored *library*
+rather than verovio's SWIG Python module is what keeps it that way — a module
+would be a second package in site-packages, under a name pip can replace with
+the published one, whose score editor is dead (``third_party/verovio.pin``). In
+a source checkout, build it with ``third_party/build-verovio.sh`` and stage it
+with ``build_native.py``, or point ``CLAUSTERS_VEROVIO`` at a library or a build
+prefix.
 
 The heavy lifting is verovio's; this module is only the SVG-to-display-list
 adapter.
@@ -24,11 +26,11 @@ adapter.
 
 from __future__ import annotations
 
-import importlib
+import ctypes
 import json
 import os
+import platform
 import re
-import sys
 import xml.etree.ElementTree as ET
 
 _SVG = "{http://www.w3.org/2000/svg}"
@@ -261,55 +263,175 @@ def _note_events(tk, timemap: list) -> list:
     return events
 
 
+# The C entry points we bind, with their ctypes signatures. `restype` matters:
+# without it ctypes truncates a returned pointer to a 32-bit int, so every string
+# would come back corrupt on a 64-bit build.
+_VRV_API = {
+    "vrvToolkit_constructor": ([], ctypes.c_void_p),
+    "vrvToolkit_constructorResourcePath": ([ctypes.c_char_p], ctypes.c_void_p),
+    "vrvToolkit_destructor": ([ctypes.c_void_p], None),
+    "vrvToolkit_getVersion": ([ctypes.c_void_p], ctypes.c_char_p),
+    "vrvToolkit_setOptions": ([ctypes.c_void_p, ctypes.c_char_p], ctypes.c_bool),
+    "vrvToolkit_loadData": ([ctypes.c_void_p, ctypes.c_char_p], ctypes.c_bool),
+    "vrvToolkit_renderToSVG": ([ctypes.c_void_p, ctypes.c_int, ctypes.c_bool],
+                               ctypes.c_char_p),
+    "vrvToolkit_renderToTimemap": ([ctypes.c_void_p, ctypes.c_char_p],
+                                   ctypes.c_char_p),
+    "vrvToolkit_getMEI": ([ctypes.c_void_p, ctypes.c_char_p], ctypes.c_char_p),
+    "vrvToolkit_getMIDIValuesForElement": ([ctypes.c_void_p, ctypes.c_char_p],
+                                           ctypes.c_char_p),
+    "vrvToolkit_edit": ([ctypes.c_void_p, ctypes.c_char_p], ctypes.c_bool),
+    "vrvToolkit_editInfo": ([ctypes.c_void_p], ctypes.c_char_p),
+}
+
+_LIB_NAMES = {"Linux": "libverovio.so", "Darwin": "libverovio.dylib",
+              "Windows": "verovio.dll"}
+
+_engraver: tuple | None = None
+
+
 def _verovio():
-    """Import the engraver, preferring the copy bundled with this package.
+    """Load ``libverovio`` and its resource data, cached for the process.
 
-    The precedence is the one every native artifact here follows — environment
-    override, then the bundled copy, then whatever the environment has:
+    Returns ``(lib, resources)``: the bound library and the SMuFL data directory
+    to construct a toolkit with (``None`` when the library's built-in path is
+    already right). Resolution follows the precedence every native artifact in
+    this package uses:
 
-    - ``CLAUSTERS_VEROVIO`` names a directory *containing* a ``verovio``
-      package, for pointing at a local build;
-    - ``clausters/_libs/verovio`` is what the wheel ships;
-    - an installed ``verovio`` is the last resort.
+    - ``CLAUSTERS_VEROVIO`` — a library file, or a prefix containing
+      ``lib/`` and ``share/verovio/``;
+    - the copy bundled in ``clausters/_libs`` — what the wheel ships;
+    - a system-wide install, last.
 
-    The bundled copy deliberately wins over an installed one, and not only for
-    self-containment: the *published* verovio (6.2.1) has an unreachable score
-    editor, so a stray ``pip install verovio`` would leave the page engraving
-    fine and every edit silently refused. Ours is built from the pin past the
-    fix (``third_party/verovio.pin``).
+    The data directory has to be passed explicitly because verovio bakes its
+    resource path in at *configure* time, pointing at the prefix it was built
+    for; a copy staged into the wheel is somewhere else entirely, and a toolkit
+    that cannot find its SMuFL data engraves nothing.
     """
-    if "verovio" in sys.modules:
-        return sys.modules["verovio"]
-    roots = [os.environ.get("CLAUSTERS_VEROVIO"),
-             os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                          "_libs")]
-    for root in roots:
-        if root and os.path.isdir(os.path.join(root, "verovio")):
-            sys.path.insert(0, root)
-            try:
-                return importlib.import_module("verovio")
-            finally:
-                # Leave sys.path as we found it: the module is imported and
-                # cached, and its resource path is resolved from its own
-                # location, so the entry has done its whole job.
-                sys.path.remove(root)
+    global _engraver
+    if _engraver is None:
+        _engraver = _load_verovio()
+    return _engraver
+
+
+def _verovio_roots() -> list[str]:
+    override = os.environ.get("CLAUSTERS_VEROVIO")
+    libs = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_libs")
+    return [p for p in (override, libs) if p]
+
+
+def _load_verovio():
+    name = _LIB_NAMES.get(platform.system(), "libverovio.so")
+    tried = []
+    for root in _verovio_roots():
+        # A file names the library itself; a directory holds it directly (the
+        # staged layout) or under lib/ (a build prefix).
+        candidates = ([root] if os.path.isfile(root) else
+                      [os.path.join(root, name), os.path.join(root, "lib", name)])
+        for path in candidates:
+            tried.append(path)
+            if os.path.exists(path):
+                return _bind(path), _resources_for(path)
     try:
-        return importlib.import_module("verovio")
-    except ImportError as exc:  # pragma: no cover - exercised only without verovio
+        return _bind(name), None       # whatever the loader finds system-wide
+    except OSError as exc:
         raise RuntimeError(
-            "engraving a score needs verovio, which ships inside this package. "
-            "This install has no bundled copy and none is importable -- build "
-            "it with third_party/build-verovio.sh --python, or point "
-            "CLAUSTERS_VEROVIO at a directory containing one"
+            f"engraving a score needs {name}, which ships inside this package. "
+            "This install has no bundled copy and none is on the library path "
+            f"(looked in: {', '.join(tried) or 'nothing'}). Build it with "
+            "third_party/build-verovio.sh and stage it with "
+            "clients/python/build_native.py, or point CLAUSTERS_VEROVIO at a "
+            "library or a build prefix"
         ) from exc
+
+
+def _bind(path: str):
+    lib = ctypes.CDLL(path)
+    for fn, (argtypes, restype) in _VRV_API.items():
+        func = getattr(lib, fn)
+        func.argtypes, func.restype = argtypes, restype
+    return lib
+
+
+def _resources_for(path: str) -> str | None:
+    """The SMuFL data directory beside a resolved library, if it is there:
+    ``<dir>/verovio`` in the staged layout, ``<prefix>/share/verovio`` in a
+    build prefix."""
+    lib_dir = os.path.dirname(os.path.abspath(path))
+    for cand in (os.path.join(lib_dir, "verovio"),
+                 os.path.join(os.path.dirname(lib_dir), "share", "verovio")):
+        if os.path.isdir(cand):
+            return cand
+    return None
+
+
+class _Toolkit:
+    """One verovio toolkit, over the library's C API.
+
+    A thin ctypes surface rather than verovio's SWIG module, so the engraver is
+    a *library* we vendor and bundle — the arrangement libfaust already has here
+    — with no second package for pip to shadow. The methods are named after the
+    C entry points they call so the mapping stays obvious; strings cross as
+    UTF-8, and every ``const char *`` verovio returns points into storage it
+    owns until the next call, so each is copied out immediately.
+    """
+
+    def __init__(self, lib, resources: str | None):
+        self._lib = lib
+        self._tk = (lib.vrvToolkit_constructorResourcePath(resources.encode())
+                    if resources else lib.vrvToolkit_constructor())
+        if not self._tk:
+            raise RuntimeError("verovio could not create a toolkit")
+
+    def __del__(self):
+        tk, lib = getattr(self, "_tk", None), getattr(self, "_lib", None)
+        if tk and lib is not None:
+            lib.vrvToolkit_destructor(tk)
+            self._tk = None
+
+    def getVersion(self) -> str:
+        return self._lib.vrvToolkit_getVersion(self._tk).decode()
+
+    def setOptions(self, options: dict) -> bool:
+        return bool(self._lib.vrvToolkit_setOptions(
+            self._tk, json.dumps(options).encode()))
+
+    def loadData(self, data: str) -> bool:
+        return bool(self._lib.vrvToolkit_loadData(self._tk, data.encode()))
+
+    def renderToSVG(self, page: int = 1) -> str:
+        return self._lib.vrvToolkit_renderToSVG(self._tk, page, False).decode()
+
+    def renderToTimemap(self, options: dict | None = None) -> list:
+        out = self._lib.vrvToolkit_renderToTimemap(
+            self._tk, json.dumps(options or {}).encode())
+        return json.loads(out.decode())
+
+    def getMEI(self, options: dict | None = None) -> str:
+        return self._lib.vrvToolkit_getMEI(
+            self._tk, json.dumps(options or {}).encode()).decode()
+
+    def getMIDIValuesForElement(self, xml_id: str) -> dict:
+        out = self._lib.vrvToolkit_getMIDIValuesForElement(
+            self._tk, xml_id.encode()).decode()
+        return json.loads(out) if out else {}
+
+    def edit(self, action: dict) -> bool:
+        return bool(self._lib.vrvToolkit_edit(
+            self._tk, json.dumps(action).encode()))
+
+    def editInfo(self) -> dict:
+        out = self._lib.vrvToolkit_editInfo(self._tk).decode()
+        return json.loads(out) if out else {}
 
 
 def _toolkit(data: str, *, scale: int, page_width: int, options: dict | None):
     """A verovio toolkit with the score loaded and laid out — the single place
     the engraver is reached and the layout options are set."""
-    verovio = _verovio()
+    lib, resources = _verovio()
 
-    tk = verovio.toolkit()
+    tk = _Toolkit(lib, resources)
     opts = {"scale": scale, "adjustPageHeight": True, "svgViewBox": True,
             "breaks": "auto", "pageWidth": page_width}
     if options:
@@ -321,10 +443,8 @@ def _toolkit(data: str, *, scale: int, page_width: int, options: dict | None):
 
 
 def _timemap(tk) -> list:
-    """The score's timemap: onset ms -> the MEI ids starting and stopping then.
-    verovio returns it as a list or as JSON depending on the binding version."""
-    tm = tk.renderToTimemap({"includeMeasures": False})
-    return json.loads(tm) if isinstance(tm, (str, bytes, bytearray)) else tm
+    """The score's timemap: onset ms -> the MEI ids starting and stopping then."""
+    return tk.renderToTimemap({"includeMeasures": False})
 
 
 def _cursor_track(display_list: dict, timemap: list) -> list:

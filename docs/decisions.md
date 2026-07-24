@@ -1660,23 +1660,27 @@ no released tag contains it; **repin to 6.3.0 when it ships**, at which point th
 published wheel is usable again and building stops being mandatory for the Python
 client. It stays required for the native producer.
 
-Two things about that build are not obvious. First, it has **two targets**, not
-one, because two consumers need different artifacts from the same tree: a shared
-`libverovio.so` plus headers and resources (`--library`, what a native producer
-links) and the SWIG Python module (`--python`, what the client engraves with).
-Second, `--python` builds and installs with **two different interpreters** on
-purpose. Compiling needs development headers, which Ubuntu's `python3.14` does
-not ship and which would be the one step wanting sudo; but the extension targets
-the stable ABI (`Py_LIMITED_API` 3.10 → a `cp310-abi3` wheel), so a wheel built
-by any CPython ≥ 3.10 installs into any other. Building with a uv-managed 3.12
-and installing into the 3.14 `.venv` keeps the whole thing in user space.
+**One artifact, not one per language.** The build produces the shared
+`libverovio.so` with its headers and SMuFL resources, and every consumer goes
+through that: the Python client binds the C wrapper (`tools/c_wrapper.h`) with
+`ctypes`, `build_native.py` stages the library and its data into
+`clausters/_libs/` beside libfaust, and a wasm build would expose the same
+functions. This is the libfaust arrangement reused verbatim, and it was reached
+the wrong way round first — via verovio's SWIG Python module, which is what the
+project's own packaging offers. That module is a trap in this context: a second
+compile of the same sources, a second copy of the engine and its 12 MB of glyph
+data in `site-packages`, and a distribution literally *named* `verovio` that pip
+can replace with the published one, whose editor is dead. It did replace it, in
+this checkout, and the editing tests began failing for an upstream reason. A
+library we build, bundle and load by path has none of that ambiguity, and it
+keeps the client's `dependencies = []` intact.
 
 **Building it ourselves also means choosing what is in it,** and the importers
 are independent cmake options. The build keeps MEI (the canonical format the
 edit cycle round-trips through), MusicXML and `.mxl`, and the two compact
 hand-typed formats, ABC and Plaine & Easie; it drops Humdrum, GABC and DARMS.
 Only Humdrum is a size argument, and a real one — it vendors humlib, ~148k
-lines, and dropping it takes the built wheel from 8.2 MB to 5.2 MB. The other
+lines, and dropping it takes `libverovio.so` from 21 MB to 13 MB. The other
 two are noise (ABC and PAE measure ~10 KB apart) and are out because nothing
 reads them. The tempting inference — that the fonts are the weight — is wrong in
 the direction that matters: SMuFL *is* 12 of the 30 MB **installed**, across
