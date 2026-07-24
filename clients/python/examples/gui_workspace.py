@@ -12,11 +12,12 @@ same widget configured down, not separate widgets:
 - the default — the free plane.
 
 This example puts all three in one window so the degeneration is visible side
-by side, and prints the ``"view" x y zoom`` events the gestures emit. The view
-state is settable back with `set` (the round trip that lets a script own the
-navigation), which the **reset button** next to the plane demonstrates: its
-press comes in as a ``/gui_event`` and the script answers by putting the view
-back at the origin, zoom 1.
+by side, and prints the ``"view" x y zoom`` events the gestures emit. Every pane
+and the reset button are *named*, so the script wires each by name and never
+matches a widget id. The view state is settable back with `set` (the round trip
+that lets a script own the navigation), which the **reset button** next to the
+plane demonstrates: its press comes in as a ``/gui_event`` and the handle answers
+by putting the view back at the origin, zoom 1.
 
 The example **launches its own GUI host** (`GuiHost.boot`) and needs no audio
 server at all: a workspace is pure layout and navigation. Needs a display and a
@@ -43,7 +44,7 @@ from clausters.gui import GuiHost, button, knob, label, panel, scroll, toggle, w
 PLANE_W, PLANE_H = 1600.0, 1200.0
 
 
-def plane(id: int) -> dict:
+def plane() -> dict:
     """The general case: a free 2D plane holding a scattered set of widgets.
 
     The children carry ``x``/``y``/``w``/``h`` in *content* units. With no
@@ -56,83 +57,90 @@ def plane(id: int) -> dict:
         col, row = i % 3, i // 3
         x, y = 60.0 + col * 480.0, 60.0 + row * 380.0
         boxes.append(
-            panel(200 + i,
-                  label(300 + i, f"node {i}"),
-                  knob(400 + i, label="amount", min=0.0, max=1.0, value=i / 8),
+            panel(None,
+                  label(None, f"node {i}"),
+                  knob(None, label="amount", min=0.0, max=1.0, value=i / 8),
                   layout="col", x=x, y=y, w=300.0, h=220.0))
-    return scroll(id, *boxes, content_w=PLANE_W, content_h=PLANE_H)
+    return scroll(None, *boxes, name="plane", content_w=PLANE_W, content_h=PLANE_H)
 
 
-def vertical_list(id: int) -> dict:
+def vertical_list() -> dict:
     """The constrained case: a plain vertical scroll view.
 
     Same widget, two props. A ``col`` layout stacks the children down the
     content area; ``content_h`` makes that area taller than the pane, so the
     wheel has somewhere to scroll to.
     """
-    rows = [toggle(500 + i, label=f"track {i + 1}", value=False) for i in range(20)]
-    return scroll(id, *rows, layout="col", axis="y", zoom=False, content_h=900.0)
+    rows = [toggle(None, label=f"track {i + 1}", value=False) for i in range(20)]
+    return scroll(None, *rows, name="vlist", layout="col", axis="y", zoom=False,
+                  content_h=900.0)
 
 
-def horizontal_strip(id: int) -> dict:
+def horizontal_strip() -> dict:
     """The other constrained case: a horizontal strip (a timeline-ish ribbon)."""
-    cells = [label(600 + i, f"bar {i + 1}", x=i * 90.0, y=0.0, w=80.0, h=60.0)
+    cells = [label(None, f"bar {i + 1}", x=i * 90.0, y=0.0, w=80.0, h=60.0)
              for i in range(24)]
-    return scroll(id, *cells, axis="x", zoom=False, content_h=70.0)
+    return scroll(None, *cells, name="hstrip", axis="x", zoom=False, content_h=70.0)
 
 
 def workspace() -> dict:
     return window(
-        panel(2,
-              panel(5,
-                    label(10, "free plane — drag to pan, wheel to zoom"),
-                    button(13, label="reset view", w=120.0),
+        panel(None,
+              panel(None,
+                    label(None, "free plane — drag to pan, wheel to zoom"),
+                    button(name="reset", label="reset view", w=120.0),
                     layout="row", h=26.0, margin=0),
-              plane(20),
+              plane(),
               layout="col", weight=3),
-        panel(3,
-              label(11, "vertical scroll view (axis=y, zoom off)", h=20.0),
-              vertical_list(21),
+        panel(None,
+              label(None, "vertical scroll view (axis=y, zoom off)", h=20.0),
+              vertical_list(),
               layout="col", weight=2),
-        panel(4,
-              label(12, "horizontal strip (axis=x, zoom off)", h=20.0),
-              horizontal_strip(22),
+        panel(None,
+              label(None, "horizontal strip (axis=x, zoom off)", h=20.0),
+              horizontal_strip(),
               layout="col", h=110.0),
         title="Workspace", w=900, h=760, layout="col",
     )
+
+
+def on_view(name: str):
+    """A pane's ``"view"`` edit-back, wired by name — the same three keys the
+    reset button sets back."""
+    def handler(tag, *vals):
+        if tag == "view" and len(vals) >= 3:
+            print(f"{name}: view x={vals[0]:.1f} y={vals[1]:.1f} zoom={vals[2]:.2f}")
+    return handler
 
 
 def main():
     # No audio server: `boot` starts a host with no client leg and owns it,
     # stopping the process on exit.
     with GuiHost.boot() as gui:
-        gui.define(1, workspace())
+        win = gui.open(workspace())
         print("drag and wheel over each pane; navigation events print here")
         print("('reset view' puts the plane back at the origin, zoom 1)")
         print("(close the window to end, or wait ~45 s)")
 
-        deadline = time.monotonic() + 45.0
-        closed = False
+        closed = [False]
+        win.on_closed(lambda: closed.__setitem__(0, True))
 
-        while not closed and time.monotonic() < deadline:
-            msg = gui.poll(timeout=0.1)
-            if msg is None:
-                continue
-            addr, args = msg
-            if addr == "/gui_closed":
-                print(f"window {args[0]} closed")
-                closed = True
-            elif len(args) >= 4 and args[1] == "view":
-                x, y, zoom = args[2], args[3], args[4]
-                print(f"widget {args[0]}: view x={x:.1f} y={y:.1f} zoom={zoom:.2f}")
-            elif args[0] == 13 and args[1:] == [1]:
-                # The reset button, pressed: the view is state the script owns,
-                # so it answers the event by putting the plane back — the same
-                # three keys the gestures emit.
-                gui.set(20, view_x=0.0, view_y=0.0, view_zoom=1.0)
+        # The reset button, pressed: the view is state the script owns, so the
+        # handle answers by putting the plane back — the same three keys the
+        # gestures emit.
+        def reset(value):
+            if value == 1:
+                win["plane"].set(view_x=0.0, view_y=0.0, view_zoom=1.0)
                 print("view reset to the origin, zoom 1")
-            elif args[0] != 13:
-                print(f"event from widget {args[0]}: {args[1:]}")
+
+        win["plane"].on_event(on_view("plane"))
+        win["vlist"].on_event(on_view("vlist"))
+        win["hstrip"].on_event(on_view("hstrip"))
+        win["reset"].on_event(reset)
+
+        deadline = time.monotonic() + 45.0
+        while not closed[0] and time.monotonic() < deadline:
+            gui.pump(timeout=0.1)
 
 
 if __name__ == "__main__":

@@ -46,6 +46,9 @@ outlet keeps its def's default, so these defs default their bus controls to
 and the hardware output is reached through a **terminal def** (``dac``: an inlet,
 no outlet, its ``Out.ar(0, …)`` baked in), a box like any other, not an ``OUT``.
 
+The canvas, its scroll workspace and the two transport buttons are *named*, so
+the script wires each by name and never matches a widget id.
+
 Run it as a script (``python gui_patch1.py``) or cell by cell (``# %%``). Needs
 a live audio server (it starts its own) and a display with a GPU adapter; the
 install bundles both binaries. **The ABI bumped to 11** for the cord->bus pass,
@@ -135,16 +138,15 @@ placed: dict[int, tuple[float, float]] = {}
 # `patch` draws the boxes and cords; `to_widget` renders the model into it. The
 # patch sits in a `scroll` workspace (**Shift+drag** pans, wheel zooms; a plain
 # drag marquee-selects). A thin transport strip rides below. Nothing sounds until
-# **render** compiles the patch and instances it.
+# **render** compiles the patch and instances it. Every widget is *named*.
 
 # %%
-PATCH, WORKSPACE, RENDER, STOP = 7, 6, 1, 2
-transport = panel(5, button(RENDER, label="render"), button(STOP, label="stop"),
-                  layout="row", h=48)
+transport = panel(None, button(name="render", label="render"),
+                  button(name="stop", label="stop"), layout="row", h=48)
 
 gui = session.gui()
 win = gui.open(window(
-    scroll(WORKSPACE, patch(PATCH, **p.to_widget(), label="patch")),
+    scroll(None, patch(name="patch", **p.to_widget(), label="patch"), name="workspace"),
     transport, title="Patch — level 1", w=720, h=680, layout="col"))
 session.start()
 
@@ -167,6 +169,15 @@ def render() -> None:
     print("  rendered — the patch is sounding")
 
 
+def stop() -> None:
+    """Free the instance in flight, if any."""
+    global instance
+    if instance is not None:
+        instance.free()
+        instance = None
+        print("  stopped")
+
+
 print(f"opened window {win}")
 print("drag a box to move it; drag empty canvas to marquee-select; click empty to clear.")
 print("Shift+drag pans, the wheel zooms; drag an outlet pin onto an inlet to cord them.")
@@ -174,50 +185,52 @@ print("press render to hear the chain, stop to free it.")
 
 
 # %% [markdown]
-# ## The loop: apply edits, re-audition on render
-# A ``"wire"`` event is `GraphPatch.connect` by name; a ``"move"`` persists a
-# box's canvas position (presentation only); a ``"view"`` reports the pan/zoom.
-# **render** compiles the model and instances it. The GUI never owns the patch —
-# it edits the object you built.
+# ## Wire the widgets to the patch, by name
+# A ``"wire"`` event on the canvas is `GraphPatch.connect` by name; a ``"move"``
+# persists a box's canvas position (presentation only); a ``"view"`` from the
+# scroll workspace reports the pan/zoom. **render** compiles the model and
+# instances it, **stop** frees it. The GUI never owns the patch — it edits the
+# object you built.
 
 # %%
-def step(addr, args) -> None:
-    """One host event onto the patch model."""
-    if addr != "/gui_event" or len(args) < 2:
-        return
-    tag = args[1]
-    if tag == 1 and args[0] == RENDER:
-        render()
-    elif tag == 1 and args[0] == STOP:
-        global instance
-        if instance is not None:
-            instance.free()
-            instance = None
-            print("  stopped")
-    elif tag == "wire":
-        src, outlet, dst, inlet = int(args[2]), args[3], int(args[4]), args[5]
+_closed = False
+
+
+def on_patch(tag, *rest):
+    """The canvas edits onto the patch model."""
+    if tag == "wire" and len(rest) >= 4:
+        src, outlet, dst, inlet = int(rest[0]), rest[1], int(rest[2]), rest[3]
         p.connect(src, outlet, dst, inlet)
         print(f"  wired {src}.{outlet} -> {dst}.{inlet} — press render to hear it")
-    elif tag == "move":
-        index, x, y = int(args[2]), float(args[3]), float(args[4])
+    elif tag == "move" and len(rest) >= 3:
+        index, x, y = int(rest[0]), float(rest[1]), float(rest[2])
         placed[index] = (x, y)
         print(f"  moved box {index} to ({x:.0f}, {y:.0f})")
-    elif tag == "view":
-        print(f"  view x={args[2]:.0f} y={args[3]:.0f} zoom={args[4]:.2f}")
 
 
+def on_view(tag, *rest):
+    if tag == "view" and len(rest) >= 3:
+        print(f"  view x={rest[0]:.0f} y={rest[1]:.0f} zoom={rest[2]:.2f}")
+
+
+win["patch"].on_event(on_patch)
+win["workspace"].on_event(on_view)
+win["render"].on_event(lambda value: render() if value == 1 else None)
+win["stop"].on_event(lambda value: stop() if value == 1 else None)
+win.on_closed(lambda: globals().__setitem__("_closed", True))
+
+
+# %% [markdown]
+# ## The loop: apply edits, re-audition on render
+# Cell-run: `gui.pump()` between cells while you drag and cord. Script-run: the
+# loop pumps the events onto the model until the window closes; **render**
+# re-flattens and instances whatever you have drawn by then.
+
+# %%
 if __name__ == "__main__":
     try:
-        running = True
-        while running:
-            msg = gui.poll(0.05)
-            if msg is None:
-                continue
-            addr, args = msg
-            if addr == "/gui_closed":
-                running = False
-            else:
-                step(addr, args)
+        while not _closed:
+            gui.pump(timeout=0.05)
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))
     finally:

@@ -13,11 +13,14 @@ file, and composes the two heavy views over that single mapped resource with
 - the script sees **one** event stream — a gesture emits a single
   ``"view"``/``"selection"`` event carrying the interacted lane's id, not one
   per member;
-- ``gui.set`` of ``view_start``/``view_len`` (samples; non-positive
+- ``set`` of ``view_start``/``view_len`` (samples; non-positive
   ``view_len`` = the whole timeline), ``sel_start``/``sel_len`` or
   ``playhead_at`` on **any** member applies group-wide;
 - membership is **live**: setting ``link`` moves a lane between groups, a
   negative ``link`` unlinks it (it keeps the view it had and diverges).
+
+Both lanes are *named* (``wave``/``spect``), so the script drives the group and
+reads its one event stream by name — never by widget id.
 
 The composition is plain GuiDef — existing containers plus the ``link`` prop,
 no new widget kind. A stack of linked lanes needs only one time-ruler strip:
@@ -59,15 +62,15 @@ samples_to_file(list(inter), raw_path)
 # ## Compose the linked item
 # Both lanes name ``link=1``. The spectrogram turns its own time ruler off —
 # with the navigation shared, the waveform's strip rules for the whole stack.
+# Both are *named*, so the script drives them by name.
 
 # %%
 session = Session.live()
 gui = session.gui()
 
-WAVE, SPECT = 10, 11
 win = gui.open(window(
-    waveform(WAVE, path=raw_path, channels=2, sample_rate=SR, link=1),
-    spectrogram(SPECT, path=raw_path, channels=2, sample_rate=SR,
+    waveform(name="wave", path=raw_path, channels=2, sample_rate=SR, link=1),
+    spectrogram(name="spect", path=raw_path, channels=2, sample_rate=SR,
                 window_size=1024, db_floor=-90.0, link=1, ruler="off"),
     title="Linked lanes: one timeline, one selection", w=960, h=640,
 ))
@@ -75,25 +78,28 @@ print(f"opened window {win} — wheel/drag on either lane drives both")
 
 # %% [markdown]
 # ## Drive the group from the script
-# Any member's id addresses the group: select on the spectrogram, zoom via the
-# waveform — both lanes follow either way.
+# Any member's handle addresses the group: select on the spectrogram, zoom via
+# the waveform — both lanes follow either way.
 
 # %%
-gui.set(SPECT, sel_start=float(frames // 2), sel_len=float(frames // 4))
-gui.set(WAVE, view_start=float(frames // 4), view_len=float(frames // 2))
+win["spect"].set(sel_start=float(frames // 2), sel_len=float(frames // 4))
+win["wave"].set(view_start=float(frames // 4), view_len=float(frames // 2))
+
+_closed = False
 
 
-def drain_events(closed=[False]):
-    """Print the single per-gesture event stream (no per-member duplicates)."""
-    while (msg := gui.poll(0.0)) is not None:
-        addr, args = msg
-        if addr == "/gui_closed":
-            closed[0] = True
-            print("window closed")
-        elif addr == "/gui_event" and len(args) >= 4 and args[1] in ("view", "selection"):
-            wid, kind, start, length = args[:4]
-            print(f"lane {wid}: {kind} {start:.0f} +{length:.0f} samples")
-    return closed[0]
+def on_group(name):
+    """Print the single per-gesture event stream (no per-member duplicates),
+    wired by name."""
+    def handler(tag, *vals):
+        if tag in ("view", "selection") and len(vals) >= 2:
+            print(f"{name}: {tag} {vals[0]:.0f} +{vals[1]:.0f} samples")
+    return handler
+
+
+win["wave"].on_event(on_group("wave"))
+win["spect"].on_event(on_group("spect"))
+win.on_closed(lambda: (globals().__setitem__("_closed", True), print("window closed")))
 
 
 # %% [markdown]
@@ -104,11 +110,11 @@ def drain_events(closed=[False]):
 
 # %%
 def demo_membership():
-    gui.set(SPECT, link=-1)                         # unlink: keeps its view
-    gui.set(WAVE, view_len=float(frames // 8))      # only the waveform zooms
+    win["spect"].set(link=-1)                        # unlink: keeps its view
+    win["wave"].set(view_len=float(frames // 8))     # only the waveform zooms
     time.sleep(1.5)
-    gui.set(SPECT, link=1)                          # rejoin: adopts the group
-    gui.set(WAVE, view_len=0.0)                     # reset both to the whole file
+    win["spect"].set(link=1)                         # rejoin: adopts the group
+    win["wave"].set(view_len=0.0)                    # reset both to the whole file
 
 
 # %%
@@ -119,12 +125,12 @@ if __name__ == "__main__":
         # gestures are not confused by a temporarily unlinked lane.
         deadline = time.monotonic() + 90.0
         demo_at = time.monotonic() + 75.0
-        while time.monotonic() < deadline and not drain_events():
+        while time.monotonic() < deadline and not _closed:
+            gui.pump(timeout=0.05)
             if demo_at is not None and time.monotonic() >= demo_at:
                 demo_at = None
                 print("membership demo: unlink -> diverge -> relink")
                 demo_membership()
-            time.sleep(0.05)
         gui.close(win)
         session.close()
         # The host writes a sibling peaks cache beside the mapped raw file.

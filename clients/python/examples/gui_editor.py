@@ -19,6 +19,9 @@ same render is looped by a ``PlayBuf`` synth and anchored each pass with the
 server's sample clock, and the host reads the engine clock from shared memory
 with zero per-frame messages.
 
+Both views are *named* (``wave``/``spect``), so the script sets and reads each
+by name and never matches a widget id.
+
 Unlike the old three-terminal recipe, this script **launches its own server and
 GUI**: `Session.live` starts an audio server if none is already running (picking
 a shared-memory segment automatically) and `Session.gui` starts ``clausters-gui``
@@ -36,7 +39,7 @@ Then run it either way:
 - **Interactively** — open the file in VS Code (Python + Jupyter extensions) or a
   Jupyter notebook and run each ``# %%`` cell (Shift+Enter), inspecting between
   cells and driving the open window from the live ``session``/``gui``/``win``
-  handles: ``gui.set(...)``, ``play_pass()``, ``gui.close(win)``. The kernel
+  handles: ``win["wave"].set(...)``, ``play_pass()``, ``gui.pump()``. The kernel
   stays alive with the window open.
 - **As a script** — ``python clients/python/examples/gui_editor.py`` runs the
   whole file: it follows the playhead for a while, then tears everything down.
@@ -135,30 +138,31 @@ server.sync()
 
 # %% [markdown]
 # ## Open the editor window
-# `gui.open` sends a ``window``-rooted GuiDef and returns its id (edit it with
-# ``gui.set``, close it with ``gui.close``). We pre-select the second half from
-# here; dragging on either view replaces it and reports back as ``selection``
-# events (drained below).
+# `gui.open` sends a ``window``-rooted GuiDef and returns its handle (edit a
+# named widget with ``win["wave"].set(...)``, close it with ``gui.close``). We
+# pre-select the second half from here; dragging on either view replaces it and
+# reports back as ``selection`` events (drained below).
 
 # %%
 def scene(path: str) -> dict:
     return window(
-        waveform(10, path=path, channels=2, sample_rate=SR),
-        spectrogram(11, path=path, channels=2, sample_rate=SR,
+        waveform(name="wave", path=path, channels=2, sample_rate=SR),
+        spectrogram(name="spect", path=path, channels=2, sample_rate=SR,
                     window_size=1024, db_floor=-90.0),
         title="Editor: waveform + spectrogram", w=960, h=640, layout="col",
     )
 
 
 win = gui.open(scene(raw_path))
-gui.set(10, sel_start=float(frames // 2), sel_len=float(frames // 4))
+win["wave"].set(sel_start=float(frames // 2), sel_len=float(frames // 4))
 print(f"opened window {win} — drag to select, Shift+drag to pan, wheel to zoom, r to reset")
 
 # %% [markdown]
 # ## Follow the playhead and read events
-# Re-run `play_pass()` to (re)start a loop pass and re-anchor the orange playhead;
-# `drain_events()` prints any selection changes and notices a window close. When
-# evaluating cells, call these whenever you like.
+# Re-run `play_pass()` to (re)start a loop pass and re-anchor the orange playhead.
+# The ``wave``/``spect`` handles print any selection changes and `win.on_closed`
+# notices a window close; `gui.pump()` dispatches them. When evaluating cells,
+# call these whenever you like.
 
 # %%
 _synth = None
@@ -174,26 +178,26 @@ def play_pass():
     _, args = server.request("/clock", expect=("/clock.reply",))
     clock_samples = float(args[0])
     _synth = server.synth("sampler")
-    gui.set(10, playhead_at=clock_samples)
-    gui.set(11, playhead_at=clock_samples)
+    win["wave"].set(playhead_at=clock_samples)
+    win["spect"].set(playhead_at=clock_samples)
 
 
-def drain_events():
-    """Print pending selection events; set ``_closed`` if the window was closed."""
-    global _closed
-    while (msg := gui.poll(0.0)) is not None:
-        addr, args = msg  # poll returns (addr, [args...])
-        if addr == "/gui_closed":
-            _closed = True
-            print("window closed")
-        elif addr == "/gui_event" and len(args) >= 4 and args[1] == "selection":
-            wid, _, sel_start, sel_len = args[:4]
-            print(f"widget {wid}: selection {sel_start:.0f} +{sel_len:.0f} samples "
+def on_selection(name):
+    """Print this view's ``"selection"`` edit-back, wired by name."""
+    def handler(tag, *vals):
+        if tag == "selection" and len(vals) >= 2:
+            sel_start, sel_len = vals[0], vals[1]
+            print(f"{name}: selection {sel_start:.0f} +{sel_len:.0f} samples "
                   f"({sel_start / SR:.3f}s +{sel_len / SR:.3f}s)")
+    return handler
 
+
+win["wave"].on_event(on_selection("wave"))
+win["spect"].on_event(on_selection("spect"))
+win.on_closed(lambda: (globals().__setitem__("_closed", True), print("window closed")))
 
 play_pass()
-drain_events()
+gui.pump()
 
 # %% [markdown]
 # ## Edit the open window live
@@ -201,8 +205,8 @@ drain_events()
 # without recomputing anything (shader uniforms).
 
 # %%
-gui.set(11, db_floor=-70.0, colormap=1)   # recolor the spectrogram live
-gui.set(10, sel_start=0.0, sel_len=float(frames))  # select the whole phrase
+win["spect"].set(db_floor=-70.0, colormap=1)   # recolor the spectrogram live
+win["wave"].set(sel_start=0.0, sel_len=float(frames))  # select the whole phrase
 
 # %% [markdown]
 # ## Close
@@ -223,10 +227,10 @@ def teardown():
 # %% [markdown]
 # ## Plain-script run
 # Run cell by cell in Jupyter / VS Code to keep the window open and drive the
-# handles between cells (``play_pass()``, ``gui.set(...)``, ``gui.close(win)``).
-# Run as a plain script instead — ``python gui_editor.py`` — and this block
-# follows the playhead for a while, honoring a window close, then tears
-# everything down.
+# handles between cells (``play_pass()``, ``win["wave"].set(...)``,
+# ``gui.close(win)``). Run as a plain script instead — ``python gui_editor.py`` —
+# and this block follows the playhead for a while, honoring a window close, then
+# tears everything down.
 
 # %%
 if __name__ == "__main__":
@@ -238,8 +242,7 @@ if __name__ == "__main__":
             if now >= next_pass:
                 play_pass()
                 next_pass = now + seconds + 0.5
-            drain_events()
-            time.sleep(0.05)
+            gui.pump(timeout=0.05)
         teardown()
     except (OSError, RuntimeError, ConnectionError) as e:
         sys.exit(str(e))
