@@ -205,6 +205,10 @@ class Playhead:
     inherits `quant` (start on a bar), `lock_to` (sample-exact) and
     `join_transport` (the shared grid) for free.
 
+    A pass ends on its own when the scan reaches the end of the timeline:
+    `playing` goes False and `finished` says the end is why, so a transport
+    reads the end off the playhead instead of timing it.
+
     Args:
         timeline: the `Timeline` to play.
         clock: the `TempoClock` that drives it (start it for live playback;
@@ -217,6 +221,7 @@ class Playhead:
         self.clock = clock
         self.destination = destination
         self._running = False
+        self._finished = False     # the scan ran off the end (set by the feeder)
         self._epoch = 0            # invalidates an in-flight feeder on stop/locate
         self._routine = None
         self._loop = None          # (start, end) in beats, or None
@@ -235,6 +240,7 @@ class Playhead:
         self._pos_beat = float(at)
         self._pos_clock = None
         self._running = True
+        self._finished = False
         self._epoch += 1
         epoch = self._epoch
         if self._routine is not None:
@@ -247,6 +253,7 @@ class Playhead:
         """Halt the playhead. Items already rendered keep sounding (their
         releases are scheduled); no further items are played."""
         self._running = False
+        self._finished = False     # halted by hand, not ended
         self._epoch += 1
         if self._routine is not None:
             self.clock.unsched(self._routine)
@@ -262,6 +269,7 @@ class Playhead:
         else:
             self._start_beat = float(beat)
             self._pos_beat = float(beat)
+            self._finished = False   # seeking away from the end leaves it behind
         return self
 
     def loop(self, start: float, end: float):
@@ -290,7 +298,19 @@ class Playhead:
 
     @property
     def playing(self) -> bool:
+        """Whether the scan is running. It goes False on `stop` **and** when the
+        scan reaches the end of the timeline, so a transport can poll this one
+        flag instead of comparing `position` against a length it computed
+        itself."""
         return self._running
+
+    @property
+    def finished(self) -> bool:
+        """Whether the scan ran off the end of the timeline, as opposed to being
+        halted by hand (`stop`) or still playing. It is the *scan* that ended: a
+        `loop` never ends, and the last item keeps sounding for its own length —
+        the playhead schedules items, it does not wait for them."""
+        return self._finished
 
     # ---- follow a server's shared transport (DAW conductor) ----
 
@@ -371,6 +391,12 @@ class Playhead:
                     prev = start
                     continue
             if cursor >= len(tl):
+                # Drained: the pass is over, and the transport driving it has to
+                # know without polling a length of its own. The feeder runs on
+                # the clock thread, so it records the end rather than announcing
+                # it -- `playing` goes False, `position` freezes on the last item.
+                self._running = False
+                self._finished = True
                 return
             beat, item = tl[cursor]
             wait = beat - prev

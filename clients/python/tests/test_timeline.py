@@ -152,6 +152,44 @@ def test_playhead_stop_unscheds_the_feeder():
     assert not ph.playing and len(clock._queue) == 0
 
 
+def test_playhead_ends_when_the_scan_drains():
+    clock = TempoClock(1.0)
+    ph = Playhead(_arp(), clock, RecordDest())
+    ph.play(at=0.0)
+    clock.render()
+    assert not ph.playing, "a drained scan is not playing"
+    assert ph.finished, "and it ended rather than being stopped"
+    assert ph.position() == 2.0, "the position freezes on the last item"
+
+
+def test_playhead_stopped_by_hand_did_not_finish():
+    clock = TempoClock(1.0)
+    ph = Playhead(_arp(), clock, RecordDest())
+    ph.play(at=0.0)
+    ph.stop()
+    assert not ph.playing and not ph.finished
+
+
+def test_playhead_finish_clears_on_replay_and_locate():
+    clock = TempoClock(1.0)
+    ph = Playhead(_arp(), clock, RecordDest())
+    ph.play(at=0.0)
+    clock.render()
+    assert ph.finished
+    ph.locate(0.0)
+    assert not ph.finished, "seeking away from the end leaves it behind"
+    ph.play(at=0.0)
+    assert not ph.finished, "and so does a fresh pass"
+
+
+def test_playhead_loop_never_finishes():
+    clock = TempoClock(1.0)
+    ph = Playhead(_arp(), clock, RecordDest())
+    ph.loop(0.0, 2.0).play(at=0.0)
+    clock.render(until_beat=5.0)
+    assert ph.playing and not ph.finished
+
+
 def test_playhead_position_when_stopped():
     ph = Playhead(_arp(), TempoClock(1.0), RecordDest())
     assert ph.position() == 0.0

@@ -71,6 +71,9 @@ The transport controls:
 | `locate(beat)` | Seek to `beat` — random access. While playing, restarts the scan there; while stopped, sets where the next `play` begins. |
 | `loop(start, end)` / `unloop()` | Loop the half-open window `[start, end)`; the scan wraps at `end`. |
 | `position()` | The current song position in beats (interpolated from the clock while playing). |
+| `playing` / `finished` | Whether the scan is running, and — once it is not — whether it ran off the end rather than being stopped. |
+
+A pass **ends on its own** when the scan reaches the end of the timeline: `playing` goes False, `finished` goes True and `position()` freezes on the last item. That is what a transport polls to park its cursor, rather than timing the end itself. It is the *scan* that ends, so a `loop` never finishes, and the last item keeps sounding for its own length — the playhead schedules items, it does not wait for them.
 
 Under the hood the playhead is a thin cursor over the static structure: the random access happens at the boundaries (`play`, `locate`, loop wrap), and between them it is a forward scan — exactly how a DAW's playback engine reads its arrangement. Because it rides the clock's logical time like everything else in the client, it **inherits the timing models for free**: `quant` starts it on a bar, `clock.lock_to(server)` makes its events sample-exact, and `clock.join_transport(server)` aligns its bars with other clients (see [Timing models](timing-models.md) and [A DAW-style transport](transport.md)).
 
