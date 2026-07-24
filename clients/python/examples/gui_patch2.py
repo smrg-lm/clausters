@@ -118,13 +118,17 @@ print(f"\n{faust_def.name} decoded into {len(faust_patch.boxes)} boxes, "
 def show(host, a_def, kind: str) -> None:
     """Open a def's Def-view and block until its window is closed. The window and
     the panel are captioned by the def *kind* (``SynthDef`` / ``FaustDef``) — the
-    visualization this example is about — not by the def's own name."""
+    visualization this example is about — not by the def's own name.
+
+    The window handle answers its own close: `PatchWindow.on_closed` registers
+    the callback and `GuiHost.pump` fires it when the ``/gui_closed`` arrives —
+    no widget id matched by hand."""
     print(f"\nthe {kind} (level 2) — close the window to continue")
     win = a_def.plot_def(host=host, title=f"{kind} — level 2")
-    while True:
-        msg = host.poll(0.1)
-        if msg is not None and msg[0] == "/gui_closed" and msg[1][0] == win.id:
-            break
+    closed = [False]
+    win.on_closed(lambda: closed.__setitem__(0, True))
+    while not closed[0]:
+        host.pump(timeout=0.1)
 
 
 if __name__ == "__main__":

@@ -89,6 +89,13 @@ class PlotWindow:
         self.host.set(self.widget_id, **props)
         return self
 
+    def on_closed(self, func):
+        """Call ``func()`` when the user closes this window (a ``/gui_closed``),
+        when the host's inbound messages are drained through
+        `clausters.gui.host.GuiHost.pump`. ``None`` clears it. Returns ``self``."""
+        self.host._set_closed_handler(int(self.id), func)
+        return self
+
     def close(self):
         """Close the window (``/gui_free``)."""
         self.host.close(self.id)
@@ -211,6 +218,13 @@ class PatchWindow:
         """Live-set the patch widget's props (``label``, ``boxes``, ``cords``…)
         via ``/gui_set``."""
         self.host.set(self.widget_id, **props)
+        return self
+
+    def on_closed(self, func):
+        """Call ``func()`` when the user closes this window (a ``/gui_closed``),
+        when the host's inbound messages are drained through
+        `clausters.gui.host.GuiHost.pump`. ``None`` clears it. Returns ``self``."""
+        self.host._set_closed_handler(int(self.id), func)
         return self
 
     def close(self):
