@@ -80,7 +80,7 @@ class Score:
 
     def __init__(self, data: str, *, scale: int = 40, page_width: int = 2100,
                  options: dict | None = None):
-        self._tk = _toolkit(data, scale=scale, page_width=page_width,
+        self._tk = _open_score(data, scale=scale, page_width=page_width,
                             options=options)
         self._undo: list[str] = []
         self._redo: list[str] = []
@@ -238,7 +238,7 @@ def engrave(data: str, *, page: int = 1, scale: int = 40,
     ``options`` are merged over the defaults. Raises ``RuntimeError`` if verovio
     is not installed.
     """
-    tk = _toolkit(data, scale=scale, page_width=page_width, options=options)
+    tk = _open_score(data, scale=scale, page_width=page_width, options=options)
     return _display_list(tk, page)
 
 
@@ -667,7 +667,7 @@ def _resources_for(path: str) -> str | None:
     return None
 
 
-class _Toolkit:
+class _VerovioTk:
     """One verovio toolkit, over the library's C API.
 
     A thin ctypes surface rather than verovio's SWIG module, so the engraver is
@@ -727,12 +727,12 @@ class _Toolkit:
         return json.loads(out) if out else {}
 
 
-def _toolkit(data: str, *, scale: int, page_width: int, options: dict | None):
-    """A verovio toolkit with the score loaded and laid out — the single place
-    the engraver is reached and the layout options are set."""
+def _open_score(data: str, *, scale: int, page_width: int, options: dict | None):
+    """A `_VerovioTk` with the score loaded and laid out — the single place the
+    engraver is reached and the layout options are set."""
     lib, resources = _verovio()
 
-    tk = _Toolkit(lib, resources)
+    tk = _VerovioTk(lib, resources)
     opts = {"scale": scale, "adjustPageHeight": True, "svgViewBox": True,
             "breaks": "auto", "pageWidth": page_width}
     if options:
