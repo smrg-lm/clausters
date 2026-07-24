@@ -44,6 +44,11 @@ fn main() {
     // staged wheel overrides it at run time; this is the dev-checkout convenience.
     println!("cargo:rustc-env=CLAUSTERS_VEROVIO_RESOURCES={prefix}/share/verovio");
 
+    // Published as `DEP_VEROVIO_PREFIX` to dependents (see the `links` key): the
+    // rpath below only applies to this crate's own artifacts, so clausters-ffi's
+    // cdylib emits its own from the same prefix rather than re-deriving it.
+    println!("cargo:prefix={prefix}");
+
     println!("cargo:rustc-link-search=native={prefix}/lib");
     println!("cargo:rustc-link-lib=dylib=verovio");
     println!("cargo:rustc-link-arg=-Wl,--disable-new-dtags");

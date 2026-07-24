@@ -476,7 +476,7 @@ fn viewbox(node: Node) -> [f64; 2] {
 /// The page-y of every staff line, ascending. A staff line is a wide horizontal
 /// `line` prim — the one geometry the same on every system, the ruler both the
 /// system clustering and the diatonic step are measured against.
-fn staff_line_ys(prims: &[Prim]) -> Vec<f64> {
+pub(super) fn staff_line_ys(prims: &[Prim]) -> Vec<f64> {
     let mut ys: Vec<f64> = prims
         .iter()
         .filter_map(|p| match p {
@@ -517,7 +517,7 @@ fn staff_step(prims: &[Prim]) -> f64 {
 
 /// Round `x` to `n` decimal places (half away from zero), the display list's
 /// coordinate quantization.
-fn r(x: f64, n: i32) -> f64 {
+pub(super) fn r(x: f64, n: i32) -> f64 {
     let p = 10f64.powi(n);
     (x * p).round() / p
 }

@@ -20,6 +20,8 @@
 //! duration a caller already reduced to ticks; performance nuance, tuplets and
 //! full polyphony are that later pass.
 
+use serde::Deserialize;
+
 // 32nd-note resolution: every duration is an integer number of these, so
 // barline splitting and tie decomposition are exact integer arithmetic.
 const TPW: i32 = 32; // ticks per whole note
@@ -94,7 +96,12 @@ fn key_signature(key: &str) -> (&'static str, bool) {
 /// stream a client reduces its own sequencing data to; [`voice_to_mei`] lays it
 /// out into barred, tied measures. A voice (a `&[Slot]`) is the composable
 /// per-layer primitive — polyphony stacks several, it never widens the slot.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// As JSON (what a binding sends) a slot is an object: `{"midis": [60, 64],
+/// "ticks": 8}` is a chord, `{"ticks": 8}` a rest — a slot with no pitches *is*
+/// a rest, which keeps the wire form total without a discriminator.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
 pub enum Slot {
     /// A note (one pitch) or chord (several), lasting `ticks`.
     Note { midis: Vec<i32>, ticks: i32 },
@@ -108,8 +115,10 @@ impl Slot {
             Slot::Note { ticks, .. } | Slot::Rest { ticks } => *ticks,
         }
     }
+    /// Whether this slot draws pitches. A `Note` with no pitches is a rest — the
+    /// wire form has no discriminator, so the emptiness is what says so.
     fn is_note(&self) -> bool {
-        matches!(self, Slot::Note { .. })
+        matches!(self, Slot::Note { midis, .. } if !midis.is_empty())
     }
 }
 
@@ -249,7 +258,9 @@ fn measure_xml(index: usize, cells: &[String], last: bool) -> String {
 fn element(slot: &Slot, value: i32, dots: i32, tie: Option<&str>, flats: bool) -> String {
     let d = if dots != 0 { " dots=\"1\"" } else { "" };
     match slot {
+        // A pitchless slot draws as a rest either way it was spelled.
         Slot::Rest { .. } => format!("<rest dur=\"{value}\"{d}/>"),
+        Slot::Note { midis, .. } if midis.is_empty() => format!("<rest dur=\"{value}\"{d}/>"),
         Slot::Note { midis, .. } if midis.len() == 1 => {
             note_xml(midis[0], Some(value), dots, tie, flats)
         }
@@ -379,6 +390,26 @@ mod tests {
         // a full 4/4 bar of rest is one whole rest
         assert!(mei.contains("<rest dur=\"1\"/>"));
         assert_eq!(mei.matches("<measure").count(), 1);
+    }
+
+    #[test]
+    fn a_voice_deserializes_from_the_wire_form() {
+        let voice: Vec<Slot> = serde_json::from_str(
+            r#"[{"midis": [60, 64], "ticks": 8}, {"ticks": 8}, {"midis": [], "ticks": 8}]"#,
+        )
+        .expect("parses");
+        assert_eq!(
+            voice[0],
+            Slot::Note {
+                midis: vec![60, 64],
+                ticks: 8
+            }
+        );
+        assert_eq!(voice[1], Slot::Rest { ticks: 8 });
+        // A pitchless slot is a rest however it was spelled, so it draws as one.
+        let mei = voice_to_mei(&voice[2..], "4/4", "G2", "C");
+        assert!(mei.contains("<rest dur=\"4\"/>"), "a quarter rest");
+        assert!(!mei.contains("<chord"), "never an empty chord");
     }
 
     #[test]

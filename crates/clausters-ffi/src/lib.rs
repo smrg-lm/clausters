@@ -12,6 +12,11 @@
 //! sharing the server's WebSocket implementation (`tungstenite`) instead of
 //! re-implementing the framing per language. OSC bundle assembly stays in
 //! `clausters_core::osc` (Rust-tested).
+//!
+//! Two optional features widen that surface, both off by default: `notation`
+//! adds the notation layer's pure half (see [`notation`]), and `verovio` adds the
+//! engraver and the editable score on top of it — the one that links libverovio,
+//! so it stays opt-in the way the Faust family does in the server.
 
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::clocksync::SampleClockModel;
@@ -25,6 +30,8 @@ use clausters_core::scale;
 use clausters_core::tempoclock::{self, Scheduler};
 use clausters_core::window::Window;
 
+#[cfg(feature = "notation")]
+pub mod notation;
 mod ws;
 
 /// The C ABI version of this surface. Bump on any incompatible change. v2 added
@@ -49,8 +56,12 @@ mod ws;
 /// the one occupancy-map model, internally locked per handle); v11 the
 /// `clausters_core_patch_compile` cord→bus pass (a directed patch JSON in, its
 /// GraphDef wiring JSON out — the GUI patcher's translation, shared so every
-/// client compiles a patch identically).
-pub const CORE_ABI_VERSION: u32 = 11;
+/// client compiles a patch identically); v12 the notation surface (feature-gated,
+/// see [`notation`]) — the pure `clausters_core_svg_to_display_list` and
+/// `clausters_core_voice_to_mei`, plus, behind `verovio`, the editable
+/// `clausters_score_*` handle, so a client binds the notation layer instead of
+/// reimplementing it.
+pub const CORE_ABI_VERSION: u32 = 12;
 
 /// Returns [`CORE_ABI_VERSION`]; call before anything else.
 #[unsafe(no_mangle)]

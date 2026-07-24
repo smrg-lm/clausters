@@ -1,7 +1,7 @@
 //! The pure half of the notation layer — the format-agnostic logic every
 //! client shares, so a JS/wasm client rebinds it rather than reimplementing it.
 //!
-//! Two entry points, both wasm-safe and dependency-light:
+//! Three entry points, all wasm-safe and dependency-light:
 //!
 //! - [`svg_to_display_list`] walks a verovio SVG into a [`DisplayList`] — a
 //!   SMuFL glyph-outline table keyed by codepoint plus placed glyphs, staff
@@ -15,13 +15,19 @@
 //!   barred, tied MEI. A client reduces its own sequencing data (an `Event`
 //!   run, a `Timeline`) to that voice — that reduction reads client-native
 //!   types and stays per-client; this is the language-agnostic step below it.
+//! - [`cursor_track`] folds the engraver's timemap ([`TimemapEntry`]) together
+//!   with that geometry into the playhead's [`Cursor`] track, joining the two on
+//!   the `xml:id` they share. Pure over data the engraver already produced, so
+//!   every client's playhead lands on the same pixel.
 //!
 //! The stateful editable score model and the libverovio binding are **not**
 //! here: they are native (they call the C++ engraver) and live in
 //! `clausters-notation`. This module is only what compiles to wasm.
 
+mod cursors;
 mod mei;
 mod svg;
 
+pub use cursors::{Cursor, TimemapEntry, cursor_track};
 pub use mei::{Slot, voice_to_mei};
 pub use svg::{DisplayList, Prim, svg_to_display_list};

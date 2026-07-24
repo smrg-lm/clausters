@@ -10,8 +10,21 @@ description = "C ABI over clausters-core: the language-agnostic surface every cl
 # the in-crate tests link the same functions.
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+# The notation layer's pure half (the SVG -> display-list walk, the voice -> MEI
+# encoder): logic every client shares, so no binding reimplements it. Off by
+# default, exactly as in the core it forwards to.
+notation = ["clausters-core/notation"]
+# The engraver and the editable score on top of it — this one links libverovio,
+# so it stays opt-in the way the Faust family does in the server. The Python
+# reference wheel turns it on (clients/python/build_native.py).
+verovio = ["notation", "dep:clausters-notation", "clausters-notation/verovio"]
+
 [dependencies]
 clausters-core = { path = "../clausters-core" }
+# The native half of the notation layer (libverovio); `verovio` only.
+clausters-notation = { path = "../clausters-notation", optional = true }
 # The patcher cord->bus pass crosses as JSON (the flat-data boundary): a Patch
 # in, its Compiled wiring out.
 serde_json = "1"

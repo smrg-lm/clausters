@@ -11,8 +11,8 @@
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::sync::{Mutex, MutexGuard};
 
-// Only the entry points one-shot engraving needs. The editing/timemap/MEI
-// surface is added with the stateful `Score` (G31h-c).
+// The entry points engraving and editing need, named exactly as the C wrapper
+// declares them (`third_party/verovio/tools/c_wrapper.h`).
 unsafe extern "C" {
     fn vrvToolkit_constructor() -> *mut c_void;
     fn vrvToolkit_constructorResourcePath(resourcePath: *const c_char) -> *mut c_void;
@@ -25,6 +25,14 @@ unsafe extern "C" {
         page_no: c_int,
         xmlDeclaration: bool,
     ) -> *const c_char;
+    fn vrvToolkit_renderToTimemap(tkPtr: *mut c_void, c_options: *const c_char) -> *const c_char;
+    fn vrvToolkit_getMEI(tkPtr: *mut c_void, options: *const c_char) -> *const c_char;
+    fn vrvToolkit_getMIDIValuesForElement(
+        tkPtr: *mut c_void,
+        xmlId: *const c_char,
+    ) -> *const c_char;
+    fn vrvToolkit_edit(tkPtr: *mut c_void, editorAction: *const c_char) -> bool;
+    fn vrvToolkit_editInfo(tkPtr: *mut c_void) -> *const c_char;
 }
 
 /// Serializes every call into libverovio for the process.
@@ -189,6 +197,49 @@ impl Toolkit {
         // SAFETY: live toolkit; the returned pointer is copied at once.
         unsafe { cstr_to_string(vrvToolkit_renderToSVG(self.ptr, page as c_int, false)) }
     }
+
+    /// The score's timemap as a JSON array string: onset ms -> the ids starting
+    /// and stopping there. `options` is a JSON object string.
+    pub fn render_timemap(&self, options: &str) -> Result<String, EngraveError> {
+        let c = CString::new(options).map_err(|_| EngraveError::NulByte)?;
+        // SAFETY: live toolkit, valid C string; the result is copied at once.
+        Ok(unsafe { cstr_to_string(vrvToolkit_renderToTimemap(self.ptr, c.as_ptr())) })
+    }
+
+    /// The loaded document as MEI, ids and all — the format to persist, and what
+    /// an undo snapshot is made of. `options` is a JSON object string.
+    pub fn mei(&self, options: &str) -> Result<String, EngraveError> {
+        let c = CString::new(options).map_err(|_| EngraveError::NulByte)?;
+        // SAFETY: live toolkit, valid C string; the result is copied at once.
+        Ok(unsafe { cstr_to_string(vrvToolkit_getMEI(self.ptr, c.as_ptr())) })
+    }
+
+    /// The MIDI values verovio computed for one element, as a JSON object string
+    /// (`pitch`, `time`, `duration`); empty when the element makes no sound.
+    pub fn midi_values(&self, xml_id: &str) -> Result<String, EngraveError> {
+        let c = CString::new(xml_id).map_err(|_| EngraveError::NulByte)?;
+        // SAFETY: live toolkit, valid C string; the result is copied at once.
+        Ok(unsafe { cstr_to_string(vrvToolkit_getMIDIValuesForElement(self.ptr, c.as_ptr())) })
+    }
+
+    /// Apply one editor action, given as a JSON object string
+    /// (`{"action": …, "param": {…}}`); returns whether verovio accepted it.
+    ///
+    /// Editing a document that has been loaded but never rendered **segfaults** —
+    /// the editor reaches through drawing state the load does not build — so a
+    /// page must be drawn first (see [`Score`](crate::Score), which owns that
+    /// discipline).
+    pub fn edit(&self, action: &str) -> Result<bool, EngraveError> {
+        let c = CString::new(action).map_err(|_| EngraveError::NulByte)?;
+        // SAFETY: live toolkit, valid C string.
+        Ok(unsafe { vrvToolkit_edit(self.ptr, c.as_ptr()) })
+    }
+
+    /// What the editor reported about the last action, as a JSON object string.
+    pub fn edit_info(&self) -> String {
+        // SAFETY: live toolkit; the returned pointer is copied at once.
+        unsafe { cstr_to_string(vrvToolkit_editInfo(self.ptr)) }
+    }
 }
 
 impl Drop for Toolkit {
@@ -222,7 +273,7 @@ unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 /// rendered SVG, or an [`EngraveError`] if the toolkit could not be built or the
 /// data could not be loaded.
 pub fn engrave_svg(data: &str, opts: &EngraveOptions) -> Result<String, EngraveError> {
-    let options = build_options_json(opts)?;
+    let options = options_json(opts);
     let resources = opts.resource_path.clone().or_else(default_resource_path);
 
     let _guard = ffi_lock();
@@ -236,7 +287,7 @@ pub fn engrave_svg(data: &str, opts: &EngraveOptions) -> Result<String, EngraveE
 
 /// The verovio options JSON: the fixed defaults plus the caller's scale/width,
 /// with `extra` (a JSON object) merged last so it can override any of them.
-fn build_options_json(opts: &EngraveOptions) -> Result<String, EngraveError> {
+pub(crate) fn options_json(opts: &EngraveOptions) -> String {
     use serde_json::{Map, Value, json};
     let mut map: Map<String, Value> = json!({
         "scale": opts.scale,
@@ -255,7 +306,7 @@ fn build_options_json(opts: &EngraveOptions) -> Result<String, EngraveError> {
             map.extend(m);
         }
     }
-    Ok(Value::Object(map).to_string())
+    Value::Object(map).to_string()
 }
 
 #[cfg(test)]
@@ -274,7 +325,7 @@ mod tests {
             "the inner definition-scale group"
         );
         assert!(svg.contains("viewBox"), "a viewBox to fit the page");
-        // Eight noteheads across two bars, each a SMuFL <use> reference, plus more.
+        // A notehead per note, each a SMuFL <use> reference, plus clef and meter.
         assert!(svg.matches("<use").count() >= 8, "the placed glyphs");
     }
 

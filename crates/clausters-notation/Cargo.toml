@@ -3,12 +3,23 @@ name = "clausters-notation"
 version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
+# Declares that this package is the one linking the native libverovio, and lets
+# `build.rs` publish where it found it (`DEP_VEROVIO_PREFIX`) so a dependent that
+# produces a shipped artifact — clausters-ffi's cdylib — can emit the same rpath
+# without re-deriving the prefix.
+links = "verovio"
 description = "libverovio binding for Clausters: engrave a score into resolution-independent geometry (verovio SVG), the native half of the notation layer, behind the optional `verovio` feature."
 
 [dependencies]
-# Only the `verovio` path needs it (the toolkit options JSON); kept optional so a
-# plain build pulls nothing. The format-agnostic walk/encoder live in
-# clausters-core, not here.
+# The pure half of the layer: the SVG -> display-list walk, the voice -> MEI
+# encoder and the timemap -> cursor fold. This crate adds only what needs
+# libverovio, so nothing agnostic is reimplemented here.
+clausters-core = { path = "../clausters-core", optional = true }
+# The toolkit options, the editor actions and the JSON verovio hands back
+# (timemap, MIDI values); `serde` derives the `Page` a client receives. Only the
+# `verovio` path needs them, so both are optional and a plain build pulls
+# nothing.
+serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 
 [features]
@@ -17,4 +28,9 @@ serde_json = { version = "1", optional = true }
 # libfaust). The Python reference wheel turns it on (clients/python/build_native.py);
 # with the feature off this crate is empty.
 default = []
-verovio = ["dep:serde_json"]
+verovio = [
+    "dep:serde",
+    "dep:serde_json",
+    "dep:clausters-core",
+    "clausters-core/notation",
+]

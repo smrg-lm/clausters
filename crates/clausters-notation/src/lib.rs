@@ -17,12 +17,18 @@
 //! `build.rs`); its SMuFL resource data is resolved at run time (verovio bakes
 //! the configure-time path in, overridable through `CLAUSTERS_VEROVIO`).
 //!
-//! This is the G31h-a surface — the binding and one-shot engraving to SVG. The
-//! stateful editable `Score` and the full C-ABI are the later steps of G31h.
+//! Two ways in: [`engrave_svg`] is the one-shot form (load, draw, discard), and
+//! [`Score`] is the stateful one — the document held open so it can be edited
+//! and re-engraved against the same ids. The C ABI over both lives in
+//! `clausters-ffi`.
 
+#[cfg(feature = "verovio")]
+mod score;
 #[cfg(feature = "verovio")]
 mod verovio;
 
+#[cfg(feature = "verovio")]
+pub use score::{NoteEvent, Page, Score};
 #[cfg(feature = "verovio")]
 pub use verovio::{
     EngraveError, EngraveOptions, Toolkit, default_resource_path, engrave_svg, ffi_lock,

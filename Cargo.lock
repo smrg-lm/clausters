@@ -263,6 +263,7 @@ name = "clausters-ffi"
 version = "0.3.0"
 dependencies = [
  "clausters-core",
+ "clausters-notation",
  "serde_json",
  "tungstenite",
 ]
@@ -280,6 +281,8 @@ dependencies = [
 name = "clausters-notation"
 version = "0.3.0"
 dependencies = [
+ "clausters-core",
+ "serde",
  "serde_json",
 ]
 

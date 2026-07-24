@@ -1740,3 +1740,32 @@ milestone (`clients/gui/PLAN.md`, G31g). The implementation keeps the two seams
 that milestone needs — the `dur`→value step (`_pieces`) and the pitch spelling
 (`_spell`) — each isolated in one helper, so the refinement extends them rather
 than rewriting the encoder.
+
+## The notation C ABI has no one-shot engrave: size-then-fill needs a deterministic payload
+
+Every entry point in `clausters-ffi` that hands back text or JSON is
+**size-then-fill**: the call returns the byte count the result needs and writes
+it only if it fits, so a binding sizes with a null buffer and fills with a
+second call. That contract has an unstated premise — *the payload is the same on
+both calls* — which every previous user of it satisfied by being a pure
+function of its input.
+
+The engraver is not. It mints a fresh `xml:id` per element on every load, and
+those ids vary in **length**, so a one-shot `engrave(data) -> page JSON` would
+lay out two different documents across the size call and the fill call. The
+second could be a byte longer than the buffer measured for the first, at which
+point the fill silently does not happen and the caller is handed a size again —
+a contract that can only be used in a retry loop, for a function whose result is
+supposed to be a single page.
+
+So the ABI exposes no one-shot. A binding's one-shot is
+`clausters_score_open` → `clausters_score_display_list` → `clausters_score_free`:
+the ids are minted once when the handle opens, and the page is stable for as
+long as it lives, so the size and the fill see the same bytes. It costs one
+extra call and one extra free, and it makes every size-then-fill entry point in
+the crate deterministic without exception. The Rust-side one-shot
+(`clausters_notation::engrave_svg`) stays — it hands back an owned `String`, so
+determinism never enters into it.
+
+The general rule this leaves behind: **anything nondeterministic gets a handle,
+not a size-then-fill pair.**
