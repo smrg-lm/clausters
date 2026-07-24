@@ -530,6 +530,7 @@ fn draw_pianoroll_item(
     pianoroll::draw_notes(
         mesh,
         r.grid,
+        r.grid,
         nav,
         0.0,
         &item.notes,

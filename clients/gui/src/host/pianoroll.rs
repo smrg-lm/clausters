@@ -126,21 +126,30 @@ fn to_x(s: f64, nav: &View, body: Rect) -> f64 {
 }
 
 /// The height in pixels of one semitone row over the pitch window `[lo, hi]`.
+/// The window shows every whole row `lo..=hi` — `hi - lo + 1` of them — so the
+/// pixel axis spans `[lo - 0.5, hi + 0.5]` and the extreme rows draw in full
+/// instead of being clipped at the grid edges.
 pub fn row_height(lo: f32, hi: f32, grid: Rect) -> f32 {
-    let rows = (hi - lo).max(1.0);
+    let rows = (hi - lo + 1.0).max(1.0);
     grid.h / rows
 }
 
-/// A pitch's y pixel (its row center): high pitch at the top.
+/// A pitch's y pixel (its row center): high pitch at the top. The axis spans
+/// `[lo - 0.5, hi + 0.5]`, so pitch `hi` centres half a row below the top edge
+/// and pitch `lo` half a row above the bottom — every row is fully visible.
 pub fn pitch_to_y(pitch: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
-    let frac = ((pitch - lo) / (hi - lo).max(1.0)).clamp(0.0, 1.0);
-    grid.y + grid.h * (1.0 - frac)
+    let rows = (hi - lo + 1.0).max(1.0);
+    let frac = ((hi + 0.5 - pitch) / rows).clamp(0.0, 1.0);
+    grid.y + grid.h * frac
 }
 
-/// The (fractional) pitch a y pixel maps to over `[lo, hi]`.
+/// The (fractional) pitch a y pixel maps to over the `[lo - 0.5, hi + 0.5]`
+/// window — the inverse of [`pitch_to_y`], so a drop lands on the row it is
+/// drawn on.
 pub fn y_to_pitch(y: f32, lo: f32, hi: f32, grid: Rect) -> f32 {
+    let rows = (hi - lo + 1.0).max(1.0);
     let frac = ((y - grid.y) / grid.h.max(1.0)).clamp(0.0, 1.0);
-    hi - frac * (hi - lo)
+    hi + 0.5 - frac * rows
 }
 
 // --- Drawing --------------------------------------------------------------
@@ -178,15 +187,20 @@ pub fn draw_grid_background(mesh: &mut Mesh, grid: Rect, lo: f32, hi: f32, theme
     mesh.border(grid, 1.0, theme.frame);
 }
 
-/// Draw a set of notes into `grid`, placed on the shared `nav` time axis
-/// (offset added, so a clip's roll moves with the clip) and over the pitch
-/// window `[lo, hi]`. The one primitive both the widget and the clip body use.
-/// When `color_velocity` the note fill brightens with velocity. `selected`
-/// indices draw highlighted (the multi-note selection; the clip body passes
-/// none).
+/// Draw a set of notes over the pitch window `[lo, hi]` of `grid`, placed on
+/// the shared `nav` time axis (offset added, so a clip's roll moves with the
+/// clip). `field` is the pixel domain the `nav` window spans horizontally — the
+/// lane body for a multitrack clip, the grid itself for the dedicated view — and
+/// each note's x clamps to `grid`'s bounds; `grid` also gives the pitch rows and
+/// the note height. Passing the clip rect for both would rescale the note by the
+/// clip's own width, drifting the roll off its clip under a pan/zoom. The one
+/// primitive both the widget and the clip body use. When `color_velocity` the
+/// note fill brightens with velocity. `selected` indices draw highlighted (the
+/// multi-note selection; the clip body passes none).
 #[allow(clippy::too_many_arguments)] // one time-and-pitch mapping, all scalars
 pub fn draw_notes(
     mesh: &mut Mesh,
+    field: Rect,
     grid: Rect,
     nav: &View,
     offset: f64,
@@ -204,8 +218,13 @@ pub fn draw_notes(
     let h = rh.clamp(NOTE_MIN_H, grid.h).max(NOTE_MIN_H);
     let (x_lo, x_hi) = (grid.x, grid.x + grid.w);
     for (i, n) in notes.iter().enumerate() {
-        let mut nx0 = to_x(offset + n.start, nav, grid) as f32;
-        let mut nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, grid) as f32;
+        // x maps through `field` — the pixel domain the shared `nav` spans (the
+        // lane body for a clip, the grid itself for the dedicated view) — then
+        // clamps to the clip's own `grid` bounds, exactly as `track::draw_curve`
+        // maps its points. Using `grid` for both would rescale the note by the
+        // clip's width, so notes drifted off their clip under a pan/zoom.
+        let mut nx0 = to_x(offset + n.start, nav, field) as f32;
+        let mut nx1 = to_x(offset + n.start + n.dur.max(0.0), nav, field) as f32;
         nx0 = nx0.clamp(x_lo, x_hi);
         nx1 = nx1.clamp(x_lo, x_hi);
         if nx1 <= nx0 {

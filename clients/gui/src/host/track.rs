@@ -336,7 +336,7 @@ fn draw_curve(mesh: &mut Mesh, cr: Rect, body: Rect, nav: &View, clip: &ClipDraw
 fn draw_piano_roll(
     mesh: &mut Mesh,
     cr: Rect,
-    _body: Rect,
+    body: Rect,
     nav: &View,
     clip: &ClipDraw,
     theme: &Theme,
@@ -344,8 +344,12 @@ fn draw_piano_roll(
     // The compact pitch ruler: each C named at the clip's left edge (there is
     // no keyboard gutter here), only when the rows are tall enough to read.
     pianoroll::draw_pitch_labels(mesh, cr, clip.min, clip.max, theme);
+    // Notes map their x through the lane `body` (the shared nav's pixel domain,
+    // like `draw_curve`) and clamp to the clip rect `cr`, so they stay pinned to
+    // the clip under a pan/zoom instead of rescaling by the clip's own width.
     pianoroll::draw_notes(
         mesh,
+        body,
         cr,
         nav,
         clip.offset,
