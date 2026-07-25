@@ -129,8 +129,9 @@ impl WsServerLink {
         })
     }
 
-    /// Sends one OSC message as a binary frame (one packet per frame, the G1
-    /// wire format), buffering until the socket is open.
+    /// Sends one OSC message as a binary frame (one packet per frame, the
+    /// WebSocket wire format the audio server speaks), buffering until the
+    /// socket is open.
     pub fn send(&self, msg: OscMessage) -> std::io::Result<()> {
         let bytes = encode(&OscPacket::Message(msg))
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;

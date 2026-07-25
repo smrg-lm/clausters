@@ -39,7 +39,7 @@ const BODY_W: f32 = 1.0;
 /// A piano-roll note. Re-exported from [`super::pianoroll`], the module that
 /// owns the note model and the drawing/hit-test primitives — a clip's roll and
 /// the dedicated `pianoroll` view share the one type so they never disagree on
-/// geometry (the G22h reuse discipline).
+/// geometry.
 pub use super::pianoroll::Note;
 
 /// One clip copied out of the host tree for drawing (and hit-testing). A clip

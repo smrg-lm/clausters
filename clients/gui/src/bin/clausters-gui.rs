@@ -219,7 +219,7 @@ fn run(args: &[String]) -> Result<(), String> {
         None => Config::load(),
     };
     let port = cli_port.or(cfg.gui.host_port).unwrap_or(DEFAULT_PORT);
-    // The TCP leg is on by default at the host port (G25); `--no-tcp` (or
+    // The TCP leg is on by default at the host port; `--no-tcp` (or
     // `tcp = false` in the config) turns it off, a port moves it. The CLI's
     // port-0 sentinel means "--tcp with no port": ride the host port.
     let tcp_port: Option<u16> = match cli_tcp {

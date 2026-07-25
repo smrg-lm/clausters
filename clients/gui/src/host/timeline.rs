@@ -21,10 +21,10 @@
 //! The group state navigates in **timeline sample units**, not in any one
 //! member's buffer: the group's length is the maximum of its members'
 //! registered data extents (a shorter member simply ends earlier), and a group
-//! may span windows. This is deliberately the shape a future multitrack
-//! (DAW-style) view needs — a clip item there is a member with a *placement*
-//! (a start offset) on the same shared timeline. G20d ships every member at
-//! offset 0; the per-member placement is the one designed extension point.
+//! may span windows. That shape is what the multitrack (DAW-style) view is
+//! built on: a clip there is a member with a *placement* — a start offset on
+//! the same shared timeline, set through [`Host::set_timeline_offset`] — so a
+//! lane of clips and a pair of linked lanes are one model, not two.
 //!
 //! Selection and playhead are **mirrored** from the group into every member's
 //! `EditorProps` on each change, so the frame renderer, `has_playhead` and

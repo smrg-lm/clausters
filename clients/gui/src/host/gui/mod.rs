@@ -61,7 +61,7 @@ pub enum UserEvent {
     /// One OSC datagram from a script and where it came from (decoded on the main
     /// thread, through the single shared door, to keep all logic on one thread).
     Osc { from: SocketAddr, bytes: Vec<u8> },
-    /// A new TCP connection on the script front (G25): its id and the write
+    /// A new TCP connection on the script front: its id and the write
     /// half its replies go out through. The reader threads feed the event loop
     /// directly (no wake datagram needed — the proxy *is* the wake).
     TcpConnected { id: u64, stream: TcpStream },

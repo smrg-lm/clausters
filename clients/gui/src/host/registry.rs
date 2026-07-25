@@ -5,7 +5,8 @@
 //! widget frees its descendants, the way freeing a group frees its nodes). A
 //! GuiDef is flattened into one record per widget on `/gui_def`; `/gui_set`
 //! mutates a record's props, `/gui_free` removes a subtree, `/gui_query` reads
-//! one back. No GPU yet — this is the bookkeeping the renderers (G3+) hang off.
+//! one back. It is bookkeeping only — no geometry, no GPU: the renderers read
+//! the tree it holds, and every one of them hangs off it.
 
 use std::collections::HashMap;
 

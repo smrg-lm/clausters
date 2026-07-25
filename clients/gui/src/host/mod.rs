@@ -1,32 +1,35 @@
 //! The GUI host: an OSC front with a widget command interpreter.
 //!
-//! `clausters-gui` is **two roles in one process**: a *GUI server (host)* for
-//! the language clients — it owns the windows, the widgets and (later) the GPU,
-//! and speaks the `/gui_*` widget protocol — and a *client of the audio server*
-//! — it reads buffers/buses/the node tree and sends control, exactly as the
-//! Python client does. This milestone is the **headless skeleton**: the server
-//! front and a scaffolded client leg, a widget [`Registry`], and a command loop
-//! that interprets `/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`, logs them and
-//! answers `/gui_query` with `/gui_info`. No GPU yet (G3 brings the first
-//! pixels).
+//! `clausters-gui` is **two roles in one process**: a *GUI host* for the
+//! language clients — it owns the windows, the widgets and the GPU, and speaks
+//! the `/gui_*` widget protocol — and a *client of the audio server* — it reads
+//! buffers/buses/the node tree and sends control, exactly as the Python client
+//! does. This module is the host proper: the widget [`Registry`], the typed tree
+//! it holds, and the transport-agnostic command loop that interprets
+//! `/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`/`/gui_bind`/`/gui_load` and
+//! answers with `/gui_info`/`/gui_event`/`/gui_closed`. Everything under it is
+//! split along the platform seam (see the module groups below): a web-portable
+//! core, and an I/O shell reached only through small traits.
 //!
-//! ## Transport decision (recorded here per the milestone)
+//! ## Why the host owns its transport
 //!
 //! The host does **not** extract or link the audio server's transport layer
 //! (`src/osc/{server,tcp,ws}.rs`): that code is tangled with the audio
-//! `ServerState`, the engine wake and the IPC ring, so lifting it now would drag
+//! `ServerState`, the engine wake and the IPC ring, so lifting it would drag
 //! server concerns into this crate for no gain. Instead the host **links
 //! `clausters-core`** — a path dependency that pulls only `rosc` — for the shared
 //! OSC seam (the single [`clausters_core::osc::decode_packet`] door, plus
 //! encode/bundle/message), and owns a **thin transport front** of its own
 //! ([`transport`]). The default build links no server code; only the optional
 //! `standalone` feature pulls the full `clausters` crate, for the in-process
-//! embedded server ([`embed`]). G2 ships the
-//! **UDP** front (the default Clausters carrier, minimal to drive from a Python
-//! client); TCP/WebSocket/ring are added in later milestones behind the same
-//! [`transport::ClientId`] and reply seam, which is shaped to generalize. The
-//! client leg ([`client::ServerLeg`]) reuses that same encode door, so the gui
-//! talks to the audio server with one encoder, not a parallel one.
+//! embedded server ([`embed`]).
+//!
+//! That front now carries UDP and TCP ([`tcp`]) together on one port, plus an
+//! opt-in WebSocket leg ([`ws`]) — all behind one [`ClientId`] and
+//! reply seam, which is the seam's whole point: each carrier was added without
+//! touching the protocol or this command loop, and the next one should be too.
+//! The client leg ([`client::ServerLeg`]) reuses that same encode door, so the
+//! gui talks to the audio server with one encoder, not a parallel one.
 
 // The platform-agnostic core: the widget/protocol logic, web-portable (it
 // compiles for `wasm32` unchanged). No sockets, no filesystem, no GPU bring-up —
@@ -68,11 +71,11 @@ pub mod widget;
 // fetching half is page JS).
 pub mod bundle;
 
-// The native I/O shell, excluded from `wasm32`: the UDP client leg
-// ([`Transport`]), on-disk GuiDef persistence ([`DefStore`]) and the UDP server
-// front. The browser fills the same seams over WebSocket/fetch in later
-// milestones. The winit/wgpu driver ([`gui`]) and the mmap bulk loader
-// ([`bulk`]) are gated below.
+// The native I/O shell, excluded from `wasm32`: the client leg ([`Transport`]),
+// on-disk GuiDef persistence ([`DefStore`]) and the UDP/TCP/WebSocket server
+// fronts. The browser fills the same seams over WebSocket and fetch. The
+// winit/wgpu driver ([`gui`]) and the mmap bulk loader ([`bulk`]) are gated
+// below.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod client;
 #[cfg(not(target_arch = "wasm32"))]
@@ -84,8 +87,8 @@ pub mod transport;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod ws;
 
-// Reading the audio server's shared-memory segment for zero-message meters/
-// scopes (G5), the native [`BusSource`]. Unix-only, as the server's segment is.
+// Reading the audio server's shared-memory segment for zero-message meters and
+// scopes: the native [`BusSource`]. Unix-only, as the server's segment is.
 #[cfg(unix)]
 pub mod shm;
 
@@ -96,14 +99,14 @@ pub mod shm;
 pub mod embed;
 
 // Mapping a local file (raw samples or a prebuilt peak cache) for the bulk-data
-// path: a multi-megabyte buffer rendered from a shared resource, not over OSC
-// (G7). Unix-only, like `shm`.
+// path: a multi-megabyte buffer read from a shared resource, not over OSC.
+// Unix-only, like `shm`.
 #[cfg(unix)]
 pub mod mapfile;
 
 // The native [`BulkLoader`]: resolves a waveform/plot's local `path`/`cache` to
 // samples or a peak pyramid through the mmap path above. The browser resolves
-// the same references over the network in a later milestone.
+// the same references as URLs through `fetch`.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bulk;
 
@@ -118,8 +121,8 @@ pub mod gestures;
 pub mod gui;
 
 // The browser entry point: a `<canvas>` WebGPU surface with async GPU bring-up,
-// rendering a compiled-in GuiDef through the same `frame` path the native front
-// uses. No transport yet (G12); the WebSocket carrier lands in G13. wasm-only.
+// rendering through the same `frame` path the native front uses, driven over a
+// WebSocket or the in-page binding surface. wasm-only.
 #[cfg(target_arch = "wasm32")]
 pub mod web;
 
@@ -140,15 +143,15 @@ pub use registry::Registry;
 pub use widget::Widget;
 
 /// Where a request reached the host and where its replies go. The `/gui_*`
-/// *encoding* is transport-independent, so client identity is too — UDP today
-/// (the native front), with other carriers (a browser WebSocket) added behind
-/// the same seam. It lives in the agnostic core, not the UDP front, so the
-/// protocol dispatch names it on every platform.
+/// *encoding* is transport-independent, so client identity is too: every
+/// carrier is a variant here, and a new one is added without the protocol
+/// dispatch changing. It lives in the agnostic core, not in any one front, so
+/// that dispatch names it on every platform.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum ClientId {
     /// A UDP datagram source (the native server front).
     Udp(SocketAddr),
-    /// A TCP connection on the native server front (G25), by connection id —
+    /// A TCP connection on the native server front, by connection id —
     /// length-prefixed frames, replies routed back on the same connection.
     Tcp(u64),
     /// A WebSocket connection on the native server front (`--ws`), by
@@ -285,7 +288,7 @@ pub trait DefStore: Send {
 }
 
 /// Resolves a waveform/plot widget's **local** bulk resource (its `path` or
-/// prebuilt `cache`) to ready data, off the OSC path (the G7 bulk principle).
+/// prebuilt `cache`) to ready data, off the OSC path (the bulk-data rule).
 /// The native loader ([`bulk::MmapLoader`]) maps the file read-only; a browser
 /// fetches the same reference over the network in a later milestone. The seam
 /// returns platform-agnostic data ([`WaveformData`]/samples) so the GPU views

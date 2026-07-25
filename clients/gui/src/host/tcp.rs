@@ -1,4 +1,4 @@
-//! TCP server front for the `/gui_*` protocol (G25).
+//! TCP server front for the `/gui_*` protocol.
 //!
 //! The variant the [`super::ClientId`] seam anticipated: the audio server's
 //! `osc::tcp` pattern reused — an acceptor thread plus one reader thread per

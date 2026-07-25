@@ -7,7 +7,7 @@
 //! parallel one. The leg is bidirectional: the host **sends** queries/control
 //! (`/b_query`, `/b_getn`, later `/n_set` for bound widgets) and **receives**
 //! the server's replies (`/b_info`, `/b_setn`). The windowed front pumps those
-//! replies into the main thread to fill server-buffer waveform views (G5).
+//! replies into the main thread to fill server-buffer waveform views.
 //!
 //! Control buses are *not* read through this leg: a `meter`/`scope` reads them
 //! directly from the shared-memory segment ([`super::shm`]) with no messages at

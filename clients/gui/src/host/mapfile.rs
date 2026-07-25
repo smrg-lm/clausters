@@ -1,7 +1,8 @@
 //! A read-only memory map of a local file: the bulk-data path that bypasses OSC.
 //!
-//! G7's decision — large payloads move between processes through **local shared
-//! resources**, not the network — needs the host to read a multi-megabyte
+//! The crate's bulk-data rule — large payloads move between processes through
+//! **local shared resources**, not the network — needs the host to read a
+//! multi-megabyte
 //! buffer (or its prebuilt peak cache) that a client wrote, or the audio server
 //! exported, without it crossing a UDP datagram or being re-sent per frame. A
 //! `waveform` names a file (`path` = raw little-endian `f32` samples, `cache` =

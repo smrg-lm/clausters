@@ -3,9 +3,10 @@
 //! flat-geometry [`super::paint`] painter) so they are unit-testable without a
 //! window — the static-view posture of `track`/`bpf`.
 //!
-//! This module is **shared by two consumers**, the same discipline G22h took
-//! when it extracted `bpf::place_point`/`insert_point` for both the `bpf`
-//! widget and the automation clip:
+//! This module is **shared by two consumers**, on the crate's standing rule
+//! that a model and its hit-test primitives are extracted once and reused —
+//! the same way `bpf::place_point`/`insert_point` serve both the `bpf` widget
+//! and the automation clip:
 //!
 //! - the dedicated **`pianoroll` widget** (`WidgetKind::PianoRoll`) — an
 //!   editor-grade view with a keyboard, rulers, group navigation, selection and
