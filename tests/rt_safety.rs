@@ -1215,3 +1215,66 @@ fn phase_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// The filter core (U2): the state-variable rows and the one-pole family. The
+/// coefficient path is the thing worth guarding — it computes a `tan` and a
+/// reciprocal per block, and a lazily built table or a `Vec` of interpolated
+/// coefficients there would allocate on the audio thread. Both parameter paths
+/// are exercised: constants take the block fast path, the modulated `RLPF`
+/// takes the interpolating one.
+#[test]
+fn filter_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "filters",
+            "ugens": [
+                {"kind": "Saw", "inputs": [{"const": 110.0}]},
+                {"kind": "LFTri", "inputs": [{"const": 2.0}, {"const": 0.0}]},
+                {"kind": "MulAdd", "inputs": [{"ugen": 1}, {"const": 900.0}, {"const": 1200.0}]},
+                {"kind": "LPF", "inputs": [{"ugen": 0}, {"const": 900.0}]},
+                {"kind": "HPF", "inputs": [{"ugen": 3}, {"const": 80.0}]},
+                {"kind": "RLPF", "inputs": [{"ugen": 4}, {"ugen": 2}, {"const": 0.2}]},
+                {"kind": "BPF", "inputs": [{"ugen": 5}, {"const": 700.0}, {"const": 0.5}]},
+                {"kind": "BRF", "inputs": [{"ugen": 6}, {"const": 300.0}, {"const": 0.5}]},
+                {"kind": "Svf", "inputs": [{"ugen": 7}, {"ugen": 2}, {"const": 0.4},
+                                           {"const": 1.0}, {"ugen": 1}, {"const": 0.2}]},
+                {"kind": "OnePole", "inputs": [{"ugen": 8}, {"const": 0.7}]},
+                {"kind": "LeakDC", "inputs": [{"ugen": 9}, {"const": 0.995}]},
+                {"kind": "BinaryOpUGen", "op": "mul",
+                 "inputs": [{"ugen": 10}, {"const": 0.1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 11}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

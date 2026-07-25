@@ -1949,3 +1949,77 @@ softening them would be a defect rather than a feature. Their initial phase is
 in **cycles**, `[0, 1)`, where sclang measures the same argument in `[0, 2)`
 because its accumulator happens to run over `[-1, 1]` — an implementation
 detail exposed as a unit, which every phase in this project declines to inherit.
+
+## The two-pole filters are one trapezoidal state-variable core, and the response can be an input
+
+scsynth realizes `LPF`, `HPF`, `BPF`, `BRF`, `RLPF`, `RHPF` and `Resonz` as
+seven direct-form two-pole sections, each with its own coefficient formula, its
+own `next` variants, and its own copy of the same algebra.
+
+**Decision:** one *topology-preserving* (trapezoidal-integrator) state-variable
+filter behind all of them. It implements the **same** prototype — the bilinear
+transform of the analog two-pole — so the transfer function is not an
+approximation of scsynth's, it is the same function, and the tests assert it
+against the closed form rather than against a golden file: within **0.1 dB**
+across nine octaves at every cutoff and resonance tried, with the allpass mix
+flat to 0.02 dB and the notch nulling below −136 dB.
+
+What changes is behaviour, not response:
+
+1. **It does not leave its stable region under audio-rate cutoff modulation.**
+   A direct-form section's state has no meaning between two coefficient sets; an
+   integrator's state is the signal it has integrated, whatever happens next.
+   The acceptance test sweeps a resonant cutoff from 20 Hz to 18 kHz at 40 Hz
+   under full-scale noise and asserts the output stays bounded.
+2. **It stays well conditioned at low cutoff**, where the poles crowd `z = 1`.
+   The acceptance test runs `LPF` at 20 Hz for ten seconds and requires the
+   passband gain to still match the analytic value within 0.1 dB.
+3. **Every response falls out of the same pair of integrator updates**, as a
+   linear mix of three taps. That is what lets one implementation carry seven
+   scsynth names — and it is the whole reason for the one row scsynth has no
+   name for.
+
+**`Svf`: the response as a signal.** Because the taps are already computed,
+exposing their gains as **inputs** costs the mix and nothing else, where a
+direct-form section would have to recompute coefficients. So `Svf` takes `low`,
+`band` and `high` as ordinary signals, and every classic response is a triple:
+lowpass `1,0,0`; bandpass `0,rq,0`; highpass `0,0,1`; notch `1,0,1`; peak
+`-1,0,1`; allpass `1,-rq,1`. A one-knob morph is a **client-side** helper over
+those three inputs (`svf_morph` in the Python client), deliberately not a wire
+parameter: committing the protocol to one arbitrary ordering of responses would
+exclude every other, and the ordering is a user-interface choice, not a DSP one.
+
+**Precision:** state and coefficients are `f64`. This is not caution and not a
+deviation — scsynth's `FilterUGens.cpp` declares `double y1, y2, a0, b1, b2` for
+exactly these filters, because near DC the coefficient quantization and the
+state truncation of `f32` dominate the output.
+
+**Coefficient rate:** the `tan` and the reciprocal run **once per block** when
+the parameters arrive as scalar wires, and twice — at the block's first and last
+sample, with the three integrator gains interpolated linearly between — when
+either is audio-rate. Interpolating the *gains* rather than the cutoff is what
+keeps a modulated filter at three multiply-adds per sample instead of a
+transcendental and a division. This is scsynth's `CALCSLOPE` idea applied one
+level later.
+
+**`rq`, not `Q`, on the wire.** Keeping scsynth's reciprocal is not a
+performance choice: it saves one division per *block*, next to a `tan` that
+costs several times more. It is a domain choice — `rq = 0` is infinite Q and is
+exactly representable, where `Q = 0` divides by zero and `Q → ∞` is not a
+number. The awkwardness is real, so the client builders accept `q=` and convert
+(a constant folds at graph-build time; a signal composes one reciprocal).
+
+**`BPF` and `Resonz` are the same row twice.** scsynth ships two historically
+distinct two-pole resonators that promise the same parameterization and the same
+unity peak gain; reproducing the distinction would mean reproducing an accident.
+A test asserts the two are sample-identical, so a reader finds the answer
+instead of wondering.
+
+**The one-pole family keeps its coefficient parameterization** (`OnePole`,
+`OneZero`, `LeakDC`, `Integrator` take a pole, not a cutoff), as in scsynth: a
+one-pole has no `-3 dB` point in the sense a two-pole does, and naming the
+parameter a frequency would promise one. `Lag` is the UGen for a time constant.
+The coefficient is clamped just inside the unit circle, so a mistyped control
+degrades instead of producing NaN forever — which does mean `Integrator` always
+leaks, deliberately: a true integrator fed any DC reaches infinity, and it would
+do so on the audio thread.

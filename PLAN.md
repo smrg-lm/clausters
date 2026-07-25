@@ -489,23 +489,27 @@ inherits them.
   duty cycle declares two inputs rather than three so `/u_query` never reports an
   inlet the UGen ignores.
 
-- **U2 — The filter core** — `src/dsp/filter.rs`: the TPT/ZDF state-variable core
-  behind `LPF`, `HPF`, `BPF`, `BRF`, `RLPF`, `RHPF`, `Resonz`, `Ringz`, plus the
-  one-pole core behind `OnePole`, `OneZero`, `LeakDC`, `Integrator` (reusing the
-  time-constant helper already in `src/dsp/lag.rs`). Resonance stays `rq` on the
-  wire — not for cost (one division per block, dominated by the `tan()` beside
-  it) but for parity and for the clean domain, `rq = 0` being infinite Q exactly
-  where `Q = 0` would divide by zero; the Python builders accept `q=` and fold it
-  client-side. Acceptance includes an audio-rate cutoff sweep the deviation
-  exists for. The same milestone adds the one row scsynth has no name for, and
-  which the core makes nearly free: **`Svf`**, whose three output mixes (`low`,
-  `band`, `high`) are **signal inputs** rather than a compile-time mode — every
-  classic response is a linear combination of the structure's three taps
-  (notch = `1,0,1`; peak = `-1,0,1`; allpass = `1,-rq,1`), so a modulable
-  multimode filter costs the mix and nothing else, where a direct-form biquad
-  would have to recompute coefficients. The single-knob morph stays a client-side
-  helper over those three inputs, so no arbitrary ordering of responses is baked
-  into the wire.
+- ✅ **U2 — The filter core** *(done 2026-07-25)* — `src/dsp/filter.rs`: one
+  trapezoidal-integrator state-variable core behind `LPF`, `HPF`, `BPF`, `BRF`,
+  `RLPF`, `RHPF` and `Resonz`, plus the one-pole family (`OnePole`, `OneZero`,
+  `LeakDC`, `Integrator`). It implements the *same* bilinear-transformed two-pole
+  prototype scsynth does, asserted against the closed form rather than a golden:
+  **within 0.1 dB across nine octaves**, allpass flat to 0.02 dB, notch nulling
+  below −136 dB. The two properties the realization was chosen for each have an
+  acceptance test — a resonant cutoff swept 20 Hz→18 kHz at 40 Hz under
+  full-scale noise stays bounded, and `LPF` at 20 Hz for ten seconds still gives
+  the analytic passband gain (the test that would catch `f64` state regressing to
+  `f32`). Resonance stays `rq` on the wire, for its clean domain rather than for
+  cost; the Python builders accept `q=` and fold it. `BPF` and `Resonz` are one
+  implementation under two names, with a test that says so. And the row scsynth
+  has no name for: **`Svf`**, whose three tap gains (`low`, `band`, `high`) are
+  **signal inputs**, so the response itself is modulable — every classic
+  response is a triple (notch `1,0,1`, peak `-1,0,1`, allpass `1,-rq,1`) and the
+  one-knob morph is a client helper, so no arbitrary ordering of responses enters
+  the wire. Two measurement findings recorded in the tests: a digital two-pole is
+  steeper than 12 dB/octave near Nyquist (bilinear warping — the filter being
+  right, not wrong), and every gain measurement needs a coherent window or it
+  reads a tenth of a dB off.
 
 - **U3 — The delay core** — `src/dsp/delay.rs`: one line core (`f32` storage,
   `f64` read position) parameterized by interpolation × feedback, behind

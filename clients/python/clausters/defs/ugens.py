@@ -444,6 +444,148 @@ def phasor(trig=0.0, rate=1.0, start=0.0, end=1.0, reset_pos=0.0) -> Ugen:
     return Ugen("Phasor", [trig, rate, start, end, reset_pos])
 
 
+# ---- filters ----------------------------------------------------------------
+#
+# One state-variable implementation stands behind every two-pole name; the row
+# chooses the tap mix. Resonance travels on the wire as ``rq`` (the reciprocal
+# of Q), which is scsynth's contract and the parameter with the clean domain:
+# ``rq = 0`` is infinite Q, representable exactly, where ``Q = 0`` would divide
+# by zero. Because ``rq`` is awkward to *think* in, each resonant builder also
+# accepts ``q=``; a constant folds here at graph-build time and a signal
+# composes one reciprocal, which is nothing next to the filter it feeds.
+
+
+def _resonance(rq, q):
+    """Resolves the mutually exclusive ``rq`` / ``q`` pair into a wire ``rq``."""
+    if q is None:
+        return 1.0 if rq is None else rq
+    if rq is not None:
+        raise TypeError("give either rq or q, not both")
+    if isinstance(q, (int, float)):
+        if q == 0:
+            raise ValueError("q must be non-zero; use rq=0 for infinite Q")
+        return 1.0 / q
+    return _channel_unop(q, "recip")
+
+
+def lpf(signal, freq=440.0) -> Ugen:
+    """Second-order Butterworth lowpass: -3 dB at ``freq``, -12 dB/octave."""
+    return Ugen("LPF", [signal, freq])
+
+
+def hpf(signal, freq=440.0) -> Ugen:
+    """Second-order Butterworth highpass: -3 dB at ``freq``, -12 dB/octave."""
+    return Ugen("HPF", [signal, freq])
+
+
+def rlpf(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
+    """Resonant lowpass. Give the resonance as ``rq`` (1/Q, 0 = infinite) or
+    as ``q``; unity gain at DC."""
+    return Ugen("RLPF", [signal, freq, _resonance(rq, q)])
+
+
+def rhpf(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
+    """Resonant highpass; unity gain at Nyquist. Resonance as in `rlpf`."""
+    return Ugen("RHPF", [signal, freq, _resonance(rq, q)])
+
+
+def bpf(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
+    """Bandpass with **unity gain at the centre**; ``rq`` is its bandwidth
+    ratio. Resonance as in `rlpf`."""
+    return Ugen("BPF", [signal, freq, _resonance(rq, q)])
+
+
+def brf(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
+    """Band reject (notch); unity gain in both passbands, a true null at
+    ``freq``. Resonance as in `rlpf`."""
+    return Ugen("BRF", [signal, freq, _resonance(rq, q)])
+
+
+def resonz(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
+    """Resonator with unity gain at the peak.
+
+    The same structure and parameterization as `bpf` — sclang ships two
+    historically distinct two-pole resonators that promise the same thing, and
+    here one implementation carries both names.
+    """
+    return Ugen("Resonz", [signal, freq, _resonance(rq, q)])
+
+
+def svf(signal, freq=440.0, rq=None, low=0.0, band=0.0, high=0.0, *,
+        q=None) -> Ugen:
+    """The state-variable filter with its three tap gains as **signal inputs**,
+    so the response itself can be modulated.
+
+    Every classic response is a mix of the three taps, and each of these is a
+    valid argument triple:
+
+    | response | ``low`` | ``band`` | ``high`` |
+    |---|---|---|---|
+    | lowpass | 1 | 0 | 0 |
+    | bandpass (peak gain Q) | 0 | 1 | 0 |
+    | bandpass (unity peak) | 0 | ``rq`` | 0 |
+    | highpass | 0 | 0 | 1 |
+    | notch | 1 | 0 | 1 |
+    | peak | -1 | 0 | 1 |
+    | allpass | 1 | ``-rq`` | 1 |
+
+    Sweeping between them costs the mix and nothing else: the three taps come
+    out of the same pair of integrator updates. See `svf_morph` for the
+    one-knob version.
+    """
+    return Ugen("Svf", [signal, freq, _resonance(rq, q), low, band, high])
+
+
+def svf_morph(pos):
+    """The ``(low, band, high)`` gains for a continuous lowpass → bandpass →
+    highpass sweep, to splat into `svf`: ``svf(sig, freq, rq, *svf_morph(p))``.
+
+    ``pos`` runs 0 → 1 → 2 and may be a signal, so the response becomes an
+    automation lane like any other. The ordering lives here rather than on the
+    wire, where committing to one arbitrary sequence of responses would exclude
+    every other (notch, peak, allpass are all reachable through `svf` itself).
+    """
+    def clamp01(x):
+        return _channel_binop(_channel_binop(x, "max", 0.0), "min", 1.0)
+
+    low = clamp01(_channel_binop(1.0, "sub", pos))
+    high = clamp01(_channel_binop(pos, "sub", 1.0))
+    # A triangle peaking at pos == 1: 1 - |pos - 1|.
+    band = clamp01(
+        _channel_binop(1.0, "sub", _channel_unop(_channel_binop(pos, "sub", 1.0), "abs"))
+    )
+    return low, band, high
+
+
+def one_pole(signal, coef=0.5) -> Ugen:
+    """``y[n] = (1-|coef|)·x[n] + coef·y[n-1]`` — lowpass for a positive
+    coefficient, highpass for a negative one, unity in the passband.
+
+    The parameter is the **pole**, not a cutoff, as in sclang. Use `lag` when
+    what you want is a time constant.
+    """
+    return Ugen("OnePole", [signal, coef])
+
+
+def one_zero(signal, coef=0.5) -> Ugen:
+    """``y[n] = (1-|coef|)·x[n] + coef·x[n-1]`` — the zero-only sibling of
+    `one_pole`."""
+    return Ugen("OneZero", [signal, coef])
+
+
+def leak_dc(signal, coef=0.995) -> Ugen:
+    """Removes DC: a zero exactly at 0 Hz with a pole just inside it. The
+    default corner is low enough to leave audio untouched."""
+    return Ugen("LeakDC", [signal, coef])
+
+
+def integrator(signal, coef=0.999) -> Ugen:
+    """Leaky accumulator, ``y[n] = x[n] + coef·y[n-1]``. The coefficient is
+    clamped just inside 1 on the server, so it always forgets eventually
+    instead of running away on a DC input."""
+    return Ugen("Integrator", [signal, coef])
+
+
 def in_(bus=0.0) -> Ugen:
     """Reads an audio bus (sampled per block)."""
     return Ugen("In", [bus])

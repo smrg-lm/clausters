@@ -18,6 +18,7 @@ use crate::dsp::demand::{Demand, Dseq};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::EnvGen;
+use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
@@ -385,6 +386,12 @@ const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
 /// an inlet the UGen ignores.
 const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
+/// The two-pole rows (U2). The Butterworth pair fixes its own damping and
+/// therefore has no `rq` wire; the resonant ones read it.
+const I_FILT: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0)];
+const I_FILT_RQ: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("rq", 1.0)];
+/// The one-pole family takes a pole coefficient, not a frequency.
+const I_ONE: &[UGenInput] = &[inp("signal", 0.0), inp("coef", 0.5)];
 const I_BUS: &[UGenInput] = &[inp("bus", 0.0)];
 const I_BUS_SIGNAL: &[UGenInput] = &[inp("bus", 0.0), inp("signal", 0.0)];
 const I_BUFNUM: &[UGenInput] = &[inp("bufnum", 0.0)];
@@ -517,6 +524,150 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(Phasor::new()),
+    ),
+    // --- the filter core (U2): one topology-preserving state-variable
+    //     implementation behind every two-pole name, plus the one-pole family.
+    //     `BPF` and `Resonz` are the same row twice on purpose - scsynth ships
+    //     two historically distinct resonators with the same parameterization
+    //     and the same unity peak gain. See `dsp::filter`. ---
+    desc(
+        "LPF",
+        Fixed(2),
+        I_FILT,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::Lp)),
+    ),
+    desc(
+        "HPF",
+        Fixed(2),
+        I_FILT,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::Hp)),
+    ),
+    desc(
+        "RLPF",
+        Fixed(3),
+        I_FILT_RQ,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::RLp)),
+    ),
+    desc(
+        "RHPF",
+        Fixed(3),
+        I_FILT_RQ,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::RHp)),
+    ),
+    desc(
+        "BPF",
+        Fixed(3),
+        I_FILT_RQ,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::Bp)),
+    ),
+    desc(
+        "Resonz",
+        Fixed(3),
+        I_FILT_RQ,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::Bp)),
+    ),
+    desc(
+        "BRF",
+        Fixed(3),
+        I_FILT_RQ,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::Notch)),
+    ),
+    desc(
+        "Svf",
+        Fixed(6),
+        &[
+            inp("signal", 0.0),
+            inp("freq", 440.0),
+            inp("rq", 1.0),
+            inp("low", 1.0),
+            inp("band", 0.0),
+            inp("high", 0.0),
+        ],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Svf::new(SvfMode::Mix)),
+    ),
+    desc(
+        "OnePole",
+        Fixed(2),
+        I_ONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(OneFilter::new(OneKind::OnePole)),
+    ),
+    desc(
+        "OneZero",
+        Fixed(2),
+        I_ONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(OneFilter::new(OneKind::OneZero)),
+    ),
+    desc(
+        "LeakDC",
+        Fixed(2),
+        I_ONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(OneFilter::new(OneKind::LeakDc)),
+    ),
+    desc(
+        "Integrator",
+        Fixed(2),
+        I_ONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(OneFilter::new(OneKind::Integrator)),
     ),
     // --- arithmetic: the generic op UGens (S3), selected by a core opcode
     //     index; every math need is one more `clausters_core::builtins` entry,

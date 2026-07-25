@@ -34,6 +34,8 @@ pub mod disk;
 #[cfg(feature = "synth")]
 pub mod envgen;
 #[cfg(feature = "synth")]
+pub mod filter;
+#[cfg(feature = "synth")]
 pub mod fused;
 #[cfg(feature = "synth")]
 pub mod impulse;

@@ -190,6 +190,15 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | `LFPulse` | freq (Hz), iphase, width | square in **[0, 1]** (a gate, unlike the bipolar `Pulse`) with `width` as its duty cycle; not band-limited |
 | `LFTri` | freq (Hz), iphase | triangle in ±1 starting at 0 and rising; not band-limited |
 | `VarSaw` | freq (Hz), iphase, width | triangle whose peak sits at `width` of the cycle — sweeps from a falling ramp through a triangle to a rising one; not band-limited |
+| `LPF`, `HPF` | signal, freq (Hz) | second-order Butterworth low/highpass: −3 dB at `freq`, −12 dB/octave |
+| `RLPF`, `RHPF` | signal, freq (Hz), rq | the same with the resonance as an input; unity gain at DC / at Nyquist |
+| `BPF`, `Resonz` | signal, freq (Hz), rq | bandpass with **unity gain at the centre**, `rq` its bandwidth ratio. Two names, one implementation — see the filter note below |
+| `BRF` | signal, freq (Hz), rq | band reject: unity in both passbands, a true null at `freq` |
+| `Svf` | signal, freq (Hz), rq, low, band, high | the state-variable filter with its three tap gains as **signal inputs**, so the response is modulable. Lowpass = `1,0,0`; bandpass (unity peak) = `0,rq,0`; highpass = `0,0,1`; notch = `1,0,1`; peak = `-1,0,1`; allpass = `1,-rq,1` |
+| `OnePole` | signal, coef | `y[n] = (1−\|c\|)·x[n] + c·y[n−1]` — lowpass for a positive coefficient, highpass for a negative one. The parameter is the **pole**, not a cutoff |
+| `OneZero` | signal, coef | `y[n] = (1−\|c\|)·x[n] + c·x[n−1]` |
+| `LeakDC` | signal, coef | DC blocker: a zero exactly at 0 Hz with a pole just inside it |
+| `Integrator` | signal, coef | leaky accumulator, `y[n] = x[n] + c·y[n−1]`; `coef` is clamped just inside 1 so it always forgets eventually |
 | `Phasor` | trig, rate, start, end, reset_pos | ramp from `start` to `end` advancing by `rate` **per sample** (not Hz), wrapping at `end`; a rising `trig` jumps to `reset_pos`. The index source for a buffer reader: a rate of 1 advances one frame per sample |
 | `BinaryOpUGen` | a, b | one of a table of binary operators, chosen by the `op` **name** — see the operator note below |
 | `UnaryOpUGen` | a | one of a table of unary operators, chosen by the `op` **name** — see the operator note below |
@@ -379,6 +388,12 @@ Output happens exclusively through `Out`/`ReplaceOut`; a def without them is sil
 | 3996 Hz | 39.2 dB | 9.9 dB | 38.9 dB | 11.4 dB |
 
 The 105 Hz figure is within about 2.5 dB of what the measurement itself can resolve, so the low end is effectively transparent. The `LF*` shapes are deliberately not band-limited at all, as in scsynth — they are modulation sources and their corners should be exact.
+
+**The two-pole rows are one filter (deviation from scsynth).** scsynth realizes `LPF`, `HPF`, `BPF`, `BRF`, `RLPF`, `RHPF` and `Resonz` as separate direct-form sections, each with its own coefficient formula. Here they are one *topology-preserving* (trapezoidal-integrator) state-variable filter, which implements the **same** prototype — the bilinear transform of the analog two-pole — and therefore the same transfer function, verified against it to within 0.1 dB across nine octaves. What changes is behaviour, not response: it does not leave its stable region under audio-rate cutoff modulation, it stays well conditioned at low cutoff, and lowpass/bandpass/highpass/notch all fall out of the same pair of integrator updates. That last point is why `Svf` exists at all: exposing the tap mix as inputs costs the mix and nothing else, so a filter whose response is itself a signal is free here and would mean recomputing coefficients in a direct-form section. `BPF` and `Resonz` are the same row twice on purpose — scsynth ships two historically distinct resonators that promise the same parameterization and the same unity peak gain.
+
+State and coefficients are `f64` throughout, matching scsynth's own choice for the same reason: near DC the poles crowd the unit circle and `f32` truncation dominates the output. The `tan` and reciprocal that turn a cutoff into integrator gains run **once per block** when the parameters are scalar, and twice — block start and end, linearly interpolated — when either is audio-rate, so a modulated filter costs three multiply-adds per sample rather than a transcendental.
+
+Resonance travels as **`rq`**, the reciprocal of Q, as in scsynth. That is not a performance choice (one division per block, next to a `tan` that costs several times more) but a domain one: `rq = 0` is infinite Q and is exactly representable, where `Q = 0` would divide by zero and `Q → ∞` is not a number. Clients are free to offer `q` and convert.
 
 Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output PlayBuf): the `chan` input picks the channel, and two readers with the same inputs stay sample-locked, so a stereo file is two UGens. Neither has a trigger or done action yet.
 
