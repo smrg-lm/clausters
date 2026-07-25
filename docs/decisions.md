@@ -1852,3 +1852,43 @@ edit-back or a live `set` should address against. This keeps the wire protocol
 and the host untouched — the whole change is the client growing an allocator and
 a handle layer, no `ABI` counter moves — which is the "when a feature could live
 in the client or the wire, keep it where the system already keeps it" rule.
+
+## Docstrings are Google-style Markdown: markup a reader has to skip is a cost
+
+Python docstrings are read twice, and the *first* read is the one that decides
+this: in the source, by whoever is editing the function. Sphinx/RST field lists
+and roles (`:param x:`, or `:class:` wrapped around a symbol) pay for their
+structure in characters
+that a human has to look past on every read — colons, role names, nested
+backticks around what is otherwise an ordinary sentence. Google-style sections
+plus plain backticks say the same thing with markup that reads as prose. So the
+convention is **Markdown, Google style, no RST** — the rule that keeps
+`clients/python/docs/build.sh` and the rustdoc honest is a consequence, not the
+reason.
+
+The toolchain agrees, which is why the choice costs nothing: nothing in the
+chain speaks RST. The two books are mdBooks, the client's API page is generated
+by pydoc-markdown (a static AST parse emitting Markdown), the Rust reference is
+rustdoc. An RST role here is not "less supported" — it is inert text that lands
+verbatim in the published page.
+
+**Cross-references fall under the same rule, and cost more than they look.** A
+reference only means something after a resolver has run: it needs a symbol table
+plus a URL scheme for the output. Move a symbol or change generators and it
+breaks — which is why the two books deliberately cross-link by their Read the
+Docs URLs rather than by symbol resolution.
+
+The consequence is sharper when the reference sigil is a character that occurs
+in ordinary prose. pydoc-markdown's own `#name` syntax (neither Markdown nor
+RST, a third thing) is matched by `\B\#`, so the quote in `"#rrggbb[aa]"`
+satisfied it; nothing resolved, and the fallback **rewrote the text** — dropping
+the `#` and injecting backticks inside an already-open code span — so the
+published reference documented the color format as `"rrggbb[aa]"` in all four
+places it appeared. The source was fine; only the artifact was wrong, behind one
+build warning. `#` is everywhere in this domain (hex colors, shell comments, the
+C preprocessor, anchors, issue numbers), so the collision was a matter of time.
+The `crossref` processor is therefore **not** in `pydoc-markdown.yml`: removing
+it changed exactly those four lines out of a 351 KB page, so nothing was relying
+on it. The general form: a docstring should mean the same thing read raw,
+through `help()`, or rendered — and a syntax that only resolves in one of those
+does not merely fail to link when it misfires, it edits your prose.

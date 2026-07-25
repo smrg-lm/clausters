@@ -48,7 +48,11 @@ Three rules hold across *all* of the above (repeat them to yourself):
 
 1. **Plain Markdown only.** No Sphinx/RST directives in docstrings — use
    backticks and Google-style sections, never `:param:` field lists or `:role:`
-   cross-refs.
+   cross-refs. The reason is the *source* read, not the generators: a docstring
+   is read first in the code, by whoever is editing the function, and RST
+   markup is characters a human has to look past every time. That nothing in
+   the chain speaks RST is a happy consequence, not the motive
+   (`docs/decisions.md`, "Docstrings are Google-style Markdown").
 2. **No milestone labels** (`Mx`/`Cx`/`Fx`) in any published doc or docstring.
    Those live only in the `PLAN.md` roadmaps.
 3. **Prose names API actions by the API's own verbs.** When the protocol or API
@@ -219,8 +223,8 @@ of truth.
   `clients/python/docs/build.sh` runs pydoc-markdown into `src/api.md`. Edit the
   docstrings, never the generated `api.md`.
 
-The plain-Markdown / no-RST rule from above is what keeps these two generators
-honest.
+The plain-Markdown / no-RST rule from above is also what keeps these two
+generators honest — a side benefit of a rule adopted for the source read.
 
 ## 3. Development documentation — internals & decisions (for core maintainers)
 
