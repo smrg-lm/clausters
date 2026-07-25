@@ -139,6 +139,12 @@ with this modularity in mind.
 a feature branch on your own — this overrides the default "if on the default
 branch, branch first" behavior.
 
+**No trailers in commit messages.** Not `Co-Authored-By:`, not a "generated
+with" line, not attribution of any kind, whoever or whatever wrote the commit.
+The subject and body are the entire message, and the last line is prose. The
+history records *what shipped and why*; how it was typed is not part of that
+record. The same holds for a PR description.
+
 Before generating any commit that touches Rust, run `cargo fmt` (or at least
 `cargo fmt --check`) and include the formatting fixes — the tree must be
 `cargo fmt --check`-clean. Do not hand-format Rust against rustfmt; rustfmt is
