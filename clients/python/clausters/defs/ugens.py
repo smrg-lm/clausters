@@ -67,7 +67,8 @@ _BINOP_OPS = frozenset({
     "mod", "pow", "min", "max", "atan2", "gt", "lt", "ge", "le", "eq", "ne",
     "bitand", "bitor", "bitxor", "lshift", "rshift", "hypot", "ring1", "ring2",
     "ring3", "ring4", "sumsqr", "difsqr", "sqrsum", "sqrdif", "absdif",
-    "thresh", "clip2", "excess", "round", "trunc",
+    "thresh", "clip2", "excess", "round", "trunc", "fold2", "wrap2", "gcd",
+    "lcm", "hypot_apx",
 })
 _UNOP_OPS = frozenset({
     "neg", "abs", "sin", "cos", "tan", "asin", "acos", "atan", "exp", "log",

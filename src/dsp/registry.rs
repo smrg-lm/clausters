@@ -82,6 +82,29 @@ pub struct UGenConfig {
     /// Ignored by every other kind.
     pub mag_prog: Option<clausters_core::pvprog::PvProgram>,
     pub phase_prog: Option<clausters_core::pvprog::PvProgram>,
+    /// Delay family (U3): the longest delay this instance accepts, in
+    /// **seconds**. It sizes the pre-allocated line, so like `partitions` it is
+    /// static config resolved at build time, not a signal input. Ignored by
+    /// every other kind.
+    pub max_delay: Option<f32>,
+}
+
+/// What the engine knows at **build** time, handed to every
+/// [`UGenDescriptor::build`].
+///
+/// A UGen whose *allocation* depends on the sample rate — a delay line is
+/// `max_delay × sample_rate` samples — cannot compute its size from
+/// [`UGenConfig`] alone, and it must allocate here, on the network thread,
+/// never in `process`. This is the same information `FaustSynth::new` already
+/// takes for the same reason.
+#[derive(Clone, Copy, Debug)]
+pub struct BuildCtx {
+    /// The engine's sample rate in Hz, fixed for the server's run.
+    pub sample_rate: f32,
+    /// The full control block length in samples. A scheduled bundle may split a
+    /// block into shorter runs, so this is a **capacity**, not the length any
+    /// single `process` call sees — size buffers by it, never loop over it.
+    pub block_size: usize,
 }
 
 /// Input count of a UGen: a fixed number, or variable (`EnvGen`, `Dseq`).
@@ -208,8 +231,10 @@ pub struct UGenDescriptor {
     /// an `FFT` chain. [`SpectralRole::None`] for every non-spectral kind.
     pub spectral: SpectralRole,
     /// Builds an instance. Runs on the network thread (allocates); `config`
-    /// carries static per-UGen parameters, ignored by most kinds.
-    pub build: fn(&UGenConfig) -> Box<dyn UGen>,
+    /// carries static per-UGen parameters, ignored by most kinds, and `ctx` the
+    /// engine facts a kind may need to size that allocation (the sample rate,
+    /// for a delay line). Most kinds ignore both.
+    pub build: fn(&UGenConfig, &BuildCtx) -> Box<dyn UGen>,
 }
 
 impl UGenDescriptor {
@@ -243,7 +268,7 @@ const fn desc_full(
     needs_path: bool,
     op_family: Option<OpFamily>,
     spectral: SpectralRole,
-    build: fn(&UGenConfig) -> Box<dyn UGen>,
+    build: fn(&UGenConfig, &BuildCtx) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
     UGenDescriptor {
         name,
@@ -272,7 +297,7 @@ const fn desc(
     exec: ExecMode,
     bus: BusRole,
     needs_path: bool,
-    build: fn(&UGenConfig) -> Box<dyn UGen>,
+    build: fn(&UGenConfig, &BuildCtx) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
     desc_full(
         name,
@@ -300,7 +325,7 @@ const fn desc_spectral(
     default_rate: Rate,
     rates: &'static [Rate],
     role: SpectralRole,
-    build: fn(&UGenConfig) -> Box<dyn UGen>,
+    build: fn(&UGenConfig, &BuildCtx) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
     desc_full(
         name,
@@ -324,7 +349,7 @@ const fn desc_op(
     arity: Arity,
     inputs: &'static [UGenInput],
     family: OpFamily,
-    build: fn(&UGenConfig) -> Box<dyn UGen>,
+    build: fn(&UGenConfig, &BuildCtx) -> Box<dyn UGen>,
 ) -> UGenDescriptor {
     desc_full(
         name,
@@ -376,7 +401,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Sine::new()),
+        |_, _| Box::new(Sine::new()),
     ),
     desc(
         "Impulse",
@@ -387,7 +412,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Impulse::new()),
+        |_, _| Box::new(Impulse::new()),
     ),
     desc(
         "WhiteNoise",
@@ -398,16 +423,16 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(WhiteNoise::new()),
+        |_, _| Box::new(WhiteNoise::new()),
     ),
     // --- arithmetic: the generic op UGens (S3), selected by a core opcode
     //     index; every math need is one more `clausters_core::builtins` entry,
     //     not a new kind. `Add`/`Sub`/`Mul`/`Div` stay as thin aliases below
     //     for back-compat with existing defs. ---
-    desc_op("BinaryOpUGen", Fixed(2), I_AB, OpFamily::Binary, |c| {
+    desc_op("BinaryOpUGen", Fixed(2), I_AB, OpFamily::Binary, |c, _| {
         Box::new(BinaryOp::from_index(c.op.unwrap_or(0)))
     }),
-    desc_op("UnaryOpUGen", Fixed(1), I_A, OpFamily::Unary, |c| {
+    desc_op("UnaryOpUGen", Fixed(1), I_A, OpFamily::Unary, |c, _| {
         Box::new(UnaryOp::from_index(c.op.unwrap_or(0)))
     }),
     // Fused forms scsynth optimizes (fixed kinds, not op-table entries).
@@ -420,7 +445,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(MulAdd),
+        |_, _| Box::new(MulAdd),
     ),
     desc(
         "Sum3",
@@ -431,7 +456,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Sum3),
+        |_, _| Box::new(Sum3),
     ),
     desc(
         "Sum4",
@@ -442,7 +467,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Sum4),
+        |_, _| Box::new(Sum4),
     ),
     // Aliases for the four operator kinds (back-compat).
     desc(
@@ -454,7 +479,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BinaryOp::new(BinOp::Add)),
+        |_, _| Box::new(BinaryOp::new(BinOp::Add)),
     ),
     desc(
         "Sub",
@@ -465,7 +490,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BinaryOp::new(BinOp::Sub)),
+        |_, _| Box::new(BinaryOp::new(BinOp::Sub)),
     ),
     desc(
         "Mul",
@@ -476,7 +501,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BinaryOp::new(BinOp::Mul)),
+        |_, _| Box::new(BinaryOp::new(BinOp::Mul)),
     ),
     desc(
         "Div",
@@ -487,12 +512,20 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BinaryOp::new(BinOp::Div)),
+        |_, _| Box::new(BinaryOp::new(BinOp::Div)),
     ),
     // --- audio-bus I/O (audio rate only; carries a bus role) ---
-    desc("In", Fixed(1), I_BUS, Ar, R_AR, Normal, Read, false, |_| {
-        Box::new(In)
-    }),
+    desc(
+        "In",
+        Fixed(1),
+        I_BUS,
+        Ar,
+        R_AR,
+        Normal,
+        Read,
+        false,
+        |_, _| Box::new(In),
+    ),
     desc(
         "InCtl",
         Fixed(1),
@@ -502,7 +535,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(InCtl),
+        |_, _| Box::new(InCtl),
     ),
     desc(
         "OutCtl",
@@ -513,7 +546,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(OutCtl),
+        |_, _| Box::new(OutCtl),
     ),
     desc(
         "Out",
@@ -524,7 +557,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         Write,
         false,
-        |_| Box::new(Out),
+        |_, _| Box::new(Out),
     ),
     desc(
         "ReplaceOut",
@@ -535,7 +568,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         ReadWrite,
         false,
-        |_| Box::new(ReplaceOut),
+        |_, _| Box::new(ReplaceOut),
     ),
     // --- buffer readers and info ---
     desc(
@@ -552,7 +585,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(PlayBuf::new()),
+        |_, _| Box::new(PlayBuf::new()),
     ),
     desc(
         "BufRd",
@@ -568,7 +601,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BufRd),
+        |_, _| Box::new(BufRd),
     ),
     // --- table oscillators & waveshaper (S5); read `/b_gen` wavetables ---
     desc(
@@ -580,7 +613,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Osc::new()),
+        |_, _| Box::new(Osc::new()),
     ),
     desc(
         "OscN",
@@ -591,7 +624,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(OscN::new()),
+        |_, _| Box::new(OscN::new()),
     ),
     desc(
         "VOsc",
@@ -602,7 +635,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(VOsc::new()),
+        |_, _| Box::new(VOsc::new()),
     ),
     desc(
         "Shaper",
@@ -613,7 +646,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Shaper),
+        |_, _| Box::new(Shaper),
     ),
     desc(
         "BufSampleRate",
@@ -624,7 +657,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BufInfo(BufInfoKind::SampleRate)),
+        |_, _| Box::new(BufInfo(BufInfoKind::SampleRate)),
     ),
     desc(
         "BufRateScale",
@@ -635,7 +668,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BufInfo(BufInfoKind::RateScale)),
+        |_, _| Box::new(BufInfo(BufInfoKind::RateScale)),
     ),
     desc(
         "BufFrames",
@@ -646,7 +679,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BufInfo(BufInfoKind::Frames)),
+        |_, _| Box::new(BufInfo(BufInfoKind::Frames)),
     ),
     desc(
         "BufChannels",
@@ -657,7 +690,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BufInfo(BufInfoKind::Channels)),
+        |_, _| Box::new(BufInfo(BufInfoKind::Channels)),
     ),
     desc(
         "BufDur",
@@ -668,7 +701,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(BufInfo(BufInfoKind::Duration)),
+        |_, _| Box::new(BufInfo(BufInfoKind::Duration)),
     ),
     // --- streaming disk I/O (need a path; native only — see dsp::disk) ---
     #[cfg(not(target_arch = "wasm32"))]
@@ -681,7 +714,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         true,
-        |c| Box::new(DiskIn::open(c)),
+        |c, _| Box::new(DiskIn::open(c)),
     ),
     #[cfg(not(target_arch = "wasm32"))]
     desc(
@@ -693,7 +726,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         true,
-        |c| Box::new(DiskOut::open(c)),
+        |c, _| Box::new(DiskOut::open(c)),
     ),
     // --- synth-private feedback (synth-coordinated execution) ---
     desc(
@@ -705,7 +738,7 @@ static UGENS: &[UGenDescriptor] = &[
         ExecLocalIn,
         BusRole::None,
         false,
-        |_| Box::new(LocalIn),
+        |_, _| Box::new(LocalIn),
     ),
     desc(
         "LocalOut",
@@ -716,7 +749,7 @@ static UGENS: &[UGenDescriptor] = &[
         ExecLocalOut,
         BusRole::None,
         false,
-        |_| Box::new(LocalOut),
+        |_, _| Box::new(LocalOut),
     ),
     // --- one-pole smoothers (also inserted by S2 lagged controls) ---
     desc(
@@ -728,7 +761,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Lag::new()),
+        |_, _| Box::new(Lag::new()),
     ),
     desc(
         "VarLag",
@@ -739,7 +772,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(VarLag::new()),
+        |_, _| Box::new(VarLag::new()),
     ),
     // --- envelope ---
     // Variadic: the five named slots are the fixed head; the envelope's own
@@ -759,7 +792,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(EnvGen::new()),
+        |_, _| Box::new(EnvGen::new()),
     ),
     // --- scalar / init-rate (S1) ---
     desc(
@@ -771,7 +804,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(SampleRate),
+        |_, _| Box::new(SampleRate),
     ),
     desc(
         "Rand",
@@ -782,7 +815,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Rand::new()),
+        |_, _| Box::new(Rand::new()),
     ),
     // --- demand rate (S1): the driver runs specially, the source is pulled ---
     desc(
@@ -794,7 +827,7 @@ static UGENS: &[UGenDescriptor] = &[
         DemandDriver,
         BusRole::None,
         false,
-        |_| Box::new(Demand::new()),
+        |_, _| Box::new(Demand::new()),
     ),
     desc(
         "Dseq",
@@ -805,7 +838,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(Dseq::new()),
+        |_, _| Box::new(Dseq::new()),
     ),
     // --- side-effect UGens (S9): reply/observe, no `Out` required. Control or
     //     audio rate; their output is silence (SendTrig/SendReply) or the
@@ -819,7 +852,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |_| Box::new(SendTrig::new()),
+        |_, _| Box::new(SendTrig::new()),
     ),
     // Variadic: `trig`/`reply_id` are the head, the reported values follow.
     desc(
@@ -831,7 +864,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |c| Box::new(SendReply::new(c)),
+        |c, _| Box::new(SendReply::new(c)),
     ),
     desc(
         "Poll",
@@ -842,7 +875,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |c| Box::new(Poll::new(c)),
+        |c, _| Box::new(Poll::new(c)),
     ),
     // --- frequency-domain (`fr`) chain (S8): FFT opens a synth-private
     //     spectral chain, PV_* transform it in place, IFFT resynthesises audio.
@@ -855,7 +888,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Source,
-        |c| Box::new(Fft::new(c)),
+        |c, _| Box::new(Fft::new(c)),
     ),
     desc_spectral(
         "IFFT",
@@ -864,7 +897,7 @@ static UGENS: &[UGenDescriptor] = &[
         Ar,
         R_AR,
         SpectralRole::Sink,
-        |c| Box::new(Ifft::new(c)),
+        |c, _| Box::new(Ifft::new(c)),
     ),
     desc_spectral(
         "PV_MagAbove",
@@ -873,7 +906,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |_| Box::new(PvMag::new(MagMode::Above)),
+        |_, _| Box::new(PvMag::new(MagMode::Above)),
     ),
     desc_spectral(
         "PV_MagBelow",
@@ -882,7 +915,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |_| Box::new(PvMag::new(MagMode::Below)),
+        |_, _| Box::new(PvMag::new(MagMode::Below)),
     ),
     desc_spectral(
         "PV_BrickWall",
@@ -891,7 +924,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |_| Box::new(PvBrickWall),
+        |_, _| Box::new(PvBrickWall),
     ),
     // M27: the curated PV set — parameterized implementations under the
     // scsynth-compatible names, deliberately not a one-UGen-per-op catalog
@@ -905,7 +938,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |_| Box::new(PvMag::new(MagMode::Clip)),
+        |_, _| Box::new(PvMag::new(MagMode::Clip)),
     ),
     desc_spectral(
         "PV_Add",
@@ -914,7 +947,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter2,
-        |_| Box::new(PvCombine::new(CombineOp::Add)),
+        |_, _| Box::new(PvCombine::new(CombineOp::Add)),
     ),
     desc_spectral(
         "PV_Mul",
@@ -923,7 +956,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter2,
-        |_| Box::new(PvCombine::new(CombineOp::Mul)),
+        |_, _| Box::new(PvCombine::new(CombineOp::Mul)),
     ),
     desc_spectral(
         "PV_Min",
@@ -932,7 +965,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter2,
-        |_| Box::new(PvCombine::new(CombineOp::Min)),
+        |_, _| Box::new(PvCombine::new(CombineOp::Min)),
     ),
     desc_spectral(
         "PV_Max",
@@ -941,7 +974,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter2,
-        |_| Box::new(PvCombine::new(CombineOp::Max)),
+        |_, _| Box::new(PvCombine::new(CombineOp::Max)),
     ),
     desc_spectral(
         "PV_MagMul",
@@ -950,7 +983,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter2,
-        |_| Box::new(PvCombine::new(CombineOp::MagMul)),
+        |_, _| Box::new(PvCombine::new(CombineOp::MagMul)),
     ),
     desc_spectral(
         "PV_CopyPhase",
@@ -959,7 +992,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter2,
-        |_| Box::new(PvCombine::new(CombineOp::CopyPhase)),
+        |_, _| Box::new(PvCombine::new(CombineOp::CopyPhase)),
     ),
     desc_spectral(
         "PV_MagFreeze",
@@ -968,7 +1001,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |c| Box::new(PvMagFreeze::new(c)),
+        |c, _| Box::new(PvMagFreeze::new(c)),
     ),
     desc_spectral(
         "PV_MagSmear",
@@ -977,7 +1010,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |c| Box::new(PvMagSmear::new(c)),
+        |c, _| Box::new(PvMagSmear::new(c)),
     ),
     desc_spectral(
         "PV_BinShift",
@@ -986,7 +1019,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |c| Box::new(PvBinShift::new(c, false)),
+        |c, _| Box::new(PvBinShift::new(c, false)),
     ),
     desc_spectral(
         "PV_MagShift",
@@ -995,7 +1028,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |c| Box::new(PvBinShift::new(c, true)),
+        |c, _| Box::new(PvBinShift::new(c, true)),
     ),
     // M29: the general per-frame mechanism — one UGen interpreting a
     // compile-validated bin-expression program (`mag_expr`/`phase_expr`) over
@@ -1010,7 +1043,7 @@ static UGENS: &[UGenDescriptor] = &[
         Kr,
         R_KR,
         SpectralRole::Filter,
-        |c| Box::new(PvKernel::new(c)),
+        |c, _| Box::new(PvKernel::new(c)),
     ),
     // --- partitioned convolution (M28): one UGen, kernel spectra prepared
     //     off the RT thread by `/b_gen prepare_partconv`, MACs spread across
@@ -1026,7 +1059,7 @@ static UGENS: &[UGenDescriptor] = &[
         Normal,
         BusRole::None,
         false,
-        |c| Box::new(Conv::new(c)),
+        |c, _| Box::new(Conv::new(c)),
     ),
 ];
 

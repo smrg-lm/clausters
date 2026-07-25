@@ -24,7 +24,7 @@ fn passthru_from(in_bus: f32) -> Box<dyn SynthNode> {
         ]
     }))
     .unwrap();
-    Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap())))
+    Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), SR))
 }
 
 /// One input channel pushed through the ring reaches `In` and comes back out on

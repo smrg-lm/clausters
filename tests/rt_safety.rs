@@ -34,7 +34,7 @@ fn audio_thread_does_not_allocate() {
         .ok()
         .unwrap();
     for i in 0..32i32 {
-        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0));
         synth.set_control(0, 100.0 + i as f32);
         synth.set_control(1, 0.01);
         handle
@@ -95,7 +95,7 @@ fn mapped_controls_do_not_allocate_on_the_audio_thread() {
 
     let def = Arc::new(compile(default_spec()).unwrap());
     for i in 0..16i32 {
-        let synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        let synth = Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0));
         handle
             .send(Cmd::AddSynth {
                 id: 1000 + i,
@@ -154,7 +154,7 @@ fn scheduled_bundles_do_not_allocate_on_the_audio_thread() {
     // adding a synth, retuning another and freeing a third.
     let def = Arc::new(compile(default_spec()).unwrap());
     for i in 0..16u64 {
-        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0));
         synth.set_control(1, 0.01);
         let cmds = vec![
             Cmd::AddSynth {
@@ -239,7 +239,7 @@ fn buffer_swaps_do_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -338,7 +338,7 @@ fn table_oscillators_do_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()))),
+            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -390,7 +390,7 @@ fn spectral_chain_does_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()))),
+            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -435,7 +435,7 @@ fn local_feedback_does_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -490,7 +490,7 @@ fn rate_substrate_does_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -543,7 +543,7 @@ fn typed_controls_do_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -626,7 +626,7 @@ fn operator_ugens_do_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -778,7 +778,7 @@ fn envgen_free_self_does_not_allocate_on_the_audio_thread() {
                 id: 1000 + i,
                 target: ROOT_NODE_ID,
                 action: AddAction::Tail,
-                synth: Box::new(UGenSynth::new(Arc::clone(&def))),
+                synth: Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0)),
                 usage: Default::default(),
             })
             .ok()
@@ -847,7 +847,7 @@ fn relative_done_actions_and_n_run_do_not_allocate() {
                 id: 1000 + i,
                 target: 1,
                 action: AddAction::Tail,
-                synth: Box::new(UGenSynth::new(Arc::clone(def))),
+                synth: Box::new(UGenSynth::new(Arc::clone(def), 48_000.0)),
                 usage: Default::default(),
             })
             .ok()
@@ -907,7 +907,7 @@ fn parallel_dispatch_does_not_allocate() {
             ]
         }))
         .unwrap();
-        let synth = Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap())));
+        let synth = Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), 48_000.0));
         handle
             .send(Cmd::AddSynth {
                 id: 3000 + i,
@@ -955,7 +955,7 @@ fn command_set_completion_does_not_allocate_on_the_audio_thread() {
         .ok()
         .unwrap();
     for id in [1000, 1001] {
-        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+        let mut synth = Box::new(UGenSynth::new(Arc::clone(&def), 48_000.0));
         synth.set_control(1, 0.01);
         handle
             .send(Cmd::AddSynth {
@@ -1050,7 +1050,7 @@ fn hardware_input_path_does_not_allocate() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()))),
+            synth: Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -1103,7 +1103,7 @@ fn reply_ugens_do_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()
@@ -1136,7 +1136,7 @@ fn tap_writes_do_not_allocate_on_the_audio_thread() {
             id: 1000,
             target: ROOT_NODE_ID,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
             usage: Default::default(),
         })
         .ok()

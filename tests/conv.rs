@@ -21,7 +21,7 @@ const CHANNELS: usize = 2;
 
 fn spec_synth(spec: Value) -> UGenSynth {
     let spec: SynthDefSpec = serde_json::from_value(spec).unwrap();
-    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()))
+    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()), SR)
 }
 
 fn add_synth(id: i32, synth: UGenSynth) -> Cmd {

@@ -55,7 +55,7 @@ fn spec_from_json(json: &str) -> SynthDefSpec {
 }
 
 fn synth_from_json(json: &str) -> UGenSynth {
-    UGenSynth::new(Arc::new(compile(spec_from_json(json)).unwrap()))
+    UGenSynth::new(Arc::new(compile(spec_from_json(json)).unwrap()), SR)
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn json_def_compiles_and_plays() {
     assert_eq!(def.control_index("amp"), Some(1));
     assert_eq!(def.control_index("nope"), None);
 
-    let mut synth = UGenSynth::new(def);
+    let mut synth = UGenSynth::new(def, SR);
     let out = render(&mut synth, 750);
     assert!(out.iter().all(|x| x.is_finite()));
     assert!((estimated_freq(&out) - 330.0).abs() < 5.0);

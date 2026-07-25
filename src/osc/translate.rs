@@ -275,7 +275,7 @@ impl CmdTranslator {
     pub fn make_synth(&self, name: &str) -> Result<(Box<dyn SynthNode>, NodeDef), String> {
         #[cfg(feature = "synth")]
         if let Some(def) = self.synth_defs.get(name) {
-            let synth = Box::new(UGenSynth::new(Arc::clone(def)));
+            let synth = Box::new(UGenSynth::new(Arc::clone(def), self.sample_rate));
             return Ok((synth, NodeDef::UGen(Arc::clone(def))));
         }
         #[cfg(feature = "faust")]

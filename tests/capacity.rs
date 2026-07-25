@@ -27,7 +27,7 @@ fn default_synth() -> Box<dyn SynthNode> {
     static DEF: std::sync::OnceLock<Arc<clausters::synthdef::SynthDef>> =
         std::sync::OnceLock::new();
     let def = DEF.get_or_init(|| Arc::new(compile(default_spec()).unwrap()));
-    Box::new(UGenSynth::new(Arc::clone(def)))
+    Box::new(UGenSynth::new(Arc::clone(def), SR))
 }
 
 fn add(id: i32, target: i32) -> Cmd {

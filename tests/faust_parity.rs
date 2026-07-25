@@ -50,7 +50,7 @@ fn compile_faust(name: &str, payload: CompilePayload) -> Arc<FaustDef> {
 fn ugen_synth(spec_json: &str) -> Box<dyn SynthNode> {
     let spec: SynthDefSpec = serde_json::from_str(spec_json).expect("valid spec");
     let def = Arc::new(compile(spec).expect("spec must compile"));
-    Box::new(UGenSynth::new(def))
+    Box::new(UGenSynth::new(def, SR))
 }
 
 fn faust_synth(def: &Arc<FaustDef>, controls: &[(&str, f32)]) -> Box<dyn SynthNode> {

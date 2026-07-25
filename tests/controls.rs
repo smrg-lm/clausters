@@ -15,7 +15,7 @@ const SR: f32 = 48_000.0;
 
 fn make(json: &str) -> UGenSynth {
     let spec: SynthDefSpec = serde_json::from_str(json).unwrap();
-    UGenSynth::new(Arc::new(compile(spec).unwrap()))
+    UGenSynth::new(Arc::new(compile(spec).unwrap()), SR)
 }
 
 fn compile_err(json: &str) -> String {

@@ -17,7 +17,7 @@ const CHANNELS: usize = 2;
 
 fn synth_from(spec_json: Value) -> Box<dyn SynthNode> {
     let spec: SynthDefSpec = serde_json::from_value(spec_json).unwrap();
-    Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap())))
+    Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), SR))
 }
 
 fn add(id: i32, synth: Box<dyn SynthNode>) -> Cmd {

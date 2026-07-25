@@ -257,7 +257,7 @@ fn segment_control_buses_feed_the_engine_directly() {
         ]
     }))
     .unwrap();
-    let synth = Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap())));
+    let synth = Box::new(UGenSynth::new(Arc::new(compile(spec).unwrap()), SR));
     handle
         .send(Cmd::AddSynth {
             id: 1000,

@@ -67,7 +67,7 @@ fn playbuf_spec(bufnum: f32, chan: f32, rate: f32, looping: f32, out_bus: f32) -
 
 fn spec_synth(spec: serde_json::Value) -> UGenSynth {
     let spec: SynthDefSpec = serde_json::from_value(spec).unwrap();
-    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()))
+    UGenSynth::new(Arc::new(clausters::synthdef::compile(spec).unwrap()), SR)
 }
 
 fn add_synth(id: i32, synth: UGenSynth) -> Cmd {

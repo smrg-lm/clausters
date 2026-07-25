@@ -143,20 +143,24 @@ fn bench_sine_vs_wavetable() {
         for (_, d) in &defs {
             let d = Arc::clone(d);
             let t = Arc::clone(&table);
-            let blocks = bench_with(n, move |_| Box::new(UGenSynth::new(Arc::clone(&d))), {
-                let t = Arc::clone(&t);
-                move |engine, handle, out| {
-                    send_cmd(
-                        engine,
-                        handle,
-                        out,
-                        Cmd::SetBuffer {
-                            index: 0,
-                            buffer: Some(Arc::clone(&t)),
-                        },
-                    );
-                }
-            });
+            let blocks = bench_with(
+                n,
+                move |_| Box::new(UGenSynth::new(Arc::clone(&d), SAMPLE_RATE as f32)),
+                {
+                    let t = Arc::clone(&t);
+                    move |engine, handle, out| {
+                        send_cmd(
+                            engine,
+                            handle,
+                            out,
+                            Cmd::SetBuffer {
+                                index: 0,
+                                buffer: Some(Arc::clone(&t)),
+                            },
+                        );
+                    }
+                },
+            );
             cols.push(blocks * BLOCK_SIZE as f64 / SAMPLE_RATE);
         }
         println!(
@@ -240,7 +244,8 @@ fn bench_spectral() {
         let (mut engine, mut handle) = engine_pair(SAMPLE_RATE as f32, 2);
         let mut out = vec![0.0f32; BLOCK_SIZE * 2];
         for i in 0..n {
-            let mut synth: Box<dyn SynthNode> = Box::new(UGenSynth::new(Arc::clone(&def)));
+            let mut synth: Box<dyn SynthNode> =
+                Box::new(UGenSynth::new(Arc::clone(&def), SAMPLE_RATE as f32));
             synth.set_control(0, 50.0 + i as f32);
             let cmd = Cmd::AddSynth {
                 id: 1000 + i as i32 * id_step,
@@ -344,7 +349,7 @@ fn bench_conv(budget_us: f64) {
             id: 1000,
             target: 0,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(def)),
+            synth: Box::new(UGenSynth::new(def, SAMPLE_RATE as f32)),
             usage: Default::default(),
         },
     );
@@ -478,7 +483,7 @@ fn make_default_synth() -> Box<dyn SynthNode> {
     static DEF: std::sync::OnceLock<Arc<clausters::synthdef::SynthDef>> =
         std::sync::OnceLock::new();
     let def = DEF.get_or_init(|| Arc::new(compile(default_spec()).expect("default def compiles")));
-    Box::new(UGenSynth::new(Arc::clone(def)))
+    Box::new(UGenSynth::new(Arc::clone(def), SAMPLE_RATE as f32))
 }
 
 /// Head-to-head: the **same** DSP run by the two engines, so the only thing
@@ -529,7 +534,9 @@ fn bench_ugen_vs_faust() {
     );
     for &n in VOICE_COUNTS {
         let ud = Arc::clone(&ugen_def);
-        let ugen = bench(n, move |_| Box::new(UGenSynth::new(Arc::clone(&ud))));
+        let ugen = bench(n, move |_| {
+            Box::new(UGenSynth::new(Arc::clone(&ud), SAMPLE_RATE as f32))
+        });
         let fd = Arc::clone(&faust_def);
         let faust = bench(n, move |_| {
             Box::new(
@@ -613,7 +620,7 @@ fn bench_gain_overhead() {
     for &n in VOICE_COUNTS {
         let ug = Arc::clone(&ugen_gain);
         let ugen = bench_chain(n, &src_def, move || {
-            Box::new(UGenSynth::new(Arc::clone(&ug)))
+            Box::new(UGenSynth::new(Arc::clone(&ug), SAMPLE_RATE as f32))
         });
         let fg = Arc::clone(&faust_gain);
         let faust = bench_chain(n, &src_def, move || {
@@ -661,7 +668,7 @@ fn bench_chain(
             id: 1,
             target: 0,
             action: AddAction::Tail,
-            synth: Box::new(UGenSynth::new(Arc::clone(src_def))),
+            synth: Box::new(UGenSynth::new(Arc::clone(src_def), SAMPLE_RATE as f32)),
             usage: Default::default(),
         },
     );
@@ -738,7 +745,7 @@ fn bench_parallel(workers: usize, chains: usize, voices: usize) -> f64 {
         let mut usage = BusUsage::default();
         usage.mark(bus as f32, false, true);
         for v in 0..voices {
-            let mut synth = Box::new(UGenSynth::new(Arc::clone(&def)));
+            let mut synth = Box::new(UGenSynth::new(Arc::clone(&def), SAMPLE_RATE as f32));
             synth.set_control(0, 50.0 + (k * voices + v) as f32);
             let mut cmd = Cmd::AddSynth {
                 id: 1000 + (k * voices + v) as i32,

@@ -79,6 +79,19 @@ pub enum BinaryOp {
     Round = 33,
     /// Truncate `a` toward zero-of-grid to a multiple of `b` (`b == 0` = `a`).
     Trunc = 34,
+    /// Fold `a` into the symmetric range `[-b, b]` (reflecting at both ends,
+    /// repeatedly). The bilateral form of scsynth's `sc_fold`.
+    Fold2 = 35,
+    /// Wrap `a` into the symmetric range `[-b, b]` (modulo, not reflecting).
+    /// The bilateral form of scsynth's `sc_wrap`.
+    Wrap2 = 36,
+    /// Greatest common divisor of the **integer truncations** of `a` and `b`.
+    Gcd = 37,
+    /// Least common multiple of the **integer truncations** of `a` and `b`.
+    Lcm = 38,
+    /// A cheap approximation of `hypot` (see [`apply_binary`] for the exact
+    /// formula and its error bound).
+    HypotApx = 39,
 }
 
 impl BinaryOp {
@@ -121,6 +134,11 @@ impl BinaryOp {
             32 => Excess,
             33 => Round,
             34 => Trunc,
+            35 => Fold2,
+            36 => Wrap2,
+            37 => Gcd,
+            38 => Lcm,
+            39 => HypotApx,
             _ => return None,
         })
     }
@@ -166,6 +184,14 @@ impl BinaryOp {
             Excess => "excess",
             Round => "round",
             Trunc => "trunc",
+            Fold2 => "fold2",
+            Wrap2 => "wrap2",
+            Gcd => "gcd",
+            Lcm => "lcm",
+            // Lowercase/snake_case like every other name in this table, which
+            // is our spelling convention even where scsynth's selector is
+            // camelCase (`asInteger` is `as_int` here for the same reason).
+            HypotApx => "hypot_apx",
         }
     }
 
@@ -336,6 +362,97 @@ impl UnaryOp {
     }
 }
 
+/// `sqrt(2) - 1`, the coefficient of [`BinaryOp::HypotApx`]. Derived in `f64`
+/// and then rounded once, which is what scsynth's `kFSQRT2M1` does — computing
+/// it in `f32` throughout would land a ULP away and cost the bit-parity the
+/// operator table exists for.
+const SQRT2_MINUS_1: f32 = (core::f64::consts::SQRT_2 - 1.0) as f32;
+
+/// Wraps `x` into `[lo, hi)`, scsynth's `sc_wrap` — including its two
+/// single-shift fast paths, which are not merely an optimization: the general
+/// branch below runs on the *already shifted* value, so a faithful port has to
+/// keep the same shape.
+#[inline]
+fn wrap(x: f32, lo: f32, hi: f32) -> f32 {
+    let range = hi - lo;
+    let x = if x >= hi {
+        let shifted = x - range;
+        if shifted < hi {
+            return shifted;
+        }
+        shifted
+    } else if x < lo {
+        let shifted = x + range;
+        if shifted >= lo {
+            return shifted;
+        }
+        shifted
+    } else {
+        return x;
+    };
+    if hi == lo {
+        return lo;
+    }
+    x - range * ((x - lo) / range).floor()
+}
+
+/// Folds `x` into `[lo, hi]`, scsynth's `sc_fold` — reflecting at both ends as
+/// many times as needed. Note the general branch measures from the **original**
+/// `x`, not from the once-reflected value, as scsynth's does.
+#[inline]
+fn fold(x: f32, lo: f32, hi: f32) -> f32 {
+    let offset = x - lo;
+    if x >= hi {
+        let reflected = hi + hi - x;
+        if reflected >= lo {
+            return reflected;
+        }
+    } else if x < lo {
+        let reflected = lo + lo - x;
+        if reflected < hi {
+            return reflected;
+        }
+    } else {
+        return x;
+    }
+    if hi == lo {
+        return lo;
+    }
+    let range = hi - lo;
+    let range2 = range + range;
+    let c = offset - range2 * (offset / range2).floor();
+    (if c >= range { range2 - c } else { c }) + lo
+}
+
+/// Greatest common divisor with scsynth's sign convention: the result is
+/// negative only when **both** operands are non-positive, and a zero operand
+/// returns the other one unchanged.
+///
+/// Euclid runs on the unsigned magnitudes so that an operand of `i64::MIN`
+/// (reachable, since a float-to-int cast saturates) cannot overflow its own
+/// negation.
+#[inline]
+fn gcd_i64(a: i64, b: i64) -> i64 {
+    if a == 0 {
+        return b;
+    }
+    if b == 0 {
+        return a;
+    }
+    let negative = a <= 0 && b <= 0;
+    let (mut x, mut y) = (a.unsigned_abs(), b.unsigned_abs());
+    if x == 1 || y == 1 {
+        return if negative { -1 } else { 1 };
+    }
+    while y > 0 {
+        let t = x % y;
+        x = y;
+        y = t;
+    }
+    let g = x.min(i64::MAX as u64) as i64;
+    if negative { -g } else { g }
+}
+
 /// Applies a binary operator to two scalars.
 #[inline]
 pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
@@ -426,6 +543,44 @@ pub fn apply_binary(op: BinaryOp, a: f32, b: f32) -> f32 {
             } else {
                 (a / b).floor() * b
             }
+        }
+        // scsynth's bilateral `sc_fold2`/`sc_wrap2`: the ranged fold/wrap over
+        // the symmetric interval `[-b, b]`.
+        Fold2 => fold(a, -b, b),
+        Wrap2 => wrap(a, -b, b),
+        // scsynth truncates both operands to integers first, so `gcd(6.7, 4.2)`
+        // is `gcd(6, 4)` = 2. The sign convention is scsynth's: negative only
+        // when *both* operands are non-positive.
+        Gcd => gcd_i64(a as i64, b as i64) as f32,
+        Lcm => {
+            let (x, y) = (a as i64, b as i64);
+            if x == 0 || y == 0 {
+                0.0
+            } else {
+                // scsynth computes `(x*y)/gcd`; dividing first keeps the same
+                // value while pushing the overflow threshold far out, and the
+                // saturation makes the worst case a finite number instead of a
+                // debug-build panic — this runs on the audio thread.
+                let g = gcd_i64(x, y);
+                (x / g).saturating_mul(y) as f32
+            }
+        }
+        // scsynth's `sc_hypotx`: `|a| + |b| - (sqrt(2) - 1)*min(|a|, |b|)`.
+        // Deliberately approximate and always **greater than or equal to** the
+        // true hypotenuse: exact on the axes (one operand zero), +12.1% on the
+        // diagonal, and worst at `atan(2 - sqrt(2))` ~ 30.4 deg, where the
+        // ratio is `sqrt(1 + (2 - sqrt(2))^2)` ~ +15.9%. (The diagonal is the
+        // intuitive guess and it is not the maximum — the sweep in the tests
+        // is what establishes the bound.)
+        // Reproduced as scsynth defines it rather than "corrected", because the
+        // whole contract of the operator is to be the cheap one and a def
+        // ported from sclang must not change value. (scsynth's own comment
+        // above the function describes a *different* quantity — the octagonal
+        // distance `max + (sqrt(2)-1)*min` — which its formula does not
+        // compute; the formula is what both implementations agree on.)
+        HypotApx => {
+            let (x, y) = (a.abs(), b.abs());
+            x + y - SQRT2_MINUS_1 * x.min(y)
         }
     }
 }
@@ -573,10 +728,10 @@ mod tests {
     fn enum_discriminants_round_trip() {
         // Contiguous and stable: every discriminant maps back to itself, and
         // one past the end is unknown (guards an accidental gap).
-        for v in 0..=34u32 {
+        for v in 0..=39u32 {
             assert_eq!(BinaryOp::from_u32(v).map(|o| o as u32), Some(v));
         }
-        assert_eq!(BinaryOp::from_u32(35), None);
+        assert_eq!(BinaryOp::from_u32(40), None);
         for v in 0..=36u32 {
             assert_eq!(UnaryOp::from_u32(v).map(|o| o as u32), Some(v));
         }
@@ -620,6 +775,107 @@ mod tests {
         assert_eq!(apply_binary(Round, 1.3, 0.5), 1.5);
         assert_eq!(apply_binary(Trunc, 1.9, 1.0), 1.0);
         assert_eq!(apply_binary(Round, 1.7, 0.0), 1.7); // zero step = identity
+    }
+
+    /// `fold2` reflects at both ends of `[-b, b]`, as many times as needed —
+    /// the values below are hand-unfolded, not captured from the code.
+    #[test]
+    fn fold2_reflects_repeatedly() {
+        use BinaryOp::Fold2;
+        assert_eq!(apply_binary(Fold2, 0.5, 1.0), 0.5); // inside, untouched
+        assert_eq!(apply_binary(Fold2, 1.5, 1.0), 0.5); // one reflection at +1
+        assert_eq!(apply_binary(Fold2, -1.5, 1.0), -0.5); // one at -1
+        assert_eq!(apply_binary(Fold2, 2.5, 1.0), -0.5); // 2.5 -> -0.5
+        // 3.5 -> reflect at +1 -> -1.5 -> reflect at -1 -> -0.5.
+        assert_eq!(apply_binary(Fold2, 3.5, 1.0), -0.5);
+        assert_eq!(apply_binary(Fold2, 4.5, 1.0), 0.5);
+        // The fold is symmetric, and the fixed points are the bounds.
+        assert_eq!(apply_binary(Fold2, 1.0, 1.0), 1.0);
+        assert_eq!(apply_binary(Fold2, -1.0, 1.0), -1.0);
+    }
+
+    /// `wrap2` is modulo into the half-open `[-b, b)`, never reflecting.
+    #[test]
+    fn wrap2_is_modulo_not_reflection() {
+        use BinaryOp::Wrap2;
+        assert_eq!(apply_binary(Wrap2, 0.5, 1.0), 0.5);
+        assert_eq!(apply_binary(Wrap2, 1.5, 1.0), -0.5); // one period down
+        assert_eq!(apply_binary(Wrap2, -1.5, 1.0), 0.5); // one period up
+        assert_eq!(apply_binary(Wrap2, 3.5, 1.0), -0.5); // two periods down
+        assert_eq!(apply_binary(Wrap2, -3.5, 1.0), 0.5);
+        // The range is half-open: the upper bound wraps, the lower does not.
+        assert_eq!(apply_binary(Wrap2, 1.0, 1.0), -1.0);
+        assert_eq!(apply_binary(Wrap2, -1.0, 1.0), -1.0);
+    }
+
+    /// `gcd`/`lcm` truncate to integers first and carry scsynth's sign rule:
+    /// the result is negative only when **both** operands are non-positive.
+    #[test]
+    fn gcd_and_lcm_truncate_and_keep_scsynth_signs() {
+        use BinaryOp::{Gcd, Lcm};
+        assert_eq!(apply_binary(Gcd, 6.0, 4.0), 2.0);
+        assert_eq!(apply_binary(Gcd, 6.7, 4.2), 2.0); // truncated to 6 and 4
+        assert_eq!(apply_binary(Gcd, -6.0, 4.0), 2.0); // one negative: positive
+        assert_eq!(apply_binary(Gcd, -6.0, -4.0), -2.0); // both: negative
+        assert_eq!(apply_binary(Gcd, 0.0, 5.0), 5.0); // a zero passes the other
+        assert_eq!(apply_binary(Gcd, 7.0, 1.0), 1.0); // coprime
+        assert_eq!(apply_binary(Gcd, 17.0, 5.0), 1.0);
+        assert_eq!(apply_binary(Gcd, 48.0, 18.0), 6.0);
+
+        assert_eq!(apply_binary(Lcm, 4.0, 6.0), 12.0);
+        assert_eq!(apply_binary(Lcm, 0.0, 6.0), 0.0);
+        assert_eq!(apply_binary(Lcm, -4.0, 6.0), -12.0);
+        assert_eq!(apply_binary(Lcm, -4.0, -6.0), -12.0);
+        // The identity that defines the pair, on a case with a shared factor.
+        for (a, b) in [(12.0f32, 18.0f32), (35.0, 21.0), (9.0, 28.0)] {
+            let g = apply_binary(Gcd, a, b);
+            let l = apply_binary(Lcm, a, b);
+            assert_eq!(g * l, a * b, "gcd*lcm == a*b for ({a}, {b})");
+        }
+    }
+
+    /// `hypot_apx` is the cheap approximation, reproduced from scsynth's
+    /// formula. It never under-estimates; its error is 0 on the axes, +12.1 %
+    /// on the diagonal, and peaks at +15.9 % near 30.4 deg — the maximum is
+    /// *not* on the diagonal, which is why the bound is swept rather than
+    /// assumed.
+    #[test]
+    fn hypot_apx_error_stays_within_its_documented_bound() {
+        use BinaryOp::HypotApx;
+        assert_eq!(apply_binary(HypotApx, 3.0, 0.0), 3.0); // exact on an axis
+        assert_eq!(apply_binary(HypotApx, 0.0, -4.0), 4.0); // and symmetric
+        // 3, 4: 7 - (sqrt(2)-1)*3.
+        let k = (core::f64::consts::SQRT_2 - 1.0) as f32;
+        assert!((apply_binary(HypotApx, 3.0, 4.0) - (7.0 - k * 3.0)).abs() < 1e-6);
+        // The diagonal, where the intuitive worst case sits: 2 - (sqrt(2)-1).
+        assert!((apply_binary(HypotApx, 1.0, 1.0) / 2.0f32.sqrt() - 1.1213).abs() < 1e-4);
+
+        // Sweep a quadrant on the unit circle, where the true hypotenuse is 1:
+        // check the one-sided claim everywhere and locate the actual maximum.
+        // Analytically the ratio is `cos t + (2 - sqrt(2)) sin t`, maximal at
+        // `tan t = 2 - sqrt(2)` with value `sqrt(1 + (2 - sqrt(2))^2)`.
+        let beta = 2.0 - core::f32::consts::SQRT_2;
+        let peak = (1.0 + beta * beta).sqrt();
+        let (mut worst, mut worst_deg) = (0.0f32, 0.0f32);
+        for i in 0..=9000 {
+            let deg = i as f32 / 100.0;
+            let (y, x) = deg.to_radians().sin_cos();
+            let ratio = apply_binary(HypotApx, x, y) / x.hypot(y);
+            assert!(ratio >= 1.0 - 1e-6, "under-estimated at {deg} deg: {ratio}");
+            if ratio - 1.0 > worst {
+                (worst, worst_deg) = (ratio - 1.0, deg);
+            }
+        }
+        assert!(
+            (worst - (peak - 1.0)).abs() < 1e-4,
+            "measured worst error {worst} != analytic {}",
+            peak - 1.0
+        );
+        assert!(
+            (worst_deg - beta.atan().to_degrees()).abs() < 0.05,
+            "worst case at {worst_deg} deg, expected {} deg",
+            beta.atan().to_degrees()
+        );
     }
 
     #[test]

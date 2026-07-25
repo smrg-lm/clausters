@@ -46,6 +46,56 @@ fn zero_crossings(buf: &[f32]) -> usize {
 Tolerances: compare audio floats with relative tolerance (1e-4 is usually enough
 for f32); never exact equality except for structural zeros.
 
+## Measuring instead of pinning (the shared harness)
+
+`tests/common/signal.rs` holds the measurements — include it with
+`#[path = "common/signal.rs"] mod signal;`. Its own tests live in
+`tests/signal.rs`, each driving a helper with a signal whose answer is known in
+closed form.
+
+| helper | estimates |
+|---|---|
+| `rms`, `peak`, `dc`, `assert_finite` | the basics |
+| `dft_at`, `amplitude_at`, `phase_at` | one bin at an **arbitrary** frequency — not the nearest FFT bin |
+| `response_at(input, output, hz, sr)` | a filter's gain and phase shift from a real I/O pair |
+| `coherent_freq(target, sr, n)` | a frequency that fits a whole (odd) number of periods in `n` samples |
+| `alias_snr_db(x, f0, sr)` | harmonic energy vs everything else — an oscillator's antialiasing figure |
+| `power_spectrum(x, n, win)` | Welch-averaged power spectrum |
+| `spectral_slope_db_per_octave` | dB/octave over octave bands (pink noise = −3.01) |
+| `group_delay_samples(x, y, max)` | delay to sub-sample resolution |
+
+**Coherent sampling.** `amplitude_at` and `alias_snr_db` are *exact* only when
+the analysis window spans a whole number of periods, which is why the frequency
+comes from `coherent_freq` and no window is applied: a rectangular window over a
+coherent signal has zero leakage, so a component's energy sits in one bin. The
+alternative — windowing a non-coherent signal — buries anything under the
+window's sidelobe floor (Blackman, the best `clausters_core` offers, is about
+−58 dB, above a decent oscillator's alias floor), so the measurement would
+report the window rather than the UGen. `coherent_freq` also snaps to an **odd**
+bin, which keeps aliased partials off the harmonic bins; on an even bin they
+fold on top of the harmonics and become invisible.
+
+**The rules a UGen test follows:**
+
+1. A filter is asserted against the **analytic transfer function of the
+   structure actually implemented**, evaluated in `f64` — never against a golden
+   file, never against scsynth's output. State the tolerance in dB.
+2. An oscillator **reports its measured alias SNR** at several fundamentals and
+   asserts a floor derived from that measurement and written down. A naive
+   (non-band-limited) saw measures 30.9 / 16.0 / 9.9 dB at 105 / 996 / 3996 Hz —
+   that is the baseline a band-limited one has to beat.
+3. Stochastic sources are tested for **distribution** (mean, variance, spectral
+   slope) with a fixed seed, plus bit-exact reproducibility from a
+   `clausters_core::rng` seed.
+4. Every stateful UGen gets a **long-run numerical test** (a resonant filter at
+   fc = 20 Hz for 10 s: finite, and its RMS matches the analytic gain). This is
+   what catches a regression from `f64` state back to `f32`.
+5. Every stateful UGen gets a **block-split test**: rendering in whole blocks and
+   in split blocks must agree.
+6. Don't assert on a number you cannot derive. If the expected value is not in
+   closed form, print it from a run (see `report_the_measured_figures` in
+   `tests/signal.rs`) and write the measurement into the doc.
+
 ## Golden files
 
 For complete scenes (synth + filter + envelope via OSC commands):

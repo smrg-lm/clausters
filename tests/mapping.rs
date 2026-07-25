@@ -42,7 +42,7 @@ fn dc_def() -> Arc<SynthDef> {
 }
 
 fn add_default(id: i32, freq: f32, amp: f32) -> Cmd {
-    let mut synth = Box::new(UGenSynth::new(default_def()));
+    let mut synth = Box::new(UGenSynth::new(default_def(), SR));
     synth.set_control(CTL_FREQ, freq);
     synth.set_control(1, amp);
     Cmd::AddSynth {
@@ -59,7 +59,7 @@ fn add_dc(id: i32) -> Cmd {
         id,
         target: ROOT_NODE_ID,
         action: AddAction::Tail,
-        synth: Box::new(UGenSynth::new(dc_def())),
+        synth: Box::new(UGenSynth::new(dc_def(), SR)),
         usage: Default::default(),
     }
 }

@@ -370,6 +370,184 @@ entries keep their original paths as a record of what shipped where. See
   `demo.html?smoke=1`: element up with the canvas in its shadow root, raw
   `server()` sees the element's synth (`/status`), meter bus streaming.
 
+## U track — the UGen library
+
+Section added 2026-07-25. The S track finished the substrate *for* this and
+closed; the catalog itself never grew past the base set, so a `synth`-only build
+(the wasm engine included, which has no LLVM and therefore no Faust) still cannot
+produce a band-limited saw, a resonant filter, a delay, a trigger or a pan.
+Faust covers all of it today, which is why the gap has not hurt in practice —
+the justification for closing it is (a) builds without Faust/LLVM, (b)
+conceptual parity with scsynth, (c) teaching material. Like F, S and B, U
+coexists with the M line; its milestones are largely independent of each other
+and interleavable as loose items, with U0 the one prerequisite.
+
+**Design stance — one implementation per family, scsynth names on the wire.**
+Implementations are grouped by **affinity**: one Rust core per family, and the
+registry exposes only the **scsynth names**, one row each, the mode chosen in
+the row's `build`. This is the `PvMag` pattern (`PV_MagAbove`/`PV_MagBelow`/
+`PV_MagClip` → one struct + a `MagMode`), deliberately not the `BinaryOpUGen`
+pattern: no `Svf` or `Delay` kind exists on the wire, so the catalog reads as
+scsynth's and a mode is never something a def has to spell. Where a
+parameterized core makes a *new* capability nearly free that scsynth has no name
+for (a filter whose mode is a signal input — continuous LP→BP→HP morphing, which
+falls out of the SVF's shared integrator update and would cost a coefficient
+recompute in a biquad), that is a kind on its own merits, named for itself, and
+out of scope here.
+
+**Design stance — the realization may differ where the transfer function does
+not.** Per this plan's "conceptual, not binary, compatibility" principle, each
+milestone below is free to adopt a better implementation than scsynth's and must
+say why. The three that shape the track, each landing as a `docs/decisions.md`
+entry:
+
+1. **Internal precision.** Wires and buses stay `f32` (the ABI), but filter and
+   integrator **state and coefficients are `f64`**, as are phase accumulators and
+   delay read positions. This is not a deviation but an alignment: scsynth's own
+   `FilterUGens.cpp` declares `double y1, y2, a0, b1, b2` for `LPF`/`HPF`/
+   `RLPF`/`RHPF`/`BPF`/`BRF`/`Resonz`/`Ringz`/`OnePole`, because at low cutoff
+   the poles sit near `z = 1` and in `f32` the coefficient quantization and state
+   truncation noise dominate the output. The `Sine` precedent (`f64` phase) is
+   the same reasoning already applied once.
+2. **Filters: one TPT/ZDF state-variable core, not direct-form-II biquads.** The
+   transfer function is the *same* bilinear-transformed two-pole prototype, so
+   the magnitude response is verifiable analytically and matches; the
+   realization is trapezoidal-integrator state space, which does not blow up
+   under audio-rate cutoff modulation, is far better conditioned at low fc, and
+   yields LP/BP/HP/notch/peak from one computation — which is what lets one core
+   cover eight scsynth names.
+3. **Oscillators: PolyBLEP over an `f64` phase, not the DSF impulse train.**
+   scsynth's `Saw`/`Pulse`/`Blip` divide a sine table by a cosecant table and run
+   the result through a `0.999f` leaky integrator over an `int32` fixed-point
+   phase — a division per sample, a table, DC settling and drift, and fixed-point
+   tuning error. PolyBLEP has none of those; its honest cost is being *quasi*-
+   bandlimited (aliasing rises toward Nyquist), which the tests **measure and
+   publish** rather than claim away.
+
+**Design stance — efficiency lives at the block, not the sample.** A parameter
+arriving as a length-1 wire (a constant, an `ir`/`kr` value) is distinguishable
+at the top of `process`, so coefficients are recomputed **once per block**;
+an `ar` parameter gets two evaluations per block and a linear per-sample ramp
+(scsynth's `CALCSLOPE` in spirit) rather than a per-sample recompute. That is the
+same effect scsynth gets from generating a `next` variant per input-rate
+combination, without the combinatorial code. Every family lands with a row in
+`examples/bench.rs`, whose existing UGen-vs-Faust comparison is this track's
+yardstick.
+
+**Testing stance — the asserts are measurements, not goldens.** U0 builds the
+harness and the rules: a filter is asserted against the **analytic transfer
+function of the structure actually implemented**, evaluated in `f64` — never
+against a golden, never against scsynth's output; an oscillator reports a
+measured alias SNR at several fundamentals and asserts a documented floor; a
+stochastic source is tested for distribution (mean, variance, spectral slope)
+with a fixed seed plus bit-exact reproducibility; every stateful UGen gets a
+long-run numerical test (the one that catches an `f64`→`f32` state regression)
+and a block-split test. The rules go into the `audio-testing` skill so later work
+inherits them.
+
+- ✅ **U0 — Build context, the deferred operators, and the measurement harness**
+  *(done 2026-07-25)* — the prerequisite, nothing user-visible. (a) A `BuildCtx`
+  (sample rate, block size) reaches `UGenDescriptor::build`, so a UGen may size
+  its allocation from the sample rate — `build` and `UGenSynth::new` had none,
+  which is what blocked the delay family; plus the `max_delay` static field on
+  both the wire spec and `UGenConfig`. (b) The S3 operator deferrals close as
+  `clausters_core::builtins` entries and nothing else: `fold2`, `wrap2`, `gcd`,
+  `lcm`, `hypot_apx` (lowercased like every other name in that table, as
+  `as_int` already is). `randRange`/`expRandRange` are **not** among them and
+  never will be — they are not pure functions of their operands, so they cannot
+  live in an op table whose entire purpose is a scalar formula both sides
+  compute identically; the stochastic need is a UGen with its own RNG state
+  (`Rand.ir` today, its exponential sibling with U6). scsynth's `hypot_apx` is
+  reproduced rather than corrected — it is deliberately the cheap one, and a
+  ported def must not change value — with its real error bound *measured*
+  (never below the true hypotenuse, at worst +15.9 % near 30.4 deg, which is
+  **not** the diagonal the intuition suggests) and scsynth's own prose/formula
+  mismatch recorded. (c) `tests/common/signal.rs`, the shared measurement
+  module over `clausters_core::fft`/`window`: single-frequency DFT (gain and
+  phase at an *arbitrary* frequency, not the nearest bin), `response_at` for a
+  filter's I/O pair, coherent-frequency selection, alias SNR, Welch spectrum,
+  spectral slope in dB/octave, and sub-sample group delay — each documenting
+  when its estimate is exact, each driven in `tests/signal.rs` by a signal whose
+  answer is known in closed form. It establishes the baseline U1 must beat: a
+  naive saw measures 30.9 / 16.0 / 9.9 dB of alias SNR at 105 / 996 / 3996 Hz.
+  The rules the track tests by moved into the `audio-testing` skill.
+
+- **U1 — The phase family** — `src/dsp/phase.rs`: one `f64` phase accumulator
+  plus a `poly_blep` helper, and the rows `Saw`, `Pulse`, `VarSaw`, `Phasor`
+  (the trigger-resettable ramp — deliberately not band-limited, as in scsynth)
+  and `LFSaw`/`LFPulse`/`LFTri` (modulation shapes, also not band-limited by
+  design). Tests measure frequency, amplitude, alias SNR at three fundamentals,
+  `Saw`'s DC (the property scsynth's leaky integrator only approximates) and the
+  exact reset sample of `Phasor`.
+
+- **U2 — The filter core** — `src/dsp/filter.rs`: the TPT/ZDF state-variable core
+  behind `LPF`, `HPF`, `BPF`, `BRF`, `RLPF`, `RHPF`, `Resonz`, `Ringz`, plus the
+  one-pole core behind `OnePole`, `OneZero`, `LeakDC`, `Integrator` (reusing the
+  time-constant helper already in `src/dsp/lag.rs`). Resonance stays `rq` on the
+  wire — not for cost (one division per block, dominated by the `tan()` beside
+  it) but for parity and for the clean domain, `rq = 0` being infinite Q exactly
+  where `Q = 0` would divide by zero; the Python builders accept `q=` and fold it
+  client-side. Acceptance includes an audio-rate cutoff sweep the deviation
+  exists for. The same milestone adds the one row scsynth has no name for, and
+  which the core makes nearly free: **`Svf`**, whose three output mixes (`low`,
+  `band`, `high`) are **signal inputs** rather than a compile-time mode — every
+  classic response is a linear combination of the structure's three taps
+  (notch = `1,0,1`; peak = `-1,0,1`; allpass = `1,-rq,1`), so a modulable
+  multimode filter costs the mix and nothing else, where a direct-form biquad
+  would have to recompute coefficients. The single-knob morph stays a client-side
+  helper over those three inputs, so no arbitrary ordering of responses is baked
+  into the wire.
+
+- **U3 — The delay core** — `src/dsp/delay.rs`: one line core (`f32` storage,
+  `f64` read position) parameterized by interpolation × feedback, behind
+  `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C`. The line is **synth-private
+  memory** allocated at build, not a pool buffer — a pool buffer is immutable
+  once built, the same invariant that put the spectral frame in private scratch —
+  so `BufDelay*` is out of this track. These carry intrinsic delay by definition,
+  which is the point of the UGen and **not** a compensation target: they must not
+  report it through `latency()`. The strongest acceptance is the allpass's own
+  definition — magnitude flat to within ±0.1 dB across the band.
+
+- **U4 — `Line`/`XLine` and the self-control set** — `Line` and `XLine` are
+  one-segment envelopes built on the existing `src/dsp/envgen.rs` segment engine,
+  so they inherit the full done-action set rather than growing a second ramp;
+  plus S9's deferred `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone`, `Done`.
+  `RecordBuf`/`BufWr` are **not** part of it: they write into a pool buffer,
+  which the immutability invariant forbids, so they need their own decision
+  (a mutable-buffer class? a private record buffer handed over on free?) before
+  they can be planned.
+
+- **U5 — Triggers and control** — `src/dsp/trig.rs`: one shared rising-edge
+  detector under `Trig`, `Trig1`, `TDelay`, `Latch`, `Gate`, `Schmidt`,
+  `ToggleFF`, `SetResetFF`, `PulseCount`, `PulseDivider`, `Stepper`, `Timer`,
+  `Sweep`, `Changed`, `Decay`, `Decay2` and `DetectSilence` (with a done action).
+
+- **U6 — Noise** — extending `src/dsp/noise.rs`: `PinkNoise`, `BrownNoise`,
+  `GrayNoise`, `ClipNoise`, `LFNoise0/1/2`, `LFClipNoise`, `Dust`, `Dust2`,
+  `Crackle`, all over `clausters_core::rng` so a client reproduces the stream
+  (the `WhiteNoise` precedent). Pink noise uses Voss–McCartney and explicitly not
+  Trammell's stochastic variant: its randomized update schedule gives non-uniform
+  per-sample cost, which a fixed block budget cannot absorb. Acceptance is the
+  measured spectral slope, −3.01 dB/octave.
+
+- **U7 — Panning and selection** — `src/dsp/pan.rs`. The engine gives a UGen
+  **one output** (an input reference names a UGen, not an output of one), a
+  deviation `docs/schemas.md` already states for the buffer readers. So a
+  two-output panner is a row carrying its channel index and sharing the pan-law
+  helper, and the Python `pan2()` returns a `ChannelList` of two — exactly what
+  `out()` already does. `Pan2`, `LinPan2`, `Balance2`, `Rotate2`, `PanAz` that
+  way; `XFade2`, `LinXFade2`, `Select`, `SelectX` as ordinary single-output rows.
+
+- **U8 — The demand family** — extending `src/dsp/demand.rs` on the `dr`
+  substrate S1 built and the shared RNG: `Dseries`, `Dgeom`, `Dwhite`, `Diwhite`,
+  `Dbrown`, `Dibrown`, `Drand`, `Dxrand`, `Dshuf`, `Dswitch1`, `Dbufrd`,
+  `Dstutter`, plus the drivers `Duty` and `TDuty`.
+
+Every U milestone ships its rows **with** their Python builders in
+`clients/python/clausters/defs/ugens.py` (the contrast test keeps the input names
+identical to the registry's; `/u_query` picks the rows up with no further work),
+the catalog table in `docs/schemas.md`, and the usual milestone checklist.
+
 ## Testing strategy
 
 - **Per-UGen unit tests**: offline render of N blocks, asserts on the signal

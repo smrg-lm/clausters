@@ -68,6 +68,11 @@ class BinaryOp(IntEnum):
     EXCESS = 32
     ROUND = 33
     TRUNC = 34
+    FOLD2 = 35
+    WRAP2 = 36
+    GCD = 37
+    LCM = 38
+    HYPOT_APX = 39
 
 
 class UnaryOp(IntEnum):

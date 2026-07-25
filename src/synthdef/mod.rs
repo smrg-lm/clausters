@@ -142,6 +142,11 @@ pub struct UGenSpec {
     /// prepared kernel the instance accepts). Ignored by every other kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub partitions: Option<usize>,
+    /// Delay family (U3): the longest delay the instance accepts, in seconds.
+    /// It sizes the pre-allocated line, so it is static config rather than a
+    /// signal input. Ignored by every other kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_delay: Option<f32>,
     /// `PV_Kernel`: the magnitude bin-expression as a **postfix token list** —
     /// a number pushes a constant, a word is a per-bin load (`"mag"`,
     /// `"phase"`, `"bin"`, `"nbins"`, `"binfreq"`, `"p0"`…) or an operator wire
@@ -408,6 +413,7 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             partitions: u.partitions,
             mag_prog: None,
             phase_prog: None,
+            max_delay: u.max_delay,
         };
         // Any kind that takes an `fft_size` (the spectral chain's FFT, the
         // partitioned convolver) must name a supported transform size.

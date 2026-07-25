@@ -2,10 +2,11 @@
 
 use std::sync::Arc;
 
-use crate::dsp::registry::{DEMAND_SOURCE_SLOT, ExecMode};
+use crate::dsp::registry::{BuildCtx, DEMAND_SOURCE_SLOT, ExecMode};
 use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
-    Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, ReplyMsg, UGen, at,
+    BLOCK_SIZE, Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, ReplyMsg,
+    UGen, at,
 };
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{ControlType, InputRef, SynthDef};
@@ -40,13 +41,21 @@ pub struct UGenSynth {
 }
 
 impl UGenSynth {
-    pub fn new(def: Arc<SynthDef>) -> Self {
+    /// Builds the instance on the network thread. `sample_rate` reaches the
+    /// UGens' constructors through [`BuildCtx`], for the kinds whose
+    /// *allocation* is sized in samples (a delay line); the engine's own rate
+    /// arrives per block in `ProcessCtx` as before.
+    pub fn new(def: Arc<SynthDef>, sample_rate: f32) -> Self {
+        let build_ctx = BuildCtx {
+            sample_rate,
+            block_size: BLOCK_SIZE,
+        };
         let controls = def.control_defaults.clone();
         let maps = vec![ControlMap::UNMAPPED; controls.len()];
         let ugens: Vec<_> = def
             .ugens
             .iter()
-            .map(|u| (u.desc.build)(&u.config))
+            .map(|u| (u.desc.build)(&u.config, &build_ctx))
             .collect();
         let wires = vec![Block::SILENCE; ugens.len()];
         let locals = vec![Block::SILENCE; def.num_locals];

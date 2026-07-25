@@ -28,9 +28,10 @@ fn dc_synth(level: f32) -> Box<dyn SynthNode> {
         ]
     }))
     .unwrap();
-    let mut synth = Box::new(UGenSynth::new(Arc::new(
-        clausters::synthdef::compile(spec).unwrap(),
-    )));
+    let mut synth = Box::new(UGenSynth::new(
+        Arc::new(clausters::synthdef::compile(spec).unwrap()),
+        SR,
+    ));
     synth.set_control(0, level);
     synth
 }
@@ -56,9 +57,10 @@ fn add_impulse(id: i32, freq: f32) -> Cmd {
         ]
     }))
     .unwrap();
-    let synth = Box::new(UGenSynth::new(Arc::new(
-        clausters::synthdef::compile(spec).unwrap(),
-    )));
+    let synth = Box::new(UGenSynth::new(
+        Arc::new(clausters::synthdef::compile(spec).unwrap()),
+        SR,
+    ));
     Cmd::AddSynth {
         id,
         target: ROOT_NODE_ID,
@@ -250,9 +252,10 @@ fn scheduled_control_bus_write_lands_on_its_sample() {
         ]
     }))
     .unwrap();
-    let synth = Box::new(UGenSynth::new(Arc::new(
-        clausters::synthdef::compile(spec).unwrap(),
-    )));
+    let synth = Box::new(UGenSynth::new(
+        Arc::new(clausters::synthdef::compile(spec).unwrap()),
+        SR,
+    ));
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
     handle
         .send(Cmd::AddSynth {

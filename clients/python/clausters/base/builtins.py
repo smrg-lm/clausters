@@ -88,6 +88,11 @@ def clip2(a, b): return _binop(BinaryOp.CLIP2, a, b)
 def excess(a, b): return _binop(BinaryOp.EXCESS, a, b)
 def round(a, b): return _binop(BinaryOp.ROUND, a, b)
 def trunc(a, b): return _binop(BinaryOp.TRUNC, a, b)
+def fold2(a, b): return _binop(BinaryOp.FOLD2, a, b)
+def wrap2(a, b): return _binop(BinaryOp.WRAP2, a, b)
+def gcd(a, b): return _binop(BinaryOp.GCD, a, b)
+def lcm(a, b): return _binop(BinaryOp.LCM, a, b)
+def hypot_apx(a, b): return _binop(BinaryOp.HYPOT_APX, a, b)
 
 
 # ---- unary primitives (native, f32) ----
@@ -154,5 +159,6 @@ BINARY = {
     "ring1": ring1, "ring2": ring2, "ring3": ring3, "ring4": ring4,
     "sumsqr": sumsqr, "difsqr": difsqr, "sqrsum": sqrsum, "sqrdif": sqrdif,
     "absdif": absdif, "thresh": thresh, "clip2": clip2, "excess": excess,
-    "round": round, "trunc": trunc,
+    "round": round, "trunc": trunc, "fold2": fold2, "wrap2": wrap2,
+    "gcd": gcd, "lcm": lcm, "hypot_apx": hypot_apx,
 }

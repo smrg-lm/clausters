@@ -19,7 +19,7 @@ const SR: f32 = 48_000.0;
 /// the block really is constant (these defs feed constants, so it must be).
 fn render_const(json: &str) -> f32 {
     let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def));
+    let mut synth = UGenSynth::new(Arc::new(def), SR);
     let mut buses = Buses::new(ControlBuses::new(16), 8);
     buses.clear_audio();
     let mut ctx = ProcessCtx {
@@ -157,4 +157,30 @@ fn rejects_wrong_arity_for_op_ugen() {
         {"kind":"UnaryOpUGen","op":"neg","inputs":[{"const":1.0},{"const":2.0}]}
     ]}"#;
     assert!(compile_err(json).contains("expected 1 inputs"));
+}
+
+/// The operators deferred when S3 landed (U0): they must resolve by name
+/// through the real compile+render path, not only in the core's unit tests.
+#[test]
+fn deferred_s3_operators_resolve_and_compute() {
+    let op = |name: &str, a: f32, b: f32| {
+        let json = format!(
+            r#"{{
+                "name": "d",
+                "ugens": [
+                    {{"kind": "BinaryOpUGen", "op": "{name}",
+                     "inputs": [{{"const": {a}}}, {{"const": {b}}}]}},
+                    {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}
+                ]
+            }}"#
+        );
+        render_const(&json)
+    };
+    assert_eq!(op("fold2", 3.5, 1.0), -0.5);
+    assert_eq!(op("wrap2", 3.5, 1.0), -0.5);
+    assert_eq!(op("gcd", 48.0, 18.0), 6.0);
+    assert_eq!(op("lcm", 4.0, 6.0), 12.0);
+    // 3 + 4 - (sqrt(2) - 1) * 3.
+    let expected = 7.0 - (std::f64::consts::SQRT_2 - 1.0) as f32 * 3.0;
+    assert!((op("hypot_apx", 3.0, 4.0) - expected).abs() < 1e-6);
 }

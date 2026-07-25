@@ -330,7 +330,7 @@ fn ugen_and_faust_synths_mix_on_the_same_bus() {
     let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
 
     // Same freq and phase, both summing into bus 0: amplitudes add.
-    let mut usynth = Box::new(UGenSynth::new(Arc::clone(&udef)));
+    let mut usynth = Box::new(UGenSynth::new(Arc::clone(&udef), SR));
     usynth.set_control(0, 440.0); // freq
     usynth.set_control(1, 0.2); // amp
     handle
