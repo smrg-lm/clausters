@@ -24,6 +24,7 @@ fn render_const(json: &str) -> f32 {
     buses.clear_audio();
     let mut ctx = ProcessCtx {
         sample_rate: SR,
+        full_sample_rate: SR,
         buses: &buses,
         buffers: &[],
         offset: 0,

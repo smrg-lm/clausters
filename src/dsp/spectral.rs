@@ -831,7 +831,9 @@ impl UGen for PvKernel {
                 *p = at(input, 0);
             }
             let half = chain.winsize / 2;
-            let hz_per_bin = ctx.sample_rate / chain.winsize as f32;
+            // The engine's rate, not this UGen's: a `PV_*` runs at `kr` but the
+            // spectrum it edits is of an audio-rate signal.
+            let hz_per_bin = ctx.full_sample_rate / chain.winsize as f32;
             // The identity phase program keeps each bin's phase by *scaling*
             // the complex pair — exact, and no polar conversion unless a
             // program reads `phase`.

@@ -134,6 +134,25 @@ impl SynthNode for UGenSynth {
             // `ar`: one value per sample; `kr`/`ir`: one value per block.
             let out_len = if rate == Rate::Ar { ctx.frames } else { 1 };
 
+            // Every UGen runs at *its own* sample rate, scsynth's
+            // `unit->mRate->mSampleRate`. A `kr` UGen emits one sample per
+            // slice, so one of its samples lasts `frames` engine samples and
+            // its rate is `full / frames` — which is the control rate for a
+            // whole block, and stays exact when a scheduled bundle splits one
+            // (the slice is shorter, the tick covers less time, and the two
+            // cancel). Deriving it per slice rather than from `BLOCK_SIZE` is
+            // what keeps a split block from advancing control time too fast.
+            // Everything time-dependent then divides by `ctx.sample_rate` and
+            // is correct at either rate with no branch of its own.
+            let mut kr_ctx;
+            let ctx: &mut ProcessCtx = if rate == Rate::Kr {
+                kr_ctx = *ctx;
+                kr_ctx.sample_rate = ctx.full_sample_rate / ctx.frames.max(1) as f32;
+                &mut kr_ctx
+            } else {
+                &mut *ctx
+            };
+
             // Topological order guarantees inputs only reference earlier wires.
             let (earlier, rest) = self.wires.split_at_mut(i);
             let output = &mut rest[0].0[..out_len];

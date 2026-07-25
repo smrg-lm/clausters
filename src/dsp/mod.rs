@@ -355,7 +355,19 @@ impl Buses {
 /// The struct is `Copy` so every worker carries its own.
 #[derive(Clone, Copy)]
 pub struct ProcessCtx<'a> {
+    /// **The rate of the UGen currently running**, in samples per second — not
+    /// necessarily the engine's. An [`Rate::Ar`] UGen sees the engine rate; a
+    /// [`Rate::Kr`] one sees its own, `full_sample_rate / frames`, because one
+    /// of its samples covers the whole slice. Anything that turns seconds into
+    /// samples — a phase increment, a filter coefficient, an envelope segment,
+    /// a delay time — divides by *this*, and is then correct at either rate
+    /// with no branch. For the engine's own rate as a **fact** (`SampleRate`,
+    /// an FFT's Hz-per-bin), read [`full_sample_rate`](Self::full_sample_rate).
     pub sample_rate: f32,
+    /// The engine's audio sample rate, the same for every UGen and every
+    /// slice. Read it only where the quantity really is the hardware rate;
+    /// timing belongs to [`sample_rate`](Self::sample_rate).
+    pub full_sample_rate: f32,
     pub buses: &'a Buses,
     /// The engine's buffer pool; read-only on the audio thread (see
     /// [`buffer`] for the immutability contract).

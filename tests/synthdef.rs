@@ -28,6 +28,7 @@ fn render_with(synths: &mut [UGenSynth], blocks: usize, setup: impl Fn(&ControlB
         buses.clear_audio();
         let mut ctx = ProcessCtx {
             sample_rate: SR,
+            full_sample_rate: SR,
             buses: &mut buses,
             buffers: &[],
             offset: 0,

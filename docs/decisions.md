@@ -2068,3 +2068,45 @@ is the direct path and always returns at full level: `y[D] = 1`, `y[2D] = g`,
 `10^(-3t/decay)`. A negative decay time negates the gain, so alternate echoes
 invert — scsynth allows this and it is musically useful; a zero decay leaves a
 single echo rather than dividing by zero.
+
+## A calculation rate is a time base: every UGen runs at its own sample rate
+
+Found while starting U4, and older than the U track: `Impulse.kr(10)` fired
+**once** per second instead of ten times. Every UGen read `ProcessCtx::
+sample_rate`, which was the engine's rate for all of them — but a `kr` UGen
+emits one sample per block, so dividing a frequency by 48 000 and then stepping
+once per 64 samples made it 64 times too slow. The same factor was in `Lag.kr`'s
+convergence time, `Saw.kr`'s pitch, every filter's cutoff at `kr`, and would
+have been in `Line.kr`'s duration — which is what made it surface now, since a
+one-segment ramp is the canonical control-rate UGen.
+
+**The fix is the one scsynth already makes:** `sample_rate` is the rate of the
+**UGen being run**, not the engine's — scsynth's `unit->mRate->mSampleRate`,
+which for a control-rate unit is the control rate. A `kr` sample lasts a whole
+slice, so its rate is `full_sample_rate / frames`. Everything that turns seconds
+into samples then divides by the same field and is correct at either rate with
+no branch of its own; the alternative — a `rate_scale` factor each UGen must
+remember to apply — is a bug waiting in every kind added after it, and the bug
+is silent, because a wrong time base still produces a plausible signal.
+
+**Why `frames` and not `BLOCK_SIZE`.** A scheduled bundle splits a block at the
+event's sample and runs the whole tree per slice, so a `kr` UGen ticks once per
+*slice*, not once per block. Deriving its rate from the slice length makes a
+shorter tick cover proportionally less time, and the two cancel exactly: control
+time advances at the same speed whether or not the block was cut. Had the rate
+come from `BLOCK_SIZE`, a busy score would have run its control-rate UGens fast
+in proportion to how many events it scheduled — the sort of error that shows up
+as a mix that drifts and no failing test.
+
+**The engine's rate stays reachable** as `ProcessCtx::full_sample_rate`, for the
+two quantities that are hardware facts rather than time bases: the `SampleRate`
+UGen (`SampleRate.kr` reports 48 kHz, not the 750 Hz it runs at) and a spectral
+chain's Hz-per-bin. `FFT` and the `PV_*` family are `kr` for an unrelated reason
+— a frame is not a block — and consume their audio input frame by frame, so they
+are untouched by the rate change and only needed the bin spacing corrected.
+
+The consequence for users is worth stating plainly, because it is what makes the
+rates comparable: **choosing `kr` changes a UGen's cost, not its meaning.** A
+time is still in seconds, a frequency still in hertz; what you give up is
+resolution, since nothing above half the control rate (375 Hz at 48 kHz / 64)
+can be represented.

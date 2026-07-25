@@ -657,7 +657,10 @@ impl Engine {
             return;
         }
         let ctx = ProcessCtx {
+            // The two agree at the engine boundary: a node runs at the engine
+            // rate, and the per-UGen rate is derived inside the synth.
             sample_rate: self.sample_rate,
+            full_sample_rate: self.sample_rate,
             buses: &self.buses,
             buffers: &self.buffers,
             offset,

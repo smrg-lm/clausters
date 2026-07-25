@@ -52,6 +52,7 @@ fn render_with_input(ugen_json: &str, input: &[f32]) -> Vec<f32> {
         drive[..n].copy_from_slice(&input[pos..pos + n]);
         let mut ctx = ProcessCtx {
             sample_rate: SR,
+            full_sample_rate: SR,
             buses: &buses,
             buffers: &[],
             offset: 0,
@@ -325,6 +326,7 @@ fn a_modulated_delay_time_stays_finite_and_bounded() {
         }
         let mut ctx = ProcessCtx {
             sample_rate: SR,
+            full_sample_rate: SR,
             buses: &buses,
             buffers: &[],
             offset: 0,
@@ -391,6 +393,7 @@ fn render_split(ugen_json: &str, input: &[f32], at_sample: usize) -> Vec<f32> {
         for (offset, frames) in [(0, at_sample), (at_sample, BLOCK_SIZE - at_sample)] {
             let mut ctx = ProcessCtx {
                 sample_rate: SR,
+                full_sample_rate: SR,
                 buses: &buses,
                 buffers: &[],
                 offset,

@@ -23,6 +23,7 @@ fn render(json: &str, blocks: usize) -> Vec<f32> {
         buses.clear_audio();
         let mut ctx = ProcessCtx {
             sample_rate: SR,
+            full_sample_rate: SR,
             buses: &buses,
             buffers: &[],
             offset: 0,
@@ -32,6 +33,49 @@ fn render(json: &str, blocks: usize) -> Vec<f32> {
         out.extend_from_slice(buses.audio(0));
     }
     out
+}
+
+/// Renders `blocks` blocks, cut into slices of `split` frames — what a
+/// scheduled bundle does to a block (M6). The audio bus is read once per whole
+/// block, so the result is directly comparable with [`render`]'s.
+fn render_split(json: &str, blocks: usize, split: usize) -> Vec<f32> {
+    let def = compile(serde_json::from_str::<SynthDefSpec>(json).unwrap()).unwrap();
+    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut buses = Buses::new(ControlBuses::new(16), 8);
+    let mut out = Vec::with_capacity(blocks * BLOCK_SIZE);
+    for _ in 0..blocks {
+        buses.clear_audio();
+        let mut offset = 0;
+        while offset < BLOCK_SIZE {
+            let frames = split.min(BLOCK_SIZE - offset);
+            let mut ctx = ProcessCtx {
+                sample_rate: SR,
+                full_sample_rate: SR,
+                buses: &buses,
+                buffers: &[],
+                offset,
+                frames,
+            };
+            synth.process(&mut ctx);
+            offset += frames;
+        }
+        out.extend_from_slice(buses.audio(0));
+    }
+    out
+}
+
+/// Counts rising edges, so an impulse counts once however many samples the
+/// `Out` broadcast it across.
+fn count_pulses(sig: &[f32]) -> usize {
+    let mut prev = 0.0;
+    let mut n = 0;
+    for &s in sig {
+        if s > 0.5 && prev <= 0.5 {
+            n += 1;
+        }
+        prev = s;
+    }
+    n
 }
 
 fn compile_err(json: &str) -> String {
@@ -91,6 +135,79 @@ fn kr_output_is_constant_within_each_block() {
     assert!(
         values.windows(2).any(|w| w[0] != w[1]),
         "kr value should change across blocks: {values:?}"
+    );
+}
+
+// ---- kr: the control rate is a time base, not just a decimation ----
+//
+// A `kr` UGen emits one sample per slice, so *its* sample rate is `full /
+// frames` — scsynth's `unit->mRate->mSampleRate`. Anything that turns seconds
+// into samples divides by that, which is what makes a period in Hz mean the
+// same thing at either rate.
+
+const ONE_SECOND: usize = SR as usize / BLOCK_SIZE;
+
+#[test]
+fn kr_frequency_is_in_hertz_like_ar() {
+    // Ten cycles per second is ten impulses per second, whichever rate runs
+    // them. Reading the engine's rate here instead would make the control-rate
+    // one 64 times too slow — one impulse per second.
+    let json = |rate: &str| {
+        format!(
+            r#"{{
+            "name": "imp",
+            "ugens": [
+                {{"kind": "Impulse", "rate": "{rate}", "inputs": [{{"const": 10.0}}]}},
+                {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}
+            ]
+        }}"#
+        )
+    };
+    let ar = render(&json("ar"), ONE_SECOND);
+    let kr = render(&json("kr"), ONE_SECOND);
+    assert_eq!(count_pulses(&ar), 10, "Impulse.ar at 10 Hz over one second");
+    assert_eq!(count_pulses(&kr), 10, "Impulse.kr at 10 Hz over one second");
+}
+
+#[test]
+fn kr_time_survives_a_block_split() {
+    // Cutting a block into slices makes a kr UGen run once per *slice*, so the
+    // rate has to come from the slice length rather than from BLOCK_SIZE: a
+    // shorter tick covers proportionally less time, and the two cancel. A
+    // scheduled bundle therefore does not speed control time up.
+    let json = r#"{
+        "name": "imp",
+        "ugens": [
+            {"kind": "Impulse", "rate": "kr", "inputs": [{"const": 10.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    for split in [1, 7, 16, 32, 64] {
+        let out = render_split(json, ONE_SECOND, split);
+        assert_eq!(
+            count_pulses(&out),
+            10,
+            "Impulse.kr at 10 Hz over one second, blocks cut into {split}-frame slices"
+        );
+    }
+}
+
+#[test]
+fn kr_samplerate_still_reports_the_engine_rate() {
+    // The one quantity that is a hardware fact rather than a time base: a
+    // control-rate SampleRate reports 48 kHz, not the 750 Hz it runs at.
+    let json = r#"{
+        "name": "sr",
+        "ugens": [
+            {"kind": "SampleRate", "rate": "kr", "inputs": []},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    }"#;
+    let out = render(json, 3);
+    assert!(
+        out.iter().all(|&x| x == SR),
+        "SampleRate.kr should be {SR}, got {}",
+        out[0]
     );
 }
 

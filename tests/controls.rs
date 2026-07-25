@@ -27,6 +27,7 @@ fn step(synth: &mut UGenSynth, buses: &mut Buses) -> Vec<f32> {
     buses.clear_audio();
     let mut ctx = ProcessCtx {
         sample_rate: SR,
+        full_sample_rate: SR,
         buses,
         buffers: &[],
         offset: 0,

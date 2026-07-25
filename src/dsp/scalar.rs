@@ -13,11 +13,15 @@ use crate::dsp::{ProcessCtx, UGen};
 
 /// `SampleRate.ir`: the engine's sample rate in Hz. No inputs. Idempotent
 /// (the same every block), so it is the gentle textbook `ir` example.
+///
+/// This is one of the two places that read the **engine's** rate rather than
+/// the running UGen's: the answer is a hardware fact, so `SampleRate.kr`
+/// reports the audio rate, not the control rate it is itself running at.
 pub struct SampleRate;
 
 impl UGen for SampleRate {
     fn process(&mut self, ctx: &mut ProcessCtx, _inputs: &[&[f32]], output: &mut [f32]) {
-        output.fill(ctx.sample_rate);
+        output.fill(ctx.full_sample_rate);
     }
 }
 

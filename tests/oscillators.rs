@@ -39,6 +39,7 @@ fn render(ugen: &str, n: usize) -> Vec<f32> {
         buses.clear_audio();
         let mut ctx = ProcessCtx {
             sample_rate: SR,
+            full_sample_rate: SR,
             buses: &buses,
             buffers: &[],
             offset: 0,
@@ -376,6 +377,7 @@ fn render_split(ugen: &str, n: usize, at: usize) -> Vec<f32> {
         for (offset, frames) in [(0, at), (at, BLOCK_SIZE - at)] {
             let mut ctx = ProcessCtx {
                 sample_rate: SR,
+                full_sample_rate: SR,
                 buses: &buses,
                 buffers: &[],
                 offset,

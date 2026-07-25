@@ -282,6 +282,7 @@ fn worker_main(shared: &Shared, me: usize) {
         let buffers = unsafe { std::slice::from_raw_parts(job.buffers, job.buffers_len) };
         let ctx = ProcessCtx {
             sample_rate: job.sample_rate,
+            full_sample_rate: job.sample_rate,
             buses: unsafe { &*job.buses },
             buffers,
             offset: job.offset,

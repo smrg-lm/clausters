@@ -20,6 +20,7 @@ use clausters_core::builtins::{self, BinaryOp as CoreBinaryOp, UnaryOp as CoreUn
 fn ctx<'a>(buses: &'a Buses, buffers: &'a [Option<Arc<Buffer>>]) -> ProcessCtx<'a> {
     ProcessCtx {
         sample_rate: 48_000.0,
+        full_sample_rate: 48_000.0,
         buses,
         buffers,
         offset: 0,
