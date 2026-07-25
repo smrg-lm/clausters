@@ -14,6 +14,7 @@
 use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::conv::Conv;
+use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{Demand, Dseq};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
@@ -41,6 +42,12 @@ use crate::dsp::{Rate, UGen};
 /// demand source (after `trig`, `reset`): must be a wire to a demand-rate
 /// (`dr`) UGen.
 pub const DEMAND_SOURCE_SLOT: usize = 2;
+
+/// Line length a delay row allocates when the def omits `max_delay` (U3), in
+/// seconds. A default rather than a hard error, like `fft_size`'s — but a def
+/// that wants a long echo must say so, because the field sizes memory and
+/// cannot be widened later.
+const DEFAULT_MAX_DELAY: f32 = 0.2;
 
 /// Static, per-UGen parameters that are not signal inputs: set in the SynthDef
 /// spec and resolved at compile time, consumed by a descriptor's `build`.
@@ -390,6 +397,14 @@ const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("
 /// therefore has no `rq` wire; the resonant ones read it.
 const I_FILT: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0)];
 const I_FILT_RQ: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0), inp("rq", 1.0)];
+/// The delay family (U3). `max_delay` is static config, not an input: it sizes
+/// the allocation, so it belongs where `fft_size` and `partitions` are.
+const I_DELAY: &[UGenInput] = &[inp("signal", 0.0), inp("delaytime", 0.2)];
+const I_DELAY_DECAY: &[UGenInput] = &[
+    inp("signal", 0.0),
+    inp("delaytime", 0.2),
+    inp("decaytime", 1.0),
+];
 /// The one-pole family takes a pole coefficient, not a frequency.
 const I_ONE: &[UGenInput] = &[inp("signal", 0.0), inp("coef", 0.5)];
 const I_BUS: &[UGenInput] = &[inp("bus", 0.0)];
@@ -668,6 +683,173 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(OneFilter::new(OneKind::Integrator)),
+    ),
+    // --- the delay core (U3): one circular line, parameterized by
+    //     interpolation and by what it feeds back. The line is synth-private
+    //     memory sized at build from `max_delay` and the sample rate - a pool
+    //     buffer is immutable, and this one is written every sample. See
+    //     `dsp::delay`. ---
+    desc(
+        "DelayN",
+        Fixed(2),
+        I_DELAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::None,
+                Feedback::None,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "CombN",
+        Fixed(3),
+        I_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::None,
+                Feedback::Comb,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "AllpassN",
+        Fixed(3),
+        I_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::None,
+                Feedback::Allpass,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "DelayL",
+        Fixed(2),
+        I_DELAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::Linear,
+                Feedback::None,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "CombL",
+        Fixed(3),
+        I_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::Linear,
+                Feedback::Comb,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "AllpassL",
+        Fixed(3),
+        I_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::Linear,
+                Feedback::Allpass,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "DelayC",
+        Fixed(2),
+        I_DELAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::Cubic,
+                Feedback::None,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "CombC",
+        Fixed(3),
+        I_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::Cubic,
+                Feedback::Comb,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
+    ),
+    desc(
+        "AllpassC",
+        Fixed(3),
+        I_DELAY_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |c, b| {
+            Box::new(Delay::new(
+                Interp::Cubic,
+                Feedback::Allpass,
+                c.max_delay.unwrap_or(DEFAULT_MAX_DELAY),
+                b.sample_rate,
+            ))
+        },
     ),
     // --- arithmetic: the generic op UGens (S3), selected by a core opcode
     //     index; every math need is one more `clausters_core::builtins` entry,

@@ -25,6 +25,8 @@ pub mod buf;
 // the UGen inside it is synth-gated.
 pub mod conv;
 #[cfg(feature = "synth")]
+pub mod delay;
+#[cfg(feature = "synth")]
 pub mod demand;
 // Streaming disk I/O owns a background file thread — meaningless on wasm32
 // (no fs, no threads), so the module and its two registry entries are gated

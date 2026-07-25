@@ -412,7 +412,7 @@ def lf_saw(freq=440.0, iphase=0.0) -> Ugen:
     first sample. (sclang measures the same argument in ``[0, 2)``; every phase
     in this client is in cycles.)
     """
-    return Ugen("LFSaw", [freq, iphase, 0.5])
+    return Ugen("LFSaw", [freq, iphase])
 
 
 def lf_pulse(freq=440.0, iphase=0.0, width=0.5) -> Ugen:
@@ -424,7 +424,7 @@ def lf_pulse(freq=440.0, iphase=0.0, width=0.5) -> Ugen:
 def lf_tri(freq=440.0, iphase=0.0) -> Ugen:
     """Triangle in ±1, starting at 0 and rising. Not band-limited.
     ``iphase`` as in `lf_saw`."""
-    return Ugen("LFTri", [freq, iphase, 0.5])
+    return Ugen("LFTri", [freq, iphase])
 
 
 def var_saw(freq=440.0, iphase=0.0, width=0.5) -> Ugen:
@@ -584,6 +584,91 @@ def integrator(signal, coef=0.999) -> Ugen:
     clamped just inside 1 on the server, so it always forgets eventually
     instead of running away on a DC input."""
     return Ugen("Integrator", [signal, coef])
+
+
+# ---- delays -----------------------------------------------------------------
+#
+# One line implementation behind nine names, chosen by interpolation (``N``
+# none, ``L`` linear, ``C`` cubic) and by feedback (none, comb, allpass).
+#
+# ``max_delay`` is **static**: it sizes the line the server allocates when the
+# synth is built, so it cannot grow later and a `delaytime` past it is clamped.
+# Left unset it follows a constant ``delaytime``, which is what you want for a
+# fixed delay; a *modulated* delaytime has to state the longest it will reach.
+
+
+def _line(kind, delaytime, max_delay):
+    """The static ``max_delay`` field, defaulted from a constant delay time."""
+    if max_delay is None:
+        if not isinstance(delaytime, (int, float)):
+            raise TypeError(
+                f"{kind}: a modulated delaytime needs an explicit max_delay "
+                "(it sizes the line, and the line is allocated once)"
+            )
+        max_delay = delaytime
+    return {"max_delay": float(max_delay)}
+
+
+def delay_n(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
+    """Pure delay, no interpolation: the delay is rounded to whole samples."""
+    return Ugen("DelayN", [signal, delaytime],
+                static=_line("DelayN", delaytime, max_delay))
+
+
+def delay_l(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
+    """Pure delay with linear interpolation — a fractional delay, at the cost of
+    a gentle lowpass that deepens toward Nyquist (about -1.6 dB at 9 kHz on a
+    half-sample delay)."""
+    return Ugen("DelayL", [signal, delaytime],
+                static=_line("DelayL", delaytime, max_delay))
+
+
+def delay_c(signal, delaytime=0.2, *, max_delay=None) -> Ugen:
+    """Pure delay with four-point cubic interpolation — about -0.36 dB at 9 kHz
+    where `delay_l` loses 1.6 dB. The one to modulate."""
+    return Ugen("DelayC", [signal, delaytime],
+                static=_line("DelayC", delaytime, max_delay))
+
+
+def comb_n(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
+    """Feedback comb, no interpolation. ``decaytime`` is the time for the echo
+    train to fall 60 dB **counting from the first echo**, which is the direct
+    path and always comes back at full level. A negative decay time inverts
+    alternate echoes; zero leaves a single echo."""
+    return Ugen("CombN", [signal, delaytime, decaytime],
+                static=_line("CombN", delaytime, max_delay))
+
+
+def comb_l(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
+    """Feedback comb with linear interpolation. Decay as in `comb_n`."""
+    return Ugen("CombL", [signal, delaytime, decaytime],
+                static=_line("CombL", delaytime, max_delay))
+
+
+def comb_c(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
+    """Feedback comb with cubic interpolation. Decay as in `comb_n`."""
+    return Ugen("CombC", [signal, delaytime, decaytime],
+                static=_line("CombC", delaytime, max_delay))
+
+
+def allpass_n(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
+    """Schroeder allpass, no interpolation: the magnitude response is exactly
+    flat and only the phase is shaped, which is what makes it the diffusion
+    stage of a reverb. Decay as in `comb_n`."""
+    return Ugen("AllpassN", [signal, delaytime, decaytime],
+                static=_line("AllpassN", delaytime, max_delay))
+
+
+def allpass_l(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
+    """Schroeder allpass with linear interpolation."""
+    return Ugen("AllpassL", [signal, delaytime, decaytime],
+                static=_line("AllpassL", delaytime, max_delay))
+
+
+def allpass_c(signal, delaytime=0.2, decaytime=1.0, *, max_delay=None) -> Ugen:
+    """Schroeder allpass with cubic interpolation — the one to modulate."""
+    return Ugen("AllpassC", [signal, delaytime, decaytime],
+                static=_line("AllpassC", delaytime, max_delay))
 
 
 def in_(bus=0.0) -> Ugen:

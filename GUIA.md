@@ -264,6 +264,14 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   tema por host); un rol desconocido en el archivo solo deja un warning en el
   log y el resto aplica. Lo mismo por config con la tabla `[gui.theme]`.
 
+- **Síntesis sustractiva sin Faust.** `python3 examples/subtractive.py toma.wav`
+  y escucharla → una sierra limitada en banda con el filtro resonante barrido
+  por envolvente (ataque brillante, cola oscura, sin aspereza de aliasing en las
+  notas agudas), un pulso cuyo filtro **morfea** de pasabajos a pasaaltos de
+  forma continua y no a saltos, y una cola de comb + allpass que suena como
+  espacio y no como ecos separados. Vale también con el servidor vivo
+  (`--features synth` sola alcanza: no necesita LLVM).
+
 ### Con la feature `faust`
 
 - **Faust suena.** Compilar un `/d_faust` (fuente o Box API) → se oye la sierra

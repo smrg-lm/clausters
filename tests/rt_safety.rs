@@ -1278,3 +1278,68 @@ fn filter_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// The delay core (U3): the line is allocated in `build`, on the network
+/// thread, and never resized — which is exactly the claim worth a guard, since
+/// a `Vec` that grew to accommodate a longer delay would allocate here. All
+/// three interpolations and both feedback forms are exercised, with a modulated
+/// delay time so the per-sample path runs too.
+#[test]
+fn delay_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "delays",
+            "ugens": [
+                {"kind": "Saw", "inputs": [{"const": 110.0}]},
+                {"kind": "LFTri", "inputs": [{"const": 1.0}, {"const": 0.0}]},
+                {"kind": "MulAdd", "inputs": [{"ugen": 1}, {"const": 0.004}, {"const": 0.006}]},
+                {"kind": "DelayN", "inputs": [{"ugen": 0}, {"const": 0.01}],
+                 "max_delay": 0.05},
+                {"kind": "DelayL", "inputs": [{"ugen": 3}, {"ugen": 2}],
+                 "max_delay": 0.02},
+                {"kind": "DelayC", "inputs": [{"ugen": 4}, {"ugen": 2}],
+                 "max_delay": 0.02},
+                {"kind": "CombC", "inputs": [{"ugen": 5}, {"ugen": 2}, {"const": 0.5}],
+                 "max_delay": 0.02},
+                {"kind": "AllpassC", "inputs": [{"ugen": 6}, {"ugen": 2}, {"const": 0.3}],
+                 "max_delay": 0.02},
+                {"kind": "AllpassN", "inputs": [{"ugen": 7}, {"const": 0.007}, {"const": 0.3}],
+                 "max_delay": 0.02},
+                {"kind": "BinaryOpUGen", "op": "mul",
+                 "inputs": [{"ugen": 8}, {"const": 0.1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 9}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

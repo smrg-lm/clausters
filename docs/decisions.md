@@ -2023,3 +2023,48 @@ The coefficient is clamped just inside the unit circle, so a mistyped control
 degrades instead of producing NaN forever — which does mean `Integrator` always
 leaks, deliberately: a true integrator fed any DC reaches infinity, and it would
 do so on the audio thread.
+
+## The delay family is one line in synth-private memory, and its length is configuration
+
+scsynth ships nine delay UGens — `DelayN/L/C`, `CombN/L/C`, `AllpassN/L/C` —
+as nine plugins. They are two independent choices: how a fractional tap is
+interpolated, and what the line feeds back.
+
+**Decision:** one circular line parameterized by those two, registered under all
+nine scsynth names (the `PvMag` pattern). Measured through a half-sample delay at
+9 kHz, linear interpolation loses about 1.6 dB and cubic about 0.36 dB — neither
+is transparent three quarters of the way to Nyquist, and that gap is what
+justifies paying for `C` on a modulated delay.
+
+**The line is synth-private memory, not a pool buffer.** A pool buffer is
+immutable once built — the invariant that already put the spectral frame in
+private scratch — and a delay line is written every sample. So it is allocated
+in `build`, on the network thread, from the static `max_delay` and the sample
+rate. **This is the reason `UGenDescriptor::build` receives a sample rate at
+all** (U0): the length in samples cannot be known without it, and it cannot be
+computed later, because "later" is the audio thread. A consequence worth
+stating: there is no `BufDelay*` family here, since a delay over a pool buffer
+would have to mutate one.
+
+**`max_delay` is static configuration, not an input.** scsynth passes
+`maxdelaytime` as an initial-rate *input* because its `ir` inputs double as
+build-time constants. Here the field that sizes an allocation lives where
+`fft_size` and `partitions` already live, and the signal inputs are only the
+things that vary. It defaults to 0.2 s when a def omits it, like `fft_size`'s
+default; a `delaytime` past it is clamped, never wrapped. The Python builders
+fill it in from a *constant* delay time and **raise** on a modulated one that
+does not state its reach — a silently truncated modulation is worse than an
+error at graph-build time.
+
+**These UGens do not report an intrinsic latency.** The `latency()` hook exists
+for a UGen whose processing happens to lag (the partitioned convolver) and feeds
+a future plugin-delay compensation. A delay's delay is what the user asked for;
+compensating it would silently undo the instrument.
+
+**One convention worth writing down because it caught a test.** `decaytime` is
+the time for the echo train to fall 60 dB counted from the **first** echo, which
+is the direct path and always returns at full level: `y[D] = 1`, `y[2D] = g`,
+`y[3D] = g²`. The envelope is therefore `10^(-3(t - delay)/decay)`, not
+`10^(-3t/decay)`. A negative decay time negates the gain, so alternate echoes
+invert — scsynth allows this and it is musically useful; a zero decay leaves a
+single echo rather than dividing by zero.

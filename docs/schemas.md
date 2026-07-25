@@ -199,6 +199,9 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | `OneZero` | signal, coef | `y[n] = (1−\|c\|)·x[n] + c·x[n−1]` |
 | `LeakDC` | signal, coef | DC blocker: a zero exactly at 0 Hz with a pole just inside it |
 | `Integrator` | signal, coef | leaky accumulator, `y[n] = x[n] + c·y[n−1]`; `coef` is clamped just inside 1 so it always forgets eventually |
+| `DelayN`, `DelayL`, `DelayC` | signal, delaytime (s) | pure delay: no interpolation (rounded to whole samples), linear, or four-point cubic. Plus the static `max_delay` field |
+| `CombN`, `CombL`, `CombC` | signal, delaytime (s), decaytime (s) | feedback comb. `decaytime` is the time for the echo train to fall 60 dB **counting from the first echo**, which is the direct path and returns at full level; negative inverts alternate echoes, zero leaves a single one |
+| `AllpassN`, `AllpassL`, `AllpassC` | signal, delaytime (s), decaytime (s) | Schroeder allpass: exactly flat magnitude, phase only. Decay as for the comb |
 | `Phasor` | trig, rate, start, end, reset_pos | ramp from `start` to `end` advancing by `rate` **per sample** (not Hz), wrapping at `end`; a rising `trig` jumps to `reset_pos`. The index source for a buffer reader: a rate of 1 advances one frame per sample |
 | `BinaryOpUGen` | a, b | one of a table of binary operators, chosen by the `op` **name** — see the operator note below |
 | `UnaryOpUGen` | a | one of a table of unary operators, chosen by the `op` **name** — see the operator note below |
@@ -394,6 +397,12 @@ The 105 Hz figure is within about 2.5 dB of what the measurement itself can reso
 State and coefficients are `f64` throughout, matching scsynth's own choice for the same reason: near DC the poles crowd the unit circle and `f32` truncation dominates the output. The `tan` and reciprocal that turn a cutoff into integrator gains run **once per block** when the parameters are scalar, and twice — block start and end, linearly interpolated — when either is audio-rate, so a modulated filter costs three multiply-adds per sample rather than a transcendental.
 
 Resonance travels as **`rq`**, the reciprocal of Q, as in scsynth. That is not a performance choice (one division per block, next to a `tan` that costs several times more) but a domain one: `rq = 0` is infinite Q and is exactly representable, where `Q = 0` would divide by zero and `Q → ∞` is not a number. Clients are free to offer `q` and convert.
+
+**The delay family is one line (deviation from scsynth).** `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C` are the same circular buffer with two independent parameters: how a fractional tap is interpolated, and what is fed back. Measured through a half-sample delay at 9 kHz, `L` loses about 1.6 dB and `C` about 0.36 dB — four-point interpolation is not a brick wall, but that is the gap that justifies paying for `C` on a modulated delay.
+
+The line is **synth-private memory**, allocated when the synth is built and sized from the static `max_delay` field (in seconds) and the server's sample rate. It is not a pool buffer, because a pool buffer is immutable once built — the same invariant that puts the spectral frame in private scratch — and a delay line is written every sample. That is also why there is no `BufDelay*` family. Unlike scsynth, `max_delay` is **static configuration and not an input**: it sizes an allocation, so it belongs with `fft_size` and `partitions` rather than among the signals, and it defaults to 0.2 s if the def omits it. A `delaytime` past it is clamped, never wrapped.
+
+These UGens do **not** report an intrinsic latency, on purpose. Their delay is what the user asked for, not an artifact of processing; the latency hook exists for something like the partitioned convolver, and compensating a musical delay would silently undo it.
 
 Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output PlayBuf): the `chan` input picks the channel, and two readers with the same inputs stay sample-locked, so a stereo file is two UGens. Neither has a trigger or done action yet.
 

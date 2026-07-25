@@ -511,15 +511,26 @@ inherits them.
   right, not wrong), and every gain measurement needs a coherent window or it
   reads a tenth of a dB off.
 
-- **U3 — The delay core** — `src/dsp/delay.rs`: one line core (`f32` storage,
-  `f64` read position) parameterized by interpolation × feedback, behind
-  `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C`. The line is **synth-private
-  memory** allocated at build, not a pool buffer — a pool buffer is immutable
-  once built, the same invariant that put the spectral frame in private scratch —
-  so `BufDelay*` is out of this track. These carry intrinsic delay by definition,
-  which is the point of the UGen and **not** a compensation target: they must not
-  report it through `latency()`. The strongest acceptance is the allpass's own
-  definition — magnitude flat to within ±0.1 dB across the band.
+- ✅ **U3 — The delay core** *(done 2026-07-25)* — `src/dsp/delay.rs`: one line
+  (`f32` storage, `f64` read position) parameterized by interpolation × feedback,
+  behind `DelayN/L/C`, `CombN/L/C` and `AllpassN/L/C`. The line is
+  **synth-private memory** allocated at build from `max_delay` and the sample
+  rate — which is what U0's `BuildCtx` exists for — not a pool buffer, since a
+  pool buffer is immutable; `BufDelay*` is therefore out of this track.
+  `max_delay` is static configuration rather than scsynth's `ir` input, and the
+  Python builders fill it from a constant delay time but **raise** on a modulated
+  one that does not state its reach. These do not report `latency()`: a delay's
+  delay is what the user asked for. Acceptance is each family's defining
+  property — a pure delay lands on the exact frame with nothing anywhere else, a
+  fractional one has the group delay requested to within 0.05 samples, the comb's
+  envelope tracks `10^(-3(t-delay)/decay)` to 2 %, and **the allpass is flat to
+  0.02 dB** across three interpolations, three decay times and four frequencies.
+  Measured interpolation loss at 9 kHz through a half-sample delay: 1.6 dB
+  linear, 0.36 dB cubic.
+
+The batch closes with `examples/subtractive.py` — a band-limited saw through an
+envelope-swept resonant lowpass, a pulse through a morphing `Svf`, and a
+comb-plus-allpass space, rendered offline so it needs no audio hardware.
 
 - **U4 — `Line`/`XLine` and the self-control set** — `Line` and `XLine` are
   one-segment envelopes built on the existing `src/dsp/envgen.rs` segment engine,
