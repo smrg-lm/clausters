@@ -135,6 +135,26 @@ is reproducible with the same line:
 
 Domain knowledge lives in `.claude/skills/`: `realtime-audio` (RT thread rules, lock-free patterns, cpal), `scsynth-osc` (the OSC protocol and node-tree model), `ugen-dsp` (UGen DSP algorithms), `audio-testing` (testing audio without ears: NRT, golden files, signal asserts, no-alloc), `faust-embedding` (the libfaust C API and lifecycles), and `faust-language` (writing Faust and transposing it to the Signal/Box APIs — sample-level feedback, physical modeling). Process skills: `clausters-python` (idiomatic client use), `clausters-gui` (the GUI host and GuiDefs) and `documentation` (how to write and place docs — the Diataxis split, the generated API references, and the dev/decision docs).
 
+One skill is a workflow rather than knowledge: `feature-matrix` runs the fmt + clippy configurations of the commit workflow, including the three the CI never builds (`--no-default-features`, and each def family alone). Run it whenever a change touches feature-gated code.
+
+## Claude Code hooks and settings
+
+`.claude/hooks/` holds three hooks that enforce, mechanically, rules this chapter already states in prose. They are versioned for the same reason the skills are — they are project policy, not anyone's local preference — and they contain no absolute paths:
+
+- **`fmt-rust.sh`** runs `rustfmt` on every `.rs` file as it is written, so the tree cannot drift out of `cargo fmt --check`.
+- **`check-stale-bin.sh`** refuses a Python launch when a Rust source is newer than the last staging pass. In a source checkout the package is installed editable, so the artifacts bundled in `clients/python/clausters/{_bin,_libs}` win over the workspace `target/`: a stale bundle makes a manual test report on code that is no longer there, and nothing fails loudly. `scripts/refresh-bin.sh` rebuilds and stages them; bypass with `CLAUSTERS_SKIP_STALE_CHECK=1`. It compares timestamps rather than content, so a branch switch or any other git operation that rewrites a file also trips it — conservatively, since a branch switch really can change what gets built.
+- **`clippy-before-commit.sh`** blocks a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the commit touches (root, `clients/gui`, `fuzz` are three separate workspaces). A commit with no Rust in it costs nothing. Bypass with `CLAUSTERS_SKIP_CLIPPY=1`.
+
+**Versioned vs. local.** `.claude/settings.json` (the hook wiring, plus the permissions any contributor would grant: `cargo build`/`test`/`fmt`/`clippy` and the venv's Python) is checked in. `.claude/settings.local.json` is git-ignored and is where machine-specific permissions belong — absolute paths, one-off commands, anything naming your home directory. So is `.claude/projects/`, the assistant's per-session memory.
+
+**What the hooks need on a fresh clone**, beyond the build dependencies above:
+
+- **`jq`** (`sudo apt install jq`), which all three use to read their input.
+- **GNU coreutils and findutils** — `check-stale-bin.sh` uses `stat -c` and `find -newermc`, which the BSD/macOS versions reject.
+- **`cargo` and `rustfmt` on the PATH of a *non-interactive* shell.** This is the one that bites: rustup adds `~/.cargo/bin` from a shell profile, and hooks do not necessarily run under one. If in doubt, `bash -lc 'command -v cargo rustfmt'` from a fresh terminal.
+
+A hook whose dependencies are missing prints a warning to stderr (once every twelve hours) and then stands down. It never blocks the work — but read the warning, because until it is fixed the check is simply not running.
+
 ## Editing this book
 
 The book sources are the Markdown files in `docs/`; `docs/SUMMARY.md` is the table of contents and `book.toml` the config. Build and preview with [mdBook](https://rust-lang.github.io/mdBook/):
