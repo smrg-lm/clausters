@@ -1,6 +1,6 @@
 ---
 name: gui-widgets
-description: Domain knowledge for designing and implementing each Clausters GUI graphical element — the widget extension recipe and data-source table, oscilloscope triggering and the server audio taps, goniometer/phasescope geometry, live FFT spectrum, editor-grade waveform/spectrogram (multichannel, LOD crossfade, rulers, selection/playhead), BPF envelope editing, and the edit-back-to-data pattern. Consult when designing or implementing any new GUI widget or deepening an existing view.
+description: Domain knowledge for designing and implementing the Clausters GUI's graphical elements — what an element *is*: its algorithm, its visual parameters, its data source. Carries the extension recipe every widget follows, the table of what can feed one (shm control buses, the server's audio taps, bulk caches, streamed values), the placement rule deciding whether new compute belongs in the shared core or stays display-only, the invariants of editing data back to whoever owns it, and worked designs for the scope family and the editor-grade waveform/spectrogram. Consult whenever work touches any GUI widget or view — adding one, deepening one, picking where its data comes from, or deciding how an edit travels back — **including widgets it has no section on yet**, since the recipe, the placement rule and the edit-back invariants govern those too. The crate around them is mapped by clausters-gui.
 ---
 
 # GUI widgets: per-element domain knowledge
@@ -100,12 +100,13 @@ The heavy views receive data; edit-back is the reverse direction, and it does no
 
 Two invariants: **the host's mapped resources stay read-only** (the mmap bulk path is a read path by design — writes go through the server or the script, never by the host scribbling on a shared file), and **flat primitives at the boundary** (no structured/nested encoding on the wire beyond the JSON-in-OSC def itself). The later drawn-buffer and automation cases are applications of this pattern, not new designs.
 
-## Forward pointers (no firm design yet — do not elaborate)
+## Where the design is not firm yet
 
-- **Timeline / DAW view**: tracks with audio and MIDI/OSC sequencing; audio lives in the server so the view reads it from there; the reference shape is an OSC-controllable transport. Builds on selection/playhead above and [[scsynth-osc]] semantics.
-- **Score / notation**: Verovio (C++ → wasm/JS) rendering MEI/MusicXML to interactive SVG — off the GPU path entirely, web-first.
+The track is at an intermediate stage: individual widgets are settled while the general design is not. `clients/gui/PLAN.md` is what tells the two apart, and it is the only thing that does — it carries the staging for everything above and everything ahead.
 
-Staging for both, and for everything above, lives in `clients/gui/PLAN.md`.
+Do not read this skill's own coverage as that line. **Widgets have shipped without a section here** — the multitrack lane and its clips, the piano roll, the keyboard, the patcher, the engraved page, the measuring plot. For those, the settled design lives in `clients/gui/PLAN.md`, in `docs/gui-protocol.md` for the wire and in the module doc at the top of each `clients/gui/src/host/*.rs`, which is written to be read. A missing section here means this file lags, not that the design is open.
+
+So where that roadmap has no staged design for something, **do not invent one**. Name it, say it is unstaged, and point at the roadmap. A design produced here reads as a decided one — it arrives in the same voice as the settled sections, with no marker saying otherwise — and costs far more to unpick later than it costs to withhold now. The useful move when asked about unstaged work is to say what the existing patterns would constrain (the extension recipe, the placement rule, the edit-back invariants above) and leave the choice open.
 
 ## Conventions
 
