@@ -7,30 +7,34 @@
 # reason this script exists; the rest are here so one run answers "is the tree
 # committable?" without a second pass.
 #
+# It only ever reads. Nothing here writes to your working tree: this is the gate
+# that says whether the code is committable, and a gate that edits the thing it
+# is judging cannot be trusted to report on it. `cargo clippy --fix` exists and
+# is worth running, but deliberately, by hand, on one configuration at a time,
+# with the diff read afterwards — not five times over five different views of
+# the code inside a script whose output you skim.
+#
 # Every configuration runs even if an earlier one fails — a matrix that stops at
 # the first error hides how many of the others were also broken.
 #
 # Usage:
 #   check.sh          # everything
 #   check.sh --fast   # only the three configurations CI does not cover
-#   check.sh --fix    # clippy --fix --allow-dirty instead of reporting
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "$root"
 
 fast=0
-fix_args=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --fast) fast=1 ;;
-        --fix) fix_args=(--fix --allow-dirty) ;;
         -h | --help)
-            sed -n '2,18p' "$0"
+            sed -n '2,22p' "$0"
             exit 0
             ;;
         *)
-            echo "check.sh: unknown option '$1' (--fast, --fix)" >&2
+            echo "check.sh: unknown option '$1' (--fast)" >&2
             exit 2
             ;;
     esac
@@ -59,7 +63,7 @@ run() {
 clippy() {
     local label="$1"
     shift
-    run "$label" cargo clippy "${fix_args[@]}" "$@" -- -D warnings
+    run "$label" cargo clippy "$@" -- -D warnings
 }
 
 # --- Covered by CI, run unless --fast ----------------------------------------
@@ -82,10 +86,13 @@ clippy "clippy: faust alone" --all-targets --no-default-features --features faus
 
 if [ "$fast" = 0 ]; then
     clippy "clippy: workspace (core, ffi, midi, ...)" --workspace --all-targets
-    # A separate workspace, so it needs its own invocation, not --manifest-path
-    # (which would resolve against the root workspace's lockfile).
+    # A separate workspace. `--manifest-path` resolves it correctly too — it
+    # carries its own [workspace] and lockfile — but cargo reads
+    # `.cargo/config.toml` from the *current directory* upward, not from the
+    # manifest's, so only running there sees a config the GUI crate might one
+    # day carry. It is also the form CLAUDE.md's command list spells out.
     run "clippy: gui host" \
-        env -C clients/gui cargo clippy "${fix_args[@]}" --all-targets -- -D warnings
+        env -C clients/gui cargo clippy --all-targets -- -D warnings
 fi
 
 # --- Report -------------------------------------------------------------------

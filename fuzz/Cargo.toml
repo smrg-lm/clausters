@@ -1,8 +1,10 @@
 # Fuzzing harness for the network edge (cargo-fuzz / libFuzzer).
 #
-# Not a workspace member (see `[workspace]` below): it needs nightly and only
-# ever builds through `cargo +nightly fuzz run <target>`. See
-# `docs/contributing.md` ("Fuzzing") for how to run it.
+# Not a workspace member (see `[workspace]` below): the root workspace should
+# never build a target that links the libFuzzer runtime. *Running* the fuzzer
+# needs nightly (`cargo +nightly fuzz run <target>`, for -Zsanitizer), but the
+# crate itself checks and lints on stable, which is what the commit hook does
+# when a commit touches this directory. See `docs/contributing.md` ("Fuzzing").
 [package]
 name = "clausters-fuzz"
 version = "0.0.0"

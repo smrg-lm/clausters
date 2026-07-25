@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# No commit touching Rust without fmt + clippy clean.
+#
+# CLAUDE.md's commit workflow: "Before generating any commit that touches Rust,
+# run `cargo fmt` ... the tree must be `cargo fmt --check`-clean" and "Clippy
+# must come back clean, always -- zero warnings, not 'no new ones'".
+#
+# This does NOT enforce that rule, and cannot. A client-side git hook is skipped
+# by `--no-verify`, by unsetting core.hooksPath, or by editing this file -- it
+# sits in the working tree of the person it is checking. What it buys is
+# *speed*: the same failure in two seconds, here, instead of five minutes into a
+# CI run. CI (.github/workflows/ci.yml) is what actually enforces the rule,
+# because the person committing cannot skip it.
+#
+# A *git* hook rather than an editor's or an agent's: git is the one thing that
+# knows, with certainty, that a commit is happening. Anything upstream of it has
+# to guess from the text of a command line -- and a guess that is wrong in the
+# permissive direction is a gate that silently is not there. It also covers
+# every commit, from any terminal, editor or script, not just the ones typed
+# through one tool.
+#
+# Enable it once per clone (it lives in the repo, so it is versioned policy
+# rather than a local preference):
+#
+#     git config core.hooksPath .githooks
+#
+# Only the workspaces the working tree actually touches are linted (root,
+# clients/gui, fuzz -- three separate workspaces), so a Python- or docs-only
+# commit pays nothing. The def-family matrix is NOT run here (five more builds);
+# when the diff touches feature-gated code the hook points at the feature-matrix
+# skill instead, pass or fail.
+#
+# Deliberately *not* a per-edit check: clippy is a compile, not a reformat. Per
+# edit it would cost tens of seconds each time and fail constantly on
+# half-finished refactors, which is how a hook gets turned off. Once per commit
+# is rare, and it is the moment the rule exists for.
+#
+# Escape hatch: git commit --no-verify. Git's own, and unavoidable -- git skips
+# the hook without running it, so nothing here could refuse. That is the honest
+# shape of a client-side hook, and the reason the real gate is CI.
+set -uo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+
+# Fail open, but say so. A machine that cannot run the check is not a reason to
+# stop the work -- it is a reason to say the check is not running.
+#
+# The rustup *components* are checked alongside cargo itself, and matter more:
+# a toolchain without clippy is far commoner than no cargo at all, and without
+# the check `cargo clippy` would exit non-zero on "no such command", which this
+# hook cannot tell from a warning -- it would block the commit on a diagnosis
+# that is simply wrong, with a message about warnings that do not exist.
+# cargo is usually missing because ~/.cargo/bin is on an interactive PATH but
+# not on the non-interactive one hooks run under.
+#
+# The components are probed by *running* them, not by looking for a binary on
+# the PATH: rustup puts a `cargo-clippy` proxy in ~/.cargo/bin whether or not
+# the component is installed in the active toolchain, and cargo resolves its
+# subcommands out of the toolchain directory anyway -- so `command -v` answers
+# neither question. `--version` is a process spawn and no build.
+missing=""
+if ! command -v cargo >/dev/null 2>&1; then
+    missing=" cargo"
+else
+    cargo fmt --version >/dev/null 2>&1 || missing="$missing rustfmt"
+    cargo clippy --version >/dev/null 2>&1 || missing="$missing clippy"
+fi
+if [ -n "$missing" ]; then
+    echo "clausters: pre-commit is inert -- not available:$missing." >&2
+    echo "Commits touching Rust are NOT being checked for fmt/clippy warnings." >&2
+    echo "The components come from rustup: rustup component add rustfmt clippy." >&2
+    echo "See docs/contributing.md, \"The commit hook\"." >&2
+    exit 0
+fi
+
+# --- Which workspaces does the working tree touch? ---------------------------
+#
+# The *working tree*, not the index: cargo reads the filesystem, so the tree is
+# what would actually be linted either way, and CLAUDE.md's rule is about the
+# tree ("the tree must be `cargo fmt --check`-clean"). A dirty experiment left
+# beside a clean staged change therefore blocks the commit -- which is the rule
+# working, not the hook overreaching.
+#
+# `--porcelain -z`, not plain `--porcelain`: the human format quotes any path
+# that is not plain ASCII (`"src/caf\303\251.rs"`), and a quoted path stops
+# matching `*.rs` -- the hook would then see no Rust and wave the commit through
+# without a word. The -z format never quotes. Each record is `XY <path>`, with a
+# rename's original path following as a record of its own; the new path is the
+# one that says which workspace was touched, so the original is read and
+# dropped.
+
+want_root=0
+want_gui=0
+want_fuzz=0
+while IFS= read -r -d '' entry; do
+    case "${entry:0:1}" in
+        R | C) IFS= read -r -d '' _orig ;;
+    esac
+    path=${entry:3}
+    case "$path" in
+        *.rs | Cargo.toml | Cargo.lock | */Cargo.toml | */Cargo.lock) ;;
+        *) continue ;;
+    esac
+    case "$path" in
+        clients/gui/*) want_gui=1 ;;
+        fuzz/*) want_fuzz=1 ;;
+        clients/*) ;; # other clients hold no Rust the root workspace builds
+        *) want_root=1 ;;
+    esac
+done < <(git -C "$root" status --porcelain -z --untracked-files=all 2>/dev/null)
+
+[ "$want_root$want_gui$want_fuzz" = "000" ] && exit 0
+
+# --- Lint them ---------------------------------------------------------------
+
+out=$(mktemp)
+trap 'rm -f "$out"' EXIT
+failed=""
+
+check() {
+    local label="$1" dir="$2"
+    shift 2
+    if ! (cd "$dir" && "$@") >>"$out" 2>&1; then
+        failed="$failed $label"
+    fi
+}
+
+if [ "$want_root" = 1 ]; then
+    check "fmt" "$root" cargo fmt --check
+    check "clippy" "$root" cargo clippy --workspace --all-targets -- -D warnings
+fi
+if [ "$want_gui" = 1 ]; then
+    check "fmt(gui)" "$root/clients/gui" cargo fmt --check
+    check "clippy(gui)" "$root/clients/gui" cargo clippy --all-targets -- -D warnings
+fi
+if [ "$want_fuzz" = 1 ]; then
+    check "fmt(fuzz)" "$root/fuzz" cargo fmt --check
+    check "clippy(fuzz)" "$root/fuzz" cargo clippy --all-targets -- -D warnings
+fi
+
+# --- Report -------------------------------------------------------------------
+
+# The five def-family builds are not run here, and CI never runs them either, so
+# a warning that appears only under `synth` alone reaches `main` with nothing
+# having looked at it. Said on the way past whether or not the lint failed: a
+# *clean* commit of feature-gated code is exactly the case where nothing else
+# would bring the matrix up. `diff HEAD` covers staged and unstaged alike.
+#
+# The diff is captured before it is matched rather than piped into grep: `set -o
+# pipefail` is on, `grep -q` closes the pipe at the first match, and git then
+# dies of SIGPIPE -- so the pipeline reports 141 exactly when there *was* a
+# match, and the note would be printed only when it is not wanted.
+matrix_note() {
+    local diff
+    diff=$(git -C "$root" diff -U0 HEAD 2>/dev/null)
+    grep -q '^+.*cfg(feature' <<<"$diff" || return 0
+    {
+        echo
+        echo "This diff touches feature-gated code, and CI never builds the"
+        echo "def-family matrix -- run .claude/skills/feature-matrix/check.sh"
+        echo "(or its --fast form) before committing."
+    } >&2
+}
+
+if [ -n "$failed" ]; then
+    {
+        echo "Commit blocked --$failed failed. CLAUDE.md: the tree must be"
+        echo "\`cargo fmt --check\`-clean and clippy must come back clean, always"
+        echo "(zero warnings, not \"no new ones\" -- fix the ones this change did not"
+        echo "introduce too, in their own commit so the feature's diff stays readable)."
+        echo
+        tail -60 "$out"
+        echo
+        echo "A warning that is genuinely wrong gets a scoped #[allow(...)] with a"
+        echo "comment saying why. To bypass: git commit --no-verify"
+    } >&2
+    matrix_note
+    exit 1
+fi
+
+matrix_note
+exit 0

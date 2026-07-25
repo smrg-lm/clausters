@@ -139,23 +139,34 @@ Domain knowledge lives in `.claude/skills/`: `realtime-audio` (RT thread rules, 
 
 One skill is a workflow rather than knowledge: `feature-matrix` runs the fmt + clippy configurations of the commit workflow, including the three the CI never builds (`--no-default-features`, and each def family alone). Run it whenever a change touches feature-gated code.
 
+## The commit hook
+
+`.githooks/pre-commit` stops a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the working tree touches (root, `clients/gui`, `fuzz` are three separate workspaces). A commit with no Rust in it costs nothing.
+
+It is versioned in the repo but git only looks at it once you point git at it, so **enable it once per clone**:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+**It does not enforce anything, and cannot.** `git commit --no-verify` skips it without running it; so does unsetting `core.hooksPath`, or editing the file, which sits in the working tree of the person it is checking. A client-side hook is a convenience, never a gate. What it buys is speed: the same failure in two seconds instead of five minutes into a CI run. **CI is the gate** — it runs fmt, clippy, the test matrix and the Python suite, and the person committing cannot skip it. So `--no-verify` is not a licence to land a warning; it just moves the discovery to CI, and the rule in CLAUDE.md ("zero warnings, always") is unchanged either way.
+
+A *git* hook rather than an editor's or an agent's, because git is the one thing that knows with certainty that a commit is happening: anything upstream has to guess it from the text of a command line, and a guess that errs permissive is a check that silently is not there. It also covers every commit — from any terminal, editor or script.
+
+It checks the **working tree**, not the index: cargo reads the filesystem, so the tree is what gets linted either way, and the rule in CLAUDE.md is about the tree. A dirty experiment left beside a clean staged change therefore blocks the commit; that is the rule working, not the hook overreaching.
+
 ## Claude Code hooks and settings
 
-`.claude/hooks/` holds three hooks that enforce, mechanically, rules this chapter already states in prose. They are versioned for the same reason the skills are — they are project policy, not anyone's local preference — and they contain no absolute paths:
-
-- **`fmt-rust.sh`** runs `rustfmt` on every `.rs` file as it is written, so the tree cannot drift out of `cargo fmt --check`.
-- **`check-stale-bin.sh`** refuses a Python launch when a Rust source is newer than the last staging pass. In a source checkout the package is installed editable, so the artifacts bundled in `clients/python/clausters/{_bin,_libs}` win over the workspace `target/`: a stale bundle makes a manual test report on code that is no longer there, and nothing fails loudly. `scripts/refresh-bin.sh` rebuilds and stages them; bypass with `CLAUSTERS_SKIP_STALE_CHECK=1`. It compares timestamps rather than content, so a branch switch or any other git operation that rewrites a file also trips it — conservatively, since a branch switch really can change what gets built.
-- **`clippy-before-commit.sh`** blocks a commit whose `cargo fmt --check` or `cargo clippy` is dirty, for the default feature set of the workspaces the commit touches (root, `clients/gui`, `fuzz` are three separate workspaces). A commit with no Rust in it costs nothing. Bypass with `CLAUSTERS_SKIP_CLIPPY=1`.
+`.claude/hooks/` holds one hook, versioned so a clone gets it and containing no absolute paths: **`fmt-rust.sh`** runs `rustfmt` on every `.rs` file as it is written, so the tree cannot drift out of `cargo fmt --check`. It only formats files inside this checkout — "every crate is edition 2024 with no `rustfmt.toml`" is a fact about *this* tree, not about someone else's.
 
 **Versioned vs. local.** `.claude/settings.json` (the hook wiring, plus the permissions any contributor would grant: `cargo build`/`test`/`fmt`/`clippy` and the venv's Python) is checked in. `.claude/settings.local.json` is git-ignored and is where machine-specific permissions belong — absolute paths, one-off commands, anything naming your home directory. So is `.claude/projects/`, the assistant's per-session memory.
 
 **What the hooks need on a fresh clone**, beyond the build dependencies above:
 
-- **`jq`** (`sudo apt install jq`), which all three use to read their input.
-- **GNU coreutils and findutils** — `check-stale-bin.sh` uses `stat -c` and `find -newermc`, which the BSD/macOS versions reject.
-- **`cargo` and `rustfmt` on the PATH of a *non-interactive* shell.** This is the one that bites: rustup adds `~/.cargo/bin` from a shell profile, and hooks do not necessarily run under one. If in doubt, `bash -lc 'command -v cargo rustfmt'` from a fresh terminal.
+- **`jq`** (`sudo apt install jq`), which `fmt-rust.sh` uses to read its input, and a `find` with `-mmin` (GNU or BSD, not POSIX) for the once-every-twelve-hours throttle on its warning. The git hook needs neither — git hands it the event directly.
+- **`cargo` on the PATH of a *non-interactive* shell, with the `rustfmt` and `clippy` components installed.** The PATH is the one that bites: rustup adds `~/.cargo/bin` from a shell profile, and hooks do not necessarily run under one. The components are a separate question — rustup leaves a `cargo-clippy` proxy in `~/.cargo/bin` whether or not the component is there, so finding the binary proves nothing; ask cargo instead. If in doubt, `bash -c 'cargo fmt --version && cargo clippy --version'`, and `rustup component add rustfmt clippy` if either fails.
 
-A hook whose dependencies are missing prints a warning to stderr (once every twelve hours) and then stands down. It never blocks the work — but read the warning, because until it is fixed the check is simply not running.
+A hook whose dependencies are missing says so on stderr (once every twelve hours) and then stands down. It never blocks the work — but read the warning, because until it is fixed the check is simply not running.
 
 ## Editing this book
 
