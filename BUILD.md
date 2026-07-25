@@ -369,7 +369,7 @@ cd clients/python && python -m pytest
 Two mdBooks, one per platform, plus the rustdoc:
 
 ```sh
-cargo install mdbook             # once (or a distro / prebuilt mdbook)
+cargo install mdbook --version 0.4.40   # the version CI and Read the Docs use
 
 # server / workspace book (docs/ -> book/, git-ignored)
 mdbook build

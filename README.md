@@ -132,7 +132,7 @@ how to build both documentation books.
 The short version (Ubuntu):
 
 ```sh
-sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev clang
+sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
 cargo build --release
 cargo test
 ```

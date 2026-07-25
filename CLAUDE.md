@@ -25,8 +25,10 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   - **Python client** — mdBook in `clients/python/docs/` (its own `book.toml`
     and `src/`; `clients/python/docs/build.sh` builds it). The API-reference
     page `src/api.md` is **generated from the package docstrings by
-    pydoc-markdown** (`clients/python/pydoc-markdown.yml`; both it and `book/`
-    git-ignored). Install the generator in **user space** (no sudo) with
+    pydoc-markdown** (configured by the versioned
+    `clients/python/pydoc-markdown.yml`; the generated `src/api.md` and the
+    built `book/` are both git-ignored). Install the generator in **user
+    space** (no sudo) with
     `uv tool install --python 3.12 pydoc-markdown` — pin 3.12 because its deps
     lag the newest CPython, and that is also Read the Docs' version; then
     `clients/python/docs/build.sh` regenerates `api.md` and rebuilds the book

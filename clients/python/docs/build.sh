@@ -7,7 +7,8 @@
 # git-ignored.
 #
 # Requires (user space, no sudo):
-#   mdbook          -- cargo install mdbook
+#   mdbook          -- cargo install mdbook --version 0.4.40 (the version CI
+#                      and both .readthedocs.yaml builds use)
 #   pydoc-markdown  -- uv tool install --python 3.12 pydoc-markdown
 #                      (global uv CLI in ~/.local/bin; pin 3.12 -- its deps lag
 #                      the newest CPython. Or run via `uvx pydoc-markdown`, or

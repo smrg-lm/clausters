@@ -293,7 +293,7 @@ books, one per platform, cross-linked). Build it:
 
 ```sh
 uv tool install --python 3.12 pydoc-markdown   # user-space CLI in ~/.local/bin
-cargo install mdbook                            # once (or use a distro / prebuilt mdbook)
+cargo install mdbook --version 0.4.40           # the version CI and Read the Docs use
 clients/python/docs/build.sh                    # writes src/api.md, then runs `mdbook build`
 ```
 
