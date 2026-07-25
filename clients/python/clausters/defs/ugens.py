@@ -386,6 +386,64 @@ def white_noise() -> Ugen:
     return Ugen("WhiteNoise", [])
 
 
+def saw(freq=440.0) -> Ugen:
+    """Band-limited rising sawtooth in ±1, starting at 0.
+
+    Anti-aliased with PolyBLEP, which is very clean over the low and middle
+    range and progressively less so toward Nyquist (its residual grows about
+    as the square of the frequency). It carries no DC offset.
+    """
+    return Ugen("Saw", [freq])
+
+
+def pulse(freq=440.0, width=0.5) -> Ugen:
+    """Band-limited pulse in ±1; ``width`` is the duty cycle (0.5 = square).
+
+    Anti-aliased like `saw`. The width is clamped just inside ``(0, 1)``,
+    where the two edges would coincide.
+    """
+    return Ugen("Pulse", [freq, width])
+
+
+def lf_saw(freq=440.0, iphase=0.0) -> Ugen:
+    """Rising sawtooth in ±1, **not** band-limited — a modulation shape.
+
+    ``iphase`` is the initial phase in **cycles**, ``[0, 1)``, read once at the
+    first sample. (sclang measures the same argument in ``[0, 2)``; every phase
+    in this client is in cycles.)
+    """
+    return Ugen("LFSaw", [freq, iphase, 0.5])
+
+
+def lf_pulse(freq=440.0, iphase=0.0, width=0.5) -> Ugen:
+    """Square in ``[0, 1]`` — a gate, not a bipolar waveform like `pulse` — with
+    ``width`` as its duty cycle. Not band-limited. ``iphase`` as in `lf_saw`."""
+    return Ugen("LFPulse", [freq, iphase, width])
+
+
+def lf_tri(freq=440.0, iphase=0.0) -> Ugen:
+    """Triangle in ±1, starting at 0 and rising. Not band-limited.
+    ``iphase`` as in `lf_saw`."""
+    return Ugen("LFTri", [freq, iphase, 0.5])
+
+
+def var_saw(freq=440.0, iphase=0.0, width=0.5) -> Ugen:
+    """Triangle whose peak sits at ``width`` of the cycle, in ±1: sweeps from a
+    falling ramp through a triangle to a rising one. Not band-limited.
+    ``iphase`` as in `lf_saw`."""
+    return Ugen("VarSaw", [freq, iphase, width])
+
+
+def phasor(trig=0.0, rate=1.0, start=0.0, end=1.0, reset_pos=0.0) -> Ugen:
+    """Ramp from ``start`` to ``end`` advancing by ``rate`` **per sample**,
+    wrapping at ``end``; a rising ``trig`` jumps to ``reset_pos``.
+
+    ``rate`` is in output units per sample, not Hz, which is what makes this the
+    index source for a buffer reader: a rate of 1 advances one frame per sample.
+    """
+    return Ugen("Phasor", [trig, rate, start, end, reset_pos])
+
+
 def in_(bus=0.0) -> Ugen:
     """Reads an audio bus (sampled per block)."""
     return Ugen("In", [bus])

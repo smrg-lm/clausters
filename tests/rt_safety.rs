@@ -1150,3 +1150,68 @@ fn tap_writes_do_not_allocate_on_the_audio_thread() {
         }
     });
 }
+
+/// The phase family (U1): every one of them is a pure accumulator plus
+/// arithmetic, so none should touch the allocator. `Phasor` is included because
+/// it carries trigger state, and the `LF*` shapes because they latch their
+/// initial phase on the first block — a lazily built table there would show up
+/// here.
+#[test]
+fn phase_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // Every kind at once, summed: Saw + Pulse + LFSaw + LFPulse + LFTri +
+    // VarSaw, with Phasor driving a modulated pulse width so no input is a
+    // plain constant (the scalar fast path must not be the only one covered).
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "phase",
+            "ugens": [
+                {"kind": "Phasor", "inputs": [{"const": 0.0}, {"const": 0.0001},
+                                              {"const": 0.1}, {"const": 0.9},
+                                              {"const": 0.1}]},
+                {"kind": "Saw", "inputs": [{"const": 110.0}]},
+                {"kind": "Pulse", "inputs": [{"const": 220.0}, {"ugen": 0}]},
+                {"kind": "LFSaw", "inputs": [{"const": 3.0}, {"const": 0.25}]},
+                {"kind": "LFPulse", "inputs": [{"const": 5.0}, {"const": 0.0}, {"ugen": 0}]},
+                {"kind": "LFTri", "inputs": [{"const": 7.0}, {"const": 0.5}]},
+                {"kind": "VarSaw", "inputs": [{"const": 2.0}, {"const": 0.0}, {"ugen": 0}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 1}, {"ugen": 2},
+                                            {"ugen": 3}, {"ugen": 4}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 7}, {"ugen": 5}, {"ugen": 6}]},
+                {"kind": "BinaryOpUGen", "op": "mul",
+                 "inputs": [{"ugen": 8}, {"const": 0.1}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 9}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

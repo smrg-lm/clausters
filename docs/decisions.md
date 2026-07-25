@@ -1892,3 +1892,60 @@ it changed exactly those four lines out of a 351 KB page, so nothing was relying
 on it. The general form: a docstring should mean the same thing read raw,
 through `help()`, or rendered — and a syntax that only resolves in one of those
 does not merely fail to link when it misfires, it edits your prose.
+
+## Band-limited oscillators are PolyBLEP over an `f64` phase, and the residual is measured rather than claimed
+
+scsynth builds `Saw`, `Pulse` and `Blip` from a **discrete-summation impulse
+train**: a sine table divided by a cosecant table, the quotient run through a
+leaky integrator with a `0.999` pole, over a 32-bit fixed-point phase. It is
+genuinely band-limited, and it costs a division and two table lookups per
+sample, carries a settling transient, leaves a residual DC droop from the
+integrator, and quantizes tuning to the fixed-point step.
+
+**Decision:** accumulate phase in `f64` and correct each discontinuity with a
+**fourth-order PolyBLEP** — the residual obtained by integrating a cubic
+B-spline, spanning two samples on each side of the jump. No division, no table,
+no integrator state, no DC error, and the polynomial only runs on four samples
+per cycle; everywhere else the inner loop is the naive expression plus one
+comparison. The `f64` phase is the same reasoning that named `Sine` for what it
+produces: an `f32` accumulator drifts audibly over a long note and a fixed-point
+one quantizes the pitch.
+
+**What it costs, in numbers.** PolyBLEP is *quasi*-band-limited: a polynomial
+cannot be a sinc, so a residual remains and grows with the fundamental. That is
+not hedged in prose, it is measured, and the measurement is regenerated on every
+test run against a naive waveform built in the same test (alias SNR, 48 kHz):
+
+| fundamental | `Saw` | naive ramp | `Pulse` | naive square |
+|---|---|---|---|---|
+| 105 Hz | 96.7 dB | 30.9 dB | 98.4 dB | 32.7 dB |
+| 996 Hz | 42.6 dB | 16.0 dB | 43.5 dB | 17.7 dB |
+| 3996 Hz | 39.2 dB | 9.9 dB | 38.9 dB | 11.4 dB |
+
+At 105 Hz that is within about 2.5 dB of what the analysis itself resolves (a
+pure tone reads 99.2 dB through it), so the low end is effectively transparent.
+
+**Why fourth order and not second.** The two-sample residual was implemented,
+measured, and rejected on its numbers: 67.6 / 32.3 / 27.7 dB at the same three
+fundamentals. Doubling the corrected span buys +29 dB at the bottom and +10 to
++12 dB over the rest, for two extra polynomial evaluations per cycle — a trade
+worth taking, and one that could only be judged after measuring both.
+
+**Two consequences worth writing down.** Above `sr/4` the two correction regions
+would overlap, so the increment is tested once per sample and the calculation
+falls back to the second-order residual, which stays disjoint to `sr/2`; a
+waveform with a fundamental that high has at most one harmonic left, so the
+switch is inaudible. And **direction cancels out**: running the phase backwards
+reverses both which side of the discontinuity a sample sits on and the sign of
+the jump, and the residual is antisymmetric, so a negative frequency needs the
+same expression with `|dt|`. Mirroring the phase instead (`1 - t`) is
+algebraically identical but evaluates the polynomial on a difference of nearly
+equal numbers, which measurably costs precision at fourth order — it read 25 dB
+where the direct form reads 42.
+
+**Not band-limited, on purpose:** the `LF*` family and `VarSaw`, exactly as in
+scsynth. They are modulation sources; their corners should be exact, and
+softening them would be a defect rather than a feature. Their initial phase is
+in **cycles**, `[0, 1)`, where sclang measures the same argument in `[0, 2)`
+because its accumulator happens to run over `[-1, 1]` — an implementation
+detail exposed as a unit, which every phase in this project declines to inherit.

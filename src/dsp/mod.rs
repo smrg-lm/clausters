@@ -48,6 +48,8 @@ pub mod noise;
 #[cfg(feature = "synth")]
 pub mod osc;
 #[cfg(feature = "synth")]
+pub mod phase;
+#[cfg(feature = "synth")]
 pub mod registry;
 #[cfg(feature = "synth")]
 pub mod reply;

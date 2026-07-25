@@ -25,6 +25,7 @@ use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
+use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
 use crate::dsp::sine::Sine;
@@ -379,6 +380,11 @@ const I_NONE: &[UGenInput] = &[];
 const I_A: &[UGenInput] = &[inp("a", 0.0)];
 const I_AB: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0)];
 const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
+/// The non-band-limited modulation shapes (U1). The two with a duty cycle
+/// declare a third input; the two without do not, so `/u_query` never reports
+/// an inlet the UGen ignores.
+const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
+const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
 const I_BUS: &[UGenInput] = &[inp("bus", 0.0)];
 const I_BUS_SIGNAL: &[UGenInput] = &[inp("bus", 0.0), inp("signal", 0.0)];
 const I_BUFNUM: &[UGenInput] = &[inp("bufnum", 0.0)];
@@ -424,6 +430,93 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(WhiteNoise::new()),
+    ),
+    // --- the phase family (U1): one f64 accumulator, PolyBLEP where the
+    //     waveform is meant to be heard and exact corners where it is meant to
+    //     modulate. See `dsp::phase` for why this is not scsynth's impulse
+    //     train. ---
+    desc(
+        "Saw",
+        Fixed(1),
+        &[inp("freq", 440.0)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Saw::new()),
+    ),
+    desc(
+        "Pulse",
+        Fixed(2),
+        &[inp("freq", 440.0), inp("width", 0.5)],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pulse::new()),
+    ),
+    desc(
+        "LFSaw",
+        Fixed(2),
+        I_LF,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::Saw)),
+    ),
+    desc(
+        "LFPulse",
+        Fixed(3),
+        I_LF_WIDTH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::Pulse)),
+    ),
+    desc(
+        "LFTri",
+        Fixed(2),
+        I_LF,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::Tri)),
+    ),
+    desc(
+        "VarSaw",
+        Fixed(3),
+        I_LF_WIDTH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Lf::new(LfShape::VarSaw)),
+    ),
+    desc(
+        "Phasor",
+        Fixed(5),
+        &[
+            inp("trig", 0.0),
+            inp("rate", 1.0),
+            inp("start", 0.0),
+            inp("end", 1.0),
+            inp("reset_pos", 0.0),
+        ],
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Phasor::new()),
     ),
     // --- arithmetic: the generic op UGens (S3), selected by a core opcode
     //     index; every math need is one more `clausters_core::builtins` entry,

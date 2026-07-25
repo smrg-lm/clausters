@@ -184,6 +184,13 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | `Sine` | freq (Hz) | sine by f64 phase accumulation, starts at phase 0 |
 | `Impulse` | freq (Hz) | single-sample `1.0` every `freq` Hz, `0.0` between; the first output sample is always an impulse, so a `/sched`'d `/s_new` places it on an exact frame; `freq` 0 emits one impulse then silence (f64 phase, drift-free) |
 | `WhiteNoise` | — | uniform white noise in ±1 |
+| `Saw` | freq (Hz) | band-limited rising sawtooth in ±1, starting at 0 (no onset step, no DC). Anti-aliased with PolyBLEP — see the note below |
+| `Pulse` | freq (Hz), width | band-limited pulse in ±1; `width` is the duty cycle (0.5 = square), clamped just inside (0, 1) where the two edges would coincide |
+| `LFSaw` | freq (Hz), iphase | rising sawtooth in ±1, **not** band-limited — a modulation shape. `iphase` is the initial phase in **cycles**, [0, 1), read once at the first sample |
+| `LFPulse` | freq (Hz), iphase, width | square in **[0, 1]** (a gate, unlike the bipolar `Pulse`) with `width` as its duty cycle; not band-limited |
+| `LFTri` | freq (Hz), iphase | triangle in ±1 starting at 0 and rising; not band-limited |
+| `VarSaw` | freq (Hz), iphase, width | triangle whose peak sits at `width` of the cycle — sweeps from a falling ramp through a triangle to a rising one; not band-limited |
+| `Phasor` | trig, rate, start, end, reset_pos | ramp from `start` to `end` advancing by `rate` **per sample** (not Hz), wrapping at `end`; a rising `trig` jumps to `reset_pos`. The index source for a buffer reader: a rate of 1 advances one frame per sample |
 | `BinaryOpUGen` | a, b | one of a table of binary operators, chosen by the `op` **name** — see the operator note below |
 | `UnaryOpUGen` | a | one of a table of unary operators, chosen by the `op` **name** — see the operator note below |
 | `Add`, `Sub`, `Mul`, `Div` | a, b | sample-wise arithmetic; thin aliases for the `add`/`sub`/`mul`/`div` operators (kept so existing defs are unchanged) |
@@ -362,6 +369,16 @@ extension may add copying the frame into a buffer for inspection/sharing.
 **Streaming disk I/O (`DiskIn`/`DiskOut`).** These stream to/from disk in real time, so arbitrarily long files never touch the buffer pool (`PlayBuf`/`BufRd` load the whole file first). Each is **self-contained**: one background I/O thread plus a lock-free ring shared with the audio thread, opened at `/s_new` and closed when the synth is freed. The audio thread only pushes/pops the ring — never blocks. A ring underrun (disk too slow) plays silence; a `DiskOut` overrun drops samples; both are rare with the ~1 s ring. They carry extra **static fields** in the UGen spec (alongside `kind`/`inputs`): `path` (required), `loop` (`DiskIn`, default false), and `format` (`DiskOut`, `int16`|`int24`|`float`, default `int16`). Both are **mono per UGen** like the buffer readers: `DiskIn` extracts one channel (`chan`) — a stereo file is two `DiskIn`s; `DiskOut` writes a mono WAV — record stereo with two `DiskOut`s. `DiskIn` streams one file frame per server sample with **no resampling** (pitch follows the sample-rate ratio, as in scsynth's `DiskIn`); these UGens spawn a thread each, so they are for a handful of streams, not per-voice. Example DiskOut UGen: `{"kind": "DiskOut", "inputs": [{"ugen": 0}], "path": "/tmp/rec.wav", "format": "float"}`.
 
 Output happens exclusively through `Out`/`ReplaceOut`; a def without them is silent. Several synths with `Out` on the same bus mix. Bus-index inputs are ordinary signals, sampled at the first frame of each block and clamped to the valid range.
+
+**Band limiting in `Saw`/`Pulse` (deviation from scsynth).** scsynth builds these from a discrete-summation impulse train — a sine table divided by a cosecant table — smoothed by a leaky integrator, over a 32-bit fixed-point phase. Ours accumulate phase in `f64` and correct each discontinuity with a fourth-order PolyBLEP, which costs no division, no table and no integrator: there is no settling transient, no residual DC droop, and no fixed-point tuning error. The trade is that PolyBLEP stays *quasi*-band-limited — a residual remains and grows with the fundamental. Measured alias SNR at 48 kHz, against the same waveform generated naively:
+
+| fundamental | `Saw` | naive ramp | `Pulse` | naive square |
+|---|---|---|---|---|
+| 105 Hz | 96.7 dB | 30.9 dB | 98.4 dB | 32.7 dB |
+| 996 Hz | 42.6 dB | 16.0 dB | 43.5 dB | 17.7 dB |
+| 3996 Hz | 39.2 dB | 9.9 dB | 38.9 dB | 11.4 dB |
+
+The 105 Hz figure is within about 2.5 dB of what the measurement itself can resolve, so the low end is effectively transparent. The `LF*` shapes are deliberately not band-limited at all, as in scsynth — they are modulation sources and their corners should be exact.
 
 Buffer readers are **mono** (one output per UGen, unlike scsynth's multi-output PlayBuf): the `chan` input picks the channel, and two readers with the same inputs stay sample-locked, so a stereo file is two UGens. Neither has a trigger or done action yet.
 

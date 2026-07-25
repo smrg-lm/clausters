@@ -472,13 +472,22 @@ inherits them.
   naive saw measures 30.9 / 16.0 / 9.9 dB of alias SNR at 105 / 996 / 3996 Hz.
   The rules the track tests by moved into the `audio-testing` skill.
 
-- **U1 — The phase family** — `src/dsp/phase.rs`: one `f64` phase accumulator
-  plus a `poly_blep` helper, and the rows `Saw`, `Pulse`, `VarSaw`, `Phasor`
-  (the trigger-resettable ramp — deliberately not band-limited, as in scsynth)
-  and `LFSaw`/`LFPulse`/`LFTri` (modulation shapes, also not band-limited by
-  design). Tests measure frequency, amplitude, alias SNR at three fundamentals,
-  `Saw`'s DC (the property scsynth's leaky integrator only approximates) and the
-  exact reset sample of `Phasor`.
+- ✅ **U1 — The phase family** *(done 2026-07-25)* — `src/dsp/phase.rs`: one
+  `f64` phase accumulator plus a **fourth-order** `poly_blep` (the residual of
+  the cubic B-spline, derived in the module rather than tabulated), behind the
+  rows `Saw`, `Pulse`, `VarSaw`, `Phasor` (the trigger-resettable ramp, in units
+  per sample) and `LFSaw`/`LFPulse`/`LFTri`. Measured alias SNR for `Saw`:
+  96.7 / 42.6 / 39.2 dB at 105 / 996 / 3996 Hz, against 30.9 / 16.0 / 9.9 for
+  the same waveform generated naively — the second-order residual was
+  implemented first and rejected on its numbers (67.6 / 32.3 / 27.7). Two
+  findings worth the record: above `sr/4` the fourth-order correction regions
+  overlap and it falls back to the second-order one, and a negative frequency
+  needs the *same* expression with `|dt|` because reversing direction reverses
+  both the sample's side and the jump's sign — the phase-mirroring form is
+  algebraically identical but loses 17 dB to cancellation. The `LF*` shapes take
+  their initial phase in **cycles**, not sclang's `[0, 2)`, and a shape without a
+  duty cycle declares two inputs rather than three so `/u_query` never reports an
+  inlet the UGen ignores.
 
 - **U2 — The filter core** — `src/dsp/filter.rs`: the TPT/ZDF state-variable core
   behind `LPF`, `HPF`, `BPF`, `BRF`, `RLPF`, `RHPF`, `Resonz`, `Ringz`, plus the
