@@ -10,6 +10,9 @@
 
 #![cfg(feature = "faust")]
 
+#[path = "common/signal.rs"]
+mod signal;
+
 use std::time::Duration;
 
 use clausters::faust::compiler::{CompilePayload, CompileRequest, CompilerThread};
@@ -79,8 +82,7 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
-    crossings as f32 * SR / buf.len() as f32
+    signal::zero_crossing_freq(buf, SR)
 }
 
 /// The F0 smoke graph, now as JSON: `sin(2π·phasor(freq)) * 0.2` with

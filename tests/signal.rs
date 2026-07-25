@@ -194,3 +194,29 @@ fn report_the_measured_figures() {
         );
     }
 }
+
+#[test]
+fn zero_crossing_freq_does_not_lose_the_partial_period() {
+    // The estimator seven test files share. What makes it worth its own
+    // function is the bias the obvious version has: counting crossings and
+    // dividing by the buffer length throws away the fraction of a period at
+    // each end, which reads low by up to one whole period.
+    let n = 9600; // 0.2 s — the window the faust suites actually use
+    for freq in [110.0f32, 330.0, 997.0] {
+        // Every starting phase, including the ones that put a crossing just
+        // outside the buffer at one end or the other.
+        for k in 0..8 {
+            let phase = k as f32 * std::f32::consts::TAU / 8.0;
+            let x = sine(freq, 0.5, n, phase);
+            let got = zero_crossing_freq(&x, SR);
+            assert!(
+                (got - freq).abs() < 0.5,
+                "{freq} Hz at phase {phase:.2}: read {got}"
+            );
+        }
+    }
+    // Fewer than two crossings is not an estimate at all, and says so rather
+    // than dividing by zero.
+    assert_eq!(zero_crossing_freq(&[0.0; 64], SR), 0.0);
+    assert_eq!(zero_crossing_freq(&sine(1.0, 0.5, 64, 0.0), SR), 0.0);
+}

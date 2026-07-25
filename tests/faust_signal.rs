@@ -10,6 +10,9 @@
 
 #![cfg(feature = "faust")]
 
+#[path = "common/signal.rs"]
+mod signal;
+
 use std::ffi::{CString, c_char};
 use std::time::Duration;
 
@@ -102,8 +105,7 @@ fn rms(buf: &[f32]) -> f32 {
 }
 
 fn estimated_freq(buf: &[f32]) -> f32 {
-    let crossings = buf.windows(2).filter(|w| w[0] <= 0.0 && w[1] > 0.0).count();
-    crossings as f32 * SR / buf.len() as f32
+    signal::zero_crossing_freq(buf, SR)
 }
 
 fn un(op: &str, a: Value) -> Value {

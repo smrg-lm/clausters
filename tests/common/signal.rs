@@ -53,6 +53,38 @@ pub fn dc(x: &[f32]) -> f32 {
     (x.iter().map(|&v| v as f64).sum::<f64>() / x.len() as f64) as f32
 }
 
+/// Fundamental frequency of a periodic signal, from its **upward zero
+/// crossings**, in Hz. Returns 0 for a signal with fewer than two.
+///
+/// It measures over the span *between the first and last crossing*, not over
+/// the buffer: counting crossings and dividing by the buffer's length silently
+/// throws away the partial period at each end, which biases the estimate low by
+/// up to one whole period. Over a 0.2 s window that is a granularity of 5 Hz —
+/// enough that a 330 Hz tone reads 325 whenever the buffer happens to start
+/// just after a crossing, which is exactly the intermittent failure this
+/// replaced. Between crossings the only error left is where each one sits
+/// within its sample, well under a hertz here.
+///
+/// This is a cheap estimator for "is the oscillator at the pitch it was told",
+/// not a pitch tracker: it wants a clean periodic signal with one crossing per
+/// period. For a spectrum, use [`amplitude_at`] or [`power_spectrum`].
+pub fn zero_crossing_freq(x: &[f32], sr: f32) -> f32 {
+    let mut first = None;
+    let mut last = 0usize;
+    let mut count = 0usize;
+    for (i, w) in x.windows(2).enumerate() {
+        if w[0] <= 0.0 && w[1] > 0.0 {
+            first.get_or_insert(i);
+            last = i;
+            count += 1;
+        }
+    }
+    match first {
+        Some(f) if count >= 2 && last > f => (count - 1) as f32 * sr / (last - f) as f32,
+        _ => 0.0,
+    }
+}
+
 /// Panics if any sample is NaN or infinite, naming the first offender. Worth
 /// calling in every render test: a single NaN poisons the whole graph
 /// downstream and an RMS assert alone will not say *where*.
