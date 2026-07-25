@@ -17,7 +17,7 @@ The core **must always build and test without any feature and without libfaust i
 
 ```sh
 # default build (PipeWire audio + ALSA-seq MIDI)
-sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev clang
+sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev libdbus-1-dev clang
 # only for the matching optional feature:
 sudo apt install libjack-jackd2-dev          # --features midi-jack
 # plain-ALSA build (no PipeWire libs):
@@ -27,7 +27,9 @@ sudo apt install libjack-jackd2-dev          # --features midi-jack
 `pipewire` is a default feature (the target systems always ship PipeWire), so
 the default binary hard-links `libpipewire` and expects it at runtime. `clang`
 is only used at build time by bindgen (it parses the PipeWire C headers to
-generate bindings); the toolchain itself stays `rustc` + `gcc`. The `midi-jack`
+generate bindings); the toolchain itself stays `rustc` + `gcc`. `libdbus-1-dev`
+is there for `rtprio`, also a default feature: cpal promotes the audio callback
+thread to `SCHED_FIFO` through RTKit over DBus. The `midi-jack`
 build links against jackd2's `libjack` but resolves to PipeWire's `libjack`
 under `pw-jack` at runtime.
 
@@ -160,8 +162,22 @@ A hook whose dependencies are missing prints a warning to stderr (once every twe
 The book sources are the Markdown files in `docs/`; `docs/SUMMARY.md` is the table of contents and `book.toml` the config. Build and preview with [mdBook](https://rust-lang.github.io/mdBook/):
 
 ```sh
-cargo install mdbook
+cargo install mdbook --version 0.4.40
 mdbook serve     # live preview at http://localhost:3000
 mdbook build     # generates ./book (git-ignored)
 mdbook test      # type-checks Rust code snippets
 ```
+
+**Pin the version.** CI and both `.readthedocs.yaml` builds fetch the prebuilt mdBook 0.4.40; an unpinned `cargo install` gets whatever is current, and a page that looks right locally can then render differently in what actually gets published. Upgrading means changing all three together. The prebuilt binary is also the faster route to the same thing:
+
+```sh
+curl -sSL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/.local/bin
+```
+
+The Python client's book is a second, separate mdBook in `clients/python/docs/`, built by `clients/python/docs/build.sh`. Its API-reference page is **generated** from the package docstrings by pydoc-markdown, so it needs that tool as well — installed in user space, pinned to Python 3.12 because its dependencies lag the newest CPython and 3.12 is also what Read the Docs builds with:
+
+```sh
+uv tool install --python 3.12 pydoc-markdown
+```
+
+Both books have to stay current: a change that touches the server and the client surfaces belongs in both. See [`clients/python/README.md`](https://github.com/smrg-lm/clausters/blob/main/clients/python/README.md) for the alternatives to `uv` (`uvx`, or a plain `pip install` in an environment that is not externally managed).
