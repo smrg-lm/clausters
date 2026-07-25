@@ -281,6 +281,13 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   corta a los 0.6 s con la envolvente todavía abierta, porque una señal cualquiera
   cruzó un umbral. Nada debe quedar sonando después de su corte.
 
+- **Un secuenciador que vive adentro de un synth.** `python3
+  examples/sequencer.py toma.wav` y escucharla → **dos** `/s_new` y nada más:
+  ningún reloj del lado del cliente. Tienen que oírse 24 notas en 4 segundos con
+  un acento cada cuatro (el primero acentuado, no el cuarto), el filtro saltando
+  a un valor nuevo *por paso* y no deslizándose, y un bajo que entra justo con
+  cada acento y nunca se corre — es el mismo `impulse` dividido, no dos relojes.
+
 ### Con la feature `faust`
 
 - **Faust suena.** Compilar un `/d_faust` (fuente o Box API) → se oye la sierra

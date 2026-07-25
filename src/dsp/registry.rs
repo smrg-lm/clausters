@@ -36,6 +36,10 @@ use crate::dsp::spectral::{
     CombineOp, Fft, Ifft, MagMode, PvBinShift, PvBrickWall, PvCombine, PvKernel, PvMag,
     PvMagFreeze, PvMagSmear,
 };
+use crate::dsp::trig::{
+    Changed, Counter, CounterMode, Decay, DetectSilence, Elapsed, ElapsedMode, FlipFlop,
+    FlipFlopMode, Hold, HoldMode, Schmidt, Stepper, TrigMode, TrigPulse,
+};
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{DoneAction, Rate, UGen};
 
@@ -432,6 +436,37 @@ const I_XLINE: &[UGenInput] = &[
     inp("start", 0.01),
     inp("end", 1.0),
     inp("dur", 1.0),
+    inp("done_action", 0.0),
+];
+/// The trigger family (U5). A kind that takes only triggers has no signal
+/// input at all — but it still defaults to `ar`, because a `kr` consumer
+/// samples an `ar` wire once per block and would drop most of a trigger train.
+const I_TRIG_DUR: &[UGenInput] = &[inp("signal", 0.0), inp("dur", 0.1)];
+const I_HOLD: &[UGenInput] = &[inp("signal", 0.0), inp("trig", 0.0)];
+const I_SCHMIDT: &[UGenInput] = &[inp("signal", 0.0), inp("lo", 0.0), inp("hi", 1.0)];
+const I_TRIG: &[UGenInput] = &[inp("trig", 0.0)];
+const I_TRIG_RESET: &[UGenInput] = &[inp("trig", 0.0), inp("reset", 0.0)];
+const I_DIVIDER: &[UGenInput] = &[inp("trig", 0.0), inp("div", 2.0), inp("start", 0.0)];
+const I_STEPPER: &[UGenInput] = &[
+    inp("trig", 0.0),
+    inp("reset", 0.0),
+    inp("min", 0.0),
+    inp("max", 7.0),
+    inp("step", 1.0),
+    inp("resetval", 0.0),
+];
+const I_SWEEP: &[UGenInput] = &[inp("trig", 0.0), inp("rate", 1.0)];
+const I_CHANGED: &[UGenInput] = &[inp("signal", 0.0), inp("threshold", 0.0)];
+const I_DECAY: &[UGenInput] = &[inp("signal", 0.0), inp("decaytime", 1.0)];
+const I_DECAY2: &[UGenInput] = &[
+    inp("signal", 0.0),
+    inp("attacktime", 0.01),
+    inp("decaytime", 1.0),
+];
+const I_SILENCE: &[UGenInput] = &[
+    inp("signal", 0.0),
+    inp("amp", 0.0001),
+    inp("time", 0.1),
     inp("done_action", 0.0),
 ];
 /// The node-control rows (U4): `FreeSelf`/`PauseSelf` watch a signal,
@@ -1298,6 +1333,200 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Line::new(LineShape::Exponential)),
     )),
+    // --- triggers and control (U5) ---
+    // All of these default to `ar`, counters included. A `kr` UGen reads one
+    // sample per block from an `ar` input, so a `kr` counter fed an `ar`
+    // trigger train would silently miss 63 triggers out of 64; the cheaper
+    // pairing has to be asked for, and asked for on both ends.
+    desc(
+        "Trig",
+        Fixed(2),
+        I_TRIG_DUR,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(TrigPulse::new(TrigMode::Level)),
+    ),
+    desc(
+        "Trig1",
+        Fixed(2),
+        I_TRIG_DUR,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(TrigPulse::new(TrigMode::Unit)),
+    ),
+    desc(
+        "TDelay",
+        Fixed(2),
+        I_TRIG_DUR,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(TrigPulse::new(TrigMode::Delay)),
+    ),
+    desc(
+        "Latch",
+        Fixed(2),
+        I_HOLD,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Hold::new(HoldMode::Latch)),
+    ),
+    desc(
+        "Gate",
+        Fixed(2),
+        I_HOLD,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Hold::new(HoldMode::Gate)),
+    ),
+    desc(
+        "Schmidt",
+        Fixed(3),
+        I_SCHMIDT,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Schmidt::default()),
+    ),
+    desc(
+        "ToggleFF",
+        Fixed(1),
+        I_TRIG,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(FlipFlop::new(FlipFlopMode::Toggle)),
+    ),
+    desc(
+        "SetResetFF",
+        Fixed(2),
+        I_TRIG_RESET,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(FlipFlop::new(FlipFlopMode::SetReset)),
+    ),
+    desc(
+        "PulseCount",
+        Fixed(2),
+        I_TRIG_RESET,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Counter::new(CounterMode::Count)),
+    ),
+    desc(
+        "PulseDivider",
+        Fixed(3),
+        I_DIVIDER,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Counter::new(CounterMode::Divide)),
+    ),
+    desc(
+        "Stepper",
+        Fixed(6),
+        I_STEPPER,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Stepper::default()),
+    ),
+    desc(
+        "Timer",
+        Fixed(1),
+        I_TRIG,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Elapsed::new(ElapsedMode::Timer)),
+    ),
+    desc(
+        "Sweep",
+        Fixed(2),
+        I_SWEEP,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Elapsed::new(ElapsedMode::Sweep)),
+    ),
+    desc(
+        "Changed",
+        Fixed(2),
+        I_CHANGED,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Changed::default()),
+    ),
+    desc(
+        "Decay",
+        Fixed(2),
+        I_DECAY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Decay::new(false)),
+    ),
+    desc(
+        "Decay2",
+        Fixed(3),
+        I_DECAY2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Decay::new(true)),
+    ),
+    // The one row here with a done flag: it exists to notice that a voice has
+    // nothing left to say, so `Done`/`FreeSelfWhenDone` can watch it too.
+    desc_done(desc(
+        "DetectSilence",
+        Fixed(4),
+        I_SILENCE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(DetectSilence::default()),
+    )),
     // --- node control (U4) ---
     // These four pass their input through and act on their own node. The first
     // two read a signal; the last two read another UGen's done flag, which is
@@ -1306,7 +1535,7 @@ static UGENS: &[UGenDescriptor] = &[
         "FreeSelf",
         Fixed(1),
         I_SIGNAL,
-        Kr,
+        Ar,
         R_KR_AR,
         Normal,
         BusRole::None,
@@ -1317,7 +1546,7 @@ static UGENS: &[UGenDescriptor] = &[
         "PauseSelf",
         Fixed(1),
         I_SIGNAL,
-        Kr,
+        Ar,
         R_KR_AR,
         Normal,
         BusRole::None,
@@ -1328,7 +1557,7 @@ static UGENS: &[UGenDescriptor] = &[
         "Done",
         Fixed(1),
         I_SOURCE,
-        Kr,
+        Ar,
         R_KR_AR,
         DoneQuery,
         BusRole::None,
@@ -1339,7 +1568,7 @@ static UGENS: &[UGenDescriptor] = &[
         "FreeSelfWhenDone",
         Fixed(1),
         I_SOURCE,
-        Kr,
+        Ar,
         R_KR_AR,
         DoneQuery,
         BusRole::None,

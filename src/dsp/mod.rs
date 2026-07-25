@@ -66,6 +66,8 @@ pub mod sine;
 #[cfg(feature = "synth")]
 pub mod spectral;
 #[cfg(feature = "synth")]
+pub mod trig;
+#[cfg(feature = "synth")]
 pub mod unop;
 
 use std::cell::UnsafeCell;

@@ -1403,3 +1403,88 @@ fn ramp_and_node_control_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// The trigger family (U5). The interesting claim is not that a comparator
+/// allocates — it cannot — but that the *counters* do not: `Stepper`,
+/// `PulseCount` and `Timer` all hold running state, and `Decay` recomputes a
+/// transcendental whose scalar fast path must not reach for a buffer. The
+/// scene runs every state machine in the module at once, driven by a real
+/// trigger stream rather than by silence.
+#[test]
+fn trigger_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "trigs",
+            "ugens": [
+                {"kind": "Impulse", "inputs": [{"const": 200.0}]},
+                {"kind": "Impulse", "inputs": [{"const": 7.0}]},
+                {"kind": "Trig", "inputs": [{"ugen": 0}, {"const": 0.001}]},
+                {"kind": "Trig1", "inputs": [{"ugen": 0}, {"const": 0.002}]},
+                {"kind": "TDelay", "inputs": [{"ugen": 0}, {"const": 0.003}]},
+                {"kind": "Latch", "inputs": [{"ugen": 2}, {"ugen": 0}]},
+                {"kind": "Gate", "inputs": [{"ugen": 3}, {"ugen": 4}]},
+                {"kind": "Schmidt", "inputs": [{"ugen": 5}, {"const": 0.2},
+                                               {"const": 0.8}]},
+                {"kind": "ToggleFF", "rate": "ar", "inputs": [{"ugen": 0}]},
+                {"kind": "SetResetFF", "rate": "ar",
+                 "inputs": [{"ugen": 0}, {"ugen": 1}]},
+                {"kind": "PulseCount", "rate": "ar",
+                 "inputs": [{"ugen": 0}, {"ugen": 1}]},
+                {"kind": "PulseDivider", "rate": "ar",
+                 "inputs": [{"ugen": 0}, {"const": 3.0}, {"const": 0.0}]},
+                {"kind": "Stepper", "rate": "ar", "inputs": [{"ugen": 0}, {"ugen": 1},
+                 {"const": 0.0}, {"const": 7.0}, {"const": 1.0}, {"const": 0.0}]},
+                {"kind": "Timer", "rate": "ar", "inputs": [{"ugen": 0}]},
+                {"kind": "Sweep", "inputs": [{"ugen": 1}, {"const": 2.0}]},
+                {"kind": "Changed", "inputs": [{"ugen": 12}, {"const": 0.1}]},
+                {"kind": "Decay", "inputs": [{"ugen": 0}, {"const": 0.05}]},
+                {"kind": "Decay2", "inputs": [{"ugen": 0}, {"ugen": 13},
+                                              {"const": 0.2}]},
+                {"kind": "DetectSilence", "inputs": [{"ugen": 17}, {"const": 0.001},
+                 {"const": 0.05}, {"const": 0.0}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 6}, {"ugen": 7},
+                                            {"ugen": 8}, {"ugen": 9}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 10}, {"ugen": 11},
+                                            {"ugen": 14}, {"ugen": 15}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 16}, {"ugen": 17},
+                                            {"ugen": 18}, {"ugen": 19}]},
+                {"kind": "BinaryOpUGen", "op": "add",
+                 "inputs": [{"ugen": 20}, {"ugen": 21}]},
+                {"kind": "BinaryOpUGen", "op": "mul",
+                 "inputs": [{"ugen": 22}, {"const": 0.01}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 23}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

@@ -13,6 +13,7 @@
 //! end-of-stream is signalled by a `NaN` pull and the driver holds its last
 //! value. The `dr` families that land later reuse these same two trait hooks.
 
+use crate::dsp::trig::Edge;
 use crate::dsp::{ProcessCtx, UGen, at};
 
 /// `Dseq(repeats, v0, v1, …)`: a demand *source* that yields its value list in
@@ -76,16 +77,16 @@ impl UGen for Dseq {
 /// exhausted (a `NaN` pull). Audio or control rate.
 pub struct Demand {
     held: f32,
-    prev_trig: f32,
-    prev_reset: f32,
+    prev_trig: Edge,
+    prev_reset: Edge,
 }
 
 impl Demand {
     pub fn new() -> Self {
         Self {
             held: 0.0,
-            prev_trig: 0.0,
-            prev_reset: 0.0,
+            prev_trig: Edge::default(),
+            prev_reset: Edge::default(),
         }
     }
 }
@@ -110,20 +111,16 @@ impl UGen for Demand {
         step: &mut dyn FnMut(bool) -> f32,
     ) {
         for (i, out) in output.iter_mut().enumerate() {
-            let r = at(reset, i);
-            if r > 0.0 && self.prev_reset <= 0.0 {
+            if self.prev_reset.rose(at(reset, i)) {
                 step(true); // reset the source's stream
             }
-            let t = at(trig, i);
-            if t > 0.0 && self.prev_trig <= 0.0 {
+            if self.prev_trig.rose(at(trig, i)) {
                 let v = step(false); // pull the next value
                 if v.is_finite() {
                     self.held = v; // NaN = exhausted: hold the last value
                 }
             }
             *out = self.held;
-            self.prev_trig = t;
-            self.prev_reset = r;
         }
     }
 }

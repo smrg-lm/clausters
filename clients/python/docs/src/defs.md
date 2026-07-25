@@ -258,6 +258,17 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `allpass_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | an allpass: scatters phase and leaves the magnitude alone |
 | Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
 | | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
+| Triggers | `trig(signal, dur)` / `trig1(signal, dur)` | holds the level that triggered it / holds 1, for `dur` seconds |
+| | `t_delay(signal, dur)` | one sample of 1, `dur` later; a trigger arriving while one is in flight is dropped |
+| | `latch(signal, trig)` / `gate(signal, trig)` | one sample per rising edge / transparent while the gate is open |
+| | `schmidt(signal, lo, hi)` | comparator with hysteresis — it takes the whole band to change its mind |
+| | `changed(signal, threshold)` | 1 where the input moved; compares the **halved** difference (sclang's `HPZ1` gain) |
+| Counters | `toggle_ff(trig)` / `set_reset_ff(trig, reset)` | one bit of state: flipped by each trigger / set and reset |
+| | `pulse_count(trig, reset)` / `pulse_divider(trig, div, start)` | counts triggers / one out per `div` in, `start` phases it |
+| | `stepper(trig, reset, min, max, step, resetval)` | walks `[min, max]`, both ends included, wrapping |
+| | `timer(trig)` / `sweep(trig, rate)` | seconds between the last two triggers / a ramp restarted at each |
+| Followers | `decay(signal, decaytime)` / `decay2(signal, attacktime, decaytime)` | an impulse into an exponential / the same with a rounded attack |
+| | `detect_silence(signal, amp, time, done_action)` | 1 once the input has been quiet for `time`; raises a done flag |
 | Node control | `free_self(signal)` / `pause_self(signal)` | frees / pauses the synth while `signal > 0`, passing it through |
 | | `done(source)` | 1 once `source` (an envelope or a ramp) has finished — the flag, not its value |
 | | `free_self_when_done(source)` | passes `source` through and frees the synth once it finishes |

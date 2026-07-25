@@ -81,6 +81,12 @@ pub enum WhenDoneMode {
 /// wire's UGen index, so input 0 must be a wire to a kind that *has* a done
 /// flag; the compiler rejects anything else by name rather than letting it read
 /// zero forever.
+///
+/// **The flag has block resolution.** It is one bool per UGen, read once when
+/// the watcher runs, so a watcher reports it for the whole block in which it
+/// was raised — even at `ar`, where the source may have finished part-way
+/// through. That is inherent to a flag rather than a signal, and at `kr` (these
+/// two default there) it is exactly the resolution on offer anyway.
 pub struct WhenDone {
     mode: WhenDoneMode,
     flag: bool,

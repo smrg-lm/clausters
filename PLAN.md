@@ -557,10 +557,29 @@ comb-plus-allpass space, rendered offline so it needs no audio hardware.
   `BLOCK_SIZE`, so a scheduled bundle splitting a block does not make control
   time run fast. Choosing `kr` now changes a UGen's cost, not its meaning.
 
-- **U5 — Triggers and control** — `src/dsp/trig.rs`: one shared rising-edge
-  detector under `Trig`, `Trig1`, `TDelay`, `Latch`, `Gate`, `Schmidt`,
-  `ToggleFF`, `SetResetFF`, `PulseCount`, `PulseDivider`, `Stepper`, `Timer`,
-  `Sweep`, `Changed`, `Decay`, `Decay2` and `DetectSilence` (with a done action).
+- ✅ **U5 — Triggers and control** *(done 2026-07-25)* — `src/dsp/trig.rs`: one
+  rising-edge detector (`Edge`) under `Trig`, `Trig1`, `TDelay`, `Latch`,
+  `Gate`, `Schmidt`, `ToggleFF`, `SetResetFF`, `PulseCount`, `PulseDivider`,
+  `Stepper`, `Timer`, `Sweep`, `Changed`, `Decay`, `Decay2` and
+  `DetectSilence`. The definition of a trigger had been copied into three
+  places (`SendTrig`, `SendReply`/`Poll`, the `Demand` driver); they now share
+  this one, so a kind added later inherits it rather than restating it. Nine
+  state machines behind seventeen names, grouped where they are genuinely the
+  same machine and left apart where they are not.
+
+  These are state machines, so the milestone is mostly boundary decisions, each
+  in `docs/decisions.md`: `Timer` and `Sweep` **interpolate** the zero crossing
+  (at 997 Hz, not a whole number of samples at 48 kHz, that beats sample
+  rounding by an order of magnitude — the tested claim); a `TDelay` of `n`
+  fires at `t + n` and **re-arms on that sample**, without which a regular
+  trigger stream came out limping (961, 1440, 1440 instead of a steady 960);
+  a held pulse *includes* its trigger's sample while a delay does not; a
+  simultaneous set and reset leaves a flip-flop at 0; a `Stepper` sits at
+  `resetval` so its first trigger lands on `resetval + step`. `Changed`
+  reproduces sclang's **halved** difference (`HPZ1`'s gain is 0.5) rather than
+  correcting it, on U0's rule that a ported def must not change value.
+  `DetectSilence` raises a done flag, and that flag has **block resolution** by
+  nature — a bool has no position within a block.
 
 - **U6 — Noise** — extending `src/dsp/noise.rs`: `PinkNoise`, `BrownNoise`,
   `GrayNoise`, `ClipNoise`, `LFNoise0/1/2`, `LFClipNoise`, `Dust`, `Dust2`,

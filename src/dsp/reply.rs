@@ -14,6 +14,7 @@
 //! audio thread, so no allocation happens while processing.
 
 use crate::dsp::registry::UGenConfig;
+use crate::dsp::trig::Edge;
 use crate::dsp::{ProcessCtx, REPLY_BUFFER_LEN, ReplyKind, ReplyMsg, UGen, at};
 
 /// A fixed-capacity, allocation-free buffer of the reply messages a UGen
@@ -50,26 +51,17 @@ impl ReplyBuffer {
     }
 }
 
-/// Rising-edge detector shared by the three UGens: returns `true` on each frame
-/// where the signal crosses from `<= 0` up to `> 0`, updating `prev`.
-#[inline]
-fn triggered(prev: &mut f32, cur: f32) -> bool {
-    let fired = *prev <= 0.0 && cur > 0.0;
-    *prev = cur;
-    fired
-}
-
 /// `SendTrig(in, id, value)` — sends `/tr nodeID id value` on each trigger of
 /// `in`. Output is silence (it exists for the side effect, not a signal).
 pub struct SendTrig {
-    prev: f32,
+    prev: Edge,
     buf: ReplyBuffer,
 }
 
 impl SendTrig {
     pub fn new() -> Self {
         Self {
-            prev: 0.0,
+            prev: Edge::default(),
             buf: ReplyBuffer::new(),
         }
     }
@@ -85,7 +77,7 @@ impl UGen for SendTrig {
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (trig, id, value) = (inputs[0], inputs[1], inputs[2]);
         for (f, &cur) in trig.iter().enumerate() {
-            if triggered(&mut self.prev, cur) {
+            if self.prev.rose(cur) {
                 let mut msg = ReplyMsg::new(ReplyKind::Trig, at(id, f) as i32, "");
                 msg.push_value(at(value, f));
                 self.buf.push(msg);
@@ -109,7 +101,7 @@ impl UGen for SendTrig {
 /// Output is silence.
 pub struct SendReply {
     cmd: String,
-    prev: f32,
+    prev: Edge,
     buf: ReplyBuffer,
 }
 
@@ -122,7 +114,7 @@ impl SendReply {
             .unwrap_or_else(|| "/reply".to_string());
         Self {
             cmd,
-            prev: 0.0,
+            prev: Edge::default(),
             buf: ReplyBuffer::new(),
         }
     }
@@ -139,7 +131,7 @@ impl UGen for SendReply {
         let reply_id = inputs.get(1).copied();
         let values = inputs.get(2..).unwrap_or(&[]);
         for (f, &cur) in trig.iter().enumerate() {
-            if triggered(&mut self.prev, cur) {
+            if self.prev.rose(cur) {
                 let id = reply_id.map_or(-1, |r| at(r, f) as i32);
                 let mut msg = ReplyMsg::new(ReplyKind::Reply, id, &self.cmd);
                 for v in values {
@@ -166,7 +158,7 @@ impl UGen for SendReply {
 /// `Poll` can sit mid-chain like scsynth.
 pub struct Poll {
     label: String,
-    prev: f32,
+    prev: Edge,
     buf: ReplyBuffer,
 }
 
@@ -179,7 +171,7 @@ impl Poll {
             .unwrap_or_else(|| "poll".to_string());
         Self {
             label,
-            prev: 0.0,
+            prev: Edge::default(),
             buf: ReplyBuffer::new(),
         }
     }
@@ -189,7 +181,7 @@ impl UGen for Poll {
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
         let (trig, sig, trigid) = (inputs[0], inputs[1], inputs[2]);
         for (f, &cur) in trig.iter().enumerate() {
-            if triggered(&mut self.prev, cur) {
+            if self.prev.rose(cur) {
                 let mut msg = ReplyMsg::new(ReplyKind::Poll, at(trigid, f) as i32, &self.label);
                 msg.push_value(at(sig, f));
                 self.buf.push(msg);

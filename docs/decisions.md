@@ -2157,3 +2157,78 @@ just processed. For `FreeSelf` the difference is unobservable (the node is gone
 either way), but a latched `PauseSelf` would re-pause the instant `/n_run 1`
 resumed the node — making the command useless and turning a gate into a one-way
 door. So the action is recomputed per block rather than remembered.
+
+## One definition of a trigger, and the boundary cases that follow from it
+
+U5's rows are state machines, so almost every decision in them is about a
+boundary: which sample, which of two simultaneous events, what happens before
+the first one. Recording them because each was a choice, and because a test had
+to be corrected against three of them.
+
+**A trigger is a rising edge through zero, defined once.** The definition was
+already copied into three places (`SendTrig`, `SendReply`/`Poll`, the `Demand`
+driver) before this milestone; `dsp::trig::Edge` is now the only one, and those
+three moved onto it. Nothing about the behaviour changed — the point is that a
+kind added later inherits the definition rather than restating it, and that
+"trigger" cannot come to mean two things in one server.
+
+**`Timer` and `Sweep` interpolate the crossing.** Both measure time, so they
+compute where *between* two samples the input actually crossed zero
+(`frac = -prev / (cur - prev)`) instead of rounding to the sample. For a trigger
+built from an impulse this is exactly zero and costs nothing. For one built from
+an oscillator it is the difference between a period measured to ±0.5 samples and
+one measured about twenty times finer: at 997 Hz — deliberately not a whole
+number of samples at 48 kHz — the interpolated reading beats sample rounding by
+an order of magnitude, which is what the test asserts. scsynth does this too.
+
+**A `TDelay` of `n` samples fires at `t + n`, and re-arms on that sample.** The
+countdown therefore advances *before* the trigger is examined, not after. Both
+halves matter. Counting the trigger's own sample would put the pulse at
+`t + n - 1`, off by one at every duration. And examining the trigger first would
+swallow one landing on the very sample the pending pulse fires — which turns a
+regular stream of triggers into a limping one (the first version divided a
+100 Hz train into intervals of 961, 1440, 1440 samples instead of a steady 960).
+
+**A held pulse includes its trigger's sample; a delay does not.** `Trig`/`Trig1`
+of `n` samples cover `t ..= t+n-1`. That is the asymmetry the previous point
+turns on, and it is right: a pulse *starts* at the trigger, a delay *ends* `n`
+later.
+
+**`Changed` reproduces sclang's halved difference.** It is a pseudo-UGen there,
+`HPZ1(in).abs > threshold`, and `HPZ1`'s gain is 0.5 — so a step of 1.0 registers
+as 0.5. Reproduced rather than corrected, on the same rule as `hypot_apx` in U0:
+a def ported from sclang must not change value. Documented everywhere it is
+reachable, because it will otherwise be found by someone whose threshold
+mysteriously does nothing.
+
+**The done flag has block resolution.** `DetectSilence` raises one, so
+`Done`/`FreeSelfWhenDone` can watch it. A watcher reports it for the whole block
+in which it was raised, even at `ar`, because the flag is one bool read once
+when the watcher runs — not a signal. This is inherent, not a limitation to fix:
+a bool has no position within the block. At `kr`, where these two default, it is
+exactly the resolution on offer anyway.
+
+**Two small ones.** A `SetResetFF` seeing both edges on one sample ends at 0 —
+reset is applied second, so the quiet outcome wins. And a `Stepper` sits at
+`resetval` until its first trigger, which therefore lands on `resetval + step`:
+a stepper is defined by its transitions, and the alternative makes the first
+step invisible.
+
+**Everything defaults to `ar`, counters included — and that reverses the
+obvious choice.** A flip-flop or a counter can only move when a trigger does,
+so `kr` looks like the free win: one evaluation a block instead of 64, for an
+output that cannot change in between. It is a trap. A `kr` UGen reads **one
+sample per block** from an `ar` input (`at(input, 0)`), so a `kr` counter fed
+an `ar` impulse train sees 1 trigger in 64 and silently drops the rest. The
+first draft of this milestone defaulted the counters to `kr` and would have
+shipped `pulse_count(impulse(4))` as a builder pair that quietly loses almost
+everything.
+
+`kr` is still right *when the trigger is also `kr`* — the saving is then real,
+and since the calculation-rate fix that preceded U4 the arithmetic is unchanged
+(a duration means seconds at either rate). The rule that came out of it is
+general enough to belong in the rate documentation rather than in this family:
+**a slower consumer samples a faster input, it does not summarize it.** The
+same applies to the U4 node-control rows, which moved to `ar` for the same
+reason — a `kr` `FreeSelf` watching a one-sample trigger would miss it and the
+node would never leave.
