@@ -272,6 +272,15 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   espacio y no como ecos separados. Vale también con el servidor vivo
   (`--features synth` sola alcanza: no necesita LLVM).
 
+- **Rampas, y las tres formas de terminar una nota.** `python3
+  examples/ramps.py toma.wav` y escucharla → un zap cuyo glissando baja dos
+  octavas parejo (no acelerando al final, que es lo que daría una rampa lineal)
+  y que **corta al llegar abajo**, porque lo que libera el nodo es el flag de la
+  rampa de altura y no la envolvente; un barrido de filtro de un segundo hecho a
+  `kr` que suena igual de suave que a `ar` y dura lo mismo; y una nota que se
+  corta a los 0.6 s con la envolvente todavía abierta, porque una señal cualquiera
+  cruzó un umbral. Nada debe quedar sonando después de su corte.
+
 ### Con la feature `faust`
 
 - **Faust suena.** Compilar un `/d_faust` (fuente o Box API) → se oye la sierra

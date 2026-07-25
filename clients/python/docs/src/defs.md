@@ -240,6 +240,27 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | Sources | `sine(freq=440.0)` | sine by f64 phase accumulation, starting at phase 0 |
 | | `impulse(freq=1.0)` | one-sample `1.0` every `freq` Hz (`freq` 0 = one impulse then silence) |
 | | `white_noise()` | uniform white noise in ±1 |
+| | `saw(freq=440.0)` | **band-limited** sawtooth: the harmonics that belong there, not aliases folded down from above Nyquist |
+| | `pulse(freq=440.0, width=0.5)` | band-limited pulse; `width` is the duty cycle |
+| Modulation | `lf_saw(freq, iphase=0.0)` / `lf_tri(freq, iphase=0.0)` | saw and triangle in ±1, **not** band-limited — cheap shapes to modulate with rather than listen to; `iphase` in cycles |
+| | `lf_pulse(freq, iphase=0.0, width=0.5)` | square in `[0, 1]` — a gate, not a bipolar waveform like `pulse` |
+| | `var_saw(freq, iphase=0.0, width=0.5)` | triangle whose peak sits at `width` of the cycle: falling ramp → triangle → rising ramp |
+| | `phasor(trig, rate, start, end, reset_pos)` | a ramp in units **per sample**, wrapping at `end`; a rising `trig` jumps to `reset_pos` — an index generator, deliberately not band-limited |
+| Filters | `lpf(signal, freq)` / `hpf(signal, freq)` | second-order Butterworth low / highpass: −3 dB at `freq`, −12 dB/octave |
+| | `rlpf(signal, freq, rq=None, *, q=None)` / `rhpf(...)` | the resonant pair; give the resonance as `rq` (1/Q, 0 = infinite) **or** as `q` |
+| | `bpf(...)` / `resonz(...)` | bandpass with unity gain at the centre — one implementation under scsynth's two names |
+| | `brf(...)` | band reject: unity in both passbands, a true null at `freq` |
+| | `svf(signal, freq, rq=None, low=1.0, band=0.0, high=0.0)` | the state-variable filter with its three taps as **signal inputs**, so the response itself can be modulated; `svf_morph(pos)` gives the one-knob version |
+| | `one_pole(signal, coef)` / `one_zero(signal, coef)` | the one-pole / one-zero primitives; the parameter is the **pole**, not a cutoff |
+| | `leak_dc(signal, coef=0.995)` / `integrator(signal, coef=0.999)` | DC blocker / leaky accumulator |
+| Delays | `delay_n/l/c(signal, delaytime, *, max_delay=None)` | pure delay — no interpolation, linear, cubic |
+| | `comb_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | a comb: `decaytime` is −60 dB counted from the first echo |
+| | `allpass_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | an allpass: scatters phase and leaves the magnitude alone |
+| Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
+| | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
+| Node control | `free_self(signal)` / `pause_self(signal)` | frees / pauses the synth while `signal > 0`, passing it through |
+| | `done(source)` | 1 once `source` (an envelope or a ramp) has finished — the flag, not its value |
+| | `free_self_when_done(source)` | passes `source` through and frees the synth once it finishes |
 | Bus input | `in_(bus=0.0)` | reads an audio bus (sampled per block) |
 | | `in_ctl(bus=0.0)` | reads a control bus (constant over the block) |
 | Bus output | `out(bus, signal)` | **sums** `signal` into an audio bus |

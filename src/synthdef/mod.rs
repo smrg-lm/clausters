@@ -606,6 +606,30 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
             }
         }
 
+        // `Done`/`FreeSelfWhenDone` watch another UGen's *done flag*, which is
+        // not a value on a wire: input 0 must therefore name a UGen, and one
+        // that can finish at all. Rejecting it here turns a UGen that would
+        // have read zero for the node's whole life into a pointed error.
+        if desc.exec == ExecMode::DoneQuery {
+            match inputs.first() {
+                Some(InputRef::Wire(w)) if ugens[*w].desc.has_done_flag => {}
+                Some(InputRef::Wire(w)) => {
+                    return Err(format!(
+                        "ugens[{i}] ({}).inputs[0]: {} has no done flag — only a UGen that \
+                         finishes (an envelope) can be watched",
+                        u.kind, ugens[*w].desc.name
+                    ));
+                }
+                _ => {
+                    return Err(format!(
+                        "ugens[{i}] ({}).inputs[0]: must be another UGen (an envelope), not a \
+                         constant or a control",
+                        u.kind
+                    ));
+                }
+            }
+        }
+
         ugens.push(UGenDef {
             desc,
             inputs,

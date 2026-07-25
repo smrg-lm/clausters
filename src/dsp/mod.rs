@@ -48,6 +48,8 @@ pub mod lag;
 #[cfg(feature = "synth")]
 pub mod local;
 #[cfg(feature = "synth")]
+pub mod nodectl;
+#[cfg(feature = "synth")]
 pub mod noise;
 #[cfg(feature = "synth")]
 pub mod osc;
@@ -531,6 +533,25 @@ pub trait UGen: Send {
     fn done(&self) -> DoneAction {
         DoneAction::None
     }
+
+    /// Whether this UGen has **finished** — scsynth's per-unit *done flag*,
+    /// which is what `Done` and `FreeSelfWhenDone` read.
+    ///
+    /// Deliberately separate from [`done`](Self::done): that one says what
+    /// should happen to the *node* and is `None` for an envelope whose
+    /// `doneAction` is 0, while this one is raised by any envelope that has
+    /// played out, whatever it asked the node to do. Reading the action would
+    /// therefore make `Done` silent exactly where it is most used — watching a
+    /// ramp that is not meant to free anything.
+    fn is_done(&self) -> bool {
+        false
+    }
+
+    /// Hands this UGen the done flag of the UGen its first input names, read
+    /// just before `process` by [`ExecMode::DoneQuery`](registry::ExecMode).
+    /// Only the two kinds that watch another UGen implement it; for everyone
+    /// else it is never called.
+    fn set_done_flag(&mut self, _done: bool) {}
 
     /// Intrinsic latency in samples: how far this UGen's output lags its
     /// input by construction (M28's partitioned convolver reports its

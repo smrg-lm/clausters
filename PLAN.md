@@ -532,14 +532,30 @@ The batch closes with `examples/subtractive.py` — a band-limited saw through a
 envelope-swept resonant lowpass, a pulse through a morphing `Svf`, and a
 comb-plus-allpass space, rendered offline so it needs no audio hardware.
 
-- **U4 — `Line`/`XLine` and the self-control set** — `Line` and `XLine` are
-  one-segment envelopes built on the existing `src/dsp/envgen.rs` segment engine,
-  so they inherit the full done-action set rather than growing a second ramp;
-  plus S9's deferred `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone`, `Done`.
-  `RecordBuf`/`BufWr` are **not** part of it: they write into a pool buffer,
-  which the immutability invariant forbids, so they need their own decision
-  (a mutable-buffer class? a private record buffer handed over on free?) before
-  they can be planned.
+- ✅ **U4 — `Line`/`XLine` and the self-control set** *(done 2026-07-25)* —
+  `Line` and `XLine` assemble `EnvGen`'s input layout in their stack frame
+  rather than growing a second ramp, so they inherit the whole done-action set,
+  the exact landing on the target and the shared `envshape` arithmetic a client
+  draws with. Plus S9's deferred `FreeSelf`, `PauseSelf`, `FreeSelfWhenDone`,
+  `Done`, in `src/dsp/nodectl.rs`. Two findings shaped the result. The **done
+  flag is not the done action**: `Done` exists precisely for an envelope whose
+  `doneAction` is 0, so reading the action would leave it blind, and the flag is
+  not on a wire either (a finished envelope sits at its final level, which is
+  just a number) — hence `UGen::is_done` and an `ExecMode::DoneQuery` that
+  resolves input 0's *identity* the way the demand driver already does, with the
+  compiler rejecting a source that can never finish. And **`PauseSelf` must not
+  latch**, or `/n_run 1` would be useless: the action is recomputed per block.
+  `RecordBuf`/`BufWr` remain out — they write into a pool buffer, which the
+  immutability invariant forbids, and need their own decision first.
+
+  Its prerequisite turned out to be a bug older than the U track: **every UGen
+  now runs at its own sample rate** (scsynth's `unit->mRate->mSampleRate`), not
+  the engine's. `Impulse.kr(10)` fired once a second instead of ten times, and
+  the same factor sat in `Lag.kr`'s convergence time, `Saw.kr`'s pitch and every
+  filter's cutoff at `kr`; `Line.kr` could not have been written correctly on
+  top of it. The control rate is derived from the *slice* rather than from
+  `BLOCK_SIZE`, so a scheduled bundle splitting a block does not make control
+  time run fast. Choosing `kr` now changes a UGen's cost, not its meaning.
 
 - **U5 — Triggers and control** — `src/dsp/trig.rs`: one shared rising-edge
   detector under `Trig`, `Trig1`, `TDelay`, `Latch`, `Gate`, `Schmidt`,

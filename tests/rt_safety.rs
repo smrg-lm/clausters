@@ -1343,3 +1343,63 @@ fn delay_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// The one-segment envelopes and the node-control set (U4). Two claims: `Line`
+/// assembling `EnvGen`'s input layout on every block does it in its stack frame
+/// and not on the heap, and the `DoneQuery` path — the synth reading one UGen's
+/// done flag on behalf of another — adds no allocation to the block either. The
+/// ramp is short enough to finish and re-report inside the run, with
+/// `doneAction` 0 so the node survives to keep being measured.
+#[test]
+fn ramp_and_node_control_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "ramps",
+            "ugens": [
+                {"kind": "Line", "inputs": [{"const": 100.0}, {"const": 900.0},
+                                            {"const": 0.001}, {"const": 0.0}]},
+                {"kind": "XLine", "rate": "kr", "inputs": [{"const": 0.05},
+                                            {"const": 0.4}, {"const": 0.002},
+                                            {"const": 0.0}]},
+                {"kind": "Done", "rate": "kr", "inputs": [{"ugen": 0}]},
+                {"kind": "Saw", "inputs": [{"ugen": 0}]},
+                {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"ugen": 3}, {"ugen": 1}]},
+                {"kind": "BinaryOpUGen", "op": "add", "inputs": [{"ugen": 4}, {"ugen": 2}]},
+                {"kind": "PauseSelf", "inputs": [{"const": -1.0}]},
+                {"kind": "BinaryOpUGen", "op": "mul", "inputs": [{"ugen": 5}, {"ugen": 6}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 7}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

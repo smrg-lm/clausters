@@ -2641,6 +2641,7 @@ fn ugen_info(d: &crate::dsp::registry::UGenDescriptor) -> Vec<OscType> {
                 ExecMode::LocalIn => "local_in",
                 ExecMode::LocalOut => "local_out",
                 ExecMode::DemandDriver => "demand_driver",
+                ExecMode::DoneQuery => "done_query",
                 ExecMode::Spectral => "spectral",
             }
             .into(),

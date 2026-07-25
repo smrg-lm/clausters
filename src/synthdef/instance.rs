@@ -190,6 +190,21 @@ impl SynthNode for UGenSynth {
                         *o = at(signal, j);
                     }
                 }
+                // Done query (U4): `Done`/`FreeSelfWhenDone` read the *done
+                // flag* of the UGen input 0 names — an identity, not a value,
+                // like the demand source below. Topological order puts that
+                // UGen before this one, so the flag is the one it raised this
+                // very slice.
+                ExecMode::DoneQuery => {
+                    let (u_earlier, u_rest) = self.ugens.split_at_mut(i);
+                    let flag = match refs.first() {
+                        // Compile guarantees a wire to a kind with a done flag.
+                        Some(InputRef::Wire(w)) => u_earlier[*w].is_done(),
+                        _ => false,
+                    };
+                    u_rest[0].set_done_flag(flag);
+                    u_rest[0].process(ctx, &inputs[..refs.len()], output);
+                }
                 // Demand driver (S1): pull the next value from its demand
                 // source on each trigger. The source (a `dr` UGen, skipped in
                 // block order) is reached only through the `step` callback, so

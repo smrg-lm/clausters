@@ -230,6 +230,12 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | `LocalIn` | channel | reads synth-private feedback channel `channel` (a constant); see feedback note below |
 | `LocalOut` | channel, signal | writes `signal` into synth-private feedback channel `channel` (a constant); also passes `signal` through as its own output |
 | `EnvGen` | gate, level_scale, level_bias, time_scale, done_action, *envelope array* | breakpoint envelope; gate-driven, with a `done_action` that can free the node — see the envelope note below |
+| `Line` | start, end, dur, done_action | ramps from `start` to `end` over `dur` seconds, then holds; the same `done_action` set as `EnvGen`, which it is built on |
+| `XLine` | start, end, dur, done_action | `Line` in equal ratios instead of equal steps; `start`/`end` must be non-zero and share a sign |
+| `FreeSelf` | signal | passes `signal` through; frees the enclosing synth while it is greater than zero |
+| `PauseSelf` | signal | passes `signal` through; pauses the enclosing synth while it is greater than zero (resume with `/n_run 1`) |
+| `Done` | source | 1 once the ugen wired into `source` has **finished**, 0 before — see the done-flag note below |
+| `FreeSelfWhenDone` | source | passes `source` through and frees the synth once it has finished |
 | `Lag` | signal, time | one-pole smoother: `signal` lagged over `time` seconds (symmetric); `time` 0 passes through; primed to the first input (no glide up from 0) |
 | `VarLag` | signal, up, down | one-pole smoother with separate rise (`up`) and fall (`down`) times |
 | `SampleRate` | — | the engine sample rate in Hz; init-rate (`ir`) by default |
@@ -272,6 +278,12 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | 7 | free this synth and every preceding node in its group | 15 | free this synth and **resume** the following node |
 
 The relative actions (3–13, 15) resolve the node's previous/next sibling and head/tail-of-group from the tree's execution order. Any input can be a signal, so a control can drive the gate or scale the levels/times live. The Python client builds the array with the `Env` breakpoint helper (`Env.adsr`, `Env.perc`, `Env.asr` …, plus `release_node`/`loop_node`) and the `env_gen` callable.
+
+**One-segment envelopes (`Line`/`XLine`).** A ramp from `start` to `end` over `dur` seconds, then held. They are the same envelope engine with the header filled in, so they take the whole `doneAction` set above — `Line(1, 0, 2, 2)` is a two-second fade that frees its synth — and interpolate with the same shared curve math. `XLine` moves in equal *ratios*, which is the shape that reads as straight when it drives a frequency or a gain; a zero endpoint is undefined there, and is nudged to a tiny same-signed value rather than producing a `NaN`. Both run at `kr` as well as `ar`, and a sweep usually belongs at `kr`.
+
+**The done flag (`Done`/`FreeSelfWhenDone`).** A ugen that plays out — an envelope, a ramp — raises a **done flag** when it finishes. That is not the same as its `doneAction` (a ugen with action 0 still raises the flag), and it is not visible on its wire either: an envelope that has ended sits at its final level, which is just a number. These two read the flag of the ugen wired into their `source`, so `source` must name a **ugen**, and one that can finish; the compiler rejects a constant, a control, or a kind that never finishes, naming it. `Done` reports the flag as a 0/1 signal for the rest of the graph to trigger on; `FreeSelfWhenDone` passes the source through and frees the synth — the idiom for an envelope whose own `doneAction` is 0 because something else in the graph still needs it.
+
+**Freeing on a trigger (`FreeSelf`/`PauseSelf`).** The counterpart for when what ends a note is not an envelope: both pass their input through and act while it is greater than zero. Neither latches — the action is reported for the block just processed — which is what makes `PauseSelf` a gate rather than a one-way door: `/n_run 1` really resumes the node, and it re-pauses only if its input is still up.
 
 **Operator UGens (`BinaryOpUGen`/`UnaryOpUGen`).** Rather than a distinct kind per math operation, one generic UGen per arity carries the operator as a static **`op`** field (alongside `kind`/`inputs`) — the operator's **name**. So `{"kind": "BinaryOpUGen", "op": "mul", "inputs": [a, b]}` multiplies. Every operator is one entry in `clausters_core::builtins` — the **same code** the client's value FFI runs off the audio thread — so a value a client computes ahead of time and the UGen on the audio thread are **bit-identical** for the native ops. A missing or unknown `op` fails the def with `/fail` naming the node. The `Add`/`Sub`/`Mul`/`Div` kinds remain as aliases for the `add`/`sub`/`mul`/`div` operators. (Internally each operator also has a stable integer id for the C ABI, but that is an implementation detail — defs and clients only ever use the name.)
 

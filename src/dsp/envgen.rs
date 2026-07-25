@@ -13,7 +13,7 @@
 // The segment interpolation itself (the SC shape curves) lives once in the
 // shared core, so a client drawing an envelope evaluates exactly what this
 // UGen plays.
-use clausters_core::envshape::shape_value;
+use clausters_core::envshape::{SHAPE_EXPONENTIAL, SHAPE_LINEAR, shape_value};
 
 use crate::dsp::{DoneAction, ProcessCtx, UGen, at};
 
@@ -203,5 +203,93 @@ impl UGen for EnvGen {
         } else {
             DoneAction::None
         }
+    }
+
+    fn is_done(&self) -> bool {
+        self.finished
+    }
+}
+
+/// Interpolation of a [`Line`]'s single segment: the two the wire names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LineShape {
+    /// `Line`: equal steps, `start + t·(end − start)`.
+    Linear,
+    /// `XLine`: equal *ratios*, `start·(end/start)^t` — the one that sounds
+    /// like a straight line when what it drives is a frequency or a gain.
+    Exponential,
+}
+
+/// `Line` and `XLine`: a single segment from `start` to `end` over `dur`
+/// seconds, then held, with the full `doneAction` set. Inputs 0 `start`,
+/// 1 `end`, 2 `dur`, 3 `done_action`.
+///
+/// It **is** an [`EnvGen`], with the header and the one segment filled in
+/// rather than a second ramp implementation: same curve arithmetic (the shared
+/// `envshape` a client draws with), same landing exactly on the target, same
+/// done actions — including the relative ones, which scsynth's `Line` also
+/// accepts and which come free here. The wrapper only assembles the input
+/// layout, so it allocates nothing: the constants live in the stack frame and
+/// the caller's slices are passed straight through.
+///
+/// An exponential segment through or to zero is undefined; the shared shape
+/// nudges a zero level to a tiny same-signed one and falls back to linear
+/// across a sign change, so `XLine(0, 1, …)` is a very steep rise rather than
+/// a `NaN`.
+pub struct Line {
+    env: EnvGen,
+    shape: LineShape,
+}
+
+impl Line {
+    pub fn new(shape: LineShape) -> Self {
+        Self {
+            env: EnvGen::new(),
+            shape,
+        }
+    }
+}
+
+impl UGen for Line {
+    fn process(&mut self, ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
+        if inputs.len() < 4 {
+            output.fill(0.0);
+            return;
+        }
+        // The header EnvGen reads (see the layout comment in its `process`),
+        // as the one-segment envelope this is: a gate held open so the ramp
+        // triggers on its first sample and never releases, no level scaling,
+        // and no release/loop node — a `Line` plays straight through.
+        let held = [1.0f32];
+        let zero = [0.0f32];
+        let none = [-1.0f32];
+        let shape = [match self.shape {
+            LineShape::Linear => SHAPE_LINEAR as f32,
+            LineShape::Exponential => SHAPE_EXPONENTIAL as f32,
+        }];
+        let env_inputs: [&[f32]; HEADER_INPUTS + SEGMENT_INPUTS] = [
+            &held,     // 0 gate
+            &held,     // 1 levelScale
+            &zero,     // 2 levelBias
+            &held,     // 3 timeScale
+            inputs[3], // 4 doneAction
+            inputs[0], // 5 initLevel == start
+            &held,     // 6 numSegments
+            &none,     // 7 releaseNode
+            &none,     // 8 loopNode
+            inputs[1], // 9 target == end
+            inputs[2], // 10 duration
+            &shape,    // 11 shape
+            &zero,     // 12 curve (unused by these two shapes)
+        ];
+        self.env.process(ctx, &env_inputs, output);
+    }
+
+    fn done(&self) -> DoneAction {
+        self.env.done()
+    }
+
+    fn is_done(&self) -> bool {
+        self.env.is_done()
     }
 }

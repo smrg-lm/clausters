@@ -2110,3 +2110,50 @@ rates comparable: **choosing `kr` changes a UGen's cost, not its meaning.** A
 time is still in seconds, a frequency still in hertz; what you give up is
 resolution, since nothing above half the control rate (375 Hz at 48 kHz / 64)
 can be represented.
+
+## `Line` is `EnvGen` with its header filled in, and the done flag is not the done action
+
+Two decisions from U4, both about *not* growing a second mechanism.
+
+**`Line`/`XLine` are the segment engine, not a second ramp.** They could have
+been forty lines of `start + t·(end − start)` each. Instead they assemble
+`EnvGen`'s input layout in their stack frame — a gate held open, one segment,
+no release node — and call it. That buys the whole `doneAction` set (including
+the relative ones, which scsynth's `Line` also accepts), the same landing exactly
+on the target, and the same shared `envshape` arithmetic a client draws a curve
+with, so a ramp the editor shows and the ramp the server plays cannot drift.
+What it costs is one indirection per block and an input array on the stack;
+the RT-safety guard covers the claim that this is not a heap allocation.
+
+The wrapper is the `PvMag` pattern once more: one struct, a shape enum, two
+registry rows, and no `Ramp` kind on the wire.
+
+**The done flag is a separate hook from the done action.** `Done(src)` and
+`FreeSelfWhenDone(src)` ask "has that finished?", and the obvious implementation
+— read `src`'s `DoneAction` — is wrong: an envelope with `doneAction` 0 is
+exactly the case these two exist for, and it reports `None` forever. So
+`UGen::is_done` says only that the UGen ran out, and `UGen::done` keeps saying
+what should happen to the node. Two questions, two answers.
+
+**Why watching needs an execution mode.** The flag is not on a wire. An envelope
+that has played out sits at its final level, which may be any number and is
+routinely the number it started at, so no signal-level test can recover it. The
+watcher therefore needs its source's **identity**, not its value — the same need
+the demand driver already has for its source slot — and gets it the same way:
+`ExecMode::DoneQuery` resolves input 0's wire index in the synth, reads that
+UGen's flag and hands it over before `process`. Topological order guarantees the
+source ran first in the same slice.
+
+The alternative was to let a watcher silently read zero when pointed at
+something that never finishes. Instead the descriptor carries `has_done_flag`
+and the compiler rejects the def by name (`Sine has no done flag`). The field
+defaults to false in the descriptor constructor and is set by a one-line wrapper
+on the three rows that have one, so the hundred other rows did not have to be
+touched to add it — the same reason `desc`/`desc_full` were split in the first
+place.
+
+**`FreeSelf`/`PauseSelf` do not latch.** They report their action for the block
+just processed. For `FreeSelf` the difference is unobservable (the node is gone
+either way), but a latched `PauseSelf` would re-pause the instant `/n_run 1`
+resumed the node — making the command useless and turning a gate into a one-way
+door. So the action is recomputed per block rather than remembered.

@@ -338,6 +338,13 @@ def test_ugen_catalog_matches_the_python_callables():
             for p, i in zip(params, u.inputs):
                 if p.default is inspect.Parameter.empty:
                     continue
+                # `None` is a client-side sentinel, not a value: the filter
+                # builders take `rq=None` so that `q=` can be given instead and
+                # the pair resolved together (see `_resonance`). The name
+                # contrast above still covers those slots; only the number is
+                # unavailable here.
+                if p.default is None:
+                    continue
                 # The server's defaults are f32 and arrive widened, so 0.1
                 # comes back as 0.10000000149...: compare at f32 precision.
                 as_f32 = struct.unpack("f", struct.pack("f", float(p.default)))[0]

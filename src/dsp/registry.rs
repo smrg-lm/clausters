@@ -18,13 +18,14 @@ use crate::dsp::delay::{Delay, Feedback, Interp};
 use crate::dsp::demand::{Demand, Dseq};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
-use crate::dsp::envgen::EnvGen;
+use crate::dsp::envgen::{EnvGen, Line, LineShape};
 use crate::dsp::filter::{OneFilter, OneKind, Svf, SvfMode};
 use crate::dsp::fused::{MulAdd, Sum3, Sum4};
 use crate::dsp::impulse::Impulse;
 use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
 use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
+use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
 use crate::dsp::noise::WhiteNoise;
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw};
@@ -36,7 +37,7 @@ use crate::dsp::spectral::{
     PvMagFreeze, PvMagSmear,
 };
 use crate::dsp::unop::UnaryOp;
-use crate::dsp::{Rate, UGen};
+use crate::dsp::{DoneAction, Rate, UGen};
 
 /// Input slot of a demand driver ([`ExecMode::DemandDriver`]) that names its
 /// demand source (after `trig`, `reset`): must be a wire to a demand-rate
@@ -159,6 +160,12 @@ pub enum ExecMode {
     LocalOut,
     /// Pulls its demand source each block (`Demand`); see the `dr` contract.
     DemandDriver,
+    /// Reads the **done flag** of the UGen its first input names, before
+    /// running (`Done`, `FreeSelfWhenDone`, U4). Like [`DemandDriver`](Self::
+    /// DemandDriver) this needs the input's *identity*, not its value, so the
+    /// synth resolves the wire index and the compiler requires a wire there —
+    /// a kind whose descriptor sets `has_done_flag`.
+    DoneQuery,
     /// Runs through [`UGen::process_spectral`] with its synth-private
     /// [`SpectralChain`](crate::dsp::spectral::SpectralChain) (`FFT`/`PV_*`/
     /// `IFFT`, S8). The `spectral` role field says how it uses the chain.
@@ -239,6 +246,12 @@ pub struct UGenDescriptor {
     /// Spectral-chain role (S8): whether this kind opens, transforms or closes
     /// an `FFT` chain. [`SpectralRole::None`] for every non-spectral kind.
     pub spectral: SpectralRole,
+    /// Whether this kind raises a **done flag** when it finishes, i.e. whether
+    /// [`UGen::is_done`](crate::dsp::UGen::is_done) can ever be true for it.
+    /// `Done`/`FreeSelfWhenDone` may only watch a kind that does; the compiler
+    /// rejects the rest by name, since watching a UGen that never finishes
+    /// would read zero for the life of the node with nothing to see.
+    pub has_done_flag: bool,
     /// Builds an instance. Runs on the network thread (allocates); `config`
     /// carries static per-UGen parameters, ignored by most kinds, and `ctx` the
     /// engine facts a kind may need to size that allocation (the sample rate,
@@ -291,6 +304,17 @@ const fn desc_full(
         op_family,
         spectral,
         build,
+        has_done_flag: false,
+    }
+}
+
+/// A kind that raises a done flag when it finishes (the envelope family), so
+/// `Done`/`FreeSelfWhenDone` may watch it. Wraps [`desc`] rather than widening
+/// its argument list, since three rows out of a hundred want this.
+const fn desc_done(d: UGenDescriptor) -> UGenDescriptor {
+    UGenDescriptor {
+        has_done_flag: true,
+        ..d
     }
 }
 
@@ -377,7 +401,7 @@ const fn desc_op(
 
 use Arity::{Fixed, Variadic};
 use BusRole::{Read, ReadWrite, Write};
-use ExecMode::{DemandDriver, LocalIn as ExecLocalIn, LocalOut as ExecLocalOut, Normal};
+use ExecMode::{DemandDriver, DoneQuery, LocalIn as ExecLocalIn, LocalOut as ExecLocalOut, Normal};
 use Rate::{Ar, Dr, Ir, Kr};
 
 // Input signatures shared by several rows. Named in **wire order** and in
@@ -393,6 +417,29 @@ const I_ABC: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("c", 0.0)];
 /// an inlet the UGen ignores.
 const I_LF: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0)];
 const I_LF_WIDTH: &[UGenInput] = &[inp("freq", 440.0), inp("iphase", 0.0), inp("width", 0.5)];
+/// The one-segment envelopes (U4). `done_action` is an input rather than
+/// static config because `EnvGen` already takes it as one, and a def that
+/// re-aims a ramp mid-flight can re-aim what it does at the end too.
+const I_LINE: &[UGenInput] = &[
+    inp("start", 0.0),
+    inp("end", 1.0),
+    inp("dur", 1.0),
+    inp("done_action", 0.0),
+];
+/// `XLine`'s only difference is where it starts: an exponential ramp from zero
+/// is degenerate, so the value a client offers must not be one.
+const I_XLINE: &[UGenInput] = &[
+    inp("start", 0.01),
+    inp("end", 1.0),
+    inp("dur", 1.0),
+    inp("done_action", 0.0),
+];
+/// The node-control rows (U4): `FreeSelf`/`PauseSelf` watch a signal,
+/// `Done`/`FreeSelfWhenDone` watch the UGen wired into `source`. The names
+/// differ because what they read differs — one is a value, the other an
+/// identity.
+const I_SIGNAL: &[UGenInput] = &[inp("signal", 0.0)];
+const I_SOURCE: &[UGenInput] = &[inp("source", 0.0)];
 /// The two-pole rows (U2). The Butterworth pair fixes its own damping and
 /// therefore has no `rq` wire; the resonant ones read it.
 const I_FILT: &[UGenInput] = &[inp("signal", 0.0), inp("freq", 440.0)];
@@ -405,8 +452,13 @@ const I_DELAY_DECAY: &[UGenInput] = &[
     inp("delaytime", 0.2),
     inp("decaytime", 1.0),
 ];
-/// The one-pole family takes a pole coefficient, not a frequency.
+/// The one-pole family takes a pole coefficient, not a frequency. The two
+/// whose job fixes where that pole belongs offer their own value: a DC blocker
+/// and a leaky integrator both want a pole just inside the unit circle, and 0.5
+/// would make one deaf to bass and the other forget almost immediately.
 const I_ONE: &[UGenInput] = &[inp("signal", 0.0), inp("coef", 0.5)];
+const I_LEAK: &[UGenInput] = &[inp("signal", 0.0), inp("coef", 0.995)];
+const I_INTEGRATE: &[UGenInput] = &[inp("signal", 0.0), inp("coef", 0.999)];
 const I_BUS: &[UGenInput] = &[inp("bus", 0.0)];
 const I_BUS_SIGNAL: &[UGenInput] = &[inp("bus", 0.0), inp("signal", 0.0)];
 const I_BUFNUM: &[UGenInput] = &[inp("bufnum", 0.0)];
@@ -665,7 +717,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "LeakDC",
         Fixed(2),
-        I_ONE,
+        I_LEAK,
         Ar,
         R_KR_AR,
         Normal,
@@ -676,7 +728,7 @@ static UGENS: &[UGenDescriptor] = &[
     desc(
         "Integrator",
         Fixed(2),
-        I_ONE,
+        I_INTEGRATE,
         Ar,
         R_KR_AR,
         Normal,
@@ -1203,7 +1255,7 @@ static UGENS: &[UGenDescriptor] = &[
     // --- envelope ---
     // Variadic: the five named slots are the fixed head; the envelope's own
     // breakpoint array follows and is unnamed by nature.
-    desc(
+    desc_done(desc(
         "EnvGen",
         Variadic,
         &[
@@ -1219,6 +1271,80 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(EnvGen::new()),
+    )),
+    // The one-segment envelopes (U4): the same engine with its header filled
+    // in, so they inherit the shape arithmetic and the whole done-action set.
+    // Unlike `EnvGen` they run at either rate — a ramp is the archetypal `kr`
+    // UGen, and a `kr` one costs a block's worth of work per block.
+    desc_done(desc(
+        "Line",
+        Fixed(4),
+        I_LINE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Line::new(LineShape::Linear)),
+    )),
+    desc_done(desc(
+        "XLine",
+        Fixed(4),
+        I_XLINE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Line::new(LineShape::Exponential)),
+    )),
+    // --- node control (U4) ---
+    // These four pass their input through and act on their own node. The first
+    // two read a signal; the last two read another UGen's done flag, which is
+    // why they run in `DoneQuery` rather than `Normal`.
+    desc(
+        "FreeSelf",
+        Fixed(1),
+        I_SIGNAL,
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(SelfControl::new(DoneAction::FreeSelf)),
+    ),
+    desc(
+        "PauseSelf",
+        Fixed(1),
+        I_SIGNAL,
+        Kr,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(SelfControl::new(DoneAction::PauseSelf)),
+    ),
+    desc(
+        "Done",
+        Fixed(1),
+        I_SOURCE,
+        Kr,
+        R_KR_AR,
+        DoneQuery,
+        BusRole::None,
+        false,
+        |_, _| Box::new(WhenDone::new(WhenDoneMode::Report)),
+    ),
+    desc(
+        "FreeSelfWhenDone",
+        Fixed(1),
+        I_SOURCE,
+        Kr,
+        R_KR_AR,
+        DoneQuery,
+        BusRole::None,
+        false,
+        |_, _| Box::new(WhenDone::new(WhenDoneMode::Free)),
     ),
     // --- scalar / init-rate (S1) ---
     desc(

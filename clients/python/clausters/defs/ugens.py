@@ -511,7 +511,7 @@ def resonz(signal, freq=440.0, rq=None, *, q=None) -> Ugen:
     return Ugen("Resonz", [signal, freq, _resonance(rq, q)])
 
 
-def svf(signal, freq=440.0, rq=None, low=0.0, band=0.0, high=0.0, *,
+def svf(signal, freq=440.0, rq=None, low=1.0, band=0.0, high=0.0, *,
         q=None) -> Ugen:
     """The state-variable filter with its three tap gains as **signal inputs**,
     so the response itself can be modulated.
@@ -1300,6 +1300,57 @@ def env_gen(
     the envelope finishes (see `DoneAction`)."""
     fixed = [gate, level_scale, level_bias, time_scale, float(done_action)]
     return Ugen("EnvGen", fixed + env.to_inputs())
+
+
+def line(start=0.0, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
+    """A single ramp from ``start`` to ``end`` over ``dur`` seconds, then held.
+
+    It is an `env_gen` with one linear segment, so it takes the same
+    `DoneAction` set — ``line(1, 0, 2, DoneAction.FREE_SELF)`` is a two-second
+    fade that frees its synth. Cheap at ``rate="kr"``, which is where a sweep
+    usually belongs."""
+    return Ugen("Line", [start, end, dur, float(done_action)])
+
+
+def x_line(start=0.01, end=1.0, dur=1.0, done_action=DoneAction.NONE) -> Ugen:
+    """`line` in equal *ratios* rather than equal steps — the shape that reads
+    as straight when it drives a frequency or a gain.
+
+    ``start`` and ``end`` must be non-zero and share a sign; a zero is nudged to
+    a tiny value of the same sign rather than producing a ``NaN``."""
+    return Ugen("XLine", [start, end, dur, float(done_action)])
+
+
+def free_self(signal) -> Ugen:
+    """Frees the enclosing synth while ``signal`` is greater than zero, passing
+    it through unchanged. The trigger-driven counterpart of a `DoneAction` —
+    use it when what ends the note is not the envelope."""
+    return Ugen("FreeSelf", [signal])
+
+
+def pause_self(signal) -> Ugen:
+    """Pauses the enclosing synth while ``signal`` is greater than zero, passing
+    it through. Resume with `Server.run`; it re-pauses only if the signal is
+    still up, so this is a gate rather than a one-way door."""
+    return Ugen("PauseSelf", [signal])
+
+
+def done(source) -> Ugen:
+    """1 once ``source`` has finished, 0 before — a trigger the rest of the
+    graph can read.
+
+    ``source`` must be a ugen that *can* finish (`env_gen`, `line`, `x_line`);
+    the server rejects the def by name otherwise. What it reads is the done
+    flag, not the value on the wire: an envelope that has played out sits at
+    its final level, which tells you nothing."""
+    return Ugen("Done", [source])
+
+
+def free_self_when_done(source) -> Ugen:
+    """Passes ``source`` through and frees the synth once it has finished. The
+    idiom for an envelope whose own ``done_action`` is `DoneAction.NONE`
+    because something else in the graph still needs it."""
+    return Ugen("FreeSelfWhenDone", [source])
 
 
 # ---- break-point <-> Env mapping (shared by the bpf widget and automation) ----

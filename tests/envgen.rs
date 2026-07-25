@@ -516,3 +516,267 @@ fn n_run_pauses_and_resumes_a_whole_group() {
     assert!(out.iter().any(|s| (*s - 0.5).abs() < 1e-6), "resumed group");
     assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
 }
+
+// ---- Line / XLine: the one-segment envelopes (U4) ----
+
+/// A `Line` (or `XLine`) written to bus 0, at the given rate. `done_action` is
+/// an input like `EnvGen`'s.
+fn line_spec(kind: &str, rate: &str, start: f64, end: f64, dur: f64, done_action: f64) -> Value {
+    json!({
+        "name": "line",
+        "ugens": [
+            {"kind": kind, "rate": rate, "inputs": [
+                {"const": start}, {"const": end},
+                {"const": dur}, {"const": done_action}
+            ]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+}
+
+#[test]
+fn line_ramps_over_its_duration_then_holds_the_end() {
+    // The same assertion as the linear EnvGen segment above, which is the
+    // point: this *is* that segment, with the header filled in.
+    let (mut engine, _handle) = spawn(line_spec("Line", "ar", 0.0, 1.0, secs(64), 0.0));
+    let out = render(&mut engine, 2);
+    for (i, s) in out[..BLOCK_SIZE].iter().enumerate() {
+        let want = i as f32 / 64.0;
+        assert!((*s - want).abs() < 1e-6, "ramp sample {i}: {s} != {want}");
+    }
+    for s in &out[BLOCK_SIZE..] {
+        assert!((*s - 1.0).abs() < 1e-6, "hold: {s} != 1.0");
+    }
+}
+
+#[test]
+fn xline_moves_by_a_constant_ratio() {
+    // What makes the exponential one worth a separate name: equal *ratios*
+    // per sample, so it reads as a straight line to the ear driving a pitch.
+    let (mut engine, _handle) = spawn(line_spec("XLine", "ar", 0.01, 1.0, secs(64), 0.0));
+    let out = render(&mut engine, 1);
+    assert!((out[0] - 0.01).abs() < 1e-6, "start: {}", out[0]);
+    let ratio = 100f32.powf(1.0 / 64.0);
+    for i in 1..BLOCK_SIZE - 1 {
+        let r = out[i + 1] / out[i];
+        assert!((r - ratio).abs() < 1e-4, "ratio at {i}: {r} != {ratio}");
+    }
+}
+
+#[test]
+fn a_control_rate_line_takes_the_same_wall_clock_time() {
+    // The ramp lasts four blocks. At kr it advances one step per block, and
+    // "one step" has to mean a whole block of time — the test that fails by a
+    // factor of BLOCK_SIZE if a UGen reads the engine's rate instead of its
+    // own (see the calculation-rate note in docs/decisions.md).
+    let dur = secs(4 * BLOCK_SIZE);
+    let (mut engine, _handle) = spawn(line_spec("Line", "kr", 0.0, 1.0, dur, 0.0));
+    let out = render(&mut engine, 6);
+    // Block b (0-based) holds the value at its start: b/4.
+    for b in 0..4 {
+        let want = b as f32 / 4.0;
+        let got = out[b * BLOCK_SIZE];
+        assert!((got - want).abs() < 1e-6, "kr block {b}: {got} != {want}");
+    }
+    for b in 4..6 {
+        let got = out[b * BLOCK_SIZE];
+        assert!(
+            (got - 1.0).abs() < 1e-6,
+            "kr block {b} should hold 1.0: {got}"
+        );
+    }
+}
+
+#[test]
+fn line_carries_the_whole_done_action_set() {
+    // doneAction 2 (freeSelf) through the same path EnvGen uses — the reason
+    // Line is built on the segment engine rather than beside it.
+    let (mut engine, handle) = spawn(line_spec("Line", "ar", 0.0, 1.0, secs(64), 2.0));
+    render(&mut engine, 1);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        1,
+        "alive during the ramp"
+    );
+    render(&mut engine, 2);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        0,
+        "freed when the ramp ended"
+    );
+}
+
+// ---- FreeSelf / PauseSelf / Done / FreeSelfWhenDone (U4) ----
+
+/// A node-control UGen fed by control 0, its output written to bus 0 so the
+/// pass-through is observable.
+fn nodectl_spec(kind: &str) -> Value {
+    json!({
+        "name": "ctl",
+        "controls": [{"name": "trig", "default": 0.0}],
+        "ugens": [
+            {"kind": kind, "rate": "ar", "inputs": [{"control": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    })
+}
+
+fn set(handle: &mut EngineHandle, value: f32) {
+    handle
+        .send(Cmd::SetControl {
+            id: 1000,
+            index: 0,
+            value,
+        })
+        .ok()
+        .unwrap();
+}
+
+#[test]
+fn free_self_passes_its_input_through_until_it_goes_positive() {
+    let (mut engine, mut handle) = spawn(nodectl_spec("FreeSelf"));
+    set(&mut handle, -0.25);
+    let out = render(&mut engine, 2);
+    assert!(
+        out.iter().all(|s| (*s + 0.25).abs() < 1e-6),
+        "an input that is not yet positive passes through untouched"
+    );
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
+
+    set(&mut handle, 1.0);
+    render(&mut engine, 2);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        0,
+        "freed once the input went positive"
+    );
+}
+
+#[test]
+fn pause_self_does_not_latch_so_n_run_really_resumes() {
+    // The property the implementation is shaped around: the action is reported
+    // for the block just processed, never remembered. A latched one would
+    // re-pause the instant /n_run 1 resumed the node, making the command
+    // useless and PauseSelf a one-way door.
+    let (mut engine, mut handle) = spawn(nodectl_spec("PauseSelf"));
+    set(&mut handle, 1.0);
+    let out = render(&mut engine, 2);
+    assert!(
+        out[..BLOCK_SIZE].iter().all(|s| (*s - 1.0).abs() < 1e-6),
+        "the pausing block still runs and still passes through"
+    );
+    assert!(
+        out[BLOCK_SIZE..].iter().all(|s| s.abs() < 1e-6),
+        "paused from the next block on"
+    );
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1, "alive");
+
+    // Drop the input first, then resume: it must stay running.
+    set(&mut handle, 0.0);
+    handle
+        .send(Cmd::RunNode {
+            id: 1000,
+            run: true,
+        })
+        .ok()
+        .unwrap();
+    let out = render(&mut engine, 2);
+    assert!(
+        out.iter().all(|s| s.abs() < 1e-6),
+        "resumed and passing through its now-zero input"
+    );
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        1,
+        "still alive, still running"
+    );
+
+    // Raise it again and it pauses again — a gate, not a one-shot.
+    set(&mut handle, 1.0);
+    let out = render(&mut engine, 3);
+    assert!(
+        out[BLOCK_SIZE..].iter().all(|s| s.abs() < 1e-6),
+        "re-paused while the input is up"
+    );
+}
+
+/// A ramp with `doneAction` 0 (it frees nothing itself) watched by `kind`.
+fn watcher_spec(kind: &str, dur: f64) -> Value {
+    json!({
+        "name": "watch",
+        "ugens": [
+            {"kind": "Line", "inputs": [
+                {"const": 0.0}, {"const": 1.0}, {"const": dur}, {"const": 0.0}
+            ]},
+            {"kind": kind, "rate": "ar", "inputs": [{"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    })
+}
+
+#[test]
+fn done_reports_the_flag_of_the_ugen_it_watches() {
+    // The flag is not the watched signal: this ramp ends at 1.0 and Done also
+    // reads 1.0, so the test uses the *timing* to tell them apart — the ramp
+    // holds 1.0 only from the sample after it lands, while Done is 0 for the
+    // whole first block and 1 from the second.
+    let (mut engine, _handle) = spawn(watcher_spec("Done", secs(64)));
+    let out = render(&mut engine, 3);
+    assert!(
+        out[..BLOCK_SIZE].iter().all(|s| s.abs() < 1e-6),
+        "not done while the ramp is running"
+    );
+    assert!(
+        out[BLOCK_SIZE..].iter().all(|s| (*s - 1.0).abs() < 1e-6),
+        "done from the block the ramp finished in"
+    );
+}
+
+#[test]
+fn free_self_when_done_frees_on_a_ramp_that_frees_nothing() {
+    // The idiom it exists for: the envelope's own doneAction is 0 because
+    // something else in the graph still needs it, and the freeing is a
+    // separate decision.
+    let (mut engine, handle) = spawn(watcher_spec("FreeSelfWhenDone", secs(64)));
+    let out = render(&mut engine, 1);
+    assert!(
+        out.iter().any(|s| *s > 0.4),
+        "it passes the watched ramp through"
+    );
+    assert_eq!(handle.counters().synths.load(Ordering::Relaxed), 1);
+    render(&mut engine, 2);
+    assert_eq!(
+        handle.counters().synths.load(Ordering::Relaxed),
+        0,
+        "freed once the ramp finished"
+    );
+}
+
+#[test]
+fn a_watcher_rejects_a_source_that_never_finishes() {
+    // Reading a wire that has no done flag would be zero for the node's whole
+    // life with nothing to see, so the compiler names it instead.
+    let spec = json!({
+        "name": "bad",
+        "ugens": [
+            {"kind": "Sine", "inputs": [{"const": 440.0}]},
+            {"kind": "Done", "rate": "ar", "inputs": [{"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]
+    });
+    let err = compile(serde_json::from_value::<SynthDefSpec>(spec).unwrap()).unwrap_err();
+    assert!(err.contains("Sine has no done flag"), "{err}");
+}
+
+#[test]
+fn a_watcher_rejects_a_constant_source() {
+    let spec = json!({
+        "name": "bad",
+        "ugens": [
+            {"kind": "FreeSelfWhenDone", "rate": "ar", "inputs": [{"const": 1.0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+        ]
+    });
+    let err = compile(serde_json::from_value::<SynthDefSpec>(spec).unwrap()).unwrap_err();
+    assert!(err.contains("must be another UGen"), "{err}");
+}
