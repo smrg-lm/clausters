@@ -1,6 +1,6 @@
 ---
 name: feature-matrix
-description: Run the fmt + clippy checks CI does not cover — the def-family feature matrix (synth/faust/neither), the workspace and the GUI host. Consult before committing any change to feature-gated code, or whenever clippy needs to be verified clean across the whole matrix.
+description: Run the fmt + clippy + rustdoc checks CI does not cover — the def-family feature matrix (synth/faust/neither), the workspace, the GUI host and the doc build's own lints (broken intra-doc links). Consult before committing any change to feature-gated code or to doc comments, or whenever clippy or rustdoc needs to be verified clean across the whole matrix.
 ---
 
 # The feature matrix CI does not run
@@ -14,6 +14,11 @@ def-family matrix. So a warning (or an error) that appears only under
 That matters because `synth` and `faust` are peers, either can ship alone, and
 the code is full of `#[cfg(feature = ...)]` seams where an import, a helper or a
 match arm goes unused as soon as one family is switched off.
+
+CI never builds the **docs** either, in any configuration. `cargo doc` is its
+own lint pass — clippy says nothing about a `[`link`]` to an item that was
+renamed, moved or made private — so those warnings accumulated unwatched until
+the doc build was added here.
 
 Two standing rules from CLAUDE.md apply to whatever this reports:
 
@@ -52,9 +57,10 @@ It runs every configuration even when an earlier one fails, then prints a
 pass/fail table and exits non-zero if anything failed. Expect a few minutes on a
 cold `target/` — each feature combination is a distinct build.
 
-One option: `--fast` skips `cargo fmt` and the two default-feature
-configurations (the ones CI already covers), leaving only the three CI never
-sees. Use when you have just run the ordinary clippy by hand.
+One option: `--fast` skips `cargo fmt` and the two default-feature clippy
+configurations (the ones CI already covers), leaving what CI never sees — the
+def-family matrix, the `verovio` build and both doc builds. Use when you have
+just run the ordinary clippy by hand.
 
 **The script only reads.** It never writes to the working tree — it is the gate
 that decides whether the code is committable, and a gate that edits what it is
@@ -75,11 +81,14 @@ under one set of `cfg`s is not always right under another.
 | 5 | `cargo clippy --all-targets --no-default-features --features synth` | **no** |
 | 6 | `cargo clippy --all-targets --no-default-features --features faust` | **no** |
 | 7 | `cargo clippy -p clausters-ffi --features verovio --all-targets` | **no** |
-| 8 | `cargo clippy --workspace --all-targets` | yes |
-| 9 | `cargo clippy --all-targets` in `clients/gui` | yes |
+| 8 | `cargo doc --no-deps --workspace` | **no** |
+| 9 | `cargo doc --no-deps --document-private-items` in `clients/gui` | **no** |
+| 10 | `cargo clippy --workspace --all-targets` | yes |
+| 11 | `cargo clippy --all-targets` in `clients/gui` | yes |
 
-Every clippy line runs with `-- -D warnings`, matching CI, so a warning is a
-failure rather than something to scroll past.
+Every clippy line runs with `-- -D warnings` and every doc line with
+`RUSTDOCFLAGS=-D warnings`, matching CI's bar, so a warning is a failure rather
+than something to scroll past.
 
 Configuration 4 is also the build that must stay green **without libfaust
 installed at all** — the core has to compile and test with no LLVM-backed
@@ -90,6 +99,24 @@ default, so CI's `--workspace` run never enables it and the notation layer it
 pulls in is linted by nothing. It needs no libverovio present — clippy checks
 and never links — so it lints the code under the feature's `cfg`s, not the
 library's presence.
+
+Configurations 8 and 9 are the doc build, and they are the one place this
+script does **not** walk the feature matrix: both run at the default feature
+set. The rustdoc a reader ever sees is built from default features (docs.rs
+included), and a few module docs link across a feature seam on purpose —
+`dsp::denormals` naming `server::backend`, `server::defstore` naming
+`faust::cache::FaustRecord`. Those links are right in the build that publishes
+them and unresolvable in a build that compiles the target away; chasing them
+out would cost the published docs real links to satisfy a doc build nobody
+reads. So a `cargo doc --no-default-features` still reports a handful of
+unresolved links, knowingly.
+
+The GUI host is documented with `--document-private-items` because that is how
+its docs are read: it is the internal host crate, most of it private, and its
+module docs name the private function that does the work (`frame`'s `render`,
+`widget`'s `build`/`apply`). Its crate root turns
+`rustdoc::private_intra_doc_links` off for the same reason — `broken_intra_doc_links`,
+the one that catches a link to something that does not exist at all, stays on.
 
 ## What it does not cover
 

@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# The fmt + clippy matrix from CLAUDE.md's commit workflow, in one command.
+# The fmt + clippy + rustdoc matrix from CLAUDE.md's commit workflow, in one
+# command.
 #
 # CI lints the default build set and the GUI host, but never the def-family
 # matrix: a warning that only appears under --no-default-features, or under
 # `synth` or `faust` alone, passes CI. Those three configurations are the whole
 # reason this script exists; the rest are here so one run answers "is the tree
 # committable?" without a second pass.
+#
+# CI never runs rustdoc either, in any configuration, so the doc build's own
+# lints (broken intra-doc links above all) were watched by nothing until they
+# were added here.
 #
 # It only ever reads. Nothing here writes to your working tree: this is the gate
 # that says whether the code is committable, and a gate that edits the thing it
@@ -19,7 +24,7 @@
 #
 # Usage:
 #   check.sh          # everything
-#   check.sh --fast   # only the three configurations CI does not cover
+#   check.sh --fast   # only the configurations CI does not cover
 set -uo pipefail
 
 root="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -66,6 +71,12 @@ clippy() {
     run "$label" cargo clippy "$@" -- -D warnings
 }
 
+doc() {
+    local label="$1"
+    shift
+    run "$label" env RUSTDOCFLAGS="-D warnings" "$@"
+}
+
 # --- Covered by CI, run unless --fast ----------------------------------------
 
 if [ "$fast" = 0 ]; then
@@ -90,6 +101,29 @@ clippy "clippy: faust alone" --all-targets --no-default-features --features faus
 # that the library is actually installed is a different question, and the one
 # `third_party/build-verovio.sh` answers.
 clippy "clippy: ffi with verovio" -p clausters-ffi --features verovio --all-targets
+
+# --- The other gap: rustdoc --------------------------------------------------
+#
+# CI never builds the docs, so a broken intra-doc link -- a link to an item that
+# was renamed, moved or made private -- lands silently and stays. The doc build
+# is its own lint pass: `cargo clippy` says nothing about it.
+#
+# Both runs are at the **default** feature set, deliberately, and that is the
+# one place this script does not walk the matrix. The rustdoc a reader ever sees
+# is built from default features (docs.rs included), and several module docs
+# link across a feature seam on purpose -- `denormals` naming
+# `server::backend`, `defstore` naming `faust::cache::FaustRecord`. Those links
+# are right in the build that publishes them and unresolvable in a build that
+# compiles the target away; chasing them out would cost the published docs real
+# links to satisfy a doc build nobody reads.
+#
+# The GUI host adds `--document-private-items` because that is how its docs are
+# read: it is the internal host crate, most of it private, and its module docs
+# name the private function that does the work. Documenting them means a link
+# into that machinery is checked rather than quietly rendered as text.
+doc "rustdoc: workspace" cargo doc --no-deps --workspace
+doc "rustdoc: gui host" \
+    env -C clients/gui cargo doc --no-deps --document-private-items
 
 # --- Covered by CI, run unless --fast ----------------------------------------
 

@@ -172,8 +172,11 @@ separate from the feature, so the feature's diff stays readable.
 
 Note CI lints `--workspace --all-targets` and the GUI crate, but **not** the
 def-family feature matrix — a warning that only appears under
-`--no-default-features` (or under one family alone) will not be caught there.
-Run the matrix locally when the change touches feature-gated code:
+`--no-default-features` (or under one family alone) will not be caught there —
+and it never builds the **docs** at all, so rustdoc's own lints (a `[`link`]`
+to an item that was renamed, moved or made private) are caught nowhere but
+here. Run the matrix locally when the change touches feature-gated code or doc
+comments (`.claude/skills/feature-matrix/check.sh` runs all of it in one go):
 
 ```sh
 cargo fmt --check
@@ -183,7 +186,14 @@ cargo clippy --all-targets --no-default-features --features synth
 cargo clippy --all-targets --no-default-features --features faust
 cargo clippy --workspace --all-targets                      # core, ffi, midi
 (cd clients/gui && cargo clippy --all-targets)              # the GUI host
+RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace  # the doc build
+(cd clients/gui && RUSTDOCFLAGS='-D warnings' \
+    cargo doc --no-deps --document-private-items)
 ```
+
+The two doc lines run at the **default** feature set on purpose: the rustdoc
+anyone reads is built from default features, and a few module docs link across
+a feature seam deliberately (see the feature-matrix skill).
 
 ## Versioning: SemVer of the package vs. the binary ABI counters
 
