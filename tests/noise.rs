@@ -6,6 +6,15 @@
 //! `BrownNoise` are separate kinds), the mean and variance, the mean density of
 //! an impulse source, and — for every generator — bit-exact reproducibility
 //! from a seed, which is what lets a noisy patch have a golden file at all.
+//!
+//! **Rule 5 lives here rather than in the shared table**, which is the one
+//! place these rows differ from every other family. Splitting a block means
+//! comparing two renders, and through the def path that means two instances,
+//! each of which draws its own seed on purpose — correlated noise summed with
+//! itself is a comb filter — while the wire has no seed input to pin. So the
+//! table refuses these, and `every_generator_is_unmoved_by_a_block_split`
+//! below discharges the rule one level down, against `with_seed` constructors,
+//! where the comparison is exact.
 
 #![cfg(feature = "synth")]
 
@@ -324,17 +333,42 @@ fn dust_fires_at_its_mean_density_with_random_amplitudes() {
             "Dust is unipolar in [0, 1)"
         );
     }
-    // ...and Dust2 straddles zero.
-    let x = run(
-        &mut Dust::with_seed(DustMode::Bipolar, 8),
-        &[&[200.0]],
-        48_000,
-    );
-    assert!(x.iter().any(|v| *v < 0.0), "Dust2 fires both ways");
-    assert!(
-        x.iter().all(|v| (-1.0..1.0).contains(v)),
-        "and stays in range"
-    );
+}
+
+#[test]
+fn dust2_fires_both_ways_at_the_same_mean_density() {
+    // The bipolar sibling had been checked only for having some negative
+    // samples, riding on `Dust`'s density measurement. It is the same Poisson
+    // process, so it owes the same figure — and the sign has to be a fair coin
+    // on top of it, which is the part that "some are negative" does not say.
+    for density in [10.0f32, 200.0] {
+        let x = run(
+            &mut Dust::with_seed(DustMode::Bipolar, 8),
+            &[&[density]],
+            48_000 * 4,
+        );
+        let hits: Vec<f32> = x.iter().copied().filter(|v| *v != 0.0).collect();
+        let rate = hits.len() as f32 / 4.0;
+        let sigma = (4.0 * density).sqrt() / 4.0;
+        println!("Dust2({density}): {rate:.1} impulses/second (sigma {sigma:.2})");
+        assert!(
+            (rate - density).abs() < 4.0 * sigma,
+            "{rate} impulses/second against a density of {density}"
+        );
+        assert!(
+            x.iter().all(|v| (-1.0..1.0).contains(v)),
+            "Dust2 is bipolar in [-1, 1)"
+        );
+        // Fair: over `n` impulses the count of negative ones is binomial, so
+        // its standard error is sqrt(n)/2. Four of those.
+        let down = hits.iter().filter(|v| **v < 0.0).count() as f32;
+        let (half, se) = (hits.len() as f32 / 2.0, (hits.len() as f32).sqrt() / 2.0);
+        assert!(
+            (down - half).abs() < 4.0 * se,
+            "{down} of {} impulses fired downward, expected about {half}",
+            hits.len()
+        );
+    }
 }
 
 #[test]
@@ -411,46 +445,196 @@ fn crackle_is_deterministic_bounded_and_carries_dc() {
 fn every_generator_replays_exactly_from_its_seed() {
     // The rule a golden file for a noisy patch depends on. `Crackle` has no
     // seed because it has no RNG; it is covered above.
+    // The constructor is taken as a closure over the seed, so each kind can be
+    // built twice from the same one and once from another: reproducibility and
+    // "the seed is actually read" are different claims, and a generator that
+    // ignored its seed entirely would satisfy the first alone.
     macro_rules! same {
         ($what:expr, $make:expr, $inputs:expr) => {{
-            let a = run(&mut $make, $inputs, 4096);
-            let b = run(&mut $make, $inputs, 4096);
+            let mk = $make;
+            let a = run(&mut mk(42), $inputs, 4096);
+            let b = run(&mut mk(42), $inputs, 4096);
             assert_eq!(a, b, "{} is not reproducible from its seed", $what);
-            // And a different seed is a different stream — a generator that
-            // ignored its seed would pass the test above.
-            assert_ne!(a.len(), 0);
+            let c = run(&mut mk(43), $inputs, 4096);
+            assert_ne!(a, c, "{} gives the same stream for two seeds", $what);
         }};
     }
-    same!("WhiteNoise", WhiteNoise::with_seed(42), &[]);
-    same!("PinkNoise", PinkNoise::with_seed(42), &[]);
-    same!("BrownNoise", BrownNoise::with_seed(42), &[]);
-    same!("GrayNoise", GrayNoise::with_seed(42), &[]);
-    same!("ClipNoise", ClipNoise::with_seed(42), &[]);
+    same!("WhiteNoise", WhiteNoise::with_seed, &[]);
+    same!("PinkNoise", PinkNoise::with_seed, &[]);
+    same!("BrownNoise", BrownNoise::with_seed, &[]);
+    same!("GrayNoise", GrayNoise::with_seed, &[]);
+    same!("ClipNoise", ClipNoise::with_seed, &[]);
     same!(
         "LFNoise0",
-        LfNoise::with_seed(LfNoiseShape::Step, 42),
+        |s| LfNoise::with_seed(LfNoiseShape::Step, s),
         &[&[300.0]]
     );
     same!(
         "LFNoise1",
-        LfNoise::with_seed(LfNoiseShape::Linear, 42),
+        |s| LfNoise::with_seed(LfNoiseShape::Linear, s),
         &[&[300.0]]
     );
     same!(
         "LFNoise2",
-        LfNoise::with_seed(LfNoiseShape::Quadratic, 42),
+        |s| LfNoise::with_seed(LfNoiseShape::Quadratic, s),
         &[&[300.0]]
     );
     same!(
         "LFClipNoise",
-        LfNoise::with_seed(LfNoiseShape::Clip, 42),
+        |s| LfNoise::with_seed(LfNoiseShape::Clip, s),
         &[&[300.0]]
     );
-    same!("Dust", Dust::with_seed(DustMode::Unipolar, 42), &[&[500.0]]);
+    same!(
+        "Dust",
+        |s| Dust::with_seed(DustMode::Unipolar, s),
+        &[&[500.0]]
+    );
+    same!(
+        "Dust2",
+        |s| Dust::with_seed(DustMode::Bipolar, s),
+        &[&[500.0]]
+    );
+}
 
-    let a = run(&mut PinkNoise::with_seed(1), &[], 4096);
-    let b = run(&mut PinkNoise::with_seed(2), &[], 4096);
-    assert_ne!(a, b, "two seeds must give two streams");
+// ---- rule 5, one level down ----
+
+/// Renders `n` samples the way [`run`] does, but cutting every block at `at`:
+/// two `process` calls over the two halves of the output slice, which is what
+/// the synth does when a scheduled bundle splits a block.
+///
+/// Only valid for constant inputs — a signal input would need its own slice
+/// per call — and every generator here takes constants.
+fn run_split(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize, at: usize) -> Vec<f32> {
+    let buses = Buses::new(ControlBuses::new(16), 8);
+    let mut out = vec![0.0f32; n];
+    for chunk in out.chunks_mut(BLOCK_SIZE) {
+        let cut = at.min(chunk.len());
+        let (head, tail) = chunk.split_at_mut(cut);
+        for (offset, part) in [(0, head), (cut, tail)] {
+            if part.is_empty() {
+                continue;
+            }
+            let mut ctx = ProcessCtx {
+                sample_rate: SR,
+                full_sample_rate: SR,
+                buses: &buses,
+                buffers: &[],
+                offset,
+                frames: part.len(),
+            };
+            ugen.process(&mut ctx, inputs, part);
+        }
+    }
+    out
+}
+
+#[test]
+fn every_generator_is_unmoved_by_a_block_split() {
+    // Rule 5 for the stochastic sources, and the reason it is here rather than
+    // in the shared table: comparing two renders means comparing two
+    // instances, and through the def path each one draws its own seed on
+    // purpose (correlated noise summed with itself is a comb filter), while
+    // the wire has no seed input to pin. One level down the stream *is*
+    // pinned, so the comparison is exact -- not a tolerance, equality.
+    //
+    // What would fail here and nowhere else: a generator that refilled a
+    // buffer per `process` call rather than per sample, or one holding a
+    // countdown in samples-until-next-block.
+    macro_rules! unmoved {
+        ($what:expr, $make:expr, $inputs:expr) => {{
+            let n = BLOCK_SIZE * 32;
+            let whole = run(&mut $make, $inputs, n);
+            let split = run_split(&mut $make, $inputs, n, 23);
+            assert_eq!(whole, split, "{} differs when the block is cut", $what);
+        }};
+    }
+    unmoved!("WhiteNoise", WhiteNoise::with_seed(7), &[]);
+    unmoved!("PinkNoise", PinkNoise::with_seed(7), &[]);
+    unmoved!("BrownNoise", BrownNoise::with_seed(7), &[]);
+    unmoved!("GrayNoise", GrayNoise::with_seed(7), &[]);
+    unmoved!("ClipNoise", ClipNoise::with_seed(7), &[]);
+    unmoved!(
+        "LFNoise0",
+        LfNoise::with_seed(LfNoiseShape::Step, 7),
+        &[&[300.0]]
+    );
+    unmoved!(
+        "LFNoise1",
+        LfNoise::with_seed(LfNoiseShape::Linear, 7),
+        &[&[300.0]]
+    );
+    unmoved!(
+        "LFNoise2",
+        LfNoise::with_seed(LfNoiseShape::Quadratic, 7),
+        &[&[300.0]]
+    );
+    unmoved!(
+        "LFClipNoise",
+        LfNoise::with_seed(LfNoiseShape::Clip, 7),
+        &[&[300.0]]
+    );
+    unmoved!("Dust", Dust::with_seed(DustMode::Unipolar, 7), &[&[500.0]]);
+    unmoved!("Dust2", Dust::with_seed(DustMode::Bipolar, 7), &[&[500.0]]);
+    unmoved!("Crackle", Crackle::default(), &[&[1.5]]);
+}
+
+// ---- rule 4: the long run ----
+
+#[test]
+fn the_slow_generators_stay_bounded_over_ten_seconds() {
+    // `LFNoise2` overshoots its range by construction -- it aims at the
+    // midpoint between two draws and carries its slope through, so it can
+    // swing past either. The question a long run answers is whether that
+    // overshoot is *bounded* or whether it grows.
+    //
+    // Compared **half against half of one run**, not one second against ten.
+    // The tempting version of this test is the wrong one: at 5 Hz a second
+    // holds five segments and ten seconds hold fifty, so the longer window
+    // peaks higher for having drawn more, which says nothing about the bound.
+    // Two halves of the same run hold the same number of draws.
+    for hz in [5.0f32, 100.0, 2000.0] {
+        let n = 48_000 * 10;
+        let x = run(
+            &mut LfNoise::with_seed(LfNoiseShape::Quadratic, 3),
+            &[&[hz]],
+            n,
+        );
+        assert_finite(&x, "LFNoise2 over ten seconds");
+        let (first, second) = (peak(&x[..n / 2]), peak(&x[n / 2..]));
+        println!("LFNoise2({hz}): peak {first:.4} then {second:.4} over 10 s");
+        // The construction allows +/-1.7. What it actually reaches over ten
+        // seconds is less: 1.22 at 5 Hz, 1.21 at 100, 1.09 at 2 kHz -- the
+        // worst case needs two extreme draws in a row and does not come up.
+        // The bound asserted is the construction's, since that is the claim
+        // the documentation makes.
+        assert!(
+            peak(&x) < 1.7,
+            "LFNoise2 at {hz} Hz peaks at {} over ten seconds",
+            peak(&x)
+        );
+        assert!(
+            (second - first).abs() < 0.3,
+            "LFNoise2 at {hz} Hz: peak {first} in the first half, {second} in \
+             the second -- the overshoot is trending, not bounded"
+        );
+    }
+
+    // `Crackle` is a chaotic map with no RNG, so the risk is the other one: a
+    // map that leaves its attractor lands on a rail or on a NaN, and only a
+    // long run gets far enough in to find out.
+    for chaos in [1.0f32, 1.5, 1.9] {
+        let x = run(&mut Crackle::default(), &[&[chaos]], 48_000 * 10);
+        assert_finite(&x, "Crackle over ten seconds");
+        let p = peak(&x);
+        assert!(p <= 2.0, "Crackle at chaos {chaos} reached {p}");
+        // And it is still moving: a map that collapsed to a fixed point would
+        // be finite and in range, and dead.
+        let tail = &x[x.len() - 48_000..];
+        assert!(
+            rms(tail) > 0.01,
+            "Crackle at chaos {chaos} went quiet by the tenth second"
+        );
+    }
 }
 
 #[test]
