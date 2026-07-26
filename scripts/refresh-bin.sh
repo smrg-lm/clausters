@@ -2,12 +2,12 @@
 # Refresh the Python package's bundled native binaries, then (optionally) run
 # an example — the one command to type before any manual/visual test.
 #
-# In this source checkout the package is installed editable, so the *bundled*
-# binaries (clausters/_bin/, _libs/) win over the workspace target/ and go
-# stale the moment a crate is rebuilt. This wraps the staging machinery that
-# already knows the whole recipe (clients/python/build_native.py: server +
-# FFI + GUI host + the faust libs) and then runs whatever you give it with
-# the repo's .venv Python, no activation needed.
+# A source checkout resolves the *bundled* binaries (clausters/_bin/, _libs/)
+# before the workspace target/, so they go stale the moment a crate is rebuilt
+# and a manual test silently exercises pre-change binaries. This wraps the
+# staging machinery that already knows the whole recipe
+# (clients/python/build_native.py: server + FFI + GUI host + the faust and
+# verovio libs) and then runs whatever you give it, no activation needed.
 #
 # Usage:
 #   scripts/refresh-bin.sh                    # just refresh the bundled bins
@@ -18,14 +18,28 @@
 set -eu
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-python="$root/.venv/bin/python"
-if [ -x "$python" ]; then
-    # The venv's tools (patchelf, used by the lib staging) without activation.
-    PATH="$root/.venv/bin:$PATH"
+
+# The interpreter: the workspace-root .venv first -- that is the documented
+# setup (clients/python/README.md: a venv at the repo root, then
+# `pip install -e ./clients/python`) -- then one next to the package, then plain
+# python3. Any of the three runs an example either way, because the examples put
+# clients/python on sys.path themselves rather than relying on an install.
+#
+# Every venv found goes on PATH even when it did not win the interpreter slot,
+# because the staging shells out to tools that may live in either: patchelf,
+# which rewrites the run path of the vendored libs, is often a per-venv wheel.
+python=""
+venv_bins=""
+for venv in "$root/.venv" "$root/clients/python/.venv"; do
+    [ -x "$venv/bin/python" ] || continue
+    [ -n "$python" ] || python="$venv/bin/python"
+    venv_bins="${venv_bins:+$venv_bins:}$venv/bin"
+done
+if [ -n "$venv_bins" ]; then
+    PATH="$venv_bins:$PATH"
     export PATH
-else
-    python="$(command -v python3)"
 fi
+[ -n "$python" ] || python="$(command -v python3)"
 
 profile_flag=""
 refresh=1
