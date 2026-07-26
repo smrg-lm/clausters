@@ -294,11 +294,36 @@ edits notation on that clean install, and the client keeps `dependencies = []`. 
 *adds* to the defaults (only `--no-default-features` replaces them), so the embed
 cdylib keeps `faust`, `synth`, `midi`, … too.
 
-Two things to hold when cutting a wheel:
+### Building a package with a piece left out
+
+`build_native.py` requires both vendored libraries by default and stops on one
+line naming the recipe when either is missing — the same answer for both,
+because they are built the same way and absent for the same reason. Three
+environment variables take a piece out on purpose, for development:
+
+| variable | what the package loses |
+|---|---|
+| `CLAUSTERS_SKIP_FAUST` | the FaustDef family: every `/d_faust` fails. Set it to work without building libfaust first |
+| `CLAUSTERS_SKIP_SYNTH` | the SynthDef family: no `/d_recv`, no UGen graphs — a deliberately Faust-only package |
+| `CLAUSTERS_SKIP_VEROVIO` | the notation layer: the `score` widget does not engrave |
+
+The two def-family knobs are peers, like the features themselves: either family
+can go, both can, and what survives is the engine core (groups, buses, buffers)
+where every `/s_new` fails. They are the only way to drop a *default* feature
+from a packaged build — cargo features only add, so this is what emits
+`--no-default-features` and names the survivors. `CLAUSTERS_SKIP_SYNTH` has no
+library to miss and therefore nothing to probe: it is a preference, not a
+fallback.
+
+Three things to hold when cutting a wheel:
 
 - **Do not set `CLAUSTERS_CARGO_FEATURES`** for a release build. It *replaces*
   the embed cdylib's features, so an incomplete value (e.g. omitting `faust`)
   silently ships a trimmed wheel. Leaving it unset keeps the full defaults.
+- **Do not set any `CLAUSTERS_SKIP_*`** — each ships a wheel missing a piece
+  that fails at the *user's* run time. `CLAUSTERS_REQUIRE_VEROVIO=1`, which the
+  release workflow sets, refuses a `CLAUSTERS_SKIP_VEROVIO` for exactly that
+  reason.
 - **Do not set `CLAUSTERS_SKIP_GUI_BUILD`** — that yields a light, server-only
   wheel missing the GUI mode.
 
