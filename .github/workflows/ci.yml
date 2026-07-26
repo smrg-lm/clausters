@@ -141,9 +141,11 @@ jobs:
     # third_party/verovio.pin, read by the .github/actions/verovio composite.
     env:
       VEROVIO_PREFIX: /home/runner/.local
-      # A missing engraver must fail the staging step, not skip it: the notation
-      # tests would otherwise skip and the run would still come back green.
-      CLAUSTERS_REQUIRE_VEROVIO: "1"
+      # Refuse every CLAUSTERS_SKIP_*: this job stages a whole package or none.
+      # A missing piece is invisible downstream -- the notation tests skip
+      # themselves without an engraver, a def family only fails once someone
+      # sends a def -- so the run would still come back green.
+      CLAUSTERS_REQUIRE_COMPLETE: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable

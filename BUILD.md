@@ -230,9 +230,9 @@ Docs. Steps:
      from `pyproject.toml` (hence step 2). Both third-party libraries are
      restored or built by their composite actions
      (`.github/actions/{libfaust,verovio}`), and the job sets
-     `CLAUSTERS_REQUIRE_VEROVIO=1` — the name the workflow pins for what is now
-     `CLAUSTERS_REQUIRE_COMPLETE`: refuse every `CLAUSTERS_SKIP_*`, so no release
-     can publish a wheel missing a piece that raises on the user's machine.
+     `CLAUSTERS_REQUIRE_COMPLETE=1` — refuse every `CLAUSTERS_SKIP_*`, so no
+     release can publish a wheel missing a piece that raises on the user's
+     machine.
    - **publish-pypi** — publishes the wheel to PyPI via Trusted Publishing (OIDC,
      the `pypi` environment, no stored token).
    - **github-release** — creates the GitHub release with generated notes and
@@ -323,8 +323,7 @@ Three things to hold when cutting a wheel:
   silently ships a trimmed wheel. Leaving it unset keeps the full defaults.
 - **Do not set any `CLAUSTERS_SKIP_*`** — each ships a wheel missing a piece
   that fails at the *user's* run time. You do not have to remember: the release
-  sets `CLAUSTERS_REQUIRE_VEROVIO=1` (the pinned name for
-  `CLAUSTERS_REQUIRE_COMPLETE`), which refuses all three.
+  sets `CLAUSTERS_REQUIRE_COMPLETE=1`, which refuses all three.
 - **Do not set `CLAUSTERS_SKIP_GUI_BUILD`** — that yields a light, server-only
   wheel missing the GUI mode.
 

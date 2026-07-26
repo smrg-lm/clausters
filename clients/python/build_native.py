@@ -66,10 +66,8 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_SKIP_VEROVIO``     build without the notation layer; the `score`
                                  widget will not engrave.
 - ``CLAUSTERS_REQUIRE_COMPLETE`` refuse every ``CLAUSTERS_SKIP_*`` above: this
-                                 build ships whole or not at all. What a release
-                                 sets. ``CLAUSTERS_REQUIRE_VEROVIO`` is the same
-                                 thing under the name the pinned workflows
-                                 already use.
+                                 build ships whole or not at all. Set by CI and
+                                 by the release.
 
 Both vendored libraries behave the same way, which is deliberate: they are built
 the same way (a pinned source, a script under ``third_party/``, a prefix), they
@@ -365,17 +363,10 @@ def stage_faust_libs(profile: str) -> list[str]:
 
 
 # Set by CI and the release: this build must leave nothing out. Requiring every
-# piece is the default, so the only job left for these is to refuse a
+# piece is the default, so the only job left for this is to refuse a
 # CLAUSTERS_SKIP_* — and that job is the same for all three pieces, which is why
-# it is one rule and not one variable per piece. CLAUSTERS_REQUIRE_VEROVIO is
-# the name the pinned workflows already set, kept as an alias; new places should
-# say CLAUSTERS_REQUIRE_COMPLETE, which is what it has always meant.
-_REQUIRE_COMPLETE = ("CLAUSTERS_REQUIRE_COMPLETE", "CLAUSTERS_REQUIRE_VEROVIO")
-
-
-def _must_be_complete() -> str | None:
-    """The variable demanding a package with nothing left out, if one is set."""
-    return next((v for v in _REQUIRE_COMPLETE if os.environ.get(v)), None)
+# it is one variable and not one per piece.
+_REQUIRE_COMPLETE = "CLAUSTERS_REQUIRE_COMPLETE"
 
 
 def _skipping(skip: str, without: str) -> bool:
@@ -390,11 +381,11 @@ def _skipping(skip: str, without: str) -> bool:
     """
     if not os.environ.get(skip):
         return False
-    required = _must_be_complete()
-    if required:
+    if os.environ.get(_REQUIRE_COMPLETE):
         raise SystemExit(
-            f"clausters: {skip} is set and so is {required}, which means this "
-            f"build must leave nothing out -- and {skip} means {without}.")
+            f"clausters: {skip} is set and so is {_REQUIRE_COMPLETE}, which "
+            f"means this build must leave nothing out -- and {skip} means "
+            f"{without}.")
     print(f"clausters: {skip} set -- {without}")
     return True
 

@@ -225,9 +225,8 @@ the libfaust one (restore from cache, build from this pin on a miss).
 
 A missing engraver fails the build on its own now: `build_native.py` requires
 both vendored libraries by default and stops with the recipe. Both jobs also set
-`CLAUSTERS_REQUIRE_VEROVIO=1`, which is the pinned name for
-`CLAUSTERS_REQUIRE_COMPLETE` — it refuses a deliberate `CLAUSTERS_SKIP_*`, so
-nothing can opt out of the engraver (or of a def family) on the way to a
+`CLAUSTERS_REQUIRE_COMPLETE=1`, which refuses a deliberate `CLAUSTERS_SKIP_*`,
+so nothing can opt out of the engraver (or of a def family) on the way to a
 release. Without that, a green run and a wheel whose `score` widget raises at
 the user's run time look identical: the notation tests skip themselves when
 there is no engraver.

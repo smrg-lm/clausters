@@ -28,10 +28,11 @@ env:
   # machine. Nothing links it (the client binds it with ctypes), but it has to
   # exist here to be staged. Pinned in third_party/verovio.pin.
   VEROVIO_PREFIX: /home/runner/.local
-  # Fail the wheel build if libverovio is missing rather than shipping a package
-  # whose `score` widget raises at run time. Publishing is one-way -- a silent
-  # skip here is a broken release on PyPI.
-  CLAUSTERS_REQUIRE_VEROVIO: "1"
+  # Refuse every CLAUSTERS_SKIP_*: a release ships the whole package or nothing.
+  # Each skip drops a piece that only fails at the *user's* run time -- the
+  # `score` widget, a def family -- and publishing is one-way, so a silent skip
+  # here is a broken release on PyPI.
+  CLAUSTERS_REQUIRE_COMPLETE: "1"
 
 jobs:
   build:
