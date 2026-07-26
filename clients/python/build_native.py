@@ -74,7 +74,8 @@ BIN_DIR = os.path.join(PKG_DIR, "_bin")
 _CRATES = {
     # `verovio` pulls `notation` with it: the whole notation layer, which is
     # native and shared, so the wheel's ABI carries it and the Python client is
-    # a shell over it rather than a second implementation.
+    # a shell over it rather than a second implementation. Dropped when the
+    # machine has no libverovio to link -- see `_ffi_features`.
     "clausters_ffi": ("clausters-ffi", "verovio"),
     "clausters": ("clausters", "embed,realtime"),  # overridable below
 }
@@ -330,6 +331,32 @@ def stage_faust_libs(profile: str) -> list[str]:
     return copied
 
 
+_NO_VEROVIO = ("no libverovio found (looked in VEROVIO_PREFIX, ~/.local, "
+               "/usr/local); build it with third_party/build-verovio.sh")
+
+
+def _ffi_features() -> str:
+    """The features ``clausters-ffi`` is built with here, minus what this machine
+    cannot link.
+
+    ``verovio`` makes ``clausters-notation`` link libverovio, so on a checkout
+    that never ran ``third_party/build-verovio.sh`` the build dies in the
+    *linker* — ``unable to find library -lverovio``, a page of `cc` arguments —
+    long before `stage_verovio` gets to make its lenient call. The two have to
+    agree, and the lenient one is the documented behaviour: a checkout without
+    the engraver still gets a working package, minus the `score` widget.
+    ``CLAUSTERS_REQUIRE_VEROVIO=1`` still turns that into an error, now as one
+    line naming the recipe rather than a link failure.
+    """
+    if _verovio_prefix() is not None:
+        return "verovio"
+    if os.environ.get("CLAUSTERS_REQUIRE_VEROVIO"):
+        raise SystemExit(f"clausters: {_NO_VEROVIO}")
+    print(f"clausters: {_NO_VEROVIO} -- building clausters-ffi without the "
+          "`verovio` feature (the `score` widget will not engrave)")
+    return ""
+
+
 def _verovio_prefix() -> str | None:
     """The prefix ``build-verovio.sh`` installed into: ``VEROVIO_PREFIX``, then
     the same defaults ``build.rs`` uses for libfaust."""
@@ -375,11 +402,9 @@ def stage_verovio() -> list[str]:
     """
     prefix = _verovio_prefix()
     if prefix is None:
-        message = ("no libverovio found (looked in VEROVIO_PREFIX, ~/.local, "
-                   "/usr/local); build it with third_party/build-verovio.sh")
         if os.environ.get("CLAUSTERS_REQUIRE_VEROVIO"):
-            raise SystemExit(f"clausters: {message}")
-        print(f"clausters: {message} -- skipping (the `score` widget will "
+            raise SystemExit(f"clausters: {_NO_VEROVIO}")
+        print(f"clausters: {_NO_VEROVIO} -- skipping (the `score` widget will "
               "not engrave)")
         return []
     name = _verovio_name()
@@ -456,7 +481,12 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
 
     features = os.environ.get("CLAUSTERS_CARGO_FEATURES")
     for stem, (crate, default_feat) in _CRATES.items():
-        feat = features if (features and stem == "clausters") else default_feat
+        if stem == "clausters_ffi":
+            feat = _ffi_features()
+        elif features and stem == "clausters":
+            feat = features
+        else:
+            feat = default_feat
         _cargo_build(workspace, crate, feat, profile)
     copied = stage(workspace, profile)
     if not copied:
