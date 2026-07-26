@@ -21,9 +21,34 @@ profile="${1:-release}"
 flag=""
 [ "$profile" = release ] && flag="--release"
 
+# The CLI must be the same version as the `wasm-bindgen` crate the wasm was
+# compiled against: the glue they exchange is a private format, and a mismatch
+# surfaces as an opaque "different bindgen format" error at the staging step
+# below, long after the build. Two lockfiles pin it -- the root workspace's
+# (the engine and the core codec) and clients/gui's own (the host) -- and one
+# CLI stages all three bundles, so they must agree. See BUILD.md.
+pinned_wasm_bindgen() {   # $1 = a Cargo.lock
+    sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' "$1"
+}
+pin=$(pinned_wasm_bindgen ../../Cargo.lock)
+gui_pin=$(pinned_wasm_bindgen ../gui/Cargo.lock)
+if [ -z "$pin" ] || [ "$pin" != "$gui_pin" ]; then
+    echo "the lockfiles disagree on wasm-bindgen (root '$pin', gui '$gui_pin');" >&2
+    echo "no single CLI can stage both -- reconcile them first." >&2
+    exit 1
+fi
+
 if ! command -v wasm-bindgen >/dev/null; then
     echo "wasm-bindgen is missing; install it with:" >&2
-    echo "  cargo install wasm-bindgen-cli --version <Cargo.lock wasm-bindgen version>" >&2
+    echo "  cargo install wasm-bindgen-cli --version $pin" >&2
+    exit 1
+fi
+
+have=$(wasm-bindgen --version | awk '{print $2}')
+if [ "$have" != "$pin" ]; then
+    echo "wasm-bindgen $have does not match the lockfiles' $pin;" >&2
+    echo "the bundles would not stage. Install the pinned CLI with:" >&2
+    echo "  cargo install wasm-bindgen-cli --version $pin" >&2
     exit 1
 fi
 

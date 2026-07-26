@@ -5,7 +5,7 @@ The toolchain posture mirrors the repo's: minimal, user-space, reproducible
 build already needs:
 
 - the Rust wasm toolchain — `rustup target add wasm32-unknown-unknown` and
-  `cargo install wasm-bindgen-cli` at `Cargo.lock`'s wasm-bindgen version;
+  **wasm-bindgen-cli pinned to the lockfiles' `wasm-bindgen` version** (below);
 - **node LTS**, installed under `~/.local` with no sudo (below);
 - **typescript** (dev-only, via `npm install` here) — `tsc` is both the
   type-checker and the emitter. `@types/node` rides along for the test files'
@@ -14,6 +14,29 @@ build already needs:
 There is deliberately **no bundler** (no vite/esbuild/webpack): the package
 ships unbundled ES modules, the wasm bundles and the AudioWorklet module must
 stay static assets anyway, and the browser loads bare ESM natively.
+
+## Installing wasm-bindgen-cli (pinned to the lockfiles)
+
+The CLI and the `wasm-bindgen` crate the wasm was compiled against must be the
+**same version**: the glue they exchange is a private format, so a mismatch
+fails at the staging step with a "different bindgen format" error, not at
+compile time. `build.sh` only checks that the CLI is *present* — the pin is
+on you.
+
+**Two lockfiles pin it, and one CLI stages all three bundles**: the root
+workspace's `Cargo.lock` (the engine and the core codec) and `clients/gui`'s
+own `Cargo.lock` (the GUI host — a separate workspace by design). They must
+agree; if they ever diverge, reconcile them before installing, because no
+single CLI can serve both.
+
+```sh
+grep -A1 '^name = "wasm-bindgen"$' ../../Cargo.lock ../gui/Cargo.lock   # both must match
+cargo install wasm-bindgen-cli --version 0.2.126                        # that version
+wasm-bindgen --version
+```
+
+Re-run the install whenever a `cargo update` moves the crate: bundles built
+against the new version will not stage with the old CLI.
 
 ## Installing node (user space, no sudo)
 
