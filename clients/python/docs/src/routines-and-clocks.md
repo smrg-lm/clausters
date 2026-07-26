@@ -92,7 +92,9 @@ with Session.nrt(tempo=2.0) as session:
 
 Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, drive the clock with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).
 
-Unchanged includes the **immediate** commands. `server.synth(…)`, `server.set(…)`, `server.free(…)` claim to send "now", and inside a routine "now" is the routine's logical beat — offline as well as live. So a routine that makes a synth, yields a beat and makes another renders two events a beat apart, exactly as it sounds live. Only what is sent **outside** a routine has no logical time to answer to, and that lands at the start of the score: the defs, the buffer allocations, the groups a piece opens with, which is where they belong. `send_bundle` is still there for the case a routine wants to schedule *ahead* of itself (`delay_beats=`).
+One thing does not carry over, and it is the distinction the two send paths exist to make. An `Event` — and so every pattern — is stamped from the routine's logical time, as above. The **raw node commands are not**: `server.synth(…)`, `server.set(…)`, `server.free(…)` are *immediate* sends, they carry no time, and offline they land at the **start of the score** however far into a routine they were called. That is where a piece's setup belongs — the defs, the buffer allocations, the opening groups — and it is why those calls are the ones you reach for outside the clock entirely.
+
+To place something *in time*, say so: **`send_bundle`** stamps the beat the routine has accumulated by yielding (plus an optional `delay_beats=` lookahead), and a **pattern** does the same without you writing it. Live the difference is invisible, because "now" and "the logical beat" are the same instant; offline it is the difference between a piece and a chord.
 
 ## See also
 
