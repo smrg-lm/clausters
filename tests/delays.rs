@@ -6,21 +6,26 @@
 //! follows the decay time it was given, and an allpass is flat. That last one
 //! is the strongest assert in the track — flatness cannot be satisfied by
 //! accident, so a filter that passes it really is an allpass.
+//!
+//! Rule 5, the block split, is not here: it is the same test for every row and
+//! runs from the shared table over all nine at once (`tests/subjects.rs`).
 
 #![cfg(feature = "synth")]
 
+#[path = "common/bench.rs"]
+mod bench;
 #[path = "common/signal.rs"]
 mod signal;
 
 use std::sync::Arc;
 
+use bench::{SR, render_with_input};
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
 use signal::*;
 
-const SR: f32 = 48_000.0;
 const WIN: usize = 8192;
 const RENDER: usize = 32_768;
 
@@ -29,40 +34,6 @@ const RENDER: usize = 32_768;
 fn snap(f: f32) -> f32 {
     let bin = SR / WIN as f32;
     (f / bin).round().max(1.0) * bin
-}
-
-/// Renders a def whose UGen 0 is `In` on bus 1, filled by hand each block.
-fn render_with_input(ugen_json: &str, input: &[f32]) -> Vec<f32> {
-    let json = format!(
-        r#"{{"name": "d", "ugens": [
-            {{"kind": "In", "inputs": [{{"const": 1.0}}]}},
-            {ugen_json},
-            {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 1}}]}}]}}"#
-    );
-    let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
-    let mut buses = Buses::new(ControlBuses::new(16), 8);
-    let mut out = Vec::with_capacity(input.len());
-    let mut pos = 0;
-    while pos < input.len() {
-        buses.clear_audio();
-        let n = BLOCK_SIZE.min(input.len() - pos);
-        // SAFETY: single-threaded test, sole owner of bus 1.
-        let drive = unsafe { buses.audio_mut(1) };
-        drive[..n].copy_from_slice(&input[pos..pos + n]);
-        let mut ctx = ProcessCtx {
-            sample_rate: SR,
-            full_sample_rate: SR,
-            buses: &buses,
-            buffers: &[],
-            offset: 0,
-            frames: BLOCK_SIZE,
-        };
-        synth.process(&mut ctx);
-        out.extend_from_slice(&buses.audio(0)[..n]);
-        pos += n;
-    }
-    out
 }
 
 fn impulse(n: usize) -> Vec<f32> {
@@ -287,6 +258,93 @@ fn allpass_still_shifts_phase() {
     );
 }
 
+// ---- the long run ----
+//
+// Rule 4, pointed where this family actually accumulates. There is no running
+// position here to lose precision in — the read offset is recomputed from the
+// delay time every sample, so nothing counts upward. What recirculates is the
+// **signal**: a feedback form stores its own output back into an `f32` line, so
+// a long decay is a long chain of round trips each quantized once. `delay.rs`
+// says `f32` is enough because the line holds signal rather than filter state;
+// for the comb and the allpass that reasoning is loose, since what they store
+// *is* recursive. These are the tests that settle it.
+
+#[test]
+fn an_allpass_ringing_for_ten_seconds_is_still_flat() {
+    // Flatness is the allpass's definition and it survives nothing by accident,
+    // so it is also the sharpest thing to re-check after thousands of round
+    // trips: a 10 ms line over 10 s recirculates a thousand times, each one
+    // rounding to `f32`. Same tolerance as the short test — 0.02 dB — because
+    // the claim is that the property does not degrade, not that it degrades
+    // slowly.
+    let n = (SR as usize) * 10;
+    for f in [snap(120.0), snap(700.0), snap(2500.0)] {
+        let x = sine(f, n);
+        let y = render_with_input(&feedback_json("AllpassC", 480.0 / SR, 4.0, 0.05), &x);
+        assert_finite(&y, "AllpassC over ten seconds");
+        let from = n - n % WIN - WIN;
+        let (g, _) = response_at(&x[from..from + WIN], &y[from..from + WIN], f, SR);
+        let db = 20.0 * (g as f64).log10();
+        assert!(
+            db.abs() < 0.02,
+            "AllpassC at {f:.0} Hz reads {db:.4} dB after ten seconds of ringing"
+        );
+    }
+}
+
+#[test]
+fn a_comb_with_a_long_decay_still_follows_its_envelope_at_ten_seconds() {
+    // A thousand round trips in, the echo train must still be where
+    // 10^(-3(t-delay)/decay) says. A per-round-trip error would compound
+    // geometrically and show here as a level that has drifted off the curve —
+    // exactly what a short render cannot see.
+    let delay_frames = 480usize;
+    let (delay, decay) = (delay_frames as f32 / SR, 30.0f32);
+    let n = (SR as usize) * 10;
+    let y = render_with_input(&feedback_json("CombN", delay, decay, 0.05), &impulse(n));
+    assert_finite(&y, "CombN over ten seconds");
+    for echo in [900usize, 950, 999] {
+        let idx = echo * delay_frames;
+        let t = idx as f64 / SR as f64;
+        let want = 10f64.powf(-3.0 * (t - delay as f64) / decay as f64);
+        let got = y[idx].abs() as f64;
+        assert!(
+            (got / want - 1.0).abs() < 0.01,
+            "echo {echo} at {t:.3}s: {got:.6} vs {want:.6}"
+        );
+    }
+}
+
+#[test]
+fn a_comb_driven_for_ten_seconds_stays_under_its_analytic_ceiling() {
+    // The other half: not an impulse dying away but a full-scale signal going
+    // in for the whole run, so the loop is charged rather than draining. The
+    // steady-state gain of a comb at one of its peaks is 1/(1-g), which is the
+    // ceiling — the test is that it converges to it instead of walking past it.
+    let delay = 480.0 / SR;
+    let decay = 2.0f32;
+    let g = 10f64.powf(-3.0 * delay as f64 / decay as f64);
+    let ceiling = 1.0 / (1.0 - g);
+    let n = (SR as usize) * 10;
+    let x: Vec<f32> = {
+        let mut rng = clausters_core::rng::WhiteNoise::from_seed(0xDECA1);
+        (0..n).map(|_| rng.next_sample()).collect()
+    };
+    let y = render_with_input(&feedback_json("CombL", delay, decay, 0.05), &x);
+    assert_finite(&y, "CombL charged for ten seconds");
+    let worst = peak(&y) as f64;
+    assert!(
+        worst < ceiling,
+        "peak {worst:.2} after ten seconds, past the analytic ceiling {ceiling:.2}"
+    );
+    // And it really did charge: a loop that quietly lost its feedback would
+    // also pass the bound above.
+    assert!(
+        worst > 3.0,
+        "peak {worst:.2} -- the comb does not seem to be resonating at all"
+    );
+}
+
 // ---- bounds and modulation ----
 
 #[test]
@@ -347,62 +405,4 @@ fn a_delay_with_no_max_delay_field_still_builds() {
         &impulse(4096),
     );
     assert_eq!(y.iter().position(|&v| v != 0.0), Some((0.01 * SR) as usize));
-}
-
-// ---- block splitting ----
-
-#[test]
-fn delays_are_identical_across_a_split_block() {
-    let x: Vec<f32> = {
-        let mut rng = clausters_core::rng::WhiteNoise::from_seed(5);
-        (0..BLOCK_SIZE * 16).map(|_| rng.next_sample()).collect()
-    };
-    for ugen in [
-        delay_json("DelayC", 0.003, 0.05),
-        feedback_json("CombL", 0.003, 0.4, 0.05),
-        feedback_json("AllpassC", 0.003, 0.4, 0.05),
-    ] {
-        let whole = render_with_input(&ugen, &x);
-        let split = render_split(&ugen, &x, 23);
-        for (i, (a, b)) in whole.iter().zip(&split).enumerate() {
-            assert!(
-                (a - b).abs() < 1e-6,
-                "{ugen} differs at sample {i}: {a} vs {b}"
-            );
-        }
-    }
-}
-
-fn render_split(ugen_json: &str, input: &[f32], at_sample: usize) -> Vec<f32> {
-    let json = format!(
-        r#"{{"name": "d", "ugens": [
-            {{"kind": "In", "inputs": [{{"const": 1.0}}]}},
-            {ugen_json},
-            {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 1}}]}}]}}"#
-    );
-    let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
-    let mut buses = Buses::new(ControlBuses::new(16), 8);
-    let mut out = Vec::with_capacity(input.len());
-    let mut pos = 0;
-    while pos + BLOCK_SIZE <= input.len() {
-        buses.clear_audio();
-        // SAFETY: single-threaded test, sole owner of bus 1.
-        let drive = unsafe { buses.audio_mut(1) };
-        drive[..BLOCK_SIZE].copy_from_slice(&input[pos..pos + BLOCK_SIZE]);
-        for (offset, frames) in [(0, at_sample), (at_sample, BLOCK_SIZE - at_sample)] {
-            let mut ctx = ProcessCtx {
-                sample_rate: SR,
-                full_sample_rate: SR,
-                buses: &buses,
-                buffers: &[],
-                offset,
-                frames,
-            };
-            synth.process(&mut ctx);
-        }
-        out.extend_from_slice(buses.audio(0));
-        pos += BLOCK_SIZE;
-    }
-    out
 }
