@@ -99,7 +99,10 @@ is reproducible with the same line:
 - **gui** — `cargo test` in `clients/gui` plus the wasm build gate
   (`clients/gui/check-wasm.sh`).
 - **python** — `python clients/python/build_native.py --debug`, then `pytest`
-  in `clients/python`.
+  in `clients/python`. pytest is the client's one development dependency,
+  declared as the `dev` group in its `pyproject.toml`
+  (`pip install --group ./clients/python/pyproject.toml:dev`); the package
+  itself has none. On Linux the staging step also needs **patchelf**.
 - **docs** — both mdBooks with the same mdBook version Read the Docs uses,
   and the pydoc-markdown API page for the client book.
 - **faust** — the default `cargo test` covers it, with libfaust built from

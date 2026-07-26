@@ -16,6 +16,10 @@ sudo apt install build-essential pkg-config libasound2-dev libpipewire-0.3-dev c
 
 # only for the matching optional feature:
 sudo apt install libjack-jackd2-dev          # --features midi-jack
+
+# only to stage the Python package's native artifacts (build_native.py, and so
+# scripts/refresh-bin.sh and `pip install ./clients/python`):
+sudo apt install patchelf
 ```
 
 - `pkg-config` locates the ALSA and PipeWire libraries at build time; without
@@ -357,9 +361,12 @@ never allocates (run it after touching anything on the audio path),
 `tests/golden.rs` holds bit-exact render references, and `tests/denormals.rs`
 guards flush-to-zero.
 
-The Python client has its own suite:
+The Python client has its own suite. **pytest** is its one development
+dependency — the package itself declares none — and it is declared as the `dev`
+group in `clients/python/pyproject.toml`:
 
 ```sh
+pip install --group ./clients/python/pyproject.toml:dev   # once: pytest
 cargo build -p clausters-ffi && cargo build --features embed,realtime
 cd clients/python && python -m pytest
 ```

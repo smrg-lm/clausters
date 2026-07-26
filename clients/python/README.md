@@ -178,8 +178,11 @@ pip install ./clients/python
 
 `pip install` triggers `setup.py`, which runs `cargo build` for both cdylibs and
 stages them in `clausters/_libs/` before packaging them into the wheel (the
-system build dependencies are listed in [`BUILD.md`](../../BUILD.md)). Building
-a redistributable wheel explicitly:
+system build dependencies are listed in [`BUILD.md`](../../BUILD.md)). On Linux
+that staging also needs **patchelf** — it rewrites each vendored library's run
+path so the bundle resolves itself — from your package manager or as a
+self-contained wheel (`pip install patchelf`). Building a redistributable wheel
+explicitly:
 
 ```sh
 python -m build --wheel clients/python           # -> clients/python/dist/*.whl
@@ -207,8 +210,9 @@ python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activa
 #    binaries with cargo, then packages them into the one self-contained package):
 pip install -e ./clients/python
 
-# 3) for the test suite:
-pip install pytest
+# 3) for the test suite -- pytest is the whole dev group (`dependency-groups`
+#    in clients/python/pyproject.toml); the package itself has no dependencies:
+pip install --group ./clients/python/pyproject.toml:dev
 ```
 
 (To evaluate the examples cell by cell, open the `.py` in VS Code with the Python
