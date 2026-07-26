@@ -3,9 +3,10 @@
 A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
 
-- Forward roadmaps and milestones: `PLAN.md` (server), `clients/PLAN.md` and
-  `clients/gui/PLAN.md` (client/GUI tracks), all in English — a roadmap plus a
-  checkbox status per milestone, not an expanded completion narrative.
+- Forward roadmaps and milestones: `PLAN.md` (server), `clients/PLAN.md`,
+  `clients/gui/PLAN.md` and `clients/web/PLAN.md` (client/GUI/web tracks), all
+  in English — a roadmap plus a checkbox status per milestone, not an expanded
+  completion narrative.
 - The record of *what shipped* is the git history (clear commit messages); there
   is no separate per-milestone log. Non-obvious decisions and upstream-bug
   findings are curated in `docs/decisions.md` (ADR spirit); the frozen historical
@@ -70,8 +71,9 @@ with this modularity in mind.
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
   test names) is in English.
 - **Git commit messages are in English** (subject and body), ASCII-only.
-- The `PLAN.md` roadmaps (`PLAN.md`, `clients/PLAN.md`, `clients/gui/PLAN.md`),
-  `docs/decisions.md` and the frozen `docs/history/build-log.md` are in English.
+- The `PLAN.md` roadmaps (`PLAN.md`, `clients/PLAN.md`, `clients/gui/PLAN.md`,
+  `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
+  `docs/history/build-log.md` are in English.
   `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation with the user
   are in Spanish.
 - **Prose uses the API's own verbs for API actions.** When the protocol or
