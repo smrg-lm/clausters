@@ -266,6 +266,9 @@ _WIRE_ORDER_FORCED = {
     "EnvGen": "the Env comes first in Python, its array last on the wire",
     "SendReply": "reply_id follows trig on the wire, but must be keyword-only here",
     "Dseq": "repeats leads on the wire; the value list is the leading argument here",
+    "Drand": "repeats leads on the wire; the value list is the leading argument here",
+    "Dxrand": "repeats leads on the wire; the value list is the leading argument here",
+    "Dshuf": "repeats leads on the wire; the value list is the leading argument here",
 }
 
 # Not forced: these take their **static** (non-signal) fields as ordinary

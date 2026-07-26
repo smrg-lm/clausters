@@ -642,10 +642,47 @@ comb-plus-allpass space, rendered offline so it needs no audio hardware.
   costs 3 dB for doing nothing, and width leaves the mono sum **exactly** where
   it was — 0.688 at widths 0, 1 and 2 alike, since it only scales what cancels.
 
-- **U8 — The demand family** — extending `src/dsp/demand.rs` on the `dr`
-  substrate S1 built and the shared RNG: `Dseries`, `Dgeom`, `Dwhite`, `Diwhite`,
-  `Dbrown`, `Dibrown`, `Drand`, `Dxrand`, `Dshuf`, `Dswitch1`, `Dbufrd`,
-  `Dstutter`, plus the drivers `Duty` and `TDuty`.
+- ✅ **U8 — The demand family** *(done 2026-07-26)* — `src/dsp/demand.rs`:
+  fourteen rows over six cores. `Dramp` (`Dseries`, `Dgeom`), `Drandom`
+  (`Dwhite`/`Diwhite`, `Dbrown`/`Dibrown`), `Dlist` (`Dseq`, `Drand`, `Dxrand`,
+  `Dshuf`), then `Dstutter`, `Dswitch1` and `Dbufrd` one machine each, plus the
+  self-clocked drivers `Duty` and `TDuty` beside S1's `Demand`.
+
+  The milestone was not the sources; it was making **streams nest**, which is
+  what turns the family into a sequencer of phrases rather than of numbers.
+  S1's substrate could not: it wired one driver to one source through a `step`
+  closure, and its rate rule named a slot. Both were replaced by
+  `dsp::DemandInputs`, the protocol a source sees its own inputs through — a
+  plain number and a nested `Dseq` differ only in what `is_demand` answers —
+  implemented by `Pull` in `synthdef::instance`, which borrows the **prefix** of
+  the UGen vector before the row it serves. That one property (a UGen's inputs
+  are earlier UGens) gives the recursion for free: each nested pull splits a
+  strictly shorter prefix, so the borrows form a decreasing chain of indices and
+  cannot alias, and the whole view is a stack value that allocates nothing.
+  `tests/rt_safety.rs` drives all fourteen rows nested three deep under
+  `assert_no_alloc`.
+
+  Three decisions, all in `docs/decisions.md`. **`repeats ≤ 0` is the endless
+  stream**, because the wire rejects a non-finite constant and JSON cannot spell
+  `inf` — with the one wrinkle that a `NaN` count (an exhausted stream feeding
+  it) means *zero*, since there the number is a value and not a request. **The
+  nesting depth is a compile-time refusal** (16), not a runtime guard: a level
+  costs a stack frame inside the callback, so the honest place to say no is
+  where a human is still watching. And the rate rule lost its slot — a `dr` wire
+  may feed **anything that pulls it**, a driver or another demand UGen, while a
+  driver handed a plain number now gets a stream of one value that never ends
+  instead of a compile error. **Resetting is per kind and lazy**: marked when a
+  slot is left, performed just before it is read again, so a child the parent
+  never returns to is never restarted — a restarted `Dshuf` has drawn a new
+  order, and that is audible.
+
+  `examples/demand.py` plays six sections and then measures the family's claims
+  on its own render: five pitches against three durations realign after fifteen
+  notes, a nested slot is drained and restarted (`1 2 3 9 1 2 3 9`), `Dswitch1`
+  leaves the branch it did not pick exactly where it was (`1 10 2 20`),
+  `Dshuf`'s second pass repeats its first, and `Duty`'s f64 countdown puts the
+  600th pull of a 1.429 ms slot within a sample of where it belongs — against
+  the 257 samples a naive per-pull counter would have drifted by.
 
 Every U milestone ships its rows **with** their Python builders in
 `clients/python/clausters/defs/ugens.py` (the contrast test keeps the input names

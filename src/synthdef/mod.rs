@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use clausters_core::{builtins, pvprog};
 
 use crate::dsp::registry::{
-    Arity, DEMAND_SOURCE_SLOT, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
+    Arity, ExecMode, OpFamily, SpectralRole, UGenConfig, UGenDescriptor, lookup,
 };
 use crate::dsp::spectral::resolve_fft_size;
 use crate::dsp::{MAX_UGEN_INPUTS, Rate};
@@ -288,6 +288,14 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
     let n_controls = spec.controls.len();
     let mut constants = Vec::new();
     let mut ugens: Vec<UGenDef> = Vec::with_capacity(spec.ugens.len());
+    /// How deep demand streams may nest (U8). A pull descends one Rust stack
+    /// frame per level *on the audio thread*, so this is a hard ceiling the
+    /// compiler enforces, not a runtime check the callback would pay for.
+    /// Sixteen is well past any musical use — sclang's own patterns rarely go
+    /// past three — and far short of anything a callback stack would notice.
+    const MAX_DEMAND_DEPTH: u32 = 16;
+    // Demand nesting depth per UGen, parallel to `ugens`.
+    let mut demand_depth: Vec<u32> = Vec::with_capacity(spec.ugens.len());
     // Synth-private feedback channels: size the buffer and require each
     // channel's LocalIn to precede its LocalOut (the one-block-delay contract).
     let mut num_locals = 0usize;
@@ -583,20 +591,19 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 InputRef::Control(_) => Rate::Kr,
                 InputRef::Wire(w) => ugens[*w].rate,
             };
-            let is_demand_slot = desc.exec == ExecMode::DemandDriver && k == DEMAND_SOURCE_SLOT;
+            // A `dr` wire may only feed something that *pulls* it: a driver
+            // (`Demand`/`Duty`/`TDuty`) or another demand source nesting it
+            // (U8 — `Dseq(1, Dwhite(...), 3)`). Anywhere else it would cross
+            // into block order, where a stream has no samples at all.
+            let pulls_demand = desc.exec == ExecMode::DemandDriver || rate == Rate::Dr;
             if in_rate == Rate::Dr {
-                if !is_demand_slot {
+                if !pulls_demand {
                     return Err(format!(
                         "ugens[{i}] ({}).inputs[{k}]: a demand-rate (dr) signal can only feed a \
-                         demand driver's source",
+                         demand driver or another demand UGen",
                         u.kind
                     ));
                 }
-            } else if is_demand_slot {
-                return Err(format!(
-                    "ugens[{i}] (Demand).inputs[{k}]: the demand source must be a demand-rate \
-                     (dr) UGen"
-                ));
             } else if rate == Rate::Ir && in_rate != Rate::Ir {
                 return Err(format!(
                     "ugens[{i}] ({}).inputs[{k}]: an ir-rate UGen requires ir inputs, got {}",
@@ -629,6 +636,28 @@ pub fn compile(spec: SynthDefSpec) -> Result<SynthDef, String> {
                 }
             }
         }
+
+        // Nesting depth of the demand sub-graph rooted here (U8). A pull
+        // recurses once per level, on the audio thread, so the depth is capped
+        // here rather than guarded there: a def that nests too deep is a def we
+        // refuse, not a stack the callback might run off. One more than the
+        // deepest stream this UGen reads; 0 for a UGen that reads none.
+        let depth = inputs
+            .iter()
+            .filter_map(|r| match r {
+                InputRef::Wire(w) if ugens[*w].rate == Rate::Dr => Some(demand_depth[*w] + 1),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(0);
+        if depth > MAX_DEMAND_DEPTH {
+            return Err(format!(
+                "ugens[{i}] ({}): demand streams nested {depth} deep; the limit is \
+                 {MAX_DEMAND_DEPTH}",
+                u.kind
+            ));
+        }
+        demand_depth.push(depth);
 
         ugens.push(UGenDef {
             desc,

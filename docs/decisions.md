@@ -2419,3 +2419,85 @@ and the clamp outside it.
 What does *not* change is the property that surprises people about both: every
 source runs whether or not it is selected, because they are UGens in a graph and
 not branches.
+
+## `repeats ≤ 0` is the endless stream, because a def cannot say `inf`
+
+Every demand source takes a `repeats` count, and sclang's answer for "keep
+going" is `inf` — a float the language has and the wire does not. `compile`
+rejects a non-finite constant outright (`src/synthdef/mod.rs`), JSON has no
+spelling for one, and neither is worth changing for this: a format that accepts
+infinities has to decide what they mean everywhere, not just here.
+
+So the count of **none** is the endless one. A client that writes `repeats=0`
+gets what it would have guessed from a count anyway, a positive count behaves
+exactly as scsynth's, and an `inf` still works if some client manages to send
+one. The one case that needed thinking is a `repeats` that is *itself* an
+exhausted stream, which pulls as `NaN`: there the number is a value rather than
+a request, so it means **zero** — the stream feeding the count ran out, and a
+source with nothing to repeat yields nothing. Reading it as endless would turn
+every drained counter into an infinite loop, which is the opposite of what the
+exhaustion is reporting.
+
+The asymmetry in *what* the count counts is scsynth's, and kept: passes over the
+list for `Dseq` and `Dshuf`, items for `Drand` and `Dxrand`. A shuffle that
+stopped mid-list would not be one, and a random pick has no pass to complete.
+
+## A nested pull borrows the prefix, and the depth is a compile-time refusal
+
+The demand family is only interesting because streams nest: `Dseq`'s value list
+can hold another `Dseq`, which is what makes it a sequencer of phrases rather
+than of numbers. That turns a pull into a recursion, and a recursion into a
+question the audio thread has to be able to answer safely — with no allocation,
+no aliasing, and no way to run off the stack.
+
+Both halves fall out of one observation: **a UGen's inputs are always earlier
+UGens**. So `Pull` (`src/synthdef/instance.rs`) borrows the *prefix* of the UGen
+vector before the UGen it is serving, and each nested pull splits a strictly
+shorter prefix. The borrows up the call stack form a strictly decreasing chain
+of indices — no UGen can be reached twice, no `&mut` can alias, and the compiler
+checks it rather than a comment claiming it. Nothing on the path allocates,
+because there is nothing to allocate: the whole view is a stack value.
+
+Depth is capped at **16** and the cap lives in `compile`, not in `demand`. Each
+level costs a real stack frame *inside the audio callback*, so the honest place
+to say no is where a human is still watching — a def that nests too deep is a
+def the server refuses, with a message naming the depth. Checking it per pull
+would spend the callback's time discovering, every block, something that was
+knowable once. Sixteen is far past any musical use (sclang's own patterns rarely
+reach three) and far short of anything a callback stack would notice.
+
+The same observation generalized the rate rule. S1 had one: a `dr` wire may feed
+a `Demand`'s source slot, and that slot must be `dr`. Neither half survives —
+`Duty` pulls two of its four inputs, so "the source slot" stopped naming
+anything, and a nesting source pulls inputs that may or may not be streams. What
+replaced both is a single rule with no slot in it: **a `dr` wire may feed only
+something that pulls it** — a driver, or another demand UGen. A stream anywhere
+else would cross into block order, where it has no samples to offer. The
+converse rule is gone entirely: a driver handed a plain number pulls a stream of
+one value that never ends, which is well defined and occasionally what you meant.
+
+## Resetting a demand stream is per kind, and it happens late
+
+A parent that comes back to a child it has already drained resets it, so the
+child replays — that is what makes `Dseq(2, Dseries(3, 0, 1))` give `0 1 2 0 1 2`
+rather than `0 1 2` and silence. Two things about that are decisions rather than
+mechanics.
+
+**It is lazy.** The reset is *marked* when a slot is left and *performed* just
+before that slot is read again. Doing it eagerly is the obvious implementation
+and it is wrong at the edge: a parent that moves on and then ends, or is itself
+reset, would have restarted a child it never returns to — and a restarted
+`Dshuf` has drawn a new order, which is audible. Marking costs one bool and
+makes the eager case unreachable.
+
+**It does not propagate by default.** `reset_demand` receives the same
+`DemandInputs` a pull does, so each kind decides which of its inputs to restart:
+the list sources restart the slot they move to, `Dstutter` and `Dswitch1` restart
+their inputs outright (neither has a position of its own to rewind), and the
+scalar sources — `Dseries`, `Dwhite`, the walks — propagate nothing at all,
+because they re-read their bounds on every pull and have nothing to gain from
+restarting whatever produces them. A blanket "reset resets everything below"
+would be simpler to describe and would quietly rewind streams shared between two
+consumers. scsynth draws the same line, visible in which of its `_next`
+functions call `RESETINPUT`; this is that asymmetry made explicit rather than
+inherited.

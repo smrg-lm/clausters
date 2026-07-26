@@ -37,7 +37,7 @@ static SEED: AtomicU64 = AtomicU64::new(0x9E37_79B9_7F4A_7C15);
 /// The next per-instance seed. Two noise UGens in one graph must not run the
 /// same stream — correlated "noise" sums to a comb filter rather than to more
 /// noise.
-fn next_seed() -> u64 {
+pub(crate) fn next_seed() -> u64 {
     SEED.fetch_add(0x9E37_79B9_7F4A_7C15, Ordering::Relaxed)
 }
 

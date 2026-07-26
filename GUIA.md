@@ -314,6 +314,24 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   a un valor nuevo *por paso* y no deslizándose, y un bajo que entra justo con
   cada acento y nunca se corre — es el mismo `impulse` dividido, no dos relojes.
 
+- **La familia demand entera, y una frase que no es una lista de números.**
+  `python3 examples/demand.py toma.wav` y escucharla → seis secciones, cada una
+  una idea: una melodía de cinco alturas contra tres duraciones que **no se
+  repite cada cinco notas** (las dos series recién vuelven a coincidir a las
+  quince); una secuencia cuyos casilleros son *frases* — cuatro notas que suben,
+  dos sorteadas, una fija — y que se oye reiniciar cada frase al volver a ella;
+  un `dstutter` cuyo conteo también es un stream, así que la repetición misma es
+  el ritmo; un bajo de `dshuf` que sortea **un** orden y lo repite, de modo que
+  el oído lo aprende (con `drand` en su lugar no habría riff); un `dbrown`
+  caminando el corte de un filtro, para ver que un stream no tiene por qué
+  llevar altura; y una percusión de `tduty` donde los niveles **son** los
+  acentos. Sin el `.wav`, el mismo comando corre además el banco de mediciones:
+  nueve streams impresos valor por valor (`1 2 3 1 2 3` contra `1 2 3 9 1 2 3 9`
+  del anidado, `1 10 2 20` del `dswitch1` que no adelanta la rama que no eligió)
+  y el chequeo de deriva — el pull número 600 a 1.429 ms cae a menos de un
+  sample de donde corresponde, contra los 257 que acumularía un contador
+  ingenuo. Tiene que terminar con "every claim above holds".
+
 ### Con la feature `faust`
 
 - **Faust suena.** Compilar un `/d_faust` (fuente o Box API) → se oye la sierra

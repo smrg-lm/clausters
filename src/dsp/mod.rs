@@ -526,6 +526,54 @@ impl Rate {
     }
 }
 
+/// A demand UGen's view of its own inputs (U8) — the whole `dr` protocol from
+/// the UGen's side.
+///
+/// A demand input is not a buffer of samples: it is a *stream*, and reading it
+/// means asking the UGen behind it for one more value. Since that UGen may in
+/// turn read streams of its own, the recursion has to happen where the graph
+/// is — in [`crate::synthdef::instance`] — which is why a source is handed this
+/// trait object instead of `&[&[f32]]`. From inside a source, a plain constant
+/// and a nested `Dseq` differ only in what [`is_demand`](Self::is_demand)
+/// answers.
+///
+/// The synth's implementation is a stack value with no allocation, and the
+/// recursion it performs is bounded at compile time (`MAX_DEMAND_DEPTH`), so
+/// every method here is audio-thread safe.
+pub trait DemandInputs {
+    /// Number of inputs this UGen has.
+    fn len(&self) -> usize;
+
+    /// Whether the input list is empty (a variadic source with no values).
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Whether input `k` is a demand-rate stream — scsynth's `ISDEMANDINPUT`.
+    /// The list sources branch on this: a stream is drained until it yields
+    /// `NaN`, a value is taken once.
+    fn is_demand(&self, k: usize) -> bool;
+
+    /// The next value of input `k`: pulled if it is a stream, read at the
+    /// current frame if it is not. `NaN` means an exhausted stream (and an
+    /// out-of-range `k` reads as `NaN` too — nothing to yield).
+    fn pull(&mut self, k: usize) -> f32;
+
+    /// Restarts input `k`'s stream from its beginning. A no-op for an input
+    /// that is not a stream.
+    fn reset(&mut self, k: usize);
+
+    /// Input `k` read as an ordinary value at the current frame, *without*
+    /// pulling — what a driver reads for its own `trig`/`reset`/`done_action`.
+    /// A demand input has no samples and reads `0`.
+    fn at(&self, k: usize) -> f32;
+
+    /// Moves the view to sample `frame` of the slice, for the `ar` inputs.
+    /// Drivers call this once per sample; a source inherits the frame its
+    /// driver was on, so a modulated `dur` is read at the sample it is used.
+    fn seek(&mut self, frame: usize);
+}
+
 pub trait UGen: Send {
     /// Writes one block into `output`. `inputs` are full-block or length-1
     /// slices, already resolved by the synth. `output.len()` reflects the
@@ -573,29 +621,31 @@ pub trait UGen: Send {
     /// Runs on the audio thread — must stay allocation-free (arithmetic only).
     fn set_node_id(&mut self, _id: i32) {}
 
-    /// Demand-rate pull (S1): a demand *source* (`Dseq`, and later the rest of
-    /// the `D*` family) returns its next value when its driver pulls it, or
-    /// `NaN` once the stream is exhausted. Non-demand UGens never see this.
-    /// Runs on the audio thread — allocation-free, like `process`.
-    fn demand(&mut self, _ctx: &ProcessCtx, _inputs: &[&[f32]]) -> f32 {
+    /// Demand-rate pull (S1): a demand *source* (the `D*` family) returns its
+    /// next value when it is pulled, or `NaN` once its stream is exhausted.
+    /// Non-demand UGens never see this. Runs on the audio thread —
+    /// allocation-free, like `process`.
+    ///
+    /// `inputs` is a [`DemandInputs`] rather than a slice of buffers because a
+    /// demand input may itself be a stream: `pull` on it yields *its* next
+    /// value, recursively (U8). Everything a source reads goes through that
+    /// one call, so a plain number and a nested stream are the same code path.
+    fn demand(&mut self, _ctx: &ProcessCtx, _inputs: &mut dyn DemandInputs) -> f32 {
         f32::NAN
     }
 
-    /// Resets a demand source's internal position (a driver's `reset` edge).
-    fn reset_demand(&mut self) {}
+    /// Restarts a demand source's stream (a driver's `reset` edge, or a parent
+    /// source coming back around to this one). A kind that owns nested streams
+    /// propagates the reset through `inputs`; whether it does is part of its
+    /// definition, not a blanket rule — see `src/dsp/demand.rs`.
+    fn reset_demand(&mut self, _inputs: &mut dyn DemandInputs) {}
 
-    /// Demand *driver* (`Demand`): steps `output` one block, calling `step` to
-    /// pull the next value (`step(false)`) or reset the source (`step(true)`).
-    /// The synth wires `step` to the driver's demand source. Default: the UGen
-    /// is not a driver, so this is never called.
-    fn drive(
-        &mut self,
-        _trig: &[f32],
-        _reset: &[f32],
-        _output: &mut [f32],
-        _step: &mut dyn FnMut(bool) -> f32,
-    ) {
-    }
+    /// Demand *driver* (`Demand`, `Duty`, `TDuty`): fills `output` for one
+    /// slice, pulling its demand inputs whenever its own clock says to.
+    /// `inputs.seek(i)` moves the view to sample `i` first, so an ordinary
+    /// (`ar`) input is read at the sample the pull happens on. Default: the
+    /// UGen is not a driver, so this is never called.
+    fn drive(&mut self, _ctx: &ProcessCtx, _inputs: &mut dyn DemandInputs, _output: &mut [f32]) {}
 
     /// Receives a typed out-of-band command addressed to this instance
     /// (`/u_cmd`). The mechanism the future FFT/streaming UGens use to take

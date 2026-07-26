@@ -399,8 +399,12 @@ fn wrap(x: f32, lo: f32, hi: f32) -> f32 {
 /// Folds `x` into `[lo, hi]`, scsynth's `sc_fold` — reflecting at both ends as
 /// many times as needed. Note the general branch measures from the **original**
 /// `x`, not from the once-reflected value, as scsynth's does.
+///
+/// Public because the bounded random walks (`Dbrown`/`Dibrown`) turn their
+/// steps around with exactly this, and a walk that folded differently from
+/// `fold2` would be a second definition of the same word.
 #[inline]
-fn fold(x: f32, lo: f32, hi: f32) -> f32 {
+pub fn fold(x: f32, lo: f32, hi: f32) -> f32 {
     let offset = x - lo;
     if x >= hi {
         let reflected = hi + hi - x;

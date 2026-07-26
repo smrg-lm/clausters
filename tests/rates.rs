@@ -331,7 +331,8 @@ fn rejects_non_ir_input_to_ir_ugen() {
 
 #[test]
 fn rejects_demand_wire_into_a_normal_input() {
-    // A dr wire may only feed a demand driver's source slot.
+    // A dr wire may only feed something that pulls it: a driver, or another
+    // demand UGen nesting it. A multiply is neither — a stream has no samples.
     let json = r#"{"name":"x","ugens":[
         {"kind":"Dseq","rate":"dr","inputs":[{"const":0.0},{"const":1.0}]},
         {"kind":"Mul","inputs":[{"ugen":0},{"const":2.0}]}
@@ -340,10 +341,33 @@ fn rejects_demand_wire_into_a_normal_input() {
 }
 
 #[test]
-fn rejects_non_demand_source_in_demand_slot() {
+fn a_driver_accepts_a_plain_value_as_its_source() {
+    // U8 loosened this: with `Duty` pulling two of its four inputs, "the source
+    // slot must be a dr wire" stopped being a rule the family shares, and a
+    // stream that is really a constant is well defined — it holds.
     let json = r#"{"name":"x","ugens":[
         {"kind":"Impulse","inputs":[{"const":1.0}]},
-        {"kind":"Demand","inputs":[{"ugen":0},{"const":0.0},{"const":5.0}]}
+        {"kind":"Demand","inputs":[{"ugen":0},{"const":0.0},{"const":5.0}]},
+        {"kind":"Out","inputs":[{"const":0.0},{"ugen":1}]}
     ]}"#;
-    assert!(compile_err(json).contains("must be a demand-rate"));
+    // The Impulse fires on sample 0 of every block, so everything after the
+    // first sample holds the value the "stream" yielded.
+    let out = render(json, 1);
+    assert!(out[1..].iter().all(|s| *s == 5.0), "held: {:?}", &out[..4]);
+}
+
+#[test]
+fn rejects_demand_streams_nested_past_the_limit() {
+    // The pull recurses one stack frame per level on the audio thread, so the
+    // depth is a compile-time refusal rather than a runtime guard.
+    let mut ugens = String::from(
+        r#"{"kind":"Dseries","rate":"dr","inputs":[{"const":0.0},{"const":0.0},{"const":1.0}]}"#,
+    );
+    for i in 0..17 {
+        ugens.push_str(&format!(
+            r#",{{"kind":"Dstutter","rate":"dr","inputs":[{{"const":2.0}},{{"ugen":{i}}}]}}"#
+        ));
+    }
+    let json = format!(r#"{{"name":"x","ugens":[{ugens}]}}"#);
+    assert!(compile_err(&json).contains("nested"));
 }

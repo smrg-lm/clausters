@@ -15,7 +15,10 @@ use crate::dsp::binop::{BinOp, BinaryOp};
 use crate::dsp::buf::{BufInfo, BufInfoKind, BufRd, PlayBuf};
 use crate::dsp::conv::Conv;
 use crate::dsp::delay::{Delay, Feedback, Interp};
-use crate::dsp::demand::{Demand, Dseq};
+use crate::dsp::demand::{
+    Dbufrd, Demand, Dlist, Dramp, Drandom, Dstutter, Dswitch1, Duty, DutyKind, ListOrder, RampKind,
+    RandKind,
+};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::dsp::disk::{DiskIn, DiskOut};
 use crate::dsp::envgen::{EnvGen, Line, LineShape};
@@ -46,11 +49,6 @@ use crate::dsp::trig::{
 };
 use crate::dsp::unop::UnaryOp;
 use crate::dsp::{DoneAction, Rate, UGen};
-
-/// Input slot of a demand driver ([`ExecMode::DemandDriver`]) that names its
-/// demand source (after `trig`, `reset`): must be a wire to a demand-rate
-/// (`dr`) UGen.
-pub const DEMAND_SOURCE_SLOT: usize = 2;
 
 /// Line length a delay row allocates when the def omits `max_delay` (U3), in
 /// seconds. A default rather than a hard error, like `fft_size`'s — but a def
@@ -497,6 +495,31 @@ const I_PAN_AZ: &[UGenInput] = &[
 ];
 /// `Select`/`SelectX`: the index, then an unbounded run of sources.
 const I_WHICH: &[UGenInput] = &[inp("which", 0.0)];
+// The demand family (U8). `repeats` leads every source that has one — for a
+// list it counts passes, for a random pick it counts items (scsynth's own
+// asymmetry, kept). The two stochastic shapes differ by the walk's `step`
+// alone. Both drivers put their clock first; `gap_first` is `TDuty`'s only.
+const I_REPEATS: &[UGenInput] = &[inp("repeats", 0.0)];
+const I_DRAW: &[UGenInput] = &[inp("repeats", 0.0), inp("lo", 0.0), inp("hi", 1.0)];
+const I_DWALK: &[UGenInput] = &[
+    inp("repeats", 0.0),
+    inp("lo", 0.0),
+    inp("hi", 1.0),
+    inp("step", 0.01),
+];
+const I_DUTY: &[UGenInput] = &[
+    inp("dur", 1.0),
+    inp("reset", 0.0),
+    inp("level", 1.0),
+    inp("done_action", 0.0),
+];
+const I_TDUTY: &[UGenInput] = &[
+    inp("dur", 1.0),
+    inp("reset", 0.0),
+    inp("level", 1.0),
+    inp("done_action", 0.0),
+    inp("gap_first", 0.0),
+];
 /// The trigger family (U5). A kind that takes only triggers has no signal
 /// input at all — but it still defaults to `ar`, because a `kr` consumer
 /// samples an `ar` wire once per block and would drop most of a trigger train.
@@ -1904,7 +1927,9 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Rand::new()),
     ),
-    // --- demand rate (S1): the driver runs specially, the source is pulled ---
+    // --- demand rate (S1 substrate, U8 catalog): a driver runs specially and
+    //     pulls; a source is skipped in block order and reached only through a
+    //     pull, its own inputs pulled with it when they are streams too. ---
     desc(
         "Demand",
         Fixed(3),
@@ -1916,16 +1941,182 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Demand::new()),
     ),
+    desc_done(desc(
+        "Duty",
+        Fixed(4),
+        I_DUTY,
+        Ar,
+        R_KR_AR,
+        DemandDriver,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Duty::new(DutyKind::Hold)),
+    )),
+    desc_done(desc(
+        "TDuty",
+        Fixed(5),
+        I_TDUTY,
+        Ar,
+        R_KR_AR,
+        DemandDriver,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Duty::new(DutyKind::Trigger)),
+    )),
     desc(
         "Dseq",
         Variadic,
-        &[inp("repeats", 0.0)],
+        I_REPEATS,
         Dr,
         R_DR,
         Normal,
         BusRole::None,
         false,
-        |_, _| Box::new(Dseq::new()),
+        |_, _| Box::new(Dlist::new(ListOrder::Seq)),
+    ),
+    desc(
+        "Drand",
+        Variadic,
+        I_REPEATS,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dlist::new(ListOrder::Rand)),
+    ),
+    desc(
+        "Dxrand",
+        Variadic,
+        I_REPEATS,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dlist::new(ListOrder::Xrand)),
+    ),
+    desc(
+        "Dshuf",
+        Variadic,
+        I_REPEATS,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dlist::new(ListOrder::Shuf)),
+    ),
+    desc(
+        "Dseries",
+        Fixed(3),
+        &[inp("repeats", 0.0), inp("start", 0.0), inp("step", 1.0)],
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dramp::new(RampKind::Series)),
+    ),
+    desc(
+        "Dgeom",
+        Fixed(3),
+        &[inp("repeats", 0.0), inp("start", 1.0), inp("grow", 2.0)],
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dramp::new(RampKind::Geom)),
+    ),
+    desc(
+        "Dwhite",
+        Fixed(3),
+        I_DRAW,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Drandom::new(RandKind::White)),
+    ),
+    desc(
+        "Diwhite",
+        Fixed(3),
+        I_DRAW,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Drandom::new(RandKind::IWhite)),
+    ),
+    desc(
+        "Dbrown",
+        Fixed(4),
+        I_DWALK,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Drandom::new(RandKind::Brown)),
+    ),
+    desc(
+        "Dibrown",
+        Fixed(4),
+        // Same shape as `I_DWALK`, but a walk over the integers whose default
+        // step was a hundredth would never move.
+        &[
+            inp("repeats", 0.0),
+            inp("lo", 0.0),
+            inp("hi", 1.0),
+            inp("step", 1.0),
+        ],
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Drandom::new(RandKind::IBrown)),
+    ),
+    desc(
+        "Dstutter",
+        Fixed(2),
+        &[inp("repeats", 1.0), inp("value", 0.0)],
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dstutter::new()),
+    ),
+    desc(
+        "Dswitch1",
+        Variadic,
+        I_WHICH,
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dswitch1),
+    ),
+    desc(
+        "Dbufrd",
+        Fixed(4),
+        &[
+            inp("bufnum", 0.0),
+            inp("phase", 0.0),
+            inp("loop", 1.0),
+            inp("channel", 0.0),
+        ],
+        Dr,
+        R_DR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dbufrd),
     ),
     // --- side-effect UGens (S9): reply/observe, no `Out` required. Control or
     //     audio rate; their output is silence (SendTrig/SendReply) or the

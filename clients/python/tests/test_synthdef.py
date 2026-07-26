@@ -665,3 +665,40 @@ def test_splay_spreads_and_folds_to_a_pair():
     positions = sorted({u["inputs"][1]["const"] for u in spec["ugens"]
                         if u["kind"] == "Pan2"})
     assert positions == [-1.0, 0.0, 1.0]
+
+
+def test_a_demand_stream_may_be_the_value_of_another():
+    """The property the whole family turns on: a source's input can be a
+    source, and it comes out as an ordinary wire between two `dr` rows."""
+    from clausters.defs.ugens import dseq, dseries, demand, impulse
+
+    phrase = dseries(3, 0.0, 1.0)
+    spec = SynthDef("nest", out(0.0, demand(impulse(4.0), 0.0, dseq([phrase, 100.0])))).spec()
+    by_kind = {u["kind"]: u for u in spec["ugens"]}
+    assert by_kind["Dseries"]["rate"] == "dr"
+    assert by_kind["Dseq"]["rate"] == "dr"
+    # repeats leads, then the wire to the nested stream, then the constant.
+    inputs = by_kind["Dseq"]["inputs"]
+    assert inputs[0] == {"const": 0.0}
+    assert "ugen" in inputs[1]
+    assert inputs[2] == {"const": 100.0}
+
+
+def test_a_demand_source_needs_a_value():
+    from clausters.defs.ugens import dseq
+
+    with pytest.raises(ValueError):
+        dseq([])
+
+
+def test_the_duty_drivers_carry_their_own_clock():
+    """`duty` needs no trigger — the arity is what says so — and `tduty` adds
+    the opening gap."""
+    from clausters.defs.ugens import dseq, duty, tduty
+
+    levels = dseq([1.0, 2.0])
+    spec = SynthDef("d", out(0.0, duty(0.25, level=levels) + tduty(0.5, level=levels))).spec()
+    by_kind = {u["kind"]: u for u in spec["ugens"]}
+    assert len(by_kind["Duty"]["inputs"]) == 4
+    assert len(by_kind["TDuty"]["inputs"]) == 5
+    assert by_kind["Duty"]["inputs"][0] == {"const": 0.25}

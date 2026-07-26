@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use crate::dsp::registry::{BuildCtx, DEMAND_SOURCE_SLOT, ExecMode};
+use crate::dsp::registry::{BuildCtx, ExecMode};
 use crate::dsp::spectral::SpectralChain;
 use crate::dsp::{
-    BLOCK_SIZE, Block, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx, Rate, ReplyMsg,
-    UGen, at,
+    BLOCK_SIZE, Block, DemandInputs, DoneAction, MAX_UGEN_INPUTS, NUM_AUDIO_BUSES, ProcessCtx,
+    Rate, ReplyMsg, UGen, at,
 };
 use crate::node::{ControlMap, SynthNode};
 use crate::synthdef::{ControlType, InputRef, SynthDef};
@@ -38,6 +38,116 @@ pub struct UGenSynth {
     /// `Poll`, S9); precomputed so `has_replies` is O(1) and the tree only
     /// enqueues these synths for the reply drain.
     has_reply_ugens: bool,
+}
+
+/// One demand UGen's inputs as the pull protocol sees them (U8) — the synth
+/// side of [`DemandInputs`].
+///
+/// `ugens` and `wires` are the **prefix** of the graph before the UGen being
+/// served, so an index into either stays absolute while every nested pull
+/// targets a strictly smaller one. That is what makes the recursion both
+/// expressible and obviously sound: the UGens borrowed up the call stack form a
+/// strictly decreasing chain of indices, so no UGen can be reached twice and no
+/// `&mut` ever aliases. The graph is acyclic by construction (a UGen's inputs
+/// are earlier UGens), and `MAX_DEMAND_DEPTH` bounds the depth at compile time,
+/// so this cannot run away on the audio thread. Nothing here allocates.
+struct Pull<'a> {
+    def: &'a SynthDef,
+    controls: &'a [f32],
+    /// Output wires of the UGens before the one being served.
+    wires: &'a [Block],
+    /// The UGens before the one being served.
+    ugens: &'a mut [Box<dyn UGen>],
+    /// Input references of the UGen being served.
+    refs: &'a [InputRef],
+    ctx: ProcessCtx<'a>,
+    /// Sample within the slice at which an ordinary input is read.
+    frame: usize,
+}
+
+impl Pull<'_> {
+    /// The recursion step: runs `f` with UGen `w` and a `Pull` over *its*
+    /// inputs. `w` is strictly less than the index this `Pull` serves, so the
+    /// split is always disjoint.
+    fn nested<R>(&mut self, w: usize, f: impl FnOnce(&mut dyn UGen, &mut Pull) -> R) -> R {
+        let (head, tail) = self.ugens.split_at_mut(w);
+        let mut inner = Pull {
+            def: self.def,
+            controls: self.controls,
+            wires: self.wires,
+            ugens: head,
+            refs: &self.def.ugens[w].inputs,
+            ctx: self.ctx,
+            frame: self.frame,
+        };
+        f(&mut *tail[0], &mut inner)
+    }
+
+    /// Wire `w` read as an ordinary value: one sample per block for `kr`/`ir`,
+    /// the current frame for `ar`. Wire slices are run-relative (index 0 is the
+    /// first frame of *this* slice), so `frame` indexes them directly.
+    fn wire_value(&self, w: usize) -> f32 {
+        if self.def.ugens[w].rate == Rate::Ar {
+            self.wires[w].0[self.frame.min(BLOCK_SIZE - 1)]
+        } else {
+            self.wires[w].0[0]
+        }
+    }
+
+    /// Whether wire `w` carries a demand stream rather than samples.
+    fn is_stream(&self, w: usize) -> bool {
+        self.def.ugens[w].rate == Rate::Dr
+    }
+}
+
+impl DemandInputs for Pull<'_> {
+    fn len(&self) -> usize {
+        self.refs.len()
+    }
+
+    fn is_demand(&self, k: usize) -> bool {
+        matches!(self.refs.get(k), Some(&InputRef::Wire(w)) if self.is_stream(w))
+    }
+
+    fn pull(&mut self, k: usize) -> f32 {
+        match self.refs.get(k) {
+            // An input that does not exist has nothing to yield.
+            None => f32::NAN,
+            Some(&InputRef::Const(c)) => self.def.constants[c],
+            Some(&InputRef::Control(c)) => self.controls[c],
+            Some(&InputRef::Wire(w)) => {
+                if self.is_stream(w) {
+                    let ctx = self.ctx;
+                    self.nested(w, |u, inner| u.demand(&ctx, inner))
+                } else {
+                    self.wire_value(w)
+                }
+            }
+        }
+    }
+
+    fn reset(&mut self, k: usize) {
+        if let Some(&InputRef::Wire(w)) = self.refs.get(k)
+            && self.is_stream(w)
+        {
+            self.nested(w, |u, inner| u.reset_demand(inner));
+        }
+    }
+
+    fn at(&self, k: usize) -> f32 {
+        match self.refs.get(k) {
+            None => 0.0,
+            Some(&InputRef::Const(c)) => self.def.constants[c],
+            Some(&InputRef::Control(c)) => self.controls[c],
+            // A demand wire is never written in block order: it has no samples.
+            Some(&InputRef::Wire(w)) if self.is_stream(w) => 0.0,
+            Some(&InputRef::Wire(w)) => self.wire_value(w),
+        }
+    }
+
+    fn seek(&mut self, frame: usize) {
+        self.frame = frame;
+    }
 }
 
 impl UGenSynth {
@@ -205,43 +315,26 @@ impl SynthNode for UGenSynth {
                     u_rest[0].set_done_flag(flag);
                     u_rest[0].process(ctx, &inputs[..refs.len()], output);
                 }
-                // Demand driver (S1): pull the next value from its demand
-                // source on each trigger. The source (a `dr` UGen, skipped in
-                // block order) is reached only through the `step` callback, so
-                // there is a single mutable path to it and no allocation.
+                // Demand driver (S1, generalized in U8): the driver decides
+                // when to pull, and `Pull` resolves each of its inputs — a
+                // value if it is one, the next item of a stream if it is a `dr`
+                // wire, recursing into that stream's own demand inputs. The
+                // sources are reached only this way (they are skipped in block
+                // order), so there is a single mutable path to each and nothing
+                // allocates.
                 ExecMode::DemandDriver => {
-                    let InputRef::Wire(j) = refs[DEMAND_SOURCE_SLOT] else {
-                        // Compile guarantees a `dr` wire in this slot.
-                        output.fill(0.0);
-                        continue;
-                    };
-                    // Resolve the source's own inputs (its value list, etc.).
-                    let src_refs = &self.def.ugens[j].inputs;
-                    let mut src_inputs: [&[f32]; MAX_UGEN_INPUTS] = [&[]; MAX_UGEN_INPUTS];
-                    for (k, r) in src_refs.iter().enumerate() {
-                        src_inputs[k] = match r {
-                            InputRef::Const(c) => std::slice::from_ref(&self.def.constants[*c]),
-                            InputRef::Control(c) => std::slice::from_ref(&self.controls[*c]),
-                            InputRef::Wire(w) => {
-                                &earlier[*w].0[..wire_len(&self.def, *w, ctx.frames)]
-                            }
-                        };
-                    }
-                    let sn = src_refs.len();
                     let ctx_copy = *ctx; // Copy: shared refs, no aliasing
-                    let (trig, reset) = (inputs[0], inputs[1]);
                     let (u_earlier, u_rest) = self.ugens.split_at_mut(i);
-                    let source = &mut u_earlier[j];
-                    let driver = &mut u_rest[0];
-                    let mut step = |reset: bool| -> f32 {
-                        if reset {
-                            source.reset_demand();
-                            f32::NAN
-                        } else {
-                            source.demand(&ctx_copy, &src_inputs[..sn])
-                        }
+                    let mut pull = Pull {
+                        def: &self.def,
+                        controls: &self.controls,
+                        wires: earlier,
+                        ugens: u_earlier,
+                        refs,
+                        ctx: ctx_copy,
+                        frame: 0,
                     };
-                    driver.drive(trig, reset, output, &mut step);
+                    u_rest[0].drive(&ctx_copy, &mut pull, output);
                 }
                 // Spectral chain (S8): the FFT/PV_*/IFFT UGen runs with its
                 // synth-private `SpectralChain`, resolved by the compile-

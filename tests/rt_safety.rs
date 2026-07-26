@@ -511,6 +511,95 @@ fn rate_substrate_does_not_allocate_on_the_audio_thread() {
     assert_eq!(handle.collect_garbage(), 1);
 }
 
+/// The demand family (U8): every source and both drivers, nested three deep,
+/// pulled and reset every block. The recursion runs on the audio thread — this
+/// is what says it never allocates a frame of it — and driving all fourteen
+/// rows from one def also checks each one's arity against the registry.
+#[test]
+fn demand_family_does_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    // A `Dseq` over every other source (so each is drained and restarted every
+    // pass), a `Dstutter` over that, a `Dswitch1` picking between the two
+    // drivers' streams, and a reset trigger firing on its own clock.
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "demandall",
+            "ugens": [
+                {"kind": "Dseries", "rate": "dr",
+                 "inputs": [{"const": 3.0}, {"const": 0.0}, {"const": 1.0}]},
+                {"kind": "Dgeom", "rate": "dr",
+                 "inputs": [{"const": 3.0}, {"const": 1.0}, {"const": 2.0}]},
+                {"kind": "Dwhite", "rate": "dr",
+                 "inputs": [{"const": 2.0}, {"const": 0.0}, {"const": 1.0}]},
+                {"kind": "Diwhite", "rate": "dr",
+                 "inputs": [{"const": 2.0}, {"const": 0.0}, {"const": 9.0}]},
+                {"kind": "Dbrown", "rate": "dr",
+                 "inputs": [{"const": 2.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.2}]},
+                {"kind": "Dibrown", "rate": "dr",
+                 "inputs": [{"const": 2.0}, {"const": 0.0}, {"const": 9.0}, {"const": 2.0}]},
+                {"kind": "Drand", "rate": "dr",
+                 "inputs": [{"const": 2.0}, {"const": 4.0}, {"const": 5.0}]},
+                {"kind": "Dxrand", "rate": "dr",
+                 "inputs": [{"const": 2.0}, {"const": 6.0}, {"const": 7.0}]},
+                {"kind": "Dshuf", "rate": "dr",
+                 "inputs": [{"const": 1.0}, {"const": 8.0}, {"const": 9.0}]},
+                {"kind": "Dbufrd", "rate": "dr",
+                 "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}, {"const": 0.0}]},
+                {"kind": "Dseq", "rate": "dr",
+                 "inputs": [{"const": 0.0}, {"ugen": 0}, {"ugen": 1}, {"ugen": 2},
+                            {"ugen": 3}, {"ugen": 4}, {"ugen": 5}, {"ugen": 6},
+                            {"ugen": 7}, {"ugen": 8}, {"ugen": 9}]},
+                {"kind": "Dstutter", "rate": "dr", "inputs": [{"const": 2.0}, {"ugen": 10}]},
+                {"kind": "Dseries", "rate": "dr",
+                 "inputs": [{"const": 0.0}, {"const": 0.0}, {"const": 1.0}]},
+                {"kind": "Dswitch1", "rate": "dr",
+                 "inputs": [{"ugen": 12}, {"ugen": 11}, {"const": 0.5}]},
+                {"kind": "Dseq", "rate": "dr",
+                 "inputs": [{"const": 0.0}, {"const": 0.001}, {"const": 0.002}]},
+                {"kind": "Impulse", "inputs": [{"const": 7000.0}]},
+                {"kind": "Impulse", "inputs": [{"const": 11.0}]},
+                {"kind": "Demand", "inputs": [{"ugen": 15}, {"ugen": 16}, {"ugen": 13}]},
+                {"kind": "Duty", "inputs": [{"ugen": 14}, {"ugen": 16},
+                                            {"ugen": 13}, {"const": 0.0}]},
+                {"kind": "TDuty", "inputs": [{"ugen": 14}, {"ugen": 16}, {"ugen": 13},
+                                             {"const": 0.0}, {"const": 1.0}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 17}, {"ugen": 18}, {"ugen": 19}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 20}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}
+
 /// Typed controls (S2): the trigger reset, the compile-inserted `Lag`, the
 /// scalar `/n_set` reject and ordinary sets must all stay allocation-free on
 /// the audio thread. The def mixes a `tr`, a lagged `kr` and an `ir` control.

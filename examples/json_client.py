@@ -592,8 +592,11 @@ def demo_demand(client: Client):
     tick of a 4 Hz `Impulse`, holding the frequency between ticks. That held
     (control-like) signal drives a `Sine`, so the sine hops through the
     sequence — a step sequencer with no per-note `/s_new`. The `"rate": "dr"`
-    on the `Dseq` marks it demand-rate; the compiler then only lets it feed the
-    `Demand`'s source slot. `repeats` 0 loops the list forever."""
+    on the `Dseq` marks it demand-rate; the compiler then only lets it feed
+    something that *pulls* it — a driver, or another demand ugen nesting it.
+    `repeats` 0 is the endless stream. This is the smallest member of a family
+    of fourteen (`Duty`, `Dwhite`, `Dstutter`, ...); `examples/demand.py` shows
+    the rest from Python."""
     d = SynthDefBuilder("dseqmelody")
     trig = d.add("Impulse", 4.0)  # 4 steps per second
     seq = d.add(

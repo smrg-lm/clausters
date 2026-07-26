@@ -309,8 +309,19 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `var_lag(signal, up=0.1, down=0.1)` | one-pole smoother with separate rise / fall times |
 | Scalar (`ir`) | `sample_rate()` | the engine sample rate in Hz, computed once at init |
 | | `rand(lo=0.0, hi=1.0)` | one uniform random value in `[lo, hi)`, drawn once at init and held for the node's life |
-| Demand (`dr`) | `dseq(values, repeats=0.0)` | a demand-rate sequence source (`repeats` 0 loops forever); only valid as a `demand` source |
-| | `demand(trig, reset, source)` | pulls the next value from a demand `source` on each rising edge of `trig`, holding it between triggers |
+| Demand (`dr`) | `dseq(values, repeats=0.0)` | yields `values` in order, `repeats` passes (**0 is endless**); a value that is itself a stream is drained, not taken once |
+| | `drand(values, repeats=0.0)` / `dxrand(...)` | `repeats` **items** drawn at random from the list; `dxrand` never picks the value it just used |
+| | `dshuf(values, repeats=0.0)` | the list shuffled **once** and replayed in that order, `repeats` passes |
+| | `dseries(repeats=0.0, start=0.0, step=1.0)` | arithmetic sequence; `step` is read per item, so it may be a stream |
+| | `dgeom(repeats=0.0, start=1.0, grow=2.0)` | geometric sequence `start`, `start * grow`, … |
+| | `dwhite(repeats=0.0, lo=0.0, hi=1.0)` / `diwhite(...)` | independent uniform draws on `[lo, hi]`; `diwhite` over the integers, both ends included |
+| | `dbrown(repeats=0.0, lo=0.0, hi=1.0, step=0.01)` / `dibrown(..., step=1.0)` | a random walk of at most `step` per item, **folded** into `[lo, hi]`; `dibrown` over the integers |
+| | `dstutter(repeats, value)` | repeats each item of `value` `repeats` times; the count is pulled per item |
+| | `dswitch1(which, *sources)` | takes **one** item from the stream `which` picks, then picks again; the unselected ones do not advance |
+| | `dbufrd(bufnum, phase, loop=1.0, channel=0.0)` | reads the buffer frame the `phase` stream names — a `dseries` phase walks a buffer as a step sequence |
+| | `demand(trig, reset, source)` | driver: pulls one value per rising edge of `trig`, holding it in between; holds the last value once the stream ends |
+| | `duty(dur, reset=0.0, level=1.0, done_action=0)` | driver with a clock of its own: pulls one `level` every `dur` seconds and holds it; `done_action` fires when either stream ends |
+| | `tduty(dur, reset=0.0, level=1.0, done_action=0, gap_first=0.0)` | `duty` emitting each level on its own sample and silence in between — a trigger stream with amplitudes |
 | Fused | `madd(a, b, c)` | `a*b + c` in one UGen (the multiply-accumulate the server fuses) |
 | | `sum3(a, b, c)` / `sum4(a, b, c, d)` | three / four-operand sums in one UGen |
 | Side-effect | `send_trig(trig, id, value)` | on each trigger, sends `/tr nodeID id value`; output is silence |
@@ -343,6 +354,18 @@ out(0, mid_side(lpf(m, 400), s * 1.5))  # process each axis, decode, widened
 ```
 
 Use `stereo_width` when a width knob is all you need, and `mid_side` when something has to happen *between* the two — which is the case the knob cannot express.
+
+The **demand** callables are a sequencer inside the def. A `d*` builder is not a signal: it is a **stream**, with no samples and only a next value, and it yields one each time something pulls it. Three things pull. `demand` is told when, by a trigger — the classic "one note per `impulse`". `duty` and `tduty` bring their own clock, pulling one `level` every `dur` seconds, and both `dur` and `level` are pulled, which is what makes them sequencers rather than samplers: a stream of durations against a stream of pitches, the two free to be different lengths. `duty` holds each level; `tduty` emits it on one sample and is silent in between, so it is a trigger train whose amplitudes are the levels — feed it to an envelope's gate.
+
+```python
+from clausters.defs import SynthDef, dseq, drand, duty, sine, out
+
+pitch = dseq([60, 62, 67, drand([70, 72, 74], repeats=2)])  # a stream inside a stream
+dur = dseq([0.25, 0.25, 0.5])
+sdef = SynthDef("seq", out(0.0, sine(duty(dur, level=pitch).midicps()) * 0.2))
+```
+
+Two conventions carry the family. **`repeats=0` is endless** — sclang writes `inf`, which a def cannot carry — and it counts *passes over the list* for `dseq`/`dshuf` but *items* for `drand`/`dxrand`, which have no pass to complete. And **a stream may go anywhere a number may**, as above: `dseq` **drains** a nested stream before moving on, and restarts it when it comes round to it again, so that pitch stream is five items per pass (three notes, then two drawn) against three durations, and the two only realign after fifteen. That is the whole reason the family exists — a sequence of phrases rather than of numbers. When a stream ends, `demand` holds its last value while `duty`/`tduty` fire their `done_action`, so a finite sequence can free its own node.
 
 ### Maths on a UGen graph
 
