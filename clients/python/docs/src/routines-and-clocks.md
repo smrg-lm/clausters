@@ -92,6 +92,8 @@ with Session.nrt(tempo=2.0) as session:
 
 Everything here works unchanged offline. Build the `Server` with an `OscNrtInterface`, drive the clock with `clock.render()` instead of `run()`, and the routine's `play` calls accumulate a timed score the bundled renderer turns into samples — no server, no audio device. That swap is the client's central seam, covered in [Sessions](sessions.md) and [The client, layer by layer](guide.md).
 
+Unchanged includes the **immediate** commands. `server.synth(…)`, `server.set(…)`, `server.free(…)` claim to send "now", and inside a routine "now" is the routine's logical beat — offline as well as live. So a routine that makes a synth, yields a beat and makes another renders two events a beat apart, exactly as it sounds live. Only what is sent **outside** a routine has no logical time to answer to, and that lands at the start of the score: the defs, the buffer allocations, the groups a piece opens with, which is where they belong. `send_bundle` is still there for the case a routine wants to schedule *ahead* of itself (`delay_beats=`).
+
 ## See also
 
 - [Timing models](timing-models.md) — the ways a clock keeps time (wall-clock, sample-locked, shared transport) and how to observe each.

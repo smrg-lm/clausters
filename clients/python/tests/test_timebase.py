@@ -10,6 +10,7 @@ import pytest
 from clausters.base import (
     MonotonicTimebase,
     OscNrtInterface,
+    Routine,
     SampleClockTimebase,
     TempoClock,
 )
@@ -149,6 +150,41 @@ def test_nrt_render_is_timebase_independent():
     mono = starts_for(MonotonicTimebase())
     samp = starts_for(SampleClockTimebase(lambda: 0, 48_000.0))
     assert mono == samp == [0.0, 0.5, 1.0, 1.5]
+
+
+# ---- an immediate send inside a routine is at the routine's logical time ----
+
+def test_nrt_immediate_sends_follow_the_routine_clock():
+    """`Server.synth` and friends send "immediately". Offline that has to mean
+    the running routine's logical time, not the start of the score: a routine
+    that makes a synth, yields a beat and makes another describes two events a
+    beat apart, and rendering them both at zero turns a piece into one chord.
+    (The bug this pins piled five sections of `examples/noise.py` onto time
+    zero and read 1.31 peak where it should have read 0.46.)"""
+    server = Server(interface=OscNrtInterface())
+    clock = TempoClock(tempo=1.0)
+
+    def routine():
+        server.synth("default", {"freq": 100.0})
+        yield 0.5
+        server.synth("default", {"freq": 200.0})
+        yield 0.25
+        server.synth("default", {"freq": 300.0})
+        yield 1.0
+
+    clock.play(Routine(routine))
+    clock.render()
+    starts = sorted(w for w, raw in server.interface.score.bundles
+                    if _inner_addr(raw) == "/s_new")
+    assert starts == [0.0, 0.5, 0.75]
+
+
+def test_nrt_immediate_sends_outside_a_routine_stay_at_zero():
+    """There is no logical time outside a routine, and the setup a score opens
+    with — the defs, the buffers, the groups — belongs at zero."""
+    server = Server(interface=OscNrtInterface())
+    server.send_msg("/g_new", 1, 0, 0)
+    assert [w for w, _ in server.interface.score.bundles] == [0.0]
 
 
 if __name__ == "__main__":

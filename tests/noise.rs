@@ -162,11 +162,14 @@ fn clip_noise_is_only_ever_plus_or_minus_one_and_fair() {
 
 #[test]
 fn gray_noise_moves_by_one_bit_at_a_time() {
-    // One bit of a 31-bit word flips per sample, so the *step* is a power of
-    // two — but that is a property of the word, not of the output, and it is
-    // not recoverable from the samples: an `f32` mantissa is 24 bits, so the
-    // bottom flips vanish entirely and a flip that changes the exponent is
-    // rounded at a different granularity either side of it. What is observable
+    // One bit of the *integer* word flips per sample, so the step is exactly a
+    // power of two — in the integer. It is not recoverable from the output,
+    // because the output is `word / 2^31` in `f32` and an `f32` significand is
+    // 24 bits against the word's 31: the conversion rounds, by an amount that
+    // depends on the word's magnitude, which the flip itself changes. Flipping
+    // bit 28 of 0x0001F3A5 reads as a step of 268435451 rather than 2^28, and
+    // flipping bit 0 of a word near 2^29 reads as no step at all. What is
+    // observable
     // is the distribution the bit flipping produces, and that is the character
     // the kind exists for: steps spanning every order of magnitude, so the
     // median step is a tiny fraction of the mean one. White noise, whose steps

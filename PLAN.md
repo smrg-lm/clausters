@@ -597,8 +597,10 @@ comb-plus-allpass space, rendered offline so it needs no audio hardware.
   corrected by measuring, all in `docs/decisions.md`. `GrayNoise` is **not**
   flat — it leans low at −2.9 dB/octave, and what distinguishes it is its
   step distribution (a mean step four thousand times the median, against 1.14
-  for white). That bit-level property is **not observable from the output** at
-  all, since the word is 31 bits and an `f32` mantissa 24. And `Crackle` does
+  for white). That bit-level property is exact in the **integer** (bit 31 is
+  the sign, which is what makes the output bipolar) but **not observable from
+  the output**, since `word / 2^31` in `f32` has a 24-bit significand and rounds
+  by an amount that depends on the magnitude the flip just changed. And `Crackle` does
   **not** settle below a chaos of 1: there is no period up to 512 samples
   anywhere in 0.3–1.9, and its spread is not monotonic in the parameter.
   `LFNoise2` overshoots to ±1.7 by construction (it aims at midpoints and

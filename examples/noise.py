@@ -109,11 +109,10 @@ def render(path=None):
         kit(),
     ):
         server.add_synthdef(sdef)
-    # One event per section, sequenced by a pattern. Note that this is *not*
-    # `server.synth()` in a loop: offline, an immediate send is stamped at time
-    # zero whatever the routine's logical time is, so five of them would all
-    # start at once. Anything that has to happen *later* in a score goes through
-    # a pattern or through `send_bundle`.
+    # One event per section, sequenced by a pattern: `instrument` is a pattern
+    # like any other key, so a `Pseq` of def names plays them in turn. (A
+    # routine calling `server.synth()` between yields does the same thing —
+    # offline, an immediate send lands at the routine's logical time.)
     clock = TempoClock(tempo=1.0)
     Pbind(
         instrument=Pseq(["white", "pink", "brown", "grit", "kit"]),

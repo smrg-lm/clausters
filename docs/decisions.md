@@ -2267,12 +2267,17 @@ number is ours. What *is* distinctive is the distribution: the mean step is some
 four thousand times the median, against 1.14 for white noise, and that is the
 graininess the kind exists for.
 
-**That bit-level property cannot be tested from the output.** The word is 31
-bits and an `f32` mantissa is 24, so flips in the bottom seven vanish entirely,
-and a flip that changes the exponent is rounded at a different granularity
-either side of it. The first test asserted "every step is a power of two" and
-failed on the third sample. The test now asserts what is observable — the
-step-size distribution and the spectrum — and the docs state the limit.
+**That bit-level property cannot be tested from the output.** The flip is exact
+— it is integer arithmetic on a signed 32-bit word, exactly as scsynth's is
+(`int32 mCounter`, `counter ^= 1L << (trand() & 31)`), and bit 31 is the sign
+bit, which is what makes the output bipolar. What is lossy is the *conversion*:
+the output is `word / 2^31` in `f32`, whose significand is 24 bits against the
+word's 31. So the rounding depends on the word's magnitude — and the flip
+changes that magnitude. Flipping bit 28 of `0x0001F3A5` reads as a step of
+268435451 rather than 2^28; flipping bit 0 of a word near 2^29 reads as no step
+at all. The first test asserted "every step is a power of two" and failed on the
+third sample. The test now asserts what is observable — the step-size
+distribution and the spectrum — and the docs state the limit.
 
 **`Crackle` does not settle below a chaos of 1.** The obvious reading of a
 chaos parameter is that low values are periodic and high ones are not. Measured

@@ -205,8 +205,11 @@ impl UGen for BrownNoise {
 /// consecutive samples differ by exactly one power of two, so the steps span
 /// every order of magnitude (the mean step is some four thousand times the
 /// median, against 1.14 for white noise) and it sounds grainy rather than
-/// smooth. That bit-level property is not recoverable from the output, since an
-/// `f32` mantissa is 24 bits and the word is 31.
+/// smooth. That bit-level property is exact in the **integer** — bit 31 is the
+/// sign bit, which is what makes the output bipolar — but it is not recoverable
+/// from the output, because `word / 2^31` in `f32` has a 24-bit significand
+/// against the word's 31 and rounds by an amount that depends on the magnitude
+/// the flip just changed.
 pub struct GrayNoise {
     rng: rng::Rng,
     word: i32,

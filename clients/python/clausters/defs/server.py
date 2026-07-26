@@ -656,7 +656,29 @@ class Server:
     # ---- raw OSC: immediate and timed ----
 
     def send_msg(self, addr, *args):
-        """Send one message immediately."""
+        """Send one message immediately.
+
+        **Offline, "immediately" means the running routine's logical time**, not
+        the start of the score. A routine that creates a synth, yields a beat
+        and creates another describes two events a beat apart, and it has to
+        render as two events a beat apart — otherwise `Server.synth` is a
+        command whose meaning changes with the interface, and a score written
+        that way piles everything onto time zero and sounds like one loud
+        chord. Outside a routine there is no logical time and the message lands
+        at 0, which is where the setup belongs: the defs, the buffer
+        allocations, the groups a score starts with.
+
+        In real time this question does not arise — "now" is now — so the path
+        below is unchanged there."""
+        if getattr(self.interface, "time_mode", "unix") == "score":
+            tt = main.current_tt
+            clock = getattr(tt, "clock", None)
+            beat = getattr(tt, "_logical_beat", None)
+            if clock is not None and beat is not None:
+                self.interface.send_bundle(
+                    self.target.addr(), clock.beats2secs(beat), (addr, *args)
+                )
+                return
         self.interface.send_msg(self.target.addr(), addr, *args)
 
     def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None):
