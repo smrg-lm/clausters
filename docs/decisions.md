@@ -2548,18 +2548,12 @@ a measured gain** — the interleaved A/B benchmark that justified it came back
 identical within the machine's noise.
 
 **The decision is to stay on autovectorization and write loop bodies it can
-take.** Three reasons, in order of weight:
+take.** Two reasons:
 
-- **The ceiling is low where it would apply.** A block is 64 samples: sixteen
-  SSE2 vectors, eight AVX ones. For the arithmetic rows — the only ones a
-  vectorizer can touch at all — the per-call overhead is a large fraction of the
-  work either way.
-- **The measured bottleneck is somewhere else.** Head to head on a bit-exact
-  `gain` (a multiply over a shared bus — no transcendental, no `f64`/`f32`
-  asymmetry, so the number is pure engine overhead), Faust runs **1.3–1.6×
-  faster** than the equivalent UGen graph. The cost is three `dyn` dispatches and
-  two intermediate wire buffers against one call over the block. Widening the
-  arithmetic does not touch that.
+- **It is enough.** Measured below: the arithmetic rows went from scalar to
+  4-wide SSE2 without a single intrinsic, purely by handing LLVM a loop it could
+  take. An explicit-vector rewrite would be starting from a body that is already
+  vectorized.
 - **Intrinsics would be three code paths.** `core::arch::x86_64`,
   `core::arch::aarch64` and `core::arch::wasm32`, each hand-written and each
   needing its own correctness argument. One autovectorizable loop body serves all
@@ -2585,15 +2579,66 @@ phase0 + i·inc`), and **every one of those transforms changes the result in the
 last bits** — against golden WAVs and the sample-by-sample Faust parity suite,
 that is a real cost, not a rounding detail.
 
-**Our own loop bodies are the first obstacle, before any flag.** The shared
-operators run `apply_binary(op, …)` with `op` a runtime field, so a match over
-some thirty variants sits *inside* the per-sample loop, and `builtins::at` — the
-length-1 broadcast — puts a branch there too. Both are loop-invariant and LLVM
-may hoist them, but that is a hope, not a measurement, and nobody has read the
-disassembly. So the ordered work, if the arithmetic rows ever need to be faster,
-is: hoist the operator match out of the loop (free, bit-identical, and it leaves
-a trivial body behind), then fuse chains to delete intermediate wires, and only
-then consider vectors.
+**Our own loop bodies were the obstacle, and they were the whole story.** The
+shared operators ran `apply_binary(op, …)` with `op` a runtime field, so a match
+over 40 variants sat *inside* the per-sample loop, and `builtins::at` — the
+length-1 broadcast — put a branch there too. Both are loop-invariant, so the
+first draft of this entry supposed LLVM might hoist them and called the cost
+small. **Measured, it does not and it was not.** `binary_slice`/`unary_slice` now
+match the operator once and hand a monomorphic closure to a helper that resolves
+the broadcast shape before the loop, leaving a flat body over slices of equal
+length. Nothing about the arithmetic changed — the closure still calls the same
+scalar `apply_*`, which is what keeps the two paths one definition, and a test
+asserts the slice ops equal the scalar ones **bit for bit** (`to_bits`, so a NaN
+must be the same NaN) across every operator, every broadcast shape and the edge
+operands.
+
+The disassembly is the direct evidence, read from two probes that take the
+operator as a runtime integer so neither can fold it away. Before: 506
+instructions, **no packed arithmetic at all** — every operator scalar (`mulss`,
+`addss`), the only `*ps` present being the `xorps`/`andps` sign and absolute-value
+bit tricks on a single lane. After: 3744 instructions, of which **985 packed** —
+288 `mulps`, 127 `addps`, 112 `subps`. That is the 4-wide SSE2 baseline actually
+being used.
+
+The timings, interleaved A/B in one process (best of nine rounds, 400 000 calls
+each, 64-frame block), ns per block:
+
+| case | before | after | |
+|---|---:|---:|---:|
+| `Mul` signal × constant | 71.7 | 4.7 | **15.3×** |
+| `Mul` signal × signal | 71.8 | 5.5 | 13.1× |
+| `Add` signal × signal | 72.1 | 5.1 | 14.1× |
+| `Gt` signal × constant | 72.2 | 5.7 | 12.6× |
+| `Neg` (unary) | 39.6 | 4.3 | 9.3× |
+| `Sqrt` (unary) | 41.7 | 10.2 | 4.1× |
+| `Pow` signal × constant | 253.6 | 231.7 | 1.09× |
+| `Sine` (unary) | 161.9 | 134.7 | 1.20× |
+
+More than the 4× vectorization alone, because the per-sample jump through a
+40-way match cost more than the multiply did. The transcendental rows are the
+control: `Pow` and `Sine` call a scalar libm and barely move, which is what says
+the rest of the table is the loop body and not the harness.
+
+At the engine, `examples/bench.rs` over three interleaved rounds: the default def
+(`Sine · amp → 2× Out`, one multiply among four UGens) gains **~20%** at every
+voice count (1000 synths: 1205 → 1435 blocks/s). The bit-exact `gain` graph —
+the bench built precisely to isolate engine overhead — gains **~70%** (128
+synths: 87.3 → 150.5 × real time), and Faust's lead on it, the number this entry
+originally cited as proof the arithmetic was not worth touching, **fell from 2.9×
+to 1.6×**. So the second reason in the first draft ("widening the arithmetic does
+not touch that") was wrong twice over: the dispatch was not the only cost, and
+removing it closed half the gap.
+
+The price is code size — 506 to 3744 instructions for the binary dispatch,
+because 77 operators are each monomorphized. For a synthesis server's hot path
+that is the right side of the trade, but it is the reason the technique belongs
+here and not reflexively everywhere.
+
+What is left, in order: `at` still runs per sample inside the fused rows
+(`MulAdd`, `Sum3`, `Sum4`), where the operator was always a constant and only the
+broadcast branch remains; then fusing chains to delete intermediate wires; and
+only then, if ever, explicit vectors.
 
 **What this means in the browser.** wasm's SIMD is `simd128`: **fixed at 128
 bits, four `f32`, and there is nothing wider** — no AVX equivalent, by design of

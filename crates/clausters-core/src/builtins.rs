@@ -649,21 +649,108 @@ pub fn apply_unary(op: UnaryOp, x: f32) -> f32 {
     }
 }
 
-/// Broadcasting binary op over slices into `out` (length defines the frame
-/// count). Allocation-free.
-#[inline]
-pub fn binary_slice(op: BinaryOp, a: &[f32], b: &[f32], out: &mut [f32]) {
-    for (i, s) in out.iter_mut().enumerate() {
-        *s = apply_binary(op, at(a, i), at(b, i));
+/// Applies `f` element-wise over two broadcasting inputs.
+///
+/// The **broadcast shape is resolved once, before the loop**: each arm slices
+/// its inputs to `out.len()` up front, so the body is a flat `f(x, y)` over
+/// slices of statically equal length — no per-sample branch, no bounds check,
+/// and a shape the autovectorizer can take. That is the whole point of this
+/// helper; it is what [`at`] cannot give, since its branch is per sample.
+///
+/// A length other than 1 or `out.len()` panics, as indexing did before.
+#[inline(always)]
+fn map2<F: Fn(f32, f32) -> f32>(a: &[f32], b: &[f32], out: &mut [f32], f: F) {
+    let n = out.len();
+    if n == 0 {
+        return;
+    }
+    match (a.len() == 1, b.len() == 1) {
+        (true, true) => out.fill(f(a[0], b[0])),
+        (true, false) => {
+            let x = a[0];
+            for (o, &y) in out.iter_mut().zip(&b[..n]) {
+                *o = f(x, y);
+            }
+        }
+        (false, true) => {
+            let y = b[0];
+            for (o, &x) in out.iter_mut().zip(&a[..n]) {
+                *o = f(x, y);
+            }
+        }
+        (false, false) => {
+            for (o, (&x, &y)) in out.iter_mut().zip(a[..n].iter().zip(&b[..n])) {
+                *o = f(x, y);
+            }
+        }
     }
 }
 
-/// Broadcasting unary op over a slice into `out`. Allocation-free.
-#[inline]
-pub fn unary_slice(op: UnaryOp, a: &[f32], out: &mut [f32]) {
-    for (i, s) in out.iter_mut().enumerate() {
-        *s = apply_unary(op, at(a, i));
+/// [`map2`] with one input.
+#[inline(always)]
+fn map1<F: Fn(f32) -> f32>(a: &[f32], out: &mut [f32], f: F) {
+    let n = out.len();
+    if n == 0 {
+        return;
     }
+    if a.len() == 1 {
+        out.fill(f(a[0]));
+    } else {
+        for (o, &x) in out.iter_mut().zip(&a[..n]) {
+            *o = f(x);
+        }
+    }
+}
+
+/// Generates `binary_slice`/`unary_slice` as a match that picks the operator
+/// **once**, before the loop, and hands [`map2`]/[`map1`] a closure that is
+/// monomorphic in it.
+///
+/// The closure still calls `apply_*`, so the scalar function stays the single
+/// definition of every operator's arithmetic and the slice path cannot drift
+/// from it; with the operator a constant at each call site it folds away, which
+/// is what leaves the loop body flat. Written out by hand this would be one arm
+/// per operator saying the same thing 77 times. A variant missing from the list
+/// below fails to compile — the generated match is exhaustive.
+macro_rules! slice_dispatch {
+    (binary: $($b:ident),+ $(,)?; unary: $($u:ident),+ $(,)?) => {
+        /// Broadcasting binary op over slices into `out` (length defines the
+        /// frame count). Allocation-free.
+        #[inline]
+        pub fn binary_slice(op: BinaryOp, a: &[f32], b: &[f32], out: &mut [f32]) {
+            match op {
+                $(BinaryOp::$b => map2(a, b, out, |x, y| apply_binary(BinaryOp::$b, x, y)),)+
+            }
+        }
+
+        /// Broadcasting unary op over a slice into `out`. Allocation-free.
+        #[inline]
+        pub fn unary_slice(op: UnaryOp, a: &[f32], out: &mut [f32]) {
+            match op {
+                $(UnaryOp::$u => map1(a, out, |x| apply_unary(UnaryOp::$u, x)),)+
+            }
+        }
+    };
+}
+
+slice_dispatch! {
+    binary:
+        Add, Sub, Mul, Div, Mod, Pow, Min, Max, Atan2,
+        Gt, Lt, Ge, Le, Eq, Ne,
+        And, Or, Xor, Lsh, Rsh,
+        Hypot, Ring1, Ring2, Ring3, Ring4,
+        Sumsqr, Difsqr, Sqrsum, Sqrdif, Absdif,
+        Thresh, Clip2, Excess, Round, Trunc, Fold2, Wrap2,
+        Gcd, Lcm, HypotApx;
+    unary:
+        Neg, Abs, Sine, Cos, Tan, Asin, Acos, Atan,
+        Exp, Exp10, Log, Log10, Log2, Sqrt,
+        Floor, Ceil, Rint, IntCast, FloatCast,
+        Squared, Cubed, Recip, Frac, Sign,
+        Sinh, Cosh, Tanh,
+        Midicps, Cpsmidi, Midiratio, Ratiomidi,
+        Dbamp, Ampdb, Octcps, Cpsoct,
+        Distort, Softclip,
 }
 
 /// Scale-degree → MIDI note number: `degree` indexes `scale` (semitone offsets
@@ -726,6 +813,73 @@ mod tests {
         let mut out = [0.0f32; 3];
         binary_slice(BinaryOp::Add, &a, &b, &mut out);
         assert_eq!(out, [12.0, 22.0, 32.0]);
+    }
+
+    #[test]
+    fn slice_ops_are_the_scalar_ops_element_by_element() {
+        // The invariant the dispatch rests on: hoisting the operator match and
+        // the broadcast shape out of the loop must not move a single bit. The
+        // reference here is the naive formulation the loops used to be —
+        // `apply_*` under `at` — checked bit-exactly (`to_bits`, so a NaN must
+        // be the *same* NaN) over every operator, every broadcast shape, and
+        // operands that reach the edge cases: zero and signed zero, negatives
+        // (`Pow`, `Sqrt`, `Log`), the shift and gcd integer casts, infinities
+        // and NaN itself.
+        let vals = [
+            0.0f32,
+            -0.0,
+            1.0,
+            -1.0,
+            0.5,
+            -2.5,
+            3.0,
+            1e-30,
+            1e30,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+        ];
+        let n = vals.len();
+        let bin = (0..40).map(|v| BinaryOp::from_u32(v).unwrap());
+        for op in bin {
+            for shape in 0..4 {
+                let (a, b) = match shape {
+                    0 => (vals.to_vec(), vals.to_vec()),
+                    1 => (vec![vals[5]], vals.to_vec()),
+                    2 => (vals.to_vec(), vec![vals[5]]),
+                    _ => (vec![vals[3]], vec![vals[5]]),
+                };
+                let mut got = vec![0.0f32; n];
+                binary_slice(op, &a, &b, &mut got);
+                for (i, g) in got.iter().enumerate() {
+                    let want = apply_binary(op, at(&a, i), at(&b, i));
+                    assert_eq!(
+                        g.to_bits(),
+                        want.to_bits(),
+                        "{op:?} shape {shape} frame {i}: {g} != {want}"
+                    );
+                }
+            }
+        }
+        for op in (0..37).map(|v| UnaryOp::from_u32(v).unwrap()) {
+            for a in [vals.to_vec(), vec![vals[5]]] {
+                let mut got = vec![0.0f32; n];
+                unary_slice(op, &a, &mut got);
+                for (i, g) in got.iter().enumerate() {
+                    let want = apply_unary(op, at(&a, i));
+                    assert_eq!(g.to_bits(), want.to_bits(), "{op:?} frame {i}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn slice_ops_accept_an_empty_frame_count() {
+        // Reachable from the C ABI (`n == 0` with length-1 or empty inputs) and
+        // a no-op there before the shapes were hoisted; it must stay one.
+        let mut out: [f32; 0] = [];
+        binary_slice(BinaryOp::Add, &[], &[], &mut out);
+        unary_slice(UnaryOp::Neg, &[], &mut out);
     }
 
     #[test]
