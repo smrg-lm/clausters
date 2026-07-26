@@ -18,9 +18,30 @@
 //! suite is the closed forms, plus one pass driving every row with inputs no
 //! musician would write, since a wrap or a reciprocal is where a non-finite
 //! sample would come from.
+//!
+//! **Most of it drives the DSP directly, and the last section does not.** The
+//! laws are worth asserting on the struct, where a gain pair is one call and
+//! reads as arithmetic. But a two-channel row is emitted as *two UGens* whose
+//! only difference is a trailing `chan`, and that index is wiring rather than
+//! arithmetic — every test built on `stereo` and `matrix` below hands the
+//! channel numbers in itself, so none of them can tell whether the index
+//! survives a def. Verified rather than assumed: with the channel index
+//! deliberately broken, the two tests in that section fail and the other forty
+//! pass.
+//!
+//! Its limit is worth stating too, because a contrast test is easy to over-read:
+//! it compares the def path against the struct path, so it catches the def path
+//! *diverging* — an index that does not arrive, a variadic tail the compiler
+//! sizes wrongly, a channel written to the wrong bus. It cannot catch a law
+//! that is wrong in the struct, since both sides would be wrong together. That
+//! is what the rest of the file, against the closed forms, is for.
 
 #![cfg(feature = "synth")]
 
+#[path = "common/bench.rs"]
+mod bench;
+
+use bench::{Run, render_def};
 use clausters::dsp::pan::{
     Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind, quarter_sin, sin_cos_pi,
 };
@@ -824,5 +845,162 @@ fn no_input_produces_a_non_finite_sample() {
             .chain(sources.iter().copied())
             .collect();
         check(&format!("{kind:?}"), run(&mut Select::new(kind), &inputs));
+    }
+}
+
+// ---- through the def path ----
+//
+// What everything above cannot see. A panner has two outputs and a UGen has
+// one, so the family is two catalog rows sharing their inputs and differing in
+// a trailing `chan` — and the tests above supply that index themselves. Swap
+// the two rows' `chan` in `registry.rs`, or drop the input, and every one of
+// them still passes. These build the def, compile it and run a real synth, so
+// the wiring is what is under test: input order, the channel index, and a
+// variadic row's arity resolved at compile time.
+
+/// One block of a def whose UGens are `rows` (JSON fragments), each written to
+/// its own output bus. Returns the first sample of each.
+fn def_row(rows: &[String]) -> Vec<f32> {
+    let outs: Vec<String> = (0..rows.len())
+        .map(|c| format!(r#"{{"kind": "Out", "inputs": [{{"const": {c}.0}}, {{"ugen": {c}}}]}}"#))
+        .collect();
+    let json = format!(
+        r#"{{"name": "p", "ugens": [{}, {}]}}"#,
+        rows.join(", "),
+        outs.join(", ")
+    );
+    let run = Run::new(BLOCK_SIZE).channels(rows.len());
+    render_def(&json, &run).iter().map(|c| c[0]).collect()
+}
+
+/// A multi-channel row built once per channel, the way a client's builder does.
+fn def_chans(kind: &str, inputs: &[f32], channels: usize) -> Vec<f32> {
+    let rows: Vec<String> = (0..channels)
+        .map(|c| {
+            let mut args: Vec<String> = inputs
+                .iter()
+                .map(|v| format!(r#"{{"const": {v}}}"#))
+                .collect();
+            args.push(format!(r#"{{"const": {c}.0}}"#));
+            format!(r#"{{"kind": "{kind}", "inputs": [{}]}}"#, args.join(", "))
+        })
+        .collect();
+    def_row(&rows)
+}
+
+#[test]
+fn every_two_channel_row_is_wired_to_the_channel_it_names() {
+    // The contrast: the same inputs through the def and through the struct.
+    // Positions are chosen so the two channels differ — at the centre a swapped
+    // `chan` would be invisible, which is exactly the trap.
+    for pos in [-1.0f32, -0.3, 0.4, 1.0] {
+        for (kind, pankind) in [("Pan2", PanKind::Pan2), ("LinPan2", PanKind::LinPan2)] {
+            let (l, r) = stereo(pankind, &[&[0.8], &[pos], &[1.0]]);
+            let got = def_chans(kind, &[0.8, pos, 1.0], 2);
+            close(got[0], l, 1e-6, &format!("{kind} chan 0 at pos {pos}"));
+            close(got[1], r, 1e-6, &format!("{kind} chan 1 at pos {pos}"));
+            assert_ne!(got[0], got[1], "{kind} at {pos} must not be symmetric");
+        }
+
+        let (l, r) = stereo(PanKind::Balance2, &[&[0.8], &[0.3], &[pos], &[1.0]]);
+        let got = def_chans("Balance2", &[0.8, 0.3, pos, 1.0], 2);
+        close(got[0], l, 1e-6, &format!("Balance2 chan 0 at pos {pos}"));
+        close(got[1], r, 1e-6, &format!("Balance2 chan 1 at pos {pos}"));
+
+        let (l, r) = matrix(RotKind::Rotate2, &[&[0.8], &[0.3], &[pos]]);
+        let got = def_chans("Rotate2", &[0.8, 0.3, pos], 2);
+        close(got[0], l, 1e-6, &format!("Rotate2 chan 0 at pos {pos}"));
+        close(got[1], r, 1e-6, &format!("Rotate2 chan 1 at pos {pos}"));
+
+        let (l, r) = matrix(RotKind::Width, &[&[0.8], &[0.3], &[pos]]);
+        let got = def_chans("StereoWidth", &[0.8, 0.3, pos], 2);
+        close(
+            got[0],
+            l,
+            1e-6,
+            &format!("StereoWidth chan 0 at width {pos}"),
+        );
+        close(
+            got[1],
+            r,
+            1e-6,
+            &format!("StereoWidth chan 1 at width {pos}"),
+        );
+    }
+
+    // MidSide has no position input; two asymmetric inputs are what make its
+    // channels differ.
+    let (m, s) = matrix(RotKind::MidSide, &[&[0.8], &[0.3]]);
+    let got = def_chans("MidSide", &[0.8, 0.3], 2);
+    close(got[0], m, 1e-6, "MidSide chan 0");
+    close(got[1], s, 1e-6, "MidSide chan 1");
+    assert_ne!(got[0], got[1], "mid and side of an asymmetric pair differ");
+}
+
+#[test]
+fn pan_az_is_wired_around_the_ring_through_the_def() {
+    // Four rows, four channels, and the same `chan` question with more places
+    // to get it wrong: an off-by-one in the index would rotate the whole image
+    // by one speaker and nothing above would notice.
+    for pos in [0.0f32, 0.25, 0.6] {
+        let got = def_chans("PanAz", &[1.0, pos, 1.0, 2.0, 0.5, 4.0], 4);
+        for (c, g) in got.iter().enumerate() {
+            let want = run1(
+                &mut PanAz,
+                &[&[1.0], &[pos], &[1.0], &[2.0], &[0.5], &[4.0], &[c as f32]],
+            );
+            close(*g, want, 1e-6, &format!("PanAz chan {c} at pos {pos}"));
+        }
+        // The source is somewhere, not everywhere and not nowhere.
+        let loudest = got.iter().enumerate().fold((0usize, 0.0f32), |a, (i, v)| {
+            if v.abs() > a.1 { (i, v.abs()) } else { a }
+        });
+        assert!(loudest.1 > 0.1, "PanAz at pos {pos} is silent everywhere");
+    }
+}
+
+#[test]
+fn the_single_output_rows_are_wired_in_the_order_the_registry_names() {
+    // No channel index on these, so what the def path adds is the input order
+    // — and for the two variadic rows, an arity the compiler resolves rather
+    // than the descriptor fixing.
+    for pan in [-1.0f32, -0.25, 0.5, 1.0] {
+        let want = run1(
+            &mut Pan::new(PanKind::XFade2),
+            &[&[0.8], &[0.3], &[pan], &[1.0]],
+        );
+        let got = def_row(&[format!(
+            r#"{{"kind": "XFade2", "inputs": [{{"const": 0.8}}, {{"const": 0.3}},
+                {{"const": {pan}}}, {{"const": 1.0}}]}}"#
+        )]);
+        close(got[0], want, 1e-6, &format!("XFade2 at pan {pan}"));
+
+        let want = run1(
+            &mut Pan::new(PanKind::LinXFade2),
+            &[&[0.8], &[0.3], &[pan], &[1.0]],
+        );
+        let got = def_row(&[format!(
+            r#"{{"kind": "LinXFade2", "inputs": [{{"const": 0.8}}, {{"const": 0.3}},
+                {{"const": {pan}}}, {{"const": 1.0}}]}}"#
+        )]);
+        close(got[0], want, 1e-6, &format!("LinXFade2 at pan {pan}"));
+    }
+
+    // Four sources, so the variadic tail is long enough that a compiler taking
+    // a fixed arity would have failed to build the def at all.
+    let sources = [0.1f32, 0.2, 0.4, 0.8];
+    for which in [0.0f32, 1.0, 2.7, 3.0] {
+        for (kind, selkind) in [("Select", SelectKind::Pick), ("SelectX", SelectKind::Cross)] {
+            let refs: Vec<&[f32]> = sources.iter().map(std::slice::from_ref).collect();
+            let want = selected(selkind, which, &refs);
+            let args: Vec<String> = std::iter::once(format!(r#"{{"const": {which}}}"#))
+                .chain(sources.iter().map(|v| format!(r#"{{"const": {v}}}"#)))
+                .collect();
+            let got = def_row(&[format!(
+                r#"{{"kind": "{kind}", "inputs": [{}]}}"#,
+                args.join(", ")
+            )]);
+            close(got[0], want, 1e-6, &format!("{kind} at which {which}"));
+        }
     }
 }
