@@ -54,6 +54,8 @@ fn main() {
 
     bench_pan();
 
+    bench_fused();
+
     bench_spectral();
 
     #[cfg(feature = "faust")]
@@ -237,6 +239,97 @@ fn bench_pan() {
         "  (the moving row also pays for its own LFTri, so the ratio is an\n\
          \x20  upper bound on what evaluating the law per sample costs.)"
     );
+}
+
+/// The fused arithmetic rows (`MulAdd`, `Sum3`, `Sum4`) against the unfused
+/// graphs they replace — the measurement behind offering them at all, since a
+/// client can always write the operators out longhand.
+///
+/// Fusing saves two things at once and the columns cannot separate them: the
+/// extra `dyn` dispatch and intermediate wire buffer per operator dropped, and
+/// one pass over the block instead of two or three. Both rows share their
+/// source (the same `Sine` wire read two, three or four times), so the ratio
+/// isolates the arithmetic rather than the sources feeding it.
+///
+/// The two shapes are deliberately the extremes of the broadcast dispatch: the
+/// `MulAdd` row folds `sig * k + k`, where two of three inputs are constants,
+/// and the `Sum4` row sums four signals with no constant at all.
+fn bench_fused() {
+    let def = |name: &str, ugens: serde_json::Value| -> Arc<clausters::synthdef::SynthDef> {
+        Arc::new(
+            compile(
+                serde_json::from_value(serde_json::json!({
+                    "name": name,
+                    "controls": [{"name": "freq", "default": 440.0}],
+                    "ugens": ugens,
+                }))
+                .unwrap(),
+            )
+            .expect("fused def compiles"),
+        )
+    };
+    let sine = serde_json::json!({"kind": "Sine", "inputs": [{"control": 0}]});
+
+    // a*b + c in one UGen, against the Mul -> Add pair with a wire between.
+    let mul_add = def(
+        "cmp_muladd_fused",
+        serde_json::json!([
+            sine,
+            {"kind": "MulAdd", "inputs": [{"ugen": 0}, {"const": 0.5}, {"const": 0.1}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]),
+    );
+    let mul_then_add = def(
+        "cmp_muladd_unfused",
+        serde_json::json!([
+            sine,
+            {"kind": "Mul", "inputs": [{"ugen": 0}, {"const": 0.5}]},
+            {"kind": "Add", "inputs": [{"ugen": 1}, {"const": 0.1}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]}
+        ]),
+    );
+    // Four signals summed in one UGen, against the three Adds it folds.
+    let sum4 = def(
+        "cmp_sum4_fused",
+        serde_json::json!([
+            sine,
+            {"kind": "Sum4", "inputs": [
+                {"ugen": 0}, {"ugen": 0}, {"ugen": 0}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 1}]}
+        ]),
+    );
+    let three_adds = def(
+        "cmp_sum4_unfused",
+        serde_json::json!([
+            sine,
+            {"kind": "Add", "inputs": [{"ugen": 0}, {"ugen": 0}]},
+            {"kind": "Add", "inputs": [{"ugen": 1}, {"ugen": 0}]},
+            {"kind": "Add", "inputs": [{"ugen": 2}, {"ugen": 0}]},
+            {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 3}]}
+        ]),
+    );
+
+    println!("\nfused arithmetic vs the unfused graph it folds (shared Sine source):");
+    println!(
+        "  {:>6}  {:>12}  {:>12}  {:>10}  {:>12}  {:>10}  {:>6}",
+        "synths", "MulAdd xRT", "Mul+Add xRT", "fused", "Sum4 xRT", "3x Add xRT", "fused"
+    );
+    for &n in VOICE_COUNTS {
+        let run = |d: &Arc<clausters::synthdef::SynthDef>| {
+            let d = Arc::clone(d);
+            bench(n, move |_| {
+                Box::new(UGenSynth::new(Arc::clone(&d), SAMPLE_RATE as f32))
+            }) * BLOCK_SIZE as f64
+                / SAMPLE_RATE
+        };
+        let (f_ma, u_ma) = (run(&mul_add), run(&mul_then_add));
+        let (f_s4, u_s4) = (run(&sum4), run(&three_adds));
+        println!(
+            "  {n:>6}  {f_ma:>11.1}x  {u_ma:>11.1}x  {:>9.2}x  {f_s4:>11.1}x  {u_s4:>9.1}x  {:>5.2}x",
+            f_ma / u_ma,
+            f_s4 / u_s4
+        );
+    }
 }
 
 /// The spectral (`fr`) family, in three views:

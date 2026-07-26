@@ -2653,6 +2653,22 @@ through a table the vectorizer cannot see past. The second is something LLVM
 often unswitches by itself — often, not always, which is why doing it by hand
 still pays, just modestly.
 
+**At the engine it does not show up at all.** `examples/bench.rs` grew a fused
+section for exactly this question, and the same A/B through it — `MulAdd` and
+`Sum4` graphs over a shared `Sine`, three interleaved rounds — moves **inside the
+±1% noise** at every voice count. That is the correct reading rather than a
+disappointment: an arithmetic row is 5–10 ns of a block that spends ~135 ns in
+`Sine`'s per-sample `sin()`, so a 20% cut to the cheap part is invisible next to
+the expensive one. It is also the difference from the operator hoist, which *did*
+move the engine ~20%: there the loop being fixed was 70 ns, not 10.
+
+What the section is for going forward is the question a user actually asks —
+whether to reach for `MulAdd` over `a*b` then `+c` at all. That answer is stable
+across both versions of the code: **fusing buys 2–6% for `MulAdd` over
+`Mul`+`Add`, and 4–10% for `Sum4` over three `Add`s**, rising with voice count,
+and what it saves is mostly the dropped `dyn` dispatch and wire buffer rather
+than the arithmetic.
+
 The fused hoist is expressed differently from `map2`'s, because the shapes
 multiply: three and four inputs mean eight and sixteen combinations. Each input
 gets a `const bool` saying "this one is a length-1 constant", so the broadcast
