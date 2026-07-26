@@ -50,13 +50,32 @@ Environment knobs (also honoured by ``setup.py``):
 - ``CLAUSTERS_CARGO_FEATURES``   features for the embed library
                                  (default ``embed,realtime``).
 - ``CLAUSTERS_CARGO_PROFILE``    ``release`` (default) or ``debug``.
-- ``VEROVIO_PREFIX``             where ``third_party/build-verovio.sh`` installed
-                                 libverovio (default: ``~/.local``, then
+- ``FAUST_PREFIX``               where ``third_party/build-faust.sh`` installed
+                                 libfaust (default: ``~/.local``, then
                                  ``/usr/local``).
-- ``CLAUSTERS_REQUIRE_VEROVIO``  if set, a missing libverovio is an error rather
-                                 than a warning. CI and the release set it: there
-                                 a silent skip ships a `score` widget that cannot
-                                 engrave, and nothing downstream fails.
+- ``VEROVIO_PREFIX``             where ``third_party/build-verovio.sh`` installed
+                                 libverovio (same defaults).
+- ``CLAUSTERS_SKIP_FAUST``       build without the `faust` def family instead of
+                                 stopping when libfaust is missing (and without
+                                 it even when installed). A SynthDef-only server:
+                                 every ``/d_faust`` fails.
+- ``CLAUSTERS_SKIP_SYNTH``       the peer knob, for a deliberately Faust-only
+                                 build: no ``/d_recv``, no UGen graphs. It has no
+                                 library to miss, so there is nothing to probe —
+                                 it is a preference, not a fallback.
+- ``CLAUSTERS_SKIP_VEROVIO``     build without the notation layer; the `score`
+                                 widget will not engrave.
+- ``CLAUSTERS_REQUIRE_VEROVIO``  redundant — requiring it is the default — and
+                                 still honoured: it refuses a
+                                 ``CLAUSTERS_SKIP_VEROVIO`` rather than letting a
+                                 release ship a widget that raises at the user's
+                                 run time. CI and the release set it.
+
+Both vendored libraries behave the same way, which is deliberate: they are built
+the same way (a pinned source, a script under ``third_party/``, a prefix), they
+are missing for the same reason, and so they fail the same way — one line naming
+the recipe, before anything is compiled, with an explicit opt-out for the
+developer who is working on something else today.
 """
 
 import os
@@ -79,6 +98,11 @@ _CRATES = {
     "clausters_ffi": ("clausters-ffi", "verovio"),
     "clausters": ("clausters", "embed,realtime"),  # overridable below
 }
+
+# The server crate's default features, mirroring the `default` list in the root
+# Cargo.toml — so dropping one means re-adding the rest by hand, which is what
+# `--no-default-features` costs and why this list has to move when that one does.
+_DEFAULT_FEATURES = ["synth", "faust", "realtime", "midi", "pipewire", "rtprio"]
 
 
 def bin_name() -> str:
@@ -150,21 +174,30 @@ def staged_gui_bin() -> str | None:
     return path if os.path.exists(path) else None
 
 
-def _cargo_build(workspace: str, crate: str, features: str | None, profile: str):
+def _cargo_build(workspace: str, crate: str, features: str | None, profile: str,
+                 no_default: bool = False):
     cmd = ["cargo", "build", "-p", crate]
     if profile == "release":
         cmd.append("--release")
+    if no_default:
+        cmd.append("--no-default-features")
     if features:
         cmd += ["--features", features]
     print("clausters: " + " ".join(cmd))
     subprocess.run(cmd, cwd=workspace, check=True)
 
 
-def _cargo_build_bin(workspace: str, profile: str):
-    """Build the standalone server binary with default features."""
+def _cargo_build_bin(workspace: str, profile: str, features: str = "",
+                     no_default: bool = False):
+    """Build the standalone server binary — default features unless a def family
+    was left out, in which case the survivors are named explicitly."""
     cmd = ["cargo", "build", "--bin", "clausters"]
     if profile == "release":
         cmd.append("--release")
+    if no_default:
+        cmd.append("--no-default-features")
+    if features:
+        cmd += ["--features", features]
     print("clausters: " + " ".join(cmd))
     subprocess.run(cmd, cwd=workspace, check=True)
 
@@ -331,41 +364,137 @@ def stage_faust_libs(profile: str) -> list[str]:
     return copied
 
 
-_NO_VEROVIO = ("no libverovio found (looked in VEROVIO_PREFIX, ~/.local, "
-               "/usr/local); build it with third_party/build-verovio.sh")
+def _links(lib: str, prefix: str | None, env: str, recipe: str, skip: str,
+           without: str) -> bool:
+    """Whether this build links ``lib``, having probed for it and not found it.
 
+    One answer for both vendored libraries, which is the point. libfaust and
+    libverovio are built the same way — a pinned source, a script under
+    ``third_party/``, a prefix that defaults to ``~/.local`` — and they are
+    missing for the same reason: a checkout that has not run the script yet. So
+    they behave the same way here. Present, we link them. Absent, the build stops
+    on one line naming the recipe, rather than in the linker (``unable to find
+    library -lverovio``, under a page of `cc` arguments, is where this used to
+    end up). Absent *and* deliberately skipped, we build without, and say what
+    that costs.
 
-def _ffi_features() -> str:
-    """The features ``clausters-ffi`` is built with here, minus what this machine
-    cannot link.
-
-    ``verovio`` makes ``clausters-notation`` link libverovio, so on a checkout
-    that never ran ``third_party/build-verovio.sh`` the build dies in the
-    *linker* — ``unable to find library -lverovio``, a page of `cc` arguments —
-    long before `stage_verovio` gets to make its lenient call. The two have to
-    agree, and the lenient one is the documented behaviour: a checkout without
-    the engraver still gets a working package, minus the `score` widget.
-    ``CLAUSTERS_REQUIRE_VEROVIO=1`` still turns that into an error, now as one
-    line naming the recipe rather than a link failure.
+    The default is to require them because that is what a def family and an
+    engraver are: parts of the product, not options. The opt-out exists for the
+    developer who wants to work on something else today and can live `without`
+    — building a 13 MB C++ library to touch the sequencer is a bad trade.
     """
-    if _verovio_prefix() is not None:
-        return "verovio"
-    if os.environ.get("CLAUSTERS_REQUIRE_VEROVIO"):
-        raise SystemExit(f"clausters: {_NO_VEROVIO}")
-    print(f"clausters: {_NO_VEROVIO} -- building clausters-ffi without the "
-          "`verovio` feature (the `score` widget will not engrave)")
-    return ""
+    if os.environ.get(skip):
+        # The skip is read before the probe on purpose: it means "build without
+        # this", not "I could not find it", so it holds whether or not the
+        # library is installed. The release must not be able to use it, though --
+        # CI sets CLAUSTERS_REQUIRE_VEROVIO precisely because a silently missing
+        # engraver ships a `score` widget that raises at the user's run time, and
+        # nothing downstream fails.
+        require = f"CLAUSTERS_REQUIRE_{lib.removeprefix('lib').upper()}"
+        if os.environ.get(require):
+            raise SystemExit(
+                f"clausters: {skip} and {require} are both set; refusing to "
+                f"guess which one you meant.")
+        print(f"clausters: {skip} set -- building without {lib} ({without})")
+        return False
+    if prefix is not None:
+        return True
+    raise SystemExit(
+        f"clausters: no {lib} found (looked in {env}, ~/.local, /usr/local); "
+        f"build it with {recipe} -- or set {skip}=1 to build without it "
+        f"({without})")
+
+
+def _links_faust() -> bool:
+    """Whether the server artifacts are built with the `faust` def family."""
+    return _links("libfaust", _faust_prefix(), "FAUST_PREFIX",
+                  "third_party/build-faust.sh", "CLAUSTERS_SKIP_FAUST",
+                  "a SynthDef-only server: every /d_faust fails")
+
+
+def _dropped_families(with_faust: bool) -> set[str]:
+    """Which def families this build leaves out.
+
+    They are peers, so either can go and the crate still builds: `faust` when
+    there is no libfaust to link (or nobody wants to wait for one), `synth` when
+    the build is deliberately Faust-only.
+    """
+    dropped = set()
+    if not with_faust:
+        dropped.add("faust")
+    if os.environ.get("CLAUSTERS_SKIP_SYNTH"):
+        dropped.add("synth")
+    return dropped
+
+
+def _server_features(extra: str, dropped: set[str]) -> tuple[str, bool]:
+    """The ``--features`` list and whether to pass ``--no-default-features``, for
+    a server artifact built on top of ``extra``.
+
+    Dropping a default feature means turning the defaults off and naming the
+    survivors, because cargo features only ever add — which is exactly the knob
+    this file did not have, and why a Faust-only or SynthDef-only package could
+    not be built through it at all.
+
+    Dropping nothing returns the command line unchanged rather than an
+    equivalent-but-different one: the ordinary build, the one CI and the release
+    run, should not acquire flags because an opt-out exists that nobody used.
+    """
+    if not dropped:
+        return extra, False
+    keep = [f for f in _DEFAULT_FEATURES if f not in dropped]
+    keep += [f for f in extra.split(",") if f and f not in keep]
+    return ",".join(keep), True
+
+
+def _links_verovio() -> bool:
+    """Whether ``clausters-ffi`` is built with the `verovio` notation layer."""
+    return _links("libverovio", _verovio_prefix(), "VEROVIO_PREFIX",
+                  "third_party/build-verovio.sh", "CLAUSTERS_SKIP_VEROVIO",
+                  "the `score` widget will not engrave")
+
+
+def _prefix(env: str, names: list[str]) -> str | None:
+    """The prefix the *linker* will look in, or ``None`` if the library is not
+    there — the question this whole file needs answered before it runs cargo.
+
+    Mirrors the resolution in ``build.rs`` (both of them), including the part
+    that is easy to get wrong: an explicitly set ``*_PREFIX`` **wins outright**,
+    with no fallback to the defaults. Walking the defaults anyway would let this
+    report "found it in ~/.local" about a build that is going to link somewhere
+    else entirely and fail there — the two have to agree, or the check is worse
+    than none.
+    """
+    prefix = os.environ.get(env)
+    if not prefix:
+        local = os.path.expanduser("~/.local")
+        prefix = local if _has_lib(local, names) else "/usr/local"
+    return prefix if _has_lib(prefix, names) else None
+
+
+def _has_lib(prefix: str, names: list[str]) -> bool:
+    lib = os.path.join(prefix, "lib")
+    return any(os.path.exists(os.path.join(lib, name)) for name in names)
+
+
+def _faust_prefix() -> str | None:
+    """Where ``build-faust.sh`` installed libfaust. Either library form counts —
+    build.rs accepts the shared object or the archive."""
+    return _prefix("FAUST_PREFIX", _faust_names())
+
+
+def _faust_names() -> list[str]:
+    system = platform.system()
+    if system == "Darwin":
+        return ["libfaust.dylib", "libfaust.a"]
+    if system == "Windows":
+        return ["faust.dll", "faust.lib"]
+    return ["libfaust.so", "libfaust.a"]
 
 
 def _verovio_prefix() -> str | None:
-    """The prefix ``build-verovio.sh`` installed into: ``VEROVIO_PREFIX``, then
-    the same defaults ``build.rs`` uses for libfaust."""
-    candidates = [os.environ.get("VEROVIO_PREFIX"),
-                  os.path.expanduser("~/.local"), "/usr/local"]
-    for prefix in candidates:
-        if prefix and os.path.exists(os.path.join(prefix, "lib", _verovio_name())):
-            return prefix
-    return None
+    """Where ``build-verovio.sh`` installed libverovio."""
+    return _prefix("VEROVIO_PREFIX", [_verovio_name()])
 
 
 def _verovio_name() -> str:
@@ -393,19 +522,17 @@ def stage_verovio() -> list[str]:
     passes it to each toolkit explicitly — a toolkit that cannot find its SMuFL
     data engraves nothing.
 
-    Missing, this normally only warns: a checkout that has not built verovio yet
-    still gets a working package, minus the `score` widget. Set
-    ``CLAUSTERS_REQUIRE_VEROVIO=1`` to make it an error instead — CI and the
-    release do, because there the skip is invisible. A published wheel without
-    the engraver raises at *the user's* run time, and the notation tests skip
-    themselves rather than failing, so nothing downstream would report it.
+    Missing, there is nothing to decide here: `_links_verovio` already stopped
+    the build, before anything was compiled, unless the engraver was skipped on
+    purpose. Which is the case this reaches — and it is worth being loud about,
+    because a wheel without the engraver raises at *the user's* run time and the
+    notation tests skip themselves rather than failing, so nothing downstream
+    would report it.
     """
     prefix = _verovio_prefix()
     if prefix is None:
-        if os.environ.get("CLAUSTERS_REQUIRE_VEROVIO"):
-            raise SystemExit(f"clausters: {_NO_VEROVIO}")
-        print(f"clausters: {_NO_VEROVIO} -- skipping (the `score` widget will "
-              "not engrave)")
+        print("clausters: no libverovio staged (CLAUSTERS_SKIP_VEROVIO) -- the "
+              "`score` widget will not engrave")
         return []
     name = _verovio_name()
     os.makedirs(LIBS_DIR, exist_ok=True)
@@ -479,21 +606,32 @@ def build_and_stage(profile: str = "release", *, allow_skip: bool = False) -> li
             "CLAUSTERS_WORKSPACE, or pre-stage the artifacts."
         )
 
+    # Both vendored libraries are decided before anything is compiled, so a
+    # missing one costs a message rather than a linker failure ten minutes in.
+    with_faust = _links_faust()
+    with_verovio = _links_verovio()
+
+    dropped = _dropped_families(with_faust)
+    if {"synth", "faust"} <= dropped:
+        print("clausters: both def families skipped -- the server keeps its "
+              "engine core (groups, buses, buffers) but every /s_new fails")
+
     features = os.environ.get("CLAUSTERS_CARGO_FEATURES")
     for stem, (crate, default_feat) in _CRATES.items():
+        no_default = False
         if stem == "clausters_ffi":
-            feat = _ffi_features()
-        elif features and stem == "clausters":
-            feat = features
+            feat = "verovio" if with_verovio else ""
+        elif features:
+            feat = features  # an explicit list is yours to get right
         else:
-            feat = default_feat
-        _cargo_build(workspace, crate, feat, profile)
+            feat, no_default = _server_features(default_feat, dropped)
+        _cargo_build(workspace, crate, feat, profile, no_default)
     copied = stage(workspace, profile)
     if not copied:
         raise SystemExit("clausters: cargo produced no cdylibs to stage")
     # The standalone server binary (default features), bundled so the wheel's
     # `clausters` command can run a separate (networked / shared-memory) server.
-    _cargo_build_bin(workspace, profile)
+    _cargo_build_bin(workspace, profile, *_server_features("", dropped))
     binname = stage_binary(workspace, profile)
     if binname:
         copied.append(binname)
