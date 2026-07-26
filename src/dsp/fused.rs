@@ -4,7 +4,7 @@
 //! shared `clausters_core::builtins` operators, so a client folding the same
 //! expression off the RT path matches them to the bit.
 
-use clausters_core::builtins::{BinaryOp, apply_binary, at};
+use clausters_core::builtins;
 
 use crate::dsp::{ProcessCtx, UGen};
 
@@ -14,11 +14,7 @@ pub struct MulAdd;
 
 impl UGen for MulAdd {
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let (a, b, c) = (inputs[0], inputs[1], inputs[2]);
-        for (i, s) in output.iter_mut().enumerate() {
-            let prod = apply_binary(BinaryOp::Mul, at(a, i), at(b, i));
-            *s = apply_binary(BinaryOp::Add, prod, at(c, i));
-        }
+        builtins::mul_add_slice(inputs[0], inputs[1], inputs[2], output);
     }
 }
 
@@ -27,11 +23,7 @@ pub struct Sum3;
 
 impl UGen for Sum3 {
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let (a, b, c) = (inputs[0], inputs[1], inputs[2]);
-        for (i, s) in output.iter_mut().enumerate() {
-            let ab = apply_binary(BinaryOp::Add, at(a, i), at(b, i));
-            *s = apply_binary(BinaryOp::Add, ab, at(c, i));
-        }
+        builtins::sum3_slice(inputs[0], inputs[1], inputs[2], output);
     }
 }
 
@@ -40,11 +32,6 @@ pub struct Sum4;
 
 impl UGen for Sum4 {
     fn process(&mut self, _ctx: &mut ProcessCtx, inputs: &[&[f32]], output: &mut [f32]) {
-        let (a, b, c, d) = (inputs[0], inputs[1], inputs[2], inputs[3]);
-        for (i, s) in output.iter_mut().enumerate() {
-            let ab = apply_binary(BinaryOp::Add, at(a, i), at(b, i));
-            let abc = apply_binary(BinaryOp::Add, ab, at(c, i));
-            *s = apply_binary(BinaryOp::Add, abc, at(d, i));
-        }
+        builtins::sum4_slice(inputs[0], inputs[1], inputs[2], inputs[3], output);
     }
 }

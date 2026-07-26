@@ -2635,10 +2635,43 @@ because 77 operators are each monomorphized. For a synthesis server's hot path
 that is the right side of the trade, but it is the reason the technique belongs
 here and not reflexively everywhere.
 
-What is left, in order: `at` still runs per sample inside the fused rows
-(`MulAdd`, `Sum3`, `Sum4`), where the operator was always a constant and only the
-broadcast branch remains; then fusing chains to delete intermediate wires; and
-only then, if ever, explicit vectors.
+**The fused rows then separated the two obstacles, and the answer is not what
+the paragraph above assumed.** `MulAdd`, `Sum3` and `Sum4` always held their
+operator as a *constant* — `apply_binary(BinaryOp::Mul, …)` written literally —
+so the only thing left in their loops was `at`'s branch. If that branch were
+itself a barrier, they would have been as scalar as `binary_slice` was. They were
+not: the old `MulAdd` disassembles to **26 packed arithmetic instructions against
+15 scalar**, so LLVM had already unswitched part of it on its own. Hoisting the
+rest (below) takes it to 199 packed against 3, and buys **1.19–1.23× on the
+all-signal shapes, 1.03–1.09× on the constant-heavy ones** — real, consistent,
+and an order of magnitude less than the operator match was worth.
+
+So the two are not peers, and it is worth stating the rule the measurement
+actually supports: **a runtime `match` in a loop body stops vectorization dead; a
+loop-invariant branch on a slice length usually does not.** The first is a jump
+through a table the vectorizer cannot see past. The second is something LLVM
+often unswitches by itself — often, not always, which is why doing it by hand
+still pays, just modestly.
+
+The fused hoist is expressed differently from `map2`'s, because the shapes
+multiply: three and four inputs mean eight and sixteen combinations. Each input
+gets a `const bool` saying "this one is a length-1 constant", so the broadcast
+decision is a compile-time parameter rather than a per-sample test, and the
+cartesian product of those parameters is written **once** in a macro instead of
+once per operator. The arithmetic still goes through the same scalar `apply_*`,
+in the same order (`add(mul(a,b),c)`, sums left to right — float addition does
+not associate, so the order is part of the contract), and the same bit-exactness
+test covers all sixteen shapes.
+
+Those three now live in `clausters_core::builtins` beside `binary_slice`
+(`mul_add_slice`, `sum3_slice`, `sum4_slice`), which is where `dsp::fused`'s
+module doc already claimed the math lived — a client folding `a*b + c` off the RT
+path can now actually call it. They get no C ABI export yet: additive as that
+would be, it waits until a client asks for it, the same deferral the note
+spelling and the tap reader took.
+
+What is left, in order: fusing chains to delete intermediate wires; and only
+then, if ever, explicit vectors.
 
 **What this means in the browser.** wasm's SIMD is `simd128`: **fixed at 128
 bits, four `f32`, and there is nothing wider** — no AVX equivalent, by design of
