@@ -2232,3 +2232,71 @@ general enough to belong in the rate documentation rather than in this family:
 same applies to the U4 node-control rows, which moved to `ar` for the same
 reason — a `kr` `FreeSelf` watching a one-sample trigger would miss it and the
 node would never leave.
+
+## Pink noise takes the schedule with the worse average and the bounded worst case
+
+Voss–McCartney sums a set of white generators updated at halving rates, and
+re-rolls the one picked by the number of trailing zeros in a counter: **exactly
+one row changes per sample**, forever. Trammell's stochastic variant decides at
+random which rows to update — cheaper on average, and unbounded in the worst
+case.
+
+An audio callback is not paid on average. It has one block's budget, and a run
+of expensive samples inside one block is a dropout however good the mean was.
+Every other choice in this track has gone the same way (the delay line is
+allocated at build, the filter coefficients are recomputed per block rather than
+per sample): the cost is made **flat and knowable** even when that is not the
+cheapest thing on a spreadsheet.
+
+Measured slope, over 40 Hz – 10 kHz: **−3.26 dB/octave** against the ideal
+−3.01. That gap is Voss–McCartney's own — the octave-spaced staircase only
+approximates 1/f — and it is published here rather than smoothed over, on the
+same rule as the oscillators' alias figures.
+
+## Three noise findings that contradict the obvious reading
+
+All three were assumptions written into a test or a doc comment first, and
+corrected by measuring.
+
+**`GrayNoise`'s spectrum is not flat.** The obvious reading is that flipping a
+random bit per sample gives white noise with a strange amplitude distribution.
+It does not: the high bits flip rarely — one sample in 32 for the top one — and
+the low bits carry almost no weight, so the energy leans low. Measured
+**−2.9 dB/octave**, near enough pink. sclang's help says as much in words; the
+number is ours. What *is* distinctive is the distribution: the mean step is some
+four thousand times the median, against 1.14 for white noise, and that is the
+graininess the kind exists for.
+
+**That bit-level property cannot be tested from the output.** The word is 31
+bits and an `f32` mantissa is 24, so flips in the bottom seven vanish entirely,
+and a flip that changes the exponent is rounded at a different granularity
+either side of it. The first test asserted "every step is a power of two" and
+failed on the third sample. The test now asserts what is observable — the
+step-size distribution and the spectrum — and the docs state the limit.
+
+**`Crackle` does not settle below a chaos of 1.** The obvious reading of a
+chaos parameter is that low values are periodic and high ones are not. Measured
+across 0.3 to 1.9 there is **no period up to 512 samples anywhere**, and the
+spread runs 0.56, 0.20, 0.08, 0.05, 0.19, 0.05, 0.06 — not monotonic in either
+direction. It is a map, not a level control, and the honest documentation says
+to reach for it by ear. (A longer or quasi-period would not be caught by that
+test, which is the limit of what a test can say about a chaotic map, and the
+test says so.)
+
+## Noise is reproducible, and two instances are never the same stream
+
+Every generator draws from `clausters_core::rng` — the xorshift the sequencing
+layer and the client's `Pwhite` already use — and each can be built from an
+explicit seed, so a render replays exactly. That is what lets a patch with noise
+in it have a golden file at all.
+
+Each *instance* takes its seed from a shared atomic counter, so two `WhiteNoise`
+UGens in one def are two streams. This is invisible until someone writes one:
+correlated noise summed with itself is a comb filter, not more noise, and
+subtracted from itself is silence. There is a test that puts two in a graph and
+subtracts them.
+
+What is **not** in the core is the shaping — the dice table, the random walk, the
+interpolation. So the claim "a client can reproduce the stream" holds today only
+for `WhiteNoise`, whose generator is mirrored there. Saying so is cheaper than
+moving ten algorithms across a boundary for a use nobody has yet.

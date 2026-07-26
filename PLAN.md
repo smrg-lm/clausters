@@ -581,13 +581,29 @@ comb-plus-allpass space, rendered offline so it needs no audio hardware.
   `DetectSilence` raises a done flag, and that flag has **block resolution** by
   nature — a bool has no position within a block.
 
-- **U6 — Noise** — extending `src/dsp/noise.rs`: `PinkNoise`, `BrownNoise`,
-  `GrayNoise`, `ClipNoise`, `LFNoise0/1/2`, `LFClipNoise`, `Dust`, `Dust2`,
-  `Crackle`, all over `clausters_core::rng` so a client reproduces the stream
-  (the `WhiteNoise` precedent). Pink noise uses Voss–McCartney and explicitly not
-  Trammell's stochastic variant: its randomized update schedule gives non-uniform
-  per-sample cost, which a fixed block budget cannot absorb. Acceptance is the
-  measured spectral slope, −3.01 dB/octave.
+- ✅ **U6 — Noise** *(done 2026-07-25)* — `src/dsp/noise.rs`: `PinkNoise`,
+  `BrownNoise`, `GrayNoise`, `ClipNoise`, `LFNoise0/1/2`, `LFClipNoise`,
+  `Dust`, `Dust2`, `Crackle`, all drawing from `clausters_core::rng` and all
+  buildable from an explicit seed, so a render replays exactly; each *instance*
+  seeds from a shared counter, since correlated noise summed with itself is a
+  comb filter and subtracted from itself is silence. Pink noise is
+  Voss–McCartney and explicitly not Trammell's stochastic variant: its
+  randomized update schedule has an unbounded worst case, and an audio callback
+  is not paid on average. Measured slopes over 40 Hz – 10 kHz: white **−0.08**,
+  pink **−3.26** (the ideal is −3.01; the gap is Voss–McCartney's own staircase,
+  published rather than smoothed over), brown **−5.79**.
+
+  Three assumptions were written into a test or a doc comment first and
+  corrected by measuring, all in `docs/decisions.md`. `GrayNoise` is **not**
+  flat — it leans low at −2.9 dB/octave, and what distinguishes it is its
+  step distribution (a mean step four thousand times the median, against 1.14
+  for white). That bit-level property is **not observable from the output** at
+  all, since the word is 31 bits and an `f32` mantissa 24. And `Crackle` does
+  **not** settle below a chaos of 1: there is no period up to 512 samples
+  anywhere in 0.3–1.9, and its spread is not monotonic in the parameter.
+  `LFNoise2` overshoots to ±1.7 by construction (it aims at midpoints and
+  carries its slope), which is stable — the peak is the same over one second
+  and over ten, at 5 Hz, 100 Hz and 2 kHz.
 
 - **U7 — Panning and selection** — `src/dsp/pan.rs`. The engine gives a UGen
   **one output** (an input reference names a UGen, not an output of one), a

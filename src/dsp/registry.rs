@@ -26,7 +26,10 @@ use crate::dsp::io::{In, InCtl, Out, OutCtl, ReplaceOut};
 use crate::dsp::lag::{Lag, VarLag};
 use crate::dsp::local::{LocalIn, LocalOut};
 use crate::dsp::nodectl::{SelfControl, WhenDone, WhenDoneMode};
-use crate::dsp::noise::WhiteNoise;
+use crate::dsp::noise::{
+    BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, PinkNoise,
+    WhiteNoise,
+};
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
@@ -438,6 +441,12 @@ const I_XLINE: &[UGenInput] = &[
     inp("dur", 1.0),
     inp("done_action", 0.0),
 ];
+/// The noise family (U6). The three spectral shapes and the two bit sources
+/// take no input at all; the held ones take a frequency, and `Dust` a mean
+/// density in impulses per second.
+const I_LF_NOISE: &[UGenInput] = &[inp("freq", 500.0)];
+const I_DENSITY: &[UGenInput] = &[inp("density", 1.0)];
+const I_CHAOS: &[UGenInput] = &[inp("chaos", 1.5)];
 /// The trigger family (U5). A kind that takes only triggers has no signal
 /// input at all — but it still defaults to `ar`, because a `kr` consumer
 /// samples an `ar` wire once per block and would drop most of a trigger train.
@@ -1333,6 +1342,128 @@ static UGENS: &[UGenDescriptor] = &[
         false,
         |_, _| Box::new(Line::new(LineShape::Exponential)),
     )),
+    // --- noise (U6) ---
+    desc(
+        "PinkNoise",
+        Fixed(0),
+        I_NONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(PinkNoise::new()),
+    ),
+    desc(
+        "BrownNoise",
+        Fixed(0),
+        I_NONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(BrownNoise::new()),
+    ),
+    desc(
+        "GrayNoise",
+        Fixed(0),
+        I_NONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(GrayNoise::new()),
+    ),
+    desc(
+        "ClipNoise",
+        Fixed(0),
+        I_NONE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(ClipNoise::new()),
+    ),
+    desc(
+        "LFNoise0",
+        Fixed(1),
+        I_LF_NOISE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(LfNoise::new(LfNoiseShape::Step)),
+    ),
+    desc(
+        "LFNoise1",
+        Fixed(1),
+        I_LF_NOISE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(LfNoise::new(LfNoiseShape::Linear)),
+    ),
+    desc(
+        "LFNoise2",
+        Fixed(1),
+        I_LF_NOISE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(LfNoise::new(LfNoiseShape::Quadratic)),
+    ),
+    desc(
+        "LFClipNoise",
+        Fixed(1),
+        I_LF_NOISE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(LfNoise::new(LfNoiseShape::Clip)),
+    ),
+    desc(
+        "Dust",
+        Fixed(1),
+        I_DENSITY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dust::new(DustMode::Unipolar)),
+    ),
+    desc(
+        "Dust2",
+        Fixed(1),
+        I_DENSITY,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Dust::new(DustMode::Bipolar)),
+    ),
+    desc(
+        "Crackle",
+        Fixed(1),
+        I_CHAOS,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Crackle::default()),
+    ),
     // --- triggers and control (U5) ---
     // All of these default to `ar`, counters included. A `kr` UGen reads one
     // sample per block from an `ar` input, so a `kr` counter fed an `ar`

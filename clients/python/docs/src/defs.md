@@ -258,6 +258,12 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `allpass_n/l/c(signal, delaytime, decaytime, *, max_delay=None)` | an allpass: scatters phase and leaves the magnitude alone |
 | Envelopes | `env_gen(env, gate=1.0, …, done_action=DoneAction.NONE)` | plays an `Env` breakpoint envelope; the `done_action` can free the node |
 | | `line(start, end, dur, done_action)` / `x_line(...)` | a single ramp, in equal steps / equal ratios; the same `DoneAction` set |
+| Noise | `pink_noise()` / `brown_noise()` | −3 dB/octave (quiet by construction, ~0.13 RMS) / −6, a reflecting random walk |
+| | `gray_noise()` / `clip_noise()` | one random bit flipped per sample, grainy and low-leaning / ±1 only |
+| | `lf_noise0(freq)` / `lf_noise1(freq)` / `lf_noise2(freq)` | a new random value every `1/freq` s: held / ramped / curved (overshoots to ±1.7) |
+| | `lf_clip_noise(freq)` | the held one, restricted to ±1 |
+| | `dust(density)` / `dust2(density)` | random impulses at a **mean** density — exponential gaps, not a clock |
+| | `crackle(chaos)` | a deterministic chaotic map; one-sided, so it carries DC |
 | Triggers | `trig(signal, dur)` / `trig1(signal, dur)` | holds the level that triggered it / holds 1, for `dur` seconds |
 | | `t_delay(signal, dur)` | one sample of 1, `dur` later; a trigger arriving while one is in flight is dropped |
 | | `latch(signal, trig)` / `gate(signal, trig)` | one sample per rising edge / transparent while the gate is open |

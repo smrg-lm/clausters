@@ -236,6 +236,17 @@ A client does not *have* to enumerate the catalog — naming a kind and letting 
 | `PauseSelf` | signal | passes `signal` through; pauses the enclosing synth while it is greater than zero (resume with `/n_run 1`) |
 | `Done` | source | 1 once the ugen wired into `source` has **finished**, 0 before — see the done-flag note below |
 | `FreeSelfWhenDone` | source | passes `source` through and frees the synth once it has finished |
+| `PinkNoise` | — | equal energy per octave, −3 dB/octave (Voss–McCartney); a **quiet** signal, ~0.13 RMS |
+| `BrownNoise` | — | a random walk, −6 dB/octave; reflects at ±1 rather than clamping |
+| `GrayNoise` | — | one random bit of a 31-bit word flipped per sample; leans low (~−2.9 dB/octave) and steps by wildly unequal amounts |
+| `ClipNoise` | — | −1 or 1 only, a coin flip per sample |
+| `LFNoise0` | freq | a new random value in ±1 every `1/freq` seconds, held (steps) |
+| `LFNoise1` | freq | the same, ramped linearly between values |
+| `LFNoise2` | freq | the same, quadratic between values — no corners, and it **overshoots** to about ±1.7 |
+| `LFClipNoise` | freq | `LFNoise0` restricted to ±1 |
+| `Dust` | density | random impulses in [0, 1) at a **mean** `density` per second — exponential gaps, not a clock |
+| `Dust2` | density | the same, firing both ways in ±1 |
+| `Crackle` | chaos | the chaotic map `y[n] = |chaos·y[n-1] − y[n-2] − 0.05|`; deterministic, one-sided (carries DC) |
 | `Trig` | signal, dur | holds the **level the input had at the trigger** for `dur` seconds, then 0 |
 | `Trig1` | signal, dur | holds 1 for `dur` seconds after each trigger |
 | `TDelay` | signal, dur | one sample of 1, `dur` seconds after each trigger; a trigger arriving while one is in flight is dropped |
@@ -299,6 +310,8 @@ The relative actions (3–13, 15) resolve the node's previous/next sibling and h
 **One-segment envelopes (`Line`/`XLine`).** A ramp from `start` to `end` over `dur` seconds, then held. They are the same envelope engine with the header filled in, so they take the whole `doneAction` set above — `Line(1, 0, 2, 2)` is a two-second fade that frees its synth — and interpolate with the same shared curve math. `XLine` moves in equal *ratios*, which is the shape that reads as straight when it drives a frequency or a gain; a zero endpoint is undefined there, and is nudged to a tiny same-signed value rather than producing a `NaN`. Both run at `kr` as well as `ar`, and a sweep usually belongs at `kr`.
 
 **The done flag (`Done`/`FreeSelfWhenDone`).** A ugen that plays out — an envelope, a ramp — raises a **done flag** when it finishes. That is not the same as its `doneAction` (a ugen with action 0 still raises the flag), and it is not visible on its wire either: an envelope that has ended sits at its final level, which is just a number. These two read the flag of the ugen wired into their `source`, so `source` must name a **ugen**, and one that can finish; the compiler rejects a constant, a control, or a kind that never finishes, naming it. `Done` reports the flag as a 0/1 signal for the rest of the graph to trigger on; `FreeSelfWhenDone` passes the source through and frees the synth — the idiom for an envelope whose own `doneAction` is 0 because something else in the graph still needs it. The flag has **block resolution**: it is one bit of state, read once when the watcher runs, so a watcher reports it for the whole block in which it was raised even at `ar`. `DetectSilence` raises one too, so it can be watched the same way.
+
+**Noise.** Every stochastic source draws from the same seeded xorshift the sequencing layer uses, and each instance in a graph gets its own seed — two `WhiteNoise` ugens in one def are two streams, not one summed with itself (which would be a comb filter, not more noise). A given seed replays exactly, which is what lets a noisy patch have a golden file. Three of these are worth reading twice before use: `PinkNoise` is **quiet** by construction (~0.13 RMS against white's 0.58 — the level a def ported from sclang expects); `Dust` is **not a clock** (each sample is an independent trial, so its `density` is a mean and its gaps are exponential — use `Impulse` for even spacing); and `Crackle` has **no RNG at all** — it is a deterministic chaotic map whose parameter changes the sound drastically and not monotonically, and whose output is one-sided and therefore carries DC.
 
 **Triggers.** A **trigger** is a signal crossing from `<= 0` up to `> 0` — one definition, the same for every ugen that takes one (`Demand`, `SendTrig`, `EnvGen`'s gate, and the whole family above). Two things about that family are worth knowing before you pick a threshold or a rate. `Changed` compares the **halved** difference, `|(x[n] - x[n-1]) / 2|`, because sclang builds it out of `HPZ1` whose gain is 0.5 and a ported def must not change value: a step of 0.2 registers against a threshold of 0.09, not of 0.19. And they all default to **`ar`**, counters included, even though a counter can only move when a trigger does: a `kr` ugen reads **one sample per block** from an `ar` input, so a `kr` counter fed an `ar` trigger train sees one trigger in 64 and silently drops the rest. `kr` is the right choice when the trigger is `kr` too — the saving is real then, and a duration means seconds at either rate.
 

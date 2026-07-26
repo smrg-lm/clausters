@@ -281,6 +281,15 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   corta a los 0.6 s con la envolvente todavía abierta, porque una señal cualquiera
   cruzó un umbral. Nada debe quedar sonando después de su corte.
 
+- **Los ruidos, y qué es "más oscuro" contra "más bajo".** `python3
+  examples/noise.py toma.wav` y escucharla → blanco, rosa y marrón seguidos, al
+  mismo amplitud nominal: el rosa se oye **claramente más bajo** (mide 0.059 de
+  RMS contra 0.254), el marrón se oye igual de fuerte que el blanco pero
+  **oscuro**, no más suave — son dos cosas distintas y el reporte las separa.
+  Después: `dust` que no es un reloj (llega en racimos y deja huecos, contra
+  `impulse` que sería parejo), `crackle` sin nada de azar, y un hi-hat de
+  `clip_noise` sobre un viento de marrón filtrado.
+
 - **Un secuenciador que vive adentro de un synth.** `python3
   examples/sequencer.py toma.wav` y escucharla → **dos** `/s_new` y nada más:
   ningún reloj del lado del cliente. Tienen que oírse 24 notas en 4 segundos con

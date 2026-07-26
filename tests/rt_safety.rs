@@ -1488,3 +1488,72 @@ fn trigger_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// The noise family (U6). Nothing here has a buffer to grow, so the claim is
+/// narrow — but `PinkNoise` carries a dice table, `LFNoise*` a per-segment
+/// state machine and `Dust` a per-sample division, and the scene is what would
+/// catch any of them reaching for the heap later.
+#[test]
+fn noise_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "noise",
+            "ugens": [
+                {"kind": "WhiteNoise", "inputs": []},
+                {"kind": "PinkNoise", "inputs": []},
+                {"kind": "BrownNoise", "inputs": []},
+                {"kind": "GrayNoise", "inputs": []},
+                {"kind": "ClipNoise", "inputs": []},
+                {"kind": "LFNoise0", "inputs": [{"const": 300.0}]},
+                {"kind": "LFNoise1", "inputs": [{"const": 120.0}]},
+                {"kind": "LFNoise2", "inputs": [{"ugen": 5}]},
+                {"kind": "LFClipNoise", "inputs": [{"const": 90.0}]},
+                {"kind": "Dust", "inputs": [{"const": 400.0}]},
+                {"kind": "Dust2", "inputs": [{"ugen": 6}]},
+                {"kind": "Crackle", "inputs": [{"const": 1.5}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 0}, {"ugen": 1},
+                                            {"ugen": 2}, {"ugen": 3}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 4}, {"ugen": 5},
+                                            {"ugen": 6}, {"ugen": 7}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 8}, {"ugen": 9},
+                                            {"ugen": 10}, {"ugen": 11}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 12}, {"ugen": 13},
+                                            {"ugen": 14}]},
+                {"kind": "BinaryOpUGen", "op": "mul",
+                 "inputs": [{"ugen": 15}, {"const": 0.05}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 16}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

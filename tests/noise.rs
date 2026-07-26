@@ -1,0 +1,466 @@
+//! Noise (U6): the stochastic sources.
+//!
+//! A random signal cannot be asserted sample by sample, so the claims here are
+//! about **distributions and spectra**, per the rules in the `audio-testing`
+//! skill: the measured slope in dB/octave (the whole reason `PinkNoise` and
+//! `BrownNoise` are separate kinds), the mean and variance, the mean density of
+//! an impulse source, and — for every generator — bit-exact reproducibility
+//! from a seed, which is what lets a noisy patch have a golden file at all.
+
+#![cfg(feature = "synth")]
+
+#[path = "common/signal.rs"]
+mod signal;
+
+use std::sync::Arc;
+
+use clausters::dsp::noise::{
+    BrownNoise, ClipNoise, Crackle, Dust, DustMode, GrayNoise, LfNoise, LfNoiseShape, PinkNoise,
+    WhiteNoise,
+};
+use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx, UGen};
+use clausters::node::SynthNode;
+use clausters::synthdef::instance::UGenSynth;
+use clausters::synthdef::{SynthDefSpec, compile};
+use signal::*;
+
+const SR: f32 = 48_000.0;
+
+/// Renders `n` samples straight from a UGen, with no graph around it — the
+/// form the seeded constructors need, since a def has no way to name a seed.
+fn run(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
+    let buses = Buses::new(ControlBuses::new(16), 8);
+    let mut out = vec![0.0f32; n];
+    for chunk in out.chunks_mut(BLOCK_SIZE) {
+        let mut ctx = ProcessCtx {
+            sample_rate: SR,
+            full_sample_rate: SR,
+            buses: &buses,
+            buffers: &[],
+            offset: 0,
+            frames: chunk.len(),
+        };
+        ugen.process(&mut ctx, inputs, chunk);
+    }
+    out
+}
+
+/// Renders `n` samples of a one-UGen def written to bus 0 — the path a real
+/// def takes, seeds and all.
+fn render(ugen: &str, n: usize) -> Vec<f32> {
+    let json = format!(
+        r#"{{"name": "n", "ugens": [{ugen},
+            {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 0}}]}}]}}"#
+    );
+    let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
+    let mut synth = UGenSynth::new(Arc::new(def), SR);
+    let mut buses = Buses::new(ControlBuses::new(16), 8);
+    let mut out = Vec::with_capacity(n);
+    while out.len() < n {
+        buses.clear_audio();
+        let mut ctx = ProcessCtx {
+            sample_rate: SR,
+            full_sample_rate: SR,
+            buses: &buses,
+            buffers: &[],
+            offset: 0,
+            frames: BLOCK_SIZE,
+        };
+        synth.process(&mut ctx);
+        out.extend_from_slice(buses.audio(0));
+    }
+    out.truncate(n);
+    out
+}
+
+const N: usize = 1 << 17; // ~2.7 s — enough frames for a stable Welch average
+
+// ---- the spectral shapes ----
+
+#[test]
+fn the_three_spectral_shapes_measure_zero_minus_three_and_minus_six() {
+    // This *is* the reason they are three kinds rather than one. The slope is
+    // measured over 40 Hz - 10 kHz: below that a 2.7 s window has too few
+    // periods to average, and above it the walk's own reflection shows.
+    let white = run(&mut WhiteNoise::with_seed(1), &[], N);
+    let pink = run(&mut PinkNoise::with_seed(1), &[], N);
+    let brown = run(&mut BrownNoise::with_seed(1), &[], N);
+
+    let slope = |x: &[f32]| spectral_slope_db_per_octave(x, SR, 40.0, 10_000.0);
+    let (sw, sp, sb) = (slope(&white), slope(&pink), slope(&brown));
+    println!("measured slopes: white {sw:.2}, pink {sp:.2}, brown {sb:.2} dB/octave");
+
+    assert!(sw.abs() < 0.3, "white should be flat, measured {sw:.2}");
+    // The name's whole content: equal energy per octave is -3.01 dB/octave.
+    assert!(
+        (sp + 3.01).abs() < 0.35,
+        "pink should be -3.01 dB/octave, measured {sp:.2}"
+    );
+    // A random walk integrates white noise, so -6.02.
+    assert!(
+        (sb + 6.02).abs() < 0.6,
+        "brown should be -6.02 dB/octave, measured {sb:.2}"
+    );
+}
+
+#[test]
+fn pink_noise_is_quiet_and_centred_like_the_one_a_def_was_written_against() {
+    // Seventeen uniforms mapped onto the full scale: the peak is reachable and
+    // almost never reached. A def ported from sclang expects this level, so it
+    // is worth pinning rather than "some noise came out".
+    let x = run(&mut PinkNoise::with_seed(7), &[], N);
+    assert_finite(&x, "PinkNoise");
+    let (r, d, p) = (rms(&x), dc(&x), peak(&x));
+    println!("pink: rms {r:.3}, dc {d:.4}, peak {p:.3}");
+    assert!((0.08..0.20).contains(&r), "rms {r:.3}");
+    assert!(d.abs() < 0.02, "should be centred, dc {d:.4}");
+    assert!(p <= 1.0, "must not leave [-1, 1], peak {p:.3}");
+}
+
+#[test]
+fn brown_noise_reflects_instead_of_resting_against_a_rail() {
+    // Clamping would let the walk sit at ±1 — a constant, audible as silence
+    // with a click at each end. Reflection keeps it moving: no run of equal
+    // samples anywhere near the rails, and the distribution stays flat rather
+    // than piling up there.
+    let x = run(&mut BrownNoise::with_seed(3), &[], N);
+    assert_finite(&x, "BrownNoise");
+    assert!(peak(&x) <= 1.0, "stays in range");
+    let longest = x
+        .windows(2)
+        .fold((0usize, 0usize), |(best, run), w| {
+            let run = if w[0] == w[1] { run + 1 } else { 0 };
+            (best.max(run), run)
+        })
+        .0;
+    assert_eq!(longest, 0, "a reflecting walk never repeats a sample");
+    // Flat-ish: the extreme decile is not over-represented the way clamping
+    // would make it.
+    let extreme = x.iter().filter(|v| v.abs() > 0.9).count() as f32 / x.len() as f32;
+    println!("brown: fraction beyond ±0.9 = {extreme:.4}");
+    assert!(extreme < 0.15, "piling up at the rails: {extreme:.4}");
+}
+
+// ---- the bit and sign sources ----
+
+#[test]
+fn clip_noise_is_only_ever_plus_or_minus_one_and_fair() {
+    let x = run(&mut ClipNoise::with_seed(11), &[], N);
+    assert!(
+        x.iter().all(|v| v.abs() == 1.0),
+        "every sample must be at full scale"
+    );
+    let mean = dc(&x);
+    // A fair coin over 131072 flips: the standard error is 1/sqrt(N) ≈ 0.003,
+    // so 0.02 is six sigma and still a real test of fairness.
+    assert!(mean.abs() < 0.02, "biased coin, mean {mean:.4}");
+    assert!(
+        (rms(&x) - 1.0).abs() < 1e-6,
+        "and its RMS is 1 by construction"
+    );
+}
+
+#[test]
+fn gray_noise_moves_by_one_bit_at_a_time() {
+    // One bit of a 31-bit word flips per sample, so the *step* is a power of
+    // two — but that is a property of the word, not of the output, and it is
+    // not recoverable from the samples: an `f32` mantissa is 24 bits, so the
+    // bottom flips vanish entirely and a flip that changes the exponent is
+    // rounded at a different granularity either side of it. What is observable
+    // is the distribution the bit flipping produces, and that is the character
+    // the kind exists for: steps spanning every order of magnitude, so the
+    // median step is a tiny fraction of the mean one. White noise, whose steps
+    // are a sum of two uniforms, has them within a factor of two.
+    let gray = run(&mut GrayNoise::with_seed(5), &[], 1 << 15);
+    let white = run(&mut WhiteNoise::with_seed(5), &[], 1 << 15);
+    assert_finite(&gray, "GrayNoise");
+    assert!(peak(&gray) <= 1.0, "stays in range");
+
+    let ratio = |x: &[f32]| {
+        let mut steps: Vec<f32> = x.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
+        steps.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let median = steps[steps.len() / 2];
+        let mean = steps.iter().sum::<f32>() / steps.len() as f32;
+        mean / median.max(1e-12)
+    };
+    let (rg, rw) = (ratio(&gray), ratio(&white));
+    println!("mean/median step: gray {rg:.1}, white {rw:.2}");
+    assert!(rw < 3.0, "white noise steps are all of a size: {rw:.2}");
+    assert!(
+        rg > 100.0,
+        "gray noise steps should span orders of magnitude: {rg:.1}"
+    );
+    // And its spectrum is **not** flat, which is easy to assume and wrong: the
+    // high bits flip rarely (one in 32 samples for the top one) and the low
+    // ones carry almost no weight, so the energy sits low. Measured -2.9
+    // dB/octave, near enough pink. sclang's help says the same in words; this
+    // is the number.
+    let slope = spectral_slope_db_per_octave(&gray, SR, 40.0, 10_000.0);
+    println!("gray slope {slope:.2} dB/octave");
+    assert!(
+        (-3.6..-2.2).contains(&slope),
+        "gray noise leans low, around -2.9 dB/octave, measured {slope:.2}"
+    );
+}
+
+// ---- the held and interpolated shapes ----
+
+#[test]
+fn lf_noise0_holds_each_value_for_one_period() {
+    // 100 Hz at 48 kHz is 480 samples a segment, so a second holds 100 values.
+    let x = run(
+        &mut LfNoise::with_seed(LfNoiseShape::Step, 2),
+        &[&[100.0]],
+        48_000,
+    );
+    let steps = x.windows(2).filter(|w| w[0] != w[1]).count();
+    assert!(
+        (99..=101).contains(&steps),
+        "100 Hz should step ~100 times a second, got {steps}"
+    );
+    assert!(peak(&x) <= 1.0, "stays in range");
+}
+
+#[test]
+fn lf_clip_noise_holds_but_only_ever_at_the_rails() {
+    let x = run(
+        &mut LfNoise::with_seed(LfNoiseShape::Clip, 4),
+        &[&[100.0]],
+        48_000,
+    );
+    assert!(x.iter().all(|v| v.abs() == 1.0), "±1 only");
+    let steps = x.windows(2).filter(|w| w[0] != w[1]).count();
+    // Half the draws repeat the previous side, so the visible steps are about
+    // half the segments — which is itself the check that it is *drawing* each
+    // segment rather than alternating.
+    println!("LFClipNoise: {steps} visible steps in 100 segments");
+    assert!((30..=70).contains(&steps), "{steps} steps");
+}
+
+#[test]
+fn lf_noise1_is_piecewise_linear_and_lf_noise2_has_no_corners() {
+    // The difference between the two, stated as the property that separates
+    // them: a linear ramp has a *constant* first difference inside a segment
+    // and a jump in it at the boundary; the quadratic has a first difference
+    // that changes smoothly and never jumps.
+    let n = 48_000;
+    let one = run(
+        &mut LfNoise::with_seed(LfNoiseShape::Linear, 6),
+        &[&[100.0]],
+        n,
+    );
+    let two = run(
+        &mut LfNoise::with_seed(LfNoiseShape::Quadratic, 6),
+        &[&[100.0]],
+        n,
+    );
+    assert_finite(&one, "LFNoise1");
+    assert_finite(&two, "LFNoise2");
+
+    let jumps = |x: &[f32]| {
+        let d: Vec<f32> = x.windows(2).map(|w| w[1] - w[0]).collect();
+        // The largest change in slope from one sample to the next, in units of
+        // the typical slope.
+        let typical = d.iter().map(|v| v.abs()).fold(0.0f32, f32::max).max(1e-9);
+        d.windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0f32, f32::max)
+            / typical
+    };
+    let (j1, j2) = (jumps(&one), jumps(&two));
+    println!("slope discontinuity: LFNoise1 {j1:.2}, LFNoise2 {j2:.4} (of the peak slope)");
+    assert!(j1 > 0.5, "LFNoise1 must have corners at its boundaries");
+    assert!(j2 < 0.05, "LFNoise2 must not, measured {j2:.4}");
+
+    // The quadratic **overshoots** its draws, because it aims at the midpoints
+    // between them and carries its slope across the boundary. scsynth's does
+    // too, and it is worth pinning rather than discovering: measured 1.67 here,
+    // and stable — the peak is the same over one second and over ten, at 5 Hz,
+    // 100 Hz and 2 kHz, so the carried slope does not accumulate.
+    println!("LFNoise2 peak {:.3}", peak(&two));
+    assert!(peak(&two) < 1.8, "bounded, if not by 1: {:.3}", peak(&two));
+}
+
+#[test]
+fn an_lf_noise_at_control_rate_steps_at_the_same_speed() {
+    // The calculation-rate contract: the frequency is in hertz at either rate.
+    let ar = render(
+        r#"{"kind": "LFNoise0", "inputs": [{"const": 10.0}]}"#,
+        48_000,
+    );
+    let kr = render(
+        r#"{"kind": "LFNoise0", "rate": "kr", "inputs": [{"const": 10.0}]}"#,
+        48_000,
+    );
+    let steps = |x: &[f32]| x.windows(2).filter(|w| w[0] != w[1]).count();
+    assert!((9..=11).contains(&steps(&ar)), "ar: {}", steps(&ar));
+    assert!((9..=11).contains(&steps(&kr)), "kr: {}", steps(&kr));
+}
+
+// ---- the impulsive and chaotic ----
+
+#[test]
+fn dust_fires_at_its_mean_density_with_random_amplitudes() {
+    for density in [10.0f32, 200.0] {
+        let x = run(
+            &mut Dust::with_seed(DustMode::Unipolar, 8),
+            &[&[density]],
+            48_000 * 4,
+        );
+        let hits = x.iter().filter(|v| **v != 0.0).count() as f32 / 4.0;
+        // A Poisson count over four seconds: the standard deviation is
+        // sqrt(4·density)/4, so this bound is about four sigma.
+        let sigma = (4.0 * density).sqrt() / 4.0;
+        println!("Dust({density}): {hits:.1} impulses/second (sigma {sigma:.2})");
+        assert!(
+            (hits - density).abs() < 4.0 * sigma,
+            "{hits} impulses/second against a density of {density}"
+        );
+        assert!(
+            x.iter().all(|v| (0.0..1.0).contains(v)),
+            "Dust is unipolar in [0, 1)"
+        );
+    }
+    // ...and Dust2 straddles zero.
+    let x = run(
+        &mut Dust::with_seed(DustMode::Bipolar, 8),
+        &[&[200.0]],
+        48_000,
+    );
+    assert!(x.iter().any(|v| *v < 0.0), "Dust2 fires both ways");
+    assert!(
+        x.iter().all(|v| (-1.0..1.0).contains(v)),
+        "and stays in range"
+    );
+}
+
+#[test]
+fn dust_is_not_a_clock() {
+    // The property that separates it from `Impulse`, and the reason to say so
+    // in the docs: the intervals are exponential, not constant. Over a long
+    // run the shortest gap is a small fraction of the longest.
+    let x = run(
+        &mut Dust::with_seed(DustMode::Unipolar, 9),
+        &[&[100.0]],
+        48_000 * 4,
+    );
+    let hits: Vec<usize> = x
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| **v != 0.0)
+        .map(|(i, _)| i)
+        .collect();
+    let gaps: Vec<usize> = hits.windows(2).map(|w| w[1] - w[0]).collect();
+    let (lo, hi) = (
+        *gaps.iter().min().unwrap() as f32,
+        *gaps.iter().max().unwrap() as f32,
+    );
+    println!("Dust(100) gaps: shortest {lo}, longest {hi} samples (mean 480)");
+    assert!(hi > 5.0 * lo, "an exponential spread, not a clock");
+}
+
+#[test]
+fn crackle_is_deterministic_bounded_and_carries_dc() {
+    let a = run(&mut Crackle::default(), &[&[1.5]], 1 << 15);
+    let b = run(&mut Crackle::default(), &[&[1.5]], 1 << 15);
+    assert_eq!(a, b, "no RNG at all: the same chaos gives the same signal");
+    assert_finite(&a, "Crackle");
+    assert!(peak(&a) < 2.0, "bounded, peak {:.3}", peak(&a));
+    // The absolute value is part of the map, so it is one-sided.
+    let mean = dc(&a);
+    println!("Crackle(1.5): mean {mean:.3}, rms {:.3}", rms(&a));
+    assert!(mean > 0.05, "unipolar, so it carries DC: mean {mean:.3}");
+    // It does not repeat: no period up to 512 samples anywhere in the tail.
+    // (A longer or quasi-period would not be caught by this, which is the
+    // honest limit of what a test can say about a chaotic map.)
+    let tail = &a[a.len() - 8192..];
+    let period = (1..=512).find(|&p| {
+        tail[..4096]
+            .iter()
+            .zip(tail[p..p + 4096].iter())
+            .all(|(x, y)| (x - y).abs() < 1e-6)
+    });
+    assert_eq!(period, None, "found a short period: {period:?}");
+
+    // `chaos` materially changes the signal, and **not monotonically** — the
+    // measured spread runs 0.56, 0.20, 0.08, 0.05, 0.19, 0.05, 0.06 across
+    // chaos 0.3 to 1.9. It is a map, not a level control: reach for it by ear.
+    let spread = |x: &[f32]| {
+        let t = &x[x.len() * 3 / 4..];
+        let m = dc(t);
+        (t.iter().map(|v| (v - m) * (v - m)).sum::<f32>() / t.len() as f32).sqrt()
+    };
+    let low = run(&mut Crackle::default(), &[&[0.3]], 1 << 15);
+    println!(
+        "Crackle spread: chaos 0.3 -> {:.5}, chaos 1.5 -> {:.5}",
+        spread(&low),
+        spread(&a)
+    );
+    assert!(
+        spread(&low) > 5.0 * spread(&a),
+        "the parameter must change the signal, not just its seed"
+    );
+}
+
+// ---- reproducibility ----
+
+#[test]
+fn every_generator_replays_exactly_from_its_seed() {
+    // The rule a golden file for a noisy patch depends on. `Crackle` has no
+    // seed because it has no RNG; it is covered above.
+    macro_rules! same {
+        ($what:expr, $make:expr, $inputs:expr) => {{
+            let a = run(&mut $make, $inputs, 4096);
+            let b = run(&mut $make, $inputs, 4096);
+            assert_eq!(a, b, "{} is not reproducible from its seed", $what);
+            // And a different seed is a different stream — a generator that
+            // ignored its seed would pass the test above.
+            assert_ne!(a.len(), 0);
+        }};
+    }
+    same!("WhiteNoise", WhiteNoise::with_seed(42), &[]);
+    same!("PinkNoise", PinkNoise::with_seed(42), &[]);
+    same!("BrownNoise", BrownNoise::with_seed(42), &[]);
+    same!("GrayNoise", GrayNoise::with_seed(42), &[]);
+    same!("ClipNoise", ClipNoise::with_seed(42), &[]);
+    same!(
+        "LFNoise0",
+        LfNoise::with_seed(LfNoiseShape::Step, 42),
+        &[&[300.0]]
+    );
+    same!(
+        "LFNoise1",
+        LfNoise::with_seed(LfNoiseShape::Linear, 42),
+        &[&[300.0]]
+    );
+    same!(
+        "LFNoise2",
+        LfNoise::with_seed(LfNoiseShape::Quadratic, 42),
+        &[&[300.0]]
+    );
+    same!(
+        "LFClipNoise",
+        LfNoise::with_seed(LfNoiseShape::Clip, 42),
+        &[&[300.0]]
+    );
+    same!("Dust", Dust::with_seed(DustMode::Unipolar, 42), &[&[500.0]]);
+
+    let a = run(&mut PinkNoise::with_seed(1), &[], 4096);
+    let b = run(&mut PinkNoise::with_seed(2), &[], 4096);
+    assert_ne!(a, b, "two seeds must give two streams");
+}
+
+#[test]
+fn two_instances_in_one_graph_are_not_the_same_stream() {
+    // Correlated "noise" summed with itself is a comb filter, not more noise.
+    // The per-instance seeding is what prevents it, and it is invisible until
+    // someone puts two of the same kind in one def.
+    let x = render(
+        r#"{"kind": "WhiteNoise", "inputs": []},
+           {"kind": "WhiteNoise", "inputs": []},
+           {"kind": "BinaryOpUGen", "op": "sub", "inputs": [{"ugen": 0}, {"ugen": 1}]}"#,
+        1 << 14,
+    );
+    // Identical streams would cancel exactly.
+    assert!(rms(&x) > 0.5, "the two streams cancelled: rms {}", rms(&x));
+}
