@@ -82,9 +82,12 @@ under one set of `cfg`s is not always right under another.
 | 6 | `cargo clippy --all-targets --no-default-features --features faust` | **no** |
 | 7 | `cargo clippy -p clausters-ffi --features verovio --all-targets` | **no** |
 | 8 | `cargo doc --no-deps --workspace` | **no** |
-| 9 | `cargo doc --no-deps --document-private-items` in `clients/gui` | **no** |
-| 10 | `cargo clippy --workspace --all-targets` | yes |
-| 11 | `cargo clippy --all-targets` in `clients/gui` | yes |
+| 9 | `cargo doc --no-deps --workspace --no-default-features` | **no** |
+| 10 | `cargo doc --no-deps --workspace --no-default-features --features synth` | **no** |
+| 11 | `cargo doc --no-deps --workspace --no-default-features --features faust` | **no** |
+| 12 | `cargo doc --no-deps --document-private-items` in `clients/gui` | **no** |
+| 13 | `cargo clippy --workspace --all-targets` | yes |
+| 14 | `cargo clippy --all-targets` in `clients/gui` | yes |
 
 Every clippy line runs with `-- -D warnings` and every doc line with
 `RUSTDOCFLAGS=-D warnings`, matching CI's bar, so a warning is a failure rather
@@ -100,16 +103,17 @@ pulls in is linted by nothing. It needs no libverovio present — clippy checks
 and never links — so it lints the code under the feature's `cfg`s, not the
 library's presence.
 
-Configurations 8 and 9 are the doc build, and they are the one place this
-script does **not** walk the feature matrix: both run at the default feature
-set. The rustdoc a reader ever sees is built from default features (docs.rs
-included), and a few module docs link across a feature seam on purpose —
+Configurations 8–12 are the doc build, and it walks the def families for the
+same reason clippy does: a link whose target is compiled away by a feature
+resolves in one configuration and not in the next, and only the default one
+gets built by habit.
+
+That has one consequence for how a doc comment is written. **A doc comment that
+names an item across a feature seam names it in backticks, not as a link** —
 `dsp::denormals` naming `server::backend`, `server::defstore` naming
-`faust::cache::FaustRecord`. Those links are right in the build that publishes
-them and unresolvable in a build that compiles the target away; chasing them
-out would cost the published docs real links to satisfy a doc build nobody
-reads. So a `cargo doc --no-default-features` still reports a handful of
-unresolved links, knowingly.
+`faust::cache::FaustRecord`, `embed`'s module docs naming the `realtime`-gated
+C exports. Linking it would resolve in the build where the target exists and
+warn in every build where it does not.
 
 The GUI host is documented with `--document-private-items` because that is how
 its docs are read: it is the internal host crate, most of it private, and its

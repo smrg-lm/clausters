@@ -9,7 +9,7 @@
 //!    fractional phase `frac` in `[0, 1)`,
 //!    `out = x0 + (1 + frac) * x1 = a[i] + frac * (a[i+1] - a[i])`. Storing the
 //!    offset/slope pair instead of the raw samples is what lets the read be one
-//!    madd with no branch. See `Osc`/`VOsc`/`Shaper` in [`crate::dsp::osc`].
+//!    madd with no branch. See `Osc`/`VOsc`/`Shaper` in `crate::dsp::osc`.
 //!
 //! 2. **The generators.** [`GenCommand`] is one parsed `/b_gen` command
 //!    (`sine1`/`sine2`/`sine3` additive spectra, `cheby` waveshaping transfer

@@ -52,7 +52,7 @@ pub const DEFAULT_PARTITIONS: usize = 16;
 pub const MAX_PARTITIONS: usize = 256;
 
 /// The prepared-kernel buffer layout written by `/b_gen prepare_partconv` and
-/// read by [`Conv`]: `data[0] = L` (partition length), `data[1] = P`
+/// read by `Conv`: `data[0] = L` (partition length), `data[1] = P`
 /// (partition count), then `P` frames of `N = 2L` floats — each partition
 /// zero-padded to `N` and packed by
 /// [`fft::rfft_into`](clausters_core::fft::rfft_into)

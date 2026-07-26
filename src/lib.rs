@@ -23,7 +23,7 @@
 //! # Feature flags
 //!
 //! - `synth` (default) — the SynthDef family: the UGen library, the def
-//!   compiler (`/d_recv`) and the [`synthdef`] module.
+//!   compiler (`/d_recv`) and the `synthdef` module.
 //! - `faust` — the FaustDef family: libfaust embedding (Box API + LLVM JIT);
 //!   adds the `faust` module.
 //!

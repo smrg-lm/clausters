@@ -108,20 +108,25 @@ clippy "clippy: ffi with verovio" -p clausters-ffi --features verovio --all-targ
 # was renamed, moved or made private -- lands silently and stays. The doc build
 # is its own lint pass: `cargo clippy` says nothing about it.
 #
-# Both runs are at the **default** feature set, deliberately, and that is the
-# one place this script does not walk the matrix. The rustdoc a reader ever sees
-# is built from default features (docs.rs included), and several module docs
-# link across a feature seam on purpose -- `denormals` naming
-# `server::backend`, `defstore` naming `faust::cache::FaustRecord`. Those links
-# are right in the build that publishes them and unresolvable in a build that
-# compiles the target away; chasing them out would cost the published docs real
-# links to satisfy a doc build nobody reads.
+# The doc build walks the def families for the same reason clippy does: a link
+# whose target is compiled away by a feature resolves in one configuration and
+# not in the next, and only the default one is ever built by habit. A doc
+# comment that has to name an item across a feature seam names it in backticks
+# instead of linking it -- `dsp::denormals` naming `server::backend`,
+# `server::defstore` naming `faust::cache::FaustRecord` -- so every
+# configuration documents clean.
 #
 # The GUI host adds `--document-private-items` because that is how its docs are
 # read: it is the internal host crate, most of it private, and its module docs
 # name the private function that does the work. Documenting them means a link
 # into that machinery is checked rather than quietly rendered as text.
 doc "rustdoc: workspace" cargo doc --no-deps --workspace
+doc "rustdoc: neither def family" \
+    cargo doc --no-deps --workspace --no-default-features
+doc "rustdoc: synth alone" \
+    cargo doc --no-deps --workspace --no-default-features --features synth
+doc "rustdoc: faust alone" \
+    cargo doc --no-deps --workspace --no-default-features --features faust
 doc "rustdoc: gui host" \
     env -C clients/gui cargo doc --no-deps --document-private-items
 

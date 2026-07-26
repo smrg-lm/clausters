@@ -14,11 +14,11 @@
 //! - [`clausters_render`]: the synchronous "scientific" call — render a
 //!   binary score offline and get the interleaved samples back. No audio
 //!   device, no threads, no asynchrony; blocks the *caller* only.
-//! - [`clausters_open`]/[`clausters_send`]/[`clausters_poll`]: a full live
+//! - `clausters_open`/`clausters_send`/`clausters_poll`: a full live
 //!   server in-process. Commands are ordinary OSC packets delivered by
 //!   function call through the same heap-backed ring the `--shm` transport
 //!   uses (`server::ipc`); replies are polled. The data plane is direct:
-//!   [`clausters_clock`] and [`clausters_ctl_set`]/[`clausters_ctl_get`]
+//!   `clausters_clock` and `clausters_ctl_set`/`clausters_ctl_get`
 //!   touch the segment atomics with no command round trip at all.
 //!
 //! Versioning: check [`clausters_abi_version`] before anything else; the
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn clausters_free_samples(ptr: *mut f32, samples: u64) {
 ///
 /// Not RT-strict: the serving turn allocates (translate, NRT) on the calling
 /// thread, the accepted relaxation of this mode — a host that needs the
-/// native no-alloc audio callback uses [`Clausters`] (its own threads) or
+/// native no-alloc audio callback uses `Clausters` (its own threads) or
 /// the full server instead.
 pub struct ClaustersHeadless {
     engine: crate::server::engine::Engine,

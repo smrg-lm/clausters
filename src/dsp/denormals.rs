@@ -8,7 +8,7 @@
 //!
 //! - [`flush_to_zero`] switches the **calling thread's** FPU to treat
 //!   subnormals as zero. The cpal callback re-arms it on every buffer
-//!   ([`crate::server::backend`]) and the offline renderer arms it once per
+//!   (`crate::server::backend`) and the offline renderer arms it once per
 //!   render ([`crate::server::render`]) — both modes, so an NRT render stays
 //!   sample-identical to a live take (the M7 guarantee).
 //! - Faust factories are created with `-ftz 2`

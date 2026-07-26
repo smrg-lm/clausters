@@ -532,7 +532,7 @@ impl Rate {
 /// A demand input is not a buffer of samples: it is a *stream*, and reading it
 /// means asking the UGen behind it for one more value. Since that UGen may in
 /// turn read streams of its own, the recursion has to happen where the graph
-/// is — in [`crate::synthdef::instance`] — which is why a source is handed this
+/// is — in `crate::synthdef::instance` — which is why a source is handed this
 /// trait object instead of `&[&[f32]]`. From inside a source, a plain constant
 /// and a nested `Dseq` differ only in what [`is_demand`](Self::is_demand)
 /// answers.
@@ -600,7 +600,7 @@ pub trait UGen: Send {
     }
 
     /// Hands this UGen the done flag of the UGen its first input names, read
-    /// just before `process` by [`ExecMode::DoneQuery`](registry::ExecMode).
+    /// just before `process` by `ExecMode::DoneQuery`.
     /// Only the two kinds that watch another UGen implement it; for everyone
     /// else it is never called.
     fn set_done_flag(&mut self, _done: bool) {}

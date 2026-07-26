@@ -8,7 +8,7 @@
 //! - `defs/synthdefs/<name>.json` — the `SynthDefSpec` JSON of a `/d_recv`
 //!   UGen graph, stored verbatim. Reloading just re-parses and recompiles it
 //!   (cheap); there is no compiled artifact to cache.
-//! - `defs/faustdefs/<name>.json` — a [`crate::faust::cache::FaustRecord`]
+//! - `defs/faustdefs/<name>.json` — a `crate::faust::cache::FaustRecord`
 //!   holding the original Faust source/JSON and metadata, plus a sibling
 //!   `defs/faustdefs/<name>.<sha>.bc` bitcode cache (the "A" layer, see
 //!   `faust::cache`). The JSON record is always the source of truth; the

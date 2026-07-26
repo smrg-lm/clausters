@@ -186,14 +186,18 @@ cargo clippy --all-targets --no-default-features --features synth
 cargo clippy --all-targets --no-default-features --features faust
 cargo clippy --workspace --all-targets                      # core, ffi, midi
 (cd clients/gui && cargo clippy --all-targets)              # the GUI host
-RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace  # the doc build
+RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace  # the doc build,
+RUSTDOCFLAGS='-D warnings' cargo doc --no-deps --workspace --no-default-features
+#   ... and the same two def-family variants as clippy above
 (cd clients/gui && RUSTDOCFLAGS='-D warnings' \
     cargo doc --no-deps --document-private-items)
 ```
 
-The two doc lines run at the **default** feature set on purpose: the rustdoc
-anyone reads is built from default features, and a few module docs link across
-a feature seam deliberately (see the feature-matrix skill).
+The doc build walks the def families for the same reason clippy does, which
+settles how a doc comment names something across a feature seam: **in
+backticks, not as a link** (`dsp::denormals` naming `server::backend`,
+`server::defstore` naming `faust::cache::FaustRecord`) — a link there resolves
+only in the build where the target is compiled in.
 
 ## Versioning: SemVer of the package vs. the binary ABI counters
 
