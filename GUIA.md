@@ -19,6 +19,11 @@ milestone y no crece con cada feature nueva.
 
 Los ejemplos referidos están en `examples/` (catálogo en `docs/examples.md`).
 
+Para **escuchar un WAV** ya renderizado: `pw-play toma.wav` — las herramientas de
+PipeWire, que es el backend que el build asume por defecto, y vienen con él en
+Ubuntu y Fedora. `aplay toma.wav` (alsa-utils) sirve igual. Es lo mismo que
+imprime cada ejemplo al terminar de escribir el archivo.
+
 ## Smoke audible/visual
 
 Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).

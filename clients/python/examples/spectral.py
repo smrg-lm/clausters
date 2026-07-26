@@ -84,7 +84,7 @@ def main():
             struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
         ))
     print(f"wrote {out_path} - left = raw noise, right = spectral low-pass")
-    print(f"listen with: ffplay -autoexit {out_path}")
+    print(f"listen with: pw-play {out_path}")
 
 
 if __name__ == "__main__":

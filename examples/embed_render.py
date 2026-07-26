@@ -57,7 +57,7 @@ def main():
             w.setframerate(48000)
             ints = array_to_int16(samples)
             w.writeframes(ints)
-        print(f"wrote {path} — listen with: ffplay -autoexit {path}")
+        print(f"wrote {path} — listen with: pw-play {path}")
 
 
 def array_to_int16(samples) -> bytes:

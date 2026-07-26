@@ -69,7 +69,7 @@ with wave.open(out_path, "wb") as w:
 print(f"wrote {out_path}")
 ```
 
-Listen to it (`ffplay -autoexit`, or any player): the piece, with every edit
+Listen to it (`pw-play`, or any player): the piece, with every edit
 you made on screen — the moved clips, the trimmed take, the redrawn sweep —
 because the offline pass flattened the same model your window was editing.
 Both renders converge on the same score; the engine that plays it is

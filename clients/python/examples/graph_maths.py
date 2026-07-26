@@ -71,7 +71,7 @@ def main():
         w.writeframes(b"".join(
             struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples
         ))
-    print(f"wrote {out_path} - listen with: ffplay -autoexit {out_path}")
+    print(f"wrote {out_path} - listen with: pw-play {out_path}")
 
 
 if __name__ == "__main__":

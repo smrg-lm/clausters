@@ -152,7 +152,7 @@ def render(path=None):
                     for s in samples
                 )
             )
-        print(f"wrote {path} — listen with: ffplay -autoexit {path}")
+        print(f"wrote {path} — listen with: pw-play {path}")
 
 
 if __name__ == "__main__":

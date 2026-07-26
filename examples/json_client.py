@@ -656,7 +656,7 @@ def demo_score():
     the offline renderer; no server needed. Render and listen with:
 
         ./target/release/clausters --nrt /tmp/clausters_score.osc /tmp/out.wav
-        ffplay -autoexit /tmp/out.wav
+        pw-play /tmp/out.wav
     """
     path = "/tmp/clausters_score.osc"
     notes = [330.0, 440.0, 550.0, 660.0, 880.0]
