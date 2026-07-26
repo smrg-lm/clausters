@@ -7,6 +7,12 @@
 //! reports. The three that are numeric — `Decay`, `Decay2`, `Timer`'s
 //! sub-sample crossing — are checked against the closed form, per the rules in
 //! the `audio-testing` skill.
+//!
+//! Rule 5 comes from two places. The shared table splits every one of the
+//! seventeen rows in two (`tests/subjects.rs`); `a_counter_is_unmoved_by_a_
+//! block_split` below stays because it does something the table does not —
+//! nine slices per block rather than one cut — which is the shape a burst of
+//! scheduled events actually produces.
 
 #![cfg(feature = "synth")]
 
@@ -653,6 +659,94 @@ fn a_trigger_means_the_same_at_either_rate() {
         (kr[9000] - 0.01).abs() <= block,
         "kr: {} (one control period is {block})",
         kr[9000]
+    );
+}
+
+#[test]
+fn a_ten_second_sweep_still_reads_the_time_it_has_run() {
+    // Rule 4 for this family, and it lands on the one piece of accumulated
+    // state here: `Elapsed`'s `f64` accumulator, shared by `Sweep` and
+    // `Timer`. Everything else is a flag or an `i64` count, which does not
+    // lose anything -- `PulseCount`'s state is exact; only the value it
+    // *reports* quantizes, at 2^24, because the wire is `f32`.
+    //
+    // The separation is large and worth writing down. Stepping the same
+    // accumulator by 1/48000 for ten seconds: `f64` lands on 10 s to 1e-11,
+    // `f32` on 10.0357 -- **36 ms fast**, which is a third of a percent and
+    // plainly audible in anything the sweep drives. The tolerance below sits
+    // between the two by orders of magnitude in both directions.
+    let n = 48_000 * 10;
+    let sig = render(
+        r#"{"kind": "Impulse", "inputs": [{"const": 0.0}]},
+           {"kind": "Sweep", "inputs": [{"ugen": 0}, {"const": 1.0}]}"#,
+        n,
+    );
+    let last = n - 1;
+    let want = last as f32 / SR;
+    assert!(
+        (sig[last] - want).abs() < 1e-4,
+        "after {want:.4} s the sweep reads {} ({:+.4} s)",
+        sig[last],
+        sig[last] - want
+    );
+
+    // `Timer` reports the same accumulator as an interval, so a long gap
+    // between two triggers is the same measurement seen from the other end.
+    let sig = render(
+        r#"{"kind": "Impulse", "inputs": [{"const": 0.1}]},
+           {"kind": "Timer", "rate": "ar", "inputs": [{"ugen": 0}]}"#,
+        48_000 * 11,
+    );
+    let reported = sig[48_000 * 10 + 100];
+    assert!(
+        (reported - 10.0).abs() < 1e-4,
+        "a ten second interval reported as {reported}"
+    );
+}
+
+#[test]
+fn a_gate_that_closes_and_reopens_follows_again() {
+    // The gate is tested beside the latch over one cycle, which shows it
+    // tracking and then freezing. What that cannot show is whether it *stays*
+    // frozen: a gate whose closed state also latched its input would look
+    // identical for one cycle and diverge on the second.
+    let ramp = r#"{"kind": "Phasor", "inputs": [{"const": 0.0}, {"const": 1.0},
+                   {"const": 0.0}, {"const": 100000.0}, {"const": 0.0}]}"#;
+    let gate = r#"{"kind": "LFPulse", "inputs": [{"const": 10.0}, {"const": 0.0},
+                   {"const": 0.5}]}"#;
+    let n = 4800 * 3;
+    let gated = render(
+        &format!(
+            r#"{ramp}, {gate},
+               {{"kind": "Gate", "inputs": [{{"ugen": 0}}, {{"ugen": 1}}]}}"#
+        ),
+        n,
+    );
+    let square = render(gate, n);
+
+    // Over three cycles of the square, the gate's output must equal the ramp
+    // while the square is up and hold its last value while it is down --
+    // checked against the ramp itself rather than against a shape, so a gate
+    // that drifted or re-latched would fail on any sample.
+    let mut held = 0.0f32;
+    for i in 0..n {
+        if square[i] > 0.0 {
+            held = i as f32; // the Phasor's value at this sample
+        }
+        assert!(
+            (gated[i] - held).abs() < 1e-6,
+            "sample {i} (square {}): gate reads {} not {held}",
+            square[i],
+            gated[i]
+        );
+    }
+    // And it really did reopen more than once, or the loop above proves little.
+    let reopenings = (1..n)
+        .filter(|&i| square[i] > 0.0 && square[i - 1] <= 0.0)
+        .count();
+    assert!(
+        reopenings >= 2,
+        "only {reopenings} reopenings in the window"
     );
 }
 
