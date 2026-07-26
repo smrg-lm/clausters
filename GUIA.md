@@ -295,6 +295,18 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   `impulse` que sería parejo), `crackle` sin nada de azar, y un hi-hat de
   `clip_noise` sobre un viento de marrón filtrado.
 
+- **El paneo, y que el ancho no es la posición.** `python3
+  examples/panning.py toma.wav` y escucharla **con auriculares** → una fuente
+  que cruza el campo sin cambiar de nivel ni escalonarse (la posición va a
+  audio rate); un banco de seis voces que llega abierto en vez de en bloque;
+  después una imagen que se **angosta y se ensancha sin que nada se mueva**, que
+  es la distinción que hay que oír; un `mid_side` que apaga el centro y deja los
+  costados como estaban; un morfeo de tres timbres sin saltos; y un anillo de
+  seis parlantes girando, plegado a dos. Al final, siete notas quietas: las dos
+  centradas suenan **igual de fuertes** (0.707 las dos) aunque una sea `pan2` y
+  la otra `balance2` que no movió nada, y las tres de ancho (0, 1 y 2) tienen
+  **exactamente** el mismo mono, 0.688 — la tabla del reporte lo mide.
+
 - **Un secuenciador que vive adentro de un synth.** `python3
   examples/sequencer.py toma.wav` y escucharla → **dos** `/s_new` y nada más:
   ningún reloj del lado del cliente. Tienen que oírse 24 notas en 4 segundos con

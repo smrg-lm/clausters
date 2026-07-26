@@ -607,13 +607,40 @@ comb-plus-allpass space, rendered offline so it needs no audio hardware.
   carries its slope), which is stable — the peak is the same over one second
   and over ten, at 5 Hz, 100 Hz and 2 kHz.
 
-- **U7 — Panning and selection** — `src/dsp/pan.rs`. The engine gives a UGen
-  **one output** (an input reference names a UGen, not an output of one), a
-  deviation `docs/schemas.md` already states for the buffer readers. So a
-  two-output panner is a row carrying its channel index and sharing the pan-law
-  helper, and the Python `pan2()` returns a `ChannelList` of two — exactly what
-  `out()` already does. `Pan2`, `LinPan2`, `Balance2`, `Rotate2`, `PanAz` that
-  way; `XFade2`, `LinXFade2`, `Select`, `SelectX` as ordinary single-output rows.
+- ✅ **U7 — Panning and selection** *(done 2026-07-26)* — `src/dsp/pan.rs`:
+  eleven rows over four cores. The engine gives a UGen **one output** (an input
+  reference names a UGen, not an output of one), a deviation `docs/schemas.md`
+  already states for the buffer readers — so a two-channel panner is two rows
+  sharing their inputs and differing in a trailing `chan` index, and the Python
+  `pan2()` returns a `ChannelList` of two, exactly what `out()` already accepts.
+  `Pan2`, `LinPan2`, `Balance2`, `Rotate2`, `PanAz` that way; `XFade2`,
+  `LinXFade2`, `Select`, `SelectX` as single-output rows, plus `splay()` as a
+  client-side helper over `pan2`.
+
+  Three decisions, all in `docs/decisions.md`. The pan law is a **polynomial**,
+  not scsynth's rounded 2049-entry table: worst-case `2.6e-7` against its
+  `3.8e-4`, exact at both ends (a hard pan is digital silence on the far side)
+  and
+  symmetric by construction, since the pair is one function read from both ends.
+  It is evaluated **per sample** when the position is audio rate — the one place
+  the track's block-rate stance is deliberately reversed, because ramping the
+  gains across a block leaves a 3 dB hole wherever a fast sweep crosses it;
+  measured cost, `examples/bench.rs`, **1.30×** the whole graph. And **width got
+  a name**: `Rotate2` rotates the plane (moving an image without resizing it)
+  and cannot express a width (resizing it without moving it), so the same matrix
+  also carries `StereoWidth` — the knob — and `MidSide`, normalized to `1/√2`
+  and therefore its own inverse, the only one of the two that lets something
+  happen *between* the encode and the decode. Neither name is scsynth's.
+
+  `SelectX` is one row rather than sclang's two `Select`s and an `XFade2`; the
+  values agree across the index range and deliberately not outside it, where
+  sclang folds the crossfade while clipping the picks and returns a mix of the
+  first two sources for a negative index, or the last one at 1.414 past the end.
+  `examples/panning.py` measures the family's level claims on its own render:
+  equal power holds the stereo level and lifts the mono fold-down 3 dB at the
+  centre, constant amplitude holds the mono sum instead, a centred `Balance2`
+  costs 3 dB for doing nothing, and width leaves the mono sum **exactly** where
+  it was — 0.688 at widths 0, 1 and 2 alike, since it only scales what cancels.
 
 - **U8 — The demand family** — extending `src/dsp/demand.rs` on the `dr`
   substrate S1 built and the shared RNG: `Dseries`, `Dgeom`, `Dwhite`, `Diwhite`,

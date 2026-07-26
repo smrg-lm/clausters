@@ -1557,3 +1557,92 @@ fn noise_ugens_do_not_allocate_on_the_audio_thread() {
     });
     assert_eq!(handle.collect_garbage(), 1);
 }
+
+/// The pan family (U7). None of these holds a buffer either, so what the scene
+/// is really guarding is the shape of the code: eleven rows share one
+/// polynomial and one two-by-two product, and every one of them runs its law
+/// per sample when its parameter is audio rate. That per-sample path is where a
+/// `sin()` call, a temporary or a lazily built table would hide, so the scene
+/// drives every row from an audio-rate parameter rather than a constant.
+#[test]
+fn pan_ugens_do_not_allocate_on_the_audio_thread() {
+    use clausters::synthdef::SynthDefSpec;
+
+    let (mut engine, mut handle) = engine_pair(48_000.0, 2);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+
+    let spec: SynthDefSpec = serde_json::from_str(
+        r#"{
+            "name": "pan",
+            "ugens": [
+                {"kind": "WhiteNoise", "inputs": []},
+                {"kind": "Sine", "inputs": [{"const": 220.0}]},
+                {"kind": "Sine", "inputs": [{"const": 0.7}]},
+
+                {"kind": "Pan2", "inputs": [{"ugen": 0}, {"ugen": 2},
+                                            {"const": 1.0}, {"const": 0.0}]},
+                {"kind": "Pan2", "inputs": [{"ugen": 0}, {"ugen": 2},
+                                            {"const": 1.0}, {"const": 1.0}]},
+                {"kind": "LinPan2", "inputs": [{"ugen": 1}, {"ugen": 2},
+                                               {"const": 1.0}, {"const": 0.0}]},
+                {"kind": "Balance2", "inputs": [{"ugen": 3}, {"ugen": 4},
+                                                {"ugen": 2}, {"const": 1.0},
+                                                {"const": 1.0}]},
+                {"kind": "Rotate2", "inputs": [{"ugen": 3}, {"ugen": 4},
+                                               {"ugen": 2}, {"const": 0.0}]},
+                {"kind": "MidSide", "inputs": [{"ugen": 3}, {"ugen": 4},
+                                               {"const": 1.0}]},
+                {"kind": "StereoWidth", "inputs": [{"ugen": 3}, {"ugen": 4},
+                                                   {"ugen": 2}, {"const": 0.0}]},
+                {"kind": "PanAz", "inputs": [{"ugen": 1}, {"ugen": 2},
+                                             {"const": 1.0}, {"const": 2.0},
+                                             {"const": 0.5}, {"const": 4.0},
+                                             {"const": 2.0}]},
+                {"kind": "XFade2", "inputs": [{"ugen": 0}, {"ugen": 1},
+                                              {"ugen": 2}, {"const": 1.0}]},
+                {"kind": "LinXFade2", "inputs": [{"ugen": 0}, {"ugen": 1},
+                                                 {"ugen": 2}, {"const": 1.0}]},
+                {"kind": "Select", "inputs": [{"ugen": 2}, {"ugen": 0},
+                                              {"ugen": 1}, {"ugen": 11}]},
+                {"kind": "SelectX", "inputs": [{"ugen": 2}, {"ugen": 0},
+                                               {"ugen": 1}, {"ugen": 11}]},
+
+                {"kind": "Sum4", "inputs": [{"ugen": 5}, {"ugen": 6},
+                                            {"ugen": 7}, {"ugen": 8}]},
+                {"kind": "Sum4", "inputs": [{"ugen": 9}, {"ugen": 10},
+                                            {"ugen": 12}, {"ugen": 13}]},
+                {"kind": "Sum3", "inputs": [{"ugen": 14}, {"ugen": 15},
+                                            {"ugen": 16}]},
+                {"kind": "BinaryOpUGen", "op": "mul",
+                 "inputs": [{"ugen": 17}, {"const": 0.05}]},
+                {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 18}]}
+            ]
+        }"#,
+    )
+    .unwrap();
+    let def = Arc::new(compile(spec).unwrap());
+    handle
+        .send(Cmd::AddSynth {
+            id: 1000,
+            target: ROOT_NODE_ID,
+            action: AddAction::Tail,
+            synth: Box::new(UGenSynth::new(def, 48_000.0)),
+            usage: Default::default(),
+        })
+        .ok()
+        .unwrap();
+
+    assert_no_alloc(|| {
+        for _ in 0..200 {
+            engine.process_block(&mut out);
+        }
+    });
+
+    handle.send(Cmd::FreeNode { id: 1000 }).ok().unwrap();
+    assert_no_alloc(|| {
+        for _ in 0..50 {
+            engine.process_block(&mut out);
+        }
+    });
+    assert_eq!(handle.collect_garbage(), 1);
+}

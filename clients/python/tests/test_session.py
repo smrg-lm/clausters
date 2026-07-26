@@ -282,7 +282,25 @@ _WIRE_ORDER_STATIC_FIELDS_POSITIONAL = {
     "PV_Kernel": "mag/phase are static fields, the wire takes chain + params",
 }
 
-_WIRE_ORDER_DIFFERS = {**_WIRE_ORDER_FORCED, **_WIRE_ORDER_STATIC_FIELDS_POSITIONAL}
+# Not a divergence in the same sense: these rows end in a `chan` index the
+# *builder* fills, once per channel, because a UGen has one output and a panner
+# has two. The caller never passes it, so the Python signature is the wire's
+# minus its last input — by construction, for every row of the family.
+_WIRE_CHANNEL_IS_THE_BUILDERS = {
+    "Pan2": "built twice, one row per output channel",
+    "LinPan2": "built twice, one row per output channel",
+    "Balance2": "built twice, one row per output channel",
+    "Rotate2": "built twice, one row per output channel",
+    "MidSide": "built twice, one row per output channel",
+    "StereoWidth": "built twice, one row per output channel",
+    "PanAz": "built numchans times; numchans leads in Python, trails on the wire",
+}
+
+_WIRE_ORDER_DIFFERS = {
+    **_WIRE_ORDER_FORCED,
+    **_WIRE_ORDER_STATIC_FIELDS_POSITIONAL,
+    **_WIRE_CHANNEL_IS_THE_BUILDERS,
+}
 
 
 def _python_callables_by_kind():

@@ -31,6 +31,7 @@ use crate::dsp::noise::{
     WhiteNoise,
 };
 use crate::dsp::osc::{Osc, OscN, Shaper, VOsc};
+use crate::dsp::pan::{Pan, PanAz, PanKind, RotKind, Rotate, Select, SelectKind};
 use crate::dsp::phase::{Lf, LfShape, Phasor, Pulse, Saw};
 use crate::dsp::reply::{Poll, SendReply, SendTrig};
 use crate::dsp::scalar::{Rand, SampleRate};
@@ -447,6 +448,55 @@ const I_XLINE: &[UGenInput] = &[
 const I_LF_NOISE: &[UGenInput] = &[inp("freq", 500.0)];
 const I_DENSITY: &[UGenInput] = &[inp("density", 1.0)];
 const I_CHAOS: &[UGenInput] = &[inp("chaos", 1.5)];
+/// The pan family (U7). Every row that emits two channels ends in `chan`, the
+/// index of the one *this* instance carries: the engine gives a UGen one
+/// output, so a stereo panner is two rows sharing their inputs, and the Python
+/// builder returns the pair as a channel list. It sits last because it is the
+/// builder's business, not the reader's — the inputs before it are scsynth's,
+/// in scsynth's order.
+const I_PAN2: &[UGenInput] = &[
+    inp("signal", 0.0),
+    inp("pos", 0.0),
+    inp("level", 1.0),
+    inp("chan", 0.0),
+];
+const I_BALANCE2: &[UGenInput] = &[
+    inp("left", 0.0),
+    inp("right", 0.0),
+    inp("pos", 0.0),
+    inp("level", 1.0),
+    inp("chan", 0.0),
+];
+const I_XFADE2: &[UGenInput] = &[
+    inp("a", 0.0),
+    inp("b", 0.0),
+    inp("pan", 0.0),
+    inp("level", 1.0),
+];
+const I_ROTATE2: &[UGenInput] = &[
+    inp("x", 0.0),
+    inp("y", 0.0),
+    inp("pos", 0.0),
+    inp("chan", 0.0),
+];
+const I_MIDSIDE: &[UGenInput] = &[inp("a", 0.0), inp("b", 0.0), inp("chan", 0.0)];
+const I_WIDTH: &[UGenInput] = &[
+    inp("left", 0.0),
+    inp("right", 0.0),
+    inp("width", 1.0),
+    inp("chan", 0.0),
+];
+const I_PAN_AZ: &[UGenInput] = &[
+    inp("signal", 0.0),
+    inp("pos", 0.0),
+    inp("level", 1.0),
+    inp("width", 2.0),
+    inp("orientation", 0.5),
+    inp("numchans", 2.0),
+    inp("chan", 0.0),
+];
+/// `Select`/`SelectX`: the index, then an unbounded run of sources.
+const I_WHICH: &[UGenInput] = &[inp("which", 0.0)];
 /// The trigger family (U5). A kind that takes only triggers has no signal
 /// input at all — but it still defaults to `ar`, because a `kr` consumer
 /// samples an `ar` wire once per block and would drop most of a trigger train.
@@ -1463,6 +1513,131 @@ static UGENS: &[UGenDescriptor] = &[
         BusRole::None,
         false,
         |_, _| Box::new(Crackle::default()),
+    ),
+    // --- panning, the stereo field and selection (U7): one pan law, one
+    //     two-by-two matrix, one crossfade. The two-channel rows appear once
+    //     each and carry a `chan` index; `numchans` on `PanAz` sizes the ring
+    //     the gain is computed against, not an allocation. ---
+    desc(
+        "Pan2",
+        Fixed(4),
+        I_PAN2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pan::new(PanKind::Pan2)),
+    ),
+    desc(
+        "LinPan2",
+        Fixed(4),
+        I_PAN2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pan::new(PanKind::LinPan2)),
+    ),
+    desc(
+        "Balance2",
+        Fixed(5),
+        I_BALANCE2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pan::new(PanKind::Balance2)),
+    ),
+    desc(
+        "XFade2",
+        Fixed(4),
+        I_XFADE2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pan::new(PanKind::XFade2)),
+    ),
+    desc(
+        "LinXFade2",
+        Fixed(4),
+        I_XFADE2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Pan::new(PanKind::LinXFade2)),
+    ),
+    desc(
+        "Rotate2",
+        Fixed(4),
+        I_ROTATE2,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Rotate::new(RotKind::Rotate2)),
+    ),
+    desc(
+        "MidSide",
+        Fixed(3),
+        I_MIDSIDE,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Rotate::new(RotKind::MidSide)),
+    ),
+    desc(
+        "StereoWidth",
+        Fixed(4),
+        I_WIDTH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Rotate::new(RotKind::Width)),
+    ),
+    desc(
+        "PanAz",
+        Fixed(7),
+        I_PAN_AZ,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(PanAz),
+    ),
+    desc(
+        "Select",
+        Variadic,
+        I_WHICH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Select::new(SelectKind::Pick)),
+    ),
+    desc(
+        "SelectX",
+        Variadic,
+        I_WHICH,
+        Ar,
+        R_KR_AR,
+        Normal,
+        BusRole::None,
+        false,
+        |_, _| Box::new(Select::new(SelectKind::Cross)),
     ),
     // --- triggers and control (U5) ---
     // All of these default to `ar`, counters included. A `kr` UGen reads one

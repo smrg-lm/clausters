@@ -264,6 +264,16 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 | | `lf_clip_noise(freq)` | the held one, restricted to ±1 |
 | | `dust(density)` / `dust2(density)` | random impulses at a **mean** density — exponential gaps, not a clock |
 | | `crackle(chaos)` | a deterministic chaotic map; one-sided, so it carries DC |
+| Panning | `pan2(signal, pos=0.0, level=1.0)` | places a mono signal between two channels at **equal power**; returns two channels |
+| | `lin_pan2(signal, pos, level)` | the same at constant **amplitude** — the two gains sum to `level` |
+| | `balance2(left, right, pos, level)` | shifts an already stereo pair to one side; centred, it costs 3 dB |
+| | `pan_az(numchans, signal, pos, level=1.0, width=2.0, orientation=0.5)` | places a signal on a **ring** of `numchans`; returns that many channels |
+| | `splay(signals, spread=1.0, level=1.0, center=0.0)` | spreads a list across the field and folds it to a pair (client-side, no UGen of its own) |
+| Stereo field | `rotate2(x, y, pos)` | rotates the plane by `pos` **half turns** — turns an image without resizing it |
+| | `mid_side(a, b)` | the mid/side matrix, **its own inverse**: encodes and decodes with one call |
+| | `stereo_width(left, right, width)` | widens or narrows: `0` mono, `1` the identity, `2` wide, negative swaps |
+| Crossfades | `xfade2(a, b, pan, level)` / `lin_xfade2(...)` | equal-power / constant-amplitude fade between two signals |
+| | `select(which, *sources)` / `select_x(which, *sources)` | picks one source by index / crossfades between neighbours; every source still runs |
 | Triggers | `trig(signal, dur)` / `trig1(signal, dur)` | holds the level that triggered it / holds 1, for `dur` seconds |
 | | `t_delay(signal, dur)` | one sample of 1, `dur` later; a trigger arriving while one is in flight is dropped |
 | | `latch(signal, trig)` / `gate(signal, trig)` | one sample per rising edge / transparent while the gate is open |
@@ -322,6 +332,17 @@ Each **UGen output** also carries a calculation **rate** — `ir` (init), `kr` (
 Like Faust synths, a SynthDef also accepts the reserved `in` / `out` bus-selecting controls the server adds at `/s_new` time.
 
 The **side-effect** UGens exist for a reply or a console post rather than audio, so a def may consist of them alone with **no `out`** — pass them as `SynthDef` roots (see [Building one](#building-one)). The **spectral** UGens form a frequency-domain chain — see [The frequency-domain chain](#the-frequency-domain-chain) below.
+
+The **panning** callables return a `ChannelList`, so they compose with everything the container already does — `out(0, pan2(sig, pos))` lays the pair on consecutive buses, and `pan2(...) * 0.5` scales both channels. (A UGen has one output, so each is really one row per channel with a trailing channel index; the builder fills it and you never pass it.) Two things about the family are worth knowing before picking one. **Equal power** — `pan2`, `balance2`, `xfade2`, `select_x` — holds one *loudness* across the move, which is what you want for a source crossing the field, but it puts 0.707 in each channel at the centre and adds 3 dB when the two sides are the same signal; **constant amplitude** — `lin_pan2`, `lin_xfade2` — holds the *sum* instead, which is what correlated material and mono fold-downs want. And `balance2` is not a pass-through when centred: it applies the pan law to a pair that is already stereo, so it costs 3 dB there (scsynth's behaviour, kept).
+
+`rotate2`, `mid_side` and `stereo_width` are the same matrix said three ways, and the names are worth reading closely because scsynth only has the first. A **rotation** moves an image without resizing it; **width** resizes it without moving it. `rotate2` at a quarter turn *is* the left/right ↔ mid/side basis change, which is what `mid_side` names outright — normalized so one call both encodes and decodes:
+
+```python
+m, s = mid_side(left, right)          # encode
+out(0, mid_side(lpf(m, 400), s * 1.5))  # process each axis, decode, widened
+```
+
+Use `stereo_width` when a width knob is all you need, and `mid_side` when something has to happen *between* the two — which is the case the knob cannot express.
 
 ### Maths on a UGen graph
 

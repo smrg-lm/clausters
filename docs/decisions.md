@@ -2305,3 +2305,117 @@ What is **not** in the core is the shaping — the dice table, the random walk, 
 interpolation. So the claim "a client can reproduce the stream" holds today only
 for `WhiteNoise`, whose generator is mirrored there. Saying so is cheaper than
 moving ten algorithms across a boundary for a use nobody has yet.
+
+## The pan law is a polynomial, not a table, and it is evaluated per sample
+
+scsynth answers every equal-power question — `Pan2`, `Balance2`, `XFade2`,
+`PanAz`'s window — with a **rounded** lookup into a 2049-entry sine table. That
+costs a table, an initialization and a worst-case gain error near `3.8e-4`,
+which is inaudible on its own but is the kind of floor that ends up under
+everything.
+
+Here it is a polynomial in the position: the Taylor series of `sin(t·pi/2)` to
+five odd terms, about ten flops, worst-case error `2.6e-7` — three orders of
+magnitude under the table's. Three properties are worth stating because they
+are design, not luck.
+
+**The endpoints are exact.** The fifth coefficient is not the Taylor one; it is
+*defined* as whatever makes the five sum to `1`, which lands within `3.5e-6` of
+Taylor's and buys `quarter_sin(1) == 1` exactly. It also buys most of the
+accuracy: forcing the sum cancels the bulk of the truncation error across the
+whole range, which is why the worst case is `2.6e-7` and not the `3.5e-6` the
+truncated series alone would give. That number is the gain of a
+hard-panned source in the channel it is panned *to*, and the other end —
+exact for free, since the polynomial's bare factor is `t` — is the gain in the
+channel it is panned *away* from. A hard pan is therefore digital silence on the
+far side rather than −110 dB of it.
+
+**The pair is symmetric by construction.** A gain pair is
+`(quarter_sin(1 - t), quarter_sin(t))` — one function read from both ends — so
+panning to `-pos` is exactly the mirror of panning to `pos`. That is a property
+of the expression, not a tolerance a test has to keep honest, and the test
+asserts equality rather than closeness.
+
+**The quadrant reduction is exact.** `Rotate2` needs sine and cosine of any
+angle, so the same polynomial is read per quadrant. A half turn is therefore
+exactly a sign flip and a quarter turn is exactly the mid/side basis — which is
+what makes `Rotate2(l, r, 0.25)` and `MidSide(l, r)` agree, and what keeps a
+full turn from drifting.
+
+**And it runs per sample when the position is audio rate.** This is the one
+place the U track's block-rate stance is deliberately not applied. Interpolating
+the two gains across a block — what a filter coefficient does here, and what
+scsynth's `CALCSLOPE` does for its own amplitudes — reads `0.5` where the law
+wants `0.707` if the position sweeps a whole block: a 3 dB hole in the middle of
+every block, on exactly the fast pan sweeps someone reaches for audio rate to
+get. A scalar position still computes its gains once per block; the polynomial
+is what makes the other path affordable, and is most of the reason it exists.
+`examples/bench.rs` measures the gap on the same graph
+(`Sine → Pan2 → 2× Out`, position constant against position from an `LFTri`):
+**1.30×** the whole graph at every voice count from 32 up — and that figure
+includes the `LFTri` the moving version has to run, so it is an upper bound on
+the 64 evaluations a block.
+
+## Rotation and width are different operations, so width gets a name
+
+scsynth's `Rotate2` rotates the plane its two inputs span. On a stereo pair that
+turns the image without resizing it, and at a quarter turn the rotation *is* the
+change of basis between left/right and mid/side — which is how the mid/side
+trick is done in sclang, as a side effect of a 45° rotation.
+
+What that cannot express is **width**, which scales the side axis: it resizes
+the image without moving it, and no angle produces it (a rotation is orthogonal;
+a width is a squeeze). So the family had a hole where its most-wanted member
+should be, hidden by a name that describes a different operation. Two rows fill
+it, both the same two-by-two matrix `Rotate2` already is:
+
+- **`StereoWidth`** — the knob. `0` mono, `1` exactly the identity (the
+  coefficients are `1` and `0`, not `0.99999` and `1e-8`), `2` widened,
+  negative swaps the sides.
+- **`MidSide`** — the matrix itself, normalized to `1/sqrt(2)` rather than the
+  `1/2` a DAW meter shows. That normalization makes it an **involution**: one
+  kind encodes and decodes, and the round trip is exact rather than nearly so.
+  It costs a 3 dB offset on the mid against the convention, which is a plain
+  gain, and buys a catalog with one name instead of an encoder and a decoder
+  that must be kept inverse to each other by hand.
+
+`StereoWidth` is `MidSide`, a multiply, `MidSide` — collapsed into the matrix it
+amounts to, and tested against the two-step route. Keeping both is not
+redundancy: the knob is what most defs want, and the pair is the only one of the
+two that lets something happen *between* the encode and the decode (the centre
+of a mix filtered apart from its sides), which is the reason mid/side processing
+exists at all.
+
+Naming them for what they do rather than for scsynth's vocabulary is the same
+call the U track's design stance already makes for a capability scsynth has no
+name for. The cost is two rows that a def ported from sclang will never mention;
+the alternative was documenting a rotation as the way to get a width.
+
+## `SelectX` is one row, not two `Select`s and a crossfade
+
+sclang's `SelectX` is a pseudo-UGen: it builds `Select(which.round(2), array)`,
+`Select(which.trunc(2) + 1, array)` and an `XFade2` across
+`(which * 2 - 1).fold2(1)` — a ping-pong that alternates which of the two
+selectors holds the even neighbour as the index sweeps, with the fold undoing
+the direction reversal. It is ingenious and it is three UGens where one will do.
+
+Here it is a mode of the selector: clamp the index, split it into floor and
+fraction, and crossfade the two neighbours with the same equal-power law the
+rest of the family uses. Across the whole index range the two agree, and that
+equivalence is asserted point by point rather than assumed from having copied
+the construction.
+
+**Off the ends they part company, and the divergence is deliberate.** sclang
+*folds* the crossfade position while *clipping* the two picks, so an index of
+`-0.5` comes out as a 50/50 mix of the first two sources rather than the first
+one, and an index past the end comes out as the last source crossfaded with
+itself — 1.414 times its value, 3 dB of gain from nowhere. (The class even
+accepts a `wrap` argument and drops it on the floor before `new1` sees it.)
+Reproducing that would honour the letter of "a ported def must not change
+value" while shipping a gain bug; the index clamps instead, exactly as
+`Select`'s does, and the tests pin both halves — the agreement inside the range
+and the clamp outside it.
+
+What does *not* change is the property that surprises people about both: every
+source runs whether or not it is selected, because they are UGens in a graph and
+not branches.

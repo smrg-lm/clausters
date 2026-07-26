@@ -52,6 +52,8 @@ fn main() {
 
     bench_sine_vs_wavetable();
 
+    bench_pan();
+
     bench_spectral();
 
     #[cfg(feature = "faust")]
@@ -168,6 +170,73 @@ fn bench_sine_vs_wavetable() {
             cols[0], cols[1], cols[2]
         );
     }
+}
+
+/// What the pan family's one deliberate deviation costs (U7). Every equal-power
+/// row computes its gain pair from a polynomial rather than a table, **once per
+/// block** when the position is a scalar and **per sample** when it is audio
+/// rate — because interpolating the two gains across the block, the way a
+/// filter coefficient is interpolated here, would leave a 3 dB hole in the
+/// middle of every block a fast sweep crosses.
+///
+/// The two rows are the same graph (`Sine → Pan2 → 2× Out`) with the position
+/// wired to a constant and to an `LFTri`, so the difference between them is
+/// exactly the per-sample path: 64 polynomial evaluations a block instead of
+/// one. The claim being measured is that the second is affordable at all —
+/// which is most of the reason the law is ten flops and not a `sin()` call.
+fn bench_pan() {
+    let def = |name: &str, moving: bool| -> Arc<clausters::synthdef::SynthDef> {
+        let pos = if moving {
+            serde_json::json!({"ugen": 1})
+        } else {
+            serde_json::json!({"const": 0.3})
+        };
+        Arc::new(
+            compile(
+                serde_json::from_value(serde_json::json!({
+                    "name": name,
+                    "controls": [{"name": "freq", "default": 440.0}],
+                    "ugens": [
+                        {"kind": "Sine", "inputs": [{"control": 0}]},
+                        {"kind": "LFTri", "inputs": [{"const": 3.0}, {"const": 0.0}]},
+                        {"kind": "Pan2", "inputs": [
+                            {"ugen": 0}, pos, {"const": 0.05}, {"const": 0.0}]},
+                        {"kind": "Pan2", "inputs": [
+                            {"ugen": 0}, pos, {"const": 0.05}, {"const": 1.0}]},
+                        {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 2}]},
+                        {"kind": "Out", "inputs": [{"const": 1.0}, {"ugen": 3}]}
+                    ]
+                }))
+                .unwrap(),
+            )
+            .expect("pan def compiles"),
+        )
+    };
+    let fixed = def("cmp_pan_fixed", false);
+    let moving = def("cmp_pan_moving", true);
+
+    println!("\npan position, block-rate vs per-sample (Sine -> Pan2 -> 2x Out):");
+    println!(
+        "  {:>6}  {:>13}  {:>13}  {:>14}",
+        "synths", "scalar xRT", "ar pos xRT", "per-sample cost"
+    );
+    for &n in VOICE_COUNTS {
+        let f = Arc::clone(&fixed);
+        let a = bench(n, move |_| {
+            Box::new(UGenSynth::new(Arc::clone(&f), SAMPLE_RATE as f32))
+        });
+        let m = Arc::clone(&moving);
+        let b = bench(n, move |_| {
+            Box::new(UGenSynth::new(Arc::clone(&m), SAMPLE_RATE as f32))
+        });
+        let a_xrt = a * BLOCK_SIZE as f64 / SAMPLE_RATE;
+        let b_xrt = b * BLOCK_SIZE as f64 / SAMPLE_RATE;
+        println!("  {n:>6}  {a_xrt:>11.1}x  {b_xrt:>11.1}x  {:>12.2}x", a / b);
+    }
+    println!(
+        "  (the moving row also pays for its own LFTri, so the ratio is an\n\
+         \x20  upper bound on what evaluating the law per sample costs.)"
+    );
 }
 
 /// The spectral (`fr`) family, in three views:

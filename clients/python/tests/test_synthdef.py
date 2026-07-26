@@ -588,3 +588,80 @@ if __name__ == "__main__":
                 print(f"{'skip' if skip else 'FAIL'} {name}: {e}")
                 if not skip:
                     traceback.print_exc()
+
+
+# ---- panning, the stereo field and selection (U7) ----
+
+
+def test_pan_builders_emit_one_row_per_channel():
+    """A UGen has one output, so a stereo panner is two rows sharing their
+    inputs and differing only in the trailing channel index — which the builder
+    fills and the caller never sees."""
+    from clausters.defs.ugens import pan2
+
+    sig = sine(440.0)
+    spec = SynthDef("p", out(0.0, pan2(sig, 0.3))).spec()
+    rows = [u for u in spec["ugens"] if u["kind"] == "Pan2"]
+    assert len(rows) == 2
+    # Same source (serialized once), same position, different channel.
+    assert spec["ugens"].count(rows[0]) == 1
+    assert [u["kind"] for u in spec["ugens"]].count("Sine") == 1
+    assert rows[0]["inputs"][:3] == rows[1]["inputs"][:3]
+    assert [r["inputs"][3] for r in rows] == [{"const": 0.0}, {"const": 1.0}]
+    # ...and the pair lands on consecutive buses.
+    outs = [u for u in spec["ugens"] if u["kind"] == "Out"]
+    assert [o["inputs"][0] for o in outs] == [{"const": 0.0}, {"const": 1.0}]
+
+
+def test_pan_az_sizes_the_ring_and_numbers_its_channels():
+    from clausters.defs.ugens import pan_az
+
+    spec = SynthDef("az", out(0.0, pan_az(4, sine(440.0), 0.5))).spec()
+    rows = [u for u in spec["ugens"] if u["kind"] == "PanAz"]
+    assert len(rows) == 4
+    # Every row is told the same ring size and its own place on it.
+    assert [r["inputs"][5] for r in rows] == [{"const": 4.0}] * 4
+    assert [r["inputs"][6] for r in rows] == [{"const": float(c)} for c in range(4)]
+
+    with pytest.raises(ValueError):
+        pan_az(0, sine(440.0))
+
+
+def test_mid_side_round_trip_serializes_as_two_pairs():
+    """The composable form: encode, do something to one axis, decode — four
+    rows of the same kind, not a special decoder."""
+    from clausters.defs.ugens import mid_side
+
+    m, s = mid_side(sine(440.0), white_noise())
+    spec = SynthDef("ms", out(0.0, mid_side(m, s * 1.5))).spec()
+    assert [u["kind"] for u in spec["ugens"]].count("MidSide") == 4
+
+
+def test_selectors_take_their_sources_as_arguments_or_a_list():
+    from clausters.defs.ugens import select, select_x
+
+    a, b = sine(440.0), white_noise()
+    assert select(1.0, a, b).inputs == select(1.0, [a, b]).inputs
+    spec = SynthDef("sel", out(0.0, select_x(0.5, a, b) * 0.1)).spec()
+    row = next(u for u in spec["ugens"] if u["kind"] == "SelectX")
+    assert len(row["inputs"]) == 3  # the index, then both sources
+    with pytest.raises(ValueError):
+        select(0.0)
+
+
+def test_splay_spreads_and_folds_to_a_pair():
+    """A client-side helper, so it must come out as plain rows: one `Pan2`
+    pair per source, folded by the fused sums into two channels."""
+    from clausters.defs.ugens import splay
+
+    voices = [sine(220.0), sine(440.0), sine(660.0)]
+    result = splay(voices)
+    assert len(result) == 2
+    spec = SynthDef("sp", out(0.0, result * 0.1)).spec()
+    kinds = [u["kind"] for u in spec["ugens"]]
+    assert kinds.count("Pan2") == 6
+    assert kinds.count("Sum3") == 2
+    # The outer voices are hard panned, the middle one is centred.
+    positions = sorted({u["inputs"][1]["const"] for u in spec["ugens"]
+                        if u["kind"] == "Pan2"})
+    assert positions == [-1.0, 0.0, 1.0]
