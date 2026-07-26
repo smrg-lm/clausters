@@ -2640,18 +2640,19 @@ the paragraph above assumed.** `MulAdd`, `Sum3` and `Sum4` always held their
 operator as a *constant* — `apply_binary(BinaryOp::Mul, …)` written literally —
 so the only thing left in their loops was `at`'s branch. If that branch were
 itself a barrier, they would have been as scalar as `binary_slice` was. They were
-not: the old `MulAdd` disassembles to **26 packed arithmetic instructions against
-15 scalar**, so LLVM had already unswitched part of it on its own. Hoisting the
-rest (below) takes it to 199 packed against 3, and buys **1.19–1.23× on the
-all-signal shapes, 1.03–1.09× on the constant-heavy ones** — real, consistent,
-and an order of magnitude less than the operator match was worth.
+not: `MulAdd` disassembles to **26 packed arithmetic instructions against 15
+scalar**, so LLVM had already unswitched part of it on its own. Hoisting the rest
+by hand was written and measured — it takes the same probe to 199 packed against
+3, and buys **1.19–1.23× on the all-signal shapes, 1.03–1.09× on the
+constant-heavy ones** — real, consistent, and an order of magnitude less than the
+operator match was worth.
 
 So the two are not peers, and it is worth stating the rule the measurement
 actually supports: **a runtime `match` in a loop body stops vectorization dead; a
 loop-invariant branch on a slice length usually does not.** The first is a jump
 through a table the vectorizer cannot see past. The second is something LLVM
-often unswitches by itself — often, not always, which is why doing it by hand
-still pays, just modestly.
+often unswitches by itself — often, not always. The fused rows are where "not
+always" showed up, which is what made hoisting them worth trying.
 
 **At the engine it does not show up at all.** `examples/bench.rs` grew a fused
 section for exactly this question, and the same A/B through it — `MulAdd` and
@@ -2663,28 +2664,32 @@ the expensive one. It is also the difference from the operator hoist, which *did
 move the engine ~20%: there the loop being fixed was 70 ns, not 10.
 
 What the section is for going forward is the question a user actually asks —
-whether to reach for `MulAdd` over `a*b` then `+c` at all. That answer is stable
-across both versions of the code: **fusing buys 2–6% for `MulAdd` over
-`Mul`+`Add`, and 4–10% for `Sum4` over three `Add`s**, rising with voice count,
-and what it saves is mostly the dropped `dyn` dispatch and wire buffer rather
-than the arithmetic.
+whether to reach for `MulAdd` over `a*b` then `+c` at all. Read at the voice
+counts where the bench is steady (32 to 512): **fusing buys some 3–4% for
+`MulAdd` over `Mul`+`Add` and 5–8% for `Sum4` over three `Add`s**, and what it
+saves is mostly the dropped `dyn` dispatch and wire buffer rather than the
+arithmetic. The 1000-voice row of that section is **not** readable — repeated
+rounds swing it from 0.90× to 1.09×, since by then the graph is near real time
+and the measurement is competing with the scheduler. Read the ratio in the middle
+of the sweep, not at its end.
 
-The fused hoist is expressed differently from `map2`'s, because the shapes
-multiply: three and four inputs mean eight and sixteen combinations. Each input
-gets a `const bool` saying "this one is a length-1 constant", so the broadcast
-decision is a compile-time parameter rather than a per-sample test, and the
-cartesian product of those parameters is written **once** in a macro instead of
-once per operator. The arithmetic still goes through the same scalar `apply_*`,
-in the same order (`add(mul(a,b),c)`, sums left to right — float addition does
-not associate, so the order is part of the contract), and the same bit-exactness
-test covers all sixteen shapes.
+**So the fused hoist was reverted and the bodies are the naive ones again.** It
+worked and it was bit-exact; it just did not earn what it cost. Hoisting three
+and four inputs is not `map2`'s four arms but eight and sixteen, one `const bool`
+per input and a cartesian product of shapes — around 150 lines of dispatch, in
+the shared core, for a gain no graph can observe. Reverting is the cheap decision
+here precisely *because* it was measured: the number is written down, so the next
+person to have the idea starts from evidence instead of from scratch.
 
-Those three now live in `clausters_core::builtins` beside `binary_slice`
-(`mul_add_slice`, `sum3_slice`, `sum4_slice`), which is where `dsp::fused`'s
-module doc already claimed the math lived — a client folding `a*b + c` off the RT
-path can now actually call it. They get no C ABI export yet: additive as that
-would be, it waits until a client asks for it, the same deferral the note
-spelling and the tap reader took.
+What was kept is the part that stands on its own: the three now live in
+`clausters_core::builtins` beside `binary_slice` (`mul_add_slice`, `sum3_slice`,
+`sum4_slice`), which is where `dsp::fused`'s module doc already claimed the math
+lived — a client folding `a*b + c` off the RT path can now actually call it. They
+get no C ABI export yet: additive as that would be, it waits until a client asks
+for it, the same deferral the note spelling and the tap reader took. The
+sixteen-shape bit-exactness test was kept too, now pinning the operand order as a
+contract rather than guarding a refactor — it is the harness the next attempt
+would be measured against.
 
 What is left, in order: fusing chains to delete intermediate wires; and only
 then, if ever, explicit vectors.

@@ -702,139 +702,44 @@ fn map1<F: Fn(f32) -> f32>(a: &[f32], out: &mut [f32], f: F) {
     }
 }
 
-/// Reads input `i` with the broadcast decision made **at compile time** — the
-/// manual loop unswitching [`at`] cannot express, since its branch is a runtime
-/// value the optimizer declines to hoist. `K` is "this input is a length-1
-/// constant", so each instantiation is one of `x[0]` or `x[i]` with nothing left
-/// to test per sample.
-#[inline(always)]
-fn get<const K: bool>(x: &[f32], i: usize) -> f32 {
-    if K { x[0] } else { x[i] }
-}
-
-/// Calls `$f` with one `const bool` per input, chosen by whether that input is
-/// a length-1 constant: the cartesian product of the broadcast shapes, written
-/// out once here instead of once per fused operator.
-///
-/// Two inputs are [`map2`]'s four arms; these are for the fused rows, which
-/// have three and four and would otherwise need eight and sixteen arms each,
-/// spelled by hand, per operator.
-macro_rules! dispatch_shapes {
-    ($f:ident, $a:expr, $b:expr, $c:expr, $out:expr) => {
-        match ($a.len() == 1, $b.len() == 1, $c.len() == 1) {
-            (false, false, false) => $f::<false, false, false>($a, $b, $c, $out),
-            (false, false, true) => $f::<false, false, true>($a, $b, $c, $out),
-            (false, true, false) => $f::<false, true, false>($a, $b, $c, $out),
-            (false, true, true) => $f::<false, true, true>($a, $b, $c, $out),
-            (true, false, false) => $f::<true, false, false>($a, $b, $c, $out),
-            (true, false, true) => $f::<true, false, true>($a, $b, $c, $out),
-            (true, true, false) => $f::<true, true, false>($a, $b, $c, $out),
-            (true, true, true) => $f::<true, true, true>($a, $b, $c, $out),
-        }
-    };
-    ($f:ident, $a:expr, $b:expr, $c:expr, $d:expr, $out:expr) => {
-        match ($a.len() == 1, $b.len() == 1, $c.len() == 1, $d.len() == 1) {
-            (false, false, false, false) => $f::<false, false, false, false>($a, $b, $c, $d, $out),
-            (false, false, false, true) => $f::<false, false, false, true>($a, $b, $c, $d, $out),
-            (false, false, true, false) => $f::<false, false, true, false>($a, $b, $c, $d, $out),
-            (false, false, true, true) => $f::<false, false, true, true>($a, $b, $c, $d, $out),
-            (false, true, false, false) => $f::<false, true, false, false>($a, $b, $c, $d, $out),
-            (false, true, false, true) => $f::<false, true, false, true>($a, $b, $c, $d, $out),
-            (false, true, true, false) => $f::<false, true, true, false>($a, $b, $c, $d, $out),
-            (false, true, true, true) => $f::<false, true, true, true>($a, $b, $c, $d, $out),
-            (true, false, false, false) => $f::<true, false, false, false>($a, $b, $c, $d, $out),
-            (true, false, false, true) => $f::<true, false, false, true>($a, $b, $c, $d, $out),
-            (true, false, true, false) => $f::<true, false, true, false>($a, $b, $c, $d, $out),
-            (true, false, true, true) => $f::<true, false, true, true>($a, $b, $c, $d, $out),
-            (true, true, false, false) => $f::<true, true, false, false>($a, $b, $c, $d, $out),
-            (true, true, false, true) => $f::<true, true, false, true>($a, $b, $c, $d, $out),
-            (true, true, true, false) => $f::<true, true, true, false>($a, $b, $c, $d, $out),
-            (true, true, true, true) => $f::<true, true, true, true>($a, $b, $c, $d, $out),
-        }
-    };
-}
-
-/// Slices every non-constant input to `out.len()` up front, so the indexing in
-/// the loop is provably in range and LLVM drops the bounds checks. A length
-/// other than 1 or `out.len()` panics, as indexing did before.
-macro_rules! clamp_inputs {
-    ($n:expr, $($k:ident => $x:ident),+ $(,)?) => {
-        $(let $x = if $k { $x } else { &$x[..$n] };)+
-    };
-}
-
 /// `a*b + c` over broadcasting inputs — the fused multiply-accumulate, computed
 /// as `add(mul(a, b), c)` so it is bit-identical to the two operators applied in
 /// that order. Allocation-free.
+///
+/// The body is deliberately the naive one, [`at`] per sample and all. Hoisting
+/// the broadcast shape out of it — one `const bool` per input, so the decision
+/// is made at compile time — was written, measured and reverted: it is worth
+/// 1.03-1.23x on the operator alone and **nothing measurable at the engine**,
+/// because an arithmetic row is 5-10 ns of a block that spends ~135 ns in one
+/// `Sine`. `docs/decisions.md` carries the figures. Anyone tempted again should
+/// beat that measurement first; the operator match in [`binary_slice`], which
+/// *was* worth hoisting, is the contrasting case.
 #[inline]
 pub fn mul_add_slice(a: &[f32], b: &[f32], c: &[f32], out: &mut [f32]) {
-    #[inline(always)]
-    fn go<const KA: bool, const KB: bool, const KC: bool>(
-        a: &[f32],
-        b: &[f32],
-        c: &[f32],
-        out: &mut [f32],
-    ) {
-        let n = out.len();
-        clamp_inputs!(n, KA => a, KB => b, KC => c);
-        for (i, s) in out.iter_mut().enumerate() {
-            let prod = apply_binary(BinaryOp::Mul, get::<KA>(a, i), get::<KB>(b, i));
-            *s = apply_binary(BinaryOp::Add, prod, get::<KC>(c, i));
-        }
+    for (i, s) in out.iter_mut().enumerate() {
+        let prod = apply_binary(BinaryOp::Mul, at(a, i), at(b, i));
+        *s = apply_binary(BinaryOp::Add, prod, at(c, i));
     }
-    if out.is_empty() {
-        return;
-    }
-    dispatch_shapes!(go, a, b, c, out)
 }
 
 /// `a + b + c` over broadcasting inputs, added left to right. Allocation-free.
 #[inline]
 pub fn sum3_slice(a: &[f32], b: &[f32], c: &[f32], out: &mut [f32]) {
-    #[inline(always)]
-    fn go<const KA: bool, const KB: bool, const KC: bool>(
-        a: &[f32],
-        b: &[f32],
-        c: &[f32],
-        out: &mut [f32],
-    ) {
-        let n = out.len();
-        clamp_inputs!(n, KA => a, KB => b, KC => c);
-        for (i, s) in out.iter_mut().enumerate() {
-            let ab = apply_binary(BinaryOp::Add, get::<KA>(a, i), get::<KB>(b, i));
-            *s = apply_binary(BinaryOp::Add, ab, get::<KC>(c, i));
-        }
+    for (i, s) in out.iter_mut().enumerate() {
+        let ab = apply_binary(BinaryOp::Add, at(a, i), at(b, i));
+        *s = apply_binary(BinaryOp::Add, ab, at(c, i));
     }
-    if out.is_empty() {
-        return;
-    }
-    dispatch_shapes!(go, a, b, c, out)
 }
 
 /// `a + b + c + d` over broadcasting inputs, added left to right.
 /// Allocation-free.
 #[inline]
 pub fn sum4_slice(a: &[f32], b: &[f32], c: &[f32], d: &[f32], out: &mut [f32]) {
-    #[inline(always)]
-    fn go<const KA: bool, const KB: bool, const KC: bool, const KD: bool>(
-        a: &[f32],
-        b: &[f32],
-        c: &[f32],
-        d: &[f32],
-        out: &mut [f32],
-    ) {
-        let n = out.len();
-        clamp_inputs!(n, KA => a, KB => b, KC => c, KD => d);
-        for (i, s) in out.iter_mut().enumerate() {
-            let ab = apply_binary(BinaryOp::Add, get::<KA>(a, i), get::<KB>(b, i));
-            let abc = apply_binary(BinaryOp::Add, ab, get::<KC>(c, i));
-            *s = apply_binary(BinaryOp::Add, abc, get::<KD>(d, i));
-        }
+    for (i, s) in out.iter_mut().enumerate() {
+        let ab = apply_binary(BinaryOp::Add, at(a, i), at(b, i));
+        let abc = apply_binary(BinaryOp::Add, ab, at(c, i));
+        *s = apply_binary(BinaryOp::Add, abc, at(d, i));
     }
-    if out.is_empty() {
-        return;
-    }
-    dispatch_shapes!(go, a, b, c, d, out)
 }
 
 /// Generates `binary_slice`/`unary_slice` as a match that picks the operator
@@ -1010,12 +915,15 @@ mod tests {
 
     #[test]
     fn fused_ops_are_the_scalar_ops_element_by_element() {
-        // Same invariant as above for the fused rows, over **every** broadcast
-        // shape — eight for the ternaries, sixteen for `Sum4` — since those are
-        // exactly what the const-generic dispatch splits on. The reference is
-        // the naive `at` formulation, and the operand order (`add(mul(a,b),c)`,
-        // sums left to right) is part of the contract: float addition does not
-        // associate, so a reordering would show up here.
+        // Pins the fused rows' **contract** over every broadcast shape: the
+        // operand order (`add(mul(a,b),c)`, sums left to right) and `at`'s
+        // broadcasting. Float addition does not associate, so a reordering
+        // shows up here bit-exactly.
+        //
+        // Today the bodies *are* this formulation, so the assert is a
+        // restatement — deliberately. It is the harness for the next attempt at
+        // rewriting them (the reverted broadcast hoist split on exactly these
+        // sixteen shapes), which is when a restatement becomes a test.
         let vals = [0.0f32, -0.0, 1.5, -2.5, 1e30, f32::INFINITY, f32::NAN, 0.25];
         let n = vals.len();
         let pick =

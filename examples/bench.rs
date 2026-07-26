@@ -251,9 +251,13 @@ fn bench_pan() {
 /// source (the same `Sine` wire read two, three or four times), so the ratio
 /// isolates the arithmetic rather than the sources feeding it.
 ///
-/// The two shapes are deliberately the extremes of the broadcast dispatch: the
+/// The two shapes are deliberately the extremes of the broadcast rule: the
 /// `MulAdd` row folds `sig * k + k`, where two of three inputs are constants,
 /// and the `Sum4` row sums four signals with no constant at all.
+///
+/// Read the ratio in the **middle** of the sweep. By 1000 voices the graph is
+/// near real time and the ratio swings from 0.90x to 1.09x between rounds — the
+/// measurement is competing with the scheduler, not reporting the fold.
 fn bench_fused() {
     let def = |name: &str, ugens: serde_json::Value| -> Arc<clausters::synthdef::SynthDef> {
         Arc::new(
