@@ -15,22 +15,32 @@
 //! and notch numerators `W`, `W^2` and `|1 - W^2|` over the same denominator.
 //! That expression is the whole specification; if the filter matches it at
 //! twenty points across the band, it is the filter it claims to be.
+//!
+//! The one-pole family is asserted the same way, against its own closed form —
+//! an FIR for `OneZero`, a one-pole gain for `Integrator` — and additionally
+//! sample by sample against its difference equation, which a frequency response
+//! cannot see a one-sample state error through.
+//!
+//! Rule 5, the block split, is not here: it is the same test for every row and
+//! runs from the shared table over all twelve at once (`tests/subjects.rs`).
 
 #![cfg(feature = "synth")]
 
+#[path = "common/bench.rs"]
+mod bench;
 #[path = "common/signal.rs"]
 mod signal;
 
 use std::f64::consts::PI;
 use std::sync::Arc;
 
+use bench::{SR, render_with_input};
 use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx};
 use clausters::node::SynthNode;
 use clausters::synthdef::instance::UGenSynth;
 use clausters::synthdef::{SynthDefSpec, compile};
 use signal::*;
 
-const SR: f32 = 48_000.0;
 /// Analysis window for every gain measurement, and the render it is taken from.
 /// The window starts at a whole multiple of itself, so a frequency that is a
 /// whole number of periods in `WIN` is also a whole number of periods in the
@@ -45,45 +55,6 @@ const RENDER: usize = 32_768;
 fn snap(f: f32) -> f32 {
     let bin = SR / WIN as f32;
     (f / bin).round().max(1.0) * bin
-}
-
-/// Renders a def whose UGen 0 reads control bus 0 as its input signal, so the
-/// test can drive it with any waveform it likes.
-fn render_with_input(ugen_json: &str, input: &[f32]) -> Vec<f32> {
-    // The signal reaches the filter through audio bus 1: a helper synth writes
-    // it there, then the filter reads it. Simpler here: build the input as a
-    // literal `In` from a bus we fill by hand each block.
-    let json = format!(
-        r#"{{"name": "f", "ugens": [
-            {{"kind": "In", "inputs": [{{"const": 1.0}}]}},
-            {ugen_json},
-            {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 1}}]}}]}}"#
-    );
-    let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
-    let mut buses = Buses::new(ControlBuses::new(16), 8);
-    let mut out = Vec::with_capacity(input.len());
-    let mut pos = 0;
-    while pos < input.len() {
-        buses.clear_audio();
-        let n = BLOCK_SIZE.min(input.len() - pos);
-        // Fill bus 1 with this block of the driving signal.
-        // SAFETY: this test is single-threaded and nothing else touches bus 1.
-        let drive = unsafe { buses.audio_mut(1) };
-        drive[..n].copy_from_slice(&input[pos..pos + n]);
-        let mut ctx = ProcessCtx {
-            sample_rate: SR,
-            full_sample_rate: SR,
-            buses: &buses,
-            buffers: &[],
-            offset: 0,
-            frames: BLOCK_SIZE,
-        };
-        synth.process(&mut ctx);
-        out.extend_from_slice(&buses.audio(0)[..n]);
-        pos += n;
-    }
-    out
 }
 
 fn sine(freq: f32, n: usize) -> Vec<f32> {
@@ -186,6 +157,10 @@ fn resonant_rows_match_the_analytic_response_across_q() {
         assert_matches_analytic("RHPF", "hp", fc, Some(rq), 0.1);
         assert_matches_analytic("BPF", "bp", fc, Some(rq), 0.1);
         assert_matches_analytic("BRF", "notch", fc, Some(rq), 0.2);
+        // Resonz gets its own sweep rather than riding on the one below. That
+        // test says the two rows are the same implementation; this one says
+        // the implementation is the right one, and either could fail alone.
+        assert_matches_analytic("Resonz", "bp", fc, Some(rq), 0.1);
     }
 }
 
@@ -264,6 +239,64 @@ fn a_low_cutoff_stays_accurate_over_a_long_run() {
     assert!(
         err_db.abs() < 0.1,
         "after 10 s at fc 20 Hz the gain is off by {err_db:.3} dB"
+    );
+}
+
+#[test]
+fn a_high_q_resonator_still_has_unity_peak_gain_after_ten_seconds() {
+    // The other end of the long-run rule. `LPF` at 20 Hz puts the poles near
+    // z = 1; a high-Q bandpass puts them near the unit circle at its centre
+    // frequency, which is where a resonator's state is largest relative to
+    // its input and where truncation would show first. Q = 50, driven at the
+    // centre, where the normalized bandpass is unity by construction — so the
+    // expected value is 1 exactly, with nothing to fit.
+    let n = (SR as usize) * 10;
+    let fc = snap(1000.0);
+    let x = sine(fc, n);
+    for kind in ["BPF", "Resonz"] {
+        let y = render_with_input(
+            &format!(
+                r#"{{"kind": "{kind}", "inputs": [{{"ugen": 0}}, {{"const": {fc}}},
+                    {{"const": 0.02}}]}}"#
+            ),
+            &x,
+        );
+        assert_finite(&y, &format!("{kind} at Q 50 over 10 s"));
+        let from = n - n % WIN - WIN;
+        let (gain, _) = response_at(&x[from..from + WIN], &y[from..from + WIN], fc, SR);
+        let db = 20.0 * (gain as f64).log10();
+        assert!(
+            db.abs() < 0.1,
+            "{kind} at Q 50 reads {db:.3} dB at its own centre after 10 s"
+        );
+    }
+}
+
+#[test]
+fn the_leaky_integrator_still_matches_its_analytic_gain_after_ten_seconds() {
+    // `Integrator` is the one-pole with no input normalization, so its state
+    // is the largest of the family and its pole sits closest to z = 1: the
+    // place to look for an accumulator losing bits. Its gain at w is
+    // `1 / |1 - c e^-jw|`, closed form.
+    let n = (SR as usize) * 10;
+    let c = 0.9999f64;
+    let f = snap(220.0);
+    let x = sine(f, n);
+    let y = render_with_input(
+        &format!(r#"{{"kind": "Integrator", "inputs": [{{"ugen": 0}}, {{"const": {c}}}]}}"#),
+        &x,
+    );
+    assert_finite(&y, "Integrator over 10 s");
+    let from = n - n % WIN - WIN;
+    let (gain, _) = response_at(&x[from..from + WIN], &y[from..from + WIN], f, SR);
+    let w = std::f64::consts::TAU * f as f64 / SR as f64;
+    let (re, im) = (1.0 - c * w.cos(), c * w.sin());
+    let want = 1.0 / (re * re + im * im).sqrt();
+    let err_db = 20.0 * ((gain as f64) / want).log10();
+    assert!(
+        err_db.abs() < 0.1,
+        "after 10 s the Integrator's gain is off by {err_db:.3} dB \
+         (measured {gain}, analytic {want})"
     );
 }
 
@@ -434,6 +467,49 @@ fn one_pole_matches_its_difference_equation() {
 }
 
 #[test]
+fn one_zero_matches_its_analytic_magnitude() {
+    // The zero-only sibling, and the row that had no test of its own: an FIR,
+    // `y[n] = (1-|c|) x[n] + c x[n-1]`, so its magnitude is exactly
+    // `|(1-|c|) + c e^-jw|` with no approximation anywhere in the comparison.
+    // A positive `c` is a lowpass with a null at Nyquist, a negative one a
+    // highpass with a null at DC; both are checked, because the `(1-|c|)`
+    // normalization is the easy thing to get wrong for the negative half.
+    for c in [0.9f32, -0.9, 0.5, -0.5] {
+        let json = format!(r#"{{"kind": "OneZero", "inputs": [{{"ugen": 0}}, {{"const": {c}}}]}}"#);
+        let freqs = sweep();
+        for (f, g) in freqs.iter().zip(&measured_response(&json, &freqs)) {
+            let (c, w) = (c as f64, std::f64::consts::TAU * *f as f64 / SR as f64);
+            let (re, im) = (1.0 - c.abs() + c * w.cos(), -c * w.sin());
+            let want = (re * re + im * im).sqrt();
+            let (got_db, want_db) = (20.0 * (*g as f64).log10(), 20.0 * want.log10());
+            assert!(
+                (got_db - want_db).abs() < 0.05,
+                "OneZero c={c} at {f:.0} Hz: {got_db:.3} dB, analytic {want_db:.3} dB"
+            );
+        }
+    }
+
+    // And sample by sample against the difference equation, the way `OnePole`
+    // is checked: the response above cannot see a one-sample state error.
+    for c in [0.9f32, -0.9, 0.0, 0.5] {
+        let x: Vec<f32> = (0..512).map(|i| if i == 0 { 1.0 } else { 0.0 }).collect();
+        let y = render_with_input(
+            &format!(r#"{{"kind": "OneZero", "inputs": [{{"ugen": 0}}, {{"const": {c}}}]}}"#),
+            &x,
+        );
+        let (mut x1, cd) = (0.0f64, c as f64);
+        for (i, &got) in y.iter().enumerate() {
+            let want = (1.0 - cd.abs()) * x[i] as f64 + cd * x1;
+            x1 = x[i] as f64;
+            assert!(
+                (got as f64 - want).abs() < 1e-6,
+                "OneZero c={c} sample {i}: {got} vs {want}"
+            );
+        }
+    }
+}
+
+#[test]
 fn leak_dc_removes_a_constant_and_keeps_the_signal() {
     // A coherent frequency and a whole-window slice, so the tone's own mean is
     // exactly zero and what `dc` reports is the leftover offset alone.
@@ -481,62 +557,4 @@ fn one_pole_family_stays_finite_at_an_unstable_coefficient() {
             assert_finite(&y, &format!("{kind} at coef {c}"));
         }
     }
-}
-
-// ---- block splitting ----
-
-#[test]
-fn filters_are_identical_across_a_split_block() {
-    let x: Vec<f32> = {
-        let mut rng = clausters_core::rng::WhiteNoise::from_seed(7);
-        (0..BLOCK_SIZE * 8).map(|_| rng.next_sample()).collect()
-    };
-    for ugen in [
-        r#"{"kind": "LPF", "inputs": [{"ugen": 0}, {"const": 700.0}]}"#,
-        r#"{"kind": "RLPF", "inputs": [{"ugen": 0}, {"const": 700.0}, {"const": 0.3}]}"#,
-        r#"{"kind": "OnePole", "inputs": [{"ugen": 0}, {"const": 0.8}]}"#,
-    ] {
-        let whole = render_with_input(ugen, &x);
-        let split = render_split(ugen, &x, 19);
-        for (i, (a, b)) in whole.iter().zip(&split).enumerate() {
-            assert!(
-                (a - b).abs() < 1e-6,
-                "{ugen} differs at sample {i}: {a} vs {b}"
-            );
-        }
-    }
-}
-
-fn render_split(ugen_json: &str, input: &[f32], at_sample: usize) -> Vec<f32> {
-    let json = format!(
-        r#"{{"name": "f", "ugens": [
-            {{"kind": "In", "inputs": [{{"const": 1.0}}]}},
-            {ugen_json},
-            {{"kind": "Out", "inputs": [{{"const": 0.0}}, {{"ugen": 1}}]}}]}}"#
-    );
-    let def = compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap()).unwrap();
-    let mut synth = UGenSynth::new(Arc::new(def), SR);
-    let mut buses = Buses::new(ControlBuses::new(16), 8);
-    let mut out = Vec::with_capacity(input.len());
-    let mut pos = 0;
-    while pos + BLOCK_SIZE <= input.len() {
-        buses.clear_audio();
-        // SAFETY: single-threaded test, sole owner of bus 1.
-        let drive = unsafe { buses.audio_mut(1) };
-        drive[..BLOCK_SIZE].copy_from_slice(&input[pos..pos + BLOCK_SIZE]);
-        for (offset, frames) in [(0, at_sample), (at_sample, BLOCK_SIZE - at_sample)] {
-            let mut ctx = ProcessCtx {
-                sample_rate: SR,
-                full_sample_rate: SR,
-                buses: &buses,
-                buffers: &[],
-                offset,
-                frames,
-            };
-            synth.process(&mut ctx);
-        }
-        out.extend_from_slice(buses.audio(0));
-        pos += BLOCK_SIZE;
-    }
-    out
 }
