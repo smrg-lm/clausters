@@ -2530,3 +2530,85 @@ next to the assert (`f64_is_for_the_position_not_the_phase`) so the claim cannot
 quietly become folklore again. The general lesson is worth keeping: for a
 floating-point accumulator, what matters is the **magnitude it reaches**, not the
 number of steps it takes to get there.
+
+## SIMD is left to the autovectorizer, and the browser caps it at 128 bits
+
+The question comes back periodically — are the UGens vectorizable with AVX/SSE/
+NEON, and what does that mean for the wasm engine — so here is the standing
+answer and the reasoning behind it.
+
+**Nothing in the tree asks for SIMD.** There are no intrinsics, no `std::simd`,
+no `wide`, and no `RUSTFLAGS`/`target-cpu` anywhere — so a stock build gets the
+baseline of its target: `sse`/`sse2` on x86-64 (128 bits, four `f32`) and NEON on
+aarch64, which has it in the baseline. The one piece of groundwork is the
+cache-line alignment of `Block` (`src/dsp/mod.rs`): a block is `#[repr(C,
+align(64))]` over `[f32; 64]`, exactly four 64-byte lines, so a vector load or
+store never straddles a line. That was kept **for the stability argument, not for
+a measured gain** — the interleaved A/B benchmark that justified it came back
+identical within the machine's noise.
+
+**The decision is to stay on autovectorization and write loop bodies it can
+take.** Three reasons, in order of weight:
+
+- **The ceiling is low where it would apply.** A block is 64 samples: sixteen
+  SSE2 vectors, eight AVX ones. For the arithmetic rows — the only ones a
+  vectorizer can touch at all — the per-call overhead is a large fraction of the
+  work either way.
+- **The measured bottleneck is somewhere else.** Head to head on a bit-exact
+  `gain` (a multiply over a shared bus — no transcendental, no `f64`/`f32`
+  asymmetry, so the number is pure engine overhead), Faust runs **1.3–1.6×
+  faster** than the equivalent UGen graph. The cost is three `dyn` dispatches and
+  two intermediate wire buffers against one call over the block. Widening the
+  arithmetic does not touch that.
+- **Intrinsics would be three code paths.** `core::arch::x86_64`,
+  `core::arch::aarch64` and `core::arch::wasm32`, each hand-written and each
+  needing its own correctness argument. One autovectorizable loop body serves all
+  three. If explicit vectors are ever genuinely needed, the portable 128-bit
+  wrappers are the entry point, not the intrinsics — they are the width every
+  target has.
+
+And the vectorized path already exists, under another name: **the Faust family
+is the one that gets it**, free and host-tuned. Its factories JIT for the host
+CPU, which is exactly why CI has to pin a baseline target — the SIGILL
+investigation above found AVX-512 in the emitted pages. Two def families as peers
+means a graph that needs the ALU can be written in the family whose compiler
+already vectorizes it.
+
+**Which rows could vectorize at all.** They split cleanly. The element-wise ones
+— the binary and unary operators, the fused `MulAdd`/`Sum3`/`Sum4`, panning, bus
+mixing — have no loop-carried dependence and are candidates. Everything with
+state is a recurrence and is not: the filters, the phase accumulators, `Sine`,
+`Lag`, `EnvGen`, delay feedback, `LocalIn`/`LocalOut`, the demand rows, the noise
+generators. Those can only be widened by rewriting the recurrence itself (the
+`y[n] = a^k·y[n-k] + …` unrolling, a matrix step for the biquad, `phase[i] =
+phase0 + i·inc`), and **every one of those transforms changes the result in the
+last bits** — against golden WAVs and the sample-by-sample Faust parity suite,
+that is a real cost, not a rounding detail.
+
+**Our own loop bodies are the first obstacle, before any flag.** The shared
+operators run `apply_binary(op, …)` with `op` a runtime field, so a match over
+some thirty variants sits *inside* the per-sample loop, and `builtins::at` — the
+length-1 broadcast — puts a branch there too. Both are loop-invariant and LLVM
+may hoist them, but that is a hope, not a measurement, and nobody has read the
+disassembly. So the ordered work, if the arithmetic rows ever need to be faster,
+is: hoist the operator match out of the loop (free, bit-identical, and it leaves
+a trivial body behind), then fuse chains to delete intermediate wires, and only
+then consider vectors.
+
+**What this means in the browser.** wasm's SIMD is `simd128`: **fixed at 128
+bits, four `f32`, and there is nothing wider** — no AVX equivalent, by design of
+the instruction set. Rust does not enable it by default on
+`wasm32-unknown-unknown` (the default features are `bulk-memory`, `multivalue`,
+`mutable-globals`, `nontrapping-fptoint`, `reference-types`, `sign-ext`), so the
+browser engine today is entirely scalar. Turning it on is one
+`-C target-feature=+simd128` in the web build, and the cost of that switch is a
+distribution question rather than a code one: wasm has no cheap runtime feature
+detection, so it means either assuming the capability — universal in current
+browsers — or shipping a second bundle. That is left for when a browser workload
+is actually measured to need it. Worth remembering alongside it: the browser also
+gives no denormal control at all, which is why `flush_to_zero` is a no-op
+outside x86-64 and aarch64.
+
+The general shape of the decision: vectorization here is a property of the loop
+body and of which def family the DSP is written in, not a build flag we forgot to
+set.
