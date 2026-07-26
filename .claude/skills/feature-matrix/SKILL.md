@@ -74,8 +74,9 @@ under one set of `cfg`s is not always right under another.
 | 4 | `cargo clippy --all-targets --no-default-features` | **no** |
 | 5 | `cargo clippy --all-targets --no-default-features --features synth` | **no** |
 | 6 | `cargo clippy --all-targets --no-default-features --features faust` | **no** |
-| 7 | `cargo clippy --workspace --all-targets` | yes |
-| 8 | `cargo clippy --all-targets` in `clients/gui` | yes |
+| 7 | `cargo clippy -p clausters-ffi --features verovio --all-targets` | **no** |
+| 8 | `cargo clippy --workspace --all-targets` | yes |
+| 9 | `cargo clippy --all-targets` in `clients/gui` | yes |
 
 Every clippy line runs with `-- -D warnings`, matching CI, so a warning is a
 failure rather than something to scroll past.
@@ -83,6 +84,12 @@ failure rather than something to scroll past.
 Configuration 4 is also the build that must stay green **without libfaust
 installed at all** — the core has to compile and test with no LLVM-backed
 libfaust on the machine.
+
+Configuration 7 is the same kind of gap one crate over: `verovio` is off by
+default, so CI's `--workspace` run never enables it and the notation layer it
+pulls in is linted by nothing. It needs no libverovio present — clippy checks
+and never links — so it lints the code under the feature's `cfg`s, not the
+library's presence.
 
 ## What it does not cover
 

@@ -82,6 +82,15 @@ clippy "clippy: neither def family" --all-targets --no-default-features
 clippy "clippy: synth alone" --all-targets --no-default-features --features synth
 clippy "clippy: faust alone" --all-targets --no-default-features --features faust
 
+# `verovio` is off by default, so CI's `--workspace --all-targets` never enables
+# it and the whole notation layer it pulls in goes unlinted -- the same gap as
+# the def families, for the same reason. It needs no libverovio on the machine:
+# clippy checks and never links, so a missing library is the build script's
+# warning, not a failure. What this covers is the code under the feature's cfgs;
+# that the library is actually installed is a different question, and the one
+# `third_party/build-verovio.sh` answers.
+clippy "clippy: ffi with verovio" -p clausters-ffi --features verovio --all-targets
+
 # --- Covered by CI, run unless --fast ----------------------------------------
 
 if [ "$fast" = 0 ]; then
