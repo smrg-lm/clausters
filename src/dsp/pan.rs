@@ -25,6 +25,31 @@
 //! audio-rate one computes them per sample; the polynomial is what makes the
 //! second affordable.
 //!
+//! **The per-sample mix stays in `f64` because the law is, and that is a
+//! consistency choice rather than a requirement.** The gains come out of an
+//! `f64` polynomial, and every row here then *combines* its `f32` inputs in
+//! `f64` too before rounding once to `f32` — `(x as f64 * cx + y as f64 * cy)
+//! as f32` and its cousins in [`Pan`], [`Rotate`] and [`PanAz`]. Only the first
+//! half of that is load-bearing: the law's exactness properties (an exact
+//! endpoint, an exact quadrant reduction, a symmetric pair) live in the
+//! coefficients, not in how the two products are added.
+//!
+//! Combining in `f32` instead was measured rather than argued about. It is
+//! **2.30× faster on the mix loop alone** — the `f64` version vectorizes two
+//! lanes wide (`mulpd`), the `f32` one four — and it costs at most `5.96e-8`
+//! of absolute disagreement over a sweep of 2001 angles, which is half an ulp
+//! at full scale, or -144 dBFS. (The *relative* error over that sweep reads a
+//! frightening -66 dB, but only where the output is itself near zero through
+//! cancellation — the side channel of a near-mono pair. That figure is an
+//! artifact of dividing by nothing, not an audio number.)
+//!
+//! It stays `f64` anyway, because the engine cannot see the difference: on
+//! `Sine → Pan2 → 2× Out` the whole-graph throughput is unchanged. A row's
+//! arithmetic is a small part of a block that spends most of its time in its
+//! sources, which is the same reason the fused rows kept their naive loops
+//! (`docs/decisions.md`). Anyone revisiting this should get an engine-level
+//! number first — the isolated 2.30× is real and has never been worth anything.
+//!
 //! **Rotation and width are different operations, and only one of them is
 //! scsynth's.** `Rotate2` rotates the plane the two signals span: it moves the
 //! stereo image without changing its size, and at a quarter turn the rotation
@@ -213,6 +238,7 @@ impl UGen for Pan {
                 Some(g) => g,
                 None => self.kind.gains(at(pos, i) as f64),
             };
+            // `f64` by consistency with the law, not by need: see the module doc.
             let v = if sums {
                 at(a, i) as f64 * gl + at(b, i) as f64 * gr
             } else if right {
@@ -311,6 +337,7 @@ impl UGen for Rotate {
                 Some(r) => r,
                 None => self.row(chan, at(param, i) as f64),
             };
+            // `f64` by consistency with the law, not by need: see the module doc.
             *s = (at(x, i) as f64 * cx + at(y, i) as f64 * cy) as f32;
         }
     }
@@ -358,6 +385,7 @@ impl UGen for PanAz {
                     i_chan,
                 ),
             };
+            // `f64` by consistency with the law, not by need: see the module doc.
             *s = (at(sig, i) as f64 * g * at(level, i) as f64) as f32;
         }
     }
