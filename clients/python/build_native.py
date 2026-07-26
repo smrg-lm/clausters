@@ -65,11 +65,11 @@ Environment knobs (also honoured by ``setup.py``):
                                  it is a preference, not a fallback.
 - ``CLAUSTERS_SKIP_VEROVIO``     build without the notation layer; the `score`
                                  widget will not engrave.
-- ``CLAUSTERS_REQUIRE_VEROVIO``  redundant — requiring it is the default — and
-                                 still honoured: it refuses a
-                                 ``CLAUSTERS_SKIP_VEROVIO`` rather than letting a
-                                 release ship a widget that raises at the user's
-                                 run time. CI and the release set it.
+- ``CLAUSTERS_REQUIRE_COMPLETE`` refuse every ``CLAUSTERS_SKIP_*`` above: this
+                                 build ships whole or not at all. What a release
+                                 sets. ``CLAUSTERS_REQUIRE_VEROVIO`` is the same
+                                 thing under the name the pinned workflows
+                                 already use.
 
 Both vendored libraries behave the same way, which is deliberate: they are built
 the same way (a pinned source, a script under ``third_party/``, a prefix), they
@@ -364,6 +364,41 @@ def stage_faust_libs(profile: str) -> list[str]:
     return copied
 
 
+# Set by CI and the release: this build must leave nothing out. Requiring every
+# piece is the default, so the only job left for these is to refuse a
+# CLAUSTERS_SKIP_* — and that job is the same for all three pieces, which is why
+# it is one rule and not one variable per piece. CLAUSTERS_REQUIRE_VEROVIO is
+# the name the pinned workflows already set, kept as an alias; new places should
+# say CLAUSTERS_REQUIRE_COMPLETE, which is what it has always meant.
+_REQUIRE_COMPLETE = ("CLAUSTERS_REQUIRE_COMPLETE", "CLAUSTERS_REQUIRE_VEROVIO")
+
+
+def _must_be_complete() -> str | None:
+    """The variable demanding a package with nothing left out, if one is set."""
+    return next((v for v in _REQUIRE_COMPLETE if os.environ.get(v)), None)
+
+
+def _skipping(skip: str, without: str) -> bool:
+    """Whether ``skip`` asks for a piece to be left out — refused outright when
+    the build must be complete.
+
+    One rule for the three pieces, because they fail the same way: a package
+    missing one raises at *the user's* run time, and nothing downstream reports
+    it — the notation tests skip themselves, a FaustDef only fails when someone
+    sends one. So a build that must be complete refuses the request rather than
+    honouring it quietly.
+    """
+    if not os.environ.get(skip):
+        return False
+    required = _must_be_complete()
+    if required:
+        raise SystemExit(
+            f"clausters: {skip} is set and so is {required}, which means this "
+            f"build must leave nothing out -- and {skip} means {without}.")
+    print(f"clausters: {skip} set -- {without}")
+    return True
+
+
 def _links(lib: str, prefix: str | None, env: str, recipe: str, skip: str,
            without: str) -> bool:
     """Whether this build links ``lib``, having probed for it and not found it.
@@ -383,19 +418,10 @@ def _links(lib: str, prefix: str | None, env: str, recipe: str, skip: str,
     developer who wants to work on something else today and can live `without`
     — building a 13 MB C++ library to touch the sequencer is a bad trade.
     """
-    if os.environ.get(skip):
-        # The skip is read before the probe on purpose: it means "build without
-        # this", not "I could not find it", so it holds whether or not the
-        # library is installed. The release must not be able to use it, though --
-        # CI sets CLAUSTERS_REQUIRE_VEROVIO precisely because a silently missing
-        # engraver ships a `score` widget that raises at the user's run time, and
-        # nothing downstream fails.
-        require = f"CLAUSTERS_REQUIRE_{lib.removeprefix('lib').upper()}"
-        if os.environ.get(require):
-            raise SystemExit(
-                f"clausters: {skip} and {require} are both set; refusing to "
-                f"guess which one you meant.")
-        print(f"clausters: {skip} set -- building without {lib} ({without})")
+    # The skip is read before the probe on purpose: it means "build without
+    # this", not "I could not find it", so it holds whether or not the library
+    # happens to be installed.
+    if _skipping(skip, without):
         return False
     if prefix is not None:
         return True
@@ -422,7 +448,7 @@ def _dropped_families(with_faust: bool) -> set[str]:
     dropped = set()
     if not with_faust:
         dropped.add("faust")
-    if os.environ.get("CLAUSTERS_SKIP_SYNTH"):
+    if _skipping("CLAUSTERS_SKIP_SYNTH", "no /d_recv, no UGen graphs"):
         dropped.add("synth")
     return dropped
 
