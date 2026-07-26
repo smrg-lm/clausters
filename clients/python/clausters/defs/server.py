@@ -656,13 +656,16 @@ class Server:
     # ---- raw OSC: immediate and timed ----
 
     def send_msg(self, addr, *args):
-        """Send one message immediately.
+        """Send one message. **A message has no time**: in a bundle it would
+        carry the immediate timetag, and alone it means exactly that.
 
-        Offline this means the **start of the score**, whatever a routine's
-        logical time happens to be — an immediate send carries no time, so it
-        goes to the front, where a score's setup belongs. Anything that has to
-        happen *later* says so: `send_bundle`, which stamps the routine's
-        logical beat, or a pattern, which does it for you."""
+        The interface is the same one in real time and offline, and so is this —
+        immediate is immediate. Logical time belongs to the **bundle** path:
+        `send_bundle`, `Event.play`, and the patterns built on them. So creating
+        a node with `send_msg` from inside a routine is an **error**, not
+        something that behaves differently offline. Use it for what has no place
+        in a timeline: sending defs, allocating buffers, opening the groups a
+        piece is built on."""
         self.interface.send_msg(self.target.addr(), addr, *args)
 
     def send_bundle(self, *messages, delay_beats: float = 0.0, clock=None):

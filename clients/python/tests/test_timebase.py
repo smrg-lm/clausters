@@ -155,11 +155,12 @@ def test_nrt_render_is_timebase_independent():
 # ---- immediate against timed, offline ----
 
 def test_nrt_immediate_sends_land_at_the_start_of_the_score():
-    """An immediate send carries no time, so offline it goes to the **front** of
-    the score however far into a routine it was called. That is deliberate, not
-    a rounding: it is where a score's setup belongs — the defs, the buffer
-    allocations, the groups a piece opens with. Anything that has to happen
-    later says so, with `send_bundle` or a pattern (below)."""
+    """A message has no time: in a bundle it would carry the immediate timetag,
+    and alone it means the same. One interface serves real time and the score,
+    so this is not an offline behaviour — it is only *visible* offline, where an
+    immediate send is stamped 0.0 however far into a routine it was called.
+    Creating a node this way from a routine is an error; the timed path is
+    below."""
     server = Server(interface=OscNrtInterface())
     clock = TempoClock(tempo=1.0)
 
