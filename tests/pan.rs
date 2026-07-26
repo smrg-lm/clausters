@@ -5,9 +5,19 @@
 //! output: the pan law is `sin`/`cos` of a quarter turn, the matrix rows are
 //! two-by-two products, and both are known exactly. So the asserts are
 //! measurements with published tolerances — the gain pair holds unit power to
-//! `1e-5`, the polynomial tracks `f64::sin` to `4e-6` — plus the handful of
+//! `1e-5`, the polynomial tracks `f64::sin` to `2.6e-7` — plus the handful of
 //! values that must be *exact* rather than close: a hard pan, an identity, a
 //! quarter turn, a round trip through mid/side.
+//!
+//! **Every kind here is stateless** — a gain pair, a matrix row or an index,
+//! computed from this sample's inputs and nothing carried over. So the two
+//! tests the `audio-testing` rules ask of a stateful UGen do not apply the way
+//! they do to a filter: there is no long run for numerical state to drift
+//! through, and the block-split test below is a check that the *code* holds no
+//! state rather than a check that its state survives a split. The rest of the
+//! suite is the closed forms, plus one pass driving every row with inputs no
+//! musician would write, since a wrap or a reciprocal is where a non-finite
+//! sample would come from.
 
 #![cfg(feature = "synth")]
 
@@ -18,17 +28,23 @@ use clausters::dsp::{BLOCK_SIZE, Buses, ControlBuses, ProcessCtx, UGen};
 
 const SR: f32 = 48_000.0;
 
-/// Renders one block of a UGen with the given input wires.
+/// Renders one whole block of a UGen with the given input wires.
 fn run(ugen: &mut dyn UGen, inputs: &[&[f32]]) -> Vec<f32> {
+    run_len(ugen, inputs, BLOCK_SIZE)
+}
+
+/// Renders `n` samples — `n < BLOCK_SIZE` is the run a scheduled bundle leaves
+/// when it splits a block.
+fn run_len(ugen: &mut dyn UGen, inputs: &[&[f32]], n: usize) -> Vec<f32> {
     let buses = Buses::new(ControlBuses::new(16), 8);
-    let mut out = vec![0.0f32; BLOCK_SIZE];
+    let mut out = vec![0.0f32; n];
     let mut ctx = ProcessCtx {
         sample_rate: SR,
         full_sample_rate: SR,
         buses: &buses,
         buffers: &[],
         offset: 0,
-        frames: BLOCK_SIZE,
+        frames: n,
     };
     ugen.process(&mut ctx, inputs, &mut out);
     out
@@ -679,5 +695,134 @@ fn select_x_clamps_off_the_ends_rather_than_folding() {
             30.0,
             "which {which}"
         );
+    }
+}
+
+// ---- the two structural checks ----
+
+/// Rendering a block whole and rendering it in two runs must give the same
+/// samples. A synth's wires are sliced **run-relative** — every input and the
+/// output start at index 0 of the current run, only bus reads carry the block
+/// offset — so a UGen that indexes its inputs per sample is correct under a
+/// split exactly when it holds no state across calls. This is what says so.
+#[test]
+fn a_split_block_renders_the_same_samples() {
+    let half = BLOCK_SIZE / 2;
+    let sig: Vec<f32> = (0..BLOCK_SIZE).map(|i| (i as f32 * 0.17).sin()).collect();
+    let pos: Vec<f32> = (0..BLOCK_SIZE)
+        .map(|i| i as f32 / (BLOCK_SIZE - 1) as f32 * 2.0 - 1.0)
+        .collect();
+
+    for chan in [0.0f32, 1.0] {
+        let whole = run(&mut Pan::new(PanKind::Pan2), &[&sig, &pos, &[1.0], &[chan]]);
+        let mut split = Vec::with_capacity(BLOCK_SIZE);
+        for part in [0..half, half..BLOCK_SIZE] {
+            split.extend(run_len(
+                &mut Pan::new(PanKind::Pan2),
+                &[&sig[part.clone()], &pos[part], &[1.0], &[chan]],
+                half,
+            ));
+        }
+        assert_eq!(whole, split, "channel {chan}");
+    }
+
+    // The same for the matrix and the selector, whose parameters are also read
+    // per sample.
+    let whole = run(
+        &mut Rotate::new(RotKind::Rotate2),
+        &[&sig, &pos, &pos, &[1.0]],
+    );
+    let mut split = Vec::with_capacity(BLOCK_SIZE);
+    for part in [0..half, half..BLOCK_SIZE] {
+        split.extend(run_len(
+            &mut Rotate::new(RotKind::Rotate2),
+            &[&sig[part.clone()], &pos[part.clone()], &pos[part], &[1.0]],
+            half,
+        ));
+    }
+    assert_eq!(whole, split, "Rotate2");
+}
+
+/// Every row, driven with inputs no musician would write: positions far out of
+/// range, a ring with a zero and a negative width, an index past both ends, an
+/// angle of a thousand turns. Nothing here may produce a NaN or an infinity —
+/// one non-finite sample poisons every node downstream of it on the bus, and
+/// the wrap in `PanAz` and the reciprocal behind its width are exactly where
+/// one would come from.
+#[test]
+fn no_input_produces_a_non_finite_sample() {
+    let wild: Vec<f32> = (0..BLOCK_SIZE)
+        .map(|i| match i % 8 {
+            0 => 0.0,
+            1 => -1e30,
+            2 => 1e30,
+            3 => -400.0,
+            4 => 400.0,
+            5 => 1e-30,
+            6 => -1.0,
+            _ => 1.0,
+        })
+        .collect();
+    let sig = vec![0.5f32; BLOCK_SIZE];
+    let check = |what: &str, out: Vec<f32>| {
+        for (i, s) in out.iter().enumerate() {
+            assert!(s.is_finite(), "{what}: sample {i} is {s}");
+        }
+    };
+
+    for kind in [
+        PanKind::Pan2,
+        PanKind::LinPan2,
+        PanKind::Balance2,
+        PanKind::XFade2,
+        PanKind::LinXFade2,
+    ] {
+        let mut inputs: Vec<&[f32]> = vec![&sig];
+        if !matches!(kind, PanKind::Pan2 | PanKind::LinPan2) {
+            inputs.push(&sig);
+        }
+        inputs.push(&wild); // position
+        inputs.push(&wild); // level
+        inputs.push(&[1.0]); // channel
+        check(&format!("{kind:?}"), run(&mut Pan::new(kind), &inputs));
+    }
+
+    for kind in [RotKind::Rotate2, RotKind::MidSide, RotKind::Width] {
+        let mut inputs: Vec<&[f32]> = vec![&sig, &sig];
+        if kind != RotKind::MidSide {
+            inputs.push(&wild);
+        }
+        inputs.push(&[1.0]);
+        check(&format!("{kind:?}"), run(&mut Rotate::new(kind), &inputs));
+    }
+
+    // The ring: a zero width would divide by zero, a negative one would invert
+    // the wrap, and a huge position must still land somewhere on the ring.
+    for width in [&[0.0f32][..], &[-2.0][..], &[1e30][..], &wild] {
+        for chan in 0..4u32 {
+            check(
+                &format!("PanAz width {width:?} chan {chan}"),
+                run(
+                    &mut PanAz,
+                    &[
+                        &sig,
+                        &wild,
+                        &[1.0],
+                        width,
+                        &wild,
+                        &[4.0],
+                        &[chan as f32][..],
+                    ],
+                ),
+            );
+        }
+    }
+
+    let sources: [&[f32]; 3] = [&sig, &sig, &sig];
+    for kind in [SelectKind::Pick, SelectKind::Cross] {
+        let inputs: Vec<&[f32]> = std::iter::once(&wild[..])
+            .chain(sources.iter().copied())
+            .collect();
+        check(&format!("{kind:?}"), run(&mut Select::new(kind), &inputs));
     }
 }
