@@ -1,6 +1,6 @@
 //! The wgpu device/surface bring-up, shared by the native window harness
 //! ([`crate::native`]), the GUI host's windowed front ([`crate::host::gui`]) and
-//! the browser entry point ([`crate::host::web`]).
+//! the browser entry point (`crate::host::web`).
 //!
 //! It is **platform-agnostic**: `wgpu` and `winit` both compile for `wasm32`
 //! (the WebGPU backend over an HTML `<canvas>`), so the device/surface setup

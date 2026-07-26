@@ -11,7 +11,7 @@
 //! callback (native pointer lock; a front without one returns `false`).
 //!
 //! The module is platform-agnostic (no winit, no web-sys): the native windowed
-//! front ([`super::gui`]) and the browser front ([`super::web`]) both drive it,
+//! front ([`super::gui`]) and the browser front (`super::web`) both drive it,
 //! so a selection, a clip drag or a BPF edit behaves identically on either
 //! platform by construction.
 

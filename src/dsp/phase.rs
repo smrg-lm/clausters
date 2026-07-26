@@ -112,7 +112,7 @@ fn blep4(x: f64) -> f64 {
 /// a waveform whose fundamental is above `sr/4` has at most one harmonic left.
 ///
 /// Returns 0 for a non-positive `dt`: a stopped oscillator has no step, and a
-/// reversed one passes `|dt|` (see [`blep_saw`] for why direction cancels).
+/// reversed one passes `|dt|` (see `blep_saw` for why direction cancels).
 #[inline]
 pub fn poly_blep(t: f64, dt: f64) -> f64 {
     if dt <= 0.0 {

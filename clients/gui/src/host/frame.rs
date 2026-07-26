@@ -6,7 +6,7 @@
 //! resources, so the browser is pixel-faithful to the desktop by construction,
 //! not by a parallel renderer. The native windowed front ([`super::gui`]) calls
 //! it with live inputs (the shared-memory bus source, scope histories, the node
-//! tree, the held-button highlight); the browser entry point ([`super::web`])
+//! tree, the held-button highlight); the browser entry point (`super::web`)
 //! calls it with the streamed equivalents. It builds the flat-geometry [`Mesh`]
 //! from the placed widgets ([`super::layout`] + [`super::paint`]/
 //! [`super::font`]), uploads the heavy `waveform`/`spectrogram`/`canvas` views,

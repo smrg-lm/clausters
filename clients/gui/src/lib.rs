@@ -24,6 +24,14 @@
 //! persistence, shared-memory bus source, mmap bulk loader, the winit/wgpu
 //! driver) that is excluded from `wasm32`.
 
+// This crate is the GUI host, read as *developer* documentation (much of it
+// with `--document-private-items`): a module's docs routinely name the private
+// function that does the work — `frame`'s `render`, `widget`'s `build`/`apply`,
+// `gui`'s submodules. Those links are correct and useful in that mode, so the
+// private-link lint is off here; `broken_intra_doc_links` (a link to something
+// that does not exist at all) stays on and still fails the doc gate.
+#![allow(rustdoc::private_intra_doc_links)]
+
 pub mod host;
 
 /// The peak pyramid lives in the shared core (general client functionality);

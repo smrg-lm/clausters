@@ -134,7 +134,7 @@ impl TcpHub {
 
     /// Writes a length-prefixed reply to connection `id` (silently dropped if
     /// the connection is gone — the `Disconnected` event prunes it). A write
-    /// that fails — including one that stalls past [`REPLY_WRITE_TIMEOUT`]
+    /// that fails — including one that stalls past `REPLY_WRITE_TIMEOUT`
     /// because the client stopped reading — drops the connection: its reader
     /// sees the shutdown and the `Disconnected` event prunes the state.
     pub fn reply(&self, id: u64, bytes: &[u8]) {

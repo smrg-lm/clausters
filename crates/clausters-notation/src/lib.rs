@@ -17,8 +17,8 @@
 //! `build.rs`); its SMuFL resource data is resolved at run time (verovio bakes
 //! the configure-time path in, overridable through `CLAUSTERS_VEROVIO`).
 //!
-//! Two ways in: [`engrave_svg`] is the one-shot form (load, draw, discard), and
-//! [`Score`] is the stateful one — the document held open so it can be edited
+//! Two ways in: `engrave_svg` is the one-shot form (load, draw, discard), and
+//! `Score` is the stateful one — the document held open so it can be edited
 //! and re-engraved against the same ids. The C ABI over both lives in
 //! `clausters-ffi`.
 

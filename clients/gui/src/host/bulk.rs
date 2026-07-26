@@ -1,7 +1,7 @@
 //! The native bulk loader: resolves a waveform/spectrogram/plot's local
 //! resource by mapping it read-only.
 //!
-//! This is the native fill of the [`BulkLoader`](super::BulkLoader) seam — the
+//! This is the native fill of the [`BulkLoader`] seam — the
 //! bulk-data principle made concrete on the desktop: a multi-megabyte buffer
 //! named by `path`/`cache` is `mmap`-ed once (through [`super::mapfile`]) and
 //! read zero-copy, never re-encoded over OSC. The browser cannot map files, so

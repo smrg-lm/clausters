@@ -657,9 +657,10 @@ pub trait UGen: Send {
     /// Runs a spectral-chain UGen (`FFT`/`PV_*`/`IFFT`, S8) with access to its
     /// synth-private [`SpectralChain`](spectral::SpectralChain) — state the plain
     /// `process` path cannot reach, since the chain is shared across UGens. The
-    /// synth calls this (instead of `process`) for [`ExecMode::Spectral`]
-    /// UGens, resolving the compile-assigned chain slot. Runs on the audio
-    /// thread: the transform reuses pre-allocated scratch and never allocates.
+    /// synth calls this (instead of `process`) for
+    /// [`ExecMode::Spectral`](registry::ExecMode::Spectral) UGens, resolving the
+    /// compile-assigned chain slot. Runs on the audio thread: the transform
+    /// reuses pre-allocated scratch and never allocates.
     /// Non-spectral UGens never see this.
     #[cfg(feature = "synth")]
     fn process_spectral(

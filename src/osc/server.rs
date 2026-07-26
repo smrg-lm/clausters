@@ -286,7 +286,7 @@ impl OscServer {
     /// Differences from [`Self::bind`], all consequences of having no thread
     /// of its own: NRT jobs run **inline** on the driving thread (same order,
     /// same results), and streams/timetags take their time from the **engine
-    /// sample clock** rather than the wall clock ([`TimeSource::Sample`]) —
+    /// sample clock** rather than the wall clock (`TimeSource::Sample`) —
     /// `unix_epoch` (Unix seconds at sample 0) anchors that axis so a
     /// wall-clocked client's bundle timetags still land correctly; pass the
     /// current time for live use, or any fixed origin for deterministic runs.

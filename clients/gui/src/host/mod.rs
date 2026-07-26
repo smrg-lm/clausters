@@ -22,7 +22,7 @@
 //! encode/bundle/message), and owns a **thin transport front** of its own
 //! ([`transport`]). The default build links no server code; only the optional
 //! `standalone` feature pulls the full `clausters` crate, for the in-process
-//! embedded server ([`embed`]).
+//! embedded server (`embed`).
 //!
 //! That front now carries UDP and TCP ([`tcp`]) together on one port, plus an
 //! opt-in WebSocket leg ([`ws`]) — all behind one [`ClientId`] and

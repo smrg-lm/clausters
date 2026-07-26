@@ -327,7 +327,7 @@ fn load_plot_paths(widget: &mut Widget) {
 }
 
 /// Maps the local resource (`cache` or `path`) of every clip that names one,
-/// through the same [`BulkLoader`](crate::host::BulkLoader) seam the waveform
+/// through the same [`BulkLoader`] seam the waveform
 /// view uses — so a minutes-long take reaches a lane as a peak pyramid, never as
 /// JSON over OSC. The loaded body lands in the host tree (like a plot's
 /// samples), no GPU slot: a lane draws flat geometry decimated from the pyramid.

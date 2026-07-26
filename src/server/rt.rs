@@ -64,7 +64,7 @@ const DIAG_AT_CALLBACK: u32 = 64;
 
 /// One-shot per-stream setup running *on* the callback thread: tid + optional
 /// CPU pin on the first callback, scheduling diagnostic at
-/// [`DIAG_AT_CALLBACK`]. All cold paths (a syscall each, once); after that
+/// `DIAG_AT_CALLBACK`. All cold paths (a syscall each, once); after that
 /// [`RtSetup::on_callback`] is a single compare per callback.
 pub struct RtSetup {
     calls: u32,

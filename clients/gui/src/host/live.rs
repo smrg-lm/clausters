@@ -309,7 +309,8 @@ pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
 }
 
 /// Folds each spectrum channel's newest FFT window into its persistent
-/// [`SpectrumState`] (one state per channel, kept in step with the widget's
+/// [`SpectrumState`](super::spectrum::SpectrumState) (one state per channel,
+/// kept in step with the widget's
 /// `channels`), once per tick. `read_raw` fills a full FFT window of one tap;
 /// a tap with no data yet leaves that channel's state (and curve) as it was.
 pub(crate) fn update_spectra(

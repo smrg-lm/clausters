@@ -4,7 +4,7 @@
 //! Hit-testing a point, reading and writing a control's value, flipping a toggle,
 //! cycling a menu: all of it is pure work on the [`Host`]'s typed tree plus the
 //! [`layout`] and [`controls`] math, with no platform dependency. The native
-//! windowed front ([`super::gui`]) and the browser front ([`super::web`]) both
+//! windowed front ([`super::gui`]) and the browser front (`super::web`) both
 //! call these, so a turned knob updates the tree and decides bound-vs-event the
 //! same way on either platform — only the event *source* (winit vs browser
 //! pointer events) and the event *sink* (a socket vs the binding surface) differ.

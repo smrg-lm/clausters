@@ -14,9 +14,10 @@
 //! `clausters_core::osc` (Rust-tested).
 //!
 //! Two optional features widen that surface, both off by default: `notation`
-//! adds the notation layer's pure half (see [`notation`]), and `verovio` adds the
-//! engraver and the editable score on top of it — the one that links libverovio,
-//! so it stays opt-in the way the Faust family does in the server.
+//! adds the notation layer's pure half (see `clausters_core::notation`), and
+//! `verovio` adds the engraver and the editable score on top of it — the one
+//! that links libverovio, so it stays opt-in the way the Faust family does in
+//! the server.
 
 use clausters_core::builtins::{self, BinaryOp, UnaryOp};
 use clausters_core::clocksync::SampleClockModel;
@@ -56,9 +57,10 @@ pub mod ws;
 /// the one occupancy-map model, internally locked per handle); v11 the
 /// `clausters_core_patch_compile` cord→bus pass (a directed patch JSON in, its
 /// GraphDef wiring JSON out — the GUI patcher's translation, shared so every
-/// client compiles a patch identically); v12 the notation surface (feature-gated,
-/// see [`notation`]) — the pure `clausters_core_svg_to_display_list` and
-/// `clausters_core_voice_to_mei`, plus, behind `verovio`, the editable
+/// client compiles a patch identically); v12 the notation surface
+/// (feature-gated, see `clausters_core::notation`) — the pure
+/// `clausters_core_svg_to_display_list` and `clausters_core_voice_to_mei`,
+/// plus, behind `verovio`, the editable
 /// `clausters_score_*` handle, so a client binds the notation layer instead of
 /// reimplementing it.
 pub const CORE_ABI_VERSION: u32 = 12;

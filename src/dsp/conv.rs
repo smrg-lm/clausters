@@ -13,9 +13,10 @@
 //!
 //! **Load spreading.** The `p ≥ 1` MAC terms of hop `n+1` only involve input
 //! spectra that already exist after hop `n`, so they are accumulated across
-//! the blocks *between* hops (a fair share per [`UGen::process`] call), and
-//! the hop block itself does only the input FFT, the single fresh-spectrum
-//! MAC (`p = 0`) and the IFFT. The steady-state cost per block is flat
+//! the blocks *between* hops (a fair share per
+//! [`UGen::process`](crate::dsp::UGen::process) call), and the hop block itself
+//! does only the input FFT, the single fresh-spectrum MAC (`p = 0`) and the
+//! IFFT. The steady-state cost per block is flat
 //! instead of a per-hop sawtooth — the design constraint the whole module is
 //! shaped by (with the S11 stagger, the other half of keeping spectral load
 //! spikes out of the RT budget).
@@ -29,9 +30,9 @@
 //!
 //! **Latency.** The first output sample leaves after one full partition of
 //! input has been collected: an intrinsic latency of `L` samples, reported
-//! through [`UGen::latency`]/`SynthNode::latency` — the first consumer of the
-//! hook the auto-ordering work anticipated (compensation itself is deferred;
-//! see `docs/model-vs-daw.md`).
+//! through [`UGen::latency`](crate::dsp::UGen::latency)/`SynthNode::latency` —
+//! the first consumer of the hook the auto-ordering work anticipated
+//! (compensation itself is deferred; see `docs/model-vs-daw.md`).
 //!
 //! **Kernel swap.** The FDL holds *input* history, which is kernel-agnostic,
 //! so swapping kernels never rebuilds state. When the `kernel` input moves to
@@ -53,7 +54,8 @@ pub const MAX_PARTITIONS: usize = 256;
 /// The prepared-kernel buffer layout written by `/b_gen prepare_partconv` and
 /// read by [`Conv`]: `data[0] = L` (partition length), `data[1] = P`
 /// (partition count), then `P` frames of `N = 2L` floats — each partition
-/// zero-padded to `N` and packed by [`fft::rfft_into`]
+/// zero-padded to `N` and packed by
+/// [`fft::rfft_into`](clausters_core::fft::rfft_into)
 /// (`[dc, nyquist, re₁, im₁, …]`).
 pub mod layout {
     /// Header length in samples (`[L, P]`).

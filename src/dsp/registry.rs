@@ -253,7 +253,7 @@ pub struct UGenDescriptor {
     /// an `FFT` chain. [`SpectralRole::None`] for every non-spectral kind.
     pub spectral: SpectralRole,
     /// Whether this kind raises a **done flag** when it finishes, i.e. whether
-    /// [`UGen::is_done`](crate::dsp::UGen::is_done) can ever be true for it.
+    /// [`UGen::is_done`] can ever be true for it.
     /// `Done`/`FreeSelfWhenDone` may only watch a kind that does; the compiler
     /// rejects the rest by name, since watching a UGen that never finishes
     /// would read zero for the life of the node with nothing to see.

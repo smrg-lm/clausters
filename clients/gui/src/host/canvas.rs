@@ -72,7 +72,8 @@ fn shade(uv: vec2<f32>, frag: vec4<f32>) -> vec4<f32> {
 
 /// A `canvas`'s GPU resources: the pipeline compiled from the user's shader
 /// (`None` when it failed to compile), the per-frame uniform buffer and its bind
-/// group. Rebuilt in place when the shader property changes ([`set_shader`]).
+/// group. Rebuilt in place when the shader property changes
+/// ([`set_shader`](CanvasView::set_shader)).
 pub struct CanvasView {
     pipeline: Option<wgpu::RenderPipeline>,
     uniform_buffer: wgpu::Buffer,

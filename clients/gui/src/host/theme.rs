@@ -140,19 +140,20 @@ theme_roles! {
     /// A placed object's edge.
     object_edge = [0.45, 0.60, 0.85, 1.0];
     /// A patch box's central band (the def-name band): **white**, so the name
-    /// reads as black text on white ([`box_text`]) and the box stands out on the
-    /// dark canvas. Distinct from [`object_fill`] (a clip's body) — a patch box
+    /// reads as black text on white ([`box_text`](Theme::box_text)) and the box
+    /// stands out on the dark canvas. Distinct from
+    /// [`object_fill`](Theme::object_fill) (a clip's body) — a patch box
     /// is its own thing.
     box_fill = [0.95, 0.96, 0.97, 1.0];
     /// A patch box's central-band text (the def name) — near-black, for the
-    /// white [`box_fill`] band.
+    /// white [`box_fill`](Theme::box_fill) band.
     box_text = [0.09, 0.10, 0.12, 1.0];
     /// A patch **value** box's central band (a `const` literal / parameter box,
     /// set apart from the white UGen boxes so a data box reads as data): a pale
-    /// cream, still black-text ([`box_text`]).
+    /// cream, still black-text ([`box_text`](Theme::box_text)).
     value_fill = [0.98, 0.94, 0.80, 1.0];
     /// A patch box's port strips (top inlets and bottom outlets, one color) —
-    /// dark grey, framing the white middle band ([`box_fill`]).
+    /// dark grey, framing the white middle band ([`box_fill`](Theme::box_fill)).
     port_strip = [0.15, 0.16, 0.18, 1.0];
     /// A patch box's wiring port (the cell a cord connects to: its edge and pin).
     port = [0.75, 0.82, 0.92, 1.0];
