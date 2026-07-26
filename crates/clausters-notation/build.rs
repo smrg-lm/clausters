@@ -23,14 +23,14 @@ fn main() {
     let prefix = std::env::var("VEROVIO_PREFIX").unwrap_or_else(|_| {
         let home = std::env::var("HOME").unwrap_or_default();
         let local = format!("{home}/.local");
-        if std::path::Path::new(&format!("{local}/lib/libverovio.so")).exists() {
+        if has_libverovio(&local) {
             local
         } else {
             "/usr/local".into()
         }
     });
 
-    if !std::path::Path::new(&format!("{prefix}/lib/libverovio.so")).exists() {
+    if !has_libverovio(&prefix) {
         println!(
             "cargo:warning=no libverovio under {prefix}/lib: the `verovio` feature is on but \
              libverovio is not built (third_party/build-verovio.sh has the recipe). Point \
@@ -55,4 +55,20 @@ fn main() {
     println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
     println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN/../_libs");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{prefix}/lib");
+}
+
+/// Whether libverovio is installed under `<prefix>/lib` — telling cargo, on the
+/// way, to re-run this script when that directory changes.
+///
+/// The `rerun-if-changed` is what keeps the answer from going stale. Emitting
+/// any `rerun-if-*` turns off cargo's default "re-run when a file in the package
+/// changes", so `VEROVIO_PREFIX` would otherwise be the *only* trigger — and a
+/// cached "not found" then survives the very install that fixes it: you build
+/// libverovio into the prefix, cargo replays a resolution made before it
+/// existed, and the link fails against a prefix that has none. The library
+/// appearing in the directory is the event that matters, so that is what we
+/// watch. (The server's build.rs does the same for libfaust.)
+fn has_libverovio(prefix: &str) -> bool {
+    println!("cargo:rerun-if-changed={prefix}/lib");
+    std::path::Path::new(&format!("{prefix}/lib/libverovio.so")).exists()
 }
