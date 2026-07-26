@@ -513,6 +513,90 @@ fn dbufrd_reads_the_frame_its_phase_names() {
     assert_eq!(&v[8..10], &[100.0, 101.0]);
 }
 
+#[test]
+fn dbufrd_not_looping_holds_the_last_frame_instead_of_wrapping() {
+    // The other half of the `loop` input, and the one a step sequencer that is
+    // meant to *stop* depends on. Past the end it clamps to the last frame;
+    // before the start, to the first. Wrapping there would silently restart a
+    // phrase, which is the failure that sounds like a bug in the pattern
+    // rather than in the buffer read.
+    let data: Vec<f32> = (0..8).map(|i| 100.0 + i as f32).collect();
+    let buffers = [Some(Arc::new(Buffer::new(data, 1, 8, SR as f64)))];
+    let g = [
+        ugen("Dseries", &[0.0, 5.0, 1.0]),
+        ugen_wired("Dbufrd", &[0.0, 0.0, 0.0, 0.0], &[(1, 0)]),
+    ];
+    let v = stream_over(&g, 1, 6, &buffers);
+    // Frames 5, 6, 7, then 8, 9, 10 — all held at the last one.
+    assert_eq!(v, vec![105.0, 106.0, 107.0, 107.0, 107.0, 107.0]);
+
+    // And off the front, where a `rem_euclid` would have jumped to the end.
+    let data: Vec<f32> = (0..8).map(|i| 100.0 + i as f32).collect();
+    let buffers = [Some(Arc::new(Buffer::new(data, 1, 8, SR as f64)))];
+    let g = [
+        ugen("Dseries", &[0.0, -3.0, 1.0]),
+        ugen_wired("Dbufrd", &[0.0, 0.0, 0.0, 0.0], &[(1, 0)]),
+    ];
+    let v = stream_over(&g, 1, 5, &buffers);
+    assert_eq!(v, vec![100.0, 100.0, 100.0, 100.0, 101.0]);
+}
+
+// ---------------------------------------------------------------------------
+// The compile-time refusal
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nesting_deeper_than_the_limit_is_refused_at_compile_time() {
+    // A pull recurses once per level, inside the audio callback, so the depth
+    // is a *compile* error rather than a runtime guard: the honest place to
+    // say no is where a human is still watching, not on the thread that would
+    // run off its stack. The limit is 16, and both sides of it are checked —
+    // a cap nothing reaches is not a cap, and a cap that fires one level early
+    // costs a legitimate def.
+    let chain = |depth: usize| {
+        let mut ugens = vec![ugen("Dseries", &[0.0, 0.0, 1.0])];
+        // Each Dstutter takes the one before as its value, so the chain is
+        // exactly `depth` levels of demand nesting.
+        for i in 0..depth {
+            ugens.push(ugen_wired("Dstutter", &[1.0, 0.0], &[(1, i)]));
+        }
+        let src = ugens.len() - 1;
+        let imp = ugens.len();
+        ugens.push(format!(
+            r#"{{"kind":"Impulse","inputs":[{{"const":{}}}]}}"#,
+            SR / 2.0
+        ));
+        ugens.push(format!(
+            r#"{{"kind":"Demand","inputs":[{{"ugen":{imp}}},{{"const":0.0}},{{"ugen":{src}}}]}}"#
+        ));
+        ugens.push(format!(
+            r#"{{"kind":"Out","inputs":[{{"const":0.0}},{{"ugen":{}}}]}}"#,
+            imp + 1
+        ));
+        let json = format!(r#"{{"name":"deep","ugens":[{}]}}"#, ugens.join(","));
+        compile(serde_json::from_str::<SynthDefSpec>(&json).unwrap())
+    };
+
+    // 15 Dstutters over the Dseries is depth 15 at the last of them, 16 at the
+    // driver: right at the limit, and it must build.
+    assert!(
+        chain(15).is_ok(),
+        "a def at the limit must still compile: {:?}",
+        chain(15).err()
+    );
+
+    // One more and it is refused, with a message naming the depth and the
+    // limit rather than a bare failure.
+    let err = chain(16).expect_err("nesting past the limit must be refused");
+    // Both numbers, so the message stays diagnostic rather than merely
+    // present: "ugens[18] (Demand): demand streams nested 17 deep; the limit
+    // is 16".
+    assert!(
+        err.contains("nested 17 deep") && err.contains("the limit is 16"),
+        "the refusal should say how deep it got and what the limit is: {err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // The drivers
 // ---------------------------------------------------------------------------
