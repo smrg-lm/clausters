@@ -1,0 +1,620 @@
+{
+  "_doc": [
+    "The UGens under test, one entry per row, keyed by U milestone.",
+    "",
+    "A subject is a SynthDef JSON fragment plus the little that a driver needs",
+    "to know about it: what to feed it, and which of the audio-testing rules",
+    "apply. Two consumers read this file and must keep agreeing:",
+    "",
+    "  - tests/common/bench.rs, which turns a subject into a def and runs the",
+    "    generic rules over it (block split, long run, finiteness);",
+    "  - examples/audition.py, the by-ear bench, which sends the same fragment",
+    "    to a server so you can listen to exactly what the asserts measured.",
+    "",
+    "Fields. `name` is the audition handle (lowercase, unique across the file).",
+    "`kind` is the registry row. `inputs` are its wire inputs in wire order.",
+    "`static` carries non-signal fields (`max_delay`, ...). `source` names a",
+    "signal wired in front as UGen 0, which the inputs reach as {\"ugen\": 0}:",
+    "one of noise, impulse, sine, silence, dc. `hz` is the fundamental a",
+    "spectral measurement should use. `traits` select the generic rules:",
+    "",
+    "  stateful    carries state between blocks: earns the split and long-run",
+    "              drivers. A memoryless row (the pan laws) does not.",
+    "  oscillator  a periodic source: earns the alias-SNR report.",
+    "  stochastic  a random source: its stream must replay from its seed, so",
+    "              the split driver compares it exactly rather than to a",
+    "              tolerance.",
+    "  finite      ends on its own (a ramp, an envelope): the long-run driver",
+    "              checks where it lands rather than that it keeps going.",
+    "",
+    "Adding a row to a milestone is one entry here: the asserts and the ear",
+    "both pick it up with no further work."
+  ],
+
+  "U1": [
+    {
+      "name": "saw",
+      "kind": "Saw",
+      "inputs": [{ "const": 333.0 }],
+      "hz": 333.0,
+      "traits": ["stateful", "oscillator"]
+    },
+    {
+      "name": "pulse",
+      "kind": "Pulse",
+      "inputs": [{ "const": 333.0 }, { "const": 0.3 }],
+      "hz": 333.0,
+      "traits": ["stateful", "oscillator"]
+    },
+    {
+      "name": "varsaw",
+      "kind": "VarSaw",
+      "inputs": [{ "const": 333.0 }, { "const": 0.0 }, { "const": 0.3 }],
+      "hz": 333.0,
+      "traits": ["stateful", "oscillator"]
+    },
+    {
+      "name": "lfsaw",
+      "kind": "LFSaw",
+      "inputs": [{ "const": 333.0 }, { "const": 0.0 }],
+      "hz": 333.0,
+      "traits": ["stateful"]
+    },
+    {
+      "name": "lfpulse",
+      "kind": "LFPulse",
+      "inputs": [{ "const": 333.0 }, { "const": 0.0 }, { "const": 0.3 }],
+      "hz": 333.0,
+      "traits": ["stateful"]
+    },
+    {
+      "name": "lftri",
+      "kind": "LFTri",
+      "inputs": [{ "const": 333.0 }, { "const": 0.0 }],
+      "hz": 333.0,
+      "traits": ["stateful"]
+    },
+    {
+      "name": "phasor",
+      "kind": "Phasor",
+      "inputs": [
+        { "const": 0.0 },
+        { "const": 0.25 },
+        { "const": 0.0 },
+        { "const": 7.0 },
+        { "const": 0.0 }
+      ],
+      "traits": ["stateful"]
+    }
+  ],
+
+  "U2": [
+    {
+      "name": "lpf",
+      "kind": "LPF",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "hpf",
+      "kind": "HPF",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "rlpf",
+      "kind": "RLPF",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }, { "const": 0.3 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "rhpf",
+      "kind": "RHPF",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }, { "const": 0.3 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "bpf",
+      "kind": "BPF",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }, { "const": 0.3 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "brf",
+      "kind": "BRF",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }, { "const": 0.3 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "resonz",
+      "kind": "Resonz",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 700.0 }, { "const": 0.3 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "svf",
+      "kind": "Svf",
+      "source": "noise",
+      "inputs": [
+        { "ugen": 0 },
+        { "const": 700.0 },
+        { "const": 0.3 },
+        { "const": 1.0 },
+        { "const": 0.0 },
+        { "const": 0.0 }
+      ],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "onepole",
+      "kind": "OnePole",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.8 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "onezero",
+      "kind": "OneZero",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.5 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "leakdc",
+      "kind": "LeakDC",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.995 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "integrator",
+      "kind": "Integrator",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.99 }],
+      "traits": ["stateful"]
+    }
+  ],
+
+  "U3": [
+    {
+      "name": "delayn",
+      "kind": "DelayN",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.003 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "delayl",
+      "kind": "DelayL",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0031 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "delayc",
+      "kind": "DelayC",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0031 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "combn",
+      "kind": "CombN",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.003 }, { "const": 0.4 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "combl",
+      "kind": "CombL",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0031 }, { "const": 0.4 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "combc",
+      "kind": "CombC",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0031 }, { "const": 0.4 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "allpassn",
+      "kind": "AllpassN",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.003 }, { "const": 0.4 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "allpassl",
+      "kind": "AllpassL",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0031 }, { "const": 0.4 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    },
+    {
+      "name": "allpassc",
+      "kind": "AllpassC",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0031 }, { "const": 0.4 }],
+      "static": { "max_delay": 0.05 },
+      "traits": ["stateful"]
+    }
+  ],
+
+  "U4": [
+    {
+      "name": "line",
+      "kind": "Line",
+      "inputs": [
+        { "const": 0.0 },
+        { "const": 1.0 },
+        { "const": 0.5 },
+        { "const": 0.0 }
+      ],
+      "traits": ["stateful", "finite"]
+    },
+    {
+      "name": "xline",
+      "kind": "XLine",
+      "inputs": [
+        { "const": 0.01 },
+        { "const": 1.0 },
+        { "const": 0.5 },
+        { "const": 0.0 }
+      ],
+      "traits": ["stateful", "finite"]
+    }
+  ],
+
+  "U5": [
+    {
+      "name": "trig",
+      "kind": "Trig",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.005 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "trig1",
+      "kind": "Trig1",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.005 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "tdelay",
+      "kind": "TDelay",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.005 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "latch",
+      "kind": "Latch",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "gate",
+      "kind": "Gate",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "schmidt",
+      "kind": "Schmidt",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": -0.2 }, { "const": 0.2 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "toggleff",
+      "kind": "ToggleFF",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "setresetff",
+      "kind": "SetResetFF",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "pulsecount",
+      "kind": "PulseCount",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "pulsedivider",
+      "kind": "PulseDivider",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 4.0 }, { "const": 0.0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "stepper",
+      "kind": "Stepper",
+      "source": "impulse_train",
+      "inputs": [
+        { "ugen": 0 },
+        { "const": 0.0 },
+        { "const": 0.0 },
+        { "const": 7.0 },
+        { "const": 1.0 },
+        { "const": 0.0 }
+      ],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "timer",
+      "kind": "Timer",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "sweep",
+      "kind": "Sweep",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 1.0 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "changed",
+      "kind": "Changed",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.01 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "decay",
+      "kind": "Decay",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.05 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "decay2",
+      "kind": "Decay2",
+      "source": "impulse_train",
+      "inputs": [{ "ugen": 0 }, { "const": 0.01 }, { "const": 0.05 }],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "detectsilence",
+      "kind": "DetectSilence",
+      "source": "noise",
+      "inputs": [{ "ugen": 0 }, { "const": 0.0001 }, { "const": 0.1 }, { "const": 0.0 }],
+      "traits": ["stateful"]
+    }
+  ],
+
+  "U6": [
+    {
+      "name": "whitenoise",
+      "kind": "WhiteNoise",
+      "inputs": [],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "pinknoise",
+      "kind": "PinkNoise",
+      "inputs": [],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "brownnoise",
+      "kind": "BrownNoise",
+      "inputs": [],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "graynoise",
+      "kind": "GrayNoise",
+      "inputs": [],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "clipnoise",
+      "kind": "ClipNoise",
+      "inputs": [],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "lfnoise0",
+      "kind": "LFNoise0",
+      "inputs": [{ "const": 400.0 }],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "lfnoise1",
+      "kind": "LFNoise1",
+      "inputs": [{ "const": 400.0 }],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "lfnoise2",
+      "kind": "LFNoise2",
+      "inputs": [{ "const": 400.0 }],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "lfclipnoise",
+      "kind": "LFClipNoise",
+      "inputs": [{ "const": 400.0 }],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "dust",
+      "kind": "Dust",
+      "inputs": [{ "const": 200.0 }],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "dust2",
+      "kind": "Dust2",
+      "inputs": [{ "const": 200.0 }],
+      "traits": ["stateful", "stochastic"]
+    },
+    {
+      "name": "crackle",
+      "kind": "Crackle",
+      "inputs": [{ "const": 1.5 }],
+      "traits": ["stateful"]
+    }
+  ],
+
+  "U7": [
+    {
+      "name": "pan2",
+      "kind": "Pan2",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "const": -0.3 }, { "const": 1.0 }],
+      "channels": 2,
+      "traits": []
+    },
+    {
+      "name": "linpan2",
+      "kind": "LinPan2",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "const": -0.3 }, { "const": 1.0 }],
+      "channels": 2,
+      "traits": []
+    },
+    {
+      "name": "balance2",
+      "kind": "Balance2",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }, { "const": -0.3 }, { "const": 1.0 }],
+      "channels": 2,
+      "traits": []
+    },
+    {
+      "name": "rotate2",
+      "kind": "Rotate2",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }, { "const": 0.25 }],
+      "channels": 2,
+      "traits": []
+    },
+    {
+      "name": "midside",
+      "kind": "MidSide",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }],
+      "channels": 2,
+      "traits": []
+    },
+    {
+      "name": "stereowidth",
+      "kind": "StereoWidth",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }, { "const": 1.5 }],
+      "channels": 2,
+      "traits": []
+    },
+    {
+      "name": "panaz",
+      "kind": "PanAz",
+      "source": "sine",
+      "inputs": [
+        { "ugen": 0 },
+        { "const": 0.25 },
+        { "const": 1.0 },
+        { "const": 2.0 },
+        { "const": 0.5 },
+        { "const": 4.0 }
+      ],
+      "channels": 4,
+      "traits": []
+    },
+    {
+      "name": "xfade2",
+      "kind": "XFade2",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }, { "const": 0.3 }, { "const": 1.0 }],
+      "traits": []
+    },
+    {
+      "name": "linxfade2",
+      "kind": "LinXFade2",
+      "source": "sine",
+      "inputs": [{ "ugen": 0 }, { "ugen": 0 }, { "const": 0.3 }, { "const": 1.0 }],
+      "traits": []
+    },
+    {
+      "name": "select",
+      "kind": "Select",
+      "source": "sine",
+      "inputs": [{ "const": 1.0 }, { "ugen": 0 }, { "const": 0.25 }],
+      "traits": []
+    },
+    {
+      "name": "selectx",
+      "kind": "SelectX",
+      "source": "sine",
+      "inputs": [{ "const": 0.5 }, { "ugen": 0 }, { "const": 0.25 }],
+      "traits": []
+    }
+  ],
+
+  "U8": [
+    {
+      "name": "duty",
+      "kind": "Duty",
+      "inputs": [{ "const": 0.05 }, { "const": 0.0 }, { "ugen": 0 }, { "const": 0.0 }],
+      "prelude": [
+        {
+          "kind": "Dseries",
+          "inputs": [{ "const": -1.0 }, { "const": 0.0 }, { "const": 1.0 }]
+        }
+      ],
+      "traits": ["stateful"]
+    },
+    {
+      "name": "tduty",
+      "kind": "TDuty",
+      "inputs": [
+        { "const": 0.05 },
+        { "const": 0.0 },
+        { "ugen": 0 },
+        { "const": 0.0 },
+        { "const": 0.0 }
+      ],
+      "prelude": [
+        {
+          "kind": "Dseq",
+          "inputs": [
+            { "const": -1.0 },
+            { "const": 0.4 },
+            { "const": 0.8 },
+            { "const": 1.0 }
+          ]
+        }
+      ],
+      "traits": ["stateful"]
+    }
+  ]
+}

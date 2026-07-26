@@ -96,6 +96,36 @@ fold on top of the harmonics and become invisible.
    closed form, print it from a run (see `report_the_measured_figures` in
    `tests/signal.rs`) and write the measurement into the doc.
 
+Rules 4 and 5 are the same for every UGen, so they are driven from one table
+rather than restated per family — see the bench below. Rules 1–3 are claims
+only the family can make, and stay in its own suite.
+
+## The bench: one declaration, asserts and ears
+
+`tests/common/subjects.json` declares the UGens under test — one entry per row,
+keyed by milestone: the kind, its wire inputs, what to feed it, and `traits`
+that select which generic rules apply (`stateful`, `oscillator`, `stochastic`,
+`finite`). **Adding a row to a milestone is one entry there.** Two consumers
+read it:
+
+- `tests/common/bench.rs` (`#[path = "common/bench.rs"] mod bench;`) assembles a
+  subject into a def and renders it. `render`/`render_split`/`render_with_input`
+  replace the private copies each suite used to carry; `assert_split_agrees`
+  (rule 5), `assert_long_run_is_bounded` (rule 4) and `assert_renders_finite`
+  drive the generic rules. `tests/subjects.rs` runs them over the whole table
+  and contrasts every entry against `registry::all()`, so a renamed row or a
+  family that gains an input fails loudly instead of quietly shrinking coverage.
+- `examples/audition.py` sends the same fragment to a server so you can **hear**
+  it: `python3 examples/audition.py saw`, `... U2 --wav /tmp/u2.wav` (offline, no
+  hardware), `... rlpf --sweep freq 100 8000`. Its sources are the UGen
+  equivalents of the test's sample arrays — same character, different samples.
+
+One thing the def path cannot do: a **stochastic** subject's split test. Each
+noise instance seeds from a shared counter and the wire has no seed input, so
+two renders differ at sample 0 by design. `assert_split_agrees` refuses those;
+`tests/noise.rs` discharges rule 5 for them one level down, against `with_seed`
+constructors.
+
 ## Golden files
 
 For complete scenes (synth + filter + envelope via OSC commands):
