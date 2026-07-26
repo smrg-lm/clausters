@@ -3,10 +3,22 @@
 //! and `Phasor`.
 //!
 //! **One accumulator, in `f64`.** Every UGen here advances a normalized phase in
-//! `[0, 1)` by `freq / sample_rate` per sample. `f64` is not caution, it is the
-//! tuning: an `f32` accumulator drifts audibly over a long note, and scsynth's
-//! own oscillators use a 32-bit *fixed-point* phase whose resolution is coarser
-//! still. This is the same reasoning that already applies to [`Sine`](super::sine).
+//! `[0, 1)` by `freq / sample_rate` per sample.
+//!
+//! What `f64` buys is worth stating precisely, because the obvious answer is
+//! wrong and the tests measure it (`tests/oscillators.rs`,
+//! `f64_is_for_the_position_not_the_phase`). For the **wrapped phase** it buys
+//! nothing audible:
+//! the value never leaves `[0, 1)`, so the rounding error per step is about one
+//! ulp of 1.0 and random-walks nowhere — over ten seconds an `f32` phase and an
+//! `f64` one both read 55.0003 Hz for a 55 Hz saw. The precision is for
+//! [`Phasor`], whose position is **not** wrapped into a small range: as a buffer
+//! index eight minutes into a 48 kHz file it is past 2^24, where consecutive
+//! `f32` values are 2 apart and `pos += 1.0` rounds back to where it started.
+//! Measured, an `f32` position advances **0 frames in ten seconds** there. So
+//! the family shares one accumulator type, chosen by the row with the widest
+//! range rather than by the most common one. (scsynth instead uses a 32-bit
+//! *fixed-point* phase, coarser again.)
 //!
 //! **Band-limiting is PolyBLEP, not a band-limited impulse train.** scsynth
 //! builds `Saw`/`Pulse` from a discrete-summation impulse train — a sine table

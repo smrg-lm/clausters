@@ -2501,3 +2501,32 @@ would be simpler to describe and would quietly rewind streams shared between two
 consumers. scsynth draws the same line, visible in which of its `_next`
 functions call `RESETINPUT`; this is that asymmetry made explicit rather than
 inherited.
+
+## `f64` in the phase family is for the position, not the phase
+
+The phase family's accumulator is `f64`, and both the module doc and `Sine`'s
+used to give the same reason: an `f32` phase drifts over a long note. Measured,
+it does not, and the reason it does not is the wrap.
+
+A phase wrapped into `[0, 1)` never grows. Its rounding error per step is about
+one ulp of 1.0 — 6e-8 — and it random-walks rather than accumulating, so after
+ten seconds (480 000 steps) the expected error is some 4e-5 of a cycle. Stepped
+side by side in each precision, a 55 Hz saw reads **55.0003 Hz in its tenth
+second either way**. For every wrapped row — `Saw`, `Pulse`, the `LF*` shapes,
+`Sine` — `f32` would have done.
+
+`Phasor` is the row that needs the precision, and it needs it badly, because its
+position is deliberately *not* wrapped into a small range: it is a buffer index,
+one frame per sample, over whatever the file is long. Above 2^24 consecutive
+`f32` values are 2 apart, so `pos += 1.0` rounds back to where it started and the
+index **stops dead** — measured, an `f32` position eight minutes into a 48 kHz
+file advances **0 frames in ten seconds** where the `f64` one advances 479 999.
+Not a drift, a stall, and silent: the output is a plausible constant.
+
+So the type is chosen by the widest-ranging row and shared by the family, which
+is the right outcome reached by the wrong argument. Both doc comments now say
+which row is paying for it, and `tests/oscillators.rs` carries the measurement
+next to the assert (`f64_is_for_the_position_not_the_phase`) so the claim cannot
+quietly become folklore again. The general lesson is worth keeping: for a
+floating-point accumulator, what matters is the **magnitude it reaches**, not the
+number of steps it takes to get there.

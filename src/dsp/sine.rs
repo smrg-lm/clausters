@@ -3,8 +3,12 @@ use std::f64::consts::TAU;
 use crate::dsp::{ProcessCtx, UGen, at};
 
 /// Sine oscillator by phase accumulation. Input 0: frequency in Hz (signal or
-/// constant). The phase is kept in `f64` so the tuning does not degrade over
-/// long sessions.
+/// constant).
+///
+/// The phase is `f64` to match the rest of the phase family rather than because
+/// this row needs it: wrapped at `TAU` it never grows, and a wrapped `f32` phase
+/// measures the same pitch after ten seconds (see [`phase`](super::phase) for
+/// the figures and for the row that does need the precision).
 pub struct Sine {
     phase: f64,
 }

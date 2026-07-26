@@ -51,7 +51,7 @@
       "kind": "VarSaw",
       "inputs": [{ "const": 333.0 }, { "const": 0.0 }, { "const": 0.3 }],
       "hz": 333.0,
-      "traits": ["stateful", "oscillator"]
+      "traits": ["stateful"]
     },
     {
       "name": "lfsaw",
