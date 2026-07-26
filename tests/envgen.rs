@@ -1,6 +1,15 @@
 //! `EnvGen`: segment-based envelopes with SC shape curves, gate-driven sustain
-//! at the release node, and `doneAction` freeing. The engine renders offline;
-//! the envelope's output goes to bus 0 so `render` can read it back.
+//! at the release node, and `doneAction` freeing, plus U4's `Line`/`XLine` —
+//! which are that same segment engine with the header filled in — and the
+//! node-control set. The engine renders offline; the envelope's output goes to
+//! bus 0 so `render` can read it back.
+//!
+//! These drive a whole `Engine` rather than a bare synth, because half of what
+//! is under test here is a *done action*: freeing a node, pausing it, resuming
+//! it with `/n_run`. That is engine behavior, not signal.
+//!
+//! Rule 5, the block split, is not here: it is the same test for every row and
+//! runs from the shared table (`tests/subjects.rs`), which covers the two ramps.
 
 #![cfg(feature = "synth")]
 
@@ -583,6 +592,61 @@ fn a_control_rate_line_takes_the_same_wall_clock_time() {
         assert!(
             (got - 1.0).abs() < 1e-6,
             "kr block {b} should hold 1.0: {got}"
+        );
+    }
+}
+
+#[test]
+fn a_ten_second_ramp_is_still_a_closed_form_at_its_end() {
+    // Rule 4 for the ramps, and it lands somewhere slightly different from the
+    // other families: a segment does not accumulate. Its value is
+    // `shape(start, target, phase / dur_samples)` recomputed from an integer
+    // counter every sample, so there is no running sum to drift — and a ten
+    // second ramp is where that shows, because an implementation that stepped
+    // by `(end - start) / n` instead would be visibly short of its target by
+    // now.
+    //
+    // 480 000 samples still sits under 2^24, so both the counter and the
+    // duration are exact in `f32` and the only error left is the division's.
+    // The tolerance is that: a few ulps of the range, not a fraction of it.
+    let secs10 = 10.0f64;
+    let n = (SR * secs10 as f32) as usize;
+    let blocks = n / BLOCK_SIZE;
+
+    let (mut engine, _handle) = spawn(line_spec("Line", "ar", 0.0, 1.0, secs10, 0.0));
+    let out = render(&mut engine, blocks + 2);
+    for i in [1usize, n / 3, n / 2, n - 2] {
+        let want = i as f32 / n as f32;
+        assert!(
+            (out[i] - want).abs() < 1e-6,
+            "Line at sample {i} of {n}: {} != {want}",
+            out[i]
+        );
+    }
+    // And it arrives, exactly, rather than stopping just short.
+    for s in &out[n..] {
+        assert_eq!(*s, 1.0, "a finished Line holds its target exactly");
+    }
+
+    // XLine the same way, against its own closed form `start * (end/start)^t`
+    // — the absolute claim, where the short test asserts only that consecutive
+    // samples keep a constant ratio. Both are needed: a ramp with the right
+    // ratio everywhere can still have started from the wrong place.
+    let (start, end) = (0.01f64, 1.0f64);
+    let (mut engine, _handle) = spawn(line_spec("XLine", "ar", start, end, secs10, 0.0));
+    let out = render(&mut engine, blocks + 2);
+    for i in [1usize, n / 3, n / 2, n - 2] {
+        let want = (start * (end / start).powf(i as f64 / n as f64)) as f32;
+        assert!(
+            (out[i] / want - 1.0).abs() < 1e-5,
+            "XLine at sample {i} of {n}: {} != {want}",
+            out[i]
+        );
+    }
+    for s in &out[n..] {
+        assert!(
+            (*s - end as f32).abs() < 1e-6,
+            "a finished XLine holds its target: {s}"
         );
     }
 }
