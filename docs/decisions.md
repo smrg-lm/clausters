@@ -2691,8 +2691,30 @@ sixteen-shape bit-exactness test was kept too, now pinning the operand order as 
 contract rather than guarding a refactor — it is the harness the next attempt
 would be measured against.
 
-What is left, in order: fusing chains to delete intermediate wires; and only
-then, if ever, explicit vectors.
+**Where things stand, by family.** Read off the shipped release binary rather
+than assumed — every `UGen::process` is a vtable entry, so it survives as a real
+symbol and its instruction mix can be counted (`objdump -dC target/release/clausters`,
+then count `*ps`/`*pd` against `*ss`/`*sd` per symbol; regenerate it that way
+rather than trusting the summary below to stay current):
+
+- **Vectorized**: the operator rows through `binary_slice` (88 `mulps`, 45
+  `addps`, 42 `subps`, 24 `minps`), the fused rows, `Out`'s bus accumulation
+  (`addps`), `Rotate`.
+- **Partly, for a real reason**: `unary_slice` is 27 packed against 116 scalar
+  because most unary operators are transcendental — `sin`, `exp`, `log`, `pow`
+  are libm calls, and vectorizing those needs a vector libm, not a better loop.
+  `Pan`, `Select`, `PanAz` and `Svf` mix for the same kind of reason.
+- **Scalar, and correctly so**: everything with state — the filters, the phase
+  family, `Sine`, the table readers, `Lag`, `EnvGen`, `Delay`, the noise family,
+  the trigger family. These are recurrences; see the split described earlier.
+- **One reading trap**: several rows disassemble to a dozen instructions and no
+  arithmetic at all (`binop::BinaryOp`, the `spectral` rows, the `demand` rows).
+  Those are *thunks* — the vtable entry tail-calls into the core or another
+  module. Counting them as "scalar" would say the binary operator does no
+  arithmetic.
+- **One thing worth a look someday**: `Rotate` vectorizes as `mulpd`/`addpd`,
+  not `*ps` — it works in `f64`, so it runs two lanes where the rest run four.
+  Whether that precision is needed there was never examined.
 
 **What this means in the browser.** wasm's SIMD is `simd128`: **fixed at 128
 bits, four `f32`, and there is nothing wider** — no AVX equivalent, by design of
@@ -2711,3 +2733,53 @@ outside x86-64 and aarch64.
 The general shape of the decision: vectorization here is a property of the loop
 body and of which def family the DSP is written in, not a build flag we forgot to
 set.
+
+## The UGen graph's overhead is the wires, and only a compiler can collect it
+
+The entry above ends by naming what was left after the operator loops were fixed:
+fusing chains so the intermediate wire buffers disappear, the shape of the gap
+the `gain` bench still shows against Faust. Measured, it closes the question
+rather than opening it.
+
+A chain of N binary operators, all holding their operator at run time as
+`dsp::binop` does, run five ways over one block (ns per block, best of nine
+interleaved rounds):
+
+| N | `dyn` + wires | direct call + wires | fused, runtime ops | fused, tiled | fused, static ops |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 6.4 | 4.7 | 65.0 | 30.3 | 6.8 |
+| 2 | 13.5 | 13.2 | 100.6 | 44.1 | 8.0 |
+| 4 | 28.4 | 28.3 | 154.9 | 73.7 | 9.0 |
+| 8 | 54.5 | 55.1 | 257.7 | 148.0 | 13.5 |
+
+Three things fall out, and none of them was the expected one.
+
+**The `dyn` dispatch costs nothing.** Devirtualizing the whole chain — the second
+column, a direct call that still cannot inline — moves the total by −0.7 to
+1.8 ns, which is noise. The indirect call through the vtable is one
+well-predicted branch per link. Any plan that starts "first get rid of the
+virtual dispatch" is optimizing a rounding error.
+
+**The wires are the entire overhead.** At N = 8, 41 of the 54.5 ns — three
+quarters — is the round trip through intermediate buffers. Each extra link costs
+~6.9 ns wired against ~1 ns fused, so the ceiling for eliminating them is about
+**4× on a long chain**, and that ceiling is exactly the shape of the gap the
+`gain` bench still shows against Faust: a JIT emits the last column.
+
+**But a generic engine cannot collect it.** The two fusion strategies that do not
+need the operator sequence at compile time are both *far worse than the wires
+they remove*: interpreting the ops per sample is 4.7× slower than doing nothing,
+and tiling the block so the operator is matched once per 16 frames instead of
+once per frame — the obvious middle path — is still 2.7× slower, because the tile
+copy and the per-call overhead cost more than the wire saved. The last column is
+only reachable when the sequence is known before the loop is compiled. There are
+exactly two ways to have that: **hard-code the shape** (which is what `MulAdd`
+and `Sum4` already are, and why they exist) or **JIT it** — and the JIT is not
+missing from this project, it is the Faust family, sitting right there as a peer.
+
+So the conclusion is a decision not to build a chain fuser: the win is real and
+it is in the wires, but collecting it generically is a compiler, and we have one.
+What remains open is cheap and narrow — adding fused *shapes* when a common
+expression justifies one, on the `MulAdd`/`Sum4` precedent and against the bench
+section that measures them.
+
