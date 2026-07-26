@@ -11,5 +11,7 @@ __pycache__/
 uv.lock
 # Persisted defs left on disk by examples/persistent_graphdef.py (explore, then rm -rf)
 /examples/defs_store
+# Where scripts/render-all.sh drops its WAVs by default (a bench, not a fixture)
+/render
 # Personal scratch files (nombre.notrack.md): never committed.
 *.notrack.md
