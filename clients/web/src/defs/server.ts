@@ -19,8 +19,8 @@
 // (an integral number is an int32) and takes an explicit `[tag, value]` pair
 // wherever that guess is wrong.
 
-import { decodePacket, encodeMessage } from "../base/osc.ts";
-import type { OscArg, OscMessage } from "../base/osc.ts";
+import { decodePacket, encodeMessage, oscArg } from "../base/osc.ts";
+import type { MsgArg, OscArg, OscMessage } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
 import { CommandError, ReplyTimeout } from "../errors.ts";
 import {
@@ -132,8 +132,9 @@ export interface TreeNode {
 }
 
 /// A plain value a message argument may take, or an explicit `[tag, value]`
-/// pair when the inferred type is wrong.
-export type MsgArg = number | string | bigint | Uint8Array | OscArg;
+/// pair when the inferred type is wrong (the codec's own type — re-exported
+/// here, where the commands take it).
+export type { MsgArg };
 
 /// Control values, by name. The reserved `in`/`out` bus controls are
 /// expressible here like any other name.
@@ -144,18 +145,6 @@ interface Pending {
     resolve: (msg: OscMessage) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
-}
-
-function isOscArg(x: MsgArg): x is OscArg {
-    return Array.isArray(x) && x.length === 2 && typeof x[0] === "string";
-}
-
-function oscArg(value: MsgArg): OscArg {
-    if (isOscArg(value)) return value;
-    if (typeof value === "bigint") return ["h", value];
-    if (typeof value === "string") return ["s", value];
-    if (value instanceof Uint8Array) return ["b", value];
-    return Number.isInteger(value) ? ["i", value] : ["f", value];
 }
 
 /// Control values flattened into the `name value name value …` tail every

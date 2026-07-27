@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>clausters-gui (web)</title>
+    <title>clausters GUI from TypeScript</title>
     <link rel="icon" href="data:," />
     <style>
       html,
@@ -41,143 +41,202 @@
       #note {
         padding: 0 12px 8px;
         font-size: 13px;
+        white-space: pre-line;
       }
     </style>
   </head>
   <body>
     <div id="bar">
-      <input id="server" value="ws://127.0.0.1:57120" />
-      <button id="connect">connect</button>
+      <button id="play">play a tone</button>
       <button id="panel">panel</button>
       <button id="meters">meters</button>
-      <button id="bulk">bulk</button>
+      <button id="views">views</button>
+      <input id="ws" value="ws://127.0.0.1:57220" />
+      <button id="remote">drive a native host</button>
     </div>
-    <div id="note">
-      clausters-gui browser host. Renders over WebGPU where available and falls
-      back to WebGL2 otherwise. Connect to a `--ws` audio server, then open a
-      demo; see docs/clients.md ("The GUI host in the browser").
-    </div>
+    <div id="note">building a GUI from TypeScript…</div>
 
     <!--
-      Throwaway harness — explicitly NOT a product client (the TypeScript client
-      is the separate clients/web track). It only proves the host: each demo
-      builds the same GuiDef JSON the Python builders emit (the panel, meters
-      and bulk examples) and feeds it through the binding surface.
+      The GUI client, end to end: the GuiDef builders (`gui.window`, `gui.knob`,
+      …) compose the tree, `GuiHost` sends it and reads the widgets back, and
+      the panel drives the audio engine running in this tab's AudioWorklet —
+      no server process anywhere. The same code drives a *native*
+      `clausters-gui --ws` host: `GuiHost.connect(url)` instead of
+      `GuiHost.page()` is the one line that names a carrier.
 
-      - panel:  controls + an inline waveform; turning a control logs a
-        /gui_event; the bound `freq` knob forwards straight to the server.
-      - meters: a meter + scope on control bus 10 streamed over WebSocket
-        (/c_stream), driven by the bound `bus 10` knob — a self-contained
-        loop: knob -> /c_set -> server -> /c_set snapshots -> meter.
-      - bulk:   three waveforms — a fetched peak cache (tests/sine.peaks),
-        fetched raw f32 samples (tests/sine.f32, pyramid built in wasm), and
-        a server buffer pulled over /b_query + chunked /b_getn. Generate the
-        two files and buffer with gui_bulk.py's setup.
+      - panel:  a tone's controls. `freq` is **bound** — its value goes
+        straight from the host to the engine, with no round trip through this
+        script — while `amp` and the waveform selector come back as
+        /gui_event and are applied here, so both paths are visible at once.
+      - meters: a level meter and a scope on a control bus, with a bound knob
+        writing that bus: knob -> /c_set -> engine -> the host's /c_stream
+        subscription -> the views. A loop with no script in it.
+      - views:  the editor-grade waveform and spectrogram of a rendered
+        signal, under one navigation group (`link`), plus a bpf envelope
+        editor whose break-points come back as a "points" event.
     -->
     <script type="module">
-      import init, { start } from "../dist/gui-host/clausters_gui.js";
+      import {
+        loadOsc, pageConnection, server as engine,
+        Server, SynthDef, GuiHost, guiHost, gui,
+        control, out, saw, lpf,
+      } from "../dist/index.js";
 
-      // A short synthetic signal for the inline waveform view.
-      const N = 4096;
-      const data = Array.from({ length: N }, (_, i) => {
+      const note = document.getElementById("note");
+      const say = (text) => { note.textContent = text; };
+
+      await loadOsc();
+
+      // The audio side: one engine in this tab, one `Server` over it. The
+      // AudioContext starts suspended under the autoplay policy and the
+      // engine only runs (and answers) while it does, so the server is opened
+      // on the first click rather than at load — every button goes through
+      // `audio()`.
+      const raw = await engine({ channels: 2 });
+      let server = null;
+      let voice = null;
+
+      async function audio() {
+        await raw.resume();
+        if (!server) {
+          server = await Server.open(await pageConnection());
+          // A tone whose cutoff a knob sweeps and whose pitch a bound one does.
+          const freq = control("freq", 220.0);
+          const amp = control("amp", 0.2);
+          const cutoff = control("cutoff", 2000.0);
+          await server.addSynthDef(new SynthDef(
+            "gui_tone", out(0.0, lpf(saw(freq), cutoff).mul(amp))));
+        }
+        return server;
+      }
+
+      const playing = () => (voice ??= server.synth(
+        "gui_tone", { freq: 220.0, amp: 0.2 }));
+
+      // The GUI side. `GuiHost.page()` drives the wasm host on this page's
+      // canvas; `GuiHost.connect(url)` would drive a native one, and nothing
+      // below this line would change.
+      let host = await GuiHost.page();
+      const { canvas } = await guiHost();
+      canvas.style.margin = "0 12px 12px";
+
+      const panel = () => gui.window(
+        { title: "a tone", w: 520, h: 300, layout: "col", margin: 8.0, gap: 8.0 },
+        gui.label("freq is bound to the engine; amp and cutoff come back here",
+                  { h: 24, textSize: 1.5 }),
+        gui.panel(
+          { layout: "row" },
+          gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0,
+                     value: 220.0 }),
+          gui.knob({ name: "cutoff", label: "cutoff", min: 100.0, max: 8000.0,
+                     value: 2000.0 }),
+          gui.slider({ name: "amp", label: "amp", min: 0.0, max: 0.5,
+                       value: 0.2, vertical: true, w: 90 }),
+        ),
+        gui.panel(
+          { layout: "row", h: 44 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "stop", label: "stop" }),
+        ),
+      );
+
+      const meters = (bus) => gui.window(
+        { title: "a bus, metered", w: 560, h: 320, layout: "col", gap: 8.0 },
+        gui.label(`control bus ${bus}: the knob writes it, the views read it`,
+                  { h: 24, textSize: 1.5 }),
+        gui.panel(
+          { layout: "row" },
+          gui.knob({ name: "level", label: `bus ${bus}`, min: -1.0, max: 1.0,
+                     value: 0.0, w: 120 }),
+          gui.meter(bus, { min: -1.0, max: 1.0, label: "level", w: 80 }),
+          gui.scope(bus, { min: -1.0, max: 1.0, label: "history" }),
+        ),
+      );
+
+      // A short synthetic signal for the heavy views: a decaying sweep.
+      const N = 48000;
+      const samples = Array.from({ length: N }, (_, i) => {
         const t = i / N;
-        return Math.sin(t * Math.PI * 12) * (1 - t) * 0.85;
+        return Math.sin(i * 0.02 * (1 + 3 * t)) * (1 - t) ** 2;
       });
 
-      // The same shapes the Python GuiDef builders emit: a tree of
-      // {id, type, ...props, children}.
-      const defs = {
-        panel: {
-          type: "window",
-          title: "clausters-gui (web)",
-          w: 480,
-          h: 420,
-          layout: "col",
-          children: [
-            { id: 1, type: "label", text: "clausters-gui over the binding surface" },
-            { id: 2, type: "slider", label: "cutoff", min: 20.0, max: 20000.0, value: 800.0 },
-            { id: 3, type: "knob", label: "res", min: 0.0, max: 1.0, value: 0.3 },
-            {
-              id: 4,
-              type: "knob",
-              label: "freq",
-              min: 50.0,
-              max: 2000.0,
-              value: 220.0,
-              bind: ["/n_set", 1000, "freq"],
-            },
-            { id: 5, type: "toggle", label: "gate", value: 1 },
-            { id: 6, type: "button", label: "ping" },
-            { id: 7, type: "waveform", data: data, base_bucket: 64 },
-          ],
-        },
-        meters: {
-          type: "window",
-          title: "Meters over WebSocket",
-          w: 640,
-          h: 440,
-          layout: "col",
-          children: [
-            { id: 1, type: "label", text: "bus 10 streamed with /c_stream (no shm)" },
-            {
-              id: 2,
-              type: "panel",
-              layout: "row",
-              children: [
-                { id: 10, type: "knob", label: "bus 10", min: -1.0, max: 1.0, value: 0.0, bind: ["/c_set", 10] },
-                { id: 11, type: "meter", bus: 10, min: -1.0, max: 1.0, label: "bus" },
-                { id: 12, type: "scope", bus: 10, min: -1.0, max: 1.0, label: "bus" },
-              ],
-            },
-          ],
-        },
-        bulk: {
-          type: "window",
-          title: "Bulk data in the browser",
-          w: 640,
-          h: 520,
-          layout: "col",
-          children: [
-            { id: 1, type: "label", text: "peak cache (fetch)" },
-            { id: 2, type: "waveform", cache: "../tests/sine.peaks" },
-            { id: 3, type: "label", text: "raw f32 (fetch + wasm pyramid)" },
-            { id: 4, type: "waveform", path: "../tests/sine.f32", base_bucket: 512 },
-            { id: 5, type: "label", text: "server buffer 0 (/b_getn over WS)" },
-            { id: 6, type: "waveform", buffer: 0 },
-          ],
-        },
+      const views = () => gui.window(
+        { title: "the editor views", w: 720, h: 560, layout: "col", gap: 8.0 },
+        gui.waveform({ name: "wave", blob: 0, sampleRate: 48000.0,
+                       baseBucket: 256, ruler: "time", rulerY: "db", link: 1 }),
+        gui.spectrogram({ name: "stft", blob: 0, sampleRate: 48000.0,
+                          windowSize: 1024, freqScale: "log", link: 1 }),
+        gui.bpf({ name: "env", h: 140,
+                  points: [[0.0, 0.0], [0.3, 1.0, "exp"], [1.0, 0.0, -4.0]],
+                  label: "an envelope — drag a point" }),
+      );
+
+      // ---- the three demos, each opened through the same `GuiHost` ----
+
+      let win = null;
+      const open = (tree, blobs = []) => {
+        if (win) win.close();
+        win = host.open(tree, { blobs });
+        return win;
       };
 
-      init()
-        .then(() => {
-          const gui = start();
-          const note = document.getElementById("note");
-          let events = 0;
-          let connected = "";
+      document.getElementById("play").onclick = async () => {
+        await audio();               // resumes the context (the gesture)
+        playing();
+        say("playing — open a demo");
+      };
 
-          document.getElementById("connect").onclick = () => {
-            connected = document.getElementById("server").value;
-            gui.connect_server(connected);
-          };
-          for (const name of ["panel", "meters", "bulk"]) {
-            document.getElementById(name).onclick = () =>
-              gui.def(1, JSON.stringify(defs[name]));
-          }
-
-          // Drain the host's outbound events (also logged to the console by the
-          // host). A real client would decode these OSC packets; here we just
-          // count them so the queue does not grow.
-          setInterval(() => {
-            while (gui.poll()) events += 1;
-            note.textContent =
-              "open a demo; /gui_event count: " + events +
-              (connected ? " | server: " + connected : " | not connected");
-          }, 150);
-        })
-        .catch((e) => {
-          document.getElementById("note").textContent =
-            "failed to start (no WebGPU or WebGL2 available?): " + e;
+      document.getElementById("panel").onclick = async () => {
+        await audio();
+        playing();
+        const w = open(panel());
+        // The bound control: its value never passes through this script.
+        w.widget("freq").bind("/n_set", voice.id, "freq");
+        // The scripted controls: the event comes here, and this code decides.
+        w.widget("cutoff").onEvent((value) => {
+          if (voice) server.set(voice, { cutoff: value });
+          say(`cutoff ${value.toFixed(0)} Hz (through the script)`);
         });
+        w.widget("amp").onEvent((value) => {
+          if (voice) server.set(voice, { amp: value });
+        });
+        w.widget("play").onEvent((down) => { if (down) playing(); });
+        w.widget("stop").onEvent((down) => {
+          if (down && voice) { voice.free(); voice = null; }
+        });
+        say("panel: turn `freq` (bound, no script) and `cutoff` (scripted)");
+      };
+
+      document.getElementById("meters").onclick = async () => {
+        await audio();
+        const bus = server.controlBus();
+        const w = open(meters(bus.index));
+        w.widget("level").bind("/c_set", bus.index);
+        say(`meters: the knob writes bus ${bus.index}; the host streams it back`);
+      };
+
+      document.getElementById("views").onclick = () => {
+        const w = open(views(), [gui.samplesToBlob(samples)]);
+        w.widget("env").onEvent((tag, ...points) => {
+          if (tag === "points") say(`envelope edited: ${points.length / 4} points`);
+        });
+        say("views: zoom with the wheel, drag to select — both lanes move as one");
+      };
+
+      // The same client against a native host: only the carrier changes.
+      document.getElementById("remote").onclick = async () => {
+        const url = document.getElementById("ws").value;
+        try {
+            host.stop();
+            host = await GuiHost.connect(url);
+            win = null;
+            say(`driving the native host at ${url} — open a demo`);
+        } catch (error) {
+            say(`could not reach ${url}: ${error}`);
+        }
+      };
+
+      say("ready: press play (the autoplay gesture), then open a demo");
     </script>
   </body>
 </html>

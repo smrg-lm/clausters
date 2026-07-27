@@ -2823,3 +2823,35 @@ tags **by position** — node ids, bus indices and add actions as int32, control
 values as float32 — and only the free-form `sendMsg`/`genBuffer` guess (an
 integral number is an int32), with an explicit `[tag, value]` pair as the escape
 hatch where the guess is wrong (`/b_gen`'s flag word).
+
+## A GuiDef from TypeScript: the options are the language's, the document is the wire's
+
+The Python GuiDef builders take keyword arguments spelled exactly like the props
+they emit (`text_size=3.0`, `base_bucket=512`, `sel_start=…`), because in Python
+those are the same identifier. TypeScript's are not, and a client whose surface
+reads as snake_case would be the odd one in its own language — the def builders
+already took the other road (`control("cutoff", 800.0, { lag: 0.1, lagDown: 0.5 })`).
+So the web GuiDef builders take **camelCase options** and write the host's
+**snake_case props**: `waveform({ baseBucket: 512, selStart: 0.0 })` emits
+`{"base_bucket": 512, "sel_start": 0.0}`. A prop this client does not name yet —
+a newer host's — passes straight through under its wire name, the way Python's
+`**props` does, so the vocabulary can grow without a client release.
+
+**Parity is asserted on the emitted document, not on the source**, for the same
+reason the def specs are (`clients/web/tests/gui-parity.test.ts` against vectors
+frozen by `gen-gui-vectors.py`) — and there is a second reason here. A JSON
+number from JavaScript carries no int/float distinction: `JSON.stringify(480.0)`
+is `480`, where Python writes `480.0`. That looked like a parity problem and is
+not, because the host reads every continuous prop through `as_f64` and every id,
+index and count as an integer — an integer literal is a perfectly good float on
+the way in. What the vectors compare is therefore the **parsed** document, which
+is exactly the level at which the two clients have to agree. The int/float
+distinction stays load-bearing where it actually rides OSC (`/gui_set`'s values,
+tagged by the same inference rule the audio client uses).
+
+The same milestone settles a smaller one: the browser client has **no pump**.
+`GuiHost` subscribes to its connection once and routes `/gui_event`/`/gui_closed`
+to the handles as they arrive (`win.widget("cutoff").onEvent(fn)`), with `query`
+a promise — where the Python client drains the host from the script's own loop
+because it must not block the clock thread. Same discipline, but in a language
+where it is the only shape available.

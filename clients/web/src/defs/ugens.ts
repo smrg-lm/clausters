@@ -1360,7 +1360,11 @@ const SHAPE_NUMBERS: Record<string, number> = {
 /// slow, negative starts fast).
 export type Curve = string | number;
 
-function resolveCurve(spec: Curve): [number, number] {
+/// A shape name (`"lin"`, `"exp"`, `"sin"`, …) or a numeric curvature as the
+/// wire's `[shape, curve]` pair. A number selects the custom-curvature shape,
+/// so a drawn segment and a played one agree by construction — which is why
+/// the GuiDef `bpf`/`clip` builders resolve their break-points through here.
+export function resolveCurve(spec: Curve): [number, number] {
     if (typeof spec === "string") {
         const shape = SHAPE_NUMBERS[spec];
         if (shape === undefined) {
@@ -1480,6 +1484,66 @@ export class Env {
         }
         return out;
     }
+}
+
+/// An `Env` (levels / segment times / curves) as the flat `bpf` breakpoint
+/// list `[t, v, shape, curve, …]`, with absolute times starting at `timeAt`.
+/// The last point carries a linear placeholder (no segment leaves it). Feed
+/// the result to the `bpf` widget or to a live `points` set.
+export function envToPoints(env: Env, { timeAt = 0.0 }: { timeAt?: number } = {}): number[] {
+    const out: number[] = [];
+    let t = timeAt;
+    for (let i = 0; i < env.levels.length; i++) {
+        const [shape, curve] =
+            i < env.times.length ? resolveCurve(env.curves[i]!) : [1, 0.0];
+        out.push(t, env.levels[i]!, shape, curve);
+        if (i < env.times.length) t += env.times[i]!;
+    }
+    return out;
+}
+
+/// A `bpf` breakpoint list — the flat `t v shape curve …` quads a `"points"`
+/// event carries — as an `Env`: absolute times become segment durations and
+/// each segment keeps its shape (the numeric curvature for the custom shape,
+/// the shape name otherwise).
+///
+/// A first breakpoint later than `timeAt` (default `0.0`) is a drawn initial
+/// delay, encoded as a leading `hold` segment (the first level held for that
+/// duration) so what was drawn and what plays stay identical. `releaseNode`
+/// and `loopNode` pass through to the `Env`.
+export function pointsToEnv(
+    points: readonly number[],
+    {
+        timeAt = 0.0,
+        releaseNode,
+        loopNode,
+    }: { timeAt?: number; releaseNode?: number; loopNode?: number } = {},
+): Env {
+    const quads: number[][] = [];
+    for (let i = 0; i + 4 <= points.length; i += 4) {
+        quads.push(points.slice(i, i + 4) as number[]);
+    }
+    if (quads.length < 2) {
+        throw new TypeError("an envelope needs at least two breakpoints");
+    }
+    // First name wins for the aliased numbers ("lin"/"exp"/… come before
+    // their long forms in the table).
+    const names = new Map<number, string>();
+    for (const [name, num] of Object.entries(SHAPE_NUMBERS)) {
+        if (!names.has(num)) names.set(num, name);
+    }
+    const levels = quads.map((q) => q[1]!);
+    const times = quads.slice(1).map((q, i) => q[0]! - quads[i]![0]!);
+    const curves: Curve[] = quads
+        .slice(0, -1)
+        .map((q) => (Math.trunc(q[2]!) === 5 ? q[3]! : (names.get(Math.trunc(q[2]!)) ?? "lin")));
+    const delay = quads[0]![0]! - timeAt;
+    if (delay > 1e-9) {
+        levels.unshift(levels[0]!);
+        times.unshift(delay);
+        curves.unshift("hold");
+    }
+    return new Env(levels, times, curves, { releaseNode, loopNode });
 }
 
 /// Plays an `Env`. A rising `gate` (re)triggers from the start; while the

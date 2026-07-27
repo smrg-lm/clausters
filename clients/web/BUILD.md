@@ -95,18 +95,26 @@ The pieces individually:
   the TypeScript sources directly (native type stripping — the
   `.ts`-extension imports are what make this work), no compile step. The
   suite covers the OSC parity vectors against the committed
-  `tests/osc-vectors.json`, the def-spec parity vectors against
-  `tests/def-vectors.json`, and the WebSocket carrier and `Server` end to end
-  (it spawns `target/debug/clausters --ws` itself and skips if the debug
-  server is not built — `cargo build` at the root). It runs **serially**
-  because `--ws <port>` only moves the WebSocket front: the OSC port (57110)
-  is fixed, so two spawned servers cannot overlap.
-- `./test.sh` — the above plus two acceptance pages under headless Chrome,
+  `tests/osc-vectors.json`, the def-spec and GuiDef parity vectors against
+  `tests/def-vectors.json` and `tests/gui-vectors.json`, and the WebSocket
+  carrier end to end against both fronts — `Server` against a spawned
+  `target/debug/clausters --ws` and `GuiHost` against a spawned
+  `clients/gui/target/debug/clausters-gui --ws`, each skipping if its debug
+  binary is not built (`cargo build` at the root, and inside `clients/gui`).
+  It runs **serially** because `--ws <port>` only moves the WebSocket front:
+  the OSC port (57110) is fixed, so two spawned servers cannot overlap.
+- `./test.sh` — the above plus three acceptance pages under headless Chrome,
   each in its own browser: `tests/client.html?smoke=1` (the in-page carrier's
-  `/status` round trip) and `tests/defs.html?smoke=1` (a def built, sent,
+  `/status` round trip), `tests/defs.html?smoke=1` (a def built, sent,
   played — asserted audible on an analyser — read back out of the node tree
-  and freed). Verdicts are beaconed through the HTTP access log like every
-  web smoke.
+  and freed) and `tests/gui.html?smoke=1` (a panel built with the GuiDef
+  builders, opened on the in-page host and then *played with*: the gestures
+  are synthesized as pointer events on the host's own canvas, an unbound
+  control's move comes back as a `/gui_event` and the bound one drives the
+  engine in the same tab). The GUI page needs a WebGL2 adapter, which headless
+  has to get from SwiftShader — hence `--enable-unsafe-swiftshader` in the
+  runner. Verdicts are beaconed through the HTTP access log like every web
+  smoke.
 
 The dev loop is `tsc -p tsconfig.build.json --watch` in one terminal and
 `python3 -m http.server` in another; rerun `./build.sh` only when the Rust
@@ -114,17 +122,20 @@ side changes.
 
 ## Regenerating the parity vectors
 
-Two vector files are committed, both generated from the Python client — the
-reference for the wire (the codec) and for the def format (the builders):
+Three vector files are committed, all generated from the Python client — the
+reference for the wire (the codec), for the def format and for the GuiDef
+document (the builders):
 
 ```sh
 cd tests
 PYTHONPATH=../../python python3 gen-osc-vectors.py   # tests/osc-vectors.json
 python3 gen-def-vectors.py                           # tests/def-vectors.json
+python3 gen-gui-vectors.py                           # tests/gui-vectors.json
 ```
 
-`gen-def-vectors.py` needs the Python client importable (the repo's `.venv`
-has it installed editable); it inserts `../../python` on the path itself.
+The two builder generators need the Python client importable (the repo's
+`.venv` has it installed editable); they insert `../../python` on the path
+themselves.
 
 Regenerate only when the vector set itself changes (new cases); the point of
 committing them is that the two clients are held to the same frozen bytes and

@@ -38,7 +38,8 @@ clients/web/
       server.ts  node.ts  bus.ts  buffer.ts
       signals.ts  ugens.ts  synthdef.ts  faustdef.ts  graphdef.ts
     gui/                  #   the GUI host driver (mirrors clausters/gui)
-      host.ts             #     today the per-page guiHost() singleton; (guidef.ts — W2)
+      host.ts             #     GuiHost + the per-page guiHost() singleton
+      guidef.ts  handle.ts  ids.ts
     (seq/                 #   sequencing (mirrors clausters/seq) — W3
       event.ts  eventstream.ts  pattern.ts  timeline.ts)
     (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W4)
@@ -50,8 +51,9 @@ clients/web/
                           #   bundles engine/ gui-host/ core/ — the _bin/_libs analog
   examples/               # synth.html, demo.html, engine.html, gui-host.html,
                           #   standalone.html (the Python examples port here — W5)
-  tests/                  # node --test suites + parity vectors (osc, def) + the
-                          #   browser acceptance pages (client/defs/smoke/parity)
+  tests/                  # node --test suites + parity vectors (osc, def, gui)
+                          #   + the browser acceptance pages (client/defs/gui/
+                          #   smoke/parity)
   tools/                  # bundle-manifest.py, demo-bundle.sh
   (docs/                  # an mdBook (mirrors clients/python/docs), API ref via typedoc — W5)
 ```
@@ -139,7 +141,7 @@ tree and freed, over the in-page engine with no server process). Example:
 `examples/synth.html`, the same def and the same code over either carrier, the
 choice being the one line that names one.
 
-### W2 - GUI host driver (`GuiHost` + GuiDef builders)
+### ✅ W2 - GUI host driver (`GuiHost` + GuiDef builders)
 
 The product driver the GUI track (G13) deferred here - this closes the loop with G11-G16.
 
@@ -147,6 +149,52 @@ The product driver the GUI track (G13) deferred here - this closes the loop with
 - `gui/host.ts`: a `GuiHost` mirroring `clausters.gui.host`, grown over the pieces that already exist — in-page it wraps the `guiHost()` singleton (B4), whose `GuiBridge` (`def`/`feed`/`poll`, B3's `connect_page`/`server_reply` leg already wired to the engine singleton) is the binding surface; the remote leg drives a `--ws` host: `/gui_def`/`/gui_set`/`/gui_free`/`/gui_bind` out, `/gui_event`/`/gui_closed` in.
 
 **Acceptance:** a TS app builds a panel GuiDef and drives the browser GUI host with it; interactions return as `/gui_event`; a `bind`-ed widget drives the audio server with no round-trip through the script, over either carrier (in-page, the bind→engine leg B3/B4 already exercise; and against a `--ws` server) - the same examples the Python client runs against the native host, now in the browser.
+
+**What shipped.** The whole `src/gui/` tree, mirroring `clausters/gui/` module
+for module: `guidef.ts` (the full widget catalogue — containers, the light
+controls, the heavy `waveform`/`spectrogram`/`plot`, the bus- and tap-fed
+`meter`/`scope`/`phasescope`/`spectrum`, `nodetree`, the `bpf`/`pianoroll`/
+`piano`/`track`/`clip`/`score`/`patch`/`canvas` editors, plus `toJson`,
+`samplesToBlob` and the `Env`↔break-point pair), `host.ts` (`GuiHost` over the
+W0 carrier seam, beside the `guiHost()` page singleton and the
+`pageGuiConnection()` that wraps its bridge), `ids.ts` (the core-backed widget-id
+allocator) and `handle.ts` (the name-addressed widget/window handles). Three
+things are worth carrying forward:
+
+- **The GUI reuses the audio client's seam whole.** A `GuiHost` is a
+  `Connection` and a name; `GuiHost.page()` drives the wasm host on this page's
+  canvas (through `GuiBridge.feed`/`poll`) and `GuiHost.connect(url)` a native
+  `clausters-gui --ws` — the two carriers the browser has, behind the interface
+  W0 already defined. Nothing above it names one.
+- **Nothing pumps.** Where the Python client drains the host from the script's
+  loop, this client subscribes once and the host's events arrive as calls:
+  `win.widget("cutoff").onEvent(fn)`, `win.onClosed(fn)`, and `query` a promise.
+- **The options are TypeScript's, the props are the wire's** (`textSize` →
+  `text_size`), and parity is asserted on the **emitted document** —
+  `tests/gui-parity.test.ts` rebuilds each reference tree independently and
+  compares it against vectors frozen from the Python builders
+  (`tests/gen-gui-vectors.py`). Rationale in `docs/decisions.md` ("A GuiDef
+  from TypeScript").
+
+**Verified:** `./test.sh` — 45 `node --test` cases (13 new GuiDef-parity and
+allocator cases, 3 end-to-end against a real `clausters-gui --ws` host covering
+define/query/set/bind/redefine/free, plus the W0/W1 suites) and three
+headless-Chrome acceptances, the new one being `tests/gui.html`: a panel built
+with the builders, opened on the in-page host, then **played with** — the
+gestures are synthesized as pointer events on the host's own canvas, so an
+unbound slider's move comes back as a `/gui_event` while the bound knob drives
+the engine in the same tab (asserted by reading the node's control back), and
+closing the window frees the subtree. Example: `examples/gui-host.html`, now
+the product client rather than the B-track harness — the bound and the scripted
+control paths side by side, a `/c_stream`-fed meter/scope loop, the linked
+waveform + spectrogram, and one button that swaps the in-page host for a native
+one.
+
+Not in scope here, by the plan's own division: the browser data paths the
+heavy views feed on (`/c_stream` decoding client-side, `fetch`/`/b_getn` bulk,
+the wasm peak pyramid) and the `correlation`/`lissajous` analysis exports,
+which are W4's — the host already reads those paths itself, so a GuiDef that
+names a bus, a tap or a URL works today.
 
 ### W3 - Sequencing: clock, routines, events, patterns
 

@@ -48,3 +48,24 @@ export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
 export function decodePacket(bytes: Uint8Array): OscMessage[] {
     return osc_decode_packet(bytes) as unknown as OscMessage[];
 }
+
+/// A plain value a message argument may take, or an explicit `[tag, value]`
+/// pair when the inferred type is wrong.
+export type MsgArg = number | string | boolean | bigint | Uint8Array | OscArg;
+
+/// One argument tagged **by inference**: an integral number rides as an int32,
+/// a fractional one as a float32, a boolean as the 1/0 the wire carries (OSC
+/// has no bool), a string as a string and bytes as a blob. A JS number is a
+/// double with no int/float distinction, so this is a guess — the clients tag
+/// what they know by position instead, and pass an explicit `[tag, value]`
+/// pair wherever the guess would be wrong.
+export function oscArg(value: MsgArg): OscArg {
+    if (Array.isArray(value) && value.length === 2 && typeof value[0] === "string") {
+        return value as OscArg;
+    }
+    if (typeof value === "bigint") return ["h", value];
+    if (typeof value === "string") return ["s", value];
+    if (typeof value === "boolean") return ["i", value ? 1 : 0];
+    if (value instanceof Uint8Array) return ["b", value];
+    return Number.isInteger(value) ? ["i", value as number] : ["f", value as number];
+}

@@ -185,7 +185,7 @@ The browser fills the host's data paths over the network instead of shared memor
 python3 -m http.server    # then open http://localhost:8000/examples/gui-host.html
 ```
 
-The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). `clients/web/examples/gui-host.html` is a documented throwaway harness with a panel demo, a meters demo and a bulk demo — it proves the host; the product browser client is the TypeScript track growing in the same package.
+The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). That surface is the *binding*, not the client: a page programs against the TypeScript client's `GuiHost` (below), which wraps it — `clients/web/examples/gui-host.html` is that client driving the host, with the bound and the scripted control paths side by side.
 
 ### A standalone bundle in a tab
 
@@ -206,7 +206,7 @@ The `clausters` package in `clients/web/` (TypeScript sources under `src/`, mirr
 ## The TypeScript client (started)
 
 The browser-first TypeScript client grows inside the same `clients/web/`
-package (roadmap: `clients/web/PLAN.md`). Two layers are in place.
+package (roadmap: `clients/web/PLAN.md`). Three layers are in place.
 
 **The seam.** The **OSC codec through the shared core**
 (`crates/clausters-core-web`, a thin wasm-bindgen shell over `clausters-core`,
@@ -233,6 +233,21 @@ vectors frozen from the Python builders, rather than on the source.
 A Faust def reaches a **native** server only: the in-page engine is the
 `synth,embed` build with no LLVM JIT. That is a property of the build, not of
 the client — nothing above the seam names a carrier.
+
+**The GUI.** `GuiHost` and the GuiDef builders, mirroring the Python client's
+`clausters/gui/`: the widget catalogue as functions (`gui.window`, `gui.knob`,
+`gui.waveform`, `gui.track`, …) emitting the same JSON document, the same
+client-side id allocation out of one recycling namespace, and the same
+name-addressed handles (`win.widget("cutoff").set({ value: 800.0 })`). It sits
+on the very same `Connection` seam the audio client does, so the two carriers a
+browser has are one line apart: `GuiHost.page()` drives the wasm host on this
+page's canvas through its binding bridge, `GuiHost.connect(url)` a native
+`clausters-gui --ws` host. A widget is **bound** the same way
+(`w.bind("/n_set", node.id, "freq")`), and the value then flows host → engine
+with no round trip through the page's script. Two differences from the
+reference client, both in `docs/decisions.md`: the options are camelCase where
+the props are the wire's snake_case, and there is **no pump** — the host's
+`/gui_event`/`/gui_closed` arrive as handle callbacks, `query` as a promise.
 
 The package mirrors the Python client's structure (`src/base`, `src/defs`,
 `src/gui`, … with `examples/` and `tests/` beside them) and the toolchain is

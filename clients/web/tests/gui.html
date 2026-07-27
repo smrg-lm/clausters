@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters GUI over the in-page carrier</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      canvas { display: block; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the GuiDef builders and <code>GuiHost</code> over the in-page
+        carrier: a panel built here, opened on the wasm host in this page, then
+        <em>played with</em> — an unbound control's move comes back as a
+        <code>/gui_event</code>, a bound one drives the engine in this tab's
+        AudioWorklet with no round trip through this script.</div>
+      <button id="boot">boot + drive</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The in-page half of W2's acceptance (clients/web/test.sh, headless
+      Chrome): ?smoke=1 auto-runs. The gestures are synthesized as pointer
+      events on the host's canvas — the same path a user's hand takes, so what
+      is asserted is the host's own interaction, not a simulated one. Verdict
+      beaconed as a fetch, read from the HTTP access log. The WS half — the
+      same client against a native `clausters-gui --ws` — is
+      tests/gui-host.test.ts.
+    -->
+    <script type="module">
+      import {
+        loadOsc, pageConnection, server as engine,
+        Server, SynthDef, GuiHost, guiHost, gui,
+        control, out, sine,
+      } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      // A pointer gesture on the host's canvas, in the widget coordinates the
+      // GuiDef lays out in (device pixels from the canvas origin).
+      function pointer(canvas, type, x, y, buttons) {
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;   // the HiDPI factor
+        canvas.dispatchEvent(new PointerEvent(type, {
+          bubbles: true, cancelable: true, pointerId: 1, isPrimary: true,
+          pointerType: "mouse", button: 0, buttons,
+          clientX: rect.left + x / scale,
+          clientY: rect.top + y / scale,
+        }));
+      }
+
+      async function run() {
+        await loadOsc();
+
+        // The audio side first: something for a bound widget to drive.
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        const server = await Server.open(await pageConnection());
+        const freq = control("freq", 220.0);
+        const amp = control("amp", 0.1);
+        await server.addSynthDef(
+          new SynthDef("gui_tone", out(0.0, sine(freq).mul(amp))));
+        const synth = server.synth("gui_tone", { freq: 220.0, amp: 0.1 });
+        await server.sync();
+        log(`playing node ${synth.id}`);
+
+        // The GUI side: the same panel a script would write, over the in-page
+        // host — nothing here names a carrier.
+        const host = await GuiHost.page();
+        const { canvas } = await guiHost();
+        const tree = gui.window(
+          { title: "driven from TypeScript", w: 480, h: 300, layout: "col",
+            margin: 8.0, gap: 8.0 },
+          gui.label("knob: bound to the engine — slider: back to this script",
+                    { h: 28 }),
+          gui.knob({ name: "freq", min: 50.0, max: 2000.0, value: 220.0, h: 110 }),
+          gui.slider({ name: "cutoff", min: 0.0, max: 1.0, value: 0.2, h: 110 }),
+        );
+        const win = host.open(tree);
+        log(`window ${win.id}, widgets ${win.widgetNames().join(", ")}`);
+
+        // The ids were assigned into the tree in place.
+        if (typeof tree.children[1].id !== "number") {
+          throw new Error("the knob was never assigned an id");
+        }
+
+        // The unbound control reports to this script; the bound one bypasses
+        // it and sends /n_set straight to the engine.
+        const events = [];
+        win.widget("cutoff").onEvent((...args) => events.push(args));
+        win.widget("freq").bind("/n_set", synth.id, "freq");
+
+        // The host holds what was sent (a /gui_query round trip in-page).
+        const info = await win.widget("cutoff").query();
+        if (info.type !== "slider" || info.props.max !== 1) {
+          throw new Error(`unexpected widget: ${JSON.stringify(info)}`);
+        }
+        log(`queried: ${info.type} over [${info.props.min}, ${info.props.max}]`);
+
+        // Let the host lay the window out on its canvas before touching it.
+        await sleep(600);
+
+        // A press on the slider sets its value from where it landed: the
+        // widget's band is y 162..272, a quarter along its width.
+        pointer(canvas, "pointerdown", 8 + 0.25 * 464, 217, 1);
+        await sleep(50);
+        pointer(canvas, "pointerup", 8 + 0.25 * 464, 217, 0);
+        for (let i = 0; i < 40 && events.length === 0; i++) await sleep(50);
+        if (events.length === 0) {
+          throw new Error("the slider never emitted a /gui_event");
+        }
+        log(`/gui_event from the slider: ${JSON.stringify(events[0])}`);
+        const moved = await win.widget("cutoff").query();
+        if (moved.props.value === 0.2) {
+          throw new Error("the slider's value never moved");
+        }
+
+        // A drag on the knob: it is bound, so the value goes to the engine and
+        // *not* to this script. The knob's band is y 44..154.
+        const before = (await server.nodeQuery(synth)).controls.freq;
+        const seen = events.length;
+        pointer(canvas, "pointerdown", 240, 100, 1);
+        await sleep(50);
+        pointer(canvas, "pointermove", 240, 60, 1);
+        await sleep(50);
+        pointer(canvas, "pointerup", 240, 60, 0);
+
+        let after = before;
+        for (let i = 0; i < 40 && after === before; i++) {
+          await sleep(50);
+          after = (await server.nodeQuery(synth)).controls.freq;
+        }
+        if (after === before) {
+          throw new Error(`the bound knob never reached the engine (freq ${after})`);
+        }
+        if (events.length !== seen) {
+          throw new Error("a bound widget must not report to the script");
+        }
+        log(`bound knob drove the engine: freq ${before} -> ${after}`);
+
+        // Closing frees the subtree: a query still answers, with the empty
+        // type that means "no such widget".
+        win.close();
+        await sleep(100);
+        const gone = await win.widget("cutoff").query();
+        if (gone.type !== "") {
+          throw new Error(`the widget outlived its window: ${gone.type}`);
+        }
+
+        synth.free();
+        verdict(`PASS: page GUI carrier — event ${JSON.stringify(events[0])}, `
+          + `bound freq ${before} -> ${after}, subtree freed`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

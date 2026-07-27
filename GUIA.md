@@ -181,6 +181,21 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   mueven con el LFO por `/c_stream` sobre el engine in-page, y la perilla
   `freq` (bindeada `/n_set`) cambia el tono al arrastrarla. Sin ningún proceso
   servidor.
+- **Una GUI construida y manejada desde TypeScript (cliente web).**
+  `clients/web/build.sh`, después `(cd clients/web && python3 -m http.server)` y
+  abrir `http://localhost:8000/examples/gui-host.html` → **play** (el gesto de
+  autoplay) y **panel**: el canvas del host muestra la ventana armada con los
+  builders (`gui.window`, `gui.knob`, …). Girar `freq` → **cambia el tono sin
+  pasar por el script** (está *bindeada*: host → engine in-page); girar
+  `cutoff` o `amp` → el evento vuelve a la página, que manda el `/n_set` (la
+  nota de abajo dice cuál fue). **meters**: la perilla escribe un bus de
+  control y el meter/scope lo leen por `/c_stream` — un lazo sin script en el
+  medio. **views**: waveform y espectrograma del mismo render bajo un `link`,
+  la rueda zoomea los dos juntos, y arrastrar un punto del `bpf` avisa cuántos
+  break-points quedaron. Con un `clausters-gui --ws` corriendo, el botón
+  **drive a native host** manda todo eso a la ventana nativa sin cambiar una
+  línea del ejemplo. Versión scriptada: `clients/web/test.sh` (Chrome headless;
+  `tests/gui.html` sintetiza los gestos sobre el canvas).
 - **El shell de aplicación (props de layout).** `examples/gui_shell.py` abre
   una "aplicación": barra de menú de altura fija arriba (menú + play/stop),
   área de trabajo elástica (sidebar de ancho fijo con knob/slider + scope que

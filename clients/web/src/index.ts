@@ -8,14 +8,19 @@
 // WebSocket — and `defs/` builds and drives what runs on it (`Server`, the
 // two def families, nodes, buses and buffers), naming no transport.
 //
+// The GUI host is driven the same way: `GuiHost` (the `gui` namespace holds
+// the GuiDef builders — `gui.window`, `gui.knob`, …) sits on that same
+// connection seam, over the in-page host or a `--ws` one.
+//
 // Importing this module registers the `<clausters-bundle>` and
 // `<clausters-power>` custom elements as a side effect; the singletons stay
 // lazy until first used.
 
 export { server } from "./engine/server.ts";
 export type { ClaustersServer, ReplyListener } from "./engine/server.ts";
-export { guiHost } from "./gui/host.ts";
+export { GuiHost, guiHost, pageGuiConnection } from "./gui/host.ts";
 export type { ClaustersGui } from "./gui/host.ts";
+export * as gui from "./gui/index.ts";
 export { bootBundle } from "./bundle.ts";
 export type { BundleManifest } from "./bundle.ts";
 export { ClaustersBundle, ClaustersPower } from "./elements.ts";

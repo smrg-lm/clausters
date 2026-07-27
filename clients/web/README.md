@@ -43,6 +43,12 @@ The client proper (`src/defs/`, mirroring the Python client's `clausters/defs/`)
 - `SynthDef` + the lowercase UGen callables (`sine`, `saw`, `rlpf`, `envGen`, `out`, `pan2`, …), and `FaustDef` + the Faust signal API (`signals`), the two def families as peers. `GraphDef` wires several of either into one named, instantiable configuration with a port surface.
 - The graph composes **by method**, TypeScript having no operator overloading: `sine(freq).mul(amp)` where the Python client writes `sine(freq) * amp`. The emitted spec JSON is identical, and `tests/def-parity.test.ts` holds that against vectors frozen from the Python builders (`tests/gen-def-vectors.py`).
 
+The GUI client (`src/gui/`, mirroring the Python client's `clausters/gui/`):
+
+- `GuiHost` — the object that drives a GUI host, on the same connection seam: `GuiHost.page()` for the wasm host on this page's canvas (through the `guiHost()` singleton's binding bridge) and `GuiHost.connect(url)` for a native `clausters-gui --ws` host. It carries `open`/`define` (a whole tree in one `/gui_def`, with the ids assigned into it in place), `set`, `free`, `bind`/`unbind`, `query` and `load`.
+- The GuiDef builders in the `gui` namespace (`gui.window`, `gui.knob`, `gui.waveform`, `gui.track`, …) — the whole widget catalogue, emitting the same JSON document the Python builders do (`tests/gui-parity.test.ts` holds that against vectors frozen from them). The options are camelCase where the wire's props are snake_case (`textSize` → `text_size`).
+- Widgets are addressed by **name**, not by integer: `win.widget("cutoff").set({ value: 800.0 })`, `.onEvent(fn)`, `.bind("/n_set", node.id, "freq")`. A **bound** widget's value goes from the host straight to the audio server, with no round trip through the page's script. **Nothing pumps** — events arrive as callbacks, `query` resolves a promise.
+
 ```js
 import { loadOsc, pageConnection, Server, SynthDef, control, out, sine }
   from "./dist/index.js";
@@ -57,4 +63,17 @@ server.set(note, { freq: 220.0 });
 note.free();
 ```
 
-The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` the GUI host over WebSocket, `graph-controls/` — a GraphDef's control surface as one web component, its bundle authored with the Python client (`make_bundle.py`) — and `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are the `scripts/smoke-web*.sh` set at the repo root plus `scripts/parity-web.sh`, and `./test.sh` here.
+```js
+import { GuiHost, gui } from "./dist/index.js";
+
+const host = await GuiHost.page();          // or GuiHost.connect(wsUrl)
+const win = host.open(gui.window(
+  { title: "a tone", w: 480, h: 240, layout: "col" },
+  gui.knob({ name: "freq", label: "freq", min: 50.0, max: 2000.0, value: 220.0 }),
+  gui.slider({ name: "amp", label: "amp", min: 0.0, max: 1.0, value: 0.2 }),
+));
+win.widget("freq").bind("/n_set", note.id, "freq");   // host -> engine, no script
+win.widget("amp").onEvent((value) => server.set(note, { amp: value }));
+```
+
+The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` a GUI built and driven from TypeScript — the bound and the scripted control paths side by side, a metered bus, the linked waveform + spectrogram, and one button that swaps the in-page host for a native `--ws` one — `graph-controls/` — a GraphDef's control surface as one web component, its bundle authored with the Python client (`make_bundle.py`) — and `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are the `scripts/smoke-web*.sh` set at the repo root plus `scripts/parity-web.sh`, and `./test.sh` here.

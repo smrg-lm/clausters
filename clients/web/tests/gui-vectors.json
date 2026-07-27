@@ -1,0 +1,511 @@
+[
+  {
+    "name": "panel_controls",
+    "tree": {
+      "type": "window",
+      "title": "panel",
+      "w": 480,
+      "h": 420,
+      "layout": "col",
+      "margin": 8.0,
+      "children": [
+        {
+          "type": "label",
+          "id": 1,
+          "text": "clausters",
+          "text_size": 3.0,
+          "align": "center",
+          "h": 24
+        },
+        {
+          "type": "panel",
+          "id": 2,
+          "layout": "row",
+          "gap": 10.0,
+          "children": [
+            {
+              "type": "knob",
+              "id": 3,
+              "label": "freq",
+              "min": 50.0,
+              "max": 2000.0,
+              "value": 220.0
+            },
+            {
+              "type": "slider",
+              "id": 4,
+              "label": "cutoff",
+              "min": 20.0,
+              "max": 20000.0,
+              "value": 800.0,
+              "vertical": true
+            },
+            {
+              "type": "number",
+              "id": 5,
+              "label": "amp",
+              "min": 0.0,
+              "max": 1.0,
+              "value": 0.2
+            }
+          ]
+        },
+        {
+          "type": "panel",
+          "id": 6,
+          "layout": "row",
+          "h": 40,
+          "children": [
+            {
+              "type": "button",
+              "id": 7,
+              "label": "ping"
+            },
+            {
+              "type": "toggle",
+              "id": 8,
+              "label": "gate",
+              "value": 1
+            },
+            {
+              "type": "menu",
+              "id": 9,
+              "options": [
+                "sine",
+                "saw",
+                "pulse"
+              ],
+              "index": 1,
+              "label": "wave"
+            },
+            {
+              "type": "text",
+              "id": 10,
+              "value": "/n_set 1000 freq 440",
+              "multiline": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "containers",
+    "tree": {
+      "type": "window",
+      "title": "workspace",
+      "layout": "col",
+      "theme": {
+        "window_fill": "#0d0d12"
+      },
+      "children": [
+        {
+          "type": "scroll",
+          "id": 1,
+          "axis": "y",
+          "content_h": 1200.0,
+          "view_y": 40.0,
+          "view_zoom": 1.0,
+          "layout": "free",
+          "zoom": 0,
+          "children": [
+            {
+              "type": "panel",
+              "id": 2,
+              "theme": {
+                "panel_fill": "#101018",
+                "accent": "#40c0a0"
+              },
+              "x": 0.0,
+              "y": 0.0,
+              "w": 200.0,
+              "h": 1200.0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "heavy_views",
+    "tree": {
+      "type": "window",
+      "title": "views",
+      "layout": "col",
+      "children": [
+        {
+          "type": "waveform",
+          "id": 1,
+          "path": "take.f32",
+          "channels": 2,
+          "base_bucket": 512,
+          "ruler": "beats",
+          "ruler_y": "db",
+          "tempo": 2.0,
+          "beat_at": 0.0,
+          "quant": 4.0,
+          "sel_start": 1000.0,
+          "sel_len": 4000.0,
+          "playhead_at": 48000.0,
+          "y_start": 0.25,
+          "y_len": 0.5,
+          "link": 7,
+          "overlay": 1
+        },
+        {
+          "type": "spectrogram",
+          "id": 2,
+          "cache": "take.stft",
+          "window_size": 2048,
+          "hop": 512,
+          "sample_rate": 48000.0,
+          "db_floor": -90.0,
+          "db_ceil": 0.0,
+          "freq_scale": "mel",
+          "colormap": 1,
+          "ruler": "time",
+          "ruler_y": "hz",
+          "link": 7
+        },
+        {
+          "type": "plot",
+          "id": 3,
+          "data": [
+            0.0,
+            0.5,
+            -0.5,
+            1.0
+          ],
+          "view": "spectrum",
+          "ruler": "samples",
+          "ruler_y": "off",
+          "fft_size": 1024,
+          "db_floor": -100.0,
+          "freq_scale": "log",
+          "label": "render"
+        }
+      ]
+    }
+  },
+  {
+    "name": "live_views",
+    "tree": {
+      "type": "window",
+      "title": "live",
+      "layout": "col",
+      "children": [
+        {
+          "type": "meter",
+          "id": 1,
+          "bus": 10,
+          "min": -1.0,
+          "max": 1.0,
+          "label": "bus"
+        },
+        {
+          "type": "scope",
+          "id": 2,
+          "bus": 10,
+          "min": -1.0,
+          "max": 1.0
+        },
+        {
+          "type": "scope",
+          "id": 3,
+          "bus": 0,
+          "tap": 0,
+          "channels": 2,
+          "window_ms": 20.0,
+          "trigger": 0.0,
+          "overlay": 1,
+          "ruler": "off",
+          "ruler_y": "off"
+        },
+        {
+          "type": "phasescope",
+          "id": 4,
+          "tap": 0,
+          "window_ms": 30.0,
+          "tap2": 1,
+          "hold": 0
+        },
+        {
+          "type": "spectrum",
+          "id": 5,
+          "tap": 0,
+          "channels": 2,
+          "fft_size": 2048,
+          "db_floor": -100.0,
+          "db_ceil": 0.0,
+          "freq_scale": "bark",
+          "averaging": 0.5,
+          "peak_hold": 1
+        },
+        {
+          "type": "nodetree",
+          "id": 6,
+          "group": 0,
+          "controls": 1
+        }
+      ]
+    }
+  },
+  {
+    "name": "bpf_points",
+    "tree": {
+      "type": "window",
+      "title": "envelopes",
+      "layout": "col",
+      "children": [
+        {
+          "type": "bpf",
+          "id": 1,
+          "points": [
+            0.0,
+            0.0,
+            1,
+            0.0,
+            0.5,
+            1.0,
+            2,
+            0.0,
+            1.0,
+            0.0,
+            5,
+            -4.0
+          ],
+          "min": 0.0,
+          "max": 1.0,
+          "duration": 1.0,
+          "label": "env",
+          "exp": 0
+        },
+        {
+          "type": "bpf",
+          "id": 2,
+          "points": [
+            0.0,
+            0.0,
+            5,
+            -4.0,
+            0.01,
+            1.0,
+            5,
+            -4.0,
+            0.21000000000000002,
+            0.6,
+            5,
+            -4.0,
+            0.6100000000000001,
+            0.0,
+            1,
+            0.0
+          ]
+        },
+        {
+          "type": "bpf",
+          "id": 3,
+          "points": [
+            0.0,
+            0.0,
+            1,
+            0.0,
+            2.0,
+            1.0,
+            8,
+            0.0
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "timeline_editors",
+    "tree": {
+      "type": "window",
+      "title": "arrangement",
+      "layout": "col",
+      "children": [
+        {
+          "type": "pianoroll",
+          "id": 1,
+          "notes": [
+            0.0,
+            4800.0,
+            60.0,
+            100,
+            0,
+            4800.0,
+            4800.0,
+            67.0,
+            90,
+            1
+          ],
+          "osc": [
+            0.0,
+            "start",
+            9600.0,
+            ""
+          ],
+          "min": 48,
+          "max": 84,
+          "snap": 1200.0,
+          "ruler": "beats",
+          "tempo": 2.0,
+          "playhead_at": -1.0,
+          "velocity": 1,
+          "osc_lane": 1
+        },
+        {
+          "type": "piano",
+          "id": 2,
+          "min": 36,
+          "max": 96,
+          "active_min": 48,
+          "active_max": 84,
+          "velocity": 100,
+          "channel": 0,
+          "voice": "piano_voice",
+          "voice_args": [
+            "amp",
+            0.3
+          ],
+          "pan": 1,
+          "overview": 1
+        },
+        {
+          "type": "track",
+          "id": 3,
+          "label": "drums",
+          "height": 2.0,
+          "snap": 1200.0,
+          "ruler": "time",
+          "sample_rate": 48000.0,
+          "playhead_at": 0.0,
+          "children": [
+            {
+              "type": "clip",
+              "id": 4,
+              "dur": 48000.0,
+              "offset": 0.0,
+              "path": "take.f32",
+              "channels": 1,
+              "base_bucket": 256,
+              "label": "take"
+            },
+            {
+              "type": "clip",
+              "id": 5,
+              "dur": 24000.0,
+              "offset": 48000.0,
+              "notes": [
+                0.0,
+                12000.0,
+                64.0,
+                100,
+                0
+              ],
+              "min": 48.0,
+              "max": 84.0
+            },
+            {
+              "type": "clip",
+              "id": 6,
+              "dur": 24000.0,
+              "offset": 72000.0,
+              "points": [
+                0.0,
+                0.0,
+                1,
+                0.0,
+                24000.0,
+                1.0,
+                3,
+                0.0
+              ],
+              "exp": 0
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "patch_canvas",
+    "tree": {
+      "type": "window",
+      "title": "patch",
+      "layout": "row",
+      "children": [
+        {
+          "type": "patch",
+          "id": 1,
+          "boxes": [
+            {
+              "def": "gsrc",
+              "inlets": [],
+              "outlets": [
+                "out"
+              ],
+              "x": 0.0,
+              "y": 0.0
+            },
+            {
+              "def": "gsink",
+              "inlets": [
+                "in",
+                {
+                  "name": "gain",
+                  "rate": "control"
+                }
+              ],
+              "outlets": [],
+              "x": 0.0,
+              "y": 120.0
+            }
+          ],
+          "cords": [
+            0,
+            0,
+            1,
+            0
+          ],
+          "label": "graph"
+        },
+        {
+          "type": "canvas",
+          "id": 2,
+          "shader": "return vec4<f32>(uv, u.params.x, 1.0);",
+          "params": [
+            0.5,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "buses": [
+            10,
+            -1,
+            -1,
+            -1
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "generic_node",
+    "tree": {
+      "type": "window",
+      "title": "generic",
+      "children": [
+        {
+          "type": "gizmo",
+          "id": 1,
+          "spin": 2.5,
+          "mode": "loose",
+          "w": 64
+        }
+      ]
+    }
+  }
+]

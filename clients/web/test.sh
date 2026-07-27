@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# The web client's single test entry: type-check, the node suites (OSC and def
-# parity with the Python reference + the WS carrier against a real
-# `clausters --ws`), and the page-carrier acceptances (client.html and
-# defs.html under headless Chrome, verdict beaconed through the HTTP access
-# log — the real-time posture of every web smoke; see docs/decisions.md).
+# The web client's single test entry: type-check, the node suites (OSC, def
+# and GuiDef parity with the Python reference + the WS carriers against a real
+# `clausters --ws` server and a real `clausters-gui --ws` host), and the
+# page-carrier acceptances (client.html, defs.html and gui.html under headless
+# Chrome, verdict beaconed through the HTTP access log — the real-time posture
+# of every web smoke; see docs/decisions.md).
 #
-# Prerequisites: ./build.sh (stages engine/ gui-host/ core/), npm install,
-# and `cargo build` at the workspace root for the WS tests' debug server
-# (those tests skip themselves if the binary is missing).
+# Prerequisites: ./build.sh (stages engine/ gui-host/ core/), npm install, and
+# `cargo build` at the workspace root (the WS server) and in clients/gui (the
+# WS GUI host) for the WS suites — those skip themselves if the binary is
+# missing.
 #
 # From clients/web/:  ./test.sh
 set -euo pipefail
@@ -32,7 +34,11 @@ sleep 0.5
 run_page() {   # $1 = page under tests/
     local page="$1" mark verdict decoded
     mark=$(wc -c <"$LOG")
+    # --enable-unsafe-swiftshader: the GUI host needs a WebGL2 adapter, and
+    # headless has no GPU — SwiftShader is the software one. Harmless for the
+    # pages that only make sound.
     "$CHROME" --headless=new --disable-gpu --no-sandbox \
+        --enable-unsafe-swiftshader \
         --autoplay-policy=no-user-gesture-required \
         --user-data-dir="$(mktemp -d)" \
         "http://127.0.0.1:$PORT/tests/$page?smoke=1" >/dev/null 2>&1 &
@@ -60,3 +66,4 @@ run_page() {   # $1 = page under tests/
 
 run_page client.html   # the carrier seam itself
 run_page defs.html     # the def model + Server over that carrier
+run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
