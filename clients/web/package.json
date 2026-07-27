@@ -24,11 +24,39 @@
   "scripts": {
     "check": "tsc",
     "build": "tsc -p tsconfig.build.json",
-    "test": "node --test --test-concurrency=1 'tests/*.test.ts'"
+    "test": "node --test --test-concurrency=1 'tests/*.test.ts'",
+    "docs": "docs/build.sh",
+    "check-package": "node tools/check-package.mjs",
+    "prepublishOnly": "node tools/check-package.mjs"
   },
   "devDependencies": {
     "@types/node": "^24",
     "typescript": "^7"
+  },
+  "keywords": [
+    "audio",
+    "synthesis",
+    "dsp",
+    "osc",
+    "supercollider",
+    "faust",
+    "webassembly",
+    "audioworklet",
+    "webgpu"
+  ],
+  "homepage": "https://github.com/smrg-lm/clausters/tree/main/clients/web#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smrg-lm/clausters.git",
+    "directory": "clients/web"
+  },
+  "bugs": "https://github.com/smrg-lm/clausters/issues",
+  "author": "Lucas Samaruga",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "license": "GPL-3.0-or-later"
 }

@@ -3053,3 +3053,20 @@ public surface a little — the types that appeared in signatures without being
 exported (`ParamSpec`, `SpecInput`, `TimedMessage`, `Props`, …) are exported
 now, which is the honest reading of a warning that says a documented signature
 mentions something the reader cannot name.
+
+## Publishing is a step, and a checker stands in for rehearsing it
+
+The npm package is built, tested and installable from a checkout long before it
+is published, and the publication itself is deliberately a later step. The risk
+that creates is that publishing is the one operation nobody rehearses: its
+mistakes — a tarball carrying the emitted modules but not the wasm bundles
+`build.sh` stages beside them, a `version` that drifted from the crate's, an
+`exports` entry pointing at a file the `files` list leaves out — are invisible
+here and only surface in somebody else's install.
+
+So the check runs now, twice: `tools/check-package.mjs` is what `prepublishOnly`
+runs, and `tests/package.test.ts` runs it in the ordinary suite along with a
+read of what `npm pack --dry-run` would actually ship. The version rule it
+enforces is the repository's — package, crate and wheel are one release, one
+SemVer — while the binary ABI counters stay separate, as they are everywhere
+else.

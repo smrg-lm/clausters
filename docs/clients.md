@@ -405,10 +405,15 @@ package over the same OSC, against a native server.
   beside the cdylibs, so a `FaustDef` compiles on a machine with neither
   installed. Cross-platform CI wheels (cibuildwheel / manylinux) are still
   future work.
-- **TypeScript / web (packaging pending)**: an npm package of the client's
-  `dist/` — plain ES modules plus the wasm the core and the GUI host compile
-  to. No per-platform native addon: the browser build is wasm, and a native
-  server is reached over WebSocket.
+- **TypeScript / web (built here, publication pending)**: the npm package is
+  the client's `dist/` — plain ES modules plus the wasm the core, the engine
+  and the GUI host compile to, staged beside them. No per-platform native
+  addon: the browser build is wasm, and a native server is reached over
+  WebSocket. `npm install ./clients/web` installs it from a checkout today; the
+  tree is held publishable by a checker (`npm run check-package`, which
+  `prepublishOnly` runs) that refuses a `dist/` missing its wasm bundles or a
+  version out of step with the crate's. What is left is the publication
+  itself.
 - **Reproducible Faust build (done for native/CI/release)**: the `faust` feature
   needs libfaust built with the LLVM backend. It is now vendored under
   `third_party/` — `faust.pin` (the exact commit + LLVM version) and
@@ -435,5 +440,6 @@ package over the same OSC, against a native server.
 | Notation layer in the shared core (`clausters-notation` + `clausters_core::notation`, over the C ABI; every client a shell) | done |
 | Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
 | TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the document's components) | done |
-| npm packaging of the web client | planned |
+| npm packaging of the web client (the tarball, its contents checked) | done |
 | Web client documentation book (mdBook + generated API reference) | done |
+| Publishing the web client (npm registry, Read the Docs project) | planned |

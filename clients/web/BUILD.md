@@ -145,6 +145,32 @@ with `docs/src/SUMMARY.md`. It runs with warnings as errors, so a doc comment
 referring to something that moved or became private fails the build rather than
 producing a dangling page — the rustdoc posture, on this leg.
 
+## Publishing
+
+The package is **not published yet**; this is the procedure for when it is, and
+`npm run check-package` (which `prepublishOnly` also runs) is the gate.
+
+1. **One release, one version.** `package.json`'s `version` tracks the
+   workspace crate's — the checker refuses a mismatch. The binary ABI counters
+   are separate and are not SemVer; see the repo-root `CLAUDE.md`.
+2. **Build everything, then check the tree.** A tarball with the modules but
+   without the staged wasm bundles installs and does nothing:
+
+   ```sh
+   ./build.sh && ./test.sh          # the wasm bundles + the emit, then green
+   npm run check-package            # dist/ complete, version aligned
+   npm pack --dry-run               # read the file list once, by eye
+   ```
+
+3. **Publish.** `npm publish` (the package is scoped `public` by
+   `publishConfig`). A dry run first: `npm publish --dry-run`.
+4. **The book.** Create a third Read the Docs project pointing at
+   `clients/web/.readthedocs.yaml` (Settings > Advanced > "Path to
+   configuration file"), the way the other two do. Once it resolves, add the
+   inbound cross-links the other books do not carry yet: the badge and link
+   rows in the root `README.md`, `clients/python/README.md` and
+   `clients/gui/README.md`, and the Python book's introduction.
+
 ## Regenerating the parity vectors
 
 Four vector files are committed, all generated from the Python client — the
