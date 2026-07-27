@@ -52,6 +52,10 @@
 //!   cache.
 //! - [`bytes`] — little-endian cache (de)serialization the analysis caches
 //!   share.
+//! - [`bundle`] — the component bundle's manifest and its resolver: the
+//!   placeholder pass that turns one persisted GuiDef template into N
+//!   non-colliding mounted instances, shared so a browser tab, a
+//!   `clausters-gui --standalone` and a loopback host read one format.
 //! - [`patch`] — the GUI patcher's cord → bus pass: a directed patch (typed
 //!   inlets/outlets, cords) compiled to a GraphDef's bus wiring (one bus per
 //!   connected net, its writers summing), shared so every client that draws a
@@ -63,6 +67,7 @@
 //!   feature so a default core carries no XML/regex weight; compiles to wasm.
 
 pub mod builtins;
+pub mod bundle;
 pub mod bytes;
 pub mod clocksync;
 pub mod config;

@@ -11,19 +11,21 @@ description = "Shared native core for Clausters: numeric builtins, seeded RNG an
 # JS/wasm client reuses. The native libverovio binding lives in the separate
 # `clausters-notation` crate; this feature is only the wasm-safe logic. Pulls
 # an XML reader, a regex engine and JSON so the walk and the encoder compile.
-notation = ["dep:roxmltree", "dep:regex", "dep:serde_json"]
+notation = ["dep:roxmltree", "dep:regex"]
 
 [dependencies]
 # Only the `osc` module needs it; the builtins/rng/tempoclock hot paths are
 # dependency-free and allocation-free so the audio thread can call them.
 rosc = "0.11"
 # The `notation` feature only (all wasm-safe, pure Rust): roxmltree reads the
-# verovio SVG (a single read-only DOM, no writer), regex parses its transforms
-# and glyph refs exactly as the Python original did, and serde_json serializes
-# the display list the FFI hands back size-then-fill.
+# verovio SVG (a single read-only DOM, no writer), and regex parses its
+# transforms and glyph refs exactly as the Python original did.
 roxmltree = { version = "0.20", optional = true }
 regex = { version = "1", optional = true }
-serde_json = { version = "1", optional = true }
+# The `bundle` module's format is JSON — a manifest, a GuiDef template whose
+# props are arbitrary values — so the resolver reads and writes `Value`
+# directly; `notation` serializes its display list through it too.
+serde_json = "1"
 # The `fft` module's forward real FFT, shared by the GUI spectrogram and the
 # server's coming FFT/IFFT UGens. `no_std` and zero-allocation (compile-time
 # power-of-two sizes), so a real-time caller never allocates. The default
