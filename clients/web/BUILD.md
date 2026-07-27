@@ -147,29 +147,40 @@ producing a dangling page — the rustdoc posture, on this leg.
 
 ## Publishing
 
-The package is **not published yet**; this is the procedure for when it is, and
-`npm run check-package` (which `prepublishOnly` also runs) is the gate.
+The package is published to npm as **`clausters`**, and it is published the way
+the wheel is: **by the release workflow, on a `v*` tag**, never by hand from a
+working copy. The three artifacts — crate, wheel and package — carry one
+version, so one tag cuts all three (`docs/contributing.md`, "Releases and
+publishing"). `npm run check-package`, which `prepublishOnly` also runs, is the
+gate the workflow passes through.
 
 1. **One release, one version.** `package.json`'s `version` tracks the
    workspace crate's — the checker refuses a mismatch. The binary ABI counters
    are separate and are not SemVer; see the repo-root `CLAUDE.md`.
-2. **Build everything, then check the tree.** A tarball with the modules but
-   without the staged wasm bundles installs and does nothing:
+2. **Rehearse locally before tagging.** A tarball with the modules but without
+   the staged wasm bundles installs and does nothing, and the workflow builds
+   the same way this does:
 
    ```sh
    ./build.sh && ./test.sh          # the wasm bundles + the emit, then green
    npm run check-package            # dist/ complete, version aligned
    npm pack --dry-run               # read the file list once, by eye
+   npm publish --dry-run            # what the tag will do
    ```
 
-3. **Publish.** `npm publish` (the package is scoped `public` by
-   `publishConfig`). A dry run first: `npm publish --dry-run`.
-4. **The book.** Create a third Read the Docs project pointing at
-   `clients/web/.readthedocs.yaml` (Settings > Advanced > "Path to
-   configuration file"), the way the other two do. Once it resolves, add the
-   inbound cross-links the other books do not carry yet: the badge and link
-   rows in the root `README.md`, `clients/python/README.md` and
-   `clients/gui/README.md`, and the Python book's introduction.
+3. **Tag.** `git tag vX.Y.Z && git push --tags` runs `release.yml`, whose
+   `publish-npm` job compiles the three wasm bundles with the lockfile-pinned
+   `wasm-bindgen` CLI, emits `dist/`, runs the checker and publishes with
+   provenance. Auth is the `NPM_TOKEN` secret of the repository's `npm`
+   environment — an automation token with publish rights. (npm's OIDC trusted
+   publishing is configured per package on a package that already exists, so
+   the token is what can create one; it can be swapped in later.)
+4. **The wasm bundles ship inside the tarball** (~2 MB), rather than being
+   fetched at run time: an installed package has to work offline and with no
+   CDN. The worklet is reached as `new URL("./worklet.js", import.meta.url)`,
+   the form every bundler recognises as an asset to copy rather than a module
+   to inline — a worklet is loaded by URL, into another realm. A consumer whose
+   bundler does neither passes its own `workletUrl` to `server()`.
 
 ## Regenerating the parity vectors
 

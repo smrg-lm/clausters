@@ -114,21 +114,40 @@ is reproducible with the same line:
 
 ## Releases and publishing
 
+- **One version, one tag.** The crate, the Python wheel and the npm package are
+  a single release carrying the repository's SemVer, so they are cut together
+  by one `v*` tag rather than each on its own schedule; `clients/web`'s package
+  checker refuses a `package.json` that disagrees with the crate, and the
+  wheel's `pyproject.toml` is held to the same number by hand. The binary ABI
+  counters are *not* SemVer and move
+  independently — the rules, including which of them forces a breaking-tier
+  bump, are in the repo-root `CLAUDE.md`.
 - **Tagged releases** (`.github/workflows/release.yml`): pushing a `v*` tag
   builds the self-contained Python wheel (client + embedded server +
   standalone binary; Linux x86_64 for now) and a server-binary tarball,
-  publishes the wheel to PyPI and attaches both to a GitHub release. PyPI
-  auth is [Trusted Publishing](https://docs.pypi.org/trusted-publishers/)
-  (OIDC — no stored token): the PyPI project must list this repository with
-  workflow `release.yml` and environment `pypi` as a trusted publisher, and
-  the repository needs a `pypi` environment. There is deliberately **no
-  sdist**: the package compiles cdylibs from the Rust workspace, which an
-  sdist of `clients/python` would not contain.
-- **Read the Docs** hosts the two books as two projects pointing at the same
+  publishes the wheel to PyPI and the web client to npm, and attaches the wheel
+  and the binary to a GitHub release. PyPI auth is
+  [Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC — no
+  stored token): the PyPI project must list this repository with workflow
+  `release.yml` and environment `pypi` as a trusted publisher, and the
+  repository needs a `pypi` environment. There is deliberately **no sdist**:
+  the package compiles cdylibs from the Rust workspace, which an sdist of
+  `clients/python` would not contain.
+- **The npm leg** builds what CI never does: the `publish-npm` job installs the
+  wasm32 target and the `wasm-bindgen` CLI the lockfiles pin, runs
+  `clients/web/build.sh` to compile and stage the three wasm bundles, passes
+  `npm run check-package` (which refuses a `dist/` missing a bundle, or a
+  version disagreeing with the crate's) and publishes with provenance. Auth is
+  an automation token in the `NPM_TOKEN` secret of an `npm` environment, not
+  OIDC: npm's trusted publishing is configured per package, on a package the
+  registry already has. The procedure and the local rehearsal are in
+  `clients/web/BUILD.md`, "Publishing".
+- **Read the Docs** hosts the three books as three projects pointing at the same
   repository, each selecting its config under *Settings → Advanced → Path to
   configuration file*: the server/workspace book uses the repo-root
-  `.readthedocs.yaml`, the Python client book uses
-  `clients/python/.readthedocs.yaml`.
+  `.readthedocs.yaml`, the Python client book
+  `clients/python/.readthedocs.yaml`, the web client book
+  `clients/web/.readthedocs.yaml`.
 
 ## Conventions
 

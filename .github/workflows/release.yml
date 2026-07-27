@@ -1,12 +1,19 @@
 # Release: on a version tag (v*), build the self-contained Python wheel
 # (client + embedded server + standalone server binary, see clients/python/
 # setup.py) and the standalone server binary, publish the wheel to PyPI and
-# attach both to a GitHub release.
+# the web client to npm, and attach the wheel and the binary to a GitHub
+# release. The three artifacts carry ONE version -- the repository's SemVer --
+# so they are cut by the same tag rather than each on its own schedule.
 #
 # PyPI auth is Trusted Publishing (OIDC): the PyPI project `clausters` must
 # list this repository/workflow as a trusted publisher and the repo must have
 # a `pypi` environment (see docs/contributing.md, "Releases"). No API token
 # is stored.
+#
+# npm auth is an automation token in the `npm` environment's NPM_TOKEN secret,
+# not OIDC: npm's own trusted publishing is configured per package, on a
+# package that already exists in the registry, so a token is what can create
+# one. The tarball carries provenance, which is what needs id-token: write.
 #
 # Linux x86_64 only for now; adding macOS/Windows wheels is a matter of
 # extending the build matrix once those targets are verified by hand.
@@ -96,6 +103,54 @@ jobs:
           name: wheel
           path: dist
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-npm:
+    name: publish the web client to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: npm
+    permissions:
+      id-token: write # provenance
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web-wasm
+      # The three wasm bundles are staged by a wasm-bindgen CLI that must be the
+      # exact version the lockfiles pin (the glue they exchange is a private
+      # format). Taken as the prebuilt release binary rather than
+      # `cargo install`, which would rebuild it on every run.
+      - name: The pinned wasm-bindgen CLI
+        run: |
+          PIN=$(sed -n '/^name = "wasm-bindgen"$/{n;s/^version = "\(.*\)"$/\1/p;}' Cargo.lock)
+          echo "staging wasm-bindgen $PIN"
+          mkdir -p "$HOME/bin"
+          curl -sSL "https://github.com/wasm-bindgen/wasm-bindgen/releases/download/${PIN}/wasm-bindgen-${PIN}-x86_64-unknown-linux-musl.tar.gz" \
+            | tar -xz --strip-components=1 -C "$HOME/bin" \
+              "wasm-bindgen-${PIN}-x86_64-unknown-linux-musl/wasm-bindgen"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      # build.sh compiles the engine, the GUI host and the core's JS door to
+      # wasm, stages the bundles into dist/ and emits src/ -> dist/. The
+      # checker then refuses a tree that is missing either half, or a version
+      # that disagrees with the crate's -- one release, one version.
+      - name: Build the package
+        working-directory: clients/web
+        run: |
+          npm ci
+          ./build.sh
+          npm run check-package
+      - name: Publish
+        working-directory: clients/web
+        run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   github-release:
     name: GitHub release assets
