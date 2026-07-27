@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# The web client's single test entry: type-check, the node suites (OSC, def
-# and GuiDef parity with the Python reference + the WS carriers against a real
-# `clausters --ws` server and a real `clausters-gui --ws` host), and the
-# page-carrier acceptances (client.html, defs.html and gui.html under headless
-# Chrome, verdict beaconed through the HTTP access log — the real-time posture
-# of every web smoke; see docs/decisions.md).
+# The web client's single test entry: type-check, the node suites (OSC, def,
+# GuiDef and clock/RNG parity with the Python reference + the WS carriers
+# against a real `clausters --ws` server and a real `clausters-gui --ws`
+# host), and the page-carrier acceptances (client.html, defs.html, gui.html
+# and seq.html under headless Chrome, verdict beaconed through the HTTP access
+# log — the real-time posture of every web smoke; see docs/decisions.md).
 #
 # Prerequisites: ./build.sh (stages engine/ gui-host/ core/), npm install, and
 # `cargo build` at the workspace root (the WS server) and in clients/gui (the
@@ -67,3 +67,4 @@ run_page() {   # $1 = page under tests/
 run_page client.html   # the carrier seam itself
 run_page defs.html     # the def model + Server over that carrier
 run_page gui.html      # the GuiDef builders + GuiHost, gestures and all
+run_page seq.html      # the clock and the patterns on the engine's own clock

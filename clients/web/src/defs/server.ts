@@ -1000,8 +1000,11 @@ export class Server {
     ///   anchor fixes the integer offset between the two counters and the
     ///   sample is then readable synchronously, exactly, with no drift.
     /// - **over a socket** — `/clock` round trips feed the core's sample-clock
-    ///   model, which regresses local time against the server's counter; the
-    ///   returned timebase reads that model, and `track` keeps it fed.
+    ///   model, which regresses local time against the server's counter. The
+    ///   warmup spreads `anchors` round trips `gap` seconds apart (a
+    ///   regression needs a span, not a burst), and `trackEvery` keeps
+    ///   anchoring afterwards so the slope stays fresh; `trackEvery: 0` stops
+    ///   after the warmup.
     ///
     /// A server that does not answer leaves you on wall-clock time: the
     /// returned timebase is a `MonotonicTimebase` and a warning is logged, so
@@ -1011,9 +1014,15 @@ export class Server {
     /// clock never talks to a server itself.
     async sampleTimebase({
         timeout = 2.0,
-        anchors = 4,
-        trackEvery = 2.0,
-    }: { timeout?: number; anchors?: number; trackEvery?: number } = {}): Promise<Timebase> {
+        anchors = 5,
+        gap = 0.05,
+        trackEvery = 0.5,
+    }: {
+        timeout?: number;
+        anchors?: number;
+        gap?: number;
+        trackEvery?: number;
+    } = {}): Promise<Timebase> {
         if (this.connection.sampleClock) {
             const clock = await this.connection.sampleClock();
             return new SampleTimebase(clock.sample, clock.sampleRate);
@@ -1030,9 +1039,12 @@ export class Server {
         }
         const model = new SampleClockModel(info.rate, 64);
         model.addAnchor(info.local, info.sample, info.rate);
-        // Firm the model up before anything schedules against it: a single
-        // anchor gives an offset, several give a rate.
+        // Firm the model up before anything schedules against it: one anchor
+        // gives an offset, several give a rate — but only if they are spread
+        // over enough time. Back-to-back round trips all land inside a couple
+        // of milliseconds, and a regression over that span is noise.
         for (let i = 1; i < anchors; i++) {
+            if (gap > 0) await new Promise((done) => setTimeout(done, gap * 1000));
             const next = await this.clockAnchor(timeout);
             model.addAnchor(next.local, next.sample, next.rate);
         }

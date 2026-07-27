@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters sequencing</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the sequencing layer over the in-page carrier: a
+        <code>TempoClock</code> paced by the engine's own sample clock, a
+        pattern playing notes into it, and the notes' starts and ends read back
+        off the server's notifications.</div>
+      <button id="boot">boot + play</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The page-carrier half of W3's acceptance (clients/web/test.sh, headless
+      Chrome): ?smoke=1 auto-runs and asserts that
+        - `server.sampleTimebase()` returns the engine-anchored sample clock
+          (the in-page carrier shares the page's AudioContext, so no /clock
+          tracking is involved);
+        - a pattern's notes start at the beats its deltas add up to and end a
+          sustain later, as the engine reports them;
+        - a routine's logical time is unaffected by how the page's timers
+          actually fired.
+      Verdict beaconed as a fetch, read from the HTTP access log.
+    -->
+    <script type="module">
+      import {
+        SampleTimebase, Server, SynthDef, TempoClock, control, loadOsc, out,
+        pageConnection, seq, sine,
+      } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+      async function run() {
+        await loadOsc();
+        const connection = await pageConnection();
+        const server = await Server.open(connection);
+
+        // A plain sine: the event's own release frees it, so /n_end is the
+        // note ending exactly where the schedule put it.
+        await server.addSynthDef(
+          new SynthDef("web_seq_beep",
+            out(0.0, sine(control("freq", 440.0)).mul(0.05))),
+        );
+
+        // The in-page engine runs in this page's AudioContext, so the
+        // timebase is anchored, not tracked.
+        const timebase = await server.sampleTimebase();
+        if (!(timebase instanceof SampleTimebase)) {
+          throw new Error("the page carrier did not yield a sample timebase");
+        }
+        log(`sample timebase: ${timebase.sampleRate} Hz, ` +
+            `at sample ${timebase.currentSample()}`);
+
+        // Record the notes as the engine reports them, in seconds from the
+        // clock's own origin.
+        const started = [];
+        const ended = [];
+        const t0 = () => clock.startTime + server.latency;
+        server.onReply(({ addr }) => {
+          const now = Date.now() / 1000;
+          if (addr === "/n_go") started.push(now - t0());
+          else if (addr === "/n_end") ended.push(now - t0());
+        });
+
+        const clock = new TempoClock(1.0, { timebase });
+        clock.start();
+        new seq.Pbind({
+          instrument: "web_seq_beep",
+          degree: new seq.Pseq([0, 2, 4, 7]),
+          dur: 0.25,
+          legato: 4.0, // sustain 1 beat: the four notes overlap
+        }).play(server, { clock });
+
+        await sleep(2600);
+        clock.close();
+
+        const near = (got, want, what) => {
+          if (got.length !== want.length) {
+            throw new Error(`${what}: ${got.length} of ${want.length}`);
+          }
+          got.forEach((value, i) => {
+            if (Math.abs(value - want[i]) > 0.15) {
+              throw new Error(
+                `${what}[${i}] = ${value.toFixed(3)}s, expected ~${want[i]}s`);
+            }
+          });
+        };
+        near(started, [0, 0.25, 0.5, 0.75], "note starts");
+        near(ended, [1.0, 1.25, 1.5, 1.75], "note ends");
+        log(`starts: ${started.map((v) => v.toFixed(3)).join(", ")}`);
+        log(`ends:   ${ended.map((v) => v.toFixed(3)).join(", ")}`);
+        verdict("PASS: four notes scheduled on the engine's sample clock, " +
+          "each starting and ending on its beat");
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>
