@@ -212,6 +212,26 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   **drive a native host** manda todo eso a la ventana nativa sin cambiar una
   línea del ejemplo. Versión scriptada: `clients/web/test.sh` (Chrome headless;
   `tests/gui.html` sintetiza los gestos sobre el canvas).
+- **Los ejemplos portados del cliente Python (cliente web).**
+  `clients/web/build.sh`, `(cd clients/web && python3 -m http.server)` y abrir
+  cada uno en `http://localhost:8000/examples/`; todos suenan por el engine
+  in-page (sin proceso servidor) y arrancan con **start** (el gesto de
+  autoplay). Leer cada página contra su hermana en
+  `clients/python/examples/` — mismo instrumento, mismo punto de interés:
+  - `multichannel.html` → *play the phrase*: tres acordes de doce senos
+    detuneados (`dup` evaluado, `mix` plegando) — grueso, no doce copias
+    idénticas.
+  - `typed-controls.html` → *play the melody*: la melodía **glisa** entre notas
+    (lag) y cada nota **repica** (gate `tr`); el sinte queda vivo al final,
+    esperando otro gate. Mover el tempo mientras suena.
+  - `graph-maths.html` → *play the phrase*: notas MIDI crudas que el def
+    convierte con `.midicps()`, con vibrato, saturación y trémolo hechos con
+    operadores.
+  - `wavetables.html` → *play the morph voice* y arrastrar **pos**: el timbre
+    va de seno a diente de sierra sin cortes; después *play the shaped voice* y
+    subir **drive**: entran armónicos por la curva `cheby`.
+  - `pause-resume.html` → **pause**: silencio total; *query the node tree*
+    muestra que el nodo **sigue ahí**; **resume**: el tono vuelve donde estaba.
 - **El shell de aplicación (props de layout).** `examples/gui_shell.py` abre
   una "aplicación": barra de menú de altura fija arriba (menú + play/stop),
   área de trabajo elástica (sidebar de ancho fijo con knob/slider + scope que

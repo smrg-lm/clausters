@@ -7,6 +7,11 @@ python -m venv .venv && . .venv/bin/activate
 pip install ./clients/python          # builds + bundles the native libs
 ```
 
+Five of these have a **web counterpart** of the same name in
+`clients/web/examples/` — the same instrument written as a page instead of a
+script, sounding through the browser's in-page engine: `multichannel`,
+`typed_controls`, `graph_maths`, `wavetables` and `pause_resume`.
+
 - **`hello_note.py`** — the shortest path to sound: `Server.boot()` then `play(Event(...))`, no `Session` and no clock wiring. The booted server becomes the default session, so a bare event plays immediately and frees itself. Start here.
 
   ```sh
