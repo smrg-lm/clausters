@@ -24,6 +24,8 @@ use clausters_gui::host::{Host, ServerLeg, gui};
 #[cfg(feature = "standalone")]
 use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 #[cfg(feature = "standalone")]
+use clausters_gui::host::bundle;
+#[cfg(feature = "standalone")]
 use clausters_gui::host::embed::EmbedServer;
 #[cfg(feature = "standalone")]
 use clausters_gui::host::{ClientId, ServerLink};
@@ -398,6 +400,34 @@ fn run_standalone(
         .load(name)
         .map_err(|e| format!("--standalone: loading GuiDef \"{name}\": {e}"))?;
 
+    // A manifest that declares the component contract makes this bundle a
+    // *template*: its symbols are allocated and its holes resolved, the same
+    // pass a browser tab runs, so one directory behaves identically on both
+    // legs. Without one — or with a manifest written before the contract — the
+    // saved tree is opened verbatim, exactly as it always was.
+    let manifest = bundle::read_manifest(data_dir).filter(bundle::is_symbolic);
+    let mounted = match &manifest {
+        Some(manifest) => {
+            let template = serde_json::from_slice(&json)
+                .map_err(|e| format!("--standalone: GuiDef \"{name}\" is not a record: {e}"))?;
+            let mut alloc = bundle::MountAllocator::default();
+            let mount = bundle::mount(
+                manifest,
+                &template,
+                &data_dir.to_string_lossy(),
+                &mut alloc,
+                &Default::default(),
+            )
+            .map_err(|e| format!("--standalone: mounting \"{name}\": {e}"))?;
+            Some(mount)
+        }
+        None => None,
+    };
+    let (id, json) = match &mounted {
+        Some(mount) => (mount.def_id, mount.tree.clone()),
+        None => (id, json),
+    };
+
     // The embedded server loads the bundle's defs itself from the data directory
     // (SynthDefs, FaustDefs with the `faust` feature, GraphDefs, MIDI bindings
     // and the boot.json preset) — the same startup the standalone server binary
@@ -409,9 +439,13 @@ fn run_standalone(
     );
 
     // Bring the instrument up: the GuiDef's own `boot` messages (e.g. an /s_new),
-    // unless the config disabled it.
+    // unless the config disabled it. A mounted bundle's boot list came out of
+    // the resolver with its ids already filled in.
     if run_boot {
-        let boot = store::boot_messages(&json);
+        let boot = match &mounted {
+            Some(mount) => mount.messages.clone(),
+            None => store::boot_messages(&json),
+        };
         for msg in &boot {
             send_osc(&embed, msg.clone())?;
         }
