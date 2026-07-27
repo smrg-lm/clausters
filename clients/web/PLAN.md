@@ -69,10 +69,21 @@ The repo-wide posture — minimal, user-space, reproducible — applied to the J
 - **No bundler.** Nothing here needs one: the package ships unbundled, the wasm bundles and the worklet module must stay static assets anyway (`AudioWorklet.addModule` and bundlers are a known friction), and the browser loads bare ESM natively. Evaluated and not adopted: **vite** (a dev server with HMR plus rollup/esbuild underneath — tens of MB of dev machinery whose two roles are already covered by `http.server` and `tsc --watch`; revisit only if HMR-grade DX is genuinely missed), **esbuild** (only earns its place when bundling), **vitest** (pulls vite in as its platform).
 - **Tests: `node:test`, built into node — zero dependencies.** Node runs `.ts` directly (native type stripping, default since 23.6), so pure-logic tests (codec parity, clock arithmetic, builders) run straight from source with `node --test`, no compile step, no runner package. Browser-only behavior (audio, canvas, the elements) keeps the B-track posture: headless-Chrome smoke scripts with the access-log beacon.
 - `typedoc` (the W5 API-reference generator) gets evaluated under this same lens when W5 starts.
+- The **Emscripten SDK** (`emcc`, user-space via `emsdk`) is the one heavy addition this lens admits, and it is **W7's**, not the toolchain's baseline: it builds `libfaust-wasm` so a Faust def compiles in the page (`third_party/BUILD-FAUST.md`, "WebAssembly parts" — documented, never built here). It stays out of the JS toolchain proper — nothing in `src/` or the test loop touches it, `build.sh` only stages its output as static assets, and the slim run-time entry never loads them. Evaluated under the same lens when W7 starts, decision recorded then.
 
 ## Milestones
 
 Labels (`Wx`) live only here, never in published docs or docstrings - the same rule as the other plans.
+
+**What a milestone defers becomes a later milestone, which names the milestone
+it was deferred from.** So a "not in scope" line is always a forward reference
+to a numbered slot, never a loose note, and every slot past W5 carries its own
+back-reference instead of being grouped under one. Those later slots have **no
+fixed sequential order** - each is independent and gets tackled when it is
+wanted, the same convention the client track uses past C10 - and each *widens a
+layer that already exists* rather than opening a new one, which is why none of
+them blocks W5: the client is shippable without them, just narrower than the
+Python one.
 
 ### ✅ W0 - Toolchain + OSC over both carriers
 
@@ -126,11 +137,13 @@ queries), `node.ts`/`bus.ts`/`buffer.ts` (the handles and their allocators),
   from the Python builders (`tests/gen-def-vectors.py`). Rationale in
   `docs/decisions.md` ("The TypeScript graph composes by method").
 
-Not in scope here, by the plan's own division: the exhaustive UGen/`signals`
-catalogue (the set the acceptance and the examples exercise is in — sources,
-filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand
-pair, the full operator tables), the box API, and the bulk/streaming data
-paths.
+Not in scope here, by the plan's own division, each now its own milestone: the
+exhaustive UGen catalogue (**W6** — the set the acceptance and the examples
+exercise is in: sources, filters, delays, panning, envelopes, triggers, bus and
+buffer I/O, the demand pair, the full operator tables), the two Faust surfaces,
+the box algebra and the rest of the signal API (**W7**), the reply handling
+this milestone grew ad hoc inside `Server` (**W8**), and the bulk/streaming
+data paths (**W10**).
 
 **Verified:** `./test.sh` — 29 `node --test` cases (16 def-parity vectors, the
 9 end-to-end against a real `clausters --ws` server covering both def families,
@@ -190,11 +203,11 @@ control paths side by side, a `/c_stream`-fed meter/scope loop, the linked
 waveform + spectrogram, and one button that swaps the in-page host for a native
 one.
 
-Not in scope here, by the plan's own division: the browser data paths the
-heavy views feed on (`/c_stream` decoding client-side, `fetch`/`/b_getn` bulk,
-the wasm peak pyramid) and the `correlation`/`lissajous` analysis exports —
-the host already reads those paths itself, so a GuiDef that names a bus, a tap
-or a URL works today.
+Not in scope here, by the plan's own division, and now **W10**: the browser
+data paths the heavy views feed on (`/c_stream` decoding client-side,
+`fetch`/`/b_getn` bulk, the wasm peak pyramid) and the
+`correlation`/`lissajous` analysis exports — the host already reads those paths
+itself, so a GuiDef that names a bus, a tap or a URL works today.
 
 ### ✅ W3 - Sequencing: clock, routines, events, patterns
 
@@ -258,11 +271,12 @@ engine's own sample clock, its notes' starts and ends read back off the
 server's notifications. Example: `examples/sequencing.html` - the generative
 half and the seekable half side by side.
 
-Not in scope, by the plan's own division: `automation` (a break-point control
-curve; it pulls in buffers, `Env` and a control def), `MidiEvent` and MIDI
-destinations, the shared `/transport` grid, and an NRT/score drive - the
-client has no score interface, and `Timeline.fromPattern` bounces by driving
-the ordinary clock through its manual seams.
+Not in scope, by the plan's own division, each now its own milestone:
+`automation` (**W11** — a break-point control curve; it pulls in buffers, `Env`
+and a control def), `MidiEvent` and MIDI destinations (**W9**), the shared
+`/transport` grid (**W12**), and an NRT/score drive (**W13** — the client has
+no score interface, and `Timeline.fromPattern` bounces by driving the ordinary
+clock through its manual seams).
 
 ### ✅ W4 - Components: the host's canvases in the document
 
@@ -348,10 +362,11 @@ off-screen component streaming nothing, and the broken one failing alone.
 Examples: `examples/piano/` and `examples/graph-controls/` ported to the writer,
 and `examples/document/` — the interactive text the milestone is for.
 
-Not in scope, deliberately: window *management* (an element removed from the DOM
-does not free its def; a `/gui_closed` travelling back is a separate feature),
-and a TypeScript bundle writer — the reference client leads and the port is
-mechanical, the repo's standing rule.
+Not in scope, deliberately, each now its own milestone: window *management*
+(**W14** — an element removed from the DOM does not free its def; a
+`/gui_closed` travelling back is a separate feature) and a TypeScript bundle
+writer (**W15** — the reference client leads and the port is mechanical, the
+repo's standing rule).
 
 ### W5 - Docs, examples, tests, packaging
 
@@ -362,40 +377,49 @@ Make it a real, shippable client.
 
 **Acceptance:** `npm install clausters` (or the workspace build) yields a usable client; the ported examples run in a browser over either carrier (the in-page engine, or a `--ws` server) with the browser GUI host; the docs build and deploy like the Python client's.
 
-### Milestones deferred out of W1-W3
+### W6 - The full UGen catalogue
 
-Everything below was left out of W1, W2 or W3 as those closed, and is now its
-own milestone. They have **no fixed sequential order** — each is independent
-and gets tackled when it is wanted, the same convention the client track uses
-past C10 — and each *widens a layer that already exists* rather than opening a
-new one, which is why none of them blocks W5: the client is shippable without
-them, just narrower than the Python one.
-
-### W6 - The full UGen / `signals` catalogue
-
-W1 shipped the def model with representatives of each family; this fills the
-families out, so a graph written against the Python client ports by
-transcription rather than by lookup.
+*Deferred out of W1.* W1 shipped the def model with representatives of each
+family; this fills out the UGen-graph one, so a graph written against the
+Python client ports by transcription rather than by lookup. The Faust
+authoring surfaces are W7's, both of them.
 
 - `defs/ugens.ts`: the rest of the server's UGen catalogue — sources, filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand pair, the spectral chain (`fft`/`ifft`/`pv_*`, the client side of S8), the output-less roots (`sendReply`/`sendTrig`/`poll`), and the complete unary/binary operator tables.
-- `defs/signals.ts`: the same for the Faust signal API, up to the whole surface `clausters.defs.signals` exposes.
 - The W1 composition rule is unchanged: TypeScript has no operator overloading, so operators stay methods and parity is asserted on the **emitted spec**, never on the source.
 
-**Acceptance:** every builder the Python client exposes has a TS counterpart emitting the same spec JSON, checked by extending the frozen vectors (`tests/gen-def-vectors.py`); a graph transcribed from a Python example plays over either carrier (the Faust half WS-only, as ever).
+**Acceptance:** every UGen builder the Python client exposes has a TS counterpart emitting the same spec JSON, checked by extending the frozen vectors (`tests/gen-def-vectors.py`); a graph transcribed from a Python example plays over either carrier.
 
-### W7 - The box API: Faust's box algebra
+### W7 - The Faust surfaces: the box algebra, then the signal API
 
-The TS counterpart of `clausters.defs.boxes` (C22) — the third def-authoring
-surface, beside the UGen graph and the signal API.
+*Deferred out of W1.* The two Faust def-authoring surfaces, together because
+they are one family — `clausters.defs.boxes` (C22) and `clausters.defs.signals`
+— and in that order: the **box API first**, it being the richer and more
+important of the two (Faust's own algebra, and the surface a whole `.dsp`
+source folds into). And with them the piece the rest of the track never needed:
+**a Faust compiler in the page**, so the Faust family stops being the one thing
+a browser can author but not run.
 
 - `defs/boxes.ts`: the point-free algebra (`seq`/`par`/`split`/`merge`/`rec`, `wire`/`cut`, controls, tables) emitting the same box-tree JSON the Python builders emit, plus `faust(src, ...)` to fold a Faust source expression — its libraries (`fi.`/`os.`/`re.`/`pm.`) included — into a composable `Box`.
-- WS-only by nature, like every Faust path in the browser: the wasm engine is the `synth,embed` build with no LLVM JIT, so a box def compiles only against a native server.
+- `defs/signals.ts`: the sample-level signal API filled out to the whole surface `clausters.defs.signals` exposes, the same emitted-spec parity rule W6 states.
+- **The browser Faust toolchain** — the new build and packaging leg, below. Against a `--ws` server the two builders work without it (they emit JSON and the native server compiles it, the `faust(src, …)` escape hatch included — it ships its generated program as a `{"op": "faust", "src": …}` node rather than parsing Faust on the client); the in-page carrier is what needs it, and having *one* def family that only runs over WS is the asymmetry this milestone closes.
 
-**Acceptance:** the Python box-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of them compiles and plays against a `clausters --ws` server.
+**The build and packaging step (new to this plan, and the reason W7 is not just
+TypeScript).** Nothing in the track so far compiles anything but Rust and TS:
+the toolchain is `tsc` with no bundler, and the wasm artifacts are the core and
+host bundles `build.sh` stages. Faust in the page adds a second compiler
+toolchain, in two halves — **only the first is packaging, and the second is the
+one that decides whether the milestone lands**:
+
+- **The compiler.** `libfaust-wasm` — the whole Faust compiler as a wasm library, what faustwasm and the Faust IDE use — built with the **Emscripten SDK** (`emcc` user-space via `emsdk`, then `make wasmlib` in `third_party/faust`), producing `libfaust-wasm.{js,wasm,data}`, the `.data` carrying the stdlib for Emscripten's virtual FS. The repo already documents the recipe and has **never built it** (`third_party/BUILD-FAUST.md`, "WebAssembly parts": excluded from `make most`, `emcc` not installed here), so this milestone is where it gets built, pinned the way `faust.pin`/`verovio.pin` pin the native ones, and staged by `build.sh` as static assets beside the core/host bundles — **off the slim `dist/runtime.js`**, since a page that mounts a *prebuilt* bundle must not download a compiler it never calls. CI grows the emsdk leg or the artifact is fetched, a decision to record.
+- **The engine's side, which a compiler alone does not solve.** The in-page engine is the `synth,embed` build: no libfaust, **no LLVM JIT**, so it cannot instantiate the factory a native FaustDef becomes. A compiled-in-the-page def therefore needs a second instantiation path — Faust emitting a **wasm DSP module** run behind our AudioWorklet (the `faust -lang wasm` output plus glue), or the **Faust interpreter backend** the server's B track already names as future work. That half lives where the engine lives, so W7 **pairs with a B-track milestone** the way G25 pairs with M25 and P2 shipped as M30; the pairing is what makes this schedulable, and until it is numbered W7's in-page half is blocked on it while the WS half is not.
+- **The decision to record** (`docs/decisions.md`): adopting a second compiler toolchain, its size and its licensing, in a repo whose stated posture is minimal, user-space and reproducible — plus which of the two instantiation paths the engine takes, and why the compiler stays out of the slim runtime.
+
+**Acceptance:** the Python box-API and signal-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of each compiles and plays **over either carrier** — against a `clausters --ws` server, and in the page with no server process, the source compiled by the staged `libfaust-wasm` and sounding through the in-page engine; a page that mounts a prebuilt bundle loads none of the compiler's assets.
 
 ### W8 - Responders: `OscFunc` over the reply stream
 
-The client's input path and its role as a general OSC hub (sclang's `OSCFunc`),
+*Deferred out of W1*, which grew its reply handling ad hoc inside `Server`. The
+client's input path and its role as a general OSC hub (sclang's `OSCFunc`),
 mirroring the half of `responders.py` that does not involve MIDI.
 
 - `responders.ts`: pattern-matched dispatch over the connection's reply stream — either carrier exposes it through the W0 seam (`addReply`), so nothing here names a transport — with handlers scheduled on a clock rather than run from the socket callback, the browser counterpart of the Python client's "never block the clock thread".
@@ -405,8 +429,9 @@ mirroring the half of `responders.py` that does not involve MIDI.
 
 ### W9 - MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out
 
-Both directions of MIDI in one milestone, since in the browser they are one
-API: Web MIDI is the only MIDI I/O a page has.
+*Deferred out of W3*, which left `MidiEvent` and MIDI destinations out of the
+sequencing layer. Both directions of MIDI in one milestone, since in the
+browser they are one API: Web MIDI is the only MIDI I/O a page has.
 
 - `MidiFunc` over `navigator.requestMIDIAccess`, mirroring `responders.py`/`base/_midiinterface` — note/cc/program dispatch, port selection, handlers scheduled on a clock; convenience responders turn notes into `/s_new`, as C13 does.
 - `MidiEvent` and MIDI as a **destination** of the sequencing layer: an event stream plays to a MIDI output exactly the way it plays to a `Server`, over the `play(destination)` seam W3 established, mapping `Event` → channel-voice messages the way `clausters-midi` already defines them for C11.
@@ -416,7 +441,8 @@ API: Web MIDI is the only MIDI I/O a page has.
 
 ### W10 - The browser data paths: buses, bulk, and the analysis exports
 
-The paths the heavy views feed on, read by the **script** this time. The host
+*Deferred out of W2.* The paths the heavy views feed on, read by the **script**
+this time. The host
 already reads them itself (that is why a GuiDef naming a bus, a tap or a URL
 works today); this is the client getting the same numbers.
 
@@ -428,8 +454,8 @@ works today); this is the client getting the same numbers.
 
 ### W11 - Automation: a break-point curve as a control vector
 
-The TS side of C23 — deferred out of W3 because it is the one sequencing piece
-that is not pure timing: it pulls in buffers, `Env` and a control def.
+*Deferred out of W3*, because it is the one sequencing piece that is not pure
+timing: the TS side of C23 pulls in buffers, `Env` and a control def.
 
 - `seq/automation.ts`: a break-point curve discretized into a control buffer on the server (`/b_gen "env"`, the server's own `envshape`) and read back onto a control bus by a lane synth (`OutCtl`), prepared without blocking the driver, then played and freed like any other element.
 - The `bpf` builder already in W2's GuiDef catalogue becomes its editor, so the curve is authored, heard and edited over the same loop the multitrack editor uses.
@@ -438,8 +464,8 @@ that is not pure timing: it pulls in buffers, `Env` and a control def.
 
 ### W12 - The shared `/transport` grid
 
-Phase alignment across clients — the TS counterpart of C15 and of C16's
-`follow_transport`.
+*Deferred out of W3.* Phase alignment across clients — the TS counterpart of
+C15 and of C16's `follow_transport`.
 
 - `quant` honored when a routine starts (snap to a beat boundary), and joining the server's `/transport` grid so pages started at different moments share one bar line.
 - Following the `/transport_play|stop|locate` broadcasts, so a page's playhead rolls in lockstep with every other client: the server broadcasts control, never audio.
@@ -449,8 +475,9 @@ Phase alignment across clients — the TS counterpart of C15 and of C16's
 
 ### W13 - An NRT / score drive
 
-The third `Server` interface, beside the two carriers: a destination that
-*writes* time instead of waiting for it.
+*Deferred out of W3*, whose `Timeline.fromPattern` bounces by driving the
+ordinary clock through its manual seams. The third `Server` interface, beside
+the two carriers: a destination that *writes* time instead of waiting for it.
 
 - A score destination for the sequencing layer — the same pattern or timeline that plays live emitted as a timestamped score — rendered either by a native server's NRT mode over WS, or in-page by the wasm engine running faster than real time into a buffer the page can play or download.
 - W3 already *bounces* without one (`Timeline.fromPattern` drives the ordinary clock through its manual seams); what is missing is the interface, not the arithmetic.
@@ -458,8 +485,32 @@ The third `Server` interface, beside the two carriers: a destination that
 
 **Acceptance:** a piece written once emits a score byte-identical to the Python client's for the same input, and renders from the browser to a WAV that matches the native NRT render.
 
+### W14 - Component lifecycle: freeing what a removed element owns
+
+*Deferred out of W4*, which mounted components but never unmounted them: an
+element removed from the DOM leaves its def standing, and a window the host
+closes has no way back to the page. The missing half of the mount, in both
+directions.
+
+- **Down** (`src/elements.ts`, `src/base/pool.ts`): `disconnectedCallback` frees the component's GuiDef subtree (`/gui_free`), returns its allocated block — widget ids, buses, node ids — to the core-backed pools, and drops its canvas entry from the host (`web.rs`'s map, the `set_visible` sibling), so a long document that adds and removes components does not leak ids, streams or surfaces. The engine half is page-wide and stays up; only what the instance allocated goes.
+- **Up**: `/gui_closed` travelling back from the host to the element that mounted the def — the event exists on the wire and in the `GuiHost` driver (W2), but a component has no handler for it; a host-closed window must reach its element rather than leave a live tag over a freed def.
+- The reverse of W4's two-phase mount is deliberately **not** symmetric: a re-connected element mounts again from the same bundle (defs already sent, a fresh allocation), so the resolver is re-run, not cached.
+
+**Acceptance:** a page that mounts and removes the same component a hundred times holds a flat id/bus/node occupancy (read from the pools and from `/g_queryTree`); a removed component stops sounding and stops streaming; a `/gui_closed` from a native `--ws` host reaches its element; and the surviving components on the page are untouched throughout.
+
+### W15 - The TypeScript bundle writer
+
+*Deferred out of W4*, which shipped the writer in Python only — the reference
+client leads and the port is mechanical, the repo's standing rule. This is that
+port, so a bundle can be authored in the same language the page is written in.
+
+- `src/bundle-writer.ts` (authoring, **not** part of the slim `dist/runtime.js`): the TS counterpart of `clausters.bundle.Bundle` — the symbol table, the bundle-prefixed def names, the declared `params` and presets, validation through the core wasm door (`check_def_payload` and the `requirements`/`resolve` pair) before emitting, and the generated five-line ES module that registers the tag. An unmountable bundle stays unwritable, on this leg too.
+- Runs in Node (a file writer) and in the page (an in-memory bundle mounted without a round trip through disk), the two being the same code over a small output seam.
+
+**Acceptance:** the W4 bundle parity vector runs both ways — what the TS writer emits and what the Python writer emits are byte-identical for the same input, and each resolves through the browser's wasm door to the same mount; `examples/document/` rebuilt from the TS writer draws the same page.
+
 ## Future directions
 
-- **Node target.** The same package outside the browser (a Node `WebSocket` carrier and the same wasm core) for headless scripting/CI, the way `clients/python` runs without a display.
-- **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning.
-- **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** (B3/B4: `bootBundle`, `<clausters-bundle>`, `examples/standalone.html`); what remains as a future direction is the same page against a **remote `--ws` server** — the bundle's GuiDef and defs replayed over the WS carrier instead of the in-page one, a one-file instrument front for a server running elsewhere. Cheap once W1/W2 exist: the boot replay is carrier-agnostic above the W0 seam.
+- **Node target.** Already true in the harness, not yet a supported target: the `node --test` suites drive a real `clausters --ws` server and a real `clausters-gui --ws` host, so `WsConnection` runs under node's global `WebSocket` (`src/base/connection.ts` says so) and the wasm core loads there (`loadCore(bytes)`, node's `fetch` not reading `file://`). What remains is making it a *product*: a load path that finds the core's `.wasm` without the test's manual read, a documented entry point for headless scripting/CI the way `clients/python` runs without a display, and the boundary written down — the def, sequencing and GUI-driver layers port, the in-page engine (AudioWorklet) and the page host (canvas) do not.
+- **Type-safe GuiDef/def schemas.** Generate TS types for the widget/def vocabularies from a single source shared with the server, so an invalid GuiDef is a compile error, not a runtime warning. Two things have since appeared that change the shape of the answer rather than the want: the frozen parity vectors (`tests/gen-*-vectors.py`) already catch a drifted *builder* at test time, and M30's `/d_query`/`/u_query` make the server's own catalogue readable at run time — so the open question is narrower, which source generates the types and when, not whether one exists.
+- **A remote-server standalone page.** The in-tab standalone (a bundle booting against the embedded wasm engine) **shipped with the B track** and grew up in W4 (the bundle contract, the resolver, the pools, the components); what remains is the same mount against a **remote `--ws` server** — a one-file instrument front for a server running elsewhere. The old note called this cheap "once W1/W2 exist"; they exist, and W4 is what actually decides the work: `openBundle`/`startBundle` reach the page's `guiHost()` and `engine` singletons directly, so the step is giving the mount a **destination seam** (a `Server` + `GuiHost` pair, both already carrier-agnostic since W1/W2) in place of those singletons. The boot replay itself stays carrier-agnostic above the W0 seam, as it always was.
