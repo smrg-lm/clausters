@@ -2,10 +2,11 @@
 //
 // The audio server compiled to wasm inside an AudioWorklet, the GUI host on a
 // canvas, and web components that boot native-format standalone bundles — no
-// server process anywhere. This is the seed of the TypeScript client track
-// (clients/web/PLAN.md); the `Connection` seam (`base/connection.ts`) is the
-// surface that client builds on, over either carrier: the in-page engine or
-// a `--ws` server over WebSocket.
+// server process anywhere. On top of that runtime sits the TypeScript client
+// (clients/web/PLAN.md): the `Connection` seam (`base/connection.ts`) carries
+// OSC over either carrier — the in-page engine or a `--ws` server over
+// WebSocket — and `defs/` builds and drives what runs on it (`Server`, the
+// two def families, nodes, buses and buffers), naming no transport.
 //
 // Importing this module registers the `<clausters-bundle>` and
 // `<clausters-power>` custom elements as a side effect; the singletons stay
@@ -20,5 +21,13 @@ export type { BundleManifest } from "./bundle.ts";
 export { ClaustersBundle, ClaustersPower } from "./elements.ts";
 export { loadOsc, encodeMessage, decodePacket } from "./base/osc.ts";
 export type { OscArg, OscMessage } from "./base/osc.ts";
+export { loadCore } from "./base/core.ts";
 export { WsConnection, pageConnection } from "./base/connection.ts";
 export type { Connection } from "./base/connection.ts";
+export * from "./defs/index.ts";
+export {
+    AllocationError,
+    ClaustersError,
+    CommandError,
+    ReplyTimeout,
+} from "./errors.ts";

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters defs over the in-page carrier</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the def model and the <code>Server</code> over the in-page carrier:
+        a SynthDef built here, sent, played and freed against the engine in
+        this page's AudioWorklet — no server process, and nothing below
+        <code>Server</code> naming a transport.</div>
+      <button id="boot">boot + play</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The in-page half of W1's acceptance (clients/web/test.sh, headless
+      Chrome): ?smoke=1 auto-runs, defines a def, plays it, reads it back out
+      of the node tree, hears it on an analyser and frees it. Verdict beaconed
+      as a fetch, read from the HTTP access log. The WS half — both def
+      families against a native server — is tests/server.test.ts.
+    -->
+    <script type="module">
+      import {
+        loadOsc, pageConnection, server as engine,
+        Server, SynthDef, Env, DoneAction,
+        control, envGen, out, sine,
+      } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function run() {
+        await loadOsc();
+
+        // The engine handle is the page's; the connection over it is what the
+        // client sees, and `Server` never learns which one it got.
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        if (raw.context.state !== "running") {
+          throw new Error(`context did not run: ${raw.context.state}`);
+        }
+        // Tap the output so the assertion below is about sound, not messages.
+        const analyser = raw.context.createAnalyser();
+        analyser.fftSize = 2048;
+        raw.node.connect(analyser);
+
+        const connection = await pageConnection();
+        const server = await Server.open(connection);
+        log(`sized from the engine: ${server.sizing.audioBuses} audio buses, `
+          + `${server.sizing.controlBuses} control buses`);
+
+        // A def built here, in TypeScript, and sent to the engine in this tab.
+        const freq = control("freq", 440.0);
+        const amp = control("amp", 0.2);
+        const gate = control("gate", 1.0);
+        const def = new SynthDef("page_beep", out(0.0, sine(freq)
+          .mul(amp)
+          .mul(envGen(Env.asr(0.01, 1.0, 0.05),
+                      { gate, doneAction: DoneAction.FREE_SELF }))));
+
+        // Fire-and-forget plus the barrier: the ordering discipline that
+        // makes an asynchronous def path safe.
+        await server.addSynthDef(def, { wait: false });
+        await server.sync();
+        const loaded = await server.queryDefs(["page_beep"]);
+        if (loaded[0]?.family !== "synth") {
+          throw new Error(`def not loaded: ${JSON.stringify(loaded)}`);
+        }
+        log(`def loaded: ${loaded[0].controls.map((c) => c.name).join(", ")}`);
+
+        const synth = server.synth("page_beep", { freq: 330.0, amp: 0.2 });
+        await server.sync();
+
+        // Read it back out of the tree — the queryable half of the acceptance.
+        const info = await server.nodeQuery(synth);
+        if (info.def !== "page_beep" || info.controls.freq !== 330) {
+          throw new Error(`unexpected node: ${JSON.stringify(info)}`);
+        }
+        const tree = await server.queryTree();
+        if (!tree.children.some((c) => c.id === synth.id)) {
+          throw new Error(`node ${synth.id} is not in the tree`);
+        }
+        log(`playing node ${synth.id} (${info.def}) under group ${info.parent}`);
+
+        // And the audible half: the analyser has to see the engine's output
+        // move once the synth is in. The envelope takes a moment to open.
+        let peak = 0;
+        const bins = new Float32Array(analyser.fftSize);
+        for (let i = 0; i < 200 && peak < 0.01; i++) {
+          await sleep(25);
+          analyser.getFloatTimeDomainData(bins);
+          for (const v of bins) peak = Math.max(peak, Math.abs(v));
+        }
+        if (peak < 0.01) throw new Error(`silent output (peak ${peak})`);
+        log(`output peak ${peak.toFixed(3)}`);
+
+        server.set(synth, { freq: 220.0 });
+        await server.sync();
+        const moved = await server.nodeQuery(synth);
+        if (moved.controls.freq !== 220) {
+          throw new Error(`/n_set did not take: ${JSON.stringify(moved.controls)}`);
+        }
+
+        synth.free();
+        await server.sync();
+        const empty = await server.queryTree();
+        if (empty.children.length !== 0) {
+          throw new Error(`the tree still holds ${empty.children.length} node(s)`);
+        }
+
+        verdict(`PASS: page carrier def round trip, peak ${peak.toFixed(3)}, `
+          + `tree empty after free`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

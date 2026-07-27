@@ -2783,3 +2783,43 @@ What remains open is cheap and narrow — adding fused *shapes* when a common
 expression justifies one, on the `MulAdd`/`Sum4` precedent and against the bench
 section that measures them.
 
+
+---
+
+## The TypeScript graph composes by method, and the wire is what parity means
+
+The Python client builds a UGen graph with operators — `sine(freq) * amp`,
+`1 - env`, `sig % 2` — because Python lets a class define them. TypeScript does
+not: there is no operator overloading, and no proposal close enough to plan
+against. So the web client's graph composes by **method**: `sine(freq).mul(amp)`,
+and every other operator or math function is a method carrying the same operator
+**name** the wire uses (`.midicps()`, `.max(x)`, `.distort()`). Where the
+constant is on the left, which a method cannot express, there are free functions
+(`sub(1, sig)`) and, on the Faust side, the explicit `rsub`/`rdiv`.
+
+Two consequences worth stating, because they look like drift and are not.
+
+**A method name is not always the wire name.** The selector *is* what crosses
+(`as_int`, `hypot_apx`), and the method takes the idiomatic spelling (`asInt()`,
+`hypotApx()`) with the mapping in the class. The same holds for the Faust signal
+API, where `asInt()` emits Faust's `intcast`. The language surface is the
+language's; the vocabulary is the protocol's.
+
+**Parity is asserted on the emitted spec, not on the source.** The two clients
+cannot be compared expression for expression, so `clients/web/tests/def-parity.
+test.ts` builds each reference graph independently in TypeScript and asserts the
+`SynthDefSpec`/signal-tree/`GraphDefSpec` JSON is identical to what the Python
+builders emit for the same graph (frozen by `gen-def-vectors.py`). That is the
+right seam anyway: the def format is the shared contract, and two clients
+agreeing on it is exactly what "numerically equivalent by construction" buys.
+The vectors cover what the source alone cannot show — control dedup and
+first-seen order, the topological walk, the fused `Sum4`/`Sum3` mix fold, the
+`ir`/`tr` control types and lags, generic op naming, and the `sr()` clamp inside
+a Faust recursion.
+
+The same reasoning settles a smaller one: a JS number is a double, so the client
+cannot infer int-vs-float from a value the way Python does. The `Server` therefore
+tags **by position** — node ids, bus indices and add actions as int32, control
+values as float32 — and only the free-form `sendMsg`/`genBuffer` guess (an
+integral number is an int32), with an explicit `[tag, value]` pair as the escape
+hatch where the guess is wrong (`/b_gen`'s flag word).

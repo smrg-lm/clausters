@@ -8,11 +8,11 @@
 // package).
 //
 // The wasm module must be loaded once before the sync codec calls:
-// `await loadOsc()` (idempotent). In the browser the default locates the
-// `.wasm` next to the glue; under node (the test runner) pass the bytes
-// explicitly — node's `fetch` cannot read `file://` URLs.
+// `await loadOsc()` (idempotent) — the codec's name for `base/core.ts`'s one
+// core load, which everything else core-backed shares.
 
-import initCore, {
+import { loadCore } from "./core.ts";
+import {
     osc_encode_message,
     osc_decode_packet,
 } from "../core/clausters_core_web.js";
@@ -31,15 +31,10 @@ export interface OscMessage {
     args: (number | string | Uint8Array | boolean | null)[];
 }
 
-let loaded: Promise<void> | null = null;
-
 /// Loads the core wasm once (later calls reuse it). `source` overrides the
 /// default URL-relative lookup with raw module bytes (the node path).
 export function loadOsc(source?: BufferSource): Promise<void> {
-    loaded ??= initCore(
-        source === undefined ? undefined : { module_or_path: source },
-    ).then(() => undefined);
-    return loaded;
+    return loadCore(source);
 }
 
 /// Encodes one OSC message: `encodeMessage("/s_new", [["s","default"],

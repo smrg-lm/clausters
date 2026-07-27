@@ -206,14 +206,35 @@ The `clausters` package in `clients/web/` (TypeScript sources under `src/`, mirr
 ## The TypeScript client (started)
 
 The browser-first TypeScript client grows inside the same `clients/web/`
-package (roadmap: `clients/web/PLAN.md`). Its first layer is in place: the
-**OSC codec through the shared core** (`crates/clausters-core-web`, a thin
-wasm-bindgen shell over `clausters-core`, staged as `dist/core/` —
-byte-identical to the server and the Python client, held by committed parity
-vectors generated from the Python codec) and the **carrier seam**
-(`Connection`): `WsConnection` to a `--ws` server and `pageConnection()` over
-the in-page engine, one interface, so everything built above never names a
-transport. The package mirrors the Python client's structure (`src/base`,
+package (roadmap: `clients/web/PLAN.md`). Two layers are in place.
+
+**The seam.** The **OSC codec through the shared core**
+(`crates/clausters-core-web`, a thin wasm-bindgen shell over `clausters-core`,
+staged as `dist/core/` — byte-identical to the server and the Python client,
+held by committed parity vectors generated from the Python codec) and the
+**carrier seam** (`Connection`): `WsConnection` to a `--ws` server and
+`pageConnection()` over the in-page engine, one interface, so everything built
+above never names a transport.
+
+**The client.** `Server` and the def model, mirroring the Python client's
+`clausters/defs/` module for module: both def families as peers (`SynthDef`
+with the lowercase UGen callables, `FaustDef` with the Faust signal API) plus
+`GraphDef`, the `/sync` barrier, nodes, groups, graph instances, buses,
+buffers and the introspection queries. The allocators come from the same core
+— the wasm shell also exposes the **registry** (the occupancy map behind node
+ids, buses and buffers) that `clausters-ffi` exposes to Python, and a `Server`
+sizes itself from the server's own `/server_info`. Two shapes differ from the
+reference client by necessity, both recorded in `docs/decisions.md`: everything
+that waits is a **promise** (the browser has one thread), and the graph
+composes **by method** (`sine(freq).mul(amp)`), TypeScript having no operator
+overloading — so parity is asserted on the **emitted spec JSON**, against
+vectors frozen from the Python builders, rather than on the source.
+
+A Faust def reaches a **native** server only: the in-page engine is the
+`synth,embed` build with no LLVM JIT. That is a property of the build, not of
+the client — nothing above the seam names a carrier.
+
+The package mirrors the Python client's structure (`src/base`, `src/defs`,
 `src/gui`, … with `examples/` and `tests/` beside them) and the toolchain is
 deliberately minimal — `tsc` type-checks and emits `src/` to `dist/` (plain
 ES modules plus declarations and source maps), tests run from source under

@@ -91,15 +91,22 @@ The pieces individually:
   in `dist/` and mirrors the glue's `.d.ts` (plus the core's glue `.js`,
   which node needs at runtime) into `src/`, so run `./build.sh` first on a
   fresh tree.
-- `npm test` — `node --test tests/*.test.ts`; node runs the TypeScript
-  sources directly (native type stripping — the `.ts`-extension imports are
-  what make this work), no compile step. The suite covers the OSC parity
-  vectors against the committed `tests/osc-vectors.json` and the WebSocket
-  carrier end to end (it spawns `target/debug/clausters --ws` itself and
-  skips if the debug server is not built — `cargo build` at the root).
-- `./test.sh` — the above plus `tests/client.html?smoke=1` under headless
-  Chrome: the in-page carrier's `/status` round trip, verdict beaconed
-  through the HTTP access log like every web smoke.
+- `npm test` — `node --test --test-concurrency=1 tests/*.test.ts`; node runs
+  the TypeScript sources directly (native type stripping — the
+  `.ts`-extension imports are what make this work), no compile step. The
+  suite covers the OSC parity vectors against the committed
+  `tests/osc-vectors.json`, the def-spec parity vectors against
+  `tests/def-vectors.json`, and the WebSocket carrier and `Server` end to end
+  (it spawns `target/debug/clausters --ws` itself and skips if the debug
+  server is not built — `cargo build` at the root). It runs **serially**
+  because `--ws <port>` only moves the WebSocket front: the OSC port (57110)
+  is fixed, so two spawned servers cannot overlap.
+- `./test.sh` — the above plus two acceptance pages under headless Chrome,
+  each in its own browser: `tests/client.html?smoke=1` (the in-page carrier's
+  `/status` round trip) and `tests/defs.html?smoke=1` (a def built, sent,
+  played — asserted audible on an analyser — read back out of the node tree
+  and freed). Verdicts are beaconed through the HTTP access log like every
+  web smoke.
 
 The dev loop is `tsc -p tsconfig.build.json --watch` in one terminal and
 `python3 -m http.server` in another; rerun `./build.sh` only when the Rust
@@ -107,13 +114,21 @@ side changes.
 
 ## Regenerating the parity vectors
 
-`tests/osc-vectors.json` is committed; it comes from the Python client's
-reference codec:
+Two vector files are committed, both generated from the Python client — the
+reference for the wire (the codec) and for the def format (the builders):
 
 ```sh
-cd tests && PYTHONPATH=../../python python3 gen-osc-vectors.py
+cd tests
+PYTHONPATH=../../python python3 gen-osc-vectors.py   # tests/osc-vectors.json
+python3 gen-def-vectors.py                           # tests/def-vectors.json
 ```
 
+`gen-def-vectors.py` needs the Python client importable (the repo's `.venv`
+has it installed editable); it inserts `../../python` on the path itself.
+
 Regenerate only when the vector set itself changes (new cases); the point of
-committing it is that the TS and Python codecs are held to the same frozen
-bytes.
+committing them is that the two clients are held to the same frozen bytes and
+the same frozen specs. The def vectors are compared as **parsed JSON**, since
+what has to match is the spec the server reads, not the two sources — the TS
+builders compose by method where the Python ones compose by operator (see
+`docs/decisions.md`).

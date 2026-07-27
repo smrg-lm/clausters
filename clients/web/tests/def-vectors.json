@@ -1,0 +1,1038 @@
+{
+  "synthdefs": [
+    {
+      "name": "beep",
+      "spec": {
+        "name": "beep",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 440.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "controls_stereo",
+      "spec": {
+        "name": "controls_stereo",
+        "controls": [
+          {
+            "name": "freq",
+            "default": 440.0
+          },
+          {
+            "name": "amp",
+            "default": 0.2
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "control": 0
+              }
+            ]
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "control": 1
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 1
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "ugen": 1
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "shared_control",
+      "spec": {
+        "name": "shared",
+        "controls": [
+          {
+            "name": "freq",
+            "default": 200.0
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "control": 0
+              }
+            ]
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "control": 0
+              },
+              {
+                "const": 2.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "ugen": 1
+              }
+            ]
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "ugen": 2
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "typed_controls_env",
+      "spec": {
+        "name": "voice",
+        "controls": [
+          {
+            "name": "cutoff",
+            "default": 800.0,
+            "lag": 0.1,
+            "lag_down": 0.5
+          },
+          {
+            "name": "gate",
+            "default": 1.0,
+            "rate": "tr"
+          }
+        ],
+        "ugens": [
+          {
+            "kind": "Saw",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "LPF",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "control": 0
+              }
+            ]
+          },
+          {
+            "kind": "EnvGen",
+            "inputs": [
+              {
+                "control": 1
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 2.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 3.0
+              },
+              {
+                "const": 2.0
+              },
+              {
+                "const": -1.0
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.01
+              },
+              {
+                "const": 5.0
+              },
+              {
+                "const": -4.0
+              },
+              {
+                "const": 0.6
+              },
+              {
+                "const": 0.2
+              },
+              {
+                "const": 5.0
+              },
+              {
+                "const": -4.0
+              },
+              {
+                "const": 0.0
+              },
+              {
+                "const": 0.4
+              },
+              {
+                "const": 5.0
+              },
+              {
+                "const": -4.0
+              }
+            ]
+          },
+          {
+            "kind": "Mul",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "ugen": 2
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "generic_ops",
+      "spec": {
+        "name": "ops",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 440.0
+              }
+            ]
+          },
+          {
+            "kind": "UnaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 0
+              }
+            ],
+            "op": "distort"
+          },
+          {
+            "kind": "BinaryOpUGen",
+            "inputs": [
+              {
+                "ugen": 1
+              },
+              {
+                "const": 0.1
+              }
+            ],
+            "op": "max"
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 2
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "mix_fold",
+      "spec": {
+        "name": "fold",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 110.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 220.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 330.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 440.0
+              }
+            ]
+          },
+          {
+            "kind": "Sum4",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "ugen": 1
+              },
+              {
+                "ugen": 2
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 550.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 660.0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 770.0
+              }
+            ]
+          },
+          {
+            "kind": "Sum3",
+            "inputs": [
+              {
+                "ugen": 5
+              },
+              {
+                "ugen": 6
+              },
+              {
+                "ugen": 7
+              }
+            ]
+          },
+          {
+            "kind": "Add",
+            "inputs": [
+              {
+                "ugen": 4
+              },
+              {
+                "ugen": 8
+              }
+            ]
+          },
+          {
+            "kind": "MulAdd",
+            "inputs": [
+              {
+                "ugen": 9
+              },
+              {
+                "const": 0.1
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 10
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "pan",
+      "spec": {
+        "name": "pan",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "WhiteNoise",
+            "inputs": []
+          },
+          {
+            "kind": "Pan2",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 0.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 1
+              }
+            ]
+          },
+          {
+            "kind": "Pan2",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 0.3
+              },
+              {
+                "const": 1.0
+              },
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "ugen": 3
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "side_effect_only",
+      "spec": {
+        "name": "watch",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 1.0
+              }
+            ]
+          },
+          {
+            "kind": "SendTrig",
+            "inputs": [
+              {
+                "ugen": 0
+              },
+              {
+                "const": 7.0
+              },
+              {
+                "const": 0.5
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rates_and_chans",
+      "spec": {
+        "name": "rates",
+        "controls": [],
+        "ugens": [
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 5.0
+              }
+            ],
+            "rate": "kr"
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 0.0
+              },
+              {
+                "ugen": 0
+              }
+            ]
+          },
+          {
+            "kind": "Sine",
+            "inputs": [
+              {
+                "const": 7.0
+              }
+            ],
+            "rate": "kr"
+          },
+          {
+            "kind": "Out",
+            "inputs": [
+              {
+                "const": 1.0
+              },
+              {
+                "ugen": 2
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "faustdefs": [
+    {
+      "name": "faust_tone",
+      "payload": {
+        "signals": [
+          {
+            "op": "mul",
+            "in": [
+              {
+                "op": "sin",
+                "in": [
+                  {
+                    "op": "mul",
+                    "in": [
+                      {
+                        "op": "recursion",
+                        "in": [
+                          {
+                            "op": "sub",
+                            "in": [
+                              {
+                                "op": "add",
+                                "in": [
+                                  {
+                                    "op": "self"
+                                  },
+                                  {
+                                    "op": "div",
+                                    "in": [
+                                      {
+                                        "op": "hslider",
+                                        "label": "freq",
+                                        "init": 440.0,
+                                        "min": 20.0,
+                                        "max": 2000.0,
+                                        "step": 0.01
+                                      },
+                                      {
+                                        "op": "min",
+                                        "in": [
+                                          192000.0,
+                                          {
+                                            "op": "max",
+                                            "in": [
+                                              1.0,
+                                              {
+                                                "op": "fconst",
+                                                "ctype": "int",
+                                                "name": "fSamplingFreq",
+                                                "file": "<math.h>"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "op": "floor",
+                                "in": [
+                                  {
+                                    "op": "add",
+                                    "in": [
+                                      {
+                                        "op": "self"
+                                      },
+                                      {
+                                        "op": "div",
+                                        "in": [
+                                          {
+                                            "op": "hslider",
+                                            "label": "freq",
+                                            "init": 440.0,
+                                            "min": 20.0,
+                                            "max": 2000.0,
+                                            "step": 0.01
+                                          },
+                                          {
+                                            "op": "min",
+                                            "in": [
+                                              192000.0,
+                                              {
+                                                "op": "max",
+                                                "in": [
+                                                  1.0,
+                                                  {
+                                                    "op": "fconst",
+                                                    "ctype": "int",
+                                                    "name": "fSamplingFreq",
+                                                    "file": "<math.h>"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      6.283185307179586
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "hslider",
+                "label": "amp",
+                "init": 0.2,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.001
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "faust_stereo",
+      "payload": {
+        "signals": [
+          {
+            "op": "mul",
+            "in": [
+              {
+                "op": "sin",
+                "in": [
+                  {
+                    "op": "mul",
+                    "in": [
+                      {
+                        "op": "recursion",
+                        "in": [
+                          {
+                            "op": "sub",
+                            "in": [
+                              {
+                                "op": "add",
+                                "in": [
+                                  {
+                                    "op": "self"
+                                  },
+                                  {
+                                    "op": "div",
+                                    "in": [
+                                      {
+                                        "op": "hslider",
+                                        "label": "freq",
+                                        "init": 440.0,
+                                        "min": 20.0,
+                                        "max": 2000.0,
+                                        "step": 0.01
+                                      },
+                                      {
+                                        "op": "min",
+                                        "in": [
+                                          192000.0,
+                                          {
+                                            "op": "max",
+                                            "in": [
+                                              1.0,
+                                              {
+                                                "op": "fconst",
+                                                "ctype": "int",
+                                                "name": "fSamplingFreq",
+                                                "file": "<math.h>"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "op": "floor",
+                                "in": [
+                                  {
+                                    "op": "add",
+                                    "in": [
+                                      {
+                                        "op": "self"
+                                      },
+                                      {
+                                        "op": "div",
+                                        "in": [
+                                          {
+                                            "op": "hslider",
+                                            "label": "freq",
+                                            "init": 440.0,
+                                            "min": 20.0,
+                                            "max": 2000.0,
+                                            "step": 0.01
+                                          },
+                                          {
+                                            "op": "min",
+                                            "in": [
+                                              192000.0,
+                                              {
+                                                "op": "max",
+                                                "in": [
+                                                  1.0,
+                                                  {
+                                                    "op": "fconst",
+                                                    "ctype": "int",
+                                                    "name": "fSamplingFreq",
+                                                    "file": "<math.h>"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      6.283185307179586
+                    ]
+                  }
+                ]
+              },
+              {
+                "op": "hslider",
+                "label": "amp",
+                "init": 0.2,
+                "min": 0.0,
+                "max": 1.0,
+                "step": 0.001
+              }
+            ]
+          },
+          {
+            "op": "mul",
+            "in": [
+              {
+                "op": "mul",
+                "in": [
+                  {
+                    "op": "sin",
+                    "in": [
+                      {
+                        "op": "mul",
+                        "in": [
+                          {
+                            "op": "recursion",
+                            "in": [
+                              {
+                                "op": "sub",
+                                "in": [
+                                  {
+                                    "op": "add",
+                                    "in": [
+                                      {
+                                        "op": "self"
+                                      },
+                                      {
+                                        "op": "div",
+                                        "in": [
+                                          {
+                                            "op": "hslider",
+                                            "label": "freq",
+                                            "init": 440.0,
+                                            "min": 20.0,
+                                            "max": 2000.0,
+                                            "step": 0.01
+                                          },
+                                          {
+                                            "op": "min",
+                                            "in": [
+                                              192000.0,
+                                              {
+                                                "op": "max",
+                                                "in": [
+                                                  1.0,
+                                                  {
+                                                    "op": "fconst",
+                                                    "ctype": "int",
+                                                    "name": "fSamplingFreq",
+                                                    "file": "<math.h>"
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "op": "floor",
+                                    "in": [
+                                      {
+                                        "op": "add",
+                                        "in": [
+                                          {
+                                            "op": "self"
+                                          },
+                                          {
+                                            "op": "div",
+                                            "in": [
+                                              {
+                                                "op": "hslider",
+                                                "label": "freq",
+                                                "init": 440.0,
+                                                "min": 20.0,
+                                                "max": 2000.0,
+                                                "step": 0.01
+                                              },
+                                              {
+                                                "op": "min",
+                                                "in": [
+                                                  192000.0,
+                                                  {
+                                                    "op": "max",
+                                                    "in": [
+                                                      1.0,
+                                                      {
+                                                        "op": "fconst",
+                                                        "ctype": "int",
+                                                        "name": "fSamplingFreq",
+                                                        "file": "<math.h>"
+                                                      }
+                                                    ]
+                                                  }
+                                                ]
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          6.283185307179586
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "op": "hslider",
+                    "label": "amp",
+                    "init": 0.2,
+                    "min": 0.0,
+                    "max": 1.0,
+                    "step": 0.001
+                  }
+                ]
+              },
+              0.5
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "graphdefs": [
+    {
+      "name": "graph_chain",
+      "spec": {
+        "name": "chain",
+        "members": [
+          {
+            "def": "gsrc",
+            "controls": {
+              "out": "mix",
+              "level": 1.0
+            }
+          },
+          {
+            "def": "gsink",
+            "controls": {
+              "in": "mix",
+              "out": "OUT"
+            }
+          },
+          {
+            "def": "gvoice",
+            "controls": {
+              "out": "mix"
+            },
+            "voice": true
+          }
+        ],
+        "buses": [
+          {
+            "name": "mix",
+            "rate": "audio",
+            "channels": 1
+          }
+        ],
+        "surface": {
+          "gain": [
+            {
+              "member": 0,
+              "control": "level",
+              "mul": 2.0,
+              "add": 0.1
+            }
+          ]
+        },
+        "defaults": {
+          "gain": 0.5
+        }
+      }
+    }
+  ]
+}

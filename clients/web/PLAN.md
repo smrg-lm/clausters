@@ -19,7 +19,7 @@ So the web client is one more consumer of the exact same wires the Python client
 
 ## Target architecture
 
-A TS package mirroring `clients/python`'s shape — the `src/` module tree at the same relative paths as `clausters/`'s modules, `dist/` reproducing it 1:1, and `examples/`/`tests/`/(W5) `docs/` beside them — so a reader who knows one finds the other. This is the **only web directory in the repo**: every browser JS/HTML artifact (package modules, the engine's worklet/loader runtime, examples, test pages, tools) lives here, and the wasm crates stay Rust-only, their wasm-bindgen bundles staged in by `build.sh` (see `docs/decisions.md`, "The web front-end lives in one package"). The layout as it stands after W0 (parenthesized entries are where the later milestones grow):
+A TS package mirroring `clients/python`'s shape — the `src/` module tree at the same relative paths as `clausters/`'s modules, `dist/` reproducing it 1:1, and `examples/`/`tests/`/(W5) `docs/` beside them — so a reader who knows one finds the other. This is the **only web directory in the repo**: every browser JS/HTML artifact (package modules, the engine's worklet/loader runtime, examples, test pages, tools) lives here, and the wasm crates stay Rust-only, their wasm-bindgen bundles staged in by `build.sh` (see `docs/decisions.md`, "The web front-end lives in one package"). The layout as it stands after W1 (parenthesized entries are where the later milestones grow):
 
 ```
 clients/web/
@@ -29,12 +29,14 @@ clients/web/
   src/                    # ← mirrors clients/python/clausters/, module for module
     index.ts              #   the package facade (the __init__)
     base/                 #   the low-level seam (mirrors clausters/base)
+      core.ts             #     the shared core's wasm: one load, the registry
       osc.ts              #     OSC encode/decode over the wasm core (mirrors _osclib)
       connection.ts       #     the carrier seam: WsConnection | pageConnection()
       (clock.ts  timebase.ts  builtins.ts — W3)
-    (defs/                #   the def model + server client (mirrors clausters/defs) — W1
+    errors.ts             #   the error hierarchy (mirrors errors.py)
+    defs/                 #   the def model + server client (mirrors clausters/defs)
       server.ts  node.ts  bus.ts  buffer.ts
-      signals.ts  ugens.ts  synthdef.ts  faustdef.ts  graphdef.ts)
+      signals.ts  ugens.ts  synthdef.ts  faustdef.ts  graphdef.ts
     gui/                  #   the GUI host driver (mirrors clausters/gui)
       host.ts             #     today the per-page guiHost() singleton; (guidef.ts — W2)
     (seq/                 #   sequencing (mirrors clausters/seq) — W3
@@ -46,10 +48,10 @@ clients/web/
     bundle.ts elements.ts #   browser-only: bundle boot + the custom elements
   dist/                   # emitted src/ 1:1 (.js + .d.ts + maps) + the staged wasm
                           #   bundles engine/ gui-host/ core/ — the _bin/_libs analog
-  examples/               # demo.html, engine.html, gui-host.html, standalone.html
-                          #   (the Python examples port here — W5)
-  tests/                  # node --test suites + parity vectors + the browser
-                          #   acceptance pages (client/smoke/parity/gui-parity)
+  examples/               # synth.html, demo.html, engine.html, gui-host.html,
+                          #   standalone.html (the Python examples port here — W5)
+  tests/                  # node --test suites + parity vectors (osc, def) + the
+                          #   browser acceptance pages (client/defs/smoke/parity)
   tools/                  # bundle-manifest.py, demo-bundle.sh
   (docs/                  # an mdBook (mirrors clients/python/docs), API ref via typedoc — W5)
 ```
@@ -81,16 +83,13 @@ The smallest round trip, and the toolchain. **Rewritten 2026-07-18**: the origin
 
 **Acceptance:** dual — a `/status` round trip through the *same* connection interface over **both** carriers (in-page under headless Chrome with no server process; WebSocket against a native `--ws` server), the parity vectors green under `node --test`, and the package type-checking clean (`tsc`).
 
-### W1 - Server client + the def model
+### ✅ W1 - Server client + the def model
 
-**On hold (2026-07-18) — waiting for the Python client review.** W1 is the
-first milestone that mirrors the *Python API surface* (not just the wire, as
-W0 did), and so does everything after it (W2 the gui builders/host, W3 seq,
-W4 responders). The reference client is under review; starting the mirror
-before it settles would turn every Python change into two changes — exactly
-what the cross-client build strategy exists to avoid ("finish and polish one
-reference client at a time, then port"). The wire-level work is unaffected
-and done: the W0 seam, the host's `--ws` front, the bundle formats.
+*(The hold this milestone carried from 2026-07-18 — "waiting for the Python
+client review", since W1 is the first milestone to mirror the Python **API
+surface** rather than only the wire — was lifted on 2026-07-26: the reference
+client's arc had settled, so the mirror could start without turning every
+Python change into two.)*
 
 Drive the audio server.
 
@@ -98,6 +97,47 @@ Drive the audio server.
 - The def builders (`signals`/`ugens`/`synthdef`/`faustdef`/`graphdef`): start by sending the **same spec JSON the Python builders emit** (reused verbatim), then grow the typed TS builder API for parity, with the Python builders (both def families) as the reference.
 
 **Acceptance:** from a browser page, define a def and play it (`/s_new` then `/n_set`), with `/sync` ordering and an audible/queryable result, **over either carrier** through the same `Server` (the W0 seam: nothing above it names a transport) — a synth def against the in-page engine with no server process, and both families against a `--ws` server (the Faust half is WS-only by nature: the wasm engine is the `synth,embed` build, no LLVM JIT).
+
+**What shipped.** The whole `src/defs/` tree, mirroring `clausters/defs/`
+module for module: `server.ts` (reply dispatch, the `/sync` barrier, the three
+def commands, nodes/groups/graph instances, buses, buffers, the introspection
+queries), `node.ts`/`bus.ts`/`buffer.ts` (the handles and their allocators),
+`ugens.ts` + `synthdef.ts` (the UGen graph and its spec walk), `signals.ts` +
+`faustdef.ts` (the Faust signal API and the three payload forms) and
+`graphdef.ts`. Three things are worth carrying forward:
+
+- **Everything that waits is a promise.** Where the Python client blocks a
+  thread on a reply, this one `await`s — the browser has one thread, and the
+  page has to keep running. The "never block in a routine" discipline of the
+  reference client is here simply the language.
+- **The allocators come from the core.** `crates/clausters-core-web` grew the
+  registry surface (`Registry`, `node_id_partition`, `graph_bus_reserved`) —
+  the wasm sibling of the C door `clausters-ffi` opens for Python — so node
+  ids, buses and buffers are allocated by the same occupancy map the server
+  and the Python client use, not by a second implementation. `Server.open`
+  sizes them from `/server_info`, so the client matches the server that is
+  actually running.
+- **The graph composes by method** (`sine(freq).mul(amp)`), TypeScript having
+  no operator overloading, and parity is therefore asserted on the **emitted
+  spec** rather than on the source: `tests/def-parity.test.ts` rebuilds each
+  reference graph independently and compares the JSON against vectors frozen
+  from the Python builders (`tests/gen-def-vectors.py`). Rationale in
+  `docs/decisions.md` ("The TypeScript graph composes by method").
+
+Not in scope here, by the plan's own division: the exhaustive UGen/`signals`
+catalogue (the set the acceptance and the examples exercise is in — sources,
+filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand
+pair, the full operator tables), the box API, and the bulk/streaming data
+paths, which are W4's.
+
+**Verified:** `./test.sh` — 29 `node --test` cases (16 def-parity vectors, the
+9 end-to-end against a real `clausters --ws` server covering both def families,
+plus the W0 codec and carrier suites) and the two headless-Chrome acceptances,
+`tests/client.html` (the carrier seam) and `tests/defs.html` (a def built,
+sent, played — asserted **audible** on an analyser — read back out of the node
+tree and freed, over the in-page engine with no server process). Example:
+`examples/synth.html`, the same def and the same code over either carrier, the
+choice being the one line that names one.
 
 ### W2 - GUI host driver (`GuiHost` + GuiDef builders)
 
