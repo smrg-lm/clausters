@@ -181,7 +181,7 @@ convert. Driving:
 ## Closing a feature
 
 When a client feature lands, update (where applicable): docstrings (the docs
-source), `docs/` for user-facing wire formats, the `clients/PLAN.md` roadmap
+source), `docs/` for user-facing wire formats, the `clients/python/PLAN.md` roadmap
 checkbox, and a commented `examples/*.py`; a `docs/decisions.md` note only for a
 non-obvious choice, and a `clients/python/GUIA.md` smoke step only for new
 human-audible/visual behavior. The record of what shipped is the commit message,

@@ -3,7 +3,7 @@
 A real-time audio synthesis server in the style of SuperCollider's scsynth,
 written in Rust and controlled over OSC (UDP, default port 57110).
 
-- Forward roadmaps and milestones: `PLAN.md` (server), `clients/PLAN.md`,
+- Forward roadmaps and milestones: `PLAN.md` (server), `clients/python/PLAN.md`,
   `clients/gui/PLAN.md` and `clients/web/PLAN.md` (client/GUI/web tracks), all
   in English — a roadmap plus a checkbox status per milestone, not an expanded
   completion narrative.
@@ -63,16 +63,16 @@ makes a port cheap is keeping all language-agnostic logic in the shared core
 `clients/gui`) and pushing logic down there **as you write it**, so each client
 stays a thin language-specific shell (idiomatic API + concurrency/scheduling).
 Porting then = rebind the same core (ctypes/N-API/wasm), not reimplement it.
-Full rationale in `clients/PLAN.md` ("Build strategy"). Always factor new work
-with this modularity in mind.
+Full rationale in `clients/python/PLAN.md` ("Build strategy"). Always factor
+new work with this modularity in mind.
 
 ## Language conventions
 
 - Everything under `src/`, `tests/` and `examples/` (code, comments, strings,
   test names) is in English.
 - **Git commit messages are in English** (subject and body), ASCII-only.
-- The `PLAN.md` roadmaps (`PLAN.md`, `clients/PLAN.md`, `clients/gui/PLAN.md`,
-  `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
+- The `PLAN.md` roadmaps (`PLAN.md`, `clients/python/PLAN.md`,
+  `clients/gui/PLAN.md`, `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
   `docs/history/build-log.md` are in English.
   `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation with the user
   are in Spanish.

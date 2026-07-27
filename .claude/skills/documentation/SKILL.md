@@ -39,7 +39,7 @@ writing. Then place the page.
   both it and `book/` git-ignored). Never hand-edit `api.md`.
 - **Development** (section 3) — `docs/architecture.md`, `docs/contributing.md`,
   `docs/decisions.md` (the ADR-style design record, in the server book), the
-  `PLAN.md` roadmaps (`PLAN.md` / `clients/PLAN.md` / `clients/gui/PLAN.md`), and
+  `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` / `clients/gui/PLAN.md`), and
   the frozen `docs/history/build-log.md`. `GUIA.md` (root +
   `clients/python/GUIA.md`) is a Spanish smoke checklist, **not** part of the
   books.
@@ -197,7 +197,7 @@ are not authoritative. The **cdylib table** (`libclausters_ffi` / `libclausters`
 plays which role; the authoritative contract is the rustdoc and the C ABI in
 `ipc.md`, so keep it a pointer, not a second source of truth for signatures. The
 **"Status at a glance"** table is project status (done/planned), the user-facing
-snapshot of `PLAN.md` / `clients/PLAN.md` — keep it in sync with them and, like
+snapshot of `PLAN.md` / `clients/python/PLAN.md` — keep it in sync with them and, like
 all published docs, free of `Mx`/`Cx` labels. `clients.md` is also a **cross-book
 hub**: it links the Python client book by its Read the Docs URL (an inline
 comment flags the slug risk) — keep that link live.

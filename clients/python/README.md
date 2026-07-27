@@ -141,7 +141,7 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   the same at the object level. Both binaries are bundled in the wheel.
 
 Still to come: a JavaScript client on the same C ABI and OSC contract (see
-[`../PLAN.md`](../PLAN.md)).
+[`PLAN.md`](PLAN.md)).
 
 The full documentation (this client's guide and the generated API reference) is
 the mdBook in [`docs/`](docs/). Runnable, installed-package examples are in

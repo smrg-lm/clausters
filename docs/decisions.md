@@ -2863,7 +2863,7 @@ thread**, which shares objects with the rest of the program: the routine, the
 `Server`, the session. A browser Worker shares nothing but structured-cloned
 messages, and a routine is a closure over the script's own objects — it cannot
 cross. So there is no direct port of that thread, and the coroutine driver stays
-on the page's thread, which is what `clients/PLAN.md` already asks for ("the
+on the page's thread, which is what `clients/python/PLAN.md` already asks for ("the
 coroutine driver stays in the language").
 
 What *does* port is the property the background thread buys: a wake-up the rest

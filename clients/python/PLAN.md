@@ -45,7 +45,7 @@ crates/
   clausters-ffi/            # NEW: C-ABI cdylib over clausters-core (the "lib for all clients")
 clients/
   python/                   # high-level Python client
-  PLAN.md                   # this plan (generic, also for the future JS client)
+    PLAN.md                 # this plan (generic, also for the future JS client)
 ```
 
 `clausters-core` (pure library, a `no_std` candidate except where it needs `alloc`):
