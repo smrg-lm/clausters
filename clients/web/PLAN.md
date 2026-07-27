@@ -19,7 +19,7 @@ So the web client is one more consumer of the exact same wires the Python client
 
 ## Target architecture
 
-A TS package mirroring `clients/python`'s shape — the `src/` module tree at the same relative paths as `clausters/`'s modules, `dist/` reproducing it 1:1, and `examples/`/`tests/`/(W5) `docs/` beside them — so a reader who knows one finds the other. This is the **only web directory in the repo**: every browser JS/HTML artifact (package modules, the engine's worklet/loader runtime, examples, test pages, tools) lives here, and the wasm crates stay Rust-only, their wasm-bindgen bundles staged in by `build.sh` (see `docs/decisions.md`, "The web front-end lives in one package"). The layout as it stands after W1 (parenthesized entries are where the later milestones grow):
+A TS package mirroring `clients/python`'s shape — the `src/` module tree at the same relative paths as `clausters/`'s modules, `dist/` reproducing it 1:1, and `examples/`/`tests/`/`docs/` beside them — so a reader who knows one finds the other. This is the **only web directory in the repo**: every browser JS/HTML artifact (package modules, the engine's worklet/loader runtime, examples, test pages, tools) lives here, and the wasm crates stay Rust-only, their wasm-bindgen bundles staged in by `build.sh` (see `docs/decisions.md`, "The web front-end lives in one package"). The layout as it stands after W1 (parenthesized entries are where the later milestones grow):
 
 ```
 clients/web/
@@ -43,19 +43,23 @@ clients/web/
     (seq/                 #   sequencing (mirrors clausters/seq) — W3
       event.ts  eventstream.ts  pattern.ts  timeline.ts)
     (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W8/W9)
-    (session.ts           #   the Session facade — W5)
+    (session.ts           #   the Session facade — W18)
     engine/               #   browser-only: the in-page engine runtime
       worklet.ts  loader.ts  worklet-shim.ts  server.ts (the server() singleton)
     bundle.ts elements.ts #   browser-only: bundle boot + the custom elements
   dist/                   # emitted src/ 1:1 (.js + .d.ts + maps) + the staged wasm
                           #   bundles engine/ gui-host/ core/ — the _bin/_libs analog
-  examples/               # synth.html, demo.html, engine.html, gui-host.html,
-                          #   standalone.html (the Python examples port here — W5)
+  examples/               # synth.html, sequencing.html, gui-host.html, demo.html,
+                          #   engine.html, standalone.html, the bundle components
+                          #   (piano/ graph-controls/ document/) and the ports of
+                          #   the Python examples (the rest of them — W16)
   tests/                  # node --test suites + parity vectors (osc, def, gui)
                           #   + the browser acceptance pages (client/defs/gui/
                           #   smoke/parity)
   tools/                  # bundle-manifest.py, demo-bundle.sh
-  (docs/                  # an mdBook (mirrors clients/python/docs), API ref via typedoc — W5)
+  docs/                   # an mdBook (mirrors clients/python/docs), the API
+                          #   reference generated from the TSDoc by typedoc
+  typedoc.json  .readthedocs.yaml   # that generator, and the RTD build (W17)
 ```
 
 The wasm `clausters-core` build is **shared with the GUI host** (G11-G16 already needs core compiled to wasm); this client links the same artifact, it does not produce a second one.
@@ -368,14 +372,53 @@ Not in scope, deliberately, each now its own milestone: window *management*
 writer (**W15** — the reference client leads and the port is mechanical, the
 repo's standing rule).
 
-### W5 - Docs, examples, tests, packaging
+### ✅ W5 - Docs, examples, tests, packaging
 
 Make it a real, shippable client.
 
-- An mdBook in `clients/web/docs` (mirroring `clients/python/docs`), with the API reference **generated from TSDoc by typedoc** (the TS counterpart of the Python client's pydoc-markdown), and the GUIA-style manual-testing notes kept current. The two client books and the two GUI books cross-link by their RTD URLs.
-- The Python examples ported to TS (either carrier), the `node --test` suite, and the npm package build/publish; a parity pass against the Python client on the shared vectors (OSC, clock arithmetic, GuiDef JSON).
+- An mdBook in `clients/web/docs` (mirroring `clients/python/docs`), with the API reference **generated from TSDoc by typedoc** (the TS counterpart of the Python client's pydoc-markdown), and the GUIA-style manual-testing notes kept current. The client books cross-link by their RTD URLs.
+- A **selection** of the Python examples ported to TS, the `node --test` suite, and the npm package build; a parity pass against the Python client on the shared vectors (OSC, clock arithmetic, GuiDef JSON).
 
-**Acceptance:** `npm install clausters` (or the workspace build) yields a usable client; the ported examples run in a browser over either carrier (the in-page engine, or a `--ws` server) with the browser GUI host; the docs build and deploy like the Python client's.
+**Acceptance:** the workspace build yields a usable, installable client; the ported examples run in a browser over the in-page engine, and the carrier is the one line that says so; the docs build like the Python client's.
+
+**What shipped.** The book, five ports, and the packaging held by a checker.
+
+The **book** is the third mdBook (`clients/web/docs/`, `.readthedocs.yaml`
+beside it): an orientation, a getting-started that ends with a tab making a
+sound, the client layer by layer, the components chapter, the examples catalog,
+and an API reference **generated by TypeDoc** from the sources' TSDoc — which
+first meant converting the whole tree from Rust-style `///` to `/** */`, a form
+TypeScript tooling actually reads. TypeDoc is a user-space *tool*, not a
+dependency, parsing with its own TypeScript 5.9 while the package keeps
+compiling with the v7 in `node_modules`; it runs with warnings as errors, which
+is what widened the exported type surface. Rationale in `docs/decisions.md`
+("The web client's API reference").
+
+The **examples** are five ports, each named after the Python example it mirrors
+so the two can be read side by side: `multichannel`, `typed-controls`,
+`graph-maths`, `wavetables`, `pause-resume`. They were chosen for running in a
+page as they stand — live on the in-page engine, interactively or as a scripted
+phrase; the offline-render half of the Python set has no browser counterpart
+until there is a score drive.
+
+The **package** is publishable but unpublished, and the gap is covered by a
+check rather than by care: `tools/check-package.mjs` (what `prepublishOnly`
+runs, and `tests/package.test.ts` too) refuses a `dist/` missing the wasm
+bundles `build.sh` stages, a version out of step with the crate's, or an
+`exports` entry the `files` list leaves out — plus a read of what `npm pack`
+would ship. The procedure itself is `clients/web/BUILD.md`, "Publishing".
+
+**Verified:** `./test.sh` — 114 `node --test` cases (the three new packaging
+ones on top of W0-W4's) and the five headless-Chrome acceptances; the book
+builds clean (`docs/build.sh`, TypeDoc with zero warnings); each ported example
+was driven in a browser and asserted **audible** on an analyser, `pause-resume`
+across its three states (0.20 sounding → 0.0 paused → 0.20 resumed).
+
+Not in scope, by the plan's own division, each now its own milestone: the rest
+of the Python examples (**W16**), the publication itself — the npm registry and
+a Read the Docs project — (**W17**), and the `Session` facade this layout
+sketched into this slot (**W18**), which is an API layer rather than a
+packaging one and leans on verbs the client does not have yet.
 
 ### W6 - The full UGen catalogue
 
@@ -508,6 +551,43 @@ port, so a bundle can be authored in the same language the page is written in.
 - Runs in Node (a file writer) and in the page (an in-memory bundle mounted without a round trip through disk), the two being the same code over a small output seam.
 
 **Acceptance:** the W4 bundle parity vector runs both ways — what the TS writer emits and what the Python writer emits are byte-identical for the same input, and each resolves through the browser's wasm door to the same mount; `examples/document/` rebuilt from the TS writer draws the same page.
+
+### W16 - Example parity with the Python client
+
+*Deferred out of W5*, which ported the examples that run in a page as they
+stand and left the rest. This closes the gap, so the two example sets read as
+one catalogue: same name, same instrument, same point of interest, one written
+as a script and one as a page.
+
+- The remaining `clients/python/examples/` ported to `clients/web/examples/`, each keeping the name of the example it mirrors and the catalog row that says so.
+- Most of what is left is **not** blocked on porting effort but on a surface this client does not have yet — the responders, MIDI, automation, the transport grid, an offline render, the box algebra, the UGens outside the shipped set. Each such example lands with (or after) the milestone that opens its surface, which is why this slot is a destination rather than a queue.
+- The examples that are Python-process shaped by nature (a launcher, a live UDP peer, a native GUI shell) have no page counterpart and stay unported; the catalog says so rather than leaving a hole.
+
+**Acceptance:** every Python example either has a web page of the same name or a stated reason in the catalog for having none, and each ported page runs on the in-page engine with the carrier line marked.
+
+### W17 - Publishing: the npm registry and a third Read the Docs project
+
+*Deferred out of W5*, which built the package and the book and left them on the
+machine. The distribution step, deliberately separate: the artifacts are held
+publishable by a checker long before anyone runs `npm publish`.
+
+- **The package**: `npm publish` for `clausters`, on the repository's own SemVer (package, crate and wheel are one release), through the gate `prepublishOnly` runs. The procedure, including what has to be built first, is `clients/web/BUILD.md`, "Publishing".
+- **The book**: a third Read the Docs project pointing at `clients/web/.readthedocs.yaml` (the file exists and drives the whole build: TypeDoc, then mdBook).
+- **The inbound links**: the other books and READMEs do not link the web book, because the URL does not resolve yet. Once it does, the badge/link rows (root `README.md`, `clients/python/README.md`, `clients/gui/README.md`) and the Python book's introduction gain it — the cross-linking the three books otherwise already do.
+- The npm publication also decides what W5 could leave open: whether the wasm bundles ship inside the tarball (they do today, ~2 MB) or are fetched, and how a consumer's bundler is expected to treat the worklet module.
+
+**Acceptance:** `npm install clausters` in an empty project yields a working client (the getting-started page's example runs against it unchanged), the web book is live and cross-linked in both directions, and the release's three version numbers agree.
+
+### W18 - The `Session` facade
+
+*Deferred out of W5*, whose layout sketched a `session.ts` into the slot while
+the milestone itself was docs, examples and packaging. It is an API layer, and
+it leans on verbs this client does not have yet.
+
+- `session.ts`: the browser counterpart of `clausters.Session` — one handle bundling a `Server`, a `TempoClock` and its timebase, so a page stops wiring the three by hand. On this page the singletons already give the *shared* half (one engine, one host, one namespace); what a `Session` adds is the ergonomics and the ability to hold more than one at a time (a page against the in-page engine beside one against a remote `--ws` server).
+- The Python client's ambient verbs are the reason not to do it early: `play` is here already as `Event.play`/`Pattern.play`, but `plot` wants the script-side data paths (**W10**) and `render` an offline drive (**W13**). A facade shipped before them would name verbs it cannot keep.
+
+**Acceptance:** the getting-started example rewritten through a `Session` is shorter and does the same thing; two sessions over different carriers coexist in one page, each with its own clock.
 
 ## Future directions
 
