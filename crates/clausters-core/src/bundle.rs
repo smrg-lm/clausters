@@ -172,8 +172,10 @@ pub struct Manifest {
     pub synthdefs: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub graphdefs: Vec<String>,
-    /// How many widgets the template holds, root included — the size of the id
-    /// block the caller allocates.
+    /// The width of the id block one instance needs: the **highest** local
+    /// widget id the template uses, the root's included. Not a count — the
+    /// template may number sparsely (`1`, `10`, `20`), and what the caller
+    /// allocates is a contiguous run wide enough for the numbering.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub widgets: usize,
     #[serde(default, skip_serializing_if = "SymbolTable::is_empty")]
@@ -275,8 +277,12 @@ pub enum Error {
         min: Option<f64>,
         max: Option<f64>,
     },
-    /// The manifest's widget count disagrees with the template's.
-    WidgetCount { declared: usize, found: usize },
+    /// The manifest declares a narrower id block than the template numbers
+    /// into — two instances offset by it would overlap.
+    WidgetBlock { declared: usize, needed: usize },
+    /// One widget id used twice in a template (the root's id counts): the two
+    /// would resolve to the same widget.
+    DuplicateWidgetId(i64),
     /// One name declared in two symbol namespaces — `@name` would be ambiguous.
     DuplicateSymbol(String),
     /// A placeholder found where none may live (a def payload).
@@ -328,9 +334,14 @@ impl fmt::Display for Error {
                     (None, None) => Ok(()),
                 }
             }
-            Error::WidgetCount { declared, found } => write!(
+            Error::WidgetBlock { declared, needed } => write!(
                 f,
-                "the manifest declares {declared} widget(s), the template holds {found}"
+                "the manifest declares a {declared}-wide widget id block, but the \
+                 template numbers up to {needed}"
+            ),
+            Error::DuplicateWidgetId(id) => write!(
+                f,
+                "widget id {id} is used twice in the template (the root's id counts)"
             ),
             Error::DuplicateSymbol(name) => write!(
                 f,
@@ -446,11 +457,12 @@ pub fn resolve(
     let Value::Object(root) = &template.gui else {
         return Err(Error::BadTemplate("the root is not an object".into()));
     };
-    let found = widget_count(root);
-    if manifest.widgets != 0 && manifest.widgets != found {
-        return Err(Error::WidgetCount {
+    check_widget_ids(template)?;
+    let needed = widget_span(template);
+    if manifest.widgets != 0 && manifest.widgets < needed {
+        return Err(Error::WidgetBlock {
             declared: manifest.widgets,
-            found,
+            needed,
         });
     }
 
@@ -719,20 +731,28 @@ fn resolve_boot(list: &[Value], ctx: &Ctx) -> Result<Vec<Vec<Value>>, Error> {
     Ok(out)
 }
 
-/// The widgets in a template tree, the root included.
-fn widget_count(node: &Map<String, Value>) -> usize {
-    let children = node
-        .get("children")
-        .and_then(Value::as_array)
-        .map(|children| {
-            children
-                .iter()
-                .filter_map(Value::as_object)
-                .map(widget_count)
-                .sum::<usize>()
-        })
-        .unwrap_or(0);
-    1 + children
+/// Refuses a widget id used twice — the root's id counts, since it is offset
+/// with the rest and a child numbered like the root would resolve onto it.
+fn check_widget_ids(template: &Template) -> Result<(), Error> {
+    fn walk(node: &Value, seen: &mut Vec<i64>) -> Result<(), Error> {
+        let Some(map) = node.as_object() else {
+            return Ok(());
+        };
+        if let Some(id) = map.get("id").and_then(Value::as_i64) {
+            if seen.contains(&id) {
+                return Err(Error::DuplicateWidgetId(id));
+            }
+            seen.push(id);
+        }
+        if let Some(children) = map.get("children").and_then(Value::as_array) {
+            for child in children {
+                walk(child, seen)?;
+            }
+        }
+        Ok(())
+    }
+    let mut seen = vec![template.id as i64];
+    walk(&template.gui, &mut seen)
 }
 
 /// Refuses one name declared in two namespaces: `@name` would not say which.
@@ -1168,16 +1188,41 @@ mod tests {
         );
     }
 
+    /// A block narrower than the numbering is the error worth catching: two
+    /// instances offset by it would overlap. A wider one is merely generous.
     #[test]
-    fn a_wrong_widget_count_is_an_error() {
+    fn too_narrow_a_widget_block_is_an_error() {
         let mut m = manifest();
-        m.widgets = 9;
+        m.widgets = 2;
         assert_eq!(
             resolve(&m, &template(), &allocation(), &ParamInput::default()),
-            Err(Error::WidgetCount {
-                declared: 9,
-                found: 4
+            Err(Error::WidgetBlock {
+                declared: 2,
+                needed: 4
             })
+        );
+        m.widgets = 9;
+        assert!(resolve(&m, &template(), &allocation(), &ParamInput::default()).is_ok());
+    }
+
+    /// The root's id is offset with the rest, so a child numbered like it would
+    /// resolve onto it.
+    #[test]
+    fn a_widget_id_used_twice_is_an_error() {
+        let mut m = manifest();
+        m.widgets = 2;
+        m.symbols = SymbolTable::default();
+        m.params.clear();
+        let t: Template = serde_json::from_value(json!({
+            "id": 1,
+            "gui": { "type": "window", "children": [
+                { "id": 1, "type": "knob" },
+                { "id": 2, "type": "meter", "bus": 0 }]}
+        }))
+        .unwrap();
+        assert_eq!(
+            resolve(&m, &t, &allocation(), &ParamInput::default()),
+            Err(Error::DuplicateWidgetId(1))
         );
     }
 

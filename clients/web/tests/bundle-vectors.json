@@ -1,0 +1,293 @@
+{
+ "manifest": {
+  "name": "fm-voice",
+  "gui": "fm-voice",
+  "synthdefs": [
+   "fm-voice.voice"
+  ],
+  "widgets": 3,
+  "symbols": {
+   "nodes": [
+    "voice"
+   ],
+   "buses": [
+    {
+     "name": "lfo",
+     "rate": "control",
+     "channels": 1
+    }
+   ]
+  },
+  "params": {
+   "freq": {
+    "type": "float",
+    "default": 220.0,
+    "min": 60.0,
+    "max": 700.0
+   },
+   "title": {
+    "type": "string",
+    "default": "FM voice"
+   }
+  },
+  "presets": [
+   "bright"
+  ]
+ },
+ "template": {
+  "id": 1,
+  "gui": {
+   "type": "window",
+   "title": "$title",
+   "w": 320,
+   "h": 200,
+   "layout": "col",
+   "children": [
+    {
+     "type": "knob",
+     "id": 2,
+     "label": "freq",
+     "min": 60.0,
+     "max": 700.0,
+     "value": "$freq",
+     "bind": [
+      "/n_set",
+      "@voice",
+      "freq"
+     ]
+    },
+    {
+     "type": "meter",
+     "id": 3,
+     "bus": "@lfo",
+     "label": "env"
+    }
+   ],
+   "boot": [
+    [
+     "/s_new",
+     "fm-voice.voice",
+     "@voice",
+     0,
+     0,
+     "freq",
+     "$freq",
+     "env_bus",
+     "@lfo"
+    ]
+   ]
+  }
+ },
+ "requirements": {
+  "widgets": 3,
+  "nodes": [
+   "voice"
+  ],
+  "buses": [
+   {
+    "name": "lfo",
+    "rate": "control",
+    "channels": 1
+   }
+  ],
+  "buffers": []
+ },
+ "cases": [
+  {
+   "name": "defaults",
+   "attributes": {},
+   "preset": {},
+   "allocation": {
+    "widget_base": 1000,
+    "nodes": {
+     "voice": 2000
+    },
+    "buses": {
+     "lfo": 300
+    },
+    "buffers": {}
+   },
+   "resolved": {
+    "boot": [
+     [
+      "/s_new",
+      "fm-voice.voice",
+      2000,
+      0,
+      0,
+      "freq",
+      220.0,
+      "env_bus",
+      300
+     ]
+    ],
+    "def_id": 1000,
+    "params": {
+     "freq": 220.0,
+     "title": "FM voice"
+    },
+    "tree": {
+     "children": [
+      {
+       "bind": [
+        "/n_set",
+        2000,
+        "freq"
+       ],
+       "id": 1001,
+       "label": "freq",
+       "max": 700.0,
+       "min": 60.0,
+       "type": "knob",
+       "value": 220.0
+      },
+      {
+       "bus": 300,
+       "id": 1002,
+       "label": "env",
+       "type": "meter"
+      }
+     ],
+     "h": 200,
+     "layout": "col",
+     "title": "FM voice",
+     "type": "window",
+     "w": 320
+    }
+   }
+  },
+  {
+   "name": "attribute",
+   "attributes": {
+    "freq": "440"
+   },
+   "preset": {},
+   "allocation": {
+    "widget_base": 1003,
+    "nodes": {
+     "voice": 2001
+    },
+    "buses": {
+     "lfo": 301
+    },
+    "buffers": {}
+   },
+   "resolved": {
+    "boot": [
+     [
+      "/s_new",
+      "fm-voice.voice",
+      2001,
+      0,
+      0,
+      "freq",
+      440.0,
+      "env_bus",
+      301
+     ]
+    ],
+    "def_id": 1003,
+    "params": {
+     "freq": 440.0,
+     "title": "FM voice"
+    },
+    "tree": {
+     "children": [
+      {
+       "bind": [
+        "/n_set",
+        2001,
+        "freq"
+       ],
+       "id": 1004,
+       "label": "freq",
+       "max": 700.0,
+       "min": 60.0,
+       "type": "knob",
+       "value": 440.0
+      },
+      {
+       "bus": 301,
+       "id": 1005,
+       "label": "env",
+       "type": "meter"
+      }
+     ],
+     "h": 200,
+     "layout": "col",
+     "title": "FM voice",
+     "type": "window",
+     "w": 320
+    }
+   }
+  },
+  {
+   "name": "preset_under_attribute",
+   "attributes": {
+    "freq": "330"
+   },
+   "preset": {
+    "freq": 660.0,
+    "title": "bright voice"
+   },
+   "allocation": {
+    "widget_base": 1006,
+    "nodes": {
+     "voice": 2002
+    },
+    "buses": {
+     "lfo": 302
+    },
+    "buffers": {}
+   },
+   "resolved": {
+    "boot": [
+     [
+      "/s_new",
+      "fm-voice.voice",
+      2002,
+      0,
+      0,
+      "freq",
+      330.0,
+      "env_bus",
+      302
+     ]
+    ],
+    "def_id": 1006,
+    "params": {
+     "freq": 330.0,
+     "title": "bright voice"
+    },
+    "tree": {
+     "children": [
+      {
+       "bind": [
+        "/n_set",
+        2002,
+        "freq"
+       ],
+       "id": 1007,
+       "label": "freq",
+       "max": 700.0,
+       "min": 60.0,
+       "type": "knob",
+       "value": 330.0
+      },
+      {
+       "bus": 302,
+       "id": 1008,
+       "label": "env",
+       "type": "meter"
+      }
+     ],
+     "h": 200,
+     "layout": "col",
+     "title": "bright voice",
+     "type": "window",
+     "w": 320
+    }
+   }
+  }
+ ]
+}

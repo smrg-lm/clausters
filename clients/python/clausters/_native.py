@@ -274,6 +274,16 @@ def _configure(lib: ctypes.CDLL) -> ctypes.CDLL:
     # GraphDef wiring JSON out (size-query then fill, the peaks pattern).
     lib.clausters_core_patch_compile.restype = ctypes.c_size_t
     lib.clausters_core_patch_compile.argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
+    # The component bundle (ABI v13): what an instance needs allocated, one
+    # instance resolved, and the writers' pre-flight — the same three the
+    # browser gets over wasm, on the same JSON-in/JSON-out shape.
+    for _bundle_fn in (
+        "clausters_core_bundle_requirements",
+        "clausters_core_bundle_resolve",
+        "clausters_core_bundle_validate",
+    ):
+        getattr(lib, _bundle_fn).restype = ctypes.c_size_t
+        getattr(lib, _bundle_fn).argtypes = [u8p, ctypes.c_size_t, u8p, ctypes.c_size_t]
     # Finite-resource registry (ABI v10): the one id-allocator model — node
     # ids, buses, buffers — shared with the server's reserved ranges.
     lib.clausters_registry_new.restype = ctypes.c_void_p
@@ -412,6 +422,78 @@ def as_u8(data: bytes):
         return None
     buf = (ctypes.c_ubyte * len(data)).from_buffer_copy(data)
     return ctypes.cast(buf, ctypes.POINTER(ctypes.c_ubyte))
+
+
+def _json_call(fn, payload: dict, what: str) -> dict:
+    """One JSON-in/JSON-out core call: size query, then fill (the peaks
+    pattern). Raises `ValueError` on unreadable input or on the error object
+    the core answers with."""
+    data = json.dumps(payload).encode("utf-8")
+    u8p = ctypes.POINTER(ctypes.c_ubyte)
+    inp = (ctypes.c_ubyte * len(data)).from_buffer_copy(data) if data else (ctypes.c_ubyte * 0)()
+    need = fn(ctypes.cast(inp, u8p), len(data), None, 0)
+    if need == 0:
+        raise ValueError(f"{what}: the core could not read the request")
+    out = (ctypes.c_ubyte * need)()
+    n = fn(ctypes.cast(inp, u8p), len(data), out, need)
+    result = json.loads(bytes(out[:n]).decode("utf-8"))
+    if "error" in result:
+        raise ValueError(result["error"])
+    return result
+
+
+def bundle_requirements(manifest: dict, template: dict | None = None) -> dict:
+    """What one instance of a bundle needs allocated: ``{"widgets", "nodes",
+    "buses", "buffers"}``, through the shared `clausters_core::bundle` pass.
+
+    Pass ``template`` for a bundle written before the manifest carried a widget
+    count — its id block is then measured from the ids the tree actually uses.
+    """
+    payload: dict = {"manifest": manifest}
+    if template is not None:
+        payload["template"] = template
+    return _json_call(
+        lib().clausters_core_bundle_requirements, payload, "bundle requirements"
+    )
+
+
+def bundle_resolve(
+    manifest: dict,
+    template: dict,
+    allocation: dict,
+    attributes: dict | None = None,
+    preset: dict | None = None,
+) -> dict:
+    """One mounted instance: the template's widget ids offset by
+    ``allocation["widget_base"]``, its ``@symbol`` and ``$param`` holes filled,
+    its ``boot`` list lifted out — ``{"def_id", "tree", "boot", "params"}``.
+
+    The caller allocates (``allocation`` is ``{"widget_base", "nodes", "buses",
+    "buffers"}``), which is what keeps the pass pure. Raises `ValueError` on an
+    unknown symbol, a missing parameter, a type mismatch or a value out of its
+    declared range.
+    """
+    return _json_call(
+        lib().clausters_core_bundle_resolve,
+        {
+            "manifest": manifest,
+            "template": template,
+            "allocation": allocation,
+            "params": {"attributes": attributes or {}, "preset": preset or {}},
+        },
+        "bundle resolve",
+    )
+
+
+def bundle_validate(manifest: dict, template: dict, defs: list | None = None) -> None:
+    """The writers' pre-flight: the mount dry-run over the declared defaults,
+    plus the no-holes check on every def payload — so a bundle that would fail
+    to mount fails to be written. Raises `ValueError` with the reason."""
+    _json_call(
+        lib().clausters_core_bundle_validate,
+        {"manifest": manifest, "template": template, "defs": defs or []},
+        "bundle validate",
+    )
 
 
 def compile_patch(patch: dict) -> dict:
