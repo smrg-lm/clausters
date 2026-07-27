@@ -578,6 +578,24 @@ publishable by a checker long before anyone runs `npm publish`.
 
 **Acceptance:** `npm install clausters` in an empty project yields a working client (the getting-started page's example runs against it unchanged), the web book is live and cross-linked in both directions, and the release's three version numbers agree.
 
+**In place, awaiting the tag.** The publication is **automated rather than
+manual**: `release.yml` grew a `publish-npm` job beside the PyPI one, so the
+`v*` tag that cuts the wheel cuts the package too — one tag, one version,
+which is the only way the "package, crate and wheel are one release" rule can
+hold by construction rather than by memory. CI never builds `clients/web`, so
+the job carries the whole recipe itself (the wasm32 target, the
+lockfile-pinned `wasm-bindgen` CLI taken as a prebuilt binary, `build.sh`, the
+package checker, then a publish with provenance). The two open questions W5
+left are settled and recorded in `BUILD.md`: the wasm bundles **ship inside
+the tarball** (an install has to work offline, with no CDN), and the worklet
+is reached as `new URL("./worklet.js", import.meta.url)` — the form a bundler
+copies as an asset — with `workletUrl` as the escape hatch for one that does
+not. The prose, the badges and the inbound cross-links are already written for
+the published state.
+
+What is left is account-side and cannot be done from a working copy: the `npm`
+environment's token, the tag itself, and the Read the Docs project.
+
 ### W18 - The `Session` facade
 
 *Deferred out of W5*, whose layout sketched a `session.ts` into the slot while

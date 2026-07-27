@@ -2,11 +2,14 @@
 
 [![CI](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml/badge.svg)](https://github.com/smrg-lm/clausters/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/clausters)](https://pypi.org/project/clausters/)
+[![npm](https://img.shields.io/npm/v/clausters)](https://www.npmjs.com/package/clausters)
 [![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
 [![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
+[![Web client book](https://readthedocs.org/projects/clausters-web/badge/?version=latest)](https://clausters-web.readthedocs.io/)
 
 📖 **Documentation:** [server book](https://clausters.readthedocs.io/) ·
-[Python client book](https://clausters-python.readthedocs.io/)
+[Python client book](https://clausters-python.readthedocs.io/) ·
+[web client book](https://clausters-web.readthedocs.io/)
 
 Clausters is a **port of SuperCollider's `scsynth` audio server to Rust**: a
 real-time audio synthesis server controlled over OSC, with the same node-tree
@@ -139,16 +142,15 @@ cargo test
 
 ## Documentation
 
-Three books, one per platform. Two are published on Read the Docs:
+Three books, one per platform, all published on Read the Docs:
 
 - **[Server / workspace book](https://clausters.readthedocs.io/)** — full
   guide, OSC reference and architecture.
 - **[Python client book](https://clausters-python.readthedocs.io/)** — the
   client's guide plus an API reference generated from its docstrings.
-
-The third, the **web client book**, is written and builds here but is not
-hosted yet — the steps are in
-[`clients/web/BUILD.md`](clients/web/BUILD.md#publishing).
+- **[Web client book](https://clausters-web.readthedocs.io/)** — the browser
+  client and the in-page engine, with an API reference generated from the
+  sources' TSDoc.
 
 All three are mdBooks kept in this repository (Markdown, ReadTheDocs-deployable),
 so they also build and read offline:

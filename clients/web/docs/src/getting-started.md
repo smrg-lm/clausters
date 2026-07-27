@@ -4,7 +4,17 @@ By the end of this page a tab is making a sound with no server process anywhere,
 
 ## Get the package
 
-The package is **not on npm yet**, so it comes from a checkout of the repository. Two tools are needed once, both user-space (the full recipes are in `clients/web/BUILD.md`): **node** (an LTS under `~/.local`) and the Rust wasm toolchain — `rustup target add wasm32-unknown-unknown` plus `wasm-bindgen-cli` at the version the lockfiles pin.
+```sh
+npm install clausters
+```
+
+That is the whole install: the tarball carries the emitted modules, their type declarations and the three wasm bundles (the engine, the GUI host, the shared core), so nothing is compiled and nothing is fetched at run time.
+
+The pages below are served straight off the file system with no build step, so they import `./dist/index.js` by path. Through a bundler the same imports are written `from "clausters"`; nothing else in them changes.
+
+### From a checkout instead
+
+Building it yourself is only needed to work *on* the client. Two tools once, both user-space (the full recipes are in `clients/web/BUILD.md`): **node** (an LTS under `~/.local`) and the Rust wasm toolchain — `rustup target add wasm32-unknown-unknown` plus `wasm-bindgen-cli` at the version the lockfiles pin.
 
 ```sh
 cd clients/web
@@ -13,13 +23,7 @@ npm install       # once: TypeScript into node_modules/ (no other dependency)
                   # then emits src/ -> dist/
 ```
 
-`dist/` is now the whole package: plain ES modules with their type declarations, and the wasm bundles beside them (`dist/engine/`, `dist/gui-host/`, `dist/core/`). Any static file server serves it.
-
-To use it from another project *on this machine*, install the directory:
-
-```sh
-npm install /path/to/clausters/clients/web
-```
+`dist/` is now the whole package: plain ES modules with their type declarations, and the wasm bundles beside them (`dist/engine/`, `dist/gui-host/`, `dist/core/`) — the same tree `npm install` unpacks. To use *that* build from another project on this machine, install the directory: `npm install /path/to/clausters/clients/web`.
 
 ## Serve it
 

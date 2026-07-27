@@ -1,10 +1,18 @@
 # clausters (web)
 
+[![npm](https://img.shields.io/npm/v/clausters)](https://www.npmjs.com/package/clausters)
+[![Web client book](https://readthedocs.org/projects/clausters-web/badge/?version=latest)](https://clausters-web.readthedocs.io/)
+[![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
+
+```sh
+npm install clausters
+```
+
 Clausters in the browser: the audio server compiled to WebAssembly running inside an **AudioWorklet**, the GUI host on a canvas, **web components** that boot native-format standalone bundles — no server process anywhere — and the **TypeScript client** that drives all of it: the OSC codec through the shared native core, the carrier-agnostic connection seam, the def model and `Server` above them, and the sequencing layer that plays on it. See `PLAN.md` here for the client roadmap.
 
 This is the repo's **one web directory**: every browser artifact (the package modules, the engine's worklet/loader runtime, the examples, the test pages, the tools) lives here, and the wasm crates stay Rust-only — `build.sh` stages their wasm-bindgen bundles into `dist/`. The package **mirrors the Python client's structure**: sources under `src/` at the same relative paths as `clausters/`'s modules (`base/`, `gui/`, …), with `examples/` and `tests/` beside them; `dist/` reproduces the `src/` tree 1:1 (plain ES modules plus `.d.ts` and source maps — no bundler), and the staged wasm bundles inside it (`engine/`, `gui-host/`, `core/`) are the browser's `_bin`/`_libs`. Any static file server serves the result. Toolchain details and the from-scratch recipe are in `BUILD.md`.
 
-📖 **Documentation:** the client's own book is the mdBook in `docs/` (`./docs/build.sh`, with the API reference generated from the sources' TSDoc by TypeDoc) — the third of the repository's three, beside the [server book](https://clausters.readthedocs.io/) (the OSC protocol, the `/gui_*` reference, the bundle format) and the [Python client book](https://clausters-python.readthedocs.io/) (the shared client model). It is not on Read the Docs yet; the steps are in `BUILD.md`, "Publishing".
+📖 **Documentation:** **[clausters-web.readthedocs.io](https://clausters-web.readthedocs.io/)** — the client's own book, the mdBook in `docs/` (`./docs/build.sh` builds it locally, with the API reference generated from the sources' TSDoc by TypeDoc). It is the third of the repository's three, beside the [server book](https://clausters.readthedocs.io/) (the OSC protocol, the `/gui_*` reference, the bundle format) and the [Python client book](https://clausters-python.readthedocs.io/) (the shared client model).
 
 ```sh
 ./build.sh                # cargo-builds the three wasm bundles, stages them

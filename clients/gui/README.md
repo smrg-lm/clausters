@@ -2,11 +2,13 @@
 
 [![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
 [![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
+[![Web client book](https://readthedocs.org/projects/clausters-web/badge/?version=latest)](https://clausters-web.readthedocs.io/)
 
 📖 **Documentation:** [The GUI protocol](../../docs/gui-protocol.md) in the
 [server book](https://clausters.readthedocs.io/) (the `/gui_*` wire reference)
 · [Python client book](https://clausters-python.readthedocs.io/) (driving it
-from Python)
+from Python) · [web client book](https://clausters-web.readthedocs.io/)
+(driving the host in a browser, on a canvas)
 
 The scriptable GUI host for the [Clausters](../../README.md) audio server: a
 language client sends a **GuiDef** — a widget tree as JSON riding OSC — over

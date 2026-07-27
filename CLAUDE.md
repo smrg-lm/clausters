@@ -47,9 +47,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     5.9** while the package compiles with the v7 in `node_modules`, and it runs
     with warnings as errors. Doc comments in `clients/web/src` are TSDoc
     (`/** */`), never Rust-style `///`, which TypeScript tooling does not read.
-    This book is **not on Read the Docs yet** — `clients/web/BUILD.md`,
-    "Publishing", carries the steps, and the other books' inbound links wait
-    for that.
+    This book is on Read the Docs like the other two
+    (`clients/web/.readthedocs.yaml`), and the package is published to npm as
+    `clausters` by the release tag — `clients/web/BUILD.md`, "Publishing".
   - The books cross-link by their RTD URLs.
   - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists

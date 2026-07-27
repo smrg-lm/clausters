@@ -73,8 +73,8 @@ Three rules hold across *all* of the above (repeat them to yourself):
    (shell `kill`, `subprocess.terminate()`, POSIX "the kernel kills the
    process", upstream symbols cited verbatim).
 
-The books cross-link each other by their ReadTheDocs URLs (the web one's
-project does not exist yet, so its inbound links wait).
+The books cross-link each other by their ReadTheDocs URLs — all three are
+published, so a new page links the other two rather than describing them.
 
 ## 1. User documentation — Diataxis (Tutorial / Explanation / Reference)
 

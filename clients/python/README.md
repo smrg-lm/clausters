@@ -3,10 +3,13 @@
 [![PyPI](https://img.shields.io/pypi/v/clausters)](https://pypi.org/project/clausters/)
 [![Python client book](https://readthedocs.org/projects/clausters-python/badge/?version=latest)](https://clausters-python.readthedocs.io/)
 [![Server book](https://readthedocs.org/projects/clausters/badge/?version=latest)](https://clausters.readthedocs.io/)
+[![Web client book](https://readthedocs.org/projects/clausters-web/badge/?version=latest)](https://clausters-web.readthedocs.io/)
 
 📖 **Documentation:** [Python client book](https://clausters-python.readthedocs.io/)
 (this package) · [server book](https://clausters.readthedocs.io/) (the OSC
-protocol, the wire formats, the engine)
+protocol, the wire formats, the engine) ·
+[web client book](https://clausters-web.readthedocs.io/) (the same model in the
+browser)
 
 High-level Python client for the [Clausters](../../README.md) audio server,
 ported selectively from SuperCollider's class library
@@ -288,8 +291,10 @@ python clients/python/build_native.py            # release; --debug for the debu
 📖 **[clausters-python.readthedocs.io](https://clausters-python.readthedocs.io/)**
 — the client's book online: the guide, the composition tutorial and the API
 reference. The server's own book (the OSC protocol, the wire formats, the
-engine) is at **[clausters.readthedocs.io](https://clausters.readthedocs.io/)**;
-the two cross-link.
+engine) is at **[clausters.readthedocs.io](https://clausters.readthedocs.io/)**,
+and the web client's — the same client model in a browser — at
+**[clausters-web.readthedocs.io](https://clausters-web.readthedocs.io/)**; the
+three cross-link.
 
 The book lives in this repository as an mdBook — a guide plus an API reference
 **generated from the package docstrings** — so it also builds and reads offline.

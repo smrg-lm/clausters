@@ -4,8 +4,8 @@
 
 It is **pure Python at runtime**: it reaches the shared native core through `ctypes` over the `clausters-ffi` cdylib, and speaks ordinary OSC bytes to the server (UDP, TCP, shared memory, or an in-process embedded server). A NumPy user can wrap a returned `array('f')`, but NumPy is never a dependency — only flat data crosses the binding.
 
-This is the **package documentation**. The server itself — the OSC protocol, the def formats (SynthDef JSON and Faust), the node-tree model, the C ABI contract, and how to embed it — is documented separately in the **[Clausters server book](https://clausters.readthedocs.io/)**; this site links to it rather than repeating it. Two books, one per platform.
-<!-- Cross-link to the companion book; update the URL if the Read the Docs slug differs. -->
+This is the **package documentation**. The server itself — the OSC protocol, the def formats (SynthDef JSON and Faust), the node-tree model, the C ABI contract, and how to embed it — is documented separately in the **[Clausters server book](https://clausters.readthedocs.io/)**; this site links to it rather than repeating it. The **[web client book](https://clausters-web.readthedocs.io/)** is the third: the same client model in a browser, where this client's threads become promises and the server can run in the page itself. One book per platform.
+<!-- Cross-links to the companion books; update the URLs if the Read the Docs slugs differ. -->
 
 ## Components
 

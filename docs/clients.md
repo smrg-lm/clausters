@@ -323,7 +323,10 @@ without a generated module. `clients/web/examples/piano/` and
 The browser-first TypeScript client grows inside the same `clients/web/`
 package (roadmap: `clients/web/PLAN.md`), and has its own book — the mdBook in
 `clients/web/docs/`, the third of the repository's three, with its API
-reference generated from the sources' TSDoc. Four layers are in place.
+reference generated from the sources' TSDoc:
+**[the clausters web client book](https://clausters-web.readthedocs.io/)**.
+Four layers are in place.
+<!-- Cross-link to the companion book; update the URL if the Read the Docs slug differs. -->
 
 **The seam.** The **OSC codec through the shared core**
 (`crates/clausters-core-web`, a thin wasm-bindgen shell over `clausters-core`,
@@ -405,15 +408,14 @@ package over the same OSC, against a native server.
   beside the cdylibs, so a `FaustDef` compiles on a machine with neither
   installed. Cross-platform CI wheels (cibuildwheel / manylinux) are still
   future work.
-- **TypeScript / web (built here, publication pending)**: the npm package is
-  the client's `dist/` — plain ES modules plus the wasm the core, the engine
-  and the GUI host compile to, staged beside them. No per-platform native
-  addon: the browser build is wasm, and a native server is reached over
-  WebSocket. `npm install ./clients/web` installs it from a checkout today; the
-  tree is held publishable by a checker (`npm run check-package`, which
-  `prepublishOnly` runs) that refuses a `dist/` missing its wasm bundles or a
-  version out of step with the crate's. What is left is the publication
-  itself.
+- **TypeScript / web (published on npm)**: `npm install clausters`. The package
+  is the client's `dist/` — plain ES modules plus the wasm the core, the engine
+  and the GUI host compile to, staged beside them, so an install needs no
+  toolchain and fetches nothing at run time. No per-platform native addon: the
+  browser build is wasm, and a native server is reached over WebSocket. The
+  release tag publishes it beside the wheel, through a checker
+  (`npm run check-package`, which `prepublishOnly` runs) that refuses a `dist/`
+  missing its wasm bundles or a version out of step with the crate's.
 - **Reproducible Faust build (done for native/CI/release)**: the `faust` feature
   needs libfaust built with the LLVM backend. It is now vendored under
   `third_party/` — `faust.pin` (the exact commit + LLVM version) and
@@ -442,4 +444,4 @@ package over the same OSC, against a native server.
 | TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the document's components) | done |
 | npm packaging of the web client (the tarball, its contents checked) | done |
 | Web client documentation book (mdBook + generated API reference) | done |
-| Publishing the web client (npm registry, Read the Docs project) | planned |
+| Publishing the web client (npm registry, Read the Docs project) | done |
