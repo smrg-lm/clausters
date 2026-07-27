@@ -125,8 +125,10 @@ const expected = (y: number | string): number =>
             ? Number.POSITIVE_INFINITY
             : Number.NEGATIVE_INFINITY;
 
-/// The ops that reach libm — the only ones allowed to differ from the native
-/// client, and only in the last f32 ulp.
+/**
+ * The ops that reach libm — the only ones allowed to differ from the native
+ * client, and only in the last f32 ulp.
+ */
 const TRANSCENDENTAL = new Set([
     "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "exp", "exp10",
     "log", "log2", "log10", "sinh", "cosh", "tanh", "pow", "hypot",
@@ -134,7 +136,7 @@ const TRANSCENDENTAL = new Set([
     "ampdb", "octcps", "cpsoct",
 ]);
 
-/// One f32 ulp at `x` — the width of the disagreement libm is allowed.
+/** One f32 ulp at `x` — the width of the disagreement libm is allowed. */
 const ulp = (x: number): number => {
     const magnitude = Math.abs(Math.fround(x));
     if (!Number.isFinite(magnitude) || magnitude === 0) return 1e-45;

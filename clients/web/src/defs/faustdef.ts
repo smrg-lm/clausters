@@ -20,13 +20,13 @@
 import { Signal } from "./signals.ts";
 import type { SignalNode } from "./signals.ts";
 
-/// Which of the three payload forms a def carries.
+/** Which of the three payload forms a def carries. */
 export type FaustDefKind = "signals" | "box" | "source";
 
 const CONTROL_OPS = new Set(["hslider", "vslider", "nentry", "button", "checkbox"]);
 
 export class FaustDef {
-    /// The def name (also what `/d_faust` replies with on success).
+    /** The def name (also what `/d_faust` replies with on success). */
     readonly name: string;
     readonly kind: FaustDefKind;
     private readonly payload: unknown;
@@ -39,7 +39,7 @@ export class FaustDef {
 
     // --- constructors ---
 
-    /// One output per argument (a `Signal` or a number).
+    /** One output per argument (a `Signal` or a number). */
     static fromSignals(name: string, ...outputs: (Signal | number)[]): FaustDef {
         if (outputs.length === 0) {
             throw new TypeError("a signal def needs at least one output");
@@ -50,21 +50,25 @@ export class FaustDef {
         return new FaustDef(name, { signals: nodes }, "signals");
     }
 
-    /// From Faust source, verbatim.
+    /** From Faust source, verbatim. */
     static fromSource(name: string, src: string): FaustDef {
         return new FaustDef(name, src, "source");
     }
 
-    /// From a raw box-tree object — the JSON the Python client's box API
-    /// emits, and what a machine-generated graph produces.
+    /**
+     * From a raw box-tree object — the JSON the Python client's box API
+     * emits, and what a machine-generated graph produces.
+     */
     static fromBox(name: string, box: unknown): FaustDef {
         return new FaustDef(name, box, "box");
     }
 
     // --- serialization ---
 
-    /// The def serialized to text — the `/d_faust <name> <payload>` wire
-    /// payload: a JSON signal/box tree, or the Faust source string verbatim.
+    /**
+     * The def serialized to text — the `/d_faust <name> <payload>` wire
+     * payload: a JSON signal/box tree, or the Faust source string verbatim.
+     */
     dumpDef(): string {
         if (this.kind === "source") return this.payload as string;
         return JSON.stringify(this.payload);
@@ -72,12 +76,14 @@ export class FaustDef {
 
     // --- controls ---
 
-    /// bus-selecting controls every Faust synth also accepts.
+    /** bus-selecting controls every Faust synth also accepts. */
     static readonly reserved = ["out", "in"] as const;
 
-    /// The control names this def declares (UI labels), in tree order. The
-    /// reserved `in`/`out` bus controls (added by the server) are not
-    /// included; see `FaustDef.reserved`.
+    /**
+     * The control names this def declares (UI labels), in tree order. The
+     * reserved `in`/`out` bus controls (added by the server) are not
+     * included; see `FaustDef.reserved`.
+     */
     controlNames(): string[] {
         const names: string[] = [];
         if (this.kind !== "source") collectLabels(this.payload, names);

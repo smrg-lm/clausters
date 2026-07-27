@@ -27,12 +27,12 @@ import type { Pattern } from "./pattern.ts";
 import type { TimedMessage } from "../defs/server.ts";
 import type { MsgArg } from "../base/osc.ts";
 
-/// What a timeline can hold: anything that renders itself on a destination.
+/** What a timeline can hold: anything that renders itself on a destination. */
 export interface TimelineItem {
     play(destination: PlayDestination): unknown;
 }
 
-/// The destination a playhead renders on. `Server` satisfies it.
+/** The destination a playhead renders on. `Server` satisfies it. */
 export interface PlayDestination extends EventDestination {
     sendBundle(
         messages: readonly TimedMessage[],
@@ -40,8 +40,10 @@ export interface PlayDestination extends EventDestination {
     ): void;
 }
 
-/// One timed item. A stable object, so it can be removed or moved by identity
-/// after other edits have shifted positions.
+/**
+ * One timed item. A stable object, so it can be removed or moved by identity
+ * after other edits have shifted positions.
+ */
 export class Entry {
     beat: number;
     readonly item: unknown;
@@ -52,8 +54,10 @@ export class Entry {
     }
 }
 
-/// A raw OSC message as a timeline item: rendering it sends the message at the
-/// playhead's current logical beat.
+/**
+ * A raw OSC message as a timeline item: rendering it sends the message at the
+ * playhead's current logical beat.
+ */
 export class OscEvent {
     readonly message: TimedMessage;
 
@@ -66,13 +70,15 @@ export class OscEvent {
     }
 }
 
-/// A static, editable sequence of `(beat, item)` kept sorted by beat, with
-/// random access by time.
-///
-/// Items stay in beat order, and a stable insert preserves the order of items
-/// added at the same beat (a note-off before a re-trigger). `add` returns a
-/// handle you pass back to `remove`/`move`, so edits stay correct as other
-/// inserts shift indices.
+/**
+ * A static, editable sequence of `(beat, item)` kept sorted by beat, with
+ * random access by time.
+ *
+ * Items stay in beat order, and a stable insert preserves the order of items
+ * added at the same beat (a note-off before a re-trigger). `add` returns a
+ * handle you pass back to `remove`/`move`, so edits stay correct as other
+ * inserts shift indices.
+ */
 export class Timeline {
     private entries: Entry[] = [];
 
@@ -82,21 +88,21 @@ export class Timeline {
 
     // ---- editing ----
 
-    /// Inserts `item` at `beat` (kept sorted); returns the entry handle.
+    /** Inserts `item` at `beat` (kept sorted); returns the entry handle. */
     add(beat: number, item: unknown): Entry {
         const entry = new Entry(beat, item);
         this.entries.splice(this.insertIndex(beat), 0, entry);
         return entry;
     }
 
-    /// Removes an entry returned by `add` (by identity).
+    /** Removes an entry returned by `add` (by identity). */
     remove(entry: Entry): this {
         const i = this.entries.indexOf(entry);
         if (i >= 0) this.entries.splice(i, 1);
         return this;
     }
 
-    /// Moves an entry to `newBeat`, keeping the timeline sorted.
+    /** Moves an entry to `newBeat`, keeping the timeline sorted. */
     move(entry: Entry, newBeat: number): Entry {
         this.remove(entry);
         entry.beat = newBeat;
@@ -104,14 +110,16 @@ export class Timeline {
         return entry;
     }
 
-    /// Drops every item.
+    /** Drops every item. */
     clear(): this {
         this.entries = [];
         return this;
     }
 
-    /// Snaps every placement to the nearest multiple of `grid` beats; a zero or
-    /// negative grid is a no-op.
+    /**
+     * Snaps every placement to the nearest multiple of `grid` beats; a zero or
+     * negative grid is a no-op.
+     */
     quantize(grid: number): this {
         if (grid <= 0) return this;
         for (const entry of this.entries) {
@@ -123,8 +131,10 @@ export class Timeline {
 
     // ---- random access by time ----
 
-    /// The index the *last* item at `beat` would be inserted after (a stable
-    /// insert), and the cursor of the first item strictly after it.
+    /**
+     * The index the *last* item at `beat` would be inserted after (a stable
+     * insert), and the cursor of the first item strictly after it.
+     */
     private insertIndex(beat: number): number {
         let lo = 0;
         let hi = this.entries.length;
@@ -136,8 +146,10 @@ export class Timeline {
         return lo;
     }
 
-    /// The cursor (index) of the first item at or after `beat` — the seek
-    /// primitive a playhead starts and locates with.
+    /**
+     * The cursor (index) of the first item at or after `beat` — the seek
+     * primitive a playhead starts and locates with.
+     */
     indexAt(beat: number): number {
         let lo = 0;
         let hi = this.entries.length;
@@ -149,19 +161,19 @@ export class Timeline {
         return lo;
     }
 
-    /// The `(beat, item)` pairs in the half-open beat window `[t0, t1)`.
+    /** The `(beat, item)` pairs in the half-open beat window `[t0, t1)`. */
     range(t0: number, t1: number): [number, unknown][] {
         return this.entries
             .slice(this.indexAt(t0), this.indexAt(t1))
             .map((e) => [e.beat, e.item] as [number, unknown]);
     }
 
-    /// The items exactly at `beat`.
+    /** The items exactly at `beat`. */
     at(beat: number): unknown[] {
         return this.entries.filter((e) => e.beat === beat).map((e) => e.item);
     }
 
-    /// The beat of the last item (0 when empty) — the timeline's length.
+    /** The beat of the last item (0 when empty) — the timeline's length. */
     duration(): number {
         return this.entries.at(-1)?.beat ?? 0;
     }
@@ -170,7 +182,7 @@ export class Timeline {
         return this.entries.length;
     }
 
-    /// The `(beat, item)` pair at index `i`.
+    /** The `(beat, item)` pair at index `i`. */
     get(i: number): [number, unknown] | undefined {
         const entry = this.entries[i];
         return entry ? [entry.beat, entry.item] : undefined;
@@ -182,13 +194,15 @@ export class Timeline {
 
     // ---- capture a pattern into a timeline ----
 
-    /// Bounces an event pattern into a static timeline by running it with no
-    /// pacing and recording each event at its logical beat. `dur` bounds an
-    /// open-ended pattern (in beats); leave it out to drain a finite one.
-    ///
-    /// The run uses the clock's own seams — a hand-driven timebase and ticker —
-    /// so it is the same driver live playback uses, only advanced as fast as
-    /// the loop can go.
+    /**
+     * Bounces an event pattern into a static timeline by running it with no
+     * pacing and recording each event at its logical beat. `dur` bounds an
+     * open-ended pattern (in beats); leave it out to drain a finite one.
+     *
+     * The run uses the clock's own seams — a hand-driven timebase and ticker —
+     * so it is the same driver live playback uses, only advanced as fast as
+     * the loop can go.
+     */
     static fromPattern(
         pattern: Pattern<unknown>,
         { dur, tempo = 1.0 }: { dur?: number; tempo?: number } = {},
@@ -224,20 +238,22 @@ export class Timeline {
     }
 }
 
-/// A transport over a `Timeline`: play / stop / locate / loop, and a song
-/// `position`.
-///
-/// The playhead scans the timeline forward as a clock advances, rendering each
-/// item on a destination. The forward scan is what `play` runs; the random
-/// access lives at the boundaries — `play({ at })` and `locate(beat)` re-seek
-/// the cursor by time, which a forward-only routine could never do.
-///
-/// Timing rides the clock's logical time like everything else, so a playhead
-/// inherits `quant` and a sample-exact timebase for free.
-///
-/// A pass ends on its own when the scan reaches the end of the timeline:
-/// `playing` goes false and `finished` says the end is why, so a transport
-/// reads the end off the playhead instead of timing it.
+/**
+ * A transport over a `Timeline`: play / stop / locate / loop, and a song
+ * `position`.
+ *
+ * The playhead scans the timeline forward as a clock advances, rendering each
+ * item on a destination. The forward scan is what `play` runs; the random
+ * access lives at the boundaries — `play({ at })` and `locate(beat)` re-seek
+ * the cursor by time, which a forward-only routine could never do.
+ *
+ * Timing rides the clock's logical time like everything else, so a playhead
+ * inherits `quant` and a sample-exact timebase for free.
+ *
+ * A pass ends on its own when the scan reaches the end of the timeline:
+ * `playing` goes false and `finished` says the end is why, so a transport
+ * reads the end off the playhead instead of timing it.
+ */
 export class Playhead {
     readonly timeline: Timeline;
     readonly clock: TempoClock;
@@ -260,9 +276,11 @@ export class Playhead {
 
     // ---- transport ----
 
-    /// Starts (or restarts) playback from beat `at`, snapping the start to a
-    /// `quant` boundary of the clock's grid. Re-seeks the cursor to `at`, so it
-    /// doubles as a locate-and-play.
+    /**
+     * Starts (or restarts) playback from beat `at`, snapping the start to a
+     * `quant` boundary of the clock's grid. Re-seeks the cursor to `at`, so it
+     * doubles as a locate-and-play.
+     */
     play({ at = 0, quant }: { at?: number; quant?: number } = {}): this {
         this.startBeat = at;
         this.posBeat = at;
@@ -277,8 +295,10 @@ export class Playhead {
         return this;
     }
 
-    /// Halts the playhead. Items already rendered keep sounding (their releases
-    /// are scheduled); no further items are played.
+    /**
+     * Halts the playhead. Items already rendered keep sounding (their releases
+     * are scheduled); no further items are played.
+     */
     stop(): this {
         this.posBeat = this.position();
         this.running = false;
@@ -292,8 +312,10 @@ export class Playhead {
         return this;
     }
 
-    /// Seeks to `beat`. While playing, restarts the scan from there (random
-    /// access); while stopped, sets where the next `play` begins.
+    /**
+     * Seeks to `beat`. While playing, restarts the scan from there (random
+     * access); while stopped, sets where the next `play` begins.
+     */
     locate(beat: number): this {
         if (this.running) {
             this.play({ at: beat });
@@ -305,21 +327,25 @@ export class Playhead {
         return this;
     }
 
-    /// Loops the half-open beat window `[start, end)`: when the scan reaches
-    /// `end` it wraps back to `start`. Set before or during play.
+    /**
+     * Loops the half-open beat window `[start, end)`: when the scan reaches
+     * `end` it wraps back to `start`. Set before or during play.
+     */
     loop(start: number, end: number): this {
         this.loopWindow = [start, end];
         return this;
     }
 
-    /// Stops looping; the scan plays through to the end.
+    /** Stops looping; the scan plays through to the end. */
     unloop(): this {
         this.loopWindow = null;
         return this;
     }
 
-    /// The current song position, in beats. Interpolated from the clock between
-    /// items while playing; the start or last-seek beat while stopped.
+    /**
+     * The current song position, in beats. Interpolated from the clock between
+     * items while playing; the start or last-seek beat while stopped.
+     */
     position(): number {
         if (!this.running || this.posClock === null) return this.posBeat;
         let pos = this.posBeat + (this.clock.beats() - this.posClock);
@@ -331,17 +357,21 @@ export class Playhead {
         return pos;
     }
 
-    /// Whether the scan is running. It goes false on `stop` **and** when the
-    /// scan reaches the end of the timeline, so a transport polls this one flag
-    /// instead of comparing `position` against a length of its own.
+    /**
+     * Whether the scan is running. It goes false on `stop` **and** when the
+     * scan reaches the end of the timeline, so a transport polls this one flag
+     * instead of comparing `position` against a length of its own.
+     */
     get playing(): boolean {
         return this.running;
     }
 
-    /// Whether the scan ran off the end, as opposed to being halted by hand or
-    /// still playing. It is the *scan* that ended: a loop never ends, and the
-    /// last item keeps sounding for its own length — the playhead schedules
-    /// items, it does not wait for them.
+    /**
+     * Whether the scan ran off the end, as opposed to being halted by hand or
+     * still playing. It is the *scan* that ended: a loop never ends, and the
+     * last item keeps sounding for its own length — the playhead schedules
+     * items, it does not wait for them.
+     */
     get finished(): boolean {
         return this.ended;
     }

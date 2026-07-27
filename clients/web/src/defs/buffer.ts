@@ -28,10 +28,10 @@ export class Buffer {
     }
 }
 
-/// Anything a command can address by buffer number: a handle or the number.
+/** Anything a command can address by buffer number: a handle or the number. */
 export type BufferLike = Buffer | number;
 
-/// The index behind a buffer handle or a bare number.
+/** The index behind a buffer handle or a bare number. */
 export function bufferNumber(buf: BufferLike): number {
     return typeof buf === "number" ? buf : buf.bufnum;
 }
@@ -45,7 +45,7 @@ export class BufferAllocator {
         this.registry = new Registry(0, size);
     }
 
-    /// A free buffer index; throws when the pool is exhausted.
+    /** A free buffer index; throws when the pool is exhausted. */
     alloc(): number {
         const bufnum = this.registry.alloc(1);
         if (bufnum === undefined) {
@@ -54,9 +54,11 @@ export class BufferAllocator {
         return bufnum;
     }
 
-    /// Returns `bufnum` to the pool. A double free (or an index this
-    /// allocator never handed out) throws — a lost buffer slot is a client
-    /// bug, never absorbed silently.
+    /**
+     * Returns `bufnum` to the pool. A double free (or an index this
+     * allocator never handed out) throws — a lost buffer slot is a client
+     * bug, never absorbed silently.
+     */
     free(bufnum: number): void {
         if (!this.registry.release(bufnum, 1)) {
             throw new AllocationError(
@@ -65,7 +67,7 @@ export class BufferAllocator {
         }
     }
 
-    /// How many buffer slots are currently allocated.
+    /** How many buffer slots are currently allocated. */
     get inUse(): number {
         return this.registry.inUse;
     }

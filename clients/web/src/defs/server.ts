@@ -62,20 +62,24 @@ export const DEFAULT_MAX_BUFFERS = 4096;
 export const DEFAULT_MAX_GRAPH_CHILDREN = 512;
 export const DEFAULT_MAX_UGEN_INPUTS = 32;
 
-/// The sizes a client's allocators need. They are a property of the *server*,
-/// so `Server.open` reads them from `/server_info` rather than guessing;
-/// pass them explicitly to skip that round trip.
+/**
+ * The sizes a client's allocators need. They are a property of the *server*,
+ * so `Server.open` reads them from `/server_info` rather than guessing;
+ * pass them explicitly to skip that round trip.
+ */
 export interface ServerSizing {
     audioBuses: number;
     controlBuses: number;
     maxNodes: number;
     maxBuffers: number;
-    /// Hardware output channels — the audio buses reserved at the bottom of
-    /// the space, which the allocator never hands out.
+    /**
+     * Hardware output channels — the audio buses reserved at the bottom of
+     * the space, which the allocator never hands out.
+     */
     channels: number;
 }
 
-/// The static configuration a running server reports over `/server_info`.
+/** The static configuration a running server reports over `/server_info`. */
 export interface ServerInfo extends ServerSizing {
     blockSize: number;
     nominalSampleRate: number;
@@ -83,37 +87,39 @@ export interface ServerInfo extends ServerSizing {
     inputChannels: number;
     maxGraphChildren: number;
     maxUgenInputs: number;
-    /// Audio-tap region shape; 0/0 when the server has no segment.
+    /** Audio-tap region shape; 0/0 when the server has no segment. */
     taps: number;
     tapFrames: number;
-    /// The stream-transport frame ceiling in bytes.
+    /** The stream-transport frame ceiling in bytes. */
     maxFrame: number;
 }
 
-/// One entry of a def's control surface, as `queryDefs` reports it.
+/** One entry of a def's control surface, as `queryDefs` reports it. */
 export interface ControlInfo {
     name: string;
     default: number;
-    /// The control type the def declared: `"kr"`, `"tr"` or `"ir"`.
+    /** The control type the def declared: `"kr"`, `"tr"` or `"ir"`. */
     rate: string;
-    /// A Faust parameter's declared range (its UI widget's).
+    /** A Faust parameter's declared range (its UI widget's). */
     min?: number;
     max?: number;
     step?: number;
-    /// A graph def's port: the member controls it drives.
+    /** A graph def's port: the member controls it drives. */
     targets?: PortTargetInfo[];
 }
 
-/// What the server holds under a def name.
+/** What the server holds under a def name. */
 export interface DefInfo {
     name: string;
-    /// `"synth"`, `"faust"` or `"graph"` — empty when the name is unknown.
+    /** `"synth"`, `"faust"` or `"graph"` — empty when the name is unknown. */
     family: string;
     controls: ControlInfo[];
 }
 
-/// A node as `/n_query` reports it: a group carries `head`/`tail`, a synth
-/// its `def` and control values.
+/**
+ * A node as `/n_query` reports it: a group carries `head`/`tail`, a synth
+ * its `def` and control values.
+ */
 export interface NodeInfo {
     id: number;
     parent: number;
@@ -126,7 +132,7 @@ export interface NodeInfo {
     controls?: Record<string, number>;
 }
 
-/// One inner target of a graph def's surface port, as `/d_info` reports it.
+/** One inner target of a graph def's surface port, as `/d_info` reports it. */
 export interface PortTargetInfo {
     member: number;
     control: string;
@@ -134,8 +140,10 @@ export interface PortTargetInfo {
     add: number;
 }
 
-/// A node-tree entry: a group carries `children`, a synth a `def` and its
-/// control values.
+/**
+ * A node-tree entry: a group carries `children`, a synth a `def` and its
+ * control values.
+ */
 export interface TreeNode {
     id: number;
     children?: TreeNode[];
@@ -143,17 +151,23 @@ export interface TreeNode {
     controls?: Record<string, number | string>;
 }
 
-/// A plain value a message argument may take, or an explicit `[tag, value]`
-/// pair when the inferred type is wrong (the codec's own type — re-exported
-/// here, where the commands take it).
+/**
+ * A plain value a message argument may take, or an explicit `[tag, value]`
+ * pair when the inferred type is wrong (the codec's own type — re-exported
+ * here, where the commands take it).
+ */
 export type { MsgArg };
 
-/// Control values, by name. The reserved `in`/`out` bus controls are
-/// expressible here like any other name.
+/**
+ * Control values, by name. The reserved `in`/`out` bus controls are
+ * expressible here like any other name.
+ */
 export type Controls = Record<string, number> | readonly (readonly [string, number])[];
 
-/// One `/clock` observation: the server's counter and rate, and the local time
-/// the exchange is centred on.
+/**
+ * One `/clock` observation: the server's counter and rate, and the local time
+ * the exchange is centred on.
+ */
 interface ClockReply {
     local: number;
     sample: number;
@@ -168,17 +182,21 @@ interface Pending {
     timer: ReturnType<typeof setTimeout>;
 }
 
-/// One message of a timed bundle: an address and its arguments, tagged by the
-/// same rule `sendMsg` uses (an explicit `[tag, value]` pair where the guess
-/// would be wrong).
+/**
+ * One message of a timed bundle: an address and its arguments, tagged by the
+ * same rule `sendMsg` uses (an explicit `[tag, value]` pair where the guess
+ * would be wrong).
+ */
 export type TimedMessage = [string, ...MsgArg[]];
 
-/// The bundle form the codec takes.
+/** The bundle form the codec takes. */
 const toBundle = (messages: readonly TimedMessage[]): BundleMessage[] =>
     messages.map(([addr, ...args]) => ({ addr, args: args.map(oscArg) }));
 
-/// Control values flattened into the `name value name value …` tail every
-/// node command takes. Accepts an object or a list of pairs.
+/**
+ * Control values flattened into the `name value name value …` tail every
+ * node command takes. Accepts an object or a list of pairs.
+ */
 function flattenControls(controls?: Controls): OscArg[] {
     if (!controls) return [];
     const entries = Array.isArray(controls)
@@ -191,14 +209,16 @@ function flattenControls(controls?: Controls): OscArg[] {
 
 export class Server {
     readonly connection: Connection;
-    /// The sizes this client's allocators were built against.
+    /** The sizes this client's allocators were built against. */
     readonly sizing: ServerSizing;
     readonly nodes: NodeIdAllocator;
     readonly audioBuses: AudioBusAllocator;
     readonly controlBuses: ControlBusAllocator;
     readonly buffers: BufferAllocator;
-    /// Seconds added to every timed send — the scheduling headroom. Kept here
-    /// so the sequencing layer (a later milestone) has one place to read it.
+    /**
+     * Seconds added to every timed send — the scheduling headroom. Kept here
+     * so the sequencing layer (a later milestone) has one place to read it.
+     */
     latency = 0.05;
 
     private pending = new Set<Pending>();
@@ -217,15 +237,17 @@ export class Server {
         connection.addReply(this.listener);
     }
 
-    /// Opens a server over `connection`.
-    ///
-    /// With no `sizing` it asks the server for its own (`/server_info`), so
-    /// the allocators match the server that is actually running; a server
-    /// that does not answer within `timeout` leaves the compiled defaults in
-    /// place. `notify` (default `true`) registers for the server's pushes,
-    /// which is what recycles node ids as their `/n_end` arrives.
-    ///
-    /// The core wasm must be loaded first (`await loadOsc()`).
+    /**
+     * Opens a server over `connection`.
+     *
+     * With no `sizing` it asks the server for its own (`/server_info`), so
+     * the allocators match the server that is actually running; a server
+     * that does not answer within `timeout` leaves the compiled defaults in
+     * place. `notify` (default `true`) registers for the server's pushes,
+     * which is what recycles node ids as their `/n_end` arrives.
+     *
+     * The core wasm must be loaded first (`await loadOsc()`).
+     */
     static async open(
         connection: Connection,
         {
@@ -296,16 +318,20 @@ export class Server {
         }
     }
 
-    /// Subscribes to every decoded reply message; returns the unsubscribe.
-    /// The seam a responder layer builds on.
+    /**
+     * Subscribes to every decoded reply message; returns the unsubscribe.
+     * The seam a responder layer builds on.
+     */
     onReply(handler: (msg: OscMessage) => void): () => void {
         this.handlers.add(handler);
         return () => this.handlers.delete(handler);
     }
 
-    /// Resolves with the first reply message `match` accepts, or rejects with
-    /// `ReplyTimeout` after `timeout` seconds. Registered *before* whatever
-    /// send provokes the reply, so a fast server cannot outrun it.
+    /**
+     * Resolves with the first reply message `match` accepts, or rejects with
+     * `ReplyTimeout` after `timeout` seconds. Registered *before* whatever
+     * send provokes the reply, so a fast server cannot outrun it.
+     */
     awaitReply(
         match: (msg: OscMessage) => boolean,
         timeout = 5.0,
@@ -327,11 +353,13 @@ export class Server {
 
     // ---- raw OSC ----
 
-    /// Sends one message. **A message has no time**: in a bundle it would
-    /// carry the immediate timetag, and alone it means exactly that. Logical
-    /// time belongs to the bundle path, which a later milestone brings; use
-    /// this for what has no place in a timeline — sending defs, allocating
-    /// buffers, opening the groups a piece is built on.
+    /**
+     * Sends one message. **A message has no time**: in a bundle it would
+     * carry the immediate timetag, and alone it means exactly that. Logical
+     * time belongs to the bundle path, which a later milestone brings; use
+     * this for what has no place in a timeline — sending defs, allocating
+     * buffers, opening the groups a piece is built on.
+     */
     sendMsg(addr: string, ...args: MsgArg[]): void {
         this.connection.send(encodeMessage(addr, args.map(oscArg)));
     }
@@ -343,14 +371,16 @@ export class Server {
     // wall-clock — so a sequence stays tight however late the wake-up was, and
     // `latency` is the headroom that absorbs that lateness.
 
-    /// Emits a bundle of messages at the running routine's **exact logical
-    /// beat** (plus `delayBeats`, plus `latency`).
-    ///
-    /// Call it from a routine playing on a clock — the clock is found through
-    /// the routine being resumed — or pass `clock` explicitly. Under a
-    /// monotonic timebase the bundle carries a wall-clock timetag; under a
-    /// `SampleTimebase` it goes out as `/sched` at an absolute sample, which
-    /// is drift-free and exact to the sample.
+    /**
+     * Emits a bundle of messages at the running routine's **exact logical
+     * beat** (plus `delayBeats`, plus `latency`).
+     *
+     * Call it from a routine playing on a clock — the clock is found through
+     * the routine being resumed — or pass `clock` explicitly. Under a
+     * monotonic timebase the bundle carries a wall-clock timetag; under a
+     * `SampleTimebase` it goes out as `/sched` at an absolute sample, which
+     * is drift-free and exact to the sample.
+     */
     sendBundle(
         messages: readonly TimedMessage[],
         { delayBeats = 0, clock }: { delayBeats?: number; clock?: TempoClock } = {},
@@ -378,9 +408,11 @@ export class Server {
         this.sendTimetagged(wall + secs + this.latency, messages);
     }
 
-    /// Emits a bundle at wall-clock now + `delaySecs` (+ `latency`), with **no
-    /// clock** — the clockless counterpart of `sendBundle`, which is how a
-    /// note played outside any routine still frees itself.
+    /**
+     * Emits a bundle at wall-clock now + `delaySecs` (+ `latency`), with **no
+     * clock** — the clockless counterpart of `sendBundle`, which is how a
+     * note played outside any routine still frees itself.
+     */
     sendBundleAfter(delaySecs: number, messages: readonly TimedMessage[]): void {
         this.sendTimetagged(Date.now() / 1000 + delaySecs + this.latency, messages);
     }
@@ -389,8 +421,10 @@ export class Server {
         this.connection.send(encodeBundle(unixSecs, toBundle(messages)));
     }
 
-    /// `/sched <absolute sample> <packet>`: the sample-exact path. The inner
-    /// bundle is immediate — the outer command's own target carries the time.
+    /**
+     * `/sched <absolute sample> <packet>`: the sample-exact path. The inner
+     * bundle is immediate — the outer command's own target carries the time.
+     */
     private sendSched(sample: number, messages: readonly TimedMessage[]): void {
         this.sendMsg("/sched", ["h", sample], [
             "b",
@@ -398,17 +432,19 @@ export class Server {
         ]);
     }
 
-    /// Plays a note `Event` as OSC: `/s_new`, then its release (`gate 0` when
-    /// the event releases by gate, else `/n_free`) after the sustain. The OSC
-    /// side of the event's double dispatch. Returns the synth's node id, or
-    /// `null` for a rest.
-    ///
-    /// Two timing regimes, chosen by context. **Inside a routine** both go out
-    /// as timed bundles at the routine's exact logical beat, so a sequence
-    /// stays sample-tight. **Outside any clock** the `/s_new` fires
-    /// immediately and the release is a bundle at wall-clock now plus the
-    /// sustain in seconds — so a single `new Event().play(server)` sounds now
-    /// and frees itself with no clock at all.
+    /**
+     * Plays a note `Event` as OSC: `/s_new`, then its release (`gate 0` when
+     * the event releases by gate, else `/n_free`) after the sustain. The OSC
+     * side of the event's double dispatch. Returns the synth's node id, or
+     * `null` for a rest.
+     *
+     * Two timing regimes, chosen by context. **Inside a routine** both go out
+     * as timed bundles at the routine's exact logical beat, so a sequence
+     * stays sample-tight. **Outside any clock** the `/s_new` fires
+     * immediately and the release is a bundle at wall-clock now plus the
+     * sustain in seconds — so a single `new Event().play(server)` sounds now
+     * and frees itself with no clock at all.
+     */
     playEvent(event: Event): number | null {
         if (event.get("type") === "rest") return null;
         const node = this.nodes.alloc();
@@ -437,10 +473,12 @@ export class Server {
         return node;
     }
 
-    /// Sends `addr` and resolves with the first reply whose address is in
-    /// `expect`. `cmd` additionally requires the reply's first argument to
-    /// name that command, which is what makes concurrent requests safe (the
-    /// server echoes the command in `/done`/`/fail`).
+    /**
+     * Sends `addr` and resolves with the first reply whose address is in
+     * `expect`. `cmd` additionally requires the reply's first argument to
+     * name that command, which is what makes concurrent requests safe (the
+     * server echoes the command in `/done`/`/fail`).
+     */
     async request(
         addr: string,
         args: MsgArg[] = [],
@@ -461,9 +499,11 @@ export class Server {
         return reply;
     }
 
-    /// Sends `addr` and collects every `reply` message until the batch's
-    /// `/done` terminator — the shape the introspection queries take, whose
-    /// result is a variable number of messages.
+    /**
+     * Sends `addr` and collects every `reply` message until the batch's
+     * `/done` terminator — the shape the introspection queries take, whose
+     * result is a variable number of messages.
+     */
     requestBatch(
         addr: string,
         args: MsgArg[] = [],
@@ -492,8 +532,10 @@ export class Server {
         });
     }
 
-    /// Sends `addr` and awaits its `/done`, throwing `CommandError` on
-    /// `/fail`. The shape every asynchronous command answers with.
+    /**
+     * Sends `addr` and awaits its `/done`, throwing `CommandError` on
+     * `/fail`. The shape every asynchronous command answers with.
+     */
     private async command(
         addr: string,
         args: MsgArg[],
@@ -510,9 +552,11 @@ export class Server {
         return msg;
     }
 
-    /// The async barrier (scsynth `/sync`): resolves only once every async
-    /// command sent earlier — def compiles, buffer jobs — has completed.
-    /// Returns the id used.
+    /**
+     * The async barrier (scsynth `/sync`): resolves only once every async
+     * command sent earlier — def compiles, buffer jobs — has completed.
+     * Returns the id used.
+     */
     async sync(timeout = 5.0): Promise<number> {
         const id = ++this.syncCounter;
         const reply = this.awaitReply(
@@ -527,9 +571,11 @@ export class Server {
 
     // ---- definitions ----
 
-    /// Sends a def of any family — dispatches by type. `wait` (default
-    /// `true`) resolves on the server's `/done`; `wait: false` is
-    /// fire-and-forget, to be paired with `sync()`.
+    /**
+     * Sends a def of any family — dispatches by type. `wait` (default
+     * `true`) resolves on the server's `/done`; `wait: false` is
+     * fire-and-forget, to be paired with `sync()`.
+     */
     addDef(
         def: SynthDef | FaustDef | GraphDef,
         options?: { wait?: boolean; timeout?: number },
@@ -539,9 +585,11 @@ export class Server {
         return this.addSynthDef(def, options);
     }
 
-    /// Sends a UGen `SynthDef` via `/d_recv`. Compilation is asynchronous on
-    /// the server, so `wait: true` (the default) resolves on `/done` and
-    /// rejects with `CommandError` on `/fail`.
+    /**
+     * Sends a UGen `SynthDef` via `/d_recv`. Compilation is asynchronous on
+     * the server, so `wait: true` (the default) resolves on `/done` and
+     * rejects with `CommandError` on `/fail`.
+     */
     async addSynthDef(
         def: SynthDef,
         { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
@@ -555,9 +603,11 @@ export class Server {
         return def.name;
     }
 
-    /// Sends a `FaustDef` via `/d_faust`, which JIT-compiles it on the
-    /// server's network thread. Reaches a **native** server only: the in-page
-    /// engine is the `synth,embed` build with no LLVM, and answers `/fail`.
+    /**
+     * Sends a `FaustDef` via `/d_faust`, which JIT-compiles it on the
+     * server's network thread. Reaches a **native** server only: the in-page
+     * engine is the `synth,embed` build with no LLVM, and answers `/fail`.
+     */
     async addFaustDef(
         def: FaustDef,
         { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
@@ -570,9 +620,11 @@ export class Server {
         return def.name;
     }
 
-    /// Sends a `GraphDef` via `/d_graph`. Loading one is cheap on the server
-    /// (no JIT — it only validates and references the member defs), but it is
-    /// still asynchronous, so the same barrier discipline applies.
+    /**
+     * Sends a `GraphDef` via `/d_graph`. Loading one is cheap on the server
+     * (no JIT — it only validates and references the member defs), but it is
+     * still asynchronous, so the same barrier discipline applies.
+     */
     async addGraphDef(
         def: GraphDef,
         { wait = true, timeout = 10.0 }: { wait?: boolean; timeout?: number } = {},
@@ -586,14 +638,14 @@ export class Server {
         return def.name;
     }
 
-    /// Frees defs by name (`/d_free`).
+    /** Frees defs by name (`/d_free`). */
     freeDef(...names: string[]): void {
         this.sendMsg("/d_free", ...names);
     }
 
     // ---- nodes ----
 
-    /// Creates a synth (`/s_new`) and returns its handle.
+    /** Creates a synth (`/s_new`) and returns its handle. */
     synth(
         defname: string,
         controls?: Controls,
@@ -614,7 +666,7 @@ export class Server {
         return new Synth(id, defname, this);
     }
 
-    /// Creates a group (`/g_new`) and returns its handle.
+    /** Creates a group (`/g_new`) and returns its handle. */
     group({
         target = ROOT_NODE_ID,
         action = AddAction.TAIL,
@@ -624,11 +676,13 @@ export class Server {
         return new Group(id, this);
     }
 
-    /// Instantiates a GraphDef (`/graph_new`) as a wired group, with `ports`
-    /// overriding the def defaults. Drive the returned group through the
-    /// surface with `set` (`/n_set` resolves names against the surface, not
-    /// the private members) and tear it down with `free` (which also reclaims
-    /// its private buses).
+    /**
+     * Instantiates a GraphDef (`/graph_new`) as a wired group, with `ports`
+     * overriding the def defaults. Drive the returned group through the
+     * surface with `set` (`/n_set` resolves names against the surface, not
+     * the private members) and tear it down with `free` (which also reclaims
+     * its private buses).
+     */
     graph(
         defname: string,
         ports?: Controls,
@@ -649,8 +703,10 @@ export class Server {
         return new Group(id, this);
     }
 
-    /// Spawns a per-voice sub-graph (`/graph_voice`) inside a running
-    /// GraphDef `instance`, wired to its shared private buses.
+    /**
+     * Spawns a per-voice sub-graph (`/graph_voice`) inside a running
+     * GraphDef `instance`, wired to its shared private buses.
+     */
     graphVoice(instance: NodeLike, ports?: Controls): Group {
         const id = this.nodes.alloc();
         this.sendMsg(
@@ -662,12 +718,12 @@ export class Server {
         return new Group(id, this);
     }
 
-    /// Sets a node's controls (`/n_set`).
+    /** Sets a node's controls (`/n_set`). */
     set(node: NodeLike, controls: Controls): void {
         this.sendMsg("/n_set", ["i", nodeId(node)], ...flattenControls(controls));
     }
 
-    /// Maps a node's control to a bus (`/n_map`, or `/n_mapa` for audio).
+    /** Maps a node's control to a bus (`/n_map`, or `/n_mapa` for audio). */
     map(node: NodeLike, name: string, bus: BusLike, { audio = false } = {}): void {
         this.sendMsg(
             audio ? "/n_mapa" : "/n_map",
@@ -677,9 +733,11 @@ export class Server {
         );
     }
 
-    /// Sends a typed command to **one UGen instance** inside a synth
-    /// (`/u_cmd nodeID ugenIndex name args…`); an unrecognized `name` is a
-    /// no-op on the server.
+    /**
+     * Sends a typed command to **one UGen instance** inside a synth
+     * (`/u_cmd nodeID ugenIndex name args…`); an unrecognized `name` is a
+     * no-op on the server.
+     */
     uCmd(node: NodeLike, ugenIndex: number, name: string, ...args: number[]): void {
         this.sendMsg(
             "/u_cmd",
@@ -690,55 +748,59 @@ export class Server {
         );
     }
 
-    /// Frees nodes (`/n_free`). The id is **not** returned to the registry
-    /// here: it stays tracked until the server confirms the death with
-    /// `/n_end` — releasing at send time could re-hand an id whose node is
-    /// still alive on the server.
+    /**
+     * Frees nodes (`/n_free`). The id is **not** returned to the registry
+     * here: it stays tracked until the server confirms the death with
+     * `/n_end` — releasing at send time could re-hand an id whose node is
+     * still alive on the server.
+     */
     free(...nodes: NodeLike[]): void {
         for (const node of nodes) this.sendMsg("/n_free", ["i", nodeId(node)]);
     }
 
-    /// Pauses (`flag: false`) or resumes a node — a synth or a whole group —
-    /// with `/n_run`. A paused node stays in the tree and keeps its state but
-    /// is skipped; this is what resumes a synth parked by `PAUSE_SELF`.
+    /**
+     * Pauses (`flag: false`) or resumes a node — a synth or a whole group —
+     * with `/n_run`. A paused node stays in the tree and keeps its state but
+     * is skipped; this is what resumes a synth parked by `PAUSE_SELF`.
+     */
     run(node: NodeLike, flag = true): void {
         this.sendMsg("/n_run", ["i", nodeId(node)], ["i", flag ? 1 : 0]);
     }
 
-    /// Pauses a node (`/n_run … 0`).
+    /** Pauses a node (`/n_run … 0`). */
     pause(node: NodeLike): void {
         this.run(node, false);
     }
 
-    /// Resumes a paused node (`/n_run … 1`).
+    /** Resumes a paused node (`/n_run … 1`). */
     resume(node: NodeLike): void {
         this.run(node, true);
     }
 
     // ---- buses ----
 
-    /// A run of `channels` contiguous audio buses.
+    /** A run of `channels` contiguous audio buses. */
     audioBus(channels = 1): Bus {
         return this.audioBuses.alloc(channels);
     }
 
-    /// One control bus.
+    /** One control bus. */
     controlBus(): Bus {
         return this.controlBuses.alloc(1);
     }
 
-    /// Returns a bus's run to its allocator.
+    /** Returns a bus's run to its allocator. */
     freeBus(bus: Bus): void {
         if (bus.rate === "audio") this.audioBuses.free(bus);
         else this.controlBuses.free(bus);
     }
 
-    /// Sets a control bus's value (`/c_set`).
+    /** Sets a control bus's value (`/c_set`). */
     setBus(bus: BusLike, value: number): void {
         this.sendMsg("/c_set", ["i", busIndex(bus)], ["f", value]);
     }
 
-    /// Reads a control bus's value (`/c_get`).
+    /** Reads a control bus's value (`/c_get`). */
     async getBus(bus: BusLike, timeout = 5.0): Promise<number> {
         const index = busIndex(bus);
         const msg = await this.request("/c_get", [["i", index]], {
@@ -750,7 +812,7 @@ export class Server {
 
     // ---- buffers ----
 
-    /// Allocates a zeroed buffer (`/b_alloc`).
+    /** Allocates a zeroed buffer (`/b_alloc`). */
     async allocBuffer(
         frames: number,
         channels = 1,
@@ -775,13 +837,15 @@ export class Server {
         return new Buffer(bufnum, frames, channels);
     }
 
-    /// Fills a buffer through `/b_gen` (the wavetable/generator commands:
-    /// `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`).
-    ///
-    /// `args` follow each command's own shape — the wavetable generators take
-    /// an integer flag word first, then their values. They are tagged by the
-    /// same rule as `sendMsg` (an integral number is an int32), so a flag
-    /// word arrives as the int the server requires.
+    /**
+     * Fills a buffer through `/b_gen` (the wavetable/generator commands:
+     * `"env"`, `"sine1"`/`"sine2"`/`"sine3"`, `"cheby"`, `"copy"`).
+     *
+     * `args` follow each command's own shape — the wavetable generators take
+     * an integer flag word first, then their values. They are tagged by the
+     * same rule as `sendMsg` (an integral number is an int32), so a flag
+     * word arrives as the int the server requires.
+     */
     async genBuffer(
         buf: BufferLike,
         cmd: string,
@@ -796,7 +860,7 @@ export class Server {
         await this.command("/b_gen", payload, timeout);
     }
 
-    /// Zeroes a buffer (`/b_zero`).
+    /** Zeroes a buffer (`/b_zero`). */
     async zeroBuffer(
         buf: BufferLike,
         { wait = true, timeout = 5.0 }: { wait?: boolean; timeout?: number } = {},
@@ -809,10 +873,12 @@ export class Server {
         await this.command("/b_zero", args, timeout);
     }
 
-    /// Loads a sound file into a freshly allocated buffer (`/b_allocRead`).
-    /// The path is the **server's**, so this reaches a native server over the
-    /// WebSocket carrier; the in-page engine has no filesystem (feed it
-    /// decoded samples instead).
+    /**
+     * Loads a sound file into a freshly allocated buffer (`/b_allocRead`).
+     * The path is the **server's**, so this reaches a native server over the
+     * WebSocket carrier; the in-page engine has no filesystem (feed it
+     * decoded samples instead).
+     */
     async readBuffer(
         path: string,
         {
@@ -835,14 +901,14 @@ export class Server {
         return this.queryBuffer(bufnum, timeout);
     }
 
-    /// Frees a buffer on the server and returns its index to the pool.
+    /** Frees a buffer on the server and returns its index to the pool. */
     freeBuffer(buf: BufferLike): void {
         const bufnum = bufferNumber(buf);
         this.sendMsg("/b_free", ["i", bufnum]);
         this.buffers.free(bufnum);
     }
 
-    /// A buffer's shape as the server reports it (`/b_query`).
+    /** A buffer's shape as the server reports it (`/b_query`). */
     async queryBuffer(buf: BufferLike, timeout = 5.0): Promise<Buffer> {
         const bufnum = bufferNumber(buf);
         const msg = await this.request("/b_query", [["i", bufnum]], {
@@ -855,10 +921,12 @@ export class Server {
 
     // ---- server introspection ----
 
-    /// The server's static configuration: bus counts, output/input channels,
-    /// block size, sample rate and the boot-time pool sizes. The appended
-    /// capacity fields degrade to the compiled defaults against a server too
-    /// old to report them.
+    /**
+     * The server's static configuration: bus counts, output/input channels,
+     * block size, sample rate and the boot-time pool sizes. The appended
+     * capacity fields degrade to the compiled defaults against a server too
+     * old to report them.
+     */
     async queryInfo(timeout = 5.0): Promise<ServerInfo> {
         const msg = await this.request("/server_info", [], {
             expect: ["/server_info.reply"],
@@ -885,8 +953,10 @@ export class Server {
         };
     }
 
-    /// The live counters (`/status`): `[unused, ugens, synths, groups, defs,
-    /// avgCpu, peakCpu, nominalSr, actualSr]`.
+    /**
+     * The live counters (`/status`): `[unused, ugens, synths, groups, defs,
+     * avgCpu, peakCpu, nominalSr, actualSr]`.
+     */
     async status(timeout = 5.0): Promise<(number | string | boolean | null | Uint8Array)[]> {
         const msg = await this.request("/status", [], {
             expect: ["/status.reply"],
@@ -895,13 +965,15 @@ export class Server {
         return msg.args;
     }
 
-    /// The defs the server holds, each with its control surface (`/d_query`,
-    /// answered by one `/d_info` per def). With `names`, details exactly
-    /// those — an unknown one comes back with an empty `family` rather than
-    /// failing; with none, every loaded def of every family.
-    ///
-    /// The def store persists across restarts, so a server may well hold defs
-    /// this client never sent: this is how you find out.
+    /**
+     * The defs the server holds, each with its control surface (`/d_query`,
+     * answered by one `/d_info` per def). With `names`, details exactly
+     * those — an unknown one comes back with an empty `family` rather than
+     * failing; with none, every loaded def of every family.
+     *
+     * The def store persists across restarts, so a server may well hold defs
+     * this client never sent: this is how you find out.
+     */
     async queryDefs(names: string[] = [], timeout = 5.0): Promise<DefInfo[]> {
         const replies = await this.requestBatch("/d_query", names, {
             reply: "/d_info",
@@ -910,8 +982,10 @@ export class Server {
         return replies.map((msg) => parseDefInfo(msg.args));
     }
 
-    /// One node's place in the tree (`/n_query`). A group reports its
-    /// `head`/`tail`; a synth its `def` and control values.
+    /**
+     * One node's place in the tree (`/n_query`). A group reports its
+     * `head`/`tail`; a synth its `def` and control values.
+     */
     async nodeQuery(node: NodeLike, timeout = 5.0): Promise<NodeInfo> {
         const id = nodeId(node);
         const reply = this.awaitReply(
@@ -923,8 +997,10 @@ export class Server {
         return parseNodeInfo((await reply).args);
     }
 
-    /// The node tree from `group` down (`/g_queryTree`): a group is
-    /// `{id, children}`, a synth `{id, def, controls}`.
+    /**
+     * The node tree from `group` down (`/g_queryTree`): a group is
+     * `{id, children}`, a synth `{id, def, controls}`.
+     */
     async queryTree(
         group: NodeLike = ROOT_NODE_ID,
         { controls = true, timeout = 5.0 }: { controls?: boolean; timeout?: number } = {},
@@ -940,8 +1016,10 @@ export class Server {
         return { id: Number(a[1]), children };
     }
 
-    /// The server's rendered node graph as text (`/g_dumpGraph`) — a
-    /// debugging aid; for machine use prefer `queryTree`.
+    /**
+     * The server's rendered node graph as text (`/g_dumpGraph`) — a
+     * debugging aid; for machine use prefer `queryTree`.
+     */
     async dumpGraph(group: NodeLike = ROOT_NODE_ID, timeout = 5.0): Promise<string> {
         const msg = await this.request("/g_dumpGraph", [["i", nodeId(group)]], {
             expect: ["/g_dumpGraph.reply", "/fail"],
@@ -955,9 +1033,11 @@ export class Server {
 
     // ---- server control ----
 
-    /// Registers (or drops) this client for the server's pushes — `/n_end`
-    /// node deaths, `/tr` triggers, the transport broadcasts. Registering is
-    /// what lets the node-id registry recycle.
+    /**
+     * Registers (or drops) this client for the server's pushes — `/n_end`
+     * node deaths, `/tr` triggers, the transport broadcasts. Registering is
+     * what lets the node-id registry recycle.
+     */
     async notify(flag = true, timeout = 5.0): Promise<void> {
         const reply = this.awaitReply(
             (msg) => msg.addr === "/done" && msg.args[0] === "/notify",
@@ -979,8 +1059,10 @@ export class Server {
 
     private recycling = false;
 
-    /// Returns a node id to the registry as its `/n_end` arrives — the
-    /// side-channel that keeps the client range from exhausting.
+    /**
+     * Returns a node id to the registry as its `/n_end` arrives — the
+     * side-channel that keeps the client range from exhausting.
+     */
     private recycleNodeIds(): void {
         if (this.recycling) return;
         this.recycling = true;
@@ -991,27 +1073,29 @@ export class Server {
 
     // ---- the sample clock ----
 
-    /// A timebase on **this server's** sample counter, for a clock that should
-    /// schedule on the server's own axis instead of a wall-clock timetag.
-    ///
-    /// The Server resolves it, because the Server is what knows the carrier:
-    ///
-    /// - **in-page** — the engine runs in this page's `AudioContext`, so one
-    ///   anchor fixes the integer offset between the two counters and the
-    ///   sample is then readable synchronously, exactly, with no drift.
-    /// - **over a socket** — `/clock` round trips feed the core's sample-clock
-    ///   model, which regresses local time against the server's counter. The
-    ///   warmup spreads `anchors` round trips `gap` seconds apart (a
-    ///   regression needs a span, not a burst), and `trackEvery` keeps
-    ///   anchoring afterwards so the slope stays fresh; `trackEvery: 0` stops
-    ///   after the warmup.
-    ///
-    /// A server that does not answer leaves you on wall-clock time: the
-    /// returned timebase is a `MonotonicTimebase` and a warning is logged, so
-    /// a page whose master is unreachable keeps working.
-    ///
-    /// Hand the result to a clock (`new TempoClock(2, { timebase })`); the
-    /// clock never talks to a server itself.
+    /**
+     * A timebase on **this server's** sample counter, for a clock that should
+     * schedule on the server's own axis instead of a wall-clock timetag.
+     *
+     * The Server resolves it, because the Server is what knows the carrier:
+     *
+     * - **in-page** — the engine runs in this page's `AudioContext`, so one
+     *   anchor fixes the integer offset between the two counters and the
+     *   sample is then readable synchronously, exactly, with no drift.
+     * - **over a socket** — `/clock` round trips feed the core's sample-clock
+     *   model, which regresses local time against the server's counter. The
+     *   warmup spreads `anchors` round trips `gap` seconds apart (a
+     *   regression needs a span, not a burst), and `trackEvery` keeps
+     *   anchoring afterwards so the slope stays fresh; `trackEvery: 0` stops
+     *   after the warmup.
+     *
+     * A server that does not answer leaves you on wall-clock time: the
+     * returned timebase is a `MonotonicTimebase` and a warning is logged, so
+     * a page whose master is unreachable keeps working.
+     *
+     * Hand the result to a clock (`new TempoClock(2, { timebase })`); the
+     * clock never talks to a server itself.
+     */
     async sampleTimebase({
         timeout = 2.0,
         anchors = 5,
@@ -1067,8 +1151,10 @@ export class Server {
     private clockTracker: ReturnType<typeof setInterval> | null = null;
     private clockModel: SampleClockModel | null = null;
 
-    /// One `/clock` round trip, timestamped at the midpoint of the exchange —
-    /// the best estimate of when the server read its own counter.
+    /**
+     * One `/clock` round trip, timestamped at the midpoint of the exchange —
+     * the best estimate of when the server read its own counter.
+     */
     private async clockAnchor(timeout: number): Promise<ClockReply> {
         const sent = performance.now() / 1000;
         const msg = await this.request("/clock", [], {
@@ -1084,21 +1170,27 @@ export class Server {
         };
     }
 
-    /// The drift the sample-clock model has measured, in parts per million, or
-    /// `null` when this server is not being tracked (the in-page carrier needs
-    /// no model — it shares the page's audio clock).
+    /**
+     * The drift the sample-clock model has measured, in parts per million, or
+     * `null` when this server is not being tracked (the in-page carrier needs
+     * no model — it shares the page's audio clock).
+     */
     get clockDriftPpm(): number | null {
         return this.clockModel?.driftPpm ?? null;
     }
 
-    /// Stops the server (`/quit`). Over the in-page carrier this stops the
-    /// page's engine, which nothing restarts.
+    /**
+     * Stops the server (`/quit`). Over the in-page carrier this stops the
+     * page's engine, which nothing restarts.
+     */
     quit(): void {
         this.sendMsg("/quit");
     }
 
-    /// Detaches this server from its connection (the connection itself, and
-    /// any shared in-page engine, keep running). Pending requests reject.
+    /**
+     * Detaches this server from its connection (the connection itself, and
+     * any shared in-page engine, keep running). Pending requests reject.
+     */
     close(): void {
         if (this.clockTracker !== null) clearInterval(this.clockTracker);
         this.clockTracker = null;
@@ -1112,16 +1204,20 @@ export class Server {
     }
 }
 
-/// Any decoded OSC argument — what a reply parser walks.
+/** Any decoded OSC argument — what a reply parser walks. */
 type ReplyArgs = readonly (number | string | boolean | null | Uint8Array)[];
 
-/// A control identifier in a reply is a name string, or an int index when the
-/// server could not resolve a name.
+/**
+ * A control identifier in a reply is a name string, or an int index when the
+ * server could not resolve a name.
+ */
 const controlKey = (key: ReplyArgs[number]): string =>
     typeof key === "string" ? key : String(Number(key));
 
-/// Recursively parses `count` nodes of a `/g_queryTree.reply` starting at
-/// `i`; returns the nodes and the next index. A synth has child-count −1.
+/**
+ * Recursively parses `count` nodes of a `/g_queryTree.reply` starting at
+ * `i`; returns the nodes and the next index. A synth has child-count −1.
+ */
 function parseTreeNodes(
     args: ReplyArgs,
     i: number,
@@ -1152,8 +1248,10 @@ function parseTreeNodes(
     return [out, i];
 }
 
-/// An `/n_info` reply: the four fixed neighbours and the group flag, then
-/// either the group's head/tail or the synth's def and controls.
+/**
+ * An `/n_info` reply: the four fixed neighbours and the group flag, then
+ * either the group's head/tail or the synth's def and controls.
+ */
 function parseNodeInfo(args: ReplyArgs): NodeInfo {
     const isGroup = Number(args[4]) === 1;
     const info: NodeInfo = {
@@ -1179,9 +1277,11 @@ function parseNodeInfo(args: ReplyArgs): NodeInfo {
     return info;
 }
 
-/// One `/d_info` reply: `name, family, numControls` then per control `name,
-/// default, rate` — plus `min, max, step` for a Faust parameter, or
-/// `numTargets` and the target tuples for a graph port.
+/**
+ * One `/d_info` reply: `name, family, numControls` then per control `name,
+ * default, rate` — plus `min, max, step` for a Faust parameter, or
+ * `numTargets` and the target tuples for a graph port.
+ */
 function parseDefInfo(args: ReplyArgs): DefInfo {
     const name = String(args[0]);
     const family = String(args[1]);

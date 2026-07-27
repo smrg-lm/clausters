@@ -35,27 +35,33 @@ import {
 import type { Timebase } from "./timebase.ts";
 import type { TickReply, TickRequest } from "./tick-worker.ts";
 
-/// Anything the clock can resume: a stream (a `Routine`), or a plain callable
-/// for a one-shot. A callable that returns a number is rescheduled by that
-/// many beats; one returning nothing runs once.
+/**
+ * Anything the clock can resume: a stream (a `Routine`), or a plain callable
+ * for a one-shot. A callable that returns a number is rescheduled by that
+ * many beats; one returning nothing runs once.
+ */
 export type Schedulable = Stream | (() => number | void);
 
 // ---- the pacing seam ----
 
-/// How the clock is woken. One wake is pending at a time: scheduling again
-/// replaces it, which is all a single-queue driver needs.
+/**
+ * How the clock is woken. One wake is pending at a time: scheduling again
+ * replaces it, which is all a single-queue driver needs.
+ */
 export interface Ticker {
-    /// Wakes `callback` in `seconds`, replacing any pending wake.
+    /** Wakes `callback` in `seconds`, replacing any pending wake. */
     schedule(seconds: number, callback: () => void): void;
-    /// Drops the pending wake, if any.
+    /** Drops the pending wake, if any. */
     cancel(): void;
-    /// Releases whatever the ticker holds.
+    /** Releases whatever the ticker holds. */
     close(): void;
 }
 
-/// The page-thread ticker. Correct everywhere, but clamped when nested and
-/// throttled to about a second in a background tab — which is why the browser
-/// default is the worker one.
+/**
+ * The page-thread ticker. Correct everywhere, but clamped when nested and
+ * throttled to about a second in a background tab — which is why the browser
+ * default is the worker one.
+ */
 export function timerTicker(): Ticker {
     let pending: ReturnType<typeof setTimeout> | null = null;
     const cancel = () => {
@@ -72,12 +78,14 @@ export function timerTicker(): Ticker {
     };
 }
 
-/// A ticker driven by hand: what tests wake with, so the same driver the
-/// browser runs advances deterministically and instantly.
+/**
+ * A ticker driven by hand: what tests wake with, so the same driver the
+ * browser runs advances deterministically and instantly.
+ */
 export interface ManualTicker extends Ticker {
-    /// The seconds the clock last asked to sleep, or `null` when it is idle.
+    /** The seconds the clock last asked to sleep, or `null` when it is idle. */
     readonly pending: number | null;
-    /// Runs the pending wake.
+    /** Runs the pending wake. */
     fire(): void;
 }
 
@@ -108,8 +116,10 @@ export function manualTicker(): ManualTicker {
     };
 }
 
-/// The page's one tick worker, shared by every clock on it (a worker per clock
-/// would buy nothing: the work is a `setTimeout`).
+/**
+ * The page's one tick worker, shared by every clock on it (a worker per clock
+ * would buy nothing: the work is a `setTimeout`).
+ */
 let sharedWorker: Worker | null = null;
 let nextTickerId = 1;
 const tickCallbacks = new Map<number, () => void>();
@@ -128,8 +138,10 @@ function tickWorker(): Worker {
     return sharedWorker;
 }
 
-/// The browser ticker: the wake-up is timed in a worker, so a background tab's
-/// timer throttling cannot starve the schedule.
+/**
+ * The browser ticker: the wake-up is timed in a worker, so a background tab's
+ * timer throttling cannot starve the schedule.
+ */
 export function workerTicker(): Ticker {
     const worker = tickWorker();
     const id = nextTickerId++;
@@ -149,36 +161,44 @@ export function workerTicker(): Ticker {
     };
 }
 
-/// The default ticker for this environment: the worker where there is one, the
-/// page timer otherwise (node, and any environment without `Worker`).
+/**
+ * The default ticker for this environment: the worker where there is one, the
+ * page timer otherwise (node, and any environment without `Worker`).
+ */
 export function defaultTicker(): Ticker {
     return typeof Worker === "undefined" ? timerTicker() : workerTicker();
 }
 
 // ---- the clock ----
 
-/// One queued item and how many times it is currently queued (the same
-/// routine may sit in the queue more than once).
+/**
+ * One queued item and how many times it is currently queued (the same
+ * routine may sit in the queue more than once).
+ */
 interface Entry {
     item: Schedulable;
     queued: number;
 }
 
 export interface TempoClockOptions {
-    /// The pacing source. Defaults to the page's monotonic clock; pass a
-    /// `SampleTimebase` from `Server.sampleTimebase()` to pace against a
-    /// server's own sample counter.
+    /**
+     * The pacing source. Defaults to the page's monotonic clock; pass a
+     * `SampleTimebase` from `Server.sampleTimebase()` to pace against a
+     * server's own sample counter.
+     */
     timebase?: Timebase;
-    /// How the clock is woken. Defaults to `defaultTicker()`.
+    /** How the clock is woken. Defaults to `defaultTicker()`. */
     ticker?: Ticker;
 }
 
-/// A scheduler that keeps musical time in beats and resumes routines on it.
+/** A scheduler that keeps musical time in beats and resumes routines on it. */
 export class TempoClock {
-    /// Beats per second.
+    /** Beats per second. */
     tempo: number;
-    /// The pacing source — *only* used to decide how long to sleep between
-    /// items, and read by `Server` to choose how to stamp what it emits.
+    /**
+     * The pacing source — *only* used to decide how long to sleep between
+     * items, and read by `Server` to choose how to stamp what it emits.
+     */
     timebase: Timebase;
 
     private baseBeats = 0;
@@ -190,7 +210,7 @@ export class TempoClock {
     private readonly ticker: Ticker;
     private running = false;
     private mode: "rt" | "stopped" = "stopped";
-    /// The yield-driven beat while an item is being resumed.
+    /** The yield-driven beat while an item is being resumed. */
     private logicalBeat = 0;
     private monoStart: number | null = null;
     private unixStart: number | null = null;
@@ -204,54 +224,62 @@ export class TempoClock {
 
     // ---- beat/second math (through the core) ----
 
-    /// A beat position in seconds under the current tempo.
+    /** A beat position in seconds under the current tempo. */
     beats2secs(beats: number): number {
         return beatsToSecs(this.tempo, this.baseBeats, this.baseSecs, beats);
     }
 
-    /// Seconds as a beat position under the current tempo.
+    /** Seconds as a beat position under the current tempo. */
     secs2beats(secs: number): number {
         return secsToBeats(this.tempo, this.baseBeats, this.baseSecs, secs);
     }
 
-    /// The clock's current beat: the paced elapsed beat while running (what
-    /// scheduling relative to "now" reads), else the yield-driven logical beat
-    /// — before the first `start`, and after a `stop`, which holds the beat it
-    /// reached.
+    /**
+     * The clock's current beat: the paced elapsed beat while running (what
+     * scheduling relative to "now" reads), else the yield-driven logical beat
+     * — before the first `start`, and after a `stop`, which holds the beat it
+     * reached.
+     */
     beats(): number {
         if (!this.running || this.monoStart === null) return this.logicalBeat;
         return this.secs2beats(this.timebase.now() - this.monoStart);
     }
 
-    /// The wall-clock origin (Unix seconds) of the current beat axis — the
-    /// instant beat 0 falls on — or `null` before the first `start`. The
-    /// Server turns a logical beat into a timetag from it: the **wall** clock,
-    /// kept apart from the monotonic pacing source so timetags stay valid Unix
-    /// time. A `stop` leaves it in place (it is the axis a later `start`
-    /// resumes); a `start` re-places it so the held beat maps to now.
+    /**
+     * The wall-clock origin (Unix seconds) of the current beat axis — the
+     * instant beat 0 falls on — or `null` before the first `start`. The
+     * Server turns a logical beat into a timetag from it: the **wall** clock,
+     * kept apart from the monotonic pacing source so timetags stay valid Unix
+     * time. A `stop` leaves it in place (it is the axis a later `start`
+     * resumes); a `start` re-places it so the held beat maps to now.
+     */
     get startTime(): number | null {
         return this.unixStart;
     }
 
-    /// The timebase value of the current beat axis' zero, placed by `start`.
-    /// For a sample timebase this is `sampleOrigin / sampleRate`, which the
-    /// Server turns into the absolute sample for `/sched`.
+    /**
+     * The timebase value of the current beat axis' zero, placed by `start`.
+     * For a sample timebase this is `sampleOrigin / sampleRate`, which the
+     * Server turns into the absolute sample for `/sched`.
+     */
     get pacingOrigin(): number | null {
         return this.monoStart;
     }
 
-    /// Whether the real-time driver is running.
+    /** Whether the real-time driver is running. */
     get isRunning(): boolean {
         return this.running;
     }
 
-    /// How many items are queued.
+    /** How many items are queued. */
     get queued(): number {
         return this.queue.len;
     }
 
-    /// Changes tempo, pinning the current instant so the beat→second mapping
-    /// stays continuous across the change.
+    /**
+     * Changes tempo, pinning the current instant so the beat→second mapping
+     * stays continuous across the change.
+     */
     setTempo(tempo: number): void {
         const at = this.beats();
         // The seconds of that beat under the *old* tempo — read before the
@@ -261,22 +289,26 @@ export class TempoClock {
         this.tempo = tempo;
     }
 
-    /// The 0-based bar index the clock's current beat (or an explicit `beats`)
-    /// falls in, on a grid of `quant` beats per bar.
+    /**
+     * The 0-based bar index the clock's current beat (or an explicit `beats`)
+     * falls in, on a grid of `quant` beats per bar.
+     */
     bar(quant: number, beats?: number): number {
         return bar(beats ?? this.beats(), quant);
     }
 
-    /// The beat within its bar, in `[0, quant)`.
+    /** The beat within its bar, in `[0, quant)`. */
     beatInBar(quant: number, beats?: number): number {
         return beatInBar(beats ?? this.beats(), quant);
     }
 
     // ---- scheduling ----
 
-    /// The id this item is queued under, minted on first use. The queue holds
-    /// flat numbers; the map back to the item lives here, which is what keeps
-    /// the coroutine driver in the language.
+    /**
+     * The id this item is queued under, minted on first use. The queue holds
+     * flat numbers; the map back to the item lives here, which is what keeps
+     * the coroutine driver in the language.
+     */
     private idOf(item: Schedulable): number {
         const key = item as unknown as object;
         let id = this.ids.get(key);
@@ -295,8 +327,10 @@ export class TempoClock {
         this.queue.push(beat, id);
     }
 
-    /// The item a popped id stands for, dropping the reference once no queued
-    /// entry needs it.
+    /**
+     * The item a popped id stands for, dropping the reference once no queued
+     * entry needs it.
+     */
     private take(id: number): Schedulable | null {
         const entry = this.items.get(id);
         if (entry === undefined) return null;
@@ -305,32 +339,36 @@ export class TempoClock {
         return entry.item;
     }
 
-    /// Schedules `item` to run `delayBeats` from the current beat. Safe from
-    /// inside a running routine.
+    /**
+     * Schedules `item` to run `delayBeats` from the current beat. Safe from
+     * inside a running routine.
+     */
     sched(delayBeats: number, item: Schedulable): this {
         this.push(this.beats() + delayBeats, item);
         this.pump();
         return this;
     }
 
-    /// Schedules `item` at an absolute `beat`.
+    /** Schedules `item` at an absolute `beat`. */
     schedAbs(beat: number, item: Schedulable): this {
         this.push(beat, item);
         this.pump();
         return this;
     }
 
-    /// Schedules a routine (or callable), snapping its start to a beat grid.
-    ///
-    /// `quant` starts it on the next beat that is a multiple of it (`4` = the
-    /// next bar in 4/4); 0 or undefined starts it now. The grid is the clock's
-    /// own elapsed beats.
+    /**
+     * Schedules a routine (or callable), snapping its start to a beat grid.
+     *
+     * `quant` starts it on the next beat that is a multiple of it (`4` = the
+     * next bar in 4/4); 0 or undefined starts it now. The grid is the clock's
+     * own elapsed beats.
+     */
     play<T extends Schedulable>(item: T, quant?: number): T {
         this.sched(quant ? quantDelay(this.beats(), quant) : 0, item);
         return item;
     }
 
-    /// Drops every item currently queued.
+    /** Drops every item currently queued. */
     clear(): this {
         this.queue.clear();
         this.items.clear();
@@ -338,8 +376,10 @@ export class TempoClock {
         return this;
     }
 
-    /// Removes one scheduled `item` (by identity), leaving the rest in order —
-    /// how a playhead stops or seeks without clearing everything else.
+    /**
+     * Removes one scheduled `item` (by identity), leaving the rest in order —
+     * how a playhead stops or seeks without clearing everything else.
+     */
     unsched(item: Schedulable): this {
         const id = this.ids.get(item as unknown as object);
         if (id === undefined) return this;
@@ -355,13 +395,15 @@ export class TempoClock {
 
     // ---- driving ----
 
-    /// Begins the real-time driver. Idempotent.
-    ///
-    /// A restart resumes where `stop` left the beat, so what is still queued
-    /// keeps its place in the music. (The Python client restarts the beat axis
-    /// at zero instead, which leaves queued items an unplayable stretch in the
-    /// future; a browser transport is a pause button, so this one holds the
-    /// position.)
+    /**
+     * Begins the real-time driver. Idempotent.
+     *
+     * A restart resumes where `stop` left the beat, so what is still queued
+     * keeps its place in the music. (The Python client restarts the beat axis
+     * at zero instead, which leaves queued items an unplayable stretch in the
+     * future; a browser transport is a pause button, so this one holds the
+     * position.)
+     */
     start(): this {
         if (this.running) return this;
         this.running = true;
@@ -378,9 +420,11 @@ export class TempoClock {
         return this;
     }
 
-    /// Stops the driver, holding the beat it reached. What is queued stays
-    /// queued: `stop`/`start` is a transport, not a reset — `clear` is the
-    /// reset.
+    /**
+     * Stops the driver, holding the beat it reached. What is queued stays
+     * queued: `stop`/`start` is a transport, not a reset — `clear` is the
+     * reset.
+     */
     stop(): this {
         // Freeze the beat first: from here `beats()` reports it, because the
         // clock is no longer running. The two origins are deliberately kept —
@@ -393,16 +437,18 @@ export class TempoClock {
         return this;
     }
 
-    /// Stops the driver and releases the ticker (its worker slot).
+    /** Stops the driver and releases the ticker (its worker slot). */
     close(): this {
         this.stop();
         this.ticker.close();
         return this;
     }
 
-    /// One turn of the driver: resume everything due, then arm the wake for
-    /// whatever comes next. Re-entrant calls (a routine scheduling from inside
-    /// its own wake) are absorbed — the loop re-reads the queue anyway.
+    /**
+     * One turn of the driver: resume everything due, then arm the wake for
+     * whatever comes next. Re-entrant calls (a routine scheduling from inside
+     * its own wake) are absorbed — the loop re-reads the queue anyway.
+     */
     private pump(): void {
         if (!this.running || this.pumping) return;
         this.pumping = true;
@@ -428,7 +474,7 @@ export class TempoClock {
         }
     }
 
-    /// Resumes `item` at `beat`, rescheduling it by whatever delay it asks for.
+    /** Resumes `item` at `beat`, rescheduling it by whatever delay it asks for. */
     private wake(item: Schedulable, beat: number): void {
         const isStream = item instanceof Stream;
         const previous = setCurrentRoutine(isStream ? item : null);

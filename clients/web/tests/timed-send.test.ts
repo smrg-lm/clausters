@@ -27,8 +27,10 @@ await loadCore(
     ),
 );
 
-/// A carrier that only records. Nothing replies, so the Server is opened with
-/// explicit sizing and no `/notify`.
+/**
+ * A carrier that only records. Nothing replies, so the Server is opened with
+ * explicit sizing and no `/notify`.
+ */
 function recorder(): Connection & { packets: Uint8Array[] } {
     const packets: Uint8Array[] = [];
     return {
@@ -46,9 +48,11 @@ const openServer = (connection: Connection) =>
         notify: false,
     });
 
-/// Whether a packet is a bundle, and the NTP bits it is stamped with. The
-/// codec flattens bundles on decode (a reply reader wants the messages), so
-/// the timetag is read here from the wire layout: `#bundle\0` then 8 bytes.
+/**
+ * Whether a packet is a bundle, and the NTP bits it is stamped with. The
+ * codec flattens bundles on decode (a reply reader wants the messages), so
+ * the timetag is read here from the wire layout: `#bundle\0` then 8 bytes.
+ */
 function timetagOf(packet: Uint8Array): bigint {
     const head = new TextDecoder().decode(packet.subarray(0, 8));
     assert.equal(head, "#bundle\0", "expected a bundle");
@@ -59,7 +63,7 @@ function timetagOf(packet: Uint8Array): bigint {
 const isBundle = (packet: Uint8Array): boolean =>
     new TextDecoder().decode(packet.subarray(0, 8)) === "#bundle\0";
 
-/// A clock on manual seams, driven by a caller-supplied timebase.
+/** A clock on manual seams, driven by a caller-supplied timebase. */
 function harness(timebase: Timebase & { advance(secs: number): void }, tempo = 1.0) {
     const ticker = manualTicker();
     const clock = new TempoClock(tempo, { timebase, ticker });
@@ -75,8 +79,10 @@ function harness(timebase: Timebase & { advance(secs: number): void }, tempo = 1
     return { clock, run };
 }
 
-/// A sample timebase whose counter is moved by hand — the in-page engine's
-/// clock, stripped to what the tests need.
+/**
+ * A sample timebase whose counter is moved by hand — the in-page engine's
+ * clock, stripped to what the tests need.
+ */
 function manualSampleTimebase(sampleRate = 48000) {
     let sample = 0;
     const timebase = new SampleTimebase(() => sample, sampleRate) as SampleTimebase & {

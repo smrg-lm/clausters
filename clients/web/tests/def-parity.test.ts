@@ -59,7 +59,7 @@ const find = <T extends { name: string }>(rows: T[], name: string): T => {
     return row;
 };
 
-/// The TS side of each named vector, built independently of the Python one.
+/** The TS side of each named vector, built independently of the Python one. */
 const synthdefs: Record<string, () => SynthDef> = {
     beep: () => new SynthDef("beep", out(0.0, sine(440.0))),
 

@@ -18,17 +18,17 @@ import {
     unary as coreUnary,
 } from "../core/clausters_core_web.js";
 
-/// A number or an array of them — what every builtin accepts and returns.
+/** A number or an array of them — what every builtin accepts and returns. */
 export type Num = number | readonly number[];
 
-/// A unary builtin: array in, array out.
+/** A unary builtin: array in, array out. */
 export interface UnaryFn {
     (x: number): number;
     (x: readonly number[]): number[];
     (x: Num): Num;
 }
 
-/// A binary builtin: an array on either side (or both) gives an array.
+/** A binary builtin: an array on either side (or both) gives an array. */
 export interface BinaryFn {
     (a: number, b: number): number;
     (a: Num, b: Num): Num;
@@ -36,7 +36,7 @@ export interface BinaryFn {
 
 const isSeq = (x: Num): x is readonly number[] => Array.isArray(x);
 
-/// `seq` cycled out to `n` values (sc3's shorter-operand extension).
+/** `seq` cycled out to `n` values (sc3's shorter-operand extension). */
 const extend = (seq: readonly number[], n: number): number[] =>
     Array.from({ length: n }, (_, i) => seq[i % seq.length]!);
 
@@ -58,11 +58,13 @@ function binop(op: string, a: Num, b: Num): Num {
     return (b as readonly number[]).map((v) => coreBinary(op, a as number, v));
 }
 
-/// One unary builtin by its core name — the extensible door behind the named
-/// exports below (`unary("midicps", 60)`).
+/**
+ * One unary builtin by its core name — the extensible door behind the named
+ * exports below (`unary("midicps", 60)`).
+ */
 export const unary = (op: string, x: Num): Num => unop(op, x);
 
-/// One binary builtin by its core name (`binary("clip2", 1.5, 1)`).
+/** One binary builtin by its core name (`binary("clip2", 1.5, 1)`). */
 export const binary = (op: string, a: Num, b: Num): Num => binop(op, a, b);
 
 const un = (op: string): UnaryFn => ((x: Num) => unop(op, x)) as UnaryFn;
@@ -154,9 +156,11 @@ export const ampdb = un("ampdb");
 export const octcps = un("octcps");
 export const cpsoct = un("cpsoct");
 
-/// Scale degree → MIDI note number in the pitch space `octave`/`root`, with
-/// floored octave wrapping (sclang semantics). An empty `scale` yields middle
-/// C. The rule is the core's, so every client resolves a degree identically.
+/**
+ * Scale degree → MIDI note number in the pitch space `octave`/`root`, with
+ * floored octave wrapping (sclang semantics). An empty `scale` yields middle
+ * C. The rule is the core's, so every client resolves a degree identically.
+ */
 export const degreeToMidinote = (
     degree: number,
     octave: number,

@@ -21,7 +21,7 @@ import { spawnRng } from "./rand.ts";
 import type { Rng } from "./rand.ts";
 import type { TempoClock } from "./clock.ts";
 
-/// Thrown (and caught by the clock) to end a stream normally.
+/** Thrown (and caught by the clock) to end a stream normally. */
 export class StopStream extends Error {
     constructor(message = "the stream ended") {
         super(message);
@@ -29,32 +29,42 @@ export class StopStream extends Error {
     }
 }
 
-/// A lazy sequence: `next()` produces values until it throws `StopStream`.
-///
-/// Concrete streams carry their own random generator (`rng`), derived from the
-/// creating context at construction (see `base/rand.ts`): random values drawn
-/// while a stream runs come from *its* stream, so one root seed reproduces a
-/// whole script and concurrent routines stay reproducible per routine.
+/**
+ * A lazy sequence: `next()` produces values until it throws `StopStream`.
+ *
+ * Concrete streams carry their own random generator (`rng`), derived from the
+ * creating context at construction (see `base/rand.ts`): random values drawn
+ * while a stream runs come from *its* stream, so one root seed reproduces a
+ * whole script and concurrent routines stay reproducible per routine.
+ */
 export abstract class Stream {
-    /// The stream's own random generator.
+    /** The stream's own random generator. */
     rng: Rng | null = null;
-    /// The clock currently driving this stream, set by the clock on each wake;
-    /// `null` when it is not playing. A `Server` reads it to find the logical
-    /// time of what it is emitting.
+    /**
+     * The clock currently driving this stream, set by the clock on each wake;
+     * `null` when it is not playing. A `Server` reads it to find the logical
+     * time of what it is emitting.
+     */
     clock: TempoClock | null = null;
-    /// The exact logical beat at which the clock last resumed this stream
-    /// (yield-accumulated, never wall-clock). The Server stamps from it.
+    /**
+     * The exact logical beat at which the clock last resumed this stream
+     * (yield-accumulated, never wall-clock). The Server stamps from it.
+     */
     logicalBeat = 0;
 
-    /// Produces the next value, optionally fed `inval`; throws `StopStream` to
-    /// end.
+    /**
+     * Produces the next value, optionally fed `inval`; throws `StopStream` to
+     * end.
+     */
     abstract next(inval?: unknown): unknown;
 
-    /// Returns the stream to its initial state so iteration restarts. A no-op
-    /// on the base; stateful subclasses override it.
+    /**
+     * Returns the stream to its initial state so iteration restarts. A no-op
+     * on the base; stateful subclasses override it.
+     */
     reset(): void {}
 
-    /// Iterating a stream runs it to its end (a `StopStream` closes the loop).
+    /** Iterating a stream runs it to its end (a `StopStream` closes the loop). */
     *[Symbol.iterator](): Generator<unknown, void, undefined> {
         for (;;) {
             let value: unknown;
@@ -69,7 +79,7 @@ export abstract class Stream {
     }
 }
 
-/// Wraps a plain callable: each `next` calls it with `inval`.
+/** Wraps a plain callable: each `next` calls it with `inval`. */
 export class FunctionStream extends Stream {
     private readonly func: (inval?: unknown) => unknown;
     private readonly resetFunc?: () => void;
@@ -90,22 +100,28 @@ export class FunctionStream extends Stream {
     }
 }
 
-/// What a routine's generator function looks like: it may take the initial
-/// `inval`, and each `yield` is a delay in beats.
+/**
+ * What a routine's generator function looks like: it may take the initial
+ * `inval`, and each `yield` is a delay in beats.
+ */
 export type RoutineFunc = (
     inval?: unknown,
 ) => Generator<number | undefined, unknown, unknown>;
 
-/// The state a routine is in. `paused` is reserved for a routine held out of
-/// the queue without being finished.
+/**
+ * The state a routine is in. `paused` is reserved for a routine held out of
+ * the queue without being finished.
+ */
 export type RoutineState = "init" | "running" | "done" | "paused";
 
-/// Wraps a generator function into a resumable timeline.
-///
-/// Each `next` resumes it; a yielded number is the delay in beats before the
-/// routine should be resumed again. The generator's own locals are its musical
-/// state, which is why a routine is forward-only — the seekable counterpart is
-/// `seq/timeline.ts`.
+/**
+ * Wraps a generator function into a resumable timeline.
+ *
+ * Each `next` resumes it; a yielded number is the delay in beats before the
+ * routine should be resumed again. The generator's own locals are its musical
+ * state, which is why a routine is forward-only — the seekable counterpart is
+ * `seq/timeline.ts`.
+ */
 export class Routine extends Stream {
     readonly func: RoutineFunc;
     state: RoutineState = "init";
@@ -120,16 +136,20 @@ export class Routine extends Stream {
         this.rng = spawnRng();
     }
 
-    /// Discards the running generator and returns to `init`, so the next
-    /// `next` or `play` starts the generator function afresh.
+    /**
+     * Discards the running generator and returns to `init`, so the next
+     * `next` or `play` starts the generator function afresh.
+     */
     override reset(): void {
         this.gen = null;
         this.state = "init";
     }
 
-    /// Resumes the generator once (sending it `inval`) and returns the value it
-    /// yields — a delay in beats — or throws `StopStream` when it finishes.
-    /// The clock calls this on each wake; you rarely call it yourself.
+    /**
+     * Resumes the generator once (sending it `inval`) and returns the value it
+     * yields — a delay in beats — or throws `StopStream` when it finishes.
+     * The clock calls this on each wake; you rarely call it yourself.
+     */
     next(inval?: unknown): unknown {
         if (this.state === "done") throw new StopStream();
         if (this.gen === null) {
@@ -150,8 +170,10 @@ export class Routine extends Stream {
         return step.value;
     }
 
-    /// Schedules this routine to start on `clock`; returns itself. Inside a
-    /// running routine the clock defaults to the one driving it.
+    /**
+     * Schedules this routine to start on `clock`; returns itself. Inside a
+     * running routine the clock defaults to the one driving it.
+     */
     play(clock?: TempoClock, quant?: number): this {
         const target = clock ?? resolveClock();
         target.play(this, quant);
@@ -159,8 +181,10 @@ export class Routine extends Stream {
     }
 }
 
-/// The clock driving the routine that is running right now. Throws where there
-/// is none, because "later" has no meaning without one.
+/**
+ * The clock driving the routine that is running right now. Throws where there
+ * is none, because "later" has no meaning without one.
+ */
 function resolveClock(): TempoClock {
     const running = currentRoutine();
     if (running?.clock) return running.clock;

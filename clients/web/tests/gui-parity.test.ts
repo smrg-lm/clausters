@@ -82,7 +82,7 @@ const find = (name: string): unknown => {
     return row.tree;
 };
 
-/// The TS side of each named vector, built independently of the Python one.
+/** The TS side of each named vector, built independently of the Python one. */
 const trees: Record<string, () => GuiNode> = {
     panel_controls: () =>
         window(

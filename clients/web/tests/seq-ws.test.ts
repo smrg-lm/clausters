@@ -68,14 +68,18 @@ async function withServer(body: (server: Server) => Promise<void>): Promise<void
     }
 }
 
-/// A plain sine with no envelope: the event's own release frees it, so a
-/// `/n_end` is the note ending exactly when the schedule said it would.
+/**
+ * A plain sine with no envelope: the event's own release frees it, so a
+ * `/n_end` is the note ending exactly when the schedule said it would.
+ */
 const beep = () =>
     new SynthDef("ts_seq_beep", out(0.0, sine(control("freq", 440.0)).mul(0.05)));
 
-/// Waits until the server's engine is actually rendering: at boot the sample
-/// counter sits at 0 until the audio stream delivers its first block, and a
-/// bundle scheduled before that fires late through no fault of the client.
+/**
+ * Waits until the server's engine is actually rendering: at boot the sample
+ * counter sits at 0 until the audio stream delivers its first block, and a
+ * bundle scheduled before that fires late through no fault of the client.
+ */
 async function awaitEngine(server: Server): Promise<void> {
     const clockNow = async () =>
         Number(
@@ -89,9 +93,11 @@ async function awaitEngine(server: Server): Promise<void> {
     throw new Error("the server's engine never started rendering");
 }
 
-/// Records when each node started and ended, in wall-clock seconds. The
-/// origin is the clock's own start time, so the arrivals are checked against
-/// an absolute reference rather than against each other.
+/**
+ * Records when each node started and ended, in wall-clock seconds. The
+ * origin is the clock's own start time, so the arrivals are checked against
+ * an absolute reference rather than against each other.
+ */
 function noteLog(server: Server) {
     const started: number[] = [];
     const ended: number[] = [];
@@ -103,9 +109,11 @@ function noteLog(server: Server) {
     return { started, ended };
 }
 
-/// Notifications are emitted on a block boundary and cross a socket, so the
-/// tolerance is generous — this is a liveness-and-order assertion, not the
-/// sample-exactness one (that is `timed-send.test.ts`'s, on the bytes).
+/**
+ * Notifications are emitted on a block boundary and cross a socket, so the
+ * tolerance is generous — this is a liveness-and-order assertion, not the
+ * sample-exactness one (that is `timed-send.test.ts`'s, on the bytes).
+ */
 function assertNear(
     got: number[],
     origin: number,

@@ -11,27 +11,31 @@
 // (`server.ts`) wraps this handle and fans its single onReply slot out;
 // pages and the TS client normally go through that.
 
-/// The raw engine handle: one reply-callback slot, raw byte I/O.
+/** The raw engine handle: one reply-callback slot, raw byte I/O. */
 export interface ClaustersEngine {
     context: AudioContext;
     node: AudioWorkletNode;
-    /// Reply callback slot — one consumer; multiplexers own it and fan out.
+    /** Reply callback slot — one consumer; multiplexers own it and fan out. */
     onReply: ((packet: Uint8Array) => void) | null;
     onQuit: (() => void) | null;
     onError: ((message: string) => void) | null;
     resume(): Promise<void>;
     suspend(): Promise<void>;
-    /// One complete OSC packet; the bytes are transferred, not copied.
+    /** One complete OSC packet; the bytes are transferred, not copied. */
     send(bytes: Uint8Array): void;
-    /// The engine's sample clock (a round trip through the audio thread).
+    /** The engine's sample clock (a round trip through the audio thread). */
     clock(): Promise<number>;
-    /// The engine's clock paired with the context's own frame counter, both
-    /// read in the same instant on the audio thread. Their difference is a
-    /// fixed integer, so a client can map `AudioContext.currentTime` onto the
-    /// engine's sample axis afterwards with no further round trip.
+    /**
+     * The engine's clock paired with the context's own frame counter, both
+     * read in the same instant on the audio thread. Their difference is a
+     * fixed integer, so a client can map `AudioContext.currentTime` onto the
+     * engine's sample axis afterwards with no further round trip.
+     */
     clockAnchor(): Promise<ClockAnchor>;
-    /// Installs host-decoded samples as buffer `index` (the browser's
-    /// /b_allocRead). `samples` is interleaved and transferred.
+    /**
+     * Installs host-decoded samples as buffer `index` (the browser's
+     * /b_allocRead). `samples` is interleaved and transferred.
+     */
     bLoad(
         index: number,
         channels: number,
@@ -40,13 +44,13 @@ export interface ClaustersEngine {
     ): Promise<number>;
 }
 
-/// One reading of the engine's clock against the context's frame counter.
+/** One reading of the engine's clock against the context's frame counter. */
 export interface ClockAnchor {
-    /// The engine's sample counter.
+    /** The engine's sample counter. */
     sample: number;
-    /// The context's frame counter at the same instant.
+    /** The context's frame counter at the same instant. */
     frame: number;
-    /// Unix seconds at engine sample 0.
+    /** Unix seconds at engine sample 0. */
     epoch: number;
 }
 

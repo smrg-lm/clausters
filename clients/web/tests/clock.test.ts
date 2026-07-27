@@ -23,8 +23,10 @@ await loadCore(
     ),
 );
 
-/// A clock on the manual seams, plus a `run(seconds)` that advances time and
-/// fires whatever the clock asked for along the way.
+/**
+ * A clock on the manual seams, plus a `run(seconds)` that advances time and
+ * fires whatever the clock asked for along the way.
+ */
 function harness(tempo = 1.0) {
     const timebase = new ManualTimebase(1000);
     const ticker = manualTicker();

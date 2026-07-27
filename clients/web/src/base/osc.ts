@@ -19,39 +19,47 @@ import {
     osc_decode_packet,
 } from "../core/clausters_core_web.js";
 
-/// One typed argument: the tag keeps the int/float distinction explicit
-/// ("i" int32, "h" int64, "f" float32, "d" float64, "s" string, "b" blob).
+/**
+ * One typed argument: the tag keeps the int/float distinction explicit
+ * ("i" int32, "h" int64, "f" float32, "d" float64, "s" string, "b" blob).
+ */
 export type OscArg =
     | ["i" | "h" | "f" | "d", number]
     | ["h", bigint]
     | ["s", string]
     | ["b", Uint8Array];
 
-/// A decoded message: plain values (numbers/strings/Uint8Array/bool/null).
+/** A decoded message: plain values (numbers/strings/Uint8Array/bool/null). */
 export interface OscMessage {
     addr: string;
     args: (number | string | Uint8Array | boolean | null)[];
 }
 
-/// Loads the core wasm once (later calls reuse it). `source` overrides the
-/// default URL-relative lookup with raw module bytes (the node path).
+/**
+ * Loads the core wasm once (later calls reuse it). `source` overrides the
+ * default URL-relative lookup with raw module bytes (the node path).
+ */
 export function loadOsc(source?: BufferSource): Promise<void> {
     return loadCore(source);
 }
 
-/// Encodes one OSC message: `encodeMessage("/s_new", [["s","default"],
-/// ["i",1000]])`. Requires a prior `loadOsc()`.
+/**
+ * Encodes one OSC message: `encodeMessage("/s_new", [["s","default"],
+ * ["i",1000]])`. Requires a prior `loadOsc()`.
+ */
 export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
     return osc_encode_message(addr, args);
 }
 
-/// Decodes one packet into its messages (bundles flattened, in order).
-/// Requires a prior `loadOsc()`.
+/**
+ * Decodes one packet into its messages (bundles flattened, in order).
+ * Requires a prior `loadOsc()`.
+ */
 export function decodePacket(bytes: Uint8Array): OscMessage[] {
     return osc_decode_packet(bytes) as unknown as OscMessage[];
 }
 
-/// One message inside a bundle: its address and its typed arguments.
+/** One message inside a bundle: its address and its typed arguments. */
 export interface BundleMessage {
     addr: string;
     args: OscArg[];
@@ -60,9 +68,11 @@ export interface BundleMessage {
 const asEntries = (messages: readonly BundleMessage[]): unknown[] =>
     messages.map((m) => [m.addr, m.args]);
 
-/// Encodes a bundle stamped at `unixSecs` — the wall clock the server reads as
-/// an NTP timetag, which is how a message gets a *time*. A message on its own
-/// has none: it means "now".
+/**
+ * Encodes a bundle stamped at `unixSecs` — the wall clock the server reads as
+ * an NTP timetag, which is how a message gets a *time*. A message on its own
+ * has none: it means "now".
+ */
 export function encodeBundle(
     unixSecs: number,
     messages: readonly BundleMessage[],
@@ -70,24 +80,30 @@ export function encodeBundle(
     return osc_encode_bundle(unixSecs, asEntries(messages));
 }
 
-/// Encodes a bundle with the **immediate** timetag: what rides inside
-/// `/sched`, whose own absolute sample carries the time.
+/**
+ * Encodes a bundle with the **immediate** timetag: what rides inside
+ * `/sched`, whose own absolute sample carries the time.
+ */
 export function encodeImmediateBundle(
     messages: readonly BundleMessage[],
 ): Uint8Array {
     return osc_encode_immediate_bundle(asEntries(messages));
 }
 
-/// A plain value a message argument may take, or an explicit `[tag, value]`
-/// pair when the inferred type is wrong.
+/**
+ * A plain value a message argument may take, or an explicit `[tag, value]`
+ * pair when the inferred type is wrong.
+ */
 export type MsgArg = number | string | boolean | bigint | Uint8Array | OscArg;
 
-/// One argument tagged **by inference**: an integral number rides as an int32,
-/// a fractional one as a float32, a boolean as the 1/0 the wire carries (OSC
-/// has no bool), a string as a string and bytes as a blob. A JS number is a
-/// double with no int/float distinction, so this is a guess — the clients tag
-/// what they know by position instead, and pass an explicit `[tag, value]`
-/// pair wherever the guess would be wrong.
+/**
+ * One argument tagged **by inference**: an integral number rides as an int32,
+ * a fractional one as a float32, a boolean as the 1/0 the wire carries (OSC
+ * has no bool), a string as a string and bytes as a blob. A JS number is a
+ * double with no int/float distinction, so this is a guess — the clients tag
+ * what they know by position instead, and pass an explicit `[tag, value]`
+ * pair wherever the guess would be wrong.
+ */
 export function oscArg(value: MsgArg): OscArg {
     if (Array.isArray(value) && value.length === 2 && typeof value[0] === "string") {
         return value as OscArg;

@@ -31,8 +31,10 @@ await loadOsc(
     await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
 );
 
-/// Starts a headless host and drives it through a connected `GuiHost`,
-/// stopping both afterwards.
+/**
+ * Starts a headless host and drives it through a connected `GuiHost`,
+ * stopping both afterwards.
+ */
 async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
     const process = spawn(
         hostBin,
@@ -60,7 +62,7 @@ async function withHost(body: (gui: GuiHost) => Promise<void>): Promise<void> {
     }
 }
 
-/// The reference panel: a named control per kind, ids left to the client.
+/** The reference panel: a named control per kind, ids left to the client. */
 const controlPanel = () =>
     window(
         { title: "ws front", w: 480, h: 320, layout: "col" },

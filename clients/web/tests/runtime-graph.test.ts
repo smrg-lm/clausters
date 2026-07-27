@@ -20,15 +20,17 @@ import test from "node:test";
 const dist = new URL("../dist/", import.meta.url).pathname;
 const entry = `${dist}runtime.js`;
 
-/// The module specifiers `runtime.js` must never reach, transitively.
+/** The module specifiers `runtime.js` must never reach, transitively. */
 const FORBIDDEN = [
     { what: "the def builders", match: (p: string) => p.startsWith("defs/") },
     { what: "the GuiDef builders", match: (p: string) => p === "gui/guidef.js" },
     { what: "the sequencing layer", match: (p: string) => p.startsWith("seq/") },
 ];
 
-/// Every specifier `source` imports — static and dynamic alike (the host's
-/// wasm glue is loaded with a dynamic `import()`, and that counts).
+/**
+ * Every specifier `source` imports — static and dynamic alike (the host's
+ * wasm glue is loaded with a dynamic `import()`, and that counts).
+ */
 function importsOf(source: string): string[] {
     const out: string[] = [];
     const patterns = [
@@ -42,9 +44,11 @@ function importsOf(source: string): string[] {
     return out;
 }
 
-/// The transitive closure of `entry`, as paths relative to dist/. Only
-/// relative specifiers are followed; a bare one would be a package import,
-/// which this package does not have.
+/**
+ * The transitive closure of `entry`, as paths relative to dist/. Only
+ * relative specifiers are followed; a bare one would be a package import,
+ * which this package does not have.
+ */
 async function moduleGraph(entry: string): Promise<Set<string>> {
     const seen = new Set<string>();
     const queue = [entry];

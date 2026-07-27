@@ -20,7 +20,7 @@ export class EventStreamPlayer {
         this.destination = destination;
     }
 
-    /// Schedules the pattern on `clock`, snapping the start to `quant`.
+    /** Schedules the pattern on `clock`, snapping the start to `quant`. */
     play(clock?: TempoClock, quant?: number): this {
         const events = this.pattern[Symbol.iterator]();
         const destination = this.destination;
@@ -40,8 +40,10 @@ export class EventStreamPlayer {
         return this;
     }
 
-    /// Ends the player. Items already played keep sounding (their releases are
-    /// scheduled); nothing further is played.
+    /**
+     * Ends the player. Items already played keep sounding (their releases are
+     * scheduled); nothing further is played.
+     */
     stop(): this {
         if (this.routine !== null) {
             this.routine.clock?.unsched(this.routine);

@@ -24,8 +24,10 @@
 import { ChannelList, Control, Ugen } from "./ugens.ts";
 import type { GraphInput } from "./ugens.ts";
 
-/// One serialized UGen input: a reference to an earlier UGen, to a control,
-/// or a constant.
+/**
+ * One serialized UGen input: a reference to an earlier UGen, to a control,
+ * or a constant.
+ */
 export type SpecInput =
     | { ugen: number }
     | { control: number }
@@ -48,20 +50,22 @@ export interface UgenSpec {
     [field: string]: unknown;
 }
 
-/// The `SynthDefSpec` the server's `/d_recv` compiles.
+/** The `SynthDefSpec` the server's `/d_recv` compiles. */
 export interface SynthDefSpec {
     name: string;
     controls: ControlSpec[];
     ugens: UgenSpec[];
 }
 
-/// A named UGen graph. Pass the graph's **root** UGens — normally the outputs
-/// (`out(...)`/`replaceOut(...)`, and any `localOut(...)` to keep feedback
-/// writes in the graph), but a root can equally be a side-effect UGen with no
-/// audio output (`sendTrig(...)`/`sendReply(...)`/`poll(...)`): a def may
-/// consist only of those and no `out` at all. Every root must be a UGen; a
-/// def needs at least one (the server rejects an empty graph). A def with no
-/// output UGen is simply silent on the server.
+/**
+ * A named UGen graph. Pass the graph's **root** UGens — normally the outputs
+ * (`out(...)`/`replaceOut(...)`, and any `localOut(...)` to keep feedback
+ * writes in the graph), but a root can equally be a side-effect UGen with no
+ * audio output (`sendTrig(...)`/`sendReply(...)`/`poll(...)`): a def may
+ * consist only of those and no `out` at all. Every root must be a UGen; a
+ * def needs at least one (the server rejects an empty graph). A def with no
+ * output UGen is simply silent on the server.
+ */
 export class SynthDef {
     readonly name: string;
     readonly roots: Ugen[];
@@ -97,7 +101,7 @@ export class SynthDef {
         this.roots = flat;
     }
 
-    /// The `SynthDefSpec` object the server's `/d_recv` compiles.
+    /** The `SynthDefSpec` object the server's `/d_recv` compiles. */
     spec(): SynthDefSpec {
         const ordered: Ugen[] = []; // UGens in topological order
         const wire = new Map<Ugen, number>(); // ugen -> its index in `ordered`
@@ -165,13 +169,15 @@ export class SynthDef {
         };
     }
 
-    /// The def serialized to text — the `/d_recv` wire payload. Useful to
-    /// inspect the built graph before sending it.
+    /**
+     * The def serialized to text — the `/d_recv` wire payload. Useful to
+     * inspect the built graph before sending it.
+     */
     dumpDef(): string {
         return JSON.stringify(this.spec());
     }
 
-    /// The control names this def declares, in first-seen order.
+    /** The control names this def declares, in first-seen order. */
     controlNames(): string[] {
         return this.spec().controls.map((c) => c.name);
     }

@@ -14,29 +14,33 @@
 
 import { server } from "../engine/server.ts";
 
-/// A synchronous view of a server's sample counter — what a sample-locked
-/// clock paces against and a `/sched` target is computed from.
+/**
+ * A synchronous view of a server's sample counter — what a sample-locked
+ * clock paces against and a `/sched` target is computed from.
+ */
 export interface SampleClock {
-    /// The server's current sample, read with no round trip.
+    /** The server's current sample, read with no round trip. */
     sample(): number;
-    /// The rate that counter advances at.
+    /** The rate that counter advances at. */
     sampleRate: number;
 }
 
-/// A duplex OSC byte pipe to an audio server.
+/** A duplex OSC byte pipe to an audio server. */
 export interface Connection {
-    /// Sends one complete OSC packet.
+    /** Sends one complete OSC packet. */
     send(packet: Uint8Array): void;
-    /// Subscribes to every reply packet.
+    /** Subscribes to every reply packet. */
     addReply(listener: (packet: Uint8Array) => void): void;
     removeReply(listener: (packet: Uint8Array) => void): void;
-    /// Releases the carrier (never stops the shared in-page engine).
+    /** Releases the carrier (never stops the shared in-page engine). */
     close(): void;
-    /// The server's sample clock, where the carrier *shares* one with it —
-    /// the in-page engine runs in this page's `AudioContext`, so its counter
-    /// is readable synchronously and exactly. A socket has no such thing and
-    /// leaves this out; `Server.sampleTimebase()` then anchors over `/clock`
-    /// instead.
+    /**
+     * The server's sample clock, where the carrier *shares* one with it —
+     * the in-page engine runs in this page's `AudioContext`, so its counter
+     * is readable synchronously and exactly. A socket has no such thing and
+     * leaves this out; `Server.sampleTimebase()` then anchors over `/clock`
+     * instead.
+     */
     sampleClock?(): Promise<SampleClock>;
 }
 
@@ -58,8 +62,10 @@ export class WsConnection implements Connection {
         });
     }
 
-    /// Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`), resolving
-    /// once the handshake completes (sends never race the handshake).
+    /**
+     * Opens a WebSocket to `url` (e.g. `ws://127.0.0.1:57120`), resolving
+     * once the handshake completes (sends never race the handshake).
+     */
     static open(url: string): Promise<WsConnection> {
         return new Promise((resolve, reject) => {
             const socket = new WebSocket(url);
@@ -90,9 +96,11 @@ export class WsConnection implements Connection {
     }
 }
 
-/// The in-page carrier: a `Connection` over the per-page engine singleton.
-/// Closing detaches this connection's listeners; the engine keeps running
-/// (it is shared page state, not this connection's to stop).
+/**
+ * The in-page carrier: a `Connection` over the per-page engine singleton.
+ * Closing detaches this connection's listeners; the engine keeps running
+ * (it is shared page state, not this connection's to stop).
+ */
 export async function pageConnection(): Promise<Connection> {
     const engine = await server();
     const mine = new Set<(packet: Uint8Array) => void>();

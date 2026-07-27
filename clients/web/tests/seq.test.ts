@@ -40,7 +40,7 @@ await loadCore(
     ),
 );
 
-/// A destination that records what was played and when, instead of sending.
+/** A destination that records what was played and when, instead of sending. */
 function recorder() {
     const played: { beat: number; event: Event }[] = [];
     const messages: { beat: number; addr: string }[] = [];

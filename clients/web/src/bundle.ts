@@ -30,7 +30,7 @@ import type { Pools } from "./base/pool.ts";
 import { server } from "./engine/server.ts";
 import { guiHost } from "./gui/page.ts";
 
-/// A declared parameter, as `bundle.json` carries it.
+/** A declared parameter, as `bundle.json` carries it. */
 export interface ParamSpec {
     type: "float" | "int" | "string" | "bool";
     default?: unknown;
@@ -38,15 +38,17 @@ export interface ParamSpec {
     max?: number;
 }
 
-/// The manifest at a served bundle's root (`bundle.json`).
+/** The manifest at a served bundle's root (`bundle.json`). */
 export interface BundleManifest {
     name?: string;
     gui: string;
     synthdefs?: string[];
     graphdefs?: string[];
-    /// How many widgets the template holds — the size of the id block a mount
-    /// allocates. Absent (or 0) in a bundle written before the contract, which
-    /// mounts verbatim.
+    /**
+     * How many widgets the template holds — the size of the id block a mount
+     * allocates. Absent (or 0) in a bundle written before the contract, which
+     * mounts verbatim.
+     */
     widgets?: number;
     symbols?: {
         nodes?: string[];
@@ -55,23 +57,29 @@ export interface BundleManifest {
     };
     params?: Record<string, ParamSpec>;
     presets?: string[];
-    /// Whether the bundle carries a `boot.json` preset. Declared here so the
-    /// mount never probes for the optional file (a probe's 404 would litter
-    /// the console); absent means none.
+    /**
+     * Whether the bundle carries a `boot.json` preset. Declared here so the
+     * mount never probes for the optional file (a probe's 404 would litter
+     * the console); absent means none.
+     */
     boot?: boolean;
-    /// Buffer symbol -> audio URL relative to the bundle. The symbol is what
-    /// `@name` resolves to; the mount allocates the index.
+    /**
+     * Buffer symbol -> audio URL relative to the bundle. The symbol is what
+     * `@name` resolves to; the mount allocates the index.
+     */
     buffers?: Record<string, string>;
 }
 
-/// The persisted GuiDef record: `{ "id": <i32>, "gui": <tree> }`, read as the
-/// template it is.
+/**
+ * The persisted GuiDef record: `{ "id": <i32>, "gui": <tree> }`, read as the
+ * template it is.
+ */
 interface Template {
     id: number;
     gui: unknown;
 }
 
-/// What the resolver hands back for one instance.
+/** What the resolver hands back for one instance. */
 interface Resolved {
     def_id: number;
     tree: unknown;
@@ -79,20 +87,22 @@ interface Resolved {
     params: Record<string, unknown>;
 }
 
-/// One mounted instance, between its two phases and after them.
+/** One mounted instance, between its two phases and after them. */
 export interface Mounted {
-    /// The id its GuiDef opened under — unique per instance.
+    /** The id its GuiDef opened under — unique per instance. */
     defId: number;
-    /// The resolved tree, holes filled.
+    /** The resolved tree, holes filled. */
     tree: unknown;
-    /// The merged parameter values that produced it, typed as declared.
+    /** The merged parameter values that produced it, typed as declared. */
     params: Record<string, unknown>;
-    /// What this instance was allocated, by symbol name: its node ids, its
-    /// buses, its buffers. Flat because the names share one namespace (the
-    /// core refuses a name declared twice), and here because a page that wants
-    /// to talk to *this* instance — an `/n_set`, a bus to watch — needs them.
+    /**
+     * What this instance was allocated, by symbol name: its node ids, its
+     * buses, its buffers. Flat because the names share one namespace (the
+     * core refuses a name declared twice), and here because a page that wants
+     * to talk to *this* instance — an `/n_set`, a bus to watch — needs them.
+     */
     symbols: Record<string, number>;
-    /// Whether the engine half has been sent (phase 2).
+    /** Whether the engine half has been sent (phase 2). */
     started: boolean;
 }
 
@@ -100,19 +110,23 @@ export interface Mounted {
 // mistake each other's /synced for their own.
 let nextSync = 0xb40;
 
-/// The def payloads already handed to the page's engine, by URL, each as the
-/// promise of its send.
-///
-/// A def payload holds no holes, so two instances of one bundle send it once —
-/// but a **promise**, not a flag: components start concurrently, and a second
-/// instance that merely saw the first claim the def could boot before the
-/// bytes were on their way. It waits for the send that is already in flight.
+/**
+ * The def payloads already handed to the page's engine, by URL, each as the
+ * promise of its send.
+ *
+ * A def payload holds no holes, so two instances of one bundle send it once —
+ * but a **promise**, not a flag: components start concurrently, and a second
+ * instance that merely saw the first claim the def could boot before the
+ * bytes were on their way. It waits for the send that is already in flight.
+ */
 const sentDefs = new Map<string, Promise<void>>();
 
-/// The buffer allocated for each sample URL, and which of them are loaded.
-/// A sample is identical data wherever it is referenced, so two instances of
-/// one bundle resolve their `@symbol` to the **same** buffer and the file is
-/// fetched and decoded once.
+/**
+ * The buffer allocated for each sample URL, and which of them are loaded.
+ * A sample is identical data wherever it is referenced, so two instances of
+ * one bundle resolve their `@symbol` to the **same** buffer and the file is
+ * fetched and decoded once.
+ */
 const bufferIds = new Map<string, number>();
 const loadedBuffers = new Set<string>();
 
@@ -139,8 +153,10 @@ function interleave(audioBuffer: AudioBuffer): Float32Array {
     return out;
 }
 
-/// What `openBundle` keeps for `startBundle` — the engine half, held until a
-/// gesture makes an AudioContext legal.
+/**
+ * What `openBundle` keeps for `startBundle` — the engine half, held until a
+ * gesture makes an AudioContext legal.
+ */
 interface Pending {
     base: string;
     manifest: BundleManifest;
@@ -151,26 +167,32 @@ interface Pending {
 const pending = new WeakMap<Mounted, Pending>();
 
 export interface MountOptions {
-    /// The bundle's URL prefix.
+    /** The bundle's URL prefix. */
     base: string;
-    /// The canvas this instance draws into. Omitted, the page's default one is
-    /// used — which is right for a page showing a single bundle and wrong for
-    /// a document showing several.
+    /**
+     * The canvas this instance draws into. Omitted, the page's default one is
+     * used — which is right for a page showing a single bundle and wrong for
+     * a document showing several.
+     */
     canvas?: HTMLCanvasElement;
-    /// Overrides the manifest's GuiDef name.
+    /** Overrides the manifest's GuiDef name. */
     name?: string | null;
-    /// The values the tag supplies, as they come off an element: strings.
+    /** The values the tag supplies, as they come off an element: strings. */
     attributes?: Record<string, string>;
-    /// A named preset from `presets/<name>.json`, under the attributes.
+    /** A named preset from `presets/<name>.json`, under the attributes. */
     preset?: string | null;
-    /// The id spaces to allocate from. Defaults to the page's pools; a page
-    /// also driving the TypeScript client passes that client's allocators so
-    /// the two cannot overlap.
+    /**
+     * The id spaces to allocate from. Defaults to the page's pools; a page
+     * also driving the TypeScript client passes that client's allocators so
+     * the two cannot overlap.
+     */
     pools?: Pools;
 }
 
-/// Phase 1: allocate, resolve, and open this instance's GuiDef on the page's
-/// host — no audio, no gesture. The component draws immediately.
+/**
+ * Phase 1: allocate, resolve, and open this instance's GuiDef on the page's
+ * host — no audio, no gesture. The component draws immediately.
+ */
 export async function openBundle(options: MountOptions): Promise<Mounted> {
     const { base, canvas, name = null, attributes = {}, preset = null } = options;
     // The core first: the pools are built on its `Registry`, and the resolver
@@ -254,9 +276,11 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
     return mounted;
 }
 
-/// Phase 2: the engine half — the defs, the samples and the boot list. Call it
-/// from a user gesture (the AudioContext will not start without one); calling
-/// it twice is a no-op.
+/**
+ * Phase 2: the engine half — the defs, the samples and the boot list. Call it
+ * from a user gesture (the AudioContext will not start without one); calling
+ * it twice is a no-op.
+ */
 export async function startBundle(mounted: Mounted): Promise<void> {
     if (mounted.started) return;
     const held = pending.get(mounted);
@@ -338,8 +362,10 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     }
 }
 
-/// One resolved boot argument as a tagged OSC value, keeping the int/float
-/// distinction JSON already carries — so a node id stays an integer.
+/**
+ * One resolved boot argument as a tagged OSC value, keeping the int/float
+ * distinction JSON already carries — so a node id stays an integer.
+ */
 function oscValue(value: unknown): OscArg {
     if (typeof value === "string") return ["s", value];
     if (typeof value === "boolean") return ["i", value ? 1 : 0];
@@ -347,8 +373,10 @@ function oscValue(value: unknown): OscArg {
     return Number.isInteger(n) ? ["i", n] : ["f", n];
 }
 
-/// Both phases at once, for a page driving the mount from script after a
-/// gesture (a test, a REPL). A component uses the two separately.
+/**
+ * Both phases at once, for a page driving the mount from script after a
+ * gesture (a test, a REPL). A component uses the two separately.
+ */
 export async function bootBundle(options: MountOptions): Promise<{ id: number; tree: unknown }> {
     const mounted = await openBundle(options);
     await startBundle(mounted);

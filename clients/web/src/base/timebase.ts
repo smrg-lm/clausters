@@ -41,8 +41,10 @@ import {
 
 // ---- the conversions ----
 
-/// Seconds at `beats` on the affine clock `(tempo, baseBeats, baseSecs)` —
-/// the pair `(baseBeats, baseSecs)` is the instant a tempo change pinned.
+/**
+ * Seconds at `beats` on the affine clock `(tempo, baseBeats, baseSecs)` —
+ * the pair `(baseBeats, baseSecs)` is the instant a tempo change pinned.
+ */
 export const beatsToSecs = (
     tempo: number,
     baseBeats: number,
@@ -50,7 +52,7 @@ export const beatsToSecs = (
     beats: number,
 ): number => coreBeatsToSecs(tempo, baseBeats, baseSecs, beats);
 
-/// Beats at `secs` on the same affine clock.
+/** Beats at `secs` on the same affine clock. */
 export const secsToBeats = (
     tempo: number,
     baseBeats: number,
@@ -58,32 +60,38 @@ export const secsToBeats = (
     secs: number,
 ): number => coreSecsToBeats(tempo, baseBeats, baseSecs, secs);
 
-/// Seconds → sample count at `rate` (ties to even, the server's rounding).
+/** Seconds → sample count at `rate` (ties to even, the server's rounding). */
 export const secsToSamples = (secs: number, rate: number): number =>
     coreSecsToSamples(secs, rate);
 
-/// Sample count → seconds at `rate`.
+/** Sample count → seconds at `rate`. */
 export const samplesToSecs = (samples: number, rate: number): number =>
     coreSamplesToSecs(samples, rate);
 
-/// Beats to wait so a routine starts on the next `quant` boundary of the grid
-/// (`quant` 0 or negative starts now).
+/**
+ * Beats to wait so a routine starts on the next `quant` boundary of the grid
+ * (`quant` 0 or negative starts now).
+ */
 export const quantDelay = (pos: number, quant: number): number =>
     coreQuantDelay(pos, quant);
 
-/// The 0-based bar index `beats` falls in, on a grid of `quant` beats per bar.
+/** The 0-based bar index `beats` falls in, on a grid of `quant` beats per bar. */
 export const bar = (beats: number, quant: number): number => coreBar(beats, quant);
 
-/// The beat within its bar, in `[0, quant)`.
+/** The beat within its bar, in `[0, quant)`. */
 export const beatInBar = (beats: number, quant: number): number =>
     coreBeatInBar(beats, quant);
 
-/// A Unix timestamp → the 64 NTP timetag bits. A `bigint`: the wire value is a
-/// full 64-bit word and a JS number would drop its low bits.
+/**
+ * A Unix timestamp → the 64 NTP timetag bits. A `bigint`: the wire value is a
+ * full 64-bit word and a JS number would drop its low bits.
+ */
 export const unixToNtp = (unixSecs: number): bigint => coreUnixToNtp(unixSecs);
 
-/// A Unix timestamp → the server's absolute sample, through a `/clock` anchor
-/// and the measured rate.
+/**
+ * A Unix timestamp → the server's absolute sample, through a `/clock` anchor
+ * and the measured rate.
+ */
 export const unixToSample = (
     unixSecs: number,
     anchorUnix: number,
@@ -93,15 +101,19 @@ export const unixToSample = (
 
 // ---- the pacing sources ----
 
-/// What a clock paces against: seconds that only move forward. `kind` is what
-/// a `Server` reads to decide how to stamp an emission.
+/**
+ * What a clock paces against: seconds that only move forward. `kind` is what
+ * a `Server` reads to decide how to stamp an emission.
+ */
 export interface Timebase {
     readonly kind: string;
     now(): number;
 }
 
-/// The page's monotonic clock. Unaffected by wall-clock steps, and the default
-/// for a clock that has not been anchored to a server.
+/**
+ * The page's monotonic clock. Unaffected by wall-clock steps, and the default
+ * for a clock that has not been anchored to a server.
+ */
 export class MonotonicTimebase implements Timebase {
     readonly kind = "monotonic";
 
@@ -110,11 +122,13 @@ export class MonotonicTimebase implements Timebase {
     }
 }
 
-/// Seconds from a server's sample counter: `sample() / sampleRate`.
-///
-/// `sample` is any callable returning the current counter — the page engine's
-/// audio clock, or a `/clock`-anchored model against a remote server. It must
-/// be **synchronous**: the clock reads it on every scheduling turn.
+/**
+ * Seconds from a server's sample counter: `sample() / sampleRate`.
+ *
+ * `sample` is any callable returning the current counter — the page engine's
+ * audio clock, or a `/clock`-anchored model against a remote server. It must
+ * be **synchronous**: the clock reads it on every scheduling turn.
+ */
 export class SampleTimebase implements Timebase {
     readonly kind = "sample";
     readonly sampleRate: number;
@@ -129,20 +143,24 @@ export class SampleTimebase implements Timebase {
         return this.sample() / this.sampleRate;
     }
 
-    /// The server's current sample counter.
+    /** The server's current sample counter. */
     currentSample(): number {
         return Math.trunc(this.sample());
     }
 
-    /// The absolute sample for a time in *this timebase's* seconds (the core's
-    /// rounding, shared with the server).
+    /**
+     * The absolute sample for a time in *this timebase's* seconds (the core's
+     * rounding, shared with the server).
+     */
     sampleAt(seconds: number): number {
         return secsToSamples(seconds, this.sampleRate);
     }
 }
 
-/// A timebase driven by hand: what tests pace with, so the same code path the
-/// browser runs advances deterministically and instantly.
+/**
+ * A timebase driven by hand: what tests pace with, so the same code path the
+ * browser runs advances deterministically and instantly.
+ */
 export class ManualTimebase implements Timebase {
     readonly kind = "manual";
     private seconds: number;
@@ -155,12 +173,12 @@ export class ManualTimebase implements Timebase {
         return this.seconds;
     }
 
-    /// Moves time forward by `secs` (never backwards).
+    /** Moves time forward by `secs` (never backwards). */
     advance(secs: number): void {
         this.seconds += Math.max(secs, 0);
     }
 
-    /// Places time at an absolute second.
+    /** Places time at an absolute second. */
     set(secs: number): void {
         this.seconds = secs;
     }

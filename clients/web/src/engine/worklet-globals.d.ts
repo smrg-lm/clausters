@@ -13,11 +13,13 @@ declare function registerProcessor(
     ctor: new (options: any) => AudioWorkletProcessor,
 ): void;
 
-/// The AudioWorkletGlobalScope global: the context's sample rate.
+/** The AudioWorkletGlobalScope global: the context's sample rate. */
 declare const sampleRate: number;
 
-/// The AudioWorkletGlobalScope global: the frame index at the start of the
-/// current render quantum, on the context's own timeline. Paired with the
-/// engine's counter it gives the exact offset between the two, which is what
-/// lets a client read the engine's sample clock synchronously afterwards.
+/**
+ * The AudioWorkletGlobalScope global: the frame index at the start of the
+ * current render quantum, on the context's own timeline. Paired with the
+ * engine's counter it gives the exact offset between the two, which is what
+ * lets a client read the engine's sample clock synchronously afterwards.
+ */
 declare const currentFrame: number;

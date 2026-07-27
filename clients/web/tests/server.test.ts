@@ -45,9 +45,11 @@ await loadOsc(
     await readFile(new URL("../dist/core/clausters_core_web_bg.wasm", here)),
 );
 
-/// Boots a server, runs `body` against a `Server` over its WS front, and
-/// tears both down — one process per test, which also satisfies the sandbox's
-/// per-invocation network isolation.
+/**
+ * Boots a server, runs `body` against a `Server` over its WS front, and
+ * tears both down — one process per test, which also satisfies the sandbox's
+ * per-invocation network isolation.
+ */
 async function withServer(body: (server: Server) => Promise<void>): Promise<void> {
     const process = spawn(
         serverBin,

@@ -21,8 +21,10 @@ export { Registry };
 
 let loaded: Promise<void> | null = null;
 
-/// Loads the core wasm once (later calls reuse it). `source` overrides the
-/// default URL-relative lookup with raw module bytes (the node path).
+/**
+ * Loads the core wasm once (later calls reuse it). `source` overrides the
+ * default URL-relative lookup with raw module bytes (the node path).
+ */
 export function loadCore(source?: BufferSource): Promise<void> {
     loaded ??= initCore(
         source === undefined ? undefined : { module_or_path: source },
@@ -30,31 +32,37 @@ export function loadCore(source?: BufferSource): Promise<void> {
     return loaded;
 }
 
-/// The boot-derived partition of the node-id space, scaled from the engine's
-/// node-table capacity — the same formula the server applies, so a client's
-/// registry and the server's table agree by construction.
+/**
+ * The boot-derived partition of the node-id space, scaled from the engine's
+ * node-table capacity — the same formula the server applies, so a client's
+ * registry and the server's table agree by construction.
+ */
 export interface NodeIdPartition {
-    /// First id a client's registry hands out.
+    /** First id a client's registry hands out. */
     clientBase: number;
-    /// Client id-space size (node-table capacity with in-flight margin).
+    /** Client id-space size (node-table capacity with in-flight margin). */
     clientCapacity: number;
-    /// First id of the server's auto range (`/s_new -1`, GraphDef members).
+    /** First id of the server's auto range (`/s_new -1`, GraphDef members). */
     autoBase: number;
     autoCapacity: number;
-    /// First id of the server's MIDI-voice range.
+    /** First id of the server's MIDI-voice range. */
     midiBase: number;
     midiCapacity: number;
 }
 
-/// The node-id partition for a node table of `maxNodes` slots. Requires a
-/// prior `loadCore()`.
+/**
+ * The node-id partition for a node table of `maxNodes` slots. Requires a
+ * prior `loadCore()`.
+ */
 export function nodeIdPartition(maxNodes: number): NodeIdPartition {
     return node_id_partition(maxNodes) as NodeIdPartition;
 }
 
-/// The `[audio, control]` bus widths GraphDef instances reserve at the top of
-/// each bus space (before clamping to a smaller configured count). Requires a
-/// prior `loadCore()`.
+/**
+ * The `[audio, control]` bus widths GraphDef instances reserve at the top of
+ * each bus space (before clamping to a smaller configured count). Requires a
+ * prior `loadCore()`.
+ */
 export function graphBusReserved(): [number, number] {
     const [audio, control] = graph_bus_reserved();
     return [audio, control];

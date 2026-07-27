@@ -14,13 +14,15 @@ import type { Stream } from "./stream.ts";
 
 let current: Stream | null = null;
 
-/// The stream the clock is resuming right now, or `null` outside any wake.
+/** The stream the clock is resuming right now, or `null` outside any wake. */
 export function currentRoutine(): Stream | null {
     return current;
 }
 
-/// Makes `routine` the ambient one and returns the previous, which the caller
-/// must restore — the clock brackets every wake with this pair.
+/**
+ * Makes `routine` the ambient one and returns the previous, which the caller
+ * must restore — the clock brackets every wake with this pair.
+ */
 export function setCurrentRoutine(routine: Stream | null): Stream | null {
     const previous = current;
     current = routine;

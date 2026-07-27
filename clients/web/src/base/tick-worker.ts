@@ -11,12 +11,12 @@
 // milliseconds" crosses, which is exactly what the Python client's background
 // clock thread contributes.
 
-/// Main thread → worker: arm a timer, or cancel one already armed.
+/** Main thread → worker: arm a timer, or cancel one already armed. */
 export type TickRequest =
     | { id: number; delayMs: number }
     | { id: number; cancel: true };
 
-/// Worker → main thread: the timer with this id came due.
+/** Worker → main thread: the timer with this id came due. */
 export interface TickReply {
     id: number;
 }

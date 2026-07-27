@@ -46,13 +46,15 @@ const BUTTON_STYLE = `
     button:disabled { opacity: 0.6; cursor: default; }
 `;
 
-/// The components waiting for the page's first gesture, and whether it came.
-/// The AudioContext is page-wide, so any component's power affordance — or a
-/// `<clausters-power>` — starts every one of them.
+/**
+ * The components waiting for the page's first gesture, and whether it came.
+ * The AudioContext is page-wide, so any component's power affordance — or a
+ * `<clausters-power>` — starts every one of them.
+ */
 const waiting = new Set<ClaustersBundle>();
 let gestured = false;
 
-/// Starts every mounted component's engine half. Call from a user gesture.
+/** Starts every mounted component's engine half. Call from a user gesture. */
 export async function startPage(): Promise<void> {
     gestured = true;
     const components = [...waiting];
@@ -64,13 +66,15 @@ export async function startPage(): Promise<void> {
 }
 
 export class ClaustersBundle extends HTMLElement {
-    /// The declared parameters, once the manifest is read — the attributes
-    /// this element answers to. `preset` and `src` are always among them.
+    /**
+     * The declared parameters, once the manifest is read — the attributes
+     * this element answers to. `preset` and `src` are always among them.
+     */
     private canvas: HTMLCanvasElement;
     private overlay: HTMLDivElement;
     private button: HTMLButtonElement;
     private mounted: Mounted | null = null;
-    /// The in-flight phase 2, latched so every caller awaits the one send.
+    /** The in-flight phase 2, latched so every caller awaits the one send. */
     private starting: Promise<void> | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private viewObserver: IntersectionObserver | null = null;
@@ -111,8 +115,10 @@ export class ClaustersBundle extends HTMLElement {
         this.button.onclick = () => void startPage();
     }
 
-    /// Phase 1, on connect: the GuiDef opens and draws, with no gesture and no
-    /// audio. An element inserted later works the same way.
+    /**
+     * Phase 1, on connect: the GuiDef opens and draws, with no gesture and no
+     * audio. An element inserted later works the same way.
+     */
     connectedCallback(): void {
         if (this.mounted) return;
         void this.open();
@@ -155,14 +161,16 @@ export class ClaustersBundle extends HTMLElement {
         }
     }
 
-    /// Phase 2: this component's engine half — its defs, its samples, its boot
-    /// list.
-    ///
-    /// Two callers reach here for the same component — the page's gesture and
-    /// the component itself, once the gesture already happened — so the second
-    /// one **awaits the first** rather than returning early. Returning early
-    /// would resolve while the defs were still travelling, and whatever the
-    /// caller did next would find them missing.
+    /**
+     * Phase 2: this component's engine half — its defs, its samples, its boot
+     * list.
+     *
+     * Two callers reach here for the same component — the page's gesture and
+     * the component itself, once the gesture already happened — so the second
+     * one **awaits the first** rather than returning early. Returning early
+     * would resolve while the defs were still travelling, and whatever the
+     * caller did next would find them missing.
+     */
     start(): Promise<void> {
         waiting.delete(this);
         if (!this.mounted) return Promise.resolve();
@@ -179,26 +187,32 @@ export class ClaustersBundle extends HTMLElement {
         }
     }
 
-    /// The resolved parameter values this instance mounted with, or `null`
-    /// before it did.
+    /**
+     * The resolved parameter values this instance mounted with, or `null`
+     * before it did.
+     */
     get params(): Record<string, unknown> | null {
         return this.mounted?.params ?? null;
     }
 
-    /// The id this instance's GuiDef opened under, or `null` before it did.
+    /** The id this instance's GuiDef opened under, or `null` before it did. */
     get defId(): number | null {
         return this.mounted?.defId ?? null;
     }
 
-    /// What this instance was allocated, by symbol name — its node ids, its
-    /// buses, its buffers. What a page needs to talk to *this* component.
+    /**
+     * What this instance was allocated, by symbol name — its node ids, its
+     * buses, its buffers. What a page needs to talk to *this* component.
+     */
     get symbols(): Record<string, number> | null {
         return this.mounted?.symbols ?? null;
     }
 
-    /// Every attribute except the element's own — the tag's parameter values,
-    /// as strings. The resolver ignores what the manifest does not declare, so
-    /// `class` and `style` pass through harmlessly.
+    /**
+     * Every attribute except the element's own — the tag's parameter values,
+     * as strings. The resolver ignores what the manifest does not declare, so
+     * `class` and `style` pass through harmlessly.
+     */
     private declaredAttributes(): Record<string, string> {
         const out: Record<string, string> = {};
         for (const { name, value } of this.attributes) {
@@ -208,8 +222,10 @@ export class ClaustersBundle extends HTMLElement {
         return out;
     }
 
-    /// The canvas' backing store, in device pixels, from the element's box —
-    /// the host never reads the DOM, so the element reports the pixels.
+    /**
+     * The canvas' backing store, in device pixels, from the element's box —
+     * the host never reads the DOM, so the element reports the pixels.
+     */
     private sizeCanvas(): void {
         const ratio = globalThis.devicePixelRatio || 1;
         const box = this.getBoundingClientRect();
@@ -219,9 +235,11 @@ export class ClaustersBundle extends HTMLElement {
         this.canvas.height = height;
     }
 
-    /// The two observers a component carries: its box drives `resize`, and its
-    /// place in the viewport drives `set_visible` — a canvas nobody is looking
-    /// at is skipped on the tick and drops its buses from the stream.
+    /**
+     * The two observers a component carries: its box drives `resize`, and its
+     * place in the viewport drives `set_visible` — a canvas nobody is looking
+     * at is skipped on the tick and drops its buses from the stream.
+     */
     private observe(): void {
         const defId = this.mounted?.defId;
         if (defId === undefined) return;
@@ -241,8 +259,10 @@ export class ClaustersBundle extends HTMLElement {
         this.viewObserver.observe(this);
     }
 
-    /// A failure shows on this component and nowhere else: the page comes up
-    /// around it.
+    /**
+     * A failure shows on this component and nowhere else: the page comes up
+     * around it.
+     */
     private fail(error: unknown): void {
         waiting.delete(this);
         this.overlay.hidden = false;
@@ -279,19 +299,21 @@ export class ClaustersPower extends HTMLElement {
 customElements.define("clausters-bundle", ClaustersBundle);
 customElements.define("clausters-power", ClaustersPower);
 
-/// Registers `tag` as a component mounting the bundle at `base` — what a
-/// bundle's generated `index.js` calls, so a page gets a named tag from one
-/// import:
-///
-/// ```js
-/// import { defineComponent } from "/dist/runtime.js";
-/// defineComponent("fm-voice", new URL(".", import.meta.url));
-/// ```
-///
-/// The tag is `<clausters-bundle>` with its `src` already filled in, so
-/// everything the generic element does — the attributes, `preset`, the
-/// two-phase mount — works on it unchanged. Registering the same tag twice is
-/// a no-op, so two copies of a generated module on one page are harmless.
+/**
+ * Registers `tag` as a component mounting the bundle at `base` — what a
+ * bundle's generated `index.js` calls, so a page gets a named tag from one
+ * import:
+ *
+ * ```js
+ * import { defineComponent } from "/dist/runtime.js";
+ * defineComponent("fm-voice", new URL(".", import.meta.url));
+ * ```
+ *
+ * The tag is `<clausters-bundle>` with its `src` already filled in, so
+ * everything the generic element does — the attributes, `preset`, the
+ * two-phase mount — works on it unchanged. Registering the same tag twice is
+ * a no-op, so two copies of a generated module on one page are harmless.
+ */
 export function defineComponent(tag: string, base: string | URL): void {
     if (customElements.get(tag)) return;
     const src = String(base);

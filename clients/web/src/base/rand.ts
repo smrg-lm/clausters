@@ -24,58 +24,68 @@
 import { Rng as CoreRng } from "../core/clausters_core_web.js";
 import { currentRoutine } from "./context.ts";
 
-/// A resumable seeded value stream over the core generator: uniform doubles in
-/// `[0, 1)` and bounded integers. `spawn` derives a child deterministically.
+/**
+ * A resumable seeded value stream over the core generator: uniform doubles in
+ * `[0, 1)` and bounded integers. `spawn` derives a child deterministically.
+ */
 export class Rng {
     private readonly inner: CoreRng;
 
-    /// The stream for `seed` (splitmix64-mixed, never zero) — the same seeding
-    /// as the server's `WhiteNoise`.
+    /**
+     * The stream for `seed` (splitmix64-mixed, never zero) — the same seeding
+     * as the server's `WhiteNoise`.
+     */
     constructor(seed: number);
     constructor(inner: CoreRng);
     constructor(source: number | CoreRng) {
         this.inner = typeof source === "number" ? new CoreRng(source) : source;
     }
 
-    /// Uniform in `[0, 1)` with 53-bit resolution.
+    /** Uniform in `[0, 1)` with 53-bit resolution. */
     nextF64(): number {
         return this.inner.nextF64();
     }
 
-    /// Uniform in `[lo, hi)` (degenerate to `lo` when `hi <= lo`).
+    /** Uniform in `[lo, hi)` (degenerate to `lo` when `hi <= lo`). */
     uniform(lo: number, hi: number): number {
         return this.inner.uniform(lo, hi);
     }
 
-    /// Uniform integer in `[0, n)`; 0 when `n` is 0.
+    /** Uniform integer in `[0, n)`; 0 when `n` is 0. */
     nextBelow(n: number): number {
         return this.inner.nextBelow(n);
     }
 
-    /// A uniformly chosen element of `items`.
+    /** A uniformly chosen element of `items`. */
     choice<T>(items: readonly T[]): T {
         return items[this.nextBelow(items.length)]!;
     }
 
-    /// A child stream seeded from this one's next word.
+    /** A child stream seeded from this one's next word. */
     spawn(): Rng {
         return new Rng(this.inner.spawn());
     }
 }
 
-/// The root stream, when no routine is running. Built on first use (the core
-/// wasm has to be loaded first) and seeded from the wall clock, so an unseeded
-/// script differs run to run — exactly what `seed(n)` takes away.
+/**
+ * The root stream, when no routine is running. Built on first use (the core
+ * wasm has to be loaded first) and seeded from the wall clock, so an unseeded
+ * script differs run to run — exactly what `seed(n)` takes away.
+ */
 let root: Rng | null = null;
 
-/// Seeds the root stream, reproducing every draw made outside a routine and
-/// every routine created after this call.
+/**
+ * Seeds the root stream, reproducing every draw made outside a routine and
+ * every routine created after this call.
+ */
 export function seed(value: number): void {
     root = new Rng(value);
 }
 
-/// The stream of the routine running right now; outside a routine, the root.
-/// This is where every random value in the library comes from.
+/**
+ * The stream of the routine running right now; outside a routine, the root.
+ * This is where every random value in the library comes from.
+ */
 export function currentRng(): Rng {
     const routine = currentRoutine();
     if (routine?.rng) return routine.rng;
@@ -83,21 +93,23 @@ export function currentRng(): Rng {
     return root;
 }
 
-/// A new stream derived from the current context — how a `Routine` gets its
-/// own at creation, seeded by its parent.
+/**
+ * A new stream derived from the current context — how a `Routine` gets its
+ * own at creation, seeded by its parent.
+ */
 export function spawnRng(): Rng {
     return currentRng().spawn();
 }
 
-/// Uniform in `[0, 1)` from the current context.
+/** Uniform in `[0, 1)` from the current context. */
 export const nextF64 = (): number => currentRng().nextF64();
 
-/// Uniform in `[lo, hi)` from the current context.
+/** Uniform in `[lo, hi)` from the current context. */
 export const uniform = (lo: number, hi: number): number =>
     currentRng().uniform(lo, hi);
 
-/// Uniform integer in `[0, n)` from the current context.
+/** Uniform integer in `[0, n)` from the current context. */
 export const nextBelow = (n: number): number => currentRng().nextBelow(n);
 
-/// A uniformly chosen element of `items`, from the current context.
+/** A uniformly chosen element of `items`, from the current context. */
 export const choice = <T>(items: readonly T[]): T => currentRng().choice(items);

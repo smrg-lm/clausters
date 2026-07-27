@@ -15,22 +15,28 @@ import type { BootOptions, ClockAnchor } from "./loader.ts";
 
 export type ReplyListener = (packet: Uint8Array) => void;
 
-/// The shared engine surface: raw OSC bytes in, fanned-out replies back —
-/// what the connection seam (`base/connection.ts`) and any REPL build on.
+/**
+ * The shared engine surface: raw OSC bytes in, fanned-out replies back —
+ * what the connection seam (`base/connection.ts`) and any REPL build on.
+ */
 export interface ClaustersServer {
     context: AudioContext;
     node: AudioWorkletNode;
-    /// One complete OSC packet to the engine (bytes are transferred).
+    /** One complete OSC packet to the engine (bytes are transferred). */
     send(bytes: Uint8Array): void;
-    /// Subscribe to every engine reply packet.
+    /** Subscribe to every engine reply packet. */
     addReply(listener: ReplyListener): void;
     removeReply(listener: ReplyListener): void;
     clock(): Promise<number>;
-    /// The engine's clock paired with the context's frame counter, both read
-    /// in the same instant — what a sample-locked client anchors to.
+    /**
+     * The engine's clock paired with the context's frame counter, both read
+     * in the same instant — what a sample-locked client anchors to.
+     */
     clockAnchor(): Promise<ClockAnchor>;
-    /// Installs host-decoded samples as buffer `index` (the browser's
-    /// /b_allocRead); `samples` is interleaved and transferred.
+    /**
+     * Installs host-decoded samples as buffer `index` (the browser's
+     * /b_allocRead); `samples` is interleaved and transferred.
+     */
     bLoad(
         index: number,
         channels: number,
@@ -43,8 +49,10 @@ export interface ClaustersServer {
 
 let instance: Promise<ClaustersServer> | null = null;
 
-/// The page's engine, booting it on first call. `options` (channels, an
-/// existing AudioContext) only apply to that first call.
+/**
+ * The page's engine, booting it on first call. `options` (channels, an
+ * existing AudioContext) only apply to that first call.
+ */
 export function server(options: BootOptions = {}): Promise<ClaustersServer> {
     instance ??= boot(options);
     return instance;

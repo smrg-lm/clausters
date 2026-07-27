@@ -34,10 +34,10 @@ export class Bus {
     }
 }
 
-/// Anything a command can address by bus index: a handle or the bare number.
+/** Anything a command can address by bus index: a handle or the bare number. */
 export type BusLike = Bus | number;
 
-/// The index behind a bus handle or a bare number.
+/** The index behind a bus handle or a bare number. */
 export function busIndex(bus: BusLike): number {
     return typeof bus === "number" ? bus : bus.index;
 }
@@ -62,8 +62,10 @@ class Allocator {
         this.registry = span > 0 ? new Registry(reserved, span) : null;
     }
 
-    /// A run of `channels` contiguous buses. Throws when no such run is free
-    /// — exhaustion is an explicit failure, never an aliased index.
+    /**
+     * A run of `channels` contiguous buses. Throws when no such run is free
+     * — exhaustion is an explicit failure, never an aliased index.
+     */
     alloc(channels = 1): Bus {
         const index = this.registry?.alloc(channels);
         if (index === undefined) {
@@ -72,9 +74,11 @@ class Allocator {
         return new Bus(index, channels, this.rate);
     }
 
-    /// Returns the bus's run to the pool. A double free (or a bus this
-    /// allocator never handed out) throws — losing track of a bus is a client
-    /// bug, never absorbed silently.
+    /**
+     * Returns the bus's run to the pool. A double free (or a bus this
+     * allocator never handed out) throws — losing track of a bus is a client
+     * bug, never absorbed silently.
+     */
     free(bus: Bus): void {
         if (!this.registry?.release(bus.index, bus.channels)) {
             throw new AllocationError(
@@ -84,21 +88,23 @@ class Allocator {
         }
     }
 
-    /// How many buses are currently allocated.
+    /** How many buses are currently allocated. */
     get inUse(): number {
         return this.registry?.inUse ?? 0;
     }
 }
 
-/// Allocates audio buses above the hardware outputs (`reserved`) and below
-/// the GraphDef private range. `size` is the server's audio-bus count.
+/**
+ * Allocates audio buses above the hardware outputs (`reserved`) and below
+ * the GraphDef private range. `size` is the server's audio-bus count.
+ */
 export class AudioBusAllocator extends Allocator {
     constructor(size: number, reserved = 2) {
         super("audio", size, reserved, graphBusReserved()[0]);
     }
 }
 
-/// `size` is the server's control-bus count.
+/** `size` is the server's control-bus count. */
 export class ControlBusAllocator extends Allocator {
     constructor(size: number) {
         super("control", size, 0, graphBusReserved()[1]);

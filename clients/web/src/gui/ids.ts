@@ -19,21 +19,27 @@
 import { AllocationError } from "../errors.ts";
 import { Registry } from "../base/core.ts";
 
-/// The first id the allocator hands out. Hand-picked ids below this never
-/// collide with assigned ones (the documented `/gui_def` id convention).
+/**
+ * The first id the allocator hands out. Hand-picked ids below this never
+ * collide with assigned ones (the documented `/gui_def` id convention).
+ */
 export const BASE_ID = 1000;
 
-/// The size of the id window. Far beyond any real count of simultaneously
-/// live widgets, so the space recycles inside it without ever exhausting in
-/// practice.
+/**
+ * The size of the id window. Far beyond any real count of simultaneously
+ * live widgets, so the space recycles inside it without ever exhausting in
+ * practice.
+ */
 export const CAPACITY = 1 << 20;
 
-/// The registry of a host client's widget-id space.
-///
-/// An occupancy map, not a counter: every id handed out by `alloc` stays
-/// tracked until `free` returns it, which makes it allocatable again — so a
-/// long session that opens and closes many windows recycles ids within a fixed
-/// window instead of climbing without bound.
+/**
+ * The registry of a host client's widget-id space.
+ *
+ * An occupancy map, not a counter: every id handed out by `alloc` stays
+ * tracked until `free` returns it, which makes it allocatable again — so a
+ * long session that opens and closes many windows recycles ids within a fixed
+ * window instead of climbing without bound.
+ */
 export class GuiIdAllocator {
     private registry: Registry;
 
@@ -41,9 +47,11 @@ export class GuiIdAllocator {
         this.registry = new Registry(base, capacity);
     }
 
-    /// A fresh id, unique across everything this allocator names. Throws when
-    /// the whole window is live at once — a client bug (that many widgets
-    /// never coexist; freed ones recycle).
+    /**
+     * A fresh id, unique across everything this allocator names. Throws when
+     * the whole window is live at once — a client bug (that many widgets
+     * never coexist; freed ones recycle).
+     */
     alloc(): number {
         const id = this.registry.alloc(1);
         if (id === undefined) {
@@ -56,14 +64,16 @@ export class GuiIdAllocator {
         return id;
     }
 
-    /// Returns `id` to the pool. Ids outside this allocator's window (a
-    /// hand-picked id below the base) and ids not currently allocated are
-    /// ignored, so freeing is always safe.
+    /**
+     * Returns `id` to the pool. Ids outside this allocator's window (a
+     * hand-picked id below the base) and ids not currently allocated are
+     * ignored, so freeing is always safe.
+     */
     free(id: number): void {
         if (this.registry.contains(id)) this.registry.release(id, 1);
     }
 
-    /// How many ids are allocated right now.
+    /** How many ids are allocated right now. */
     get inUse(): number {
         return this.registry.inUse;
     }

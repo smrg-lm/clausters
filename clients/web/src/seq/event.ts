@@ -17,20 +17,24 @@
 import { cpsmidi, degreeToMidinote, midicps } from "../base/builtins.ts";
 import type { OscArg } from "../base/osc.ts";
 
-/// Keys that drive timing and structure, and are never sent as controls.
-/// `node` and `server` are written back by `play`.
+/**
+ * Keys that drive timing and structure, and are never sent as controls.
+ * `node` and `server` are written back by `play`.
+ */
 const RESERVED = new Set([
     "type", "instrument", "dur", "legato", "stretch", "sustain", "delta",
     "addAction", "target", "group", "server", "hasGate",
     "midinote", "degree", "octave", "root", "scale", "node",
 ]);
 
-/// Defaults merged into every `Event`. `type` selects behaviour (`note` or
-/// `rest`); `instrument` is the def name; `dur` is the beats to the next
-/// event, scaled by `legato`/`stretch` into the sounding time; `amp` is linear
-/// amplitude; `addAction`/`target` place the synth in the node tree; `hasGate`
-/// picks release-by-free vs `gate 0`; and `octave`/`root`/`scale` define the
-/// pitch space `degree` indexes.
+/**
+ * Defaults merged into every `Event`. `type` selects behaviour (`note` or
+ * `rest`); `instrument` is the def name; `dur` is the beats to the next
+ * event, scaled by `legato`/`stretch` into the sounding time; `amp` is linear
+ * amplitude; `addAction`/`target` place the synth in the node tree; `hasGate`
+ * picks release-by-free vs `gate 0`; and `octave`/`root`/`scale` define the
+ * pitch space `degree` indexes.
+ */
 export const DEFAULTS: EventProps = {
     type: "note",
     instrument: "default",
@@ -46,30 +50,36 @@ export const DEFAULTS: EventProps = {
     scale: [0, 2, 4, 5, 7, 9, 11], // major
 };
 
-/// An event's parameters. Unknown keys are simply stored; the numeric ones
-/// that are not reserved are forwarded to the synth as controls.
+/**
+ * An event's parameters. Unknown keys are simply stored; the numeric ones
+ * that are not reserved are forwarded to the synth as controls.
+ */
 export interface EventProps {
     [key: string]: unknown;
 }
 
-/// What an `Event` can be played on: the OSC `Server`, or any destination that
-/// renders one (a MIDI destination, once the client has one).
+/**
+ * What an `Event` can be played on: the OSC `Server`, or any destination that
+ * renders one (a MIDI destination, once the client has one).
+ */
 export interface EventDestination {
     playEvent(event: Event): number | null;
     free(...nodes: number[]): void;
     set(node: number, controls: Record<string, number>): void;
 }
 
-/// A note event: parameters that know how to play themselves.
-///
-/// The keys split in two: a fixed **reserved** set drives timing and structure
-/// (`dur`, `legato`, `stretch`, `addAction`/`target`, the pitch keys, …) and is
-/// never sent to the synth; every other numeric key is forwarded as a control.
-///
-/// The derived quantities compute the values actually used: `midinote` and
-/// `freq` resolve pitch (an explicit `freq` wins, else `midinote`, else
-/// `degree` within `octave`/`root`/`scale`), `delta` is the beats to the next
-/// event and `sustain` the beats the synth sounds.
+/**
+ * A note event: parameters that know how to play themselves.
+ *
+ * The keys split in two: a fixed **reserved** set drives timing and structure
+ * (`dur`, `legato`, `stretch`, `addAction`/`target`, the pitch keys, …) and is
+ * never sent to the synth; every other numeric key is forwarded as a control.
+ *
+ * The derived quantities compute the values actually used: `midinote` and
+ * `freq` resolve pitch (an explicit `freq` wins, else `midinote`, else
+ * `degree` within `octave`/`root`/`scale`), `delta` is the beats to the next
+ * event and `sustain` the beats the synth sounds.
+ */
 export class Event {
     readonly props: EventProps;
 
@@ -77,12 +87,12 @@ export class Event {
         this.props = { ...DEFAULTS, ...props };
     }
 
-    /// One parameter, or `undefined` when it is not set.
+    /** One parameter, or `undefined` when it is not set. */
     get(key: string): unknown {
         return this.props[key];
     }
 
-    /// Sets parameters, as `play` writes its derived quantities back.
+    /** Sets parameters, as `play` writes its derived quantities back. */
     set(props: EventProps): this {
         Object.assign(this.props, props);
         return this;
@@ -94,9 +104,11 @@ export class Event {
 
     // ---- derived quantities ----
 
-    /// The MIDI note number this event sounds. An explicit `freq` (Hz) is
-    /// inverted through `cpsmidi`; otherwise it comes from `midinote`, or from
-    /// `degree` within `octave`/`root`/`scale`.
+    /**
+     * The MIDI note number this event sounds. An explicit `freq` (Hz) is
+     * inverted through `cpsmidi`; otherwise it comes from `midinote`, or from
+     * `degree` within `octave`/`root`/`scale`.
+     */
     midinote(): number {
         if (this.props.freq !== undefined) return cpsmidi(this.num("freq"));
         if (this.props.midinote !== undefined) return this.num("midinote");
@@ -111,37 +123,47 @@ export class Event {
         );
     }
 
-    /// The frequency in Hz this event sounds: an explicit `freq` if given,
-    /// otherwise `midinote` converted through the core's `midicps`.
+    /**
+     * The frequency in Hz this event sounds: an explicit `freq` if given,
+     * otherwise `midinote` converted through the core's `midicps`.
+     */
     freq(): number {
         if (this.props.freq !== undefined) return this.num("freq");
         return midicps(this.midinote());
     }
 
-    /// Beats until the next event: an explicit `delta` if given, otherwise
-    /// `dur * stretch`. As in SuperCollider, the key overrides the calculation.
+    /**
+     * Beats until the next event: an explicit `delta` if given, otherwise
+     * `dur * stretch`. As in SuperCollider, the key overrides the calculation.
+     */
     delta(): number {
         if (this.props.delta !== undefined) return this.num("delta");
         return this.num("dur") * this.num("stretch");
     }
 
-    /// Beats the synth sounds: an explicit `sustain` if given, otherwise
-    /// `dur * legato * stretch`.
+    /**
+     * Beats the synth sounds: an explicit `sustain` if given, otherwise
+     * `dur * legato * stretch`.
+     */
     sustain(): number {
         if (this.props.sustain !== undefined) return this.num("sustain");
         return this.num("dur") * this.num("legato") * this.num("stretch");
     }
 
-    /// Whether this event releases by closing a gate. The built-in `"default"`
-    /// instrument carries a gated, self-freeing envelope, so it does even
-    /// though the global default is `false`.
+    /**
+     * Whether this event releases by closing a gate. The built-in `"default"`
+     * instrument carries a gated, self-freeing envelope, so it does even
+     * though the global default is `false`.
+     */
     releasesByGate(): boolean {
         return Boolean(this.props.hasGate) || this.props.instrument === "default";
     }
 
-    /// The `name value …` control tail this event sends to the synth: `freq`
-    /// and `amp` always, `out` when set, then every other numeric key that is
-    /// not reserved.
+    /**
+     * The `name value …` control tail this event sends to the synth: `freq`
+     * and `amp` always, `out` when set, then every other numeric key that is
+     * not reserved.
+     */
     controlArgs(): OscArg[] {
         const args: OscArg[] = [
             ["s", "freq"], ["f", this.freq()],
@@ -161,19 +183,21 @@ export class Event {
 
     // ---- play ----
 
-    /// Plays this event on `destination` (double dispatch): the OSC `Server`
-    /// turns it into `/s_new` plus a release, a MIDI destination into note
-    /// on/off — without the clock or the routine knowing which.
-    ///
-    /// Returns **this event, with its keys completed**: the derived quantities
-    /// are written in (`midinote`, `freq`, `delta`, `sustain` — the values
-    /// actually used) along with `node` (the synth's node id; `null` for a
-    /// rest) and `server` (the destination), so the note stays actionable
-    /// after the fact — `free` cuts it, `release` ends it musically. The
-    /// scheduled self-release still arrives regardless.
-    ///
-    /// Outside a clock the note plays immediately; inside a routine it emits
-    /// at the routine's logical beat.
+    /**
+     * Plays this event on `destination` (double dispatch): the OSC `Server`
+     * turns it into `/s_new` plus a release, a MIDI destination into note
+     * on/off — without the clock or the routine knowing which.
+     *
+     * Returns **this event, with its keys completed**: the derived quantities
+     * are written in (`midinote`, `freq`, `delta`, `sustain` — the values
+     * actually used) along with `node` (the synth's node id; `null` for a
+     * rest) and `server` (the destination), so the note stays actionable
+     * after the fact — `free` cuts it, `release` ends it musically. The
+     * scheduled self-release still arrives regardless.
+     *
+     * Outside a clock the note plays immediately; inside a routine it emits
+     * at the routine's logical beat.
+     */
     play(destination: EventDestination): this {
         const midinote = this.midinote();
         const freq = this.freq();
@@ -183,18 +207,22 @@ export class Event {
         return this;
     }
 
-    /// Cuts the played note **now** (`/n_free`), without waiting for its
-    /// sustain. A no-op when the event has not sounded (a rest, or never
-    /// played). The release already scheduled at play time still arrives and
-    /// is harmless.
+    /**
+     * Cuts the played note **now** (`/n_free`), without waiting for its
+     * sustain. A no-op when the event has not sounded (a rest, or never
+     * played). The release already scheduled at play time still arrives and
+     * is harmless.
+     */
     free(): void {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
         if (typeof node === "number" && server) server.free(node);
     }
 
-    /// Ends the played note **musically**, now: `gate 0` when it releases by
-    /// gate, a plain `/n_free` otherwise. Same no-op rule as `free`.
+    /**
+     * Ends the played note **musically**, now: `gate 0` when it releases by
+     * gate, a plain `/n_free` otherwise. Same no-op rule as `free`.
+     */
     release(): void {
         const node = this.props.node;
         const server = this.props.server as EventDestination | undefined;
@@ -204,6 +232,8 @@ export class Event {
     }
 }
 
-/// A silent `Event` that sounds nothing but still advances time by `dur`
-/// beats — a rest in the sequence.
+/**
+ * A silent `Event` that sounds nothing but still advances time by `dur`
+ * beats — a rest in the sequence.
+ */
 export const rest = (dur = 1.0): Event => new Event({ type: "rest", dur });

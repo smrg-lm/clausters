@@ -21,21 +21,29 @@ import type { Connection } from "../base/connection.ts";
 
 export type EventListener = (packet: Uint8Array) => void;
 
-/// The page canvas' default size in device pixels, matching the host's own
-/// default. A component sizes its canvas from its element box instead.
+/**
+ * The page canvas' default size in device pixels, matching the host's own
+ * default. A component sizes its canvas from its element box instead.
+ */
 const DEFAULT_CANVAS = { width: 480, height: 420 };
 
-/// The shared host surface: the raw binding bridge, the page-wide canvas
-/// (re-parent it freely; the GPU context survives), and the outbound
-/// `/gui_event`/`/gui_info`/`/gui_closed` stream as byte packets.
+/**
+ * The shared host surface: the raw binding bridge, the page-wide canvas
+ * (re-parent it freely; the GPU context survives), and the outbound
+ * `/gui_event`/`/gui_info`/`/gui_closed` stream as byte packets.
+ */
 export interface ClaustersGui {
     bridge: GuiBridge;
-    /// The page's default canvas — the one a page that does not make its own
-    /// draws into. `attach` hands it to a def.
+    /**
+     * The page's default canvas — the one a page that does not make its own
+     * draws into. `attach` hands it to a def.
+     */
     canvas: HTMLCanvasElement;
-    /// Gives a `window`-rooted def a canvas to draw into, before its
-    /// `/gui_def` is fed. The host holds one canvas per def, so a document can
-    /// show several at once; omit `canvas` to use the page's default one.
+    /**
+     * Gives a `window`-rooted def a canvas to draw into, before its
+     * `/gui_def` is fed. The host holds one canvas per def, so a document can
+     * show several at once; omit `canvas` to use the page's default one.
+     */
     attach(defId: number, canvas?: HTMLCanvasElement): void;
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
@@ -43,15 +51,17 @@ export interface ClaustersGui {
 
 let instance: Promise<ClaustersGui> | null = null;
 
-/// The page's GUI host, booting it (and the engine) on first call.
-///
-/// One wasm GUI host serves the page, drawing one canvas per `window`-rooted
-/// def. The first call initializes the wasm module, starts the host, makes the
-/// page's default canvas (appended to `<body>`, where a page that makes none of
-/// its own finds it), and wires the two singletons together **once**: engine
-/// replies → `bridge.server_reply`, host outbound → `engine.send` (the in-page
-/// server leg). Later calls get the same instance, so several components share
-/// one host and one engine — the shared node/bus/buffer namespace.
+/**
+ * The page's GUI host, booting it (and the engine) on first call.
+ *
+ * One wasm GUI host serves the page, drawing one canvas per `window`-rooted
+ * def. The first call initializes the wasm module, starts the host, makes the
+ * page's default canvas (appended to `<body>`, where a page that makes none of
+ * its own finds it), and wires the two singletons together **once**: engine
+ * replies → `bridge.server_reply`, host outbound → `engine.send` (the in-page
+ * server leg). Later calls get the same instance, so several components share
+ * one host and one engine — the shared node/bus/buffer namespace.
+ */
 export function guiHost(): Promise<ClaustersGui> {
     instance ??= boot();
     return instance;
@@ -96,16 +106,18 @@ async function boot(): Promise<ClaustersGui> {
     };
 }
 
-/// The in-page carrier: a `Connection` over the page's GUI-host singleton —
-/// `feed` carries a packet in, the drained outbox carries the events back.
-/// Closing detaches this connection's listeners; the host keeps running (it is
-/// shared page state, not this connection's to stop).
-///
-/// A `/gui_def` sent over this carrier gets the page's default canvas attached
-/// to it first, unless the caller already gave that def one. A `GuiHost` is
-/// transport-agnostic — the same object drives a native `--ws` host, which has
-/// windows rather than canvases — so the canvas policy belongs here, on the
-/// carrier that *is* the page.
+/**
+ * The in-page carrier: a `Connection` over the page's GUI-host singleton —
+ * `feed` carries a packet in, the drained outbox carries the events back.
+ * Closing detaches this connection's listeners; the host keeps running (it is
+ * shared page state, not this connection's to stop).
+ *
+ * A `/gui_def` sent over this carrier gets the page's default canvas attached
+ * to it first, unless the caller already gave that def one. A `GuiHost` is
+ * transport-agnostic — the same object drives a native `--ws` host, which has
+ * windows rather than canvases — so the canvas policy belongs here, on the
+ * carrier that *is* the page.
+ */
 export async function pageGuiConnection(): Promise<Connection> {
     const gui = await guiHost();
     const mine = new Set<EventListener>();
