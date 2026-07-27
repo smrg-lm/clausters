@@ -27,7 +27,9 @@ on you.
 workspace's `Cargo.lock` (the engine and the core codec) and `clients/gui`'s
 own `Cargo.lock` (the GUI host — a separate workspace by design). They must
 agree; if they ever diverge, reconcile them before installing, because no
-single CLI can serve both.
+single CLI can serve both. Both are **committed** for that reason: the pin is
+an agreement *between* two files, so a lockfile cargo resolves fresh on
+whatever machine builds — a release runner, say — is not a pin at all.
 
 ```sh
 grep -A1 '^name = "wasm-bindgen"$' ../../Cargo.lock ../gui/Cargo.lock   # both must match

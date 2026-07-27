@@ -92,7 +92,13 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI (trusted publishing)
-    needs: build
+    # Gated on the npm leg, not merely on the wheel build: publishing is
+    # one-way, so the release either goes out whole or not at all. A web build
+    # that breaks after the wheel is on PyPI cannot be taken back, and it is
+    # the npm side that carries the long, uncached wasm build -- the one with
+    # something to fail at. The order between the two registries is arbitrary;
+    # what matters is that one of them is a gate.
+    needs: [build, publish-npm]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
