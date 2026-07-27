@@ -181,6 +181,22 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   mueven con el LFO por `/c_stream` sobre el engine in-page, y la perilla
   `freq` (bindeada `/n_set`) cambia el tono al arrastrarla. Sin ningún proceso
   servidor.
+- **Un texto interactivo: varios instrumentos en una misma página.**
+  Generar los dos bundles y servir la raíz del paquete:
+  `(cd clients/web/examples/graph-controls && python3 make_bundle.py)`,
+  `(cd clients/web/examples/piano && python3 make_bundle.py)`,
+  `clients/web/build.sh`, `(cd clients/web && python3 -m http.server)` y abrir
+  `http://localhost:8000/examples/document/` → la prosa y los instrumentos
+  intercalados, cada canvas colocado por el CSS de la página como cualquier
+  párrafo. Power en cualquiera arranca el audio de **toda** la página (el
+  AudioContext es de la página, no del elemento). Los dos `<fm-trem>` son el
+  **mismo bundle montado dos veces**: suenan juntos, no al unísono (el segundo
+  trae `freq="110"`), y cada uno mueve su propio meter/scope porque tiene su
+  bus. Bajar hasta el teclado y tocar: el host arma una voz por tecla. Scrollear
+  hasta dejar un instrumento fuera de la pantalla → deja de dibujarse y de
+  streamear (vuelve solo al subir). Versión scriptada: `clients/web/test.sh`
+  (`tests/components.html` verifica los tres canvas, los ids distintos, el def
+  enviado una sola vez, el que quedó fuera de vista y el que falla solo).
 - **Una GUI construida y manejada desde TypeScript (cliente web).**
   `clients/web/build.sh`, después `(cd clients/web && python3 -m http.server)` y
   abrir `http://localhost:8000/examples/gui-host.html` → **play** (el gesto de

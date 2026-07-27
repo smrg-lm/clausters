@@ -122,20 +122,27 @@ side changes.
 
 ## Regenerating the parity vectors
 
-Three vector files are committed, all generated from the Python client — the
-reference for the wire (the codec), for the def format and for the GuiDef
-document (the builders):
+Four vector files are committed, all generated from the Python client — the
+reference for the wire (the codec), for the def format, for the GuiDef document
+(the builders) and for a written bundle (the writer plus the shared resolver):
 
 ```sh
 cd tests
 PYTHONPATH=../../python python3 gen-osc-vectors.py   # tests/osc-vectors.json
 python3 gen-def-vectors.py                           # tests/def-vectors.json
 python3 gen-gui-vectors.py                           # tests/gui-vectors.json
+python3 gen-bundle-vectors.py                        # tests/bundle-vectors.json
 ```
 
-The two builder generators need the Python client importable (the repo's
+The three builder generators need the Python client importable (the repo's
 `.venv` has it installed editable); they insert `../../python` on the path
-themselves.
+themselves. The bundle one also needs `libclausters_ffi` built, since the
+writer validates and resolves through the core.
+
+The bundle vector is the odd one out on purpose: TypeScript has no bundle
+*writer* yet, so what is frozen is not two writers' output but **the file the
+Python writer emits, resolved** — the browser's wasm door running over the same
+manifest and template, which is the contract that actually has to hold.
 
 Regenerate only when the vector set itself changes (new cases); the point of
 committing them is that the two clients are held to the same frozen bytes and

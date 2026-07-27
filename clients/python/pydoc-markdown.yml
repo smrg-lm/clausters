@@ -20,6 +20,7 @@ loaders:
       - clausters.scope
       - clausters.session
       - clausters.responders
+      - clausters.bundle
       - clausters.ipc
       - clausters.errors
       - clausters.base

@@ -12,25 +12,56 @@ python3 -m http.server    # then open /examples/demo.html
 ./test.sh                 # type-check + node suites + the headless-Chrome smoke
 ```
 
-Use it from a page:
+## An instrument in the page
+
+A **bundle** is an instrument written to a directory (defs, one GuiDef, presets,
+samples) plus a generated ES module that registers its tag. Importing that module
+is the whole integration — **no client library is loaded at run time**:
 
 ```html
 <script type="module">
-  import { server, bootBundle } from "./dist/index.js";
-  // registers <clausters-bundle> and <clausters-power> as a side effect
-  import "./dist/index.js";
+  import "./fm-voice/index.js";   // registers <fm-voice>
 </script>
 
-<!-- a standalone bundle as one element; its button is the autoplay gesture -->
-<clausters-bundle src="my-bundle" name="drone"></clausters-bundle>
+<style>fm-voice { display: block; width: 100%; height: 340px; }</style>
+
+<p>Prose, and then the instrument in the flow of the page:</p>
+<fm-voice></fm-voice>
+<fm-voice freq="110" preset="bright"></fm-voice>
+```
+
+Each element owns its canvas, and **the document places it** — CSS, the order of
+the markup. Two instances of one bundle hold their own node ids and buses, and
+the def they share is sent once. Declared parameters are attributes, resolved
+attribute → preset → default. The first gesture anywhere on the page starts the
+audio for all of them; a component scrolled out of the viewport stops drawing
+and stops streaming. Write one with `clausters.bundle.Bundle` in the Python
+client — `examples/piano/make_bundle.py` is the worked example — and see the
+server book's clients chapter for the format.
+
+`<clausters-bundle src="./fm-voice">` mounts a bundle with no generated module.
+
+## Driving it from script
+
+```html
+<script type="module">
+  import { server, guiHost } from "./dist/index.js";
+  // registers <clausters-bundle> and <clausters-power> as a side effect
+</script>
 ```
 
 The page surface:
 
 - `server()` — the lazy **per-page engine singleton**: `send(bytes)` / `addReply(listener)` raw OSC, `clock()`, `bLoad(...)` (the browser's `/b_allocRead`), `resume()`/`suspend()`. Every component and script on the page gets the same engine, so they meet in one node/bus/buffer namespace.
-- `guiHost()` — the per-page GUI-host singleton, wired to the engine over the in-page server leg (`GuiBridge.connect_page`).
-- `bootBundle({ base, name })` — boots a served bundle (the native `--standalone` data directory plus the `bundle.json` manifest `tools/bundle-manifest.py` generates; see "A standalone bundle in a tab" in the server book's clients chapter).
+- `guiHost()` — the per-page GUI-host singleton, wired to the engine over the in-page server leg (`GuiBridge.connect_page`). It draws **one canvas per `window`-rooted def**: `attach(defId, canvas)` gives a def its surface, and the host is told its size and its visibility, never the DOM.
+- `openBundle(...)` / `startBundle(...)` — the two phases of a mount by hand (allocate + resolve + draw, then the engine half on a gesture); `bootBundle(...)` does both for a script that already has one.
 - `<clausters-bundle>` / `<clausters-power>` — the elements; the power button is the standard autoplay-policy affordance.
+
+**Two entry points.** `dist/runtime.js` is what a page that mounts components
+loads: the engine, the host, the OSC codec and the mount. `dist/index.js` adds
+the TypeScript client — the def builders, the GuiDef builders, the sequencing
+layer — for a page that sequences, responds or edits live. Both target the same
+element, and `tests/runtime-graph.test.ts` holds the line between them.
 
 The client seam (what the TypeScript client builds on):
 
@@ -98,4 +129,4 @@ win.widget("freq").bind("/n_set", note.id, "freq");   // host -> engine, no scri
 win.widget("amp").onEvent((value) => server.set(note, { amp: value }));
 ```
 
-The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` a GUI built and driven from TypeScript — the bound and the scripted control paths side by side, a metered bus, the linked waveform + spectrogram, and one button that swaps the in-page host for a native `--ws` one — `graph-controls/` — a GraphDef's control surface as one web component, its bundle authored with the Python client (`make_bundle.py`) — and `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are the `scripts/smoke-web*.sh` set at the repo root plus `scripts/parity-web.sh`, and `./test.sh` here.
+The examples (`examples/`, served pages): `synth.html` a def built, sent, played and retuned from TypeScript over **either** carrier (the choice is the one line of the page that names one), `demo.html` the web-components demo, `standalone.html` the raw-API standalone boot, `engine.html` the audible engine harness, `gui-host.html` a GUI built and driven from TypeScript — the bound and the scripted control paths side by side, a metered bus, the linked waveform + spectrogram, and one button that swaps the in-page host for a native `--ws` one — `graph-controls/` — a GraphDef's control surface as one component, its bundle authored with the Python client (`make_bundle.py`) — `piano/` — a playable piano keyboard whose keys the GUI host maps to server voices itself (the widget's `voice` mode), the same authored-bundle posture — and `document/`, an interactive text with both of them interleaved with the prose, which is the shape the whole component format is for. The bundle format and the underlying pieces are documented in the server book (`docs/clients.md`, `docs/using-as-a-library.md`); the scripted acceptances are the `scripts/smoke-web*.sh` set at the repo root plus `scripts/parity-web.sh`, and `./test.sh` here.

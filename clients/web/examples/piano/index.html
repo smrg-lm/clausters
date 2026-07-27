@@ -11,6 +11,9 @@
       main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
              align-items: flex-start; }
       #note { font-size: 13px; white-space: pre-wrap; max-width: 44rem; }
+      /* The document places the component: its canvas fills the box CSS
+         gives it, and the element tells the host the pixels. */
+      piano-keys { display: block; width: 820px; height: 300px; max-width: 100%; }
     </style>
   </head>
   <body>
@@ -22,31 +25,37 @@ a /s_new per key press, a gate release per key up, no server process, no
 script in between. Drag the strip above the keys to pan the MIDI range, wheel
 over it to zoom; grayed keys are outside the instrument's active range. The
 power button is the autoplay gesture.</div>
-      <clausters-bundle src="bundle"></clausters-bundle>
+      <piano-keys title="Piano (host voices)"></piano-keys>
     </main>
 
     <!--
       The component page of examples/piano (see make_bundle.py for the
       authoring half and the bundle's contents).
 
+      The bundle ships its own ES module: importing it registers the
+      `piano-keys` tag and **nothing of the TypeScript client is loaded** — the run time is
+      the engine, the host and the mount (dist/runtime.js), which is what the
+      generated module imports.
+
       Serve from clients/web — the PACKAGE ROOT, never this folder: the
       imports below reach ../../dist/, which must stay inside the served
       root (serving piano/ itself turns them into 404s/MIME errors). From
       clients/web:  python3 -m http.server  and open /examples/piano/.
 
-      ?smoke=1 auto-boots and asserts the voice chain end to end — the same
-      /s_new … gate 1 a key press makes the host send, verified sounding by
-      the envelope the voice publishes on control bus 0, then gated off and
-      verified silent — beaconing the verdict as a fetch, the standard
+      ?smoke=1 asserts the voice chain end to end — the same /s_new … gate 1 a
+      key press makes the host send, verified sounding by the envelope the
+      voice publishes on **this instance's own** control bus, then gated off
+      and verified silent — beaconing the verdict as a fetch, the standard
       web-smoke posture under headless Chrome. (A real key press needs a
       pointer; the G27 browser harness covers input.)
     -->
     <script type="module">
-      import { server, loadOsc, encodeMessage, decodePacket }
-        from "../../dist/index.js"; // also registers <clausters-bundle>
+      import "./bundle/index.js";   // registers <piano-keys>
+      import { startPage, server } from "../../dist/runtime.js";
+      import { loadOsc, encodeMessage, decodePacket } from "../../dist/base/osc.js";
 
       const smoke = new URLSearchParams(location.search).has("smoke");
-      const element = document.querySelector("clausters-bundle");
+      const element = document.querySelector("piano-keys");
       const verdict = (text) => {
         document.getElementById("note").textContent = text;
         document.title = text.split("\n")[0];
@@ -58,30 +67,37 @@ power button is the autoplay gesture.</div>
         verdict(`FAIL: ${e.detail.error}`));
       element.addEventListener("clausters-ready", (e) => {
         if (smoke) {
-          smokeAsserts(e.detail.id).catch((err) => verdict(`FAIL: ${err}`));
+          startPage()
+            .then(() => smokeAsserts(e.detail.id))
+            .catch((err) => verdict(`FAIL: ${err}`));
         }
       });
-      if (smoke) element.boot();
 
       async function smokeAsserts(id) {
         await loadOsc();
         const engine = await server();
+        // The bus this instance was allocated — not a fixed 0. That is the
+        // difference between a bundle and a component.
+        const envBus = element.symbols.env;
         let latest = 0;
         let failed = null;
         engine.addReply((bytes) => {
           for (const { addr, args } of decodePacket(bytes)) {
             if (addr === "/fail") failed = JSON.stringify(args);
             if (addr !== "/c_set") continue;
-            for (let i = 0; i + 1 < args.length; i += 2) latest = args[i + 1];
+            for (let i = 0; i + 1 < args.length; i += 2) {
+              if (args[i] === envBus) latest = args[i + 1];
+            }
           }
         });
         // The very message the host's voice mode sends on a key press (an
-        // explicit node id, so the release below can gate it).
+        // explicit node id, so the release below can gate it), carrying the
+        // env_bus this instance publishes on.
         const NODE = 0x10000000;
         engine.send(encodeMessage("/s_new", [
-          ["s", "piano_voice"], ["i", NODE], ["i", 0], ["i", 0],
+          ["s", "piano.voice"], ["i", NODE], ["i", 0], ["i", 0],
           ["s", "freq"], ["f", 440.0], ["s", "amp"], ["f", 0.3],
-          ["s", "gate"], ["f", 1.0],
+          ["s", "gate"], ["f", 1.0], ["s", "env_bus"], ["f", envBus],
         ]));
         await until(() => latest > 0.5, "the voice envelope never opened");
         // The key release: gate 0 — the envelope falls and the node frees.
@@ -89,8 +105,8 @@ power button is the autoplay gesture.</div>
           [["i", NODE], ["s", "gate"], ["f", 0.0]]));
         await until(() => latest < 0.05, "the voice never released");
         if (failed) throw new Error(`/fail: ${failed}`);
-        verdict(`PASS: piano bundle up (GuiDef ${id}); voice sounded on ` +
-          `gate 1 and released on gate 0`);
+        verdict(`PASS: piano component up (GuiDef ${id}, env bus ${envBus}); ` +
+          `voice sounded on gate 1 and released on gate 0`);
 
         async function until(cond, what) {
           const t0 = performance.now();
@@ -98,7 +114,7 @@ power button is the autoplay gesture.</div>
             if (failed) throw new Error(`/fail: ${failed}`);
             if (cond()) return;
             if (performance.now() - t0 > 20000) {
-              throw new Error(`${what} (bus 0 = ${latest})`);
+              throw new Error(`${what} (bus ${envBus} = ${latest})`);
             }
             await new Promise((r) => setTimeout(r, 100));
           }

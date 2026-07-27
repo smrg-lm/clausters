@@ -2907,3 +2907,112 @@ the two carriers need different work:
 
 A server that does not answer leaves the clock on wall-clock time rather than
 failing, so a page whose master is unreachable keeps working.
+
+## The document places, the host draws: no window management in the browser
+
+On the desktop `clausters-gui` opens one window per `window`-rooted GuiDef and
+the system's window manager places, sizes and stacks them. In a browser tab the
+drawing surface is a `<canvas>` in an HTML document, and the document does the
+placing — CSS, the order of the markup, the flow of the page. W4 makes that one
+substitution and nothing else: the browser host went from `window`/`render`/
+`current_def`, all singular, to a map keyed by def id, and the model is the
+native front's, ported rather than invented.
+
+Two things had to change direction with it, and both are the same point. The
+**element supplies the canvas** (`GuiBridge::attach(def_id, canvas)`, winit's
+`with_canvas`) instead of the page hunting for whichever canvas winit appended
+to `<body>`: that is the correct ownership, and it is the only way N of them can
+exist. And the **size comes from the element** (a `ResizeObserver` times
+`devicePixelRatio`, reported in device pixels), so the host never reads the DOM;
+it is told "this def draws into this canvas, at this size, and right now it is
+(not) visible", and knows nothing else about HTML.
+
+What is deliberately absent is the *management* layer. Components are placed in
+the markup by whoever writes the page, in the order they want; nothing opens,
+moves, stacks or closes them. Mounting happens in `connectedCallback`, so an
+element inserted later works. An element **removed** from the DOM does not free
+its def — a `/gui_closed` travelling back is a separate feature, for whenever an
+editing program needs to open and close panels, and inventing it now would be
+guessing at that program's shape.
+
+One consequence is worth writing down because it was found the hard way: winit
+focuses a canvas it creates, and a browser scrolls a freshly focused element
+into view. In a document with several components the last one mounted yanked the
+reader to the bottom of the page. Canvases are created with `with_active(false)`;
+a click focuses them, which is when keyboard input is wanted anyway.
+
+**Not rendering what is not seen.** A document can hold fifty canvases with
+three in the viewport. The browser already skips compositing what is off screen,
+but that does not stop *our* host from computing the frame — the spectrum
+analysis, the scope advance, the FFT — nor, more expensively, from keeping its
+`/c_stream` and `/tap_stream` subscriptions alive, which is server CPU and wire
+traffic for something nobody is looking at. So each component carries an
+`IntersectionObserver`, and every per-frame and per-packet cost is derived from
+the **visible** set (`host::live::demand`, platform-agnostic and natively
+tested). The same waste exists on the desktop behind an occluded window; only
+the browser front acts on it so far.
+
+## Holes live only in the GuiDef record, so a def is sent once
+
+A bundle mounted twice on one page must not collide: two instances need two
+node ids, two buses, two blocks of widget ids. The persisted GuiDef record is
+therefore a **template** with two kinds of placeholder — `@symbol` for an id the
+caller allocates, `$param` for a value the tag supplies — and the resolver fills
+them at mount.
+
+The load-bearing decision is *where placeholders are allowed*: *only* in the
+GuiDef record and its `boot` list, never in a def payload. That is what makes a
+second instance cheap — the `/d_recv` and `/d_graph` payloads are byte-identical
+between instances, so they are sent to the server once and shared. It also
+forces one authoring rule, which is the right rule anyway:
+
+> A bus, a node or a buffer reaches a def **as a control**, never as a baked
+> constant.
+
+`piano_voice` used to do `out_ctl(0.0, env)` — the bus number compiled into the
+def — which is exactly why that bundle could not be mounted twice. Written as
+`out_ctl(control("env_bus"), env)` it can, and the mount passes each instance
+the bus it was allocated. The writer enforces the rule (`check_def_payload`)
+rather than documenting it, so the wrong form fails at write time.
+
+Widget ids are deliberately **not** symbols. The template numbers its widgets
+locally and the resolver offsets them by an allocated base: twelve widgets would
+otherwise mean twelve placeholders for no gain. So `"widgets"` in the manifest
+is the *width of the id block* — the highest local id, the root's included —
+not a count, because a template may number sparsely (`1`, `10`, `20`) and what
+is allocated is a contiguous run wide enough for the numbering. A bundle written
+before the contract declares no width at all, and the block is measured from the
+template instead, which is what lets yesterday's bundles mount twice.
+
+The resolver is **pure**: the caller allocates between `requirements` and
+`resolve`, so nothing about a page's or a host's id spaces leaks into the shared
+core, nothing is added to the `/gui_*` protocol, and no state is added to the
+host. `validate` is the same pass over the declared defaults, run by the writers
+— so an unmountable bundle is unwritable.
+
+## The run-time entry excludes the authoring builders
+
+Running a component is the browser equivalent of `clausters-gui --standalone`:
+the host is the server's client, and there is no scripting client in between.
+The builders ran earlier, in the authoring script; what the page fetches is
+data. So the package has **two entry points**, and the difference is what a page
+is made to download.
+
+`dist/runtime.js` carries the engine, the GUI host, the OSC codec, the mount and
+the element. `dist/index.js` — the whole facade — carries those plus the def
+builders (`defs/`), the GuiDef builders (`gui/guidef.ts`) and the sequencing
+layer (`seq/`). A page that embeds an instrument in an article needs the first;
+a page that sequences, responds or edits live imports the second on top. Both
+target the same element.
+
+Making the split real needed one move in the sources: the page's own host — the
+singleton, its canvases, the in-page carrier — came out of `gui/host.ts` into
+`gui/page.ts`, because `GuiHost` is the transport-agnostic *client* object (it
+also drives a native `--ws` host) and pulls the GuiDef builders with it, while
+the run time needs only the host itself.
+
+The exclusion is **asserted, not hoped for**: `tests/runtime-graph.test.ts`
+walks the emitted module graph of `dist/runtime.js` and fails if it ever reaches
+any of the three, with the facade's own graph as the negative control so the
+walker cannot pass by finding nothing. An import added anywhere along the chain
+— the entry, the element, the mount, the page host — shows up there.

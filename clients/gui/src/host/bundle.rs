@@ -24,8 +24,12 @@
 //! which is what keeps today's bundles running.
 
 use clausters_core::bundle::{
-    Allocation, Error as BundleError, Manifest, ParamInput, Requirements, Resolved, Template,
+    Allocation, Error as BundleError, Manifest, ParamInput, Requirements, Resolved,
 };
+
+/// The GuiDef template a mount fills, re-exported so a caller that has one
+/// spells it here rather than reaching into the core for it.
+pub use clausters_core::bundle::Template;
 use clausters_core::osc::{OscMessage, OscPacket, OscType, encode};
 use serde_json::Value;
 

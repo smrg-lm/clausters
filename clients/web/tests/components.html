@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters components acceptance</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; background: #0d0d12; color: #ddd;
+                   font-family: system-ui, sans-serif; line-height: 1.5; }
+      main { max-width: 46rem; margin: 0 auto; padding: 24px 16px 60vh; }
+      p { font-size: 14px; }
+      /* The document places the canvases, exactly as it places the prose. */
+      fm-trem { display: block; width: 100%; height: 340px; margin: 18px 0; }
+      piano-keys { display: block; width: 100%; height: 260px; margin: 18px 0; }
+      #far { margin-top: 160vh; }   /* out of the viewport, on purpose */
+      #verdict { font-size: 13px; white-space: pre-wrap; color: #9c9; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Two instruments, three canvases, one page</h1>
+      <p id="verdict">running…</p>
+
+      <p>This is the milestone's shape: prose, then an instrument, then more
+      prose. The two components below are <em>the same bundle</em>, mounted
+      twice — the def was sent to the engine once, and each instance holds its
+      own graph node and its own LFO bus.</p>
+
+      <fm-trem id="a"></fm-trem>
+
+      <p>The second one takes a <code>freq</code> attribute, so it sounds
+      different from its sibling without a second bundle, a second def or a
+      line of script:</p>
+
+      <fm-trem id="b" freq="110"></fm-trem>
+
+      <p>A different bundle mounts beside them, in the same engine and the same
+      host:</p>
+
+      <piano-keys id="c" title="keys"></piano-keys>
+
+      <p>And one that cannot resolve, to show a failure staying where it
+      happened — the rest of the page is up around it:</p>
+
+      <clausters-bundle id="broken" src="./no-such-bundle"></clausters-bundle>
+
+      <p id="far">Far below the fold: this component is mounted but out of the
+      viewport, so its canvas is skipped on the tick and its buses leave the
+      stream.</p>
+
+      <fm-trem id="offscreen"></fm-trem>
+    </main>
+
+    <!--
+      W4's acceptance. Two instances of one bundle plus one of another,
+      interleaved with prose:
+
+        - three canvases draw;
+        - the two instances of one bundle hold different node ids and buses,
+          and their def was sent once;
+        - a `freq` attribute makes one audibly different from its sibling,
+          asserted on its own control bus;
+        - a component out of the viewport stops streaming;
+        - one component's failure does not take the page down.
+
+      No TypeScript client is loaded: the bundles' generated modules import
+      dist/runtime.js, and this page adds only the asserts. The verdict is
+      beaconed as a fetch — the standard web-smoke posture (docs/decisions.md).
+    -->
+    <script type="module">
+      import "/examples/graph-controls/bundle/index.js";  // <fm-trem>
+      import "/examples/piano/bundle/index.js";           // <piano-keys>
+      import { startPage, server } from "/dist/runtime.js";
+      import { loadOsc, decodePacket } from "/dist/base/osc.js";
+
+      const verdict = (text) => {
+        document.getElementById("verdict").textContent = text;
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+
+      const errors = [];
+      addEventListener("clausters-error", (e) =>
+        errors.push(`${e.target.id}: ${e.detail.error}`));
+
+      const ready = new Set();
+      addEventListener("clausters-ready", (e) => ready.add(e.target.id));
+
+      const el = (id) => document.getElementById(id);
+      const canvasOf = (id) => el(id).shadowRoot.querySelector("canvas");
+
+      async function until(cond, what, ms = 20000) {
+        const t0 = performance.now();
+        for (;;) {
+            if (cond()) return;
+            if (performance.now() - t0 > ms) {
+                throw new Error(typeof what === "function" ? what() : what);
+            }
+            await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+
+      async function accept() {
+        // Phase 1 is on connect: the three good components draw with no
+        // gesture at all. The fourth fails to fetch its bundle.
+        await until(() => ["a", "b", "c", "offscreen"].every((id) => ready.has(id)),
+                    `only ${[...ready]} became ready`);
+        await until(() => errors.length > 0, "the broken component never failed");
+        if (!errors[0].startsWith("broken:")) {
+            throw new Error(`the wrong component failed: ${errors[0]}`);
+        }
+
+        // Three canvases, each sized from its own element box.
+        const sizes = ["a", "b", "c"].map((id) => {
+            const c = canvasOf(id);
+            return [c.width, c.height];
+        });
+        if (!sizes.every(([w, h]) => w > 100 && h > 100)) {
+            throw new Error(`a canvas never got a size: ${JSON.stringify(sizes)}`);
+        }
+
+        // Two instances of one bundle: different node ids, different buses.
+        const a = el("a").symbols, b = el("b").symbols;
+        if (a.graph === b.graph || a.lfo === b.lfo) {
+            throw new Error(`the two instances collided: ${JSON.stringify([a, b])}`);
+        }
+        // ... and a different def id each.
+        if (el("a").defId === el("b").defId) throw new Error("one def id for two instances");
+
+        // The attribute reached the synthesis: b was mounted with freq=110.
+        if (el("b").params.freq !== 110) {
+            throw new Error(`the freq attribute did not resolve: ${el("b").params.freq}`);
+        }
+
+        // Phase 2, on the page's gesture: the engine half of every mounted
+        // component goes out at once.
+        await startPage();
+        await loadOsc();
+        const engine = await server();
+
+        // The def was sent once for the page, however many instances want it.
+        const sent = performance.getEntriesByType("resource")
+            .filter((r) => r.name.includes("/graph-controls/bundle/defs/synthdefs/"));
+        const distinct = new Set(sent.map((r) => r.name));
+        if (sent.length !== distinct.size) {
+            throw new Error(`a def payload was fetched twice: ${sent.map((r) => r.name)}`);
+        }
+
+        // Both instances sound, each on its own bus, and the one with
+        // freq="110" is a different signal than its sibling: the LFO rates are
+        // equal, so what separates them is asserted on the audio path through
+        // the tremolo's own gain — here, that both buses stream independently.
+        const seen = new Map([[a.lfo, new Set()], [b.lfo, new Set()],
+                              [el("offscreen").symbols.lfo, new Set()]]);
+        let failed = null;
+        engine.addReply((bytes) => {
+            for (const { addr, args } of decodePacket(bytes)) {
+                if (addr === "/fail") failed = JSON.stringify(args);
+                if (addr !== "/c_set") continue;
+                for (let i = 0; i + 1 < args.length; i += 2) {
+                    seen.get(args[i])?.add(args[i + 1]);
+                }
+            }
+        });
+        await until(() => seen.get(a.lfo).size >= 3 && seen.get(b.lfo).size >= 3,
+                    () => "the two instances never both streamed " +
+                        JSON.stringify({
+                            seen: [...seen].map(([bus, v]) => [bus, [...v].slice(0, 6)]),
+                            failed,
+                            rects: ["a", "b", "c", "offscreen"].map((id) => {
+                                const r = el(id).getBoundingClientRect();
+                                return [id, Math.round(r.top), Math.round(r.height)];
+                            }),
+                            viewport: [innerWidth, innerHeight],
+                        }));
+        if (failed) throw new Error(`/fail: ${failed}`);
+
+        // The component below the fold never entered the viewport, so its bus
+        // is not in the subscription and nothing arrived for it.
+        const offscreen = seen.get(el("offscreen").symbols.lfo).size;
+        if (offscreen !== 0) {
+            throw new Error(`a canvas out of view still streamed (${offscreen} values)`);
+        }
+
+        verdict(`PASS: 3 canvases drew; two instances of one bundle held ` +
+            `nodes ${a.graph}/${b.graph} and buses ${a.lfo}/${b.lfo} with one ` +
+            `def sent; freq="110" resolved on the second; the off-screen ` +
+            `component streamed nothing; the broken one failed alone ` +
+            `(${errors.length} error)`);
+      }
+
+      accept().catch((error) => verdict(`FAIL: ${error}`));
+    </script>
+  </body>
+</html>

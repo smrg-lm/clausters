@@ -408,8 +408,14 @@ fn run_standalone(
     let manifest = bundle::read_manifest(data_dir).filter(bundle::is_symbolic);
     let mounted = match &manifest {
         Some(manifest) => {
-            let template = serde_json::from_slice(&json)
-                .map_err(|e| format!("--standalone: GuiDef \"{name}\" is not a record: {e}"))?;
+            // The store hands back the record's two halves — its id and its
+            // tree — so the template is put back together here rather than
+            // re-parsed off disk.
+            let template = bundle::Template {
+                id,
+                gui: serde_json::from_slice(&json)
+                    .map_err(|e| format!("--standalone: GuiDef \"{name}\" is not a tree: {e}"))?,
+            };
             let mut alloc = bundle::MountAllocator::default();
             let mount = bundle::mount(
                 manifest,

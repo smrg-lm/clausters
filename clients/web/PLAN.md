@@ -264,7 +264,7 @@ destinations, the shared `/transport` grid, and an NRT/score drive - the
 client has no score interface, and `Timeline.fromPattern` bounces by driving
 the ordinary clock through its manual seams.
 
-### W4 - Components: the host's canvases in the document
+### ✅ W4 - Components: the host's canvases in the document
 
 *(Design: `specs/2026-07-27-web-w4-components-design.md`; implementation plan
 beside it. What this slot used to name — the responders, MIDI, and the browser
@@ -290,6 +290,68 @@ data.
 - **The authoring API** (`clausters.bundle`, Python first, Node after): a writer over the existing builders that holds the symbol table, so the author names things instead of numbering them, declares `params` and presets, validates through the core before emitting — an unmountable bundle is unwritable — and generates the five-line ES module that registers the tag.
 
 **Acceptance:** a page interleaving prose with three components — two instances of one bundle and one of another, all authored from Python and mounted with no client library loaded — draws three canvases; the two instances of the same bundle hold different buses and node ids while their def was sent once; a `freq` attribute makes one audibly different from its sibling (asserted on a control bus); a component scrolled out of view stops streaming; one component's failure leaves the rest of the page up; and the same bundles still run on the desktop, `--standalone` and loopback.
+
+**What shipped.** The substitution, and the format that makes it repeatable.
+
+The **browser host went from one canvas to N** (`clients/gui/src/host/web.rs`):
+`window`/`render`/`current_def` — all singular, with the comment "the browser
+shows one at a time" — became a map keyed by def id, each entry a wgpu surface,
+a size, a pointer, a gesture state, the scope/tap/spectrum histories and a
+visibility flag. The native front already keeps one surface per window-rooted
+def, so the model was ported, down to the `by_winit` index every per-canvas
+event routes through. With it, two reversals: the **element supplies the
+canvas** (`attach(def_id, canvas)`, winit's `with_canvas`) instead of the page
+grabbing whichever one winit appended to `<body>`, and the **size comes from the
+element** (`ResizeObserver` × `devicePixelRatio`), so the host never reads the
+DOM. `set_visible` is the one that pays: the `/c_stream`/`/tap_stream` sets and
+the animation tick are all derived from the *visible* canvases
+(`host::live::demand`, natively tested), so a component scrolled out of the
+viewport stops costing a computed frame, wire traffic and server CPU.
+
+The **bundle grew a contract** (`clausters_core::bundle`, opened to the browser
+by `clausters-core-web` and to Python by `clausters-ffi`, `CORE_ABI_VERSION` 13):
+the GuiDef record is a template with two kinds of hole, resolved in two pure
+steps with the caller's allocation in between. Holes live only in that record,
+so def payloads stay byte-identical between instances and are sent once — and
+`check_def_payload` enforces the authoring rule that follows. Both legs read it:
+`--standalone` mounts through the same resolver, and a bundle written before the
+contract mounts verbatim.
+
+The **component** (`src/elements.ts`, `src/bundle.ts`, `src/base/pool.ts`) owns
+its canvas, takes the declared parameters as attributes, and mounts in two
+phases — the GuiDef on connect, the engine half on the page's first gesture. A
+new **slim run-time entry** (`dist/runtime.js`) carries the engine, the host, the
+codec and the mount and *not* the builders, which needed the page's own host
+split out of `gui/host.ts` into `gui/page.ts`.
+
+The **writer** is `clausters.bundle.Bundle`: it holds the symbol table, prefixes
+def names with the bundle's, and validates through the core before emitting — an
+unmountable bundle is unwritable.
+
+Four things the acceptance found, each a real defect rather than a test
+adjustment: the id pools are built on the core's `Registry`, so the core has to
+be loaded before them; a pre-contract bundle's id block must be measured from
+its template, or two instances overlap; a component's phase 2 has two callers,
+so the second must *await* the first rather than return early; and the def
+dedup has to be a promise, not a flag, or a sibling boots before the payload is
+on its way. Plus one browser behaviour worth knowing: winit focuses a canvas it
+creates and the browser scrolls to it, so a document's last component yanked the
+reader to the bottom (`with_active(false)`).
+
+**Verified:** `./test.sh` — 111 `node --test` cases (including the module-graph
+test that holds the slim entry, and the bundle parity vector: what the Python
+writer emits, resolved through the browser's wasm door) and five headless-Chrome
+acceptances, the new one being `tests/components.html` — two instances of one
+bundle plus one of another interleaved with prose: three canvases drawn, distinct
+nodes and buses with one def sent, `freq="110"` resolved on the second, the
+off-screen component streaming nothing, and the broken one failing alone.
+Examples: `examples/piano/` and `examples/graph-controls/` ported to the writer,
+and `examples/document/` — the interactive text the milestone is for.
+
+Not in scope, deliberately: window *management* (an element removed from the DOM
+does not free its def; a `/gui_closed` travelling back is a separate feature),
+and a TypeScript bundle writer — the reference client leads and the port is
+mechanical, the repo's standing rule.
 
 ### W5 - Docs, examples, tests, packaging
 

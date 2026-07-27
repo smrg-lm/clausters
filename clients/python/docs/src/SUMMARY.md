@@ -26,6 +26,7 @@
   - [The logical side: groups as signal graphs](composing/logical.md)
   - [Bouncing: the piece as a file](composing/bounce.md)
   - [Glossary](composing/glossary.md)
+- [Bundles: an instrument you can hand to a page](bundles.md)
 - [Receiving OSC and MIDI](responders.md)
 - [Examples](examples.md)
 

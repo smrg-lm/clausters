@@ -81,8 +81,9 @@ class Bundle:
 
     ``name`` names the bundle and **prefixes its def names** (a def name is a
     global namespace on the server, so two bundles defining ``voice``
-    differently must not collide). It is also the custom element's tag, so it
-    should be a valid one: lowercase, with a hyphen.
+    differently must not collide). It is also the custom element's tag by
+    default — HTML wants a hyphen in one, so a one-word name needs an explicit
+    `write(tag=...)`.
     """
 
     def __init__(self, name: str, *, gui_name: str | None = None):
@@ -258,16 +259,30 @@ class Bundle:
         defs = [json.loads(d.dump_def()) for d in (*self._synthdefs, *self._graphdefs)]
         _native.bundle_validate(self.manifest(), self.record(), defs)
 
-    def write(self, directory: str, *, runtime: str = DEFAULT_RUNTIME) -> str:
+    def write(self, directory: str, *, runtime: str = DEFAULT_RUNTIME,
+              tag: str | None = None) -> str:
         """Writes the bundle to ``directory`` and returns the path.
 
         Validates first. Emits the def payloads verbatim (each its own
         ``/d_recv``/``/d_graph`` spec), the GuiDef record, the presets, the
         manifest, and the five-line ES module that registers the tag.
-        ``runtime`` is where the page serves the component run time from — the
+
+        ``tag`` is the custom element's name, defaulting to the bundle's.
+        HTML requires a hyphen in it (that is how a custom element is told from
+        a built-in one), so a one-word bundle name — perfectly good on the
+        desktop, where the name is a GuiDef's — needs an explicit ``tag``.
+        ``runtime`` is where the page serves the component run time from: the
         page's business, not the bundle's.
         """
+        # The substance first: what the bundle *is* matters more than what it
+        # will be called, and its error is the more useful one to see.
         self.validate()
+        tag = tag or self.name
+        if "-" not in tag or tag != tag.lower() or tag[0].isdigit():
+            raise ValueError(
+                f"{tag!r} is not a valid custom element name (lowercase, with a "
+                f"hyphen, not starting with a digit) — pass write(tag=...)"
+            )
         synthdefs = os.path.join(directory, "defs", "synthdefs")
         graphdefs = os.path.join(directory, "defs", "graphdefs")
         guidefs = os.path.join(directory, "defs", "guidefs")
@@ -293,7 +308,7 @@ class Bundle:
             json.dump(self.manifest(), f, indent=2)
             f.write("\n")
         with open(os.path.join(directory, "index.js"), "w") as f:
-            f.write(_module(self.name, runtime))
+            f.write(_module(tag, runtime))
         return directory
 
     def __repr__(self) -> str:

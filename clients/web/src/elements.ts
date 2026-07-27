@@ -70,6 +70,8 @@ export class ClaustersBundle extends HTMLElement {
     private overlay: HTMLDivElement;
     private button: HTMLButtonElement;
     private mounted: Mounted | null = null;
+    /// The in-flight phase 2, latched so every caller awaits the one send.
+    private starting: Promise<void> | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private viewObserver: IntersectionObserver | null = null;
 
@@ -126,6 +128,10 @@ export class ClaustersBundle extends HTMLElement {
                 preset: this.getAttribute("preset"),
             });
             this.observe();
+            // Enrolled *before* the event: a `clausters-ready` handler that
+            // calls `startPage` (a page driving its own gesture) must find this
+            // component already waiting, or its engine half would be skipped.
+            waiting.add(this);
             this.dispatchEvent(
                 new CustomEvent("clausters-ready", {
                     detail: { id: this.mounted.defId },
@@ -135,18 +141,29 @@ export class ClaustersBundle extends HTMLElement {
             // A gesture that already happened does not come again: a component
             // inserted after it starts straight away.
             if (gestured) await this.start();
-            else waiting.add(this);
         } catch (error) {
             this.fail(error);
         }
     }
 
     /// Phase 2: this component's engine half — its defs, its samples, its boot
-    /// list. Driven by `startPage`; safe to call twice.
-    async start(): Promise<void> {
-        if (!this.mounted || this.mounted.started) return;
+    /// list.
+    ///
+    /// Two callers reach here for the same component — the page's gesture and
+    /// the component itself, once the gesture already happened — so the second
+    /// one **awaits the first** rather than returning early. Returning early
+    /// would resolve while the defs were still travelling, and whatever the
+    /// caller did next would find them missing.
+    start(): Promise<void> {
+        waiting.delete(this);
+        if (!this.mounted) return Promise.resolve();
+        this.starting ??= this.sendEngineHalf();
+        return this.starting;
+    }
+
+    private async sendEngineHalf(): Promise<void> {
         try {
-            await startBundle(this.mounted);
+            await startBundle(this.mounted!);
             this.overlay.hidden = true;
         } catch (error) {
             this.fail(error);
@@ -162,6 +179,12 @@ export class ClaustersBundle extends HTMLElement {
     /// The id this instance's GuiDef opened under, or `null` before it did.
     get defId(): number | null {
         return this.mounted?.defId ?? null;
+    }
+
+    /// What this instance was allocated, by symbol name — its node ids, its
+    /// buses, its buffers. What a page needs to talk to *this* component.
+    get symbols(): Record<string, number> | null {
+        return this.mounted?.symbols ?? null;
     }
 
     /// Every attribute except the element's own — the tag's parameter values,

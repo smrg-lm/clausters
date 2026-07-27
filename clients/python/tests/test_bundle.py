@@ -154,11 +154,11 @@ def test_the_baked_form_is_what_the_rule_prevents(tmp_path):
     """`baked()` compiles bus 0 into the def, so both instances would write it.
     The writer cannot see that (0 is a number, not a hole) — the rule is an
     authoring one, and this test records what it is about."""
-    b = Bundle("legacy")
+    b = Bundle("legacy-voice")
     b.synthdef(baked())
     b.gui(window(meter(2, 0.0, label="env")))
     b.write(str(tmp_path / "legacy"))  # writes: nothing here is a hole
-    spec = json.loads((tmp_path / "legacy" / "defs" / "synthdefs" / "legacy.baked.json").read_text())
+    spec = json.loads((tmp_path / "legacy" / "defs" / "synthdefs" / "legacy-voice.baked.json").read_text())
     out_ctls = [u for u in spec["ugens"] if u["kind"] == "OutCtl"]
     assert out_ctls, "the def writes a control bus"
     # ... and the bus is a *constant* in the payload, which is exactly why a

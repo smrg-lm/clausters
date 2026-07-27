@@ -87,6 +87,11 @@ export interface Mounted {
     tree: unknown;
     /// The merged parameter values that produced it, typed as declared.
     params: Record<string, unknown>;
+    /// What this instance was allocated, by symbol name: its node ids, its
+    /// buses, its buffers. Flat because the names share one namespace (the
+    /// core refuses a name declared twice), and here because a page that wants
+    /// to talk to *this* instance — an `/n_set`, a bus to watch — needs them.
+    symbols: Record<string, number>;
     /// Whether the engine half has been sent (phase 2).
     started: boolean;
 }
@@ -95,10 +100,14 @@ export interface Mounted {
 // mistake each other's /synced for their own.
 let nextSync = 0xb40;
 
-/// The def names already sent to the page's engine. A def payload holds no
-/// holes, so two instances of one bundle — and two bundles sharing a def name
-/// — send it once.
-const sentDefs = new Set<string>();
+/// The def payloads already handed to the page's engine, by URL, each as the
+/// promise of its send.
+///
+/// A def payload holds no holes, so two instances of one bundle send it once —
+/// but a **promise**, not a flag: components start concurrently, and a second
+/// instance that merely saw the first claim the def could boot before the
+/// bytes were on their way. It waits for the send that is already in flight.
+const sentDefs = new Map<string, Promise<void>>();
 
 /// The buffer allocated for each sample URL, and which of them are loaded.
 /// A sample is identical data wherever it is referenced, so two instances of
@@ -238,6 +247,7 @@ export async function openBundle(options: MountOptions): Promise<Mounted> {
         defId: resolved.def_id,
         tree: resolved.tree,
         params: resolved.params,
+        symbols: { ...allocation.nodes, ...allocation.buses, ...allocation.buffers },
         started: false,
     };
     pending.set(mounted, { base, manifest, resolved, buffers: allocation.buffers });
@@ -251,22 +261,37 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     if (mounted.started) return;
     const held = pending.get(mounted);
     if (!held) throw new Error("startBundle: this instance was not opened here");
+    // Claimed before the first await: a component's own start and the page's
+    // gesture can both reach here, and the defs must go out once.
+    mounted.started = true;
     const { base, manifest, resolved, buffers } = held;
     const engine = await server();
-    mounted.started = true;
 
-    // The defs, once per name for the whole page: a def payload holds no
-    // holes, so two instances share the one that was sent.
+    // The defs, once per payload for the whole page: a def payload holds no
+    // holes, so two instances share the one that was sent. Every def this
+    // instance needs must be **on its way** before its boot goes out — the
+    // engine serves in order, so an issued send is enough.
     const wanted: [string, string][] = [
-        ...(manifest.synthdefs ?? []).map((n) => ["/d_recv", `${base}/defs/synthdefs/${n}.json`] as [string, string]),
-        ...(manifest.graphdefs ?? []).map((n) => ["/d_graph", `${base}/defs/graphdefs/${n}.json`] as [string, string]),
+        ...(manifest.synthdefs ?? []).map(
+            (n) => ["/d_recv", `${base}/defs/synthdefs/${n}.json`] as [string, string],
+        ),
+        ...(manifest.graphdefs ?? []).map(
+            (n) => ["/d_graph", `${base}/defs/graphdefs/${n}.json`] as [string, string],
+        ),
     ];
-    const specs: [string, Uint8Array][] = [];
-    for (const [addr, url] of wanted) {
-        if (sentDefs.has(url)) continue;
-        sentDefs.add(url);
-        specs.push([addr, await fetchBytes(url)]);
-    }
+    await Promise.all(
+        wanted.map(([addr, url]) => {
+            let send = sentDefs.get(url);
+            if (!send) {
+                send = (async () => {
+                    const spec = await fetchBytes(url);
+                    engine.send(encodeMessage(addr, [["b", spec]]));
+                })();
+                sentDefs.set(url, send);
+            }
+            return send;
+        }),
+    );
 
     // The samples, loaded before any boot message can play one — once per URL,
     // since phase 1 already pointed every instance at the same buffer.
@@ -296,9 +321,6 @@ export async function startBundle(mounted: Mounted): Promise<void> {
     };
     engine.addReply(watch);
     try {
-        for (const [addr, spec] of specs) {
-            engine.send(encodeMessage(addr, [["b", spec]]));
-        }
         engine.send(encodeMessage("/sync", [["i", syncId]]));
         for (const message of resolved.boot) {
             const [addr, ...args] = message as [string, ...unknown[]];

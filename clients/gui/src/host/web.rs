@@ -449,6 +449,12 @@ impl WebApp {
         let attrs = Window::default_attributes()
             .with_title(format!("clausters-gui {def_id}"))
             .with_inner_size(LogicalSize::new(CANVAS_SIZE.0 as f64, CANVAS_SIZE.1 as f64))
+            // Not focused on creation: winit focuses a new canvas, and a
+            // browser scrolls a freshly focused element into view — so in a
+            // document with several components the last one mounted would yank
+            // the reader down to it. A click focuses it, which is when keyboard
+            // input is wanted anyway.
+            .with_active(false)
             .with_canvas(canvas)
             .with_append(appending);
         let window = match event_loop.create_window(attrs) {

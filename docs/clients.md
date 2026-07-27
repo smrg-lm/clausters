@@ -187,21 +187,135 @@ python3 -m http.server    # then open http://localhost:8000/examples/gui-host.ht
 
 The page loads the bundle and calls the wasm entry point `start()`, which returns the **binding surface** (`GuiBridge`) the page drives: `def(id, json)` feeds a GuiDef (the same JSON the Python builders emit), `feed(packet)` pushes any raw `/gui_*` OSC packet, `poll()` drains the outbound `/gui_event`/`/gui_info`/`/gui_closed` packets, and the audio-server leg attaches with `connect_server(url)` (a `--ws` server) or `connect_page(send)` (the in-page engine: outbound packets go to the `send` callback, replies come back through `server_reply(packet)`; a `bind`-ed widget forwards straight to it either way, with no script round-trip). That surface is the *binding*, not the client: a page programs against the TypeScript client's `GuiHost` (below), which wraps it — `clients/web/examples/gui-host.html` is that client driving the host, with the bound and the scripted control paths side by side.
 
-### A standalone bundle in a tab
+### The component bundle: an instrument as an element of the document
 
-A bundle saved for the native `clausters-gui --standalone <name>` (the data directory: `defs/synthdefs`, `defs/graphdefs`, `defs/guidefs`, `boot.json`) boots **entirely in a browser tab**: the engine runs in an AudioWorklet ([Using as a library](using-as-a-library.md) describes the pulled server it wraps), the GUI host on a canvas, and the streamed data paths (`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) ride the in-page leg unchanged — meters, scopes and buffer views are live with no server process anywhere.
+A **bundle** is the persisted form of an instrument — its def payloads, its
+GuiDef, its presets, its samples — and the manifest that says what mounting it
+needs. One directory runs on three legs: a browser tab, the desktop
+(`clausters-gui --standalone <name> --data-dir <dir>`), and a loopback host
+against a running server. In the tab the engine runs in an AudioWorklet
+([Using as a library](using-as-a-library.md) describes the pulled server it
+wraps), the GUI host draws into a `<canvas>`, and the streamed data paths
+(`/c_stream`, `/tap_stream`, `/b_getn`, `/clock`) ride the in-page leg
+unchanged — meters, scopes and buffer views are live with no server process
+anywhere.
 
-Serving a bundle over HTTP needs one extra file the native flow does not: a `bundle.json` manifest at the bundle's root naming the def files and declaring the optional `boot.json` preset (HTTP cannot list directories, nor probe for optional files without console noise) — generate it with `clients/web/tools/bundle-manifest.py <data-dir>`. Its optional `"buffers"` map (`{"<index>": "<audio url>"}`) loads samples through fetch + `decodeAudioData` into the engine (the browser's `/b_allocRead`). Then, after `clients/web/build.sh` (which stages both wasm bundles into the package's `dist/`), copy or symlink the bundle into the served `clients/web/` and open:
+On the desktop `clausters-gui` opens a window per `window`-rooted GuiDef and the
+window manager places it. In a tab the drawing surface is an element, and **the
+document places it** — CSS, the order of the markup, the flow of the page. So
+canvases interleave with prose and images, and one page can be an interactive
+text with the instrument sounding beside the paragraph that explains it
+(`clients/web/examples/document/`).
 
 ```
-http://localhost:8000/examples/standalone.html?bundle=<bundle url>&name=<GuiDef name>
+fm-voice/
+  index.js                            the generated ES module: registers the tag
+  bundle.json                         the manifest
+  defs/synthdefs/fm-voice.voice.json  a /d_recv payload, verbatim
+  defs/graphdefs/fm-voice.graph.json  a /d_graph payload, verbatim
+  defs/guidefs/fm-voice.json          the GuiDef record - a *template*
+  presets/bright.json                 a parameter map
+  audio/hit.wav                       optional sample data
 ```
 
-The boot replays the persisted files over the wire in the server's own boot order (defs → graphdefs → `boot.json` preset → the GuiDef's `boot` messages), `/sync`-bracketed so the page knows when the instrument is up. The scripted acceptance is `scripts/smoke-web-standalone.sh` (headless Chrome).
+**Two kinds of hole.** Mounting the same bundle twice on one page must not
+collide, so the GuiDef record is a template with placeholders, told apart by
+sigil: `"@lfo"` is a **symbol** — an id the page allocates (a node, a bus, a
+buffer) — and `"$freq"` is a **parameter**, a value the tag supplies. A doubled
+sigil escapes it (`"$$5"` is the literal `"$5"`). Widget ids are deliberately
+not symbols: the template numbers its widgets locally and the mount offsets
+them by an allocated base, so twelve widgets do not mean twelve placeholders.
 
-### Web components: a bundle as one HTML element
+Placeholders live **only** in the GuiDef record (and in its `boot` list). That
+is the invariant the format rests on: the def payloads under `defs/` hold no
+holes, so they are byte-identical between two instances and are sent to the
+server once. It forces one authoring rule, which is the right rule anyway — *a
+bus, a node or a buffer reaches a def as a control, never as a baked constant*
+— and the writer refuses to emit a bundle that breaks it.
 
-The `clausters` package in `clients/web/` (TypeScript sources under `src/`, mirroring the Python client's module tree; `./build.sh` emits them to `dist/` — plain ES modules with declarations and source maps — and stages the wasm bundles beside them, so serving the directory is enough) wraps all of the above as **web components** over **per-page singletons**: `server()` boots the engine lazily on first use and exposes the raw surface a REPL or the future TypeScript client builds on (`send`/`addReply` OSC bytes, `clock`, `bLoad`), `guiHost()` boots the GUI host and wires the in-page leg once, and `<clausters-bundle src="…">` is a standalone bundle as one element — its power button is the standard autoplay-policy gesture, and the host's canvas is adopted into its shadow DOM once up (`<clausters-power>` is the affordance alone). Everything on the page shares the one engine and host, so components and scripts meet in the same node/bus/buffer namespace. `clients/web/examples/demo.html` is the live demo; `scripts/smoke-web-components.sh` the scripted acceptance.
+`bundle.json` declares all of that:
+
+```json
+{
+  "name": "fm-voice",
+  "gui": "fm-voice",
+  "synthdefs": ["fm-voice.voice"],
+  "graphdefs": ["fm-voice.graph"],
+  "widgets": 12,
+  "symbols": {
+    "nodes":   ["graph"],
+    "buses":   [{ "name": "lfo", "rate": "control", "channels": 1 }],
+    "buffers": []
+  },
+  "params": {
+    "freq":  { "type": "float",  "default": 220.0, "min": 60.0, "max": 700.0 },
+    "title": { "type": "string", "default": "FM voice" }
+  },
+  "presets": ["bright"],
+  "buffers": { "hit": "audio/hit.wav" },
+  "boot": true
+}
+```
+
+`"widgets"` is the **width of the id block** an instance needs (the highest
+local widget id, the root's included), not a count — a template may number
+sparsely. Every field but `"gui"` has a default, so a bundle written before the
+contract existed still mounts: it declares nothing, and nothing is substituted.
+
+**Resolving** is two pure steps with the allocation in between, shared by every
+leg (`clausters_core::bundle`, opened to the browser by `clausters-core-web`
+and to Python by `clausters-ffi`):
+
+```
+requirements(manifest)  ->  { widgets, nodes, buses, buffers }
+        ... the caller allocates from its own allocators ...
+resolve(manifest, template, allocation, params)  ->  { def_id, tree, boot, params }
+```
+
+Nothing is added to the `/gui_*` protocol and no state to the host: what comes
+out is the same `/d_recv`/`/d_graph`/`/gui_def`/`/graph_new` traffic as a
+hand-written bundle. `validate` is the same machinery pointed the other way,
+for the writers.
+
+**Parameters and presets.** Declared parameters are attributes on the tag, with
+`preset` beside them; resolution is **attribute → preset → declared default**,
+each value typed and range-checked at mount:
+
+```html
+<fm-voice></fm-voice>                      <!-- the defaults -->
+<fm-voice freq="440" title="voice 2"></fm-voice>
+<fm-voice preset="bright" amp="0.1"></fm-voice>
+```
+
+A parameter reaches the synthesis through machinery that already exists: a
+widget carries it and its `bind` pushes it, or the `boot` list does.
+
+**Mounting is two phases**, because the host does not need audio and the engine
+does — and the AudioContext is page-wide, so N power buttons would be wrong.
+On connect the component allocates, resolves and opens its GuiDef: it draws as
+the reader scrolls to it, with no gesture. On the first gesture anywhere on the
+page every mounted component's server half goes out — its defs (once per
+payload for the page), its samples (once per URL) and its `boot` list. Failures
+are per component: one that cannot fetch or resolve its bundle shows the error
+on itself and emits `clausters-error`, and the rest of the page comes up.
+`clausters-ready` fires per component with its resolved def id.
+
+**What is not loaded.** Running a component is the browser equivalent of
+`clausters-gui --standalone`: the host is the server's client and there is no
+scripting client in between. The builders ran in the authoring script; what the
+page fetches is data. So the generated module imports `dist/runtime.js` — the
+engine, the host, the OSC codec and the mount — and not the def builders, the
+GuiDef builders or the sequencing layer (`clients/web/tests/runtime-graph.test.ts`
+asserts the exclusion). A page that *does* want the TypeScript client imports
+`dist/index.js` on top; both postures target the same element.
+
+**Writing one** is `clausters.bundle.Bundle` in the Python client, which holds
+the symbol table so the author names things instead of numbering them, and
+validates through the core before emitting — an unmountable bundle is
+unwritable. The generic `<clausters-bundle src="./fm-voice">` mounts a bundle
+without a generated module. `clients/web/examples/piano/` and
+`examples/graph-controls/` are the worked examples;
+`clients/web/tests/components.html` is the acceptance.
 
 ## The TypeScript client (started)
 

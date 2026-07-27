@@ -996,7 +996,7 @@ def piano(id: int | None = None, *, min: int | None = None, max: int | None = No
                        active_max=active_max, velocity=velocity,
                        channel=channel, voice=voice,
                        voice_args=[x for kv in voice_args
-                                   for x in (str(kv[0]), float(kv[1]))]
+                                   for x in (str(kv[0]), _value(kv[1]))]
                        if voice_args is not None else None,
                        label=label, color=color)
     if pan is not None:
@@ -1076,8 +1076,9 @@ def canvas(id: int | None = None, shader: str | None = None, *, params=None, bus
     once. Omitting ``shader`` uses a default moving color field. ``params`` is an
     optional initial list of floats."""
     extra = _drop_none(shader=shader, label=label,
-                       params=[float(x) for x in params] if params is not None else None,
-                       buses=[int(b) for b in buses] if buses is not None else None, color=color)
+                       params=[_value(x) for x in params] if params is not None else None,
+                       buses=[_value(b, int) for b in buses] if buses is not None else None,
+                       color=color)
     return node("canvas", id=id, **extra, **props)
 
 
@@ -1163,6 +1164,18 @@ def lissajous(left, right) -> list:
     from .._native import lissajous as _lissajous  # lazy: needs the cdylib
 
     return _lissajous(left, right)
+
+
+def _value(x, cast=float):
+    """``x`` coerced with ``cast``, unless it is a **bundle placeholder** —
+    ``"@symbol"`` (an id the mount allocates) or ``"$param"`` (a value the tag
+    supplies), which passes through untouched for the mount to fill.
+
+    A hole is a legal value wherever a value goes; see `clausters.bundle`.
+    """
+    if isinstance(x, str) and x[:1] in ("@", "$"):
+        return x
+    return cast(x)
 
 
 def _drop_none(**kwargs) -> dict:
