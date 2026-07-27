@@ -204,7 +204,7 @@ fn is_false(b: &bool) -> bool {
 /// The persisted GuiDef record — `{ "id": <i32>, "gui": <tree> }` — read as the
 /// template it is: its widget ids are local `1..N`, and its props may hold
 /// placeholders.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Template {
     pub id: i32,
     pub gui: Value,
@@ -368,9 +368,11 @@ pub fn requirements(manifest: &Manifest) -> Requirements {
 /// named bundle of values and an attribute is a local override. Both maps may
 /// hold names the manifest does not declare (a tag carries `class` and `style`
 /// like any element); those are ignored rather than refused.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ParamInput {
+    #[serde(default)]
     pub attributes: Map<String, Value>,
+    #[serde(default)]
     pub preset: Map<String, Value>,
 }
 
@@ -473,6 +475,53 @@ pub fn check_def_payload(payload: &Value) -> Result<(), Error> {
         Value::Object(map) => map.values().try_for_each(check_def_payload),
         _ => Ok(()),
     }
+}
+
+// --- the shape the bindings carry ---------------------------------------
+//
+// [`resolve`] and [`validate`] take three and two arguments; a C or wasm door
+// carrying each as its own pointer pair would be a wide surface that the two
+// doors could then drift apart on. So the envelope is declared here, once, and
+// both doors are the same two lines over it.
+
+/// One [`resolve`] call as a single JSON object — what the wasm and C doors
+/// carry.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ResolveRequest {
+    pub manifest: Manifest,
+    pub template: Template,
+    pub allocation: Allocation,
+    #[serde(default)]
+    pub params: ParamInput,
+}
+
+/// One [`validate`] call, plus the def payloads to check for holes — the whole
+/// pre-flight a writer runs before emitting a directory.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ValidateRequest {
+    pub manifest: Manifest,
+    pub template: Template,
+    /// The `/d_recv` and `/d_graph` payloads, each parsed. Checked by
+    /// [`check_def_payload`].
+    #[serde(default)]
+    pub defs: Vec<Value>,
+}
+
+/// [`resolve`], from the envelope the bindings carry.
+pub fn resolve_request(request: &ResolveRequest) -> Result<Resolved, Error> {
+    resolve(
+        &request.manifest,
+        &request.template,
+        &request.allocation,
+        &request.params,
+    )
+}
+
+/// [`validate`] plus [`check_def_payload`] over every payload, from the
+/// envelope the bindings carry.
+pub fn validate_request(request: &ValidateRequest) -> Result<(), Error> {
+    validate(&request.manifest, &request.template)?;
+    request.defs.iter().try_for_each(check_def_payload)
 }
 
 // --- the resolution machinery -------------------------------------------

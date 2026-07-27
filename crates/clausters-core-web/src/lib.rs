@@ -23,7 +23,7 @@
 use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode};
 #[cfg(target_arch = "wasm32")]
 use clausters_core::{
-    builtins,
+    builtins, bundle,
     clocksync::SampleClockModel,
     osc,
     registry::{self, NodeIdPartition, Registry},
@@ -603,6 +603,50 @@ impl JsSampleClockModel {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+}
+
+// ---- the component bundle ----
+//
+// W4's mount, opened to the page: a persisted bundle is a template, and the
+// page turns it into N non-colliding instances. The pass itself is
+// `clausters_core::bundle` — pure, natively tested, and the same one the native
+// `--standalone` leg runs — so these three are only the JSON boundary. The
+// page allocates between `bundle_requirements` and `bundle_resolve`, from its
+// own `Server`/`GuiHost` allocators; nothing here allocates or keeps state.
+
+/// JS face: what one instance of a bundle needs allocated.
+/// `bundle_requirements(manifestJson) -> requirementsJson`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn bundle_requirements(manifest: &str) -> Result<String, JsError> {
+    let manifest: bundle::Manifest =
+        serde_json::from_str(manifest).map_err(|e| JsError::new(&format!("bundle.json: {e}")))?;
+    serde_json::to_string(&bundle::requirements(&manifest))
+        .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// JS face: one mounted instance, from the allocation the page just made.
+/// `bundle_resolve(requestJson) -> resolvedJson`, the request carrying the
+/// manifest, the template, the allocation and the supplied parameters
+/// (`{ attributes, preset }`) in one object.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn bundle_resolve(request: &str) -> Result<String, JsError> {
+    let request: bundle::ResolveRequest =
+        serde_json::from_str(request).map_err(|e| JsError::new(&format!("resolve: {e}")))?;
+    let resolved = bundle::resolve_request(&request).map_err(|e| JsError::new(&e.to_string()))?;
+    serde_json::to_string(&resolved).map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// JS face: the writers' pre-flight — the mount dry-run over the declared
+/// defaults, plus the no-holes check on every def payload.
+/// `bundle_validate(requestJson)`, throwing on the first problem.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn bundle_validate(request: &str) -> Result<(), JsError> {
+    let request: bundle::ValidateRequest =
+        serde_json::from_str(request).map_err(|e| JsError::new(&format!("validate: {e}")))?;
+    bundle::validate_request(&request).map_err(|e| JsError::new(&e.to_string()))
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
