@@ -362,6 +362,42 @@ pub fn requirements(manifest: &Manifest) -> Requirements {
     }
 }
 
+/// [`requirements`], with the template on hand to measure what the manifest
+/// does not declare.
+///
+/// A written bundle numbers its widgets `1..N` and declares `widgets`, so the
+/// two agree. A bundle written **before** the contract declares nothing, and
+/// its saved ids are whatever the author picked — `1`, `10`, `20`. Offsetting
+/// those by a one-wide block would make two instances overlap, so the block is
+/// sized to the ids actually used ([`widget_span`]) instead.
+pub fn requirements_for(manifest: &Manifest, template: Option<&Template>) -> Requirements {
+    let mut out = requirements(manifest);
+    if let Some(template) = template {
+        out.widgets = out.widgets.max(widget_span(template));
+    }
+    out
+}
+
+/// The width of the id block a template needs: its highest local widget id,
+/// the root's included. (Ids are offset by `widget_base - 1`, so a template
+/// using `1..=20` needs twenty ids however few widgets it holds.)
+pub fn widget_span(template: &Template) -> usize {
+    fn walk(node: &Value, high: &mut i64) {
+        let Some(map) = node.as_object() else { return };
+        if let Some(id) = map.get("id").and_then(Value::as_i64) {
+            *high = (*high).max(id);
+        }
+        if let Some(children) = map.get("children").and_then(Value::as_array) {
+            for child in children {
+                walk(child, high);
+            }
+        }
+    }
+    let mut high = template.id as i64;
+    walk(&template.gui, &mut high);
+    high.max(1) as usize
+}
+
 /// The parameter values a mount supplies, in the order they win.
 ///
 /// Resolution is **attribute → preset → declared default**, so a preset is a
@@ -484,6 +520,15 @@ pub fn check_def_payload(payload: &Value) -> Result<(), Error> {
 // doors could then drift apart on. So the envelope is declared here, once, and
 // both doors are the same two lines over it.
 
+/// One [`requirements_for`] call: the manifest, and the template when the
+/// caller has it (a pre-contract bundle's id block is measured from it).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RequirementsRequest {
+    pub manifest: Manifest,
+    #[serde(default)]
+    pub template: Option<Template>,
+}
+
 /// One [`resolve`] call as a single JSON object — what the wasm and C doors
 /// carry.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -505,6 +550,11 @@ pub struct ValidateRequest {
     /// [`check_def_payload`].
     #[serde(default)]
     pub defs: Vec<Value>,
+}
+
+/// [`requirements_for`], from the envelope the bindings carry.
+pub fn requirements_request(request: &RequirementsRequest) -> Requirements {
+    requirements_for(&request.manifest, request.template.as_ref())
 }
 
 /// [`resolve`], from the envelope the bindings carry.
@@ -886,6 +936,52 @@ mod tests {
         assert_eq!(req.nodes, ["graph"]);
         assert_eq!(req.buses[0].rate, BusRate::Control);
         assert_eq!(req.buffers, ["hit"]);
+    }
+
+    /// A bundle written before the contract declares no count, and its saved
+    /// ids are whatever the author picked. The block is sized to those, or two
+    /// instances would overlap on the widget ids they were offset into.
+    #[test]
+    fn an_undeclared_widget_block_is_measured_from_the_template() {
+        let old: Manifest = serde_json::from_value(json!({ "gui": "piano" })).unwrap();
+        let sparse: Template = serde_json::from_value(json!({
+            "id": 1,
+            "gui": { "type": "window", "children": [
+                { "id": 10, "type": "piano" },
+                { "id": 20, "type": "meter", "bus": 0 }]}
+        }))
+        .unwrap();
+        assert_eq!(requirements(&old).widgets, 0);
+        assert_eq!(requirements_for(&old, Some(&sparse)).widgets, 20);
+
+        // Two instances, each offset by its own 20-wide block: no id is shared.
+        let ids = |base: i32| {
+            let out = resolve(
+                &old,
+                &sparse,
+                &Allocation {
+                    widget_base: base,
+                    ..Allocation::default()
+                },
+                &ParamInput::default(),
+            )
+            .unwrap();
+            let children = out.tree["children"].as_array().unwrap().clone();
+            let mut ids: Vec<i64> = vec![out.def_id as i64];
+            ids.extend(children.iter().map(|c| c["id"].as_i64().unwrap()));
+            ids
+        };
+        let (first, second) = (ids(1000), ids(1020));
+        assert_eq!(first, [1000, 1009, 1019]);
+        assert_eq!(second, [1020, 1029, 1039]);
+        assert!(first.iter().all(|id| !second.contains(id)));
+    }
+
+    /// A declared count wins when it is larger; the span never shrinks a block.
+    #[test]
+    fn a_declared_widget_count_is_kept() {
+        let req = requirements_for(&manifest(), Some(&template()));
+        assert_eq!(req.widgets, 4);
     }
 
     /// The whole pass: ids offset through the nesting, symbols and parameters

@@ -245,7 +245,7 @@ pub fn mount(
     alloc: &mut MountAllocator,
     params: &ParamInput,
 ) -> Result<Mount, BundleError> {
-    let requirements = clausters_core::bundle::requirements(manifest);
+    let requirements = clausters_core::bundle::requirements_for(manifest, Some(template));
     let allocation = alloc.allocate(&requirements);
     let Resolved {
         def_id, tree, boot, ..

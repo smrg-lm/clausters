@@ -25,9 +25,11 @@ export type { ClaustersServer, ReplyListener } from "./engine/server.ts";
 export { GuiHost, guiHost, pageGuiConnection } from "./gui/host.ts";
 export type { ClaustersGui } from "./gui/host.ts";
 export * as gui from "./gui/index.ts";
-export { bootBundle } from "./bundle.ts";
-export type { BundleManifest } from "./bundle.ts";
-export { ClaustersBundle, ClaustersPower, defineComponent } from "./elements.ts";
+export { bootBundle, openBundle, startBundle } from "./bundle.ts";
+export type { BundleManifest, MountOptions, Mounted } from "./bundle.ts";
+export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
+export { pagePools } from "./base/pool.ts";
+export type { Pool, Pools } from "./base/pool.ts";
 export {
     decodePacket,
     encodeBundle,

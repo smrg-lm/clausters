@@ -615,13 +615,16 @@ impl JsSampleClockModel {
 // own `Server`/`GuiHost` allocators; nothing here allocates or keeps state.
 
 /// JS face: what one instance of a bundle needs allocated.
-/// `bundle_requirements(manifestJson) -> requirementsJson`.
+/// `bundle_requirements(requestJson) -> requirementsJson`, the request holding
+/// the manifest and — for a bundle written before the contract, whose widget
+/// ids are whatever its author picked — the template its id block is measured
+/// from.
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub fn bundle_requirements(manifest: &str) -> Result<String, JsError> {
-    let manifest: bundle::Manifest =
-        serde_json::from_str(manifest).map_err(|e| JsError::new(&format!("bundle.json: {e}")))?;
-    serde_json::to_string(&bundle::requirements(&manifest))
+pub fn bundle_requirements(request: &str) -> Result<String, JsError> {
+    let request: bundle::RequirementsRequest =
+        serde_json::from_str(request).map_err(|e| JsError::new(&format!("requirements: {e}")))?;
+    serde_json::to_string(&bundle::requirements_request(&request))
         .map_err(|e| JsError::new(&e.to_string()))
 }
 

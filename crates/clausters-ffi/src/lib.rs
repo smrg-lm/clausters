@@ -951,33 +951,35 @@ fn write_json(json: Vec<u8>, out: *mut u8, out_cap: usize) -> usize {
     n
 }
 
-/// What one instance of a bundle needs allocated: a `bundle.json`
-/// [`Manifest`](clausters_core::bundle::Manifest) as JSON in, its
+/// What one instance of a bundle needs allocated: a
+/// [`RequirementsRequest`](clausters_core::bundle::RequirementsRequest) as JSON
+/// in (the `bundle.json` manifest, plus the template when the caller has it —
+/// a bundle written before the contract has its id block measured from it), the
 /// [`Requirements`](clausters_core::bundle::Requirements) as JSON out. `0` when
-/// the input is not a readable manifest.
+/// the input is not a readable request.
 ///
 /// # Safety
-/// `manifest` must be readable for `manifest_len` bytes and `out` writable for
+/// `request` must be readable for `request_len` bytes and `out` writable for
 /// `out_cap` bytes (or null, to size only).
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn clausters_core_bundle_requirements(
-    manifest: *const u8,
-    manifest_len: usize,
+    request: *const u8,
+    request_len: usize,
     out: *mut u8,
     out_cap: usize,
 ) -> usize {
-    use clausters_core::bundle::{Manifest, requirements};
+    use clausters_core::bundle::{RequirementsRequest, requirements_request};
 
-    if manifest.is_null() {
+    if request.is_null() {
         return 0;
     }
-    // SAFETY: caller guarantees `manifest` is readable for `manifest_len` bytes.
-    let bytes = unsafe { std::slice::from_raw_parts(manifest, manifest_len) };
-    let Ok(manifest) = serde_json::from_slice::<Manifest>(bytes) else {
+    // SAFETY: caller guarantees `request` is readable for `request_len` bytes.
+    let bytes = unsafe { std::slice::from_raw_parts(request, request_len) };
+    let Ok(request) = serde_json::from_slice::<RequirementsRequest>(bytes) else {
         return 0;
     };
     write_json(
-        serde_json::to_vec(&requirements(&manifest)).unwrap_or_default(),
+        serde_json::to_vec(&requirements_request(&request)).unwrap_or_default(),
         out,
         out_cap,
     )
@@ -1438,10 +1440,21 @@ mod tests {
 
     #[test]
     fn bundle_requirements_read_the_manifest() {
-        let (need, v) = bundle_json(clausters_core_bundle_requirements, MANIFEST);
+        let request = format!(r#"{{"manifest":{MANIFEST}}}"#);
+        let (need, v) = bundle_json(clausters_core_bundle_requirements, &request);
         assert!(need > 0);
         assert_eq!(v["widgets"], 2);
         assert_eq!(v["buses"][0]["name"], "lfo");
+    }
+
+    /// A pre-contract manifest declares no count; the template it is handed
+    /// sizes the id block, so two instances cannot overlap.
+    #[test]
+    fn bundle_requirements_measure_an_undeclared_block() {
+        let request = r#"{"manifest":{"gui":"piano"},"template":{"id":1,"gui":
+            {"type":"window","children":[{"id":20,"type":"meter","bus":0}]}}}"#;
+        let (_need, v) = bundle_json(clausters_core_bundle_requirements, request);
+        assert_eq!(v["widgets"], 20);
     }
 
     #[test]
