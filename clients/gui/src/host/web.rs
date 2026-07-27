@@ -30,7 +30,7 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode}
 use wasm_bindgen::prelude::*;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalSize, PhysicalSize};
-use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
@@ -285,6 +285,13 @@ struct CanvasSlot {
     /// not stop *us* from computing a frame or the server from streaming for it.
     visible: bool,
     cursor: (f64, f64),
+    /// The finger currently driving this canvas, if any.
+    ///
+    /// The gesture machine is single-pointer — one press, one drag, one release
+    /// — so the **first** touch owns the gesture and the rest are ignored until
+    /// it lifts. A second finger landing mid-drag would otherwise teleport the
+    /// value being dragged.
+    touch: Option<u64>,
     /// This canvas' gesture state — the shared machine both fronts drive.
     gestures: Gestures,
     /// Modifier keys (winit `ModifiersChanged`), snapshotted into each
@@ -315,6 +322,7 @@ impl CanvasSlot {
             pending_size: None,
             visible: true,
             cursor: (0.0, 0.0),
+            touch: None,
             gestures: Gestures::default(),
             shift: false,
             ctrl: false,
@@ -1512,6 +1520,38 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 ElementState::Pressed => self.on_press(def),
                 ElementState::Released => self.on_release(def),
             },
+            // A finger drives the same machine a pointer does: the desktop's
+            // press → drag → release, with the touch's own position. winit
+            // reports touch separately from the pointer events, so without this
+            // arm a phone reaches every DOM control on the page and nothing at
+            // all inside a canvas.
+            WindowEvent::Touch(touch) => {
+                let Some(slot) = self.canvases.get_mut(&def) else {
+                    return;
+                };
+                let owned = slot.touch == Some(touch.id);
+                match touch.phase {
+                    TouchPhase::Started if slot.touch.is_none() => {
+                        slot.touch = Some(touch.id);
+                        slot.cursor = (touch.location.x, touch.location.y);
+                        self.on_press(def);
+                    }
+                    TouchPhase::Moved if owned => {
+                        slot.cursor = (touch.location.x, touch.location.y);
+                        if slot.gestures.dragging() {
+                            self.on_move(def);
+                        }
+                    }
+                    TouchPhase::Ended | TouchPhase::Cancelled if owned => {
+                        slot.touch = None;
+                        slot.cursor = (touch.location.x, touch.location.y);
+                        self.on_release(def);
+                    }
+                    // Another finger while one is already down, or a stray
+                    // phase for a finger this canvas never claimed.
+                    _ => {}
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,

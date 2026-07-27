@@ -81,7 +81,16 @@ export class ClaustersBundle extends HTMLElement {
         shadow.innerHTML = `
             <style>
                 :host { display: block; position: relative; }
-                canvas { display: block; width: 100%; height: 100%; }
+                /*
+                  touch-action: none — a drag inside a widget is a *value*, not
+                  a scroll. Without it a phone pans the page and the host never
+                  sees the gesture. The page still scrolls everywhere else,
+                  including the margins around this element.
+                */
+                canvas {
+                    display: block; width: 100%; height: 100%;
+                    touch-action: none; -webkit-user-select: none; user-select: none;
+                }
                 .overlay {
                     position: absolute; inset: 0; display: grid; place-items: center;
                     background: #16161caa;

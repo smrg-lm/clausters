@@ -20,3 +20,8 @@ node_modules/
 /tests/native.f32
 /tests/sine.f32
 /tests/sine.peaks
+
+# Self-signed certificate for serving over HTTPS on the LAN — AudioWorklet and
+# WebGPU need a secure context, which a plain-HTTP LAN address is not, so
+# testing on a phone means https. Never commit the private key.
+/.certs/

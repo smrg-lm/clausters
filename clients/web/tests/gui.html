@@ -54,12 +54,17 @@
 
       // A pointer gesture on the host's canvas, in the widget coordinates the
       // GuiDef lays out in (device pixels from the canvas origin).
-      function pointer(canvas, type, x, y, buttons) {
+      //
+      // `kind` is the pointer type. It is not cosmetic: the host receives a
+      // "mouse" pointer as the cursor/button events a desktop sends, and a
+      // "touch" one as winit's separate touch events — two code paths, so a
+      // phone is only covered if a gesture is also played through the second.
+      function pointer(canvas, type, x, y, buttons, kind = "mouse") {
         const rect = canvas.getBoundingClientRect();
         const scale = canvas.width / rect.width;   // the HiDPI factor
         canvas.dispatchEvent(new PointerEvent(type, {
-          bubbles: true, cancelable: true, pointerId: 1, isPrimary: true,
-          pointerType: "mouse", button: 0, buttons,
+          bubbles: true, cancelable: true, pointerId: kind === "touch" ? 7 : 1,
+          isPrimary: true, pointerType: kind, button: 0, buttons,
           clientX: rect.left + x / scale,
           clientY: rect.top + y / scale,
         }));
@@ -154,6 +159,27 @@
         }
         log(`bound knob drove the engine: freq ${before} -> ${after}`);
 
+        // The same drag with a **finger**, which reaches the host as touch
+        // events rather than as a pointer: a phone drives every widget or it
+        // drives none, and the canvas is the one surface a page's own DOM
+        // handlers never see.
+        const beforeTouch = after;
+        pointer(canvas, "pointerdown", 240, 60, 1, "touch");
+        await sleep(50);
+        pointer(canvas, "pointermove", 240, 120, 1, "touch");
+        await sleep(50);
+        pointer(canvas, "pointerup", 240, 120, 0, "touch");
+
+        let touched = beforeTouch;
+        for (let i = 0; i < 40 && touched === beforeTouch; i++) {
+          await sleep(50);
+          touched = (await server.nodeQuery(synth)).controls.freq;
+        }
+        if (touched === beforeTouch) {
+          throw new Error(`a touch drag never reached the engine (freq ${touched})`);
+        }
+        log(`touch drag drove the engine: freq ${beforeTouch} -> ${touched}`);
+
         // Closing frees the subtree: a query still answers, with the empty
         // type that means "no such widget".
         win.close();
@@ -165,7 +191,7 @@
 
         synth.free();
         verdict(`PASS: page GUI carrier — event ${JSON.stringify(events[0])}, `
-          + `bound freq ${before} -> ${after}, subtree freed`);
+          + `bound freq ${before} -> ${after}, touch ${touched}, subtree freed`);
       }
 
       document.getElementById("boot").onclick = () =>
