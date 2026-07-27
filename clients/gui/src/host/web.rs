@@ -29,7 +29,7 @@ use std::sync::Arc;
 use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode};
 use wasm_bindgen::prelude::*;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
+use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, NamedKey};
@@ -173,8 +173,25 @@ impl PageServerLink {
 /// winit web event loop's proxy (single-threaded, so the non-`Send` `Gpu` and
 /// the byte buffers move freely).
 enum WebEvent {
-    /// The async WebGPU device is ready.
-    GpuReady(Gpu),
+    /// Give this def a canvas of its own. `canvas` is the element the page
+    /// created for it; `None` asks winit to append one to `<body>`, which is
+    /// what a page that never attaches anything gets.
+    Attach {
+        def_id: i32,
+        canvas: Option<web_sys::HtmlCanvasElement>,
+    },
+    /// Drop this def's canvas: its surface, its GPU slots and its live state go.
+    Detach(i32),
+    /// The element's box changed size (`ResizeObserver` × `devicePixelRatio`).
+    Resize {
+        def_id: i32,
+        width: u32,
+        height: u32,
+    },
+    /// The element entered or left the viewport (`IntersectionObserver`).
+    SetVisible { def_id: i32, visible: bool },
+    /// The async WebGPU device for one canvas is ready.
+    GpuReady { def_id: i32, gpu: Gpu },
     /// One inbound OSC packet from the in-page binding surface (a `/gui_*`).
     Inbound(Vec<u8>),
     /// Attach the audio-server leg to this `--ws` URL (for bound widgets).
@@ -190,7 +207,11 @@ enum WebEvent {
     Tick,
     /// A `fetch` of a waveform/plot URL completed and decoded (the browser's
     /// bulk path: `path`/`cache` resolve against the page origin).
-    BulkReady { widget_id: i32, data: BulkData },
+    BulkReady {
+        def_id: i32,
+        widget_id: i32,
+        data: BulkData,
+    },
     /// A theme overlay from the page: role -> "#rrggbb[aa]" pairs (the same
     /// table `[gui.theme]` and a `--theme` file carry natively).
     Theme(Vec<(String, String)>),
@@ -233,7 +254,7 @@ enum BulkRequest {
     Plot { url: String, channels: usize },
 }
 
-/// The per-window GPU resources (the browser has a single window/canvas).
+/// The per-canvas GPU resources.
 struct WindowRender {
     gpu: Gpu,
     painter: Painter,
@@ -243,20 +264,26 @@ struct WindowRender {
     spectrograms: HashMap<i32, SpectrogramSlot>,
 }
 
-/// The browser host application: the live [`Host`], the window/GPU resources, the
-/// pointer state, and the shared outbox the binding surface drains.
-struct WebApp {
-    host: Host,
-    outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
-    window: Option<Arc<Window>>,
+/// One canvas: a `window`-rooted GuiDef's drawing surface and everything that
+/// follows it. The browser twin of the native front's `WindowState` — the
+/// desktop already keeps one of these per window-rooted def, and a document
+/// holds N canvases for the same reason a desktop holds N windows.
+///
+/// The host learns nothing about HTML from it: the page says *this def draws
+/// into this canvas, at this size, and right now it is (not) visible*.
+struct CanvasSlot {
+    window: Arc<Window>,
+    /// The GPU resources, once the async device resolved.
     render: Option<WindowRender>,
-    /// The window-rooted def currently shown (the browser shows one at a time).
-    current_def: Option<i32>,
-    /// A canvas size from a `Resized` that arrived before the GPU was ready (so
-    /// `render` was `None` and it could not be applied yet); replayed on
-    /// `GpuReady` so the surface is configured to the real size for the first
-    /// frame, not a stale 1x1.
+    /// A size that arrived before the GPU was ready (so `render` was `None` and
+    /// it could not be applied yet); replayed on `GpuReady` so the surface is
+    /// configured to the real size for the first frame, not a stale 1x1.
     pending_size: Option<(u32, u32)>,
+    /// Whether the canvas is in the viewport. A hidden one is skipped on the
+    /// tick and its buses leave the subscription: a document can hold fifty
+    /// canvases with three in view, and the browser's own compositing skip does
+    /// not stop *us* from computing a frame or the server from streaming for it.
+    visible: bool,
     cursor: (f64, f64),
     /// This canvas' gesture state — the shared machine both fronts drive.
     gestures: Gestures,
@@ -265,6 +292,78 @@ struct WebApp {
     shift: bool,
     ctrl: bool,
     alt: bool,
+    /// Recent control-bus samples per `scope` widget id (oldest .. newest),
+    /// advanced on [`WebEvent::Tick`] exactly as the native tick does.
+    scopes: HashMap<i32, VecDeque<f32>>,
+    /// Triggered display window per audio-rate scope widget id, refreshed on
+    /// the tick (`live::update_tap_windows`). Also holds each phasescope's
+    /// interleaved L/R window (ids do not collide).
+    tap_windows: HashMap<i32, live::TapWindow>,
+    /// Persistent FFT analysis state per `spectrum` widget id, advanced on the
+    /// tick (`live::update_spectra`), exactly as the native front does.
+    spectra: HashMap<i32, Vec<SpectrumState>>,
+    /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
+    /// placed on `GpuReady` (plots need no GPU and are placed immediately).
+    pending_bulk: Vec<(i32, BulkData)>,
+}
+
+impl CanvasSlot {
+    fn new(window: Arc<Window>) -> Self {
+        Self {
+            window,
+            render: None,
+            pending_size: None,
+            visible: true,
+            cursor: (0.0, 0.0),
+            gestures: Gestures::default(),
+            shift: false,
+            ctrl: false,
+            alt: false,
+            scopes: HashMap::new(),
+            tap_windows: HashMap::new(),
+            spectra: HashMap::new(),
+            pending_bulk: Vec::new(),
+        }
+    }
+
+    /// Forgets everything derived from a def's tree, keeping the canvas itself
+    /// — the rebuild semantics of a re-`/gui_def` and of a `/gui_free`.
+    fn clear_def_state(&mut self) {
+        self.scopes.clear();
+        self.tap_windows.clear();
+        self.spectra.clear();
+        self.pending_bulk.clear();
+        if let Some(render) = self.render.as_mut() {
+            render.waveforms.clear();
+            render.spectrograms.clear();
+        }
+    }
+
+    fn fb(&self) -> (u32, u32) {
+        self.render
+            .as_ref()
+            .map(|r| (r.gpu.config.width.max(1), r.gpu.config.height.max(1)))
+            .unwrap_or((1, 1))
+    }
+
+    fn request_redraw(&self) {
+        self.window.request_redraw();
+    }
+}
+
+/// The browser host application: the live [`Host`], one [`CanvasSlot`] per
+/// `window`-rooted def, and the shared outbox the binding surface drains.
+struct WebApp {
+    host: Host,
+    outbox: Rc<RefCell<VecDeque<Vec<u8>>>>,
+    /// One canvas per `window`-rooted def, keyed by its def id.
+    canvases: HashMap<i32, CanvasSlot>,
+    /// The reverse index winit's per-window events route through.
+    by_winit: HashMap<WindowId, i32>,
+    /// Whether the event loop resumed — a window can only be created after it,
+    /// so an `attach` that arrives first waits here.
+    resumed: bool,
+    pending_attach: Vec<(i32, Option<web_sys::HtmlCanvasElement>)>,
     /// The piano-roll note clipboard (Ctrl+C/X/V), page-wide.
     clipboard: Vec<pianoroll::Note>,
     /// The `text` field clipboard (Ctrl+C/X/V), page-wide. An in-page clipboard
@@ -274,9 +373,6 @@ struct WebApp {
     /// Live control-bus values streamed from the audio server (`/c_stream` →
     /// `/c_set`), the browser's [`BusSource`] for meters/scopes/canvases.
     buses: Arc<StreamedBuses>,
-    /// Recent control-bus samples per `scope` widget id (oldest .. newest),
-    /// advanced on [`WebEvent::Tick`] exactly as the native tick does.
-    scopes: HashMap<i32, VecDeque<f32>>,
     /// The bus set currently subscribed with `/c_stream` (sorted), so a tree
     /// change only resubscribes when the set actually changed.
     streamed: Vec<i32>,
@@ -284,13 +380,6 @@ struct WebApp {
     /// audio-rate scopes, read on the tick exactly as the native front reads
     /// the segment's tap rings.
     taps: Arc<StreamedTaps>,
-    /// Triggered display window per audio-rate scope widget id, refreshed on
-    /// the tick (`live::update_tap_windows`). Also holds each phasescope's
-    /// interleaved L/R window (ids do not collide).
-    tap_windows: HashMap<i32, live::TapWindow>,
-    /// Persistent FFT analysis state per `spectrum` widget id, advanced on the
-    /// tick (`live::update_spectra`), exactly as the native front does.
-    spectra: HashMap<i32, Vec<SpectrumState>>,
     /// The `(taps, window frames)` currently subscribed with `/tap_stream`,
     /// so a tree change only resubscribes when they actually changed.
     tap_streamed: (Vec<i32>, usize),
@@ -310,9 +399,6 @@ struct WebApp {
     /// The server-buffer fetch machine (`/b_query` → chunked `/b_getn`),
     /// shared with the native front; requests ride the WS leg.
     fetches: BufferFetches,
-    /// Fetched waveforms/spectrograms that arrived before the GPU was ready,
-    /// placed on `GpuReady` (plots need no GPU and are placed immediately).
-    pending_bulk: Vec<(i32, BulkData)>,
 }
 
 impl WebApp {
@@ -320,37 +406,95 @@ impl WebApp {
         Self {
             host: Host::new(),
             outbox,
-            window: None,
-            render: None,
-            current_def: None,
-            pending_size: None,
-            cursor: (0.0, 0.0),
-            gestures: Gestures::default(),
-            shift: false,
-            ctrl: false,
-            alt: false,
+            canvases: HashMap::new(),
+            by_winit: HashMap::new(),
+            resumed: false,
+            pending_attach: Vec::new(),
             clipboard: Vec::new(),
             text_clipboard: String::new(),
             buses: Arc::new(StreamedBuses::default()),
-            scopes: HashMap::new(),
             streamed: Vec::new(),
             taps: Arc::new(StreamedTaps::default()),
-            tap_windows: HashMap::new(),
-            spectra: HashMap::new(),
             tap_streamed: (Vec::new(), 0),
             server_rate: 0.0,
             server_clock: 0.0,
             tick: None,
             stream_seen: false,
             fetches: BufferFetches::default(),
-            pending_bulk: Vec::new(),
         }
+    }
+
+    /// Gives `def_id` a canvas and starts its GPU bring-up.
+    ///
+    /// `canvas` is the element the component created — the correct ownership,
+    /// and the only way N of them can exist. `None` keeps the older posture, a
+    /// canvas winit appends to `<body>`, which is what a page that feeds a
+    /// `/gui_def` without attaching anything gets.
+    fn attach(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        def_id: i32,
+        canvas: Option<web_sys::HtmlCanvasElement>,
+    ) {
+        if !self.resumed {
+            // A window cannot be created before the loop resumes; `resumed`
+            // drains this.
+            self.pending_attach.push((def_id, canvas));
+            return;
+        }
+        if let Some(old) = self.canvases.remove(&def_id) {
+            self.by_winit.remove(&old.window.id());
+        }
+        let appending = canvas.is_none();
+        let attrs = Window::default_attributes()
+            .with_title(format!("clausters-gui {def_id}"))
+            .with_inner_size(LogicalSize::new(CANVAS_SIZE.0 as f64, CANVAS_SIZE.1 as f64))
+            .with_canvas(canvas)
+            .with_append(appending);
+        let window = match event_loop.create_window(attrs) {
+            Ok(w) => Arc::new(w),
+            Err(e) => return log(&format!("def {def_id}: cannot open a canvas: {e}")),
+        };
+        self.by_winit.insert(window.id(), def_id);
+        self.canvases
+            .insert(def_id, CanvasSlot::new(window.clone()));
+        log(&format!(
+            "def {def_id}: canvas attached; requesting GPU adapter"
+        ));
+        let proxy = WEB_PROXY.with(|p| p.borrow().clone());
+        wasm_bindgen_futures::spawn_local(async move {
+            match Gpu::new(window).await {
+                Ok(gpu) => {
+                    if let Some(proxy) = proxy {
+                        let _ = proxy.send_event(WebEvent::GpuReady { def_id, gpu });
+                    }
+                }
+                Err(e) => {
+                    // No GPU adapter at all (neither WebGPU nor WebGL2): surface
+                    // a clear, actionable message instead of aborting; the canvas
+                    // stays blank but the page survives.
+                    log(&e);
+                    set_status(&e);
+                }
+            }
+        });
+    }
+
+    /// Drops a def's canvas: the wgpu surface and every derived resource go.
+    /// The `<canvas>` element itself belongs to the page, which removes it.
+    fn detach(&mut self, def_id: i32) {
+        if let Some(slot) = self.canvases.remove(&def_id) {
+            self.by_winit.remove(&slot.window.id());
+        }
+        self.pending_attach.retain(|(id, _)| *id != def_id);
+        self.fetches.drop_def(def_id);
+        self.on_tree_changed();
     }
 
     /// Handles one inbound OSC packet (from the binding surface) through the real
     /// protocol dispatch, then carries out the effects: open/redraw the window,
     /// queue replies for the page to drain.
-    fn on_inbound(&mut self, bytes: &[u8]) {
+    fn on_inbound(&mut self, event_loop: &ActiveEventLoop, bytes: &[u8]) {
         let packet = match decode_packet(bytes) {
             Ok(p) => p,
             Err(e) => return log(&format!("malformed OSC packet from the page: {e}")),
@@ -359,46 +503,55 @@ impl WebApp {
             match effect {
                 HostEffect::Reply(msg) => self.queue(msg),
                 HostEffect::OpenWindow(id) => {
-                    log(&format!("/gui_def {id}: window opened from the page"));
-                    self.current_def = Some(id);
-                    self.scopes.clear();
-                    self.tap_windows.clear();
-                    self.spectra.clear();
-                    self.pending_bulk.clear();
-                    self.fetches.drop_def(id); // rebuild semantics on a re-/gui_def
-                    if self.render.is_some() {
-                        self.build_resources();
-                        self.request_redraw();
+                    log(&format!("/gui_def {id}: opened from the page"));
+                    // A page that fed a `/gui_def` without attaching a canvas
+                    // gets one appended, as the single-canvas host always did.
+                    if !self.canvases.contains_key(&id) {
+                        self.attach(event_loop, id, None);
                     }
+                    if let Some(slot) = self.canvases.get_mut(&id) {
+                        slot.clear_def_state();
+                    }
+                    self.fetches.drop_def(id); // rebuild semantics on a re-/gui_def
+                    self.build_resources(id);
+                    self.request_redraw(id);
                     self.start_bulk(id);
                     self.on_tree_changed();
                 }
                 HostEffect::CloseWindow(id) => {
-                    if self.current_def == Some(id) {
-                        self.current_def = None;
-                        self.scopes.clear();
-                        self.tap_windows.clear();
-                        self.spectra.clear();
-                        self.pending_bulk.clear();
-                        self.fetches.drop_def(id);
-                        if let Some(r) = self.render.as_mut() {
-                            r.waveforms.clear();
-                            r.spectrograms.clear();
-                        }
-                        self.request_redraw();
-                        self.on_tree_changed();
+                    if let Some(slot) = self.canvases.get_mut(&id) {
+                        slot.clear_def_state();
+                        slot.request_redraw();
                     }
+                    self.fetches.drop_def(id);
+                    self.on_tree_changed();
                 }
                 HostEffect::Redraw(id) => {
-                    if self.current_def == Some(id) {
+                    if self.canvases.contains_key(&id) {
                         // A `/gui_set` may have retargeted a meter/scope `bus`:
                         // re-derive the subscription (a no-op when unchanged).
                         self.on_tree_changed();
-                        self.request_redraw();
+                        self.request_redraw(id);
                     }
                 }
             }
         }
+    }
+
+    /// The defs currently drawing: one canvas each, and in the viewport.
+    ///
+    /// Everything that costs something per frame or per packet — the tick, the
+    /// `/c_stream` and `/tap_stream` subscriptions — is derived from exactly
+    /// this set, which is what makes a scrolled-away component free.
+    fn visible_defs(&self) -> Vec<i32> {
+        let mut ids: Vec<i32> = self
+            .canvases
+            .iter()
+            .filter(|(_, slot)| slot.visible)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort_unstable();
+        ids
     }
 
     /// A freshly attached server leg (WS or in-page) holds no subscription:
@@ -423,22 +576,30 @@ impl WebApp {
     /// attaches; cheap (a tree walk) and idempotent, so calling it eagerly is
     /// fine.
     fn on_tree_changed(&mut self) {
-        self.sync_bus_stream();
-        self.sync_tap_stream();
-        self.ensure_tick();
+        let demand = self.demand();
+        self.sync_bus_stream(demand.buses);
+        self.sync_tap_stream(demand.taps, demand.tap_frames);
+        self.ensure_tick(demand.animated);
     }
 
-    /// Subscribes the audio server to exactly the control buses the current
-    /// tree reads live (`/c_stream`, replacing this client's previous
+    /// What the drawing canvases ask of the server and of the frame clock —
+    /// the union over the **visible** set, so a scrolled-away component drops
+    /// out of it. The derivation itself is platform-agnostic
+    /// ([`live::demand`]), natively tested.
+    fn demand(&self) -> live::LiveDemand {
+        let trees: Vec<&Widget> = self
+            .visible_defs()
+            .into_iter()
+            .filter_map(|def| self.host.window_def(def))
+            .collect();
+        live::demand(trees, self.server_rate)
+    }
+
+    /// Subscribes the audio server to exactly the control buses the drawing
+    /// canvases read live (`/c_stream`, replacing this client's previous
     /// subscription), or cancels when none are left. Skipped without a server
     /// leg; `ConnectServer` re-runs it once the leg exists.
-    fn sync_bus_stream(&mut self) {
-        let mut wanted = Vec::new();
-        if let Some(def) = self.current_def
-            && let Some(tree) = self.host.window_def(def)
-        {
-            live::collect_live_buses(tree, &mut wanted);
-        }
+    fn sync_bus_stream(&mut self, wanted: Vec<i32>) {
         if wanted == self.streamed {
             return;
         }
@@ -464,21 +625,11 @@ impl WebApp {
         }
     }
 
-    /// Subscribes the audio server to exactly the audio taps the current
-    /// tree's oscilloscopes read (`/tap_stream`, replacing this client's
+    /// Subscribes the audio server to exactly the audio taps the drawing
+    /// canvases' oscilloscopes read (`/tap_stream`, replacing this client's
     /// previous subscription), sized to the largest raw window any of them
     /// needs; cancels when none are left. Skipped without a server leg.
-    fn sync_tap_stream(&mut self) {
-        let mut wanted = Vec::new();
-        let mut frames = 0usize;
-        if let Some(def) = self.current_def
-            && let Some(tree) = self.host.window_def(def)
-        {
-            live::collect_live_taps(tree, &mut wanted);
-            // Size the stream window to the largest any tap consumer needs — the
-            // oscilloscopes, the phasescopes and the spectra alike.
-            frames = live::tap_stream_frames(tree, self.server_rate);
-        }
+    fn sync_tap_stream(&mut self, wanted: Vec<i32>, frames: usize) {
         if (wanted.clone(), frames) == self.tap_streamed {
             return;
         }
@@ -506,16 +657,12 @@ impl WebApp {
         }
     }
 
-    /// Starts or stops the ~30 fps animation tick to match the current tree:
-    /// running while it has live widgets (meter/scope/canvas), stopped
-    /// otherwise. The tick advances the scope histories and repaints — the
-    /// browser twin of the native `about_to_wait` frame timer, driven by
+    /// Starts or stops the ~30 fps animation tick to match the drawing
+    /// canvases: running while any has live widgets (meter/scope/canvas),
+    /// stopped otherwise. The tick advances the scope histories and repaints —
+    /// the browser twin of the native `about_to_wait` frame timer, driven by
     /// `setInterval` because `std::time::Instant` does not exist on wasm.
-    fn ensure_tick(&mut self) {
-        let animated = self
-            .current_def
-            .and_then(|def| self.host.window_def(def))
-            .is_some_and(|tree| live::tree_has_canvas(tree) || live::tree_has_live_widget(tree));
+    fn ensure_tick(&mut self, animated: bool) {
         let Some(window) = web_sys::window() else {
             return;
         };
@@ -548,9 +695,14 @@ impl WebApp {
     /// from the `/tap_data` store (time-based, exactly like the native tick),
     /// then repaint.
     fn on_tick(&mut self) {
-        if let Some(def) = self.current_def
-            && let Some(tree) = self.host.window_def(def)
-        {
+        let mut wants_clock = false;
+        for def in self.visible_defs() {
+            let Some(tree) = self.host.window_def(def) else {
+                continue;
+            };
+            let Some(slot) = self.canvases.get_mut(&def) else {
+                continue;
+            };
             let buses = &self.buses;
             live::advance_scope_histories(
                 tree,
@@ -561,34 +713,34 @@ impl WebApp {
                         buses.control(bus as usize)
                     }
                 },
-                &mut self.scopes,
+                &mut slot.scopes,
             );
             let taps = &self.taps;
             live::update_tap_windows(
                 tree,
                 self.server_rate,
                 |tap, out| taps.read_raw(tap, out),
-                &mut self.tap_windows,
+                &mut slot.tap_windows,
             );
             live::update_phase_windows(
                 tree,
                 self.server_rate,
                 |tap, out| taps.read_raw(tap, out),
-                &mut self.tap_windows,
+                &mut slot.tap_windows,
             );
-            live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut self.spectra);
-            // A visible playhead needs the engine clock: poll it once per tick
-            // (the browser's stand-in for the shm header's sample clock).
-            if live::tree_has_playhead(tree)
-                && let Some(server) = self.host.server()
-            {
-                let _ = server.send(OscMessage {
-                    addr: "/clock".into(),
-                    args: vec![],
-                });
-            }
+            live::update_spectra(tree, |tap, out| taps.read_raw(tap, out), &mut slot.spectra);
+            wants_clock |= live::tree_has_playhead(tree);
+            slot.request_redraw();
         }
-        self.request_redraw();
+        // A visible playhead needs the engine clock: poll it once per tick (the
+        // browser's stand-in for the shm header's sample clock) — once for the
+        // page, however many canvases show one.
+        if wants_clock && let Some(server) = self.host.server() {
+            let _ = server.send(OscMessage {
+                addr: "/clock".into(),
+                args: vec![],
+            });
+        }
     }
 
     /// Routes one decoded OSC packet from the audio server (the WS leg): the
@@ -668,7 +820,8 @@ impl WebApp {
                 if let Some(OscType::Double(rate)) = msg.args.get(1) {
                     self.server_rate = *rate;
                     // Window sizes may change with the real rate known.
-                    self.sync_tap_stream();
+                    let demand = self.demand();
+                    self.sync_tap_stream(demand.taps, demand.tap_frames);
                 }
             }
             "/fail" => log(&format!("audio server replied /fail: {:?}", msg.args)),
@@ -699,7 +852,7 @@ impl WebApp {
                     wants.len()
                 ));
                 for want in wants {
-                    if self.current_def != Some(want.def_id) {
+                    if !self.canvases.contains_key(&want.def_id) {
                         continue;
                     }
                     let Some(kind) = self
@@ -714,7 +867,7 @@ impl WebApp {
                         WidgetKind::Waveform { base_bucket, .. } => {
                             let data =
                                 WaveformData::from_interleaved(&samples, channels, base_bucket);
-                            self.place_bulk(want.widget_id, BulkData::Waveform(data));
+                            self.place_bulk(want.def_id, want.widget_id, BulkData::Waveform(data));
                         }
                         WidgetKind::Clip { base_bucket, .. } => {
                             // A clip's take lands in the tree (its lane body is
@@ -742,7 +895,11 @@ impl WebApp {
                                 hop,
                                 rate,
                             );
-                            self.place_bulk(want.widget_id, BulkData::Spectrogram(stfts));
+                            self.place_bulk(
+                                want.def_id,
+                                want.widget_id,
+                                BulkData::Spectrogram(stfts),
+                            );
                         }
                         _ => continue,
                     }
@@ -757,8 +914,8 @@ impl WebApp {
                     {
                         editor.sample_rate = sample_rate;
                     }
+                    self.request_redraw(want.def_id);
                 }
-                self.request_redraw();
             }
             FetchStep::None => {}
         }
@@ -792,16 +949,19 @@ impl WebApp {
             }
         }
         for (widget_id, request) in requests {
-            wasm_bindgen_futures::spawn_local(fetch_bulk(widget_id, request));
+            wasm_bindgen_futures::spawn_local(fetch_bulk(def, widget_id, request));
         }
     }
 
-    /// Places a decoded GPU-bound resource (waveform or spectrogram): a slot
-    /// right away when the device is up, else stashed and replayed on
-    /// `GpuReady`.
-    fn place_bulk(&mut self, widget_id: i32, data: BulkData) {
-        let Some(render) = self.render.as_mut() else {
-            self.pending_bulk.push((widget_id, data));
+    /// Places a decoded GPU-bound resource (waveform or spectrogram) on its
+    /// def's canvas: a slot right away when that device is up, else stashed and
+    /// replayed on `GpuReady`.
+    fn place_bulk(&mut self, def_id: i32, widget_id: i32, data: BulkData) {
+        let Some(slot) = self.canvases.get_mut(&def_id) else {
+            return; // the canvas was detached while the fetch was in flight
+        };
+        let Some(render) = slot.render.as_mut() else {
+            slot.pending_bulk.push((widget_id, data));
             return;
         };
         let mut total = None;
@@ -840,10 +1000,9 @@ impl WebApp {
     /// A fetched bulk resource arrived: place a waveform/spectrogram (GPU
     /// slot), write a clip's take or a plot's samples into the host tree, then
     /// repaint.
-    fn on_bulk_ready(&mut self, widget_id: i32, data: BulkData) {
+    fn on_bulk_ready(&mut self, def: i32, widget_id: i32, data: BulkData) {
         // A waveform resource wanted by a `clip` lands in the tree, not the GPU.
         if let BulkData::Waveform(_) = &data
-            && let Some(def) = self.current_def
             && self
                 .host
                 .window_def(def)
@@ -854,16 +1013,15 @@ impl WebApp {
                 unreachable!()
             };
             self.set_clip_body(def, widget_id, data);
-            self.request_redraw();
+            self.request_redraw(def);
             return;
         }
         match data {
             BulkData::Waveform(_) | BulkData::Spectrogram(_) => {
-                self.place_bulk(widget_id, data);
+                self.place_bulk(def, widget_id, data);
             }
             BulkData::Plot(samples) => {
-                if let Some(def) = self.current_def
-                    && let Some(root) = self.host.window_def_mut(def)
+                if let Some(root) = self.host.window_def_mut(def)
                     && let Some(widget) = root.find_mut(widget_id)
                     && let WidgetKind::Plot {
                         samples: plot_samples,
@@ -876,7 +1034,7 @@ impl WebApp {
                 }
             }
         }
-        self.request_redraw();
+        self.request_redraw(def);
     }
 
     /// Encodes `msg` and pushes it to the outbox for the page to drain; also logs
@@ -889,12 +1047,14 @@ impl WebApp {
         }
     }
 
-    /// (Re)builds the GPU resources for the current def: the inline-data
-    /// waveform/spectrogram views (`path`/`cache`/`buffer` references load
-    /// async through [`fetch_bulk`] and the fetch machine).
-    fn build_resources(&mut self) {
-        let Some(def) = self.current_def else { return };
-        let Some(render) = self.render.as_ref() else {
+    /// (Re)builds one canvas' GPU resources: the inline-data waveform/
+    /// spectrogram views (`path`/`cache`/`buffer` references load async through
+    /// [`fetch_bulk`] and the fetch machine).
+    fn build_resources(&mut self, def: i32) {
+        let Some(slot) = self.canvases.get(&def) else {
+            return;
+        };
+        let Some(render) = slot.render.as_ref() else {
             return;
         };
         let Some(tree) = self.host.window_def(def) else {
@@ -911,7 +1071,7 @@ impl WebApp {
                 .map(|(id, s)| (*id, s.view.total_samples())),
         );
         totals.extend(spectrograms.iter().map(|(id, s)| (*id, s.total_samples())));
-        if let Some(render) = self.render.as_mut() {
+        if let Some(render) = self.canvases.get_mut(&def).and_then(|s| s.render.as_mut()) {
             render.waveforms = waveforms;
             render.spectrograms = spectrograms;
         }
@@ -920,39 +1080,46 @@ impl WebApp {
         }
     }
 
-    /// Renders the current def through the shared frame path. The live inputs
+    /// Renders one canvas' def through the shared frame path. The live inputs
     /// come from the streamed buses (meters/canvases read them in `render`, the
     /// scopes their tick-fed histories); the node tree stays empty until a
     /// browser node-tree path exists.
-    fn draw(&mut self) {
-        let Some(def) = self.current_def else { return };
-        let active_button = self.gestures.active_button();
+    fn draw(&mut self, def: i32) {
         let server_attached = self.host.server().is_some();
+        let focused_text = self
+            .host
+            .focused_text()
+            .filter(|(d, _)| *d == def)
+            .map(|(_, id)| id);
+        let timelines = self.host.timelines();
+        let theme = &self.host.theme;
         let Some(tree) = self.host.window_def(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
             return;
         };
         let inputs = frame::FrameInputs {
             bus: Some(self.buses.as_ref() as &dyn BusSource),
-            active_button,
-            focused_text: self
-                .host
-                .focused_text()
-                .filter(|(d, _)| *d == def)
-                .map(|(_, id)| id),
+            active_button: slot.gestures.active_button(),
+            focused_text,
             server_attached,
             sample_rate: self.server_rate,
             sample_clock: self.server_clock,
-            cursor: Some(self.cursor),
-            timelines: self.host.timelines(),
+            cursor: Some(slot.cursor),
+            timelines,
             // A rewiring drag in flight draws its wire to the pointer.
-            wiring: self
+            wiring: slot
                 .gestures
                 .wiring()
-                .map(|(id, port)| (id, port, (self.cursor.0 as f32, self.cursor.1 as f32))),
-            marquee: self.gestures.marquee(),
+                .map(|(id, port)| (id, port, (slot.cursor.0 as f32, slot.cursor.1 as f32))),
+            marquee: slot.gestures.marquee(),
             ..Default::default()
         };
-        let Some(render) = self.render.as_mut() else {
+        let scopes = &slot.scopes;
+        let tap_windows = &slot.tap_windows;
+        let spectra = &slot.spectra;
+        let Some(render) = slot.render.as_mut() else {
             return;
         };
         let mut canvases = HashMap::new();
@@ -963,57 +1130,52 @@ impl WebApp {
             &mut render.waveforms,
             &mut render.spectrograms,
             &mut canvases,
-            &self.scopes,
-            &self.tap_windows,
-            &self.spectra,
+            scopes,
+            tap_windows,
+            spectra,
             tree,
             &inputs,
-            &self.host.theme,
+            theme,
         );
     }
 
-    fn fb(&self) -> (u32, u32) {
-        self.render
-            .as_ref()
-            .map(|r| (r.gpu.config.width.max(1), r.gpu.config.height.max(1)))
-            .unwrap_or((1, 1))
-    }
-
-    /// Schedules a repaint through winit's redraw request (drawing happens in
-    /// `RedrawRequested`, the idiomatic path on the browser's animation frame).
-    fn request_redraw(&self) {
-        if let Some(render) = self.render.as_ref() {
-            render.gpu.window.request_redraw();
-        } else if let Some(window) = self.window.as_ref() {
-            window.request_redraw();
+    /// Schedules a repaint of one canvas through winit's redraw request
+    /// (drawing happens in `RedrawRequested`, the idiomatic path on the
+    /// browser's animation frame).
+    fn request_redraw(&self, def: i32) {
+        if let Some(slot) = self.canvases.get(&def) {
+            slot.request_redraw();
         }
     }
 
-    /// Snapshots the gesture context for the current def: framebuffer size,
+    /// Snapshots the gesture context for one canvas: its framebuffer size, its
     /// modifier keys, and the heavy views' lane counts (channel/lane splits
     /// live in this front's GPU slots, so they are copied out here) — the
     /// browser twin of the native front's snapshot.
-    fn gesture_ctx(&self, def: i32) -> GestureCtx {
-        let (fb_w, fb_h) = self.fb();
+    fn gesture_ctx(&self, def: i32) -> Option<(GestureCtx, (f64, f64))> {
+        let slot = self.canvases.get(&def)?;
+        let (fb_w, fb_h) = slot.fb();
         let mut ctx = GestureCtx::new(def, fb_w, fb_h);
-        ctx.shift = self.shift;
-        ctx.ctrl = self.ctrl;
-        ctx.alt = self.alt;
-        if let Some(render) = self.render.as_ref() {
-            for (id, slot) in &render.waveforms {
-                ctx.wave_lanes.insert(*id, slot.view.num_channels());
+        ctx.shift = slot.shift;
+        ctx.ctrl = slot.ctrl;
+        ctx.alt = slot.alt;
+        if let Some(render) = slot.render.as_ref() {
+            for (id, view) in &render.waveforms {
+                ctx.wave_lanes.insert(*id, view.view.num_channels());
             }
-            for (id, slot) in &render.spectrograms {
-                ctx.spect_lanes.insert(*id, slot.views.len());
+            for (id, view) in &render.spectrograms {
+                ctx.spect_lanes.insert(*id, view.views.len());
             }
         }
-        ctx
+        Some((ctx, slot.cursor))
     }
 
     /// Carries out a gesture's effects over this front's sinks: `/gui_event`s
     /// to the page outbox (a bound widget already forwarded inside the
-    /// machine), repaints of the one canvas. There is no pointer grab in the
-    /// browser (the grab callback returns `false`), so releases are no-ops.
+    /// machine), and a repaint of the canvas the effect names — a linked-view
+    /// mutation can name a *different* def than the one gestured on, and with a
+    /// canvas each that now lands where it belongs. There is no pointer grab in
+    /// the browser (the grab callback returns `false`), so releases are no-ops.
     fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {
         for effect in effects {
             match effect {
@@ -1027,89 +1189,105 @@ impl WebApp {
                         args: msg_args,
                     });
                 }
-                // One canvas: every repaint lands on it, whichever window a
-                // linked-view mutation names.
-                GestureEffect::Redraw(_) => self.request_redraw(),
+                GestureEffect::Redraw(def_id) => self.request_redraw(def_id),
                 GestureEffect::ReleasePointer(_) => {}
             }
         }
     }
 
     /// Pointer press: the shared gesture machine acts by widget kind.
-    fn on_press(&mut self) {
-        let Some(def) = self.current_def else { return };
-        let (cx, cy) = self.cursor;
-        let ctx = self.gesture_ctx(def);
-        let effects = self
+    fn on_press(&mut self, def: i32) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot
             .gestures
             .press(&mut self.host, &ctx, cx, cy, &mut || false);
         self.apply_gesture_effects(effects);
     }
 
     /// Pointer move while dragging: the machine drives the dragged target.
-    fn on_move(&mut self) {
-        let Some(def) = self.current_def else { return };
-        let (cx, cy) = self.cursor;
-        let ctx = self.gesture_ctx(def);
-        let effects = self.gestures.drag_to(&mut self.host, &ctx, cx, cy);
+    fn on_move(&mut self, def: i32) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot.gestures.drag_to(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
     }
 
     /// Pointer release: the machine finishes the drag (button up, wire landing).
-    fn on_release(&mut self) {
-        let Some(def) = self.current_def else { return };
-        let (cx, cy) = self.cursor;
-        let ctx = self.gesture_ctx(def);
-        let effects = self.gestures.release(&mut self.host, &ctx, cx, cy);
+    fn on_release(&mut self, def: i32) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot.gestures.release(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
     }
 
     /// Wheel: the machine zooms the time axis or the vertical display window.
-    fn on_wheel(&mut self, steps: f64) {
-        let Some(def) = self.current_def else { return };
-        let (cx, cy) = self.cursor;
-        let ctx = self.gesture_ctx(def);
-        let effects = self.gestures.wheel(&mut self.host, &ctx, cx, cy, steps);
+    fn on_wheel(&mut self, def: i32, steps: f64) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
+        let effects = slot.gestures.wheel(&mut self.host, &ctx, cx, cy, steps);
         self.apply_gesture_effects(effects);
     }
 
     /// Keyboard: the same editing operations the desktop front maps (Delete,
     /// Ctrl+C/X/V, `q` quantize, `r` reset) — minus Escape, which closes an OS
     /// window there but has no window to close here.
-    fn on_key(&mut self, key: &Key) {
-        let Some(def) = self.current_def else { return };
+    fn on_key(&mut self, def: i32, key: &Key) {
+        let Some((ctx, (cx, cy))) = self.gesture_ctx(def) else {
+            return;
+        };
+        let ctrl = ctx.ctrl;
         // A focused text field consumes the key first (typing, caret motion,
         // cut/copy/paste); only otherwise do the global shortcuts run.
         if let Some(tk) = to_text_key(key) {
-            let ctx = self.gesture_ctx(def);
+            let Some(slot) = self.canvases.get_mut(&def) else {
+                return;
+            };
             if let Some(effects) =
-                self.gestures
+                slot.gestures
                     .text_key(&mut self.host, &ctx, tk, &mut self.text_clipboard)
             {
                 self.apply_gesture_effects(effects);
                 return;
             }
         }
-        let (cx, cy) = self.cursor;
-        let ctx = self.gesture_ctx(def);
+        let Some(slot) = self.canvases.get_mut(&def) else {
+            return;
+        };
         let effects = match key {
             Key::Named(NamedKey::Delete) | Key::Named(NamedKey::Backspace) => {
-                self.gestures.delete_selected(&mut self.host, &ctx, cx, cy)
+                slot.gestures.delete_selected(&mut self.host, &ctx, cx, cy)
             }
-            Key::Character(c) if self.ctrl && c.eq_ignore_ascii_case("c") => self
+            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("c") => slot
                 .gestures
                 .copy_selected(&mut self.host, &ctx, cx, cy, false, &mut self.clipboard),
-            Key::Character(c) if self.ctrl && c.eq_ignore_ascii_case("x") => self
+            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("x") => slot
                 .gestures
                 .copy_selected(&mut self.host, &ctx, cx, cy, true, &mut self.clipboard),
-            Key::Character(c) if self.ctrl && c.eq_ignore_ascii_case("v") => self
+            Key::Character(c) if ctrl && c.eq_ignore_ascii_case("v") => slot
                 .gestures
                 .paste_at_cursor(&mut self.host, &ctx, cx, cy, &self.clipboard),
             Key::Character(c) if c.eq_ignore_ascii_case("q") => {
-                self.gestures.quantize(&mut self.host, &ctx, cx, cy)
+                slot.gestures.quantize(&mut self.host, &ctx, cx, cy)
             }
             Key::Character(c) if c.eq_ignore_ascii_case("r") => {
-                self.gestures.reset_timelines(&mut self.host, &ctx)
+                slot.gestures.reset_timelines(&mut self.host, &ctx)
             }
             _ => return,
         };
@@ -1142,43 +1320,56 @@ fn to_text_key(key: &Key) -> Option<TextKey> {
 }
 
 impl ApplicationHandler<WebEvent> for WebApp {
+    /// Nothing opens on its own: a canvas exists because the page attached one
+    /// (or because a `/gui_def` arrived without one). This only unblocks the
+    /// attaches that raced ahead of the loop.
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return;
+        self.resumed = true;
+        for (def_id, canvas) in std::mem::take(&mut self.pending_attach) {
+            self.attach(event_loop, def_id, canvas);
         }
-        let attrs = Window::default_attributes()
-            .with_title("clausters-gui (web)")
-            .with_inner_size(LogicalSize::new(CANVAS_SIZE.0 as f64, CANVAS_SIZE.1 as f64))
-            .with_append(true);
-        let window = match event_loop.create_window(attrs) {
-            Ok(w) => Arc::new(w),
-            Err(e) => return log(&format!("cannot create the canvas window: {e}")),
-        };
-        self.window = Some(window.clone());
-        log("opened window over <canvas>; requesting GPU adapter (WebGPU, else WebGL2)...");
-        // The proxy lives in the closure; rebuild it from the event loop.
-        let proxy = WEB_PROXY.with(|p| p.borrow().clone());
-        wasm_bindgen_futures::spawn_local(async move {
-            match Gpu::new(window).await {
-                Ok(gpu) => {
-                    if let Some(proxy) = proxy {
-                        let _ = proxy.send_event(WebEvent::GpuReady(gpu));
-                    }
-                }
-                Err(e) => {
-                    // No GPU adapter at all (neither WebGPU nor WebGL2): surface a
-                    // clear, actionable message instead of aborting; the canvas
-                    // stays blank but the page survives.
-                    log(&e);
-                    set_status(&e);
-                }
-            }
-        });
     }
 
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: WebEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: WebEvent) {
         match event {
-            WebEvent::GpuReady(mut gpu) => {
+            WebEvent::Attach { def_id, canvas } => self.attach(event_loop, def_id, canvas),
+            WebEvent::Detach(def_id) => self.detach(def_id),
+            WebEvent::Resize {
+                def_id,
+                width,
+                height,
+            } => {
+                let Some(slot) = self.canvases.get_mut(&def_id) else {
+                    return;
+                };
+                // The element owns the box; the host is only told the pixels.
+                // winit writes the canvas' backing size, and the surface follows
+                // right here rather than waiting for the `Resized` echo.
+                let _ = slot
+                    .window
+                    .request_inner_size(PhysicalSize::new(width, height));
+                match slot.render.as_mut() {
+                    Some(render) => render.gpu.resize(width, height),
+                    None => slot.pending_size = Some((width, height)),
+                }
+                slot.request_redraw();
+            }
+            WebEvent::SetVisible { def_id, visible } => {
+                let Some(slot) = self.canvases.get_mut(&def_id) else {
+                    return;
+                };
+                if slot.visible == visible {
+                    return;
+                }
+                slot.visible = visible;
+                if visible {
+                    slot.request_redraw();
+                }
+                // The subscriptions and the tick follow the visible set: a
+                // canvas out of the viewport stops costing server CPU and wire.
+                self.on_tree_changed();
+            }
+            WebEvent::GpuReady { def_id, mut gpu } => {
                 // On the web the `<canvas>` is often not laid out yet when
                 // `Gpu::new` reads its size (the size is captured before the async
                 // adapter/device awaits), so the surface can come up configured to
@@ -1188,37 +1379,39 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 // visible is drawn. A `Resized` that arrived while the GPU was
                 // pending was stashed in `pending_size`; prefer the live size and
                 // fall back to it.
+                let Some(slot) = self.canvases.get_mut(&def_id) else {
+                    return; // detached while the device was coming up
+                };
                 let size = gpu.window.inner_size();
                 let (w, h) = if size.width > 0 && size.height > 0 {
                     (size.width, size.height)
                 } else {
-                    self.pending_size.unwrap_or((size.width, size.height))
+                    slot.pending_size.unwrap_or((size.width, size.height))
                 };
                 gpu.resize(w, h);
                 let painter = Painter::new(&gpu.device, gpu.config.format);
                 let overlay = Painter::new(&gpu.device, gpu.config.format);
                 log(&format!(
-                    "GPU device ready; surface {}x{}",
+                    "def {def_id}: GPU device ready; surface {}x{}",
                     gpu.config.width, gpu.config.height
                 ));
-                self.render = Some(WindowRender {
+                slot.render = Some(WindowRender {
                     gpu,
                     painter,
                     overlay,
                     waveforms: HashMap::new(),
                     spectrograms: HashMap::new(),
                 });
-                if self.current_def.is_some() {
-                    self.build_resources();
-                }
+                let pending = std::mem::take(&mut slot.pending_bulk);
+                self.build_resources(def_id);
                 // Bulk data that finished downloading while the device was
                 // still coming up gets its GPU slots now.
-                for (widget_id, data) in std::mem::take(&mut self.pending_bulk) {
-                    self.place_bulk(widget_id, data);
+                for (widget_id, data) in pending {
+                    self.place_bulk(def_id, widget_id, data);
                 }
-                self.request_redraw();
+                self.request_redraw(def_id);
             }
-            WebEvent::Inbound(bytes) => self.on_inbound(&bytes),
+            WebEvent::Inbound(bytes) => self.on_inbound(event_loop, &bytes),
             WebEvent::ConnectServer(url) => match WsServerLink::connect(&url) {
                 Ok(link) => {
                     self.host.set_server_link(ServerLink::Ws(link));
@@ -1235,7 +1428,11 @@ impl ApplicationHandler<WebEvent> for WebApp {
             }
             WebEvent::ServerInbound(bytes) => self.on_server_inbound(&bytes),
             WebEvent::Tick => self.on_tick(),
-            WebEvent::BulkReady { widget_id, data } => self.on_bulk_ready(widget_id, data),
+            WebEvent::BulkReady {
+                def_id,
+                widget_id,
+                data,
+            } => self.on_bulk_ready(def_id, widget_id, data),
             WebEvent::Theme(entries) => {
                 for w in self
                     .host
@@ -1252,39 +1449,53 @@ impl ApplicationHandler<WebEvent> for WebApp {
                         super::widget::resolve_themes(tree, &base);
                     }
                 }
-                self.draw();
+                for def in self.canvases.keys().copied().collect::<Vec<_>>() {
+                    self.draw(def);
+                }
             }
         }
     }
 
-    fn window_event(&mut self, _event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+    /// Every per-canvas event routes by winit's window id: a document's
+    /// canvases each get their own pointer, modifiers and repaints.
+    fn window_event(&mut self, _event_loop: &ActiveEventLoop, id: WindowId, event: WindowEvent) {
+        let Some(def) = self.by_winit.get(&id).copied() else {
+            return;
+        };
         match event {
             WindowEvent::Resized(size) => {
-                if let Some(render) = self.render.as_mut() {
-                    render.gpu.resize(size.width, size.height);
-                } else {
+                let Some(slot) = self.canvases.get_mut(&def) else {
+                    return;
+                };
+                match slot.render.as_mut() {
+                    Some(render) => render.gpu.resize(size.width, size.height),
                     // The GPU is still coming up; remember the size so `GpuReady`
                     // can configure the surface to it instead of a stale 1x1.
-                    self.pending_size = Some((size.width, size.height));
+                    None => slot.pending_size = Some((size.width, size.height)),
                 }
-                self.request_redraw();
+                slot.request_redraw();
             }
             WindowEvent::ModifiersChanged(mods) => {
-                self.shift = mods.state().shift_key();
-                self.ctrl = mods.state().control_key();
-                self.alt = mods.state().alt_key();
+                if let Some(slot) = self.canvases.get_mut(&def) {
+                    slot.shift = mods.state().shift_key();
+                    slot.ctrl = mods.state().control_key();
+                    slot.alt = mods.state().alt_key();
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = (position.x, position.y);
-                if self.gestures.dragging() {
-                    self.on_move();
+                let Some(slot) = self.canvases.get_mut(&def) else {
+                    return;
+                };
+                slot.cursor = (position.x, position.y);
+                if slot.gestures.dragging() {
+                    self.on_move(def);
                 } else if self
-                    .current_def
-                    .and_then(|def| self.host.window_def(def))
+                    .host
+                    .window_def(def)
                     .is_some_and(Widget::has_hover_readout)
                 {
                     // The hover readout follows the pointer (the native rule).
-                    self.request_redraw();
+                    self.request_redraw(def);
                 }
             }
             WindowEvent::MouseInput {
@@ -1292,21 +1503,25 @@ impl ApplicationHandler<WebEvent> for WebApp {
                 button: MouseButton::Left,
                 ..
             } => match state {
-                ElementState::Pressed => self.on_press(),
-                ElementState::Released => self.on_release(),
+                ElementState::Pressed => self.on_press(def),
+                ElementState::Released => self.on_release(def),
             },
             WindowEvent::MouseWheel { delta, .. } => {
                 let steps = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y as f64,
                     MouseScrollDelta::PixelDelta(p) => p.y / 50.0,
                 };
-                self.on_wheel(steps);
+                self.on_wheel(def, steps);
             }
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 let key = event.logical_key.clone();
-                self.on_key(&key);
+                self.on_key(def, &key);
             }
-            WindowEvent::RedrawRequested => self.draw(),
+            // A canvas out of the viewport is skipped: the browser would not
+            // composite it anyway, and *we* would still have computed the frame.
+            WindowEvent::RedrawRequested if self.canvases.get(&def).is_some_and(|s| s.visible) => {
+                self.draw(def)
+            }
             _ => {}
         }
     }
@@ -1485,7 +1700,7 @@ fn collect_bulk(
 
 /// Fetches one bulk URL and decodes it off the event loop, then hands the
 /// result back through the proxy as [`WebEvent::BulkReady`].
-async fn fetch_bulk(widget_id: i32, request: BulkRequest) {
+async fn fetch_bulk(def_id: i32, widget_id: i32, request: BulkRequest) {
     let url = match &request {
         BulkRequest::Cache(url) | BulkRequest::StftCache(url) => url,
         BulkRequest::Raw { url, .. }
@@ -1564,7 +1779,11 @@ async fn fetch_bulk(widget_id: i32, request: BulkRequest) {
         }
     };
     if let Some(proxy) = WEB_PROXY.with(|p| p.borrow().clone()) {
-        let _ = proxy.send_event(WebEvent::BulkReady { widget_id, data });
+        let _ = proxy.send_event(WebEvent::BulkReady {
+            def_id,
+            widget_id,
+            data,
+        });
     }
 }
 
@@ -1610,6 +1829,55 @@ impl GuiBridge {
     /// host, exactly as the WS wire format delivers it (one packet per call).
     pub fn feed(&self, packet: &[u8]) {
         let _ = self.proxy.send_event(WebEvent::Inbound(packet.to_vec()));
+    }
+
+    /// Gives one `window`-rooted def its own `<canvas>`, which the caller
+    /// created and the document places.
+    ///
+    /// This is the browser's answer to the desktop's window manager: on the
+    /// desktop `clausters-gui` opens a window per def and the system places it;
+    /// in a tab the canvas is an element and **the document places it** — CSS,
+    /// the order of the markup. Attach before feeding the def's `/gui_def`, so
+    /// the first frame draws into the right surface. Attaching a def that
+    /// already has a canvas replaces it.
+    ///
+    /// A page that never calls this still works: a `/gui_def` with no canvas
+    /// gets one appended to `<body>`, the older single-canvas posture.
+    pub fn attach(&self, def_id: i32, canvas: web_sys::HtmlCanvasElement) {
+        let _ = self.proxy.send_event(WebEvent::Attach {
+            def_id,
+            canvas: Some(canvas),
+        });
+    }
+
+    /// Frees a def's canvas: its GPU surface and every derived resource go. The
+    /// `<canvas>` element itself is the page's, to remove or reuse.
+    pub fn detach(&self, def_id: i32) {
+        let _ = self.proxy.send_event(WebEvent::Detach(def_id));
+    }
+
+    /// Sizes a canvas in **device pixels** — a component's `ResizeObserver`
+    /// box times `devicePixelRatio`. The host never reads the DOM: the element
+    /// owns its box and reports the pixels.
+    pub fn resize(&self, def_id: i32, width: u32, height: u32) {
+        let _ = self.proxy.send_event(WebEvent::Resize {
+            def_id,
+            width,
+            height,
+        });
+    }
+
+    /// Tells the host whether a canvas is in the viewport (a component's
+    /// `IntersectionObserver`).
+    ///
+    /// A hidden canvas is skipped on the tick and its buses leave the
+    /// `/c_stream`/`/tap_stream` sets — a document can hold fifty canvases with
+    /// three in view, and neither this host nor the server should be working
+    /// for the other forty-seven.
+    pub fn set_visible(&self, def_id: i32, visible: bool) {
+        let _ = self
+            .proxy
+            .send_event(WebEvent::SetVisible { def_id, visible });
     }
 
     /// Convenience: build and feed a `/gui_def <id> <json>` from a GuiDef JSON

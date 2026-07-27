@@ -128,6 +128,9 @@ export async function bootBundle({
             setTimeout(() => reject(
                 new Error("bundle boot: no /synced from the engine")), 15000),
         )]);
+        // The canvas comes first: the host holds one per def, and it must know
+        // where this def draws before the def opens.
+        gui.attach(record.id);
         gui.bridge.def(record.id, tree);
         return { id: record.id, tree: record.gui };
     } finally {

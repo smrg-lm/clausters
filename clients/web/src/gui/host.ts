@@ -48,12 +48,22 @@ export const DEFAULT_PORT = 57210;
 /// network carrier a browser can use.
 export const DEFAULT_WS_PORT = 57220;
 
+/// The page canvas' default size in device pixels, matching the host's own
+/// default. A component sizes its canvas from its element box instead.
+const DEFAULT_CANVAS = { width: 480, height: 420 };
+
 /// The shared host surface: the raw binding bridge, the page-wide canvas
 /// (re-parent it freely; the GPU context survives), and the outbound
 /// `/gui_event`/`/gui_info`/`/gui_closed` stream as byte packets.
 export interface ClaustersGui {
     bridge: GuiBridge;
+    /// The page's default canvas — the one a page that does not make its own
+    /// draws into. `attach` hands it to a def.
     canvas: HTMLCanvasElement;
+    /// Gives a `window`-rooted def a canvas to draw into, before its
+    /// `/gui_def` is fed. The host holds one canvas per def, so a document can
+    /// show several at once; omit `canvas` to use the page's default one.
+    attach(defId: number, canvas?: HTMLCanvasElement): void;
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
 }
@@ -62,14 +72,13 @@ let instance: Promise<ClaustersGui> | null = null;
 
 /// The page's GUI host, booting it (and the engine) on first call.
 ///
-/// One wasm GUI host serves the page (it shows one window-rooted def at a time
-/// on one canvas — the browser front's shape). The first call initializes the
-/// wasm module, starts the host, captures the canvas winit appends to `<body>`
-/// (so an element can adopt it into its shadow DOM), and wires the two
-/// singletons together **once**: engine replies → `bridge.server_reply`, host
-/// outbound → `engine.send` (the in-page server leg). Later calls get the same
-/// instance, so several components share one host and one engine — the shared
-/// node/bus/buffer namespace.
+/// One wasm GUI host serves the page, drawing one canvas per `window`-rooted
+/// def. The first call initializes the wasm module, starts the host, makes the
+/// page's default canvas (appended to `<body>`, where a page that makes none of
+/// its own finds it), and wires the two singletons together **once**: engine
+/// replies → `bridge.server_reply`, host outbound → `engine.send` (the in-page
+/// server leg). Later calls get the same instance, so several components share
+/// one host and one engine — the shared node/bus/buffer namespace.
 export function guiHost(): Promise<ClaustersGui> {
     instance ??= boot();
     return instance;
@@ -78,25 +87,19 @@ export function guiHost(): Promise<ClaustersGui> {
 async function boot(): Promise<ClaustersGui> {
     const { default: init, start } = await import("../gui-host/clausters_gui.js");
     const engine = await server();
-    const before = new Set(document.querySelectorAll("body > canvas"));
     await init();
     const bridge = start();
 
-    // winit appends the host's canvas to <body> asynchronously (on its first
-    // animation frame); wait for it so callers can re-parent it.
-    const canvas = await new Promise<HTMLCanvasElement>((resolve, reject) => {
-        const t0 = performance.now();
-        const look = () => {
-            for (const c of document.querySelectorAll("body > canvas")) {
-                if (!before.has(c)) return resolve(c as HTMLCanvasElement);
-            }
-            if (performance.now() - t0 > 5000) {
-                return reject(new Error("the GUI host's canvas never appeared"));
-            }
-            requestAnimationFrame(look);
-        };
-        look();
-    });
+    // The page makes the canvas and hands it over, rather than waiting for one
+    // to be appended and grabbing it: that is the ownership a document has, and
+    // the only way several canvases can exist at once. This one is the page's
+    // default, in <body> where the older single-canvas pages expect it; a
+    // component supplies its own to `attach`.
+    const canvas = document.createElement("canvas");
+    canvas.width = DEFAULT_CANVAS.width;
+    canvas.height = DEFAULT_CANVAS.height;
+    canvas.style.display = "block";
+    document.body.append(canvas);
 
     // The in-page server leg, wired once for the whole page.
     engine.addReply((bytes) => bridge.server_reply(bytes));
@@ -114,6 +117,7 @@ async function boot(): Promise<ClaustersGui> {
     return {
         bridge,
         canvas,
+        attach: (defId, element) => bridge.attach(defId, element ?? canvas),
         addEvent: (listener) => listeners.add(listener),
         removeEvent: (listener) => listeners.delete(listener),
     };
@@ -123,11 +127,27 @@ async function boot(): Promise<ClaustersGui> {
 /// `feed` carries a packet in, the drained outbox carries the events back.
 /// Closing detaches this connection's listeners; the host keeps running (it is
 /// shared page state, not this connection's to stop).
+///
+/// A `/gui_def` sent over this carrier gets the page's default canvas attached
+/// to it first, unless the caller already gave that def one. A `GuiHost` is
+/// transport-agnostic — the same object drives a native `--ws` host, which has
+/// windows rather than canvases — so the canvas policy belongs here, on the
+/// carrier that *is* the page.
 export async function pageGuiConnection(): Promise<Connection> {
     const gui = await guiHost();
     const mine = new Set<EventListener>();
+    const attached = new Set<number>();
     return {
-        send: (packet) => gui.bridge.feed(packet),
+        send: (packet) => {
+            for (const { addr, args } of decodePacket(packet)) {
+                if (addr !== "/gui_def" || typeof args[0] !== "number") continue;
+                if (!attached.has(args[0])) {
+                    attached.add(args[0]);
+                    gui.attach(args[0]);
+                }
+            }
+            gui.bridge.feed(packet);
+        },
         addReply: (listener) => {
             mine.add(listener);
             gui.addEvent(listener);

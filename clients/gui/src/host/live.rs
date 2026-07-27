@@ -416,6 +416,54 @@ pub(crate) fn collect_live_buses(widget: &Widget, out: &mut Vec<i32>) {
     out.sort_unstable();
 }
 
+/// What a set of drawing trees asks of the audio server and of the frame clock.
+///
+/// The browser front holds one canvas per `window`-rooted def and derives all
+/// three of these from the canvases that are **visible**, so a component
+/// scrolled out of the viewport costs nothing: not a frame computed here, not a
+/// bus streamed over the wire, not the server CPU that fills it. (The same
+/// waste exists on the desktop behind an occluded window; only the browser front
+/// acts on it so far.)
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct LiveDemand {
+    /// The `/c_stream` set: distinct, sorted.
+    pub buses: Vec<i32>,
+    /// The `/tap_stream` set: distinct, sorted.
+    pub taps: Vec<i32>,
+    /// The window every tap consumer needs, in frames — the largest any of them
+    /// asks for, since one subscription serves them all.
+    pub tap_frames: usize,
+    /// Whether anything on screen animates (a live widget or a `canvas`), which
+    /// is what decides the ~30 fps tick runs at all.
+    pub animated: bool,
+    /// Whether anything on screen shows a playhead, which needs the engine's
+    /// sample clock polled each tick.
+    pub playhead: bool,
+}
+
+/// The union of what `trees` demand — the drawing canvases' trees, in any
+/// order. Pure and platform-independent: the front supplies the set, this
+/// decides the subscriptions.
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
+pub(crate) fn demand<'a>(
+    trees: impl IntoIterator<Item = &'a Widget>,
+    sample_rate: f64,
+) -> LiveDemand {
+    let mut out = LiveDemand::default();
+    for tree in trees {
+        collect_live_buses(tree, &mut out.buses);
+        collect_live_taps(tree, &mut out.taps);
+        out.tap_frames = out.tap_frames.max(tap_stream_frames(tree, sample_rate));
+        out.animated |= tree_has_canvas(tree) || tree_has_live_widget(tree);
+        out.playhead |= tree_has_playhead(tree);
+    }
+    out.buses.sort_unstable();
+    out.buses.dedup();
+    out.taps.sort_unstable();
+    out.taps.dedup();
+    out
+}
+
 /// A [`BusSource`] filled from `/c_stream`'s periodic `/c_set` snapshots — the
 /// message-based counterpart of the shared-memory segment, for the browser.
 /// Unsubscribed or never-streamed buses read `0.0`, exactly like unmapped or
@@ -485,6 +533,51 @@ mod tests {
     fn tree(json: &str) -> Widget {
         let node = GuiNode::parse(json.as_bytes()).unwrap();
         Widget::from_node(1, &node, &[]).unwrap()
+    }
+
+    /// The union over several drawing canvases: buses and taps merge and
+    /// deduplicate, the tap window is the largest any of them needs, and one
+    /// animated tree is enough to run the frame clock for the page.
+    #[test]
+    fn demand_unions_what_the_drawing_canvases_ask_for() {
+        let one = tree(
+            r#"{"type":"window","children":[
+                {"id":1,"type":"meter","bus":9},
+                {"id":2,"type":"scope","bus":3}]}"#,
+        );
+        let two = tree(
+            r#"{"type":"window","children":[
+                {"id":3,"type":"meter","bus":3},
+                {"id":4,"type":"meter","bus":1}]}"#,
+        );
+        let d = demand([&one, &two], 48_000.0);
+        assert_eq!(d.buses, vec![1, 3, 9]);
+        assert!(d.animated, "meters and scopes animate");
+    }
+
+    /// The point of the visibility flag: what the caller leaves out of the set
+    /// leaves the subscription with it. A component scrolled out of the
+    /// viewport stops costing wire and server CPU, not just compositing.
+    #[test]
+    fn a_canvas_left_out_of_the_set_drops_its_buses() {
+        let shown = tree(r#"{"type":"window","children":[{"id":1,"type":"meter","bus":9}]}"#);
+        let hidden = tree(r#"{"type":"window","children":[{"id":2,"type":"meter","bus":4}]}"#);
+        assert_eq!(demand([&shown, &hidden], 48_000.0).buses, vec![4, 9]);
+        assert_eq!(demand([&shown], 48_000.0).buses, vec![9]);
+        // Nothing drawing at all: no subscription and no frame clock.
+        let none: [&Widget; 0] = [];
+        let quiet = demand(none, 48_000.0);
+        assert!(quiet.buses.is_empty() && !quiet.animated);
+    }
+
+    /// A still tree asks for nothing per frame — the tick stays off, however
+    /// many canvases the document holds.
+    #[test]
+    fn a_still_tree_does_not_animate() {
+        let still = tree(r#"{"type":"window","children":[{"id":1,"type":"label","text":"hi"}]}"#);
+        let d = demand([&still], 48_000.0);
+        assert!(d.buses.is_empty());
+        assert!(!d.animated);
     }
 
     #[test]
