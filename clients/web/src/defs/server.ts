@@ -19,9 +19,21 @@
 // (an integral number is an int32) and takes an explicit `[tag, value]` pair
 // wherever that guess is wrong.
 
-import { decodePacket, encodeMessage, oscArg } from "../base/osc.ts";
-import type { MsgArg, OscArg, OscMessage } from "../base/osc.ts";
+import {
+    decodePacket,
+    encodeBundle,
+    encodeImmediateBundle,
+    encodeMessage,
+    oscArg,
+} from "../base/osc.ts";
+import type { BundleMessage, MsgArg, OscArg, OscMessage } from "../base/osc.ts";
 import type { Connection } from "../base/connection.ts";
+import { currentRoutine } from "../base/context.ts";
+import { MonotonicTimebase, SampleTimebase } from "../base/timebase.ts";
+import type { Timebase } from "../base/timebase.ts";
+import { SampleClockModel } from "../core/clausters_core_web.js";
+import type { TempoClock } from "../base/clock.ts";
+import type { Event } from "../seq/event.ts";
 import { CommandError, ReplyTimeout } from "../errors.ts";
 import {
     AddAction,
@@ -140,12 +152,30 @@ export type { MsgArg };
 /// expressible here like any other name.
 export type Controls = Record<string, number> | readonly (readonly [string, number])[];
 
+/// One `/clock` observation: the server's counter and rate, and the local time
+/// the exchange is centred on.
+interface ClockReply {
+    local: number;
+    sample: number;
+    rate: number;
+    oscTime: number;
+}
+
 interface Pending {
     match: (msg: OscMessage) => boolean;
     resolve: (msg: OscMessage) => void;
     reject: (error: Error) => void;
     timer: ReturnType<typeof setTimeout>;
 }
+
+/// One message of a timed bundle: an address and its arguments, tagged by the
+/// same rule `sendMsg` uses (an explicit `[tag, value]` pair where the guess
+/// would be wrong).
+export type TimedMessage = [string, ...MsgArg[]];
+
+/// The bundle form the codec takes.
+const toBundle = (messages: readonly TimedMessage[]): BundleMessage[] =>
+    messages.map(([addr, ...args]) => ({ addr, args: args.map(oscArg) }));
 
 /// Control values flattened into the `name value name value …` tail every
 /// node command takes. Accepts an object or a list of pairs.
@@ -304,6 +334,107 @@ export class Server {
     /// buffers, opening the groups a piece is built on.
     sendMsg(addr: string, ...args: MsgArg[]): void {
         this.connection.send(encodeMessage(addr, args.map(oscArg)));
+    }
+
+    // ---- timed sends: the bundle path ----
+    //
+    // Where `sendMsg` means "now", these carry a *time*. The time is the
+    // running routine's exact logical beat — yield-accumulated, never
+    // wall-clock — so a sequence stays tight however late the wake-up was, and
+    // `latency` is the headroom that absorbs that lateness.
+
+    /// Emits a bundle of messages at the running routine's **exact logical
+    /// beat** (plus `delayBeats`, plus `latency`).
+    ///
+    /// Call it from a routine playing on a clock — the clock is found through
+    /// the routine being resumed — or pass `clock` explicitly. Under a
+    /// monotonic timebase the bundle carries a wall-clock timetag; under a
+    /// `SampleTimebase` it goes out as `/sched` at an absolute sample, which
+    /// is drift-free and exact to the sample.
+    sendBundle(
+        messages: readonly TimedMessage[],
+        { delayBeats = 0, clock }: { delayBeats?: number; clock?: TempoClock } = {},
+    ): void {
+        const routine = currentRoutine();
+        const on = clock ?? routine?.clock;
+        if (!on) {
+            throw new Error(
+                "sendBundle needs a clock: call it from a routine playing on a " +
+                    "TempoClock, or pass { clock }",
+            );
+        }
+        const base = routine?.clock === on ? routine.logicalBeat : on.beats();
+        const secs = on.beats2secs(base + delayBeats);
+        const timebase = on.timebase;
+        if (timebase instanceof SampleTimebase) {
+            // Anchored to the server's sample clock: schedule by absolute
+            // sample. The seconds->sample rounding is the core's, shared with
+            // the server.
+            const origin = on.pacingOrigin ?? 0;
+            this.sendSched(timebase.sampleAt(origin + secs + this.latency), messages);
+            return;
+        }
+        const wall = on.startTime ?? Date.now() / 1000;
+        this.sendTimetagged(wall + secs + this.latency, messages);
+    }
+
+    /// Emits a bundle at wall-clock now + `delaySecs` (+ `latency`), with **no
+    /// clock** — the clockless counterpart of `sendBundle`, which is how a
+    /// note played outside any routine still frees itself.
+    sendBundleAfter(delaySecs: number, messages: readonly TimedMessage[]): void {
+        this.sendTimetagged(Date.now() / 1000 + delaySecs + this.latency, messages);
+    }
+
+    private sendTimetagged(unixSecs: number, messages: readonly TimedMessage[]): void {
+        this.connection.send(encodeBundle(unixSecs, toBundle(messages)));
+    }
+
+    /// `/sched <absolute sample> <packet>`: the sample-exact path. The inner
+    /// bundle is immediate — the outer command's own target carries the time.
+    private sendSched(sample: number, messages: readonly TimedMessage[]): void {
+        this.sendMsg("/sched", ["h", sample], [
+            "b",
+            encodeImmediateBundle(toBundle(messages)),
+        ]);
+    }
+
+    /// Plays a note `Event` as OSC: `/s_new`, then its release (`gate 0` when
+    /// the event releases by gate, else `/n_free`) after the sustain. The OSC
+    /// side of the event's double dispatch. Returns the synth's node id, or
+    /// `null` for a rest.
+    ///
+    /// Two timing regimes, chosen by context. **Inside a routine** both go out
+    /// as timed bundles at the routine's exact logical beat, so a sequence
+    /// stays sample-tight. **Outside any clock** the `/s_new` fires
+    /// immediately and the release is a bundle at wall-clock now plus the
+    /// sustain in seconds — so a single `new Event().play(server)` sounds now
+    /// and frees itself with no clock at all.
+    playEvent(event: Event): number | null {
+        if (event.get("type") === "rest") return null;
+        const node = this.nodes.alloc();
+        const sNew: TimedMessage = [
+            "/s_new",
+            String(event.get("instrument")),
+            ["i", node],
+            ["i", Math.trunc(Number(event.get("addAction")))],
+            ["i", Math.trunc(Number(event.get("target")))],
+            ...event.controlArgs(),
+        ];
+        const release: TimedMessage = event.releasesByGate()
+            ? ["/n_set", ["i", node], "gate", ["f", 0]]
+            : ["/n_free", ["i", node]];
+        const sustain = event.sustain();
+        const clock = currentRoutine()?.clock;
+        if (!clock) {
+            // No clock in context: an immediate note, self-releasing on wall
+            // time (tempo 1.0 — beats are seconds).
+            this.sendMsg(...sNew);
+            this.sendBundleAfter(sustain, [release]);
+            return node;
+        }
+        this.sendBundle([sNew]);
+        this.sendBundle([release], { delayBeats: sustain });
+        return node;
     }
 
     /// Sends `addr` and resolves with the first reply whose address is in
@@ -858,6 +989,96 @@ export class Server {
         });
     }
 
+    // ---- the sample clock ----
+
+    /// A timebase on **this server's** sample counter, for a clock that should
+    /// schedule on the server's own axis instead of a wall-clock timetag.
+    ///
+    /// The Server resolves it, because the Server is what knows the carrier:
+    ///
+    /// - **in-page** — the engine runs in this page's `AudioContext`, so one
+    ///   anchor fixes the integer offset between the two counters and the
+    ///   sample is then readable synchronously, exactly, with no drift.
+    /// - **over a socket** — `/clock` round trips feed the core's sample-clock
+    ///   model, which regresses local time against the server's counter; the
+    ///   returned timebase reads that model, and `track` keeps it fed.
+    ///
+    /// A server that does not answer leaves you on wall-clock time: the
+    /// returned timebase is a `MonotonicTimebase` and a warning is logged, so
+    /// a page whose master is unreachable keeps working.
+    ///
+    /// Hand the result to a clock (`new TempoClock(2, { timebase })`); the
+    /// clock never talks to a server itself.
+    async sampleTimebase({
+        timeout = 2.0,
+        anchors = 4,
+        trackEvery = 2.0,
+    }: { timeout?: number; anchors?: number; trackEvery?: number } = {}): Promise<Timebase> {
+        if (this.connection.sampleClock) {
+            const clock = await this.connection.sampleClock();
+            return new SampleTimebase(clock.sample, clock.sampleRate);
+        }
+        let info: ClockReply;
+        try {
+            info = await this.clockAnchor(timeout);
+        } catch (error) {
+            if (!(error instanceof ReplyTimeout)) throw error;
+            console.warn(
+                "clausters: no /clock reply; the clock stays on wall-clock time",
+            );
+            return new MonotonicTimebase();
+        }
+        const model = new SampleClockModel(info.rate, 64);
+        model.addAnchor(info.local, info.sample, info.rate);
+        // Firm the model up before anything schedules against it: a single
+        // anchor gives an offset, several give a rate.
+        for (let i = 1; i < anchors; i++) {
+            const next = await this.clockAnchor(timeout);
+            model.addAnchor(next.local, next.sample, next.rate);
+        }
+        if (trackEvery > 0) {
+            this.clockTracker = setInterval(() => {
+                this.clockAnchor(timeout)
+                    .then((a) => model.addAnchor(a.local, a.sample, a.rate))
+                    .catch(() => {
+                        /* a missed anchor is not fatal: the model holds. */
+                    });
+            }, trackEvery * 1000);
+        }
+        this.clockModel = model;
+        return new SampleTimebase(
+            () => model.sampleAt(performance.now() / 1000),
+            info.rate,
+        );
+    }
+
+    private clockTracker: ReturnType<typeof setInterval> | null = null;
+    private clockModel: SampleClockModel | null = null;
+
+    /// One `/clock` round trip, timestamped at the midpoint of the exchange —
+    /// the best estimate of when the server read its own counter.
+    private async clockAnchor(timeout: number): Promise<ClockReply> {
+        const sent = performance.now() / 1000;
+        const msg = await this.request("/clock", [], {
+            expect: ["/clock.reply"],
+            timeout,
+        });
+        const received = performance.now() / 1000;
+        return {
+            local: (sent + received) / 2,
+            sample: Number(msg.args[0]),
+            rate: Number(msg.args[1]),
+            oscTime: Number(msg.args[2]),
+        };
+    }
+
+    /// The drift the sample-clock model has measured, in parts per million, or
+    /// `null` when this server is not being tracked (the in-page carrier needs
+    /// no model — it shares the page's audio clock).
+    get clockDriftPpm(): number | null {
+        return this.clockModel?.driftPpm ?? null;
+    }
+
     /// Stops the server (`/quit`). Over the in-page carrier this stops the
     /// page's engine, which nothing restarts.
     quit(): void {
@@ -867,6 +1088,8 @@ export class Server {
     /// Detaches this server from its connection (the connection itself, and
     /// any shared in-page engine, keep running). Pending requests reject.
     close(): void {
+        if (this.clockTracker !== null) clearInterval(this.clockTracker);
+        this.clockTracker = null;
         this.connection.removeReply(this.listener);
         for (const p of this.pending) {
             clearTimeout(p.timer);

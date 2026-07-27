@@ -24,7 +24,7 @@ import { initSync, WebServer } from "./clausters_web.js";
 //                        browser's /b_allocRead: fetch + decodeAudioData on
 //                        the main thread, interleaved floats in here)
 //   worklet -> main: {type:"osc", data}   one reply packet (bytes)
-//                    {type:"clock", clock, epoch}
+//                    {type:"clock", clock, frame, epoch}
 //                    {type:"b_load", index, ok, message?}  the install's ack
 //                    {type:"quit"}        a /quit arrived; processor stops
 //                    {type:"error", message}  fatal; processor stops
@@ -71,9 +71,14 @@ class ClaustersProcessor extends AudioWorkletProcessor {
         if (msg.type === "osc") {
             this.pending.push(new Uint8Array(msg.data));
         } else if (msg.type === "clock") {
+            // `frame` is the context's own frame counter read in the same
+            // instant as the engine's: their difference is a fixed integer, so
+            // a client can map `AudioContext.currentTime` to the engine's
+            // sample axis afterwards with no round trip and no drift.
             this.port.postMessage({
                 type: "clock",
                 clock: this.server.clock(),
+                frame: currentFrame,
                 epoch: this.epoch,
             });
         } else if (msg.type === "b_load") {

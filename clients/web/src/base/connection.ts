@@ -14,6 +14,15 @@
 
 import { server } from "../engine/server.ts";
 
+/// A synchronous view of a server's sample counter — what a sample-locked
+/// clock paces against and a `/sched` target is computed from.
+export interface SampleClock {
+    /// The server's current sample, read with no round trip.
+    sample(): number;
+    /// The rate that counter advances at.
+    sampleRate: number;
+}
+
 /// A duplex OSC byte pipe to an audio server.
 export interface Connection {
     /// Sends one complete OSC packet.
@@ -23,6 +32,12 @@ export interface Connection {
     removeReply(listener: (packet: Uint8Array) => void): void;
     /// Releases the carrier (never stops the shared in-page engine).
     close(): void;
+    /// The server's sample clock, where the carrier *shares* one with it —
+    /// the in-page engine runs in this page's `AudioContext`, so its counter
+    /// is readable synchronously and exactly. A socket has no such thing and
+    /// leaves this out; `Server.sampleTimebase()` then anchors over `/clock`
+    /// instead.
+    sampleClock?(): Promise<SampleClock>;
 }
 
 export class WsConnection implements Connection {
@@ -94,6 +109,21 @@ export async function pageConnection(): Promise<Connection> {
         close: () => {
             for (const listener of mine) engine.removeReply(listener);
             mine.clear();
+        },
+        // One round trip pairs the engine's counter with the context's frame
+        // counter; their difference is a fixed integer (the engine advances
+        // one quantum per render quantum of this very context), so from here
+        // the counter is `currentTime` read synchronously — exact, and drift
+        // is not a thing between a clock and itself.
+        sampleClock: async () => {
+            const anchor = await engine.clockAnchor();
+            const { sampleRate } = engine.context;
+            const offset = anchor.frame - anchor.sample;
+            return {
+                sampleRate,
+                sample: () =>
+                    Math.round(engine.context.currentTime * sampleRate) - offset,
+            };
         },
     };
 }

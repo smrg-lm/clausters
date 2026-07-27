@@ -13,6 +13,8 @@
 
 import { loadCore } from "./core.ts";
 import {
+    osc_encode_bundle,
+    osc_encode_immediate_bundle,
     osc_encode_message,
     osc_decode_packet,
 } from "../core/clausters_core_web.js";
@@ -47,6 +49,33 @@ export function encodeMessage(addr: string, args: OscArg[] = []): Uint8Array {
 /// Requires a prior `loadOsc()`.
 export function decodePacket(bytes: Uint8Array): OscMessage[] {
     return osc_decode_packet(bytes) as unknown as OscMessage[];
+}
+
+/// One message inside a bundle: its address and its typed arguments.
+export interface BundleMessage {
+    addr: string;
+    args: OscArg[];
+}
+
+const asEntries = (messages: readonly BundleMessage[]): unknown[] =>
+    messages.map((m) => [m.addr, m.args]);
+
+/// Encodes a bundle stamped at `unixSecs` — the wall clock the server reads as
+/// an NTP timetag, which is how a message gets a *time*. A message on its own
+/// has none: it means "now".
+export function encodeBundle(
+    unixSecs: number,
+    messages: readonly BundleMessage[],
+): Uint8Array {
+    return osc_encode_bundle(unixSecs, asEntries(messages));
+}
+
+/// Encodes a bundle with the **immediate** timetag: what rides inside
+/// `/sched`, whose own absolute sample carries the time.
+export function encodeImmediateBundle(
+    messages: readonly BundleMessage[],
+): Uint8Array {
+    return osc_encode_immediate_bundle(asEntries(messages));
 }
 
 /// A plain value a message argument may take, or an explicit `[tag, value]`

@@ -11,7 +11,7 @@
 // from a user gesture (the `<clausters-*>` elements' power affordance does).
 
 import { bootClausters } from "./loader.ts";
-import type { BootOptions } from "./loader.ts";
+import type { BootOptions, ClockAnchor } from "./loader.ts";
 
 export type ReplyListener = (packet: Uint8Array) => void;
 
@@ -26,6 +26,9 @@ export interface ClaustersServer {
     addReply(listener: ReplyListener): void;
     removeReply(listener: ReplyListener): void;
     clock(): Promise<number>;
+    /// The engine's clock paired with the context's frame counter, both read
+    /// in the same instant — what a sample-locked client anchors to.
+    clockAnchor(): Promise<ClockAnchor>;
     /// Installs host-decoded samples as buffer `index` (the browser's
     /// /b_allocRead); `samples` is interleaved and transferred.
     bLoad(
@@ -62,6 +65,7 @@ async function boot(options: BootOptions): Promise<ClaustersServer> {
         addReply: (listener) => listeners.add(listener),
         removeReply: (listener) => listeners.delete(listener),
         clock: () => raw.clock(),
+        clockAnchor: () => raw.clockAnchor(),
         bLoad: (index, channels, sampleRate, samples) =>
             raw.bLoad(index, channels, sampleRate, samples),
         resume: () => raw.context.resume(),

@@ -25,6 +25,11 @@ export interface ClaustersEngine {
     send(bytes: Uint8Array): void;
     /// The engine's sample clock (a round trip through the audio thread).
     clock(): Promise<number>;
+    /// The engine's clock paired with the context's own frame counter, both
+    /// read in the same instant on the audio thread. Their difference is a
+    /// fixed integer, so a client can map `AudioContext.currentTime` onto the
+    /// engine's sample axis afterwards with no further round trip.
+    clockAnchor(): Promise<ClockAnchor>;
     /// Installs host-decoded samples as buffer `index` (the browser's
     /// /b_allocRead). `samples` is interleaved and transferred.
     bLoad(
@@ -33,6 +38,16 @@ export interface ClaustersEngine {
         sampleRate: number,
         samples: Float32Array,
     ): Promise<number>;
+}
+
+/// One reading of the engine's clock against the context's frame counter.
+export interface ClockAnchor {
+    /// The engine's sample counter.
+    sample: number;
+    /// The context's frame counter at the same instant.
+    frame: number;
+    /// Unix seconds at engine sample 0.
+    epoch: number;
 }
 
 export interface BootOptions {
@@ -44,7 +59,7 @@ export interface BootOptions {
 
 type WorkletReply =
     | { type: "osc"; data: ArrayBuffer }
-    | { type: "clock"; clock: number; epoch: number }
+    | { type: "clock"; clock: number; frame: number; epoch: number }
     | { type: "b_load"; index: number; ok: boolean; message?: string }
     | { type: "quit" }
     | { type: "error"; message: string };
@@ -89,6 +104,9 @@ export async function bootClausters({
             ]);
         },
         clock() {
+            return this.clockAnchor().then((anchor) => anchor.sample);
+        },
+        clockAnchor() {
             return new Promise((resolve) => {
                 clockWaiters.push(resolve);
                 node.port.postMessage({ type: "clock" });
@@ -111,7 +129,7 @@ export async function bootClausters({
         },
     };
 
-    const clockWaiters: ((clock: number) => void)[] = [];
+    const clockWaiters: ((anchor: ClockAnchor) => void)[] = [];
     const loadWaiters: {
         resolve: (index: number) => void;
         reject: (error: Error) => void;
@@ -119,7 +137,13 @@ export async function bootClausters({
     node.port.onmessage = (e) => {
         const msg = e.data as WorkletReply;
         if (msg.type === "osc") handle.onReply?.(new Uint8Array(msg.data));
-        else if (msg.type === "clock") clockWaiters.shift()?.(msg.clock);
+        else if (msg.type === "clock") {
+            clockWaiters.shift()?.({
+                sample: msg.clock,
+                frame: msg.frame,
+                epoch: msg.epoch,
+            });
+        }
         else if (msg.type === "b_load") {
             const waiter = loadWaiters.shift();
             if (msg.ok) waiter?.resolve(msg.index);
