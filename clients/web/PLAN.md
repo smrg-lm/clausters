@@ -42,8 +42,8 @@ clients/web/
       guidef.ts  handle.ts  ids.ts
     (seq/                 #   sequencing (mirrors clausters/seq) — W3
       event.ts  eventstream.ts  pattern.ts  timeline.ts)
-    (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W4)
-    (session.ts           #   the Session facade — W4/W5)
+    (responders.ts        #   OscFunc/MidiFunc dispatch (mirrors responders.py) — W8/W9)
+    (session.ts           #   the Session facade — W5)
     engine/               #   browser-only: the in-page engine runtime
       worklet.ts  loader.ts  worklet-shim.ts  server.ts (the server() singleton)
     bundle.ts elements.ts #   browser-only: bundle boot + the custom elements
@@ -95,7 +95,7 @@ Python change into two.)*
 
 Drive the audio server.
 
-- `defs/server.ts`: the `Server` object - send `/d_recv`/`/d_graph`/`/d_faust` specs, `/s_new`, `/n_set`/`/n_free`, groups, the `/sync` barrier, buses and buffers; receive replies through `responders` (W4 hardens this).
+- `defs/server.ts`: the `Server` object - send `/d_recv`/`/d_graph`/`/d_faust` specs, `/s_new`, `/n_set`/`/n_free`, groups, the `/sync` barrier, buses and buffers; receive replies through `responders` (W8 hardens this).
 - The def builders (`signals`/`ugens`/`synthdef`/`faustdef`/`graphdef`): start by sending the **same spec JSON the Python builders emit** (reused verbatim), then grow the typed TS builder API for parity, with the Python builders (both def families) as the reference.
 
 **Acceptance:** from a browser page, define a def and play it (`/s_new` then `/n_set`), with `/sync` ordering and an audible/queryable result, **over either carrier** through the same `Server` (the W0 seam: nothing above it names a transport) — a synth def against the in-page engine with no server process, and both families against a `--ws` server (the Faust half is WS-only by nature: the wasm engine is the `synth,embed` build, no LLVM JIT).
@@ -130,7 +130,7 @@ Not in scope here, by the plan's own division: the exhaustive UGen/`signals`
 catalogue (the set the acceptance and the examples exercise is in — sources,
 filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand
 pair, the full operator tables), the box API, and the bulk/streaming data
-paths, which are W4's.
+paths.
 
 **Verified:** `./test.sh` — 29 `node --test` cases (16 def-parity vectors, the
 9 end-to-end against a real `clausters --ws` server covering both def families,
@@ -192,9 +192,9 @@ one.
 
 Not in scope here, by the plan's own division: the browser data paths the
 heavy views feed on (`/c_stream` decoding client-side, `fetch`/`/b_getn` bulk,
-the wasm peak pyramid) and the `correlation`/`lissajous` analysis exports,
-which are W4's — the host already reads those paths itself, so a GuiDef that
-names a bus, a tap or a URL works today.
+the wasm peak pyramid) and the `correlation`/`lissajous` analysis exports —
+the host already reads those paths itself, so a GuiDef that names a bus, a tap
+or a URL works today.
 
 ### ✅ W3 - Sequencing: clock, routines, events, patterns
 
@@ -260,18 +260,17 @@ half and the seekable half side by side.
 
 Not in scope, by the plan's own division: `automation` (a break-point control
 curve; it pulls in buffers, `Env` and a control def), `MidiEvent` and MIDI
-destinations (W4), the shared `/transport` grid, and an NRT/score drive - the
+destinations, the shared `/transport` grid, and an NRT/score drive - the
 client has no score interface, and `Timeline.fromPattern` bounces by driving
 the ordinary clock through its manual seams.
 
-### W4 - Responders + MIDI (OscFunc/MidiFunc), buses and bulk over the wire
+### W4 - Reserved
 
-Receiving, dispatch, and the browser data paths.
-
-- `responders.ts`: OscFunc/MidiFunc-style dispatch over the connection's reply stream — either carrier exposes it through the W0 seam (`addReply`) — and Web MIDI for `MidiFunc`, mirroring `responders.py`/`base/_midiinterface`.
-- The browser data paths the GUI client needs: control buses read over the connection (the message-based counterpart of shared memory, G14) feeding meters/scopes; bulk buffers via `fetch`/`/b_getn` (G15), with the peak pyramid built in wasm from fetched samples. **The server side already exists on both carriers**: `/c_stream periodMs bus...` (landed with G14) subscribes the client to periodic `/c_set` snapshots (one subscription per client, replaced per call, `periodMs <= 0` cancels, 10 ms floor, ≤128 buses; see `docs/schemas.md`), and B3 left `/c_stream`/`/tap_stream`/`/b_getn`/`/clock` streaming over the in-page leg too — plus the fetch + `decodeAudioData` → `bLoad` sample path (`bundle.ts`). The TS client only consumes them — subscribe, decode the `/c_set` stream in a responder, feed the GUI host — exactly as the browser GUI host does in `clients/gui/src/host/web.rs`.
-
-**Acceptance:** a TS app registers OscFunc/MidiFunc handlers that fire on server/MIDI events, and drives a browser GUI whose meters/waveforms read buses/buffers over the connection, either carrier.
+An intentionally empty slot, held open here because whatever lands in it
+belongs in the client **before** the documentation and the first publication.
+Its content is not specified yet. What this milestone used to name — the
+responders, MIDI, and the browser data paths — moved to the milestones after
+W5, none of which is a prerequisite of W5.
 
 ### W5 - Docs, examples, tests, packaging
 
@@ -281,6 +280,102 @@ Make it a real, shippable client.
 - The Python examples ported to TS (either carrier), the `node --test` suite, and the npm package build/publish; a parity pass against the Python client on the shared vectors (OSC, clock arithmetic, GuiDef JSON).
 
 **Acceptance:** `npm install clausters` (or the workspace build) yields a usable client; the ported examples run in a browser over either carrier (the in-page engine, or a `--ws` server) with the browser GUI host; the docs build and deploy like the Python client's.
+
+### Milestones deferred out of W1-W3
+
+Everything below was left out of W1, W2 or W3 as those closed, and is now its
+own milestone. They have **no fixed sequential order** — each is independent
+and gets tackled when it is wanted, the same convention the client track uses
+past C10 — and each *widens a layer that already exists* rather than opening a
+new one, which is why none of them blocks W5: the client is shippable without
+them, just narrower than the Python one.
+
+### W6 - The full UGen / `signals` catalogue
+
+W1 shipped the def model with representatives of each family; this fills the
+families out, so a graph written against the Python client ports by
+transcription rather than by lookup.
+
+- `defs/ugens.ts`: the rest of the server's UGen catalogue — sources, filters, delays, panning, envelopes, triggers, bus and buffer I/O, the demand pair, the spectral chain (`fft`/`ifft`/`pv_*`, the client side of S8), the output-less roots (`sendReply`/`sendTrig`/`poll`), and the complete unary/binary operator tables.
+- `defs/signals.ts`: the same for the Faust signal API, up to the whole surface `clausters.defs.signals` exposes.
+- The W1 composition rule is unchanged: TypeScript has no operator overloading, so operators stay methods and parity is asserted on the **emitted spec**, never on the source.
+
+**Acceptance:** every builder the Python client exposes has a TS counterpart emitting the same spec JSON, checked by extending the frozen vectors (`tests/gen-def-vectors.py`); a graph transcribed from a Python example plays over either carrier (the Faust half WS-only, as ever).
+
+### W7 - The box API: Faust's box algebra
+
+The TS counterpart of `clausters.defs.boxes` (C22) — the third def-authoring
+surface, beside the UGen graph and the signal API.
+
+- `defs/boxes.ts`: the point-free algebra (`seq`/`par`/`split`/`merge`/`rec`, `wire`/`cut`, controls, tables) emitting the same box-tree JSON the Python builders emit, plus `faust(src, ...)` to fold a Faust source expression — its libraries (`fi.`/`os.`/`re.`/`pm.`) included — into a composable `Box`.
+- WS-only by nature, like every Faust path in the browser: the wasm engine is the `synth,embed` build with no LLVM JIT, so a box def compiles only against a native server.
+
+**Acceptance:** the Python box-API examples rebuilt in TS emit byte-identical spec JSON (new frozen vectors), and one of them compiles and plays against a `clausters --ws` server.
+
+### W8 - Responders: `OscFunc` over the reply stream
+
+The client's input path and its role as a general OSC hub (sclang's `OSCFunc`),
+mirroring the half of `responders.py` that does not involve MIDI.
+
+- `responders.ts`: pattern-matched dispatch over the connection's reply stream — either carrier exposes it through the W0 seam (`addReply`), so nothing here names a transport — with handlers scheduled on a clock rather than run from the socket callback, the browser counterpart of the Python client's "never block the clock thread".
+- The reply handling W1 grew ad hoc inside `Server` (the dispatch table and the `/sync` barrier) folds onto this one door, so everything arriving comes in the same way.
+
+**Acceptance:** a TS app registers and unregisters `OscFunc` handlers that fire on server notifications (`/n_go`/`/n_end`, `/done`, `/tr`) over either carrier, and the W1/W3 end-to-end suites stay green through the new door.
+
+### W9 - MIDI: `MidiFunc` in, `MidiEvent` and MIDI destinations out
+
+Both directions of MIDI in one milestone, since in the browser they are one
+API: Web MIDI is the only MIDI I/O a page has.
+
+- `MidiFunc` over `navigator.requestMIDIAccess`, mirroring `responders.py`/`base/_midiinterface` — note/cc/program dispatch, port selection, handlers scheduled on a clock; convenience responders turn notes into `/s_new`, as C13 does.
+- `MidiEvent` and MIDI as a **destination** of the sequencing layer: an event stream plays to a MIDI output exactly the way it plays to a `Server`, over the `play(destination)` seam W3 established, mapping `Event` → channel-voice messages the way `clausters-midi` already defines them for C11.
+- Timing stays **best-effort by design**, as C18 settled for the Python client — but the browser gives it back cheaply: `MIDIOutput.send(data, timestamp)` takes a `performance.now()` deadline, so the driver hands over the deadline it has already computed instead of sleeping to it.
+
+**Acceptance:** a pattern plays to a browser MIDI output on the same beat grid it plays to the audio server, and a `MidiFunc` on an input port drives defs on the server, over either carrier.
+
+### W10 - The browser data paths: buses, bulk, and the analysis exports
+
+The paths the heavy views feed on, read by the **script** this time. The host
+already reads them itself (that is why a GuiDef naming a bus, a tap or a URL
+works today); this is the client getting the same numbers.
+
+- Control buses over the connection: `/c_stream periodMs bus...` subscribed from the client and its periodic `/c_set` snapshots decoded in a responder (W8's door) — the message-based counterpart of the native host's shared memory (G14). The server side exists on both carriers already: one subscription per client, replaced per call, `periodMs <= 0` cancels, 10 ms floor, ≤128 buses (`docs/schemas.md`), and B3 left `/c_stream`/`/tap_stream`/`/b_getn`/`/clock` streaming over the in-page leg too.
+- Bulk buffers by `fetch`/`/b_getn` (G15), with the **peak pyramid built in wasm** from the fetched samples, so a waveform draws at screen resolution without a second implementation of the reduction; plus the fetch + `decodeAudioData` → `bLoad` sample path B3 left in `bundle.ts`, folded into the client's buffer API.
+- The core's `correlation`/`lissajous` analysis exports surfaced to TS.
+
+**Acceptance:** a TS app reads a control bus and a buffer over either carrier and draws them **itself** (a canvas the script feeds, not a host-fed widget), numerically matching what the GUI host draws from the same source.
+
+### W11 - Automation: a break-point curve as a control vector
+
+The TS side of C23 — deferred out of W3 because it is the one sequencing piece
+that is not pure timing: it pulls in buffers, `Env` and a control def.
+
+- `seq/automation.ts`: a break-point curve discretized into a control buffer on the server (`/b_gen "env"`, the server's own `envshape`) and read back onto a control bus by a lane synth (`OutCtl`), prepared without blocking the driver, then played and freed like any other element.
+- The `bpf` builder already in W2's GuiDef catalogue becomes its editor, so the curve is authored, heard and edited over the same loop the multitrack editor uses.
+
+**Acceptance:** a curve authored in TS drives a synth's control over either carrier with the same values the Python client produces for the same break points, and dragging it in the browser GUI's `bpf` widget moves the sounding value.
+
+### W12 - The shared `/transport` grid
+
+Phase alignment across clients — the TS counterpart of C15 and of C16's
+`follow_transport`.
+
+- `quant` honored when a routine starts (snap to a beat boundary), and joining the server's `/transport` grid so pages started at different moments share one bar line.
+- Following the `/transport_play|stop|locate` broadcasts, so a page's playhead rolls in lockstep with every other client: the server broadcasts control, never audio.
+- W3's rule is not bent: the clock still never talks to a server. The `Server` feeds the grid inward, the way `sampleTimebase()` already anchors the timebase.
+
+**Acceptance:** two pages — or a page and a Python client — join the same transport and land on the same bar; a `/transport_locate` moves the page's playhead with it.
+
+### W13 - An NRT / score drive
+
+The third `Server` interface, beside the two carriers: a destination that
+*writes* time instead of waiting for it.
+
+- A score destination for the sequencing layer — the same pattern or timeline that plays live emitted as a timestamped score — rendered either by a native server's NRT mode over WS, or in-page by the wasm engine running faster than real time into a buffer the page can play or download.
+- W3 already *bounces* without one (`Timeline.fromPattern` drives the ordinary clock through its manual seams); what is missing is the interface, not the arithmetic.
+- Score parity is the check C5 keeps on the Python side: one piece, one score, compared byte for byte.
+
+**Acceptance:** a piece written once emits a score byte-identical to the Python client's for the same input, and renders from the browser to a WAV that matches the native NRT render.
 
 ## Future directions
 
