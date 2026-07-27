@@ -2855,3 +2855,55 @@ to the handles as they arrive (`win.widget("cutoff").onEvent(fn)`), with `query`
 a promise — where the Python client drains the host from the script's own loop
 because it must not block the clock thread. Same discipline, but in a language
 where it is the only shape available.
+
+## The web clock: the routine driver stays on the page, only the wake-up moves off it, and the server anchors the timebase
+
+The Python client runs a `TempoClock`'s real-time drive on a **background
+thread**, which shares objects with the rest of the program: the routine, the
+`Server`, the session. A browser Worker shares nothing but structured-cloned
+messages, and a routine is a closure over the script's own objects — it cannot
+cross. So there is no direct port of that thread, and the coroutine driver stays
+on the page's thread, which is what `clients/PLAN.md` already asks for ("the
+coroutine driver stays in the language").
+
+What *does* port is the property the background thread buys: a wake-up the rest
+of the program cannot starve. On the page, `setTimeout` is clamped once nested
+and throttled to about a second in a background tab — longer than any usable
+scheduling headroom, so a sequence would stutter the moment the user changed
+tabs. A worker whose only job is `setTimeout` and `postMessage` is not throttled
+that way. Hence the split: **queue and routines on the page, the wake-up behind
+a `Ticker`** (a shared tick worker in the browser, `setTimeout` where there is
+no `Worker`). The exactness never depended on the wake-up anyway — it rides on
+the bundle's timetag, and the wake only has to arrive within `Server.latency`.
+
+The same seam pays a second time: with `Ticker` and `Timebase` both injectable,
+`node --test` drives the *real* driver by hand, so "a late wake-up does not
+shift the music" is a deterministic assertion rather than a timing-dependent
+one. That is also why there is no NRT/score drive in this client: a second drive
+would be a second thing to keep correct, and the seams already give what it was
+for (`Timeline.fromPattern` bounces a pattern by advancing the ordinary clock as
+fast as the loop can go).
+
+**Anchoring is the Server's job, not the clock's.** The Python client has
+`clock.lock_to(server)`, which puts the clock in conversation with a server and
+contradicts that client's own rule — the one its C5 corrected — that the clock
+must not talk to the server. The web client inverts the relation:
+`server.sampleTimebase()` returns a timebase, and the clock merely reads it. The
+Server is the right owner because it is the object that knows the carrier, and
+the two carriers need different work:
+
+- **in-page** — the engine runs in this page's `AudioContext`, so one worklet
+  round trip pairs the engine's counter with the context's `currentFrame` at the
+  same instant. Their difference is a fixed integer (the engine advances one
+  quantum per render quantum of that context), so from then on the counter is
+  `currentTime` read synchronously: exact, and drift is not a thing between a
+  clock and itself.
+- **over a socket** — `/clock` round trips feed the core's `SampleClockModel`,
+  which regresses local time against the server's counter. The warmup must
+  **spread its anchors over time**: five back-to-back round trips all land
+  inside a couple of milliseconds, and a regression over that span is noise, not
+  a rate. (Measured: it read a slope 2× off, which showed up as a sample clock
+  running at half speed.)
+
+A server that does not answer leaves the clock on wall-clock time rather than
+failing, so a page whose master is unreachable keeps working.

@@ -196,7 +196,7 @@ the wasm peak pyramid) and the `correlation`/`lissajous` analysis exports,
 which are W4's — the host already reads those paths itself, so a GuiDef that
 names a bus, a tap or a URL works today.
 
-### W3 - Sequencing: clock, routines, events, patterns
+### ✅ W3 - Sequencing: clock, routines, events, patterns
 
 The timing layer, transport-agnostic, sc3-modelled.
 
@@ -204,6 +204,62 @@ The timing layer, transport-agnostic, sc3-modelled.
 - Keep the C5 lesson: the clock advances by yielding; the monotonic clock only computes sleeps, so relative timing is exact; the clock never talks to the server.
 
 **Acceptance:** a routine schedules events that play with exact relational timing under both timebases, over either carrier (the sample-clock timebase pairs naturally with the in-page engine's `clock()`), matching the Python client's behaviour on the shared vectors.
+
+**What shipped.** Mostly a *Rust* milestone with a thin TypeScript driver on top.
+`crates/clausters-core-web` grew the ten doors the layer needs - the beat-ordered
+`Scheduler`, the beat/second/sample arithmetic, the bar grid, bundle assembly
+with a timetag, `unix_to_ntp`/`unix_to_sample`, the seeded `Rng`, the builtins
+and `degree_to_midinote`, and `SampleClockModel` - each a mechanical shell over
+`clausters-core`, the same doors `clausters-ffi` already opens for Python. What
+is new in TS is only the coroutine driver, the pacing seam, the queue's
+id→routine bookkeeping and the composition of events/patterns/timelines: no
+time formula and no random value is computed in TypeScript.
+
+Then `base/{stream,clock,timebase,rand,builtins,context}.ts`, `seq/{event,
+pattern,eventstream,timeline}.ts`, and the `Server`'s timed-send path
+(`sendBundle`, `sendBundleAfter`, `playEvent`, `sampleTimebase`). Four things
+are worth carrying forward:
+
+- **The driver stays on the page; only the wake-up moves to a worker.** A
+  routine is a closure over the script's own objects and cannot cross to a
+  Worker, so the Python client's background *thread* has no direct port. What
+  does port is the property that thread buys: a wake-up the page cannot starve.
+  Hence the `Ticker` seam - a shared tick worker in the browser, `setTimeout`
+  elsewhere - and, with `Timebase`, the pair of seams that let `node --test`
+  drive the real driver by hand, deterministically.
+- **The Server anchors the timebase; the clock never talks to a server.**
+  `server.sampleTimebase()` resolves by carrier: in-page it pairs the engine's
+  counter with the AudioContext's frame counter in one worklet round trip
+  (exact - they are the same clock), over a socket it feeds `/clock` anchors
+  into the core's model. This is the inversion of the Python client's
+  `clock.lock_to(server)`, which contradicts that client's own C5 rule.
+- **Two Python-client bugs surfaced while porting** and were fixed here rather
+  than reproduced: `set_tempo` reads the pinned instant *after* moving the base
+  beat, so a tempo change jumps the timeline (beat 8 goes from 4.0 s to 0.0 s);
+  and `stop`/`start` restarts the beat axis at zero while the queue keeps
+  absolute beats, stranding whatever was queued. The TS clock pins the instant
+  and holds the beat across a stop. Both are worth porting back.
+- **`/g_queryTree` is not an observation of a schedule.** The reply comes from
+  the network-side mirror, which applies each message as it is translated, and
+  a note's `/s_new` and its release are sent in the same instant (only their
+  timetags differ) - so the mirror shows a scheduled note born and freed at
+  once while the engine still has it sounding. The end-to-end suites read
+  `/n_go`/`/n_end` instead.
+
+**Verified:** `./test.sh` - 102 `node --test` cases (the clock/RNG/builtin
+parity vectors frozen from the Python client, the driver on manual seams, the
+emitted bundle bytes under both timebases, the patterns and the timeline, and
+two WS cases against a real `clausters --ws`) and four headless-Chrome
+acceptances, the new one being `tests/seq.html`: a pattern on the in-page
+engine's own sample clock, its notes' starts and ends read back off the
+server's notifications. Example: `examples/sequencing.html` - the generative
+half and the seekable half side by side.
+
+Not in scope, by the plan's own division: `automation` (a break-point control
+curve; it pulls in buffers, `Env` and a control def), `MidiEvent` and MIDI
+destinations (W4), the shared `/transport` grid, and an NRT/score drive - the
+client has no score interface, and `Timeline.fromPattern` bounces by driving
+the ordinary clock through its manual seams.
 
 ### W4 - Responders + MIDI (OscFunc/MidiFunc), buses and bulk over the wire
 

@@ -1,6 +1,6 @@
 # clausters (web)
 
-Clausters in the browser: the audio server compiled to WebAssembly running inside an **AudioWorklet**, the GUI host on a canvas, **web components** that boot native-format standalone bundles — no server process anywhere — and the **TypeScript client** that drives all of it: the OSC codec through the shared native core, the carrier-agnostic connection seam, and the def model and `Server` above them. See `PLAN.md` here for the client roadmap.
+Clausters in the browser: the audio server compiled to WebAssembly running inside an **AudioWorklet**, the GUI host on a canvas, **web components** that boot native-format standalone bundles — no server process anywhere — and the **TypeScript client** that drives all of it: the OSC codec through the shared native core, the carrier-agnostic connection seam, the def model and `Server` above them, and the sequencing layer that plays on it. See `PLAN.md` here for the client roadmap.
 
 This is the repo's **one web directory**: every browser artifact (the package modules, the engine's worklet/loader runtime, the examples, the test pages, the tools) lives here, and the wasm crates stay Rust-only — `build.sh` stages their wasm-bindgen bundles into `dist/`. The package **mirrors the Python client's structure**: sources under `src/` at the same relative paths as `clausters/`'s modules (`base/`, `gui/`, …), with `examples/` and `tests/` beside them; `dist/` reproduces the `src/` tree 1:1 (plain ES modules plus `.d.ts` and source maps — no bundler), and the staged wasm bundles inside it (`engine/`, `gui-host/`, `core/`) are the browser's `_bin`/`_libs`. Any static file server serves the result. Toolchain details and the from-scratch recipe are in `BUILD.md`.
 
@@ -61,6 +61,28 @@ await server.addSynthDef(new SynthDef("beep", out(0.0, sine(freq).mul(0.2))));
 const note = server.synth("beep", { freq: 330.0 });
 server.set(note, { freq: 220.0 });
 note.free();
+```
+
+The sequencing layer (`src/base/clock.ts` + `src/seq/`, mirroring the Python client's `clausters/base` and `clausters/seq`):
+
+- `TempoClock` — musical time and the driver that resumes routines on it. The queue and every conversion (beats to seconds, seconds to samples, the bar grid, the timetag) are `clausters-core`'s, reached through the wasm door, so a beat resolves to the same instant here, in the Python client and in the server. The **logical beat advances only by the routines' yields**, so a late wake-up never shifts the music.
+- A **routine** is a generator: `function* () { … yield 0.25 … }` yields a delay in beats. Never `await` inside one — the page has a single thread, and the exactness lives in the timetag, not in the wake-up.
+- The **wake-up** sits behind a `Ticker`: a shared worker in the browser (the page's own timers are throttled to about a second in a background tab), `setTimeout` elsewhere. Tests fill the same seam by hand, along with the timebase, and so drive the real driver deterministically.
+- `server.sampleTimebase()` — the **Server** anchors the sample clock, because the Server is what knows the carrier: in-page it pairs the engine's counter with the AudioContext's in one round trip (the same clock, so the offset is exact and there is no drift); over a socket it feeds `/clock` anchors into the core's sample-clock model. Hand the result to a clock; the clock never talks to a server.
+- Emission is the **bundle path**: `server.sendBundle(...)` stamps at the running routine's exact logical beat — a wall-clock timetag under the monotonic timebase, `/sched` at an absolute sample under a sample one — and `Event.play(server)` is a note's `/s_new` plus the release that follows it.
+- `seq` — `Event`/`rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`) and `Pbind`, plus the seekable counterpart: `Timeline` (a static, editable, beat-sorted list, `Timeline.fromPattern` to bounce one) and `Playhead` (play/stop/locate/loop). Random values come from the context stream a routine derives at creation, so `seed(n)` replays a whole piece.
+
+```js
+import { Server, TempoClock, pageConnection, seq } from "./dist/index.js";
+
+const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
+clock.start();
+
+new seq.Pbind({
+  instrument: "beep",
+  degree: new seq.Pseq([0, 2, 4, 7], seq.INF),
+  dur: new seq.Pseq([0.5, 0.25, 0.25]),
+}).play(server, { clock });
 ```
 
 ```js
