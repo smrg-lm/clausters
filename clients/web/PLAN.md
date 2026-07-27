@@ -264,13 +264,32 @@ destinations, the shared `/transport` grid, and an NRT/score drive - the
 client has no score interface, and `Timeline.fromPattern` bounces by driving
 the ordinary clock through its manual seams.
 
-### W4 - Reserved
+### W4 - Components: the host's canvases in the document
 
-An intentionally empty slot, held open here because whatever lands in it
-belongs in the client **before** the documentation and the first publication.
-Its content is not specified yet. What this milestone used to name — the
-responders, MIDI, and the browser data paths — moved to the milestones after
-W5, none of which is a prerequisite of W5.
+*(Design: `specs/2026-07-27-web-w4-components-design.md`; implementation plan
+beside it. What this slot used to name — the responders, MIDI, and the browser
+data paths — moved to the milestones after W5.)*
+
+On the desktop, `clausters-gui` opens one window per `window`-rooted GuiDef and
+the system's window manager places them. In a tab the drawing surface is a
+`<canvas>` in an HTML document, and **the document does the placing** — CSS,
+the order of the markup, the flow of the page. That substitution is the
+milestone: the desktop working arrangement transposed onto a document, so
+canvases interleave with prose and images and one page can be an interactive
+text with the instrument sounding beside the paragraph that explains it, or an
+editing program whose panels are laid out like everything else on the page.
+
+Running one is the browser equivalent of `clausters-gui --standalone`: the host
+is the server's client and **no TypeScript client is loaded at run time**. The
+builders run earlier, in the authoring script, and what the page fetches is
+data.
+
+- **The host, from one canvas to N** (`clients/gui/src/host/web.rs`): `window`/`render`/`current_def` are singular today ("the browser shows one at a time"); they become a map keyed by def id — a wgpu surface, a size, a gesture state and a visibility flag each. The native front already keeps one surface per `window`-rooted GuiDef, so the model is ported, not invented. Two reversals ride along: the **element supplies the canvas** (winit's `with_canvas`, instead of `guiHost()` hunting for the one winit appended to `<body>`), and its size comes from the element (`ResizeObserver` + `devicePixelRatio`). A canvas out of the viewport is skipped on the tick and drops its buses from the `/c_stream`/`/tap_stream` sets — a document can hold fifty canvases with three in view, and the browser's own compositing skip does not stop *our* host from computing or the server from streaming.
+- **The bundle grows a contract** (`clausters_core::bundle`, opened to the browser by `clausters-core-web` and to Python by `clausters-ffi`): `bundle.json` gains a symbol table, declared `params` and presets, and becomes a file **both** legs read (absent, the native host keeps listing the directory as today). The GuiDef record becomes a *template* with two kinds of hole — `@symbol`, an id the page allocates, and `$param`, a value the tag supplies — while widget ids stay local `1..N` and are offset by an allocated base. **Holes live only in the GuiDef record**, so def payloads are byte-identical between instances and are sent once; the authoring rule that follows is that a bus or a node reaches a def **as a control**, never as a baked constant (which is exactly why today's `piano_voice`, with its `out_ctl(0.0, env)`, cannot be mounted twice). Resolution is two pure functions — `requirements(manifest)` then `resolve(template, allocation, params)` — with the caller allocating in between, so nothing is added to the `/gui_*` protocol and no state to the host.
+- **The component** (`src/elements.ts`, `src/runtime.ts`): a custom element owning its canvas, with the declared parameters as attributes and `preset` beside them, mounted in two phases — the GuiDef opens and draws on connect, and the engine half (defs, buffers, boot) goes out on the first page gesture, since the AudioContext is page-wide and N power buttons would be wrong. Failures stay per component. A new **slim run-time entry**, `dist/runtime.js`, carries the engine, the host, the codec and the mount and *not* the builders — today's `examples/piano/index.html` imports the whole package facade to use none of it.
+- **The authoring API** (`clausters.bundle`, Python first, Node after): a writer over the existing builders that holds the symbol table, so the author names things instead of numbering them, declares `params` and presets, validates through the core before emitting — an unmountable bundle is unwritable — and generates the five-line ES module that registers the tag.
+
+**Acceptance:** a page interleaving prose with three components — two instances of one bundle and one of another, all authored from Python and mounted with no client library loaded — draws three canvases; the two instances of the same bundle hold different buses and node ids while their def was sent once; a `freq` attribute makes one audibly different from its sibling (asserted on a control bus); a component scrolled out of view stops streaming; one component's failure leaves the rest of the page up; and the same bundles still run on the desktop, `--standalone` and loopback.
 
 ### W5 - Docs, examples, tests, packaging
 
