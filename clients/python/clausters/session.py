@@ -388,13 +388,15 @@ class Session(Environment):
     def start(self):
         """Start the clock so scheduled events fire in real time; returns
         ``self``. Pair with `stop`, or use `run` to start, wait and stop in one
-        call."""
+        call. A restart **resumes** at the beat `stop` left the clock on."""
         self.clock.start()
         return self
 
     def stop(self):
-        """Stop the clock; returns ``self``. Events scheduled past the stop
-        point do not fire."""
+        """Stop the clock; returns ``self``. Nothing further fires while it is
+        stopped, but the schedule is kept and the beat is held: this is a
+        transport, and a later `start` picks the music up where it was
+        (``session.clock.clear()`` is what drops what is queued)."""
         self.clock.stop()
         return self
 
