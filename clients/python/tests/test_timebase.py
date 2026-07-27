@@ -117,6 +117,43 @@ def test_sample_clock_emits_sched_with_exact_sample():
     assert isinstance(args[1], (bytes, bytearray)) and args[1][:8] == b"#bundle\x00"
 
 
+def test_a_resumed_clock_keeps_its_beat_axis():
+    """`stop`/`start` holds the beat, and both origins move with it — so an
+    event emitted after a restart is stamped for *now*, not for where the
+    clock would have been had it never stopped. Driven by a hand-moved sample
+    counter, so there is no wall clock in the assertion."""
+    _ffi_or_skip()
+    state = {"s": 0}
+    tb = SampleClockTimebase(lambda: state["s"], 48_000.0)
+    clock = TempoClock(tempo=1.0, timebase=tb)   # 1 beat = 1 second
+    clock.start()
+    try:
+        state["s"] = 96_000                      # 2 s of counter -> beat 2
+        assert clock.beats() == pytest.approx(2.0)
+        clock.stop()
+        assert clock.beats() == pytest.approx(2.0), "the beat is held"
+
+        state["s"] = 480_000                     # 10 s in: the clock is stopped
+        assert clock.beats() == pytest.approx(2.0), "a stopped clock does not run"
+
+        clock.start()
+        assert clock.beats() == pytest.approx(2.0), "it resumes where it stopped"
+        # The pacing origin moved back by the held beat, so beat 2 is now.
+        assert clock.pacing_origin == pytest.approx(10.0 - 2.0)
+
+        server = Server(interface=_FakeIface(), latency=0.0)
+        _running_routine(clock, 2.0)             # the routine is at beat 2
+        try:
+            server.send_bundle(("/s_new", "default", 1000, 1, 0))
+        finally:
+            main.current_tt = None
+        addr, args = server.interface.sent[-1]
+        assert addr == "/sched"
+        assert args[0] == 480_000, "scheduled for now, not for the pre-stop axis"
+    finally:
+        clock.stop()
+
+
 def test_latency_shifts_the_scheduled_sample():
     _ffi_or_skip()
     tb = SampleClockTimebase(lambda: 0, 48_000.0)

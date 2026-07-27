@@ -110,33 +110,44 @@ class TempoClock:
         return _native.secs_to_beats(self.tempo, self._base_beats, self._base_secs, secs)
 
     def beats(self) -> float:
-        """The clock's current beat: the yield-driven logical beat while
-        rendering or being woken, else the monotonic-paced elapsed beat in RT
-        (used for scheduling relative to "now")."""
-        if self._mode == "nrt" or self._mono_start is None:
+        """The clock's current beat: the monotonic-paced elapsed beat while
+        running in RT (what scheduling relative to "now" reads), else the
+        yield-driven logical beat — while rendering, before the first `start`,
+        and after a `stop`, which holds the beat it reached."""
+        if self._mode == "nrt" or not self._running or self._mono_start is None:
             return self._logical_beat
         return self.secs2beats(self._now() - self._mono_start)
 
     @property
     def start_time(self):
-        """Wall-clock origin (Unix seconds) while running in real time, else
-        ``None``. The Server uses it to turn a logical beat into a wall-clock
-        OSC timetag — the **wall** clock, kept separate from the monotonic
-        pacing source so timetags stay valid Unix time."""
+        """Wall-clock origin (Unix seconds) of the current beat axis — the
+        instant beat 0 falls on — or ``None`` before the first `start`. The
+        Server uses it to turn a logical beat into a wall-clock OSC timetag:
+        the **wall** clock, kept separate from the monotonic pacing source so
+        timetags stay valid Unix time. A `stop` leaves it in place (it is the
+        axis a later `start` resumes); a `start` re-places it so the held beat
+        keeps mapping to now."""
         return self._unix_start
 
     @property
     def pacing_origin(self):
-        """The timebase value (seconds) captured at `start`. For a
-        sample-clock timebase this is ``sample_origin / sample_rate``, which the
-        Server turns into the absolute sample for ``/sched``."""
+        """The timebase value (seconds) of the current beat axis' zero, placed
+        by `start`. For a sample-clock timebase this is
+        ``sample_origin / sample_rate``, which the Server turns into the
+        absolute sample for ``/sched``."""
         return self._mono_start
 
     def set_tempo(self, tempo: float):
-        """Change tempo, pinning the current instant (no discontinuity)."""
+        """Change tempo, pinning the current instant (no discontinuity): the
+        beat the clock is on keeps mapping to the second it already mapped to,
+        and the new tempo governs from there."""
         at = self.beats()
-        self._base_beats = at
+        # Read the seconds of that beat under the *old* mapping, before the
+        # base moves: computing it afterwards would return the old base_secs
+        # (the beat difference having just been zeroed) and slide the whole
+        # timeline by however far the clock had run.
         self._base_secs = self.beats2secs(at)
+        self._base_beats = at
         self.tempo = tempo
 
     def bar(self, quant: float, beats: float | None = None) -> float:
@@ -396,21 +407,39 @@ class TempoClock:
         return self
 
     def start(self):
-        """Begin the real-time driver on a background thread."""
+        """Begin the real-time driver on a background thread.
+
+        A restart **resumes** at the beat `stop` left the clock on, so what is
+        still queued keeps its place in the music: `stop`/`start` is a
+        transport, not a reset (`clear` is the reset). Both origins are placed
+        accordingly — a beat's position in seconds is measured from the clock's
+        own zero, so resuming at beat *b* puts the origins ``beats2secs(b)``
+        seconds in the past."""
         if self._running:
             return self
         self._mode = "rt"
         self._running = True
-        self._mono_start = self._now()   # pacing origin (monotonic)
-        self._unix_start = time.time()   # wall-clock origin (for timetags)
+        held = self.beats2secs(self._logical_beat)
+        self._mono_start = self._now() - held    # pacing origin (monotonic)
+        self._unix_start = time.time() - held    # wall-clock origin (timetags)
         self._thread = threading.Thread(target=self._run_rt, name="TempoClock", daemon=True)
         self._thread.start()
         return self
 
     def stop(self):
         """Stop the real-time driver and join its background thread; returns
-        ``self``. Schedules built up by `run`/`start` end here."""
+        ``self``.
+
+        The beat the clock reached is **held**: `beats` keeps reporting it
+        while stopped, and a later `start` resumes from it. What is queued
+        stays queued (`clear` drops it)."""
         with self._cond:
+            # Freeze the beat first: from here `beats()` reports it, because
+            # the clock is no longer running. The two origins are deliberately
+            # *not* cleared — `_wake` runs outside this lock, and a Server
+            # emitting there reads them; they stay the correct origins of the
+            # beat axis a later `start` resumes.
+            self._logical_beat = self.beats()
             self._running = False
             self._cond.notify_all()
         if self._thread is not None:

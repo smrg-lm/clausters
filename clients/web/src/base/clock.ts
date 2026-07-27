@@ -214,25 +214,28 @@ export class TempoClock {
         return secsToBeats(this.tempo, this.baseBeats, this.baseSecs, secs);
     }
 
-    /// The clock's current beat: the yield-driven logical beat while an item is
-    /// being resumed, else the paced elapsed beat (what scheduling relative to
-    /// "now" reads).
+    /// The clock's current beat: the paced elapsed beat while running (what
+    /// scheduling relative to "now" reads), else the yield-driven logical beat
+    /// — before the first `start`, and after a `stop`, which holds the beat it
+    /// reached.
     beats(): number {
-        if (this.monoStart === null) return this.logicalBeat;
+        if (!this.running || this.monoStart === null) return this.logicalBeat;
         return this.secs2beats(this.timebase.now() - this.monoStart);
     }
 
-    /// The wall-clock origin (Unix seconds) while running, else `null`. The
-    /// Server turns a logical beat into a timetag from it — the **wall** clock,
+    /// The wall-clock origin (Unix seconds) of the current beat axis — the
+    /// instant beat 0 falls on — or `null` before the first `start`. The
+    /// Server turns a logical beat into a timetag from it: the **wall** clock,
     /// kept apart from the monotonic pacing source so timetags stay valid Unix
-    /// time.
+    /// time. A `stop` leaves it in place (it is the axis a later `start`
+    /// resumes); a `start` re-places it so the held beat maps to now.
     get startTime(): number | null {
         return this.unixStart;
     }
 
-    /// The timebase value captured at `start`. For a sample timebase this is
-    /// `sampleOrigin / sampleRate`, which the Server turns into the absolute
-    /// sample for `/sched`.
+    /// The timebase value of the current beat axis' zero, placed by `start`.
+    /// For a sample timebase this is `sampleOrigin / sampleRate`, which the
+    /// Server turns into the absolute sample for `/sched`.
     get pacingOrigin(): number | null {
         return this.monoStart;
     }
@@ -363,10 +366,14 @@ export class TempoClock {
         if (this.running) return this;
         this.running = true;
         this.mode = "rt";
-        // The pacing origin, placed so `beats()` continues from where the
-        // clock was stopped.
-        this.monoStart = this.timebase.now() - this.beats2secs(this.logicalBeat);
-        this.unixStart = Date.now() / 1000; // the wall-clock origin, for timetags
+        // Both origins are placed so `beats()` continues from where the clock
+        // was stopped. A beat's position in seconds is measured from the beat
+        // axis' zero, so resuming at beat *b* puts the origins `beats2secs(b)`
+        // seconds in the past — the wall one too, or the timetag of the first
+        // event after a restart would be that far off.
+        const held = this.beats2secs(this.logicalBeat);
+        this.monoStart = this.timebase.now() - held; // the pacing origin
+        this.unixStart = Date.now() / 1000 - held; // the wall origin, for timetags
         this.pump();
         return this;
     }
@@ -375,11 +382,13 @@ export class TempoClock {
     /// queued: `stop`/`start` is a transport, not a reset — `clear` is the
     /// reset.
     stop(): this {
+        // Freeze the beat first: from here `beats()` reports it, because the
+        // clock is no longer running. The two origins are deliberately kept —
+        // they stay the correct origins of the beat axis a later `start`
+        // resumes, and a Server emitting one last event reads them.
         this.logicalBeat = this.beats();
         this.running = false;
         this.mode = "stopped";
-        this.monoStart = null;
-        this.unixStart = null;
         this.ticker.cancel();
         return this;
     }

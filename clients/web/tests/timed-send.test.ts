@@ -265,6 +265,36 @@ test("a rest sounds nothing but keeps its place in time", async () => {
     server.close();
 });
 
+test("a clock resumed after a stop stamps for now, not for the old axis", async () => {
+    const connection = recorder();
+    const server = await openServer(connection);
+    const timebase = manualSampleTimebase();
+    const { clock, run } = harness(timebase, 1.0);
+
+    clock.start();
+    timebase.advance(2); // two seconds of counter at 1 beat/s -> beat 2
+    assert.equal(clock.beats(), 2);
+    clock.stop();
+    timebase.advance(8); // the clock is stopped; the counter runs on
+    assert.equal(clock.beats(), 2, "a stopped clock holds its beat");
+    clock.start();
+    assert.equal(clock.beats(), 2, "and resumes there");
+
+    // An event at the resumed beat is scheduled for *now* — the origins moved
+    // with the beat, so the emission is not eight seconds stale.
+    clock.play(
+        new Routine(function* () {
+            server.sendBundle([["/n_free", ["i", 1000]]]);
+            yield 1;
+        }),
+    );
+    run(0.1); // the first wake lands on the spot, at the resumed beat
+    const [sched] = decodePacket(connection.packets[0]!);
+    assert.equal(sched!.addr, "/sched");
+    assert.equal(sched!.args[0], secsToSamples(10 + server.latency, 48000));
+    server.close();
+});
+
 test("sending a bundle with no clock anywhere is an error, not a silent now", async () => {
     const connection = recorder();
     const server = await openServer(connection);

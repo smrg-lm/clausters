@@ -233,12 +233,15 @@ are worth carrying forward:
   (exact - they are the same clock), over a socket it feeds `/clock` anchors
   into the core's model. This is the inversion of the Python client's
   `clock.lock_to(server)`, which contradicts that client's own C5 rule.
-- **Two Python-client bugs surfaced while porting** and were fixed here rather
-  than reproduced: `set_tempo` reads the pinned instant *after* moving the base
-  beat, so a tempo change jumps the timeline (beat 8 goes from 4.0 s to 0.0 s);
-  and `stop`/`start` restarts the beat axis at zero while the queue keeps
-  absolute beats, stranding whatever was queued. The TS clock pins the instant
-  and holds the beat across a stop. Both are worth porting back.
+- **Two Python-client bugs surfaced while porting**, and were fixed in *both*
+  clients: `set_tempo` read the pinned instant *after* moving the base beat, so
+  a tempo change jumped the timeline (beat 8 went from 4.0 s to 0.0 s); and
+  `stop`/`start` restarted the beat axis at zero while the queue kept absolute
+  beats, stranding whatever was queued. Both clocks now pin the instant and
+  hold the beat across a stop — and a stop keeps *both* origins, the pacing one
+  and the wall-clock one, moving them together on resume, which is what keeps
+  the first timetag after a restart honest (that third one was only in the TS
+  clock, and the port is what exposed it).
 - **`/g_queryTree` is not an observation of a schedule.** The reply comes from
   the network-side mirror, which applies each message as it is translated, and
   a note's `/s_new` and its release are sent in the same instant (only their

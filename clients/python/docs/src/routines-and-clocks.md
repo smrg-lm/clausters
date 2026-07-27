@@ -42,7 +42,8 @@ server.close()
 A few things worth knowing:
 
 - An `Event` carries musical defaults (see the API reference): `midinote` (or `degree`, or an explicit `freq`) sets pitch, `amp` the level, `instrument` the def (the server has a built-in `default` sine). Timing comes from `dur`: the note's `delta` (beats to the next event) is `dur`, and its `sustain` (how long it sounds) is `dur * legato` (`legato` defaults to `0.8`). As in SuperCollider, an explicit `delta` or `sustain` key overrides that calculation — `Event(..., dur=0.5, sustain=0.4)` sounds for exactly 0.4 beats. A dict works just as well — `Event({"midinote": 60, "amp": 0.2, "dur": 0.5}).play(server)`.
-- `clock.run(seconds)` starts the real-time driver, waits, and stops it. Use `clock.start()` / `clock.stop()` to keep one clock running across several routines.
+- `clock.run(seconds)` starts the real-time driver, waits, and stops it. Use `clock.start()` / `clock.stop()` to keep one clock running across several routines. The pair is a **transport, not a reset**: `stop` holds the beat the clock reached and `start` resumes from it, so whatever is still queued keeps its place in the music (`clock.clear()` is what drops it).
+- `clock.set_tempo(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
 - A routine optionally receives the clock as its argument (`def melody(clock):`) if it needs it, but for playing events you rarely do — the Server finds the logical beat itself.
 - This clock paces against wall-clock OSC time, the default. To make the same routine drift-free and sample-accurate, or to phase-align several clients, lock it to the server — see [Timing models](timing-models.md).
 

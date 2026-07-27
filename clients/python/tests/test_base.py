@@ -7,6 +7,8 @@ score (rendered to audio) just by giving the **Server** an ``OscNrtInterface``
 the native-backed clock math.
 """
 
+import time
+
 import pytest
 
 from clausters.base import builtins as B
@@ -168,6 +170,83 @@ def test_clock_bar_beat_reads_the_grid():
     assert clk.beat_in_bar(4.0, beats=9.5) == pytest.approx(1.5)
     # Without a position it reads the clock's current beat (0 while stopped).
     assert clk.bar(4.0) == pytest.approx(0.0)
+
+
+def test_set_tempo_pins_the_instant():
+    """A tempo change must not move the music that already happened: the beat
+    the clock is on keeps mapping to the second it already mapped to."""
+    _ffi_or_skip()
+    clk = TempoClock(tempo=2.0)          # 2 beats/s -> beat 8 is second 4
+    seen = {}
+
+    def change():
+        seen["at"] = clk.beats()
+        seen["before"] = clk.beats2secs(seen["at"])
+        clk.set_tempo(1.0)
+        seen["after"] = clk.beats2secs(seen["at"])
+
+    clk.sched_abs(8.0, change)
+    clk.render()
+
+    assert seen["at"] == pytest.approx(8.0)
+    assert seen["before"] == pytest.approx(4.0)
+    assert seen["after"] == pytest.approx(seen["before"])   # no discontinuity
+    # ...and from there the new tempo governs: one beat is now one second.
+    assert clk.beats2secs(9.0) == pytest.approx(5.0)
+
+
+def test_stop_holds_the_beat_and_start_resumes_it():
+    """`stop`/`start` is a transport, not a reset: the beat is held while
+    stopped and picked up on restart, so what is still queued keeps its place
+    in the music (`clear` is what drops it)."""
+    _ffi_or_skip()
+    clk = TempoClock(tempo=4.0)          # 4 beats/s: a beat every 0.25 s
+    clk.start()
+    try:
+        time.sleep(0.3)
+        clk.stop()
+        held = clk.beats()
+        assert held == pytest.approx(1.2, abs=0.3)
+
+        time.sleep(0.2)
+        assert clk.beats() == pytest.approx(held), "a stopped clock does not run"
+
+        clk.start()
+        assert clk.beats() == pytest.approx(held, abs=0.1)
+        # The wall-clock origin moved with it, so the held beat still maps to
+        # now — which is what keeps a bundle's timetag honest across a stop.
+        assert clk.beats2secs(clk.beats()) == pytest.approx(
+            time.time() - clk.start_time, abs=0.1
+        )
+    finally:
+        clk.stop()
+
+
+def test_a_queued_routine_survives_a_stop_and_restart():
+    _ffi_or_skip()
+    clk = TempoClock(tempo=8.0)          # a beat every 0.125 s
+    woke = []
+
+    def tick():
+        woke.append(clk.beats())
+        return 1.0                       # once per beat
+
+    clk.sched(0.0, tick)
+    clk.start()
+    try:
+        time.sleep(0.3)
+        clk.stop()
+        during = len(woke)
+        assert during >= 2
+
+        time.sleep(0.3)
+        assert len(woke) == during, "a stopped clock resumes nothing"
+
+        clk.start()
+        time.sleep(0.3)
+        assert len(woke) > during, "the queued routine picked up where it was"
+    finally:
+        clk.stop()
 
 
 def test_tcp_interface_constructs_and_frames():
