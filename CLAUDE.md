@@ -55,7 +55,7 @@ written in Rust and controlled over OSC (UDP, default port 57110).
 
 ## Cross-client build strategy
 
-Multiple clients exist or are planned (Python, a future JS/TS protocol client,
+Multiple clients exist or are planned (Python, the web client in TypeScript,
 the GUI host native + browser/wasm). The rule: **finish and polish one reference
 client at a time, then port** — never grow two full clients in parallel. What
 makes a port cheap is keeping all language-agnostic logic in the shared core

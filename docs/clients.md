@@ -2,7 +2,8 @@
 
 Clausters is a server; clients drive it. This chapter is the **cross-language
 map**: the one native contract every client sits on, the Python client built on
-it, and the path to a JavaScript client and to distributable packages. The
+it, the TypeScript client that sits on the same contract, and the path to
+distributable packages. The
 client work lives in the `clients/` tree; this is the architectural overview.
 
 ## One contract: the C ABI
@@ -320,7 +321,7 @@ without a generated module. `clients/web/examples/piano/` and
 ## The TypeScript client (started)
 
 The browser-first TypeScript client grows inside the same `clients/web/`
-package (roadmap: `clients/web/PLAN.md`). Three layers are in place.
+package (roadmap: `clients/web/PLAN.md`). Four layers are in place.
 
 **The seam.** The **OSC codec through the shared core**
 (`crates/clausters-core-web`, a thin wasm-bindgen shell over `clausters-core`,
@@ -348,6 +349,17 @@ A Faust def reaches a **native** server only: the in-page engine is the
 `synth,embed` build with no LLVM JIT. That is a property of the build, not of
 the client — nothing above the seam names a carrier.
 
+**The sequencing.** The clock, routines, events, patterns and timelines,
+mirroring `clausters.seq`. As in Python, no time formula and no random value is
+computed in the client's own language: the beat-ordered queue, the
+beat↔second↔sample arithmetic, the bundle timetags, the seeded RNG and the
+builtins are the core's, through the same wasm shell; what is TypeScript is the
+coroutine driver (`function*`/async in place of Python's `yield`) and the
+composition of events and patterns. Two timebases are available — the
+monotonic clock and the Web Audio sample-clock — and the driver stays on the
+page: only the wake-up moves to a shared tick worker, which is how the browser
+buys the property Python gets from a background thread.
+
 **The GUI.** `GuiHost` and the GuiDef builders, mirroring the Python client's
 `clausters/gui/`: the widget catalogue as functions (`gui.window`, `gui.knob`,
 `gui.waveform`, `gui.track`, …) emitting the same JSON document, the same
@@ -369,19 +381,11 @@ deliberately minimal — `tsc` type-checks and emits `src/` to `dist/` (plain
 ES modules plus declarations and source maps), tests run from source under
 `node --test` with no runner package; see `clients/web/BUILD.md`.
 
-## A JavaScript client (planned)
-
-A desktop/Node JS client mirrors the Python one with **no new native work**:
-it sits on the same C ABI and the same OSC.
-
-- **Native bridge**: Node/Deno **N-API** (or `Deno.dlopen`) over
-  `libclausters_ffi`/`libclausters` for desktop; **WebAssembly** for the
-  browser (the core compiled to wasm; the server itself targets wasm only for
-  the offline `render` path).
-- **Mirror the layers**: `base`/`seq`/`defs` map across directly. The one
-  language-specific piece is the coroutine driver — JS **generators / async**
-  instead of Python's `yield`; the clock and the rest are the same value/time
-  logic.
+This is the JavaScript client: there is no second one planned. Running the
+package **outside the browser** — a node WebSocket carrier for headless
+scripting, the way `clients/python` runs with no display — is a future
+direction in that roadmap, and it needs no new native work either: the same
+package over the same OSC, against a native server.
 
 ## Distribution
 
@@ -399,15 +403,18 @@ it sits on the same C ABI and the same OSC.
   beside the cdylibs, so a `FaustDef` compiles on a machine with neither
   installed. Cross-platform CI wheels (cibuildwheel / manylinux) are still
   future work.
-- **JavaScript (planned)**: an npm package with prebuilt N-API addons per
-  platform and a wasm build for the browser.
+- **TypeScript / web (packaging pending)**: an npm package of the client's
+  `dist/` — plain ES modules plus the wasm the core and the GUI host compile
+  to. No per-platform native addon: the browser build is wasm, and a native
+  server is reached over WebSocket.
 - **Reproducible Faust build (done for native/CI/release)**: the `faust` feature
   needs libfaust built with the LLVM backend. It is now vendored under
   `third_party/` — `faust.pin` (the exact commit + LLVM version) and
   `build-faust.sh` (one recipe: fetch, build, install, stage libLLVM) — so local
   dev, CI and the release wheel produce a *deterministic* bundle instead of
-  whatever the build host had. The npm N-API and wasm targets still need their
-  own vendored builds.
+  whatever the build host had. The npm package needs no such build: its wasm
+  engine carries no LLVM JIT, so Faust is not part of it — a `FaustDef` is
+  compiled by a native server reached over WebSocket.
 
 ## Status at a glance
 
@@ -425,4 +432,5 @@ it sits on the same C ABI and the same OSC.
 | Engraved music notation (the `score` widget, its display list and the click/transpose edit round trip) | done |
 | Notation layer in the shared core (`clausters-notation` + `clausters_core::notation`, over the C ABI; every client a shell) | done |
 | Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
-| JavaScript client + npm (incl. its Faust build) | planned |
+| TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the document's components) | done |
+| npm packaging of the web client | planned |

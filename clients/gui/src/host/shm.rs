@@ -11,7 +11,7 @@
 //! on the server crate (which would pull the engine, cpal and the rest into this
 //! independent GUI crate), the reader mirrors the segment's `#[repr(C)]` layout
 //! — the same role any independent peer plays against this boundary (the Python
-//! `ctypes` client, a future JS one). The contract is the canonical definition in
+//! `ctypes` client, the web one over wasm). The contract is the canonical definition in
 //! the server's `server::ipc`; the safety net against drift is the version field:
 //! [`SharedSegment::open`] rejects a segment whose magic or ABI version does not
 //! match, so a layout change fails loudly here instead of reading stale memory.

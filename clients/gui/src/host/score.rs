@@ -11,8 +11,8 @@
 //! Python `clausters.gui` submodule, driving verovio) engraves the score and
 //! sends a **semantic display list**: a table of glyph outlines keyed by SMuFL
 //! codepoint, plus placed primitives in verovio page units. The host fits that
-//! page into the widget rect and tessellates. A future JS/wasm client reuses
-//! this same renderer by sending the same display list — no engraving logic is
+//! page into the widget rect and tessellates. The web client reuses this same
+//! renderer by sending the same display list — no engraving logic is
 //! duplicated per language.
 //!
 //! Curves (glyph outlines, slurs, ties) are filled with lyon's

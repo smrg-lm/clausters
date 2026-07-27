@@ -1,12 +1,12 @@
 # Plan — High-level clients for Clausters, with a shared native Rust core
 
-This plan covers the **Python** client (the first target) but is written to serve a future **JavaScript** client too: both share the same native Rust core and the same C-ABI contract. The language-specific part is only the coroutine driver and the thin binding wrappers.
+This plan covers the **Python** client, the reference client. It was written to serve any other language as well, and the JavaScript/TypeScript client — the **web** client, roadmap in `clients/web/PLAN.md` — is built on the shared design recorded here: the same native Rust core and the same C-ABI contract (as wasm in the browser). The language-specific part is only the coroutine driver and the thin binding wrappers.
 
 > **Note — sc3 as the reference model.** For any design or semantics question (module structure, clock/routine behavior, events, patterns, OSC/MIDI interfaces, names, conventions), fall back to [sc3](https://github.com/smrg-lm/sc3) as the model. This client is a clean, pruned rewrite, but sc3 is the source of truth on how these pieces should combine and behave; deviate from it only with an explicit reason (the Clausters-specific parts: FaustDefs, server resources, native Rust core).
 
 ## Build strategy — finish one client, then port (keep the seam modular)
 
-"Build all clients at once vs. finish one then port" is a false binary: what makes a port cheap is **where the logic lives**, not the order. The rule for this project, across all clients (Python now, JS/TS later, any future language/platform):
+"Build all clients at once vs. finish one then port" is a false binary: what makes a port cheap is **where the logic lives**, not the order. The rule for this project, across all clients (Python the reference, the web client in TypeScript, any future language/platform):
 
 - **One reference client at a time.** Finish and polish the Python client first — it is the most mature. Do not grow two full clients in parallel: that duplicates tests and bugs and lets them diverge.
 - **Push every language-agnostic piece down into the shared core as you write it** (not "later"). If you find yourself writing protocol/value/time logic inside Python, it belongs in `clausters-core`/`clausters-ffi`. This is what makes the later port mechanical rather than a rewrite. The GUI track proved it: carving the platform seam first (the `host` traits) made the browser port reuse the native code verbatim.
@@ -19,12 +19,12 @@ Net: each milestone is built and finished on the reference client, but always fa
 
 Clausters is the Rust audio server (scsynth-style) controlled over OSC. Today the only client in the repo is `clients/python/clausters.py`: the **low-level transport layer** (embed cdylib / shm / render), stdlib-only, with the boundary rule "only flat data crosses" (bytes in, `array('f')`/floats/ints out). There is no high-level layer: building defs, resources, events and sequencing is currently left to the user.
 
-The goal is a **high-level client** that selectively ports the core features of [sc3](https://github.com/smrg-lm/sc3) (a SuperCollider port to Python), but **centered on FaustDefs** instead of SynthDefs, and reusing the server's resources (buses, buffers, generator units). In parallel a **native Rust core** is extracted (TempoClock, numeric builtins, OSC assembly) shared by the server and by all future clients (Python now, JavaScript later), so that client-side operations are **numerically equivalent** to the server's by construction wherever possible.
+The goal is a **high-level client** that selectively ports the core features of [sc3](https://github.com/smrg-lm/sc3) (a SuperCollider port to Python), but **centered on FaustDefs** instead of SynthDefs, and reusing the server's resources (buses, buffers, generator units). In parallel a **native Rust core** is extracted (TempoClock, numeric builtins, OSC assembly) shared by the server and by every client (Python and the web client today, any language later), so that client-side operations are **numerically equivalent** to the server's by construction wherever possible.
 
 Agreed decisions:
 - **Repo**: clean rewrite in `clients/python/` (sc3 as reference, without dragging in SynthDef or the full class library).
 - **Rust**: turn `clausters` into a Cargo **workspace** and extract a core crate (`clausters-core`).
-- **Binding**: a single **C-ABI** over the core, with thin per-language wrappers (ctypes/cffi in Python; N-API or wasm in JS later).
+- **Binding**: a single **C-ABI** over the core, with thin per-language wrappers (ctypes/cffi in Python; wasm in the web client, which took that door over N-API).
 - **Seam**: the Rust core owns builtins, TempoClock (queue + arithmetic) **and** OSC bundle/timetag assembly + conversion against the sample-clock; boundary "only flat data, no callbacks". The **coroutine driver (`yield`) stays in each language** — control flow does not move into Rust.
 
 ## Guiding principle of the seam
@@ -45,7 +45,7 @@ crates/
   clausters-ffi/            # NEW: C-ABI cdylib over clausters-core (the "lib for all clients")
 clients/
   python/                   # high-level Python client
-    PLAN.md                 # this plan (generic, also for the future JS client)
+    PLAN.md                 # this plan (its design is shared by every client)
 ```
 
 `clausters-core` (pure library, a `no_std` candidate except where it needs `alloc`):
@@ -61,7 +61,7 @@ clients/
 - Ops the server computes **natively** (`add/sub/mul/div`, `Sine` phase, `WhiteNoise` RNG): refactor the server to use `clausters-core` → **bit-exact by construction** (single source of truth). Mind RT-safety: `#[inline]` functions, no alloc/lock/IO (CLAUDE.md, `tests/rt_safety.rs`).
 - Higher math that in the server exists **only via Faust/LLVM** (`sin`, `log`, etc.): `clausters-core` implements the **same formula/semantics** (libm), but bit-for-bit equality with Faust's LLVM codegen is **not guaranteed**. Contract: same formula + documented tolerance; parity tests with tolerance.
 
-### Client package (Python example; the JS client mirrors the same structure)
+### Client package (Python example; the web client mirrors the same structure)
 
 Clean rewrite, mirroring sc3's structure but pruned, and carrying both def
 families (SynthDef and FaustDef) as peers:
@@ -86,7 +86,7 @@ clients/python/
 - `_native.py`: ctypes over `clausters-ffi` (builtins, TempoClock, OSC assembly). Flat-data boundary, like `transport.py`.
 - `base/builtins.py` + `base/absobject.py`: `AbstractObject`/operands dispatch the ops over a scalar **or list** to `_native` (equivalence with the server). Where per-scalar FFI overhead does not pay off, a pure-language fallback identical in formula.
 - `base/clock.py`: `TempoClock` wraps the native queue+arithmetic; the scheduling loop (resuming `yield`) stays in the language.
-- `base/stream.py` / `seq/`: coroutines with `yield`, patterns and events — pure Python (in JS: generators/async).
+- `base/stream.py` / `seq/`: coroutines with `yield`, patterns and events — pure Python (in the web client: generators/async).
 - `defs/signals.py`: **the user interface for building FaustDefs**. It provides a library of **lowercase callables** (functions or callable objects) that map, in principle, the **Faust Signal API** (`sin`, `cos`, `add`, `mul`, `delay`, `select2`, `hslider`, `rdtable`, …). The **composition** of these callables is what builds the graph: a specification serialized to a **JSON signal tree** now (and a **box tree** later) to send with `/d_faust` (see `crates/clausters/src/faust/`). Firm design convention: **lowercase names even for objects that act as functions** — a quality that eases programming work in Python (fluent expression-style composition). The **same pattern is reused for UGens** (`ugens.py`, constructors of the SynthDef graph in JSON).
 - `defs/faustdef.py`: **the client's center**. It takes the graph built with `signals.py` (or direct Faust source) and produces the def for `/d_faust` in its three forms (source, JSON box tree, JSON signal tree); it manages controls (UI labels → control names; reserved `out`/`in`). On-disk persistence/cache is handled by the server (M16, bitcode cache). `synthdef.py` (later) does the analogous thing for the UGen graph.
 - `defs/{node,bus,buffer,server}.py`: client-side ID allocators (scsynth-style: nodes, audio buses 0..127 / control 0..1023, buffers 0..1023), handling of `/done`/`/fail`, `/notify` → `/n_go`/`/n_end`. NRT: score → transport's `render()`.

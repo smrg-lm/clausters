@@ -140,8 +140,9 @@ this interpreter. See the [Getting started](docs/src/getting-started.md) chapter
   interpreter exits. Without a `Session`, `Server.boot()` / `GuiHost.boot()` do
   the same at the object level. Both binaries are bundled in the wheel.
 
-Still to come: a JavaScript client on the same C ABI and OSC contract (see
-[`PLAN.md`](PLAN.md)).
+The TypeScript client sits on the same core and the same OSC contract, in the
+browser (see [`../web/PLAN.md`](../web/PLAN.md)); the design both share is in
+[`PLAN.md`](PLAN.md).
 
 The full documentation (this client's guide and the generated API reference) is
 the mdBook in [`docs/`](docs/). Runnable, installed-package examples are in

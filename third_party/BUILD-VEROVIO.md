@@ -210,7 +210,7 @@ not link verovio, and neither does the GUI host (see below).
 Nothing in the workspace links verovio **today** — the notation track keeps it
 strictly client-side, which is the whole reason the `score` widget consumes a
 display list rather than a score. The GUI host draws the display list and knows
-nothing about MEI; a future JS/wasm client reuses that same renderer against the
+nothing about MEI; the web client reuses that same renderer against the
 same seam. So:
 
 - `cargo build` / `cargo test` need **none** of this. There is no feature flag
