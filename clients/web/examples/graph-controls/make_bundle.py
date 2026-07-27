@@ -79,7 +79,7 @@ import os
 
 from clausters.bundle import Bundle
 from clausters.defs import GraphDef, SynthDef, control, in_, out, out_ctl, sine
-from clausters.gui import knob, label, meter, panel, scope, window
+from clausters.gui import knob, label, meter, panel, scope, toggle, window
 
 #: The bundle's name — the tag ``index.js`` registers, and the prefix its def
 #: names carry (``fm-trem.voice``, ``fm-trem.graph``).
@@ -154,21 +154,34 @@ def build() -> Bundle:
                     bind=["/n_set", node, port])
 
     b.gui(window(
-        label(2, "every knob sets a surface port of the running GraphDef"),
+        # The header row: the note, and this instance's own play/stop. A page
+        # holding several instruments has them all sounding at once otherwise,
+        # and each needs to be silenced on its own — which is what the toggle
+        # is for, bound to `/n_run` on *this* instance's graph node. Pausing a
+        # group skips its whole subtree on the audio thread, so a stopped
+        # instrument costs nothing rather than merely going quiet. `weight`
+        # splits the row 3:1.
         panel(
-            3,
-            port_knob(4, "freq", 60.0, 700.0, freq),
-            port_knob(5, "ratio", 0.5, 8.0, 2.0),
-            port_knob(6, "bright", 0.0, 1.0, 0.4),
-            port_knob(7, "rate", 0.2, 12.0, 4.0),
-            port_knob(8, "depth", 0.0, 1.0, 0.5),
-            port_knob(9, "amp", 0.0, 0.5, amp),
+            2,
+            label(3, "every knob sets a surface port of the running GraphDef",
+                  weight=3),
+            toggle(4, label="play", value=True, bind=["/n_run", node], weight=1),
+            layout="row", h=30,
+        ),
+        panel(
+            5,
+            port_knob(6, "freq", 60.0, 700.0, freq),
+            port_knob(7, "ratio", 0.5, 8.0, 2.0),
+            port_knob(8, "bright", 0.0, 1.0, 0.4),
+            port_knob(9, "rate", 0.2, 12.0, 4.0),
+            port_knob(10, "depth", 0.0, 1.0, 0.5),
+            port_knob(11, "amp", 0.0, 0.5, amp),
             layout="row",
         ),
         panel(
-            10,
-            meter(11, lfo, min=0.0, max=1.0, label="lfo"),
-            scope(12, lfo, min=0.0, max=1.0, label="lfo"),
+            12,
+            meter(13, lfo, min=0.0, max=1.0, label="lfo"),
+            scope(14, lfo, min=0.0, max=1.0, label="lfo"),
             layout="row",
         ),
         title="FM + tremolo (a GraphDef's surface)", w=680, h=400,

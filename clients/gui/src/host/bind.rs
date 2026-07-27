@@ -228,4 +228,23 @@ mod tests {
             vec![OscType::Int(3), OscType::Float(0.5)]
         );
     }
+
+    /// A `toggle` bound to `/n_run` is a play/stop switch — the shape a bundle
+    /// with several instruments on one page needs. It only works because the
+    /// forwarded value keeps its **type**: `/n_run` takes `(nodeID, flag)` as
+    /// ints and refuses a float, and a toggle's value is an int
+    /// ([`WidgetKind::event_value`](super::widget::WidgetKind::event_value)).
+    #[test]
+    fn a_toggle_bound_to_n_run_forwards_ints() {
+        let b = Binding::from_json(&[Value::from("/n_run"), Value::from(1000)]).unwrap();
+        assert_eq!(
+            b.message(OscType::Int(0)).args,
+            vec![OscType::Int(1000), OscType::Int(0)],
+            "the node id and the flag both stay ints"
+        );
+        assert_eq!(
+            b.message(OscType::Int(1)).args,
+            vec![OscType::Int(1000), OscType::Int(1)]
+        );
+    }
 }

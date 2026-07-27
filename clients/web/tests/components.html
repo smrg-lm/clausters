@@ -72,7 +72,7 @@
       import "/examples/graph-controls/bundle/index.js";  // <fm-trem>
       import "/examples/piano/bundle/index.js";           // <piano-keys>
       import { startPage, server } from "/dist/runtime.js";
-      import { loadOsc, decodePacket } from "/dist/base/osc.js";
+      import { loadOsc, decodePacket, encodeMessage } from "/dist/base/osc.js";
 
       const verdict = (text) => {
         document.getElementById("verdict").textContent = text;
@@ -177,6 +177,23 @@
                         }));
         if (failed) throw new Error(`/fail: ${failed}`);
 
+        // Each instrument stops on its own. This is the message its play
+        // toggle is bound to -- /n_run on *this* instance's graph node -- and
+        // it is why a page holding several of them is usable at all: pausing a
+        // group skips its whole subtree, so one goes quiet (its bus freezes on
+        // its last value) while its sibling keeps running.
+        engine.send(encodeMessage("/n_run", [["i", a.graph], ["i", 0]]));
+        await new Promise((r) => setTimeout(r, 600));
+        seen.get(a.lfo).clear();
+        seen.get(b.lfo).clear();
+        await new Promise((r) => setTimeout(r, 1200));
+        const stopped = seen.get(a.lfo).size;
+        const sibling = seen.get(b.lfo).size;
+        if (stopped > 1) throw new Error(`the paused instrument kept moving (${stopped})`);
+        if (sibling < 3) throw new Error(`stopping one silenced the other (${sibling})`);
+        engine.send(encodeMessage("/n_run", [["i", a.graph], ["i", 1]]));
+        await until(() => seen.get(a.lfo).size > 1, "the instrument never resumed");
+
         // The component below the fold never entered the viewport, so its bus
         // is not in the subscription and nothing arrived for it.
         const offscreen = seen.get(el("offscreen").symbols.lfo).size;
@@ -187,7 +204,8 @@
         verdict(`PASS: 3 canvases drew; two instances of one bundle held ` +
             `nodes ${a.graph}/${b.graph} and buses ${a.lfo}/${b.lfo} with one ` +
             `def sent; freq="110" resolved on the second; the off-screen ` +
-            `component streamed nothing; the broken one failed alone ` +
+            `component streamed nothing; one stopped and resumed on its own ` +
+            `while its sibling ran; the broken one failed alone ` +
             `(${errors.length} error)`);
       }
 
