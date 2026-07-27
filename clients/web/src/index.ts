@@ -27,7 +27,7 @@ export type { ClaustersGui } from "./gui/host.ts";
 export * as gui from "./gui/index.ts";
 export { bootBundle } from "./bundle.ts";
 export type { BundleManifest } from "./bundle.ts";
-export { ClaustersBundle, ClaustersPower } from "./elements.ts";
+export { ClaustersBundle, ClaustersPower, defineComponent } from "./elements.ts";
 export {
     decodePacket,
     encodeBundle,

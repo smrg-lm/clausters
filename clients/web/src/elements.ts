@@ -21,7 +21,7 @@
 // `clausters-error` (detail: `{ error }`) on failure.
 
 import { server } from "./engine/server.ts";
-import { guiHost } from "./gui/host.ts";
+import { guiHost } from "./gui/page.ts";
 import { bootBundle } from "./bundle.ts";
 
 const BUTTON_STYLE = `
@@ -106,3 +106,30 @@ export class ClaustersPower extends HTMLElement {
 
 customElements.define("clausters-bundle", ClaustersBundle);
 customElements.define("clausters-power", ClaustersPower);
+
+/// Registers `tag` as a component mounting the bundle at `base` — what a
+/// bundle's generated `index.js` calls, so a page gets a named tag from one
+/// import:
+///
+/// ```js
+/// import { defineComponent } from "/dist/runtime.js";
+/// defineComponent("fm-voice", new URL(".", import.meta.url));
+/// ```
+///
+/// The tag is `<clausters-bundle>` with its `src` already filled in, so
+/// everything the generic element does — the attributes, `preset`, the
+/// two-phase mount — works on it unchanged. Registering the same tag twice is
+/// a no-op, so two copies of a generated module on one page are harmless.
+export function defineComponent(tag: string, base: string | URL): void {
+    if (customElements.get(tag)) return;
+    const src = String(base);
+    customElements.define(
+        tag,
+        class extends ClaustersBundle {
+            constructor() {
+                super();
+                if (!this.hasAttribute("src")) this.setAttribute("src", src);
+            }
+        },
+    );
+}
