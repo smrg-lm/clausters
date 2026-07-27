@@ -3016,3 +3016,40 @@ walks the emitted module graph of `dist/runtime.js` and fails if it ever reaches
 any of the three, with the facade's own graph as the negative control so the
 walker cannot pass by finding nothing. An import added anywhere along the chain
 — the entry, the element, the mount, the page host — shows up there.
+
+## The web client's API reference: TypeDoc, and a second TypeScript to run it
+
+The repository's documentation rule is that an API reference is *generated* from
+the source's own doc comments — the rustdoc for the crates, pydoc-markdown for
+the Python client. The web client's book needed the same for TypeScript, under
+the toolchain posture the package was built with: minimal, user-space, no
+bundler, one dependency.
+
+**TypeDoc, installed as a tool rather than as a dependency.** It is the only
+generator that reads the language's own doc format, and with the markdown plugin
+it emits the pages an mdBook can host. Its weight — about forty megabytes,
+mostly the TypeScript it parses with — buys nothing at run time and nothing at
+build time, so it goes where pydoc-markdown goes: a **user-space global
+install**, never in the package's `node_modules` and never in `package.json`.
+Read the Docs installs it the same way, into a directory of its own.
+
+That placement also settles a version conflict rather than fighting it. The
+package compiles with **TypeScript 7**, the native compiler, a single dependency
+with no transitive ones; TypeDoc is built against the **5.x** compiler API and
+resolves its own copy from beside itself. Two TypeScripts exist on the machine
+and never meet: one compiles, one reads. Pinning the package back to 5.x to
+share it would have been the wrong trade — the emit is the product, the docs
+build is a tool.
+
+**The consequence for the sources.** TypeDoc reads TSDoc (`/** */`). The client
+had been written with Rust-style `///` doc comments, which are invisible to
+*every* TypeScript tool — an editor shows nothing on hover, a generator sees an
+undocumented symbol. The tree was converted wholesale; new code writes `/** */`.
+
+**Warnings are errors** (`treatWarningsAsErrors`), the rustdoc posture: a
+comment referring to a symbol that moved, was renamed or became private fails
+the build instead of producing a dangling page. Getting there also widened the
+public surface a little — the types that appeared in signatures without being
+exported (`ParamSpec`, `SpecInput`, `TimedMessage`, `Props`, …) are exported
+now, which is the honest reading of a warning that says a documented signature
+mentions something the reader cannot name.

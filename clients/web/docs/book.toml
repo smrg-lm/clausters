@@ -1,0 +1,27 @@
+# mdBook configuration for the Clausters web client documentation.
+#
+# The book sources live in `src/`; `src/SUMMARY.md` is the table of contents.
+# The API reference under `src/api/` is *generated* from the package's TSDoc
+# comments by TypeDoc (see ../typedoc.json and ./build.sh) and is git-ignored
+# along with the build output `book/`.
+#
+# Build locally with `./build.sh` (generates the API pages, then runs mdbook).
+# This is a separate book from the server/workspace documentation in the repo's
+# root `docs/` and from the Python client's in `clients/python/docs/`: one book
+# per platform, cross-linked. See ../.readthedocs.yaml for the Read the Docs
+# build.
+
+[book]
+title = "clausters - web client"
+authors = ["Lucas Samaruga"]
+description = "The Clausters browser client: the engine in the page, the GUI host on a canvas, and the TypeScript client that drives both."
+src = "src"
+language = "en"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/smrg-lm/clausters"

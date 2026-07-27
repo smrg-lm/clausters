@@ -25,3 +25,7 @@ node_modules/
 # WebGPU need a secure context, which a plain-HTTP LAN address is not, so
 # testing on a phone means https. Never commit the private key.
 /.certs/
+
+# The documentation book: the API pages TypeDoc generates and mdBook's output.
+/docs/src/api/
+/docs/book/

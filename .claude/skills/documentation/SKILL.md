@@ -31,18 +31,28 @@ writing. Then place the page.
   place.
 - **Python client book** — mdBook in `clients/python/docs/` (its own `book.toml`
   and `src/`). Build with `clients/python/docs/build.sh`.
+- **Web client book** — mdBook in `clients/web/docs/` (its own `book.toml` and
+  `src/`). Build with `clients/web/docs/build.sh`. The **thinnest** of the
+  three by design: it documents what the browser makes different (the two
+  carriers, promises everywhere, components in a document) and links the other
+  two books for the shared model rather than restating it.
 - **Rust API reference** — the rustdoc (`cargo doc --no-deps`), generated from
   `///` / `//!` doc comments. This *is* the crate reference; no hand-written
   mirror.
 - **Python API reference** — `clients/python/docs/src/api.md`, **generated** from
   the package docstrings by pydoc-markdown (`clients/python/pydoc-markdown.yml`;
   both it and `book/` git-ignored). Never hand-edit `api.md`.
+- **TypeScript API reference** — `clients/web/docs/src/api/`, **generated** from
+  the sources' TSDoc comments by TypeDoc (`clients/web/typedoc.json`; both it
+  and `book/` git-ignored). Never hand-edit those pages, and write the source's
+  doc comments as TSDoc (`/** */`) — a Rust-style `///` is invisible to both
+  the generator and the reader's editor.
 - **Development** (section 3) — `docs/architecture.md`, `docs/contributing.md`,
   `docs/decisions.md` (the ADR-style design record, in the server book), the
-  `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` / `clients/gui/PLAN.md`), and
-  the frozen `docs/history/build-log.md`. `GUIA.md` (root +
-  `clients/python/GUIA.md`) is a Spanish smoke checklist, **not** part of the
-  books.
+  `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` /
+  `clients/gui/PLAN.md` / `clients/web/PLAN.md`), and the frozen
+  `docs/history/build-log.md`. `GUIA.md` (root + `clients/python/GUIA.md`) is a
+  Spanish smoke checklist, **not** part of the books.
 
 Three rules hold across *all* of the above (repeat them to yourself):
 
@@ -63,7 +73,8 @@ Three rules hold across *all* of the above (repeat them to yourself):
    (shell `kill`, `subprocess.terminate()`, POSIX "the kernel kills the
    process", upstream symbols cited verbatim).
 
-The two books cross-link each other by their ReadTheDocs URLs.
+The books cross-link each other by their ReadTheDocs URLs (the web one's
+project does not exist yet, so its inbound links wait).
 
 ## 1. User documentation — Diataxis (Tutorial / Explanation / Reference)
 

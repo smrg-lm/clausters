@@ -22,11 +22,12 @@
 
 export { server } from "./engine/server.ts";
 export type { ClaustersServer, ReplyListener } from "./engine/server.ts";
+export type { BootOptions, ClockAnchor } from "./engine/loader.ts";
 export { GuiHost, guiHost, pageGuiConnection } from "./gui/host.ts";
 export type { ClaustersGui } from "./gui/host.ts";
 export * as gui from "./gui/index.ts";
 export { bootBundle, openBundle, startBundle } from "./bundle.ts";
-export type { BundleManifest, MountOptions, Mounted } from "./bundle.ts";
+export type { BundleManifest, MountOptions, Mounted, ParamSpec } from "./bundle.ts";
 export { ClaustersBundle, ClaustersPower, defineComponent, startPage } from "./elements.ts";
 export { pagePools } from "./base/pool.ts";
 export type { Pool, Pools } from "./base/pool.ts";
@@ -45,7 +46,7 @@ export {
     timerTicker,
     workerTicker,
 } from "./base/clock.ts";
-export type { ManualTicker, Schedulable, Ticker } from "./base/clock.ts";
+export type { ManualTicker, Schedulable, TempoClockOptions, Ticker } from "./base/clock.ts";
 export {
     ManualTimebase,
     MonotonicTimebase,

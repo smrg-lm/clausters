@@ -139,21 +139,28 @@ cargo test
 
 ## Documentation
 
-Two books, one per platform, both published on Read the Docs:
+Three books, one per platform. Two are published on Read the Docs:
 
 - **[Server / workspace book](https://clausters.readthedocs.io/)** — full
   guide, OSC reference and architecture.
 - **[Python client book](https://clausters-python.readthedocs.io/)** — the
   client's guide plus an API reference generated from its docstrings.
 
-Both are mdBooks kept in this repository (Markdown, ReadTheDocs-deployable), so
-they also build and read offline:
+The third, the **web client book**, is written and builds here but is not
+hosted yet — the steps are in
+[`clients/web/BUILD.md`](clients/web/BUILD.md#publishing).
+
+All three are mdBooks kept in this repository (Markdown, ReadTheDocs-deployable),
+so they also build and read offline:
 
 - **Server / workspace book** — the mdBook in [`docs/`](docs/), starting at
   [`docs/introduction.md`](docs/introduction.md). Build with `mdbook build`.
 - **Python client book** — [`clients/python/docs/`](clients/python/docs/); see
   [`clients/python/README.md`](clients/python/README.md#documentation) for the
   build (its API page is generated from the docstrings).
+- **Web client book** — [`clients/web/docs/`](clients/web/docs/); build it with
+  `clients/web/docs/build.sh` (its API pages are generated from the sources'
+  TSDoc comments).
 - **Crate API reference** — `cargo doc --open` (the crate is usable as a
   library: see [`docs/using-as-a-library.md`](docs/using-as-a-library.md)).
 - **Contributing / dev setup** — [`docs/contributing.md`](docs/contributing.md).

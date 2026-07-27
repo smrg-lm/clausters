@@ -36,6 +36,11 @@ export class Rng {
      * as the server's `WhiteNoise`.
      */
     constructor(seed: number);
+    /**
+     * Wrap a core stream that already exists — how `spawnRng` derives a child.
+     *
+     * @internal
+     */
     constructor(inner: CoreRng);
     constructor(source: number | CoreRng) {
         this.inner = typeof source === "number" ? new CoreRng(source) : source;

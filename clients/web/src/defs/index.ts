@@ -16,6 +16,7 @@ export type {
     PortTargetInfo,
     ServerInfo,
     ServerSizing,
+    TimedMessage,
     TreeNode,
 } from "./server.ts";
 export {
@@ -36,13 +37,13 @@ export { Buffer, BufferAllocator, NUM_BUFFERS } from "./buffer.ts";
 export type { BufferLike } from "./buffer.ts";
 
 export { SynthDef } from "./synthdef.ts";
-export type { ControlSpec, SynthDefSpec, UgenSpec } from "./synthdef.ts";
+export type { ControlSpec, SpecInput, SynthDefSpec, UgenSpec } from "./synthdef.ts";
 
 export { FaustDef } from "./faustdef.ts";
 export type { FaustDefKind } from "./faustdef.ts";
 
 export { GraphBusRef, GraphDef, MemberRef, PortTarget } from "./graphdef.ts";
-export type { GraphDefSpec, MemberSpec } from "./graphdef.ts";
+export type { GraphDefSpec, MemberControlValue, MemberSpec } from "./graphdef.ts";
 
 export * from "./ugens.ts";
 export * as signals from "./signals.ts";

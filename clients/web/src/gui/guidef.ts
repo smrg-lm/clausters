@@ -166,7 +166,7 @@ export interface SourceOptions extends WidgetOptions {
  * A props object under wire names, with the options that were left out
  * dropped — the shape every builder assembles.
  */
-type Props = Record<string, unknown>;
+export type Props = Record<string, unknown>;
 
 /** The given `[wireKey, value]` pairs, minus the ones left `undefined`. */
 function drop(pairs: readonly (readonly [string, unknown])[]): Props {

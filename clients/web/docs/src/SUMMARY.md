@@ -1,0 +1,18 @@
+# Summary
+
+[Introduction](introduction.md)
+
+# User Guide
+
+- [Getting started](getting-started.md)
+- [The client, layer by layer](guide.md)
+- [Components: an instrument in the page](components.md)
+- [Examples](examples.md)
+
+# Reference
+
+- [API reference](api/index.md)
+  - [gui](api/Namespace.gui.md)
+  - [seq](api/Namespace.seq.md)
+  - [signals](api/Namespace.signals.md)
+  - [builtins](api/Namespace.builtins.md)

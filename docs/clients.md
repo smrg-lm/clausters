@@ -321,7 +321,9 @@ without a generated module. `clients/web/examples/piano/` and
 ## The TypeScript client (started)
 
 The browser-first TypeScript client grows inside the same `clients/web/`
-package (roadmap: `clients/web/PLAN.md`). Four layers are in place.
+package (roadmap: `clients/web/PLAN.md`), and has its own book — the mdBook in
+`clients/web/docs/`, the third of the repository's three, with its API
+reference generated from the sources' TSDoc. Four layers are in place.
 
 **The seam.** The **OSC codec through the shared core**
 (`crates/clausters-core-web`, a thin wasm-bindgen shell over `clausters-core`,
@@ -434,3 +436,4 @@ package over the same OSC, against a native server.
 | Reproducible `third_party` Faust and verovio builds (pin + script; native/CI/release) | done |
 | TypeScript/web client (the core over wasm, `Server` + both def families, the GUI, the sequencing layer, the document's components) | done |
 | npm packaging of the web client | planned |
+| Web client documentation book (mdBook + generated API reference) | done |

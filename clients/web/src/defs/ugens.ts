@@ -69,7 +69,7 @@ export type OpOperand = GraphInput | ChannelList | readonly GraphInput[];
  * A math method's result: a list operand fans the result out, anything else
  * keeps the receiver's shape.
  */
-type OpResult<TSelf, TOther> = TOther extends ChannelList | readonly GraphInput[]
+export type OpResult<TSelf, TOther> = TOther extends ChannelList | readonly GraphInput[]
     ? ChannelList
     : TSelf;
 

@@ -11,9 +11,9 @@ written in Rust and controlled over OSC (UDP, default port 57110).
   is no separate per-milestone log. Non-obvious decisions and upstream-bug
   findings are curated in `docs/decisions.md` (ADR spirit); the frozen historical
   journal is `docs/history/build-log.md`, no longer maintained.
-- English documentation is **two mdBooks, one per platform**, both Markdown and
+- English documentation is **three mdBooks, one per platform**, all Markdown and
   ReadTheDocs-deployable (each has a `.readthedocs.yaml` driving the build with
-  `build.commands` — RTD has no native mdBook builder). Keep both current.
+  `build.commands` — RTD has no native mdBook builder). Keep all three current.
   - **Server / workspace** — mdBook in `docs/` (`docs/SUMMARY.md` the table of
     contents, the repo-root `book.toml` the config, `README.md` the front door;
     build with `mdbook build .`, output `book/` git-ignored). Reuses the
@@ -34,7 +34,23 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     lag the newest CPython, and that is also Read the Docs' version; then
     `clients/python/docs/build.sh` regenerates `api.md` and rebuilds the book
     (`uvx pydoc-markdown`, or `pip install` on a non-PEP-668 env, also work —
-    see `clients/python/README.md`). The two books cross-link by their RTD URLs.
+    see `clients/python/README.md`).
+  - **Web client** — mdBook in `clients/web/docs/` (its own `book.toml` and
+    `src/`; `clients/web/docs/build.sh` builds it). The API-reference pages
+    `src/api/` are **generated from the sources' TSDoc comments by TypeDoc**
+    (configured by the versioned `clients/web/typedoc.json`, whose output file
+    names are the contract with `src/SUMMARY.md`; the generated `src/api/` and
+    the built `book/` are both git-ignored). Install the generator in **user
+    space** with `npm install -g typedoc@0.28 typedoc-plugin-markdown@4
+    typescript@5.9` (npm's prefix is under `~/.local`; symlink the `typedoc`
+    bin into `~/.local/bin` like node's) — it parses with **its own TypeScript
+    5.9** while the package compiles with the v7 in `node_modules`, and it runs
+    with warnings as errors. Doc comments in `clients/web/src` are TSDoc
+    (`/** */`), never Rust-style `///`, which TypeScript tooling does not read.
+    This book is **not on Read the Docs yet** — `clients/web/BUILD.md`,
+    "Publishing", carries the steps, and the other books' inbound links wait
+    for that.
+  - The books cross-link by their RTD URLs.
   - **Docstrings and published docs are plain Markdown**: **no Sphinx/RST
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels

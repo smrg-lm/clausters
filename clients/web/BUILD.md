@@ -120,6 +120,31 @@ The dev loop is `tsc -p tsconfig.build.json --watch` in one terminal and
 `python3 -m http.server` in another; rerun `./build.sh` only when the Rust
 side changes.
 
+## Building the documentation book
+
+The book is an mdBook in `docs/`, the third of the repository's three (server,
+Python client, this one). Its API reference pages, `docs/src/api/`, are
+**generated from the sources' TSDoc comments by TypeDoc** — the counterpart of
+the Python book's pydoc-markdown page — and both they and `docs/book/` are
+git-ignored.
+
+Two user-space tools, neither a dependency of the package:
+
+```sh
+cargo install mdbook --version 0.4.40   # the version CI and Read the Docs use
+npm install -g typedoc@0.28 typedoc-plugin-markdown@4 typescript@5.9
+ln -sfn ~/.local/lib/node/bin/typedoc ~/.local/bin/typedoc   # as for node/npm
+./docs/build.sh          # -> docs/src/api/, then docs/book/index.html
+```
+
+TypeDoc parses with **its own TypeScript 5.9**, installed beside it in npm's
+global tree; the package itself compiles with the v7 in `node_modules`, and the
+two never meet. The generator is configured by the versioned `typedoc.json`,
+whose output file names (`api/index.md`, `api/Namespace.*.md`) are the contract
+with `docs/src/SUMMARY.md`. It runs with warnings as errors, so a doc comment
+referring to something that moved or became private fails the build rather than
+producing a dangling page — the rustdoc posture, on this leg.
+
 ## Regenerating the parity vectors
 
 Four vector files are committed, all generated from the Python client — the

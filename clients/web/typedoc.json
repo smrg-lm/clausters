@@ -1,0 +1,37 @@
+{
+    "$schema": "https://typedoc.org/schema.json",
+    // The API-reference generator for the web client's book: TypeDoc reads the
+    // TSDoc comments off the package facade (`src/index.ts`) and writes the
+    // reference pages of `docs/src/` — the TypeScript counterpart of the
+    // Python client's pydoc-markdown.yml. Both the generated pages and the
+    // built book are git-ignored; run `docs/build.sh`.
+    //
+    // Markdown, not HTML: the book is an mdBook like the other two, so the
+    // markdown plugin renders one page for the package (`api/index.md`) and
+    // one per namespace, flattened so `SUMMARY.md` can name them. Those names
+    // are the contract between this file and `docs/src/SUMMARY.md`.
+    "entryPoints": ["src/index.ts"],
+    "tsconfig": "tsconfig.build.json",
+    "name": "clausters",
+    "plugin": ["typedoc-plugin-markdown"],
+    "out": "docs/src/api",
+    "readme": "none",
+    "outputFileStrategy": "modules",
+    "flattenOutputFiles": true,
+    "entryFileName": "index",
+    "hidePageHeader": true,
+    "hideBreadcrumbs": true,
+    // The pages are read on Read the Docs, not against a checkout: a "defined
+    // in" line would pin every symbol to one commit's blob URL and say
+    // nothing the reader can act on.
+    "disableSources": true,
+    "excludeExternals": true,
+    "excludeInternal": true,
+    // A type the wasm glue owns (`dist/gui-host/`): it surfaces in a
+    // signature or two but its reference is the bundle's own .d.ts, not this
+    // package's.
+    "intentionallyNotExported": ["GuiBridge"],
+    // A dangling reference is a broken page; fail the build the way the Rust
+    // side fails on a broken intra-doc link.
+    "treatWarningsAsErrors": true
+}
