@@ -160,7 +160,10 @@ jobs:
 
   github-release:
     name: GitHub release assets
-    needs: build
+    # Behind both registries, for the reason publish-pypi is behind npm: the
+    # release page is the announcement, and announcing a release whose
+    # packages are not installable is worse than announcing it late.
+    needs: [build, publish-npm, publish-pypi]
     runs-on: ubuntu-latest
     permissions:
       contents: write
