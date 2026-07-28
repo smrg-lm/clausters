@@ -55,7 +55,9 @@ export interface ScopeTrace {
  * ```
  *
  * At most 8 taps per subscription, and one subscription per client — a second
- * `TapStream` on the same `Server` replaces the first (the server's rule).
+ * `TapStream` on the same `Server` replaces the first (the server's rule), and
+ * over the in-page carrier that client includes the GUI host, so a host
+ * oscilloscope and this displace each other (see `BusStream`).
  * `frames` is clamped by the server to the transport's bound and to half the
  * ring, so a window may come back shorter than asked.
  */

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>probe: host and script both streaming</title>
+  </head>
+  <body>
+    <!--
+      A probe, deliberately **not** part of test.sh: it demonstrates a server
+      gap rather than asserting client behaviour, so it would fail today.
+
+      Everything that reaches the in-page engine goes through one shared-memory
+      ring, which the server sees as a single client (`ClientId::Ring`), and
+      `/c_stream` is one subscription per client, replaced on each call. So the
+      script and the GUI host — both pushing through `engine.send` — take the
+      stream from each other. Run it (serve this package and open with
+      ?smoke=1, or point a headless browser at it) and read the phases:
+
+        phase 1  script only .................. its bus arrives
+        phase 2  host opens a meter ........... only the host's bus arrives,
+                                                the script gains 0 snapshots
+        phase 3  script re-subscribes ......... it takes the stream back
+        phase 4  1.9 s later, untouched ....... the host never recovers, because
+                                                it only re-sends when its own
+                                                widget set changes
+
+      The fix is server-side (ring clients get identities, PLAN.md M31); when it
+      lands this page becomes an acceptance, asserting that both keep updating.
+    -->
+    <pre id="log"></pre>
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine,
+        Server, SynthDef, GuiHost, gui, data, decodePacket,
+        control, outCtl, sine,
+      } from "../dist/index.js";
+
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (t) => {
+        document.title = t;
+        fetch(`/smoke-verdict-${encodeURIComponent(t)}`).catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+
+        // A raw window onto every /c_set the engine emits, whoever asked for
+        // it: which bus indices arrive is the whole question.
+        const seen = new Map();
+        raw.addReply((bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr !== "/c_set") continue;
+            for (let i = 0; i + 1 < args.length; i += 2) {
+              const bus = Number(args[i]);
+              seen.set(bus, (seen.get(bus) ?? 0) + 1);
+            }
+          }
+        });
+        const snapshot = () => JSON.stringify([...seen.entries()].sort());
+        const reset = () => seen.clear();
+
+        // Every outbound packet, whoever sent it: the host's server leg and
+        // the script's connection both call `engine.send`.
+        const out = [];
+        const realSend = raw.send.bind(raw);
+        raw.send = (bytes) => {
+          for (const { addr, args } of decodePacket(bytes)) {
+            if (addr === "/c_stream" || addr === "/tap_stream") {
+              out.push(`${addr}(${args.join(",")})`);
+            }
+          }
+          return realSend(bytes);
+        };
+
+        const connection = await pageConnection();
+        const server = await Server.open(connection);
+
+        const scriptBus = server.controlBus();
+        const hostBus = server.controlBus();
+        await server.addSynthDef(new SynthDef("probe_lfo",
+          outCtl(control("bus", 0.0), sine(2.0).mul(0.5).add(0.5))));
+        server.synth("probe_lfo", { bus: scriptBus.index });
+        server.synth("probe_lfo", { bus: hostBus.index });
+        await server.sync();
+
+        // Phase 1: only the script is subscribed.
+        const stream = await data.BusStream.open(server, [scriptBus],
+                                                 { periodMs: 20 });
+        reset();
+        await sleep(400);
+        log(`phase 1 (script only): buses ${snapshot()}, `
+          + `stream.snapshots ${stream.snapshots}`);
+
+        // Phase 2: the GUI host opens a window with a meter on the other bus,
+        // which makes it subscribe its own set through the same page.
+        const host = await GuiHost.page();
+        host.open(gui.window({ title: "probe", w: 320, h: 160 },
+          gui.meter(hostBus.index, { h: 40 })));
+        await sleep(800);   // the host ticks at ~30 fps and (re)subscribes
+
+        const before = stream.snapshots;
+        reset();
+        await sleep(400);
+        log(`phase 2 (host window open): buses ${snapshot()}, `
+          + `script gained ${stream.snapshots - before}`);
+
+        // Phase 3: the script re-subscribes after the host did.
+        await server.streamBuses(20, [scriptBus]);
+        const before3 = stream.snapshots;
+        reset();
+        await sleep(400);
+        log(`phase 3 (script re-subscribed): buses ${snapshot()}, `
+          + `script gained ${stream.snapshots - before3}`);
+
+        // Phase 4: does the host come back on its own?
+        await sleep(1500);
+        reset();
+        await sleep(400);
+        log(`phase 4 (1.9 s later, nobody touched it): buses ${snapshot()}`);
+
+        log(`outbound: ${out.join(" ")}`);
+        verdict(`PROBE ${document.getElementById("log").textContent
+          .replace(/\n/g, " | ")}`);
+      }
+      run().catch((e) => verdict(`PROBE FAIL: ${e}`));
+    </script>
+  </body>
+</html>

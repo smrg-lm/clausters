@@ -149,9 +149,15 @@ found it (a buffer written from the client read back as silence). So the bulk
 path is **read-only** in this milestone, `setSamples` is not shipped, and
 `loadSample` refuses a carrier that does not share memory with the engine,
 naming `readBuffer` as the socket alternative. Writing from a client is a
-server-track feature and is noted as a gap to plan in the server's `PLAN.md`;
-the order is the standing one — server command, then the Python client, then
-the port here.
+server-track feature, planned as **M31** in the server's `PLAN.md`; the order
+is the standing one — server command, then the Python client, then the port
+here.
+
+A second finding, from probing after the fact and folded into the same
+milestone: over the in-page carrier the script and the GUI host are **one
+client** (`ClientId::Ring`), so their `/c_stream` subscriptions displace each
+other and the host does not recover. The sources and the book say so; the fix
+is M31's ring identities, not a page-side arbiter.
 
 ### 2.2 `src/data/` — the sources
 

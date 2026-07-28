@@ -532,8 +532,18 @@ Three things are worth carrying forward:
   `/b_allocRead`, or — in the page, where the carrier shares memory with the
   engine — `loadSample`, which fetches and decodes with the browser's own
   decoder and installs through the embed door. Writing from a client is noted
-  as a gap to plan in the server's `PLAN.md`; the order will be the standing
-  one, server command → the Python client → the port here.
+  as **M31** in the server's `PLAN.md`; the order will be the standing one,
+  server command → the Python client → the port here.
+- **On one page, the host and the script are one client.** Everything reaching
+  the in-page engine goes through one shared-memory ring, which the server sees
+  as a single `ClientId::Ring`, and `/c_stream`/`/tap_stream` are one
+  subscription per client — so a host `meter` and a script `BusStream` take the
+  stream from each other, and the host (which only re-subscribes when its own
+  widget set changes) stays frozen afterwards. Found by probing after the
+  milestone was written, reproduced in `tests/ring-clash-probe.html`, and fixed
+  where it belongs: server **M31**, ring clients get identities. Until then the
+  book says plainly that a page picks one live reader; over a socket the two
+  are ordinary separate clients and nothing collides.
 
 **Verified:** `./test.sh` — 137 `node --test` cases (23 new: the peak cache and
 the stereo field against `data-vectors.json` frozen from the Python client, the

@@ -33,6 +33,14 @@ export const STREAM_PERIOD_MS = 33;
  * opening a second `BusStream` on the same `Server` replaces the first, which
  * is the server's rule, not this class's. Watch every bus a page needs in one
  * stream.
+ *
+ * Over the **in-page carrier that client includes the GUI host**: script and
+ * host share one shared-memory ring, which the server sees as a single client,
+ * so a host `meter`/`scope` and a `BusStream` displace each other's
+ * subscription — and the host, which only re-subscribes when its own widget
+ * set changes, stays frozen afterwards. One live reader per page until ring
+ * clients get identities (the gap is recorded in the server's roadmap). A
+ * socket carrier has no such conflict.
  */
 export class BusStream {
     readonly server: Server;

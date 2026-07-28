@@ -42,6 +42,17 @@ per subscription, and **one subscription per client** — opening a second
 `BusStream` on the same `Server` replaces the first. Watch everything the page
 needs in one stream.
 
+> **In the page, the GUI host is that same client.** Over the in-page carrier
+> the script and the host both reach the engine through one shared-memory ring,
+> which the server sees as a single client — so a `meter` or a `scope` widget on
+> a canvas and a `BusStream` in the script *take the subscription from each
+> other*, and the host does not recover until one of its widgets changes. Until
+> ring clients get their own identities (a gap recorded in the server's
+> roadmap), pick one reader per page: either the host draws the live views, or
+> the script does. The same holds for `TapStream` and `/tap_stream`. Over a
+> WebSocket there is no such conflict — a native host and a script are
+> different clients.
+
 A stream is a *latest value*, not a history. A rolling trace is the view's own
 business:
 
@@ -73,6 +84,9 @@ taps.onData((index, window) => {
     drawScope(trace.samples, trace.locked);
 });
 ```
+
+One subscription per client applies here too, with the same in-page caveat
+above: a `TapStream` and a host oscilloscope on one page displace each other.
 
 Taps are as finite as buses (8 rings by default), so take them from
 `server.taps` and give them back:
