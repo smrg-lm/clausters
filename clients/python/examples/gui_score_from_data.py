@@ -83,8 +83,7 @@ def scene(display_list: dict, sample_rate: float) -> dict:
     """A minimal transport over the engraved page. Every widget is *named*, so
     the script drives it by name and never picks an id."""
     return window(
-        panel(None,
-              button(name="play", label="play"),
+        panel(button(name="play", label="play"),
               button(name="stop", label="stop"),
               layout="row", h=34.0),
         notation.score_view(display_list, name="score",

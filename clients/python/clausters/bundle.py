@@ -21,7 +21,7 @@ numbering them: `bus`, `node` and `buffer` each return the placeholder string,
 which reads naturally where an index goes::
 
     lfo = b.bus("lfo")            # -> "@lfo"
-    meter(4, lfo, label="lfo")
+    meter(bus=lfo, label="lfo")
 
 **Holes live only in the GuiDef record.** The def payloads carry none, which is
 what lets two mounted instances share the one def that was sent — and it forces
@@ -135,7 +135,7 @@ class Bundle:
         """Declares a bus symbol and returns its placeholder (``"@name"``).
 
         ``rate`` is ``"control"`` or ``"audio"``. The placeholder reads
-        naturally where a bus index goes (``meter(4, lfo)``); a def that uses
+        naturally where a bus index goes (``meter(bus=lfo)``); a def that uses
         the bus takes it **as a control**, never baked in.
         """
         if rate not in ("control", "audio"):

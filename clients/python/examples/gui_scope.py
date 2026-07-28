@@ -60,8 +60,7 @@ server.tap(0, 0)  # audio bus 0 (the hardware out) -> audio tap 0
 
 # %%
 win = gui.open(window(
-    panel(None,
-          scope(name="triggered", tap=0, window_ms=15.0, trigger=0.0,
+    panel(scope(name="triggered", tap=0, window_ms=15.0, trigger=0.0,
                 label="triggered (level 0.0)"),
           scope(name="free", tap=0, window_ms=15.0, trigger=9.0,
                 label="free-running"),

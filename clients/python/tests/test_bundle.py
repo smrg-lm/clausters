@@ -44,9 +44,9 @@ def a_bundle() -> Bundle:
     b.synthdef(voice())
     # The root is widget 1 (the record's id), so the children start at 2.
     b.gui(window(
-        knob(2, label="freq", value=freq, min=60.0, max=700.0,
+        knob(id=2, label="freq", value=freq, min=60.0, max=700.0,
              bind=["/n_set", node, "freq"]),
-        meter(3, lfo, label="env"),
+        meter(lfo, id=3, label="env"),
         title="FM voice", layout="col",
     ))
     b.boot(["/s_new", "fm-voice.voice", node, 0, 0, "freq", freq, "env_bus", lfo])
@@ -88,7 +88,7 @@ def test_the_record_carries_the_holes_and_the_boot_list():
 def test_a_bundle_that_would_not_mount_is_not_written(tmp_path):
     """The pre-flight is the whole point of `write` calling `validate` first."""
     b = a_bundle()
-    b.gui(window(meter(2, "@nope", label="typo")))
+    b.gui(window(meter("@nope", id=2, label="typo")))
     with pytest.raises(ValueError, match="unknown symbol"):
         b.write(str(tmp_path / "out"))
     assert not os.path.exists(tmp_path / "out" / "bundle.json")
@@ -106,7 +106,7 @@ def test_a_hole_baked_into_a_def_is_refused(tmp_path):
     spec["controls"][1]["default"] = bus
     sdef.dump_def = lambda: json.dumps(spec)  # type: ignore[method-assign]
     b.synthdef(sdef)
-    b.gui(window(meter(2, bus)))
+    b.gui(window(meter(bus, id=2)))
     with pytest.raises(ValueError, match="@lfo"):
         b.write(str(tmp_path / "out"))
 
@@ -114,7 +114,7 @@ def test_a_hole_baked_into_a_def_is_refused(tmp_path):
 def test_a_default_that_does_not_type_check_is_refused():
     b = Bundle("bad")
     title = b.param("title", str, default="ok")
-    b.gui(window(knob(2, label=title)))
+    b.gui(window(knob(id=2, label=title)))
     b._params["title"]["default"] = 3.5  # a float where a string was declared
     with pytest.raises(ValueError, match="wants a string"):
         b.validate()
@@ -156,7 +156,7 @@ def test_the_baked_form_is_what_the_rule_prevents(tmp_path):
     authoring one, and this test records what it is about."""
     b = Bundle("legacy-voice")
     b.synthdef(baked())
-    b.gui(window(meter(2, 0.0, label="env")))
+    b.gui(window(meter(0.0, id=2, label="env")))
     b.write(str(tmp_path / "legacy"))  # writes: nothing here is a hole
     spec = json.loads((tmp_path / "legacy" / "defs" / "synthdefs" / "legacy-voice.baked.json").read_text())
     out_ctls = [u for u in spec["ugens"] if u["kind"] == "OutCtl"]

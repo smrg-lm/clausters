@@ -87,8 +87,7 @@ def scene(display_list: dict, sample_rate: float) -> dict:
     a fixed height, so the page takes all the rest however the window is
     resized."""
     return window(
-        panel(None,
-              button(name="rewind", label="|<"),
+        panel(button(name="rewind", label="|<"),
               button(name="play", label="play"),
               button(name="pause", label="pause"),
               button(name="stop", label="stop"),

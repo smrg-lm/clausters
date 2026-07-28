@@ -210,8 +210,7 @@ song = Group([
 # (`Editor.apply` ignores them).
 
 # %%
-transport = panel(None,
-                  button(name="play", label="play"),
+transport = panel(button(name="play", label="play"),
                   button(name="pause", label="pause"),
                   button(name="stop", label="stop"),
                   button(name="rewind", label="rewind"),

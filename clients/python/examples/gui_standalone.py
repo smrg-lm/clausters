@@ -90,7 +90,7 @@ def scene() -> dict:
       symmetry with that path.
     """
     return window(
-        knob(10, label="freq", min=80.0, max=400.0, value=160.0,
+        knob(id=10, label="freq", min=80.0, max=400.0, value=160.0,
              bind=["/n_set", DRONE_NODE, "freq"]),
         title="Standalone drone", w=420, h=260, layout="col",
         name=GUI_NAME,

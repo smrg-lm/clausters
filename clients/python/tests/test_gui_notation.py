@@ -42,7 +42,7 @@ PHRASE = "@clef:G-2\n@timesig:4/4\n@data:4CDEF/ 4GABc'/"
 
 
 def test_score_carries_the_playhead_anchor_and_rate():
-    node = score(11, display_list={"vb": [100, 50], "glyphs": {}, "prims": []},
+    node = score(id=11, display_list={"vb": [100, 50], "glyphs": {}, "prims": []},
                  playhead_at=48000.0, sample_rate=44100.0)
     assert node["playhead_at"] == 48000.0
     assert node["sample_rate"] == 44100.0
@@ -54,22 +54,22 @@ def test_score_carries_the_playhead_anchor_and_rate():
 def test_score_editing_is_opt_in():
     # editing is off unless asked for: a plain view sends no `editable`, so the
     # host's read-only default holds; an editor sends editable=True.
-    assert "editable" not in score(11, display_list={"vb": [1, 1]})
-    assert score(11, editable=True)["editable"] is True
-    assert score(11, editable=False)["editable"] is False   # survives _drop_none
+    assert "editable" not in score(id=11, display_list={"vb": [1, 1]})
+    assert score(id=11, editable=True)["editable"] is True
+    assert score(id=11, editable=False)["editable"] is False   # survives _drop_none
 
 
 def test_score_carries_the_selected_element():
-    node = score(11, display_list={"vb": [100, 50], "glyphs": {}, "prims": []},
+    node = score(id=11, display_list={"vb": [100, 50], "glyphs": {}, "prims": []},
                  selected="note-1")
     assert node["selected"] == "note-1"
     # the empty string is the clear, and must survive `_drop_none`
-    assert score(11, selected="")["selected"] == ""
-    assert "selected" not in score(11)
+    assert score(id=11, selected="")["selected"] == ""
+    assert "selected" not in score(id=11)
 
 
 def test_score_sends_the_drawing_layers_but_not_the_notes():
-    node = score(11, display_list={"vb": [100, 50], "glyphs": {}, "prims": [],
+    node = score(id=11, display_list={"vb": [100, 50], "glyphs": {}, "prims": [],
                                    "cursors": [{"t": 0, "x": 1, "y0": 0, "y1": 2}],
                                    "notes": [{"t": 0, "dur": 1, "pitch": 60, "id": "n"}]})
     assert node["cursors"][0]["x"] == 1
@@ -81,7 +81,7 @@ def test_score_sends_the_pitch_quantum_the_page_was_engraved_with():
     dl = notation.engrave(PHRASE)
     # half the staff-line spacing: a line-to-space move is one diatonic step
     assert dl["step"] == 90.0
-    assert score(11, display_list=dl)["step"] == 90.0
+    assert score(id=11, display_list=dl)["step"] == 90.0
     # it follows verovio's `unit`, not the staff scale — which is why the host
     # is told rather than left to assume it
     assert notation.engrave(PHRASE, scale=100)["step"] == 90.0
@@ -95,7 +95,7 @@ def test_the_page_json_carries_the_drawing_layers_only():
     assert sorted(page) == ["cursors", "glyphs", "prims", "step", "vb"]
     # what the builder sends when it defines the widget, so a re-engraved page
     # replaces it exactly
-    built = score(11, display_list=dl)
+    built = score(id=11, display_list=dl)
     assert all(built[k] == page[k] for k in page)
 
 

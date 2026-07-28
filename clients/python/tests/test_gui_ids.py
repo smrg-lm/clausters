@@ -66,7 +66,7 @@ def test_allocator_ignores_ids_it_never_handed_out():
 def test_close_returns_the_whole_subtree_to_the_pool():
     host = _host()
     inner = button()
-    pane = panel(None, inner)
+    pane = panel(inner)
     win = host.open(window(pane))
     ids = {int(win), pane["id"], inner["id"]}
     assert len(ids) == 3
@@ -78,11 +78,11 @@ def test_close_returns_the_whole_subtree_to_the_pool():
 
 def test_redefine_recycles_the_old_subtree_instead_of_climbing():
     host = _host()
-    win = host.open(window(panel(None, button(), button())))
+    win = host.open(window(panel(button(), button())))
     in_use = host._alloc.in_use
     # Re-define the same window with an equally sized tree: the old subtree's
     # ids return to the pool first, so the count does not climb.
-    host.define(int(win), window(panel(None, button(), button())))
+    host.define(int(win), window(panel(button(), button())))
     assert host._alloc.in_use == in_use
 
 
@@ -201,5 +201,5 @@ def test_every_widget_builder_takes_a_name_without_an_id():
 
 def test_to_json_strips_names_even_without_the_host_walk():
     # A direct serialization (no GuiHost) must not leak the client-only name.
-    js = guidef.to_json(window(knob(name="cutoff"), panel(None, button(name="b"))))
+    js = guidef.to_json(window(knob(name="cutoff"), panel(button(name="b"))))
     assert "name" not in js and "cutoff" not in js

@@ -83,19 +83,18 @@ for k in range(2):
 # bar. Only the containers reintroduce margins for their own contents.
 
 # %%
-menu_bar = panel(None, menu(None, ["sine"], w=120),
+menu_bar = panel(menu(["sine"], w=120),
                  button(name="play", label="play", w=80),
                  button(name="stop", label="stop", w=80),
-                 label(None, "gui_shell - the application shell", weight=1.0),
+                 label("gui_shell - the application shell", weight=1.0),
                  layout="row", h=40, gap=4)
 
-sidebar = panel(None,
-                knob(name="freq", label="freq", min=55.0, max=880.0, value=220.0),
+sidebar = panel(knob(name="freq", label="freq", min=55.0, max=880.0, value=220.0),
                 slider(name="amp", label="amp", min=0.0, max=0.15, value=0.08),
                 layout="col", w=190)
 
 out_scope = scope(tap=tap0, channels=2, window_ms=25.0, label="output")
-work_area = panel(None, sidebar, out_scope, layout="row", weight=1.0, gap=4)
+work_area = panel(sidebar, out_scope, layout="row", weight=1.0, gap=4)
 
 win = gui.open(window(menu_bar, work_area, label(name="status", text="ready", h=24),
                       title="gui_shell", w=760, h=420, layout="col",

@@ -43,13 +43,11 @@ gui = GuiHost.boot()
 
 # %%
 win = gui.open(window(
-    panel(None,
-          knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
+    panel(knob(name="cutoff", label="cutoff", min=20.0, max=20000.0, value=800.0),
           knob(name="res", label="res", min=0.0, max=1.0, value=0.3),
           number(name="gain", label="gain", min=-24.0, max=24.0, value=0.0),
           layout="row"),
-    panel(None,
-          slider(name="mix", label="mix", min=0.0, max=1.0, value=0.5),
+    panel(slider(name="mix", label="mix", min=0.0, max=1.0, value=0.5),
           toggle(name="bypass", label="bypass", value=False),
           button(name="reset", label="reset"),
           menu(name="wave", options=["sine", "saw", "square"], index=1, label="wave"),

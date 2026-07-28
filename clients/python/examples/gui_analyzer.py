@@ -90,8 +90,7 @@ for k in range(2):
 
 # %%
 win = gui.open(window(
-    panel(None,
-          phasescope(name="gonio", tap=tap0, tap2=tap0 + 1, window_ms=30.0,
+    panel(phasescope(name="gonio", tap=tap0, tap2=tap0 + 1, window_ms=30.0,
                      label="goniometer (stereo pair)"),
           spectrum(name="spectrum", tap=tap0, fft_size=2048, log_freq=True,
                    peak_hold=True, label="spectrum (left tap, log Hz)"),

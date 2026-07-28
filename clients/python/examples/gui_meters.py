@@ -86,8 +86,7 @@ bus = server.control_bus()
 
 # %%
 win = gui.open(window(
-    panel(None,
-          meter(name="level", bus=bus.index, min=-1.0, max=1.0, label="bus"),
+    panel(meter(name="level", bus=bus.index, min=-1.0, max=1.0, label="bus"),
           scope(name="trace", bus=bus.index, min=-1.0, max=1.0, label="bus"),
           layout="row"),
     waveform(name="buffer", buffer=bufnum),

@@ -100,9 +100,9 @@ synth = server.synth("gui_oscsend_beep", {"freq": 220.0})
 
 # %%
 win = gui.open(window(
-    label(None, "type an OSC message; it is sent to the server as you type", h=28.0),
+    label("type an OSC message; it is sent to the server as you type", h=28.0),
     text(name="field", value=f"/n_set {synth.id} freq 220", h=40.0),
-    label(None, "a multiline scratch pad (Enter = newline); not sent", h=28.0),
+    label("a multiline scratch pad (Enter = newline); not sent", h=28.0),
     text(name="scratch", multiline=True, value="line one\nline two"),
     title="OSC message field", w=560, h=360, layout="col"))
 print(f"synth {synth.id} playing at 220 Hz -- edit the freq in the field and the "

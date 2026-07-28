@@ -219,11 +219,11 @@ def test_scope_without_shm_needs_an_explicit_host():
 # ---- the guidef builder ----
 
 def test_guidef_spectrum_carries_freq_scale_with_log_freq_legacy():
-    w = guidef.spectrum(7, 3, fft_size=512, freq_scale="bark",
+    w = guidef.spectrum(3, id=7, fft_size=512, freq_scale="bark",
                         averaging=0.8, peak_hold=True, label="spec")
     assert w["type"] == "spectrum" and w["tap"] == 3
     assert w["freq_scale"] == "bark"
     assert w["peak_hold"] == 1 and w["averaging"] == 0.8
     # The legacy boolean still rides (the host reads it as linear/log).
-    legacy = guidef.spectrum(8, 0, log_freq=False)
+    legacy = guidef.spectrum(0, id=8, log_freq=False)
     assert legacy["log_freq"] == 0 and "freq_scale" not in legacy

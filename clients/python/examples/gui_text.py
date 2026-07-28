@@ -53,27 +53,25 @@ LOREM = ("a wrapped label lays its words out on the font's fixed advance, "
 def sizes() -> dict:
     """The same label at growing ``text_size`` -- 1.0 up to 4.0."""
     steps = [1.0, 1.5, 2.0, 3.0, 4.0]
-    return panel(None, *[label(None, f"text size {s}", text_size=s) for s in steps],
+    return panel(*[label(f"text size {s}", text_size=s) for s in steps],
                  layout="col")
 
 
 def alignments() -> dict:
     """One wrapped paragraph per alignment, side by side."""
-    return panel(None,
-                 label(None, LOREM, wrap=True, align="start"),
+    return panel(label(LOREM, wrap=True, align="start"),
                  label(name="center", text=LOREM, wrap=True, align="center"),
-                 label(None, LOREM, wrap=True, align="end"),
+                 label(LOREM, wrap=True, align="end"),
                  layout="row")
 
 
 def controls() -> dict:
     """The controls at two text sizes, with labels long enough to clip."""
-    return panel(None,
-                 slider(None, label="a deliberately long slider label", value=0.4),
-                 knob(None, label="cutoff", min=20.0, max=20000.0, value=800.0, text_size=3.0),
-                 button(None, label="a very wordy button face"),
-                 toggle(None, label="toggle at 3x", text_size=3.0),
-                 menu(None, ["sine", "sawtooth", "square"], label="wave", text_size=3.0),
+    return panel(slider(label="a deliberately long slider label", value=0.4),
+                 knob(label="cutoff", min=20.0, max=20000.0, value=800.0, text_size=3.0),
+                 button(label="a very wordy button face"),
+                 toggle(label="toggle at 3x", text_size=3.0),
+                 menu(["sine", "sawtooth", "square"], label="wave", text_size=3.0),
                  layout="row")
 
 

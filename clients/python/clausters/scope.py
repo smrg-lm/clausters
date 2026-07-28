@@ -215,18 +215,18 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
             label = f"bus {index}"
     widget_id = host.alloc_id()
     if view == "signal":
-        widget = guidef.scope(widget_id, tap=tap0, channels=channels,
+        widget = guidef.scope(id=widget_id, tap=tap0, channels=channels,
                               overlay=overlay, window_ms=window_ms,
                               trigger=trigger, hold=hold, min=min, max=max,
                               ruler=ruler, ruler_y=ruler_y, label=label)
         lanes = 1 if overlay else channels
         h = h if h is not None else (200 + 90 * lanes)
     elif view == "phase":
-        widget = guidef.phasescope(widget_id, tap0, tap0 + 1,
+        widget = guidef.phasescope(tap0, tap0 + 1, id=widget_id,
                                    window_ms=window_ms, hold=hold, label=label)
         h = h if h is not None else 420
     else:
-        widget = guidef.spectrum(widget_id, tap0, channels=channels,
+        widget = guidef.spectrum(tap0, id=widget_id, channels=channels,
                                  fft_size=fft_size, db_floor=db_floor,
                                  db_ceil=db_ceil, freq_scale=freq_scale,
                                  averaging=averaging, peak_hold=peak_hold,

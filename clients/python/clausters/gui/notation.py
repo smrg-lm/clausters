@@ -419,11 +419,10 @@ def score_view(display_list: dict, *, scroll_id: int | None = None,
     aspect = (vb[1] / vb[0]) if vb[0] else 1.0
     height = round(width * aspect, 1)
     return scroll(
-        scroll_id,
-        score(score_id, name=name, display_list=display_list,
+        score(id=score_id, name=name, display_list=display_list,
               sample_rate=sample_rate, editable=editable,
               x=0.0, y=0.0, w=width, h=height),
-        axis="both" if zoom else "y", zoom=zoom,
+        id=scroll_id, axis="both" if zoom else "y", zoom=zoom,
         content_w=width, content_h=height,
     )
 

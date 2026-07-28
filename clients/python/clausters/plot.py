@@ -187,13 +187,13 @@ def plot(obj, *, dur: float = 1.0, controls=None, defs=(), n: int = 1024,
         props["ruler"] = "samples"
     props = {k: v for k, v in props.items() if v is not None}
     if len(samples) <= _INLINE_MAX:
-        widget = guidef.plot(widget_id, data=[float(x) for x in samples], **props)
+        widget = guidef.plot(id=widget_id, data=[float(x) for x in samples], **props)
     else:
         fd, path = tempfile.mkstemp(prefix="clausters_plot_", suffix=".f32")
         os.close(fd)
         guidef.samples_to_file(samples, path)
         _tmp_files.append(path)
-        widget = guidef.plot(widget_id, path=path, **props)
+        widget = guidef.plot(id=widget_id, path=path, **props)
     if h is None:
         h = 260 if chans <= 1 else 160 + 140 * chans
     tree = guidef.window(widget, title=title or label or "plot", w=w, h=h)
@@ -249,8 +249,8 @@ def _open_patch_view(model, *, label=None, w: int = 1000, h: int = 700,
     from .gui import guidef
 
     widget_id = host.alloc_id()
-    view = guidef.patch(widget_id, **model.to_widget(), label=label)
-    workspace = guidef.scroll(host.alloc_id(), view)
+    view = guidef.patch(id=widget_id, **model.to_widget(), label=label)
+    workspace = guidef.scroll(view, id=host.alloc_id())
     tree = guidef.window(workspace, title=title or label or "patch", w=w, h=h)
     window_id = host.open(tree)
     return PatchWindow(host, window_id, widget_id)

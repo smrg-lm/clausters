@@ -141,12 +141,12 @@ placed: dict[int, tuple[float, float]] = {}
 # **render** compiles the patch and instances it. Every widget is *named*.
 
 # %%
-transport = panel(None, button(name="render", label="render"),
+transport = panel(button(name="render", label="render"),
                   button(name="stop", label="stop"), layout="row", h=48)
 
 gui = session.gui()
 win = gui.open(window(
-    scroll(None, patch(name="patch", **p.to_widget(), label="patch"), name="workspace"),
+    scroll(patch(name="patch", **p.to_widget(), label="patch"), name="workspace"),
     transport, title="Patch — level 1", w=720, h=680, layout="col"))
 session.start()
 

@@ -83,19 +83,16 @@ CLIPS = ("kick0", "kick1", "fill", "root", "turn", "theme")
 lane_chrome = dict(snap=BEAT / 4, sample_rate=SR, tempo=TEMPO)
 
 win = gui.open(window(
-    # A container's children are positional, so id-less containers pass a leading
-    # None and take the name as a keyword (like panel(None, ...)).
-    track(None,
-          clip(name="kick0", offset=0 * BEAT, dur=kick_frames, path=kick, label="kick"),
+    # A container's positional arguments are its children; everything else,
+    # `name` included, is a keyword.
+    track(clip(name="kick0", offset=0 * BEAT, dur=kick_frames, path=kick, label="kick"),
           clip(name="kick1", offset=2 * BEAT, dur=kick_frames, path=kick, label="kick"),
           clip(name="fill", offset=4 * BEAT, dur=fill_frames, path=fill, label="fill"),
           name="drums", label="drums", **lane_chrome),
-    track(None,
-          clip(name="root", offset=0 * BEAT, dur=root_frames, path=root, label="root"),
+    track(clip(name="root", offset=0 * BEAT, dur=root_frames, path=root, label="root"),
           clip(name="turn", offset=4 * BEAT, dur=turn_frames, path=turn, label="turn"),
           name="bass", label="bass", **lane_chrome),
-    track(None,
-          # A piano-roll clip: (start, dur, pitch) events relative to the clip,
+    track(# A piano-roll clip: (start, dur, pitch) events relative to the clip,
           # pitch mapped over [min, max]. The whole roll moves with the clip.
           clip(name="theme", offset=2 * BEAT, dur=6 * BEAT, min=48, max=72,
                notes=[(0 * BEAT, BEAT, 60), (1 * BEAT, BEAT, 64),

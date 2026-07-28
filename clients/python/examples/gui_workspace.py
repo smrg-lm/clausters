@@ -57,11 +57,10 @@ def plane() -> dict:
         col, row = i % 3, i // 3
         x, y = 60.0 + col * 480.0, 60.0 + row * 380.0
         boxes.append(
-            panel(None,
-                  label(None, f"node {i}"),
-                  knob(None, label="amount", min=0.0, max=1.0, value=i / 8),
+            panel(label(f"node {i}"),
+                  knob(label="amount", min=0.0, max=1.0, value=i / 8),
                   layout="col", x=x, y=y, w=300.0, h=220.0))
-    return scroll(None, *boxes, name="plane", content_w=PLANE_W, content_h=PLANE_H)
+    return scroll(*boxes, name="plane", content_w=PLANE_W, content_h=PLANE_H)
 
 
 def vertical_list() -> dict:
@@ -71,33 +70,29 @@ def vertical_list() -> dict:
     content area; ``content_h`` makes that area taller than the pane, so the
     wheel has somewhere to scroll to.
     """
-    rows = [toggle(None, label=f"track {i + 1}", value=False) for i in range(20)]
-    return scroll(None, *rows, name="vlist", layout="col", axis="y", zoom=False,
+    rows = [toggle(label=f"track {i + 1}", value=False) for i in range(20)]
+    return scroll(*rows, name="vlist", layout="col", axis="y", zoom=False,
                   content_h=900.0)
 
 
 def horizontal_strip() -> dict:
     """The other constrained case: a horizontal strip (a timeline-ish ribbon)."""
-    cells = [label(None, f"bar {i + 1}", x=i * 90.0, y=0.0, w=80.0, h=60.0)
+    cells = [label(f"bar {i + 1}", x=i * 90.0, y=0.0, w=80.0, h=60.0)
              for i in range(24)]
-    return scroll(None, *cells, name="hstrip", axis="x", zoom=False, content_h=70.0)
+    return scroll(*cells, name="hstrip", axis="x", zoom=False, content_h=70.0)
 
 
 def workspace() -> dict:
     return window(
-        panel(None,
-              panel(None,
-                    label(None, "free plane — drag to pan, wheel to zoom"),
+        panel(panel(label("free plane — drag to pan, wheel to zoom"),
                     button(name="reset", label="reset view", w=120.0),
                     layout="row", h=26.0, margin=0),
               plane(),
               layout="col", weight=3),
-        panel(None,
-              label(None, "vertical scroll view (axis=y, zoom off)", h=20.0),
+        panel(label("vertical scroll view (axis=y, zoom off)", h=20.0),
               vertical_list(),
               layout="col", weight=2),
-        panel(None,
-              label(None, "horizontal strip (axis=x, zoom off)", h=20.0),
+        panel(label("horizontal strip (axis=x, zoom off)", h=20.0),
               horizontal_strip(),
               layout="col", h=110.0),
         title="Workspace", w=900, h=760, layout="col",

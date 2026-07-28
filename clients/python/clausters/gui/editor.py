@@ -270,9 +270,9 @@ class Editor:
         self._patches[wid] = (group, handles)
         geometry = self._patch_geometry.get(id(group), {})
         content = (900.0, 700.0)
-        view = patch(wid, **p.to_widget(geometry), label=_name(group),
+        view = patch(id=wid, **p.to_widget(geometry), label=_name(group),
                      x=0.0, y=0.0, w=content[0], h=content[1])
-        return scroll(self._new_id(), view,
+        return scroll(view, id=self._new_id(),
                       content_w=content[0], content_h=content[1])
 
     def open(self, host, id: int | None = None) -> int:
@@ -307,7 +307,7 @@ class Editor:
         # note edit-back resolves through these).
         self._lanes[wid] = element
         self._rolls[wid] = element
-        roll = pianoroll(wid, notes=notes or None, osc=osc or None, ruler="beats",
+        roll = pianoroll(id=wid, notes=notes or None, osc=osc or None, ruler="beats",
                          tempo=self.tempo, sample_rate=self.sample_rate, snap=snap,
                          label=_name(element), **body)
         return window(roll, *self.extra, title=self.title,
@@ -713,7 +713,7 @@ class Editor:
     def _lane(self, clips: list, label: str) -> dict:
         """One `track` lane holding ``clips``, with the shared time chrome."""
         wid = self._new_id()
-        lane = track(wid, *clips, label=label, sample_rate=self.sample_rate,
+        lane = track(*clips, id=wid, label=label, sample_rate=self.sample_rate,
                      tempo=self.tempo,
                      snap=self.beats_to_units(self.quant) if self.quant > 0 else None)
         self._lanes[wid] = label
@@ -744,7 +744,7 @@ class Editor:
         # a member's offset is relative to its group.
         parent_base = base - (member.offset if member is not None else 0.0)
         self._clips[wid] = _Placed(owner, member, parent_base, offset, dur)
-        return clip(wid, offset=offset, dur=dur, label=_name(element), **body)
+        return clip(id=wid, offset=offset, dur=dur, label=_name(element), **body)
 
     def _body_for(self, element) -> dict:
         """The clip-body props an element draws with — and a **simultaneous** group

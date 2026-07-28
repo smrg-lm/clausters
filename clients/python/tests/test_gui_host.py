@@ -45,9 +45,9 @@ def test_open_assigns_missing_widget_ids_in_place():
     host = GuiHost("127.0.0.1", 57998)
     host._osc = _Recorder()
     knob = guidef.knob(label="freq")            # no id: assigned at open
-    slider = guidef.slider(7)                   # explicit id: kept verbatim
+    slider = guidef.slider(id=7)                # explicit id: kept verbatim
     inner = guidef.button()
-    panel = guidef.panel(None, inner)           # nested id-less children too
+    panel = guidef.panel(inner)                 # nested id-less children too
     win_a = host.open(guidef.window(knob, slider, panel))
     win_b = host.open(guidef.window(guidef.knob()))
     # Assigned in place, host-unique across windows, disjoint from hand ids.
@@ -61,4 +61,23 @@ def test_a_non_integer_widget_id_is_refused():
     from clausters.gui import guidef
 
     with pytest.raises(TypeError, match="widget id"):
-        guidef.knob("freq")  # a label mistaken for the positional id
+        guidef.knob(id="freq")  # a label mistaken for the id
+
+
+def test_the_id_is_never_positional():
+    """The id is a keyword everywhere, so the positional slot is the widget's
+    own material — and the two ways of getting that wrong both raise."""
+    from clausters.gui import guidef
+
+    # A leaf takes no positional at all (its material is all keywords)...
+    with pytest.raises(TypeError, match="positional"):
+        guidef.knob(7)
+    # ...and a container's positionals are its children, so a stray id-shaped
+    # placeholder is refused as the non-node it is.
+    with pytest.raises(TypeError, match="must be a widget node"):
+        guidef.panel(None, guidef.button())
+    # The material that *is* positional reads without a keyword.
+    assert guidef.label("hello")["text"] == "hello"
+    assert guidef.meter(4)["bus"] == 4
+    assert guidef.menu(["sine", "saw"])["options"] == ["sine", "saw"]
+    assert guidef.panel(guidef.button())["children"][0]["type"] == "button"

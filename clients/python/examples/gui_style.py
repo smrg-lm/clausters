@@ -68,11 +68,10 @@ NESTED = {"panel": "#0a0d12", "text": "#8098b0"}
 # %%
 def controls(tag: str) -> dict:
     """One row of ordinary controls; the theme in force colors all of them."""
-    return panel(None,
-                 label(None, tag, w=220.0),
-                 slider(None, label="amp", value=0.6),
-                 knob(None, label="freq", min=20.0, max=2000.0, value=440.0),
-                 toggle(None, label="on", value=True),
+    return panel(label(tag, w=220.0),
+                 slider(label="amp", value=0.6),
+                 knob(label="freq", min=20.0, max=2000.0, value=440.0),
+                 toggle(label="on", value=True),
                  layout="row")
 
 
@@ -86,15 +85,13 @@ gui = GuiHost.boot(extra_args=("--theme", str(theme_file)))
 
 win = gui.open(window(
     controls("host theme (file)"),
-    panel(None,
-          controls("theme group (cool)"),
-          panel(None, controls("nested group (darker)"), layout="col", theme=NESTED),
+    panel(controls("theme group (cool)"),
+          panel(controls("nested group (darker)"), layout="col", theme=NESTED),
           name="cool", layout="col", theme=COOL),
-    panel(None,
-          label(None, "per-widget accents", w=220.0),
+    panel(label("per-widget accents", w=220.0),
           slider(name="accent_a", label="a", value=0.3, color="#e04060"),
-          slider(None, label="b", value=0.5, color="#40c080"),
-          slider(None, label="c", value=0.7, color="#c0b040"),
+          slider(label="b", value=0.5, color="#40c080"),
+          slider(label="c", value=0.7, color="#c0b040"),
           layout="row"),
     title="Style", w=980, h=560, layout="col"))
 print("host warm (file theme); one cool theme group, nested darker; three "

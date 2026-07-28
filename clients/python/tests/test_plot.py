@@ -52,7 +52,7 @@ def _plot_widget(tree: dict) -> dict:
 
 
 def test_guidef_plot_carries_the_new_props():
-    w = guidef.plot(7, data=[0.0, 1.0], channels=2, view="spectrum",
+    w = guidef.plot(id=7, data=[0.0, 1.0], channels=2, view="spectrum",
                     overlay=True, sample_rate=48000.0, min=-2.0, max=2.0,
                     ruler="time", ruler_y="off", fft_size=1024,
                     db_floor=-90.0, db_ceil=-3.0, freq_scale="mel",
@@ -64,7 +64,7 @@ def test_guidef_plot_carries_the_new_props():
     assert (w["min"], w["max"]) == (-2.0, 2.0)
     assert (w["ruler"], w["ruler_y"]) == ("time", "off")
     # Omitted props do not ride the wire (auto-fit relies on their absence).
-    lean = guidef.plot(8, data=[0.5])
+    lean = guidef.plot(id=8, data=[0.5])
     assert "min" not in lean and "max" not in lean and "view" not in lean
 
 

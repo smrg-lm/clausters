@@ -99,7 +99,7 @@ server.add_synthdef(voice())
 # %%
 def scene() -> dict:
     return window(
-        label(None, "click/drag plays; drag the strip to pan, wheel to zoom"),
+        label("click/drag plays; drag the strip to pan, wheel to zoom"),
         piano(name="keys", min=48, max=84, active_min=21, active_max=108, label="keys"),
         title="Piano -> server voices", w=900, h=260, layout="col",
     )
