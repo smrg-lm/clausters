@@ -555,8 +555,12 @@ acceptances, the new one being `tests/data.html`: a def feeds a bus and a tap,
 the script subscribes to both, reads a generated buffer, and draws a meter, a
 scope and a waveform on its own canvas — with the columns asserted to be the
 min/max of the very samples read, the trigger locked, the spectrum's peak on
-the tone, and the canvas carrying ink. Example: `examples/scope.html`, the
-three paths in one page; book chapter: "Reading the server".
+the tone, and the canvas carrying ink. Examples: `examples/scope.html`, the
+three paths in one page drawn by the script; and `examples/editor.html`, the
+port of the Python client's `gui_editor.py` — a decoded file in a server
+buffer, drawn by the **host** as a linked waveform and spectrogram, with a
+transport whose playhead is anchored to the engine clock and whose pause is
+`/n_run`. Book chapter: "Reading the server".
 
 ### W11 - Automation: a break-point curve as a control vector
 

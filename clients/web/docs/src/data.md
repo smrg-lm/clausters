@@ -10,9 +10,9 @@ things worth reading, and each has its own path:
 | a **buffer** | `/b_getn` in chunks, or `fetch` | waveforms, audio-editor views |
 
 The GUI host already reads all three on its own — that is why a GuiDef naming a
-bus, a tap or a URL draws with no script at all. What this chapter is about is
-the same three paths opened to *your* script, for a view you draw yourself on
-your own canvas.
+bus, a tap or a URL draws with no script at all. This chapter describes the same
+three paths opened to *your* script, for a view you draw yourself on your own
+canvas.
 
 Everything here lives in the `data` namespace:
 
@@ -119,7 +119,7 @@ const points = data.lissajous(left, right);     // [x, y] per frame
 const r = data.correlation(left, right);        // -1 … +1, or undefined
 ```
 
-## Buffers, in bulk
+## Buffer samples
 
 A buffer's samples come back in chunks sized to the carrier — over a WebSocket a
 chunk is megabytes, so a buffer of any ordinary size is one or two round trips:
@@ -143,7 +143,7 @@ with the browser's own decoder:
 const buffer = await server.loadSample("./kick.wav");   // in-page carrier only
 ```
 
-### Drawing one: the peak pyramid
+### The peak pyramid
 
 A waveform is never drawn sample by sample. Reduce the samples once, then read
 one column per pixel:
@@ -190,10 +190,10 @@ memory: the exponential averaging and the peak hold a spectrum display shows
 across frames are smoothing — a look, not a measurement — and belong to
 whatever draws.
 
-## What this buys
+## One implementation of every figure
 
 Nothing here computes a number in TypeScript. Every figure — the trigger
 alignment, the decibel curve, the peak columns, the correlation — comes out of
-the same `clausters-core` function the GUI host calls, so a canvas your script
-feeds and a widget the host draws from the same bus, tap or buffer show the same
-picture. That is the point of the paths being open to both.
+the same `clausters-core` function the GUI host calls. A canvas your script
+feeds and a widget the host draws from the same bus, tap or buffer therefore
+show the same picture, which is why both may read these paths.

@@ -212,6 +212,19 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   **drive a native host** manda todo eso a la ventana nativa sin cambiar una
   línea del ejemplo. Versión scriptada: `clients/web/test.sh` (Chrome headless;
   `tests/gui.html` sintetiza los gestos sobre el canvas).
+- **Un editor de audio en la pagina (cliente web).**
+  `clients/web/build.sh`, despues `(cd clients/web && python3 -m http.server)` y
+  abrir `http://localhost:8000/examples/editor.html` → **start** y elegir un
+  archivo de audio cualquiera (o **or: a generated tone** si no hay ninguno a
+  mano): el canvas del host muestra la forma de onda y el espectrograma del
+  buffer. **play** suena y la **cabeza lectora** barre sola; **pause** la
+  detiene y el sonido se corta pero el nodo sigue en el arbol; **play** de nuevo
+  (el mismo boton hace resume) continua **donde habia quedado**, no desde cero.
+  La rueda hace zoom en las dos vistas a la vez y Shift+arrastrar las desplaza
+  juntas (comparten `link`); arrastrar sin Shift **selecciona** y el rango
+  aparece en el log de la pagina; **play selection** repite solo ese tramo.
+  Version scripteada: `clients/web/test.sh` (`tests/editor.html`, que asierta
+  el transporte sobre un analizador).
 - **Las vistas dibujadas por el script (cliente web).**
   `clients/web/build.sh`, despues `(cd clients/web && python3 -m http.server)` y
   abrir `http://localhost:8000/examples/scope.html` → **start**: la pagina no

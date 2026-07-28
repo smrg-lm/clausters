@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters editor views over the in-page carrier</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            max-width: 44rem; white-space: pre-wrap; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div>the editor views, host-drawn: a buffer loaded into the engine in
+        this page, shown as a <code>waveform</code> and a
+        <code>spectrogram</code> pulling their samples over the host's own
+        client leg, with a transport that plays, pauses and stops it.</div>
+      <button id="boot">boot + open</button>
+      <pre id="log"></pre>
+    </main>
+
+    <!--
+      The acceptance behind examples/editor.html (clients/web/test.sh, headless
+      Chrome): ?smoke=1 auto-runs. A decoded file reaches a server buffer
+      through `loadSample` (fetch + decodeAudioData + the carrier's bulk
+      install), the host draws it from `buffer:` — which makes it fetch the
+      samples with /b_query + /b_getn over its client leg — and the transport
+      is asserted **audibly** on an analyser: silent, then sounding under play,
+      silent again under pause with the node still in the tree, sounding after
+      resume, and gone after stop.
+    -->
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine,
+        Server, SynthDef, GuiHost, guiHost, gui,
+        control, out, playBuf, bufRd, bufRateScale, phasor,
+      } from "../dist/index.js";
+
+      const smoke = new URLSearchParams(location.search).has("smoke");
+      const log = (line) => {
+        document.getElementById("log").textContent += line + "\n";
+      };
+      const verdict = (text) => {
+        log(text);
+        document.title = text.split("\n")[0];
+        fetch(`/smoke-verdict-${encodeURIComponent(text.split("\n")[0])}`)
+          .catch(() => {});
+      };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+      /**
+       * A WAV the page builds and serves to itself as an object URL: the
+       * example takes a file from an <input>, and a headless run has none.
+       * What is under test is the path a real file takes — fetch, decode,
+       * install — not where the bytes came from.
+       */
+      function wavUrl({ frames = 192000, rate = 48000, hz = 220 } = {}) {
+        const bytes = new ArrayBuffer(44 + frames * 2);
+        const view = new DataView(bytes);
+        const ascii = (at, text) => {
+          for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
+        };
+        ascii(0, "RIFF"); view.setUint32(4, 36 + frames * 2, true); ascii(8, "WAVE");
+        ascii(12, "fmt "); view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+        view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true);
+        view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+        ascii(36, "data"); view.setUint32(40, frames * 2, true);
+        for (let i = 0; i < frames; i++) {
+          const s = Math.sin((2 * Math.PI * hz * i) / rate) * 0.8;
+          view.setInt16(44 + i * 2, Math.round(s * 32767), true);
+        }
+        return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+      }
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        if (raw.context.state !== "running") {
+          throw new Error(`context did not run: ${raw.context.state}`);
+        }
+        // The transport's assertions are about sound, not about messages.
+        const analyser = raw.context.createAnalyser();
+        analyser.fftSize = 2048;
+        raw.node.connect(analyser);
+        const bins = new Float32Array(analyser.fftSize);
+        // Settle first, then measure. The analyser holds ~43 ms of history, so
+        // a peak taken across the whole window still carries the sound from
+        // before a pause; what each assertion asks is "is it sounding *now*".
+        const peak = async (ms) => {
+          await sleep(ms);
+          let top = 0;
+          for (let i = 0; i < 3; i++) {
+            await sleep(25);
+            analyser.getFloatTimeDomainData(bins);
+            for (const v of bins) top = Math.max(top, Math.abs(v));
+          }
+          return top;
+        };
+
+        const server = await Server.open(await pageConnection());
+        const host = await GuiHost.page();
+        await guiHost();
+
+        // ---- the file, into a server buffer ----
+        const url = wavUrl();
+        const buffer = await server.loadSample(url);
+        URL.revokeObjectURL(url);
+        if (buffer.frames < 100000 || buffer.channels !== 1) {
+          throw new Error(`unexpected buffer: ${JSON.stringify(buffer)}`);
+        }
+        log(`loaded ${buffer.frames} frames, ${buffer.channels} ch `
+          + `at ${buffer.sampleRate} Hz into buffer ${buffer.bufnum}`);
+
+        // The samples really landed: read them back out of the engine.
+        const read = await server.getSamples(buffer, { start: 0, count: 2048 });
+        const loudest = Math.max(...read.map(Math.abs));
+        if (loudest < 0.5) throw new Error(`the buffer is silent (${loudest})`);
+        log(`read back ${read.length} samples, peak ${loudest.toFixed(3)}`);
+
+        // ---- the player def and the window ----
+        const buf = control("buf", 0.0);
+        const rate = bufRateScale(buf);
+        await server.addSynthDef(new SynthDef("editor_test_player",
+          out(0.0, playBuf(buf, 0.0, rate, 0.0).mul(0.8)),
+          out(1.0, playBuf(buf, 0.0, rate, 0.0).mul(0.8))));
+        await server.sync();
+
+        const win = host.open(gui.window(
+          { title: "editor", w: 800, h: 560, layout: "col", gap: 8.0 },
+          gui.waveform({ name: "wave", buffer: buffer.bufnum,
+                         channels: buffer.channels, sampleRate: buffer.sampleRate,
+                         ruler: "time", link: 1 }),
+          gui.spectrogram({ name: "stft", buffer: buffer.bufnum,
+                            channels: buffer.channels, sampleRate: buffer.sampleRate,
+                            windowSize: 1024, link: 1, h: 180 }),
+        ));
+        await sleep(900);   // the host fetches the buffer over its client leg
+
+        const wave = await win.widget("wave").query();
+        if (wave.type !== "waveform" || wave.props.buffer !== buffer.bufnum) {
+          throw new Error(`unexpected view: ${JSON.stringify(wave)}`);
+        }
+        log(`the host holds ${wave.type} on buffer ${wave.props.buffer}`);
+
+        // ---- the transport, asserted on the analyser ----
+        const silent = await peak(150);
+        if (silent > 0.01) throw new Error(`not silent before play (${silent})`);
+
+        const anchor = await raw.clock();
+        const voice = server.synth("editor_test_player", { buf: buffer.bufnum });
+        win.widget("wave").set({ playhead_at: anchor });
+        win.widget("stft").set({ playhead_at: anchor });
+        const playing = await peak(200);
+        if (playing < 0.1) throw new Error(`silent under play (${playing})`);
+
+        // Pause is /n_run 0: the node stays in the tree, with its position.
+        server.pause(voice);
+        await sleep(80);
+        const pausedPeak = await peak(150);
+        if (pausedPeak > 0.01) throw new Error(`still sounding when paused (${pausedPeak})`);
+        const node = await server.nodeQuery(voice);
+        if (node.def !== "editor_test_player") {
+          throw new Error(`the paused node left the tree: ${JSON.stringify(node)}`);
+        }
+
+        server.resume(voice);
+        const resumed = await peak(200);
+        if (resumed < 0.1) throw new Error(`silent after resume (${resumed})`);
+
+        voice.free();
+        await server.sync();
+        const stopped = await peak(150);
+        if (stopped > 0.01) throw new Error(`still sounding after stop (${stopped})`);
+        const tree = await server.queryTree();
+        if (tree.children.length !== 0) {
+          throw new Error(`${tree.children.length} node(s) left in the tree`);
+        }
+
+        // The selection player the example's "play selection" button uses: a
+        // Phasor looping between the bounds, read by BufRd.
+        const rbuf = control("buf", 0.0);
+        const phase = phasor(0.0, bufRateScale(rbuf), control("start", 0.0),
+                             control("end", 1.0), control("start", 0.0));
+        await server.addSynthDef(new SynthDef("editor_test_region",
+          out(0.0, bufRd(rbuf, 0.0, phase).mul(0.8)),
+          out(1.0, bufRd(rbuf, 0.0, phase).mul(0.8))));
+        await server.sync();
+        const region = server.synth("editor_test_region", {
+          buf: buffer.bufnum, start: 24000, end: 72000,
+        });
+        const looping = await peak(200);
+        if (looping < 0.1) throw new Error(`the selection is silent (${looping})`);
+        region.free();
+        await server.sync();
+
+        verdict(`PASS: buffer ${buffer.bufnum} loaded and drawn, transport `
+          + `play ${playing.toFixed(2)} → pause ${pausedPeak.toFixed(2)} `
+          + `→ resume ${resumed.toFixed(2)} → stop ${stopped.toFixed(2)}, `
+          + `selection ${looping.toFixed(2)}`);
+      }
+
+      document.getElementById("boot").onclick = () =>
+        run().catch((err) => verdict(`FAIL: ${err}`));
+      if (smoke) run().catch((err) => verdict(`FAIL: ${err}`));
+    </script>
+  </body>
+</html>

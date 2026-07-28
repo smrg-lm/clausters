@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: an audio editor in the page</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 52rem; }
+      #note { font-size: 13px; line-height: 1.5; }
+      button, input[type=file] { font: inherit; }
+      button { padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The web port of the Python client's
+<code>gui_editor.py</code>: <b>the editor-grade views, and a transport over
+them</b>.
+
+A sound file goes into a <b>server buffer</b> — decoded by the browser and
+installed into the engine in this page — and the <b>GUI host</b> draws it as a
+<code>waveform</code> and a <code>spectrogram</code>, pulling the samples over
+its own client leg. Both views are <code>link</code>ed, so the wheel zooms and
+Shift+drag pans them together; a plain <b>drag selects</b>, and the selection
+comes back to this script as a <code>/gui_event</code>.
+
+The transport is part of the same window: <b>play</b> starts a
+<code>PlayBuf</code> and anchors the host's <b>playhead</b> to the engine's
+sample clock, so it sweeps on its own with no per-frame message; <b>pause</b> is
+<code>/n_run 0</code>, which freezes the node with its buffer position intact;
+<b>stop</b> frees it. <b>play selection</b> reads the selected region instead,
+with a <code>Phasor</code> looping between its bounds.
+
+Nothing is drawn by this page: the canvas below belongs to the host. (For the
+other direction — the same data read by the script and drawn by hand — see
+<code>scope.html</code>.)
+
+Everything runs on the <b>in-page engine</b>: no server process, no socket.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <input id="file" type="file" accept="audio/*" disabled />
+        <button id="tone" disabled>or: a generated tone</button>
+      </div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine,
+        Server, SynthDef, GuiHost, guiHost, gui,
+        control, out, playBuf, bufRd, bufRateScale, phasor,
+      } from "../dist/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      let server, host, raw, win = null;
+      let buffer = null;          // the loaded Buffer handle
+      let voice = null;           // the sounding node, if any
+      let paused = 0;             // engine samples spent paused, this pass
+      let pausedAt = 0;           // the clock reading when pause began
+      let anchor = 0;             // clock sample at timeline position 0
+      let selection = null;       // [start, len] in frames, from the view
+
+      // ---- the defs ----
+      // Built per channel count, because a def's graph is fixed when it is
+      // sent and PlayBuf is mono per UGen: a stereo buffer is two of them.
+      // `rate` rides BufRateScale, so a file recorded at another sample rate
+      // plays at its true pitch without this script knowing either rate.
+      const playerDef = (channels) => {
+        const buf = control("buf", 0.0);
+        const rate = bufRateScale(buf).mul(control("speed", 1.0));
+        const amp = control("amp", 0.8);
+        const graph = [];
+        for (let ch = 0; ch < Math.min(2, channels); ch++) {
+          graph.push(out(ch, playBuf(buf, ch, rate, 0.0).mul(amp)));
+        }
+        // A mono buffer still fills both outputs.
+        if (channels === 1) graph.push(out(1.0, playBuf(buf, 0.0, rate, 0.0).mul(amp)));
+        return new SynthDef(`editor_player_${channels}`, ...graph);
+      };
+
+      // The selection player: a Phasor sweeps frames from `start` to `end` and
+      // wraps, and BufRd reads the buffer at that phase — the editor's "loop
+      // the selection" over one graph.
+      const regionDef = (channels) => {
+        const buf = control("buf", 0.0);
+        const start = control("start", 0.0);
+        const end = control("end", 1.0);
+        const amp = control("amp", 0.8);
+        const phase = phasor(0.0, bufRateScale(buf), start, end, start);
+        const graph = [];
+        for (let ch = 0; ch < Math.min(2, channels); ch++) {
+          graph.push(out(ch, bufRd(buf, ch, phase).mul(amp)));
+        }
+        if (channels === 1) graph.push(out(1.0, bufRd(buf, 0.0, phase).mul(amp)));
+        return new SynthDef(`editor_region_${channels}`, ...graph);
+      };
+
+      // ---- the window ----
+      const scene = (buf) => gui.window(
+        { title: "editor", w: 900, h: 620, layout: "col", margin: 8.0, gap: 8.0 },
+        gui.label(`buffer ${buf.bufnum}: ${buf.frames} frames, `
+          + `${buf.channels} ch at ${buf.sampleRate} Hz`, { h: 22 }),
+        gui.waveform({
+          name: "wave", buffer: buf.bufnum, channels: buf.channels,
+          sampleRate: buf.sampleRate, ruler: "time", rulerY: "db", link: 1,
+        }),
+        gui.spectrogram({
+          name: "stft", buffer: buf.bufnum, channels: buf.channels,
+          sampleRate: buf.sampleRate, windowSize: 1024, freqScale: "log",
+          dbFloor: -90.0, link: 1, h: 200,
+        }),
+        gui.panel(
+          { layout: "row", h: 34, gap: 8.0 },
+          gui.button({ name: "play", label: "play" }),
+          gui.button({ name: "pause", label: "pause" }),
+          gui.button({ name: "stop", label: "stop" }),
+          gui.button({ name: "region", label: "play selection" }),
+        ),
+      );
+
+      // ---- the transport ----
+      // The host sweeps the playhead itself from `playhead_at`: the engine
+      // clock value at timeline position 0. Anchoring it is the whole of
+      // "follow what you hear" — there is no per-frame message.
+      const setPlayhead = (sample) => {
+        win?.widget("wave").set({ playhead_at: sample });
+        win?.widget("stft").set({ playhead_at: sample });
+      };
+
+      async function play() {
+        stop();
+        anchor = await raw.clock();
+        paused = 0;
+        voice = server.synth(`editor_player_${buffer.channels}`,
+                             { buf: buffer.bufnum });
+        setPlayhead(anchor);
+        log("play");
+      }
+
+      async function playSelection() {
+        if (!selection) return log("drag on a view to select a region first");
+        stop();
+        const [start, len] = selection;
+        voice = server.synth(`editor_region_${buffer.channels}`, {
+          buf: buffer.bufnum, start, end: start + len,
+        });
+        // The playhead is a straight sweep from position 0, so a looping
+        // region has none: what marks the region is the selection itself.
+        setPlayhead(-1);
+        log(`playing the selection: ${start.toFixed(0)} +${len.toFixed(0)} frames`);
+      }
+
+      async function pause() {
+        if (!voice) return;
+        if (pausedAt === 0) {
+          server.pause(voice);
+          pausedAt = await raw.clock();
+          setPlayhead(-1);          // a paused playhead has no anchor to sweep from
+          log("paused (the node keeps its buffer position)");
+        } else {
+          server.resume(voice);
+          paused += (await raw.clock()) - pausedAt;
+          pausedAt = 0;
+          setPlayhead(anchor + paused);   // re-anchored past the silence
+          log("resumed");
+        }
+      }
+
+      function stop() {
+        if (voice) { voice.free(); voice = null; }
+        pausedAt = 0;
+        setPlayhead(-1);
+      }
+
+      // ---- opening a buffer ----
+      async function openBuffer(buf) {
+        stop();
+        if (buffer) server.freeBuffer(buffer);
+        buffer = buf;
+        // One def per channel count, sent once each.
+        await server.addSynthDef(playerDef(buf.channels));
+        await server.addSynthDef(regionDef(buf.channels));
+        await server.sync();
+
+        win?.close();
+        selection = null;
+        win = host.open(scene(buf));
+        win.widget("play").onEvent((down) => { if (down) play(); });
+        win.widget("pause").onEvent((down) => { if (down) pause(); });
+        win.widget("stop").onEvent((down) => { if (down) { stop(); log("stop"); } });
+        win.widget("region").onEvent((down) => { if (down) playSelection(); });
+        // The views' edit-back: dragging on either one reports the same
+        // selection, in frames, because they share a `link` group.
+        for (const name of ["wave", "stft"]) {
+          win.widget(name).onEvent((tag, ...values) => {
+            if (tag !== "selection" || values.length < 2) return;
+            selection = [values[0], values[1]];
+            log(`selection: ${values[0].toFixed(0)} +${values[1].toFixed(0)} frames `
+              + `(${(values[1] / buf.sampleRate).toFixed(2)} s)`);
+          });
+        }
+        log(`opened ${buf.frames} frames, ${buf.channels} ch — `
+          + "wheel zooms, Shift+drag pans, drag selects");
+      }
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        raw = await engine({ channels: 2 });
+        await raw.resume();
+        server = await Server.open(await pageConnection());
+        host = await GuiHost.page();
+        // The host's canvas is the page's; place it where the document wants.
+        const { canvas } = await guiHost();
+        canvas.style.maxWidth = "100%";
+
+        el("file").disabled = false;
+        el("tone").disabled = false;
+        log("pick an audio file, or generate a tone");
+      }
+
+      // A file the browser decodes, installed into the engine's buffer pool:
+      // `loadSample` is fetch + decodeAudioData + the carrier's bulk install.
+      // An ordinary URL works the same way — this page uses an object URL so
+      // it needs no asset of its own.
+      el("file").onchange = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const url = URL.createObjectURL(file);
+        try {
+          log(`loading ${file.name} …`);
+          await openBuffer(await server.loadSample(url));
+        } catch (error) {
+          log(`could not load ${file.name}: ${error}`);
+        } finally {
+          URL.revokeObjectURL(url);
+        }
+      };
+
+      // No file at hand: the *server* fills a buffer instead (`/b_gen sine1`,
+      // a few partials), so the page has something to look at and play.
+      el("tone").onclick = async () => {
+        const buf = await server.allocBuffer(96000, 1);
+        await server.genBuffer(buf, "sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
+        await openBuffer(await server.queryBuffer(buf));
+      };
+
+      el("start").onclick = () => {
+        el("start").disabled = true;
+        run().catch((error) => log(`error: ${error}`));
+      };
+    </script>
+  </body>
+</html>
