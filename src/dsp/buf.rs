@@ -145,9 +145,15 @@ impl UGen for BufInfo {
                 let file_sr = buf.sample_rate() as f32;
                 match self.0 {
                     BufInfoKind::SampleRate => file_sr,
+                    // The engine's rate as a *fact*, not as a time base: this
+                    // ratio corrects a file's pitch against the hardware rate,
+                    // so it divides by `full_sample_rate` and reads the same at
+                    // either rate. Dividing by the instance's own rate would
+                    // make a control-rate `BufRateScale` report the block size
+                    // (`sr / (sr / 64)`), which silently ruins a `PlayBuf`.
                     BufInfoKind::RateScale => {
-                        if ctx.sample_rate > 0.0 {
-                            file_sr / ctx.sample_rate
+                        if ctx.full_sample_rate > 0.0 {
+                            file_sr / ctx.full_sample_rate
                         } else {
                             0.0
                         }

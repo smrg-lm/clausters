@@ -240,6 +240,43 @@ fn bufrd_interpolates_wraps_and_clamps() {
 }
 
 #[test]
+fn kr_buf_rate_scale_still_reports_the_hardware_ratio() {
+    // The twin of `rates.rs::kr_samplerate_still_reports_the_engine_rate`, for
+    // the other quantity that is a hardware fact rather than a time base: a
+    // control-rate BufRateScale must report file_sr / engine_sr, not
+    // file_sr / (engine_sr / BLOCK_SIZE). Getting this wrong is silent — the
+    // ratio comes back as the block size and a PlayBuf driven by it races
+    // through its buffer in a few milliseconds.
+    let (mut engine, mut handle) = engine_pair(SR, CHANNELS);
+    handle
+        .send(Cmd::SetBuffer {
+            index: 0,
+            buffer: Some(Arc::new(Buffer::new(vec![0.0; 100], 1, 100, 24_000.0))),
+        })
+        .ok()
+        .unwrap();
+    handle
+        .send(add_synth(
+            1000,
+            spec_synth(json!({
+                "name": "scale_kr",
+                "ugens": [
+                    {"kind": "BufRateScale", "rate": "kr", "inputs": [{"const": 0.0}]},
+                    {"kind": "Out", "inputs": [{"const": 0.0}, {"ugen": 0}]}
+                ]
+            })),
+        ))
+        .ok()
+        .unwrap();
+    let mut out = vec![0.0f32; BLOCK_SIZE * CHANNELS];
+    engine.process_block(&mut out);
+    assert_eq!(
+        out[0], 0.5,
+        "BufRateScale.kr = 24000/48000, not the block size"
+    );
+}
+
+#[test]
 fn buf_info_ugens_report_shape_and_rate_scale() {
     // A 24 kHz, 100-frame mono buffer played on a 48 kHz server: BufRateScale
     // must report 0.5 (file_sr / server_sr) so PlayBuf can correct the pitch.
