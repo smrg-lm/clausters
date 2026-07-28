@@ -428,6 +428,24 @@ so the native front has them too — and are about a view that is *driven* rathe
 than merely opened; the third is the browser front's. The first is closed; the
 other two remain open (unnumbered until their design converges).
 
+- ✅ **G32c — `timeruler`: the axis ruled once, above the lanes** *(done
+  2026-07-28)*: a ruler over a multitrack belongs to the **axis**, not to any
+  one lane, and a `track`'s `ruler` strip is reserved out of *that lane's*
+  height — so ruling a stack meant electing one lane to carry the strip and to
+  pay for it, and the strip then sat wherever that lane sat (between two lanes
+  unless it was the last). The new `timeruler` widget owns its own box: the
+  document places it above the lanes and no lane loses a pixel. It is a timeline
+  widget like any other — it joins the group its `link` names, reads that
+  group's window, and its ticks are indented by a lane's header width so they
+  stand over the samples they label. Gestures are the DAW's: a press **locates**,
+  Shift+drag pans, the wheel zooms. Deliberately **no sizing concept of its
+  own** — its thickness is the `h` place prop, like every other widget's, with
+  the default in the builders (`track`'s vestigial `height` is read by nobody,
+  which is the counter-example). Python and TypeScript builders, both catalog
+  tables, and `composer.html` now rules from the top. Tests: the ruler and the
+  lanes resolve to one group key, it follows the lanes' window across a zoom, and
+  it contributes no extent of its own.
+
 - ✅ **G32b — A clip dragged to the edge pulls the view** *(done 2026-07-28)*:
   the companion gap to G22's "empty time to zoom out into". The headroom let a
   lane be zoomed *out* past its content, but a drag still mapped the cursor

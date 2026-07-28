@@ -893,6 +893,24 @@ pub enum WidgetKind {
         snap: f64,
         editor: EditorProps,
     },
+    /// A **free-standing time ruler**: the shared axis of a navigation group,
+    /// drawn as a strip the *document* places — the DAW's ruler above its
+    /// tracks.
+    ///
+    /// It exists because a ruler over a multitrack belongs to the **axis**, not
+    /// to any one lane. A `track`'s own `ruler` strip is reserved out of that
+    /// lane's height, so ruling a stack of lanes meant picking one to carry it
+    /// (and to pay for it), and the strip then sat wherever that lane happened
+    /// to be — between two lanes, unless it was the last. This widget owns its
+    /// own box instead: put it above the lanes (or below) and no lane loses a
+    /// pixel.
+    ///
+    /// It is a timeline widget like any other (`is_timeline`): it joins the
+    /// group named by `editor.link` and reads that group's window, so it labels
+    /// exactly what the lanes show and moves with them. A press locates the
+    /// transport, as a lane's own ruler strip does. Its thickness is the `h`
+    /// place prop, like any other widget's — the builders default it.
+    TimeRuler { editor: EditorProps },
     /// The dedicated editor-grade piano-roll view: a keyboard gutter, a note
     /// grid, and optional velocity / OSC-event strips — the editor sibling of
     /// the compact `clip` roll, sharing its drawing/hit-test primitives
@@ -1244,6 +1262,7 @@ impl Widget {
                 | WidgetKind::Spectrogram { .. }
                 | WidgetKind::Track { .. }
                 | WidgetKind::PianoRoll { .. }
+                | WidgetKind::TimeRuler { .. }
         )
     }
 
@@ -1346,7 +1365,8 @@ impl WidgetKind {
             WidgetKind::Waveform { editor, .. }
             | WidgetKind::Spectrogram { editor, .. }
             | WidgetKind::Track { editor, .. }
-            | WidgetKind::PianoRoll { editor, .. } => Some(editor),
+            | WidgetKind::PianoRoll { editor, .. }
+            | WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
     }
@@ -1358,7 +1378,8 @@ impl WidgetKind {
             WidgetKind::Waveform { editor, .. }
             | WidgetKind::Spectrogram { editor, .. }
             | WidgetKind::Track { editor, .. }
-            | WidgetKind::PianoRoll { editor, .. } => Some(editor),
+            | WidgetKind::PianoRoll { editor, .. }
+            | WidgetKind::TimeRuler { editor, .. } => Some(editor),
             _ => None,
         }
     }

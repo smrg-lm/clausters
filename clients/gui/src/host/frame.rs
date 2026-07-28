@@ -208,6 +208,15 @@ struct BpfItem {
 /// A placed `track` lane and its clips, copied out of the host tree so the
 /// graphic-unit overlay is drawn after the tree borrow is released. The clips'
 /// shared time axis is computed once over all the window's tracks.
+/// A placed free-standing `timeruler`: the strip and the group it labels.
+struct RulerItem {
+    id: i32,
+    rect: Rect,
+    clip: Option<Rect>,
+    theme: Option<Arc<Theme>>,
+    editor: EditorProps,
+}
+
 struct TrackItem {
     id: i32,
     rect: Rect,
@@ -496,6 +505,15 @@ fn draw_time_ruler(
     ruler::draw_ticks_h(mesh, strip, &ticks, theme);
 }
 
+/// The pixel domain a free-standing `timeruler` labels: its own rect, indented
+/// on the left by a lane's header width so the ticks line up with the clips of
+/// the lanes it is stacked with. Zero height, so [`draw_time_ruler`] lays the
+/// strip over the widget's whole box.
+pub(super) fn ruler_strip_body(rect: Rect) -> Rect {
+    let hw = track::HEADER_W.min(rect.w);
+    Rect::new(rect.x + hw, rect.y, (rect.w - hw).max(0.0), 0.0)
+}
+
 /// The visible MIDI pitch window `[lo, hi]` of a piano-roll: the widget's
 /// `[min, max]` axis sliced by the vertical display window (`y_start`/`y_len`,
 /// `0` = the low pitch at the bottom), so pitch zoom/pan holds the same way the
@@ -749,6 +767,7 @@ struct Collected {
     plot_rects: Vec<PlotItem>,
     bpf_rects: Vec<BpfItem>,
     track_items: Vec<TrackItem>,
+    ruler_items: Vec<RulerItem>,
     pianoroll_items: Vec<PianoRollItem>,
     nodetree_rects: Vec<NodeTreeItem>,
     canvas_frames: Vec<CanvasFrame>,
@@ -784,6 +803,7 @@ fn collect_widgets(
     let mut plot_rects: Vec<PlotItem> = Vec::new();
     let mut bpf_rects: Vec<BpfItem> = Vec::new();
     let mut track_items: Vec<TrackItem> = Vec::new();
+    let mut ruler_items: Vec<RulerItem> = Vec::new();
     let mut pianoroll_items: Vec<PianoRollItem> = Vec::new();
     let mut nodetree_rects: Vec<NodeTreeItem> = Vec::new();
     let mut canvas_frames: Vec<CanvasFrame> = Vec::new();
@@ -1018,6 +1038,15 @@ fn collect_widgets(
                 exp: *exp,
                 label: label.clone(),
             }),
+            WidgetKind::TimeRuler { editor, .. } => {
+                ruler_items.push(RulerItem {
+                    id: p.widget.id.unwrap_or(-1),
+                    rect: p.rect,
+                    clip: p.clip,
+                    theme: p.widget.theme.clone(),
+                    editor: editor.clone(),
+                });
+            }
             WidgetKind::Track { label, editor, .. } => {
                 // A track carries its clips as children (not laid out by the
                 // layout engine — they are placed by offset/dur on the shared
@@ -1189,6 +1218,7 @@ fn collect_widgets(
         plot_rects,
         bpf_rects,
         track_items,
+        ruler_items,
         pianoroll_items,
         nodetree_rects,
         canvas_frames,
@@ -1483,6 +1513,27 @@ fn draw_static_meshes(
     // lanes), spanning the longest clip end; each lane's clips are placed on it.
     // The hit-test (`interact::clip_hit`) reads the same `window_nav`, so a clip
     // maps to the same pixels for drawing and dragging.
+    // The free-standing time rulers: each labels its group's window, in a strip
+    // of its own that no lane pays for. Drawn before the lanes so a lane's own
+    // chrome still reads over it where both exist.
+    for item in &collected.ruler_items {
+        mesh.set_clip(item.clip);
+        let th = item.theme.as_deref().unwrap_or(theme);
+        let nav = inputs
+            .timelines
+            .nav(group_key(item.id, item.editor.link))
+            .unwrap_or_else(|| track::window_nav(tree));
+        let rate = if item.editor.sample_rate > 0.0 {
+            item.editor.sample_rate
+        } else {
+            inputs.sample_rate
+        };
+        // The strip is indented by a lane's header width, so its ticks stand
+        // over the samples they label when it is stacked with the lanes -- the
+        // whole point of a ruler that is not inside one.
+        let body = ruler_strip_body(item.rect);
+        draw_time_ruler(&mut *mesh, item.rect, body, &nav, rate, &item.editor, th);
+    }
     if !collected.track_items.is_empty() {
         // The lanes navigate as a group (linked by default across a window), so
         // the axis zooms and pans as one; the full span is the fallback for a

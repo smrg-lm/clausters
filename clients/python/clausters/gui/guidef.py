@@ -825,6 +825,42 @@ def track(id: int | None = None, *clips, label: str | None = None, height: float
     return node("track", id=id, children=clips, **extra, **props)
 
 
+def timeruler(id: int | None = None, *, h: float = 20.0, ruler: str | None = None,
+              sample_rate: float | None = None, tempo: float | None = None,
+              beat_at: float | None = None, quant: float | None = None,
+              link: int | None = None, theme: dict | None = None,
+              color: str | None = None, **props) -> dict:
+    """A free-standing **time ruler**: the shared axis drawn as a strip the
+    document places — a DAW's ruler above its tracks.
+
+    A `track`'s own ``ruler`` is a strip reserved out of *that lane's* height, so
+    ruling a stack of lanes means choosing one to carry it and to pay for it,
+    and the strip then sits wherever that lane sits — between two lanes, unless
+    it is the last. This widget has a box of its own instead: put it above the
+    lanes and no lane loses a pixel.
+
+    It reads the axis of the navigation group named by ``link``, so it labels
+    exactly what those lanes show and moves with them — give it the lanes'
+    ``link`` id. ``ruler`` is the unit (``"time"`` the default, ``"samples"``,
+    ``"beats"``), with ``sample_rate`` labelling real time and
+    ``tempo``/``beat_at``/``quant`` labelling beats, exactly as on a lane. Its
+    ticks are indented by a lane's header width, so they stand over the samples
+    they label when it is stacked with the lanes.
+
+    A press on it **locates** the transport (emitting ``"locate"``, as a lane's
+    ruler does), Shift+drag pans the axis and the wheel zooms it — you scrub on
+    the ruler. ``h`` is its thickness in device pixels::
+
+        panel(None, timeruler(link=1, ruler="beats", tempo=2.0),
+                    track(1, clip(10, offset=0, dur=4, data=take), link=1),
+              layout="col")
+    """
+    extra = _drop_none(ruler=ruler, sample_rate=sample_rate, tempo=tempo,
+                       beat_at=beat_at, quant=quant, link=link, theme=theme,
+                       color=color)
+    return node("timeruler", id=id, h=h, **extra, **props)
+
+
 def clip(id: int | None = None, *, offset: float = 0.0, dur: float, data=None, blob: int | None = None,
          buffer: int | None = None, path: str | None = None, cache: str | None = None,
          channels: int | None = None, base_bucket: int | None = None,

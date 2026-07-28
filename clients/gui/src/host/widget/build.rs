@@ -389,6 +389,13 @@ pub(super) fn build_kind(
                 label: label(&node.props),
             }
         }
+        // The free-standing ruler: a strip the document places, reading the
+        // group's axis. Its chrome parses like any timeline widget's, so
+        // `ruler` (the unit), `tempo`/`beat_at`/`quant` (the beats grid),
+        // `sample_rate` and `link` all mean what they mean everywhere else.
+        "timeruler" => WidgetKind::TimeRuler {
+            editor: EditorProps::parse(&node.props, RulerY::Off),
+        },
         "clip" => WidgetKind::Clip {
             offset: number_f64(&node.props, "offset", 0.0).max(0.0),
             dur: number_f64(&node.props, "dur", 0.0).max(0.0),

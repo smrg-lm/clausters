@@ -691,6 +691,25 @@ impl Gestures {
                 // else (Shift+empty): leave it unconsumed so the `scroll` pan
                 // fallback below grabs the workspace.
             }
+            // The free-standing ruler behaves like a lane's ruler strip: a
+            // press locates the transport, Shift+drag pans the shared axis.
+            // It is the DAW gesture -- you scrub on the ruler.
+            WidgetKind::TimeRuler { .. } => {
+                let body = frame::ruler_strip_body(rect);
+                if ctx.shift {
+                    if let Some((start, _len, _total)) = nav(host, id) {
+                        self.drag = Some(Drag::Pan {
+                            id,
+                            origin_x: cx,
+                            start,
+                            body_w: body.w.max(1.0) as f64,
+                        });
+                    }
+                    return out;
+                }
+                locate_timeline(host, &mut out, def_id, id, body, cx);
+                return out;
+            }
             WidgetKind::Track {
                 snap, ref editor, ..
             } => {
@@ -1582,6 +1601,8 @@ impl Gestures {
             // its ruler); a heavy view's is its rect minus its rulers.
             let body = match kind {
                 WidgetKind::Track { .. } => track::lane_body(rect, editor.ruler != Ruler::Off),
+                // The free-standing ruler is all strip: no body to subtract.
+                WidgetKind::TimeRuler { .. } => frame::ruler_strip_body(rect),
                 _ => frame::timeline_body(rect, editor),
             };
             if editor.ruler_y != RulerY::Off && cx < body.x as f64 {

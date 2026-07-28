@@ -1185,6 +1185,39 @@ mod tests {
         assert_eq!(kept.len, held, "a drag holds the zoom");
     }
 
+    /// A free-standing `timeruler` joins the lanes' group and reads their
+    /// window, so it labels what they show — and it costs no lane any height,
+    /// which is the reason it exists.
+    #[test]
+    fn a_free_standing_ruler_reads_the_lanes_axis() {
+        let mut host = Host::new();
+        host.handle_packet(
+            def_msg(
+                1,
+                r#"{"type":"window","margin":0,"children":[
+                {"id":90,"type":"timeruler","link":7,"h":20.0},
+                {"id":100,"type":"track","link":7,"children":[
+                    {"id":110,"type":"clip","offset":0.0,"dur":400.0}
+                ]}
+            ]}"#,
+            ),
+            from(),
+        );
+        host.sync_track_totals();
+        // One group: the ruler and the lane resolve to the same key...
+        assert_eq!(host.timeline_key(90), host.timeline_key(100));
+        // ...so the ruler sees the lane's window, and follows it when it moves.
+        let (lane, _) = host.timeline_nav(100).unwrap();
+        let (ruler, _) = host.timeline_nav(90).unwrap();
+        assert_eq!((ruler.start, ruler.len), (lane.start, lane.len));
+        host.zoom_timeline(100, 0.5, 0.0);
+        let (lane, _) = host.timeline_nav(100).unwrap();
+        let (ruler, _) = host.timeline_nav(90).unwrap();
+        assert_eq!((ruler.start, ruler.len), (lane.start, lane.len));
+        // And it contributes no extent of its own: the axis is still the clips'.
+        assert_eq!(host.timeline_nav(90).unwrap().1, 400);
+    }
+
     /// A heavy view's axis stays bound to its data: there is no signal out past
     /// the end of a file to look at.
     #[test]

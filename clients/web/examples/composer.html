@@ -100,6 +100,11 @@ process, no socket.</div>
         { title: "composer", layout: "col", margin: 8.0, gap: 6.0 },
         gui.label("drag a clip to move it, an edge to resize it — "
                   + "wheel zooms, Shift+drag pans", { h: 20 }),
+        // The ruler above the lanes, as a DAW puts it: its own strip, joined to
+        // the lanes' link group, so it labels their axis and costs no lane any
+        // height. Scrub on it to locate.
+        gui.timeruler({ name: "ruler", link: 1, h: 20, ruler: "beats",
+                        tempo: TEMPO, quant: 4.0, sampleRate: SR }),
         gui.track(
           { name: "drums", label: "drums", link: 1, snap: beats(QUANT),
             tempo: TEMPO, quant: 4.0, sampleRate: SR },
@@ -121,13 +126,8 @@ process, no socket.</div>
                      notes: inSamples(MELODY), label: "melody" }),
         ),
         gui.track(
-          // The time ruler goes on the **last** lane: a lane's strip is drawn
-          // along its bottom edge, so only the bottom lane puts it under the
-          // whole stack instead of wedging it between two lanes. (A DAW rules
-          // the axis once, above every lane; the host has no window-level ruler
-          // yet -- the strip belongs to a lane.)
           { name: "sweep", label: "sweep", link: 1, snap: beats(QUANT),
-            ruler: "beats", tempo: TEMPO, quant: 4.0, sampleRate: SR },
+            tempo: TEMPO, quant: 4.0, sampleRate: SR },
           gui.clip({ name: "sweepClip", offset: beats(0.0), dur: beats(4.0),
                      points: pointsInSamples(SWEEP), min: 100.0, max: 1000.0,
                      exp: true, label: "freq" }),
@@ -177,7 +177,9 @@ process, no socket.</div>
             }
           });
         }
-        for (const lane of ["drums", "bass", "lead", "sweep"]) {
+        // The ruler locates too -- it is a member of the same group, so its
+        // press is the DAW's scrub.
+        for (const lane of ["ruler", "drums", "bass", "lead", "sweep"]) {
           win.widget(lane).onEvent((tag, ...values) => {
             if (tag === "locate") {
               log(`${lane}: locate ${inBeats(values[0])} beats`);

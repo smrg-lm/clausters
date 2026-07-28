@@ -909,6 +909,25 @@ export function piano(
 }
 
 /**
+ * A free-standing **time ruler**: the shared axis drawn as a strip the document
+ * places — a DAW's ruler above its tracks.
+ *
+ * A `track`'s own `ruler` is reserved out of *that lane's* height, so ruling a
+ * stack of lanes means picking one to carry it and to pay for it, and the strip
+ * then sits wherever that lane sits. This widget owns its box instead: put it
+ * above the lanes and no lane loses a pixel.
+ *
+ * It reads the axis of the group named by `link` — give it the lanes' link id —
+ * and its ticks are indented by a lane's header width, so they stand over the
+ * samples they label. A press locates the transport, Shift+drag pans and the
+ * wheel zooms: you scrub on the ruler. `h` is its thickness in device pixels.
+ */
+export function timeruler(options: TimelineOptions = {}): GuiNode {
+    const { h = 20, ...timeline } = options;
+    return node("timeruler", { ...timelineProps(timeline), h });
+}
+
+/**
  * A multitrack `track` lane holding `clip` children on a shared time axis —
  * the DAW-style editor's lane. `label` names it in a left header, `height` is
  * its lane weight, and `snap` is the drag grid a clip's move/resize rounds

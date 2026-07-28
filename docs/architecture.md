@@ -489,6 +489,7 @@ updates this table in the same change** (step 7 of the recipe below).
 | `spectrogram` | `src/spectrogram.rs` (the STFT cache + texture renderer), same navigation | the same sources |
 | `plot` | `host/plot.rs` (pure; the spectrum view analyses once at mutation points) | inline `data`/`blob` or a mapped `path` |
 | `bpf` | `host/bpf.rs`; the shape math is `clausters-core`'s (what `EnvGen` plays) | the script's `points`; edits emit `"points"` |
+| `timeruler` | `host/frame.rs` (the strip; the tick math is the shared `host/ruler.rs`); group navigation in `host/timeline.rs` | nothing of its own — it reads its `link` group's window |
 | `track`, `clip` | `host/track.rs`; a clip's roll body reuses `host/pianoroll.rs`, its curve body `host/bpf.rs`; group navigation in `host/timeline.rs` | a clip take: the waveform's sources; `notes`/`points` inline; edits emit `"clip"` |
 | `pianoroll` | `host/pianoroll.rs` (the note core shared with `clip`) | the script's `notes`/`osc`; live MIDI in (native); edits emit `"notes"`/`"osc"` |
 | `piano` | `host/piano.rs` (proportional key layout, overview strip, voice messages — pure); host voices in `host/mod.rs`; `midi_to_hz` is `clausters-core::scale`'s | the pointer; presses emit MIDI-shaped `"note"` events (or a binding forwards them), pan/zoom emits `"range"`, and `voice` mode sends `/s_new`/`gate 0` per held key over the server leg |
