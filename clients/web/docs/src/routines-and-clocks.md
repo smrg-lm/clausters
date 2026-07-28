@@ -1,0 +1,104 @@
+# Routines and clocks
+
+`Pbind` and the timeline are convenience layers over three plain objects you can also drive yourself:
+
+- a **`Routine`** — *what* happens over time, written as a generator function that `yield`s how long to wait;
+- a **`TempoClock`** — *when* it happens: it schedules the routine and keeps musical time in beats;
+- a **`Server`** — *where* the sound goes: it owns the connection and plays events on it.
+
+This page works at that level, on the high-level API throughout: you build `Event`s and call `play`, never hand-assemble OSC bundles. The model is the [Python client's](https://clausters-python.readthedocs.io/) — the same events, the same patterns, the same arithmetic, computed by the same native core — so this page covers the part that is genuinely the browser's, and links there for the rest.
+
+## Logical time vs physical time
+
+This is the idea that makes routines worth using, inherited from SuperCollider, and it is what survives a browser.
+
+A routine `yield`s numbers, and each one is a wait *in beats* before the clock resumes it. Those waits play out in **physical time** — the actual milliseconds a timer sleeps — and in a tab they jitter badly: a background tab throttles its timers to about a second, a long paint blocks everything, and there is one thread for all of it. But a routine also keeps a **logical time**: the running sum of everything it has yielded, relative to when it started and the clock's tempo. That sum has no jitter — a routine that yields `0.5` four times is at logical beats `0, 0.5, 1.0, 1.5` exactly, whatever the browser did in between.
+
+The `Server` stamps every event from the routine's **logical** time, not from "now". The wake-up only has to arrive within the emission headroom (`server.latency`); the exact instant rides on the bundle's timetag, which is already in the server's future when it is sent. That is why a page can hold a steady pulse while it is also drawing, and it is the whole reason the sequencing layer is worth having in a tab at all.
+
+## A routine by hand
+
+An `Event` is a bag of note parameters that knows how to play itself: `event.play(server)` creates a synth at the routine's current logical beat and schedules its release after the note's sustain. Play it from inside a routine, yielding the gap to the next note:
+
+```js
+import { Routine, Server, TempoClock, WsConnection, loadOsc, seq }
+  from "./dist/index.js";
+
+await loadOsc();                                   // the core's wasm: the codec
+const connection = await WsConnection.open("ws://127.0.0.1:57120");
+const server = await Server.open(connection);      // a running server, over WebSocket
+server.latency = 0.1;                              // the emission headroom
+
+const clock = new TempoClock(2.0);                 // 2 beats per second
+clock.start();
+
+function* melody() {
+  for (const note of [60, 62, 64, 67, 69]) {       // MIDI notes
+    const e = new seq.Event({ midinote: note, amp: 0.2, dur: 0.5 });
+    e.play(server);                                 // half-beat note
+    yield e.delta();                                // advance to the next note
+  }
+}
+
+clock.play(new Routine(melody));                   // schedule it to start now
+```
+
+A few things worth knowing:
+
+- An `Event` carries musical defaults (see the [API reference](api/index.md)): `midinote` (or `degree`, or an explicit `freq`) sets pitch, `amp` the level, `instrument` the def — the server has a built-in `default` sine, which is why this example sends no def of its own. Timing comes from `dur`: the note's `delta` (beats to the next event) is `dur`, and its `sustain` (how long it sounds) is `dur * legato` (`legato` defaults to `0.8`). An explicit `delta` or `sustain` overrides that calculation.
+- `clock.start()` / `clock.stop()` are a **transport, not a reset**: `stop` holds the beat the clock reached and `start` resumes from it, so whatever is still queued keeps its place in the music. `clock.clear()` is what drops it, and `clock.close()` also releases the ticker's worker slot.
+- `clock.setTempo(bps)` changes tempo **pinning the current instant**: the beat the clock is on keeps mapping to the second it already mapped to, and the new tempo governs from there — so nothing already scheduled jumps.
+- The clock never talks to a server, and the server is not told about the clock: `play` reads the logical beat off the routine being resumed. One clock can drive routines against two servers, and one server can be played by two clocks.
+
+There is no `run(seconds)` here, because nothing in a page may block: a script that waited would freeze the same thread the clock, the engine's messages and the whole document run on. The clock runs until you stop it, and the piece ends when its routines do.
+
+### The one rule
+
+**Never `await` inside a routine.** A routine is resumed by the clock and must return control synchronously; an `await` suspends it mid-beat and holds the queue behind it, which is the browser's version of the Python client's "never block the clock thread". Do the waiting *before* — `await server.addSynthDef(def)` resolves when the server has acknowledged it — and start the routine after, or `yield` enough beats before the first note that uses a def you sent without awaiting.
+
+## The two timebases
+
+The clock measures its sleeps against a **timebase**, and the timebase also decides how the `Server` stamps what it emits:
+
+- **`MonotonicTimebase`**, the default, paces on `performance.now()` and emits NTP-timetagged bundles. Relative timing inside the routine is exact; the client's clock and the server's sample clock are still two clocks, and they drift.
+- **`SampleTimebase`** paces on the server's own sample counter and emits `/sched <absolute sample>`. There is no drift left to speak of, because there is only one clock.
+
+`server.sampleTimebase()` builds one, and the `Server` is what builds it because the `Server` is what knows the carrier: over the in-page engine it pairs the engine's counter with the `AudioContext`'s in one worklet round trip — they are the same clock, so the pairing is exact — while over a socket it feeds `/clock` anchors into the core's model. Hand it to the clock at construction:
+
+```js
+const clock = new TempoClock(2.0, { timebase: await server.sampleTimebase() });
+```
+
+The rule the clock keeps either way: **it reads the timebase, and never talks to a server**.
+
+## The wake-up
+
+One more piece is the browser's alone. The clock is woken through a `Ticker`, and the default in a tab is a **shared worker**, because a page's own timers are throttled to roughly one second when the tab is in the background — a routine paced by `setTimeout` would simply stop being music the moment the user changed tabs. The worker's wake-ups are not throttled that way, and since the exactness lives in the timetag, all the wake-up has to do is arrive inside the headroom.
+
+The seam is also what makes the layer testable: a test supplies its own ticker and its own timebase and drives the real driver by hand, deterministically, with no audio device and no waiting.
+
+## Patterns, and the seekable form
+
+The routine is the forward-only form. Above it sit the same two layers as in the reference client — `Pbind` over the value patterns for the generative form, `Timeline` and its `Playhead` for the static, editable, seekable one:
+
+```js
+new seq.Pbind({
+  degree: new seq.Pseq([0, 2, 4, 7], seq.INF),
+  dur: new seq.Pseq([0.5, 0.25, 0.25]),
+}).play(server, { clock });
+```
+
+What an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns, how `Timeline.fromPattern` bounces one into the other — that is all the shared model, documented once in the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) and [timelines](https://clausters-python.readthedocs.io/) chapters.
+
+## Reproducible randomness
+
+Everything random — `Pwhite`, `Prand`, and the module functions `uniform(lo, hi)`, `nextBelow(n)`, `choice(items)` — draws from **one seedable context**, the sclang model, computed by the same core the other clients use: the same seed replays the same values in every Clausters client language.
+
+Each routine gets its **own** generator when it is created, derived from the context that created it. Same root seed plus same creation order gives the same music, and because each routine draws from its own stream, concurrent routines stay reproducible however their wakes interleave. `seed(n)`, called before you build and play, makes a whole page reproducible; there are deliberately no per-pattern seeds. To isolate some material, play it in its own routine, which is its own derived stream by construction.
+
+## See also
+
+- [The client, layer by layer](guide.md) — where routines, clocks and the server sit in the whole client.
+- [Getting started](getting-started.md) — the page that plays a note, if you have not run one yet.
+- [Examples](examples.md) — `sequencing.html` is this page as something you can hear: the generative half and the seekable half side by side.
+- [API reference](api/index.md) — `TempoClock`, `Routine`, `Event`, and the `Server` methods used here.
