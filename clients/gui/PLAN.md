@@ -156,10 +156,10 @@ A GuiDef is a tree of nodes; each node is `{ "id": int, "type": str, <props...>,
 | `menu` | control | Dropdown / option list. |
 | `waveform` | heavy GPU view | Editor-grade min/max peak waveform of a buffer/file/blob: multichannel lanes (stacked or overlaid), LOD-crossfaded zoom, adaptive rulers, selection, playhead, amplitude zoom/pan, linked navigation groups via `link` (G20-G20d); the RMS body planned (G20e). |
 | `spectrogram` | heavy GPU view | Editor-grade STFT time-frequency view, same sources and chrome as `waveform` plus a Hz ruler and frequency zoom/pan, linked groups via `link` (G20-G20d); a constant-Q analysis mode experimental (G20f). |
-| `scope` | heavy GPU view | Time-domain scope, both rates: the control-bus history form, and the audio-rate triggered oscilloscope over `channels` adjacent server audio taps (a `tap`/`rate: "audio"` prop) — lanes or `overlay` traces, ms/value rulers, a trigger-level mark and a lock/free read-out (G28). |
-| `phasescope` | view | Phase/goniometer (Lissajous) view of a stereo tap pair, with a correlation readout (G19). |
+| `scope` | heavy GPU view | Time-domain scope over `channels` adjacent buses from `bus`, at `rate` (audio by default, control for a bus history): the audio-rate form is a triggered oscilloscope — lanes or `overlay` traces, ms/value rulers, a trigger-level mark and a lock/free read-out (G28, G33). |
+| `phasescope` | view | Phase/goniometer (Lissajous) view of the audio bus pair `bus`/`bus + 1`, with a correlation readout (G19, G33). |
 | `meter` | heavy GPU view | Level meter reading a control bus directly from shared memory. |
-| `spectrum` | view | Live FFT magnitude curves (spectroscope), one per channel over `channels` adjacent audio taps: adjustable dB window, linear/log/mel/bark frequency axis with Hz/dB rulers, averaging + peak-hold (G19, G28). |
+| `spectrum` | view | Live FFT magnitude curves (spectroscope), one per channel over `channels` adjacent audio buses from `bus`: adjustable dB window, linear/log/mel/bark frequency axis with Hz/dB rulers, averaging + peak-hold (G19, G28, G33). |
 | `plot` | view | Static plot of an NRT-generated signal/file or a numeric sequence: multichannel lanes, x/y rulers, hover readout, signal/spectrum views (extensible). |
 | `nodetree` | view | Live text/graphic view of the audio server's node tree and parameters, updated in real time. |
 | `canvas` | view | A surface that runs a supplied WGSL shader, driven by OSC params or server audio - custom visuals. |
@@ -619,3 +619,27 @@ This intersects the server track, not only the GUI track, so it becomes a number
 ## Definition of done (per milestone)
 
 Following the project rule: code + tests, a clear commit message (the record of *what* shipped) and this file's checkbox updated; developer/user docs where the feature touches them; a commented example when the feature is user-facing; a `docs/decisions.md` note only when a choice has non-obvious context; and a `GUIA.md` smoke step only when a new human-audible/visual behavior appears.
+
+- ✅ **G33 — Every live view names a bus and a rate; the sample ring is the
+  server's** *(done 2026-07-28)*: the four live data views took three different
+  kinds of number — a `meter` a control bus, a `scope` either a control bus or a
+  *tap* (an index into the segment's eight sample rings), the goniometer and the
+  spectroscope only taps — so the surface claimed two kinds of signal where the
+  server has one kind at two rates, and the ring index (which the caller had to
+  allocate, route and release) leaked through the wire, the host, both clients
+  and every example. Now each view takes **`bus`, `rate` and `channels`**
+  adjacent buses (the SuperCollider model; audio is the default and bus 0 is the
+  first hardware output, so a bare `scope()` is the console scope). `/tap bus
+  watch` replaces `/tap tapIndex bus`: the **server** picks the ring and
+  publishes the choice in a per-bus directory in the segment (ABI v3 → v4),
+  counting watches so views share one ring and the last one to stop frees it;
+  the **host** is what turns a widget into that command, diffing the audio buses
+  its open documents read on every def/free/set; a `/tap_stream` subscription
+  *is* a watch, so a browser client never sends it. A `meter` needed a path of
+  its own — eight rings cannot back a mixer, and a meter wants one number per
+  block, not samples — so the segment also carries a **per-bus level**, the
+  block peak held with a 20 dB/s decay (correct for a reader a dozen blocks
+  slower than the engine, and for several readers at once, which a
+  reader-clears-the-max scheme is not). Ported to both clients in the same
+  change; the Python and TypeScript tap allocators are gone. Rationale in
+  `docs/decisions.md`.

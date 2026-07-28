@@ -53,7 +53,7 @@ Two measured facts to keep in mind when reading the meter (numbers from a deskto
 | `src/server/backend.rs` | cpal glue: `BlockAdapter` slices arbitrary callback sizes into 64-frame engine blocks (feature `realtime`) |
 | `src/server/nrt.rs` | NRT thread, `NrtJob`/`run_job` (also called synchronously by the renderer), audio reading (`read_audio`: WAV via hound, other formats via symphonia) and WAV write helpers |
 | `src/server/workers.rs` | worker pool: stage publish/steal/wait protocol for parallel groups |
-| `src/server/ipc.rs` | the versioned shared segment — data plane (clock, control buses, audio-tap rings) + OSC byte rings (`--shm` and embed transports) |
+| `src/server/ipc.rs` | the versioned shared segment — data plane (clock, control buses, the per-audio-bus directory and levels, the sample rings) + OSC byte rings (`--shm` and embed transports) |
 | `src/embed.rs` | the embed C ABI (feature `embed`, exported by the cdylib) |
 | `src/logging.rs` | `tracing` setup: `init` (binary-only subscriber, stderr), runtime-reloadable filter behind `/verbosity` and `/dumpOSC` |
 | `src/server/render.rs` | Offline mode: `Score` (binary scsynth score format), `render`/`render_to_vec`/`render_to_wav` |
@@ -86,7 +86,8 @@ The rule behind everything: **memory is allocated on the network (or NRT / compi
 Two shared structures cross threads without the FIFOs:
 
 - **Control buses**: `--control-buses` atomics, 16384 by default (`dsp::ControlBuses`). Immediate `/c_set` and `/c_get` are served directly on the network thread; the audio thread reads them through `InCtl`. A *scheduled* `/c_set` must land on its exact sample, so it travels as `Cmd::SetControlBus` instead. With an IPC segment the backing array lives in shared memory: other processes write the same atomics.
-- **Audio taps**: single-channel sample rings in the IPC segment (`--taps` × `--tap-frames`; segment ABI v3). `/tap` sends `Cmd::SetTap`, which flips an entry in the engine's pre-allocated tap table; at the end of every block the audio thread appends each routed bus's block to its ring — one `memcpy` plus one Release store per tap, then the clock store, so a reader that sees clock N sees block N. Readers (the GUI host's oscilloscope over shared memory, `/tap_stream` on the network thread) copy the newest window lock-free with a cursor double-check; `tests/rt_safety.rs` guards the write.
+- **Watching an audio bus**: a control bus lives in the segment permanently, but an audio bus is engine memory one block at a time, so the segment carries single-channel **sample rings** (`--taps` × `--tap-frames`) the server copies a bus into on request. `/tap bus watch` is refcounted on the **network thread**, which picks a free ring and sends `Cmd::SetTap`; the engine flips an entry in its pre-allocated table and publishes the inverse — a **bus → ring directory** in the segment (ABI v4) — so every reader looks the bus up and no API above ever names a ring. At the end of every block the audio thread appends each recorded bus's block to its ring (one `memcpy` plus one Release store per ring), then the per-bus **levels**, then the clock store, so a reader that sees clock N sees block N of both. Readers (the GUI host's oscilloscope over shared memory, `/tap_stream` on the network thread) copy the newest window lock-free with a cursor double-check; `tests/rt_safety.rs` guards the writes.
+- **Bus levels**: one `f32` per audio bus in the same segment, the block's peak held with a 20 dB/s decay (`engine::level_release`). That decay is what makes a meter correct for a reader an order of magnitude slower than the engine — a display frame is a dozen blocks — and, being a decay rather than a max the reader clears, correct for *several* readers of one bus at once. A meter therefore needs no ring at all, which is what lets a mixer's worth of meters exist.
 - **Buffers**: `Arc<Buffer>`, **immutable once installed**. The NRT thread builds them, `Cmd::SetBuffer` swaps them into the engine pool, the replaced `Arc` returns as `Garbage::FreedBuffer`. "Mutating" commands (`/b_zero`, `/b_read` into an existing buffer, `/b_gen` filling a wavetable) build a replacement instead of touching shared memory. The network thread keeps a mirror for `/b_query`/`/b_write` and for validation.
 
 ### Done actions (self-freeing nodes)
@@ -350,7 +351,7 @@ split, and every rule below falls out of it:
 | `src/host/mod.rs` | The protocol core: the `Host`, the command dispatch (`/gui_def`/`/gui_set`/`/gui_free`/`/gui_query`/`/gui_bind`), the `Registry`, `HostEffect` |
 | `src/host/widget.rs` | `WidgetKind` — the typed tree the renderer reads — plus its JSON parse and its `/gui_set` `apply` |
 | `src/host/frame.rs` | The one frame renderer: places the tree (`layout`), builds the flat-geometry mesh and uploads the heavy GPU views. **Both fronts call it**, so the browser is pixel-faithful by construction |
-| `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only. **Both keep one surface per `window`-rooted def** — a desktop window, a `<canvas>` in a document — keyed by def id, with a wgpu surface, a size, a pointer, a gesture state and the scope/tap/spectrum histories each |
+| `src/host/{gui,web}.rs` | The two fronts: native (winit/wgpu, sockets, mmap) and browser (canvas/WebGPU, WebSocket, fetch). Event *sources* and *sinks* only. **Both keep one surface per `window`-rooted def** — a desktop window, a `<canvas>` in a document — keyed by def id, with a wgpu surface, a size, a pointer, a gesture state and the scope/window/spectrum histories each |
 | `src/host/bundle.rs` | The bundle's two halves, platform-agnostic and natively tested: the browser's boot **replay** (the persisted files as ordered OSC), and the **mount** — allocate what `bundle.json` declares, resolve the template's holes through `clausters_core::bundle`, lay out what to send. `--standalone` mounts through it, so the desktop and the tab resolve one directory identically |
 | `src/host/theme.rs` | The color roles: every chrome color as a named function (`accent`, `field`, `selection`, ...) in one `Theme` per host — no paint site names an RGBA literal. Overlaid from `[gui.theme]` / `--theme` (native) or `GuiBridge.theme` (browser) |
 | `src/host/interact.rs` | Pointer logic over the typed tree — hit-test, value writes, the edit-back payloads — shared by both fronts |
@@ -457,7 +458,7 @@ looks for:
   editor and the server's `EnvGen` cannot drift: they evaluate the same function.
   The trigger (`core::oscil`) and the spectrum curve (`core::spectrum`) moved
   down from this crate the moment a second drawer appeared — a client script
-  reading a tap itself — which is the rule stated as a test: a piece of signal
+  reading a bus itself — which is the rule stated as a test: a piece of signal
   logic belongs here only while the host is the only one computing it.
 - **Edit-back is a payload, not an address.** A view that writes data back emits
   `/gui_event <id> <tag> <flat values…>` — `"points"` for a curve, `"clip"` for a
@@ -480,9 +481,9 @@ updates this table in the same change** (step 7 of the recipe below).
 | `slider`, `knob`, `number` | `host/controls.rs` (draw + the pure drag math); the shared `Range` payload in `host/widget.rs` | the script; value changes emit `/gui_event` (or a binding forwards) |
 | `button`, `toggle`, `menu` | `host/controls.rs` | idem |
 | `meter` | `host/meters.rs`; bus plumbing in `host/live.rs` | a control bus — the shm segment (native) / `/c_stream` snapshots (browser) |
-| `scope` | signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | a control bus's rolling history, or audio **tap** rings (shm / `/tap_data`) |
-| `phasescope` | `host/phasescope.rs` (Lissajous geometry + correlation, pure) | two audio taps |
-| `spectrum` | `host/spectrum.rs` keeps the across-frame smoothing; the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio taps |
+| `scope` | signal logic (window sizing, trigger) is `clausters-core::oscil`'s; history in `host/live.rs` | `bus` at `rate`: a control bus's rolling history, or an audio bus's recorded samples (shm / `/tap_data`) |
+| `phasescope` | `host/phasescope.rs` (Lissajous geometry + correlation, pure) | the audio bus pair `bus`/`bus + 1` |
+| `spectrum` | `host/spectrum.rs` keeps the across-frame smoothing; the per-frame curve (window, FFT, decibel scaling) is `clausters-core::spectrum`'s | `channels` adjacent audio buses |
 | `nodetree` | `host/nodetree.rs` | `/g_queryTree` over the client leg + node notifications |
 | `canvas` | `host/canvas.rs` (a GPU slot: the user's WGSL over the widget area) | `/gui_set` params and/or control buses |
 | `waveform` | data + GPU renderer in `src/waveform.rs` over `src/viewport.rs`; chrome via `host/frame.rs` | `cache`/`path` (mapped or fetched), a server `buffer`, or inline `data`/`blob` — `host/{bulk,mapfile,fetch}.rs` |

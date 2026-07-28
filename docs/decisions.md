@@ -3221,3 +3221,69 @@ no second consumer by nature: geometry, hit-testing, chrome, and the state that
 is a *look* rather than a measurement — a spectrum's averaging across frames, a
 scope's history depth. Those are decisions about how a picture should feel, and
 two views are entitled to disagree about them.
+
+## A bus is a bus: the sample ring is the server's, never an API's
+
+The live data views grew one at a time, and each took whatever number was
+nearest the implementation. A `meter` took a control bus, because control buses
+sit in the shared segment where anyone can read them. A `scope` took either a
+control bus *or* a "tap" — an index into the eight sample rings the segment
+carries — because that is the only way an audio bus's samples leave the audio
+thread. The goniometer and the spectroscope took only taps, in pairs and runs.
+
+So the surface said there were two kinds of signal, `bus` and `tap`, when the
+server has exactly one kind of thing at two rates. Worse, the "tap" number was
+not even a bus at a different rate: it is *which of eight canaletas is currently
+carrying that bus*, which the caller had to allocate, route (`/tap tapIndex
+bus`), thread into the widget, and release. Every layer above the segment —
+the wire, the host, both clients, the examples, the books — repeated that
+bookkeeping.
+
+**Every view now names `bus`, `rate` and, where it reads several, `channels`
+adjacent buses from there.** This is SuperCollider's model (`Stethoscope` takes
+an `index`, a `numChannels` and a `rate`, and its `rate` defaults to `\audio`
+with a keystroke to flip it), and it makes bus 0 — the first hardware output —
+the default a bare `scope()` or `meter()` shows.
+
+The ring does not disappear; it stops being anyone's business but the server's.
+`/tap bus watch` replaces `/tap tapIndex bus`: the client asks for a bus, the
+**server** picks the ring and publishes the choice in a per-bus directory in the
+segment, so every reader resolves bus → samples by lookup. Watches are counted,
+so two views of one bus share one ring and the last one to stop frees it. The
+GUI host is what turns a widget into that command — it diffs the audio buses its
+open documents read whenever a def, a free or a set changes them — and a
+`/tap_stream` subscription *is* a watch, so a browser client never issues the
+command at all.
+
+Why the host and not each client: the alternative was to keep the ring on the
+wire and have every client allocate and route before building a tree. That
+duplicates the same plumbing in Python, in TypeScript and in wasm, and it breaks
+the property that the GuiDef builders are host-agnostic — they would need a live
+server handle to construct a widget. Doing it in the host does it once, in the
+language the host is already written in, for every client at once.
+
+### The meter needed a data path of its own
+
+Making `meter` an audio-bus view exposed that it could not *be* one. A meter is
+the one view in a mixer that exists per channel, and there are eight rings for
+the whole system: a stereo master plus four channels would exhaust them, and a
+meter never wanted samples anyway — it wants one number per block.
+
+So the segment grew a second per-bus array beside the directory: the **level**,
+published for every audio bus every block. Two decisions inside that:
+
+- **The value is a peak held with a decay, not the raw block peak.** A block is
+  64 samples; a display frame is a dozen blocks. A reader of the raw value sees
+  the last block before it looked and misses the other eleven — which is to say
+  it misses exactly the transients a peak meter exists to catch. The engine
+  holds `max(block_peak, published * release)` with a 20 dB/s release, the usual
+  peak-meter ballistic.
+- **A decay rather than a max the reader clears.** The alternative — the engine
+  accumulates, the reader `swap`s in a zero — is exact and needs no constant,
+  but it is single-reader by construction: the second reader of a bus steals the
+  first one's peak. Several readers of one bus is the normal case here (two
+  meters in one window, a host and a headless capture), so the value has to be
+  readable without consuming it.
+
+The cost is one pass over the block per audio bus per block, one relaxed store —
+no allocation, no lock, guarded like the rest by `tests/rt_safety.rs`.

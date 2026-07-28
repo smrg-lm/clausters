@@ -263,9 +263,20 @@ Arrancar el servidor en una terminal y correr el ejemplo en otra (mismo host).
   área de trabajo elástica (sidebar de ancho fijo con knob/slider + scope que
   se estira), barra de estado abajo. Redimensionar la ventana → las barras
   conservan su altura y solo el área central crece; play → suena la voz suave
-  y el osciloscopio dibuja la salida estéreo real (taps); mover el knob/slider
+  y el osciloscopio dibuja la salida estéreo real (los buses de salida); mover el knob/slider
   → se oye el cambio, la barra de estado dice `freq ... Hz` / `amp ...` en
   cada gesto y la onda del scope cambia con él.
+- **Los buses de audio a la vista (`bus` + `rate`).** `examples/gui_scope.py`
+  abre dos osciloscopios sobre el **mismo bus 0** (la salida de hardware) sin
+  que el script ruteue nada: el de arriba tiene trigger 0.0 y su traza queda
+  **quieta** mientras el tono barre 220-440 Hz, el de abajo tiene un trigger que
+  la señal nunca alcanza y se **desliza** — es para qué existe el trigger. Cerrar
+  la ventana: el servidor deja de grabar el bus solo (nada que liberar a mano).
+  Después `examples/gui_analyzer.py` sobre el mismo par de salidas: el
+  goniómetro se abre y se cierra con el ancho estéreo y la correlación de abajo
+  lo sigue; el espectro tiene su pico donde está el tono. Y `gui_meters.py`
+  muestra el otro lado: ahí meter y scope dicen `rate="control"` y leen un bus
+  de control escrito por el script — la misma familia de widgets, la otra tasa.
 - **El workspace 2D (`scroll`) y sus formas acotadas.** `examples/gui_workspace.py`
   abre una ventana con tres paneles del *mismo* widget configurado distinto: el
   **plano libre** arriba (9 cajas dispersas en un área virtual de 1600x1200) →

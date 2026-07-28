@@ -294,7 +294,7 @@ win.close()
 
 ## Scoping a live signal: the free-standing `scope`
 
-`scope` is the real-time sibling of `plot`: one call opens a window that follows **live audio buses** of the running server, frame by frame, with no per-frame messages (the GUI host reads the server's shared memory). Everything is wired for you — the ambient server and GUI host are resolved, free **audio taps** are taken from the server's registry (`server.taps`, a finite boot-time resource like buses: `--taps` rings, 8 by default) and the buses routed into them with `/tap`.
+`scope` is the real-time sibling of `plot`: one call opens a window that follows **live audio buses** of the running server, frame by frame, with no per-frame messages (the GUI host reads the server's shared memory). Everything is wired for you — the ambient server and GUI host are resolved, and the GUI host asks the server to record the buses it draws. You name a bus and a rate; nothing else.
 
 **Open one:**
 
@@ -310,7 +310,7 @@ win = scope(0, view="phase")         # the stereo field of outs 0/1
 win = scope(0, view="spectrum", channels=2, freq_scale="mel")
 ```
 
-One rule covers every view: the verb monitors `channels` consecutive buses from `bus` (a `Bus` handle brings its own count; a plain index defaults to 1), each on its own adjacent tap ring, and each **view** presents them its way (`view=`):
+One rule covers every view: the verb monitors `channels` consecutive buses from `bus` (a `Bus` handle brings its own count; a plain index defaults to 1) — bus 0 is the first hardware output — and each **view** presents them its way (`view=`):
 
 - **`"signal"`** — a triggered **oscilloscope**. Each channel is a lane (or a color-coded trace with `overlay=True`); the x ruler reads milliseconds of the `window_ms` display window, the y ruler signal value over `[min, max]`. The trace is *phase-locked*: every frame is aligned on a rising crossing of the `trigger` level (marked by a faint line) found in the **first** channel, so a periodic signal stands still and the channels keep their true relative phase. The corner read-out says `lock` (the trigger fired) or `free` (no crossing — silence or DC — so the window free-runs).
 - **`"phase"`** — a **phasescope** (goniometer), the fixed two-channel case: the pair `bus`/`bus + 1` drawn as the 45°-rotated Lissajous figure — mono draws a vertical line, anti-phase horizontal, a wide field fills the lozenge; the bar underneath is the correlation.
@@ -325,9 +325,9 @@ win.set(freq_scale="linear", fft_size=4096)   # spectrum
 win.set(ruler="off", ruler_y="off")           # bare field, no axis strips
 ```
 
-**Close it** with `win.close()` — it stops the taps (`/tap … -1`), returns them to the registry and closes the window. Closing from the window manager does **not** free the taps, so prefer `close`. Taps are finite: a stereo scope holds two while open, so close scopes you are done with; two scopes never fight over one ring, because every index comes from the client-side registry.
+**Close it** with `win.close()` — it closes the window, and the host stops recording whatever no open view is drawing any more (closing from the window manager does the same). The server has a finite number of sample rings to record into (`--taps`, 8 by default): a stereo scope holds two while open, so close scopes you are done with. Two scopes on one bus share a ring — the server counts watchers — and one that cannot get a ring fails loudly instead of drawing nothing.
 
-**Requirements.** A live server with a shared-memory segment (`Server.boot` and `Session.live` create one by default) — the native host reads the tap rings straight from it. To scope a server you merely *attached* to, pass `host=` pointed at a `GuiHost` booted with that server's segment path.
+**Requirements.** A live server with a shared-memory segment (`Server.boot` and `Session.live` create one by default) — the native host reads the recorded samples straight from it. To scope a server you merely *attached* to, pass `host=` pointed at a `GuiHost` booted with that server's segment path.
 
 ## When you don't need a Session
 
