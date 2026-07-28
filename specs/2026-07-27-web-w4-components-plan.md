@@ -179,7 +179,7 @@ core before emitting, and generating `index.js`.
 create `clients/web/examples/document/`; create `clients/web/tests/components.html`;
 modify `docs/clients.md`, `docs/architecture.md`, `docs/decisions.md`,
 `clients/web/README.md`, `clients/web/BUILD.md`, `clients/web/PLAN.md`,
-`clients/PLAN.md`, `GUIA.md`.
+`clients/PLAN.md`.
 
 **Consumes:** everything.
 
@@ -196,6 +196,6 @@ modify `docs/clients.md`, `docs/architecture.md`, `docs/decisions.md`,
 - [ ] `./test.sh` whole, plus the feature matrix and the doc build.
 - [ ] Docs: the three `docs/decisions.md` entries, the format in
       `docs/clients.md`, the host structure in `docs/architecture.md`, the
-      README/BUILD sections, a `GUIA.md` smoke step (new visual behavior).
+      README/BUILD sections, an example exercising the new visual behavior.
 - [ ] Tick W4 in `clients/web/PLAN.md`, write its "What shipped", update the W
       status paragraph in `clients/PLAN.md`. Commit.

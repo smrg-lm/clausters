@@ -55,16 +55,20 @@ written in Rust and controlled over OSC (UDP, default port 57110).
     directives** in docstrings (no `:role:` cross-refs, no `:param:` field lists
     — use backticks / Google-style sections), and **no milestone labels
     (`Mx`/`Cx`/`Fx`) in any published doc or docstring** — those live only in
-    the `PLAN.md` roadmaps. `GUIA.md` is a personal Spanish smoke checklist, not
-    part of the docs.
+    the `PLAN.md` roadmaps.
 - **Closing a milestone always includes, whenever applicable**: code plus tests,
   a clear commit message, the `PLAN.md` roadmap checkbox updated, the developer
   documentation (`docs/architecture.md`, module docs) and the user documentation
   in `docs/` where the feature touches them, and a commented/explained example in
   `examples/` when the feature is user-facing. Add a `docs/decisions.md` entry
-  **only** for a choice with non-obvious context, and a `GUIA.md` smoke step
-  **only** for new human-audible/visual behavior — neither is a per-milestone
+  **only** for a choice with non-obvious context — not a per-milestone
   obligation.
+- **The examples are the manual test surface.** There is no separate smoke
+  checklist: new human-audible/visual behavior is checked by ear and by eye
+  through an `examples/` entry (root `examples/` for the server,
+  `clients/python/examples/` for the client and the GUI), so an example that
+  exercises the new behavior *is* the manual test, and keeping it runnable is
+  part of closing the work.
 - Project skills live in `.claude/skills/` (realtime-audio, scsynth-osc,
   ugen-dsp, audio-testing, faust-embedding, faust-language, clausters-python,
   clausters-gui, documentation).
@@ -89,9 +93,8 @@ new work with this modularity in mind.
 - **Git commit messages are in English** (subject and body), ASCII-only.
 - The `PLAN.md` roadmaps (`PLAN.md`, `clients/python/PLAN.md`,
   `clients/gui/PLAN.md`, `clients/web/PLAN.md`), `docs/decisions.md` and the frozen
-  `docs/history/build-log.md` are in English.
-  `GUIA.md` (root + `clients/python/GUIA.md`) and the conversation with the user
-  are in Spanish.
+  `docs/history/build-log.md` are in English. The conversation with the user is
+  in Spanish.
 - **Prose uses the API's own verbs for API actions.** When the protocol or
   API has a verb for an action, the documentation (books, docstrings,
   comments) names the action with *that* verb: a node or widget is **freed**

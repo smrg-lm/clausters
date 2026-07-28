@@ -3,7 +3,7 @@
 Pure-unit, no live host: the constructor picks the interface for the carrier
 (TCP by default — a `/gui_def` tree is not bounded by a datagram — UDP on
 request) without touching the network; connecting is `start()`'s job. The live
-TCP round-trip against a real host is exercised manually (`GUIA.md`) and by
+TCP round-trip against a real host is exercised by the GUI examples and by
 the host's own Rust tests (`clients/gui/src/host/tcp.rs`).
 """
 

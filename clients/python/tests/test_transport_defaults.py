@@ -5,7 +5,7 @@ Pure-unit: no live server. The default `Server` interface is a lazy
 reachable server), UDP stays an explicit opt-down, an oversized UDP send fails
 early with an error naming TCP, and bulk chunks size themselves from the frame
 ceiling `/server_info` advertises. The live TCP path is exercised by the Rust
-integration tests and the E2E smoke in `GUIA.md`.
+integration tests and by the examples.
 """
 
 import pytest

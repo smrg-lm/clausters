@@ -732,6 +732,7 @@ the catalog table in `docs/schemas.md`, and the usual milestone checklist.
 - The progress made in each milestone is added to the project notes.
 - Closing a milestone always includes, where applicable: the developer
   documentation (`docs/architecture.md`, module docs), the user
-  documentation in `docs/` for new features, the manual-test steps and
-  counts in `GUIA.md`, and an explained example in `examples/` if the feature
-  is user-facing — not just the code and the git history.
+  documentation in `docs/` for new features, and an explained example in
+  `examples/` if the feature is user-facing — not just the code and the git
+  history. The examples are also the manual-test surface: new
+  human-audible/visual behavior is checked by running one.

@@ -379,7 +379,7 @@ repo's standing rule).
 
 Make it a real, shippable client.
 
-- An mdBook in `clients/web/docs` (mirroring `clients/python/docs`), with the API reference **generated from TSDoc by typedoc** (the TS counterpart of the Python client's pydoc-markdown), and the GUIA-style manual-testing notes kept current. The client books cross-link by their RTD URLs.
+- An mdBook in `clients/web/docs` (mirroring `clients/python/docs`), with the API reference **generated from TSDoc by typedoc** (the TS counterpart of the Python client's pydoc-markdown), and the manual-testing notes kept current. The client books cross-link by their RTD URLs.
 - A **selection** of the Python examples ported to TS, the `node --test` suite, and the npm package build; a parity pass against the Python client on the shared vectors (OSC, clock arithmetic, GuiDef JSON).
 
 **Acceptance:** the workspace build yields a usable, installable client; the ported examples run in a browser over the in-page engine, and the carrier is the one line that says so; the docs build like the Python client's.

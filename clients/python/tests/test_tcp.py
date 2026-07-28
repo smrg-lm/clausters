@@ -3,8 +3,7 @@
 Pure-unit, no live server: a fake socket records what the interface sends and
 feeds back canned bytes, so the length-prefix framing and the across-segments
 reassembly are checked deterministically. The live round-trip is exercised by
-the Rust integration test (`tests/osc.rs::tcp_*`) and the manual E2E in
-`clients/python/GUIA.md`."""
+the Rust integration test (`tests/osc.rs::tcp_*`) and by the examples."""
 
 from clausters.base import OscTcpInterface
 from clausters.base import _osclib as osc

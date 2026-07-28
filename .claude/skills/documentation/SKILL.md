@@ -51,8 +51,8 @@ writing. Then place the page.
   `docs/decisions.md` (the ADR-style design record, in the server book), the
   `PLAN.md` roadmaps (`PLAN.md` / `clients/python/PLAN.md` /
   `clients/gui/PLAN.md` / `clients/web/PLAN.md`), and the frozen
-  `docs/history/build-log.md`. `GUIA.md` (root + `clients/python/GUIA.md`) is a
-  Spanish smoke checklist, **not** part of the books.
+  `docs/history/build-log.md`. The manual-test surface is the runnable
+  `examples/`, not a separate checklist.
 
 Three rules hold across *all* of the above (repeat them to yourself):
 
@@ -255,8 +255,8 @@ there is no separate `adr/` or C4 tree, by design:
   non-obvious context and consequences, add a short entry there in ADR spirit:
   **context -> decision -> consequence**. The *what shipped* is the git history
   (there is no per-milestone log); the roadmap/rationale is the `PLAN.md` set;
-  the frozen `docs/history/build-log.md` and the Spanish `GUIA.md` smoke
-  checklists are not maintained/published as reference.
+  the frozen `docs/history/build-log.md` is not maintained/published as
+  reference.
 
 ## Closing a milestone (documentation side)
 
@@ -267,8 +267,7 @@ When a feature is user-facing, "done" includes, where applicable:
   client;
 - a commented, explained entry in `examples/`;
 - the `PLAN.md` roadmap checkbox updated;
-- a `docs/decisions.md` entry only for a non-obvious choice, and a `GUIA.md`
-  (Spanish) smoke step only for new human-audible/visual behavior.
+- a `docs/decisions.md` entry only for a non-obvious choice.
 
 Then rebuild both books (`mdbook build .` and `clients/python/docs/build.sh`) so
 they still build clean.
