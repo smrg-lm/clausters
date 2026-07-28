@@ -217,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "clausters"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "assert_no_alloc",
  "clausters-core",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-core"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "microfft",
  "regex",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-core-web"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clausters-core",
  "js-sys",
@@ -261,7 +261,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-ffi"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clausters-core",
  "clausters-notation",
@@ -271,7 +271,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-midi"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "midi2",
  "midir",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-notation"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clausters-core",
  "serde",
@@ -289,7 +289,7 @@ dependencies = [
 
 [[package]]
 name = "clausters-web"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clausters",
  "js-sys",
