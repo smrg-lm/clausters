@@ -121,15 +121,14 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
             new SynthDef("ts_data_tone", out(control("bus", 0.0), sine(400.0).mul(0.5))),
         );
         server.synth("ts_data_tone", { bus: bus.index });
-        const tap = server.taps.alloc();
-        server.tap(tap, bus);
         await server.sync();
         await sleep(200); // let the ring fill a window
 
         const frames = scopeFrames(10.0, info.nominalSampleRate);
-        const stream = await TapStream.open(server, [tap], { frames, periodMs: 20 });
+        // The subscription is the watch: naming the bus is all it takes.
+        const stream = await TapStream.open(server, [bus.index], { frames, periodMs: 20 });
         await sleep(300);
-        const window = stream.window(tap);
+        const window = stream.window(bus.index);
         assert.ok(window, "no /tap_data arrived");
         assert.ok(window.samples.length > 0);
         assert.ok(window.endPosition > 0, "the window carries its stream position");
@@ -147,11 +146,9 @@ test("a tap carries the samples a synth is writing", { skip: !hasServer }, async
         // A second snapshot advances the tap's own sample axis.
         const first = window.endPosition;
         await sleep(150);
-        assert.ok(stream.window(tap)!.endPosition > first, "the axis advances");
+        assert.ok(stream.window(bus.index)!.endPosition > first, "the axis advances");
 
         await stream.stop();
-        server.tap(tap, -1);
-        server.taps.free(tap);
         server.freeBus(bus);
     });
 });

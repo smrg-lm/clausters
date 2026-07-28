@@ -613,35 +613,51 @@ export function plot(
 // ---- the live views (the audio server's data) ----
 
 /**
- * A level `meter` reading control `bus` every frame — natively from the
- * server's shared-memory segment, in the browser from the `/c_stream`
- * subscription the host keeps over its server leg. `min`/`max` scale the bar
- * (default `0`/`1`).
+ * A level `meter` on `bus`, read from the audio server's shared segment every
+ * frame — no OSC per frame at all.
+ *
+ * At `rate` `"audio"` (the default) it meters an audio bus — bus 0 is the first
+ * hardware output, so `meter()` is the console meter on the left out — reading
+ * the level the server publishes per block: a peak held with a decay, so a
+ * transient is caught even though the display refreshes far slower than the
+ * engine. It costs the server nothing to set up, so a mixer's worth of meters
+ * is fine. At `"control"` it reads a control bus's value instead. `min`/`max`
+ * scale the bar (default `0`/`1`).
  */
 export function meter(
     bus = 0,
-    options: WidgetOptions & { min?: number; max?: number; label?: string } = {},
+    options: WidgetOptions & {
+        rate?: "audio" | "control";
+        min?: number;
+        max?: number;
+        label?: string;
+    } = {},
 ): GuiNode {
-    const { min, max, label: text, ...rest } = options;
+    const { rate = "audio", min, max, label: text, ...rest } = options;
     return node("meter", {
         ...rest,
         bus,
+        rate,
         ...drop([["min", min], ["max", max], ["label", text]]),
     });
 }
 
 /**
- * A time-domain `scope`, in one of two rates. By default it plots the recent
- * history of control `bus`; passing `tap` makes it an audio-rate
- * **oscilloscope** over `channels` adjacent audio-tap rings starting there
- * (route a bus into its ring with `Server.tap` first): a `windowMs` display
- * window aligned on a rising crossing of `trigger` found in the first
- * channel, so a periodic signal draws a stable trace. `hold` freezes it.
+ * A time-domain `scope` over `channels` **adjacent** buses starting at `bus`
+ * (bus 0 is the first hardware output), in one of two rates.
+ *
+ * At `rate` `"audio"` (the default) it is a real **oscilloscope**: a `windowMs`
+ * display window of each bus's samples, aligned on a rising crossing of
+ * `trigger` found in the first channel, so a periodic signal draws a stable
+ * trace and the channels keep their true relative phase. Naming the bus is all
+ * a script does — the GUI host has the server record it and stops when nothing
+ * draws it. At `"control"` it plots the control buses' recent history instead,
+ * one sample per frame tick. `hold` freezes the trace.
  */
 export function scope(
     bus = 0,
     options: WidgetOptions & {
-        tap?: number;
+        rate?: "audio" | "control";
         channels?: number;
         overlay?: boolean;
         windowMs?: number;
@@ -659,14 +675,14 @@ export function scope(
     } = {},
 ): GuiNode {
     const {
-        tap, channels, overlay, windowMs, trigger, hold, min, max,
+        rate = "audio", channels, overlay, windowMs, trigger, hold, min, max,
         ruler, rulerY, label: text, ...rest
     } = options;
     return node("scope", {
         ...rest,
         bus,
+        rate,
         ...drop([
-            ["tap", tap],
             ["channels", channels],
             ["overlay", flag(overlay)],
             ["window_ms", windowMs],
@@ -682,27 +698,26 @@ export function scope(
 }
 
 /**
- * A `phasescope` (goniometer): the taps `tap` (left) and `tap2` (right,
- * default `tap + 1`) drawn as the 45°-rotated Lissajous figure — vertical is
- * the mid, horizontal the side, so mono reads as a vertical line and
- * anti-phase as horizontal. An age-faded trail spans the last `windowMs` and
- * a correlation read-out sits under the field.
+ * A `phasescope` (goniometer) of the stereo pair `bus` (left) and `bus + 1`
+ * (right) — the adjacent-channel layout the whole family uses — drawn as the
+ * 45°-rotated Lissajous figure: vertical is the mid, horizontal the side, so
+ * mono reads as a vertical line and anti-phase as horizontal. An age-faded
+ * trail spans the last `windowMs` and a correlation read-out sits under the
+ * field. Audio rate only.
  */
 export function phasescope(
-    tap = 0,
+    bus = 0,
     options: WidgetOptions & {
-        tap2?: number;
         windowMs?: number;
         hold?: boolean;
         label?: string;
     } = {},
 ): GuiNode {
-    const { tap2, windowMs, hold, label: text, ...rest } = options;
+    const { windowMs, hold, label: text, ...rest } = options;
     return node("phasescope", {
         ...rest,
-        tap,
+        bus,
         ...drop([
-            ["tap2", tap2],
             ["window_ms", windowMs],
             ["hold", flag(hold)],
             ["label", text],
@@ -712,12 +727,13 @@ export function phasescope(
 
 /**
  * A live `spectrum` (spectroscope): one forward FFT per frame over the newest
- * window of each of `channels` adjacent taps starting at `tap`, one magnitude
- * curve per channel. `averaging` (0..1) smooths each bin and `peakHold`
- * overlays a decaying peak trace; `freqScale` is the spectrogram's set.
+ * window of each of `channels` **adjacent** audio buses starting at `bus`, one
+ * magnitude curve per channel. `averaging` (0..1) smooths each bin and
+ * `peakHold` overlays a decaying peak trace; `freqScale` is the spectrogram's
+ * set. Audio rate only.
  */
 export function spectrum(
-    tap = 0,
+    bus = 0,
     options: WidgetOptions & {
         channels?: number;
         fftSize?: number;
@@ -737,7 +753,7 @@ export function spectrum(
     } = options;
     return node("spectrum", {
         ...rest,
-        tap,
+        bus,
         ...drop([
             ["channels", channels],
             ["fft_size", fftSize],

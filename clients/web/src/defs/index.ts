@@ -36,7 +36,7 @@ export type { BusLike, BusRate } from "./bus.ts";
 export { Buffer, BufferAllocator, NUM_BUFFERS } from "./buffer.ts";
 export type { BufferLike } from "./buffer.ts";
 
-export { DEFAULT_TAPS, TapAllocator } from "./tap.ts";
+export { DEFAULT_TAPS } from "./tap.ts";
 
 export { SynthDef } from "./synthdef.ts";
 export type { ControlSpec, SpecInput, SynthDefSpec, UgenSpec } from "./synthdef.ts";

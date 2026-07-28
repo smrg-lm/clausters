@@ -26,9 +26,9 @@
 on its own canvas — no widget, no GUI host.
 
 A synth writes a control bus (an LFO) and an audio bus (a tone); the audio bus
-is routed into an <b>audio tap</b>. The page then subscribes to both:
+is recorded by the server on request. The page then subscribes to both:
 <code>BusStream</code> brings the bus as periodic snapshots (the
-<b>meter</b>), <code>TapStream</code> brings the tap as windows of samples (the
+<b>meter</b>), <code>TapStream</code> brings the audio bus as windows of samples (the
 <b>oscilloscope</b> and the <b>spectrum</b>), and a generated buffer is read in
 bulk with <code>getSamples</code> and reduced by the wasm <b>peak pyramid</b>
 into one min/max column per pixel (the <b>waveform</b>).
@@ -70,7 +70,7 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
 
       // ---- the defs: something to look at ----
       // Ordinary defs. Neither knows a view is watching — what makes them
-      // readable is the bus and the tap, not anything in the graph.
+      // readable is the bus, not anything in the graph.
       const tone = () =>
         new SynthDef("scope_tone",
           out(control("bus", 0.0),
@@ -158,7 +158,7 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         const server = await Server.open(connection);
         const info = await server.queryInfo();
         if (info.taps === 0) {
-          log("this server has no audio taps (--taps 0): no oscilloscope");
+          log("this server records no audio buses (--taps 0): no oscilloscope");
           return;
         }
 
@@ -172,9 +172,6 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         const voice = server.synth("scope_tone", { bus: audioBus.index });
         server.synth("scope_lfo", { bus: ctlBus.index });
 
-        // The tap: an index from the registry, so two views never collide.
-        const tap = server.taps.alloc();
-        server.tap(tap, audioBus);
         await server.sync();
 
         // A buffer to draw: filled by the server, read back in bulk, reduced
@@ -190,11 +187,13 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
         // ---- the two subscriptions ----
         const buses = await data.BusStream.open(server, [ctlBus], { periodMs: 33 });
         const frames = data.scopeFrames(WINDOW_MS, info.nominalSampleRate);
-        const taps = await data.TapStream.open(server, [tap], {
+        // Opening the stream is what asks the server to record the bus; no
+        // ring index anywhere.
+        const taps = await data.TapStream.open(server, [audioBus.index], {
           frames, periodMs: 33,
         });
-        log(`streaming bus ${ctlBus.index} and tap ${tap} `
-          + `(${frames}-frame windows at ~30 fps)`);
+        log(`streaming control bus ${ctlBus.index} and audio bus `
+          + `${audioBus.index} (${frames}-frame windows at ~30 fps)`);
 
         // ---- the frame ----
         // The snapshots arrive as calls; the drawing is paced by the browser's
@@ -211,7 +210,7 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
 
         const frame = () => {
           if (!frozen) {
-            const window = taps.window(tap);
+            const window = taps.window(audioBus.index);
             if (window) {
               const trace = data.scopeWindow(window.samples, {
                 windowMs: WINDOW_MS, sampleRate: info.nominalSampleRate,
@@ -239,8 +238,8 @@ Swapping to a <code>--ws</code> server is the one line marked below.</div>
 
         // Nothing is freed here on purpose: the page keeps drawing until it is
         // closed. A view that comes and goes stops its streams (`await
-        // stream.stop()`), stops its tap (`server.tap(tap, -1)`), returns it
-        // (`server.taps.free(tap)`) and frees its pyramid (`peaks.free()`).
+        // stream.stop()`, which also stops the recording behind them) and
+        // frees its pyramid (`peaks.free()`).
       }
 
       el("start").onclick = () => {

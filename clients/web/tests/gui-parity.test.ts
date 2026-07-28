@@ -150,13 +150,13 @@ const trees: Record<string, () => GuiNode> = {
     live_views: () =>
         window(
             { title: "live", layout: "col" },
-            meter(10, { id: 1, min: -1.0, max: 1.0, label: "bus" }),
-            scope(10, { id: 2, min: -1.0, max: 1.0 }),
+            meter(10, { id: 1, rate: "control", min: -1.0, max: 1.0, label: "bus" }),
+            scope(10, { id: 2, rate: "control", min: -1.0, max: 1.0 }),
             scope(0, {
-                id: 3, tap: 0, channels: 2, windowMs: 20.0, trigger: 0.0,
+                id: 3, channels: 2, windowMs: 20.0, trigger: 0.0,
                 overlay: true, ruler: false, rulerY: "off",
             }),
-            phasescope(0, { id: 4, tap2: 1, windowMs: 30.0, hold: false }),
+            phasescope(0, { id: 4, windowMs: 30.0, hold: false }),
             spectrum(0, {
                 id: 5, channels: 2, fftSize: 2048, dbFloor: -100.0,
                 dbCeil: 0.0, freqScale: "bark", averaging: 0.5, peakHold: true,

@@ -1,4 +1,4 @@
-# Reading the server: buses, taps and buffers
+# Reading the server: buses and buffers
 
 A view that shows what the server is doing has to read it. There are three
 things worth reading, and each has its own path:
@@ -6,11 +6,11 @@ things worth reading, and each has its own path:
 | What | Path | For |
 |---|---|---|
 | a **control bus** | `/c_stream` → periodic snapshots | meters, read-outs, slow traces |
-| an **audio tap** | `/tap_stream` → windows of samples | oscilloscopes, phasescopes, spectra |
+| an **audio bus** | `/tap_stream` → windows of samples | oscilloscopes, phasescopes, spectra |
 | a **buffer** | `/b_getn` in chunks, or `fetch` | waveforms, audio-editor views |
 
 The GUI host already reads all three on its own — that is why a GuiDef naming a
-bus, a tap or a URL draws with no script at all. This chapter describes the same
+bus or a URL draws with no script at all. This chapter describes the same
 three paths opened to *your* script, for a view you draw yourself on your own
 canvas.
 
@@ -65,55 +65,54 @@ buses.onSnapshot((values) => {
 });
 ```
 
-## Audio taps
+## Audio buses
 
-A control bus carries one value per block; an oscilloscope needs the samples.
-That is what a **tap** is: a ring on the server that an audio bus is routed
-into.
+A control bus carries one value per block; an oscilloscope needs the samples. A
+control bus lives permanently in the server's shared segment, so it can always
+be read; an audio bus does not, so the server **records** the ones it is asked
+for. You never name the recording: you name the bus.
 
 ```js
-const tap = server.taps.alloc();        // from the registry, never by hand
-server.tap(tap, bus);                   // route the bus into the ring
-await server.sync();
-
 const frames = data.scopeFrames(20.0, 48000);   // a 20 ms window, with slack
-const taps = await data.TapStream.open(server, [tap], { frames, periodMs: 33 });
+const taps = await data.TapStream.open(server, [bus], { frames, periodMs: 33 });
 
-taps.onData((index, window) => {
+taps.onData((bus, window) => {
     const trace = data.scopeWindow(window.samples, { windowMs: 20.0 });
     drawScope(trace.samples, trace.locked);
 });
 ```
 
-One subscription per client applies here too, with the same in-page caveat
-above: a `TapStream` and a host oscilloscope on one page displace each other.
-
-Taps are as finite as buses (8 rings by default), so take them from
-`server.taps` and give them back:
+Opening the stream is what starts the recording, and stopping it is what ends
+it:
 
 ```js
 await taps.stop();
-server.tap(tap, -1);        // stop the routing
-server.taps.free(tap);
 ```
 
-Each window arrives with `endPosition` — the total samples ever written to that
-ring at the window's end — so consecutive windows can be placed on the tap's own
-timeline: they overlap or gap by exactly the position delta, never by a guess
-about the period.
+One subscription per client applies here too, with the same in-page caveat
+above: a `TapStream` and a host oscilloscope on one page displace each other.
+The server has a finite number of rings to record into (8 by default), shared
+with whatever the GUI host is drawing — it counts watchers, so several views of
+one bus cost one ring, and a stream that cannot get one fails loudly rather than
+drawing nothing.
+
+Each window arrives with `endPosition` — the total samples ever recorded for
+that bus at the window's end — so consecutive windows can be placed on the bus's
+own timeline: they overlap or gap by exactly the position delta, never by a
+guess about the period.
 
 `scopeWindow` is what makes a trace stand still. Without it a periodic signal
 crawls across the view; with it, the window starts at the latest rising crossing
 of the trigger level, and `locked` says whether one was found (silence and DC
 free-run on the newest samples instead of blanking). The alignment is the
 server core's own — the same one the GUI host's `scope` widget draws with — so a
-trace you draw and one the host draws from the same tap are the same trace.
+trace you draw and one the host draws from the same bus are the same trace.
 
 A stereo pair reads as one interleaved window, which is what a phasescope and a
 correlation take:
 
 ```js
-const pair = taps.interleaved(tap, 2);          // adjacent taps t and t+1
+const pair = taps.interleaved(bus, 2);          // adjacent buses b and b+1
 const [left, right] = data.deinterleave(pair, 2);
 const points = data.lissajous(left, right);     // [x, y] per frame
 const r = data.correlation(left, right);        // -1 … +1, or undefined
@@ -195,5 +194,5 @@ whatever draws.
 Nothing here computes a number in TypeScript. Every figure — the trigger
 alignment, the decibel curve, the peak columns, the correlation — comes out of
 the same `clausters-core` function the GUI host calls. A canvas your script
-feeds and a widget the host draws from the same bus, tap or buffer therefore
+feeds and a widget the host draws from the same bus or buffer therefore
 show the same picture, which is why both may read these paths.

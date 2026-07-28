@@ -7,7 +7,7 @@
 - [Getting started](getting-started.md)
 - [The client, layer by layer](guide.md)
 - [Routines and clocks](routines-and-clocks.md)
-- [Reading the server: buses, taps and buffers](data.md)
+- [Reading the server: buses and buffers](data.md)
 - [Components: an instrument in the page](components.md)
 - [Examples](examples.md)
 

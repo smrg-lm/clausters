@@ -1,17 +1,19 @@
-// Audio taps, streamed to the script.
+// Audio buses, streamed to the script.
 //
 // A control bus carries one value per block; an oscilloscope, a phasescope and
-// a spectrum need the samples themselves. That is what an audio tap is: a
-// pre-allocated ring on the server that `/tap` routes an audio bus into, read
-// natively out of shared memory and, in a page, streamed as `/tap_data` — the
-// newest window of each subscribed tap, every period.
+// a spectrum need the samples themselves. An audio bus does not sit in shared
+// memory the way a control bus does, so the server records the ones it is
+// asked for and a page reads them as `/tap_data` — the newest window of each
+// subscribed bus, every period. **A script names the bus**: the subscription
+// is itself the request to record it, and the ring behind it is the server's
+// bookkeeping.
 //
 // Two things this module keeps that a raw subscription does not:
 //
-// - **The sample axis.** Every window arrives with the tap's `endPosition`,
-//   the total samples ever written at the window's end, so consecutive
-//   snapshots can be placed on the tap's own timeline: they overlap or gap by
-//   exactly the position delta, never by a guess about the period.
+// - **The sample axis.** Every window arrives with its `endPosition`, the
+//   total samples ever recorded at the window's end, so consecutive snapshots
+//   can be placed on the bus's own timeline: they overlap or gap by exactly
+//   the position delta, never by a guess about the period.
 // - **The trace.** A free-running window makes a periodic signal crawl across
 //   the view; `scopeWindow` aligns it on a rising crossing with the core's own
 //   trigger — the one the GUI host draws with, so the two traces agree.
@@ -25,7 +27,7 @@ import {
 } from "../core/clausters_core_web.js";
 import { STREAM_PERIOD_MS } from "./buses.ts";
 
-/** One tap's newest window, on the tap's own sample axis. */
+/** One bus's newest window, on that bus's own sample axis. */
 export interface TapWindow {
     /** The samples, oldest first. */
     samples: Float32Array;
@@ -41,20 +43,19 @@ export interface ScopeTrace {
 }
 
 /**
- * A live view of a set of audio taps.
+ * A live view of a set of audio buses.
  *
  * ```ts
- * const tap = server.taps.alloc();          // from the registry, never by hand
- * server.tap(tap, bus);                     // route the bus into the ring
- * const taps = await TapStream.open(server, [tap], { frames: 2048 });
- * taps.onData((index, window) => draw(scopeWindow(window.samples)));
+ * const taps = await TapStream.open(server, [bus], { frames: 2048 });
+ * taps.onData((bus, window) => draw(scopeWindow(window.samples)));
  * // ... later
- * await taps.stop();
- * server.tap(tap, -1);
- * server.taps.free(tap);
+ * await taps.stop();   // and the server stops recording
  * ```
  *
- * At most 8 taps per subscription, and one subscription per client — a second
+ * Opening the stream is what starts the recording and stopping it is what ends
+ * it — there is no separate routing step, and no ring index anywhere.
+ *
+ * At most 8 buses per subscription, and one subscription per client — a second
  * `TapStream` on the same `Server` replaces the first (the server's rule), and
  * over the in-page carrier that client includes the GUI host, so a host
  * oscilloscope and this displace each other (see `BusStream`).
@@ -63,35 +64,35 @@ export interface ScopeTrace {
  */
 export class TapStream {
     readonly server: Server;
-    /** The tap indices watched. */
-    readonly taps: readonly number[];
+    /** The audio buses watched. */
+    readonly buses: readonly number[];
     /** Frames per window this stream asked for. */
     readonly frames: number;
 
     private windows = new Map<number, TapWindow>();
-    private listeners = new Set<(tap: number, window: TapWindow) => void>();
+    private listeners = new Set<(bus: number, window: TapWindow) => void>();
     private unsubscribe: (() => void) | null = null;
 
-    private constructor(server: Server, taps: readonly number[], frames: number) {
+    private constructor(server: Server, buses: readonly number[], frames: number) {
         this.server = server;
-        this.taps = taps;
+        this.buses = buses;
         this.frames = frames;
     }
 
-    /** Subscribes to `taps`, resolving on the server's ack. */
+    /** Subscribes to `buses`, resolving on the server's ack. */
     static async open(
         server: Server,
-        taps: readonly number[],
+        buses: readonly number[],
         {
             frames = 2048,
             periodMs = STREAM_PERIOD_MS,
             timeout = 5.0,
         }: { frames?: number; periodMs?: number; timeout?: number } = {},
     ): Promise<TapStream> {
-        const stream = new TapStream(server, [...taps], frames);
+        const stream = new TapStream(server, [...buses], frames);
         stream.unsubscribe = server.onReply((msg) => stream.take(msg));
         try {
-            await server.streamTaps(periodMs, frames, taps, timeout);
+            await server.streamTaps(periodMs, frames, buses, timeout);
         } catch (error) {
             stream.detach();
             throw error;
@@ -100,18 +101,18 @@ export class TapStream {
     }
 
     /**
-     * One tap's newest window, or `undefined` before its first snapshot — a
-     * tap whose ring has not filled a window yet sends nothing at all.
+     * One bus's newest window, or `undefined` before its first snapshot — a
+     * bus whose recording has not filled a window yet sends nothing at all.
      */
-    window(tap: number): TapWindow | undefined {
-        return this.windows.get(tap);
+    window(bus: number): TapWindow | undefined {
+        return this.windows.get(bus);
     }
 
     /**
-     * The newest windows of `count` adjacent taps from `first`, interleaved
+     * The newest windows of `count` adjacent buses from `first`, interleaved
      * frame-major (`L R L R …`) over the frames they share — the layout a
      * stereo view reads, and the one `lissajous` and `correlation` take.
-     * Empty until every one of those taps has a window.
+     * Empty until every one of those buses has a window.
      */
     interleaved(first: number, count: number): Float32Array {
         const windows: TapWindow[] = [];
@@ -137,12 +138,15 @@ export class TapStream {
      * Calls `handler` with each window as it lands (one call per tap per
      * period); returns the unsubscribe.
      */
-    onData(handler: (tap: number, window: TapWindow) => void): () => void {
+    onData(handler: (bus: number, window: TapWindow) => void): () => void {
         this.listeners.add(handler);
         return () => this.listeners.delete(handler);
     }
 
-    /** Cancels the subscription. The taps keep running; `/tap … -1` stops one. */
+    /**
+     * Cancels the subscription, which is also what stops the recording: the
+     * server drops the watch this stream held on each of its buses.
+     */
     async stop(timeout = 5.0): Promise<void> {
         this.detach();
         await this.server.streamTaps(0, 0, [], timeout);
@@ -154,19 +158,19 @@ export class TapStream {
         this.listeners.clear();
     }
 
-    /** One `/tap_data tap endPosition blob` snapshot. */
+    /** One `/tap_data bus endPosition blob` snapshot. */
     private take(msg: OscMessage): void {
         if (msg.addr !== "/tap_data") return;
-        const tap = Number(msg.args[0]);
-        if (!this.taps.includes(tap)) return;
+        const bus = Number(msg.args[0]);
+        if (!this.buses.includes(bus)) return;
         const blob = msg.args[2];
         if (!(blob instanceof Uint8Array)) return;
         const window: TapWindow = {
             samples: decodeSamples(blob),
             endPosition: Number(msg.args[1]),
         };
-        this.windows.set(tap, window);
-        for (const handler of [...this.listeners]) handler(tap, window);
+        this.windows.set(bus, window);
+        for (const handler of [...this.listeners]) handler(bus, window);
     }
 }
 
@@ -191,7 +195,7 @@ export function scopeFrames(windowMs: number, sampleRate = 48000): number {
 }
 
 /**
- * The triggered trace inside a raw tap window: the display window starting at
+ * The triggered trace inside a raw window: the display window starting at
  * the latest rising crossing of `trigger` (so a periodic signal stands still),
  * falling back to the newest samples when there is no crossing — silence, DC,
  * or no rising edge — with `locked` saying which happened.

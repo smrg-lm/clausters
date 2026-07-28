@@ -198,6 +198,7 @@
           "type": "meter",
           "id": 1,
           "bus": 10,
+          "rate": "control",
           "min": -1.0,
           "max": 1.0,
           "label": "bus"
@@ -206,6 +207,7 @@
           "type": "scope",
           "id": 2,
           "bus": 10,
+          "rate": "control",
           "min": -1.0,
           "max": 1.0
         },
@@ -213,7 +215,7 @@
           "type": "scope",
           "id": 3,
           "bus": 0,
-          "tap": 0,
+          "rate": "audio",
           "channels": 2,
           "window_ms": 20.0,
           "trigger": 0.0,
@@ -224,15 +226,14 @@
         {
           "type": "phasescope",
           "id": 4,
-          "tap": 0,
+          "bus": 0,
           "window_ms": 30.0,
-          "tap2": 1,
           "hold": 0
         },
         {
           "type": "spectrum",
           "id": 5,
-          "tap": 0,
+          "bus": 0,
           "channels": 2,
           "fft_size": 2048,
           "db_floor": -100.0,

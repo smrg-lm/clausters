@@ -47,9 +47,9 @@ import type { NodeLike } from "./node.ts";
 import { AudioBusAllocator, Bus, ControlBusAllocator, busIndex } from "./bus.ts";
 import type { BusLike } from "./bus.ts";
 import { Buffer, BufferAllocator, bufferNumber } from "./buffer.ts";
-import { DEFAULT_TAPS, TapAllocator } from "./tap.ts";
 import { fetchAudio, interleave } from "../data/samples.ts";
 import type { BufferLike } from "./buffer.ts";
+import { DEFAULT_TAPS } from "./tap.ts";
 import { SynthDef } from "./synthdef.ts";
 import { FaustDef } from "./faustdef.ts";
 import { GraphDef } from "./graphdef.ts";
@@ -219,8 +219,6 @@ export class Server {
     readonly audioBuses: AudioBusAllocator;
     readonly controlBuses: ControlBusAllocator;
     readonly buffers: BufferAllocator;
-    /** The audio-tap rings, allocated like every other finite resource. */
-    readonly taps: TapAllocator;
     /**
      * Seconds added to every timed send — the scheduling headroom. Kept here
      * so the sequencing layer (a later milestone) has one place to read it.
@@ -241,7 +239,6 @@ export class Server {
         this.audioBuses = new AudioBusAllocator(sizing.audioBuses, sizing.channels);
         this.controlBuses = new ControlBusAllocator(sizing.controlBuses);
         this.buffers = new BufferAllocator(sizing.maxBuffers);
-        this.taps = new TapAllocator(sizing.taps);
         this.listener = (packet) => this.dispatch(packet);
         connection.addReply(this.listener);
     }
@@ -842,45 +839,51 @@ export class Server {
         await this.command("/c_stream", args, timeout);
     }
 
-    // ---- audio taps ----
+    // ---- watching audio buses ----
 
     /**
-     * Routes audio `bus` into the server's tap ring `tap` (`/tap`): from the
-     * next block on, the engine appends that bus's samples to the ring, where
-     * a GUI host reads them out of shared memory and this client streams them
-     * with `streamTaps`. `bus = -1` stops the tap. No ack, like `/n_map`;
-     * sequence with `sync` when it matters.
+     * Asks the server to make audio `bus` readable (`/tap`): from the next
+     * block on, the engine records that bus into the shared segment, where a
+     * GUI host reads it with zero messages and this client streams it with
+     * `streamTaps`. `watch = false` stops.
      *
-     * Take `tap` from the `taps` registry rather than picking an index by
-     * hand, so two views never fight over one ring.
+     * **The bus is the only number you name.** Which of the server's finite
+     * sample rings carries it is the server's own bookkeeping, published in
+     * the segment for whoever reads the samples. Watches count, so two views
+     * of one bus share a ring and the last one to stop frees it. No ack, like
+     * `/n_map` (failures reply `/fail` — an unknown bus, no tap region, or
+     * every ring already taken); sequence with `sync` when it matters.
      */
-    tap(tap: number, bus: BusLike | -1): void {
+    watch(bus: BusLike, watch = true): void {
         const index = typeof bus === "number" ? bus : busIndex(bus);
-        this.sendMsg("/tap", ["i", Math.trunc(tap)], ["i", Math.trunc(index)]);
+        this.sendMsg("/tap", ["i", Math.trunc(index)], ["i", watch ? 1 : 0]);
     }
 
     /**
-     * Subscribes this client to a periodic `/tap_data` snapshot of `taps`
+     * Subscribes this client to a periodic `/tap_data` snapshot of `buses`
      * (`/tap_stream`): every `periodMs` (10 ms floor) the server sends, per
-     * tap, the newest `frames` samples of its ring — the path an oscilloscope,
-     * a phasescope or a spectrum in the page reads.
+     * bus, its newest `frames` samples — the path an oscilloscope, a
+     * phasescope or a spectrum in the page reads.
      *
-     * `frames` is clamped to the transport's bound and to half the ring; at
-     * most 8 taps; one subscription per client, replaced by each call,
-     * `periodMs <= 0` (or no taps) cancels. Resolves on the `/done` ack;
-     * `tapStream` wraps the whole thing.
+     * The subscription **is** the watch: it starts recording each bus it
+     * lists and stops when it is replaced, cancelled or the connection dies,
+     * so a streaming client never calls `watch` itself. `frames` is clamped to
+     * the transport's bound and to half the ring; at most 8 buses; one
+     * subscription per client, replaced by each call, `periodMs <= 0` (or no
+     * buses) cancels. Resolves on the `/done` ack; `tapStream` wraps the whole
+     * thing.
      */
     async streamTaps(
         periodMs: number,
         frames: number,
-        taps: readonly number[],
+        buses: readonly BusLike[],
         timeout = 5.0,
     ): Promise<void> {
         const args: MsgArg[] = [
             ["i", Math.trunc(periodMs)],
             ["i", Math.trunc(frames)],
         ];
-        for (const tap of taps) args.push(["i", Math.trunc(tap)]);
+        for (const bus of buses) args.push(["i", busIndex(bus)]);
         await this.command("/tap_stream", args, timeout);
     }
 

@@ -478,13 +478,3 @@ test("a read past the end returns what the buffer holds", async () => {
     assert.equal(samples.length, 10, "only what came back");
 });
 
-test("the tap registry hands out adjacent runs and refuses a double free", async () => {
-    const { server } = await fakeServer();
-    assert.equal(server.taps.size, 8, "sized from /server_info");
-    const pair = server.taps.alloc(2);
-    assert.equal(pair, 0);
-    assert.equal(server.taps.alloc(2), 2, "the next run is adjacent, not overlapping");
-    assert.equal(server.taps.inUse, 4);
-    server.taps.free(pair, 2);
-    assert.throws(() => server.taps.free(pair, 2), /double free/);
-});
