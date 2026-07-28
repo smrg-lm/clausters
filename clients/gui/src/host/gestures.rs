@@ -1480,13 +1480,31 @@ impl Gestures {
                 _ => frame::timeline_body(rect, editor),
             };
             if editor.ruler_y != RulerY::Off && cx < body.x as f64 {
-                // Wheel over the y-ruler strip zooms the vertical
-                // display window, anchored at the cursor's height
-                // within the lane under it.
-                let lanes = ctx.lanes(id, &kind);
-                let lane = frame::lane_rect(body, lanes, frame::lane_at(body, lanes, cy));
-                let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
-                zoom_timeline_y(host, &mut out, def_id, id, factor, 1.0 - rel);
+                // Wheel over the y-ruler strip zooms the vertical display
+                // window. The anchor depends on what the axis measures,
+                // because one window is shared by every channel lane:
+                //
+                // - **Amplitude** (the waveform): the window keeps its own
+                //   centre, so zero stays at the centre of *every* lane and
+                //   the trace grows and shrinks inside its lane. An anchor
+                //   taken from the cursor's height would be meaningless for
+                //   the other lanes, and any off-centre window pushes the
+                //   wave out of the lane and clips it.
+                // - **Frequency** (the spectrogram): the cursor's height,
+                //   which is the frequency under it. There the shared window
+                //   says the same thing in every lane — all of them show that
+                //   band — so anchoring at the cursor is both meaningful and
+                //   what the reader wants.
+                let anchor = match kind {
+                    WidgetKind::Waveform { .. } => 0.5,
+                    _ => {
+                        let lanes = ctx.lanes(id, &kind);
+                        let lane = frame::lane_rect(body, lanes, frame::lane_at(body, lanes, cy));
+                        let rel = ((cy - lane.y as f64) / lane.h.max(1.0) as f64).clamp(0.0, 1.0);
+                        1.0 - rel
+                    }
+                };
+                zoom_timeline_y(host, &mut out, def_id, id, factor, anchor);
             } else {
                 zoom_timeline(host, &mut out, def_id, id, body, cx, factor);
             }
@@ -2931,6 +2949,46 @@ mod tests {
         let after = host.timeline_nav(60).unwrap().0.len;
         assert!(after < before, "wheel-in shrinks the visible window");
         assert!(has_emit_tag(&effects, 60, "view"));
+    }
+
+    /// The amplitude axis zooms symmetrically: whatever lane the cursor is
+    /// over, the window keeps its centre — so every channel's zero line stays
+    /// at its lane's centre instead of sliding out of the lane. The regression
+    /// this fixes: the anchor used to be the cursor's height within its lane,
+    /// which is meaningless for the *other* lanes of one shared window — a
+    /// wheel near the top of channel 2 pushed every channel's wave to the
+    /// bottom of its lane, clipped.
+    #[test]
+    fn the_amplitude_axis_zooms_about_its_centre_whatever_lane_is_under_the_cursor() {
+        let mut host = host_from(
+            r#"{"type":"window","children":[
+                {"id":61,"type":"waveform","data":[0.0,0.5,-0.5,1.0],"base_bucket":2}]}"#,
+        );
+        host.set_timeline_total(61, 1000);
+        let mut g = Gestures::default();
+        let mut ctx = GestureCtx::new(1, 800, 300);
+        // Four channels: the body splits into four lanes.
+        ctx.wave_lanes.insert(61, 4);
+        // Wheel over the y-ruler strip (left of the body), high inside the
+        // *last* lane — the worst case for a cursor-derived anchor.
+        let effects = g.wheel(&mut host, &ctx, 10.0, 212.0, 4.0);
+        assert!(has_emit_tag(&effects, 61, "view_y"));
+        let (start, len) = host
+            .window_def(1)
+            .unwrap()
+            .find(61)
+            .unwrap()
+            .kind
+            .editor()
+            .unwrap()
+            .y_view();
+        assert!(len < 1.0, "wheel-in shrinks the amplitude window");
+        // Zero (display 0.5) sits at the centre of the window, so it lands at
+        // the centre of every lane.
+        assert!(
+            (start + len / 2.0 - 0.5).abs() < 1e-9,
+            "the window stays centred on zero: got ({start}, {len})"
+        );
     }
 
     // --- score ---

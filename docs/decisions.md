@@ -312,8 +312,8 @@ The editor-grade views (waveform, spectrogram) zoom and pan vertically. Two
 choices were on the table and both are worth recording:
 
 - **Gesture surface: the y-ruler strip, not a modifier over the body.** The
-  wheel over the strip zooms the vertical axis (anchored at the cursor's
-  height within its lane) and dragging the strip pans it; the wheel over the
+  wheel over the strip zooms the vertical axis and dragging the strip pans it;
+  the wheel over the
   body stays horizontal zoom and plain/Shift drag keep selecting/panning time.
   Spatial separation needs no modifier chord, leaves every existing body
   gesture untouched, and matches the audio-editor convention (Audacity, most
@@ -337,6 +337,24 @@ choices were on the table and both are worth recording:
 The y state is deliberately **per widget** while the horizontal view is slated
 to move into shared navigation groups (linked views): two lanes of one file
 scroll in lockstep in time, but each keeps its own vertical slice.
+
+**The zoom anchor follows what the axis measures**, because that one window is
+shared by every *channel* lane the view stacks — a multichannel file draws N
+lanes against a single `y_start`/`y_len`:
+
+- **Frequency (the spectrogram): the cursor's height**, which is the frequency
+  under it. A shared window says the same thing in every lane — all of them
+  show that band — so anchoring at the cursor is both meaningful and what the
+  reader wants.
+- **Amplitude (the waveform): the window's own centre**, whatever lane the
+  cursor is over, so zero stays at the centre of every lane and the trace grows
+  and shrinks inside it. This is the audio-editor convention (a vertical zoom
+  is a symmetric change of amplitude scale), and it is the only anchor that
+  survives multiple lanes: an anchor taken from the cursor's height is
+  meaningless for the *other* lanes, and any off-centre window pushes the wave
+  out of its lane and clips it — a wheel near the top of channel 2 used to
+  shove every channel's wave against the bottom of its lane. Panning the strip
+  still reaches an off-centre region when one is wanted.
 
 ## Linked views: explicit groups in the host core, shaped for the multitrack view
 

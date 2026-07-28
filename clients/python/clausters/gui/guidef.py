@@ -344,7 +344,10 @@ def waveform(id: int | None = None, *, data=None, blob: int | None = None, buffe
     units where ``0, 1`` (the default) is the full axis: the wheel over the
     y-ruler strip zooms it, dragging the strip pans it, and every change is
     reported as ``/gui_event id "view_y" y_start y_len`` (a non-positive
-    ``y_len`` resets to the full axis).
+    ``y_len`` resets to the full axis). The zoom is **symmetric about zero** —
+    it keeps the window's centre, so on a multichannel file every channel's
+    zero line stays at the centre of its own lane and the traces grow and
+    shrink in place; drag the strip to reach an off-centre region.
 
     ``link`` puts the view in a shared **navigation group**: every timeline
     view (waveform or spectrogram, in any window) declaring the same ``link``
