@@ -248,6 +248,23 @@ impl Host {
     /// data loads). A group that was showing its full timeline keeps showing
     /// all of it as the timeline grows; a zoomed one just re-clamps.
     pub fn set_timeline_total(&mut self, id: i32, total: usize) {
+        self.set_timeline_total_inner(id, total, true);
+    }
+
+    /// Registers an extent **without refitting** a window that happens to be
+    /// showing the whole timeline — the variant a *gesture* uses.
+    ///
+    /// The refit below ("it was showing it all, keep showing it all") is right
+    /// when the content changes under a still view: a def arriving, a `/gui_set`
+    /// moving a clip. Under a drag it is wrong, and visibly so — every step
+    /// grows the content, the window grows with it, and dragging a clip rightward
+    /// *zooms the axis out* from under the cursor instead of scrolling. A DAW
+    /// scrolls at constant zoom, so a dragged extent keeps the window's length.
+    pub fn set_timeline_total_keeping_view(&mut self, id: i32, total: usize) {
+        self.set_timeline_total_inner(id, total, false);
+    }
+
+    fn set_timeline_total_inner(&mut self, id: i32, total: usize, refit: bool) {
         let Some(key) = self.timeline_key(id) else {
             self.timelines.totals.insert(id, total);
             return;
@@ -257,7 +274,7 @@ impl Host {
         let new_total = self.timeline_total(key);
         let span = self.timeline_span(key);
         if let Some(state) = self.timelines.states.get_mut(&key) {
-            if (state.nav.len - old_total as f64).abs() < 1.0 {
+            if refit && (state.nav.len - old_total as f64).abs() < 1.0 {
                 // It was showing exactly the whole timeline: keep showing it all.
                 state.nav = View::full(new_total);
             } else {
@@ -275,6 +292,19 @@ impl Host {
     /// fronts register for a loaded waveform, and it must be re-run whenever a
     /// clip moves or resizes (a `/gui_def`, a `/gui_set`, or a drag).
     pub(super) fn sync_track_totals(&mut self) {
+        self.sync_track_totals_inner(true);
+    }
+
+    /// The same registration, keeping the window's length — what a **drag**
+    /// calls, so extending the content scrolls the axis instead of zooming it
+    /// out from under the cursor (see [`set_timeline_total_keeping_view`]).
+    ///
+    /// [`set_timeline_total_keeping_view`]: Host::set_timeline_total_keeping_view
+    pub(super) fn sync_track_totals_keeping_view(&mut self) {
+        self.sync_track_totals_inner(false);
+    }
+
+    fn sync_track_totals_inner(&mut self, refit: bool) {
         fn walk(widget: &Widget, out: &mut Vec<(i32, usize)>) {
             match (&widget.id, &widget.kind) {
                 (Some(id), super::widget::WidgetKind::Track { .. }) => {
@@ -304,7 +334,11 @@ impl Host {
             walk(tree, &mut lanes);
         }
         for (id, span) in lanes {
-            self.set_timeline_total(id, span);
+            if refit {
+                self.set_timeline_total(id, span);
+            } else {
+                self.set_timeline_total_keeping_view(id, span);
+            }
         }
     }
 
@@ -1125,6 +1159,30 @@ mod tests {
         host.reset_timeline(100);
         let (nav, total) = host.timeline_nav(100).unwrap();
         assert_eq!((nav.start, nav.len), (0.0, total as f64));
+    }
+
+    /// A content change under a *still* view keeps the refit: a window showing
+    /// the whole timeline keeps showing all of it when a clip is placed by
+    /// `/gui_set` rather than dragged. (A drag takes the other path -- see the
+    /// gesture tests -- so extending the content scrolls instead of zooming
+    /// the axis out from under the cursor.)
+    #[test]
+    fn a_scripted_move_refits_the_full_view_but_a_dragged_one_does_not() {
+        let mut host = lanes_host();
+        let (before, total) = host.timeline_nav(100).unwrap();
+        assert_eq!(before.len, total as f64, "it starts showing it all");
+
+        // Scripted: the window follows the piece as it grows.
+        host.handle_packet(set_msg(111, &[("offset", OscType::Float(900.0))]), from());
+        let (after, grown) = host.timeline_nav(100).unwrap();
+        assert!(grown > total);
+        assert_eq!(after.len, grown as f64, "it still shows the whole piece");
+
+        // The gesture variant keeps the window's length instead.
+        let held = host.timeline_nav(100).unwrap().0.len;
+        host.set_timeline_total_keeping_view(100, grown * 2);
+        let (kept, _) = host.timeline_nav(100).unwrap();
+        assert_eq!(kept.len, held, "a drag holds the zoom");
     }
 
     /// A heavy view's axis stays bound to its data: there is no signal out past

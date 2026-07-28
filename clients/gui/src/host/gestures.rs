@@ -2598,8 +2598,11 @@ fn apply_clip_drag(
     );
     interact::clip_set(host, def_id, d.id, Some(new_offset), Some(new_dur));
     // The lane's extent moved with the clip: re-register it, so the shared axis
-    // grows when a clip is dragged past the end.
-    host.sync_track_totals();
+    // grows when a clip is dragged past the end — keeping the window's length,
+    // so the axis *scrolls* under the drag rather than zooming out from under
+    // the cursor (a DAW scrolls at constant zoom; the refit is for content that
+    // changes under a still view).
+    host.sync_track_totals_keeping_view();
     emit_clip(host, out, def_id, d.id);
     out.push(GestureEffect::Redraw(def_id));
 }
@@ -3244,6 +3247,49 @@ mod tests {
         let (dropped, _) = host.timeline_nav(70).unwrap();
         g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
         assert_eq!(host.timeline_nav(70).unwrap().0.start, dropped.start);
+    }
+
+    /// Dragging keeps the zoom and scrolls, **from the untouched view too**.
+    /// The regression this fixes: a window showing exactly the whole timeline
+    /// was refitted to the new total on every drag step, so extending the
+    /// content zoomed the axis out from under the cursor instead of scrolling —
+    /// and the edge scroll's pan was overwritten as fast as it was applied. It
+    /// only appeared to work once the zoom had been changed at least once,
+    /// which is what took the window off the exact-full case.
+    #[test]
+    fn dragging_from_the_full_view_scrolls_instead_of_zooming_out() {
+        let mut host = lane_host();
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 200);
+        // Untouched: the window shows the whole timeline, exactly.
+        let (before, total) = host.timeline_nav(70).unwrap();
+        assert_eq!(before.len, total as f64, "showing it all, never zoomed");
+
+        // Drag the far clip past the end and hold at the edge. It spans
+        // 9000..10000 of a 10000-sample axis drawn over the body (96..800), so
+        // it occupies roughly the last 70 px.
+        g.press(&mut host, &ctx, 760.0, 100.0, &mut || false);
+        assert!(g.dragging(), "the press grabbed the far clip");
+        g.drag_to(&mut host, &ctx, 790.0, 100.0);
+        for _ in 0..20 {
+            g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+        }
+        let (after, grown) = host.timeline_nav(70).unwrap();
+        assert!(grown > total, "the content grew with the clip");
+        assert!(
+            (after.len - before.len).abs() < 1.0,
+            "the zoom held: {} -> {}",
+            before.len,
+            after.len
+        );
+        assert!(
+            after.start > before.start,
+            "and the axis scrolled: {} -> {}",
+            before.start,
+            after.start
+        );
+        g.release(&mut host, &ctx, 790.0, 100.0);
     }
 
     /// The left edge scrolls the other way, and never past the axis origin.

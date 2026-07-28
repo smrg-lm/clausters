@@ -179,7 +179,13 @@ process, no socket.</div>
         }
         for (const lane of ["drums", "bass", "lead", "sweep"]) {
           win.widget(lane).onEvent((tag, ...values) => {
-            if (tag === "locate") log(`${lane}: locate ${inBeats(values[0])} beats`);
+            if (tag === "locate") {
+              log(`${lane}: locate ${inBeats(values[0])} beats`);
+            } else if (tag === "view" && values.length >= 2) {
+              // The shared axis moved: start and length, in beats. Watching the
+              // length is how you tell a scroll from a zoom.
+              log(`${lane}: view ${inBeats(values[0])} +${inBeats(values[1])} beats`);
+            }
           });
         }
 
