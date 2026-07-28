@@ -33,6 +33,35 @@ impl App {
         ctx
     }
 
+    /// Whether window `def_id` holds a clip drag pinned against a lane's edge,
+    /// so the frame tick must keep running: the view scrolls under a standing
+    /// cursor, which sends no events of its own.
+    pub(super) fn window_is_edge_scrolling(&self, def_id: i32) -> bool {
+        self.windows
+            .get(&def_id)
+            .is_some_and(|ws| ws.gestures.edge_scrolling(ws.cursor.0))
+    }
+
+    /// The frame step of every edge-held clip drag: pans the view and carries
+    /// the clip with it, so a clip travels further than one window's worth.
+    pub(super) fn advance_edge_scroll(&mut self, dt: f64) {
+        let dragging: Vec<i32> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|id| self.window_is_edge_scrolling(*id))
+            .collect();
+        for def_id in dragging {
+            let ctx = self.gesture_ctx(def_id);
+            let Some(ws) = self.windows.get_mut(&def_id) else {
+                continue;
+            };
+            let cx = ws.cursor.0;
+            let effects = ws.gestures.tick(&mut self.host, &ctx, cx, dt);
+            self.apply_gesture_effects(effects);
+        }
+    }
+
     /// Carries out a gesture's effects: events over the window's transport,
     /// repaints, releasing the pointer grab.
     fn apply_gesture_effects(&mut self, effects: Vec<GestureEffect>) {

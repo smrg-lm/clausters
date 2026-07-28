@@ -481,6 +481,10 @@ pub(crate) enum ClipPart {
 /// turns cursor pixels into timeline samples), and which part was hit.
 pub(crate) struct ClipHit {
     pub id: i32,
+    /// The lane the clip sits on. A clip is not itself a navigation-group
+    /// member — the *lane* is — so anything that has to reach the shared axis
+    /// (the drag's cursor mapping, the edge scroll) asks through this id.
+    pub lane: i32,
     pub offset: f64,
     pub dur: f64,
     pub body: Rect,
@@ -549,6 +553,7 @@ pub(crate) fn clip_hit(
                 });
                 return Some(ClipHit {
                     id,
+                    lane: p.widget.id.unwrap_or(id),
                     offset,
                     dur,
                     body,

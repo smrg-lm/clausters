@@ -356,6 +356,38 @@ lanes against a single `y_start`/`y_len`:
   shove every channel's wave against the bottom of its lane. Panning the strip
   still reaches an off-centre region when one is wanted.
 
+## Dragging a clip to the edge scrolls the view
+
+A clip drag mapped the cursor through the group window captured at the *press*,
+and nothing moved that window while the drag was in flight. So a clip could
+never travel further than one visible window's worth per gesture, and holding
+the cursor against the lane's edge did nothing at all — a standing pointer
+sends no events. Zoomed in far enough to place something precisely, that was a
+sliver: the only way to move a clip across the piece was to zoom out (losing
+the precision), drag, and zoom back in.
+
+The fix is the audio-editor convention: **held against the edge, the drag pulls
+the view along**. Two decisions inside it are worth recording.
+
+**The cursor maps through the current window, not the press-time one.** That is
+the whole mechanism — panning the view under a standing cursor moves the sample
+beneath it, and the clip follows. The press snapshot stays for what it was for
+(`press_sample` is a *timeline* coordinate, so it is unaffected by the pan, and
+a clamped edge still cannot drift).
+
+**The scroll rate is a fraction of the visible window per second, not a pixel
+rate.** Zoomed in, a fixed pixel rate would crawl — the window is a sliver of
+the piece, so a pixel is worth almost nothing; zoomed out it would fly off the
+composition. A fraction of the window behaves the same at every zoom, which is
+what a gesture has to do. The pan clamps against the group's span, and that
+span already grows as the dragged clip extends the content, so the view keeps
+making room instead of stopping at the composition's old end.
+
+The tick is the front's frame timer — the one already driving meters, scopes
+and the playhead — so both fronts get the behaviour from one shared
+`Gestures::tick`, and a window that is otherwise still runs the timer only
+while such a drag is in flight.
+
 ## The looping playhead: an explicit loop region, not a flag over the selection
 
 The swept playhead is one subtraction in `host::frame`: a view with

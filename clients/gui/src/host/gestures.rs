@@ -156,6 +156,10 @@ enum Drag {
     /// `grid`.
     Clip {
         id: i32,
+        /// The lane the clip sits on — the navigation-group member, which the
+        /// clip itself is not; the cursor mapping and the edge scroll reach the
+        /// shared axis through it.
+        lane: i32,
         part: interact::ClipPart,
         body_x: f64,
         body_w: f64,
@@ -412,6 +416,104 @@ impl Gestures {
         matches!(self.drag, Some(Drag::Vertical { locked: true, .. }))
     }
 
+    /// Whether a clip drag is currently held against a lane's edge, so the
+    /// front must keep ticking ([`Self::tick`]) even though the pointer is
+    /// standing still — a held cursor produces no events, and the view has to
+    /// keep moving under it.
+    pub fn edge_scrolling(&self, cx: f64) -> bool {
+        self.edge_direction(cx) != 0.0
+    }
+
+    /// Which way a clip drag at `cx` pulls the view: `-1` past the left edge,
+    /// `+1` past the right, `0` when the cursor is clear of both margins (or no
+    /// clip drag is in flight). The margin reaches *outside* the body too, so a
+    /// cursor pinned at the window's own edge keeps scrolling.
+    fn edge_direction(&self, cx: f64) -> f64 {
+        let Some(Drag::Clip { body_x, body_w, .. }) = self.drag else {
+            return 0.0;
+        };
+        if body_w <= 2.0 * EDGE_MARGIN {
+            return 0.0;
+        }
+        if cx < body_x + EDGE_MARGIN {
+            -1.0
+        } else if cx > body_x + body_w - EDGE_MARGIN {
+            1.0
+        } else {
+            0.0
+        }
+    }
+
+    /// Advances an edge-held clip drag by `dt` seconds: pans the group's window
+    /// in the held direction and re-applies the drag at the standing cursor, so
+    /// the clip travels with the view.
+    ///
+    /// This is what lets a clip be moved further than one window's worth. The
+    /// drag itself maps the cursor through the *current* window, so panning is
+    /// the whole mechanism — nothing here touches the placement math.
+    pub fn tick(
+        &mut self,
+        host: &mut Host,
+        ctx: &GestureCtx,
+        cx: f64,
+        dt: f64,
+    ) -> Vec<GestureEffect> {
+        let mut out = Vec::new();
+        let dir = self.edge_direction(cx);
+        let Some(Drag::Clip {
+            id,
+            lane,
+            part,
+            body_x,
+            body_w,
+            nav_start,
+            nav_len,
+            press_sample,
+            orig_offset,
+            orig_dur,
+            grid,
+        }) = self.drag
+        else {
+            return out;
+        };
+        if dir == 0.0 || dt <= 0.0 {
+            return out;
+        }
+        let Some((start, len, _)) = nav(host, lane) else {
+            return out;
+        };
+        // Pan first, then re-apply the drag against the window it left behind.
+        // `pan_timeline` clamps to the group's span (the multitrack headroom),
+        // and the span itself grows as the dragged clip extends the content —
+        // so the view keeps making room instead of stopping at today's end.
+        let step = dir * len * EDGE_SCROLL_PER_SEC * dt;
+        let roots = host.pan_timeline(lane, start + step);
+        for root in roots {
+            out.push(GestureEffect::Redraw(root));
+        }
+        apply_clip_drag(
+            host,
+            &mut out,
+            ctx.def_id,
+            ClipDrag {
+                id,
+                lane,
+                part,
+                body_x,
+                body_w,
+                nav_start,
+                nav_len,
+                press_sample,
+                orig_offset,
+                orig_dur,
+                grid,
+            },
+            cx,
+        );
+        emit_view(host, &mut out, ctx.def_id, lane);
+        out
+    }
+
     /// Press on a widget: act by kind and possibly start a drag. `grab` is the
     /// front's pointer-grab attempt for a knob/number drag (returns whether the
     /// pointer was *locked*); a front without pointer lock returns `false`.
@@ -659,6 +761,7 @@ impl Gestures {
                     );
                     self.drag = Some(Drag::Clip {
                         id: h.id,
+                        lane: h.lane,
                         part: h.part,
                         body_x: h.body.x as f64,
                         body_w: h.body.w as f64,
@@ -1085,6 +1188,7 @@ impl Gestures {
             }
             Drag::Clip {
                 id,
+                lane,
                 part,
                 body_x,
                 body_w,
@@ -1095,24 +1199,25 @@ impl Gestures {
                 orig_dur,
                 grid,
             } => {
-                // Map the cursor to a timeline sample; the placement math
-                // (move/resize against the press snapshot, snapped and clamped)
-                // is the shared `clip_drag_placement`.
-                let sample = interact::sample_at(nav_start, nav_len, body_x, body_w, cx);
-                let (new_offset, new_dur) = interact::clip_drag_placement(
-                    part,
-                    sample,
-                    press_sample,
-                    orig_offset,
-                    orig_dur,
-                    grid,
+                apply_clip_drag(
+                    host,
+                    &mut out,
+                    def_id,
+                    ClipDrag {
+                        id,
+                        lane,
+                        part,
+                        body_x,
+                        body_w,
+                        nav_start,
+                        nav_len,
+                        press_sample,
+                        orig_offset,
+                        orig_dur,
+                        grid,
+                    },
+                    cx,
                 );
-                interact::clip_set(host, def_id, id, Some(new_offset), Some(new_dur));
-                // The lane's extent moved with the clip: re-register it, so the
-                // shared axis grows when a clip is dragged past the end.
-                host.sync_track_totals();
-                emit_clip(host, &mut out, def_id, id);
-                out.push(GestureEffect::Redraw(def_id));
             }
             Drag::ClipPoint {
                 id,
@@ -2446,6 +2551,69 @@ fn emit_view(host: &Host, out: &mut Vec<GestureEffect>, def_id: i32, id: i32) {
     }
 }
 
+/// One in-flight clip drag, as the placement math needs it: the press-time
+/// snapshot plus the lane geometry the cursor maps through.
+#[derive(Clone, Copy)]
+struct ClipDrag {
+    id: i32,
+    lane: i32,
+    part: interact::ClipPart,
+    body_x: f64,
+    body_w: f64,
+    nav_start: f64,
+    nav_len: f64,
+    press_sample: f64,
+    orig_offset: f64,
+    orig_dur: f64,
+    grid: f64,
+}
+
+/// Applies a clip drag at cursor `cx`: maps the cursor to a timeline sample,
+/// runs the shared placement math (move/resize against the press snapshot,
+/// snapped and clamped), writes it and reports it.
+///
+/// The cursor maps through the group's **current** window, not the press-time
+/// one — that is what lets the edge auto-scroll ([`Gestures::tick`]) carry the
+/// clip: panning the view under a held cursor moves the sample beneath it, and
+/// the clip follows. `press_sample` is already a timeline coordinate, so it
+/// stays fixed while the window moves.
+fn apply_clip_drag(
+    host: &mut Host,
+    out: &mut Vec<GestureEffect>,
+    def_id: i32,
+    d: ClipDrag,
+    cx: f64,
+) {
+    let (nav_start, nav_len) = nav(host, d.lane)
+        .map(|(start, len, _)| (start, len))
+        .unwrap_or((d.nav_start, d.nav_len));
+    let sample = interact::sample_at(nav_start, nav_len, d.body_x, d.body_w, cx);
+    let (new_offset, new_dur) = interact::clip_drag_placement(
+        d.part,
+        sample,
+        d.press_sample,
+        d.orig_offset,
+        d.orig_dur,
+        d.grid,
+    );
+    interact::clip_set(host, def_id, d.id, Some(new_offset), Some(new_dur));
+    // The lane's extent moved with the clip: re-register it, so the shared axis
+    // grows when a clip is dragged past the end.
+    host.sync_track_totals();
+    emit_clip(host, out, def_id, d.id);
+    out.push(GestureEffect::Redraw(def_id));
+}
+
+/// How near a lane body's edge (device pixels) a held clip drag starts pulling
+/// the view along with it.
+const EDGE_MARGIN: f64 = 28.0;
+
+/// How much of the visible window one second pinned against the edge scrolls.
+/// Deliberately a *fraction of the window* rather than a pixel rate: zoomed in,
+/// a clip must still travel at a usable speed, and zoomed out the same gesture
+/// must not fly off the composition.
+const EDGE_SCROLL_PER_SEC: f64 = 0.9;
+
 /// Writes timeline view `id`'s vertical display window (clamped) into its
 /// editor props and emits the `"view_y" y_start y_len` event — the vertical
 /// sibling of [`emit_view`]'s range.
@@ -2988,6 +3156,125 @@ mod tests {
         assert!(
             (start + len / 2.0 - 0.5).abs() < 1e-9,
             "the window stays centred on zero: got ({start}, {len})"
+        );
+    }
+
+    // --- multitrack lanes: the edge auto-scroll ---
+
+    /// One lane, one short clip, on a long axis — so zooming in leaves most of
+    /// the timeline off screen, which is the case the edge scroll exists for.
+    fn lane_host() -> Host {
+        host_from(
+            r#"{"type":"window","margin":0,"children":[
+                {"id":70,"type":"track","label":"lane","children":[
+                    {"id":71,"type":"clip","offset":0.0,"dur":1000.0},
+                    {"id":72,"type":"clip","offset":9000.0,"dur":1000.0}
+                ]}]}"#,
+        )
+    }
+
+    fn clip_offset(host: &Host, id: i32) -> f64 {
+        match &host.window_def(1).unwrap().find(id).unwrap().kind {
+            WidgetKind::Clip { offset, .. } => *offset,
+            other => panic!("not a clip: {other:?}"),
+        }
+    }
+
+    /// A clip dragged against the lane's edge pulls the view along, so it can
+    /// travel further than the visible window. The regression this fixes: the
+    /// drag mapped the cursor through the *press-time* window and nothing
+    /// scrolled, so a clip could never move more than one window's worth —
+    /// zoomed in, that was a sliver, and holding at the edge did nothing at all.
+    #[test]
+    fn a_clip_dragged_to_the_edge_pulls_the_view_along() {
+        let mut host = lane_host();
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 200);
+
+        // Zoom in hard, anchored at the left: the window shows a fraction of
+        // the timeline, and the first clip sits at its left end.
+        for _ in 0..6 {
+            host.zoom_timeline(70, 0.6, 0.0);
+        }
+        let (before, _) = host.timeline_nav(70).unwrap();
+        assert!(before.len < 2000.0, "zoomed in: {}", before.len);
+
+        // Grab the clip and drag it hard against the right edge.
+        // (past the lane's 96 px header strip, so the press lands on the clip)
+        g.press(&mut host, &ctx, 300.0, 100.0, &mut || false);
+        assert!(g.dragging(), "the press grabbed the clip");
+        g.drag_to(&mut host, &ctx, 790.0, 100.0);
+        let parked = clip_offset(&host, 71);
+        assert!(parked > 0.0, "the drag moved it: {parked}");
+        assert!(g.edge_scrolling(790.0), "and it is pinned at the edge");
+        let (at_edge, _) = host.timeline_nav(70).unwrap();
+        assert_eq!(at_edge.start, before.start, "the drag alone does not pan");
+
+        // Now hold there: every tick pans the view and carries the clip.
+        let mut effects = Vec::new();
+        for _ in 0..10 {
+            effects = g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+        }
+        let (after, _) = host.timeline_nav(70).unwrap();
+        assert!(
+            after.start > at_edge.start,
+            "the window followed the drag: {} -> {}",
+            at_edge.start,
+            after.start
+        );
+        assert!(
+            clip_offset(&host, 71) > parked,
+            "and the clip travelled with it: {parked} -> {}",
+            clip_offset(&host, 71)
+        );
+        // The move keeps reporting itself, and the view move is reported too.
+        assert!(has_emit_tag(&effects, 71, "clip"));
+        // The view move is the *lane's* — the group member, not the clip.
+        assert!(has_emit_tag(&effects, 70, "view"));
+
+        // A cursor clear of the margins scrolls nothing.
+        let (held, _) = host.timeline_nav(70).unwrap();
+        let idle = g.tick(&mut host, &ctx, 400.0, 1.0 / 30.0);
+        assert_eq!(host.timeline_nav(70).unwrap().0.start, held.start);
+        assert!(idle.is_empty());
+
+        // And the scroll stops with the drag.
+        g.release(&mut host, &ctx, 790.0, 100.0);
+        let (dropped, _) = host.timeline_nav(70).unwrap();
+        g.tick(&mut host, &ctx, 790.0, 1.0 / 30.0);
+        assert_eq!(host.timeline_nav(70).unwrap().0.start, dropped.start);
+    }
+
+    /// The left edge scrolls the other way, and never past the axis origin.
+    #[test]
+    fn the_left_edge_scrolls_back_and_stops_at_the_origin() {
+        let mut host = lane_host();
+        host.sync_track_totals();
+        let mut g = Gestures::default();
+        let ctx = GestureCtx::new(1, 800, 200);
+        for _ in 0..6 {
+            host.zoom_timeline(70, 0.6, 0.0);
+        }
+        // Start from a window well into the timeline, holding the far clip.
+        host.pan_timeline(70, 9000.0);
+        let (before, _) = host.timeline_nav(70).unwrap();
+        assert!(before.start > 0.0);
+        g.press(&mut host, &ctx, 400.0, 100.0, &mut || false);
+        g.drag_to(&mut host, &ctx, 10.0, 100.0);
+        for _ in 0..10 {
+            g.tick(&mut host, &ctx, 10.0, 1.0 / 30.0);
+        }
+        let (after, _) = host.timeline_nav(70).unwrap();
+        assert!(after.start < before.start, "the window walked back");
+        // Keep holding: it parks at the origin instead of running negative.
+        for _ in 0..2000 {
+            g.tick(&mut host, &ctx, 10.0, 1.0 / 30.0);
+        }
+        assert_eq!(host.timeline_nav(70).unwrap().0.start, 0.0);
+        assert!(
+            clip_offset(&host, 72) >= 0.0,
+            "and the clip never goes negative"
         );
     }
 

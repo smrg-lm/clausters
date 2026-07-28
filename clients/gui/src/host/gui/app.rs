@@ -507,12 +507,17 @@ impl ApplicationHandler<UserEvent> for App {
         // background thread, but the embed ring is polled here on the main thread.
         self.drain_embed_replies();
 
+        // A clip drag held against a lane's edge scrolls the view under a
+        // standing cursor, so it needs the frame tick exactly as an animated
+        // window does — and it must run before the repaint below.
+        self.advance_edge_scroll(FRAME.as_secs_f64());
+
         // Meter/scope animation, driven from the shared segment.
         let animated: Vec<i32> = self
             .windows
             .keys()
             .copied()
-            .filter(|id| self.window_is_animated(*id))
+            .filter(|id| self.window_is_animated(*id) || self.window_is_edge_scrolling(*id))
             .collect();
         if !animated.is_empty() {
             if now >= self.next_frame {

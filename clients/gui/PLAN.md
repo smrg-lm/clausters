@@ -428,6 +428,30 @@ so the native front has them too — and are about a view that is *driven* rathe
 than merely opened; the third is the browser front's. The first is closed; the
 other two remain open (unnumbered until their design converges).
 
+- ✅ **G32b — A clip dragged to the edge pulls the view** *(done 2026-07-28)*:
+  the companion gap to G22's "empty time to zoom out into". The headroom let a
+  lane be zoomed *out* past its content, but a drag still mapped the cursor
+  through the **press-time** window and nothing scrolled while it was in
+  flight — so a clip could never travel more than one visible window per
+  gesture, and holding it against the lane's edge did nothing, because a
+  standing pointer sends no events. Zoomed in to place something precisely,
+  that was a sliver. Now the drag maps through the **current** window (which is
+  the whole mechanism: panning under a standing cursor moves the sample beneath
+  it and the clip follows), and `Gestures::tick` pans while the cursor is held
+  within `EDGE_MARGIN` of a lane's edge, at a rate that is a **fraction of the
+  visible window per second** rather than a pixel rate, so it behaves the same
+  at every zoom (rationale in `docs/decisions.md`). The tick is each front's
+  existing frame timer — the one already driving meters, scopes and the
+  playhead — so both fronts get it from the one shared method, and an
+  otherwise-still window runs the timer only while such a drag is in flight.
+  `ClipHit`/`Drag::Clip` carry the **lane** id now: a clip is not itself a
+  navigation-group member, so everything reaching the shared axis asks through
+  its lane. Tests: the right edge pulls the view and carries the clip (and
+  reports both the `"clip"` and the lane's `"view"`), a cursor clear of the
+  margins scrolls nothing, the scroll stops with the drag, and the left edge
+  walks back and parks at the origin without the clip going negative.
+  `clients/web/examples/composer.html` is where it was found and verified.
+
 - ✅ **G32a — The playhead follows a loop** *(done 2026-07-28)*: the swept line
   was one subtraction in `host::frame` (`sample_clock - playhead_at`), which is
   why following a transport costs **no messages** and is exactly right for a

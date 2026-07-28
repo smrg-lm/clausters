@@ -755,6 +755,30 @@ impl WebApp {
                 args: vec![],
             });
         }
+        self.advance_edge_scroll();
+    }
+
+    /// The frame step of a clip drag held against a lane's edge: pans the view
+    /// and carries the clip with it. The tick's own period is the `dt`, so the
+    /// scroll runs at the same speed whatever else the frame is doing.
+    fn advance_edge_scroll(&mut self) {
+        let dt = f64::from(live::STREAM_PERIOD_MS) / 1000.0;
+        let dragging: Vec<i32> = self
+            .canvases
+            .iter()
+            .filter(|(_, slot)| slot.gestures.edge_scrolling(slot.cursor.0))
+            .map(|(def, _)| *def)
+            .collect();
+        for def in dragging {
+            let Some((ctx, (cx, _cy))) = self.gesture_ctx(def) else {
+                continue;
+            };
+            let Some(slot) = self.canvases.get_mut(&def) else {
+                continue;
+            };
+            let effects = slot.gestures.tick(&mut self.host, &ctx, cx, dt);
+            self.apply_gesture_effects(effects);
+        }
     }
 
     /// Routes one decoded OSC packet from the audio server (the WS leg): the
@@ -1221,6 +1245,16 @@ impl WebApp {
             .gestures
             .press(&mut self.host, &ctx, cx, cy, &mut || false);
         self.apply_gesture_effects(effects);
+        // A clip drag needs the frame tick even on an otherwise still window:
+        // held against a lane's edge it scrolls the view, and a standing cursor
+        // sends no events of its own.
+        if self
+            .canvases
+            .get(&def)
+            .is_some_and(|s| s.gestures.dragging())
+        {
+            self.ensure_tick(true);
+        }
     }
 
     /// Pointer move while dragging: the machine drives the dragged target.
@@ -1245,6 +1279,9 @@ impl WebApp {
         };
         let effects = slot.gestures.release(&mut self.host, &ctx, cx, cy);
         self.apply_gesture_effects(effects);
+        // The drag is over: the tick goes back to what the tree actually asks
+        // for (it stays on only if a live widget wants it).
+        self.on_tree_changed();
     }
 
     /// Wheel: the machine zooms the time axis or the vertical display window.
