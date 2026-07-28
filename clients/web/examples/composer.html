@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>clausters: the multitrack lanes in the page</title>
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #0d0d12;
+                   color: #dddddd; font-family: system-ui, sans-serif; }
+      main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
+             align-items: flex-start; max-width: 76rem; }
+      #note { max-width: 52rem; font-size: 13px; line-height: 1.5; }
+      #log { max-width: 52rem; }
+      button { font: inherit; padding: 4px 10px; }
+      pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
+            white-space: pre-wrap; align-self: stretch; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      /* The canvas is an element: the document sizes it, and the host draws
+         into whatever it gets. */
+      #stage { align-self: stretch; height: min(70vh, 560px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="note">The <b>multitrack lanes</b> in the browser: four
+<code>track</code>s of <code>clip</code>s on one shared time axis, drawn by the
+<b>GUI host</b>. The three clip bodies are all here — a <b>take</b> (a server
+buffer, decimated by the host through its peak pyramid), two <b>piano-roll</b>
+clips of notes, and an <b>automation</b> curve edited in place.
+
+This is the <b>host</b> half of the Python client's <code>gui_composer.py</code>,
+and only that half: the lanes and clips are built here as widgets, so there is no
+arrangement model behind them (no <code>clausters.form</code>, no
+<code>Editor</code>) — an edit-back is logged, not applied to a tree and
+re-rendered. What it does carry faithfully is everything the host owns: the
+shared axis, the drag grid, the clip gestures and the navigation.
+
+The axis is navigable: <b>wheel zooms</b>, <b>Shift+drag pans</b>, and every lane
+moves as one because they share a <code>link</code> group. <b>Drag a clip</b> to
+move it, <b>its edge</b> to resize — both snap to the <code>snap</code> grid and
+come back as a <code>"clip"</code> event. Inside a clip, drag a <b>note</b> or a
+break-<b>point</b>. Everything runs on the <b>in-page engine</b>: no server
+process, no socket.</div>
+
+      <div class="row">
+        <button id="start">start</button>
+        <button id="reset" disabled>reset the view</button>
+      </div>
+
+      <div id="stage"></div>
+      <pre id="log"></pre>
+    </main>
+
+    <script type="module">
+      import {
+        loadOsc, loadCore, pageConnection, server as engine,
+        Server, GuiHost, guiHost, gui,
+      } from "../dist/index.js";
+
+      const el = (id) => document.getElementById(id);
+      const log = (line) => { el("log").textContent += line + "\n"; };
+
+      let server, host, page, win = null;
+      let unfit = null;
+
+      // The musical grid. The lanes' axis is in **timeline samples**, so a beat
+      // is a sample count and every offset/duration below is written in beats
+      // and converted once — the same arithmetic the Python client's editor
+      // does between the arrangement (beats) and the wire (samples).
+      const SR = 48000;
+      const TEMPO = 2.0;              // beats per second (120 bpm)
+      const BEAT = SR / TEMPO;        // samples per beat
+      const QUANT = 0.5;              // the drag grid, in beats
+      const beats = (b) => b * BEAT;
+
+      // ---- the material ----
+      // The melody and the bass as literal notes: `[start, dur, pitch]` in the
+      // clip's own beats. In the Python example these come from a Timeline and
+      // from bouncing a Pbind; here they are written out, because what is being
+      // exercised is the host's geometry, not the sequencing layer.
+      const MELODY = [[0.0, 1.0, 72], [1.0, 1.0, 76], [2.0, 2.0, 79]];
+      const BASS = [[0.0, 1.0, 48], [1.0, 1.0, 48], [2.0, 1.0, 55], [3.0, 1.0, 53],
+                    [4.0, 1.0, 48], [5.0, 1.0, 48], [6.0, 1.0, 55], [7.0, 1.0, 53]];
+      // The sweep: 200 Hz up to 900 (exponential) and back down (linear). The
+      // shapes are the server's own envelope shape numbers.
+      const SWEEP = [[0.0, 200.0, "exp"], [2.0, 900.0, "exp"], [4.0, 300.0, "lin"]];
+
+      // Notes/points ride the clip in **timeline sample units** on the x axis,
+      // like the clip's own offset and duration.
+      const inSamples = (notes) =>
+        notes.map(([t, d, p]) => [beats(t), beats(d), p]);
+      const pointsInSamples = (points) =>
+        points.map(([t, v, shape]) => [beats(t), v, shape]);
+
+      // ---- the window ----
+      // Four lanes, each a `track` holding its clips, all in one `link` group
+      // so they navigate as one. `snap` is the drag grid, in samples.
+      const scene = (bufnum) => gui.window(
+        { title: "composer", layout: "col", margin: 8.0, gap: 6.0 },
+        gui.label("drag a clip to move it, an edge to resize it — "
+                  + "wheel zooms, Shift+drag pans", { h: 20 }),
+        gui.track(
+          { name: "drums", label: "drums", link: 1, snap: beats(QUANT),
+            ruler: "beats", tempo: TEMPO, quant: 4.0, sampleRate: SR },
+          gui.clip({ name: "take1", offset: beats(0.0), dur: beats(2.0),
+                     buffer: bufnum, label: "take" }),
+          gui.clip({ name: "take2", offset: beats(4.0), dur: beats(2.0),
+                     buffer: bufnum, label: "take" }),
+        ),
+        gui.track(
+          { name: "bass", label: "bass", link: 1, snap: beats(QUANT),
+            tempo: TEMPO, quant: 4.0, sampleRate: SR },
+          gui.clip({ name: "bassClip", offset: beats(0.0), dur: beats(8.0),
+                     notes: inSamples(BASS), label: "bass" }),
+        ),
+        gui.track(
+          { name: "lead", label: "lead", link: 1, snap: beats(QUANT),
+            tempo: TEMPO, quant: 4.0, sampleRate: SR },
+          gui.clip({ name: "leadClip", offset: beats(2.0), dur: beats(4.0),
+                     notes: inSamples(MELODY), label: "melody" }),
+        ),
+        gui.track(
+          { name: "sweep", label: "sweep", link: 1, snap: beats(QUANT),
+            tempo: TEMPO, quant: 4.0, sampleRate: SR },
+          gui.clip({ name: "sweepClip", offset: beats(0.0), dur: beats(4.0),
+                     points: pointsInSamples(SWEEP), min: 100.0, max: 1000.0,
+                     exp: true, label: "freq" }),
+        ),
+      );
+
+      const inBeats = (samples) => (samples / BEAT).toFixed(2);
+
+      async function run() {
+        await loadOsc();
+        await loadCore();
+        const raw = await engine({ channels: 2 });
+        await raw.resume();
+        server = await Server.open(await pageConnection());
+        host = await GuiHost.page();
+        page = await guiHost();
+        el("stage").append(page.canvas);
+
+        // The take: the *server* fills a buffer (`/b_gen sine1`, a few
+        // partials), so the lane has a real body to decimate — a clip's take
+        // is reached exactly as the heavy waveform's samples are.
+        const bufnum = await server.allocBuffer(Math.round(beats(2.0)), 1);
+        await server.genBuffer(bufnum, "sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
+        await server.sync();
+
+        win = host.open(scene(bufnum));
+        unfit?.();
+        unfit = page.fit(win.id, el("stage"));
+
+        // The edit-backs. With no arrangement behind the lanes there is nothing
+        // to apply them *to*, so they are logged — which is exactly what makes
+        // this page a bench: the numbers the host reports are the ones a real
+        // editor would write onto the model.
+        // A move/resize and a body edit are the **clip's** own events; a
+        // ruler click is the **lane's**.
+        for (const name of ["take1", "take2", "bassClip", "leadClip", "sweepClip"]) {
+          win.widget(name).onEvent((tag, ...values) => {
+            if (tag === "clip" && values.length >= 2) {
+              log(`${name}: offset ${inBeats(values[0])} beats, `
+                  + `dur ${inBeats(values[1])} beats`);
+            } else if (tag === "notes") {
+              log(`${name}: ${values.length / 5} notes edited`);
+            } else if (tag === "points") {
+              log(`${name}: ${values.length / 4} break-points edited`);
+            }
+          });
+        }
+        for (const lane of ["drums", "bass", "lead", "sweep"]) {
+          win.widget(lane).onEvent((tag, ...values) => {
+            if (tag === "locate") log(`${lane}: locate ${inBeats(values[0])} beats`);
+          });
+        }
+
+        el("reset").disabled = false;
+        log("opened 4 lanes over 8 beats");
+      }
+
+      // `view_start`/`view_len` are group-wide, so setting them on any lane
+      // moves all four: a negative length resets to the whole timeline.
+      el("reset").onclick = () => {
+        win?.widget("drums").set({ view_start: 0.0, view_len: -1.0 });
+        log("view reset to the composition");
+      };
+
+      el("start").onclick = () => {
+        el("start").disabled = true;
+        run().catch((error) => log(`error: ${error}`));
+      };
+    </script>
+  </body>
+</html>
