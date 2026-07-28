@@ -250,6 +250,13 @@ pub struct EditorProps {
     /// the engine clock and *sweeps*; this one stands still — a located, stopped
     /// transport has a cursor, and it must not drift with the clock.
     pub playhead: f64,
+    /// The sweep's **loop region**, in the same sample units as `playhead`:
+    /// with `playhead_loop_len > 0` the swept line wraps inside
+    /// `[playhead_loop_start, + len)` instead of running straight past it, so
+    /// a repeating region can be followed on the same one anchor and still
+    /// costs no message per frame. A non-positive length is the straight pass.
+    pub playhead_loop_start: f64,
+    pub playhead_loop_len: f64,
     pub y_start: f64,
     pub y_len: f64,
     pub link: Option<i32>,
@@ -276,6 +283,8 @@ impl EditorProps {
             sel_len: number_f64(props, "sel_len", 0.0),
             playhead_at: number_f64(props, "playhead_at", -1.0),
             playhead: number_f64(props, "playhead", -1.0),
+            playhead_loop_start: number_f64(props, "playhead_loop_start", 0.0),
+            playhead_loop_len: number_f64(props, "playhead_loop_len", 0.0),
             y_start: number_f64(props, "y_start", 0.0),
             y_len: number_f64(props, "y_len", 1.0),
             link: props
@@ -320,6 +329,47 @@ impl EditorProps {
         (self.sel_len > 0.0).then_some((self.sel_start, self.sel_len))
     }
 
+    /// Where the playhead stands, in this view's own sample units, for an
+    /// engine `sample_clock` — the one place the sweep is defined, so every
+    /// timeline view agrees.
+    ///
+    /// A transport that is *playing* anchors `playhead_at` and the line is
+    /// swept from Rust every frame with no message per frame; a *located,
+    /// stopped* one parks on the static `playhead`. `playhead_loop_len > 0`
+    /// wraps the sweep inside `[playhead_loop_start, +len)` — what a looping
+    /// region (an editor's "play selection", a looping clip) actually does —
+    /// and leaves the straight pass untouched otherwise.
+    pub fn head_at(&self, sample_clock: f64) -> Option<f64> {
+        self.swept_at(sample_clock)
+            .or_else(|| (self.playhead >= 0.0).then_some(self.playhead))
+    }
+
+    /// Where the *swept* playhead stands — `Some` only while a transport is
+    /// running (`playhead_at` anchored, the clock started), so a caller that
+    /// must tell playing from stopped keeps that distinction; [`head_at`] adds
+    /// the parked cursor on top.
+    ///
+    /// [`head_at`]: EditorProps::head_at
+    pub fn swept_at(&self, sample_clock: f64) -> Option<f64> {
+        if self.playhead_at < 0.0 || sample_clock <= 0.0 {
+            return None;
+        }
+        let swept = sample_clock - self.playhead_at;
+        Some(match self.playhead_loop() {
+            // `rem_euclid`, not `%`: a loop whose start sits past the anchor
+            // makes the first pass negative, and a negative remainder would
+            // park the line left of the region.
+            Some((start, len)) => start + (swept - start).rem_euclid(len),
+            None => swept,
+        })
+    }
+
+    /// The playhead's loop region as `(start, len)` in samples, if one is set.
+    pub fn playhead_loop(&self) -> Option<(f64, f64)> {
+        (self.playhead_loop_len > 0.0)
+            .then_some((self.playhead_loop_start.max(0.0), self.playhead_loop_len))
+    }
+
     fn apply(&mut self, key: &str, v: &Value) -> bool {
         match key {
             "ruler" => self.ruler.set(v),
@@ -336,6 +386,8 @@ impl EditorProps {
             "sel_len" => set_f64(&mut self.sel_len, v),
             "playhead_at" => set_f64(&mut self.playhead_at, v),
             "playhead" => set_f64(&mut self.playhead, v),
+            "playhead_loop_start" => set_f64(&mut self.playhead_loop_start, v),
+            "playhead_loop_len" => set_f64(&mut self.playhead_loop_len, v),
             "y_start" => set_f64(&mut self.y_start, v),
             "y_len" => set_f64(&mut self.y_len, v),
             _ => false,
@@ -1372,6 +1424,70 @@ mod tests {
 
     fn node(json: &str) -> GuiNode {
         GuiNode::parse(json.as_bytes()).unwrap()
+    }
+
+    /// The editor chrome of a parsed widget.
+    fn editor_of(json: &str) -> EditorProps {
+        Widget::from_node(1, &node(json), &[])
+            .unwrap()
+            .kind
+            .editor()
+            .cloned()
+            .unwrap()
+    }
+
+    #[test]
+    fn the_playhead_sweeps_straight_without_a_loop() {
+        let e = editor_of(r#"{"type":"waveform","data":[0.0],"playhead_at":1000.0}"#);
+        assert_eq!(e.playhead_loop(), None, "no loop by default");
+        assert_eq!(e.head_at(1500.0), Some(500.0));
+        // Past the end it keeps running: a straight pass is unbounded.
+        assert_eq!(e.head_at(9000.0), Some(8000.0));
+        // No clock yet, and no static cursor: nothing to draw.
+        assert_eq!(e.head_at(0.0), None);
+    }
+
+    #[test]
+    fn a_stopped_transport_parks_on_the_static_playhead() {
+        let e = editor_of(r#"{"type":"waveform","data":[0.0],"playhead":320.0}"#);
+        // The static cursor wins when no anchor is set, whatever the clock.
+        assert_eq!(e.head_at(0.0), Some(320.0));
+        assert_eq!(e.head_at(99_000.0), Some(320.0));
+    }
+
+    #[test]
+    fn the_playhead_wraps_inside_its_loop_region() {
+        let e = editor_of(
+            r#"{"type":"waveform","data":[0.0],"playhead_at":1000.0,
+                "playhead_loop_start":400.0,"playhead_loop_len":100.0}"#,
+        );
+        assert_eq!(e.playhead_loop(), Some((400.0, 100.0)));
+        // Inside the region the sweep is untouched.
+        assert_eq!(e.head_at(1450.0), Some(450.0));
+        // Past its end it wraps to the start, and keeps wrapping.
+        assert_eq!(e.head_at(1500.0), Some(400.0));
+        assert_eq!(e.head_at(1530.0), Some(430.0));
+        assert_eq!(e.head_at(1700.0), Some(400.0));
+        assert_eq!(e.head_at(1725.0), Some(425.0));
+        // Before the region — the anchor precedes the loop start, so the first
+        // pass runs up to it — the line still lands inside, never left of it.
+        for clock in [1001.0, 1100.0, 1399.0] {
+            let pos = e.head_at(clock).unwrap();
+            assert!(
+                (400.0..500.0).contains(&pos),
+                "clock {clock} put the line at {pos}, outside the region"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_positive_loop_length_is_the_straight_pass() {
+        let e = editor_of(
+            r#"{"type":"waveform","data":[0.0],"playhead_at":0.0,
+                "playhead_loop_start":400.0,"playhead_loop_len":0.0}"#,
+        );
+        assert_eq!(e.playhead_loop(), None);
+        assert_eq!(e.head_at(900.0), Some(900.0));
     }
 
     #[test]

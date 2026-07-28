@@ -133,6 +133,15 @@ export interface TimelineOptions extends WidgetOptions {
      * set, so a transport parks the line here when it pauses or locates.
      */
     playhead?: number;
+    /**
+     * The sweep's **loop region**, in the same sample units as `playhead`:
+     * with a positive length the swept line wraps inside it instead of running
+     * straight past, which is what a looping playback does — so a looped
+     * region is followed on the same one anchor, still with no message per
+     * frame. A non-positive length is the straight pass.
+     */
+    playheadLoopStart?: number;
+    playheadLoopLen?: number;
     /** The vertical display window (normalized; `0, 1` is the full axis). */
     yStart?: number;
     yLen?: number;
@@ -1088,7 +1097,8 @@ export function canvas(
 function timelineProps(options: TimelineOptions): Props {
     const {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
-        playheadAt, playhead, yStart, yLen, link, ...rest
+        playheadAt, playhead, playheadLoopStart, playheadLoopLen,
+        yStart, yLen, link, ...rest
     } = options;
     return {
         ...rest,
@@ -1102,6 +1112,8 @@ function timelineProps(options: TimelineOptions): Props {
             ["sel_len", selLen],
             ["playhead_at", playheadAt],
             ["playhead", playhead],
+            ["playhead_loop_start", playheadLoopStart],
+            ["playhead_loop_len", playheadLoopLen],
             ["y_start", yStart],
             ["y_len", yLen],
             ["link", link],

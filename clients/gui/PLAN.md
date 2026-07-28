@@ -425,33 +425,32 @@ Open lines (unnumbered until a design converges):
 Three of them, found while porting `gui_editor.py` to the browser. The first
 two are **platform-independent** — they live in the shared widget/render code,
 so the native front has them too — and are about a view that is *driven* rather
-than merely opened; the third is the browser front's.
+than merely opened; the third is the browser front's. The first is closed; the
+other two remain open (unnumbered until their design converges).
 
-**The playhead cannot follow a loop.** The swept line is one subtraction in
-`host::frame`: a timeline view with `playhead_at >= 0` draws at
-`sample_clock - playhead_at`. That is the whole reason following a transport
-costs **no messages** — the line is redrawn from Rust every frame at the
-display's rate, not sent by a client — and it is exactly right for a straight
-pass. It has no notion of a loop, so anything that repeats a region — an
-editor's "play selection" (a `Phasor` sweeping between two frames), a looping
-clip, a looped timeline range — cannot be followed at all: the line runs past
-the region and off the view. The workaround a client can reach for is worse
-than the gap: re-anchoring per pass puts a message back in the loop and drifts
-against the audio, and re-sending a position per frame gives up the property
-the anchor exists for.
-
-The fix belongs in the chrome every timeline view shares (`EditorProps`), so
-`waveform`, `spectrogram`, `track`, `clip`, `pianoroll` and `score` get it at
-once. Two shapes to weigh in the design: **(a)** an explicit loop —
-`playhead_loop_start` / `playhead_loop_len`, with the swept position becoming
-`start + ((sample_clock - playhead_at) mod len)` and `len <= 0` keeping today's
-straight sweep; or **(b)** a `playhead_loop` flag that wraps within the
-existing **selection**, which is what an editor loops in practice and costs one
-boolean. (a) is the more general and does not tie playback to a selection a
-gesture can change under it; (b) reads better in the one case that motivated
-this. Whichever lands, the static `playhead` (the parked cursor) keeps its
-current meaning, and a client sends **one** message per transport state change,
-as now.
+- ✅ **G32a — The playhead follows a loop** *(done 2026-07-28)*: the swept line
+  was one subtraction in `host::frame` (`sample_clock - playhead_at`), which is
+  why following a transport costs **no messages** and is exactly right for a
+  straight pass — but it had no notion of a loop, so a repeating region (an
+  editor's "play selection", a looping clip) ran off the view instead of being
+  followed. Shape **(a)** landed, the explicit region: `playhead_loop_start` /
+  `playhead_loop_len` on the shared `EditorProps`, the swept position becoming
+  `start + ((sample_clock - playhead_at - start) mod len)` and `len <= 0`
+  keeping the straight sweep. It beat the `playhead_loop`-flag-over-the-
+  selection alternative because it does not tie playback to a selection a
+  gesture can change under it, and because a client may loop something that is
+  not the selection (rationale in `docs/decisions.md`). The whole sweep rule
+  moved into **one** place — `EditorProps::head_at` (and `swept_at`, which
+  keeps the playing/stopped distinction the MIDI painting needs) — so the four
+  sites that each re-derived it (the timeline views, the piano-roll, the track
+  lanes, the native MIDI cursor) now agree by construction; the `score` carries
+  the same pair in **ms**, its own unit. Group-wide like the anchor, mirrored
+  through the group model, so linked views wrap at one place. Python and
+  TypeScript builders and `docs/gui-protocol.md` carry the props;
+  `clients/web/examples/editor.html` uses them — and documents the one real
+  trap, that a looped pass anchors at `clock - start`, not `clock`. Tests: the
+  wrap model (straight pass, static park, wrapping, a non-positive length) and
+  the group-wide routing.
 
 **A heavy view's source is fixed once sent.** `/gui_set` applies the chrome
 (selection, playhead, rulers, the spectrogram's contrast) but not `buffer`,
@@ -476,12 +475,12 @@ the smaller correctness point: when the page supplies a canvas that already has
 a size, the front should adopt it instead of stamping the default on top and
 waiting to be corrected.
 
-**Acceptance:** an editor plays a selected region in a loop and the line sweeps
-that region, wrapping, with one message sent when playback starts and none
-after — asserted natively and in the browser front, since the sweep is shared
-code; a view fed a second buffer redraws from it without the window being
-redefined, if the source swap lands; and a canvas supplied at a size keeps it,
-with no `resize` needed to correct the default.
+**Acceptance:** ✅ an editor plays a selected region in a loop and the line
+sweeps that region, wrapping, with one message sent when playback starts and
+none after — the sweep is shared code, so both fronts get it from the one
+`EditorProps::head_at`; a view fed a second buffer redraws from it without the
+window being redefined, if the source swap lands; and a canvas supplied at a
+size keeps it, with no `resize` needed to correct the default.
 
 ## L track — the look: layout, sizing and themes for the light widgets
 

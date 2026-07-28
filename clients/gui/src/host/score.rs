@@ -246,6 +246,13 @@ pub struct ScoreData {
     /// the start of a pass and the cursor then *sweeps* on its own — the host
     /// reads the clock every frame, so playback needs zero messages.
     pub playhead_at: f64,
+    /// The sweep's **loop region** in musical ms — the score's own unit, as
+    /// `playhead` is: with `playhead_loop_len > 0` the swept cursor wraps
+    /// inside `[playhead_loop_start, + len)` instead of running off the page,
+    /// so a repeated passage is followed on the same one anchor and still
+    /// costs no message per frame. A non-positive length is the straight pass.
+    pub playhead_loop_start: f32,
+    pub playhead_loop_len: f32,
     /// The sample rate converting the clock to musical ms (0 = unknown, use the
     /// server's own rate).
     pub sample_rate: f64,
@@ -287,6 +294,8 @@ impl Default for ScoreData {
             cursors: Vec::new(),
             playhead: -1.0,
             playhead_at: -1.0,
+            playhead_loop_start: 0.0,
+            playhead_loop_len: 0.0,
             sample_rate: 0.0,
             hits: Vec::new(),
             staves: Vec::new(),
@@ -355,6 +364,16 @@ impl ScoreData {
             .get("playhead_at")
             .and_then(Value::as_f64)
             .unwrap_or(-1.0);
+        data.playhead_loop_start = props
+            .get("playhead_loop_start")
+            .and_then(Value::as_f64)
+            .map(|f| f as f32)
+            .unwrap_or(0.0);
+        data.playhead_loop_len = props
+            .get("playhead_loop_len")
+            .and_then(Value::as_f64)
+            .map(|f| f as f32)
+            .unwrap_or(0.0);
         data.sample_rate = props
             .get("sample_rate")
             .and_then(Value::as_f64)
@@ -534,7 +553,17 @@ impl ScoreData {
             host_rate
         };
         if self.playhead_at >= 0.0 && sample_clock > 0.0 && rate > 0.0 {
-            (((sample_clock - self.playhead_at) / rate) * 1000.0) as f32
+            let swept = (((sample_clock - self.playhead_at) / rate) * 1000.0) as f32;
+            if self.playhead_loop_len > 0.0 {
+                // The same wrap the timeline views' chrome does, in ms: a
+                // repeated passage keeps the cursor inside it. `rem_euclid`
+                // so a loop starting past the anchor never parks the cursor
+                // left of the region during the first pass.
+                let start = self.playhead_loop_start.max(0.0);
+                start + (swept - start).rem_euclid(self.playhead_loop_len)
+            } else {
+                swept
+            }
         } else {
             self.playhead
         }

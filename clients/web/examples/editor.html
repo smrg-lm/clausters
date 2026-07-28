@@ -44,8 +44,10 @@ sample clock — the line is then drawn from Rust every frame, at the display's
 rate and with no message per frame; <b>pause</b> is <code>/n_run 0</code>, which
 freezes the node with its buffer position intact, and parks the line where it
 stopped; <b>stop</b> frees it. <b>play selection</b> reads the selected region
-instead, with a <code>Phasor</code> looping between its bounds — and shows no
-line, because the host's sweep is linear and cannot yet wrap a loop.
+instead, with a <code>Phasor</code> looping between its bounds, and the line
+follows it: <code>playhead_loop_start</code>/<code>playhead_loop_len</code> make
+the host's own sweep wrap inside the region, so a repeating pass still costs one
+message and not one per frame.
 
 Nothing is drawn by this page: the canvas below belongs to the host. (For the
 other direction — the same data read by the script and drawn by hand — see
@@ -149,9 +151,15 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // The host sweeps from `playhead_at` and parks on the static
       // `playhead`, so a transport has both states without a message per
       // frame: sweeping while it plays, standing still where it stopped.
-      const setPlayhead = ({ from = -1, at = -1 } = {}) => {
+      // `loop` is a [start, len] region the sweep wraps inside, for a
+      // repeating pass; omitted, the line runs straight.
+      const setPlayhead = ({ from = -1, at = -1, loop = null } = {}) => {
+        const [loopStart, loopLen] = loop ?? [0, 0];
         for (const name of ["wave", "stft"]) {
-          win?.widget(name).set({ playhead_at: from, playhead: at });
+          win?.widget(name).set({
+            playhead_at: from, playhead: at,
+            playhead_loop_start: loopStart, playhead_loop_len: loopLen,
+          });
         }
       };
 
@@ -172,15 +180,16 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         voice = server.synth(`editor_region_${buffer.channels}`, {
           buf: buffer.bufnum, start, end: start + len,
         });
-        // No playhead here, deliberately. The host sweeps the line itself,
-        // every frame, from one anchor — which is why a sweeping playhead
-        // costs no messages at all — but that sweep is linear and knows
-        // nothing about a loop. Following a repeating region from this script
-        // would mean sending a position per frame, which is precisely what
-        // the anchor exists to avoid, so the line stays off until the host
-        // learns to wrap it (a gap recorded in the GUI roadmap). What marks
-        // the region meanwhile is the selection band itself.
-        setPlayhead();
+        // The line follows the loop, still on one anchor and no message per
+        // frame: `playhead_loop_*` makes the host's own sweep wrap inside the
+        // region, exactly as the `Phasor` does over the same bounds.
+        // The anchor is `clock - start`, not `clock`: the pass begins reading
+        // at `start`, so timeline position 0 sits that far *before* the clock
+        // value we have. Anchoring there makes the swept position `start` at
+        // the first frame, and the wrap folds it back to `start` on every lap.
+        anchor = await raw.clock();
+        paused = 0;
+        setPlayhead({ from: anchor - start, loop: [start, len] });
         log(`playing the selection: ${start.toFixed(0)} +${len.toFixed(0)} frames`);
       }
 

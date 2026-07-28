@@ -356,6 +356,44 @@ lanes against a single `y_start`/`y_len`:
   shove every channel's wave against the bottom of its lane. Panning the strip
   still reaches an off-centre region when one is wanted.
 
+## The looping playhead: an explicit loop region, not a flag over the selection
+
+The swept playhead is one subtraction in `host::frame`: a view with
+`playhead_at >= 0` draws at `sample_clock - playhead_at`. That is the whole
+reason following a transport costs **no messages** — the line is redrawn from
+Rust every frame at the display's rate, never sent by a client — and it is
+exactly right for a straight pass. It had no notion of a loop, so anything
+repeating a region (an editor's "play selection", a looping clip) could not be
+followed at all: the line ran past the region and off the view. The two
+workarounds a client could reach for are both worse than the gap — re-anchoring
+per pass puts a message back in the loop and drifts against the audio, and
+sending a position per frame gives up the property the anchor exists for.
+
+Two shapes were weighed. The one chosen is an **explicit loop region** —
+`playhead_loop_start` / `playhead_loop_len`, with the swept position becoming
+`start + ((sample_clock - playhead_at - start) mod len)` and `len <= 0` keeping
+the straight sweep. The alternative was a `playhead_loop` **flag** wrapping
+within the existing selection, which reads better in the one case that motivated
+this and costs a single boolean. The explicit region won because it does not tie
+playback to a selection a gesture can change under it: a drag on the view while
+a loop plays would silently move what is heard, and a client that loops
+something *other* than the selection (a clip, a timeline range) would have no
+way to say so. The cost is one extra prop.
+
+It lives on the shared `EditorProps`, so `waveform`, `spectrogram`, `track`,
+`clip` and `pianoroll` get it at once, and it is **group-wide** like the anchor
+— linked views must wrap at the same place, or one file's waveform and
+spectrogram would draw the line in different spots. The `score` carries the
+same pair in **ms**, its own unit, since its cursor rides an engraved timemap
+rather than a sample axis. The static `playhead` keeps its meaning, and a client
+still sends **one** message per transport state change.
+
+One consequence worth stating, because it is the easy mistake: a looped pass
+anchors at `clock - start`, not `clock`. The reading begins at `start`, so
+timeline position 0 sits that far before the clock value the client has;
+anchoring there makes the swept position `start` on the first frame and the wrap
+returns it there on every lap.
+
 ## Linked views: explicit groups in the host core, shaped for the multitrack view
 
 The linked editor views (a waveform lane and a spectrogram lane navigating as

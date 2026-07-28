@@ -339,7 +339,11 @@ def waveform(id: int | None = None, *, data=None, blob: int | None = None, buffe
     ``/gui_event id "selection" start len``; Shift+drag pans, the wheel zooms).
     ``playhead_at`` draws a playhead tracking the engine sample clock: pass the
     ``/clock`` sample value that corresponds to buffer position 0 (negative or
-    omitted = no playhead). ``y_start``/``y_len`` set the **vertical view
+    omitted = no playhead). ``playhead_loop_start``/``playhead_loop_len`` (in
+    samples) make that sweep **wrap** inside the region instead of running
+    straight past it — what a looping playback does, so playing a selection on
+    a loop can be followed on the same one anchor and still costs no message
+    per frame; a non-positive length is the straight pass. ``y_start``/``y_len`` set the **vertical view
     window** — the visible slice of the amplitude axis, in normalized display
     units where ``0, 1`` (the default) is the full axis: the wheel over the
     y-ruler strip zooms it, dragging the strip pans it, and every change is
@@ -761,8 +765,12 @@ def score(id: int | None = None, *, display_list: dict | None = None,
     - ``playhead`` — a **static** time in ms, for a stopped transport located on
       a note (negative = no cursor). It stands still while ``playhead_at`` is
       off, so a paused cursor does not drift with the clock.
+    - ``playhead_loop_start``/``playhead_loop_len`` — a **loop region** in ms:
+      the sweep wraps inside it instead of running off the page, so a repeated
+      passage keeps the cursor on it. A non-positive length is the straight
+      pass.
 
-    Both are settable live with ``GuiHost.set(score_id, playhead_at=…)``.
+    All are settable live with ``GuiHost.set(score_id, playhead_at=…)``.
     """
     dl = dict(display_list or {})
     extra = _drop_none(color=color, playhead=playhead, playhead_at=playhead_at,

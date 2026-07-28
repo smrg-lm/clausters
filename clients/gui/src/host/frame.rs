@@ -583,14 +583,7 @@ fn draw_pianoroll_item(
         }
     }
     // Playhead: swept by the engine clock while playing, else the static cursor.
-    let head = if item.editor.playhead_at >= 0.0 && sample_clock > 0.0 {
-        Some(sample_clock - item.editor.playhead_at)
-    } else if item.editor.playhead >= 0.0 {
-        Some(item.editor.playhead)
-    } else {
-        None
-    };
-    if let Some(pos) = head
+    if let Some(pos) = item.editor.head_at(sample_clock)
         && pos >= nav.start
         && pos <= nav.start + nav.len
     {
@@ -668,14 +661,7 @@ fn draw_editor_overlay(
     }
     // Playhead: the engine clock relative to the widget's origin while playing,
     // else the static cursor of a located, stopped transport.
-    let head = if item.editor.playhead_at >= 0.0 && inputs.sample_clock > 0.0 {
-        Some(inputs.sample_clock - item.editor.playhead_at)
-    } else if item.editor.playhead >= 0.0 {
-        Some(item.editor.playhead)
-    } else {
-        None
-    };
-    if let Some(pos) = head
+    if let Some(pos) = item.editor.head_at(inputs.sample_clock)
         && pos >= nav.start
         && pos <= nav.start + nav.len
     {
@@ -1534,16 +1520,7 @@ fn draw_static_meshes(
             // The playhead, over the clips: the engine clock as a timeline
             // position (`playhead_at` anchors timeline sample 0 to a clock
             // value), so it sweeps the lane as the composition plays.
-            let pos = if item.editor.playhead_at >= 0.0 && inputs.sample_clock > 0.0 {
-                // Playing: the line is the engine clock, and it sweeps.
-                Some(inputs.sample_clock - item.editor.playhead_at)
-            } else if item.editor.playhead >= 0.0 {
-                // Located and stopped: the cursor stands where it was put.
-                Some(item.editor.playhead)
-            } else {
-                None
-            };
-            if let Some(pos) = pos
+            if let Some(pos) = item.editor.head_at(inputs.sample_clock)
                 && let Some(x) = track::playhead_x(body, &nav, pos)
             {
                 over.rect(Rect::new(x, body.y, 1.5, body.h), th.playhead);
@@ -1857,6 +1834,8 @@ mod tests {
             sel_len: 0.0,
             playhead_at: -1.0,
             playhead: -1.0,
+            playhead_loop_start: 0.0,
+            playhead_loop_len: 0.0,
             y_start: 0.0,
             y_len: 1.0,
             link: None,

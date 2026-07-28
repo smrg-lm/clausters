@@ -704,7 +704,7 @@ impl App {
         let tree = self.host.window_def(def_id)?;
         let e = tree.find(id)?.kind.editor()?;
         let clock = self.shm.as_ref().map_or(0.0, |s| s.sample_clock());
-        (e.playhead_at >= 0.0 && clock > 0.0).then_some(clock - e.playhead_at)
+        e.swept_at(clock)
     }
 
     /// A piano-roll's `snap` grid (0 when none or not a roll).

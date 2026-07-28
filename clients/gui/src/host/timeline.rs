@@ -72,6 +72,12 @@ pub struct GroupState {
     pub playhead_at: f64,
     /// The static cursor of a located, stopped transport (`< 0` = none).
     pub playhead: f64,
+    /// The sweep's loop region (samples; `len <= 0` = the straight pass) — the
+    /// same convention as `EditorProps::playhead_loop_start`/`_len`. Group-wide
+    /// like the anchor: linked views must wrap the line at the same place, or
+    /// one file's waveform and spectrogram would disagree about where it is.
+    pub playhead_loop_start: f64,
+    pub playhead_loop_len: f64,
 }
 
 impl GroupState {
@@ -84,6 +90,8 @@ impl GroupState {
             sel_len: editor.sel_len,
             playhead_at: editor.playhead_at,
             playhead: editor.playhead,
+            playhead_loop_start: editor.playhead_loop_start,
+            playhead_loop_len: editor.playhead_loop_len,
         }
     }
 }
@@ -425,6 +433,31 @@ impl Host {
         self.timeline_roots(key)
     }
 
+    /// Sets the group's **playhead loop region** — where the swept line wraps
+    /// (samples; a non-positive length restores the straight pass). Mirrored
+    /// into every member, so linked views wrap at one place.
+    pub fn set_timeline_playhead_loop(
+        &mut self,
+        id: i32,
+        start: Option<f64>,
+        len: Option<f64>,
+    ) -> Vec<i32> {
+        let Some(key) = self.timeline_key(id) else {
+            return Vec::new();
+        };
+        let Some(state) = self.timelines.states.get_mut(&key) else {
+            return Vec::new();
+        };
+        if let Some(start) = start {
+            state.playhead_loop_start = start;
+        }
+        if let Some(len) = len {
+            state.playhead_loop_len = len;
+        }
+        self.mirror_timeline_group(key);
+        self.timeline_roots(key)
+    }
+
     /// Sets widget `id`'s **placement** (start offset in timeline samples) on
     /// its group. Unlike the group-wide keys this is written to the one
     /// widget's own editor props (each clip carries its own offset), but it
@@ -480,6 +513,8 @@ impl Host {
                 sel_len: 0.0,
                 playhead_at: -1.0,
                 playhead: -1.0,
+                playhead_loop_start: 0.0,
+                playhead_loop_len: 0.0,
             })
         });
         // Re-clamp the (carried or adopted) window against the new membership
@@ -522,6 +557,8 @@ impl Host {
                 editor.sel_len = state.sel_len;
                 editor.playhead_at = state.playhead_at;
                 editor.playhead = state.playhead;
+                editor.playhead_loop_start = state.playhead_loop_start;
+                editor.playhead_loop_len = state.playhead_loop_len;
             }
         }
     }
@@ -593,9 +630,9 @@ impl Host {
 
     /// Routes the shared timeline keys of one `/gui_set` on timeline widget
     /// `id` through the group model — `view_start`/`view_len`, `sel_start`/
-    /// `sel_len`, `playhead_at` and `link` (a negative link unlinks) apply
-    /// group-wide; every other key is applied to the widget itself by the
-    /// caller. Pushes a redraw effect per affected window.
+    /// `sel_len`, `playhead_at`, the `playhead_loop_*` pair and `link` (a
+    /// negative link unlinks) apply group-wide; every other key is applied to
+    /// the widget itself by the caller. Pushes a redraw effect per affected window.
     pub(super) fn set_timeline_props(
         &mut self,
         id: i32,
@@ -607,12 +644,15 @@ impl Host {
         type Span = (Option<f64>, Option<f64>);
         let mut roots: Vec<i32> = Vec::new();
         let (mut view, mut sel): (Span, Span) = ((None, None), (None, None));
+        let mut loop_span: Span = (None, None);
         for (k, v) in props {
             match k.as_str() {
                 "view_start" => view.0 = v.as_f64(),
                 "view_len" => view.1 = v.as_f64(),
                 "sel_start" => sel.0 = v.as_f64(),
                 "sel_len" => sel.1 = v.as_f64(),
+                "playhead_loop_start" => loop_span.0 = v.as_f64(),
+                "playhead_loop_len" => loop_span.1 = v.as_f64(),
                 "playhead_at" => {
                     if let Some(at) = v.as_f64() {
                         roots.extend(self.set_timeline_playhead(id, at));
@@ -643,6 +683,9 @@ impl Host {
         if sel != (None, None) {
             roots.extend(self.set_timeline_selection(id, sel.0, sel.1));
         }
+        if loop_span != (None, None) {
+            roots.extend(self.set_timeline_playhead_loop(id, loop_span.0, loop_span.1));
+        }
         roots.dedup();
         let mut seen: Vec<i32> = Vec::new();
         for root in roots {
@@ -665,6 +708,8 @@ pub(super) fn is_timeline_key(key: &str) -> bool {
             | "sel_len"
             | "playhead_at"
             | "playhead"
+            | "playhead_loop_start"
+            | "playhead_loop_len"
             | "link"
             | "offset"
     )
@@ -770,6 +815,42 @@ mod tests {
             from(),
         );
         assert_eq!(editor_of(&host, 11).playhead_at, 100.0);
+    }
+
+    /// The loop region is group-wide like the anchor: a linked waveform and
+    /// spectrogram must wrap the swept line at the same place, or the two
+    /// views of one file would draw it in different spots.
+    #[test]
+    fn the_playhead_loop_applies_group_wide() {
+        let mut host = linked_host();
+        let effects = host.handle_packet(
+            set_msg(
+                11,
+                &[
+                    ("playhead_at", OscType::Float(0.0)),
+                    ("playhead_loop_start", OscType::Float(2.0)),
+                    ("playhead_loop_len", OscType::Float(4.0)),
+                ],
+            ),
+            from(),
+        );
+        assert!(effects.iter().any(|e| matches!(e, HostEffect::Redraw(1))));
+        for id in [10, 11] {
+            let e = editor_of(&host, id);
+            assert_eq!(e.playhead_loop(), Some((2.0, 4.0)), "member {id}");
+            // And the wrap is live through the mirrored props: a clock of 9
+            // sweeps to 9, which folds into [2, 6) at 5.
+            assert_eq!(e.head_at(9.0), Some(5.0), "member {id} wraps");
+        }
+        // The unlinked member keeps the straight pass.
+        assert_eq!(editor_of(&host, 12).playhead_loop(), None);
+        // A non-positive length restores it group-wide.
+        host.handle_packet(
+            set_msg(10, &[("playhead_loop_len", OscType::Float(0.0))]),
+            from(),
+        );
+        assert_eq!(editor_of(&host, 11).playhead_loop(), None);
+        assert_eq!(editor_of(&host, 11).head_at(9.0), Some(9.0));
     }
 
     #[test]
