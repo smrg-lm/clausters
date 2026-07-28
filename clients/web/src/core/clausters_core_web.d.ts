@@ -1,0 +1,385 @@
+/* tslint:disable */
+/* eslint-disable */
+
+/**
+ * A registry of one finite id space, the JS face of
+ * [`clausters_core::registry::Registry`].
+ */
+export class Registry {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Allocates `width` contiguous ids and returns the first, or `undefined`
+     * when no such run is free. `width` 0 counts as 1.
+     */
+    alloc(width: number): number | undefined;
+    /**
+     * Releases everything back to the pool (a client reset).
+     */
+    clear(): void;
+    /**
+     * Whether `id` falls inside this registry's space (allocated or not) —
+     * the filter for foreign `/n_end` ids.
+     */
+    contains(id: number): boolean;
+    /**
+     * Whether `id` is currently allocated.
+     */
+    isAllocated(id: number): boolean;
+    /**
+     * A bounded registry over `[base, base + capacity)`.
+     */
+    constructor(base: number, capacity: number);
+    /**
+     * Returns `width` ids starting at `first` to the pool. `true` when the
+     * release was accepted; `false` leaves the map untouched (out of range,
+     * or not currently allocated — a double release).
+     */
+    release(first: number, width: number): boolean;
+    /**
+     * The NRT/score registry: allocation never fails, ids ascend from `base`.
+     */
+    static unbounded(base: number): Registry;
+    /**
+     * The first id of the space.
+     */
+    readonly base: number;
+    /**
+     * The size of the id space; `undefined` when unbounded.
+     */
+    readonly capacity: number | undefined;
+    /**
+     * How many ids are currently allocated.
+     */
+    readonly inUse: number;
+}
+
+/**
+ * A resumable seeded value stream, the JS face of
+ * [`clausters_core::rng::Rng`].
+ */
+export class Rng {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * The stream for `seed` (splitmix64-mixed, never zero) — the same seeding
+     * as the server's `WhiteNoise`.
+     */
+    constructor(seed: number);
+    /**
+     * Uniform integer in `[0, n)`; 0 when `n` is 0.
+     */
+    nextBelow(n: number): number;
+    /**
+     * Uniform in `[0, 1)` with 53-bit resolution.
+     */
+    nextF64(): number;
+    /**
+     * A child stream seeded from this one's next word: deterministic
+     * derivation, so seeding a root reproduces every stream created under it,
+     * in creation order.
+     */
+    spawn(): Rng;
+    /**
+     * Uniform in `[lo, hi)` (degenerate to `lo` when `hi <= lo`).
+     */
+    uniform(lo: number, hi: number): number;
+}
+
+/**
+ * The local-time ↔ sample regression, the JS face of
+ * [`clausters_core::clocksync::SampleClockModel`].
+ */
+export class SampleClockModel {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Records one `/clock` observation: the local time it was taken at, the
+     * server's counter, and the rate the server reported (0 keeps the
+     * current one).
+     */
+    addAnchor(t_local: number, sample: number, rate: number): void;
+    /**
+     * The local time at which a server sample falls.
+     */
+    localTimeOf(sample: number): number;
+    /**
+     * A model seeded with the `nominal_rate`, keeping the last `window`
+     * anchors.
+     */
+    constructor(nominal_rate: number, window: number);
+    /**
+     * The server's sample at a local time.
+     */
+    sampleAt(t_local: number): number;
+    /**
+     * The measured drift between the two clocks, in parts per million.
+     */
+    readonly driftPpm: number;
+    readonly isEmpty: boolean;
+    /**
+     * How many anchors the model currently holds.
+     */
+    readonly len: number;
+    /**
+     * The measured sample rate (samples per local second).
+     */
+    readonly rate: number;
+    /**
+     * The local-time span the held anchors cover.
+     */
+    readonly span: number;
+}
+
+/**
+ * The beat-ordered scheduling queue, the JS face of
+ * [`clausters_core::tempoclock::Scheduler`]. It holds `(time, id)` pairs and
+ * nothing else: the language side maps each id back to the routine it queued,
+ * which is what keeps the coroutine driver in the language.
+ */
+export class Scheduler {
+    free(): void;
+    [Symbol.dispose](): void;
+    clear(): void;
+    constructor();
+    /**
+     * The earliest queued time, or `undefined` when the queue is empty.
+     */
+    peekTime(): number | undefined;
+    /**
+     * Pops the earliest entry when it is due at `now`, as `[time, id]`.
+     */
+    popDue(now: number): Float64Array | undefined;
+    /**
+     * Queues `id` at `time` (beats). Equal times keep insertion order.
+     */
+    push(time: number, id: number): void;
+    /**
+     * Drops every entry queued under `id`; returns how many went.
+     */
+    remove(id: number): number;
+    readonly isEmpty: boolean;
+    readonly len: number;
+}
+
+/**
+ * The 0-based bar index `beats` falls in on a grid of `quant` beats per bar.
+ */
+export function bar(beats: number, quant: number): number;
+
+/**
+ * The beat within its bar, in `[0, quant)`.
+ */
+export function beat_in_bar(beats: number, quant: number): number;
+
+/**
+ * Seconds at `beats` for the affine clock `(tempo, base_beats, base_seconds)`.
+ */
+export function beats_to_secs(tempo: number, base_beats: number, base_seconds: number, beats: number): number;
+
+/**
+ * JS face: one binary builtin by name (`"add"`, `"pow"`, `"clip2"`, ...).
+ */
+export function binary(op: string, a: number, b: number): number;
+
+/**
+ * JS face: what one instance of a bundle needs allocated.
+ * `bundle_requirements(requestJson) -> requirementsJson`, the request holding
+ * the manifest and — for a bundle written before the contract, whose widget
+ * ids are whatever its author picked — the template its id block is measured
+ * from.
+ */
+export function bundle_requirements(request: string): string;
+
+/**
+ * JS face: one mounted instance, from the allocation the page just made.
+ * `bundle_resolve(requestJson) -> resolvedJson`, the request carrying the
+ * manifest, the template, the allocation and the supplied parameters
+ * (`{ attributes, preset }`) in one object.
+ */
+export function bundle_resolve(request: string): string;
+
+/**
+ * JS face: the writers' pre-flight — the mount dry-run over the declared
+ * defaults, plus the no-holes check on every def payload.
+ * `bundle_validate(requestJson)`, throwing on the first problem.
+ */
+export function bundle_validate(request: string): void;
+
+/**
+ * JS face: scale degree → MIDI note number in the pitch space
+ * `octave`/`root`, with floored octave wrapping (sclang semantics). An empty
+ * `scale` yields middle C.
+ */
+export function degree_to_midinote(degree: number, octave: number, root: number, scale: Float32Array): number;
+
+/**
+ * JS face: the `[audio, control]` bus widths GraphDef instances reserve at
+ * the top of each bus space (before clamping to a smaller configured count).
+ */
+export function graph_bus_reserved(): Uint32Array;
+
+/**
+ * JS face: the boot-derived node-id partition for a node table of
+ * `max_nodes` slots — `{clientBase, clientCapacity, autoBase, autoCapacity,
+ * midiBase, midiCapacity}`, the same formula the server applies.
+ */
+export function node_id_partition(max_nodes: number): object;
+
+/**
+ * JS face: `osc_decode_packet(bytes) -> [{addr, args}, ...]`, bundles
+ * flattened, args as plain JS values (numbers/strings/`Uint8Array`/bool/
+ * null).
+ */
+export function osc_decode_packet(bytes: Uint8Array): Array<any>;
+
+/**
+ * JS face: a bundle stamped at `unix_secs` (the wall clock the server reads
+ * as an NTP timetag) → `Uint8Array`.
+ */
+export function osc_encode_bundle(unix_secs: number, messages: Array<any>): Uint8Array;
+
+/**
+ * JS face: a bundle with the *immediate* timetag → `Uint8Array`. What rides
+ * inside `/sched`, whose own absolute sample carries the time.
+ */
+export function osc_encode_immediate_bundle(messages: Array<any>): Uint8Array;
+
+/**
+ * JS face: `osc_encode_message(addr, [[tag, value], ...]) -> Uint8Array`.
+ * Tags: `"i"` int32, `"h"` int64 (number or BigInt), `"f"` float32, `"d"`
+ * float64, `"s"` string, `"b"` blob (`Uint8Array`).
+ */
+export function osc_encode_message(addr: string, args: Array<any>): Uint8Array;
+
+/**
+ * Beats to wait so a routine starts on the next `quant` boundary of the grid
+ * (`quant <= 0` → now). The snapping rule every client shares.
+ */
+export function quant_delay(pos: number, quant: number): number;
+
+/**
+ * Sample count → seconds at `sample_rate`.
+ */
+export function samples_to_secs(samples: number, sample_rate: number): number;
+
+/**
+ * Beats at `secs` for the affine clock `(tempo, base_beats, base_seconds)`.
+ */
+export function secs_to_beats(tempo: number, base_beats: number, base_seconds: number, secs: number): number;
+
+/**
+ * Seconds → sample count at `sample_rate` (ties to even).
+ */
+export function secs_to_samples(secs: number, sample_rate: number): number;
+
+/**
+ * JS face: one unary builtin by name (`"midicps"`, `"cpsmidi"`, `"dbamp"`,
+ * ...), computed in `f32` exactly as the server's UGens compute it.
+ */
+export function unary(op: string, x: number): number;
+
+/**
+ * A Unix timestamp → the 64 NTP timetag bits, as a `BigInt` (the wire value
+ * is a full 64-bit word; JS numbers would lose its low bits).
+ */
+export function unix_to_ntp(unix_secs: number): bigint;
+
+/**
+ * A Unix timestamp → the server's absolute sample, through a `/clock` anchor
+ * (`anchor_unix`, `anchor_sample`) and the measured `rate`.
+ */
+export function unix_to_sample(unix_secs: number, anchor_unix: number, anchor_sample: number, rate: number): number;
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+    readonly memory: WebAssembly.Memory;
+    readonly __wbg_registry_free: (a: number, b: number) => void;
+    readonly __wbg_rng_free: (a: number, b: number) => void;
+    readonly __wbg_sampleclockmodel_free: (a: number, b: number) => void;
+    readonly __wbg_scheduler_free: (a: number, b: number) => void;
+    readonly bar: (a: number, b: number) => number;
+    readonly beat_in_bar: (a: number, b: number) => number;
+    readonly beats_to_secs: (a: number, b: number, c: number, d: number) => number;
+    readonly binary: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly bundle_requirements: (a: number, b: number) => [number, number, number, number];
+    readonly bundle_resolve: (a: number, b: number) => [number, number, number, number];
+    readonly bundle_validate: (a: number, b: number) => [number, number];
+    readonly degree_to_midinote: (a: number, b: number, c: number, d: number, e: number) => number;
+    readonly graph_bus_reserved: () => [number, number];
+    readonly node_id_partition: (a: number) => [number, number, number];
+    readonly osc_decode_packet: (a: number, b: number) => [number, number, number];
+    readonly osc_encode_bundle: (a: number, b: any) => [number, number, number, number];
+    readonly osc_encode_immediate_bundle: (a: any) => [number, number, number, number];
+    readonly osc_encode_message: (a: number, b: number, c: any) => [number, number, number, number];
+    readonly quant_delay: (a: number, b: number) => number;
+    readonly registry_alloc: (a: number, b: number) => [number, number];
+    readonly registry_base: (a: number) => number;
+    readonly registry_capacity: (a: number) => number;
+    readonly registry_clear: (a: number) => void;
+    readonly registry_contains: (a: number, b: number) => number;
+    readonly registry_inUse: (a: number) => number;
+    readonly registry_isAllocated: (a: number, b: number) => number;
+    readonly registry_new: (a: number, b: number) => number;
+    readonly registry_release: (a: number, b: number, c: number) => number;
+    readonly registry_unbounded: (a: number) => number;
+    readonly rng_new: (a: number) => number;
+    readonly rng_nextBelow: (a: number, b: number) => number;
+    readonly rng_nextF64: (a: number) => number;
+    readonly rng_spawn: (a: number) => number;
+    readonly rng_uniform: (a: number, b: number, c: number) => number;
+    readonly sampleclockmodel_addAnchor: (a: number, b: number, c: number, d: number) => void;
+    readonly sampleclockmodel_driftPpm: (a: number) => number;
+    readonly sampleclockmodel_isEmpty: (a: number) => number;
+    readonly sampleclockmodel_len: (a: number) => number;
+    readonly sampleclockmodel_localTimeOf: (a: number, b: number) => number;
+    readonly sampleclockmodel_new: (a: number, b: number) => number;
+    readonly sampleclockmodel_rate: (a: number) => number;
+    readonly sampleclockmodel_sampleAt: (a: number, b: number) => number;
+    readonly sampleclockmodel_span: (a: number) => number;
+    readonly samples_to_secs: (a: number, b: number) => number;
+    readonly scheduler_clear: (a: number) => void;
+    readonly scheduler_isEmpty: (a: number) => number;
+    readonly scheduler_len: (a: number) => number;
+    readonly scheduler_new: () => number;
+    readonly scheduler_peekTime: (a: number) => [number, number];
+    readonly scheduler_popDue: (a: number, b: number) => [number, number];
+    readonly scheduler_push: (a: number, b: number, c: number) => void;
+    readonly scheduler_remove: (a: number, b: number) => number;
+    readonly secs_to_beats: (a: number, b: number, c: number, d: number) => number;
+    readonly secs_to_samples: (a: number, b: number) => number;
+    readonly unary: (a: number, b: number, c: number) => [number, number, number];
+    readonly unix_to_ntp: (a: number) => bigint;
+    readonly unix_to_sample: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_start: () => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

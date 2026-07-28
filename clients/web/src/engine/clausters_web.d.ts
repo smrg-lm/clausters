@@ -1,0 +1,120 @@
+/* tslint:disable */
+/* eslint-disable */
+
+/**
+ * The live engine in pulled mode: a 1:1 JS face over
+ * `clausters::embed::ClaustersHeadless` (which owns all the logic and is
+ * exercised by the native `tests/headless.rs` suite). The AudioWorklet
+ * processor drives it: OSC packets in over `send`, one `process` per render
+ * quantum, replies drained with `poll`.
+ */
+export class WebServer {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Installs host-decoded samples as buffer `index` (the browser's
+     * `/b_allocRead` replacement: fetch + `decodeAudioData`, then this).
+     */
+    b_load(index: number, channels: number, sample_rate: number, data: Float32Array): void;
+    /**
+     * The engine block size in frames (the granularity `process` needs).
+     */
+    block_frames(): number;
+    /**
+     * The engine's sample counter (block-accurate; exact in an f64 for the
+     * first 2^53 samples — thousands of years of audio).
+     */
+    clock(): number;
+    /**
+     * Data-plane control-bus read.
+     */
+    ctl_get(index: number): number;
+    /**
+     * Data-plane control-bus write (no command round trip).
+     */
+    ctl_set(index: number, value: number): void;
+    /**
+     * `unix_epoch`: Unix seconds at sample 0 (JS: `Date.now() / 1000`), the
+     * anchor that lets wall-clocked clients' bundle timetags land on this
+     * server's sample axis.
+     */
+    constructor(sample_rate: number, channels: number, unix_epoch: number);
+    /**
+     * One pending reply as bytes, or `undefined`/`None` when none is.
+     */
+    poll(): Uint8Array | undefined;
+    /**
+     * Renders into `out` (interleaved, a multiple of `block_frames() *
+     * channels` samples): a serving turn before each engine block.
+     */
+    process(out: Float32Array): void;
+    /**
+     * Whether a `/quit` arrived; the page decides what closing means.
+     */
+    quit_requested(): boolean;
+    /**
+     * Pushes one complete OSC packet into the command ring. `false` =
+     * momentarily full (backpressure): retry next quantum.
+     */
+    send(packet: Uint8Array): boolean;
+}
+
+/**
+ * The embed / IPC ABI version this build speaks (`clausters_abi_version`).
+ */
+export function abi_version(): number;
+
+/**
+ * JS face: `render(scoreBytes, sampleRate, channels) -> Float32Array`,
+ * throwing a `JsError` with the render's message on failure.
+ */
+export function render(score: Uint8Array, sample_rate: number, channels: number): Float32Array;
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+    readonly memory: WebAssembly.Memory;
+    readonly clausters_abi_version: () => number;
+    readonly __wbg_webserver_free: (a: number, b: number) => void;
+    readonly render: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly webserver_b_load: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number];
+    readonly webserver_block_frames: (a: number) => number;
+    readonly webserver_clock: (a: number) => number;
+    readonly webserver_ctl_get: (a: number, b: number) => number;
+    readonly webserver_ctl_set: (a: number, b: number, c: number) => void;
+    readonly webserver_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly webserver_poll: (a: number) => [number, number];
+    readonly webserver_process: (a: number, b: number, c: number, d: any) => [number, number];
+    readonly webserver_quit_requested: (a: number) => number;
+    readonly webserver_send: (a: number, b: number, c: number) => number;
+    readonly abi_version: () => number;
+    readonly clausters_free_samples: (a: number, b: bigint) => void;
+    readonly clausters_render: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_start: () => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

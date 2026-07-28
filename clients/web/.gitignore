@@ -5,9 +5,15 @@
 node_modules/
 
 # Glue stubs staged into src/ by build.sh (type-checking + node-from-source).
-/src/core/
-/src/gui-host/
-/src/engine/clausters_web.d.ts
+# The three declaration files are the exception: they are what TypeDoc needs to
+# resolve the wasm boundary, and the book is built where no Rust toolchain
+# exists (Read the Docs). Keeping them versioned makes a change to the Rust
+# API visible as a diff after build.sh, instead of only as a doc build that
+# fails somewhere else.
+/src/core/*
+!/src/core/clausters_core_web.d.ts
+/src/gui-host/*
+!/src/gui-host/clausters_gui.d.ts
 
 # The demo bundle the smokes write (tools/demo-bundle.sh), and the bundle
 # examples the make_bundle.py scripts generate.

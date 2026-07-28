@@ -12,10 +12,12 @@
 # build the book, and copy the HTML into $READTHEDOCS_OUTPUT/html. TypeDoc
 # parses the sources with its own TypeScript 5.9 (installed here, never saved
 # into the package's node_modules, whose TypeScript is the v7 that compiles the
-# package); nothing else about the client is built.
+# package); the package itself is never built.
 #
-# The project itself is not created yet -- see clients/web/BUILD.md,
-# "Publishing", for the steps.
+# Its dev dependencies are installed all the same: the parse reads the
+# package's tsconfig, which asks for the `node` type library, so without them
+# TypeDoc stops at TS2688 -- and it treats warnings as errors. A checkout is
+# not a working copy; nothing here exists that the repository does not carry.
 version: 2
 
 build:
@@ -28,6 +30,7 @@ build:
     - |
       MDBOOK_VERSION=0.4.40
       curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C "$HOME/bin"
+    - bash -c "cd clients/web && npm ci"
     - bash -c "cd clients/web && $HOME/typedoc/node_modules/.bin/typedoc"
     - "$HOME/bin/mdbook build clients/web/docs"
     - mkdir -p "$READTHEDOCS_OUTPUT/html"

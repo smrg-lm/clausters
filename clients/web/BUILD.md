@@ -147,6 +147,15 @@ with `docs/src/SUMMARY.md`. It runs with warnings as errors, so a doc comment
 referring to something that moved or became private fails the build rather than
 producing a dangling page — the rustdoc posture, on this leg.
 
+The parse is static — no wasm bundle, no built package — but it does need the
+package's `node_modules` (the tsconfig asks for the `node` type library) and
+the **three wasm-bindgen declaration files** the sources import across the
+wasm boundary. Those three are versioned for exactly this reason: Read the
+Docs builds the book with node alone, and installing a Rust toolchain there to
+regenerate 36 kB of `.d.ts` would be a compile of wgpu per doc build.
+`build.sh` rewrites them from the freshly built bundles, so a change to the
+Rust surface shows up as a diff to commit.
+
 ## Publishing
 
 The package is published to npm as **`clausters`**, and it is published the way
