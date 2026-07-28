@@ -287,9 +287,8 @@ clock through its manual seams).
 
 ### ✅ W4 - Components: the host's canvases in the document
 
-*(Design: `specs/2026-07-27-web-w4-components-design.md`; implementation plan
-beside it. What this slot used to name — the responders, MIDI, and the browser
-data paths — moved to the milestones after W5.)*
+*(What this slot used to name — the responders, MIDI, and the browser data
+paths — moved to the milestones after W5.)*
 
 On the desktop, `clausters-gui` opens one window per `window`-rooted GuiDef and
 the system's window manager places them. In a tab the drawing surface is a

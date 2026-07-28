@@ -15,3 +15,6 @@ uv.lock
 /render
 # Personal scratch files (nombre.notrack.md): never committed.
 *.notrack.md
+# Working design notes and implementation plans (local only). What shipped is
+# the git history and the PLAN.md roadmaps; a spec is scaffolding, not a record.
+/specs/
