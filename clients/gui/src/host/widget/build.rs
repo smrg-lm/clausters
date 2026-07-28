@@ -8,6 +8,24 @@ use serde_json::Value;
 
 use super::{GuiNode, *};
 
+/// The default pitch window of a note view — a piano's compass (A0..C8),
+/// shared by the `pianoroll` widget and by a `clip` whose body is a roll, so
+/// the two cannot drift apart.
+const PITCH_MIN: f32 = 21.0;
+const PITCH_MAX: f32 = 108.0;
+
+/// The default vertical axis of a `clip`, which depends on **what its body
+/// is**: `notes` makes it a piano-roll, so the axis is pitch; otherwise it is a
+/// take and the axis is amplitude. Returns `notes` when the clip carries any,
+/// `otherwise` when it does not.
+fn note_axis(props: &serde_json::Map<String, Value>, notes: f32, otherwise: f32) -> f32 {
+    if props.contains_key("notes") {
+        notes
+    } else {
+        otherwise
+    }
+}
+
 /// Builds the [`WidgetKind`] a GuiDef `node` names (an unknown type becomes
 /// [`WidgetKind::Unknown`]). `id` is the node's resolved id (some widgets log
 /// with it); `blobs` are the `/gui_def` message's trailing bulk payloads.
@@ -334,8 +352,8 @@ pub(super) fn build_kind(
                     .and_then(truthy)
                     .unwrap_or(!osc.is_empty()),
                 osc,
-                min: number(&node.props, "min", 21.0),
-                max: number(&node.props, "max", 108.0),
+                min: number(&node.props, "min", PITCH_MIN),
+                max: number(&node.props, "max", PITCH_MAX),
                 snap: number_f64(&node.props, "snap", 0.0).max(0.0),
                 midi_in: node.props.get("midi_in").and_then(truthy).unwrap_or(false),
                 label: label(&node.props),
@@ -421,8 +439,14 @@ pub(super) fn build_kind(
             exp: node.props.get("exp").and_then(truthy).unwrap_or(false),
             points_min: number(&node.props, "points_min", number(&node.props, "min", -1.0)),
             points_max: number(&node.props, "points_max", number(&node.props, "max", 1.0)),
-            min: number(&node.props, "min", -1.0),
-            max: number(&node.props, "max", 1.0),
+            // The body's own axis. A **take** is amplitude (-1, 1); a
+            // **piano-roll** is pitch, and its default has to be a pitch range
+            // or every note lands outside the axis and clamps to the clip's top
+            // edge — silently, since nothing about the drawing says why. So a
+            // clip carrying `notes` falls back to the `pianoroll` widget's own
+            // window (a piano's compass) rather than to the take's amplitude.
+            min: number(&node.props, "min", note_axis(&node.props, PITCH_MIN, -1.0)),
+            max: number(&node.props, "max", note_axis(&node.props, PITCH_MAX, 1.0)),
             label: label(&node.props),
         },
         "patch" => WidgetKind::Patch {

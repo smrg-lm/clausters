@@ -102,7 +102,7 @@ process, no socket.</div>
                   + "wheel zooms, Shift+drag pans", { h: 20 }),
         gui.track(
           { name: "drums", label: "drums", link: 1, snap: beats(QUANT),
-            ruler: "beats", tempo: TEMPO, quant: 4.0, sampleRate: SR },
+            tempo: TEMPO, quant: 4.0, sampleRate: SR },
           gui.clip({ name: "take1", offset: beats(0.0), dur: beats(2.0),
                      buffer: bufnum, label: "take" }),
           gui.clip({ name: "take2", offset: beats(4.0), dur: beats(2.0),
@@ -121,8 +121,13 @@ process, no socket.</div>
                      notes: inSamples(MELODY), label: "melody" }),
         ),
         gui.track(
+          // The time ruler goes on the **last** lane: a lane's strip is drawn
+          // along its bottom edge, so only the bottom lane puts it under the
+          // whole stack instead of wedging it between two lanes. (A DAW rules
+          // the axis once, above every lane; the host has no window-level ruler
+          // yet -- the strip belongs to a lane.)
           { name: "sweep", label: "sweep", link: 1, snap: beats(QUANT),
-            tempo: TEMPO, quant: 4.0, sampleRate: SR },
+            ruler: "beats", tempo: TEMPO, quant: 4.0, sampleRate: SR },
           gui.clip({ name: "sweepClip", offset: beats(0.0), dur: beats(4.0),
                      points: pointsInSamples(SWEEP), min: 100.0, max: 1000.0,
                      exp: true, label: "freq" }),
@@ -144,11 +149,13 @@ process, no socket.</div>
         // The take: the *server* fills a buffer (`/b_gen sine1`, a few
         // partials), so the lane has a real body to decimate — a clip's take
         // is reached exactly as the heavy waveform's samples are.
-        const bufnum = await server.allocBuffer(Math.round(beats(2.0)), 1);
-        await server.genBuffer(bufnum, "sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
+        const take = await server.allocBuffer(Math.round(beats(2.0)), 1);
+        await server.genBuffer(take, "sine1", [["i", 7], 1.0, 0.5, 0.25, 0.12]);
         await server.sync();
 
-        win = host.open(scene(bufnum));
+        // `allocBuffer` hands back a Buffer handle; the clip prop is the
+        // **number** the host fetches by.
+        win = host.open(scene(take.bufnum));
         unfit?.();
         unfit = page.fit(win.id, el("stage"));
 

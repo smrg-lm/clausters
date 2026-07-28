@@ -2719,6 +2719,57 @@ mod tests {
         }
     }
 
+    /// A clip's vertical axis defaults to what its **body** is. The regression
+    /// this fixes: a `notes` clip fell back to the take's amplitude range
+    /// (-1, 1), so every pitch sat outside the axis and clamped to the clip's
+    /// top edge — a roll drawn as a solid band, with nothing saying why.
+    #[test]
+    fn a_clip_takes_its_default_axis_from_its_body() {
+        let roll = node(r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0]}"#);
+        match Widget::from_node(1, &roll, &[]).unwrap().kind {
+            WidgetKind::Clip { min, max, .. } => {
+                assert_eq!((min, max), (21.0, 108.0), "a roll's axis is pitch");
+            }
+            other => panic!("expected a clip, got {other:?}"),
+        }
+        // A take keeps the amplitude axis.
+        let take = node(r#"{"type":"clip","dur":100.0,"buffer":3}"#);
+        match Widget::from_node(1, &take, &[]).unwrap().kind {
+            WidgetKind::Clip { min, max, .. } => {
+                assert_eq!((min, max), (-1.0, 1.0), "a take's axis is amplitude");
+            }
+            other => panic!("expected a clip, got {other:?}"),
+        }
+        // An explicit range always wins, whatever the body.
+        let named = node(
+            r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
+                             "min":48.0,"max":72.0}"#,
+        );
+        match Widget::from_node(1, &named, &[]).unwrap().kind {
+            WidgetKind::Clip { min, max, .. } => assert_eq!((min, max), (48.0, 72.0)),
+            other => panic!("expected a clip, got {other:?}"),
+        }
+        // And the curve's own range is untouched by the roll's default: a
+        // layered clip's bodies do not share an axis.
+        let layered = node(
+            r#"{"type":"clip","dur":100.0,"notes":[0.0,10.0,60.0],
+                "points":[0.0,0.5,1,0.0],"points_min":0.0,"points_max":1.0}"#,
+        );
+        match Widget::from_node(1, &layered, &[]).unwrap().kind {
+            WidgetKind::Clip {
+                min,
+                max,
+                points_min,
+                points_max,
+                ..
+            } => {
+                assert_eq!((min, max), (21.0, 108.0));
+                assert_eq!((points_min, points_max), (0.0, 1.0));
+            }
+            other => panic!("expected a clip, got {other:?}"),
+        }
+    }
+
     #[test]
     fn piano_apply_round_trips_and_prunes_held_keys() {
         let n = node(r#"{"type":"window","children":[{"id":6,"type":"piano","min":48,"max":84}]}"#);

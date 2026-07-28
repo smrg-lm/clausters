@@ -914,7 +914,11 @@ impl WebApp {
                             let data =
                                 WaveformData::from_interleaved(&samples, channels, base_bucket);
                             self.set_clip_body(want.def_id, want.widget_id, data);
-                            continue;
+                            // Falls through to the shared tail: a clip carries
+                            // no editor props, so the sample-rate fill is a
+                            // no-op for it, but the **repaint** is not — a
+                            // `continue` here left the take sitting in the tree
+                            // with the canvas still showing the frame before it.
                         }
                         WidgetKind::Spectrogram {
                             window_size,

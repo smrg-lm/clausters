@@ -632,6 +632,20 @@ as a script and one as a page.
 
 **Acceptance:** every Python example either has a web page of the same name or a stated reason in the catalog for having none, and each ported page runs on the in-page engine with the carrier line marked.
 
+The largest single item behind this, named here because it is a **track and not
+an example**: `gui_composer.py` needs the **arrangement layer** — `clausters.form`
+(elements placed recursively, and the rendering that flattens them) plus the
+multitrack `Editor` and its transport, roughly two thousand lines of Python with
+no TypeScript counterpart — and it pulls W11 (the automation lane) and W13 (the
+offline bounce of its take) with it. No design is staged for that port, and the
+cross-client rule says the reference client is finished and polished first, then
+ported, with whatever is language-agnostic pushed into the shared core as it is
+written; deciding *what* goes down there is the first question of that milestone,
+not a detail of it. Until then `clients/web/examples/composer.html` covers the
+**host** half — the lanes, clips, shared axis, drag grid and gestures, built as
+widgets with no model behind them — which is what the host's own bugs need to be
+reproducible in a browser, and it is where G32b was found.
+
 ### ✅ W17 - Publishing: the npm registry and a third Read the Docs project
 
 *Deferred out of W5*, which built the package and the book and left them on the
