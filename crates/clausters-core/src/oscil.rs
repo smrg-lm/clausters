@@ -1,17 +1,22 @@
 //! The audio-rate oscilloscope's signal logic: window sizing and trigger
 //! alignment. Pure — no GPU, no shared memory — so it is unit-testable and
-//! shared verbatim by the native and browser fronts; the only difference
-//! between them is where the raw tap samples come from (the shm segment vs
-//! `/tap_data` snapshots).
+//! shared by every drawer of a triggered trace: the GUI host's two fronts (the
+//! only difference between them being where the raw tap samples come from — the
+//! shm segment vs `/tap_data` snapshots), and a client script drawing its own
+//! oscilloscope from a tap it streams itself.
+//!
+//! It lives here for the reason [`crate::fft`] does: the moment a second
+//! process computes the same trace, the algorithm has to be the one algorithm,
+//! or the two draw subtly different pictures of one signal.
 
 /// Cap on the display window in samples: half the default tap ring (the
 /// tear-free read bound) and the server's `/tap_stream` window cap, so the
 /// same widget works over both sources.
-pub(crate) const MAX_DISPLAY: usize = 4096;
+pub const MAX_DISPLAY: usize = 4096;
 
 /// Display window in samples for `window_ms` at `sample_rate` (falling back
 /// to 48 kHz before the rate is known), clamped to a sane interactive range.
-pub(crate) fn display_frames(window_ms: f32, sample_rate: f64) -> usize {
+pub fn display_frames(window_ms: f32, sample_rate: f64) -> usize {
     let sr = if sample_rate > 0.0 {
         sample_rate
     } else {
@@ -23,7 +28,7 @@ pub(crate) fn display_frames(window_ms: f32, sample_rate: f64) -> usize {
 
 /// How many raw samples one display window needs: a full window of slack
 /// before it, so the trigger search has somewhere to look.
-pub(crate) fn raw_frames(display: usize) -> usize {
+pub fn raw_frames(display: usize) -> usize {
     display * 2
 }
 
@@ -35,7 +40,7 @@ pub(crate) fn raw_frames(display: usize) -> usize {
 /// so noise riding on the level does not fire mid-cycle. Falls back to the
 /// newest window (free-run, `false`) when no crossing exists — silence, DC,
 /// or a window without a rising edge — so the scope always draws something.
-pub(crate) fn align(raw: &[f32], display: usize, level: f32) -> (usize, bool) {
+pub fn align(raw: &[f32], display: usize, level: f32) -> (usize, bool) {
     if raw.len() <= display {
         return (0, false);
     }
@@ -68,7 +73,7 @@ mod tests {
 
     fn sine(len: usize, period: usize, phase: f32) -> Vec<f32> {
         (0..len)
-            .map(|i| (std::f32::consts::TAU * (i as f32 / period as f32) + phase).sin())
+            .map(|i| (core::f32::consts::TAU * (i as f32 / period as f32) + phase).sin())
             .collect()
     }
 

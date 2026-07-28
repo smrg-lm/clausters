@@ -48,7 +48,6 @@ pub mod layout;
 pub mod live;
 pub mod meters;
 pub mod nodetree;
-pub mod oscil;
 pub mod paint;
 pub mod patch;
 pub mod phasescope;

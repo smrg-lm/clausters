@@ -4,9 +4,11 @@
 //! window of a server audio tap and draws the magnitude curve. Like the
 //! oscilloscope, the *signal* work is pure and shared by both fronts: the tick
 //! feeds a [`SpectrumState`] the raw tap window and the render draws the stored
-//! curve, so the browser is pixel-faithful. The FFT and the Hann window come
-//! from `clausters_core` (the same code the spectrogram uses), so the two views
-//! agree bin for bin; only what plotting needs is computed here.
+//! curve, so the browser is pixel-faithful. The whole per-frame analysis — the
+//! Hann window, the FFT and the normalized decibel curve — comes from
+//! `clausters_core::spectrum` (the same code the spectrogram and a client
+//! drawing its own curve read), so every spectrum in the system agrees bin for
+//! bin; only what plotting needs is computed here.
 //!
 //! The analysis keeps two per-bin traces across frames — an exponential average
 //! (raw per-frame FFTs flicker) and an optional decaying peak-hold — because
@@ -15,7 +17,8 @@
 //! geometry the spectrogram and its rulers share) with one curve point per
 //! pixel column (never finer than the screen).
 
-use clausters_core::fft;
+use clausters_core::spectrum as analysis;
+use clausters_core::window::Window;
 
 use crate::spectrogram::FreqScale;
 
@@ -31,10 +34,10 @@ use super::theme::Theme;
 const PAD: f32 = 4.0;
 const TEXT_SCALE: f32 = 2.0;
 
-/// The dB reference the magnitudes are floored at internally, matching the
-/// spectrogram's `REF_FLOOR`, so the analysis agrees with it before the display
-/// dB window is applied. The lowest bin at 20 Hz on the log axis.
-const REF_FLOOR: f32 = -120.0;
+/// The dB reference the magnitudes are floored at internally: the core's, so
+/// the analysis agrees with the spectrogram before the display dB window is
+/// applied. The lowest bin at 20 Hz on the log axis.
+const REF_FLOOR: f32 = analysis::REF_FLOOR;
 const F_LO_HZ: f32 = 20.0;
 /// Sample rate assumed before the server publishes one (the browser has no
 /// segment to read it from), matching the oscilloscope's fallback.
@@ -50,7 +53,8 @@ pub struct SpectrumState {
     hann: Vec<f32>,
     win_gain: f32,
     windowed: Vec<f32>,
-    mags: Vec<f32>,
+    /// This tick's raw curve in dB per bin, before the smoothing below.
+    frame_db: Vec<f32>,
     /// Exponentially-smoothed magnitude in dB per bin (`fft_size / 2` entries).
     pub avg_db: Vec<f32>,
     /// Decaying peak-hold in dB per bin.
@@ -63,18 +67,17 @@ impl SpectrumState {
     /// floor so the first frames rise into view.
     pub fn new(fft_size: usize) -> Self {
         let n_bins = fft_size / 2;
-        let hann: Vec<f32> = (0..fft_size)
-            .map(|i| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * i as f32 / fft_size as f32).cos())
-            .collect();
+        let mut hann = vec![0.0f32; fft_size];
+        Window::Hann.fill(&mut hann);
         // Coherent gain (matching the spectrogram) so a full-scale sine reads
         // ~0 dB regardless of window size.
-        let win_gain = hann.iter().sum::<f32>() * 0.5;
+        let win_gain = analysis::coherent_gain(&hann);
         Self {
             fft_size,
             hann,
             win_gain,
             windowed: vec![0.0; fft_size],
-            mags: vec![0.0; n_bins],
+            frame_db: vec![0.0; n_bins],
             avg_db: vec![REF_FLOOR; n_bins],
             peak_db: vec![REF_FLOOR; n_bins],
             initialized: false,
@@ -97,16 +100,18 @@ impl SpectrumState {
     /// and peak-hold curves. `averaging` in `[0, 1)` weights the previous frame
     /// (0 = instant, →1 = very smooth); `peak_hold` advances the decaying peak.
     pub fn update(&mut self, raw: &[f32], averaging: f32, peak_hold: bool) {
-        for (i, w) in self.windowed.iter_mut().enumerate() {
-            *w = raw.get(i).copied().unwrap_or(0.0) * self.hann[i];
-        }
-        if !fft::rfft_magnitudes_into(&self.windowed, &mut self.mags) {
+        if !analysis::magnitudes_db_into(
+            raw,
+            &self.hann,
+            self.win_gain,
+            &mut self.windowed,
+            &mut self.frame_db,
+        ) {
             return;
         }
         let a = averaging.clamp(0.0, 0.99);
-        for b in 0..self.mags.len() {
-            let mag = self.mags[b] / self.win_gain;
-            let db = (20.0 * (mag + 1e-9).log10()).max(REF_FLOOR);
+        for b in 0..self.frame_db.len() {
+            let db = self.frame_db[b];
             self.avg_db[b] = if self.initialized {
                 a * self.avg_db[b] + (1.0 - a) * db
             } else {

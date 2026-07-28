@@ -106,7 +106,7 @@ pub(crate) struct WaveParams<'a> {
 
 /// Draws an audio-rate oscilloscope: the [`TapWindow`]'s channels as stacked
 /// lanes (or color-coded `overlay` traces in one field), each an
-/// already-aligned display window (see [`super::oscil`]) over `[min, max]` —
+/// already-aligned display window (see `clausters_core::oscil`) over `[min, max]` —
 /// a polyline while the data fits the width, a per-column min/max envelope
 /// when it does not (never resolving finer than the screen). The chrome names
 /// what the trigger did: a faint line marks the `trigger` level in the first

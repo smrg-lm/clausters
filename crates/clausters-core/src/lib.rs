@@ -46,6 +46,12 @@
 //!   buffers): a bounded occupancy map where every release is reusable and
 //!   exhaustion is explicit, shared so the server's reserved ranges and every
 //!   client's allocators enforce the same invariants.
+//! - [`measure`] — the stereo-field measurements (correlation, the Lissajous /
+//!   goniometer projection) every meter and phasescope reads.
+//! - [`oscil`] — the triggered oscilloscope's window sizing and trigger
+//!   alignment, shared by the GUI host and by a client drawing its own trace.
+//! - [`spectrum`] — the per-frame magnitude curve in decibels (window, FFT,
+//!   coherent-gain normalization) every spectrum display reads.
 //! - [`peaks`] — the min/max peak pyramid behind any client's navigable
 //!   waveform view, with its memory-mappable cache. General client
 //!   functionality (not real-time), shared so every client builds the identical
@@ -77,11 +83,13 @@ pub mod measure;
 #[cfg(feature = "notation")]
 pub mod notation;
 pub mod osc;
+pub mod oscil;
 pub mod patch;
 pub mod peaks;
 pub mod pvprog;
 pub mod registry;
 pub mod rng;
 pub mod scale;
+pub mod spectrum;
 pub mod tempoclock;
 pub mod window;

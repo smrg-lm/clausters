@@ -10,8 +10,11 @@
 //! the same door `clausters-ffi` opens for Python. W3 adds the sequencing
 //! layer's core: the beat-ordered **queue**, the beat/second/sample
 //! arithmetic, **bundle assembly** with a timetag, the seeded value stream,
-//! the builtins and the pitch space, and the sample-clock model. Always the
-//! same shape: the logic lives in `clausters-core`, natively tested; this
+//! the builtins and the pitch space, and the sample-clock model. W10 adds the
+//! **data paths' analysis** — the stereo-field measurements, one spectrum
+//! frame, the oscilloscope's trigger and the peak pyramid — so a page that
+//! reads buses, taps and buffers itself draws the numbers the GUI host draws.
+//! Always the same shape: the logic lives in `clausters-core`, natively tested; this
 //! shell only converts values at the JS boundary, and only on the wasm target.
 //!
 //! The JS argument convention mirrors the tagged pairs the interim page codec
@@ -25,10 +28,13 @@ use clausters_core::osc::{OscMessage, OscPacket, OscType, decode_packet, encode}
 use clausters_core::{
     builtins, bundle,
     clocksync::SampleClockModel,
-    osc,
+    measure, osc, oscil,
+    peaks::MultiPyramid,
     registry::{self, NodeIdPartition, Registry},
     rng::Rng,
+    spectrum,
     tempoclock::{self, Scheduler},
+    window::Window,
 };
 
 #[cfg(target_arch = "wasm32")]
@@ -650,6 +656,184 @@ pub fn bundle_validate(request: &str) -> Result<(), JsError> {
     let request: bundle::ValidateRequest =
         serde_json::from_str(request).map_err(|e| JsError::new(&format!("validate: {e}")))?;
     bundle::validate_request(&request).map_err(|e| JsError::new(&e.to_string()))
+}
+
+// ---- the data paths' analysis ----
+//
+// W10's doors: what a page computes from the data it reads off the server —
+// control buses, tap windows, buffer samples. Every one of them is the
+// function the GUI host itself draws from, so a script that draws its own
+// meter, oscilloscope, spectrum or waveform gets the host's numbers rather
+// than a second implementation of them. Nothing here keeps state except the
+// peak pyramid, which is a cache by definition.
+
+/// JS face: the stereo **correlation** (Pearson's r) of two equal-length
+/// channels, in `[-1, 1]`. `undefined` when it is undefined — a length
+/// mismatch, an empty pair, or a constant channel.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn correlation(left: &[f32], right: &[f32]) -> Option<f32> {
+    measure::correlation(left, right)
+}
+
+/// JS face: the **Lissajous / goniometer** projection of a stereo pair, as
+/// interleaved `[x, y]` pairs (`x` = side, `y` = mid) — one pair per input
+/// frame. An empty array when the two channels differ in length.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn lissajous(left: &[f32], right: &[f32]) -> Vec<f32> {
+    let mut out = vec![[0.0f32; 2]; left.len()];
+    if !measure::lissajous_into(left, right, &mut out) {
+        return Vec::new();
+    }
+    out.into_iter().flatten().collect()
+}
+
+/// JS face: one spectrum frame — `samples` windowed, transformed and scaled to
+/// decibels, `fft_size / 2` bins. `wintype` is the shared window code (`-1`
+/// rectangular, `0` Hann — the display default —, `1` sine, `2` Welch, `3`
+/// Hamming, `4` Blackman). An empty array when `fft_size` is not a supported
+/// power of two. The per-frame half of a spectrum view; the smoothing and
+/// peak-hold across frames belong to whoever draws.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn spectrum_db(samples: &[f32], fft_size: usize, wintype: i32) -> Vec<f32> {
+    let mut win = vec![0.0f32; fft_size];
+    Window::from_wintype(wintype).fill(&mut win);
+    let mut scratch = vec![0.0f32; fft_size];
+    let mut out = vec![0.0f32; fft_size / 2];
+    let gain = spectrum::coherent_gain(&win);
+    if !spectrum::magnitudes_db_into(samples, &win, gain, &mut scratch, &mut out) {
+        return Vec::new();
+    }
+    out
+}
+
+/// JS face: the display window in samples for `window_ms` at `sample_rate`.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn oscil_display_frames(window_ms: f32, sample_rate: f64) -> usize {
+    oscil::display_frames(window_ms, sample_rate)
+}
+
+/// JS face: how many raw tap samples one display window needs — the window
+/// plus the trigger's search slack. What a `/tap_stream` subscription asks for.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn oscil_raw_frames(display: usize) -> usize {
+    oscil::raw_frames(display)
+}
+
+/// JS face: the triggered window's start inside `raw`, as `[start, locked]`
+/// (`locked` 1 = the trigger fired, 0 = free-running on the newest window).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+pub fn oscil_align(raw: &[f32], display: usize, level: f32) -> Vec<f64> {
+    let (start, locked) = oscil::align(raw, display, level);
+    vec![start as f64, if locked { 1.0 } else { 0.0 }]
+}
+
+/// A built min/max peak pyramid, the JS face of
+/// [`clausters_core::peaks::MultiPyramid`] — what a navigable waveform reads
+/// so a view costs the width of the window rather than the length of the
+/// buffer. Built once from the samples, then queried per frame.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_name = Pyramid)]
+pub struct JsPyramid(MultiPyramid);
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen(js_class = Pyramid)]
+impl JsPyramid {
+    /// Builds one pyramid per channel from interleaved `samples`.
+    /// `base_bucket` is the level-0 bucket size (256 is the usual choice:
+    /// ~0.8% of the source in cache for a floor of 256 samples per column).
+    pub fn build(samples: &[f32], channels: u32, base_bucket: usize) -> JsPyramid {
+        JsPyramid(MultiPyramid::build_interleaved(
+            samples,
+            channels.max(1) as usize,
+            base_bucket.max(1),
+        ))
+    }
+
+    /// Reads back a serialized cache (`toBytes`, or the file the GUI host maps
+    /// and the Python client writes). `undefined` when the bytes are not one.
+    #[wasm_bindgen(js_name = fromBytes)]
+    pub fn from_bytes(data: &[u8]) -> Option<JsPyramid> {
+        MultiPyramid::from_bytes(data).map(JsPyramid)
+    }
+
+    /// The cache's bytes, in the format every client reads.
+    #[wasm_bindgen(js_name = toBytes)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        self.0.to_bytes()
+    }
+
+    /// Samples per channel — the length a view of this cache spans.
+    #[wasm_bindgen(getter)]
+    pub fn frames(&self) -> usize {
+        self.0.frames()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn channels(&self) -> usize {
+        self.0.num_channels()
+    }
+
+    #[wasm_bindgen(getter, js_name = baseBucket)]
+    pub fn base_bucket(&self) -> usize {
+        self.0.base_bucket()
+    }
+
+    #[wasm_bindgen(getter, js_name = numLevels)]
+    pub fn num_levels(&self) -> usize {
+        self.0.channel(0).map_or(0, |p| p.num_levels())
+    }
+
+    /// The bucket size (source samples per entry) of `level`, or `undefined`.
+    #[wasm_bindgen(js_name = levelBucket)]
+    pub fn level_bucket(&self, level: usize) -> Option<usize> {
+        self.0.channel(0).and_then(|p| p.level_bucket(level))
+    }
+
+    /// The level whose buckets match `samples_per_px` — the finest one that
+    /// still aggregates about a bucket per pixel column.
+    #[wasm_bindgen(js_name = levelFor)]
+    pub fn level_for(&self, samples_per_px: f64) -> usize {
+        self.0.channel(0).map_or(0, |p| p.level_for(samples_per_px))
+    }
+
+    /// One column: the `[min, max]` of channel `ch` over `[s0, s1)` at
+    /// `level`. `undefined` for an unknown channel or an empty level.
+    pub fn column(&self, ch: usize, level: usize, s0: f64, s1: f64) -> Option<Vec<f32>> {
+        let (lo, hi) = self.0.channel(ch)?.column(level, s0, s1)?;
+        Some(vec![lo, hi])
+    }
+
+    /// A whole pixel row in one crossing: `width` columns spanning
+    /// `[s0, s1)` of channel `ch`, as interleaved `[min, max]` pairs, read at
+    /// the level `s1 - s0` and `width` imply. This is the door a view calls
+    /// every frame — never one column per call, and never a resolution finer
+    /// than the screen. An empty array for an unknown channel or a
+    /// degenerate span.
+    pub fn columns(&self, ch: usize, s0: f64, s1: f64, width: usize) -> Vec<f32> {
+        let Some(pyramid) = self.0.channel(ch) else {
+            return Vec::new();
+        };
+        let span = s1 - s0;
+        if width == 0 || !span.is_finite() || span <= 0.0 {
+            return Vec::new();
+        }
+        let step = span / width as f64;
+        let level = pyramid.level_for(step);
+        let mut out = Vec::with_capacity(width * 2);
+        for i in 0..width {
+            let (a, b) = (s0 + step * i as f64, s0 + step * (i + 1) as f64);
+            let (lo, hi) = pyramid.column(level, a, b).unwrap_or((0.0, 0.0));
+            out.push(lo);
+            out.push(hi);
+        }
+        out
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

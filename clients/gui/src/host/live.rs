@@ -12,6 +12,8 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 
+use clausters_core::oscil;
+
 use super::BusSource;
 use super::widget::{Widget, WidgetKind};
 
@@ -161,12 +163,12 @@ pub(crate) fn update_tap_windows(
         if spec.hold {
             continue;
         }
-        let display = super::oscil::display_frames(spec.window_ms, sample_rate);
-        raw.resize(super::oscil::raw_frames(display), 0.0);
+        let display = oscil::display_frames(spec.window_ms, sample_rate);
+        raw.resize(oscil::raw_frames(display), 0.0);
         if !read_raw(spec.tap, &mut raw) {
             continue;
         }
-        let (start, locked) = super::oscil::align(&raw, display, spec.trigger);
+        let (start, locked) = oscil::align(&raw, display, spec.trigger);
         let end = (start + display).min(raw.len());
         chans.clear();
         chans.push(raw[start..end].to_vec());
@@ -248,7 +250,7 @@ pub(crate) fn update_phase_windows(
         if spec.hold {
             continue;
         }
-        let n = super::oscil::display_frames(spec.window_ms, sample_rate);
+        let n = oscil::display_frames(spec.window_ms, sample_rate);
         l.resize(n, 0.0);
         r.resize(n, 0.0);
         if !read_raw(spec.tap_l, &mut l) || !read_raw(spec.tap_r, &mut r) {
@@ -346,13 +348,13 @@ pub(crate) fn tap_stream_frames(tree: &Widget, sample_rate: f64) -> usize {
     let mut scopes = Vec::new();
     collect_tap_scopes(tree, &mut scopes);
     for s in scopes {
-        let display = super::oscil::display_frames(s.window_ms, sample_rate);
-        frames = frames.max(super::oscil::raw_frames(display));
+        let display = oscil::display_frames(s.window_ms, sample_rate);
+        frames = frames.max(oscil::raw_frames(display));
     }
     let mut phases = Vec::new();
     collect_phase_scopes(tree, &mut phases);
     for p in phases {
-        frames = frames.max(super::oscil::display_frames(p.window_ms, sample_rate));
+        frames = frames.max(oscil::display_frames(p.window_ms, sample_rate));
     }
     let mut spectra = Vec::new();
     collect_spectra(tree, &mut spectra);
