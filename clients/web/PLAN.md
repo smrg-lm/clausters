@@ -565,7 +565,7 @@ as a script and one as a page.
 
 **Acceptance:** every Python example either has a web page of the same name or a stated reason in the catalog for having none, and each ported page runs on the in-page engine with the carrier line marked.
 
-### W17 - Publishing: the npm registry and a third Read the Docs project
+### ✅ W17 - Publishing: the npm registry and a third Read the Docs project
 
 *Deferred out of W5*, which built the package and the book and left them on the
 machine. The distribution step, deliberately separate: the artifacts are held
@@ -578,8 +578,8 @@ publishable by a checker long before anyone runs `npm publish`.
 
 **Acceptance:** `npm install clausters` in an empty project yields a working client (the getting-started page's example runs against it unchanged), the web book is live and cross-linked in both directions, and the release's three version numbers agree.
 
-**In place, awaiting the tag.** The publication is **automated rather than
-manual**: `release.yml` grew a `publish-npm` job beside the PyPI one, so the
+**What shipped.** The publication is **automated rather than manual**:
+`release.yml` grew a `publish-npm` job beside the PyPI one, so the
 `v*` tag that cuts the wheel cuts the package too — one tag, one version,
 which is the only way the "package, crate and wheel are one release" rule can
 hold by construction rather than by memory. CI never builds `clients/web`, so
@@ -590,11 +590,28 @@ left are settled and recorded in `BUILD.md`: the wasm bundles **ship inside
 the tarball** (an install has to work offline, with no CDN), and the worklet
 is reached as `new URL("./worklet.js", import.meta.url)` — the form a bundler
 copies as an asset — with `workletUrl` as the escape hatch for one that does
-not. The prose, the badges and the inbound cross-links are already written for
-the published state.
+not.
 
-What is left is account-side and cannot be done from a working copy: the `npm`
-environment's token, the tag itself, and the Read the Docs project.
+**Three things only a clean checkout could find**, each fixed where it broke
+rather than worked around in the workflow — a release runner and a docs
+builder are the first machines that are not somebody's working copy:
+`clients/gui/Cargo.lock` was ignored while `build.sh` reads it (the
+`wasm-bindgen` pin is an agreement between two lockfiles, so one resolved
+fresh per machine is not a pin); the Read the Docs build installed no
+dependencies for the package whose tsconfig asks for the `node` type library;
+and TypeDoc could not resolve the wasm boundary, whose three declaration files
+are now versioned rather than putting a Rust toolchain on Read the Docs to
+recompile wgpu per doc build. Publishing is one-way, so the workflow gained
+two gates on the way: PyPI publishes only if npm did, and the release page
+waits for both — a half-published release is the one failure that cannot be
+retried.
+
+**Verified:** `clausters@0.4.1` installed from the registry into an empty
+project boots the engine in headless Chrome and plays a note (peak 0.100
+read off an analyser, the node freed afterwards); the wheel is on PyPI at the
+same version; the book is live, with the API pages generated on Read the Docs
+itself; the doc build was reproduced from `git archive` before the push, on a
+tree with no `node_modules` and no Rust.
 
 ### W18 - The `Session` facade
 
