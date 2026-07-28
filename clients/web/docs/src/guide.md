@@ -101,6 +101,8 @@ Two things around it are the browser's:
 - **The wake-up** sits behind a `Ticker`: a shared worker in a tab (a page's own timers are throttled to about a second in the background), `setTimeout` elsewhere. Tests fill the same seam by hand and so drive the real driver deterministically.
 - **The timebase** decides what the clock measures sleeps against and how emissions are stamped. `MonotonicTimebase` (the default) paces on `performance.now()` and sends NTP-timetagged bundles; `SampleTimebase` paces on the server's own sample counter and emits `/sched <absolute sample>`, which removes the drift between two clocks entirely. `server.sampleTimebase()` builds one — the `Server` anchors it because the `Server` is what knows the carrier, and **the clock itself never talks to a server**.
 
+[Routines and clocks](routines-and-clocks.md) is this layer written out, from a melody by hand to the patterns above it.
+
 Above that sit `Event` and `rest`, the value patterns (`Pseq`, `Pser`, `Prand`, `Pwhite`, `Pseries`, `Pgeom`, `Pfunc`, `Pn`, `Pconst`), `Pbind`, and the seekable counterpart: `Timeline`, a static beat-sorted list that `Timeline.fromPattern` can bounce a pattern into, played by a `Playhead` with play/stop/locate/loop. Random values come from the stream a routine derives when it is created, so `seed(n)` replays a whole piece. The model itself — what an event's keys mean, how `dur` and `sustain` differ, what `Pbind` does with a pattern of patterns — is the Python book's [routines and clocks](https://clausters-python.readthedocs.io/) chapters; it is the same model.
 
 ## Three things the browser changes

@@ -94,5 +94,6 @@ Nothing else in the page changes — that one line is the only place a carrier i
 ## Where to go next
 
 - [The client, layer by layer](guide.md) — the seam, the def model, the GUI driver and the clock.
+- [Routines and clocks](routines-and-clocks.md) — the note above, in time: a melody played from a generator on a `TempoClock`.
 - [Components](components.md) — handing a finished instrument to a page as a custom element.
 - [Examples](examples.md) — the runnable pages, including the one above.

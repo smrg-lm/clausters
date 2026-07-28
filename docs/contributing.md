@@ -103,8 +103,11 @@ is reproducible with the same line:
   declared as the `dev` group in its `pyproject.toml`
   (`pip install --group ./clients/python/pyproject.toml:dev`); the package
   itself has none. On Linux the staging step also needs **patchelf**.
-- **docs** — both mdBooks with the same mdBook version Read the Docs uses,
-  and the pydoc-markdown API page for the client book.
+- **docs** — the three mdBooks with the same mdBook version Read the Docs
+  uses, each with its own generated API pages: pydoc-markdown for the Python
+  client book, TypeDoc for the web client book. Each is built the way its own
+  Read the Docs project builds it, so a book that breaks there breaks here
+  first.
 - **faust** — the default `cargo test` covers it, with libfaust built from
   source at the commit pinned in the workflow (the recipe in
   `third_party/BUILD-FAUST.md`) and cached; a cache hit makes the job cheap.

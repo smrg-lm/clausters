@@ -196,7 +196,7 @@ everything is an element, in one of two modes — *generated* data, or the
 - Project-wide boundary rule: "only flat data crosses" (bytes/`array`/scalars/integers), in both the transport and the core.
 - Client milestone track prefixed with `C` so it does not collide with the server's `M` track; close each one with the project's milestone checklist (code+tests, a clear commit message, this plan's checkbox, developer/user docs where applicable, an example in `examples/`, a `docs/decisions.md` note only for a non-obvious choice, a `GUIA.md` smoke step only for new human-audible/visual behavior).
 - Code/comments/tests in English; the `PLAN.md` roadmaps and `docs/decisions.md` in English; `GUIA.md` and conversation with the user in Spanish.
-- Documentation is **two mdBooks, one per platform** (server `docs/`, Python client `clients/python/docs/`), cross-linked; the Python user doc for a client milestone goes in `clients/python/docs/`, and its API reference is generated from docstrings by pydoc-markdown. **No Sphinx/RST directives in docstrings and no milestone labels in any published doc** (labels live only in the `PLAN.md` roadmaps); `GUIA.md` stays a Spanish smoke checklist, out of the docs.
+- Documentation is **three mdBooks, one per platform** (server `docs/`, Python client `clients/python/docs/`, web client `clients/web/docs/`), cross-linked by their Read the Docs URLs; the Python user doc for a client milestone goes in `clients/python/docs/`, and its API reference is generated from docstrings by pydoc-markdown. **No Sphinx/RST directives in docstrings and no milestone labels in any published doc** (labels live only in the `PLAN.md` roadmaps); `GUIA.md` stays a Spanish smoke checklist, out of the docs.
 
 ## Verification
 

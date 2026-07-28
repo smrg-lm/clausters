@@ -215,15 +215,19 @@ Docs. Steps:
 
 1. **Pick the tier** — major / minor / patch — per *Versioning* below. (In our
    Spanish workflow: "hacé una release" plus the tier — mayor / menor / bugfix.)
-2. **Bump `version` in lockstep** across the six packages — the root
-   `Cargo.toml`, `crates/clausters-{core,ffi,midi}`, `clients/gui` and
-   `clients/python/pyproject.toml` — and refresh both lockfiles (the root
-   `Cargo.lock` and `clients/gui/Cargo.lock`, e.g. `cargo update -w --offline`).
+2. **Bump `version` in lockstep** across every package — the root `Cargo.toml`,
+   `crates/clausters-{core,ffi,midi,notation,core-web,web}`, `clients/gui`,
+   `clients/python/pyproject.toml` and `clients/web/package.json` (`npm version
+   X.Y.Z --no-git-tag-version`, which also moves `package-lock.json`) — and
+   refresh both lockfiles (the root `Cargo.lock` and `clients/gui/Cargo.lock`,
+   e.g. `cargo update -w --offline`). The web package's checker refuses a
+   version that disagrees with the crate's, so a miss there fails the release
+   rather than shipping a mismatch.
 3. If a binary boundary changed this cycle, bump the matching ABI counter (the
    linkage rule below).
 4. **Commit** (`release: vX.Y.Z`) and **push to `main`**.
 5. **Tag and push**: `git tag vX.Y.Z && git push origin vX.Y.Z`. The tag triggers
-   `release.yml`, whose three jobs:
+   `release.yml`, whose four jobs:
    - **build** — the self-contained wheel (client + embedded server + standalone
      binary + bundled libfaust/libLLVM + libverovio) and a server-binary tarball
      (Linux x86_64); the tarball version comes from the tag, the wheel version
@@ -233,13 +237,22 @@ Docs. Steps:
      `CLAUSTERS_REQUIRE_COMPLETE=1` — refuse every `CLAUSTERS_SKIP_*`, so no
      release can publish a wheel missing a piece that raises on the user's
      machine.
+   - **publish-npm** — builds the web package (the wasm bundles with the
+     lockfile-pinned `wasm-bindgen` CLI, then the emit), passes its checker and
+     publishes `clausters` to npm with provenance, authenticated by the
+     `NPM_TOKEN` of the `npm` environment.
    - **publish-pypi** — publishes the wheel to PyPI via Trusted Publishing (OIDC,
-     the `pypi` environment, no stored token).
+     the `pypi` environment, no stored token). It **waits for the npm job**:
+     publishing is one-way, so the release goes out whole or not at all, and
+     the npm leg carries the long build that can still fail.
    - **github-release** — creates the GitHub release with generated notes and
-     attaches both artifacts.
-6. **Read the Docs** rebuilds both books from the push/tag webhook (each project
-   selects its own `.readthedocs.yaml`); activate the new version in each RTD
-   project if it is not set to build tags automatically.
+     attaches the wheel and the tarball. It waits for both registries, so the
+     announcement never precedes what it announces.
+6. **Read the Docs** rebuilds the three books from the push/tag webhook (each
+   project selects its own `.readthedocs.yaml`); activate the new version in
+   each RTD project if it is not set to build tags automatically. A book whose
+   config broke in the tagged commit builds `latest` fine and fails `stable`
+   until the next tag — CI builds all three the same way for that reason.
 
 ### Versioning and the ABI counters
 

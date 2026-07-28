@@ -186,8 +186,12 @@ jobs:
           analyze: "true"
           name: python
 
+  # The three books, each built the way its own Read the Docs project builds
+  # it -- same mdBook version, same generators, same commands. That equivalence
+  # is the point: a book that breaks here would break there, and Read the Docs
+  # only reports it after the push, on a checkout nobody is watching.
   docs:
-    name: mdBooks (server + python client)
+    name: mdBooks (server + python + web clients)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -195,6 +199,9 @@ jobs:
         with:
           # Pinned like Read the Docs (pydoc-markdown's deps lag newest CPython).
           python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
       - name: Install mdBook (same version as the Read the Docs builds)
         run: |
           mkdir -p "$HOME/bin"
@@ -208,6 +215,19 @@ jobs:
         run: |
           cd clients/python
           pydoc-markdown
+          mdbook build docs
+      # TypeDoc parses with its own TypeScript, installed apart from the
+      # package's; the package's own dev dependencies are installed because
+      # its tsconfig asks for the `node` type library. No wasm and no Rust:
+      # the parse is static, over the three declaration files the repository
+      # carries. This mirrors clients/web/.readthedocs.yaml step for step.
+      - name: Web client book (TypeDoc API pages + book)
+        run: |
+          npm install --no-save --prefix "$HOME/typedoc" \
+            typedoc@0.28 typedoc-plugin-markdown@4 typescript@5.9
+          cd clients/web
+          npm ci
+          "$HOME/typedoc/node_modules/.bin/typedoc"
           mdbook build docs
 
   # The faust-linking half of the def-family matrix: the full default set
