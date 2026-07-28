@@ -588,6 +588,17 @@ impl Engine {
                     segment.tap_write(i, self.buses.audio(bus as usize));
                 }
             }
+            // Then the per-bus block level a meter reads: one pass over the
+            // block per bus, one relaxed store. This is what lets a meter name
+            // any audio bus without holding a tap ring.
+            for bus in 0..self.buses.audio_count().min(segment.audio_buses()) {
+                let peak = self
+                    .buses
+                    .audio(bus)
+                    .iter()
+                    .fold(0.0f32, |acc, s| acc.max(s.abs()));
+                segment.set_level(bus, peak);
+            }
             segment.clock().store(block_end, Ordering::Release);
         }
         self.counters
@@ -809,7 +820,19 @@ impl Engine {
                 Cmd::SetTap { tap, bus } => {
                     // Out-of-range indices were rejected on the network side.
                     if let Some(slot) = self.tap_buses.get_mut(tap) {
+                        let previous = *slot;
                         *slot = bus;
+                        // Publish the inverse in the segment, so a reader looks
+                        // the bus up instead of being told a ring index. One
+                        // relaxed-path store each, no allocation (RT-safe).
+                        if let Some(segment) = &self.ipc {
+                            if previous >= 0 {
+                                segment.set_tap_of_bus(previous as usize, None);
+                            }
+                            if bus >= 0 {
+                                segment.set_tap_of_bus(bus as usize, Some(tap));
+                            }
+                        }
                     }
                 }
                 Cmd::Schedule { time, cmds } => {

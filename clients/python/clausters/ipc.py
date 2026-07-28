@@ -42,7 +42,7 @@ from .errors import (
     ServerError,
 )
 
-ABI_VERSION = 3
+ABI_VERSION = 4
 
 # embed cdylib file names across platforms (Linux / macOS / Windows).
 _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
@@ -55,8 +55,11 @@ _EMBED_NAMES = ("libclausters.so", "libclausters.dylib", "clausters.dll")
 # buses (`--taps` slots of a 64-byte cursor line + a `--tap-frames` sample
 # ring, the region 64-byte aligned); this client reads the counts from the
 # header but does not map-read the rings — headless tap capture goes over
-# `/tap_stream` (see `Server.stream_taps`), the recorded G18 decision. The
-# whole file is mmap'd, so any control/tap count is supported.
+# `/tap_stream` (see `Server.stream_taps`), the recorded G18 decision. ABI v4
+# inserts the **audio-bus region** between the control buses and the taps: two
+# words per audio bus, the bus -> tap directory then the per-bus block level, so
+# a reader names a bus rather than a ring. The whole file is mmap'd, so any
+# control/tap count is supported.
 
 _MAGIC = 0x5541_4C43  # "CLAU"
 _HEADER_SIZE = 64
@@ -67,6 +70,7 @@ _OFF_CLOCK = 16  # u64
 _OFF_CONTROL_BUSES = 28  # u32: number of slots in the trailing control region
 _OFF_TAPS = 32  # u32: audio-tap ring count (ABI v3)
 _OFF_TAP_FRAMES = 36  # u32: per-tap ring capacity in samples (ABI v3)
+_OFF_AUDIO_BUSES = 40  # u32: audio-bus count of the bus region (ABI v4)
 _RING_CAPACITY = 64 * 1024
 _RING_HEADER = 64  # head u32, tail u32, padding
 _OFF_C2S = _HEADER_SIZE  # 64; rings come right after the header
@@ -76,11 +80,17 @@ _DEFAULT_CONTROL_BUSES = 1024
 _DEFAULT_TAPS = 8
 _DEFAULT_TAP_FRAMES = 16384
 _TAP_ALIGN = 64  # each tap slot: a 64-byte cursor line + the sample ring
+_NUM_AUDIO_BUSES = 128  # the bus region is always sized for the engine's cap
 
 
-def _tap_region_offset(control_buses: int) -> int:
-    controls_end = _OFF_CONTROLS + 4 * control_buses
-    return (controls_end + _TAP_ALIGN - 1) // _TAP_ALIGN * _TAP_ALIGN
+def _bus_region_offset(control_buses: int) -> int:
+    """Byte offset of the audio-bus region: right after the control slots."""
+    return _OFF_CONTROLS + 4 * control_buses
+
+
+def _tap_region_offset(control_buses: int, audio_buses: int = _NUM_AUDIO_BUSES) -> int:
+    buses_end = _bus_region_offset(control_buses) + 8 * audio_buses
+    return (buses_end + _TAP_ALIGN - 1) // _TAP_ALIGN * _TAP_ALIGN
 
 
 # Segment size for the default control-bus and tap counts (the actual size is
@@ -165,6 +175,10 @@ class ShmClient:
         #: over ``/tap_stream`` (``Server.stream_taps``) instead.
         self.taps = struct.unpack_from("<I", self.mm, _OFF_TAPS)[0]
         self.tap_frames = struct.unpack_from("<I", self.mm, _OFF_TAP_FRAMES)[0]
+        #: audio-bus count of the bus region (ABI v4), the length of both the
+        #: bus -> tap directory and the level table.
+        self.audio_buses = struct.unpack_from("<I", self.mm, _OFF_AUDIO_BUSES)[0]
+        self._buses_at = _bus_region_offset(self.control_buses)
         self._c2s = _Ring(self.mm, _OFF_C2S)  # we produce here
         self._s2c = _Ring(self.mm, _OFF_S2C)  # we consume here
 
@@ -189,6 +203,24 @@ class ShmClient:
         if not 0 <= index < self.control_buses:
             raise IndexError(f"control bus {index} out of range 0..{self.control_buses}")
         struct.pack_into("<f", self.mm, _OFF_CONTROLS + 4 * index, value)
+
+    def level(self, bus: int) -> float:
+        """Audio bus `bus`'s level: the peak magnitude of the engine's last
+        block. One number per block, published for every audio bus — what a
+        meter reads, and why metering a bus costs no tap ring.
+        """
+        if not 0 <= bus < self.audio_buses:
+            raise IndexError(f"audio bus {bus} out of range 0..{self.audio_buses}")
+        return struct.unpack_from("<f", self.mm, self._buses_at + 4 * self.audio_buses + 4 * bus)[0]
+
+    def tap_of_bus(self, bus: int) -> "int | None":
+        """Which tap ring is recording audio bus `bus`, or ``None``. The ring
+        index is the segment's own bookkeeping — a reader names the bus.
+        """
+        if not 0 <= bus < self.audio_buses:
+            raise IndexError(f"audio bus {bus} out of range 0..{self.audio_buses}")
+        tap = struct.unpack_from("<i", self.mm, self._buses_at + 4 * bus)[0]
+        return tap if tap >= 0 else None
 
     # -- command plane: OSC packets through the ring --
 

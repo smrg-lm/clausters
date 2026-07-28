@@ -108,12 +108,47 @@ fn file_segments_validate_magic_and_version() {
     let _ = std::fs::remove_file(&path);
     // Pins the layout for out-of-process clients (clients/python parses
     // these offsets): changing the *structure* requires bumping ABI_VERSION.
-    // This is the default-count instance of the v3 layout: header + rings +
-    // 16384 default control buses, aligned to 64, plus 8 default taps ×
-    // (64-byte cursor line + 16384 × f32 ring). The counts travel in the
-    // header, so a non-default boot changes the size, never the offsets'
-    // derivation.
-    assert_eq!(SEGMENT_SIZE, 721_600);
+    // This is the default-count instance of the v4 layout: header + rings +
+    // 16384 default control buses, then the audio-bus region (128 buses × two
+    // words: the bus -> tap directory and the block levels), aligned to 64,
+    // plus 8 default taps × (64-byte cursor line + 16384 × f32 ring). The
+    // counts travel in the header, so a non-default boot changes the size,
+    // never the offsets' derivation.
+    assert_eq!(SEGMENT_SIZE, 722_624);
+}
+
+/// The audio-bus region (ABI v4): the bus is the key. A reader names the audio
+/// bus it wants and finds both where its samples land (the directory) and its
+/// block level (the meter's number), so no ring index reaches an API.
+#[test]
+fn the_bus_region_maps_buses_to_taps_and_holds_their_levels() {
+    let segment = Segment::in_memory_full(8, 2, 256);
+    let buses = segment.audio_buses();
+    assert!(buses > 0);
+
+    // Nothing is recorded and everything is silent until something says so.
+    assert_eq!(segment.tap_of_bus(0), None);
+    assert_eq!(segment.level(0), 0.0);
+
+    segment.set_tap_of_bus(5, Some(1));
+    assert_eq!(segment.tap_of_bus(5), Some(1));
+    assert_eq!(segment.tap_of_bus(4), None, "only the named bus moves");
+    segment.set_tap_of_bus(5, None);
+    assert_eq!(segment.tap_of_bus(5), None);
+
+    // The levels are a second array over the same key, independent of it: a
+    // metered bus needs no tap at all.
+    segment.set_level(5, 0.25);
+    segment.set_level(6, 1.0);
+    assert_eq!(segment.level(5), 0.25);
+    assert_eq!(segment.level(6), 1.0);
+    assert_eq!(segment.tap_of_bus(5), None);
+
+    // Out of range reads as absent/silent and writes are dropped, never UB.
+    assert_eq!(segment.tap_of_bus(buses), None);
+    assert_eq!(segment.level(buses), 0.0);
+    segment.set_tap_of_bus(buses, Some(0));
+    segment.set_level(buses, 1.0);
 }
 
 /// The audio-tap rings (ABI v3): block writes, the newest-window read, the

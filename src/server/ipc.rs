@@ -20,11 +20,15 @@
 //!   by the audio thread (one extra atomic store per block — M8 anchors with
 //!   zero UDP jitter), the 1024 control buses as raw atomics (the engine
 //!   reads *these very words* through `InCtl`: a client write is live on the
-//!   next block, no command involved), and the **audio taps** (ABI v3): a
+//!   next block, no command involved), the **audio taps** (ABI v3): a
 //!   fixed set of single-channel sample rings the audio thread appends a
 //!   block to whenever `/tap` routes an audio bus into one, read lock-free by
 //!   a peer each display frame — the audio-rate sibling of the control buses
-//!   (SuperCollider's `ScopeOut2` scope buffers play this role);
+//!   (SuperCollider's `ScopeOut2` scope buffers play this role) — and the
+//!   **audio-bus region** (ABI v4): two words per audio bus, the bus → tap
+//!   directory and the block level, both keyed by the bus so a reader names a
+//!   bus and never a ring, and a meter costs one number per block instead of
+//!   a whole tap;
 //! - the **command plane**: two SPSC byte rings (client→server and
 //!   server→client) carrying ordinary length-prefixed OSC packets. The
 //!   network thread drains the inbound ring in its loop and routes replies
@@ -47,14 +51,14 @@ use std::io;
 #[cfg(unix)]
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 
-use crate::dsp::{BLOCK_SIZE, ControlBuses, NUM_CONTROL_BUSES};
+use crate::dsp::{BLOCK_SIZE, ControlBuses, NUM_AUDIO_BUSES, NUM_CONTROL_BUSES};
 
 /// "CLAU" little-endian.
 pub const MAGIC: u32 = 0x5541_4C43;
 /// Bump on **any** layout change: attaching rejects mismatches.
-pub const ABI_VERSION: u32 = 3;
+pub const ABI_VERSION: u32 = 4;
 /// Byte capacity of each ring (power of two).
 pub const RING_CAPACITY: usize = 64 * 1024;
 /// Default audio-tap count (`--taps`).
@@ -81,7 +85,10 @@ struct Header {
     /// region trails the control buses (see [`Segment::tap_region_offset`]).
     taps: u32,
     tap_frames: u32,
-    _reserved: [u32; 6],
+    /// Audio-bus count (ABI v4): the length of the per-bus directory and level
+    /// table that sit between the control slots and the tap region.
+    audio_buses: u32,
+    _reserved: [u32; 5],
 }
 
 #[repr(C)]
@@ -108,11 +115,26 @@ struct Layout {
     s2c: Ring,
 }
 
-/// Byte offset of the tap region: the control slots' end, rounded up to
+/// Byte offset of the **audio-bus region** (ABI v4): the control slots' end.
+/// Two arrays of one word per audio bus follow, the directory then the levels
+/// (see [`Segment::tap_of_bus`] and [`Segment::level`]).
+const fn bus_region_offset(control_buses: usize) -> usize {
+    size_of::<Layout>() + control_buses * size_of::<AtomicU32>()
+}
+
+/// Byte size of the audio-bus region: the bus → tap directory (`AtomicI32`
+/// each) followed by the per-bus block levels (`AtomicU32`, `f32` bits). It is
+/// always sized for the compile-time cap ([`NUM_AUDIO_BUSES`]) — 1 KiB, small
+/// enough that making it a runtime parameter would buy nothing.
+const fn bus_region_size(audio_buses: usize) -> usize {
+    2 * audio_buses * size_of::<AtomicU32>()
+}
+
+/// Byte offset of the tap region: the audio-bus region's end, rounded up to
 /// [`TAP_ALIGN`] so the first tap cursor is cache-line aligned.
 const fn tap_region_offset(control_buses: usize) -> usize {
-    let controls_end = size_of::<Layout>() + control_buses * size_of::<AtomicU32>();
-    controls_end.div_ceil(TAP_ALIGN) * TAP_ALIGN
+    let buses_end = bus_region_offset(control_buses) + bus_region_size(NUM_AUDIO_BUSES);
+    buses_end.div_ceil(TAP_ALIGN) * TAP_ALIGN
 }
 
 /// Byte size of one tap slot: a cache line for the cursor, then the sample
@@ -122,8 +144,9 @@ const fn tap_slot_size(tap_frames: usize) -> usize {
     TAP_ALIGN + tap_frames * size_of::<f32>()
 }
 
-/// Total byte size of a segment carrying `control_buses` control slots and
-/// `taps` audio-tap rings of `tap_frames` samples each.
+/// Total byte size of a segment carrying `control_buses` control slots, the
+/// fixed audio-bus region, and `taps` audio-tap rings of `tap_frames` samples
+/// each.
 const fn segment_size(control_buses: usize, taps: usize, tap_frames: usize) -> usize {
     tap_region_offset(control_buses) + taps * tap_slot_size(tap_frames)
 }
@@ -297,6 +320,13 @@ impl Segment {
         header.control_buses = control_buses as u32;
         header.taps = taps as u32;
         header.tap_frames = tap_frames as u32;
+        header.audio_buses = NUM_AUDIO_BUSES as u32;
+        // A zeroed directory would read as "every bus is recorded by tap 0";
+        // `-1` is the absent marker, the same one `/tap` uses. The levels are
+        // fine zeroed: those bits are `0.0`, which is silence.
+        for bus in 0..NUM_AUDIO_BUSES {
+            self.set_tap_of_bus(bus, None);
+        }
         header.abi_version = ABI_VERSION;
         // Written last: a client that sees the magic sees a full header.
         header.magic = MAGIC;
@@ -342,6 +372,73 @@ impl Segment {
         let ptr = self.controls_ptr();
         // SAFETY: the region is part of the segment, kept alive by the Arc.
         unsafe { ControlBuses::from_raw(ptr, count, Arc::clone(self) as _) }
+    }
+
+    /// Number of audio buses the segment's per-bus region covers.
+    pub fn audio_buses(&self) -> usize {
+        self.layout().header.audio_buses as usize
+    }
+
+    /// Base of the audio-bus region: the directory array, the levels right
+    /// after it.
+    fn bus_region_ptr(&self) -> *const AtomicI32 {
+        let offset = bus_region_offset(self.layout().header.control_buses as usize);
+        // SAFETY: the constructors sized the backing for the bus region.
+        unsafe { (self.layout as *const u8).add(offset) as *const AtomicI32 }
+    }
+
+    /// The directory cell of audio bus `bus`: which tap ring is recording it,
+    /// or `-1`. **The bus is the key** — a reader names the bus it wants to
+    /// see and finds where the samples land, so the ring index stays an
+    /// implementation detail of this segment and never reaches an API.
+    fn bus_tap_cell(&self, bus: usize) -> Option<&AtomicI32> {
+        (bus < self.audio_buses()).then(|| {
+            // SAFETY: bounds-checked against the header's own count.
+            unsafe { &*self.bus_region_ptr().add(bus) }
+        })
+    }
+
+    /// The block-level cell of audio bus `bus` (`f32` bits).
+    fn bus_level_cell(&self, bus: usize) -> Option<&AtomicU32> {
+        let count = self.audio_buses();
+        (bus < count).then(|| {
+            // SAFETY: the levels are the second array of the bus region,
+            // bounds-checked against the header's own count.
+            unsafe { &*(self.bus_region_ptr().add(count + bus) as *const AtomicU32) }
+        })
+    }
+
+    /// Which tap ring records audio bus `bus`, or `None` when nothing does.
+    pub fn tap_of_bus(&self, bus: usize) -> Option<usize> {
+        match self.bus_tap_cell(bus)?.load(Ordering::Acquire) {
+            i if i >= 0 => Some(i as usize),
+            _ => None,
+        }
+    }
+
+    /// Publishes (or clears, with `None`) the ring recording audio bus `bus`.
+    /// Written by the server when it starts or stops recording a bus.
+    pub fn set_tap_of_bus(&self, bus: usize, tap: Option<usize>) {
+        if let Some(cell) = self.bus_tap_cell(bus) {
+            cell.store(tap.map_or(-1, |i| i as i32), Ordering::Release);
+        }
+    }
+
+    /// Audio bus `bus`'s level: the peak magnitude of the last block the
+    /// engine processed, or `0.0` where the bus is silent or out of range.
+    /// This is what a meter reads — one number per block instead of a ring,
+    /// so metering every bus costs no tap.
+    pub fn level(&self, bus: usize) -> f32 {
+        self.bus_level_cell(bus)
+            .map_or(0.0, |cell| f32::from_bits(cell.load(Ordering::Relaxed)))
+    }
+
+    /// Publishes audio bus `bus`'s block level. **Audio-thread safe**: one
+    /// relaxed store, no allocation, no lock.
+    pub fn set_level(&self, bus: usize, peak: f32) {
+        if let Some(cell) = self.bus_level_cell(bus) {
+            cell.store(peak.to_bits(), Ordering::Relaxed);
+        }
     }
 
     /// Number of audio-tap rings in the segment.
