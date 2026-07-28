@@ -127,6 +127,12 @@ export interface TimelineOptions extends WidgetOptions {
      * sweeps on its own from there (negative = none).
      */
     playheadAt?: number;
+    /**
+     * A **static** playhead: where the transport's cursor stands while
+     * nothing is sweeping (negative = none). `playheadAt` wins while it is
+     * set, so a transport parks the line here when it pauses or locates.
+     */
+    playhead?: number;
     /** The vertical display window (normalized; `0, 1` is the full axis). */
     yStart?: number;
     yLen?: number;
@@ -1082,7 +1088,7 @@ export function canvas(
 function timelineProps(options: TimelineOptions): Props {
     const {
         ruler, sampleRate, tempo, beatAt, quant, selStart, selLen,
-        playheadAt, yStart, yLen, link, ...rest
+        playheadAt, playhead, yStart, yLen, link, ...rest
     } = options;
     return {
         ...rest,
@@ -1095,6 +1101,7 @@ function timelineProps(options: TimelineOptions): Props {
             ["sel_start", selStart],
             ["sel_len", selLen],
             ["playhead_at", playheadAt],
+            ["playhead", playhead],
             ["y_start", yStart],
             ["y_len", yLen],
             ["link", link],

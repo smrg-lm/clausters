@@ -79,6 +79,15 @@ Widgets are addressed by **name**, not by integer id. A **bound** widget's value
 
 On this page, the host draws **one canvas per `window`-rooted def**, and the page supplies the canvas: `attach(defId, canvas)`, with the size and the visibility told to the host rather than read from the DOM. A canvas out of the viewport stops drawing and drops its buses from the streams it was subscribed to.
 
+The size is the **document's**, not the host's. A canvas starts at the host's default, so bind it to the element that should govern it:
+
+```js
+const win = host.open(tree);
+const stop = (await guiHost()).fit(win.id, container);   // and follows it
+```
+
+`fit` sets the canvas' backing store from the element's box in device pixels and tells the host, then keeps doing it as the box changes — so the drawing is as wide as the layout allows on a desktop and as wide as the screen on a phone, with no fixed size anywhere. A `<clausters-bundle>` component does exactly this for its own element; a script that opens a window calls it once.
+
 ## The clock and the patterns
 
 `TempoClock` is musical time and the driver that resumes routines on it.

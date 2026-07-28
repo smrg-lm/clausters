@@ -45,8 +45,45 @@ export interface ClaustersGui {
      * show several at once; omit `canvas` to use the page's default one.
      */
     attach(defId: number, canvas?: HTMLCanvasElement): void;
+    /**
+     * Binds a def's canvas to an element's box, so the drawing is as wide as
+     * the **document** makes it — full width on a phone, whatever the layout
+     * gives it on a desktop — instead of the host's fixed default.
+     *
+     * The canvas' backing store follows the element in device pixels (the
+     * host never reads the DOM, so the page reports the size) and the host is
+     * told on every change. This is the same rule a `<clausters-bundle>`
+     * component follows; a script that opens its own window calls it once,
+     * after `open`, and gets the same behaviour:
+     *
+     * ```js
+     * const win = host.open(tree);
+     * const stop = (await guiHost()).fit(win.id, container);
+     * ```
+     *
+     * Returns the disposer that stops observing (the canvas keeps its last
+     * size). `canvas` defaults to the page's shared one.
+     */
+    fit(
+        defId: number,
+        element: Element,
+        canvas?: HTMLCanvasElement,
+    ): () => void;
     addEvent(listener: EventListener): void;
     removeEvent(listener: EventListener): void;
+}
+
+/**
+ * One element box in device pixels, floored at 1 so a hidden element never
+ * asks for a zero-sized surface.
+ */
+export function devicePixelBox(element: Element): [number, number] {
+    const ratio = globalThis.devicePixelRatio || 1;
+    const box = element.getBoundingClientRect();
+    return [
+        Math.max(1, Math.round(box.width * ratio)),
+        Math.max(1, Math.round(box.height * ratio)),
+    ];
 }
 
 let instance: Promise<ClaustersGui> | null = null;
@@ -101,6 +138,19 @@ async function boot(): Promise<ClaustersGui> {
         bridge,
         canvas,
         attach: (defId, element) => bridge.attach(defId, element ?? canvas),
+        fit: (defId, element, target) => {
+            const surface = target ?? canvas;
+            const apply = () => {
+                const [width, height] = devicePixelBox(element);
+                surface.width = width;
+                surface.height = height;
+                bridge.resize(defId, width, height);
+            };
+            apply();
+            const observer = new ResizeObserver(apply);
+            observer.observe(element);
+            return () => observer.disconnect();
+        },
         addEvent: (listener) => listeners.add(listener),
         removeEvent: (listener) => listeners.delete(listener),
     };

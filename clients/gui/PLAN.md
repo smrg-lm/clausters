@@ -420,6 +420,69 @@ Open lines (unnumbered until a design converges):
 - **More edit verbs.** The payload is a tag plus flat primitives, so duration, accidentals, articulation and stem direction extend it without touching the protocol — each is a Verovio editor action plus a client method, the `"transpose"` shape reused.
 - **Notation as a composition surface.** The `score` is a view of a *score*; binding it to the arrangement (`clausters.form`) the way `track`/`clip` are bound is the open question the multitrack and piano-roll views already answered for their own material.
 
+## G32: host gaps the editor example turned up
+
+Three of them, found while porting `gui_editor.py` to the browser. The first
+two are **platform-independent** — they live in the shared widget/render code,
+so the native front has them too — and are about a view that is *driven* rather
+than merely opened; the third is the browser front's.
+
+**The playhead cannot follow a loop.** The swept line is one subtraction in
+`host::frame`: a timeline view with `playhead_at >= 0` draws at
+`sample_clock - playhead_at`. That is the whole reason following a transport
+costs **no messages** — the line is redrawn from Rust every frame at the
+display's rate, not sent by a client — and it is exactly right for a straight
+pass. It has no notion of a loop, so anything that repeats a region — an
+editor's "play selection" (a `Phasor` sweeping between two frames), a looping
+clip, a looped timeline range — cannot be followed at all: the line runs past
+the region and off the view. The workaround a client can reach for is worse
+than the gap: re-anchoring per pass puts a message back in the loop and drifts
+against the audio, and re-sending a position per frame gives up the property
+the anchor exists for.
+
+The fix belongs in the chrome every timeline view shares (`EditorProps`), so
+`waveform`, `spectrogram`, `track`, `clip`, `pianoroll` and `score` get it at
+once. Two shapes to weigh in the design: **(a)** an explicit loop —
+`playhead_loop_start` / `playhead_loop_len`, with the swept position becoming
+`start + ((sample_clock - playhead_at) mod len)` and `len <= 0` keeping today's
+straight sweep; or **(b)** a `playhead_loop` flag that wraps within the
+existing **selection**, which is what an editor loops in practice and costs one
+boolean. (a) is the more general and does not tie playback to a selection a
+gesture can change under it; (b) reads better in the one case that motivated
+this. Whichever lands, the static `playhead` (the parked cursor) keeps its
+current meaning, and a client sends **one** message per transport state change,
+as now.
+
+**A heavy view's source is fixed once sent.** `/gui_set` applies the chrome
+(selection, playhead, rulers, the spectrogram's contrast) but not `buffer`,
+`path`, `cache`, `data` or `blob`: `widget::apply` has no arm for them. So an
+editor that opens a second file must close its window and send a new GuiDef,
+losing the navigation, the selection and the group the user was working in. The
+question to settle is whether a source swap is worth its cost — it drops the
+peak pyramid and the STFT cache and re-fetches, which is most of the work of a
+new def anyway — or whether the honest answer is that a view *is* its source
+and the client should redefine. If it lands, the reset must be explicit about
+what survives (the view window? the selection? the link group?), which is the
+part that makes it a design and not a patch.
+
+**A canvas starts at the host's size, not the page's.** The browser front
+creates every surface with `CANVAS_SIZE` (480x420, `host::web`), overriding
+whatever the element already measured — so a page that sizes its canvas before
+the def goes out sees it reset. There *is* a way through, and it is the right
+one: `GuiBridge::resize`, which is what a `<clausters-bundle>` drives from its
+`ResizeObserver`; the web client now offers it to any script as
+`guiHost().fit(defId, element)`, so this is no longer a wall. What remains is
+the smaller correctness point: when the page supplies a canvas that already has
+a size, the front should adopt it instead of stamping the default on top and
+waiting to be corrected.
+
+**Acceptance:** an editor plays a selected region in a loop and the line sweeps
+that region, wrapping, with one message sent when playback starts and none
+after — asserted natively and in the browser front, since the sweep is shared
+code; a view fed a second buffer redraws from it without the window being
+redefined, if the source swap lands; and a canvas supplied at a size keeps it,
+with no `resize` needed to correct the default.
+
 ## L track — the look: layout, sizing and themes for the light widgets
 
 Section added 2026-07-19; ordered before the P track because the patcher's surfaces build on exactly these primitives — a positioned child, a themed accent, a sized label. This track delivers what the layout engine deliberately deferred ("children are evenly sized at this milestone") plus the customization the protocol has none of today: no color prop on any widget, no per-child size, no text size or wrap, margin/gap as compiled constants. The goal is versatility of *composition* — a script must be able to build a real application face (a menu bar, a working area, a status bar) from the same light elements — while the elements themselves stay simple and cheap to draw: flexibility lives in the layout and the theme, never in the widgets' drawing cost. Four design rules bound it, all in the direction of keeping the host light:

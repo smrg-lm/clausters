@@ -33,7 +33,7 @@
 // its resolved def id.
 
 import { server } from "./engine/server.ts";
-import { guiHost } from "./gui/page.ts";
+import { devicePixelBox, guiHost } from "./gui/page.ts";
 import { openBundle, startBundle } from "./bundle.ts";
 import type { Mounted } from "./bundle.ts";
 
@@ -227,10 +227,7 @@ export class ClaustersBundle extends HTMLElement {
      * the host never reads the DOM, so the element reports the pixels.
      */
     private sizeCanvas(): void {
-        const ratio = globalThis.devicePixelRatio || 1;
-        const box = this.getBoundingClientRect();
-        const width = Math.max(1, Math.round((box.width || this.canvas.width) * ratio));
-        const height = Math.max(1, Math.round((box.height || this.canvas.height) * ratio));
+        const [width, height] = devicePixelBox(this);
         this.canvas.width = width;
         this.canvas.height = height;
     }
@@ -244,10 +241,7 @@ export class ClaustersBundle extends HTMLElement {
         const defId = this.mounted?.defId;
         if (defId === undefined) return;
         this.resizeObserver = new ResizeObserver(() => {
-            const ratio = globalThis.devicePixelRatio || 1;
-            const box = this.getBoundingClientRect();
-            const width = Math.max(1, Math.round(box.width * ratio));
-            const height = Math.max(1, Math.round(box.height * ratio));
+            const [width, height] = devicePixelBox(this);
             void guiHost().then((gui) => gui.bridge.resize(defId, width, height));
         });
         this.resizeObserver.observe(this);

@@ -9,14 +9,20 @@
       html, body { margin: 0; min-height: 100%; background: #0d0d12;
                    color: #dddddd; font-family: system-ui, sans-serif; }
       main { padding: 16px; display: flex; flex-direction: column; gap: 12px;
-             align-items: flex-start; max-width: 52rem; }
+             align-items: flex-start; max-width: 76rem; }
+      #note { max-width: 52rem; }
       #note { font-size: 13px; line-height: 1.5; }
+      #log { max-width: 52rem; }
       button, input[type=file] { font: inherit; }
       button { padding: 4px 10px; }
       pre { background: #1a1a22; padding: 8px 12px; font-size: 12px;
             white-space: pre-wrap; align-self: stretch; }
       .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-      canvas { display: block; }
+      /* The canvas is an element: the document sizes it, and the host draws
+         into whatever it gets — full width here, and just as full on a
+         phone. */
+      #stage { align-self: stretch; height: min(70vh, 560px); }
+      #stage canvas { display: block; width: 100%; height: 100%; }
     </style>
   </head>
   <body>
@@ -34,10 +40,12 @@ comes back to this script as a <code>/gui_event</code>.
 
 The transport is part of the same window: <b>play</b> starts a
 <code>PlayBuf</code> and anchors the host's <b>playhead</b> to the engine's
-sample clock, so it sweeps on its own with no per-frame message; <b>pause</b> is
-<code>/n_run 0</code>, which freezes the node with its buffer position intact;
-<b>stop</b> frees it. <b>play selection</b> reads the selected region instead,
-with a <code>Phasor</code> looping between its bounds.
+sample clock — the line is then drawn from Rust every frame, at the display's
+rate and with no message per frame; <b>pause</b> is <code>/n_run 0</code>, which
+freezes the node with its buffer position intact, and parks the line where it
+stopped; <b>stop</b> frees it. <b>play selection</b> reads the selected region
+instead, with a <code>Phasor</code> looping between its bounds — and shows no
+line, because the host's sweep is linear and cannot yet wrap a loop.
 
 Nothing is drawn by this page: the canvas below belongs to the host. (For the
 other direction — the same data read by the script and drawn by hand — see
@@ -51,6 +59,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         <button id="tone" disabled>or: a generated tone</button>
       </div>
 
+      <div id="stage"></div>
       <pre id="log"></pre>
     </main>
 
@@ -64,7 +73,8 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       const el = (id) => document.getElementById(id);
       const log = (line) => { el("log").textContent += line + "\n"; };
 
-      let server, host, raw, win = null;
+      let server, host, raw, page, win = null;
+      let unfit = null;           // stops the canvas following its element
       let buffer = null;          // the loaded Buffer handle
       let voice = null;           // the sounding node, if any
       let paused = 0;             // engine samples spent paused, this pass
@@ -109,7 +119,9 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
 
       // ---- the window ----
       const scene = (buf) => gui.window(
-        { title: "editor", w: 900, h: 620, layout: "col", margin: 8.0, gap: 8.0 },
+        // No w/h: the layout uses the canvas the document supplies, whatever
+        // size that is.
+        { title: "editor", layout: "col", margin: 8.0, gap: 8.0 },
         gui.label(`buffer ${buf.bufnum}: ${buf.frames} frames, `
           + `${buf.channels} ch at ${buf.sampleRate} Hz`, { h: 22 }),
         gui.waveform({
@@ -134,9 +146,13 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       // The host sweeps the playhead itself from `playhead_at`: the engine
       // clock value at timeline position 0. Anchoring it is the whole of
       // "follow what you hear" — there is no per-frame message.
-      const setPlayhead = (sample) => {
-        win?.widget("wave").set({ playhead_at: sample });
-        win?.widget("stft").set({ playhead_at: sample });
+      // The host sweeps from `playhead_at` and parks on the static
+      // `playhead`, so a transport has both states without a message per
+      // frame: sweeping while it plays, standing still where it stopped.
+      const setPlayhead = ({ from = -1, at = -1 } = {}) => {
+        for (const name of ["wave", "stft"]) {
+          win?.widget(name).set({ playhead_at: from, playhead: at });
+        }
       };
 
       async function play() {
@@ -145,7 +161,7 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         paused = 0;
         voice = server.synth(`editor_player_${buffer.channels}`,
                              { buf: buffer.bufnum });
-        setPlayhead(anchor);
+        setPlayhead({ from: anchor });
         log("play");
       }
 
@@ -156,9 +172,15 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         voice = server.synth(`editor_region_${buffer.channels}`, {
           buf: buffer.bufnum, start, end: start + len,
         });
-        // The playhead is a straight sweep from position 0, so a looping
-        // region has none: what marks the region is the selection itself.
-        setPlayhead(-1);
+        // No playhead here, deliberately. The host sweeps the line itself,
+        // every frame, from one anchor — which is why a sweeping playhead
+        // costs no messages at all — but that sweep is linear and knows
+        // nothing about a loop. Following a repeating region from this script
+        // would mean sending a position per frame, which is precisely what
+        // the anchor exists to avoid, so the line stays off until the host
+        // learns to wrap it (a gap recorded in the GUI roadmap). What marks
+        // the region meanwhile is the selection band itself.
+        setPlayhead();
         log(`playing the selection: ${start.toFixed(0)} +${len.toFixed(0)} frames`);
       }
 
@@ -167,13 +189,14 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         if (pausedAt === 0) {
           server.pause(voice);
           pausedAt = await raw.clock();
-          setPlayhead(-1);          // a paused playhead has no anchor to sweep from
+          // Stop sweeping, and park the line where it stopped.
+          setPlayhead({ at: pausedAt - anchor - paused });
           log("paused (the node keeps its buffer position)");
         } else {
           server.resume(voice);
           paused += (await raw.clock()) - pausedAt;
           pausedAt = 0;
-          setPlayhead(anchor + paused);   // re-anchored past the silence
+          setPlayhead({ from: anchor + paused });   // re-anchored past the silence
           log("resumed");
         }
       }
@@ -181,10 +204,14 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
       function stop() {
         if (voice) { voice.free(); voice = null; }
         pausedAt = 0;
-        setPlayhead(-1);
+        setPlayhead();          // neither sweeping nor parked
       }
 
       // ---- opening a buffer ----
+      // The window is re-opened per buffer because a heavy view's **source**
+      // (`buffer`/`path`/`cache`) is fixed when the GuiDef is sent: the host
+      // applies chrome props live (selection, playhead, rulers) but not the
+      // samples a view is fed from. The chrome below is set live.
       async function openBuffer(buf) {
         stop();
         if (buffer) server.freeBuffer(buffer);
@@ -197,6 +224,10 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         win?.close();
         selection = null;
         win = host.open(scene(buf));
+        // The canvas follows the element from here on (and keeps following it
+        // when the window is resized or a phone is turned).
+        unfit?.();
+        unfit = page.fit(win.id, el("stage"));
         win.widget("play").onEvent((down) => { if (down) play(); });
         win.widget("pause").onEvent((down) => { if (down) pause(); });
         win.widget("stop").onEvent((down) => { if (down) { stop(); log("stop"); } });
@@ -222,13 +253,23 @@ Everything runs on the <b>in-page engine</b>: no server process, no socket.</div
         await raw.resume();
         server = await Server.open(await pageConnection());
         host = await GuiHost.page();
-        // The host's canvas is the page's; place it where the document wants.
-        const { canvas } = await guiHost();
-        canvas.style.maxWidth = "100%";
+        // The host makes the canvas and the **document places it**: it is an
+        // element like any other, so it goes where this page's markup says —
+        // here above the log. Its *size* is the page's too: `fit` below binds
+        // it to the container's box, so the drawing follows the layout at the
+        // display's true resolution instead of the host's fixed default.
+        page = await guiHost();
+        el("stage").append(page.canvas);
+
 
         el("file").disabled = false;
         el("tone").disabled = false;
-        log("pick an audio file, or generate a tone");
+
+        // The editor is on screen before there is anything to hear: an empty
+        // buffer draws a silent timeline with its rulers, and picking a file
+        // replaces it.
+        await openBuffer(await server.allocBuffer(Math.round(4 * 48000), 1));
+        log("an empty editor — pick an audio file, or generate a tone");
       }
 
       // A file the browser decodes, installed into the engine's buffer pool:
