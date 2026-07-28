@@ -106,6 +106,12 @@ pub struct OscServer {
     /// Active `/tap_stream` subscriptions, at most one per client: the same
     /// network counterpart for the audio-tap rings. Pumped by the run loop.
     tap_streams: Vec<TapStream>,
+    /// Which audio bus each tap ring is recording (`-1` = free), and how many
+    /// watchers asked for it. **The server owns the rings**: a client names a
+    /// bus and never an index, so this table is the whole of the bus -> ring
+    /// assignment (its inverse is published in the segment for readers).
+    tap_rings: Vec<i32>,
+    tap_refs: Vec<u32>,
     /// Scratch window for tap snapshots, sized to the largest subscribed
     /// window; reused across pumps.
     tap_buf: Vec<f32>,
@@ -197,7 +203,9 @@ struct TapStream {
     period: Duration,
     /// Snapshot window in samples (≤ [`MAX_TAP_WINDOW`], ≤ half the tap ring).
     frames: usize,
-    taps: Vec<i32>,
+    /// The audio buses this subscription watches. It holds a watch on each for
+    /// its lifetime, so a streaming client never issues `/tap` itself.
+    buses: Vec<i32>,
     /// In [`OscServer::mono_secs`] seconds (wall or sample time).
     next_due: f64,
 }
@@ -249,6 +257,8 @@ impl OscServer {
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
+            tap_rings: Vec::new(),
+            tap_refs: Vec::new(),
             tap_buf: Vec::new(),
             clock: TimeSource::Wall {
                 epoch: Instant::now(),
@@ -306,6 +316,8 @@ impl OscServer {
             clients: Vec::new(),
             streams: Vec::new(),
             tap_streams: Vec::new(),
+            tap_rings: Vec::new(),
+            tap_refs: Vec::new(),
             tap_buf: Vec::new(),
             clock: TimeSource::Sample { unix_epoch },
             ipc: None,
@@ -1663,52 +1675,104 @@ impl OscServer {
         args
     }
 
-    /// `/tap tapIndex bus`: routes audio bus `bus` into the segment's audio-tap
-    /// ring `tapIndex` — from the next block on, the engine appends that bus's
-    /// samples to the ring every block, where a shared-memory peer (a GUI
-    /// oscilloscope) reads them with zero messages. `bus = -1` stops the tap.
-    /// No ack (the same posture as `/n_map`: it only flips routing state);
-    /// sequence with `/sync` when needed. Fails without a tap region (server
-    /// started with `--taps 0`).
-    fn handle_tap(&mut self, msg: &OscMessage, from: ClientId) {
-        let (Some(OscType::Int(tap)), Some(OscType::Int(bus))) =
-            (msg.args.first(), msg.args.get(1))
-        else {
-            return self.fail(from, "/tap", "expected int tapIndex, int bus");
-        };
+    /// Starts recording audio bus `bus`, if it is not already: picks a free
+    /// ring, tells the engine to append that bus to it every block, and counts
+    /// one more watcher. Idempotent per watcher — two views of the same bus
+    /// share one ring — and the caller never learns the index: the segment's
+    /// directory maps the bus to it (see [`Segment::tap_of_bus`]).
+    ///
+    /// [`Segment::tap_of_bus`]: crate::server::ipc::Segment::tap_of_bus
+    fn watch_bus(&mut self, bus: i32) -> Result<(), String> {
         let Some(segment) = self.handle.segment() else {
-            return self.fail(from, "/tap", "no tap region (server started with --taps 0)");
+            return Err("no tap region (server started with --taps 0)".into());
         };
         let taps = segment.taps();
-        if *tap < 0 || *tap as usize >= taps {
-            return self.fail(from, "/tap", format!("tap index out of range 0..{taps}"));
-        }
         let audio_buses = self.handle.audio_buses;
-        if *bus != -1 && (*bus < 0 || *bus as usize >= audio_buses) {
-            return self.fail(
-                from,
-                "/tap",
-                format!("bus must be -1 or in range 0..{audio_buses}"),
-            );
+        if bus < 0 || bus as usize >= audio_buses {
+            return Err(format!("bus must be in range 0..{audio_buses}"));
         }
-        let cmd = Cmd::SetTap {
-            tap: *tap as usize,
-            bus: *bus,
+        self.tap_rings.resize(taps, -1);
+        self.tap_refs.resize(taps, 0);
+        if let Some(ring) = self.tap_rings.iter().position(|&b| b == bus) {
+            self.tap_refs[ring] += 1;
+            return Ok(());
+        }
+        let Some(ring) = self.tap_rings.iter().position(|&b| b < 0) else {
+            return Err(format!("all {taps} audio taps are in use"));
         };
-        if self.handle.send(cmd).is_err() {
-            self.fail(from, "/tap", "command FIFO full");
+        if self.handle.send(Cmd::SetTap { tap: ring, bus }).is_err() {
+            return Err("command FIFO full".into());
+        }
+        self.tap_rings[ring] = bus;
+        self.tap_refs[ring] = 1;
+        Ok(())
+    }
+
+    /// Drops one watcher of `bus`, freeing its ring when the last one goes.
+    fn release_bus(&mut self, bus: i32) {
+        let Some(ring) = self.tap_rings.iter().position(|&b| b == bus) else {
+            return;
+        };
+        self.tap_refs[ring] = self.tap_refs[ring].saturating_sub(1);
+        if self.tap_refs[ring] == 0 {
+            // Best effort: a full FIFO leaves the ring recording, and the next
+            // watcher of this bus reuses it rather than taking a second one.
+            if self.handle.send(Cmd::SetTap { tap: ring, bus: -1 }).is_ok() {
+                self.tap_rings[ring] = -1;
+            } else {
+                self.tap_refs[ring] = 1;
+            }
         }
     }
 
-    /// `/tap_stream periodMs frames tapIndex...`: subscribes this client to a
+    /// `/tap bus watch`: asks the server to make audio bus `bus` readable —
+    /// `watch = 1` starts, `0` stops. **The bus is the only number a client
+    /// names**: which of the segment's rings carries it is the server's own
+    /// bookkeeping, published in the segment's bus directory for whoever reads
+    /// the samples (a GUI host's oscilloscope, with zero messages per frame).
+    /// Watches count, so two views of one bus share a ring and the last one to
+    /// stop frees it. No ack (the same posture as `/n_map`: it only flips
+    /// routing state); sequence with `/sync` when needed. Fails without a tap
+    /// region (server started with `--taps 0`) or when every ring is taken.
+    fn handle_tap(&mut self, msg: &OscMessage, from: ClientId) {
+        let (Some(OscType::Int(bus)), Some(OscType::Int(watch))) =
+            (msg.args.first(), msg.args.get(1))
+        else {
+            return self.fail(from, "/tap", "expected int bus, int watch");
+        };
+        // Both directions answer the same way about an impossible request, so
+        // a client learns it cannot watch anything from the first call.
+        if self.handle.segment().is_none() {
+            return self.fail(from, "/tap", "no tap region (server started with --taps 0)");
+        }
+        let audio_buses = self.handle.audio_buses;
+        if *bus < 0 || *bus as usize >= audio_buses {
+            return self.fail(
+                from,
+                "/tap",
+                format!("bus must be in range 0..{audio_buses}"),
+            );
+        }
+        if *watch == 0 {
+            return self.release_bus(*bus);
+        }
+        if let Err(why) = self.watch_bus(*bus) {
+            self.fail(from, "/tap", why);
+        }
+    }
+
+    /// `/tap_stream periodMs frames bus...`: subscribes this client to a
     /// periodic `/tap_data` snapshot — the newest `frames` samples of each
-    /// listed tap — the network counterpart of reading the tap rings out of
-    /// shared memory, for clients (a browser oscilloscope) that cannot map the
-    /// segment. One subscription per client, replaced on every call;
-    /// `periodMs <= 0` or an empty tap list cancels. Acks `/done
-    /// "/tap_stream"`, then sends the first snapshot immediately and the rest
-    /// from the run loop. Not schedulable in timed bundles. Subscriptions die
-    /// with their TCP/WS connection, like `/c_stream`.
+    /// listed **audio bus** — the network counterpart of reading the segment's
+    /// tap rings, for clients (a browser oscilloscope) that cannot map it. The
+    /// subscription *is* the watch: it starts recording each bus it lists and
+    /// stops when it is replaced, cancelled or its connection dies, so a
+    /// streaming client never issues `/tap` at all. One subscription per
+    /// client, replaced on every call; `periodMs <= 0` or an empty bus list
+    /// cancels. Acks `/done "/tap_stream"`, then sends the first snapshot
+    /// immediately and the rest from the run loop. Not schedulable in timed
+    /// bundles. Subscriptions die with their TCP/WS connection, like
+    /// `/c_stream`.
     fn handle_tap_stream(&mut self, msg: &OscMessage, from: ClientId) {
         let (Some(OscType::Int(period_ms)), Some(OscType::Int(frames))) =
             (msg.args.first(), msg.args.get(1))
@@ -1722,26 +1786,26 @@ impl OscServer {
                 "no tap region (server started with --taps 0)",
             );
         };
-        let tap_count = segment.taps();
-        let mut taps = Vec::with_capacity(msg.args.len().saturating_sub(2));
+        let audio_buses = self.handle.audio_buses;
+        let mut buses = Vec::with_capacity(msg.args.len().saturating_sub(2));
         for arg in &msg.args[2..] {
-            let OscType::Int(index) = arg else {
-                return self.fail(from, "/tap_stream", "expected int tap indices");
+            let OscType::Int(bus) = arg else {
+                return self.fail(from, "/tap_stream", "expected int bus indices");
             };
-            if *index < 0 || *index as usize >= tap_count {
+            if *bus < 0 || *bus as usize >= audio_buses {
                 return self.fail(
                     from,
                     "/tap_stream",
-                    format!("tap index out of range 0..{tap_count}"),
+                    format!("bus out of range 0..{audio_buses}"),
                 );
             }
-            taps.push(*index);
+            buses.push(*bus);
         }
-        if taps.len() > MAX_STREAM_TAPS {
+        if buses.len() > MAX_STREAM_TAPS {
             return self.fail(
                 from,
                 "/tap_stream",
-                format!("at most {MAX_STREAM_TAPS} tap indices per subscription"),
+                format!("at most {MAX_STREAM_TAPS} buses per subscription"),
             );
         }
         // Clamp, don't fail, the window: to the client's transport bound and
@@ -1754,15 +1818,30 @@ impl OscServer {
         };
         let frames = (*frames).max(1) as usize;
         let frames = frames.min(transport_cap).min(segment.tap_frames() / 2);
-        self.tap_streams.retain(|s| s.client != from);
+        // The new subscription's watches are taken before the old one's are
+        // dropped, so re-subscribing to the same bus never stops recording it.
+        let wanted = if *period_ms > 0 {
+            buses.clone()
+        } else {
+            Vec::new()
+        };
+        for bus in &wanted {
+            if let Err(why) = self.watch_bus(*bus) {
+                for taken in wanted.iter().take_while(|b| *b != bus) {
+                    self.release_bus(*taken);
+                }
+                return self.fail(from, "/tap_stream", why);
+            }
+        }
+        self.drop_tap_streams(|s| s.client == from);
         self.reply(from, "/done", vec![OscType::String("/tap_stream".into())]);
-        if *period_ms > 0 && !taps.is_empty() {
+        if !wanted.is_empty() {
             let period = Duration::from_millis(*period_ms as u64).max(MIN_STREAM_PERIOD);
             self.tap_streams.push(TapStream {
                 client: from,
                 period,
                 frames,
-                taps,
+                buses,
                 next_due: self.mono_secs() + period.as_secs_f64(),
             });
             // The immediate snapshot: the client paints without waiting a
@@ -1770,6 +1849,24 @@ impl OscServer {
             self.send_tap_snapshots(self.tap_streams.len() - 1);
         }
         self.retune_timeout();
+    }
+
+    /// Removes the tap subscriptions matching `doomed` and releases the watch
+    /// each held on its buses — the one place a subscription's recording stops,
+    /// whether it was replaced, cancelled or lost with its connection.
+    fn drop_tap_streams(&mut self, doomed: impl Fn(&TapStream) -> bool) {
+        let mut released = Vec::new();
+        self.tap_streams.retain(|s| {
+            if doomed(s) {
+                released.extend_from_slice(&s.buses);
+                false
+            } else {
+                true
+            }
+        });
+        for bus in released {
+            self.release_bus(bus);
+        }
     }
 
     /// Sends every due tap stream its `/tap_data` snapshots. Called once per
@@ -1803,9 +1900,14 @@ impl OscServer {
         let client = self.tap_streams[i].client;
         let frames = self.tap_streams[i].frames;
         self.tap_buf.resize(frames, 0.0);
-        for k in 0..self.tap_streams[i].taps.len() {
-            let tap = self.tap_streams[i].taps[k];
-            let Some(end) = segment.tap_read_latest(tap as usize, &mut self.tap_buf) else {
+        for k in 0..self.tap_streams[i].buses.len() {
+            let bus = self.tap_streams[i].buses[k];
+            // The bus is the key here too: the ring it landed in is looked up,
+            // never carried in the subscription.
+            let Some(tap) = segment.tap_of_bus(bus as usize) else {
+                continue;
+            };
+            let Some(end) = segment.tap_read_latest(tap, &mut self.tap_buf) else {
                 continue;
             };
             let mut bytes = Vec::with_capacity(frames * 4);
@@ -1816,7 +1918,7 @@ impl OscServer {
                 client,
                 "/tap_data",
                 vec![
-                    OscType::Int(tap),
+                    OscType::Int(bus),
                     OscType::Long(end as i64),
                     OscType::Blob(bytes),
                 ],
@@ -1866,7 +1968,7 @@ impl OscServer {
             return;
         }
         self.streams.retain(|s| !gone.contains(&s.client));
-        self.tap_streams.retain(|s| !gone.contains(&s.client));
+        self.drop_tap_streams(|s| gone.contains(&s.client));
         self.clients.retain(|c| !gone.contains(c));
         self.retune_timeout();
     }

@@ -331,12 +331,21 @@ pub trait BusSource: Send + Sync {
     /// The current value of control bus `index` (`0.0` if out of range).
     fn control(&self, index: usize) -> f32;
 
-    /// Fills `out` with the newest raw samples of audio tap `tap` (newest
-    /// last), returning `false` when this source carries no tap data — the
-    /// default. The shared-memory segment overrides it with the lock-free
-    /// ring read; the browser reads its `/tap_data` store instead.
-    fn read_tap(&self, _tap: i32, _out: &mut [f32]) -> bool {
+    /// Fills `out` with the newest raw samples of **audio bus** `bus` (newest
+    /// last), returning `false` when this source has none for it — the
+    /// default. Where those samples physically live is this source's business:
+    /// the shared-memory segment looks the bus up in the server's directory
+    /// and reads that ring lock-free, the browser reads its `/tap_data` store.
+    /// Above here, a bus is the only thing anyone names.
+    fn read_bus(&self, _bus: i32, _out: &mut [f32]) -> bool {
         false
+    }
+
+    /// Audio bus `bus`'s published level — the peak of the engine's last
+    /// block, held with a decay — or `0.0` where this source has none. What a
+    /// meter draws; it needs no recording, so it costs no tap.
+    fn level(&self, _bus: i32) -> f32 {
+        0.0
     }
 
     /// The server's sample rate when this source knows it (`0.0` otherwise);
@@ -391,6 +400,12 @@ pub struct Host {
     /// documents the windowed front builds windows from. Non-window roots live
     /// only in the generic registry.
     window_defs: HashMap<i32, Widget>,
+    /// The audio buses the host has asked the audio server to record, so the
+    /// sample views can read them. Kept as a set and re-diffed whenever the
+    /// documents change: the host is the one that turns "this scope watches
+    /// bus 4" into the server's `/tap`, which is why no client -- and no
+    /// widget -- ever names a recording ring.
+    watched_buses: Vec<i32>,
     /// The audio-server client leg (the third topology leg). Present when the
     /// host was started with a `--server` target or, in standalone mode, an
     /// embedded server; [`forward`](Self::forward) sends bound-widget values
@@ -447,6 +462,7 @@ impl Host {
         Self {
             registry: Registry::new(),
             window_defs: HashMap::new(),
+            watched_buses: Vec::new(),
             server: None,
             bindings: HashMap::new(),
             def_json: HashMap::new(),
@@ -617,6 +633,7 @@ impl Host {
                     // the mutation point, never per frame.
                     widget::resolve_themes(&mut tree, &Arc::new(self.theme.clone()));
                     self.window_defs.insert(id, tree);
+                    self.sync_bus_watches();
                     // The def's timeline views (re)join their navigation
                     // groups; rebuild semantics for state confined to this def.
                     self.sync_timeline_groups(Some(id));
@@ -689,6 +706,11 @@ impl Host {
             return warn!("{from}: {GUI_SET} {id}: no such widget");
         }
         info!("{from}: {GUI_SET} {id}: updated {keys:?}");
+        // A set can retarget a view's source or widen its channel run, which
+        // changes what has to be recorded; the diff below is a no-op otherwise.
+        let touches_source = keys
+            .iter()
+            .any(|k| matches!(k.as_str(), "bus" | "rate" | "channels"));
         // Mirror the change into the typed window tree the front renders. A
         // timeline view's shared keys (`view_*`, `sel_*`, `playhead_at`,
         // `link`) route through its navigation group instead, so a set on any
@@ -731,6 +753,9 @@ impl Host {
             // shared axis (a clip pushed past the end lengthens the timeline).
             self.sync_track_totals();
         }
+        if touches_source {
+            self.sync_bus_watches();
+        }
     }
 
     /// `/gui_free <id>` — destroy a widget and its subtree (and its window, if
@@ -744,6 +769,7 @@ impl Host {
         if self.window_defs.remove(&id).is_some() {
             effects.push(HostEffect::CloseWindow(id));
         }
+        self.sync_bus_watches();
         // A freed widget can no longer forward (its subtree is gone), its
         // timeline group state goes with it, and its live voices are released.
         self.prune_bindings();
@@ -949,6 +975,31 @@ impl Host {
     }
 
     /// Sends one message out the audio-server leg, if one is attached.
+    /// Re-diffs the audio buses the open documents read against the ones the
+    /// server is recording, and asks it to start or stop the difference
+    /// (`/tap bus 1` / `/tap bus 0`). Watches are counted server-side, so two
+    /// views of one bus cost one recording and the last to go frees it.
+    ///
+    /// Called after anything that can change what is drawn: a def, a free, a
+    /// `/gui_set` of a view's bus, rate or channel count.
+    fn sync_bus_watches(&mut self) {
+        let mut wanted: Vec<i32> = Vec::new();
+        for tree in self.window_defs.values() {
+            collect_audio_buses(tree, &mut wanted);
+        }
+        for bus in &wanted {
+            if !self.watched_buses.contains(bus) {
+                self.send_to_server(watch_msg(*bus, true));
+            }
+        }
+        for bus in &self.watched_buses {
+            if !wanted.contains(bus) {
+                self.send_to_server(watch_msg(*bus, false));
+            }
+        }
+        self.watched_buses = wanted;
+    }
+
     fn send_to_server(&self, msg: OscMessage) {
         if let Some(server) = self.server.as_ref()
             && let Err(e) = server.send(msg)
@@ -978,6 +1029,30 @@ impl Host {
 
 /// Collects the trailing OSC blob arguments of a `/gui_def` (the bulk data, e.g.
 /// waveform samples) into a list a `Widget` can index by `"blob"`.
+/// `/tap bus watch`: what the host sends the audio server to start or stop
+/// recording an audio bus. The bus is the whole address — the server picks and
+/// publishes where the samples land.
+fn watch_msg(bus: i32, watch: bool) -> OscMessage {
+    OscMessage {
+        addr: "/tap".into(),
+        args: vec![OscType::Int(bus), OscType::Int(if watch { 1 } else { 0 })],
+    }
+}
+
+/// Appends every audio bus whose samples a tree's views read, deduplicated.
+fn collect_audio_buses(widget: &Widget, out: &mut Vec<i32>) {
+    let mut mine = Vec::new();
+    widget.kind.audio_buses_read(&mut mine);
+    for bus in mine {
+        if bus >= 0 && !out.contains(&bus) {
+            out.push(bus);
+        }
+    }
+    for child in &widget.children {
+        collect_audio_buses(child, out);
+    }
+}
+
 fn blob_args(args: &[OscType]) -> Vec<Vec<u8>> {
     args.iter()
         .filter_map(|a| match a {

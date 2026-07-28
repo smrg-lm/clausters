@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use super::Rate;
 use crate::spectrogram::FreqScale;
 
 /// Coerce a `/gui_set` value that carries an array (either already a JSON array,
@@ -382,6 +383,18 @@ pub(super) fn set_strip(slot: &mut bool, v: &Value) -> bool {
             true
         }
         None => truthy(v).map(|b| *slot = b).is_some(),
+    }
+}
+
+/// Sets a data view's rate live (`/gui_set rate "control"`), so one widget can
+/// be retuned between watching an audio bus and a control bus.
+pub(super) fn set_rate(slot: &mut Rate, v: &Value) -> bool {
+    match v.as_str() {
+        Some(s) => {
+            *slot = Rate::parse(Some(s));
+            true
+        }
+        None => false,
     }
 }
 

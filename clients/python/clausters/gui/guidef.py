@@ -449,43 +449,57 @@ def spectrogram(*, data=None, blob: int | None = None, buffer: int | None = None
     return node("spectrogram", id=id, **extra, **props)
 
 
-def meter(bus: int = 0, *, min: float | None = None, max: float | None = None,
-          label: str | None = None, color: str | None = None, id: int | None = None, **props
-          ) -> dict:
-    """A level ``meter`` reading control ``bus`` straight from the audio server's
-    shared-memory segment each frame (zero OSC messages). The host must be started
-    with ``--shm`` pointing at the server's segment. ``min``/``max`` scale the bar
-    (default ``0``/``1``)."""
+def meter(bus: int = 0, *, rate: str = "audio", min: float | None = None,
+          max: float | None = None, label: str | None = None, color: str | None = None,
+          id: int | None = None, **props) -> dict:
+    """A level ``meter`` on ``bus``, read from the audio server's shared-memory
+    segment each frame (zero OSC messages; the host must be started with
+    ``--shm`` pointing at the server's segment).
+
+    At ``rate="audio"`` (the default) it meters an **audio** bus — bus 0 is the
+    first hardware output, so ``meter()`` is the console meter on the left out
+    — reading the level the server publishes per block: a peak held with a
+    decay, so a transient is caught even though the display refreshes far
+    slower than the engine. Metering costs the server nothing to set up, so a
+    mixer's worth of meters is fine. At ``rate="control"`` it reads a control
+    bus's current value instead. ``min``/``max`` scale the bar (default
+    ``0``/``1``).
+    """
     extra = _drop_none(min=min, max=max, label=label, color=color)
-    return node("meter", id=id, bus=bus, **extra, **props)
+    return node("meter", bus=bus, rate=rate, **extra, **props, id=id)
 
 
-def scope(bus: int = 0, *, tap: int | None = None, channels: int | None = None,
+def scope(bus: int = 0, *, rate: str = "audio", channels: int | None = None,
           overlay: bool | None = None, window_ms: float | None = None,
           trigger: float | None = None, hold: bool | None = None, min: float | None = None,
           max: float | None = None, ruler: "bool | str | None" = None,
           ruler_y: "bool | str | None" = None, label: str | None = None, color: str | None = None,
           id: int | None = None, **props) -> dict:
-    """A time-domain ``scope``, in one of two rates. By default (control rate)
-    it plots the recent history of control ``bus``, read from shared memory
-    each frame (needs ``--shm`` like `meter`). Passing ``tap`` makes it an
-    audio-rate **oscilloscope** over ``channels`` (default 1) **adjacent**
-    audio-tap rings of the server starting at ``tap`` (route each bus into its
-    ring first with ``Server.tap``): a ``window_ms`` display window (default
-    20 ms), re-read every frame and aligned on a rising crossing of
-    ``trigger`` found in the **first** channel (default level ``0.0``, with
-    hysteresis; free-running when the signal never crosses), so a periodic
-    signal draws a stable trace and the channels keep their true relative
-    phase — a lock/free read-out names which mode it is in. Channels draw as
-    stacked lanes, or as color-coded traces in one field with ``overlay``.
-    ``hold`` freezes the trace. The audio-rate form carries axis rulers:
-    ``ruler`` (x, in milliseconds of the window) and ``ruler_y`` (value over
-    ``[min, max]``), both shown by default and hidden with ``False`` (or
-    ``"off"``). Natively the host reads the taps out of the ``--shm`` segment
-    with zero messages; in the browser it subscribes ``/tap_stream`` over the
-    server leg. ``min``/``max`` set the vertical range (default the bipolar
-    ``-1``/``1``)."""
-    extra = _drop_none(tap=tap, channels=channels, window_ms=window_ms,
+    """A time-domain ``scope`` over ``channels`` **adjacent** buses starting at
+    ``bus`` (bus 0 is the first hardware output), in one of two rates.
+
+    At ``rate="audio"`` (the default) it is a real **oscilloscope**: a
+    ``window_ms`` display window (default 20 ms) of each bus's samples, re-read
+    every frame and aligned on a rising crossing of ``trigger`` found in the
+    **first** channel (default level ``0.0``, with hysteresis; free-running
+    when the signal never crosses), so a periodic signal draws a stable trace
+    and the channels keep their true relative phase — a lock/free read-out
+    names which mode it is in. Asking to see an audio bus is all a script does:
+    the GUI host has the server record it and stops when nothing draws it.
+
+    At ``rate="control"`` it plots the recent history of the control buses
+    instead, one sample per frame tick.
+
+    Channels draw as stacked lanes, or as color-coded traces in one field with
+    ``overlay``. ``hold`` freezes the trace. The audio-rate form carries axis
+    rulers: ``ruler`` (x, in milliseconds of the window) and ``ruler_y`` (value
+    over ``[min, max]``), both shown by default and hidden with ``False`` (or
+    ``"off"``). Natively the host reads the samples out of the ``--shm``
+    segment with zero messages; in the browser it subscribes ``/tap_stream``
+    over the server leg. ``min``/``max`` set the vertical range (default the
+    bipolar ``-1``/``1``).
+    """
+    extra = _drop_none(channels=channels, window_ms=window_ms,
                        trigger=trigger, min=min, max=max, label=label, color=color)
     for key, flag in (("hold", hold), ("overlay", overlay)):
         if flag is not None:
@@ -493,53 +507,50 @@ def scope(bus: int = 0, *, tap: int | None = None, channels: int | None = None,
     for key, strip in (("ruler", ruler), ("ruler_y", ruler_y)):
         if strip is not None:
             extra[key] = strip if isinstance(strip, str) else (1 if strip else "off")
-    return node("scope", id=id, bus=bus, **extra, **props)
+    return node("scope", bus=bus, rate=rate, **extra, **props, id=id)
 
 
-def phasescope(tap: int = 0, tap2: int | None = None, *, window_ms: float | None = None,
-               hold: bool | None = None, label: str | None = None, color: str | None = None,
+def phasescope(bus: int = 0, *, window_ms: float | None = None, hold: bool | None = None,
+               label: str | None = None, color: str | None = None,
                id: int | None = None, **props) -> dict:
-    """A ``phasescope`` (goniometer): the two audio taps ``tap`` (left) and
-    ``tap2`` (right, default ``tap + 1``) drawn as the 45°-rotated Lissajous
-    figure — vertical is the mid ``(L + R)/√2``, horizontal the side
-    ``(L - R)/√2``, the audio-engineering convention where mono reads as a
-    vertical line, anti-phase as horizontal and a wide field fills the lozenge.
-    An age-faded persistence trail spans the last ``window_ms`` of pairs (default
-    30 ms) and a **correlation** read-out (Pearson's r over the window) sits
-    under the field. Route each channel's bus into its tap first with
-    ``Server.tap``; ``hold`` freezes the trace. Reads the segment natively
-    (zero messages) and ``/tap_stream`` in the browser, like the oscilloscope."""
+    """A ``phasescope`` (goniometer) of the stereo pair ``bus`` (left) and
+    ``bus + 1`` (right) — the adjacent-channel layout the whole family uses —
+    drawn as the 45°-rotated Lissajous figure: vertical is the mid
+    ``(L + R)/√2``, horizontal the side ``(L - R)/√2``, the audio-engineering
+    convention where mono reads as a vertical line, anti-phase as horizontal
+    and a wide field fills the lozenge. An age-faded persistence trail spans
+    the last ``window_ms`` of pairs (default 30 ms) and a **correlation**
+    read-out (Pearson's r over the window) sits under the field. ``hold``
+    freezes the trace. Audio rate only. Reads the segment natively (zero
+    messages) and ``/tap_stream`` in the browser, like the oscilloscope."""
     extra = _drop_none(window_ms=window_ms, label=label, color=color)
-    if tap2 is not None:
-        extra["tap2"] = tap2
     if hold is not None:
         extra["hold"] = 1 if hold else 0
-    return node("phasescope", id=id, tap=tap, **extra, **props)
+    return node("phasescope", bus=bus, **extra, **props, id=id)
 
 
-def spectrum(tap: int = 0, *, channels: int | None = None, fft_size: int | None = None,
+def spectrum(bus: int = 0, *, channels: int | None = None, fft_size: int | None = None,
              db_floor: float | None = None, db_ceil: float | None = None,
              freq_scale: str | None = None, log_freq: bool | None = None,
              averaging: float | None = None, peak_hold: bool | None = None,
              ruler: "bool | str | None" = None, ruler_y: "bool | str | None" = None,
              label: str | None = None, color: str | None = None, id: int | None = None, **props
              ) -> dict:
-    """A live ``spectrum`` (spectroscope): one forward FFT per frame over the
-    newest window of each of ``channels`` (default 1) **adjacent** audio taps
-    starting at ``tap``, drawn as one magnitude curve per channel (color-coded
-    when there is more than one). ``fft_size`` is a power of two (256..4096,
-    default 2048); the vertical axis is dB over ``[db_floor, db_ceil]``
-    (default ``-100``/``0``); ``freq_scale`` picks the frequency axis —
-    ``"log"`` (default), ``"linear"``, ``"mel"`` or ``"bark"``, the same
-    scales as the spectrogram (``log_freq`` is the legacy boolean alias). Raw
-    per-frame FFTs flicker, so ``averaging`` (0..1, default 0.5) exponentially
-    smooths each bin and ``peak_hold`` (default false) overlays a slowly
-    decaying peak trace per channel. Axis rulers: ``ruler`` (x, hertz on the
-    active scale) and ``ruler_y`` (dB), both shown by default and hidden with
-    ``False`` (or ``"off"``). Route each bus into its tap first with
-    ``Server.tap``; the analysis uses the shared-core FFT and Hann window,
-    so it agrees with the spectrogram. Native reads the segment; the browser
-    subscribes ``/tap_stream``."""
+    """A live ``spectrum`` (spectroscope) over ``channels`` **adjacent**
+    audio buses starting at ``bus``: one forward FFT per channel per frame of
+    the newest ``fft_size`` window (default 2048), magnitudes in dB over
+    ``[db_floor, db_ceil]`` (default ``-100``/``0``), the frequency axis on
+    ``freq_scale`` — ``"log"`` (the default), ``"linear"``, ``"mel"`` or
+    ``"bark"`` (``log_freq`` is the legacy boolean alias). The channels overlay
+    as color-coded curves in one field. ``averaging`` (0..1, default 0.5)
+    exponentially smooths each bin so the curve does not flicker; ``peak_hold``
+    overlays a slowly decaying peak trace per channel. ``ruler`` (x, in hertz
+    on the active scale) and ``ruler_y`` (y, in dB) are shown by default and
+    hidden with ``False`` (or ``"off"``). Audio rate only; asking for the bus
+    is all a script does, the host has the server record it. The analysis
+    reuses the shared-core FFT and Hann window, so it agrees with the
+    spectrogram exactly.
+    """
     extra = _drop_none(channels=channels, fft_size=fft_size,
                        db_floor=db_floor, db_ceil=db_ceil,
                        freq_scale=freq_scale, averaging=averaging, label=label, color=color)
@@ -550,7 +561,7 @@ def spectrum(tap: int = 0, *, channels: int | None = None, fft_size: int | None 
     for key, strip in (("ruler", ruler), ("ruler_y", ruler_y)):
         if strip is not None:
             extra[key] = strip if isinstance(strip, str) else (1 if strip else "off")
-    return node("spectrum", id=id, tap=tap, **extra, **props)
+    return node("spectrum", bus=bus, **extra, **props, id=id)
 
 
 def nodetree(*, group: int = 0, controls: bool | None = None, label: str | None = None,

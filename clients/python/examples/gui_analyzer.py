@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""A phasescope and a live spectrum over server audio taps.
+"""A phasescope and a live spectrum over server audio buses.
 
-Two of the GUI's analysis views, both fed by the server's **audio taps** (the
-same path the oscilloscope uses, ``gui_scope.py``):
+Two of the GUI's analysis views, both reading **audio buses** straight from the
+shared-memory segment (the same path the oscilloscope uses, ``gui_scope.py``):
 
-- a ``phasescope`` (goniometer) reads a **stereo pair** of taps and draws them
+- a ``phasescope`` (goniometer) reads a **stereo pair** of buses and draws them
   as the 45°-rotated Lissajous figure -- mono reads as a vertical line,
   anti-phase as horizontal, a wide field fills the lozenge -- with a running
   correlation read-out (Pearson's r) beneath;
-- a ``spectrum`` (spectroscope) reads one tap and draws one forward FFT per
+- a ``spectrum`` (spectroscope) reads one bus and draws one forward FFT per
   frame as a magnitude curve on a log frequency axis, with per-bin averaging
   and a decaying peak-hold so it does not flicker.
 
@@ -31,8 +31,8 @@ Run it cell by cell (Shift+Enter), or as a plain script --
 ``python clients/python/examples/gui_analyzer.py``. It self-launches everything
 the analysis needs -- which is exactly the wiring you would otherwise do by
 hand: `Session.live` boots the audio server with a shared-memory segment
-(``shm="auto"``) and audio taps, and `Session.gui` boots the windowed host
-mapping that **same** segment, so the two views read the taps straight from
+(``shm="auto"``), and `Session.gui` boots the windowed host
+mapping that **same** segment, so the two views read the buses straight from
 shared memory with no per-frame messages. (By hand that is ``clausters --shm
 <path>`` and ``clausters-gui --shm <path>``; run this with no server already up
 on 57110, so the session boots its own.) Needs a display and a GPU adapter.
@@ -50,8 +50,8 @@ from clausters.gui import panel, phasescope, spectrum, window
 # %% [markdown]
 # ## Launch the server and the GUI
 # `Session.live()` boots the server with a shared-memory segment (`shm="auto"`)
-# and audio taps, and `session.gui()` maps the same segment -- the phasescope
-# and spectrum read the taps straight from it.
+# and `session.gui()` maps the same segment -- the phasescope
+# and spectrum read the buses straight from it.
 
 # %%
 session = Session.live()
@@ -78,21 +78,16 @@ def stereo_def(name: str = "stereo_image") -> SynthDef:
 server.add_synthdef(stereo_def())
 synth = server.synth("stereo_image", {"freq": 220.0})
 
-# Route the two output buses into a stereo tap pair (the views' source).
-tap0 = server.taps.alloc(2)
-for k in range(2):
-    server.tap(tap0 + k, k)
-
 # %% [markdown]
 # ## The two analysis views
-# A phasescope on the tap pair beside a spectrum on the left tap. Both are
+# A phasescope on the output pair beside a spectrum on the left bus. Both are
 # *named*, not numbered -- `open` hands back a handle that resolves the names.
 
 # %%
 win = gui.open(window(
-    panel(phasescope(name="gonio", tap=tap0, tap2=tap0 + 1, window_ms=30.0,
+    panel(phasescope(0, name="gonio", window_ms=30.0,
                      label="goniometer (stereo pair)"),
-          spectrum(name="spectrum", tap=tap0, fft_size=2048, log_freq=True,
+          spectrum(0, name="spectrum", fft_size=2048, log_freq=True,
                    peak_hold=True, label="spectrum (left tap, log Hz)"),
           layout="row"),
     title="Phasescope + live spectrum", w=760, h=420))
@@ -134,8 +129,6 @@ if __name__ == "__main__" and not hasattr(sys, "ps1"):
     try:
         run(30.0)
     finally:
-        server.tap(tap0, -1)
-        server.tap(tap0 + 1, -1)
         session.close()
 else:
     print("analyzer up - run(10) to sweep the image, session.close() to end")

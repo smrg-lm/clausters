@@ -29,8 +29,8 @@ pub(crate) const STREAM_PERIOD_MS: i32 = 33;
 /// so the frame tick can sample each one's bus into its rolling history (an
 /// audio-rate scope reads a tap window instead — see [`collect_tap_scopes`]).
 pub(crate) fn collect_scopes(widget: &Widget, out: &mut Vec<(i32, i32)>) {
-    if let WidgetKind::Scope { bus, tap, .. } = &widget.kind
-        && *tap < 0
+    if let WidgetKind::Scope { bus, rate, .. } = &widget.kind
+        && !rate.is_audio()
         && let Some(id) = widget.id
     {
         out.push((id, *bus));
@@ -65,7 +65,9 @@ impl TapWindow {
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct TapScope {
     pub widget_id: i32,
-    pub tap: i32,
+    /// The first audio bus it reads; `channels` adjacent buses follow. Where
+    /// each one's samples live is looked up in the segment's directory.
+    pub bus: i32,
     pub channels: usize,
     pub window_ms: f32,
     pub trigger: f32,
@@ -75,19 +77,20 @@ pub(crate) struct TapScope {
 /// Appends the [`TapScope`] of every audio-rate `scope` in the tree.
 pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
     if let WidgetKind::Scope {
-        tap,
+        bus,
+        rate,
         channels,
         window_ms,
         trigger,
         hold,
         ..
     } = &widget.kind
-        && *tap >= 0
+        && rate.is_audio()
         && let Some(id) = widget.id
     {
         out.push(TapScope {
             widget_id: id,
-            tap: *tap,
+            bus: *bus,
             channels: *channels,
             window_ms: *window_ms,
             trigger: *trigger,
@@ -105,7 +108,7 @@ pub(crate) fn collect_tap_scopes(widget: &Widget, out: &mut Vec<TapScope>) {
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))] // browser-front only
 pub(crate) fn collect_live_taps(widget: &Widget, out: &mut Vec<i32>) {
     let mut taps = Vec::new();
-    widget.kind.taps_read(&mut taps);
+    widget.kind.audio_buses_read(&mut taps);
     for tap in taps {
         if !out.contains(&tap) {
             out.push(tap);
@@ -123,7 +126,7 @@ pub(crate) fn collect_live_taps(widget: &Widget, out: &mut Vec<i32>) {
 /// so the window animates.
 pub(crate) fn tree_has_live_widget(widget: &Widget) -> bool {
     let mut taps = Vec::new();
-    widget.kind.taps_read(&mut taps);
+    widget.kind.audio_buses_read(&mut taps);
     widget.kind.live_bus().is_some()
         || !taps.is_empty()
         || widget.kind.has_playhead()
@@ -165,7 +168,7 @@ pub(crate) fn update_tap_windows(
         }
         let display = oscil::display_frames(spec.window_ms, sample_rate);
         raw.resize(oscil::raw_frames(display), 0.0);
-        if !read_raw(spec.tap, &mut raw) {
+        if !read_raw(spec.bus, &mut raw) {
             continue;
         }
         let (start, locked) = oscil::align(&raw, display, spec.trigger);
@@ -174,7 +177,7 @@ pub(crate) fn update_tap_windows(
         chans.push(raw[start..end].to_vec());
         for k in 1..spec.channels {
             raw.fill(0.0);
-            let _ = read_raw(spec.tap + k as i32, &mut raw);
+            let _ = read_raw(spec.bus + k as i32, &mut raw);
             chans.push(raw[start..end].to_vec());
         }
         let frames = end - start;
@@ -200,8 +203,8 @@ pub(crate) fn update_tap_windows(
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct PhaseScope {
     pub widget_id: i32,
-    pub tap_l: i32,
-    pub tap_r: i32,
+    pub bus_l: i32,
+    pub bus_r: i32,
     pub window_ms: f32,
     pub hold: bool,
 }
@@ -209,8 +212,7 @@ pub(crate) struct PhaseScope {
 /// Appends the [`PhaseScope`] of every `phasescope` in the tree.
 pub(crate) fn collect_phase_scopes(widget: &Widget, out: &mut Vec<PhaseScope>) {
     if let WidgetKind::Phasescope {
-        tap,
-        tap2,
+        bus,
         window_ms,
         hold,
         ..
@@ -219,8 +221,8 @@ pub(crate) fn collect_phase_scopes(widget: &Widget, out: &mut Vec<PhaseScope>) {
     {
         out.push(PhaseScope {
             widget_id: id,
-            tap_l: *tap,
-            tap_r: *tap2,
+            bus_l: *bus,
+            bus_r: *bus + 1,
             window_ms: *window_ms,
             hold: *hold,
         });
@@ -253,7 +255,7 @@ pub(crate) fn update_phase_windows(
         let n = oscil::display_frames(spec.window_ms, sample_rate);
         l.resize(n, 0.0);
         r.resize(n, 0.0);
-        if !read_raw(spec.tap_l, &mut l) || !read_raw(spec.tap_r, &mut r) {
+        if !read_raw(spec.bus_l, &mut l) || !read_raw(spec.bus_r, &mut r) {
             continue;
         }
         let mut inter = Vec::with_capacity(n * 2);
@@ -277,7 +279,7 @@ pub(crate) fn update_phase_windows(
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub(crate) struct SpectrumSpec {
     pub widget_id: i32,
-    pub tap: i32,
+    pub bus: i32,
     pub channels: usize,
     pub fft_size: usize,
     pub averaging: f32,
@@ -287,7 +289,7 @@ pub(crate) struct SpectrumSpec {
 /// Appends the [`SpectrumSpec`] of every `spectrum` in the tree.
 pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
     if let WidgetKind::Spectrum {
-        tap,
+        bus,
         channels,
         fft_size,
         averaging,
@@ -298,7 +300,7 @@ pub(crate) fn collect_spectra(widget: &Widget, out: &mut Vec<SpectrumSpec>) {
     {
         out.push(SpectrumSpec {
             widget_id: id,
-            tap: *tap,
+            bus: *bus,
             channels: *channels,
             fft_size: *fft_size,
             averaging: *averaging,
@@ -331,7 +333,7 @@ pub(crate) fn update_spectra(
         for (k, state) in chans.iter_mut().enumerate() {
             state.ensure_size(spec.fft_size);
             raw.resize(state.window_len(), 0.0);
-            if read_raw(spec.tap + k as i32, &mut raw) {
+            if read_raw(spec.bus + k as i32, &mut raw) {
                 state.update(&raw, spec.averaging, spec.peak_hold);
             }
         }
@@ -544,13 +546,13 @@ mod tests {
     fn demand_unions_what_the_drawing_canvases_ask_for() {
         let one = tree(
             r#"{"type":"window","children":[
-                {"id":1,"type":"meter","bus":9},
-                {"id":2,"type":"scope","bus":3}]}"#,
+                {"id":1,"type":"meter","bus":9,"rate":"control"},
+                {"id":2,"type":"scope","bus":3,"rate":"control"}]}"#,
         );
         let two = tree(
             r#"{"type":"window","children":[
-                {"id":3,"type":"meter","bus":3},
-                {"id":4,"type":"meter","bus":1}]}"#,
+                {"id":3,"type":"meter","bus":3,"rate":"control"},
+                {"id":4,"type":"meter","bus":1,"rate":"control"}]}"#,
         );
         let d = demand([&one, &two], 48_000.0);
         assert_eq!(d.buses, vec![1, 3, 9]);
@@ -562,8 +564,12 @@ mod tests {
     /// viewport stops costing wire and server CPU, not just compositing.
     #[test]
     fn a_canvas_left_out_of_the_set_drops_its_buses() {
-        let shown = tree(r#"{"type":"window","children":[{"id":1,"type":"meter","bus":9}]}"#);
-        let hidden = tree(r#"{"type":"window","children":[{"id":2,"type":"meter","bus":4}]}"#);
+        let shown = tree(
+            r#"{"type":"window","children":[{"id":1,"type":"meter","bus":9,"rate":"control"}]}"#,
+        );
+        let hidden = tree(
+            r#"{"type":"window","children":[{"id":2,"type":"meter","bus":4,"rate":"control"}]}"#,
+        );
         assert_eq!(demand([&shown, &hidden], 48_000.0).buses, vec![4, 9]);
         assert_eq!(demand([&shown], 48_000.0).buses, vec![9]);
         // Nothing drawing at all: no subscription and no frame clock.
@@ -586,9 +592,9 @@ mod tests {
     fn live_buses_cover_meters_scopes_and_canvases_deduped() {
         let w = tree(
             r#"{"type":"window","children":[
-                {"id":1,"type":"meter","bus":9},
-                {"id":2,"type":"scope","bus":3},
-                {"id":3,"type":"meter","bus":3},
+                {"id":1,"type":"meter","bus":9,"rate":"control"},
+                {"id":2,"type":"scope","bus":3,"rate":"control"},
+                {"id":3,"type":"meter","bus":3,"rate":"control"},
                 {"id":4,"type":"canvas","shader":"fn shade(){}","buses":[7]},
                 {"id":5,"type":"label","text":"no bus"}]}"#,
         );
@@ -620,7 +626,9 @@ mod tests {
 
     #[test]
     fn scope_history_advances_and_caps() {
-        let w = tree(r#"{"type":"window","children":[{"id":2,"type":"scope","bus":3}]}"#);
+        let w = tree(
+            r#"{"type":"window","children":[{"id":2,"type":"scope","bus":3,"rate":"control"}]}"#,
+        );
         let mut scopes = HashMap::new();
         for i in 0..(SCOPE_HISTORY + 10) {
             advance_scope_histories(&w, |bus| bus as f32 + i as f32, &mut scopes);
@@ -675,13 +683,13 @@ mod tests {
     fn spectra_keep_one_state_per_channel() {
         let w = tree(
             r#"{"type":"window","children":[
-                {"id":9,"type":"spectrum","tap":2,"channels":2,"fft_size":256}]}"#,
+                {"id":9,"type":"spectrum","bus":2,"channels":2,"fft_size":256}]}"#,
         );
         let mut states = HashMap::new();
-        // Tap 2 carries a tone, tap 3 silence: the two channel states diverge.
-        let read = |tap: i32, out: &mut [f32]| {
+        // Bus 2 carries a tone, bus 3 silence: the two channel states diverge.
+        let read = |bus: i32, out: &mut [f32]| {
             for (i, s) in out.iter_mut().enumerate() {
-                *s = if tap == 2 {
+                *s = if bus == 2 {
                     (std::f32::consts::TAU * i as f32 / 8.0).sin()
                 } else {
                     0.0

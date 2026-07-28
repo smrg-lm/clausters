@@ -1,13 +1,14 @@
-"""The free-standing ``scope``: tap allocation, window-tree building per view
-and resource release, without server or GUI host processes (fakes capture the
-traffic)."""
+"""The free-standing ``scope``: window-tree building per view and resource
+release, without server or GUI host processes (fakes capture the traffic).
+
+Nothing here mentions a recording ring: a script names a bus, and the GUI host
+is what asks the server to record it."""
 
 import itertools
 
 import pytest
 
 from clausters.defs.bus import Bus
-from clausters.defs.server import TapAllocator
 from clausters.gui import guidef
 from clausters.scope import ScopeWindow, scope
 
@@ -36,15 +37,11 @@ class FakeHost:
 
 
 class FakeServer:
-    """A live server as scope() sees it: the tap registry, /tap and the shm."""
+    """A live server as scope() sees it: just the shm path. Recording is the
+    host's business now, so scope() sends the server nothing at all."""
 
-    def __init__(self, taps=8, shm="/dev/shm/fake"):
-        self.taps = TapAllocator(size=taps)
-        self.tapped = []
+    def __init__(self, shm="/dev/shm/fake"):
         self.shm = shm
-
-    def tap(self, tap, bus):
-        self.tapped.append((int(tap), int(bus)))
 
 
 def _widget(tree: dict, kind: str) -> dict:
@@ -54,66 +51,31 @@ def _widget(tree: dict, kind: str) -> dict:
     return widget
 
 
-# ---- the tap registry ----
-
-def test_tap_allocator_recycles_and_refuses_misuse():
-    a = TapAllocator(size=4)
-    first = a.alloc()
-    pair = a.alloc(2)
-    assert a.in_use == 3
-    # The pair is adjacent (a phasescope reads taps t and t + 1).
-    assert pair + 1 not in (first,)
-    a.free(pair, 2)
-    assert a.alloc(2) == pair, "a freed run is reusable"
-    a.free(pair, 2)
-    a.free(first)
-    assert a.in_use == 0
-    with pytest.raises(RuntimeError):
-        a.free(first)  # double free is a client bug, raised loudly
-
-
-def test_tap_allocator_exhaustion_raises():
-    a = TapAllocator(size=1)
-    a.alloc()
-    with pytest.raises(RuntimeError):
-        a.alloc()
-    none = TapAllocator(size=0)  # a server without a tap region
-    with pytest.raises(RuntimeError):
-        none.alloc()
-
-
 # ---- the verb, per view ----
 
-def test_scope_signal_routes_a_tap_and_releases_it_on_close():
+def test_scope_signal_names_its_bus_and_closes_cleanly():
     server, host = FakeServer(), FakeHost()
     win = scope(2, trigger=0.1, server=server, host=host)
     assert isinstance(win, ScopeWindow)
     widget = _widget(host.opened[0], "scope")
-    assert widget["tap"] == win.tap
+    assert widget["bus"] == 2 and win.bus == 2
+    assert widget["rate"] == "audio"
     assert widget["trigger"] == 0.1
-    assert server.tapped == [(win.tap, 2)]
-    assert server.taps.in_use == 1
-    # The handle retunes the display live and releases everything on close.
+    # The handle retunes the display live and closes the window.
     win.set(window_ms=5.0)
     assert host.sets == [(win.widget_id, {"window_ms": 5.0})]
     win.close()
-    assert server.tapped[-1] == (win.tap, -1), "the tap is stopped"
-    assert server.taps.in_use == 0, "and returned to the registry"
     assert host.closed == [win.id]
-    win.close()  # idempotent: no double free
-    assert server.taps.in_use == 0
+    win.close()  # idempotent
+    assert host.closed == [win.id]
 
 
-def test_scope_phase_takes_two_adjacent_taps_for_the_stereo_pair():
+def test_scope_phase_is_the_bus_pair():
     server, host = FakeServer(), FakeHost()
     win = scope(0, view="phase", server=server, host=host)
     widget = _widget(host.opened[0], "phasescope")
-    assert (widget["tap"], widget["tap2"]) == (win.tap, win.tap + 1)
-    assert server.tapped == [(win.tap, 0), (win.tap + 1, 1)]
-    assert server.taps.in_use == 2
+    assert widget["bus"] == 0, "the right channel is bus + 1"
     win.close()
-    assert server.taps.in_use == 0
-    assert (win.tap, -1) in server.tapped and (win.tap + 1, -1) in server.tapped
 
 
 def test_scope_spectrum_carries_the_freq_scale():
@@ -121,6 +83,7 @@ def test_scope_spectrum_carries_the_freq_scale():
     win = scope(3, view="spectrum", freq_scale="mel", fft_size=1024,
                 db_floor=-80.0, server=server, host=host)
     widget = _widget(host.opened[0], "spectrum")
+    assert widget["bus"] == 3
     assert widget["freq_scale"] == "mel"
     assert widget["fft_size"] == 1024 and isinstance(widget["fft_size"], int)
     assert widget["db_floor"] == -80.0
@@ -131,20 +94,16 @@ def test_scope_signal_monitors_consecutive_channels():
     server, host = FakeServer(), FakeHost()
     win = scope(2, channels=3, server=server, host=host)
     widget = _widget(host.opened[0], "scope")
-    assert widget["channels"] == 3
+    assert (widget["bus"], widget["channels"]) == (2, 3)
     assert widget["label"] == "bus 2-4"
-    assert server.tapped == [(win.tap, 2), (win.tap + 1, 3), (win.tap + 2, 4)]
-    assert server.taps.in_use == 3
     win.close()
-    assert server.taps.in_use == 0
 
 
 def test_scope_channels_default_from_a_bus_handle():
     server, host = FakeServer(), FakeHost()
     win = scope(Bus(4, channels=2), server=server, host=host)
     widget = _widget(host.opened[0], "scope")
-    assert widget["channels"] == 2, "a Bus monitors all its channels"
-    assert server.tapped == [(win.tap, 4), (win.tap + 1, 5)]
+    assert (widget["bus"], widget["channels"]) == (4, 2), "a Bus monitors all its channels"
     win.close()
     # An explicit channels= wins over the handle's count.
     win = scope(Bus(4, channels=2), channels=1, server=server, host=host)
@@ -156,7 +115,6 @@ def test_scope_phase_is_the_fixed_two_channel_case():
     server, host = FakeServer(), FakeHost()
     with pytest.raises(ValueError, match="exactly 2"):
         scope(0, view="phase", channels=4, server=server, host=host)
-    assert server.taps.in_use == 0
 
 
 def test_scope_spectrum_channels_and_strips_ride_the_wire():
@@ -166,9 +124,7 @@ def test_scope_spectrum_channels_and_strips_ride_the_wire():
     widget = _widget(host.opened[0], "spectrum")
     assert widget["channels"] == 2
     assert widget["ruler_y"] == "off"
-    assert server.taps.in_use == 2
     win.close()
-    assert server.taps.in_use == 0
 
 
 def test_scope_accepts_a_bus_handle_and_labels_from_it():
@@ -176,40 +132,27 @@ def test_scope_accepts_a_bus_handle_and_labels_from_it():
     win = scope(Bus(6, channels=2), view="phase", server=server, host=host)
     widget = _widget(host.opened[0], "phasescope")
     assert widget["label"] == "bus 6/7"
-    assert server.tapped == [(win.tap, 6), (win.tap + 1, 7)]
+    assert widget["bus"] == 6
     win.close()
 
 
-def test_each_scope_takes_a_fresh_widget_id_and_tap():
+def test_each_scope_takes_a_fresh_widget_id():
     server, host = FakeServer(), FakeHost()
     a = scope(0, server=server, host=host)
     b = scope(1, server=server, host=host)
     assert a.widget_id != b.widget_id
-    assert a.tap != b.tap, "two scopes never share a ring"
     a.close()
     b.close()
 
 
-def test_scope_misuse_raises_and_leaks_nothing():
-    server, host = FakeServer(taps=1), FakeHost()
+def test_scope_misuse_raises():
+    server, host = FakeServer(), FakeHost()
     with pytest.raises(ValueError):
         scope(0, view="lissajous", server=server, host=host)
-    # A phase view needs two taps; a 1-tap server exhausts before any /tap.
-    with pytest.raises(RuntimeError):
-        scope(0, view="phase", server=server, host=host)
-    assert server.taps.in_use == 0 and server.tapped == []
-    # A failed window open rolls the tap back.
-    class Refusing(FakeHost):
-        def open(self, tree, *blobs, id=None):
-            raise OSError("host gone")
-    with pytest.raises(OSError):
-        scope(0, server=server, host=Refusing())
-    assert server.taps.in_use == 0
-    assert server.tapped == [(0, 0), (0, -1)], "routed, then stopped"
 
 
 def test_scope_without_shm_needs_an_explicit_host():
-    # The ambient host reads taps from the server's shared segment natively;
+    # The ambient host reads the buses from the server's shared segment;
     # a handle without one must fail early instead of opening a dead scope.
     server = FakeServer(shm=None)
     with pytest.raises(RuntimeError, match="shared-memory"):
@@ -221,7 +164,7 @@ def test_scope_without_shm_needs_an_explicit_host():
 def test_guidef_spectrum_carries_freq_scale_with_log_freq_legacy():
     w = guidef.spectrum(3, id=7, fft_size=512, freq_scale="bark",
                         averaging=0.8, peak_hold=True, label="spec")
-    assert w["type"] == "spectrum" and w["tap"] == 3
+    assert w["type"] == "spectrum" and w["bus"] == 3
     assert w["freq_scale"] == "bark"
     assert w["peak_hold"] == 1 and w["averaging"] == 0.8
     # The legacy boolean still rides (the host reads it as linear/log).

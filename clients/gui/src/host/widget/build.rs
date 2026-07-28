@@ -154,48 +154,35 @@ pub(super) fn build_kind(
         }
         "meter" => WidgetKind::Meter {
             bus: int_prop(&node.props, "bus", 0),
+            rate: Rate::parse(node.props.get("rate").and_then(Value::as_str)),
             min: number(&node.props, "min", 0.0),
             max: number(&node.props, "max", 1.0),
             label: label(&node.props),
         },
-        "scope" => {
-            // Audio-rate when a `tap` is named (or `rate: "audio"` asks
-            // for the default tap 0); otherwise the control-bus history.
-            let audio = node.props.contains_key("tap")
-                || node.props.get("rate").and_then(Value::as_str) == Some("audio");
-            WidgetKind::Scope {
-                bus: int_prop(&node.props, "bus", 0),
-                tap: if audio {
-                    int_prop(&node.props, "tap", 0)
-                } else {
-                    -1
-                },
-                channels: int_prop(&node.props, "channels", 1).max(1) as usize,
-                overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
-                window_ms: number(&node.props, "window_ms", 20.0),
-                trigger: number(&node.props, "trigger", 0.0),
-                hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
-                min: number(&node.props, "min", -1.0),
-                max: number(&node.props, "max", 1.0),
-                ruler: strip_shown(&node.props, "ruler"),
-                ruler_y: strip_shown(&node.props, "ruler_y"),
-                label: label(&node.props),
-            }
-        }
-        "phasescope" => {
-            let tap = int_prop(&node.props, "tap", 0);
-            WidgetKind::Phasescope {
-                tap,
-                // The right channel defaults to the next ring, the natural
-                // layout for a stereo pair tapped on adjacent indices.
-                tap2: int_prop(&node.props, "tap2", tap + 1),
-                window_ms: number(&node.props, "window_ms", 30.0),
-                hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
-                label: label(&node.props),
-            }
-        }
+        "scope" => WidgetKind::Scope {
+            bus: int_prop(&node.props, "bus", 0),
+            rate: Rate::parse(node.props.get("rate").and_then(Value::as_str)),
+            channels: int_prop(&node.props, "channels", 1).max(1) as usize,
+            overlay: node.props.get("overlay").and_then(truthy).unwrap_or(false),
+            window_ms: number(&node.props, "window_ms", 20.0),
+            trigger: number(&node.props, "trigger", 0.0),
+            hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
+            min: number(&node.props, "min", -1.0),
+            max: number(&node.props, "max", 1.0),
+            ruler: strip_shown(&node.props, "ruler"),
+            ruler_y: strip_shown(&node.props, "ruler_y"),
+            label: label(&node.props),
+        },
+        "phasescope" => WidgetKind::Phasescope {
+            // The right channel is the next bus, the adjacent-channel layout
+            // the whole family uses.
+            bus: int_prop(&node.props, "bus", 0),
+            window_ms: number(&node.props, "window_ms", 30.0),
+            hold: node.props.get("hold").and_then(truthy).unwrap_or(false),
+            label: label(&node.props),
+        },
         "spectrum" => WidgetKind::Spectrum {
-            tap: int_prop(&node.props, "tap", 0),
+            bus: int_prop(&node.props, "bus", 0),
             channels: int_prop(&node.props, "channels", 1).max(1) as usize,
             fft_size: fft_size(&node.props),
             db_floor: number(&node.props, "db_floor", -100.0),

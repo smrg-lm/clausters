@@ -3,9 +3,10 @@
 
 It shows the two ways the GUI host reaches into the audio server:
 
-- a ``meter`` and a ``scope`` read a **control bus straight from the audio
-  server's shared-memory segment**, every frame, with no OSC traffic at all --
-  the script only writes the bus with ``/c_set``;
+- a ``meter`` and a ``scope`` read a bus **straight from the audio server's
+  shared-memory segment**, every frame, with no OSC traffic at all. Both name a
+  bus and a rate; here they say ``rate="control"`` (their default is audio, the
+  console case) and the script only writes the bus with ``/c_set``;
 - a ``waveform`` references a **server buffer by number**; the host fetches its
   samples from the server (``/b_query`` then ``/b_getn``) and renders them.
 
@@ -81,13 +82,16 @@ bus = server.control_bus()
 
 # %% [markdown]
 # ## The window
-# A meter + scope on the control bus, over a waveform of the server buffer. All
-# named, not numbered -- `open` hands back a handle that resolves the names.
+# A meter + scope on the control bus, over a waveform of the server buffer.
+# All named, not numbered -- `open` hands back a handle that resolves the
+# names.
 
 # %%
 win = gui.open(window(
-    panel(meter(name="level", bus=bus.index, min=-1.0, max=1.0, label="bus"),
-          scope(name="trace", bus=bus.index, min=-1.0, max=1.0, label="bus"),
+    panel(meter(bus.index, rate="control", name="level",
+                min=-1.0, max=1.0, label="bus"),
+          scope(bus.index, rate="control", name="trace",
+                min=-1.0, max=1.0, label="bus"),
           layout="row"),
     waveform(name="buffer", buffer=bufnum),
     title="Meters + server buffer", w=640, h=440, layout="col"))

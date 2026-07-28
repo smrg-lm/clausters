@@ -4,8 +4,8 @@
 window that follows ``channels`` consecutive audio buses of the running
 server, frame by frame, with no per-frame messages (the GUI host reads the
 server's shared memory). Everything is wired for you: the ambient server and
-GUI host are resolved, free audio taps are taken from the server's registry
-(``server.taps``) and the buses routed into them (``/tap``).
+GUI host are resolved, and the GUI host asks the server to record the buses
+it draws — you name a bus, nothing else.
 
 **Open one:**
 
@@ -49,14 +49,14 @@ win.set(freq_scale="linear", fft_size=4096)   # spectrum
 win.set(ruler="off", ruler_y="off")  # bare field, no axis strips
 ```
 
-**Close it** with ``win.close()`` — it stops the taps (``/tap … -1``),
-returns them to the registry and closes the window. Closing from the window
-manager does **not** free the taps, so prefer ``close``.
+**Close it** with ``win.close()`` — it closes the window, and the host stops
+recording whatever no open view is drawing any more (closing from the window
+manager does the same).
 
 **Requirements.** A live server with a shared-memory segment (`Server.boot`
-and `Session.live` create one by default). Taps are finite (``--taps``
-rings, 8 by default): a stereo scope holds two while open, so close scopes
-you are done with. To scope a server you only *attached* to, pass ``host=``
+and `Session.live` create one by default). Recording an audio bus uses one of
+the server's sample rings (``--taps``, 8 by default): a stereo scope holds two
+while open, so close scopes you are done with. To scope a server you only *attached* to, pass ``host=``
 pointed at a `clausters.gui.GuiHost` booted with that server's segment path.
 """
 
@@ -66,24 +66,22 @@ _VIEWS = ("signal", "phase", "spectrum")
 
 
 class ScopeWindow:
-    """One open scope window and the server resources behind it: the GUI
-    ``host``, the window ``id``, the scope widget's id, and the audio ``tap``
-    run it owns on ``server``. ``set`` retunes the display live; ``close``
-    stops the tap(s), returns them to the registry and closes the window::
+    """One open scope window: the GUI ``host``, the window ``id`` and the
+    scope widget's id. ``set`` retunes the display live; ``close`` closes the
+    window, and the host stops the recording nothing is drawing any more::
 
         win = scope(bus, view="spectrum")
         win.set(freq_scale="mel", fft_size=4096)   # /gui_set, live
-        win.close()                                # /tap -1 + registry free
+        win.close()                                # /gui_free
     """
 
-    def __init__(self, host, window_id: int, widget_id: int, server,
-                 tap: int, count: int):
+    def __init__(self, host, window_id: int, widget_id: int, server, bus: int, count: int):
         self.host = host
         self.id = window_id
         self.widget_id = widget_id
         self.server = server
-        #: first tap index of the run this window owns (`count` adjacent).
-        self.tap = tap
+        #: first bus of the adjacent run this window watches (`count` of them).
+        self.bus = bus
         self._count = count
         self._closed = False
 
@@ -93,23 +91,20 @@ class ScopeWindow:
         (signal), ``window_ms``/``hold`` (phase), ``fft_size``/``freq_scale``/
         ``db_floor``/``db_ceil``/``averaging``/``peak_hold`` (spectrum);
         ``ruler``/``ruler_y`` (``"off"`` hides an axis strip) and ``label``
-        on any."""
+        on any. ``bus`` and ``channels`` retarget it."""
         self.host.set(self.widget_id, **props)
         return self
 
     def close(self):
-        """Stop the tap(s) (``/tap … -1``), return them to ``server.taps`` and
-        close the window (``/gui_free``). Idempotent."""
+        """Close the window (``/gui_free``). Idempotent. The recording behind
+        it is the host's business: it stops what no open view reads."""
         if self._closed:
             return
         self._closed = True
-        for k in range(self._count):
-            self.server.tap(self.tap + k, -1)
-        self.server.taps.free(self.tap, self._count)
         self.host.close(self.id)
 
     def __repr__(self):
-        return f"ScopeWindow(id={self.id}, tap={self.tap})"
+        return f"ScopeWindow(id={self.id}, bus={self.bus})"
 
 
 def scope(bus=0, *, view: str = "signal", channels: int | None = None,
@@ -126,9 +121,9 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
     """Watch ``channels`` consecutive audio buses from ``bus`` in a window.
 
     See the module manual above for how each view reads. Signal and spectrum
-    views monitor ``channels`` buses (``bus .. bus + channels - 1``, each on
-    its own tap ring); the phase view is the two-channel case — it always
-    reads the pair ``bus`` / ``bus + 1``.
+    views monitor ``channels`` buses (``bus .. bus + channels - 1``); the phase
+    view is the two-channel case — it always reads the pair ``bus`` /
+    ``bus + 1``.
 
     Args:
         bus: the first audio bus to watch — a `clausters.defs.Bus` or a plain
@@ -171,7 +166,7 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
 
     Returns:
         A `ScopeWindow` — ``.set(...)`` retunes the display live, ``.close()``
-        stops and frees the tap(s) and closes the window.
+        closes the window (and with it the recording behind it).
     """
     from .base.main import main
     from .defs.bus import Bus
@@ -193,18 +188,15 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
     if host is None:
         if server.shm is None:
             raise RuntimeError(
-                "scope reads the server's audio taps from its shared-memory "
+                "scope reads the server's audio buses from its shared-memory "
                 "segment, and this server handle has none: boot with the "
                 "default shm='auto' (Server.boot / Session.live), or pass "
-                "host= pointed at a GUI host with its own tap path (e.g. "
+                "host= pointed at a GUI host with its own segment (e.g. "
                 "GuiHost.boot(server=..., shm=...) for a server you attached "
                 "to)")
         host = _ambient_host(server)
 
     index = bus.index if isinstance(bus, Bus) else int(bus)
-    tap0 = server.taps.alloc(channels)
-    for k in range(channels):
-        server.tap(tap0 + k, index + k)
 
     if label is None:
         if view == "phase":
@@ -215,29 +207,23 @@ def scope(bus=0, *, view: str = "signal", channels: int | None = None,
             label = f"bus {index}"
     widget_id = host.alloc_id()
     if view == "signal":
-        widget = guidef.scope(id=widget_id, tap=tap0, channels=channels,
+        widget = guidef.scope(index, id=widget_id, channels=channels,
                               overlay=overlay, window_ms=window_ms,
                               trigger=trigger, hold=hold, min=min, max=max,
                               ruler=ruler, ruler_y=ruler_y, label=label)
         lanes = 1 if overlay else channels
         h = h if h is not None else (200 + 90 * lanes)
     elif view == "phase":
-        widget = guidef.phasescope(tap0, tap0 + 1, id=widget_id,
+        widget = guidef.phasescope(index, id=widget_id,
                                    window_ms=window_ms, hold=hold, label=label)
         h = h if h is not None else 420
     else:
-        widget = guidef.spectrum(tap0, id=widget_id, channels=channels,
+        widget = guidef.spectrum(index, id=widget_id, channels=channels,
                                  fft_size=fft_size, db_floor=db_floor,
                                  db_ceil=db_ceil, freq_scale=freq_scale,
                                  averaging=averaging, peak_hold=peak_hold,
                                  ruler=ruler, ruler_y=ruler_y, label=label)
         h = h if h is not None else 280
     tree = guidef.window(widget, title=title or label, w=w, h=h)
-    try:
-        window_id = host.open(tree)
-    except Exception:
-        for k in range(channels):
-            server.tap(tap0 + k, -1)
-        server.taps.free(tap0, channels)
-        raise
-    return ScopeWindow(host, window_id, widget_id, server, tap0, channels)
+    window_id = host.open(tree)
+    return ScopeWindow(host, window_id, widget_id, server, index, channels)

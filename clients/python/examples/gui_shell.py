@@ -16,7 +16,7 @@ elements a control panel uses:
   absolutely — not used here, same props, different layout.
 
 Everything is live: the sidebar's controls retune a quiet server voice, the
-oscilloscope draws the server's **actual stereo output** (two audio taps on
+oscilloscope draws the server's **actual stereo output** (the two hardware output buses,
 buses 0/1, read by the host from shared memory — zero per-frame messages),
 and the status bar is a plain ``label`` the script rewrites via ``set`` on
 every event — the whole "application" is one GuiDef plus ordinary client
@@ -46,7 +46,7 @@ from clausters.gui import button, knob, label, menu, panel, scope, slider, windo
 # ## Launch the server and the GUI
 # `Session.live()` boots the server with a shared-memory segment (`shm="auto"`),
 # and `session.gui()` maps the same segment — the oscilloscope reads the audio
-# taps straight from it.
+# buses straight from it.
 
 # %%
 session = Session.live()
@@ -71,11 +71,6 @@ def voice(name: str = "gui_shell_voice") -> SynthDef:
 
 server.add_synthdef(voice())
 
-# Two adjacent audio taps on the output buses: the oscilloscope's source.
-tap0 = server.taps.alloc(2)
-for k in range(2):
-    server.tap(tap0 + k, k)
-
 # %% [markdown]
 # ## The shell
 # A `col` window with `margin=0, gap=0`: an `h`-fixed menu bar, a `weight`ed
@@ -93,7 +88,7 @@ sidebar = panel(knob(name="freq", label="freq", min=55.0, max=880.0, value=220.0
                 slider(name="amp", label="amp", min=0.0, max=0.15, value=0.08),
                 layout="col", w=190)
 
-out_scope = scope(tap=tap0, channels=2, window_ms=25.0, label="output")
+out_scope = scope(0, channels=2, window_ms=25.0, label="output")
 work_area = panel(sidebar, out_scope, layout="row", weight=1.0, gap=4)
 
 win = gui.open(window(menu_bar, work_area, label(name="status", text="ready", h=24),
@@ -106,7 +101,7 @@ print(f"opened window {win}")
 # The script is the application logic: each button/control has its own handle
 # callback, and every action rewrites the status label -- `win["status"].set(
 # text=...)` is the whole status-bar API. The oscilloscope needs nothing from
-# this loop -- the host reads the taps from the segment on its own.
+# this loop -- the host reads the buses from the segment on its own.
 
 # %%
 _voice = None

@@ -57,11 +57,13 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         },
         WidgetKind::Meter {
             bus,
+            rate,
             min,
             max,
             label,
         } => match key {
             "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
+            "rate" => set_rate(rate, v),
             "min" => set_f(min, v),
             "max" => set_f(max, v),
             "label" => set_label(label, v),
@@ -69,7 +71,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
         },
         WidgetKind::Scope {
             bus,
-            tap,
+            rate,
             channels,
             overlay,
             window_ms,
@@ -82,7 +84,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             label,
         } => match key {
             "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
-            "tap" => v.as_i64().map(|n| *tap = n as i32).is_some(),
+            "rate" => set_rate(rate, v),
             "channels" => v
                 .as_i64()
                 .map(|n| *channels = (n as usize).max(1))
@@ -99,21 +101,19 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             _ => false,
         },
         WidgetKind::Phasescope {
-            tap,
-            tap2,
+            bus,
             window_ms,
             hold,
             label,
         } => match key {
-            "tap" => v.as_i64().map(|n| *tap = n as i32).is_some(),
-            "tap2" => v.as_i64().map(|n| *tap2 = n as i32).is_some(),
+            "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
             "window_ms" => set_f(window_ms, v),
             "hold" => truthy(v).map(|b| *hold = b).is_some(),
             "label" => set_label(label, v),
             _ => false,
         },
         WidgetKind::Spectrum {
-            tap,
+            bus,
             channels,
             fft_size,
             db_floor,
@@ -125,7 +125,7 @@ pub(super) fn apply_kind(kind: &mut WidgetKind, key: &str, v: &Value) -> bool {
             ruler_y,
             label,
         } => match key {
-            "tap" => v.as_i64().map(|n| *tap = n as i32).is_some(),
+            "bus" => v.as_i64().map(|n| *bus = n as i32).is_some(),
             "channels" => v
                 .as_i64()
                 .map(|n| *channels = (n as usize).max(1))

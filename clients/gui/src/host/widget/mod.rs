@@ -589,6 +589,34 @@ impl Place {
         true
     }
 }
+/// The rate a data view reads its bus at. A bus is a bus — the rate says how
+/// its values are obtained, not what kind of thing it is: audio-rate buses are
+/// recorded into the segment by the server on demand, control-rate buses live
+/// in the segment permanently.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Rate {
+    /// The default for every live data view: the meters, the oscilloscope, the
+    /// goniometer and the spectroscope all watch audio unless told otherwise.
+    #[default]
+    Audio,
+    Control,
+}
+
+impl Rate {
+    /// Parses the wire's `rate` prop. Absent or unrecognized reads as the
+    /// default, audio rate — so a typo shows the common case rather than
+    /// nothing.
+    pub fn parse(value: Option<&str>) -> Self {
+        match value {
+            Some("control") | Some("kr") => Rate::Control,
+            _ => Rate::Audio,
+        }
+    }
+
+    pub fn is_audio(self) -> bool {
+        self == Rate::Audio
+    }
+}
 
 /// The typed kind of a widget, with the fields the renderer needs.
 #[derive(Debug, Clone)]
@@ -673,30 +701,33 @@ pub enum WidgetKind {
         colormap: i32,
         editor: EditorProps,
     },
-    /// A level meter reading control bus `bus` from the shared-memory segment
-    /// each frame (zero messages), shown as a bar over `[min, max]`.
+    /// A level meter reading bus `bus` from the shared-memory segment each
+    /// frame (zero messages), shown as a bar over `[min, max]`. At `rate`
+    /// audio (the default) it reads the bus's published block level, the
+    /// console meter over a hardware output or any mix bus; at control rate it
+    /// reads the control bus's current value.
     Meter {
         bus: i32,
+        rate: Rate,
         min: f32,
         max: f32,
         label: Option<String>,
     },
-    /// A time-domain scope over `[min, max]`, in one of two rates:
-    /// control-rate (`tap < 0`, the default) plots the rolling history of
-    /// control bus `bus`, one sample per frame tick; audio-rate (`tap >= 0`,
-    /// set by a `tap` prop or `rate: "audio"`) is a real oscilloscope — a
-    /// `window_ms` window of `channels` **adjacent** segment tap rings
-    /// starting at `tap` (see the server's `/tap`), re-read every frame and
-    /// aligned on a rising crossing of `trigger` found in the **first**
-    /// channel, so the channels keep their true relative phase (free-running
-    /// when no crossing is found; a lock/free read-out shows which). Channels
-    /// draw as stacked lanes, or as color-coded traces in one field with
-    /// `overlay`; `hold` freezes the trace. `ruler`/`ruler_y` (`"off"` to
-    /// hide) are the audio-rate form's axis strips: x in milliseconds of the
-    /// window, y in signal value over `[min, max]`.
+    /// A time-domain scope over `[min, max]` of `channels` **adjacent** buses
+    /// starting at `bus`, in one of two rates. At audio rate (the default) it
+    /// is a real oscilloscope: a `window_ms` window of each bus's recorded
+    /// samples, re-read every frame and aligned on a rising crossing of
+    /// `trigger` found in the **first** channel, so the channels keep their
+    /// true relative phase (free-running when no crossing is found; a
+    /// lock/free read-out shows which). At control rate it plots the rolling
+    /// history of the control buses, one sample per frame tick. Channels draw
+    /// as stacked lanes, or as color-coded traces in one field with `overlay`;
+    /// `hold` freezes the trace. `ruler`/`ruler_y` (`"off"` to hide) are the
+    /// audio-rate form's axis strips: x in milliseconds of the window, y in
+    /// signal value over `[min, max]`.
     Scope {
         bus: i32,
-        tap: i32,
+        rate: Rate,
         channels: usize,
         overlay: bool,
         window_ms: f32,
@@ -708,21 +739,21 @@ pub enum WidgetKind {
         ruler_y: bool,
         label: Option<String>,
     },
-    /// A phase/goniometer view of a stereo pair of audio taps, drawn as the
+    /// A phase/goniometer view of a stereo pair of audio buses, drawn as the
     /// 45°-rotated Lissajous figure (vertical = mid `(L+R)/√2`, horizontal =
-    /// side `(L−R)/√2`): mono reads vertical, anti-phase horizontal. `tap` is
-    /// the left channel's ring, `tap2` the right; `window_ms` sizes the
-    /// age-faded persistence trail; `hold` freezes it. A correlation read-out
-    /// (Pearson r over the window) sits under the field.
+    /// side `(L−R)/√2`): mono reads vertical, anti-phase horizontal. `bus` is
+    /// the left channel and `bus + 1` the right, the adjacent-channel layout
+    /// the whole family uses; `window_ms` sizes the age-faded persistence
+    /// trail; `hold` freezes it. A correlation read-out (Pearson r over the
+    /// window) sits under the field. Audio rate only.
     Phasescope {
-        tap: i32,
-        tap2: i32,
+        bus: i32,
         window_ms: f32,
         hold: bool,
         label: Option<String>,
     },
     /// A live FFT magnitude curve (spectroscope) over `channels` **adjacent**
-    /// audio taps starting at `tap`: one forward FFT per channel per frame of
+    /// audio buses starting at `bus`: one forward FFT per channel per frame of
     /// the newest `fft_size` window, magnitudes in dB over
     /// `[db_floor, db_ceil]`, the frequency axis on `freq_scale`
     /// (linear/log/mel/bark; `log_freq` is the legacy boolean alias). The
@@ -733,7 +764,7 @@ pub enum WidgetKind {
     /// the active scale, y in dB. The analysis reuses the shared-core FFT +
     /// Hann window, so it agrees with the spectrogram.
     Spectrum {
-        tap: i32,
+        bus: i32,
         channels: usize,
         fft_size: usize,
         db_floor: f32,
@@ -1311,45 +1342,54 @@ impl WidgetKind {
         }
     }
 
-    /// The control bus a live (shared-memory-backed) widget reads each frame, if
-    /// this is one. The windowed front uses it to know which windows to animate
-    /// and which bus to sample. An audio-rate scope reads a tap, not a bus.
+    /// The control bus a live (shared-memory-backed) widget reads each frame,
+    /// if this is one. The windowed front uses it to know which windows to
+    /// animate and which bus to sample. An audio-rate view reads recorded
+    /// samples or a published level instead — see [`Self::audio_buses_read`]
+    /// and [`Self::level_bus`].
     pub fn live_bus(&self) -> Option<i32> {
         match self {
-            WidgetKind::Meter { bus, .. } => Some(*bus),
-            WidgetKind::Scope { bus, tap, .. } if *tap < 0 => Some(*bus),
+            WidgetKind::Meter { bus, rate, .. } | WidgetKind::Scope { bus, rate, .. }
+                if !rate.is_audio() =>
+            {
+                Some(*bus)
+            }
             _ => None,
         }
     }
 
-    /// The first audio-tap ring an audio-rate scope reads each frame, if this
-    /// is one.
-    pub fn live_tap(&self) -> Option<i32> {
+    /// The audio bus whose **published level** this widget reads each frame, if
+    /// this is one. A meter wants one number per block, not samples, so it
+    /// reads the segment's level table and asks the server to record nothing.
+    pub fn level_bus(&self) -> Option<i32> {
         match self {
-            WidgetKind::Scope { tap, .. } if *tap >= 0 => Some(*tap),
+            WidgetKind::Meter { bus, rate, .. } if rate.is_audio() => Some(*bus),
             _ => None,
         }
     }
 
-    /// Appends every audio-tap ring this widget reads each frame — `channels`
-    /// adjacent rings for an audio-rate `scope` or a `spectrum`, two (left and
-    /// right) for a `phasescope`. Drives the tap subscription/animation set,
-    /// so all three tap consumers are covered uniformly.
-    pub fn taps_read(&self, out: &mut Vec<i32>) {
+    /// Appends every audio bus whose **samples** this widget reads each frame —
+    /// `channels` adjacent buses for an audio-rate `scope` or a `spectrum`, two
+    /// (left and right) for a `phasescope`. This is the set the host asks the
+    /// server to record (`/tap`) and the set it animates for, so all three
+    /// sample consumers are covered uniformly. A meter is deliberately absent:
+    /// its level costs no recording.
+    pub fn audio_buses_read(&self, out: &mut Vec<i32>) {
         match self {
-            WidgetKind::Scope { tap, channels, .. } if *tap >= 0 => {
-                out.extend((0..*channels as i32).map(|k| *tap + k));
+            WidgetKind::Scope {
+                bus,
+                rate,
+                channels,
+                ..
+            } if rate.is_audio() => {
+                out.extend((0..*channels as i32).map(|k| *bus + k));
             }
-            WidgetKind::Spectrum { tap, channels, .. } if *tap >= 0 => {
-                out.extend((0..*channels as i32).map(|k| *tap + k));
+            WidgetKind::Spectrum { bus, channels, .. } => {
+                out.extend((0..*channels as i32).map(|k| *bus + k));
             }
-            WidgetKind::Phasescope { tap, tap2, .. } => {
-                if *tap >= 0 {
-                    out.push(*tap);
-                }
-                if *tap2 >= 0 {
-                    out.push(*tap2);
-                }
+            WidgetKind::Phasescope { bus, .. } => {
+                out.push(*bus);
+                out.push(*bus + 1);
             }
             _ => {}
         }
@@ -1891,11 +1931,13 @@ mod tests {
         match &w.children[0].kind {
             WidgetKind::Meter {
                 bus,
+                rate,
                 min,
                 max,
                 label,
             } => {
                 assert_eq!((*bus, *min, *max), (5, 0.0, 2.0));
+                assert_eq!(*rate, Rate::Audio, "a meter watches audio unless told");
                 assert_eq!(label.as_deref(), Some("out"));
             }
             other => panic!("expected meter, got {other:?}"),
@@ -1907,12 +1949,18 @@ mod tests {
             }
             other => panic!("expected scope, got {other:?}"),
         }
-        assert_eq!(w.children[0].kind.live_bus(), Some(5));
-        // A live `/gui_set` can retarget the bus and rescale the meter.
+        // An audio-rate meter reads a published level, not a control bus.
+        assert_eq!(w.children[0].kind.live_bus(), None);
+        assert_eq!(w.children[0].kind.level_bus(), Some(5));
+        // A live `/gui_set` can retarget the bus, rescale the meter, and move
+        // it between the rates.
         let meter = w.find_mut(1).unwrap();
         assert!(meter.kind.apply("bus", &Value::from(8)));
         assert!(meter.kind.apply("max", &Value::from(4.0)));
+        assert_eq!(meter.kind.level_bus(), Some(8));
+        assert!(meter.kind.apply("rate", &Value::from("control")));
         assert_eq!(meter.kind.live_bus(), Some(8));
+        assert_eq!(meter.kind.level_bus(), None);
     }
 
     #[test]
@@ -2122,40 +2170,39 @@ mod tests {
     fn phasescope_and_spectrum_parse_with_defaults_and_apply() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"phasescope","tap":2},
-                {"id":2,"type":"spectrum","tap":0,"fft_size":1024,"log_freq":0}
+                {"id":1,"type":"phasescope","bus":2},
+                {"id":2,"type":"spectrum","bus":0,"fft_size":1024,"log_freq":0}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
         match &w.children[0].kind {
             WidgetKind::Phasescope {
-                tap,
-                tap2,
+                bus,
                 window_ms,
                 hold,
                 ..
             } => {
-                assert_eq!((*tap, *tap2), (2, 3), "tap2 defaults to tap + 1");
+                assert_eq!(*bus, 2, "the right channel is the next bus");
                 assert_eq!(*window_ms, 30.0);
                 assert!(!*hold);
             }
             other => panic!("expected phasescope, got {other:?}"),
         }
-        // A phasescope reads both taps; it is not a single-bus/tap widget.
-        let mut taps = Vec::new();
-        w.children[0].kind.taps_read(&mut taps);
-        assert_eq!(taps, vec![2, 3]);
+        // A phasescope reads both buses; it is not a single-bus widget.
+        let mut buses = Vec::new();
+        w.children[0].kind.audio_buses_read(&mut buses);
+        assert_eq!(buses, vec![2, 3]);
         assert_eq!(w.children[0].kind.live_bus(), None);
         match &w.children[1].kind {
             WidgetKind::Spectrum {
-                tap,
+                bus,
                 fft_size,
                 db_floor,
                 db_ceil,
                 freq_scale,
                 ..
             } => {
-                assert_eq!((*tap, *fft_size), (0, 1024));
+                assert_eq!((*bus, *fft_size), (0, 1024));
                 assert_eq!((*db_floor, *db_ceil), (-100.0, 0.0));
                 assert_eq!(
                     *freq_scale,
@@ -2207,11 +2254,11 @@ mod tests {
     }
 
     #[test]
-    fn multichannel_scope_and_spectrum_read_adjacent_taps() {
+    fn multichannel_scope_and_spectrum_read_adjacent_buses() {
         let n = node(
             r#"{"type":"window","children":[
-                {"id":1,"type":"scope","tap":4,"channels":2,"overlay":1,"ruler":"off"},
-                {"id":2,"type":"spectrum","tap":6,"channels":3,"ruler_y":"off"}
+                {"id":1,"type":"scope","bus":4,"channels":2,"overlay":1,"ruler":"off"},
+                {"id":2,"type":"spectrum","bus":6,"channels":3,"ruler_y":"off"}
             ]}"#,
         );
         let mut w = Widget::from_node(9, &n, &[]).unwrap();
@@ -2230,13 +2277,13 @@ mod tests {
             }
             other => panic!("expected scope, got {other:?}"),
         }
-        // Each consumer reads its whole adjacent run.
-        let mut taps = Vec::new();
-        w.children[0].kind.taps_read(&mut taps);
-        assert_eq!(taps, vec![4, 5]);
-        taps.clear();
-        w.children[1].kind.taps_read(&mut taps);
-        assert_eq!(taps, vec![6, 7, 8]);
+        // Each consumer reads its whole adjacent run of buses.
+        let mut buses = Vec::new();
+        w.children[0].kind.audio_buses_read(&mut buses);
+        assert_eq!(buses, vec![4, 5]);
+        buses.clear();
+        w.children[1].kind.audio_buses_read(&mut buses);
+        assert_eq!(buses, vec![6, 7, 8]);
         // Live: grow the runs and toggle a strip back on.
         assert!(
             w.find_mut(1)
@@ -2245,9 +2292,9 @@ mod tests {
                 .apply("channels", &Value::from(4))
         );
         assert!(w.find_mut(1).unwrap().kind.apply("ruler", &Value::from(1)));
-        taps.clear();
-        w.find_mut(1).unwrap().kind.taps_read(&mut taps);
-        assert_eq!(taps, vec![4, 5, 6, 7]);
+        buses.clear();
+        w.find_mut(1).unwrap().kind.audio_buses_read(&mut buses);
+        assert_eq!(buses, vec![4, 5, 6, 7]);
         match &w.children[1].kind {
             WidgetKind::Spectrum {
                 channels, ruler_y, ..

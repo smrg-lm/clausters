@@ -31,7 +31,7 @@ use super::ruler::{self, TimeUnit};
 use super::spectrum::SpectrumState;
 use super::theme::{Theme, with_alpha};
 use super::timeline::{TimelineGroups, group_key};
-use super::widget::{EditorProps, Ruler, RulerY, Widget, WidgetKind};
+use super::widget::{EditorProps, Rate, Ruler, RulerY, Widget, WidgetKind};
 use super::{
     BusSource, bpf, controls, live, meters, patch, phasescope, piano, pianoroll, plot, spectrum,
     track,
@@ -259,6 +259,9 @@ struct MeterItem {
     clip: Option<Rect>,
     theme: Option<Arc<Theme>>,
     bus: i32,
+    /// Audio rate reads the bus's published block level; control rate reads
+    /// the control bus's current value.
+    rate: Rate,
     min: f32,
     max: f32,
     label: Option<String>,
@@ -454,6 +457,20 @@ fn read_bus(source: Option<&dyn BusSource>, bus: i32) -> f32 {
         return 0.0;
     }
     source.map_or(0.0, |s| s.control(bus as usize))
+}
+
+/// What a meter draws for its bus, at its rate: the published block level of an
+/// audio bus, or the current value of a control bus. Both are one atomic load
+/// out of the same segment — neither costs a message, and the audio one costs
+/// no tap either.
+fn read_level(source: Option<&dyn BusSource>, bus: i32, rate: Rate) -> f32 {
+    if bus < 0 {
+        return 0.0;
+    }
+    match rate {
+        Rate::Audio => source.map_or(0.0, |s| s.level(bus)),
+        Rate::Control => read_bus(source, bus),
+    }
 }
 
 /// Maps sample position `s` into `body`'s x range through `nav`.
@@ -872,6 +889,7 @@ fn collect_widgets(
             }
             WidgetKind::Meter {
                 bus,
+                rate,
                 min,
                 max,
                 label,
@@ -880,12 +898,13 @@ fn collect_widgets(
                 clip: p.clip,
                 theme: p.widget.theme.clone(),
                 bus: *bus,
+                rate: *rate,
                 min: *min,
                 max: *max,
                 label: label.clone(),
             }),
             WidgetKind::Scope {
-                tap,
+                rate,
                 overlay,
                 window_ms,
                 trigger,
@@ -897,7 +916,7 @@ fn collect_widgets(
                 ..
             } => {
                 if let Some(id) = p.widget.id {
-                    if *tap >= 0 {
+                    if rate.is_audio() {
                         wave_rects.push(WaveItem {
                             id,
                             rect: p.rect,
@@ -1244,7 +1263,7 @@ fn draw_live_meshes(
     for item in &collected.meter_rects {
         mesh.set_clip(item.clip);
         let th = item.theme.as_deref().unwrap_or(theme);
-        let value = read_bus(inputs.bus, item.bus);
+        let value = read_level(inputs.bus, item.bus, item.rate);
         let frac = meters::fraction(value, item.min, item.max);
         meters::draw_meter(
             &mut *mesh,

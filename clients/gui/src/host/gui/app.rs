@@ -213,18 +213,18 @@ impl App {
                 crate::host::live::update_tap_windows(
                     tree,
                     sample_rate,
-                    |tap, out| shm.read_tap(tap, out),
+                    |bus, out| shm.read_bus(bus, out),
                     &mut ws.tap_windows,
                 );
                 crate::host::live::update_phase_windows(
                     tree,
                     sample_rate,
-                    |tap, out| shm.read_tap(tap, out),
+                    |bus, out| shm.read_bus(bus, out),
                     &mut ws.tap_windows,
                 );
                 crate::host::live::update_spectra(
                     tree,
-                    |tap, out| shm.read_tap(tap, out),
+                    |bus, out| shm.read_bus(bus, out),
                     &mut ws.spectra,
                 );
             }

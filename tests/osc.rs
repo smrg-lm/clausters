@@ -6,6 +6,7 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream, UdpSocket};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -555,9 +556,10 @@ fn tap_and_tap_stream_snapshot_audio() {
         Limits::default(),
     ));
 
-    // Route audio bus 0 into tap 0 (no ack; failures reply /fail), then give
-    // it something to record: the built-in default synth on bus 0.
-    server.send("/tap", vec![OscType::Int(0), OscType::Int(0)]);
+    // Ask to watch audio bus 0 -- the server picks the ring (no ack; failures
+    // reply /fail) -- then give it something to record: the built-in default
+    // synth on bus 0.
+    server.send("/tap", vec![OscType::Int(0), OscType::Int(1)]);
     server.send(
         "/s_new",
         vec![
@@ -599,16 +601,103 @@ fn tap_and_tap_stream_snapshot_audio() {
         .fold(0.0f32, f32::max);
     assert!(peak > 0.01, "tapped audio must not be silent (peak {peak})");
 
-    // Period 0 cancels (acked); out-of-range indices fail.
+    // Period 0 cancels (acked); an out-of-range bus fails, in both
+    // directions -- watching it and releasing it are equally impossible.
     server.send("/tap_stream", vec![OscType::Int(0), OscType::Int(512)]);
     let done = server.recv_until("/done");
     assert_eq!(done.args[0], OscType::String("/tap_stream".into()));
-    server.send("/tap", vec![OscType::Int(99), OscType::Int(0)]);
+    server.send("/tap", vec![OscType::Int(999), OscType::Int(1)]);
     let fail = server.recv_until("/fail");
     assert_eq!(fail.args[0], OscType::String("/tap".into()));
-    server.send("/tap", vec![OscType::Int(0), OscType::Int(999)]);
+    server.send("/tap", vec![OscType::Int(999), OscType::Int(0)]);
     let fail = server.recv_until("/fail");
     assert_eq!(fail.args[0], OscType::String("/tap".into()));
+
+    // Two rings, three buses: the third watch has nowhere to land and says so
+    // rather than silently drawing nothing.
+    server.send("/tap", vec![OscType::Int(1), OscType::Int(1)]);
+    server.send("/tap", vec![OscType::Int(2), OscType::Int(1)]);
+    let fail = server.recv_until("/fail");
+    assert_eq!(fail.args[0], OscType::String("/tap".into()));
+    // Releasing one frees its ring for the next watcher.
+    server.send("/tap", vec![OscType::Int(1), OscType::Int(0)]);
+    server.send("/tap", vec![OscType::Int(2), OscType::Int(1)]);
+    server.send("/status", vec![]);
+    let reply = server.recv_until("/status.reply");
+    assert_eq!(reply.addr, "/status.reply", "no /fail followed the retry");
+
+    server.quit();
+}
+
+/// The per-bus levels: published for every audio bus with no tap involved,
+/// and **held with a decay** so a reader slower than the engine — a display
+/// frame is a dozen blocks — sees a transient instead of missing it between
+/// looks. The hold is a decay rather than a max the reader clears, so several
+/// readers of one bus all see it.
+#[test]
+fn bus_levels_are_published_for_every_bus_and_held_with_a_decay() {
+    let segment = Segment::in_memory_full(1024, 2, 4096);
+    let mut server = TestServer::spawn_with(engine_pair_full(
+        48_000.0,
+        2,
+        0,
+        Some(Arc::clone(&segment)),
+        128,
+        1024,
+        Limits::default(),
+    ));
+
+    // Silence reads as silence, on a bus nothing has ever touched.
+    assert_eq!(segment.level(0), 0.0);
+    assert_eq!(segment.level(64), 0.0);
+
+    server.send(
+        "/s_new",
+        vec![
+            OscType::String("default".into()),
+            OscType::Int(1000),
+            OscType::Int(1),
+            OscType::Int(0),
+        ],
+    );
+    server.wait_for_synth_count(1);
+    let mut out = vec![0.0f32; BLOCK_SIZE * 2];
+    for _ in 0..64 {
+        server.engine.process_block(&mut out);
+    }
+    let sounding = segment.level(0);
+    assert!(sounding > 0.01, "a sounding bus meters (level {sounding})");
+    // No /tap was ever sent: metering costs no ring.
+    assert_eq!(segment.tap_of_bus(0), None);
+
+    // Silence the source and watch the hold decay rather than drop: a frame's
+    // worth of blocks later the peak is still legible, which is the whole
+    // point of publishing a held value instead of the raw block peak.
+    server.send("/n_free", vec![OscType::Int(1000)]);
+    server.wait_for_synth_count(0);
+    server.engine.process_block(&mut out);
+    let after_one = segment.level(0);
+    assert!(
+        after_one > sounding * 0.9,
+        "one silent block barely moves it ({after_one} vs {sounding})"
+    );
+    for _ in 0..16 {
+        server.engine.process_block(&mut out);
+    }
+    let after_frame = segment.level(0);
+    assert!(
+        after_frame < after_one && after_frame > sounding * 0.5,
+        "a display frame later it has decayed but is still readable \
+         ({after_frame} vs {sounding})"
+    );
+    for _ in 0..4000 {
+        server.engine.process_block(&mut out);
+    }
+    assert!(
+        segment.level(0) < sounding * 0.01,
+        "and it does fall away: {}",
+        segment.level(0)
+    );
 
     server.quit();
 }
@@ -618,7 +707,7 @@ fn tap_and_tap_stream_snapshot_audio() {
 fn tap_without_segment_fails() {
     let server = TestServer::spawn();
 
-    server.send("/tap", vec![OscType::Int(0), OscType::Int(0)]);
+    server.send("/tap", vec![OscType::Int(0), OscType::Int(1)]);
     let fail = server.recv_until("/fail");
     assert_eq!(fail.args[0], OscType::String("/tap".into()));
 

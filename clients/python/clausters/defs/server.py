@@ -472,45 +472,6 @@ def _parse_buffer_list(args) -> "list[BufferInfo]":
     ]
 
 
-class TapAllocator:
-    """The server's audio-tap rings as a client-side registry.
-
-    Taps are a finite boot-time resource exactly like buses (``--taps`` rings
-    in the shared segment), so their indices are allocated the same way: a
-    registry (the core's occupancy map) sized from ``ServerOptions.taps`` —
-    reconcilable against a running server with `Server.query_info` — where a
-    freed run is always reusable, a double free raises loudly and exhaustion
-    raises instead of aliasing a ring two scopes would then fight over.
-    ``count > 1`` allocates **adjacent** rings, the natural layout for a
-    stereo pair (a phasescope reads taps ``t`` and ``t + 1``).
-    """
-
-    def __init__(self, size: int):
-        self._registry = _native.Registry(0, size) if size > 0 else None
-
-    def alloc(self, count: int = 1) -> int:
-        """The first index of a free run of ``count`` adjacent taps. Raises
-        when no such run is free (or the server has no tap region)."""
-        index = self._registry.alloc(count) if self._registry else None
-        if index is None:
-            raise RuntimeError("out of audio taps")
-        return index
-
-    def free(self, tap: int, count: int = 1):
-        """Returns a run to the pool. A double free (or a run this allocator
-        never handed out) raises — losing track of a tap is a client bug,
-        never absorbed silently."""
-        if self._registry is None or self._registry.release(tap, count) != 0:
-            raise RuntimeError(
-                f"double free of audio tap {tap} (count={count}): "
-                "not currently allocated here")
-
-    @property
-    def in_use(self) -> int:
-        """How many taps are currently allocated."""
-        return self._registry.in_use if self._registry else 0
-
-
 class Server:
     def __init__(self, host: "str | None" = None, port: "int | None" = None, interface=None,
                  latency: "float | None" = None, options: "ServerOptions | None" = None,
@@ -573,7 +534,6 @@ class Server:
         self.audio_buses = AudioBusAllocator(size=self.options.audio_buses)
         self.control_buses = ControlBusAllocator(size=self.options.control_buses)
         self.buffers = BufferAllocator(size=self.options.max_buffers)
-        self.taps = TapAllocator(size=self.options.taps)
         #: the `/n_end` side-channel that returns node ids to the registry
         #: (an `OscReceiver` + `/notify`), started lazily by `_ensure_recycler`.
         self._recycler = None
@@ -1140,36 +1100,41 @@ class Server:
 
     # ---- audio taps ----
 
-    def tap(self, tap: int, bus):
-        """Routes audio ``bus`` into the server's audio-tap ring ``tap``
-        (``/tap``): from the next block on, the engine appends that bus's
-        samples to the ring, where a GUI oscilloscope reads them out of shared
-        memory with zero messages (or this client streams them with
-        `stream_taps`). ``bus = -1`` stops the tap. No ack, like ``/n_map``
-        (failures reply ``/fail``); sequence with `sync` when needed. The
-        server must have a tap region (``--taps > 0``, the default) -- check
-        `query_info`. Take ``tap`` from the `taps` registry
-        (``server.taps.alloc()``) rather than picking an index by hand, so two
-        scopes never fight over one ring; `clausters.scope` does exactly
-        that."""
-        index = bus.index if isinstance(bus, Bus) else int(bus)
-        self.send_msg("/tap", int(tap), index)
+    def watch(self, bus, watch: bool = True):
+        """Asks the server to make audio ``bus`` readable (``/tap``): from the
+        next block on, the engine records that bus into the shared segment,
+        where a GUI oscilloscope reads it with zero messages (or this client
+        streams it with `stream_taps`). ``watch=False`` stops.
 
-    def stream_taps(self, period_ms: int, frames: int, *taps, timeout: float = 5.0):
+        **The bus is the only number you name.** Which of the server's finite
+        sample rings carries it is the server's own bookkeeping, published in
+        the segment for whoever reads the samples. Watches count, so two views
+        of one bus share a ring and the last one to stop frees it. No ack, like
+        ``/n_map`` (failures reply ``/fail`` -- an unknown bus, no tap region,
+        or every ring already taken); sequence with `sync` when needed.
+        """
+        index = bus.index if isinstance(bus, Bus) else int(bus)
+        self.send_msg("/tap", index, 1 if watch else 0)
+
+    def stream_taps(self, period_ms: int, frames: int, *buses, timeout: float = 5.0):
         """Subscribes this client to a periodic ``/tap_data`` snapshot of the
-        given audio taps (``/tap_stream``): every ``period_ms`` (floor 10 ms)
-        the server sends, per tap, the **newest** ``frames`` samples of its
-        ring as ``/tap_data tap endPosition blob`` -- the tap index, the tap's
-        stream position (total samples written) at the window's end, and the
-        window as raw little-endian ``float32``. The network counterpart of
-        reading the tap rings out of shared memory, e.g. for a browser
-        oscilloscope or headless capture. ``frames`` is clamped to 8192 and to
-        half the ring; at most 8 taps per subscription; one subscription per
-        client, replaced on each call; ``period_ms <= 0`` (or no taps)
-        cancels. Receive the snapshots with an `OscFunc` on ``/tap_data``.
-        Blocks on the ``/done`` ack."""
+        given audio **buses** (``/tap_stream``): every ``period_ms`` (floor
+        10 ms) the server sends, per bus, its **newest** ``frames`` samples as
+        ``/tap_data bus endPosition blob`` -- the bus, its stream position
+        (total samples recorded) at the window's end, and the window as raw
+        little-endian ``float32``. The network counterpart of reading the
+        samples out of shared memory, e.g. for a browser oscilloscope or
+        headless capture.
+
+        The subscription **is** the watch: it starts recording each bus it
+        lists and stops when it is replaced, cancelled or the connection dies,
+        so a streaming client never calls `watch` itself. ``frames`` is clamped
+        to 8192 and to half the server's ring; at most 8 buses per
+        subscription; one subscription per client, replaced on each call;
+        ``period_ms <= 0`` (or no buses) cancels. Receive the snapshots with an
+        `OscFunc` on ``/tap_data``. Blocks on the ``/done`` ack."""
         return self.request("/tap_stream", int(period_ms), int(frames),
-                            *[int(t) for t in taps],
+                            *[b.index if isinstance(b, Bus) else int(b) for b in buses],
                             timeout=timeout, expect=("/done", "/fail"))
 
     # ---- buffers ----

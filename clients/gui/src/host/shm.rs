@@ -30,7 +30,7 @@ const MAGIC: u32 = 0x5541_4C43;
 /// The segment ABI version this reader understands (mirrors
 /// `server::ipc::ABI_VERSION`). Bumped in lockstep with the server; a mismatch
 /// is rejected on [`SharedSegment::open`].
-const SUPPORTED_ABI_VERSION: u32 = 3;
+const SUPPORTED_ABI_VERSION: u32 = 4;
 
 // Byte offsets of the fields we read inside the `#[repr(C)]` Header.
 const OFF_ABI: usize = 4;
@@ -40,13 +40,14 @@ const OFF_RING_CAPACITY: usize = 24;
 const OFF_CONTROL_BUSES: usize = 28;
 const OFF_TAPS: usize = 32;
 const OFF_TAP_FRAMES: usize = 36;
+const OFF_AUDIO_BUSES: usize = 40;
 /// Size of the fixed Header struct.
 const HEADER_SIZE: usize = 64;
 /// Fixed prefix of each command ring before its `data` array (head/tail/pad).
 const RING_PREFIX: usize = 64;
 /// Tap-slot alignment (v3): each slot is a 64-byte cursor line followed by the
 /// sample ring; the whole region starts on the next 64-byte boundary after the
-/// control buses.
+/// audio-bus region.
 const TAP_ALIGN: usize = 64;
 
 /// A read-only mapping of the audio server's shared-memory segment. Reading a
@@ -58,6 +59,12 @@ pub struct SharedSegment {
     len: usize,
     control_count: usize,
     controls_offset: usize,
+    /// The audio-bus region (v4): `audio_count` directory words (bus -> tap
+    /// ring, `-1` for none) followed by as many level words (`f32` bits, the
+    /// peak of the engine's last block). Keyed by the bus, which is why
+    /// nothing above this reader ever names a ring.
+    audio_count: usize,
+    buses_offset: usize,
     taps: usize,
     tap_frames: usize,
     taps_offset: usize,
@@ -122,11 +129,14 @@ impl SharedSegment {
         let control_count = header_u32(ptr, OFF_CONTROL_BUSES) as usize;
         let taps = header_u32(ptr, OFF_TAPS) as usize;
         let tap_frames = header_u32(ptr, OFF_TAP_FRAMES) as usize;
-        // The control region follows the header and the two command rings; the
-        // tap region follows the controls, 64-byte aligned.
+        let audio_count = header_u32(ptr, OFF_AUDIO_BUSES) as usize;
+        // The control region follows the header and the two command rings, the
+        // audio-bus region follows the controls, and the tap region follows
+        // that, 64-byte aligned.
         let controls_offset = HEADER_SIZE + 2 * (RING_PREFIX + ring_capacity);
-        let controls_end = controls_offset + control_count * size_of::<u32>();
-        let taps_offset = controls_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
+        let buses_offset = controls_offset + control_count * size_of::<u32>();
+        let buses_end = buses_offset + 2 * audio_count * size_of::<u32>();
+        let taps_offset = buses_end.div_ceil(TAP_ALIGN) * TAP_ALIGN;
         let expected = taps_offset + taps * (TAP_ALIGN + tap_frames * size_of::<f32>());
         if len != expected {
             return fail(ptr, "segment size does not match its header".into());
@@ -136,6 +146,8 @@ impl SharedSegment {
             len,
             control_count,
             controls_offset,
+            audio_count,
+            buses_offset,
             taps,
             tap_frames,
             taps_offset,
@@ -158,6 +170,34 @@ impl SharedSegment {
         // `AtomicU32` the server keeps live.
         let bits = unsafe { (*(self.ptr.add(off) as *const AtomicU32)).load(Ordering::Relaxed) };
         f32::from_bits(bits)
+    }
+
+    /// Audio bus `bus`'s level: the peak magnitude of the engine's last block
+    /// (`0.0` for an out-of-range bus). One atomic load — what a meter reads,
+    /// and why a meter costs no tap ring.
+    pub fn level(&self, bus: usize) -> f32 {
+        if bus >= self.audio_count {
+            return 0.0;
+        }
+        let off = self.buses_offset + (self.audio_count + bus) * size_of::<u32>();
+        // SAFETY: in-range offset into the level array of the bus region.
+        let bits = unsafe { (*(self.ptr.add(off) as *const AtomicU32)).load(Ordering::Relaxed) };
+        f32::from_bits(bits)
+    }
+
+    /// Which tap ring is recording audio bus `bus`, or `None`. The server owns
+    /// the assignment and publishes it here, so a caller asks by bus.
+    pub fn tap_of_bus(&self, bus: usize) -> Option<usize> {
+        if bus >= self.audio_count {
+            return None;
+        }
+        let off = self.buses_offset + bus * size_of::<u32>();
+        // SAFETY: in-range offset into the directory array of the bus region.
+        let tap = unsafe { (*(self.ptr.add(off) as *const AtomicU32)).load(Ordering::Acquire) };
+        match tap as i32 {
+            i if i >= 0 => Some(i as usize),
+            _ => None,
+        }
     }
 
     /// The engine's block-accurate sample clock (samples processed since boot).
@@ -234,8 +274,19 @@ impl super::BusSource for SharedSegment {
         SharedSegment::control(self, index)
     }
 
-    fn read_tap(&self, tap: i32, out: &mut [f32]) -> bool {
-        tap >= 0 && self.tap_read_latest(tap as usize, out).is_some()
+    fn read_bus(&self, bus: i32, out: &mut [f32]) -> bool {
+        // The bus is the key: the server publishes which ring records it.
+        bus >= 0
+            && self
+                .tap_of_bus(bus as usize)
+                .is_some_and(|tap| self.tap_read_latest(tap, out).is_some())
+    }
+
+    fn level(&self, bus: i32) -> f32 {
+        if bus < 0 {
+            return 0.0;
+        }
+        SharedSegment::level(self, bus as usize)
     }
 
     fn sample_rate(&self) -> f64 {

@@ -300,9 +300,26 @@ impl GarbageSink<'_> {
     }
 }
 
+/// Per-block release factor of the published audio-bus levels: how much a
+/// held peak decays each block, so a meter reading at any rate — a display
+/// frame is a dozen blocks — sees a transient instead of missing it between
+/// looks. [`LEVEL_RELEASE_DB_PER_SEC`] dB per second, the usual peak-meter
+/// ballistic; a decay (rather than a max the reader clears) is what keeps it
+/// correct for **several** readers of the same bus at once.
+fn level_release(sample_rate: f32) -> f32 {
+    let block_secs = BLOCK_SIZE as f32 / sample_rate.max(1.0);
+    10.0f32.powf(-LEVEL_RELEASE_DB_PER_SEC / 20.0 * block_secs)
+}
+
+/// Release rate of a held bus level, in dB per second.
+pub const LEVEL_RELEASE_DB_PER_SEC: f32 = 20.0;
+
 /// Audio-thread half. `process_block` does not allocate, lock or do I/O.
 pub struct Engine {
     sample_rate: f32,
+    /// Per-block decay applied to the published bus levels (see
+    /// [`level_release`]), computed once from the sample rate.
+    level_release: f32,
     channels: usize,
     tree: NodeTree,
     /// M13 DSP workers for parallel groups; empty pool = sequential.
@@ -440,6 +457,7 @@ pub fn engine_pair_full(
     let segment = ipc.clone();
     let engine = Engine {
         sample_rate,
+        level_release: level_release(sample_rate),
         channels,
         tree: NodeTree::with_capacity(limits.max_nodes),
         pool: WorkerPool::new(workers),
@@ -588,16 +606,21 @@ impl Engine {
                     segment.tap_write(i, self.buses.audio(bus as usize));
                 }
             }
-            // Then the per-bus block level a meter reads: one pass over the
-            // block per bus, one relaxed store. This is what lets a meter name
-            // any audio bus without holding a tap ring.
+            // Then the per-bus level a meter reads: this block's peak, held
+            // against the decaying previous one. The hold is what makes the
+            // number correct for a reader running slower than the engine — a
+            // display frame is a dozen blocks — and the decay (rather than a
+            // max the reader clears) keeps it correct for several readers of
+            // the same bus at once. One pass over the block per bus, one load
+            // and one relaxed store: no allocation, no lock.
             for bus in 0..self.buses.audio_count().min(segment.audio_buses()) {
                 let peak = self
                     .buses
                     .audio(bus)
                     .iter()
                     .fold(0.0f32, |acc, s| acc.max(s.abs()));
-                segment.set_level(bus, peak);
+                let held = segment.level(bus) * self.level_release;
+                segment.set_level(bus, peak.max(held));
             }
             segment.clock().store(block_end, Ordering::Release);
         }
